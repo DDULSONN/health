@@ -1,0 +1,139 @@
+"use client";
+
+import { Suspense, useCallback, useEffect, useState } from "react";
+import { useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { RESULTS } from "@/lib/results";
+import type { ResultId } from "@/lib/types";
+import { getStoredAnswers, clearStoredAnswers } from "@/lib/storage";
+import { calculateTotal, calculateTagScores, getResultId } from "@/lib/scoring";
+import ResultCard from "@/components/ResultCard";
+
+const VALID_IDS: ResultId[] = [
+  "heavy_ss", "senior", "routine", "talk", "pump",
+  "frame", "egennam", "newbie", "manage", "reality",
+];
+
+/**
+ * 결과 페이지: 쿼리 r=결과ID 또는 저장된 답변으로 결과 표시
+ * 공유(Web Share / 클립보드), 다시하기
+ */
+function ResultContent() {
+  const searchParams = useSearchParams();
+  const [resultId, setResultId] = useState<ResultId | null>(null);
+  const [totalScore, setTotalScore] = useState(0);
+  const [tagScores, setTagScores] = useState<ReturnType<typeof calculateTagScores> | null>(null);
+  const [shareStatus, setShareStatus] = useState<"idle" | "copied" | "shared" | "error">("idle");
+
+  useEffect(() => {
+    const r = searchParams.get("r") as ResultId | null;
+    if (r && VALID_IDS.includes(r)) {
+      setResultId(r);
+      const answers = getStoredAnswers();
+      setTotalScore(calculateTotal(answers));
+      setTagScores(calculateTagScores(answers));
+    } else {
+      // 쿼리 없으면 저장된 답변으로 계산
+      const answers = getStoredAnswers();
+      if (Object.keys(answers).length >= 20) {
+        const id = getResultId(answers);
+        setResultId(id);
+        setTotalScore(calculateTotal(answers));
+        setTagScores(calculateTagScores(answers));
+      } else {
+        setResultId("reality");
+        setTotalScore(0);
+        setTagScores(calculateTagScores({}));
+      }
+    }
+  }, [searchParams]);
+
+  const handleShare = useCallback(async () => {
+    if (!resultId) return;
+    const result = RESULTS[resultId];
+    const shareData = {
+      title: "헬창 판독기",
+      text: result.shareText,
+    };
+    if (typeof navigator !== "undefined" && navigator.share) {
+      try {
+        await navigator.share(shareData);
+        setShareStatus("shared");
+      } catch (e) {
+        if ((e as Error).name !== "AbortError") {
+          setShareStatus("error");
+        }
+      }
+    } else {
+      try {
+        await navigator.clipboard.writeText(result.shareText);
+        setShareStatus("copied");
+        setTimeout(() => setShareStatus("idle"), 2000);
+      } catch {
+        setShareStatus("error");
+      }
+    }
+  }, [resultId]);
+
+  const handleRetry = useCallback(() => {
+    clearStoredAnswers();
+    window.location.href = "/";
+  }, []);
+
+  if (resultId === null) {
+    return (
+      <main className="min-h-screen flex items-center justify-center p-6 max-w-md mx-auto">
+        <p className="text-neutral-500">결과를 불러오는 중...</p>
+      </main>
+    );
+  }
+
+  const result = RESULTS[resultId];
+  const tags = tagScores ?? {
+    heavy: 0, routine: 0, talk: 0, pump: 0,
+    manage: 0, newbie: 0, frame: 0, egennam: 0,
+  };
+
+  return (
+    <main className="min-h-screen flex flex-col p-4 pb-8 max-w-md mx-auto">
+      <ResultCard result={result} totalScore={totalScore} tagScores={tags} className="mb-6" />
+
+      <div className="space-y-3">
+        <button
+          type="button"
+          onClick={handleShare}
+          className="w-full min-h-[56px] rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 active:scale-[0.98] transition-all"
+        >
+          {shareStatus === "copied"
+            ? "클립보드에 복사됨"
+            : shareStatus === "shared"
+              ? "공유 완료"
+              : "내 결과 공유하기"}
+        </button>
+        <button
+          type="button"
+          onClick={handleRetry}
+          className="w-full min-h-[56px] rounded-xl bg-neutral-200 text-neutral-800 font-medium hover:bg-neutral-300 active:scale-[0.98] transition-all"
+        >
+          다시하기
+        </button>
+      </div>
+
+      <Link href="/" className="block text-center mt-4 text-sm text-neutral-500 hover:text-neutral-700">
+        홈으로
+      </Link>
+    </main>
+  );
+}
+
+export default function ResultPage() {
+  return (
+    <Suspense fallback={
+      <main className="min-h-screen flex items-center justify-center p-6 max-w-md mx-auto">
+        <p className="text-neutral-500">결과를 불러오는 중...</p>
+      </main>
+    }>
+      <ResultContent />
+    </Suspense>
+  );
+}
