@@ -5,6 +5,7 @@
  * + "왜 이 결과가 나왔는지" (total, 상위 태그 2개)
  */
 
+import { useRef, useState } from "react";
 import type { ResultContent } from "@/lib/results";
 import type { TagScores } from "@/lib/types";
 import { TAG_LABELS } from "@/lib/scoring";
@@ -25,9 +26,49 @@ export default function ResultCard({
   className = "",
 }: ResultCardProps) {
   const topTags = getTopTags(tagScores);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const [isDownloading, setIsDownloading] = useState(false);
+  const [feedback, setFeedback] = useState("");
+
+  const handleDownloadImage = async () => {
+    const element = cardRef.current;
+    if (!element) return;
+
+    setIsDownloading(true);
+    setFeedback("");
+
+    try {
+      // 폰트 로딩 대기
+      await document.fonts.ready;
+
+      // html2canvas를 동적으로 import (클라이언트 전용)
+      const html2canvas = (await import('html2canvas')).default;
+
+      const canvas = await html2canvas(element, {
+        scale: 2, // Retina 디스플레이 대응
+        backgroundColor: '#ffffff',
+        useCORS: true,
+        logging: false,
+      });
+
+      const link = document.createElement('a');
+      link.download = `헬창판록기_${result.title}.png`;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+
+      setFeedback("이미지가 저장되었습니다");
+      setTimeout(() => setFeedback(""), 2000);
+    } catch (error) {
+      console.error('Image download failed:', error);
+      setFeedback("이미지 저장에 실패했습니다");
+      setTimeout(() => setFeedback(""), 2000);
+    } finally {
+      setIsDownloading(false);
+    }
+  };
 
   return (
-    <div className={`rounded-2xl bg-white border border-neutral-200 shadow-md overflow-hidden ${className}`}>
+    <div ref={cardRef} className={`rounded-2xl bg-white border border-neutral-200 shadow-md overflow-hidden ${className}`}>
       {/* 상단 이모지 + 제목 */}
       <div className="p-6 pb-4 text-center bg-gradient-to-b from-emerald-50 to-white">
         <span className="text-4xl block mb-2" aria-hidden>{result.emoji}</span>
@@ -63,6 +104,20 @@ export default function ResultCard({
               </span>
             ))}
           </p>
+        )}
+      </div>
+
+      {/* 이미지로 저장 버튼 */}
+      <div className="px-6 py-4 border-t border-neutral-100">
+        <button
+          onClick={handleDownloadImage}
+          disabled={isDownloading}
+          className="w-full min-h-[48px] rounded-xl bg-blue-600 text-white font-medium hover:bg-blue-700 active:scale-[0.98] transition-all disabled:opacity-50"
+        >
+          {isDownloading ? "이미지 생성 중..." : "📷 이미지로 저장"}
+        </button>
+        {feedback && (
+          <p className="text-xs text-center text-neutral-600 mt-2">{feedback}</p>
         )}
       </div>
 

@@ -51,9 +51,16 @@ function ResultContent() {
   const handleShare = useCallback(async () => {
     if (!resultId) return;
     const result = RESULTS[resultId];
+
+    // 공유 URL 생성
+    const shareUrl = typeof window !== 'undefined'
+      ? `${window.location.origin}/result?r=${resultId}`
+      : '';
+
     const shareData = {
-      title: "헬창 판독기",
+      title: "헬창 판록기",
       text: result.shareText,
+      url: shareUrl,
     };
     if (typeof navigator !== "undefined" && navigator.share) {
       try {
@@ -66,7 +73,8 @@ function ResultContent() {
       }
     } else {
       try {
-        await navigator.clipboard.writeText(result.shareText);
+        // URL 포함하여 클립보드에 복사
+        await navigator.clipboard.writeText(`${result.shareText}\n${shareUrl}`);
         setShareStatus("copied");
         setTimeout(() => setShareStatus("idle"), 2000);
       } catch {
