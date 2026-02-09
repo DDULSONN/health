@@ -1,31 +1,95 @@
 import Link from "next/link";
 
-/**
- * 홈: 앱 설명 + 시작하기 버튼 + 개인정보 안내
- */
+const FEATURES = [
+  {
+    href: "/1rm",
+    title: "1RM 계산기",
+    emoji: "🏋️",
+    description: "중량과 반복 횟수로 1RM을 추정하고, 퍼센트별 작업 중량표까지",
+    accent: "bg-emerald-50 border-emerald-200 hover:border-emerald-400",
+    main: true,
+  },
+  {
+    href: "/helltest",
+    title: "헬창 판독기",
+    emoji: "🏆",
+    description: "20문항으로 알아보는 나의 헬스 유형 테스트",
+    accent: "bg-amber-50 border-amber-200 hover:border-amber-400",
+  },
+  {
+    href: "/protein",
+    title: "프로틴 추천",
+    emoji: "🥛",
+    description: "WPC, WPI, 게이너 등 인기 프로틴 가격 비교 & 추천",
+    accent: "bg-blue-50 border-blue-200 hover:border-blue-400",
+  },
+  {
+    href: "/bodycheck",
+    title: "몸평가",
+    emoji: "📊",
+    description: "10문항 설문으로 나에게 맞는 운동 방향 진단",
+    accent: "bg-purple-50 border-purple-200 hover:border-purple-400",
+  },
+  {
+    href: "/lifts",
+    title: "3대 합계 계산기",
+    emoji: "💪",
+    description: "스쿼트/벤치/데드 합계와 체중 대비 등급 확인",
+    accent: "bg-rose-50 border-rose-200 hover:border-rose-400",
+  },
+];
 
 export default function HomePage() {
   return (
-    <main className="min-h-screen flex flex-col items-center justify-center p-6 max-w-md mx-auto">
-      <div className="text-center space-y-6">
-        <h1 className="text-2xl font-bold text-neutral-900">
-          헬창 판독기
+    <main className="max-w-2xl mx-auto px-4 py-10">
+      {/* Hero */}
+      <section className="text-center mb-10">
+        <h1 className="text-3xl font-bold text-neutral-900 mb-2">
+          GymTools
         </h1>
-        <p className="text-neutral-600 leading-relaxed">
-          20가지 질문에 답하면, 당신의 헬스 스타일을 10가지 유형 중 하나로 알려줘요.
-          가볍게 재미로 참여해 보세요.
+        <p className="text-neutral-500 text-base">
+          헬스인을 위한 올인원 도구 모음
         </p>
-        <Link
-          href="/test"
-          className="inline-block min-h-[56px] px-8 py-3 rounded-xl bg-emerald-600 text-white font-medium text-lg hover:bg-emerald-700 active:scale-[0.98] transition-all"
-        >
-          시작하기
-        </Link>
-        <div className="pt-4 border-t border-neutral-200 text-left">
-          <p className="text-sm text-neutral-500">
-            <strong>개인정보 안내</strong>: 답변 데이터는 서버로 전송되지 않으며, 브라우저(localStorage)에만 저장됩니다. 시크릿 모드에서는 저장되지 않을 수 있습니다.
-          </p>
-        </div>
+      </section>
+
+      {/* Feature Cards */}
+      <section className="grid gap-3">
+        {FEATURES.map((f) => (
+          <Link
+            key={f.href}
+            href={f.href}
+            className={`group block rounded-2xl border-2 p-5 transition-all active:scale-[0.99] ${f.accent} ${
+              f.main ? "ring-2 ring-emerald-300 ring-offset-1" : ""
+            }`}
+          >
+            <div className="flex items-start gap-4">
+              <span className="text-3xl shrink-0" aria-hidden>
+                {f.emoji}
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-lg font-bold text-neutral-900 group-hover:text-emerald-700 transition-colors">
+                  {f.title}
+                  {f.main && (
+                    <span className="ml-2 text-xs font-medium text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full align-middle">
+                      MAIN
+                    </span>
+                  )}
+                </h2>
+                <p className="mt-1 text-sm text-neutral-600 leading-relaxed">
+                  {f.description}
+                </p>
+              </div>
+            </div>
+          </Link>
+        ))}
+      </section>
+
+      {/* Privacy Note */}
+      <div className="mt-8 pt-4 border-t border-neutral-200">
+        <p className="text-xs text-neutral-400 text-center">
+          모든 데이터는 브라우저(localStorage)에만 저장되며, 서버로 전송되지
+          않습니다.
+        </p>
       </div>
     </main>
   );

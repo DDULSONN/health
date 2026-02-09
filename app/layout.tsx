@@ -1,6 +1,8 @@
 import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+import Header from "@/components/Header";
+import Footer from "@/components/Footer";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -12,9 +14,26 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+/**
+ * 사이트명 후보:
+ * 1. GymTools (기본 적용) - 직관적이고 깔끔
+ * 2. AlphaFit Lab - 힙하고 연구소 느낌
+ * 3. 헬스메이트 - 친근한 한국어
+ */
 export const metadata: Metadata = {
-  title: "헬창 판독기",
-  description: "20문항으로 알아보는 나의 헬스 스타일. 모바일에서 가볍게 참여해 보세요.",
+  title: {
+    default: "GymTools - 헬스 유틸 종합 사이트",
+    template: "%s | GymTools",
+  },
+  description:
+    "1RM 계산기, 3대 합계, 헬창판독기, 프로틴 추천, 몸평가까지. 헬스인을 위한 올인원 도구 모음.",
+  openGraph: {
+    title: "GymTools - 헬스 유틸 종합 사이트",
+    description:
+      "1RM 계산기, 3대 합계, 헬창판독기, 프로틴 추천, 몸평가까지. 헬스인을 위한 올인원 도구 모음.",
+    type: "website",
+    locale: "ko_KR",
+  },
 };
 
 export default function RootLayout({
@@ -25,9 +44,11 @@ export default function RootLayout({
   return (
     <html lang="ko">
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-dvh`}
       >
-        {children}
+        <Header />
+        <div className="flex-1">{children}</div>
+        <Footer />
       </body>
     </html>
   );

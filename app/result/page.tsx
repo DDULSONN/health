@@ -85,7 +85,7 @@ function ResultContent() {
 
   const handleRetry = useCallback(() => {
     clearStoredAnswers();
-    window.location.href = "/";
+    window.location.href = "/helltest";
   }, []);
 
   if (resultId === null) {
@@ -125,6 +125,31 @@ function ResultContent() {
         >
           다시하기
         </button>
+      </div>
+
+      {/* CTA */}
+      <div className="mt-6 pt-4 border-t border-neutral-200 space-y-2">
+        <p className="text-sm text-neutral-500 text-center mb-3">다른 도구도 사용해 보세요</p>
+        <div className="grid grid-cols-1 gap-2">
+          <Link
+            href="/1rm"
+            className="block text-center py-3 px-4 rounded-xl bg-emerald-50 text-emerald-700 font-medium text-sm hover:bg-emerald-100 transition-colors"
+          >
+            🏋️ 1RM 계산해보기
+          </Link>
+          <Link
+            href="/protein"
+            className="block text-center py-3 px-4 rounded-xl bg-blue-50 text-blue-700 font-medium text-sm hover:bg-blue-100 transition-colors"
+          >
+            🥛 프로틴 추천 보기
+          </Link>
+          <Link
+            href="/bodycheck"
+            className="block text-center py-3 px-4 rounded-xl bg-purple-50 text-purple-700 font-medium text-sm hover:bg-purple-100 transition-colors"
+          >
+            📊 몸평가 하기
+          </Link>
+        </div>
       </div>
 
       <Link href="/" className="block text-center mt-4 text-sm text-neutral-500 hover:text-neutral-700">

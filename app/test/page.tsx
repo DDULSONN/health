@@ -70,10 +70,10 @@ export default function TestPage() {
       {/* 뒤로가기 */}
       <div className="flex justify-between items-center mb-4">
         <Link
-          href="/"
+          href="/helltest"
           className="text-sm text-neutral-500 hover:text-neutral-700"
         >
-          ← 홈
+          ← 돌아가기
         </Link>
         {currentIndex > 0 && (
           <button
