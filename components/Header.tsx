@@ -8,7 +8,7 @@ const NAV_ITEMS = [
   { href: "/1rm", label: "1RM 계산기" },
   { href: "/lifts", label: "3대 합계" },
   { href: "/helltest", label: "헬창판독기" },
-  { href: "/protein", label: "프로틴" },
+  { href: "/snacks", label: "다이어트 간식" },
   { href: "/bodycheck", label: "몸평가" },
 ];
 

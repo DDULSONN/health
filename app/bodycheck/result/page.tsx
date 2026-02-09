@@ -105,10 +105,10 @@ function BodyCheckResultContent() {
             🏋️ 1RM 계산하기
           </Link>
           <Link
-            href="/protein"
+            href="/snacks"
             className="block text-center py-3 px-4 rounded-xl bg-blue-50 text-blue-700 font-medium text-sm hover:bg-blue-100 transition-colors"
           >
-            🥛 프로틴 추천 보기
+            🍫 다이어트 간식 보기
           </Link>
         </div>
       </div>

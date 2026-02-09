@@ -17,10 +17,10 @@ const FEATURES = [
     accent: "bg-amber-50 border-amber-200 hover:border-amber-400",
   },
   {
-    href: "/protein",
-    title: "프로틴 추천",
-    emoji: "🥛",
-    description: "WPC, WPI, 게이너 등 인기 프로틴 가격 비교 & 추천",
+    href: "/snacks",
+    title: "다이어트 간식",
+    emoji: "🍫",
+    description: "프로틴바 맛있는 순 랭킹 & 프로틴 보충제 추천 모음",
     accent: "bg-blue-50 border-blue-200 hover:border-blue-400",
   },
   {

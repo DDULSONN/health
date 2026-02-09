@@ -1,0 +1,268 @@
+[
+  {
+    "id": "snack-rank-1",
+    "name": "원데이뉴트리션 프로틴바",
+    "brand": "원데이뉴트리션",
+    "price": 0,
+    "priceText": "가격 확인",
+    "tasteRank": 1,
+    "tags": ["프로틴바", "맛있는"],
+    "category": "snack",
+    "links": {
+      "coupang": "https://link.coupang.com/a/dJjBOe"
+    },
+    "updatedAt": "2025-06-09"
+  },
+  {
+    "id": "snack-rank-2",
+    "name": "마이프로틴 프로틴바",
+    "brand": "마이프로틴",
+    "price": 0,
+    "priceText": "가격 확인",
+    "tasteRank": 2,
+    "tags": ["프로틴바", "맛있는"],
+    "category": "snack",
+    "links": {
+      "coupang": "https://link.coupang.com/a/dJjKuY"
+    },
+    "updatedAt": "2025-06-09"
+  },
+  {
+    "id": "snack-rank-3",
+    "name": "닥터유 프로틴바",
+    "brand": "오리온",
+    "price": 0,
+    "priceText": "가격 확인",
+    "tasteRank": 3,
+    "tags": ["프로틴바", "가성비"],
+    "category": "snack",
+    "links": {
+      "coupang": "https://link.coupang.com/a/dJjK5N"
+    },
+    "updatedAt": "2025-06-09"
+  },
+  {
+    "id": "snack-rank-4",
+    "name": "씽크슬림 프로틴바",
+    "brand": "씽크!",
+    "price": 0,
+    "priceText": "가격 확인",
+    "tasteRank": 4,
+    "tags": ["프로틴바", "저당"],
+    "category": "snack",
+    "links": {
+      "coupang": "https://link.coupang.com/a/dJjMfC"
+    },
+    "updatedAt": "2025-06-09"
+  },
+  {
+    "id": "snack-rank-5",
+    "name": "로버트 아이솔레이트 프로틴바",
+    "brand": "로버트",
+    "price": 0,
+    "priceText": "가격 확인",
+    "tasteRank": 5,
+    "tags": ["프로틴바", "WPI"],
+    "category": "snack",
+    "links": {
+      "coupang": "https://link.coupang.com/a/dJjNZh"
+    },
+    "updatedAt": "2025-06-09"
+  },
+  {
+    "id": "snack-rank-6",
+    "name": "퀘스트 프로틴바",
+    "brand": "퀘스트뉴트리션",
+    "price": 0,
+    "priceText": "가격 확인",
+    "tasteRank": 6,
+    "tags": ["프로틴바", "저당"],
+    "category": "snack",
+    "links": {
+      "coupang": "https://link.coupang.com/a/dJjOFF"
+    },
+    "updatedAt": "2025-06-09"
+  },
+  {
+    "id": "opt-gold-standard",
+    "name": "골드 스탠다드 100% 웨이",
+    "brand": "옵티멈 뉴트리션",
+    "price": 65000,
+    "priceText": "약 65,000원 (2.27kg)",
+    "tasteRank": 9999,
+    "tags": ["WPC", "맛있는"],
+    "category": "protein",
+    "links": {
+      "coupang": "https://www.coupang.com/np/search?q=옵티멈+골드스탠다드",
+      "naver": "https://search.shopping.naver.com/search/all?query=옵티멈+골드스탠다드"
+    },
+    "updatedAt": "2025-06-01"
+  },
+  {
+    "id": "myprotein-impact-whey",
+    "name": "임팩트 웨이 프로틴",
+    "brand": "마이프로틴",
+    "price": 39000,
+    "priceText": "약 39,000원 (1kg) / 세일 시 더 저렴",
+    "tasteRank": 9999,
+    "tags": ["WPC", "가성비", "맛있는"],
+    "category": "protein",
+    "links": {
+      "coupang": "https://www.coupang.com/np/search?q=마이프로틴+임팩트웨이",
+      "naver": "https://search.shopping.naver.com/search/all?query=마이프로틴+임팩트웨이",
+      "official": "https://www.myprotein.co.kr/"
+    },
+    "updatedAt": "2025-06-01"
+  },
+  {
+    "id": "myprotein-impact-wpi",
+    "name": "임팩트 웨이 아이솔레이트",
+    "brand": "마이프로틴",
+    "price": 52000,
+    "priceText": "약 52,000원 (1kg)",
+    "tasteRank": 9999,
+    "tags": ["WPI", "저당"],
+    "category": "protein",
+    "links": {
+      "coupang": "https://www.coupang.com/np/search?q=마이프로틴+아이솔레이트",
+      "naver": "https://search.shopping.naver.com/search/all?query=마이프로틴+아이솔레이트",
+      "official": "https://www.myprotein.co.kr/"
+    },
+    "updatedAt": "2025-06-01"
+  },
+  {
+    "id": "bnr17-protein",
+    "name": "닥터유 단백질바 & 프로틴 드링크",
+    "brand": "오리온 닥터유",
+    "price": 25000,
+    "priceText": "약 25,000원 (12개입 바)",
+    "tasteRank": 9999,
+    "tags": ["가성비", "맛있는"],
+    "category": "protein",
+    "links": {
+      "coupang": "https://www.coupang.com/np/search?q=닥터유+단백질바",
+      "naver": "https://search.shopping.naver.com/search/all?query=닥터유+단백질바"
+    },
+    "updatedAt": "2025-05-15"
+  },
+  {
+    "id": "bodymade-wpi",
+    "name": "바디메이드 WPI 프로틴",
+    "brand": "바디메이드",
+    "price": 44000,
+    "priceText": "약 44,000원 (1.5kg)",
+    "tasteRank": 9999,
+    "tags": ["WPI", "가성비", "저당"],
+    "category": "protein",
+    "links": {
+      "coupang": "https://www.coupang.com/np/search?q=바디메이드+WPI",
+      "naver": "https://search.shopping.naver.com/search/all?query=바디메이드+WPI"
+    },
+    "updatedAt": "2025-05-20"
+  },
+  {
+    "id": "dymatize-iso100",
+    "name": "ISO 100 가수분해 유청",
+    "brand": "다이마타이즈",
+    "price": 78000,
+    "priceText": "약 78,000원 (2.27kg)",
+    "tasteRank": 9999,
+    "tags": ["WPI", "저당", "맛있는"],
+    "category": "protein",
+    "links": {
+      "coupang": "https://www.coupang.com/np/search?q=다이마타이즈+ISO100",
+      "naver": "https://search.shopping.naver.com/search/all?query=다이마타이즈+ISO100"
+    },
+    "updatedAt": "2025-05-25"
+  },
+  {
+    "id": "allmax-isoflex",
+    "name": "이소플렉스 WPI",
+    "brand": "올맥스",
+    "price": 72000,
+    "priceText": "약 72,000원 (2.27kg)",
+    "tasteRank": 9999,
+    "tags": ["WPI", "맛있는"],
+    "category": "protein",
+    "links": {
+      "coupang": "https://www.coupang.com/np/search?q=올맥스+이소플렉스",
+      "naver": "https://search.shopping.naver.com/search/all?query=올맥스+이소플렉스"
+    },
+    "updatedAt": "2025-05-18"
+  },
+  {
+    "id": "raw-gainer",
+    "name": "RAW 게이너 벌크업",
+    "brand": "머슬팜",
+    "price": 55000,
+    "priceText": "약 55,000원 (2.72kg)",
+    "tasteRank": 9999,
+    "tags": ["게이너", "대용량"],
+    "category": "protein",
+    "links": {
+      "coupang": "https://www.coupang.com/np/search?q=머슬팜+게이너",
+      "naver": "https://search.shopping.naver.com/search/all?query=머슬팜+게이너"
+    },
+    "updatedAt": "2025-05-10"
+  },
+  {
+    "id": "bsn-true-mass",
+    "name": "트루매스 1200",
+    "brand": "BSN",
+    "price": 68000,
+    "priceText": "약 68,000원 (4.7kg)",
+    "tasteRank": 9999,
+    "tags": ["게이너", "대용량"],
+    "category": "protein",
+    "links": {
+      "coupang": "https://www.coupang.com/np/search?q=BSN+트루매스",
+      "naver": "https://search.shopping.naver.com/search/all?query=BSN+트루매스"
+    },
+    "updatedAt": "2025-05-12"
+  },
+  {
+    "id": "orgain-plant",
+    "name": "오가닉 플랜트 프로틴",
+    "brand": "올게인",
+    "price": 45000,
+    "priceText": "약 45,000원 (920g)",
+    "tasteRank": 9999,
+    "tags": ["식물성", "저당"],
+    "category": "protein",
+    "links": {
+      "coupang": "https://www.coupang.com/np/search?q=올게인+식물성+프로틴",
+      "naver": "https://search.shopping.naver.com/search/all?query=올게인+식물성+프로틴"
+    },
+    "updatedAt": "2025-05-22"
+  },
+  {
+    "id": "xtend-pro",
+    "name": "엑스텐드 프로 웨이 아이솔레이트",
+    "brand": "사이베이션",
+    "price": 58000,
+    "priceText": "약 58,000원 (810g)",
+    "tasteRank": 9999,
+    "tags": ["WPI", "저당"],
+    "category": "protein",
+    "links": {
+      "coupang": "https://www.coupang.com/np/search?q=엑스텐드프로+WPI",
+      "naver": "https://search.shopping.naver.com/search/all?query=엑스텐드프로+WPI"
+    },
+    "updatedAt": "2025-05-28"
+  },
+  {
+    "id": "nutri-bulk-wpc",
+    "name": "뉴트리 벌크업 WPC",
+    "brand": "뉴트리코스트",
+    "price": 32000,
+    "priceText": "약 32,000원 (2.27kg)",
+    "tasteRank": 9999,
+    "tags": ["WPC", "가성비", "대용량"],
+    "category": "protein",
+    "links": {
+      "coupang": "https://www.coupang.com/np/search?q=뉴트리코스트+WPC",
+      "naver": "https://search.shopping.naver.com/search/all?query=뉴트리코스트+WPC"
+    },
+    "updatedAt": "2025-05-30"
+  }
+]
