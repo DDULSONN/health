@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import CoupangEmbed from "@/components/CoupangEmbed";
 import CoupangNotice from "@/components/CoupangNotice";
+import CoupangNoticeTop from "@/components/CoupangNoticeTop";
 import AdSlot from "@/components/AdSlot";
 
 interface EmbedItem {
@@ -59,6 +60,8 @@ export default function SnacksPage() {
           최종 업데이트 · {data.siteUpdatedAt}
         </p>
       </section>
+
+      <CoupangNoticeTop className="mb-8" />
 
       {/* Sections */}
       {data.sections.map((section) => {
