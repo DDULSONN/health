@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import AdSlot from "@/components/AdSlot";
+import ShareToCommBtn from "@/components/ShareToCommBtn";
 import {
   calculate1RM,
   getPercentageTable,
@@ -281,6 +282,11 @@ function OneRmContent() {
             >
               💪 3대 합계 계산기로 이동
             </Link>
+            <ShareToCommBtn
+              type="1rm"
+              title={`${LIFT_LABELS[lift]} 1RM ${Math.round(oneRmKg)}kg (${formula === "epley" ? "Epley" : "Brzycki"})`}
+              payload={{ lift, weightKg: Math.round(oneRmKg * 10) / 10, oneRmKg: Math.round(oneRmKg * 10) / 10, formula }}
+            />
           </div>
 
           <AdSlot slotId="1rm-result" className="mt-4" />

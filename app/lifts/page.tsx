@@ -4,6 +4,7 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import AdSlot from "@/components/AdSlot";
+import ShareToCommBtn from "@/components/ShareToCommBtn";
 import {
   calculateLifts,
   buildLiftsShareUrl,
@@ -230,6 +231,12 @@ function LiftsContent() {
           >
             🏋️ 1RM 계산기로 이동
           </Link>
+
+          <ShareToCommBtn
+            type="lifts"
+            title={`3대 합계 ${result.totalKg}kg${bw > 0 ? ` (${result.ratio}x)` : ""}`}
+            payload={{ squat: s, bench: b, deadlift: d, totalKg: result.totalKg, ratio: result.ratio, grade: result.grade.label }}
+          />
 
           <AdSlot slotId="lifts-result" className="mt-2" />
         </div>

@@ -4,6 +4,7 @@ import { Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import AdSlot from "@/components/AdSlot";
+import ShareToCommBtn from "@/components/ShareToCommBtn";
 import {
   BODYCHECK_RESULTS,
   type BodyCheckTypeId,
@@ -90,6 +91,11 @@ function BodyCheckResultContent() {
         >
           다시하기
         </Link>
+        <ShareToCommBtn
+          type="bodycheck"
+          title={`몸평가 결과: ${result.title} ${result.emoji}`}
+          payload={{ typeId, title: result.title, subtitle: result.subtitle }}
+        />
       </div>
 
       {/* CTA */}

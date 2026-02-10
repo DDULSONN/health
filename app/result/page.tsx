@@ -8,6 +8,7 @@ import type { ResultId } from "@/lib/types";
 import { getStoredAnswers, clearStoredAnswers } from "@/lib/storage";
 import { calculateTotal, calculateTagScores, getResultId } from "@/lib/scoring";
 import ResultCard from "@/components/ResultCard";
+import ShareToCommBtn from "@/components/ShareToCommBtn";
 
 const VALID_IDS: ResultId[] = [
   "heavy_ss", "senior", "routine", "talk", "pump",
@@ -125,6 +126,11 @@ function ResultContent() {
         >
           다시하기
         </button>
+        <ShareToCommBtn
+          type="helltest"
+          title={`헬창판독기 결과: ${result.title}`}
+          payload={{ resultId, title: result.title, totalScore }}
+        />
       </div>
 
       {/* CTA */}

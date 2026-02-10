@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
+import { createClient } from "@/lib/supabase/client";
 
 const NAV_ITEMS = [
   { href: "/1rm", label: "1RM 계산기" },
@@ -10,11 +11,32 @@ const NAV_ITEMS = [
   { href: "/helltest", label: "헬창판독기" },
   { href: "/snacks", label: "다이어트 간식" },
   { href: "/bodycheck", label: "몸평가" },
+  { href: "/community", label: "커뮤니티" },
 ];
 
 export default function Header() {
   const pathname = usePathname();
   const [isOpen, setIsOpen] = useState(false);
+  const [nickname, setNickname] = useState<string | null>(null);
+  const [authChecked, setAuthChecked] = useState(false);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const supabase = createClient();
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: profile } = await supabase
+            .from("profiles")
+            .select("nickname")
+            .eq("user_id", user.id)
+            .single();
+          setNickname(profile?.nickname ?? null);
+        }
+      } catch { /* ignore */ }
+      setAuthChecked(true);
+    })();
+  }, []);
 
   return (
     <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-neutral-200">
@@ -45,6 +67,20 @@ export default function Header() {
               </Link>
             );
           })}
+          {authChecked && (
+            nickname ? (
+              <span className="ml-2 px-3 py-1.5 text-sm font-medium text-neutral-700">
+                {nickname}
+              </span>
+            ) : (
+              <Link
+                href={`/login?redirect=${encodeURIComponent(pathname)}`}
+                className="ml-2 px-3 py-1.5 rounded-lg text-sm font-medium text-emerald-600 hover:bg-emerald-50 transition-colors"
+              >
+                로그인
+              </Link>
+            )
+          )}
         </nav>
 
         {/* Mobile Menu Button */}
@@ -100,6 +136,21 @@ export default function Header() {
               </Link>
             );
           })}
+          {authChecked && (
+            nickname ? (
+              <span className="block py-2.5 px-3 text-sm font-medium text-neutral-700">
+                {nickname}
+              </span>
+            ) : (
+              <Link
+                href={`/login?redirect=${encodeURIComponent(pathname)}`}
+                onClick={() => setIsOpen(false)}
+                className="block py-2.5 px-3 rounded-lg text-sm font-medium text-emerald-600 hover:bg-emerald-50"
+              >
+                로그인
+              </Link>
+            )
+          )}
         </nav>
       )}
     </header>

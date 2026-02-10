@@ -36,6 +36,9 @@ yarn-error.log*
 # vercel
 .vercel
 
+# Windows reserved device names
+nul
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
