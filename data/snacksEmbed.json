@@ -1,0 +1,38 @@
+{
+  "siteUpdatedAt": "2026-02-10",
+  "sections": [
+    {
+      "key": "proteinbar",
+      "title": "프로틴바",
+      "items": [
+        { "id": "pb-1", "rank": 1, "embedHtml": "<iframe src=\"https://coupa.ng/clAtPk\" width=\"120\" height=\"240\" frameborder=\"0\" scrolling=\"no\" referrerpolicy=\"unsafe-url\" browsingtopics></iframe>" },
+        { "id": "pb-2", "rank": 2, "embedHtml": "<iframe src=\"https://coupa.ng/clAtQq\" width=\"120\" height=\"240\" frameborder=\"0\" scrolling=\"no\" referrerpolicy=\"unsafe-url\" browsingtopics></iframe>" },
+        { "id": "pb-3", "rank": 3, "embedHtml": "<iframe src=\"https://coupa.ng/clAtRO\" width=\"120\" height=\"240\" frameborder=\"0\" scrolling=\"no\" referrerpolicy=\"unsafe-url\" browsingtopics></iframe>" },
+        { "id": "pb-4", "rank": 4, "embedHtml": "<iframe src=\"https://coupa.ng/clAtSk\" width=\"120\" height=\"240\" frameborder=\"0\" scrolling=\"no\" referrerpolicy=\"unsafe-url\" browsingtopics></iframe>" },
+        { "id": "pb-5", "rank": 5, "embedHtml": "<iframe src=\"https://coupa.ng/clAtSH\" width=\"120\" height=\"240\" frameborder=\"0\" scrolling=\"no\" referrerpolicy=\"unsafe-url\" browsingtopics></iframe>" }
+      ]
+    },
+    {
+      "key": "protein",
+      "title": "프로틴",
+      "items": [
+        { "id": "pt-1", "rank": 1, "embedHtml": "<iframe src=\"https://coupa.ng/clAtBS\" width=\"120\" height=\"240\" frameborder=\"0\" scrolling=\"no\" referrerpolicy=\"unsafe-url\" browsingtopics></iframe>" },
+        { "id": "pt-2", "rank": 2, "embedHtml": "<iframe src=\"https://coupa.ng/clAtDX\" width=\"120\" height=\"240\" frameborder=\"0\" scrolling=\"no\" referrerpolicy=\"unsafe-url\" browsingtopics></iframe>" },
+        { "id": "pt-3", "rank": 3, "embedHtml": "<iframe src=\"https://coupa.ng/clAtHJ\" width=\"120\" height=\"240\" frameborder=\"0\" scrolling=\"no\" referrerpolicy=\"unsafe-url\" browsingtopics></iframe>" },
+        { "id": "pt-4", "rank": 4, "embedHtml": "<iframe src=\"https://coupa.ng/clAtGi\" width=\"120\" height=\"240\" frameborder=\"0\" scrolling=\"no\" referrerpolicy=\"unsafe-url\" browsingtopics></iframe>" },
+        { "id": "pt-5", "rank": 5, "embedHtml": "<iframe src=\"https://coupa.ng/clAtGF\" width=\"120\" height=\"240\" frameborder=\"0\" scrolling=\"no\" referrerpolicy=\"unsafe-url\" browsingtopics></iframe>" }
+      ]
+    },
+    {
+      "key": "dietsnack",
+      "title": "다이어트 간식",
+      "items": [
+        { "id": "ds-1", "rank": 1, "embedHtml": "<iframe src=\"https://coupa.ng/clAtLr\" width=\"120\" height=\"240\" frameborder=\"0\" scrolling=\"no\" referrerpolicy=\"unsafe-url\" browsingtopics></iframe>" },
+        { "id": "ds-2", "rank": 2, "embedHtml": "<iframe src=\"https://coupa.ng/clAtN0\" width=\"120\" height=\"240\" frameborder=\"0\" scrolling=\"no\" referrerpolicy=\"unsafe-url\" browsingtopics></iframe>" },
+        { "id": "ds-3", "rank": 3, "embedHtml": "<iframe src=\"https://coupa.ng/clAtMp\" width=\"120\" height=\"240\" frameborder=\"0\" scrolling=\"no\" referrerpolicy=\"unsafe-url\" browsingtopics></iframe>" },
+        { "id": "ds-4", "rank": 4, "embedHtml": "<iframe src=\"https://coupa.ng/clAtNh\" width=\"120\" height=\"240\" frameborder=\"0\" scrolling=\"no\" referrerpolicy=\"unsafe-url\" browsingtopics></iframe>" },
+        { "id": "ds-5", "rank": 5, "embedHtml": "<iframe src=\"https://coupa.ng/clAtIQ\" width=\"120\" height=\"240\" frameborder=\"0\" scrolling=\"no\" referrerpolicy=\"unsafe-url\" browsingtopics></iframe>" }
+      ]
+    }
+  ]
+}
