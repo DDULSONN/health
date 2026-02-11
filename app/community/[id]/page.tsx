@@ -7,7 +7,9 @@ import { createClient } from "@/lib/supabase/client";
 import {
   POST_TYPE_LABELS,
   POST_TYPE_COLORS,
+  POST_TYPE_ICONS,
   renderPayloadSummary,
+  getBadgeFromPayload,
   timeAgo,
   type Post,
   type Comment,
@@ -21,15 +23,26 @@ export default function PostDetailPage() {
   const [comments, setComments] = useState<Comment[]>([]);
   const [commentText, setCommentText] = useState("");
   const [userId, setUserId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [loading, setLoading] = useState(true);
   const [posting, setPosting] = useState(false);
   const [error, setError] = useState("");
+  const [toast, setToast] = useState("");
   const [reportTarget, setReportTarget] = useState<{ type: "post" | "comment"; id: string } | null>(null);
   const [reportReason, setReportReason] = useState("");
 
   useEffect(() => {
-    createClient().auth.getUser().then(({ data: { user } }) => {
+    const supabase = createClient();
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
       setUserId(user?.id ?? null);
+      if (user) {
+        const { data: profile } = await supabase
+          .from("profiles")
+          .select("role")
+          .eq("user_id", user.id)
+          .single();
+        setIsAdmin(profile?.role === "admin");
+      }
     });
   }, []);
 
@@ -82,7 +95,7 @@ export default function PostDetailPage() {
       return;
     }
 
-    await fetch("/api/reports", {
+    const res = await fetch("/api/reports", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -94,7 +107,30 @@ export default function PostDetailPage() {
 
     setReportTarget(null);
     setReportReason("");
-    alert("신고가 접수되었습니다.");
+    if (res.ok) {
+      showToast("신고가 접수되었습니다.");
+    } else {
+      const data = await res.json();
+      showToast(data.error ?? "신고 접수에 실패했습니다.");
+    }
+  };
+
+  const handleToggleHidden = async () => {
+    if (!post) return;
+    const res = await fetch(`/api/admin/posts/${post.id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ is_hidden: !post.is_hidden }),
+    });
+    if (res.ok) {
+      showToast(post.is_hidden ? "게시글을 공개했습니다." : "게시글을 숨겼습니다.");
+      loadPost();
+    }
+  };
+
+  const showToast = (msg: string) => {
+    setToast(msg);
+    setTimeout(() => setToast(""), 3000);
   };
 
   if (loading) {
@@ -116,6 +152,9 @@ export default function PostDetailPage() {
     );
   }
 
+  const badge = getBadgeFromPayload(post.type, post.payload_json);
+  const icon = POST_TYPE_ICONS[post.type];
+
   return (
     <main className="max-w-2xl mx-auto px-4 py-8">
       <Link href="/community" className="text-sm text-neutral-500 hover:text-neutral-700 mb-4 inline-block">
@@ -126,7 +165,7 @@ export default function PostDetailPage() {
       <article className="rounded-2xl bg-white border border-neutral-200 p-5 mb-6">
         <div className="flex items-center gap-2 mb-3">
           <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${POST_TYPE_COLORS[post.type]}`}>
-            {POST_TYPE_LABELS[post.type]}
+            {icon} {POST_TYPE_LABELS[post.type]}
           </span>
           <span className="text-xs text-neutral-400">{timeAgo(post.created_at)}</span>
           <button
@@ -152,9 +191,25 @@ export default function PostDetailPage() {
           <p className="text-sm text-neutral-700 whitespace-pre-wrap">{post.content}</p>
         )}
 
-        <p className="text-xs text-neutral-400 mt-4">
-          작성자: {post.profiles?.nickname ?? "알 수 없음"}
-        </p>
+        <div className="flex items-center gap-2 mt-4">
+          <span title={badge.label}>{badge.emoji}</span>
+          <span className="text-xs text-neutral-500">
+            {post.profiles?.nickname ?? "알 수 없음"}
+          </span>
+        </div>
+
+        {/* Admin Controls */}
+        {isAdmin && (
+          <div className="mt-4 pt-3 border-t border-neutral-100 flex gap-2">
+            <button
+              type="button"
+              onClick={handleToggleHidden}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium bg-amber-100 text-amber-700 hover:bg-amber-200"
+            >
+              {post.is_hidden ? "공개하기" : "숨김처리"}
+            </button>
+          </div>
+        )}
       </article>
 
       {/* 댓글 */}
@@ -236,6 +291,13 @@ export default function PostDetailPage() {
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-neutral-900 text-white px-5 py-3 rounded-xl text-sm font-medium shadow-lg z-50">
+          {toast}
         </div>
       )}
     </main>

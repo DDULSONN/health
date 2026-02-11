@@ -52,6 +52,25 @@ export default function HomePage() {
         </p>
       </section>
 
+      {/* Community CTA */}
+      <Link
+        href="/community"
+        className="block rounded-2xl border-2 border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 p-5 mb-4 hover:border-orange-400 transition-all active:scale-[0.99] group"
+      >
+        <div className="flex items-center gap-4">
+          <span className="text-4xl shrink-0">🔥</span>
+          <div className="min-w-0">
+            <h2 className="text-lg font-bold text-neutral-900 group-hover:text-orange-700 transition-colors">
+              오늘의 헬창 커뮤니티
+            </h2>
+            <p className="mt-1 text-sm text-neutral-600">
+              내 기록 공유하고 다른 헬창들과 소통하기
+            </p>
+          </div>
+          <span className="ml-auto text-neutral-400 group-hover:text-orange-600 transition-colors shrink-0">→</span>
+        </div>
+      </Link>
+
       {/* Feature Cards */}
       <section className="grid gap-3">
         {FEATURES.map((f) => (
