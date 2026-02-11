@@ -17,8 +17,16 @@ import {
 
 type Tab = "records" | "free" | "ranking";
 type RankingData = {
-  lifts: { id: string; payload_json: Record<string, unknown>; profiles: { nickname: string } | null }[];
-  oneRm: { id: string; payload_json: Record<string, unknown>; profiles: { nickname: string } | null }[];
+  lifts: {
+    id: string;
+    payload_json: Record<string, unknown>;
+    profiles: { nickname: string } | null;
+  }[];
+  oneRm: {
+    id: string;
+    payload_json: Record<string, unknown>;
+    profiles: { nickname: string } | null;
+  }[];
 };
 
 const TAB_LABELS: Record<Tab, string> = {
@@ -27,7 +35,13 @@ const TAB_LABELS: Record<Tab, string> = {
   ranking: "랭킹",
 };
 
-const RECORD_TYPES: (PostType | "all")[] = ["all", "1rm", "lifts", "helltest", "bodycheck"];
+const RECORD_TYPES: (PostType | "all")[] = [
+  "all",
+  "1rm",
+  "lifts",
+  "helltest",
+  "bodycheck",
+];
 
 export default function CommunityPage() {
   const router = useRouter();
@@ -39,29 +53,42 @@ export default function CommunityPage() {
   const [userId, setUserId] = useState<string | null>(null);
 
   useEffect(() => {
-    createClient().auth.getUser().then(({ data: { user } }) => {
-      setUserId(user?.id ?? null);
-    });
+    createClient()
+      .auth.getUser()
+      .then(({ data: { user } }) => {
+        setUserId(user?.id ?? null);
+      });
   }, []);
 
   const loadFeed = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
     params.set("tab", tab === "records" ? "records" : "free");
-    if (tab === "records" && filterType !== "all") params.set("type", filterType);
-    const res = await fetch(`/api/posts?${params}`);
-    if (res.ok) {
-      const data = await res.json();
-      setPosts(data.posts);
+    if (tab === "records" && filterType !== "all")
+      params.set("type", filterType);
+    try {
+      const res = await fetch(`/api/posts?${params}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPosts(data.posts);
+      } else {
+        console.error("Feed load failed:", res.status);
+      }
+    } catch (e) {
+      console.error("Feed load error:", e);
     }
     setLoading(false);
   }, [tab, filterType]);
 
   const loadRankings = useCallback(async () => {
     setLoading(true);
-    const res = await fetch("/api/rankings");
-    if (res.ok) {
-      setRankings(await res.json());
+    try {
+      const res = await fetch("/api/rankings");
+      if (res.ok) {
+        setRankings(await res.json());
+      }
+    } catch (e) {
+      console.error("Rankings load error:", e);
     }
     setLoading(false);
   }, []);
@@ -87,7 +114,7 @@ export default function CommunityPage() {
         <button
           type="button"
           onClick={handleWrite}
-          className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 active:scale-[0.98] transition-all"
+          className="px-4 min-h-[44px] rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 active:scale-[0.98] transition-all"
         >
           글쓰기
         </button>
@@ -101,8 +128,10 @@ export default function CommunityPage() {
               key={t}
               type="button"
               onClick={() => setTab(t)}
-              className={`flex-1 h-11 text-sm font-medium transition-colors ${
-                tab === t ? "bg-emerald-600 text-white" : "bg-white text-neutral-600 hover:bg-neutral-50"
+              className={`flex-1 min-h-[44px] text-sm font-medium transition-colors ${
+                tab === t
+                  ? "bg-emerald-600 text-white"
+                  : "bg-white text-neutral-600 hover:bg-neutral-50"
               }`}
             >
               {TAB_LABELS[t]}
@@ -120,13 +149,15 @@ export default function CommunityPage() {
                 key={t}
                 type="button"
                 onClick={() => setFilterType(t)}
-                className={`px-3 py-1.5 rounded-full text-xs font-medium transition-colors ${
+                className={`px-3 min-h-[36px] rounded-full text-xs font-medium transition-colors ${
                   filterType === t
                     ? "bg-emerald-600 text-white"
                     : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
                 }`}
               >
-                {t === "all" ? "전체" : `${POST_TYPE_ICONS[t]} ${POST_TYPE_LABELS[t]}`}
+                {t === "all"
+                  ? "전체"
+                  : `${POST_TYPE_ICONS[t]} ${POST_TYPE_LABELS[t]}`}
               </button>
             ))}
           </div>
@@ -147,7 +178,9 @@ export default function CommunityPage() {
           {loading ? (
             <p className="text-neutral-400 text-center py-10">로딩 중...</p>
           ) : !rankings ? (
-            <p className="text-neutral-400 text-center py-10">데이터를 불러올 수 없습니다.</p>
+            <p className="text-neutral-400 text-center py-10">
+              데이터를 불러올 수 없습니다.
+            </p>
           ) : (
             <div className="space-y-8">
               <RankingSection
@@ -176,40 +209,76 @@ export default function CommunityPage() {
 }
 
 function PostList({ posts, loading }: { posts: Post[]; loading: boolean }) {
-  if (loading) return <p className="text-neutral-400 text-center py-10">로딩 중...</p>;
-  if (posts.length === 0) return <p className="text-neutral-400 text-center py-10">아직 글이 없습니다.</p>;
+  if (loading)
+    return (
+      <p className="text-neutral-400 text-center py-10">로딩 중...</p>
+    );
+  if (posts.length === 0)
+    return (
+      <p className="text-neutral-400 text-center py-10">
+        아직 글이 없습니다.
+      </p>
+    );
 
   return (
     <div className="space-y-3">
       {posts.map((post) => {
         const badge = getBadgeFromPayload(post.type, post.payload_json);
         const icon = POST_TYPE_ICONS[post.type];
+        const hasImages = post.images && post.images.length > 0;
+
         return (
           <Link
             key={post.id}
             href={`/community/${post.id}`}
-            className="block rounded-2xl bg-white border border-neutral-200 p-4 hover:border-emerald-300 hover:shadow-sm transition-all"
+            className="block rounded-2xl bg-white border border-neutral-200 p-4 hover:border-emerald-300 hover:shadow-sm transition-all active:scale-[0.99]"
           >
-            <div className="flex items-center gap-2 mb-2">
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${POST_TYPE_COLORS[post.type]}`}>
-                {icon} {POST_TYPE_LABELS[post.type]}
-              </span>
-              <span className="text-xs text-neutral-400">{timeAgo(post.created_at)}</span>
-            </div>
-            <h3 className="font-semibold text-neutral-900 text-sm">{post.title}</h3>
-            {post.payload_json && post.type !== "free" && (
-              <p className="text-xs text-neutral-500 mt-1">
-                {renderPayloadSummary(post.type, post.payload_json)}
-              </p>
-            )}
-            {post.content && post.type === "free" && (
-              <p className="text-xs text-neutral-500 mt-1 line-clamp-2">{post.content}</p>
-            )}
-            <div className="flex items-center gap-2 mt-2">
-              <span className="text-xs" title={badge.label}>{badge.emoji}</span>
-              <span className="text-xs text-neutral-500">
-                {post.profiles?.nickname ?? "알 수 없음"}
-              </span>
+            <div className="flex gap-3">
+              {/* 텍스트 영역 */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2 mb-1.5">
+                  <span
+                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${POST_TYPE_COLORS[post.type]}`}
+                  >
+                    {icon} {POST_TYPE_LABELS[post.type]}
+                  </span>
+                  <span className="text-xs text-neutral-400">
+                    {timeAgo(post.created_at)}
+                  </span>
+                </div>
+                <h3 className="font-semibold text-neutral-900 text-sm truncate">
+                  {post.title}
+                </h3>
+                {post.payload_json && post.type !== "free" && (
+                  <p className="text-xs text-neutral-500 mt-1 truncate">
+                    {renderPayloadSummary(post.type, post.payload_json)}
+                  </p>
+                )}
+                {post.content && post.type === "free" && (
+                  <p className="text-xs text-neutral-500 mt-1 line-clamp-2">
+                    {post.content}
+                  </p>
+                )}
+                <div className="flex items-center gap-2 mt-2">
+                  <span className="text-xs" title={badge.label}>
+                    {badge.emoji}
+                  </span>
+                  <span className="text-xs text-neutral-500">
+                    {post.profiles?.nickname ?? "알 수 없음"}
+                  </span>
+                </div>
+              </div>
+
+              {/* 썸네일 */}
+              {hasImages && (
+                <div className="shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-neutral-100">
+                  <img
+                    src={post.images![0]}
+                    alt=""
+                    className="w-full h-full object-cover"
+                  />
+                </div>
+              )}
             </div>
           </Link>
         );
@@ -228,7 +297,11 @@ function RankingSection({
   labelKey,
 }: {
   title: string;
-  items: { id: string; payload_json: Record<string, unknown>; profiles: { nickname: string } | null }[];
+  items: {
+    id: string;
+    payload_json: Record<string, unknown>;
+    profiles: { nickname: string } | null;
+  }[];
   bgColor: string;
   textColor: string;
   valueKey: string;
@@ -249,9 +322,11 @@ function RankingSection({
               <Link
                 key={item.id}
                 href={`/community/${item.id}`}
-                className="flex items-center gap-3 rounded-xl bg-white border border-neutral-200 p-3 hover:border-neutral-300"
+                className="flex items-center gap-3 rounded-xl bg-white border border-neutral-200 p-3 min-h-[52px] hover:border-neutral-300 active:scale-[0.99] transition-all"
               >
-                <span className={`w-8 h-8 flex items-center justify-center rounded-full ${bgColor} ${textColor} text-sm font-bold shrink-0`}>
+                <span
+                  className={`w-8 h-8 flex items-center justify-center rounded-full ${bgColor} ${textColor} text-sm font-bold shrink-0`}
+                >
                   {i < 3 ? medals[i] : i + 1}
                 </span>
                 <div className="min-w-0 flex-1">
@@ -260,7 +335,8 @@ function RankingSection({
                   </p>
                   <p className="text-xs text-neutral-500">
                     {labelKey ? `${String(pj[labelKey] ?? "")} ` : ""}
-                    {String(pj[valueKey] ?? 0)}{unit}
+                    {String(pj[valueKey] ?? 0)}
+                    {unit}
                   </p>
                 </div>
               </Link>

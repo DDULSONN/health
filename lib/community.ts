@@ -17,6 +17,7 @@ export interface Post {
   title: string;
   content: string | null;
   payload_json: Record<string, unknown> | null;
+  images?: string[];
   is_hidden: boolean;
   created_at: string;
   profiles?: { nickname: string; role?: string } | null;
