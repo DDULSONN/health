@@ -11,11 +11,12 @@ import {
   renderPayloadSummary,
   getBadgeFromPayload,
   timeAgo,
+  getBodycheckAverage,
   type Post,
   type PostType,
 } from "@/lib/community";
 
-type Tab = "records" | "free" | "ranking";
+type Tab = "records" | "photo_bodycheck" | "free" | "ranking";
 type RankingData = {
   lifts: {
     id: string;
@@ -31,6 +32,7 @@ type RankingData = {
 
 const TAB_LABELS: Record<Tab, string> = {
   records: "기록 피드",
+  photo_bodycheck: "사진 몸평",
   free: "자유 게시판",
   ranking: "랭킹",
 };
@@ -40,7 +42,6 @@ const RECORD_TYPES: (PostType | "all")[] = [
   "1rm",
   "lifts",
   "helltest",
-  "bodycheck",
 ];
 
 export default function CommunityPage() {
@@ -63,9 +64,13 @@ export default function CommunityPage() {
   const loadFeed = useCallback(async () => {
     setLoading(true);
     const params = new URLSearchParams();
-    params.set("tab", tab === "records" ? "records" : "free");
-    if (tab === "records" && filterType !== "all")
-      params.set("type", filterType);
+    if (tab === "records") params.set("tab", "records");
+    else if (tab === "photo_bodycheck") params.set("tab", "photo_bodycheck");
+    else params.set("tab", "free");
+
+    if (tab === "records" && filterType !== "all") params.set("type", filterType);
+    if (tab === "photo_bodycheck") params.set("type", "photo_bodycheck");
+
     try {
       const res = await fetch(`/api/posts?${params}`);
       if (res.ok) {
@@ -100,7 +105,15 @@ export default function CommunityPage() {
 
   const handleWrite = () => {
     if (!userId) {
-      router.push("/login?redirect=/community/write");
+      const redirect =
+        tab === "photo_bodycheck"
+          ? "/community/write?type=photo_bodycheck"
+          : "/community/write";
+      router.push(`/login?redirect=${encodeURIComponent(redirect)}`);
+      return;
+    }
+    if (tab === "photo_bodycheck") {
+      router.push("/community/write?type=photo_bodycheck");
       return;
     }
     router.push("/community/write");
@@ -108,7 +121,6 @@ export default function CommunityPage() {
 
   return (
     <main className="max-w-2xl mx-auto px-4 py-6">
-      {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-neutral-900">커뮤니티</h1>
         <div className="flex items-center gap-2">
@@ -143,15 +155,14 @@ export default function CommunityPage() {
         </div>
       </div>
 
-      {/* Sticky Tabs */}
       <div className="sticky top-14 z-40 bg-white/90 backdrop-blur-md -mx-4 px-4 pb-3 pt-1 border-b border-neutral-100">
-        <div className="flex rounded-xl border border-neutral-300 overflow-hidden">
+        <div className="grid grid-cols-2 rounded-xl border border-neutral-300 overflow-hidden">
           {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
             <button
               key={t}
               type="button"
               onClick={() => setTab(t)}
-              className={`flex-1 min-h-[44px] text-sm font-medium transition-colors ${
+              className={`min-h-[44px] text-sm font-medium transition-colors ${
                 tab === t
                   ? "bg-emerald-600 text-white"
                   : "bg-white text-neutral-600 hover:bg-neutral-50"
@@ -163,7 +174,6 @@ export default function CommunityPage() {
         </div>
       </div>
 
-      {/* Records Feed */}
       {tab === "records" && (
         <>
           <div className="flex flex-wrap gap-2 my-4">
@@ -188,21 +198,31 @@ export default function CommunityPage() {
         </>
       )}
 
-      {/* Free Board */}
+      {tab === "photo_bodycheck" && (
+        <div className="mt-4 space-y-3">
+          <Link
+            href="/community/bodycheck"
+            className="block rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-700 font-medium"
+          >
+            이번주 몸짱 랭킹과 사진 몸평 전용 피드는 여기서 확인하세요 →
+          </Link>
+          <PostList posts={posts} loading={loading} />
+        </div>
+      )}
+
       {tab === "free" && (
         <div className="mt-4">
           <PostList posts={posts} loading={loading} />
         </div>
       )}
 
-      {/* Rankings */}
       {tab === "ranking" && (
         <div className="mt-4">
           {loading ? (
             <p className="text-neutral-400 text-center py-10">로딩 중...</p>
           ) : !rankings ? (
             <p className="text-neutral-400 text-center py-10">
-              데이터를 불러올 수 없습니다.
+              데이터를 불러오지 못했습니다.
             </p>
           ) : (
             <div className="space-y-8">
@@ -215,7 +235,7 @@ export default function CommunityPage() {
                 unit="kg"
               />
               <RankingSection
-                title="💥 1RM TOP 10 (7일)"
+                title="💪 1RM TOP 10 (7일)"
                 items={rankings.oneRm}
                 bgColor="bg-emerald-100"
                 textColor="text-emerald-700"
@@ -232,16 +252,8 @@ export default function CommunityPage() {
 }
 
 function PostList({ posts, loading }: { posts: Post[]; loading: boolean }) {
-  if (loading)
-    return (
-      <p className="text-neutral-400 text-center py-10">로딩 중...</p>
-    );
-  if (posts.length === 0)
-    return (
-      <p className="text-neutral-400 text-center py-10">
-        아직 글이 없습니다.
-      </p>
-    );
+  if (loading) return <p className="text-neutral-400 text-center py-10">로딩 중...</p>;
+  if (posts.length === 0) return <p className="text-neutral-400 text-center py-10">아직 글이 없습니다.</p>;
 
   return (
     <div className="space-y-3">
@@ -249,6 +261,9 @@ function PostList({ posts, loading }: { posts: Post[]; loading: boolean }) {
         const badge = getBadgeFromPayload(post.type, post.payload_json);
         const icon = POST_TYPE_ICONS[post.type];
         const hasImages = post.images && post.images.length > 0;
+        const avg =
+          post.type === "photo_bodycheck" ? getBodycheckAverage(post) : null;
+        const voteCount = Number(post.vote_count ?? 0);
 
         return (
           <Link
@@ -257,7 +272,6 @@ function PostList({ posts, loading }: { posts: Post[]; loading: boolean }) {
             className="block rounded-2xl bg-white border border-neutral-200 p-4 hover:border-emerald-300 hover:shadow-sm transition-all active:scale-[0.99]"
           >
             <div className="flex gap-3">
-              {/* 텍스트 영역 */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 mb-1.5">
                   <span
@@ -282,6 +296,11 @@ function PostList({ posts, loading }: { posts: Post[]; loading: boolean }) {
                     {post.content}
                   </p>
                 )}
+                {post.type === "photo_bodycheck" && (
+                  <p className="text-xs text-indigo-700 mt-1">
+                    평균 {avg?.toFixed(2) ?? "0.00"} / 투표 {voteCount}
+                  </p>
+                )}
                 <div className="flex items-center gap-2 mt-2">
                   <span className="text-xs" title={badge.label}>
                     {badge.emoji}
@@ -292,7 +311,6 @@ function PostList({ posts, loading }: { posts: Post[]; loading: boolean }) {
                 </div>
               </div>
 
-              {/* 썸네일 */}
               {hasImages && (
                 <div className="shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-neutral-100">
                   <img

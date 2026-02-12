@@ -1,11 +1,12 @@
 import { createClient } from "@/lib/supabase/server";
 import { containsProfanity, getRateLimitRemaining } from "@/lib/moderation";
 import { NextResponse } from "next/server";
+import type { BodycheckGender } from "@/lib/community";
 
 const POST_COOLDOWN_MS = 30_000;
 const RECORD_TYPES = ["lifts", "1rm", "helltest"];
+const BODYCHECK_TYPES = ["photo_bodycheck"];
 
-/** GET /api/posts — 피드 목록 */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const type = searchParams.get("type");
@@ -24,9 +25,11 @@ export async function GET(request: Request) {
     .range(offset, offset + limit - 1);
 
   if (tab === "records") {
-    query = query.neq("type", "free");
+    query = query.in("type", RECORD_TYPES);
   } else if (tab === "free") {
     query = query.eq("type", "free");
+  } else if (tab === "photo_bodycheck") {
+    query = query.in("type", BODYCHECK_TYPES);
   }
 
   if (type && type !== "all") query = query.eq("type", type);
@@ -38,12 +41,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // is_deleted 필터 (컬럼 존재 여부 무관하게 안전하게 처리)
   const visible = (posts ?? []).filter(
     (p) => !(p as Record<string, unknown>).is_deleted
   );
 
-  // 프로필 별도 조회
   const userIds = [...new Set(visible.map((p) => p.user_id as string))];
   const profileMap = new Map<string, { nickname: string; role: string }>();
 
@@ -66,7 +67,6 @@ export async function GET(request: Request) {
   return NextResponse.json({ posts: enriched, total: count ?? 0, page });
 }
 
-/** POST /api/posts — 글 작성 */
 export async function POST(request: Request) {
   const supabase = await createClient();
   const {
@@ -78,7 +78,14 @@ export async function POST(request: Request) {
   }
 
   const body = await request.json();
-  const { type, title, content, payload_json, images } = body;
+  const { type, title, content, payload_json, images, gender } = body as {
+    type?: string;
+    title?: string;
+    content?: string | null;
+    payload_json?: Record<string, unknown> | null;
+    images?: unknown[];
+    gender?: BodycheckGender;
+  };
 
   if (!type || !title) {
     return NextResponse.json({ error: "type과 title은 필수입니다." }, { status: 400 });
@@ -92,7 +99,7 @@ export async function POST(request: Request) {
     const { squat, bench, deadlift } = payload_json as Record<string, number>;
     if (
       (!squat && !bench && !deadlift) ||
-      [squat, bench, deadlift].some((v) => typeof v === "number" && isNaN(v))
+      [squat, bench, deadlift].some((v) => typeof v === "number" && Number.isNaN(v))
     ) {
       return NextResponse.json({ error: "유효한 기록을 입력해주세요." }, { status: 400 });
     }
@@ -100,12 +107,32 @@ export async function POST(request: Request) {
 
   if (type === "1rm" && payload_json) {
     const { oneRmKg } = payload_json as Record<string, number>;
-    if (!oneRmKg || isNaN(oneRmKg)) {
+    if (!oneRmKg || Number.isNaN(oneRmKg)) {
       return NextResponse.json({ error: "유효한 1RM 값이 필요합니다." }, { status: 400 });
     }
   }
 
-  // 기록 공유 하루 1회 제한 (lifts / 1rm / helltest)
+  const cleanImages = Array.isArray(images)
+    ? images
+        .filter((url: unknown) => typeof url === "string" && url.startsWith("http"))
+        .slice(0, 3)
+    : [];
+
+  if (type === "photo_bodycheck") {
+    if (gender !== "male" && gender !== "female") {
+      return NextResponse.json(
+        { error: "사진 몸평 게시글은 성별(male/female)이 필수입니다." },
+        { status: 400 }
+      );
+    }
+    if (cleanImages.length < 1 || cleanImages.length > 3) {
+      return NextResponse.json(
+        { error: "사진 몸평 게시글은 사진 1~3장이 필요합니다." },
+        { status: 400 }
+      );
+    }
+  }
+
   if (RECORD_TYPES.includes(type)) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -119,13 +146,12 @@ export async function POST(request: Request) {
 
     if ((count ?? 0) >= 1) {
       return NextResponse.json(
-        { error: "오늘은 이미 기록을 공유했어요. 내일 다시 시도해주세요!" },
+        { error: "오늘은 이미 기록을 공유했어요. 내일 다시 시도해주세요." },
         { status: 429 }
       );
     }
   }
 
-  // 30초 쿨다운
   const { data: lastPost } = await supabase
     .from("posts")
     .select("created_at")
@@ -142,34 +168,36 @@ export async function POST(request: Request) {
     );
   }
 
-  // NaN 방지
   let cleanPayload = payload_json ?? null;
   if (cleanPayload && typeof cleanPayload === "object") {
     cleanPayload = Object.fromEntries(
       Object.entries(cleanPayload).map(([k, v]) => [
         k,
-        typeof v === "number" && isNaN(v) ? 0 : v,
+        typeof v === "number" && Number.isNaN(v) ? 0 : v,
       ])
     );
   }
 
-  // 이미지 URL 정리
-  const cleanImages = Array.isArray(images)
-    ? images
-        .filter((url: unknown) => typeof url === "string" && url.startsWith("http"))
-        .slice(0, 3)
-    : [];
-
   const insertData: Record<string, unknown> = {
     user_id: user.id,
     type,
-    title,
-    content: content ?? null,
+    title: title.trim(),
+    content: content?.trim() ? content.trim() : null,
     payload_json: cleanPayload,
   };
 
   if (cleanImages.length > 0) {
     insertData.images = cleanImages;
+  }
+
+  if (type === "photo_bodycheck") {
+    insertData.gender = gender;
+    insertData.score_sum = 0;
+    insertData.vote_count = 0;
+    insertData.great_count = 0;
+    insertData.good_count = 0;
+    insertData.normal_count = 0;
+    insertData.rookie_count = 0;
   }
 
   const { data, error } = await supabase

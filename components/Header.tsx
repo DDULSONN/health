@@ -8,9 +8,9 @@ import { createClient } from "@/lib/supabase/client";
 const NAV_ITEMS = [
   { href: "/1rm", label: "1RM 계산기" },
   { href: "/lifts", label: "3대 합계" },
-  { href: "/helltest", label: "헬창판독기" },
+  { href: "/helltest", label: "헬스성향테스트" },
   { href: "/snacks", label: "다이어트 간식" },
-  { href: "/bodycheck", label: "몸평가" },
+  { href: "/community/bodycheck", label: "사진 몸평" },
   { href: "/community", label: "커뮤니티" },
 ];
 
@@ -24,7 +24,9 @@ export default function Header() {
     (async () => {
       try {
         const supabase = createClient();
-        const { data: { user } } = await supabase.auth.getUser();
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
         if (user) {
           const { data: profile } = await supabase
             .from("profiles")
@@ -33,7 +35,9 @@ export default function Header() {
             .single();
           setNickname(profile?.nickname ?? null);
         }
-      } catch { /* ignore */ }
+      } catch {
+        // ignore
+      }
       setAuthChecked(true);
     })();
   }, []);
@@ -48,7 +52,6 @@ export default function Header() {
           GymTools
         </Link>
 
-        {/* Desktop Nav */}
         <nav className="hidden md:flex items-center gap-1">
           {NAV_ITEMS.map((item) => {
             const isActive =
@@ -67,8 +70,8 @@ export default function Header() {
               </Link>
             );
           })}
-          {authChecked && (
-            nickname ? (
+          {authChecked &&
+            (nickname ? (
               <span className="ml-2 px-3 py-1.5 text-sm font-medium text-neutral-700">
                 {nickname}
               </span>
@@ -79,11 +82,9 @@ export default function Header() {
               >
                 로그인
               </Link>
-            )
-          )}
+            ))}
         </nav>
 
-        {/* Mobile Menu Button */}
         <button
           type="button"
           onClick={() => setIsOpen(!isOpen)}
@@ -115,7 +116,6 @@ export default function Header() {
         </button>
       </div>
 
-      {/* Mobile Nav */}
       {isOpen && (
         <nav className="md:hidden border-t border-neutral-100 bg-white px-4 pb-3 pt-1">
           {NAV_ITEMS.map((item) => {
@@ -136,8 +136,8 @@ export default function Header() {
               </Link>
             );
           })}
-          {authChecked && (
-            nickname ? (
+          {authChecked &&
+            (nickname ? (
               <span className="block py-2.5 px-3 text-sm font-medium text-neutral-700">
                 {nickname}
               </span>
@@ -149,8 +149,7 @@ export default function Header() {
               >
                 로그인
               </Link>
-            )
-          )}
+            ))}
         </nav>
       )}
     </header>

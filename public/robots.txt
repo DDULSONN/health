@@ -1,4 +1,0 @@
-User-agent: *
-Allow: /
-
-Sitemap: https://gymtools.kr/sitemap.xml

@@ -1,13 +1,17 @@
 import { createClient } from "@/lib/supabase/server";
 import { containsProfanity } from "@/lib/moderation";
+import { BODYCHECK_SCORE_MAP, type BodycheckRating } from "@/lib/community";
 import { NextResponse } from "next/server";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
-/** GET /api/posts/[id] — 게시글 상세 + 댓글 */
 export async function GET(_request: Request, { params }: RouteCtx) {
   const { id } = await params;
   const supabase = await createClient();
+
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
 
   const { data: post, error: postErr } = await supabase
     .from("posts")
@@ -57,13 +61,49 @@ export async function GET(_request: Request, { params }: RouteCtx) {
     profiles: commentProfileMap.get(c.user_id as string) ?? null,
   }));
 
+  let myVote: { rating: BodycheckRating; score: number } | null = null;
+  if (post.type === "photo_bodycheck" && user) {
+    const { data: vote } = await supabase
+      .from("bodycheck_votes")
+      .select("rating, score")
+      .eq("post_id", id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (vote?.rating && vote.rating in BODYCHECK_SCORE_MAP) {
+      myVote = {
+        rating: vote.rating as BodycheckRating,
+        score: vote.score ?? BODYCHECK_SCORE_MAP[vote.rating as BodycheckRating],
+      };
+    }
+  }
+
+  const voteCount = Number(post.vote_count ?? 0);
+  const scoreSum = Number(post.score_sum ?? 0);
+  const averageScore = voteCount > 0 ? Number((scoreSum / voteCount).toFixed(2)) : 0;
+
   return NextResponse.json({
-    post: { ...post, profiles: authorProfile ?? null },
+    post: {
+      ...post,
+      profiles: authorProfile ?? null,
+      my_vote: myVote,
+      bodycheck_summary:
+        post.type === "photo_bodycheck"
+          ? {
+              score_sum: scoreSum,
+              vote_count: voteCount,
+              great_count: Number(post.great_count ?? 0),
+              good_count: Number(post.good_count ?? 0),
+              normal_count: Number(post.normal_count ?? 0),
+              rookie_count: Number(post.rookie_count ?? 0),
+              average_score: averageScore,
+            }
+          : null,
+    },
     comments: enrichedComments,
   });
 }
 
-/** PATCH /api/posts/[id] — 게시글 수정 (본인 + free/bodycheck만) */
 export async function PATCH(request: Request, { params }: RouteCtx) {
   const { id } = await params;
   const supabase = await createClient();
@@ -86,10 +126,10 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   }
 
   if (post.user_id !== user.id) {
-    return NextResponse.json({ error: "본인의 글만 수정할 수 있습니다." }, { status: 403 });
+    return NextResponse.json({ error: "본인 글만 수정할 수 있습니다." }, { status: 403 });
   }
 
-  if (!["free", "bodycheck"].includes(post.type)) {
+  if (!["free", "photo_bodycheck"].includes(post.type)) {
     return NextResponse.json(
       { error: "기록 공유 글은 수정할 수 없습니다." },
       { status: 400 }
@@ -97,7 +137,12 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   }
 
   const body = await request.json();
-  const { title, content, images } = body;
+  const { title, content, images, gender } = body as {
+    title?: string;
+    content?: string;
+    images?: unknown[];
+    gender?: "male" | "female";
+  };
 
   if (title !== undefined && !title.trim()) {
     return NextResponse.json({ error: "제목을 입력해주세요." }, { status: 400 });
@@ -113,12 +158,28 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   const updateData: Record<string, unknown> = {};
   if (title !== undefined) updateData.title = title.trim();
   if (content !== undefined) updateData.content = content.trim() || null;
+
   if (images !== undefined) {
-    updateData.images = Array.isArray(images)
+    const cleanImages = Array.isArray(images)
       ? images
           .filter((u: unknown) => typeof u === "string" && u.startsWith("http"))
           .slice(0, 3)
       : [];
+
+    if (post.type === "photo_bodycheck" && cleanImages.length < 1) {
+      return NextResponse.json(
+        { error: "사진 몸평 글은 최소 1장의 사진이 필요합니다." },
+        { status: 400 }
+      );
+    }
+    updateData.images = cleanImages;
+  }
+
+  if (post.type === "photo_bodycheck" && gender !== undefined) {
+    if (!["male", "female"].includes(gender)) {
+      return NextResponse.json({ error: "성별 값이 올바르지 않습니다." }, { status: 400 });
+    }
+    updateData.gender = gender;
   }
 
   const { error } = await supabase
@@ -135,7 +196,6 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   return NextResponse.json({ ok: true });
 }
 
-/** DELETE /api/posts/[id] — soft delete + 삭제 로그 */
 export async function DELETE(_request: Request, { params }: RouteCtx) {
   const { id } = await params;
   const supabase = await createClient();
@@ -165,11 +225,10 @@ export async function DELETE(_request: Request, { params }: RouteCtx) {
       .single();
 
     if (profile?.role !== "admin") {
-      return NextResponse.json({ error: "본인의 글만 삭제할 수 있습니다." }, { status: 403 });
+      return NextResponse.json({ error: "본인 글만 삭제할 수 있습니다." }, { status: 403 });
     }
   }
 
-  // 삭제 로그
   const { error: logErr } = await supabase.from("deleted_logs").insert({
     post_id: post.id,
     user_id: user.id,
@@ -182,7 +241,6 @@ export async function DELETE(_request: Request, { params }: RouteCtx) {
     console.error("[DELETE /api/posts/[id]] log error:", logErr.message);
   }
 
-  // soft delete
   const { error } = await supabase
     .from("posts")
     .update({

@@ -1,7 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
-/** GET /api/mypage/posts — 내가 쓴 글 (free / bodycheck) */
 export async function GET() {
   const supabase = await createClient();
   const {
@@ -16,7 +15,7 @@ export async function GET() {
     .from("posts")
     .select("*")
     .eq("user_id", user.id)
-    .in("type", ["free", "bodycheck"])
+    .eq("type", "free")
     .eq("is_hidden", false)
     .order("created_at", { ascending: false })
     .limit(50);

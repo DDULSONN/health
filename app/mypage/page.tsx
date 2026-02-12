@@ -14,7 +14,7 @@ import {
   type Post,
 } from "@/lib/community";
 
-type Tab = "records" | "posts" | "deleted";
+type Tab = "records" | "posts" | "bodycheck" | "deleted";
 
 interface DeletedLog {
   id: string;
@@ -25,10 +25,24 @@ interface DeletedLog {
   deleted_at: string;
 }
 
+interface BodycheckPost {
+  id: string;
+  title: string;
+  content: string | null;
+  images: string[] | null;
+  created_at: string;
+  gender: "male" | "female";
+  score_sum: number;
+  vote_count: number;
+  average_score: number;
+  weekly_rank: number | null;
+}
+
 const TAB_CONFIG: { key: Tab; label: string; icon: string }[] = [
   { key: "records", label: "내 기록", icon: "🏋️" },
-  { key: "posts", label: "내가 쓴 글", icon: "📝" },
-  { key: "deleted", label: "삭제한 글", icon: "🗑️" },
+  { key: "posts", label: "내 글", icon: "💬" },
+  { key: "bodycheck", label: "내 몸평", icon: "📸" },
+  { key: "deleted", label: "삭제 글", icon: "🗑️" },
 ];
 
 export default function MyPage() {
@@ -40,6 +54,7 @@ export default function MyPage() {
 
   const [records, setRecords] = useState<Post[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [bodychecks, setBodychecks] = useState<BodycheckPost[]>([]);
   const [deletedLogs, setDeletedLogs] = useState<DeletedLog[]>([]);
 
   useEffect(() => {
@@ -87,6 +102,20 @@ export default function MyPage() {
     setLoading(false);
   }, []);
 
+  const loadBodycheckPosts = useCallback(async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/mypage/bodycheck");
+      if (res.ok) {
+        const data = await res.json();
+        setBodychecks(data.posts ?? []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+    setLoading(false);
+  }, []);
+
   const loadDeleted = useCallback(async () => {
     setLoading(true);
     try {
@@ -105,8 +134,9 @@ export default function MyPage() {
     if (!authChecked) return;
     if (tab === "records") loadRecords();
     else if (tab === "posts") loadPosts();
+    else if (tab === "bodycheck") loadBodycheckPosts();
     else loadDeleted();
-  }, [tab, authChecked, loadRecords, loadPosts, loadDeleted]);
+  }, [tab, authChecked, loadRecords, loadPosts, loadBodycheckPosts, loadDeleted]);
 
   if (!authChecked) {
     return (
@@ -118,7 +148,6 @@ export default function MyPage() {
 
   return (
     <main className="max-w-2xl mx-auto px-4 py-6">
-      {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">마이페이지</h1>
@@ -132,15 +161,14 @@ export default function MyPage() {
         </Link>
       </div>
 
-      {/* Sticky Tabs */}
       <div className="sticky top-14 z-40 bg-white/90 backdrop-blur-md -mx-4 px-4 pb-3 pt-1 border-b border-neutral-100">
-        <div className="flex rounded-xl border border-neutral-300 overflow-hidden">
+        <div className="grid grid-cols-2 rounded-xl border border-neutral-300 overflow-hidden">
           {TAB_CONFIG.map((t) => (
             <button
               key={t.key}
               type="button"
               onClick={() => setTab(t.key)}
-              className={`flex-1 min-h-[44px] text-sm font-medium transition-colors flex items-center justify-center gap-1 ${
+              className={`min-h-[44px] text-sm font-medium transition-colors flex items-center justify-center gap-1 ${
                 tab === t.key
                   ? "bg-emerald-600 text-white"
                   : "bg-white text-neutral-600 hover:bg-neutral-50"
@@ -160,6 +188,8 @@ export default function MyPage() {
           <RecordsList items={records} />
         ) : tab === "posts" ? (
           <PostsList items={posts} />
+        ) : tab === "bodycheck" ? (
+          <BodycheckList items={bodychecks} />
         ) : (
           <DeletedList items={deletedLogs} />
         )}
@@ -168,14 +198,9 @@ export default function MyPage() {
   );
 }
 
-/* ── 내 기록 ── */
 function RecordsList({ items }: { items: Post[] }) {
   if (items.length === 0)
-    return (
-      <p className="text-neutral-400 text-center py-10">
-        공유한 기록이 없습니다.
-      </p>
-    );
+    return <p className="text-neutral-400 text-center py-10">공유한 기록이 없습니다.</p>;
 
   return (
     <div className="space-y-3">
@@ -217,73 +242,112 @@ function RecordsList({ items }: { items: Post[] }) {
   );
 }
 
-/* ── 내가 쓴 글 ── */
 function PostsList({ items }: { items: Post[] }) {
   if (items.length === 0)
-    return (
-      <p className="text-neutral-400 text-center py-10">
-        작성한 글이 없습니다.
-      </p>
-    );
+    return <p className="text-neutral-400 text-center py-10">작성한 글이 없습니다.</p>;
 
   return (
     <div className="space-y-3">
-      {items.map((post) => {
-        const icon = POST_TYPE_ICONS[post.type];
-        const hasImages = post.images && post.images.length > 0;
-
-        return (
-          <Link
-            key={post.id}
-            href={`/community/${post.id}`}
-            className="block rounded-2xl bg-white border border-neutral-200 p-4 hover:border-emerald-300 transition-all active:scale-[0.99]"
-          >
-            <div className="flex gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${POST_TYPE_COLORS[post.type]}`}
-                  >
-                    {icon} {POST_TYPE_LABELS[post.type]}
-                  </span>
-                  <span className="text-xs text-neutral-400">
-                    {timeAgo(post.created_at)}
-                  </span>
-                </div>
-                <h3 className="font-semibold text-neutral-900 text-sm truncate">
-                  {post.title}
-                </h3>
-                {post.content && (
-                  <p className="text-xs text-neutral-500 mt-1 line-clamp-2">
-                    {post.content}
-                  </p>
-                )}
+      {items.map((post) => (
+        <Link
+          key={post.id}
+          href={`/community/${post.id}`}
+          className="block rounded-2xl bg-white border border-neutral-200 p-4 hover:border-emerald-300 transition-all active:scale-[0.99]"
+        >
+          <div className="flex gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span
+                  className={`px-2 py-0.5 rounded-full text-xs font-medium ${POST_TYPE_COLORS[post.type]}`}
+                >
+                  {POST_TYPE_ICONS[post.type]} {POST_TYPE_LABELS[post.type]}
+                </span>
+                <span className="text-xs text-neutral-400">
+                  {timeAgo(post.created_at)}
+                </span>
               </div>
-              {hasImages && (
-                <div className="shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-neutral-100">
-                  <img
-                    src={post.images![0]}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
-                </div>
+              <h3 className="font-semibold text-neutral-900 text-sm truncate">
+                {post.title}
+              </h3>
+              {post.content && (
+                <p className="text-xs text-neutral-500 mt-1 line-clamp-2">
+                  {post.content}
+                </p>
               )}
             </div>
-          </Link>
-        );
-      })}
+            {(post.images?.length ?? 0) > 0 && (
+              <img
+                src={post.images?.[0]}
+                alt=""
+                className="shrink-0 w-16 h-16 rounded-lg object-cover border border-neutral-100"
+              />
+            )}
+          </div>
+        </Link>
+      ))}
     </div>
   );
 }
 
-/* ── 삭제한 글 ── */
-function DeletedList({ items }: { items: DeletedLog[] }) {
-  if (items.length === 0)
+function BodycheckList({ items }: { items: BodycheckPost[] }) {
+  if (items.length === 0) {
     return (
       <p className="text-neutral-400 text-center py-10">
-        삭제한 글이 없습니다.
+        내가 올린 몸평 게시글이 없습니다.
       </p>
     );
+  }
+
+  return (
+    <div className="space-y-3">
+      {items.map((post) => (
+        <Link
+          key={post.id}
+          href={`/community/${post.id}`}
+          className="block rounded-2xl bg-white border border-neutral-200 p-4 hover:border-indigo-300 transition-all active:scale-[0.99]"
+        >
+          <div className="flex gap-3">
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 mb-1.5">
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                  사진 몸평 · {post.gender === "female" ? "여성" : "남성"}
+                </span>
+                <span className="text-xs text-neutral-400">
+                  {timeAgo(post.created_at)}
+                </span>
+              </div>
+              <h3 className="font-semibold text-neutral-900 text-sm truncate">
+                {post.title}
+              </h3>
+              {post.content && (
+                <p className="text-xs text-neutral-500 mt-1 line-clamp-2">
+                  {post.content}
+                </p>
+              )}
+              <p className="text-xs text-indigo-700 mt-1">
+                평균 {post.average_score.toFixed(2)} / 투표 {post.vote_count}
+              </p>
+              <p className="text-xs text-neutral-500 mt-1">
+                현재 주간 등수: {post.weekly_rank ? `${post.weekly_rank}위` : "집계 외"}
+              </p>
+            </div>
+            {(post.images?.length ?? 0) > 0 && (
+              <img
+                src={post.images?.[0]}
+                alt=""
+                className="shrink-0 w-16 h-16 rounded-lg object-cover border border-neutral-100"
+              />
+            )}
+          </div>
+        </Link>
+      ))}
+    </div>
+  );
+}
+
+function DeletedList({ items }: { items: DeletedLog[] }) {
+  if (items.length === 0)
+    return <p className="text-neutral-400 text-center py-10">삭제한 글이 없습니다.</p>;
 
   return (
     <div className="space-y-3">
