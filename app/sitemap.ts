@@ -1,8 +1,9 @@
 import type { MetadataRoute } from "next";
 import { headers } from "next/headers";
 
-export default function sitemap(): MetadataRoute.Sitemap {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? `https://${headers().get("host")}`;
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const host = (await headers()).get("host");
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? `https://${host}`;
 
   return [
     { url: baseUrl, lastModified: new Date(), changeFrequency: "weekly", priority: 1 },

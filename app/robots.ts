@@ -1,8 +1,9 @@
 import type { MetadataRoute } from "next";
 import { headers } from "next/headers";
 
-export default function robots(): MetadataRoute.Robots {
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? `https://${headers().get("host")}`;
+export default async function robots(): Promise<MetadataRoute.Robots> {
+  const host = (await headers()).get("host");
+  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? `https://${host}`;
 
   return {
     rules: { userAgent: "*", allow: "/" },
