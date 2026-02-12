@@ -111,13 +111,36 @@ export default function CommunityPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold text-neutral-900">커뮤니티</h1>
-        <button
-          type="button"
-          onClick={handleWrite}
-          className="px-4 min-h-[44px] rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 active:scale-[0.98] transition-all"
-        >
-          글쓰기
-        </button>
+        <div className="flex items-center gap-2">
+          {userId && (
+            <Link
+              href="/mypage"
+              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl border border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+              title="마이페이지"
+            >
+              <svg
+                width="20"
+                height="20"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                viewBox="0 0 24 24"
+              >
+                <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2" />
+                <circle cx="12" cy="7" r="4" />
+              </svg>
+            </Link>
+          )}
+          <button
+            type="button"
+            onClick={handleWrite}
+            className="px-4 min-h-[44px] rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 active:scale-[0.98] transition-all"
+          >
+            글쓰기
+          </button>
+        </div>
       </div>
 
       {/* Sticky Tabs */}

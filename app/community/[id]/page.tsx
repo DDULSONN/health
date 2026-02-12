@@ -34,6 +34,8 @@ export default function PostDetailPage() {
   } | null>(null);
   const [reportReason, setReportReason] = useState("");
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState(false);
 
   useEffect(() => {
     const supabase = createClient();
@@ -50,6 +52,14 @@ export default function PostDetailPage() {
     });
   }, []);
 
+  // 메뉴 바깥 클릭 시 닫기
+  useEffect(() => {
+    if (!menuOpen) return;
+    const close = () => setMenuOpen(false);
+    document.addEventListener("click", close);
+    return () => document.removeEventListener("click", close);
+  }, [menuOpen]);
+
   const loadPost = useCallback(async () => {
     setLoading(true);
     try {
@@ -58,8 +68,6 @@ export default function PostDetailPage() {
         const data = await res.json();
         setPost(data.post);
         setComments(data.comments);
-      } else {
-        console.error("Post load failed:", res.status);
       }
     } catch (e) {
       console.error("Post load error:", e);
@@ -121,12 +129,11 @@ export default function PostDetailPage() {
 
     setReportTarget(null);
     setReportReason("");
-    if (res.ok) {
-      showToast("신고가 접수되었습니다.");
-    } else {
-      const data = await res.json();
-      showToast(data.error ?? "신고 접수에 실패했습니다.");
-    }
+    showToast(
+      res.ok
+        ? "신고가 접수되었습니다."
+        : ((await res.json()).error ?? "신고 접수에 실패했습니다.")
+    );
   };
 
   const handleToggleHidden = async () => {
@@ -144,10 +151,31 @@ export default function PostDetailPage() {
     }
   };
 
+  const handleDelete = () => {
+    setMenuOpen(false);
+    setDeleteConfirm(true);
+  };
+
+  const confirmDelete = async () => {
+    const res = await fetch(`/api/posts/${id}`, { method: "DELETE" });
+    if (res.ok) {
+      showToast("게시글이 삭제되었습니다.");
+      setTimeout(() => router.push("/community"), 800);
+    } else {
+      const data = await res.json();
+      showToast(data.error ?? "삭제에 실패했습니다.");
+    }
+    setDeleteConfirm(false);
+  };
+
   const showToast = (msg: string) => {
     setToast(msg);
     setTimeout(() => setToast(""), 3000);
   };
+
+  const isOwner = userId && post && userId === post.user_id;
+  const canEdit =
+    isOwner && post && ["free", "bodycheck"].includes(post.type);
 
   if (loading) {
     return (
@@ -179,7 +207,7 @@ export default function PostDetailPage() {
     <main className="max-w-2xl mx-auto px-4 py-8">
       <Link
         href="/community"
-        className="text-sm text-neutral-500 hover:text-neutral-700 mb-4 inline-block min-h-[44px] flex items-center"
+        className="text-sm text-neutral-500 hover:text-neutral-700 mb-4 inline-flex items-center min-h-[44px]"
       >
         ← 목록으로
       </Link>
@@ -195,13 +223,56 @@ export default function PostDetailPage() {
           <span className="text-xs text-neutral-400">
             {timeAgo(post.created_at)}
           </span>
-          <button
-            type="button"
-            onClick={() => setReportTarget({ type: "post", id: post.id })}
-            className="ml-auto text-xs text-neutral-400 hover:text-red-500 min-h-[44px] flex items-center px-2"
-          >
-            신고
-          </button>
+
+          {/* 우측: ⋯ 메뉴 (본인/관리자) + 신고 */}
+          <div className="ml-auto flex items-center gap-1">
+            {(isOwner || isAdmin) && (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMenuOpen(!menuOpen);
+                  }}
+                  className="w-10 h-10 flex items-center justify-center text-neutral-400 hover:text-neutral-600 rounded-lg hover:bg-neutral-50"
+                >
+                  ⋯
+                </button>
+                {menuOpen && (
+                  <div
+                    className="absolute right-0 top-full mt-1 bg-white rounded-xl shadow-lg border border-neutral-200 py-1 z-10 min-w-[120px]"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    {canEdit && (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          router.push(`/community/${post.id}/edit`)
+                        }
+                        className="w-full px-4 py-2.5 text-sm text-left text-neutral-700 hover:bg-neutral-50"
+                      >
+                        수정
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={handleDelete}
+                      className="w-full px-4 py-2.5 text-sm text-left text-red-600 hover:bg-red-50"
+                    >
+                      삭제
+                    </button>
+                  </div>
+                )}
+              </div>
+            )}
+            <button
+              type="button"
+              onClick={() => setReportTarget({ type: "post", id: post.id })}
+              className="text-xs text-neutral-400 hover:text-red-500 min-h-[44px] flex items-center px-2"
+            >
+              신고
+            </button>
+          </div>
         </div>
 
         <h1 className="text-lg font-bold text-neutral-900 mb-2">
@@ -331,6 +402,37 @@ export default function PostDetailPage() {
         {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
       </section>
 
+      {/* 삭제 확인 모달 */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-5 max-w-sm w-full">
+            <h3 className="font-bold text-neutral-900 mb-2">
+              게시글을 삭제할까요?
+            </h3>
+            <p className="text-sm text-neutral-500 mb-4">
+              삭제된 글은 목록에서 보이지 않지만, 마이페이지에서 삭제 기록을
+              확인할 수 있습니다.
+            </p>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setDeleteConfirm(false)}
+                className="flex-1 min-h-[44px] rounded-xl bg-neutral-100 text-neutral-700 text-sm font-medium"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={confirmDelete}
+                className="flex-1 min-h-[44px] rounded-xl bg-red-600 text-white text-sm font-medium"
+              >
+                삭제
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* 이미지 Lightbox */}
       {lightboxIdx !== null && (
         <div
@@ -351,7 +453,6 @@ export default function PostDetailPage() {
             >
               ×
             </button>
-            {/* 좌우 네비게이션 */}
             {postImages.length > 1 && (
               <>
                 {lightboxIdx > 0 && (

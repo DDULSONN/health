@@ -3,8 +3,9 @@ import { containsProfanity, getRateLimitRemaining } from "@/lib/moderation";
 import { NextResponse } from "next/server";
 
 const POST_COOLDOWN_MS = 30_000;
+const RECORD_TYPES = ["lifts", "1rm", "helltest"];
 
-/** GET /api/posts — 피드 목록 (프로필을 별도 조회하여 FK join 의존 제거) */
+/** GET /api/posts — 피드 목록 */
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const type = searchParams.get("type");
@@ -37,8 +38,13 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  // 프로필을 별도로 조회하여 머지
-  const userIds = [...new Set((posts ?? []).map((p) => p.user_id as string))];
+  // is_deleted 필터 (컬럼 존재 여부 무관하게 안전하게 처리)
+  const visible = (posts ?? []).filter(
+    (p) => !(p as Record<string, unknown>).is_deleted
+  );
+
+  // 프로필 별도 조회
+  const userIds = [...new Set(visible.map((p) => p.user_id as string))];
   const profileMap = new Map<string, { nickname: string; role: string }>();
 
   if (userIds.length > 0) {
@@ -52,7 +58,7 @@ export async function GET(request: Request) {
     }
   }
 
-  const enriched = (posts ?? []).map((p) => ({
+  const enriched = visible.map((p) => ({
     ...p,
     profiles: profileMap.get(p.user_id as string) ?? null,
   }));
@@ -99,7 +105,27 @@ export async function POST(request: Request) {
     }
   }
 
-  // rate limit
+  // 기록 공유 하루 1회 제한 (lifts / 1rm / helltest)
+  if (RECORD_TYPES.includes(type)) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    const { count } = await supabase
+      .from("posts")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .in("type", RECORD_TYPES)
+      .gte("created_at", today.toISOString());
+
+    if ((count ?? 0) >= 1) {
+      return NextResponse.json(
+        { error: "오늘은 이미 기록을 공유했어요. 내일 다시 시도해주세요!" },
+        { status: 429 }
+      );
+    }
+  }
+
+  // 30초 쿨다운
   const { data: lastPost } = await supabase
     .from("posts")
     .select("created_at")
@@ -142,7 +168,6 @@ export async function POST(request: Request) {
     payload_json: cleanPayload,
   };
 
-  // images 컬럼이 있을 때만 포함 (migration_v2 실행 전에는 생략)
   if (cleanImages.length > 0) {
     insertData.images = cleanImages;
   }
