@@ -1,6 +1,8 @@
 ﻿import fs from "fs";
 import path from "path";
 import React from "react";
+import { getWeightClass } from "@/lib/weightClass";
+import type { Sex } from "@/lib/percentile";
 
 type PdfInput = {
   certificateNo: string;
@@ -62,240 +64,287 @@ async function registerKoreanFont(lib: PdfLib) {
   koreanFontRegistered = true;
 }
 
-function createStyles(lib: PdfLib, fontFamily: string) {
+function formatMultiplier(lift: number, bodyweight: number | null): string {
+  if (!bodyweight || bodyweight <= 0) return "-";
+  return `${(lift / bodyweight).toFixed(2)}x`;
+}
+
+function normalizeSex(value: string): Sex {
+  return value === "female" ? "female" : "male";
+}
+
+function sexKo(value: string) {
+  return normalizeSex(value) === "male" ? "남성" : "여성";
+}
+
+function strengthGrade(total: number, bodyweight: number | null): string {
+  if (!bodyweight || bodyweight <= 0) return "산정 불가";
+  const ratio = total / bodyweight;
+  if (ratio >= 7) return "LEGEND";
+  if (ratio >= 6) return "ELITE";
+  if (ratio >= 5) return "ADVANCED";
+  if (ratio >= 4) return "INTERMEDIATE";
+  if (ratio >= 3) return "NOVICE";
+  return "BEGINNER";
+}
+
+function createStyles(lib: PdfLib) {
   return lib.StyleSheet.create({
     page: {
-      padding: 36,
       backgroundColor: "#ffffff",
-      fontSize: 11,
+      padding: 24,
+      fontFamily: "NotoSansKR",
       color: "#111827",
-      fontFamily,
     },
-    title: {
+    frame: {
+      borderWidth: 1,
+      borderColor: "#d1d5db",
+      minHeight: "100%",
+      padding: 18,
+      position: "relative",
+    },
+    watermark: {
+      position: "absolute",
+      top: "44%",
+      left: "12%",
+      fontSize: 54,
+      color: "#111827",
+      opacity: 0.05,
+      transform: "rotate(-45deg)",
+      fontWeight: 700,
+      letterSpacing: 2,
+    },
+    topCenter: {
+      alignItems: "center",
+      marginBottom: 10,
+      gap: 1,
+    },
+    brand: {
       fontSize: 24,
       fontWeight: 700,
-      marginBottom: 12,
-      textAlign: "center",
+      letterSpacing: 1,
     },
-    topRow: {
-      flexDirection: "row",
-      justifyContent: "space-between",
-      marginBottom: 14,
-    },
-    topMeta: {
+    subtitleEn: {
       fontSize: 11,
-      lineHeight: 1.5,
+      fontWeight: 700,
+      letterSpacing: 0.8,
     },
-    infoBox: {
+    subtitleKo: {
+      fontSize: 13,
+      marginTop: 2,
+      fontWeight: 700,
+    },
+    certMetaWrap: {
+      alignItems: "flex-end",
+      marginBottom: 10,
+    },
+    certMetaText: {
+      fontSize: 10,
+      lineHeight: 1.6,
+      textAlign: "right",
+    },
+    infoCard: {
       borderWidth: 1,
       borderColor: "#d1d5db",
       borderRadius: 4,
       padding: 10,
       marginBottom: 12,
+      backgroundColor: "#fafafa",
     },
-    infoRow: {
+    infoGrid: {
       flexDirection: "row",
-      justifyContent: "space-between",
-      marginBottom: 4,
+      flexWrap: "wrap",
+      rowGap: 6,
     },
-    infoLabel: { color: "#374151" },
-    infoValue: { fontWeight: 700 },
+    infoItem: {
+      width: "50%",
+      paddingRight: 8,
+    },
+    infoLabel: {
+      fontSize: 9,
+      color: "#6b7280",
+      marginBottom: 1,
+    },
+    infoValue: {
+      fontSize: 12,
+      fontWeight: 700,
+    },
     table: {
       borderWidth: 1,
       borderColor: "#d1d5db",
+      marginBottom: 12,
     },
     tableRow: {
       flexDirection: "row",
       borderBottomWidth: 1,
       borderBottomColor: "#e5e7eb",
     },
-    th: {
-      flex: 1,
-      padding: 7,
+    tableHeader: {
       backgroundColor: "#f3f4f6",
+    },
+    cellItem: {
+      width: "38%",
+      padding: 7,
+      fontSize: 10,
+    },
+    cellRecord: {
+      width: "32%",
+      padding: 7,
+      fontSize: 10,
+      textAlign: "right",
+    },
+    cellMulti: {
+      width: "30%",
+      padding: 7,
+      fontSize: 10,
+      textAlign: "right",
+    },
+    th: {
       fontWeight: 700,
     },
-    td: {
-      flex: 1,
-      padding: 7,
-    },
-    footer: {
-      marginTop: 18,
+    bottomRow: {
       flexDirection: "row",
       justifyContent: "space-between",
       alignItems: "flex-end",
+      marginTop: 8,
+    },
+    verifyBlock: {
+      width: "66%",
     },
     verifyText: {
-      maxWidth: 360,
-      fontSize: 10,
+      fontSize: 9.5,
       lineHeight: 1.4,
+      marginBottom: 4,
     },
-    note: {
-      marginTop: 6,
-      fontSize: 9,
-      color: "#4b5563",
+    committee: {
+      marginTop: 8,
+      fontSize: 10,
+      lineHeight: 1.5,
+      fontWeight: 700,
     },
     qrWrap: {
+      width: "32%",
       alignItems: "center",
     },
     qr: {
-      width: 118,
-      height: 118,
+      width: 108,
+      height: 108,
       marginBottom: 4,
     },
+    qrCaption: {
+      fontSize: 8.5,
+      textAlign: "center",
+      lineHeight: 1.3,
+    },
   });
-}
-
-function sexKo(value: string) {
-  return value === "male" ? "남성" : "여성";
-}
-
-function sexEn(value: string) {
-  return value === "male" ? "Male" : "Female";
-}
-
-type Labels = {
-  title: string;
-  topLeft: string;
-  certNo: string;
-  issuedAt: string;
-  nickname: string;
-  sex: string;
-  bodyweight: string;
-  item: string;
-  recordKg: string;
-  squat: string;
-  bench: string;
-  deadlift: string;
-  total: string;
-  verify: string;
-  issuer: string;
-  note: string;
-  qr: string;
-};
-
-function createLabels(fallbackAscii: boolean): Labels {
-  if (fallbackAscii) {
-    return {
-      title: "Official Total Lift Certificate",
-      topLeft: "GymTools Official Certificate",
-      certNo: "Certificate No",
-      issuedAt: "Issued",
-      nickname: "Nickname",
-      sex: "Sex",
-      bodyweight: "Bodyweight",
-      item: "Item",
-      recordKg: "Record (kg)",
-      squat: "Squat",
-      bench: "Bench Press",
-      deadlift: "Deadlift",
-      total: "Total",
-      verify: "Verify",
-      issuer: "Issuer",
-      note: "Issued after admin review of submitted lifting evidence.",
-      qr: "QR Verify",
-    };
-  }
-
-  return {
-    title: "3대 합계 공식 인증서",
-    topLeft: "GymTools Official Certificate",
-    certNo: "인증번호",
-    issuedAt: "발급일",
-    nickname: "닉네임",
-    sex: "성별",
-    bodyweight: "체중",
-    item: "항목",
-    recordKg: "기록(kg)",
-    squat: "스쿼트",
-    bench: "벤치프레스",
-    deadlift: "데드리프트",
-    total: "합계",
-    verify: "검증",
-    issuer: "발급기관",
-    note: "본 인증서는 제출된 영상 자료를 운영자가 확인 후 발급되었습니다.",
-    qr: "QR 검증",
-  };
 }
 
 function CertificatePdf({
   lib,
   styles,
-  labels,
   input,
-  fallbackAscii,
 }: {
   lib: PdfLib;
   styles: ReturnType<typeof createStyles>;
-  labels: Labels;
   input: PdfInput;
-  fallbackAscii: boolean;
 }) {
   const { Document, Image, Page, Text, View } = lib;
+  const sex = normalizeSex(input.sexLabel);
+  const classLabel =
+    typeof input.bodyweight === "number" && input.bodyweight > 0
+      ? getWeightClass(sex, input.bodyweight)?.label ?? "-"
+      : "-";
+  const grade = strengthGrade(input.total, input.bodyweight);
 
   return (
     <Document>
       <Page size="A4" style={styles.page}>
-        <Text style={styles.title}>{labels.title}</Text>
+        <View style={styles.frame}>
+          <Text style={styles.watermark}>GYMTOOLS CERTIFIED</Text>
 
-        <View style={styles.topRow}>
-          <Text style={styles.topMeta}>{labels.topLeft}</Text>
-          <Text style={styles.topMeta}>
-            {labels.certNo}: {input.certificateNo}
-            {"\n"}
-            {labels.issuedAt}: {input.issuedAt}
-          </Text>
-        </View>
+          <View style={styles.topCenter}>
+            <Text style={styles.brand}>GYMTOOLS</Text>
+            <Text style={styles.subtitleEn}>OFFICIAL STRENGTH CERTIFICATION</Text>
+            <Text style={styles.subtitleKo}>3대 합계 공식 인증서</Text>
+          </View>
 
-        <View style={styles.infoBox}>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>{labels.nickname}</Text>
-            <Text style={styles.infoValue}>{input.nickname}</Text>
+          <View style={styles.certMetaWrap}>
+            <Text style={styles.certMetaText}>
+              인증번호: {input.certificateNo}
+              {"\n"}
+              발급일자: {input.issuedAt}
+            </Text>
           </View>
-          <View style={styles.infoRow}>
-            <Text style={styles.infoLabel}>{labels.sex}</Text>
-            <Text style={styles.infoValue}>{fallbackAscii ? sexEn(input.sexLabel) : sexKo(input.sexLabel)}</Text>
-          </View>
-          {typeof input.bodyweight === "number" ? (
-            <View style={styles.infoRow}>
-              <Text style={styles.infoLabel}>{labels.bodyweight}</Text>
-              <Text style={styles.infoValue}>{input.bodyweight} kg</Text>
+
+          <View style={styles.infoCard}>
+            <View style={styles.infoGrid}>
+              <View style={styles.infoItem}>
+                <Text style={styles.infoLabel}>닉네임</Text>
+                <Text style={styles.infoValue}>{input.nickname}</Text>
+              </View>
+              <View style={styles.infoItem}>
+                <Text style={styles.infoLabel}>성별</Text>
+                <Text style={styles.infoValue}>{sexKo(input.sexLabel)}</Text>
+              </View>
+              <View style={styles.infoItem}>
+                <Text style={styles.infoLabel}>체중</Text>
+                <Text style={styles.infoValue}>
+                  {typeof input.bodyweight === "number" && input.bodyweight > 0 ? `${input.bodyweight} kg` : "-"}
+                </Text>
+              </View>
+              <View style={styles.infoItem}>
+                <Text style={styles.infoLabel}>체급</Text>
+                <Text style={styles.infoValue}>{classLabel}</Text>
+              </View>
+              <View style={styles.infoItem}>
+                <Text style={styles.infoLabel}>Strength Grade</Text>
+                <Text style={styles.infoValue}>{grade}</Text>
+              </View>
             </View>
-          ) : null}
-        </View>
+          </View>
 
-        <View style={styles.table}>
-          <View style={styles.tableRow}>
-            <Text style={styles.th}>{labels.item}</Text>
-            <Text style={styles.th}>{labels.recordKg}</Text>
-          </View>
-          <View style={styles.tableRow}>
-            <Text style={styles.td}>{labels.squat}</Text>
-            <Text style={styles.td}>{input.squat}</Text>
-          </View>
-          <View style={styles.tableRow}>
-            <Text style={styles.td}>{labels.bench}</Text>
-            <Text style={styles.td}>{input.bench}</Text>
-          </View>
-          <View style={styles.tableRow}>
-            <Text style={styles.td}>{labels.deadlift}</Text>
-            <Text style={styles.td}>{input.deadlift}</Text>
-          </View>
-          <View style={styles.tableRow}>
-            <Text style={styles.td}>{labels.total}</Text>
-            <Text style={styles.td}>{input.total}</Text>
-          </View>
-        </View>
+          <View style={styles.table}>
+            <View style={[styles.tableRow, styles.tableHeader]}>
+              <Text style={[styles.cellItem, styles.th]}>항목</Text>
+              <Text style={[styles.cellRecord, styles.th]}>기록(kg)</Text>
+              <Text style={[styles.cellMulti, styles.th]}>체중 대비 배수</Text>
+            </View>
 
-        <View style={styles.footer}>
-          <View>
-            <Text style={styles.verifyText}>{labels.verify}: {input.verificationUrl}</Text>
-            <Text style={styles.verifyText}>{labels.issuer}: GymTools</Text>
-            <Text style={styles.note}>{labels.note}</Text>
+            <View style={styles.tableRow}>
+              <Text style={styles.cellItem}>스쿼트</Text>
+              <Text style={styles.cellRecord}>{input.squat}</Text>
+              <Text style={styles.cellMulti}>{formatMultiplier(input.squat, input.bodyweight)}</Text>
+            </View>
+            <View style={styles.tableRow}>
+              <Text style={styles.cellItem}>벤치프레스</Text>
+              <Text style={styles.cellRecord}>{input.bench}</Text>
+              <Text style={styles.cellMulti}>{formatMultiplier(input.bench, input.bodyweight)}</Text>
+            </View>
+            <View style={styles.tableRow}>
+              <Text style={styles.cellItem}>데드리프트</Text>
+              <Text style={styles.cellRecord}>{input.deadlift}</Text>
+              <Text style={styles.cellMulti}>{formatMultiplier(input.deadlift, input.bodyweight)}</Text>
+            </View>
+            <View style={styles.tableRow}>
+              <Text style={[styles.cellItem, styles.th]}>합계</Text>
+              <Text style={[styles.cellRecord, styles.th]}>{input.total}</Text>
+              <Text style={[styles.cellMulti, styles.th]}>{formatMultiplier(input.total, input.bodyweight)}</Text>
+            </View>
           </View>
-          <View style={styles.qrWrap}>
-            <Image style={styles.qr} src={input.qrDataUrl} />
-            <Text>{labels.qr}</Text>
+
+          <View style={styles.bottomRow}>
+            <View style={styles.verifyBlock}>
+              <Text style={styles.verifyText}>검증 URL: {input.verificationUrl}</Text>
+              <Text style={styles.verifyText}>
+                본 인증서는 제출된 영상 자료를 운영자가 확인 후 발급되었습니다.
+              </Text>
+              <Text style={styles.committee}>GymTools 인증위원회{"\n"}Chief Verifier</Text>
+            </View>
+
+            <View style={styles.qrWrap}>
+              <Image style={styles.qr} src={input.qrDataUrl} />
+              <Text style={styles.qrCaption}>보안 검증용 QR{"\n"}위변조 여부를 확인하세요.</Text>
+            </View>
           </View>
         </View>
       </Page>
@@ -310,43 +359,17 @@ export async function renderCertificatePdfBuffer(input: PdfInput): Promise<Buffe
     throw new Error("[qr_generate] Invalid QR data URL");
   }
 
-  let fallbackAscii = false;
-  try {
-    await registerKoreanFont(lib);
-  } catch (fontError) {
-    fallbackAscii = true;
-    console.error("[cert-pdf] Korean font load failed. Fallback to ASCII template.", {
-      message: fontError instanceof Error ? fontError.message : String(fontError),
-      stack: fontError instanceof Error ? fontError.stack : undefined,
-    });
-  }
+  await registerKoreanFont(lib);
 
   try {
-    const styles = createStyles(lib, fallbackAscii ? "Helvetica" : "NotoSansKR");
-    const labels = createLabels(fallbackAscii);
-    const doc = (
-      <CertificatePdf
-        lib={lib}
-        styles={styles}
-        labels={labels}
-        input={input}
-        fallbackAscii={fallbackAscii}
-      />
-    );
+    const styles = createStyles(lib);
+    const doc = <CertificatePdf lib={lib} styles={styles} input={input} />;
     return await lib.renderToBuffer(doc);
   } catch (renderError) {
     console.error("[cert-pdf] PDF render failed", {
       message: renderError instanceof Error ? renderError.message : String(renderError),
       stack: renderError instanceof Error ? renderError.stack : undefined,
-      fallbackAscii,
     });
-
-    if (fallbackAscii) {
-      throw new Error(
-        `[pdf_font_load] Font fallback mode also failed: ${renderError instanceof Error ? renderError.message : String(renderError)}`,
-      );
-    }
-
     throw renderError;
   }
 }
