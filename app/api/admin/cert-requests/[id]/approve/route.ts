@@ -26,6 +26,45 @@ type StepName =
   | "db_update_certificate_pdf"
   | "db_update_request_status";
 
+function parseStorageUploadError(raw: unknown): {
+  message: string;
+  detail: unknown;
+} {
+  const errorMessage =
+    raw && typeof raw === "object" && "message" in raw
+      ? String((raw as { message?: unknown }).message ?? "")
+      : String(raw ?? "");
+  const lower = errorMessage.toLowerCase();
+
+  if (
+    lower.includes("bucket") &&
+    (lower.includes("not found") || lower.includes("does not exist") || lower.includes("404"))
+  ) {
+    return {
+      message: "certificates 버킷을 찾을 수 없습니다. 버킷 생성이 필요합니다.",
+      detail: raw,
+    };
+  }
+
+  if (
+    lower.includes("permission") ||
+    lower.includes("not allowed") ||
+    lower.includes("unauthorized") ||
+    lower.includes("forbidden") ||
+    lower.includes("403")
+  ) {
+    return {
+      message: "Storage 업로드 권한이 없습니다. SUPABASE_SERVICE_ROLE_KEY와 버킷 정책을 확인하세요.",
+      detail: raw,
+    };
+  }
+
+  return {
+    message: errorMessage || "Storage 업로드 실패",
+    detail: raw,
+  };
+}
+
 function fail(step: StepName, message: string, detail?: unknown, status = 500) {
   console.error("[cert-approve-fail]", {
     step,
@@ -215,22 +254,7 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     return fail("pdf_generate", message, stack?.slice(0, 2000) ?? error);
   }
 
-  // step6: Storage 업로드 (bucket check + upload)
-  const { data: bucketInfo, error: bucketError } = await admin
-    .schema("storage")
-    .from("buckets")
-    .select("id, public")
-    .eq("id", "certificates")
-    .maybeSingle();
-
-  if (bucketError || !bucketInfo) {
-    return fail(
-      "storage_bucket_check",
-      "certificates bucket을 찾을 수 없습니다. Supabase SQL에서 bucket 생성 스크립트를 먼저 실행하세요.",
-      bucketError,
-    );
-  }
-
+  // step6: Storage 업로드를 먼저 시도하고 실패 원인을 메시지로 구분
   const uploadPath = `certificates/${certificateNo}.pdf`;
   const { error: uploadError } = await admin.storage
     .from("certificates")
@@ -240,12 +264,28 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     });
 
   if (uploadError) {
-    return fail("storage_upload", uploadError.message, uploadError);
+    const parsed = parseStorageUploadError(uploadError);
+    return fail("storage_upload", parsed.message, parsed.detail);
   }
 
   // step7: certificates.pdf_url 업데이트 (public/private 분기)
+  // 버킷 공개 여부는 service role listBuckets로 확인
   let pdfUrl = "";
-  if (bucketInfo.public) {
+  const { data: buckets, error: listBucketsError } = await admin.storage.listBuckets();
+  if (listBucketsError) {
+    return fail("storage_bucket_check", listBucketsError.message, listBucketsError);
+  }
+
+  const certificatesBucket = buckets?.find((bucket) => bucket.name === "certificates");
+  if (!certificatesBucket) {
+    return fail(
+      "storage_bucket_check",
+      "certificates 버킷 메타데이터를 찾을 수 없습니다.",
+      { bucketNames: buckets?.map((bucket) => bucket.name) ?? [] },
+    );
+  }
+
+  if (certificatesBucket.public) {
     const { data } = admin.storage.from("certificates").getPublicUrl(uploadPath);
     pdfUrl = data.publicUrl;
   } else {
