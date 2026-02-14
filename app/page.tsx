@@ -10,6 +10,7 @@ type Feature = {
   emoji: string;
   description: string;
   accent: string;
+  cta?: string;
   main?: boolean;
   disabled?: boolean;
 };
@@ -22,23 +23,35 @@ const FEATURES: Feature[] = [
     emoji: "📸",
     description: "사진과 글을 올리고 유저들의 몸평을 받아보세요.",
     accent: "bg-indigo-50 border-indigo-200 hover:border-indigo-400",
+    cta: "몸평 보러가기",
   },
   {
     id: "one_rm",
     href: "/1rm",
     title: "1RM 계산기",
     emoji: "🏋️",
-    description: "무게와 반복 횟수로 1RM을 추정하고 훈련 중량까지 계산합니다.",
+    description: "작업 중량과 반복 횟수로 1RM 추정값을 계산합니다.",
     accent: "bg-emerald-50 border-emerald-200 hover:border-emerald-400",
     main: true,
+    cta: "계산 시작",
   },
   {
     id: "lifts",
     href: "/lifts",
     title: "3대 합계 계산기",
     emoji: "🏆",
-    description: "스쿼트, 벤치, 데드리프트의 합계와 체중 대비 비율을 확인합니다.",
+    description: "스쿼트·벤치·데드 합계와 체급 기준 상위%를 확인합니다.",
     accent: "bg-rose-50 border-rose-200 hover:border-rose-400",
+    cta: "합계 계산하기",
+  },
+  {
+    id: "certify",
+    href: "/certify",
+    title: "3대 공식 인증",
+    emoji: "✅",
+    description: "영상 검증 후 QR 인증서(PDF) 발급",
+    accent: "bg-lime-50 border-lime-200 hover:border-lime-400",
+    cta: "인증 신청하기",
   },
   {
     id: "helltest",
@@ -47,30 +60,25 @@ const FEATURES: Feature[] = [
     emoji: "🧪",
     description: "20문항으로 알아보는 나의 헬창력 테스트",
     accent: "bg-amber-50 border-amber-200 hover:border-amber-400",
+    cta: "테스트 시작",
   },
   {
     id: "snacks",
     href: "/snacks",
     title: "다이어트 간식",
-    emoji: "🍪",
-    description: "운동 전후와 식단 보완에 도움 되는 간식을 추천합니다.",
+    emoji: "🥗",
+    description: "운동과 식단에 맞는 간식을 추천합니다.",
     accent: "bg-blue-50 border-blue-200 hover:border-blue-400",
+    cta: "간식 보기",
   },
   {
     id: "community",
     href: "/community",
     title: "커뮤니티",
     emoji: "💬",
-    description: "운동 기록을 공유하고 서로의 노하우를 나눠보세요.",
+    description: "운동 기록과 노하우를 공유하는 공간입니다.",
     accent: "bg-cyan-50 border-cyan-200 hover:border-cyan-400",
-  },
-  {
-    id: "ad_placeholder",
-    title: "AD",
-    emoji: "📢",
-    description: "광고 영역",
-    accent: "bg-neutral-100 border-neutral-200",
-    disabled: true,
+    cta: "커뮤니티 이동",
   },
 ];
 
@@ -87,64 +95,42 @@ export default function HomePage() {
       </section>
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {FEATURES.map((f) =>
-          f.href && !f.disabled ? (
+        {FEATURES.map((feature) =>
+          feature.href && !feature.disabled ? (
             <Link
-              key={f.id}
-              href={f.href}
-              className={`group block rounded-2xl border-2 p-5 transition-all active:scale-[0.99] ${f.accent} ${
-                f.main ? "ring-2 ring-emerald-300 ring-offset-1" : ""
+              key={feature.id}
+              href={feature.href}
+              className={`group block rounded-2xl border-2 p-5 transition-all active:scale-[0.99] ${feature.accent} ${
+                feature.main ? "ring-2 ring-emerald-300 ring-offset-1" : ""
               }`}
             >
               <div className="flex items-start gap-4">
                 <span className="text-3xl shrink-0" aria-hidden>
-                  {f.emoji}
+                  {feature.emoji}
                 </span>
-                <div className="min-w-0">
+                <div className="min-w-0 w-full">
                   <h2 className="text-lg font-bold text-neutral-900 group-hover:text-emerald-700 transition-colors">
-                    {f.title}
-                    {f.main && (
-                      <span className="ml-2 text-xs font-medium text-emerald-600 bg-emerald-100 px-2 py-0.5 rounded-full align-middle">
-                        MAIN
-                      </span>
-                    )}
+                    {feature.title}
                   </h2>
-                  <p className="mt-1 text-sm text-neutral-600 leading-relaxed">{f.description}</p>
+                  <p className="mt-1 text-sm text-neutral-600 leading-relaxed">{feature.description}</p>
+                  {feature.cta && (
+                    <p className="mt-3 text-xs font-semibold text-emerald-700">
+                      {feature.cta}
+                    </p>
+                  )}
                 </div>
               </div>
             </Link>
-          ) : (
-            <div
-              key={f.id}
-              className={`rounded-2xl border-2 p-5 opacity-70 select-none ${f.accent}`}
-              aria-disabled="true"
-            >
-              <div className="flex items-start gap-4">
-                <span className="text-3xl shrink-0" aria-hidden>
-                  {f.emoji}
-                </span>
-                <div className="min-w-0">
-                  <h2 className="text-lg font-bold text-neutral-700">{f.title}</h2>
-                  <p className="mt-1 text-sm text-neutral-500 leading-relaxed">{f.description}</p>
-                </div>
-              </div>
-            </div>
-          ),
+          ) : null,
         )}
       </section>
 
       <section className="mt-10 rounded-2xl border border-neutral-200 bg-neutral-50 p-5">
         <p className="text-sm leading-relaxed text-neutral-700">
-          짐툴(GymTools)은 헬스 유저를 위한 1RM 계산기, 3대 합계 계산기, 헬창 판독기와 몸평
-          게시판을 제공하는 사이트입니다.
+          짐툴(GymTools)은 헬스 유저를 위한 1RM 계산기, 3대 합계 계산기, 헬창 판독기와 몸평 게시판을 제공하는 사이트입니다.
         </p>
       </section>
-
-      <div className="mt-8 pt-4 border-t border-neutral-200">
-        <p className="text-xs text-neutral-400 text-center">
-          모든 데이터는 브라우저(localStorage)와 서비스 DB에 안전하게 저장됩니다.
-        </p>
-      </div>
     </main>
   );
 }
+

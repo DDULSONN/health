@@ -6,15 +6,15 @@ import Link from "next/link";
 import AdSlot from "@/components/AdSlot";
 import ShareToCommBtn from "@/components/ShareToCommBtn";
 import {
+  build1RMShareUrl,
   calculate1RM,
   getPercentageTable,
   kgToLb,
   lbToKg,
-  build1RMShareUrl,
   LIFT_LABELS,
   type Formula,
-  type WeightUnit,
   type LiftType,
+  type WeightUnit,
 } from "@/lib/oneRm";
 
 const STORAGE_KEY = "gymtools_1rm";
@@ -31,7 +31,6 @@ function OneRmContent() {
   const [shareStatus, setShareStatus] = useState<"idle" | "copied">("idle");
   const [calcStatus, setCalcStatus] = useState<"idle" | "done" | "invalid">("idle");
 
-  // URL 荑쇰━ ?먮뒗 localStorage?먯꽌 蹂듭썝
   useEffect(() => {
     const qW = searchParams.get("w");
     const qR = searchParams.get("reps");
@@ -49,28 +48,44 @@ function OneRmContent() {
       try {
         const saved = localStorage.getItem(STORAGE_KEY);
         if (saved) {
-          const data = JSON.parse(saved);
+          const data = JSON.parse(saved) as {
+            lift?: LiftType;
+            weight?: number;
+            reps?: number;
+            unit?: WeightUnit;
+            formula?: Formula;
+          };
           if (data.weight) setWeight(String(data.weight));
           if (data.reps) setReps(String(data.reps));
           if (data.unit) setUnit(data.unit);
           if (data.formula) setFormula(data.formula);
           if (data.lift) setLift(data.lift);
         }
-      } catch { /* ignore */ }
+      } catch {
+        // ignore
+      }
     }
+
     setMounted(true);
   }, [searchParams]);
 
-  // localStorage ???
   useEffect(() => {
     if (!mounted) return;
     try {
       localStorage.setItem(
         STORAGE_KEY,
-        JSON.stringify({ weight: Number(weight), reps: Number(reps), unit, formula, lift })
+        JSON.stringify({
+          lift,
+          weight: Number(weight),
+          reps: Number(reps),
+          unit,
+          formula,
+        }),
       );
-    } catch { /* ignore */ }
-  }, [weight, reps, unit, formula, lift, mounted]);
+    } catch {
+      // ignore
+    }
+  }, [mounted, lift, weight, reps, unit, formula]);
 
   const w = Number(weight) || 0;
   const r = Number(reps) || 0;
@@ -83,14 +98,14 @@ function OneRmContent() {
   const hasResult = w > 0 && r > 0 && r <= 12 && oneRmKg > 0;
 
   const handleShare = useCallback(async () => {
-    const url =
-      window.location.origin +
-      build1RMShareUrl({ weight: w, reps: r, unit, formula, lift });
+    const url = window.location.origin + build1RMShareUrl({ weight: w, reps: r, unit, formula, lift });
     try {
       await navigator.clipboard.writeText(url);
       setShareStatus("copied");
       setTimeout(() => setShareStatus("idle"), 2000);
-    } catch { /* ignore */ }
+    } catch {
+      // ignore
+    }
   }, [w, r, unit, formula, lift]);
 
   const handleCalcMission = useCallback(async () => {
@@ -116,7 +131,7 @@ function OneRmContent() {
   if (!mounted) {
     return (
       <main className="max-w-md mx-auto px-4 py-10">
-        <p className="text-neutral-400 text-center">濡쒕뵫 以?..</p>
+        <p className="text-neutral-400 text-center">로딩 중...</p>
       </main>
     );
   }
@@ -124,21 +139,17 @@ function OneRmContent() {
   return (
     <main className="max-w-md mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold text-neutral-900 mb-1">1RM 계산기</h1>
-      <p className="text-sm text-neutral-500 mb-6">
-        ?ъ슜 以묐웾怨?諛섎났 ?잛닔濡?1RM(1??理쒕? 以묐웾)??異붿젙?⑸땲??
-      </p>
+      <p className="text-sm text-neutral-500 mb-6">운동 종목, 작업 중량, 반복 횟수를 입력해 1RM 추정값을 확인하세요.</p>
 
-      {/* ?낅젰 ??*/}
       <div className="space-y-4 mb-6">
-        {/* ?대룞 ?좏깮 */}
         <div>
           <label htmlFor="lift" className="block text-sm font-medium text-neutral-700 mb-1">
-            ?대룞 醫낅쪟
+            운동 종목
           </label>
           <select
             id="lift"
             value={lift}
-            onChange={(e) => setLift(e.target.value as LiftType)}
+            onChange={(event) => setLift(event.target.value as LiftType)}
             className="w-full h-12 rounded-xl border border-neutral-300 bg-white px-3 text-neutral-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           >
             {Object.entries(LIFT_LABELS).map(([key, label]) => (
@@ -149,10 +160,9 @@ function OneRmContent() {
           </select>
         </div>
 
-        {/* 以묐웾 + ?⑥쐞 */}
         <div>
           <label htmlFor="weight" className="block text-sm font-medium text-neutral-700 mb-1">
-            ?ъ슜 以묐웾
+            작업 중량
           </label>
           <div className="flex gap-2">
             <input
@@ -162,7 +172,7 @@ function OneRmContent() {
               min="0"
               step="any"
               value={weight}
-              onChange={(e) => setWeight(e.target.value)}
+              onChange={(event) => setWeight(event.target.value)}
               placeholder="0"
               className="flex-1 h-12 rounded-xl border border-neutral-300 bg-white px-3 text-neutral-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
@@ -170,22 +180,14 @@ function OneRmContent() {
               <button
                 type="button"
                 onClick={() => setUnit("kg")}
-                className={`px-4 h-12 text-sm font-medium transition-colors ${
-                  unit === "kg"
-                    ? "bg-emerald-600 text-white"
-                    : "bg-white text-neutral-600 hover:bg-neutral-50"
-                }`}
+                className={`px-4 h-12 text-sm font-medium ${unit === "kg" ? "bg-emerald-600 text-white" : "bg-white text-neutral-600 hover:bg-neutral-50"}`}
               >
                 kg
               </button>
               <button
                 type="button"
                 onClick={() => setUnit("lb")}
-                className={`px-4 h-12 text-sm font-medium transition-colors ${
-                  unit === "lb"
-                    ? "bg-emerald-600 text-white"
-                    : "bg-white text-neutral-600 hover:bg-neutral-50"
-                }`}
+                className={`px-4 h-12 text-sm font-medium ${unit === "lb" ? "bg-emerald-600 text-white" : "bg-white text-neutral-600 hover:bg-neutral-50"}`}
               >
                 lb
               </button>
@@ -193,10 +195,9 @@ function OneRmContent() {
           </div>
         </div>
 
-        {/* 諛섎났 ?잛닔 */}
         <div>
           <label htmlFor="reps" className="block text-sm font-medium text-neutral-700 mb-1">
-            諛섎났 ?잛닔 (1~12)
+            반복 횟수(1~12)
           </label>
           <input
             id="reps"
@@ -205,43 +206,32 @@ function OneRmContent() {
             min="1"
             max="12"
             value={reps}
-            onChange={(e) => setReps(e.target.value)}
+            onChange={(event) => setReps(event.target.value)}
             placeholder="5"
             className="w-full h-12 rounded-xl border border-neutral-300 bg-white px-3 text-neutral-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
         </div>
 
-        {/* 怨듭떇 ?좏깮 */}
         <div>
-          <span className="block text-sm font-medium text-neutral-700 mb-1">異붿젙 怨듭떇</span>
+          <span className="block text-sm font-medium text-neutral-700 mb-1">계산식 선택</span>
           <div className="flex rounded-xl border border-neutral-300 overflow-hidden">
             <button
               type="button"
               onClick={() => setFormula("epley")}
-              className={`flex-1 h-10 text-sm font-medium transition-colors ${
-                formula === "epley"
-                  ? "bg-emerald-600 text-white"
-                  : "bg-white text-neutral-600 hover:bg-neutral-50"
-              }`}
+              className={`flex-1 h-10 text-sm font-medium ${formula === "epley" ? "bg-emerald-600 text-white" : "bg-white text-neutral-600 hover:bg-neutral-50"}`}
             >
               Epley
             </button>
             <button
               type="button"
               onClick={() => setFormula("brzycki")}
-              className={`flex-1 h-10 text-sm font-medium transition-colors ${
-                formula === "brzycki"
-                  ? "bg-emerald-600 text-white"
-                  : "bg-white text-neutral-600 hover:bg-neutral-50"
-              }`}
+              className={`flex-1 h-10 text-sm font-medium ${formula === "brzycki" ? "bg-emerald-600 text-white" : "bg-white text-neutral-600 hover:bg-neutral-50"}`}
             >
               Brzycki
             </button>
           </div>
           <p className="text-xs text-neutral-400 mt-1">
-            {formula === "epley"
-              ? "Epley: 1RM = W 횞 (1 + reps/30)"
-              : "Brzycki: 1RM = W 횞 36/(37 - reps)"}
+            {formula === "epley" ? "Epley: 1RM = W × (1 + reps/30)" : "Brzycki: 1RM = W × 36 / (37 - reps)"}
           </p>
         </div>
       </div>
@@ -251,30 +241,22 @@ function OneRmContent() {
         onClick={handleCalcMission}
         className="w-full min-h-[48px] rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 active:scale-[0.98] transition-all text-sm mb-4"
       >
-        {calcStatus === "done"
-          ? "오늘 미션 반영 완료"
-          : calcStatus === "invalid"
-          ? "값을 먼저 입력해 주세요"
-          : "1RM 계산하기"}
+        {calcStatus === "done" ? "오늘의 미션 반영 완료" : calcStatus === "invalid" ? "입력값을 먼저 확인해 주세요" : "1RM 계산하기"}
       </button>
-      {/* 寃곌낵 */}
+
       {hasResult && (
         <div className="space-y-4">
-          {/* 1RM 寃곌낵 移대뱶 */}
           <div className="rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-100 border border-emerald-200 p-6 text-center">
             <p className="text-sm text-emerald-700 mb-1">
-              {LIFT_LABELS[lift]} 異붿젙 1RM ({formula === "epley" ? "Epley" : "Brzycki"})
+              {LIFT_LABELS[lift]} 1RM 추정값 ({formula === "epley" ? "Epley" : "Brzycki"})
             </p>
             <p className="text-4xl font-bold text-emerald-800">
               {Math.round(oneRmKg * 10) / 10}
               <span className="text-lg font-normal ml-1">kg</span>
             </p>
-            <p className="text-lg text-emerald-600 mt-1">
-              {Math.round(oneRmLb * 10) / 10} lb
-            </p>
+            <p className="text-lg text-emerald-600 mt-1">{Math.round(oneRmLb * 10) / 10} lb</p>
           </div>
 
-          {/* ?쇱꽱????*/}
           <div className="rounded-2xl bg-white border border-neutral-200 overflow-hidden">
             <div className="px-4 py-3 bg-neutral-50 border-b border-neutral-200">
               <h2 className="text-sm font-semibold text-neutral-700">추천 작업 중량표</h2>
@@ -299,25 +281,31 @@ function OneRmContent() {
             </table>
           </div>
 
-          {/* 怨듭쑀 + 3? ?대룞 */}
           <div className="space-y-2">
             <button
               type="button"
               onClick={handleShare}
               className="w-full min-h-[48px] rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 active:scale-[0.98] transition-all text-sm"
             >
-              {shareStatus === "copied" ? "留곹겕媛 蹂듭궗?섏뿀?듬땲??" : "寃곌낵 留곹겕 蹂듭궗?섍린"}
+              {shareStatus === "copied" ? "링크가 복사되었습니다" : "결과 링크 복사하기"}
             </button>
+
             <Link
               href="/lifts"
               className="block text-center py-3 rounded-xl bg-neutral-100 text-neutral-700 font-medium text-sm hover:bg-neutral-200 transition-colors"
             >
-              ?뮞 3? ?⑷퀎 怨꾩궛湲곕줈 ?대룞
+              3대 합계 계산기로 이동
             </Link>
+
             <ShareToCommBtn
               type="1rm"
               title={`${LIFT_LABELS[lift]} 1RM ${Math.round(oneRmKg)}kg (${formula === "epley" ? "Epley" : "Brzycki"})`}
-              payload={{ lift, weightKg: Math.round(oneRmKg * 10) / 10, oneRmKg: Math.round(oneRmKg * 10) / 10, formula }}
+              payload={{
+                lift,
+                weightKg: Math.round(oneRmKg * 10) / 10,
+                oneRmKg: Math.round(oneRmKg * 10) / 10,
+                formula,
+              }}
             />
           </div>
 
@@ -325,10 +313,9 @@ function OneRmContent() {
         </div>
       )}
 
-      {/* ?낅젰??鍮꾩젙?곸씪 ???덈궡 */}
-      {w > 0 && r > 0 && r > 12 && (
+      {w > 0 && r > 12 && (
         <p className="text-sm text-amber-600 bg-amber-50 rounded-xl p-3 mt-4">
-          諛섎났 ?잛닔??1~12 踰붿쐞?먯꽌 媛???뺥솗?⑸땲?? 12???댄븯濡??낅젰??二쇱꽭??
+          반복 횟수는 1~12 범위에서 가장 정확합니다. 12 이하로 입력해 주세요.
         </p>
       )}
     </main>
@@ -340,7 +327,7 @@ export default function OneRmPage() {
     <Suspense
       fallback={
         <main className="max-w-md mx-auto px-4 py-10">
-          <p className="text-neutral-400 text-center">濡쒕뵫 以?..</p>
+          <p className="text-neutral-400 text-center">로딩 중...</p>
         </main>
       }
     >
@@ -348,6 +335,4 @@ export default function OneRmPage() {
     </Suspense>
   );
 }
-
-
 
