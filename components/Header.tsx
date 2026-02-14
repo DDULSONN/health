@@ -138,7 +138,7 @@ export default function Header() {
               href="/admin/cert-requests"
               className="ml-1 px-3 py-1.5 rounded-lg text-sm font-medium bg-neutral-900 text-white hover:bg-black"
             >
-              심사
+              인증 심사
             </Link>
           )}
 
@@ -232,7 +232,7 @@ export default function Header() {
               onClick={() => setMobileOpen(false)}
               className="block mt-1 py-2.5 px-3 rounded-lg text-sm font-medium bg-neutral-900 text-white"
             >
-              심사
+              인증 심사
             </Link>
           )}
 

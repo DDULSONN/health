@@ -8,8 +8,18 @@ type CreateBody = {
   squat?: number;
   bench?: number;
   deadlift?: number;
+  video_url?: string | null;
   note?: string;
 };
+
+function isHttpUrl(value: string): boolean {
+  try {
+    const url = new URL(value);
+    return url.protocol === "http:" || url.protocol === "https:";
+  } catch {
+    return false;
+  }
+}
 
 export async function GET() {
   const supabase = await createClient();
@@ -24,7 +34,7 @@ export async function GET() {
   const { data, error } = await supabase
     .from("cert_requests")
     .select(
-      "id, submit_code, status, note, admin_note, created_at, reviewed_at, sex, bodyweight, squat, bench, deadlift, total, certificates(id, certificate_no, slug, pdf_url, issued_at)",
+      "id, submit_code, status, note, video_url, admin_note, created_at, reviewed_at, sex, bodyweight, squat, bench, deadlift, total, certificates(id, certificate_no, slug, pdf_url, issued_at)",
     )
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
@@ -53,12 +63,16 @@ export async function POST(request: Request) {
   const squat = Math.max(0, normalizeNumber(body.squat));
   const bench = Math.max(0, normalizeNumber(body.bench));
   const deadlift = Math.max(0, normalizeNumber(body.deadlift));
+  const videoUrl = body.video_url?.trim() ? body.video_url.trim() : null;
 
   if (sex !== "male" && sex !== "female") {
     return NextResponse.json({ error: "성별은 필수입니다." }, { status: 400 });
   }
   if (squat <= 0 || bench <= 0 || deadlift <= 0) {
     return NextResponse.json({ error: "스쿼트, 벤치, 데드리프트는 필수입니다." }, { status: 400 });
+  }
+  if (videoUrl && !isHttpUrl(videoUrl)) {
+    return NextResponse.json({ error: "영상 링크는 http/https 형식이어야 합니다." }, { status: 400 });
   }
 
   const { data: profile } = await supabase
@@ -90,6 +104,7 @@ export async function POST(request: Request) {
       bench,
       deadlift,
       total: squat + bench + deadlift,
+      video_url: videoUrl,
       submit_code: submitCode,
       status: "pending",
       note: body.note?.trim() ? body.note.trim() : null,
@@ -105,3 +120,4 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ request: data }, { status: 201 });
 }
+

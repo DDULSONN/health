@@ -6,6 +6,9 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { timeAgo } from "@/lib/community";
 import MyLiftGrowthChart from "@/components/MyLiftGrowthChart";
+import AdminCertReviewPanel from "@/components/AdminCertReviewPanel";
+
+type MyPageTab = "my_cert" | "request_status" | "admin_review";
 
 type BodycheckPost = {
   id: string;
@@ -47,6 +50,7 @@ type MyCertRequest = {
   bench: number;
   deadlift: number;
   total: number;
+  video_url?: string | null;
   certificates?: MyCertificate[] | null;
 };
 
@@ -57,6 +61,8 @@ export default function MyPage() {
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [certRequests, setCertRequests] = useState<MyCertRequest[]>([]);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [activeTab, setActiveTab] = useState<MyPageTab>("my_cert");
   const [error, setError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
 
@@ -74,18 +80,18 @@ export default function MyPage() {
           return;
         }
 
-        const [summaryRes, certRes] = await Promise.all([
+        const [summaryRes, certRes, adminRes] = await Promise.all([
           fetch("/api/mypage/summary", { cache: "no-store" }),
           fetch("/api/cert-requests", { cache: "no-store" }),
+          fetch("/api/admin/me", { cache: "no-store" }),
         ]);
 
-        const summaryBody = (await summaryRes.json().catch(() => ({}))) as SummaryResponse & {
-          error?: string;
-        };
+        const summaryBody = (await summaryRes.json().catch(() => ({}))) as SummaryResponse & { error?: string };
         const certBody = (await certRes.json().catch(() => ({}))) as {
           error?: string;
           requests?: MyCertRequest[];
         };
+        const adminBody = (await adminRes.json().catch(() => ({}))) as { isAdmin?: boolean };
 
         if (!summaryRes.ok) {
           throw new Error(summaryBody.error ?? "마이페이지 정보를 불러오지 못했습니다.");
@@ -97,6 +103,7 @@ export default function MyPage() {
         if (isMounted) {
           setSummary(summaryBody);
           setCertRequests(certBody.requests ?? []);
+          setIsAdmin(Boolean(adminBody.isAdmin));
           setError("");
         }
       } catch (e) {
@@ -111,6 +118,12 @@ export default function MyPage() {
       isMounted = false;
     };
   }, [router, supabase]);
+
+  useEffect(() => {
+    if (!isAdmin && activeTab === "admin_review") {
+      setActiveTab("my_cert");
+    }
+  }, [isAdmin, activeTab]);
 
   const handleLogout = async () => {
     if (loggingOut) return;
@@ -150,6 +163,8 @@ export default function MyPage() {
   const posts = summary?.bodycheck_posts ?? [];
   const weeklyWinCount = summary?.weekly_win_count ?? 0;
 
+  const approvedRequests = certRequests.filter((item) => item.status === "approved" && (item.certificates?.length ?? 0) > 0);
+
   return (
     <main className="max-w-2xl mx-auto px-4 py-8">
       <section className="rounded-2xl border border-neutral-200 bg-white p-5 mb-5">
@@ -164,12 +179,6 @@ export default function MyPage() {
 
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
-            href="/mypage#cert"
-            className="px-4 min-h-[44px] rounded-xl border border-neutral-200 text-sm text-neutral-700 hover:bg-neutral-50 flex items-center"
-          >
-            내 인증 신청
-          </Link>
-          <Link
             href="/my-records"
             className="px-4 min-h-[44px] rounded-xl border border-neutral-200 text-sm text-neutral-700 hover:bg-neutral-50 flex items-center"
           >
@@ -180,12 +189,6 @@ export default function MyPage() {
             className="px-4 min-h-[44px] rounded-xl border border-neutral-200 text-sm text-neutral-700 hover:bg-neutral-50 flex items-center"
           >
             공식 인증 신청
-          </Link>
-          <Link
-            href="/hall-of-fame"
-            className="px-4 min-h-[44px] rounded-xl border border-neutral-200 text-sm text-neutral-700 hover:bg-neutral-50 flex items-center"
-          >
-            명예의 전당
           </Link>
           <button
             type="button"
@@ -202,57 +205,133 @@ export default function MyPage() {
         <MyLiftGrowthChart />
       </div>
 
-      <section id="cert" className="mb-5">
-        <h2 className="text-lg font-bold text-neutral-900 mb-3">내 인증 신청</h2>
-        {certRequests.length === 0 ? (
-          <p className="text-sm text-neutral-500 rounded-xl border border-neutral-200 bg-white p-4">
-            인증 신청 내역이 없습니다.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {certRequests.map((item) => {
-              const cert = item.certificates?.[0] ?? null;
-              const verifyPath = cert ? `/cert/${cert.slug}` : "";
-              return (
-                <div key={item.id} className="rounded-2xl border border-neutral-200 bg-white p-4">
-                  <p className="text-sm font-semibold text-neutral-900">
-                    제출코드: <span className="font-bold">{item.submit_code}</span>
-                  </p>
-                  <p className="text-xs text-neutral-500 mt-1">
-                    상태: {item.status} / 합계 {item.total}kg / {timeAgo(item.created_at)}
-                  </p>
-                  {item.status === "needs_info" && item.admin_note && (
-                    <p className="text-xs text-amber-700 mt-2">관리자 요청: {item.admin_note}</p>
-                  )}
-                  {item.status === "rejected" && item.admin_note && (
-                    <p className="text-xs text-red-700 mt-2">거절 사유: {item.admin_note}</p>
-                  )}
-                  {item.status === "approved" && cert && (
-                    <div className="mt-3 flex flex-wrap gap-2">
-                      <a
-                        href={cert.pdf_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="px-3 h-9 rounded-lg bg-emerald-600 text-white text-xs font-medium flex items-center"
-                      >
-                        PDF 다운로드
-                      </a>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const origin = typeof window !== "undefined" ? window.location.origin : "";
-                          copyToClipboard(`${origin}${verifyPath}`);
-                        }}
-                        className="px-3 h-9 rounded-lg bg-neutral-900 text-white text-xs font-medium"
-                      >
-                        검증 링크 복사
-                      </button>
+      <section className="mb-5">
+        <div className="flex flex-wrap gap-2 mb-3">
+          <button
+            type="button"
+            onClick={() => setActiveTab("my_cert")}
+            className={`px-4 h-10 rounded-xl text-sm font-medium border ${
+              activeTab === "my_cert" ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-neutral-700 border-neutral-300"
+            }`}
+          >
+            내 인증
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("request_status")}
+            className={`px-4 h-10 rounded-xl text-sm font-medium border ${
+              activeTab === "request_status" ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-neutral-700 border-neutral-300"
+            }`}
+          >
+            신청 현황
+          </button>
+          {isAdmin && (
+            <button
+              type="button"
+              onClick={() => setActiveTab("admin_review")}
+              className={`px-4 h-10 rounded-xl text-sm font-medium border ${
+                activeTab === "admin_review" ? "bg-neutral-900 text-white border-neutral-900" : "bg-white text-neutral-700 border-neutral-300"
+              }`}
+            >
+              관리자 심사
+            </button>
+          )}
+        </div>
+
+        {activeTab === "my_cert" && (
+          <>
+            <h2 className="text-lg font-bold text-neutral-900 mb-3">내 인증</h2>
+            {approvedRequests.length === 0 ? (
+              <p className="text-sm text-neutral-500 rounded-xl border border-neutral-200 bg-white p-4">
+                발급된 인증서가 없습니다.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {approvedRequests.map((item) => {
+                  const cert = item.certificates?.[0];
+                  if (!cert) return null;
+                  const verifyPath = `/cert/${cert.slug}`;
+                  return (
+                    <div key={item.id} className="rounded-2xl border border-neutral-200 bg-white p-4">
+                      <p className="text-sm font-semibold text-neutral-900">인증번호: {cert.certificate_no}</p>
+                      <p className="text-xs text-neutral-500 mt-1">발급일: {timeAgo(cert.issued_at)}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <a
+                          href={cert.pdf_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="px-3 h-9 rounded-lg bg-emerald-600 text-white text-xs font-medium flex items-center"
+                        >
+                          PDF 다운로드
+                        </a>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const origin = typeof window !== "undefined" ? window.location.origin : "";
+                            copyToClipboard(`${origin}${verifyPath}`);
+                          }}
+                          className="px-3 h-9 rounded-lg bg-neutral-900 text-white text-xs font-medium"
+                        >
+                          검증 링크 복사
+                        </button>
+                      </div>
                     </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
+            )}
+          </>
+        )}
+
+        {activeTab === "request_status" && (
+          <>
+            <h2 className="text-lg font-bold text-neutral-900 mb-3">신청 현황</h2>
+            {certRequests.length === 0 ? (
+              <p className="text-sm text-neutral-500 rounded-xl border border-neutral-200 bg-white p-4">
+                인증 신청 내역이 없습니다.
+              </p>
+            ) : (
+              <div className="space-y-3">
+                {certRequests.map((item) => (
+                  <div key={item.id} className="rounded-2xl border border-neutral-200 bg-white p-4">
+                    <p className="text-sm font-semibold text-neutral-900">
+                      제출코드: <span className="font-bold">{item.submit_code}</span>
+                    </p>
+                    <p className="text-xs text-neutral-500 mt-1">
+                      상태: {item.status} / 합계 {item.total}kg / {timeAgo(item.created_at)}
+                    </p>
+                    {item.video_url && (
+                      <p className="text-xs text-neutral-600 mt-1 break-all">
+                        영상 링크:{" "}
+                        <a href={item.video_url} target="_blank" rel="noreferrer" className="text-blue-600 underline">
+                          {item.video_url}
+                        </a>
+                      </p>
+                    )}
+                    {item.status === "needs_info" && item.admin_note && (
+                      <p className="text-xs text-amber-700 mt-2">관리자 요청: {item.admin_note}</p>
+                    )}
+                    {item.status === "rejected" && item.admin_note && (
+                      <p className="text-xs text-red-700 mt-2">거절 사유: {item.admin_note}</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        )}
+
+        {activeTab === "admin_review" && (
+          <>
+            {isAdmin ? (
+              <>
+                <h2 className="text-lg font-bold text-neutral-900 mb-3">관리자 심사</h2>
+                <AdminCertReviewPanel />
+              </>
+            ) : (
+              <p className="text-sm text-red-600">403: 접근 권한이 없습니다.</p>
+            )}
+          </>
         )}
       </section>
 
@@ -295,3 +374,4 @@ export default function MyPage() {
     </main>
   );
 }
+

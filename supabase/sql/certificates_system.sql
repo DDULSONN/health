@@ -9,6 +9,7 @@ create table if not exists public.cert_requests (
   bench numeric not null,
   deadlift numeric not null,
   total numeric not null default 0,
+  video_url text null,
   submit_code text not null unique,
   status text not null check (status in ('pending', 'needs_info', 'rejected', 'approved')) default 'pending',
   note text null,
@@ -25,6 +26,9 @@ create index if not exists idx_cert_requests_status_created_at
 
 create index if not exists idx_cert_requests_submit_code
   on public.cert_requests (submit_code);
+
+alter table public.cert_requests
+  add column if not exists video_url text null;
 
 create or replace function public.set_cert_request_total()
 returns trigger
