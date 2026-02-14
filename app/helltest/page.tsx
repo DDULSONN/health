@@ -1,10 +1,10 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import Link from "next/link";
 
 export const metadata: Metadata = {
-  title: "헬창 판독기",
+  title: "헬창 판독기 | 짐툴 GymTools",
   description:
-    "20가지 질문에 답하면, 당신의 헬스 스타일을 10가지 유형 중 하나로 알려줘요.",
+    "20문항으로 나의 헬창 성향을 테스트하고 10가지 유형 중 결과를 확인하세요.",
 };
 
 export default function HellTestPage() {
@@ -12,13 +12,13 @@ export default function HellTestPage() {
     <main className="max-w-md mx-auto px-4 py-12 flex flex-col items-center justify-center min-h-[70vh]">
       <div className="text-center space-y-6">
         <span className="text-5xl block" aria-hidden>
-          🏆
+          🧪
         </span>
         <h1 className="text-2xl font-bold text-neutral-900">헬창 판독기</h1>
         <p className="text-neutral-600 leading-relaxed">
-          20가지 질문에 답하면, 당신의 헬스 스타일을
+          20가지 질문을 통해 나의 헬창 성향을
           <br />
-          10가지 유형 중 하나로 알려줘요.
+          10가지 유형 중 하나로 알려드려요.
           <br />
           가볍게 재미로 참여해 보세요.
         </p>
@@ -30,8 +30,8 @@ export default function HellTestPage() {
         </Link>
         <div className="pt-4 border-t border-neutral-200 text-left">
           <p className="text-sm text-neutral-500">
-            <strong>개인정보 안내</strong>: 답변 데이터는 서버로 전송되지 않으며,
-            브라우저(localStorage)에만 저장됩니다.
+            <strong>개인정보 안내</strong>: 답변 데이터는 서버로 전송하지 않으며 브라우저
+            (localStorage)에만 저장됩니다.
           </p>
         </div>
       </div>

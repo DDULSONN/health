@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 
 type Feature = {
   id: string;
@@ -17,15 +17,15 @@ const FEATURES: Feature[] = [
     href: "/community/bodycheck",
     title: "사진 몸평 게시판",
     emoji: "📸",
-    description: "사진+글을 올리고 유저 평가를 받아 점수와 순위를 확인",
+    description: "사진과 글을 올리고 유저들의 몸평을 받아보세요.",
     accent: "bg-indigo-50 border-indigo-200 hover:border-indigo-400",
   },
   {
     id: "one_rm",
     href: "/1rm",
     title: "1RM 계산기",
-    emoji: "💪",
-    description: "중량과 반복 횟수로 1RM을 추정하고 세트 작업 중량까지 계산",
+    emoji: "🏋️",
+    description: "무게와 반복 횟수로 1RM을 추정하고 훈련 중량까지 계산합니다.",
     accent: "bg-emerald-50 border-emerald-200 hover:border-emerald-400",
     main: true,
   },
@@ -33,39 +33,39 @@ const FEATURES: Feature[] = [
     id: "lifts",
     href: "/lifts",
     title: "3대 합계 계산기",
-    emoji: "🏋️",
-    description: "스쿼트, 벤치, 데드리프트 합계와 체중 대비 등급 확인",
+    emoji: "🏆",
+    description: "스쿼트, 벤치, 데드리프트의 합계와 체중 대비 비율을 확인합니다.",
     accent: "bg-rose-50 border-rose-200 hover:border-rose-400",
   },
   {
     id: "helltest",
     href: "/helltest",
-    title: "헬스 성향 테스트",
+    title: "헬창 판독기",
     emoji: "🧪",
-    description: "20문항으로 알아보는 내 운동 성향 테스트",
+    description: "20문항으로 알아보는 나의 헬창력 테스트",
     accent: "bg-amber-50 border-amber-200 hover:border-amber-400",
   },
   {
     id: "snacks",
     href: "/snacks",
     title: "다이어트 간식",
-    emoji: "🥣",
-    description: "프로틴 포함 가성비와 영양 보완 간식 추천",
+    emoji: "🍪",
+    description: "운동 전후와 식단 보완에 도움 되는 간식을 추천합니다.",
     accent: "bg-blue-50 border-blue-200 hover:border-blue-400",
   },
   {
     id: "community",
     href: "/community",
     title: "커뮤니티",
-    emoji: "👥",
-    description: "기록 공유, 자유 글, 랭킹을 한 번에 보는 커뮤니티",
+    emoji: "💬",
+    description: "운동 기록을 공유하고 서로의 노하우를 나눠보세요.",
     accent: "bg-cyan-50 border-cyan-200 hover:border-cyan-400",
   },
   {
     id: "ad_placeholder",
     title: "AD",
     emoji: "📢",
-    description: "추후 광고 영역",
+    description: "광고 영역",
     accent: "bg-neutral-100 border-neutral-200",
     disabled: true,
   },
@@ -75,8 +75,8 @@ export default function HomePage() {
   return (
     <main className="max-w-2xl mx-auto px-4 py-10">
       <section className="text-center mb-10">
-        <h1 className="text-3xl font-bold text-neutral-900 mb-2">GymTools</h1>
-        <p className="text-neutral-500 text-base">헬스를 위한 계산기와 커뮤니티</p>
+        <h1 className="text-3xl font-bold text-neutral-900 mb-2">짐툴 (GymTools)</h1>
+        <p className="text-neutral-500 text-base">헬스 계산기 · 몸평 · 헬창 판독</p>
       </section>
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -124,6 +124,13 @@ export default function HomePage() {
             </div>
           ),
         )}
+      </section>
+
+      <section className="mt-10 rounded-2xl border border-neutral-200 bg-neutral-50 p-5">
+        <p className="text-sm leading-relaxed text-neutral-700">
+          짐툴(GymTools)은 헬스 유저를 위한 1RM 계산기, 3대 합계 계산기, 헬창 판독기와 몸평
+          게시판을 제공하는 사이트입니다.
+        </p>
       </section>
 
       <div className="mt-8 pt-4 border-t border-neutral-200">

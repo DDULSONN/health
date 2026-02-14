@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+﻿import type { Metadata } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
@@ -14,23 +14,19 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-/**
- * 사이트명 후보:
- * 1. GymTools (기본 적용) - 직관적이고 깔끔
- * 2. AlphaFit Lab - 힙하고 연구소 느낌
- * 3. 헬스메이트 - 친근한 한국어
- */
 export const metadata: Metadata = {
   title: {
-    default: "GymTools - 헬스 유틸 종합 사이트",
-    template: "%s | GymTools",
+    default: "짐툴 (GymTools) - 헬스 계산기 & 몸평 커뮤니티",
+    template: "%s | 짐툴 GymTools",
   },
   description:
-    "1RM 계산기, 3대 합계, 헬창판독기, 프로틴 추천, 몸평가까지. 헬스인을 위한 올인원 도구 모음.",
+    "짐툴은 1RM 계산기, 3대 합계 계산기, 헬창 판독기와 몸평 커뮤니티를 제공하는 헬스 플랫폼입니다.",
+  applicationName: "짐툴",
   openGraph: {
-    title: "GymTools - 헬스 유틸 종합 사이트",
+    title: "짐툴 (GymTools) - 헬스 계산기 & 몸평 커뮤니티",
     description:
-      "1RM 계산기, 3대 합계, 헬창판독기, 프로틴 추천, 몸평가까지. 헬스인을 위한 올인원 도구 모음.",
+      "짐툴은 1RM 계산기, 3대 합계 계산기, 헬창 판독기와 몸평 커뮤니티를 제공하는 헬스 플랫폼입니다.",
+    siteName: "짐툴 GymTools",
     type: "website",
     locale: "ko_KR",
   },
@@ -41,8 +37,22 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const jsonLd = {
+    "@context": "https://schema.org",
+    "@type": "WebSite",
+    name: "짐툴 GymTools",
+    alternateName: ["GymTools", "짐툴"],
+    url: "https://helchang.com",
+  };
+
   return (
     <html lang="ko">
+      <head>
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+        />
+      </head>
       <body
         className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-dvh`}
       >

@@ -1,12 +1,9 @@
-import type { MetadataRoute } from "next";
-import { headers } from "next/headers";
+﻿import type { MetadataRoute } from "next";
 
-export default async function robots(): Promise<MetadataRoute.Robots> {
-  const host = (await headers()).get("host");
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? `https://${host}`;
-
+export default function robots(): MetadataRoute.Robots {
   return {
     rules: { userAgent: "*", allow: "/" },
-    sitemap: `${baseUrl}/sitemap.xml`,
+    host: "https://helchang.com",
+    sitemap: "https://helchang.com/sitemap.xml",
   };
 }
