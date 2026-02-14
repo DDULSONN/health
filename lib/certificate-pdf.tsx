@@ -1,6 +1,9 @@
+import path from "path";
+import { pathToFileURL } from "url";
 import React from "react";
 import {
   Document,
+  Font,
   Image,
   Page,
   StyleSheet,
@@ -23,60 +26,78 @@ type PdfInput = {
   qrDataUrl: string;
 };
 
+let fontRegistered = false;
+
+function registerKoreanFont() {
+  if (fontRegistered) return;
+  const regularPath = pathToFileURL(path.join(process.cwd(), "public", "fonts", "NotoSansKR-Regular.ttf")).toString();
+  const boldPath = pathToFileURL(path.join(process.cwd(), "public", "fonts", "NotoSansKR-Bold.ttf")).toString();
+
+  Font.register({
+    family: "NotoSansKR",
+    fonts: [
+      { src: regularPath, fontWeight: 400 },
+      { src: boldPath, fontWeight: 700 },
+    ],
+  });
+  fontRegistered = true;
+}
+
 const styles = StyleSheet.create({
   page: {
-    padding: 40,
+    padding: 36,
     backgroundColor: "#ffffff",
     fontSize: 11,
     color: "#111827",
+    fontFamily: "NotoSansKR",
   },
   title: {
-    fontSize: 22,
-    textAlign: "center",
-    marginBottom: 20,
+    fontSize: 24,
     fontWeight: 700,
-  },
-  subtitle: {
+    marginBottom: 12,
     textAlign: "center",
-    marginBottom: 18,
-    color: "#374151",
   },
-  section: {
-    borderWidth: 1,
-    borderColor: "#d1d5db",
-    padding: 12,
-    marginBottom: 10,
-  },
-  row: {
+  topRow: {
     flexDirection: "row",
     justifyContent: "space-between",
-    marginBottom: 6,
+    marginBottom: 14,
   },
-  label: {
-    color: "#374151",
+  topMeta: {
+    fontSize: 11,
+    lineHeight: 1.5,
   },
-  value: {
-    fontWeight: 700,
-  },
-  grid: {
+  infoBox: {
     borderWidth: 1,
     borderColor: "#d1d5db",
-    marginTop: 8,
+    borderRadius: 4,
+    padding: 10,
+    marginBottom: 12,
   },
-  gridRow: {
+  infoRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 4,
+  },
+  infoLabel: { color: "#374151" },
+  infoValue: { fontWeight: 700 },
+  table: {
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+  },
+  tableRow: {
     flexDirection: "row",
     borderBottomWidth: 1,
     borderBottomColor: "#e5e7eb",
   },
-  gridCellHead: {
+  th: {
     flex: 1,
-    padding: 6,
+    padding: 7,
     backgroundColor: "#f3f4f6",
     fontWeight: 700,
   },
-  gridCell: {
+  td: {
     flex: 1,
-    padding: 6,
+    padding: 7,
   },
   footer: {
     marginTop: 18,
@@ -84,18 +105,23 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     alignItems: "flex-end",
   },
-  qrBox: {
+  verifyText: {
+    maxWidth: 360,
+    fontSize: 10,
+    lineHeight: 1.4,
+  },
+  note: {
+    marginTop: 6,
+    fontSize: 9,
+    color: "#4b5563",
+  },
+  qrWrap: {
     alignItems: "center",
   },
-  qrImage: {
-    width: 110,
-    height: 110,
+  qr: {
+    width: 118,
+    height: 118,
     marginBottom: 4,
-  },
-  issuedBy: {
-    marginTop: 6,
-    color: "#111827",
-    fontWeight: 700,
   },
 });
 
@@ -108,63 +134,64 @@ function CertificatePdf(input: PdfInput) {
     <Document>
       <Page size="A4" style={styles.page}>
         <Text style={styles.title}>3대 합계 공식 인증서</Text>
-        <Text style={styles.subtitle}>GymTools Official Certificate</Text>
 
-        <View style={styles.section}>
-          <View style={styles.row}>
-            <Text style={styles.label}>인증번호</Text>
-            <Text style={styles.value}>{input.certificateNo}</Text>
+        <View style={styles.topRow}>
+          <Text style={styles.topMeta}>GymTools Official Certificate</Text>
+          <Text style={styles.topMeta}>
+            인증번호: {input.certificateNo}
+            {"\n"}
+            발급일: {input.issuedAt}
+          </Text>
+        </View>
+
+        <View style={styles.infoBox}>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>닉네임</Text>
+            <Text style={styles.infoValue}>{input.nickname}</Text>
           </View>
-          <View style={styles.row}>
-            <Text style={styles.label}>발급일</Text>
-            <Text style={styles.value}>{input.issuedAt}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.label}>닉네임</Text>
-            <Text style={styles.value}>{input.nickname}</Text>
-          </View>
-          <View style={styles.row}>
-            <Text style={styles.label}>성별</Text>
-            <Text style={styles.value}>{sexKo(input.sexLabel)}</Text>
+          <View style={styles.infoRow}>
+            <Text style={styles.infoLabel}>성별</Text>
+            <Text style={styles.infoValue}>{sexKo(input.sexLabel)}</Text>
           </View>
           {typeof input.bodyweight === "number" ? (
-            <View style={styles.row}>
-              <Text style={styles.label}>체중</Text>
-              <Text style={styles.value}>{input.bodyweight} kg</Text>
+            <View style={styles.infoRow}>
+              <Text style={styles.infoLabel}>체중</Text>
+              <Text style={styles.infoValue}>{input.bodyweight} kg</Text>
             </View>
           ) : null}
         </View>
 
-        <View style={styles.grid}>
-          <View style={styles.gridRow}>
-            <Text style={styles.gridCellHead}>항목</Text>
-            <Text style={styles.gridCellHead}>기록 (kg)</Text>
+        <View style={styles.table}>
+          <View style={styles.tableRow}>
+            <Text style={styles.th}>항목</Text>
+            <Text style={styles.th}>기록(kg)</Text>
           </View>
-          <View style={styles.gridRow}>
-            <Text style={styles.gridCell}>스쿼트</Text>
-            <Text style={styles.gridCell}>{input.squat}</Text>
+          <View style={styles.tableRow}>
+            <Text style={styles.td}>스쿼트</Text>
+            <Text style={styles.td}>{input.squat}</Text>
           </View>
-          <View style={styles.gridRow}>
-            <Text style={styles.gridCell}>벤치프레스</Text>
-            <Text style={styles.gridCell}>{input.bench}</Text>
+          <View style={styles.tableRow}>
+            <Text style={styles.td}>벤치프레스</Text>
+            <Text style={styles.td}>{input.bench}</Text>
           </View>
-          <View style={styles.gridRow}>
-            <Text style={styles.gridCell}>데드리프트</Text>
-            <Text style={styles.gridCell}>{input.deadlift}</Text>
+          <View style={styles.tableRow}>
+            <Text style={styles.td}>데드리프트</Text>
+            <Text style={styles.td}>{input.deadlift}</Text>
           </View>
-          <View style={styles.gridRow}>
-            <Text style={styles.gridCell}>총합</Text>
-            <Text style={styles.gridCell}>{input.total}</Text>
+          <View style={styles.tableRow}>
+            <Text style={styles.td}>합계</Text>
+            <Text style={styles.td}>{input.total}</Text>
           </View>
         </View>
 
         <View style={styles.footer}>
           <View>
-            <Text style={styles.issuedBy}>발급기관: GymTools</Text>
-            <Text>{input.verificationUrl}</Text>
+            <Text style={styles.verifyText}>검증: {input.verificationUrl}</Text>
+            <Text style={styles.verifyText}>발급기관: GymTools</Text>
+            <Text style={styles.note}>본 인증서는 제출된 영상 자료를 운영자가 확인 후 발급되었습니다.</Text>
           </View>
-          <View style={styles.qrBox}>
-            <Image style={styles.qrImage} src={input.qrDataUrl} />
+          <View style={styles.qrWrap}>
+            <Image style={styles.qr} src={input.qrDataUrl} />
             <Text>QR 검증</Text>
           </View>
         </View>
@@ -174,6 +201,7 @@ function CertificatePdf(input: PdfInput) {
 }
 
 export async function renderCertificatePdfBuffer(input: PdfInput): Promise<Buffer> {
+  registerKoreanFont();
   const document = <CertificatePdf {...input} />;
   return renderToBuffer(document);
 }

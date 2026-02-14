@@ -21,7 +21,7 @@ export async function GET(request: Request) {
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("cert_requests")
-    .select("*")
+    .select("*, certificates(id, certificate_no, slug, qr_url, pdf_url, issued_at)")
     .eq("status", status)
     .order("created_at", { ascending: false })
     .limit(200);
@@ -32,4 +32,3 @@ export async function GET(request: Request) {
 
   return NextResponse.json({ requests: data ?? [] });
 }
-

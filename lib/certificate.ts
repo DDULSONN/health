@@ -13,6 +13,7 @@ export type CertRequestRecord = {
   bench: number;
   deadlift: number;
   total: number;
+  video_url?: string | null;
   submit_code: string;
   status: "pending" | "needs_info" | "rejected" | "approved";
   note: string | null;

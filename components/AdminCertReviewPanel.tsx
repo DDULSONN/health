@@ -21,6 +21,14 @@ type CertRequest = {
   admin_note: string | null;
   created_at: string;
   reviewed_at: string | null;
+  certificates?: Array<{
+    id: string;
+    certificate_no: string;
+    slug: string;
+    qr_url: string;
+    pdf_url: string;
+    issued_at: string;
+  }> | null;
 };
 
 const STATUSES: Status[] = ["pending", "needs_info", "approved", "rejected"];
@@ -92,6 +100,28 @@ export default function AdminCertReviewPanel() {
         {!loading &&
           items.map((item) => (
             <div key={item.id} className="rounded-xl border border-neutral-200 bg-white p-4">
+              {(() => {
+                const cert = item.certificates?.[0] ?? null;
+                return cert ? (
+                  <div className="mb-2 rounded-lg bg-emerald-50 border border-emerald-200 p-2 text-xs text-emerald-900">
+                    <p>slug: {cert.slug}</p>
+                    <p className="break-all">
+                      qr_url:{" "}
+                      <a href={cert.qr_url} target="_blank" rel="noreferrer" className="underline">
+                        {cert.qr_url}
+                      </a>
+                    </p>
+                    <div className="mt-1 flex gap-2">
+                      <a href={cert.qr_url} target="_blank" rel="noreferrer" className="px-2 h-7 rounded bg-neutral-900 text-white inline-flex items-center">
+                        검증 페이지 열기
+                      </a>
+                      <a href={cert.pdf_url} target="_blank" rel="noreferrer" className="px-2 h-7 rounded bg-emerald-600 text-white inline-flex items-center">
+                        PDF 열기
+                      </a>
+                    </div>
+                  </div>
+                ) : null;
+              })()}
               <p className="text-sm font-semibold text-neutral-900">submit_code: {item.submit_code}</p>
               <p className="text-xs text-neutral-500 mt-1">
                 신청자: {item.nickname ?? "닉네임 없음"} / 이메일: {item.email ?? "-"}
@@ -139,4 +169,3 @@ export default function AdminCertReviewPanel() {
     </section>
   );
 }
-

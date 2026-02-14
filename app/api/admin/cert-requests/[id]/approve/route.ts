@@ -50,7 +50,7 @@ export async function POST(
   if (certRequest.status === "approved") {
     const { data: existingCert } = await admin
       .from("certificates")
-      .select("id, certificate_no, slug, pdf_url")
+      .select("id, certificate_no, slug, qr_url, pdf_url")
       .eq("request_id", certRequest.id)
       .maybeSingle();
     return NextResponse.json({ ok: true, certificate: existingCert });
@@ -66,7 +66,7 @@ export async function POST(
 
   const certificateNo = String(nextNoData);
   const slug = makeCertificateSlug();
-  const siteUrl = (process.env.SITE_URL ?? "https://gymtools.kr").replace(/\/+$/, "");
+  const siteUrl = (process.env.SITE_URL ?? "https://helchang.com").replace(/\/+$/, "");
   const verificationUrl = `${siteUrl}/cert/${slug}`;
   const qrDataUrl = await makeQrDataUrl(verificationUrl);
 
@@ -136,4 +136,3 @@ export async function POST(
     },
   });
 }
-
