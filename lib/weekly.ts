@@ -55,3 +55,11 @@ export function formatKstDateTime(value: string | Date) {
     hour12: false,
   }).format(date);
 }
+
+export function getKstDateString(now = new Date()) {
+  const kst = toKstDate(now);
+  const year = kst.getUTCFullYear();
+  const month = String(kst.getUTCMonth() + 1).padStart(2, "0");
+  const day = String(kst.getUTCDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}

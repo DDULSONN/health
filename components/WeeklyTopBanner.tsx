@@ -139,8 +139,8 @@ export default function WeeklyTopBanner() {
 
       {data ? (
         <p className="text-xs text-neutral-500 mb-3">
-          {collecting ? "이번주 집계중" : "확정 주차"} ·{" "}
-          {formatKstDateTime(data.week.start_utc)} ~ {formatKstDateTime(data.week.end_utc)}
+          {collecting ? "이번주 집계중" : "확정 주차"} · {formatKstDateTime(data.week.start_utc)} ~{" "}
+          {formatKstDateTime(data.week.end_utc)}
         </p>
       ) : (
         <p className="text-xs text-neutral-500 mb-3">이번주 1위가 아직 없습니다.</p>

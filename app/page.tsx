@@ -1,4 +1,6 @@
-﻿import Link from "next/link";
+import Link from "next/link";
+import DailyMissionsWidget from "@/components/DailyMissionsWidget";
+import MyWeeklyRankCard from "@/components/MyWeeklyRankCard";
 import WeeklyTopBanner from "@/components/WeeklyTopBanner";
 
 type Feature = {
@@ -76,6 +78,8 @@ export default function HomePage() {
   return (
     <main className="max-w-2xl mx-auto px-4 py-10">
       <WeeklyTopBanner />
+      <DailyMissionsWidget />
+      <MyWeeklyRankCard />
 
       <section className="text-center mb-10">
         <h1 className="text-3xl font-bold text-neutral-900 mb-2">짐툴 (GymTools)</h1>

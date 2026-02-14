@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -23,6 +23,7 @@ export default function Header() {
   const [email, setEmail] = useState<string | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [unreadCount, setUnreadCount] = useState(0);
 
   const supabase = useMemo(() => createClient(), []);
 
@@ -47,14 +48,26 @@ export default function Header() {
 
           if (!isMounted) return;
           setNickname(profile?.nickname ?? null);
+
+          try {
+            const res = await fetch("/api/notifications?limit=1", { cache: "no-store" });
+            if (res.ok) {
+              const data = await res.json();
+              setUnreadCount(Number(data.unread_count ?? 0));
+            }
+          } catch {
+            setUnreadCount(0);
+          }
         } else {
           setNickname(null);
           setEmail(null);
+          setUnreadCount(0);
         }
       } catch {
         if (isMounted) {
           setNickname(null);
           setEmail(null);
+          setUnreadCount(0);
         }
       } finally {
         if (isMounted) setAuthChecked(true);
@@ -68,11 +81,16 @@ export default function Header() {
       router.refresh();
     });
 
+    const poll = setInterval(() => {
+      if (authChecked) loadUser();
+    }, 30000);
+
     return () => {
       isMounted = false;
       sub.subscription.unsubscribe();
+      clearInterval(poll);
     };
-  }, [router, supabase]);
+  }, [authChecked, router, supabase]);
 
   const userLabel = nickname ?? email?.split("@")[0] ?? null;
 
@@ -89,6 +107,17 @@ export default function Header() {
       setLoggingOut(false);
     }
   };
+
+  const NotificationLink = () => (
+    <Link href="/notifications" className="relative px-2 py-1 text-neutral-600 hover:text-neutral-900" aria-label="알림">
+      <span className="text-lg">🔔</span>
+      {unreadCount > 0 && (
+        <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] leading-[18px] text-center font-bold">
+          {unreadCount > 99 ? "99+" : unreadCount}
+        </span>
+      )}
+    </Link>
+  );
 
   return (
     <header className="sticky top-0 z-50 bg-white/80 backdrop-blur-md border-b border-neutral-200">
@@ -114,6 +143,8 @@ export default function Header() {
               </Link>
             );
           })}
+
+          {authChecked && userLabel && <NotificationLink />}
 
           {authChecked &&
             (userLabel ? (
@@ -200,6 +231,13 @@ export default function Header() {
             (userLabel ? (
               <div className="mt-2 border-t border-neutral-100 pt-2 space-y-1">
                 <p className="px-3 text-sm font-medium text-neutral-700">{userLabel}</p>
+                <Link
+                  href="/notifications"
+                  onClick={() => setIsOpen(false)}
+                  className="block py-2.5 px-3 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50"
+                >
+                  알림 {unreadCount > 0 ? `(${unreadCount})` : ""}
+                </Link>
                 <Link
                   href="/mypage"
                   onClick={() => setIsOpen(false)}

@@ -72,14 +72,14 @@ export interface Report {
 export const POST_TYPE_LABELS: Record<PostType, string> = {
   "1rm": "1RM",
   lifts: "3대 합계",
-  helltest: "헬스 성향 테스트",
+  helltest: "헬창 판독기",
   photo_bodycheck: "사진 몸평",
   free: "자유",
 };
 
 export const POST_TYPE_ICONS: Record<PostType, string> = {
-  lifts: "🏋️",
-  "1rm": "💪",
+  lifts: "🏆",
+  "1rm": "🏋️",
   helltest: "🧪",
   photo_bodycheck: "📸",
   free: "💬",
@@ -98,9 +98,9 @@ export const BODYCHECK_RATINGS: {
   label: string;
   score: number;
 }[] = [
-  { rating: "great", label: "매우 좋다", score: 3 },
-  { rating: "good", label: "좋다", score: 2 },
-  { rating: "normal", label: "평범", score: 1 },
+  { rating: "great", label: "매우 좋아요", score: 3 },
+  { rating: "good", label: "좋아요", score: 2 },
+  { rating: "normal", label: "보통", score: 1 },
   { rating: "rookie", label: "헬린이", score: 0 },
 ];
 
@@ -116,7 +116,7 @@ export function getUserBadge(posts: Post[]): { emoji: string; label: string } {
   if (liftsPosts.length === 0) return { emoji: "🥚", label: "입문자" };
 
   const maxTotal = Math.max(
-    ...liftsPosts.map((p) => Number((p.payload_json as Record<string, number>)?.totalKg ?? 0))
+    ...liftsPosts.map((p) => Number((p.payload_json as Record<string, number>)?.totalKg ?? 0)),
   );
 
   if (maxTotal >= 500) return { emoji: "🦍", label: "괴수" };
@@ -126,7 +126,7 @@ export function getUserBadge(posts: Post[]): { emoji: string; label: string } {
 
 export function getBadgeFromPayload(
   type: PostType,
-  payload: Record<string, unknown> | null
+  payload: Record<string, unknown> | null,
 ): { emoji: string; label: string } {
   if (!payload) return { emoji: "🥚", label: "입문자" };
 
@@ -151,7 +151,7 @@ export function getBadgeFromPayload(
 
 export function renderPayloadSummary(
   type: PostType,
-  payload: Record<string, unknown> | null
+  payload: Record<string, unknown> | null,
 ): string {
   if (!payload) return "";
   switch (type) {

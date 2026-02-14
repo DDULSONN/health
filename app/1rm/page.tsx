@@ -29,8 +29,9 @@ function OneRmContent() {
   const [formula, setFormula] = useState<Formula>("epley");
   const [mounted, setMounted] = useState(false);
   const [shareStatus, setShareStatus] = useState<"idle" | "copied">("idle");
+  const [calcStatus, setCalcStatus] = useState<"idle" | "done" | "invalid">("idle");
 
-  // URL 쿼리 또는 localStorage에서 복원
+  // URL 荑쇰━ ?먮뒗 localStorage?먯꽌 蹂듭썝
   useEffect(() => {
     const qW = searchParams.get("w");
     const qR = searchParams.get("reps");
@@ -60,7 +61,7 @@ function OneRmContent() {
     setMounted(true);
   }, [searchParams]);
 
-  // localStorage 저장
+  // localStorage ???
   useEffect(() => {
     if (!mounted) return;
     try {
@@ -92,10 +93,30 @@ function OneRmContent() {
     } catch { /* ignore */ }
   }, [w, r, unit, formula, lift]);
 
+  const handleCalcMission = useCallback(async () => {
+    if (!hasResult) {
+      setCalcStatus("invalid");
+      setTimeout(() => setCalcStatus("idle"), 1500);
+      return;
+    }
+
+    try {
+      await fetch("/api/daily-missions/track", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "did_1rm_calc" }),
+      });
+      setCalcStatus("done");
+      setTimeout(() => setCalcStatus("idle"), 1500);
+    } catch {
+      setCalcStatus("idle");
+    }
+  }, [hasResult]);
+
   if (!mounted) {
     return (
       <main className="max-w-md mx-auto px-4 py-10">
-        <p className="text-neutral-400 text-center">로딩 중...</p>
+        <p className="text-neutral-400 text-center">濡쒕뵫 以?..</p>
       </main>
     );
   }
@@ -104,15 +125,15 @@ function OneRmContent() {
     <main className="max-w-md mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold text-neutral-900 mb-1">1RM 계산기</h1>
       <p className="text-sm text-neutral-500 mb-6">
-        사용 중량과 반복 횟수로 1RM(1회 최대 중량)을 추정합니다.
+        ?ъ슜 以묐웾怨?諛섎났 ?잛닔濡?1RM(1??理쒕? 以묐웾)??異붿젙?⑸땲??
       </p>
 
-      {/* 입력 폼 */}
+      {/* ?낅젰 ??*/}
       <div className="space-y-4 mb-6">
-        {/* 운동 선택 */}
+        {/* ?대룞 ?좏깮 */}
         <div>
           <label htmlFor="lift" className="block text-sm font-medium text-neutral-700 mb-1">
-            운동 종류
+            ?대룞 醫낅쪟
           </label>
           <select
             id="lift"
@@ -128,10 +149,10 @@ function OneRmContent() {
           </select>
         </div>
 
-        {/* 중량 + 단위 */}
+        {/* 以묐웾 + ?⑥쐞 */}
         <div>
           <label htmlFor="weight" className="block text-sm font-medium text-neutral-700 mb-1">
-            사용 중량
+            ?ъ슜 以묐웾
           </label>
           <div className="flex gap-2">
             <input
@@ -172,10 +193,10 @@ function OneRmContent() {
           </div>
         </div>
 
-        {/* 반복 횟수 */}
+        {/* 諛섎났 ?잛닔 */}
         <div>
           <label htmlFor="reps" className="block text-sm font-medium text-neutral-700 mb-1">
-            반복 횟수 (1~12)
+            諛섎났 ?잛닔 (1~12)
           </label>
           <input
             id="reps"
@@ -190,9 +211,9 @@ function OneRmContent() {
           />
         </div>
 
-        {/* 공식 선택 */}
+        {/* 怨듭떇 ?좏깮 */}
         <div>
-          <span className="block text-sm font-medium text-neutral-700 mb-1">추정 공식</span>
+          <span className="block text-sm font-medium text-neutral-700 mb-1">異붿젙 怨듭떇</span>
           <div className="flex rounded-xl border border-neutral-300 overflow-hidden">
             <button
               type="button"
@@ -219,19 +240,30 @@ function OneRmContent() {
           </div>
           <p className="text-xs text-neutral-400 mt-1">
             {formula === "epley"
-              ? "Epley: 1RM = W × (1 + reps/30)"
-              : "Brzycki: 1RM = W × 36/(37 - reps)"}
+              ? "Epley: 1RM = W 횞 (1 + reps/30)"
+              : "Brzycki: 1RM = W 횞 36/(37 - reps)"}
           </p>
         </div>
       </div>
 
-      {/* 결과 */}
+      <button
+        type="button"
+        onClick={handleCalcMission}
+        className="w-full min-h-[48px] rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 active:scale-[0.98] transition-all text-sm mb-4"
+      >
+        {calcStatus === "done"
+          ? "오늘 미션 반영 완료"
+          : calcStatus === "invalid"
+          ? "값을 먼저 입력해 주세요"
+          : "1RM 계산하기"}
+      </button>
+      {/* 寃곌낵 */}
       {hasResult && (
         <div className="space-y-4">
-          {/* 1RM 결과 카드 */}
+          {/* 1RM 寃곌낵 移대뱶 */}
           <div className="rounded-2xl bg-gradient-to-br from-emerald-50 to-emerald-100 border border-emerald-200 p-6 text-center">
             <p className="text-sm text-emerald-700 mb-1">
-              {LIFT_LABELS[lift]} 추정 1RM ({formula === "epley" ? "Epley" : "Brzycki"})
+              {LIFT_LABELS[lift]} 異붿젙 1RM ({formula === "epley" ? "Epley" : "Brzycki"})
             </p>
             <p className="text-4xl font-bold text-emerald-800">
               {Math.round(oneRmKg * 10) / 10}
@@ -242,7 +274,7 @@ function OneRmContent() {
             </p>
           </div>
 
-          {/* 퍼센트 표 */}
+          {/* ?쇱꽱????*/}
           <div className="rounded-2xl bg-white border border-neutral-200 overflow-hidden">
             <div className="px-4 py-3 bg-neutral-50 border-b border-neutral-200">
               <h2 className="text-sm font-semibold text-neutral-700">추천 작업 중량표</h2>
@@ -267,20 +299,20 @@ function OneRmContent() {
             </table>
           </div>
 
-          {/* 공유 + 3대 이동 */}
+          {/* 怨듭쑀 + 3? ?대룞 */}
           <div className="space-y-2">
             <button
               type="button"
               onClick={handleShare}
               className="w-full min-h-[48px] rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 active:scale-[0.98] transition-all text-sm"
             >
-              {shareStatus === "copied" ? "링크가 복사되었습니다!" : "결과 링크 복사하기"}
+              {shareStatus === "copied" ? "留곹겕媛 蹂듭궗?섏뿀?듬땲??" : "寃곌낵 留곹겕 蹂듭궗?섍린"}
             </button>
             <Link
               href="/lifts"
               className="block text-center py-3 rounded-xl bg-neutral-100 text-neutral-700 font-medium text-sm hover:bg-neutral-200 transition-colors"
             >
-              💪 3대 합계 계산기로 이동
+              ?뮞 3? ?⑷퀎 怨꾩궛湲곕줈 ?대룞
             </Link>
             <ShareToCommBtn
               type="1rm"
@@ -293,10 +325,10 @@ function OneRmContent() {
         </div>
       )}
 
-      {/* 입력이 비정상일 때 안내 */}
+      {/* ?낅젰??鍮꾩젙?곸씪 ???덈궡 */}
       {w > 0 && r > 0 && r > 12 && (
         <p className="text-sm text-amber-600 bg-amber-50 rounded-xl p-3 mt-4">
-          반복 횟수는 1~12 범위에서 가장 정확합니다. 12회 이하로 입력해 주세요.
+          諛섎났 ?잛닔??1~12 踰붿쐞?먯꽌 媛???뺥솗?⑸땲?? 12???댄븯濡??낅젰??二쇱꽭??
         </p>
       )}
     </main>
@@ -308,7 +340,7 @@ export default function OneRmPage() {
     <Suspense
       fallback={
         <main className="max-w-md mx-auto px-4 py-10">
-          <p className="text-neutral-400 text-center">로딩 중...</p>
+          <p className="text-neutral-400 text-center">濡쒕뵫 以?..</p>
         </main>
       }
     >
@@ -316,3 +348,6 @@ export default function OneRmPage() {
     </Suspense>
   );
 }
+
+
+

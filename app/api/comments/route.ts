@@ -1,8 +1,36 @@
 import { createClient } from "@/lib/supabase/server";
 import { containsProfanity, getRateLimitRemaining } from "@/lib/moderation";
 import { NextResponse } from "next/server";
+import { getKstDateString } from "@/lib/weekly";
 
 const COMMENT_COOLDOWN_MS = 10_000;
+
+async function trackDailyComment(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+) {
+  const dateKst = getKstDateString();
+  const { data: row } = await supabase
+    .from("user_daily_stats")
+    .select("comments_count, viewed_bodycheck_count, did_1rm_calc")
+    .eq("user_id", userId)
+    .eq("date_kst", dateKst)
+    .maybeSingle();
+
+  const commentsCount = Number(row?.comments_count ?? 0) + 1;
+
+  await supabase.from("user_daily_stats").upsert(
+    {
+      user_id: userId,
+      date_kst: dateKst,
+      comments_count: commentsCount,
+      viewed_bodycheck_count: Number(row?.viewed_bodycheck_count ?? 0),
+      did_1rm_calc: Boolean(row?.did_1rm_calc ?? false),
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "user_id,date_kst" },
+  );
+}
 
 /** POST /api/comments — 댓글 작성 */
 export async function POST(request: Request) {
@@ -54,6 +82,8 @@ export async function POST(request: Request) {
     .single();
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 });
+
+  await trackDailyComment(supabase, user.id);
 
   return NextResponse.json({ id: data.id }, { status: 201 });
 }
