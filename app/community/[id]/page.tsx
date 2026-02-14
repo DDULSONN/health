@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -39,6 +39,7 @@ export default function PostDetailPage() {
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [weeklyWinCount, setWeeklyWinCount] = useState(0);
 
   useEffect(() => {
     const supabase = createClient();
@@ -81,6 +82,20 @@ export default function PostDetailPage() {
     loadPost();
   }, [loadPost]);
 
+  useEffect(() => {
+    if (!id) return;
+    (async () => {
+      try {
+        const res = await fetch(`/api/weekly-winners/post/${id}`, { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        setWeeklyWinCount(Number(data.total_wins ?? 0));
+      } catch {
+        setWeeklyWinCount(0);
+      }
+    })();
+  }, [id]);
+
   const isOwner = userId && post && userId === post.user_id;
   const canVote =
     post?.type === "photo_bodycheck" && !!userId && !isOwner;
@@ -118,7 +133,7 @@ export default function PostDetailPage() {
       const data = await res.json();
 
       if (!res.ok) {
-        setToast(data.error ?? "평가 반영에 실패했습니다.");
+        setToast(data.error ?? "?됯? 諛섏쁺???ㅽ뙣?덉뒿?덈떎.");
         return;
       }
 
@@ -139,9 +154,9 @@ export default function PostDetailPage() {
           rookie_count: data.summary?.rookie_count ?? prev.rookie_count,
         };
       });
-      setToast("평가가 반영되었습니다.");
+      setToast("?됯?媛 諛섏쁺?섏뿀?듬땲??");
     } catch {
-      setToast("평가 중 오류가 발생했습니다.");
+      setToast("?됯? 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.");
     } finally {
       setVoteLoading(false);
     }
@@ -170,10 +185,10 @@ export default function PostDetailPage() {
         loadPost();
       } else {
         const data = await res.json();
-        setError(data.error ?? "오류가 발생했습니다.");
+        setError(data.error ?? "?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.");
       }
     } catch {
-      setError("네트워크 오류가 발생했습니다.");
+      setError("?ㅽ듃?뚰겕 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.");
     }
     setPosting(false);
   };
@@ -199,8 +214,8 @@ export default function PostDetailPage() {
     setReportReason("");
     showToast(
       res.ok
-        ? "신고가 접수되었습니다."
-        : ((await res.json()).error ?? "신고 접수에 실패했습니다.")
+        ? "?좉퀬媛 ?묒닔?섏뿀?듬땲??"
+        : ((await res.json()).error ?? "?좉퀬 ?묒닔???ㅽ뙣?덉뒿?덈떎.")
     );
   };
 
@@ -212,7 +227,7 @@ export default function PostDetailPage() {
       body: JSON.stringify({ is_hidden: !post.is_hidden }),
     });
     if (res.ok) {
-      showToast(post.is_hidden ? "게시글을 공개했습니다." : "게시글을 숨겼습니다.");
+      showToast(post.is_hidden ? "寃뚯떆湲??怨듦컻?덉뒿?덈떎." : "寃뚯떆湲???④꼈?듬땲??");
       loadPost();
     }
   };
@@ -225,11 +240,11 @@ export default function PostDetailPage() {
   const confirmDelete = async () => {
     const res = await fetch(`/api/posts/${id}`, { method: "DELETE" });
     if (res.ok) {
-      showToast("게시글을 삭제했습니다.");
+      showToast("寃뚯떆湲????젣?덉뒿?덈떎.");
       setTimeout(() => router.push("/community"), 800);
     } else {
       const data = await res.json();
-      showToast(data.error ?? "삭제에 실패했습니다.");
+      showToast(data.error ?? "??젣???ㅽ뙣?덉뒿?덈떎.");
     }
     setDeleteConfirm(false);
   };
@@ -242,7 +257,7 @@ export default function PostDetailPage() {
   if (loading) {
     return (
       <main className="max-w-2xl mx-auto px-4 py-10">
-        <p className="text-neutral-400 text-center">로딩 중...</p>
+        <p className="text-neutral-400 text-center">濡쒕뵫 以?..</p>
       </main>
     );
   }
@@ -250,12 +265,12 @@ export default function PostDetailPage() {
   if (!post) {
     return (
       <main className="max-w-2xl mx-auto px-4 py-10 text-center">
-        <p className="text-neutral-500 mb-4">게시글을 찾을 수 없습니다.</p>
+        <p className="text-neutral-500 mb-4">寃뚯떆湲??李얠쓣 ???놁뒿?덈떎.</p>
         <Link
           href="/community"
           className="text-emerald-600 hover:underline text-sm"
         >
-          목록으로
+          紐⑸줉?쇰줈
         </Link>
       </main>
     );
@@ -271,7 +286,7 @@ export default function PostDetailPage() {
         href={post.type === "photo_bodycheck" ? "/community/bodycheck" : "/community"}
         className="text-sm text-neutral-500 hover:text-neutral-700 mb-4 inline-flex items-center min-h-[44px]"
       >
-        ← 목록으로
+        ??紐⑸줉?쇰줈
       </Link>
 
       <article className="rounded-2xl bg-white border border-neutral-200 p-5 mb-6">
@@ -283,7 +298,7 @@ export default function PostDetailPage() {
           </span>
           {post.type === "photo_bodycheck" && (
             <span className="text-xs text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
-              {post.gender === "female" ? "여성" : "남성"}
+              {post.gender === "female" ? "?ъ꽦" : "?⑥꽦"}
             </span>
           )}
           <span className="text-xs text-neutral-400">
@@ -301,7 +316,7 @@ export default function PostDetailPage() {
                   }}
                   className="w-10 h-10 flex items-center justify-center text-neutral-400 hover:text-neutral-600 rounded-lg hover:bg-neutral-50"
                 >
-                  ⋯
+                  ??
                 </button>
                 {menuOpen && (
                   <div
@@ -314,7 +329,7 @@ export default function PostDetailPage() {
                         onClick={() => router.push(`/community/${post.id}/edit`)}
                         className="w-full px-4 py-2.5 text-sm text-left text-neutral-700 hover:bg-neutral-50"
                       >
-                        수정
+                        ?섏젙
                       </button>
                     )}
                     <button
@@ -322,7 +337,7 @@ export default function PostDetailPage() {
                       onClick={handleDelete}
                       className="w-full px-4 py-2.5 text-sm text-left text-red-600 hover:bg-red-50"
                     >
-                      삭제
+                      ??젣
                     </button>
                   </div>
                 )}
@@ -333,7 +348,7 @@ export default function PostDetailPage() {
               onClick={() => setReportTarget({ type: "post", id: post.id })}
               className="text-xs text-neutral-400 hover:text-red-500 min-h-[44px] flex items-center px-2"
             >
-              신고
+              ?좉퀬
             </button>
           </div>
         </div>
@@ -371,7 +386,7 @@ export default function PostDetailPage() {
               >
                 <img
                   src={url}
-                  alt={`이미지 ${i + 1}`}
+                  alt={`?대?吏 ${i + 1}`}
                   className="w-full h-full object-cover"
                 />
               </button>
@@ -381,22 +396,27 @@ export default function PostDetailPage() {
 
         <div className="flex items-center gap-2 mt-4">
           <span title={badge.label}>{badge.emoji}</span>
+          {weeklyWinCount > 0 && (
+            <span className="text-xs font-semibold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+              🏆 이번주 몸짱
+            </span>
+          )}
           <span className="text-xs text-neutral-500">
-            {post.profiles?.nickname ?? "알 수 없음"}
+            {post.profiles?.nickname ?? "?????놁쓬"}
           </span>
         </div>
 
         {post.type === "photo_bodycheck" && summary && (
           <section className="mt-5 pt-4 border-t border-neutral-100">
-            <h2 className="text-sm font-semibold text-neutral-800 mb-2">사진 몸평 평가</h2>
+            <h2 className="text-sm font-semibold text-neutral-800 mb-2">?ъ쭊 紐명룊 ?됯?</h2>
             {isOwner && (
               <p className="text-xs text-neutral-500 mb-2">
-                본인 글은 평가할 수 없습니다.
+                蹂몄씤 湲? ?됯??????놁뒿?덈떎.
               </p>
             )}
             {!userId && (
               <p className="text-xs text-neutral-500 mb-2">
-                로그인 후 평가할 수 있습니다.
+                濡쒓렇?????됯??????덉뒿?덈떎.
               </p>
             )}
             <div className="grid grid-cols-2 gap-2">
@@ -420,13 +440,13 @@ export default function PostDetailPage() {
               })}
             </div>
             <div className="mt-3 text-xs text-neutral-600 grid grid-cols-2 gap-y-1">
-              <p>매우 좋다: {summary.greatCount}</p>
-              <p>좋다: {summary.goodCount}</p>
-              <p>평범: {summary.normalCount}</p>
-              <p>헬린이: {summary.rookieCount}</p>
+              <p>留ㅼ슦 醫뗫떎: {summary.greatCount}</p>
+              <p>醫뗫떎: {summary.goodCount}</p>
+              <p>?됰쾾: {summary.normalCount}</p>
+              <p>?щ┛?? {summary.rookieCount}</p>
             </div>
             <p className="mt-2 text-sm font-medium text-indigo-700">
-              평균 {summary.average.toFixed(2)} / 투표 {summary.voteCount}
+              ?됯퇏 {summary.average.toFixed(2)} / ?ы몴 {summary.voteCount}
             </p>
           </section>
         )}
@@ -446,7 +466,7 @@ export default function PostDetailPage() {
 
       <section>
         <h2 className="text-sm font-semibold text-neutral-700 mb-3">
-          댓글 {comments.length}개
+          ?볤? {comments.length}媛?
         </h2>
 
         {comments.length > 0 && (
@@ -468,7 +488,7 @@ export default function PostDetailPage() {
                     onClick={() => setReportTarget({ type: "comment", id: c.id })}
                     className="ml-auto text-xs text-neutral-400 hover:text-red-500 min-h-[44px] flex items-center px-2"
                   >
-                    신고
+                    ?좉퀬
                   </button>
                 </div>
                 <p className="text-sm text-neutral-800">{c.content}</p>
@@ -484,8 +504,8 @@ export default function PostDetailPage() {
             onChange={(e) => setCommentText(e.target.value)}
             placeholder={
               userId
-                ? "댓글을 입력해주세요..."
-                : "로그인 후 댓글을 작성할 수 있습니다"
+                ? "?볤????낅젰?댁＜?몄슂..."
+                : "濡쒓렇?????볤????묒꽦?????덉뒿?덈떎"
             }
             className="flex-1 min-h-[44px] rounded-xl border border-neutral-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
@@ -494,7 +514,7 @@ export default function PostDetailPage() {
             disabled={posting || !commentText.trim()}
             className="px-4 min-h-[44px] rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 disabled:opacity-50 shrink-0"
           >
-            작성
+            ?묒꽦
           </button>
         </form>
         {error && <p className="text-xs text-red-600 mt-1">{error}</p>}
@@ -504,10 +524,10 @@ export default function PostDetailPage() {
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-5 max-w-sm w-full">
             <h3 className="font-bold text-neutral-900 mb-2">
-              게시글을 삭제할까요?
+              寃뚯떆湲????젣?좉퉴??
             </h3>
             <p className="text-sm text-neutral-500 mb-4">
-              삭제한 글은 목록에서 보이지 않지만 마이페이지에서 삭제 기록은 확인할 수 있습니다.
+              ??젣??湲? 紐⑸줉?먯꽌 蹂댁씠吏 ?딆?留?留덉씠?섏씠吏?먯꽌 ??젣 湲곕줉? ?뺤씤?????덉뒿?덈떎.
             </p>
             <div className="flex gap-2">
               <button
@@ -515,14 +535,14 @@ export default function PostDetailPage() {
                 onClick={() => setDeleteConfirm(false)}
                 className="flex-1 min-h-[44px] rounded-xl bg-neutral-100 text-neutral-700 text-sm font-medium"
               >
-                취소
+                痍⑥냼
               </button>
               <button
                 type="button"
                 onClick={confirmDelete}
                 className="flex-1 min-h-[44px] rounded-xl bg-red-600 text-white text-sm font-medium"
               >
-                삭제
+                ??젣
               </button>
             </div>
           </div>
@@ -537,7 +557,7 @@ export default function PostDetailPage() {
           <div className="relative max-w-full max-h-full">
             <img
               src={postImages[lightboxIdx]}
-              alt={`이미지 ${lightboxIdx + 1}`}
+              alt={`?대?吏 ${lightboxIdx + 1}`}
               className="max-w-full max-h-[85vh] object-contain rounded-lg"
               onClick={(e) => e.stopPropagation()}
             />
@@ -555,11 +575,11 @@ export default function PostDetailPage() {
       {reportTarget && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl p-5 max-w-sm w-full">
-            <h3 className="font-bold text-neutral-900 mb-3">신고하기</h3>
+            <h3 className="font-bold text-neutral-900 mb-3">?좉퀬?섍린</h3>
             <textarea
               value={reportReason}
               onChange={(e) => setReportReason(e.target.value)}
-              placeholder="신고 사유를 입력해주세요"
+              placeholder="?좉퀬 ?ъ쑀瑜??낅젰?댁＜?몄슂"
               rows={3}
               className="w-full rounded-xl border border-neutral-300 p-3 text-sm resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500 mb-3"
             />
@@ -572,7 +592,7 @@ export default function PostDetailPage() {
                 }}
                 className="flex-1 min-h-[44px] rounded-xl bg-neutral-100 text-neutral-700 text-sm font-medium"
               >
-                취소
+                痍⑥냼
               </button>
               <button
                 type="button"
@@ -580,7 +600,7 @@ export default function PostDetailPage() {
                 disabled={!reportReason.trim()}
                 className="flex-1 min-h-[44px] rounded-xl bg-red-600 text-white text-sm font-medium disabled:opacity-50"
               >
-                신고
+                ?좉퀬
               </button>
             </div>
           </div>
@@ -595,3 +615,9 @@ export default function PostDetailPage() {
     </main>
   );
 }
+
+
+
+
+
+

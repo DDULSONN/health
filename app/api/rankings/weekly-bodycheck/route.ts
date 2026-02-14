@@ -1,27 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import type { BodycheckGender } from "@/lib/community";
-
-function getKstWeekRange(now = new Date()) {
-  const kstNow = new Date(now.toLocaleString("en-US", { timeZone: "Asia/Seoul" }));
-  const day = kstNow.getDay();
-  const diffToMonday = day === 0 ? -6 : 1 - day;
-
-  const startKst = new Date(kstNow);
-  startKst.setDate(kstNow.getDate() + diffToMonday);
-  startKst.setHours(0, 0, 0, 0);
-
-  const endKst = new Date(startKst);
-  endKst.setDate(startKst.getDate() + 7);
-
-  const startUtc = new Date(startKst.getTime() - 9 * 60 * 60 * 1000);
-  const endUtc = new Date(endKst.getTime() - 9 * 60 * 60 * 1000);
-
-  return {
-    startUtcIso: startUtc.toISOString(),
-    endUtcIso: endUtc.toISOString(),
-  };
-}
+import { getKstWeekRange } from "@/lib/weekly";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);

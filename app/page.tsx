@@ -1,4 +1,5 @@
 ﻿import Link from "next/link";
+import WeeklyTopBanner from "@/components/WeeklyTopBanner";
 
 type Feature = {
   id: string;
@@ -74,6 +75,8 @@ const FEATURES: Feature[] = [
 export default function HomePage() {
   return (
     <main className="max-w-2xl mx-auto px-4 py-10">
+      <WeeklyTopBanner />
+
       <section className="text-center mb-10">
         <h1 className="text-3xl font-bold text-neutral-900 mb-2">짐툴 (GymTools)</h1>
         <p className="text-neutral-500 text-base">헬스 계산기 · 몸평 · 헬창 판독</p>
