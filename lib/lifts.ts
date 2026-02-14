@@ -1,8 +1,5 @@
-/**
- * 3대 합계 / 체중비 계산 + 등급 판정
- */
-
 import { kgToLb, lbToKg, type WeightUnit } from "./oneRm";
+import type { Sex } from "./percentile";
 
 export interface LiftInput {
   squat: number;
@@ -15,7 +12,7 @@ export interface LiftInput {
 export interface LiftResult {
   totalKg: number;
   totalLb: number;
-  ratio: number; // total / bodyweight
+  ratio: number;
   grade: GradeInfo;
 }
 
@@ -25,14 +22,13 @@ export interface GradeInfo {
   description: string;
 }
 
-/** 등급 기준 (체중 대비 3대 합계 비율) */
 const GRADES: { minRatio: number; info: GradeInfo }[] = [
   {
     minRatio: 8.0,
     info: {
       label: "전설",
       color: "text-yellow-500",
-      description: "엘리트 파워리프터 수준",
+      description: "엘리트 파워리프터급 퍼포먼스",
     },
   },
   {
@@ -48,7 +44,7 @@ const GRADES: { minRatio: number; info: GradeInfo }[] = [
     info: {
       label: "고급",
       color: "text-purple-500",
-      description: "진지한 리프터 수준",
+      description: "지속적인 훈련이 만든 상급자",
     },
   },
   {
@@ -56,7 +52,7 @@ const GRADES: { minRatio: number; info: GradeInfo }[] = [
     info: {
       label: "중급",
       color: "text-blue-500",
-      description: "꾸준히 훈련한 수준",
+      description: "꾸준한 운동으로 다져진 수준",
     },
   },
   {
@@ -64,7 +60,7 @@ const GRADES: { minRatio: number; info: GradeInfo }[] = [
     info: {
       label: "초중급",
       color: "text-emerald-500",
-      description: "기초가 잡힌 수준",
+      description: "기초가 잡힌 트레이닝 단계",
     },
   },
   {
@@ -72,29 +68,27 @@ const GRADES: { minRatio: number; info: GradeInfo }[] = [
     info: {
       label: "입문",
       color: "text-neutral-500",
-      description: "시작이 반! 꾸준히 하면 금방 올라요",
+      description: "지금부터 시작해도 충분히 성장할 수 있어요",
     },
   },
 ];
 
-/** 비율 기반 등급 판정 */
 export function getGrade(ratio: number): GradeInfo {
-  for (const g of GRADES) {
-    if (ratio >= g.minRatio) return g.info;
+  for (const grade of GRADES) {
+    if (ratio >= grade.minRatio) return grade.info;
   }
   return GRADES[GRADES.length - 1].info;
 }
 
-/** 3대 합계 계산 */
 export function calculateLifts(input: LiftInput): LiftResult {
   const { squat, bench, deadlift, bodyweight, unit } = input;
 
   const totalInUnit = squat + bench + deadlift;
   const totalKg = unit === "kg" ? totalInUnit : lbToKg(totalInUnit);
   const totalLb = unit === "lb" ? totalInUnit : kgToLb(totalInUnit);
-  const bwKg = unit === "kg" ? bodyweight : lbToKg(bodyweight);
+  const bodyweightKg = unit === "kg" ? bodyweight : lbToKg(bodyweight);
 
-  const ratio = bwKg > 0 ? totalKg / bwKg : 0;
+  const ratio = bodyweightKg > 0 ? totalKg / bodyweightKg : 0;
   const grade = getGrade(ratio);
 
   return {
@@ -105,14 +99,19 @@ export function calculateLifts(input: LiftInput): LiftResult {
   };
 }
 
-/** 공유 URL 생성 */
-export function buildLiftsShareUrl(input: LiftInput): string {
-  const sp = new URLSearchParams({
+export function buildLiftsShareUrl(input: LiftInput, options?: { sex?: Sex }): string {
+  const searchParams = new URLSearchParams({
     s: String(input.squat),
     b: String(input.bench),
     d: String(input.deadlift),
     bw: String(input.bodyweight),
     unit: input.unit,
   });
-  return `/lifts?${sp.toString()}`;
+
+  if (options?.sex) {
+    searchParams.set("sex", options.sex);
+  }
+
+  return `/lifts?${searchParams.toString()}`;
 }
+
