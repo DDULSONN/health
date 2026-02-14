@@ -180,6 +180,11 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
   let qrDataUrl = "";
   try {
     qrDataUrl = await makeQrDataUrl(qrUrl);
+    if (!qrDataUrl || !qrDataUrl.startsWith("data:image")) {
+      return fail("qr_generate", "QR 데이터 URL 생성 결과가 올바르지 않습니다.", {
+        qrDataUrlLength: qrDataUrl?.length ?? 0,
+      });
+    }
   } catch (error) {
     return fail("qr_generate", "QR 생성 실패", error);
   }
@@ -202,10 +207,12 @@ export async function POST(_request: Request, { params }: { params: Promise<{ id
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (/font|NotoSansKR|ttf/i.test(message)) {
-      return fail("pdf_font_load", message, error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    console.error("[cert-approve-pdf-generate]", { message, stack });
+    if (/\[pdf_font_load\]|font|NotoSansKR|ttf/i.test(message)) {
+      return fail("pdf_font_load", message, stack?.slice(0, 2000) ?? error);
     }
-    return fail("pdf_generate", "PDF 생성 실패", error);
+    return fail("pdf_generate", message, stack?.slice(0, 2000) ?? error);
   }
 
   // step6: Storage 업로드 (bucket check + upload)
