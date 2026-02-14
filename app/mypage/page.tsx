@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { timeAgo } from "@/lib/community";
+import MyLiftGrowthChart from "@/components/MyLiftGrowthChart";
 
 type BodycheckPost = {
   id: string;
@@ -48,15 +49,15 @@ export default function MyPage() {
           return;
         }
 
-        const res = await fetch("/api/mypage/summary", { cache: "no-store" });
-        const data = await res.json();
+        const response = await fetch("/api/mypage/summary", { cache: "no-store" });
+        const data = (await response.json()) as SummaryResponse & { error?: string };
 
-        if (!res.ok) {
+        if (!response.ok) {
           throw new Error(data.error ?? "마이페이지 정보를 불러오지 못했습니다.");
         }
 
         if (isMounted) {
-          setSummary(data as SummaryResponse);
+          setSummary(data);
           setError("");
         }
       } catch (e) {
@@ -109,11 +110,17 @@ export default function MyPage() {
         <p className="text-xs text-neutral-500 mt-0.5">{email}</p>
 
         <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-3">
-          <p className="text-sm font-semibold text-amber-800">🏆 주간 몸짱 선정 횟수</p>
+          <p className="text-sm font-semibold text-amber-800">내 주간 몸짱 선정 횟수</p>
           <p className="text-xl font-bold text-amber-900 mt-1">{weeklyWinCount}회</p>
         </div>
 
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link
+            href="/my-records"
+            className="px-4 min-h-[44px] rounded-xl border border-neutral-200 text-sm text-neutral-700 hover:bg-neutral-50 flex items-center"
+          >
+            내 3대 기록
+          </Link>
           <Link
             href="/hall-of-fame"
             className="px-4 min-h-[44px] rounded-xl border border-neutral-200 text-sm text-neutral-700 hover:bg-neutral-50 flex items-center"
@@ -130,6 +137,10 @@ export default function MyPage() {
           </button>
         </div>
       </section>
+
+      <div className="mb-5">
+        <MyLiftGrowthChart />
+      </div>
 
       <section>
         <h2 className="text-lg font-bold text-neutral-900 mb-3">내 사진 몸평 게시글</h2>
@@ -150,9 +161,7 @@ export default function MyPage() {
                   <div className="flex-1 min-w-0">
                     <p className="text-xs text-neutral-400">{timeAgo(post.created_at)}</p>
                     <p className="text-sm font-semibold text-neutral-900 truncate mt-1">{post.title}</p>
-                    <p className="text-xs text-indigo-700 mt-1">
-                      평균 {post.average_score.toFixed(2)} / 투표 {post.vote_count}
-                    </p>
+                    <p className="text-xs text-indigo-700 mt-1">평균 {post.average_score.toFixed(2)} / 투표 {post.vote_count}</p>
                   </div>
                   {(post.images?.length ?? 0) > 0 && (
                     <img
@@ -170,3 +179,4 @@ export default function MyPage() {
     </main>
   );
 }
+

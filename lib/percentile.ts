@@ -1,3 +1,5 @@
+import { getWeightClass, type WeightClassKey } from "./weightClass";
+
 export type Sex = "male" | "female";
 
 export interface DistributionParams {
@@ -21,6 +23,25 @@ export const PERCENTILE_MODEL = {
   },
 } as const satisfies Record<string, Record<Sex, DistributionParams>>;
 
+// Class-based estimated model (sex + weight class).
+export const WEIGHT_CLASS_PERCENTILE_MODEL: Record<Sex, Partial<Record<WeightClassKey, DistributionParams>>> = {
+  male: {
+    m_lt_67: { mean: 320, std: 80 },
+    m_67_74: { mean: 355, std: 82 },
+    m_74_83: { mean: 390, std: 85 },
+    m_83_93: { mean: 420, std: 90 },
+    m_93_105: { mean: 445, std: 95 },
+    m_gte_105: { mean: 470, std: 105 },
+  },
+  female: {
+    f_lt_57: { mean: 170, std: 45 },
+    f_57_63: { mean: 200, std: 50 },
+    f_63_69: { mean: 225, std: 55 },
+    f_69_76: { mean: 245, std: 58 },
+    f_gte_76: { mean: 265, std: 62 },
+  },
+};
+
 function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -34,7 +55,6 @@ function round(value: number, decimals: number): number {
 function erf(x: number): number {
   const sign = x < 0 ? -1 : 1;
   const absX = Math.abs(x);
-
   const a1 = 0.254829592;
   const a2 = -0.284496736;
   const a3 = 1.421413741;
@@ -67,3 +87,19 @@ export function getPercentiles(total: number, sex: Sex): { allKrTop: number; gym
   };
 }
 
+export function getClassBasedPercentile(
+  total: number,
+  sex: Sex,
+  weightKg: number,
+): { topPercent: number; classLabel: string; classKey: WeightClassKey } | null {
+  const weightClass = getWeightClass(sex, weightKg);
+  if (!weightClass) return null;
+
+  const params = WEIGHT_CLASS_PERCENTILE_MODEL[sex][weightClass.key];
+  if (!params) return null;
+  return {
+    topPercent: calcPercentile(total, params),
+    classLabel: weightClass.label,
+    classKey: weightClass.key,
+  };
+}

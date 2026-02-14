@@ -99,7 +99,7 @@ export function calculateLifts(input: LiftInput): LiftResult {
   };
 }
 
-export function buildLiftsShareUrl(input: LiftInput, options?: { sex?: Sex }): string {
+export function buildLiftsShareUrl(input: LiftInput, options?: { sex?: Sex; bodyweightKg?: number }): string {
   const searchParams = new URLSearchParams({
     s: String(input.squat),
     b: String(input.bench),
@@ -112,6 +112,9 @@ export function buildLiftsShareUrl(input: LiftInput, options?: { sex?: Sex }): s
     searchParams.set("sex", options.sex);
   }
 
+  if (typeof options?.bodyweightKg === "number" && Number.isFinite(options.bodyweightKg) && options.bodyweightKg > 0) {
+    searchParams.set("bwkg", String(options.bodyweightKg));
+  }
+
   return `/lifts?${searchParams.toString()}`;
 }
-
