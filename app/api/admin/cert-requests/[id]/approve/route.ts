@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { isAdminEmail } from "@/lib/admin";
 import {
@@ -11,6 +11,44 @@ import { renderCertificatePdfBuffer } from "@/lib/certificate-pdf";
 
 export const runtime = "nodejs";
 
+type StepName =
+  | "auth_admin_check"
+  | "env_service_role"
+  | "env_site_url"
+  | "db_get_request"
+  | "db_issue_certificate_no"
+  | "db_insert_certificate"
+  | "qr_generate"
+  | "pdf_font_load"
+  | "pdf_generate"
+  | "storage_bucket_check"
+  | "storage_upload"
+  | "db_update_certificate_pdf"
+  | "db_update_request_status";
+
+function fail(step: StepName, message: string, detail?: unknown, status = 500) {
+  console.error("[cert-approve-fail]", {
+    step,
+    message,
+    detail:
+      detail instanceof Error
+        ? { name: detail.name, message: detail.message, stack: detail.stack }
+        : detail,
+  });
+  return NextResponse.json(
+    {
+      ok: false,
+      step,
+      message,
+      detail:
+        detail instanceof Error
+          ? { name: detail.name, message: detail.message, stack: detail.stack }
+          : detail,
+    },
+    { status },
+  );
+}
+
 function toKstDate(value: string | Date): string {
   return new Intl.DateTimeFormat("ko-KR", {
     timeZone: "Asia/Seoul",
@@ -20,22 +58,35 @@ function toKstDate(value: string | Date): string {
   }).format(new Date(value));
 }
 
-export async function POST(
-  _request: Request,
-  { params }: { params: Promise<{ id: string }> },
-) {
+export async function POST(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  // step1: 관리자 권한 체크
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
 
   if (!user || !isAdminEmail(user.email)) {
-    return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
+    return fail("auth_admin_check", "권한이 없습니다.", { email: user?.email }, 403);
   }
+
+  // step1-2: service role/env check
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return fail("env_service_role", "Missing SUPABASE_SERVICE_ROLE_KEY", undefined, 500);
+  }
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    return fail("env_service_role", "Missing NEXT_PUBLIC_SUPABASE_URL", undefined, 500);
+  }
+
+  const siteUrlRaw = process.env.SITE_URL?.trim();
+  if (!siteUrlRaw) {
+    return fail("env_site_url", "Missing SITE_URL", undefined, 500);
+  }
+  const siteUrl = siteUrlRaw.replace(/\/+$/, "");
 
   const { id } = await params;
   const admin = createAdminClient();
 
+  // step2: cert_requests 조회
   const { data: requestRow, error: requestError } = await admin
     .from("cert_requests")
     .select("*")
@@ -43,7 +94,7 @@ export async function POST(
     .single();
 
   if (requestError || !requestRow) {
-    return NextResponse.json({ error: requestError?.message ?? "신청을 찾을 수 없습니다." }, { status: 404 });
+    return fail("db_get_request", requestError?.message ?? "인증 신청을 찾을 수 없습니다.", requestError, 404);
   }
 
   const certRequest = requestRow as CertRequestRecord;
@@ -53,86 +104,191 @@ export async function POST(
       .select("id, certificate_no, slug, qr_url, pdf_url")
       .eq("request_id", certRequest.id)
       .maybeSingle();
-    return NextResponse.json({ ok: true, certificate: existingCert });
+
+    return NextResponse.json({ ok: true, step: "already_approved", certificate: existingCert });
   }
 
-  const year = new Date().getUTCFullYear();
-  const { data: nextNoData, error: nextNoError } = await admin.rpc("next_certificate_no", {
-    p_year: year,
-  });
-  if (nextNoError || !nextNoData) {
-    return NextResponse.json({ error: nextNoError?.message ?? "인증번호 발급 실패" }, { status: 500 });
+  // step3: certificates row 생성(slug/certificate_no/qr_url)
+  let certificateNo = "";
+  let slug = "";
+  let qrUrl = "";
+  let certId = "";
+
+  const { data: existingForRequest, error: existingForRequestError } = await admin
+    .from("certificates")
+    .select("id, certificate_no, slug, qr_url")
+    .eq("request_id", certRequest.id)
+    .maybeSingle();
+  if (existingForRequestError) {
+    return fail("db_insert_certificate", existingForRequestError.message, existingForRequestError);
   }
 
-  const certificateNo = String(nextNoData);
-  const slug = makeCertificateSlug();
-  const siteUrl = (process.env.SITE_URL ?? "https://helchang.com").replace(/\/+$/, "");
-  const verificationUrl = `${siteUrl}/cert/${slug}`;
-  const qrDataUrl = await makeQrDataUrl(verificationUrl);
+  if (existingForRequest) {
+    certId = existingForRequest.id;
+    certificateNo = existingForRequest.certificate_no;
+    slug = existingForRequest.slug;
+    qrUrl = `${siteUrl}/cert/${slug}`;
 
-  const issuedAt = new Date();
-  const pdfBuffer = await renderCertificatePdfBuffer({
-    certificateNo,
-    issuedAt: toKstDate(issuedAt),
-    nickname: certRequest.nickname ?? certRequest.email ?? "GymTools User",
-    sexLabel: certRequest.sex,
-    bodyweight: certRequest.bodyweight ? Number(certRequest.bodyweight) : null,
-    squat: normalizeNumber(certRequest.squat),
-    bench: normalizeNumber(certRequest.bench),
-    deadlift: normalizeNumber(certRequest.deadlift),
-    total: normalizeNumber(certRequest.total),
-    verificationUrl,
-    qrDataUrl,
-  });
+    const { error: fixQrUrlError } = await admin
+      .from("certificates")
+      .update({ qr_url: qrUrl })
+      .eq("id", certId);
+    if (fixQrUrlError) {
+      return fail("db_insert_certificate", fixQrUrlError.message, fixQrUrlError);
+    }
+  } else {
+    const year = new Date().getUTCFullYear();
+    const { data: nextNoData, error: nextNoError } = await admin.rpc("next_certificate_no", {
+      p_year: year,
+    });
 
-  const filePath = `${certificateNo}.pdf`;
-  const uploadPath = `certificates/${filePath}`;
+    if (nextNoError || !nextNoData) {
+      return fail("db_issue_certificate_no", nextNoError?.message ?? "인증번호 발급 실패", nextNoError);
+    }
+
+    certificateNo = String(nextNoData);
+    slug = makeCertificateSlug();
+    qrUrl = `${siteUrl}/cert/${slug}`;
+
+    const { data: insertedCert, error: insertCertError } = await admin
+      .from("certificates")
+      .insert({
+        request_id: certRequest.id,
+        certificate_no: certificateNo,
+        slug,
+        qr_url: qrUrl,
+        pdf_path: "",
+        pdf_url: "",
+        issued_at: new Date().toISOString(),
+        is_public: true,
+      })
+      .select("id")
+      .single();
+
+    if (insertCertError || !insertedCert) {
+      return fail(
+        "db_insert_certificate",
+        insertCertError?.message ?? "certificates insert 실패",
+        insertCertError,
+      );
+    }
+
+    certId = insertedCert.id;
+  }
+
+  // step4: QR 생성
+  let qrDataUrl = "";
+  try {
+    qrDataUrl = await makeQrDataUrl(qrUrl);
+  } catch (error) {
+    return fail("qr_generate", "QR 생성 실패", error);
+  }
+
+  // step5: PDF 생성
+  let pdfBuffer: Buffer;
+  try {
+    pdfBuffer = await renderCertificatePdfBuffer({
+      certificateNo,
+      issuedAt: toKstDate(new Date()),
+      nickname: certRequest.nickname ?? certRequest.email ?? "GymTools User",
+      sexLabel: certRequest.sex,
+      bodyweight: certRequest.bodyweight ? Number(certRequest.bodyweight) : null,
+      squat: normalizeNumber(certRequest.squat),
+      bench: normalizeNumber(certRequest.bench),
+      deadlift: normalizeNumber(certRequest.deadlift),
+      total: normalizeNumber(certRequest.total),
+      verificationUrl: qrUrl,
+      qrDataUrl,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    if (/font|NotoSansKR|ttf/i.test(message)) {
+      return fail("pdf_font_load", message, error);
+    }
+    return fail("pdf_generate", "PDF 생성 실패", error);
+  }
+
+  // step6: Storage 업로드 (bucket check + upload)
+  const { data: bucketInfo, error: bucketError } = await admin
+    .schema("storage")
+    .from("buckets")
+    .select("id, public")
+    .eq("id", "certificates")
+    .maybeSingle();
+
+  if (bucketError || !bucketInfo) {
+    return fail(
+      "storage_bucket_check",
+      "certificates bucket을 찾을 수 없습니다. Supabase SQL에서 bucket 생성 스크립트를 먼저 실행하세요.",
+      bucketError,
+    );
+  }
+
+  const uploadPath = `certificates/${certificateNo}.pdf`;
   const { error: uploadError } = await admin.storage
     .from("certificates")
     .upload(uploadPath, pdfBuffer, {
       contentType: "application/pdf",
       upsert: true,
     });
+
   if (uploadError) {
-    return NextResponse.json({ error: uploadError.message }, { status: 500 });
+    return fail("storage_upload", uploadError.message, uploadError);
   }
 
-  const { data: publicUrlData } = admin.storage.from("certificates").getPublicUrl(uploadPath);
-  const pdfUrl = publicUrlData.publicUrl;
+  // step7: certificates.pdf_url 업데이트 (public/private 분기)
+  let pdfUrl = "";
+  if (bucketInfo.public) {
+    const { data } = admin.storage.from("certificates").getPublicUrl(uploadPath);
+    pdfUrl = data.publicUrl;
+  } else {
+    const { data, error } = await admin.storage
+      .from("certificates")
+      .createSignedUrl(uploadPath, 60 * 60 * 24 * 30);
 
-  const { error: certError } = await admin.from("certificates").insert({
-    request_id: certRequest.id,
-    certificate_no: certificateNo,
-    slug,
-    qr_url: verificationUrl,
-    pdf_path: uploadPath,
-    pdf_url: pdfUrl,
-    issued_at: issuedAt.toISOString(),
-    is_public: true,
-  });
-  if (certError) {
-    return NextResponse.json({ error: certError.message }, { status: 500 });
+    if (error || !data?.signedUrl) {
+      return fail("db_update_certificate_pdf", "private bucket signed URL 생성 실패", error);
+    }
+
+    pdfUrl = data.signedUrl;
   }
 
-  const { error: updateError } = await admin
+  const { error: updateCertError } = await admin
+    .from("certificates")
+    .update({
+      pdf_path: uploadPath,
+      pdf_url: pdfUrl,
+    })
+    .eq("id", certId);
+
+  if (updateCertError) {
+    return fail("db_update_certificate_pdf", updateCertError.message, updateCertError);
+  }
+
+  // step8: cert_requests 상태 approved 업데이트
+  const nowIso = new Date().toISOString();
+  const { error: updateRequestError } = await admin
     .from("cert_requests")
     .update({
       status: "approved",
-      reviewed_at: issuedAt.toISOString(),
+      reviewed_at: nowIso,
       admin_note: null,
     })
     .eq("id", certRequest.id);
-  if (updateError) {
-    return NextResponse.json({ error: updateError.message }, { status: 500 });
+
+  if (updateRequestError) {
+    return fail("db_update_request_status", updateRequestError.message, updateRequestError);
   }
 
   return NextResponse.json({
     ok: true,
+    step: "completed",
     certificate: {
+      id: certId,
       certificate_no: certificateNo,
       slug,
+      qr_url: qrUrl,
       pdf_url: pdfUrl,
-      qr_url: verificationUrl,
     },
   });
 }
