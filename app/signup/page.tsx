@@ -4,10 +4,10 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { normalizeNickname, validateNickname } from "@/lib/nickname";
 
 const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
 const STORED_EMAIL_KEY = "recent_login_email";
-const NICKNAME_MIN = 2;
 const NICKNAME_MAX = 12;
 
 type SignupStep = "form" | "pending_verify" | "existing_account";
@@ -48,17 +48,14 @@ export default function SignupPage() {
 
   const handleSignup = async () => {
     const normalized = email.trim().toLowerCase();
-    const cleanNickname = nickname.trim();
+    const cleanNickname = normalizeNickname(nickname);
     if (!normalized) {
       setError("이메일을 입력해 주세요.");
       return;
     }
-    if (cleanNickname.length < NICKNAME_MIN || cleanNickname.length > NICKNAME_MAX) {
-      setError(`닉네임은 ${NICKNAME_MIN}~${NICKNAME_MAX}자로 입력해 주세요.`);
-      return;
-    }
-    if (!/^[0-9A-Za-z가-힣_]+$/.test(cleanNickname)) {
-      setError("닉네임은 한글/영문/숫자/_만 사용할 수 있습니다.");
+    const nicknameError = validateNickname(cleanNickname);
+    if (nicknameError) {
+      setError(nicknameError);
       return;
     }
     if (password.length < 8) {

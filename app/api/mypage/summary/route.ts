@@ -12,7 +12,11 @@ export async function GET() {
   }
 
   const [profileRes, bodycheckRes, winnersRes] = await Promise.all([
-    supabase.from("profiles").select("nickname").eq("user_id", user.id).maybeSingle(),
+    supabase
+      .from("profiles")
+      .select("nickname, nickname_changed_count, nickname_change_credits")
+      .eq("user_id", user.id)
+      .maybeSingle(),
     supabase
       .from("posts")
       .select("id, title, created_at, score_sum, vote_count, images, is_deleted")
@@ -46,6 +50,8 @@ export async function GET() {
   return NextResponse.json({
     profile: {
       nickname: profileRes.data?.nickname ?? null,
+      nickname_changed_count: Number(profileRes.data?.nickname_changed_count ?? 0),
+      nickname_change_credits: Number(profileRes.data?.nickname_change_credits ?? 0),
       email: user.email ?? null,
     },
     weekly_win_count: weeklyWinCount,

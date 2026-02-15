@@ -1,10 +1,11 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { timeAgo } from "@/lib/community";
+import { normalizeNickname, validateNickname } from "@/lib/nickname";
 import MyLiftGrowthChart from "@/components/MyLiftGrowthChart";
 import AdminCertReviewPanel from "@/components/AdminCertReviewPanel";
 
@@ -23,6 +24,8 @@ type BodycheckPost = {
 type SummaryResponse = {
   profile: {
     nickname: string | null;
+    nickname_changed_count: number;
+    nickname_change_credits: number;
     email: string | null;
   };
   weekly_win_count: number;
@@ -54,6 +57,15 @@ type MyCertRequest = {
   certificates?: MyCertificate[] | null;
 };
 
+type ChangeNicknameResult = {
+  success: boolean;
+  code: string;
+  message: string;
+  nickname?: string;
+  nickname_changed_count?: number;
+  nickname_change_credits?: number;
+};
+
 export default function MyPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -65,6 +77,12 @@ export default function MyPage() {
   const [activeTab, setActiveTab] = useState<MyPageTab>("my_cert");
   const [error, setError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
+
+  const [nicknameOpen, setNicknameOpen] = useState(false);
+  const [newNickname, setNewNickname] = useState("");
+  const [nicknameError, setNicknameError] = useState("");
+  const [nicknameInfo, setNicknameInfo] = useState("");
+  const [savingNickname, setSavingNickname] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -86,7 +104,9 @@ export default function MyPage() {
           fetch("/api/admin/me", { cache: "no-store" }),
         ]);
 
-        const summaryBody = (await summaryRes.json().catch(() => ({}))) as SummaryResponse & { error?: string };
+        const summaryBody = (await summaryRes.json().catch(() => ({}))) as SummaryResponse & {
+          error?: string;
+        };
         const certBody = (await certRes.json().catch(() => ({}))) as {
           error?: string;
           requests?: MyCertRequest[];
@@ -97,7 +117,7 @@ export default function MyPage() {
           throw new Error(summaryBody.error ?? "마이페이지 정보를 불러오지 못했습니다.");
         }
         if (!certRes.ok) {
-          throw new Error(certBody.error ?? "인증 신청 정보를 불러오지 못했습니다.");
+          throw new Error(certBody.error ?? "인증 요청 정보를 불러오지 못했습니다.");
         }
 
         if (isMounted) {
@@ -142,18 +162,76 @@ export default function MyPage() {
     }
   };
 
+  const handleChangeNickname = async () => {
+    const normalized = normalizeNickname(newNickname);
+    const invalid = validateNickname(normalized);
+    if (invalid) {
+      setNicknameError(invalid);
+      return;
+    }
+
+    setSavingNickname(true);
+    setNicknameError("");
+    setNicknameInfo("");
+
+    try {
+      const { data, error: rpcError } = await supabase.rpc("change_nickname", {
+        new_nickname: normalized,
+      });
+
+      if (rpcError) {
+        setNicknameError(rpcError.message);
+        return;
+      }
+
+      const result = data as ChangeNicknameResult | null;
+      if (!result?.success) {
+        const message = result?.message ?? "닉네임 변경에 실패했습니다.";
+        setNicknameError(message);
+        return;
+      }
+
+      setNicknameInfo("닉네임이 변경되었습니다.");
+      setNicknameOpen(false);
+      setNewNickname("");
+
+      setSummary((prev) => {
+        if (!prev) return prev;
+        return {
+          ...prev,
+          profile: {
+            ...prev.profile,
+            nickname: result.nickname ?? prev.profile.nickname,
+            nickname_changed_count:
+              typeof result.nickname_changed_count === "number"
+                ? result.nickname_changed_count
+                : prev.profile.nickname_changed_count,
+            nickname_change_credits:
+              typeof result.nickname_change_credits === "number"
+                ? result.nickname_change_credits
+                : prev.profile.nickname_change_credits,
+          },
+        };
+      });
+    } catch (e) {
+      setNicknameError(e instanceof Error ? e.message : "닉네임 변경에 실패했습니다.");
+    } finally {
+      setSavingNickname(false);
+    }
+  };
+
   if (loading) {
     return (
-      <main className="max-w-2xl mx-auto px-4 py-10">
-        <p className="text-neutral-400 text-center">불러오는 중...</p>
+      <main className="mx-auto max-w-2xl px-4 py-10">
+        <p className="text-center text-neutral-400">불러오는 중...</p>
       </main>
     );
   }
 
   if (error) {
     return (
-      <main className="max-w-2xl mx-auto px-4 py-10">
-        <p className="text-red-600 text-center">{error}</p>
+      <main className="mx-auto max-w-2xl px-4 py-10">
+        <p className="text-center text-red-600">{error}</p>
       </main>
     );
   }
@@ -162,39 +240,79 @@ export default function MyPage() {
   const email = summary?.profile.email ?? "이메일 없음";
   const posts = summary?.bodycheck_posts ?? [];
   const weeklyWinCount = summary?.weekly_win_count ?? 0;
+  const changedCount = summary?.profile.nickname_changed_count ?? 0;
+  const credits = summary?.profile.nickname_change_credits ?? 0;
+  const canChangeNickname = changedCount < 1 || credits > 0;
+  const remainingFree = Math.max(0, 1 - changedCount);
 
-  const approvedRequests = certRequests.filter((item) => item.status === "approved" && (item.certificates?.length ?? 0) > 0);
+  const approvedRequests = certRequests.filter(
+    (item) => item.status === "approved" && (item.certificates?.length ?? 0) > 0
+  );
 
   return (
-    <main className="max-w-2xl mx-auto px-4 py-8">
-      <section className="rounded-2xl border border-neutral-200 bg-white p-5 mb-5">
+    <main className="mx-auto max-w-2xl px-4 py-8">
+      <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
         <h1 className="text-2xl font-bold text-neutral-900">마이페이지</h1>
-        <p className="text-sm text-neutral-600 mt-1">{nickname}</p>
-        <p className="text-xs text-neutral-500 mt-0.5">{email}</p>
+        <p className="mt-1 text-sm text-neutral-600">{nickname}</p>
+        <p className="mt-0.5 text-xs text-neutral-500">{email}</p>
 
-        <div className="mt-4 rounded-xl bg-amber-50 border border-amber-200 p-3">
-          <p className="text-sm font-semibold text-amber-800">내 주간 몸짱 선정 횟수</p>
-          <p className="text-xl font-bold text-amber-900 mt-1">{weeklyWinCount}회</p>
+        <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-neutral-800">닉네임</p>
+              <p className="mt-1 text-xs text-neutral-600">
+                {remainingFree > 0
+                  ? `무료 변경 ${remainingFree}회 남음`
+                  : credits > 0
+                  ? `추가 변경권 ${credits}개 보유`
+                  : "무료 변경 완료"}
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setNicknameOpen(true);
+                setNicknameError("");
+                setNicknameInfo("");
+                setNewNickname("");
+              }}
+              disabled={!canChangeNickname}
+              className="min-h-[40px] rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              닉네임 변경
+            </button>
+          </div>
+          {!canChangeNickname && (
+            <p className="mt-2 text-xs text-amber-700">
+              닉네임 변경은 1회 무료입니다. 추가 변경은 준비 중입니다.
+            </p>
+          )}
+          {nicknameInfo && <p className="mt-2 text-xs text-emerald-700">{nicknameInfo}</p>}
+        </div>
+
+        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <p className="text-sm font-semibold text-amber-800">주간 몸짱 선정 횟수</p>
+          <p className="mt-1 text-xl font-bold text-amber-900">{weeklyWinCount}회</p>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
             href="/my-records"
-            className="px-4 min-h-[44px] rounded-xl border border-neutral-200 text-sm text-neutral-700 hover:bg-neutral-50 flex items-center"
+            className="flex min-h-[44px] items-center rounded-xl border border-neutral-200 px-4 text-sm text-neutral-700 hover:bg-neutral-50"
           >
             내 3대 기록
           </Link>
           <Link
             href="/certify"
-            className="px-4 min-h-[44px] rounded-xl border border-neutral-200 text-sm text-neutral-700 hover:bg-neutral-50 flex items-center"
+            className="flex min-h-[44px] items-center rounded-xl border border-neutral-200 px-4 text-sm text-neutral-700 hover:bg-neutral-50"
           >
-            공식 인증 신청
+            공식 인증 요청
           </Link>
           <button
             type="button"
             onClick={handleLogout}
             disabled={loggingOut}
-            className="px-4 min-h-[44px] rounded-xl bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-60"
+            className="min-h-[44px] rounded-xl bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
           >
             로그아웃
           </button>
@@ -206,12 +324,14 @@ export default function MyPage() {
       </div>
 
       <section className="mb-5">
-        <div className="flex flex-wrap gap-2 mb-3">
+        <div className="mb-3 flex flex-wrap gap-2">
           <button
             type="button"
             onClick={() => setActiveTab("my_cert")}
-            className={`px-4 h-10 rounded-xl text-sm font-medium border ${
-              activeTab === "my_cert" ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-neutral-700 border-neutral-300"
+            className={`h-10 rounded-xl border px-4 text-sm font-medium ${
+              activeTab === "my_cert"
+                ? "border-emerald-600 bg-emerald-600 text-white"
+                : "border-neutral-300 bg-white text-neutral-700"
             }`}
           >
             내 인증
@@ -219,18 +339,22 @@ export default function MyPage() {
           <button
             type="button"
             onClick={() => setActiveTab("request_status")}
-            className={`px-4 h-10 rounded-xl text-sm font-medium border ${
-              activeTab === "request_status" ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-neutral-700 border-neutral-300"
+            className={`h-10 rounded-xl border px-4 text-sm font-medium ${
+              activeTab === "request_status"
+                ? "border-emerald-600 bg-emerald-600 text-white"
+                : "border-neutral-300 bg-white text-neutral-700"
             }`}
           >
-            신청 현황
+            요청 현황
           </button>
           {isAdmin && (
             <button
               type="button"
               onClick={() => setActiveTab("admin_review")}
-              className={`px-4 h-10 rounded-xl text-sm font-medium border ${
-                activeTab === "admin_review" ? "bg-neutral-900 text-white border-neutral-900" : "bg-white text-neutral-700 border-neutral-300"
+              className={`h-10 rounded-xl border px-4 text-sm font-medium ${
+                activeTab === "admin_review"
+                  ? "border-neutral-900 bg-neutral-900 text-white"
+                  : "border-neutral-300 bg-white text-neutral-700"
               }`}
             >
               관리자 심사
@@ -240,9 +364,9 @@ export default function MyPage() {
 
         {activeTab === "my_cert" && (
           <>
-            <h2 className="text-lg font-bold text-neutral-900 mb-3">내 인증</h2>
+            <h2 className="mb-3 text-lg font-bold text-neutral-900">내 인증</h2>
             {approvedRequests.length === 0 ? (
-              <p className="text-sm text-neutral-500 rounded-xl border border-neutral-200 bg-white p-4">
+              <p className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-500">
                 발급된 인증서가 없습니다.
               </p>
             ) : (
@@ -254,13 +378,13 @@ export default function MyPage() {
                   return (
                     <div key={item.id} className="rounded-2xl border border-neutral-200 bg-white p-4">
                       <p className="text-sm font-semibold text-neutral-900">인증번호: {cert.certificate_no}</p>
-                      <p className="text-xs text-neutral-500 mt-1">발급일: {timeAgo(cert.issued_at)}</p>
+                      <p className="mt-1 text-xs text-neutral-500">발급일: {timeAgo(cert.issued_at)}</p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <a
                           href={cert.pdf_url}
                           target="_blank"
                           rel="noreferrer"
-                          className="px-3 h-9 rounded-lg bg-emerald-600 text-white text-xs font-medium flex items-center"
+                          className="flex h-9 items-center rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white"
                         >
                           PDF 다운로드
                         </a>
@@ -270,7 +394,7 @@ export default function MyPage() {
                             const origin = typeof window !== "undefined" ? window.location.origin : "";
                             copyToClipboard(`${origin}${verifyPath}`);
                           }}
-                          className="px-3 h-9 rounded-lg bg-neutral-900 text-white text-xs font-medium"
+                          className="h-9 rounded-lg bg-neutral-900 px-3 text-xs font-medium text-white"
                         >
                           검증 링크 복사
                         </button>
@@ -285,10 +409,10 @@ export default function MyPage() {
 
         {activeTab === "request_status" && (
           <>
-            <h2 className="text-lg font-bold text-neutral-900 mb-3">신청 현황</h2>
+            <h2 className="mb-3 text-lg font-bold text-neutral-900">요청 현황</h2>
             {certRequests.length === 0 ? (
-              <p className="text-sm text-neutral-500 rounded-xl border border-neutral-200 bg-white p-4">
-                인증 신청 내역이 없습니다.
+              <p className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-500">
+                인증 요청 내역이 없습니다.
               </p>
             ) : (
               <div className="space-y-3">
@@ -297,11 +421,11 @@ export default function MyPage() {
                     <p className="text-sm font-semibold text-neutral-900">
                       제출코드: <span className="font-bold">{item.submit_code}</span>
                     </p>
-                    <p className="text-xs text-neutral-500 mt-1">
+                    <p className="mt-1 text-xs text-neutral-500">
                       상태: {item.status} / 합계 {item.total}kg / {timeAgo(item.created_at)}
                     </p>
                     {item.video_url && (
-                      <p className="text-xs text-neutral-600 mt-1 break-all">
+                      <p className="mt-1 break-all text-xs text-neutral-600">
                         영상 링크:{" "}
                         <a href={item.video_url} target="_blank" rel="noreferrer" className="text-blue-600 underline">
                           {item.video_url}
@@ -309,10 +433,10 @@ export default function MyPage() {
                       </p>
                     )}
                     {item.status === "needs_info" && item.admin_note && (
-                      <p className="text-xs text-amber-700 mt-2">관리자 요청: {item.admin_note}</p>
+                      <p className="mt-2 text-xs text-amber-700">관리자 요청: {item.admin_note}</p>
                     )}
                     {item.status === "rejected" && item.admin_note && (
-                      <p className="text-xs text-red-700 mt-2">거절 사유: {item.admin_note}</p>
+                      <p className="mt-2 text-xs text-red-700">거절 사유: {item.admin_note}</p>
                     )}
                   </div>
                 ))}
@@ -325,7 +449,7 @@ export default function MyPage() {
           <>
             {isAdmin ? (
               <>
-                <h2 className="text-lg font-bold text-neutral-900 mb-3">관리자 심사</h2>
+                <h2 className="mb-3 text-lg font-bold text-neutral-900">관리자 심사</h2>
                 <AdminCertReviewPanel />
               </>
             ) : (
@@ -336,10 +460,10 @@ export default function MyPage() {
       </section>
 
       <section>
-        <h2 className="text-lg font-bold text-neutral-900 mb-3">내 사진 몸평 게시글</h2>
+        <h2 className="mb-3 text-lg font-bold text-neutral-900">내 사진 몸평 게시글</h2>
 
         {posts.length === 0 ? (
-          <p className="text-sm text-neutral-500 rounded-xl border border-neutral-200 bg-white p-4">
+          <p className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-500">
             아직 등록한 사진 몸평 게시글이 없습니다.
           </p>
         ) : (
@@ -348,13 +472,13 @@ export default function MyPage() {
               <Link
                 key={post.id}
                 href={`/community/${post.id}`}
-                className="block rounded-2xl border border-neutral-200 bg-white p-4 hover:border-emerald-300 transition-all"
+                className="block rounded-2xl border border-neutral-200 bg-white p-4 transition-all hover:border-emerald-300"
               >
                 <div className="flex gap-3">
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-0 flex-1">
                     <p className="text-xs text-neutral-400">{timeAgo(post.created_at)}</p>
-                    <p className="text-sm font-semibold text-neutral-900 truncate mt-1">{post.title}</p>
-                    <p className="text-xs text-indigo-700 mt-1">
+                    <p className="mt-1 truncate text-sm font-semibold text-neutral-900">{post.title}</p>
+                    <p className="mt-1 text-xs text-indigo-700">
                       평균 {post.average_score.toFixed(2)} / 투표 {post.vote_count}
                     </p>
                   </div>
@@ -362,7 +486,7 @@ export default function MyPage() {
                     <img
                       src={post.images?.[0]}
                       alt=""
-                      className="w-16 h-16 rounded-lg object-cover border border-neutral-100 shrink-0"
+                      className="h-16 w-16 shrink-0 rounded-lg border border-neutral-100 object-cover"
                     />
                   )}
                 </div>
@@ -371,7 +495,44 @@ export default function MyPage() {
           </div>
         )}
       </section>
+
+      {nicknameOpen && (
+        <div className="fixed inset-0 z-50 flex items-end bg-black/40 p-4 sm:items-center sm:justify-center">
+          <div className="w-full max-w-sm rounded-2xl bg-white p-4">
+            <h3 className="text-base font-semibold text-neutral-900">닉네임 변경</h3>
+            <p className="mt-1 text-xs text-neutral-600">2~12자, 한글/영문/숫자/_만 사용 가능합니다.</p>
+
+            <input
+              type="text"
+              value={newNickname}
+              onChange={(e) => setNewNickname(e.target.value)}
+              placeholder="새 닉네임"
+              maxLength={12}
+              className="mt-3 w-full min-h-[44px] rounded-lg border border-neutral-300 px-3 text-sm"
+            />
+
+            {nicknameError && <p className="mt-2 text-xs text-red-600">{nicknameError}</p>}
+
+            <div className="mt-4 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setNicknameOpen(false)}
+                className="min-h-[42px] rounded-lg border border-neutral-300 text-sm font-medium text-neutral-700"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleChangeNickname}
+                disabled={savingNickname}
+                className="min-h-[42px] rounded-lg bg-emerald-600 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {savingNickname ? "저장 중..." : "저장"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </main>
   );
 }
-
