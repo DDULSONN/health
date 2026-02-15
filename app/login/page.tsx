@@ -5,15 +5,29 @@ import { useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 const IN_APP_UA_PATTERNS = ["kakaotalk", "instagram", "naver", "fban", "fbav"];
+const STORED_EMAIL_KEY = "recent_login_email";
+const CANONICAL_SITE_URL = "https://helchang.com";
 
 function isInAppBrowser(ua: string): boolean {
   const lowered = ua.toLowerCase();
   return IN_APP_UA_PATTERNS.some((token) => lowered.includes(token));
 }
 
+function safeNextPath(input: string | null): string {
+  if (!input || !input.startsWith("/")) return "/";
+  if (input.startsWith("//")) return "/";
+  return input;
+}
+
+function buildCanonicalCallbackUrl(next: string): string {
+  const url = new URL("/auth/callback", CANONICAL_SITE_URL);
+  url.searchParams.set("next", safeNextPath(next));
+  return url.toString();
+}
+
 function LoginContent() {
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") ?? searchParams.get("next") ?? "/";
+  const redirect = safeNextPath(searchParams.get("redirect") ?? searchParams.get("next") ?? "/");
 
   const errorParam = searchParams.get("error");
   const errorCode = searchParams.get("error_code")?.toLowerCase() ?? null;
@@ -26,27 +40,25 @@ function LoginContent() {
   const [emailSentMessage, setEmailSentMessage] = useState<string | null>(null);
   const [inAppBrowser, setInAppBrowser] = useState(false);
 
-  const callbackUrl = useMemo(() => {
-    const baseSiteUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
-    const url = new URL("/auth/callback", baseSiteUrl);
-    url.searchParams.set("next", redirect || "/");
-    return url.toString();
-  }, [redirect]);
+  const callbackUrl = useMemo(() => buildCanonicalCallbackUrl(redirect), [redirect]);
 
   const isOtpExpired = errorCode === "otp_expired";
+  const isFlowStateMissing = errorCode === "flow_state_missing";
 
   const initialErrorMessage = useMemo(() => {
-    if (isOtpExpired) {
-      return "로그인 링크가 만료되었거나 이미 사용됐어요. 다시 보내드릴게요.";
-    }
+    if (isOtpExpired) return "로그인 링크가 만료되었거나 이미 사용됐어요. 다시 보내드릴게요.";
+    if (isFlowStateMissing)
+      return "세션 정보가 사라졌습니다. 브라우저를 유지한 상태로 다시 시도해 주세요.";
     if (errorDescription) return errorDescription;
     if (errorCode) return `로그인 오류가 발생했습니다. (${errorCode})`;
     if (errorParam) return errorParam;
     return null;
-  }, [errorCode, errorDescription, errorParam, isOtpExpired]);
+  }, [errorCode, errorDescription, errorParam, isOtpExpired, isFlowStateMissing]);
 
   useEffect(() => {
     setInAppBrowser(isInAppBrowser(navigator.userAgent));
+    const stored = window.localStorage.getItem(STORED_EMAIL_KEY);
+    if (stored) setEmail(stored);
   }, []);
 
   useEffect(() => {
@@ -73,11 +85,13 @@ function LoginContent() {
       return false;
     }
 
+    window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
     setEmailSentMessage("메일함을 확인해 로그인 링크를 클릭하세요");
     return true;
   };
 
   const handleGoogleLogin = async () => {
+    if (inAppBrowser) return;
     setGoogleLoading(true);
     setError(null);
     setEmailSentMessage(null);
@@ -129,15 +143,6 @@ function LoginContent() {
     }
   };
 
-  const handleCopyUrl = async () => {
-    try {
-      await navigator.clipboard.writeText(window.location.href);
-      setEmailSentMessage("현재 URL을 복사했습니다. 외부 브라우저에서 열어주세요.");
-    } catch {
-      setError("URL 복사에 실패했습니다.");
-    }
-  };
-
   const handleOpenExternal = () => {
     const href = window.location.href;
     const ua = navigator.userAgent.toLowerCase();
@@ -158,7 +163,7 @@ function LoginContent() {
 
       {error && <p className="text-sm text-red-600 bg-red-50 rounded-xl p-3 mb-4 w-full text-center">{error}</p>}
 
-      {isOtpExpired && (
+      {(isOtpExpired || isFlowStateMissing) && (
         <div className="w-full mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3">
           <p className="text-sm text-amber-900 font-medium">로그인 링크가 만료되었거나 이미 사용됐어요. 다시 보내드릴게요.</p>
           <p className="text-xs text-amber-800 mt-1">인앱 브라우저에서 실패할 수 있어 Chrome/Safari에서 열어주세요.</p>
@@ -179,30 +184,21 @@ function LoginContent() {
 
       {inAppBrowser && (
         <div className="w-full mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3">
-          <p className="text-sm text-amber-900 font-medium">카카오톡(인앱)에서는 Google 로그인이 차단될 수 있어요.</p>
-          <div className="mt-2 flex gap-2">
-            <button
-              type="button"
-              onClick={handleCopyUrl}
-              className="flex-1 min-h-[40px] rounded-lg border border-amber-300 bg-white text-amber-900 text-sm font-medium"
-            >
-              URL 복사
-            </button>
-            <button
-              type="button"
-              onClick={handleOpenExternal}
-              className="flex-1 min-h-[40px] rounded-lg bg-amber-600 text-white text-sm font-medium"
-            >
-              외부 브라우저로 열기
-            </button>
-          </div>
+          <p className="text-sm text-amber-900 font-medium">인앱에서는 로그인 오류가 날 수 있어요. Chrome으로 열어주세요.</p>
+          <button
+            type="button"
+            onClick={handleOpenExternal}
+            className="mt-2 w-full min-h-[40px] rounded-lg bg-amber-600 text-white text-sm font-medium"
+          >
+            Chrome/Safari로 열기
+          </button>
         </div>
       )}
 
       <button
         type="button"
         onClick={handleGoogleLogin}
-        disabled={googleLoading || emailLoading}
+        disabled={googleLoading || emailLoading || inAppBrowser}
         className="w-full flex items-center justify-center gap-3 min-h-[52px] rounded-xl border-2 border-neutral-200 bg-white text-neutral-800 font-medium hover:bg-neutral-50 active:scale-[0.98] transition-all disabled:opacity-50"
       >
         <svg width="20" height="20" viewBox="0 0 48 48" aria-hidden="true">
@@ -211,7 +207,7 @@ function LoginContent() {
           <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.3 35.2 26.7 36 24 36c-5.2 0-9.6-3.5-11.2-8.2l-6.5 5C9.5 39.6 16.2 44 24 44z" />
           <path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.7-.4-3.9z" />
         </svg>
-        {googleLoading ? "Google 로그인 중..." : "Google로 로그인"}
+        {inAppBrowser ? "인앱 브라우저에서는 Google 로그인 제한" : googleLoading ? "Google 로그인 중..." : "Google로 로그인"}
       </button>
 
       <div className="w-full my-5 flex items-center gap-3">

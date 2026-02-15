@@ -89,14 +89,22 @@ export async function GET(request: NextRequest) {
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
+      const lower = error.message.toLowerCase();
+      const isFlowStateError =
+        lower.includes("invalid flow state") ||
+        lower.includes("no valid flow state found") ||
+        lower.includes("code verifier");
+      const friendly = isFlowStateError
+        ? "세션 정보가 사라졌습니다. 브라우저를 유지한 상태로 다시 시도해 주세요."
+        : error.message;
       console.error("[auth/callback/complete] exchangeCodeForSession failed", {
         ...logContext,
         reason: error.message,
       });
       return buildLoginRedirect(url, next, {
         error: "exchange_failed",
-        errorCode: "oauth_code_exchange_failed",
-        errorDescription: error.message,
+        errorCode: isFlowStateError ? "flow_state_missing" : "oauth_code_exchange_failed",
+        errorDescription: friendly,
       });
     }
   } else if (tokenHash && otpType) {
@@ -115,10 +123,10 @@ export async function GET(request: NextRequest) {
         errorDescription: error.message,
       });
     }
-  } else if (accessToken) {
+  } else if (accessToken && refreshToken) {
     const { error } = await supabase.auth.setSession({
       access_token: accessToken,
-      refresh_token: refreshToken ?? "",
+      refresh_token: refreshToken,
     });
     if (error) {
       console.error("[auth/callback/complete] setSession failed", {
