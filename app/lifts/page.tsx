@@ -58,7 +58,7 @@ async function downloadShareCard(url: string, filename: string) {
       byteLength,
       text: textSnippet,
     });
-    throw new Error("이미지 생성 실패(서버 응답이 PNG가 아님)");
+    throw new Error(`이미지 생성 실패: status=${res.status}, content-type=${contentType || "none"}`);
   }
 
   const blob = new Blob([buffer], { type: "image/png" });
@@ -70,6 +70,34 @@ async function downloadShareCard(url: string, filename: string) {
   a.click();
   a.remove();
   URL.revokeObjectURL(objectUrl);
+}
+
+async function openShareCardInNewTab(url: string) {
+  const res = await fetch(url, { cache: "no-store" });
+  const contentType = res.headers.get("content-type") || "";
+  const buffer = await res.arrayBuffer();
+  const byteLength = buffer.byteLength;
+
+  if (!res.ok || !contentType.includes("image/png") || byteLength < 2048) {
+    let textSnippet = "";
+    try {
+      textSnippet = new TextDecoder().decode(buffer).slice(0, 500);
+    } catch {
+      textSnippet = "";
+    }
+    console.error("Share card open failed", {
+      status: res.status,
+      contentType,
+      byteLength,
+      text: textSnippet,
+    });
+    throw new Error(`이미지 열기 실패: status=${res.status}, content-type=${contentType || "none"}`);
+  }
+
+  const blob = new Blob([buffer], { type: "image/png" });
+  const objectUrl = URL.createObjectURL(blob);
+  window.open(objectUrl, "_blank", "noopener,noreferrer");
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 60_000);
 }
 
 function getTierMessage(percentAll: number): string {
@@ -277,12 +305,22 @@ function LiftsContent() {
     try {
       await downloadShareCard(shareCardUrl, makePngFilename(shareNickname));
       setShareError("");
-    } catch {
-      setShareError("이미지 생성 실패: 서버 응답을 확인해 주세요.");
+    } catch (e) {
+      setShareError(e instanceof Error ? e.message : "이미지 생성 실패");
     } finally {
       setIsDownloading(false);
     }
   }, [shareCardUrl, shareNickname]);
+
+  const handleOpenCard = useCallback(async () => {
+    if (!shareCardUrl) return;
+    try {
+      await openShareCardInNewTab(shareCardUrl);
+      setShareError("");
+    } catch (e) {
+      setShareError(e instanceof Error ? e.message : "이미지 열기 실패");
+    }
+  }, [shareCardUrl]);
 
   const handleShareCard = useCallback(async () => {
     if (!shareCardUrl) return;
@@ -537,7 +575,7 @@ function LiftsContent() {
                 <div className="grid grid-cols-3 gap-2">
                   <button
                     type="button"
-                    onClick={() => window.open(shareCardUrl, "_blank", "noopener,noreferrer")}
+                    onClick={handleOpenCard}
                     className="min-h-[44px] rounded-lg border border-neutral-300 text-xs font-medium"
                   >
                     이미지 열기

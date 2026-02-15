@@ -45,7 +45,7 @@ export async function GET(req: Request) {
     }
 
     const classRangeRaw = (sp.get("classRange") || "체급 정보 없음").trim();
-    const nicknameRaw = sanitizeNickname(sp.get("nickname") || "GymTools User");
+    const nicknameRaw = sanitizeNickname(sp.get("nickname") || "GymTools");
 
     if (!/^[0-9A-Za-z가-힣_ ]{1,12}$/.test(nicknameRaw)) {
       return jsonError(400, "invalid_nickname", { nickname: sp.get("nickname") });
