@@ -269,7 +269,7 @@ function LiftsContent() {
   }, [hasResult, hasSex, sex, s, b, d, result.totalKg, router]);
 
   const createShareCardAndPreview = useCallback(async () => {
-    if (!hasResult || !hasSex || !percentiles || !classPercentile) {
+    if (!hasResult || !hasSex || !percentiles) {
       setShareError("성별과 체중을 입력해 퍼센트 결과를 먼저 계산해 주세요.");
       return;
     }
@@ -284,8 +284,6 @@ function LiftsContent() {
     const params = new URLSearchParams({
       total: String(Math.round(result.totalKg)),
       percentAll: String(percentiles.allKrTop),
-      percentByClass: String(classPercentile.topPercent),
-      classRange: classPercentile.classLabel,
       nickname: normalized,
       squat: s > 0 ? String(Math.round(s)) : "",
       bench: b > 0 ? String(Math.round(b)) : "",
@@ -309,7 +307,7 @@ function LiftsContent() {
       setShareNotice("");
       setShareError(e instanceof Error ? e.message : "이미지 생성 실패");
     }
-  }, [classPercentile, hasResult, hasSex, percentiles, result.totalKg, shareNickname, shareCardObjectUrl]);
+  }, [hasResult, hasSex, percentiles, result.totalKg, s, b, d, shareNickname, shareCardObjectUrl]);
 
   useEffect(() => {
     return () => {
