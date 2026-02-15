@@ -1,38 +1,74 @@
-import { createClient } from "@/lib/supabase/server";
-import { NextResponse } from "next/server";
+import { createServerClient } from "@supabase/ssr";
+import { NextRequest, NextResponse } from "next/server";
 
-export async function GET(request: Request) {
-  const { searchParams, origin } = new URL(request.url);
-  const code = searchParams.get("code");
-  const next = searchParams.get("next") ?? "/community";
+export const runtime = "nodejs";
 
-  if (code) {
-    const supabase = await createClient();
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
+function safeNextPath(input: string | null): string {
+  if (!input || !input.startsWith("/")) return "/mypage";
+  if (input.startsWith("//")) return "/mypage";
+  return input;
+}
 
-    if (!error) {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+function errorResponse(message: string, details?: string) {
+  const debug = details ? `${message}: ${details}` : message;
+  const lower = debug.toLowerCase();
+  const hint = lower.includes("invalid redirect url")
+    ? "Hint: Add exact callback URL to Supabase Auth -> URL Configuration."
+    : lower.includes("code verifier") || lower.includes("pkce")
+    ? "Hint: This usually means PKCE flow/session cookie mismatch during callback."
+    : "Hint: Check Supabase redirect URL and PKCE settings.";
+  console.error("[auth/callback] OAuth callback failed:", debug);
 
-      if (user) {
-        // 프로필이 없으면 닉네임 설정 페이지로
-        const { data: profile } = await supabase
-          .from("profiles")
-          .select("nickname")
-          .eq("user_id", user.id)
-          .single();
+  return new NextResponse(
+    `OAuth callback failed.\n\n${debug}\n\n${hint}`,
+    { status: 500, headers: { "content-type": "text/plain; charset=utf-8" } }
+  );
+}
 
-        if (!profile) {
-          return NextResponse.redirect(
-            `${origin}/onboarding?next=${encodeURIComponent(next)}`
-          );
-        }
-      }
+export async function GET(request: NextRequest) {
+  const url = new URL(request.url);
+  const code = url.searchParams.get("code");
+  const next = safeNextPath(url.searchParams.get("next"));
 
-      return NextResponse.redirect(`${origin}${next}`);
-    }
+  if (!code) {
+    return errorResponse("Missing code parameter");
   }
 
-  return NextResponse.redirect(`${origin}/login?error=auth`);
+  const response = NextResponse.redirect(new URL(next, url.origin));
+
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
+        },
+      },
+    }
+  );
+
+  const { error } = await supabase.auth.exchangeCodeForSession(code);
+
+  if (error) {
+    const details = `${error.name ?? "AuthApiError"}: ${error.message}`;
+    return errorResponse("exchangeCodeForSession failed", details);
+  }
+
+  const {
+    data: { user },
+    error: userError,
+  } = await supabase.auth.getUser();
+
+  if (userError || !user) {
+    const details = userError?.message ?? "No user in session after exchange";
+    return errorResponse("Session verification failed", details);
+  }
+
+  return response;
 }

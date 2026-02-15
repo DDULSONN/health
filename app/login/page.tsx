@@ -6,7 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 
 function LoginContent() {
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") ?? "/community";
+  const redirect = searchParams.get("redirect") ?? "/mypage";
   const urlError = searchParams.get("error");
   const [error, setError] = useState<string | null>(urlError);
   const [loading, setLoading] = useState(false);
@@ -16,10 +16,17 @@ function LoginContent() {
     setError(null);
     try {
       const supabase = createClient();
+      const baseSiteUrl =
+        process.env.NEXT_PUBLIC_SITE_URL ||
+        process.env.SITE_URL ||
+        window.location.origin;
+      const callbackUrl = new URL("/auth/callback", baseSiteUrl);
+      callbackUrl.searchParams.set("next", redirect);
+
       const { error: authError } = await supabase.auth.signInWithOAuth({
         provider: "google",
         options: {
-          redirectTo: `${window.location.origin}/auth/callback?next=${encodeURIComponent(redirect)}`,
+          redirectTo: callbackUrl.toString(),
         },
       });
       if (authError) {

@@ -11,6 +11,10 @@ function getAdminEmails(): string[] {
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next({ request });
 
+  if (request.nextUrl.pathname.startsWith('/auth/callback')) {
+    return response;
+  }
+
   if (!request.nextUrl.pathname.startsWith("/admin")) {
     return response;
   }
@@ -49,4 +53,5 @@ export const config = {
     "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|api/og).*)",
   ],
 };
+
 
