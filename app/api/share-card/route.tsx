@@ -31,22 +31,6 @@ function getTagline(percentAll: number): string {
   return "성장 중 - 다음 기록이 기대돼요";
 }
 
-function chipStyle() {
-  return {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 9999,
-    border: "1px solid rgba(255,255,255,0.24)",
-    background: "rgba(255,255,255,0.08)",
-    color: "#E6E9F4",
-    fontSize: 30,
-    fontWeight: 600,
-    padding: "12px 24px",
-    letterSpacing: "0.02em",
-  } as const;
-}
-
 export async function GET(req: Request) {
   try {
     const sp = new URL(req.url).searchParams;
@@ -68,7 +52,9 @@ export async function GET(req: Request) {
       });
     }
 
-    if (!nickname || nickname.length > 12 || !/^[0-9A-Za-z가-힣_]+$/.test(nickname)) return jsonError(400, "invalid_nickname");
+    if (!nickname || nickname.length > 12 || !/^[0-9A-Za-z가-힣_]+$/.test(nickname)) {
+      return jsonError(400, "invalid_nickname");
+    }
     if (!classRange || classRange.length > 24) return jsonError(400, "invalid_classRange");
 
     const safeTotal = Math.max(0, Math.round(total));
@@ -77,6 +63,10 @@ export async function GET(req: Request) {
     const classPercentile = 100 - safePercentByClass;
     const tagline = getTagline(safePercentAll);
     const needsReferenceNote = safePercentByClass - safePercentAll >= 20;
+    const now = new Date();
+    const issueDate = `${now.getFullYear()}.${String(now.getMonth() + 1).padStart(2, "0")}.${String(
+      now.getDate()
+    ).padStart(2, "0")}`;
 
     return new ImageResponse(
       (
@@ -86,171 +76,145 @@ export async function GET(req: Request) {
             height: "100%",
             display: "flex",
             flexDirection: "column",
-            justifyContent: "space-between",
-            background:
-              "linear-gradient(160deg, #eef4ff 0%, #e2ebff 45%, #e7f8f2 100%)",
-            color: "#0f172a",
+            background: "#F7F8FB",
+            color: "#0F172A",
+            border: "1px solid #D4D9E5",
             fontFamily: "system-ui, -apple-system, Segoe UI, sans-serif",
-            borderRadius: 50,
-            border: "1px solid rgba(255,255,255,0.7)",
-            boxShadow: "0 18px 44px rgba(51,65,85,0.16)",
-            padding: "56px 58px",
             overflow: "hidden",
-            position: "relative",
           }}
         >
-          <div style={{ display: "flex", flexDirection: "column", gap: 26 }}>
-            <div
-              style={{
-                display: "flex",
-                width: 420,
-                height: 420,
-                borderRadius: 9999,
-                background: "radial-gradient(circle, rgba(109,94,246,0.24) 0%, rgba(109,94,246,0) 74%)",
-                position: "absolute",
-                top: -130,
-                right: -140,
-              }}
-            />
-            <div
-              style={{
-                display: "flex",
-                width: 420,
-                height: 420,
-                borderRadius: 9999,
-                background: "radial-gradient(circle, rgba(39,224,179,0.24) 0%, rgba(39,224,179,0) 75%)",
-                position: "absolute",
-                left: -150,
-                bottom: -150,
-              }}
-            />
-            <div style={{ display: "flex", flexDirection: "column", gap: 22, position: "relative", zIndex: 1 }}>
-              <div
-                style={{
-                  display: "flex",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <div style={{ display: "flex", fontSize: 42, fontWeight: 800, letterSpacing: "0.04em", color: "#1E293B" }}>
-                  GYMTOOLS
-                </div>
-                <div style={{ display: "flex", fontSize: 28, fontWeight: 600, color: "#334155" }}>helchang.com</div>
+          <div
+            style={{
+              display: "flex",
+              height: 166,
+              padding: "34px 62px",
+              alignItems: "center",
+              justifyContent: "space-between",
+              background: "linear-gradient(180deg, #1E2634 0%, #2B3444 100%)",
+              color: "#F8FAFC",
+            }}
+          >
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <div style={{ display: "flex", fontSize: 52, fontWeight: 800, letterSpacing: "0.09em" }}>
+                GYMTOOLS CERTIFICATE
               </div>
-              <div
-                style={{
-                  display: "flex",
-                  fontSize: 26,
-                  fontWeight: 600,
-                  color: "#475569",
-                }}
-              >
-                짐툴 3대 퍼센트 분석
-              </div>
-
-              <div
-                style={{
-                  ...chipStyle(),
-                  width: 198,
-                  color: "#4338CA",
-                  border: "1px solid rgba(67,56,202,0.22)",
-                  background: "rgba(255,255,255,0.64)",
-                  fontSize: 22,
-                  padding: "10px 18px",
-                }}
-              >
-                {`TOP ${formatPercent(safePercentAll)}%`}
-              </div>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                <div style={{ display: "flex", alignItems: "baseline", gap: 10, letterSpacing: "-0.01em" }}>
-                  <span style={{ display: "flex", fontSize: 62, fontWeight: 800, color: "#0F172A" }}>대한민국 상위</span>
-                  <span style={{ display: "flex", fontSize: 120, fontWeight: 900, color: "#5B4CF0" }}>
-                    {`${formatPercent(safePercentAll)}%`}
-                  </span>
-                </div>
-                <div style={{ display: "flex", fontSize: 30, fontWeight: 600, color: "#334155" }}>{tagline}</div>
+              <div style={{ display: "flex", fontSize: 17, letterSpacing: "0.24em", opacity: 0.88 }}>
+                OF 3-LIFT TOTAL
               </div>
             </div>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 14, position: "relative", zIndex: 1 }}>
-            <div style={{ display: "flex", gap: 12 }}>
-              {[
-                ["SQUAT", squatValue],
-                ["BENCH", benchValue],
-                ["DEAD", deadValue],
-              ].map(([label, value]) => (
-                <div
-                  key={label}
-                  style={{
-                    ...chipStyle(),
-                    flex: 1,
-                    borderRadius: 22,
-                    justifyContent: "space-between",
-                    background: "rgba(255,255,255,0.56)",
-                    border: "1px solid rgba(255,255,255,0.74)",
-                    color: "#1E293B",
-                    padding: "14px 14px",
-                    fontSize: 22,
-                  }}
-                >
-                  <span style={{ display: "flex", fontWeight: 600, color: "#475569" }}>{label}</span>
-                  <span style={{ display: "flex", fontWeight: 800 }}>{value}</span>
-                </div>
-              ))}
+            <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 6 }}>
+              <div style={{ display: "flex", fontSize: 28, fontWeight: 800, letterSpacing: "0.04em" }}>GYMTOOLS</div>
+              <div style={{ display: "flex", fontSize: 16, opacity: 0.92 }}>helchang.com</div>
             </div>
-
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18 }}>
-              <div
-                style={{
-                  ...chipStyle(),
-                  borderRadius: 18,
-                  background: "rgba(91,76,240,0.94)",
-                  border: "1px solid rgba(91,76,240,1)",
-                  color: "#FFFFFF",
-                  fontWeight: 800,
-                  fontSize: 32,
-                  padding: "12px 24px",
-                }}
-              >
-                {`TOTAL ${safeTotal}kg`}
-              </div>
-              <div style={{ display: "flex", fontSize: 32, fontWeight: 700, color: "#1F2937" }}>{`닉네임 · ${nickname}`}</div>
-            </div>
-          </div>
-
-          <div style={{ display: "flex", flexDirection: "column", gap: 8, position: "relative", zIndex: 1 }}>
-            <div style={{ display: "flex", fontSize: 24, color: "#475569", fontWeight: 600, justifyContent: "center" }}>
-              {`참고: ${classRange} 체급 백분위 ${formatPercent(classPercentile)}`}
-            </div>
-            {needsReferenceNote ? (
-              <div style={{ display: "flex", fontSize: 18, color: "#64748B", justifyContent: "center" }}>
-                ※ 체급 기준은 표본/모델 차이로 참고용입니다
-              </div>
-            ) : null}
           </div>
 
           <div
             style={{
               display: "flex",
-              justifyContent: "center",
-              fontSize: 26,
-              fontWeight: 600,
-              color: "#334155",
-              borderTop: "1px solid rgba(255,255,255,0.75)",
-              paddingTop: 16,
-              position: "relative",
-              zIndex: 1,
+              flex: 1,
+              padding: "40px 62px 28px",
+              gap: 36,
+              background: "linear-gradient(180deg, #FCFDFF 0%, #F3F6FC 100%)",
             }}
           >
-            짐툴에서 확인하기 → helchang.com
+            <div style={{ display: "flex", flex: 1.2, flexDirection: "column", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "flex", fontSize: 16, color: "#64748B", letterSpacing: "0.08em" }}>
+                  THIS CERTIFIES THAT
+                </div>
+                <div style={{ display: "flex", fontSize: 62, fontWeight: 800, letterSpacing: "0.01em", color: "#0F172A" }}>
+                  {nickname}
+                </div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10 }}>
+                  <span style={{ display: "flex", fontSize: 38, fontWeight: 700, color: "#1E293B" }}>대한민국 상위</span>
+                  <span style={{ display: "flex", fontSize: 76, fontWeight: 900, color: "#5B4CF0" }}>
+                    {`${formatPercent(safePercentAll)}%`}
+                  </span>
+                </div>
+                <div style={{ display: "flex", fontSize: 24, fontWeight: 600, color: "#334155" }}>{tagline}</div>
+                <div style={{ display: "flex", fontSize: 22, fontWeight: 700, color: "#1F2937" }}>{`3대 합계 ${safeTotal}kg`}</div>
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                <div style={{ display: "flex", fontSize: 21, color: "#475569", fontWeight: 600 }}>
+                  {`SQUAT ${squatValue}  |  BENCH ${benchValue}  |  DEAD ${deadValue}`}
+                </div>
+                <div style={{ display: "flex", fontSize: 15, color: "#64748B" }}>
+                  {`REFERENCE: ${classRange} / PCTL ${formatPercent(classPercentile)}`}
+                </div>
+                {needsReferenceNote ? (
+                  <div style={{ display: "flex", fontSize: 13, color: "#94A3B8" }}>
+                    ※ CLASS REFERENCE IS FOR CONTEXT ONLY
+                  </div>
+                ) : null}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", width: 1, background: "#D3DAE8" }} />
+
+            <div style={{ display: "flex", width: 300, flexDirection: "column", justifyContent: "space-between" }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+                {[
+                  ["RANK (KOREA)", `TOP ${formatPercent(safePercentAll)}%`],
+                  ["TOTAL", `${safeTotal} kg`],
+                  ["CLASS (REF)", `${classRange} / PCTL ${formatPercent(classPercentile)}`],
+                ].map(([label, value]) => (
+                  <div key={label} style={{ display: "flex", flexDirection: "column", gap: 7 }}>
+                    <div style={{ display: "flex", width: "100%", height: 1, background: "#CBD5E1" }} />
+                    <div style={{ display: "flex", fontSize: 13, color: "#64748B", letterSpacing: "0.08em" }}>{label}</div>
+                    <div style={{ display: "flex", fontSize: 24, fontWeight: 700, color: "#111827" }}>{value}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div
+                style={{
+                  display: "flex",
+                  width: 162,
+                  height: 162,
+                  borderRadius: 9999,
+                  border: "2px solid #94A3B8",
+                  alignSelf: "center",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  background: "rgba(148,163,184,0.08)",
+                }}
+              >
+                <div style={{ display: "flex", flexDirection: "column", gap: 3, textAlign: "center" }}>
+                  <span style={{ display: "flex", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#334155" }}>
+                    GYMTOOLS
+                  </span>
+                  <span style={{ display: "flex", justifyContent: "center", fontSize: 14, fontWeight: 700, color: "#334155" }}>
+                    VERIFIED
+                  </span>
+                  <span style={{ display: "flex", justifyContent: "center", fontSize: 13, fontWeight: 700, color: "#334155" }}>
+                    3-LIFT
+                  </span>
+                  <span style={{ display: "flex", justifyContent: "center", fontSize: 11, color: "#64748B" }}>helchang.com</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              height: 84,
+              padding: "0 62px",
+              borderTop: "1px solid #D3DAE8",
+              background: "#F6F8FC",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
+          >
+            <div style={{ display: "flex", fontSize: 18, color: "#475569", fontWeight: 600 }}>{`DATE ${issueDate}`}</div>
+            <div style={{ display: "flex", fontSize: 18, color: "#475569", fontWeight: 600 }}>GYMTOOLS / SHARE CARD</div>
           </div>
         </div>
       ),
       {
-        width: 1080,
-        height: 1350,
+        width: 1200,
+        height: 675,
         headers: { "cache-control": "no-store" },
       }
     );
