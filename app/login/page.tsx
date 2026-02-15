@@ -1,4 +1,4 @@
-"use client";
+ï»¿"use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -53,7 +53,7 @@ function LoginContent() {
         setGoogleLoading(false);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Google ·Î±×ÀÎ Áß ¿À·ù°¡ ¹ß»ýÇß½À´Ï´Ù.");
+      setError(e instanceof Error ? e.message : "Google ë¡œê·¸ì¸ ì¤‘ ì˜¤ë¥˜ê°€ ë°œìƒí–ˆìŠµë‹ˆë‹¤.");
       setGoogleLoading(false);
     }
   };
@@ -61,7 +61,7 @@ function LoginContent() {
   const handleMagicLinkLogin = async () => {
     const normalized = email.trim().toLowerCase();
     if (!normalized) {
-      setError("ÀÌ¸ÞÀÏÀ» ÀÔ·ÂÇØ ÁÖ¼¼¿ä.");
+      setError("ì´ë©”ì¼ì„ ìž…ë ¥í•´ ì£¼ì„¸ìš”.");
       return;
     }
 
@@ -83,9 +83,9 @@ function LoginContent() {
         return;
       }
 
-      setEmailSentMessage("¸ÞÀÏÇÔÀ» È®ÀÎÇØ ·Î±×ÀÎ ¸µÅ©¸¦ Å¬¸¯ÇÏ¼¼¿ä");
+      setEmailSentMessage("ë©”ì¼í•¨ì„ í™•ì¸í•´ ë¡œê·¸ì¸ ë§í¬ë¥¼ í´ë¦­í•˜ì„¸ìš”");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "ÀÌ¸ÞÀÏ ·Î±×ÀÎ ¸µÅ© Àü¼Û Áß ¿À·ù°¡ ¹ß»ýÇß½À´Ï´Ù.");
+      setError(e instanceof Error ? e.message : "ì´ë©”ì¼ ë¡œê·¸ì¸ ë§í¬ ì „ì†¡ ì¤‘ ì˜¤ë¥˜ê°€ ë°œìƒí–ˆìŠµë‹ˆë‹¤.");
     } finally {
       setEmailLoading(false);
     }
@@ -94,9 +94,9 @@ function LoginContent() {
   const handleCopyUrl = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
-      setEmailSentMessage("ÇöÀç URLÀ» º¹»çÇß½À´Ï´Ù. ¿ÜºÎ ºê¶ó¿ìÀú¿¡¼­ ¿­¾îÁÖ¼¼¿ä.");
+      setEmailSentMessage("í˜„ìž¬ URLì„ ë³µì‚¬í–ˆìŠµë‹ˆë‹¤. ì™¸ë¶€ ë¸Œë¼ìš°ì €ì—ì„œ ì—´ì–´ì£¼ì„¸ìš”.");
     } catch {
-      setError("URL º¹»ç¿¡ ½ÇÆÐÇß½À´Ï´Ù.");
+      setError("URL ë³µì‚¬ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤.");
     }
   };
 
@@ -115,9 +115,9 @@ function LoginContent() {
 
   return (
     <main className="max-w-sm mx-auto px-4 py-16 flex flex-col items-center min-h-[70vh] justify-center">
-      <h1 className="text-2xl font-bold text-neutral-900 mb-2">·Î±×ÀÎ</h1>
+      <h1 className="text-2xl font-bold text-neutral-900 mb-2">ë¡œê·¸ì¸</h1>
       <p className="text-sm text-neutral-500 mb-8 text-center">
-        Ä¿¹Â´ÏÆ¼ Âü¿©¿Í ±â·Ï °ü¸®¸¦ À§ÇØ ·Î±×ÀÎÇÏ¼¼¿ä.
+        ì»¤ë®¤ë‹ˆí‹° ì°¸ì—¬ì™€ ê¸°ë¡ ê´€ë¦¬ë¥¼ ìœ„í•´ ë¡œê·¸ì¸í•˜ì„¸ìš”.
       </p>
 
       {error && <p className="text-sm text-red-600 bg-red-50 rounded-xl p-3 mb-4 w-full text-center">{error}</p>}
@@ -128,21 +128,21 @@ function LoginContent() {
 
       {inAppBrowser && (
         <div className="w-full mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3">
-          <p className="text-sm text-amber-900 font-medium">Ä«Ä«¿ÀÅå(ÀÎ¾Û)¿¡¼­´Â Google ·Î±×ÀÎÀÌ Â÷´ÜµÉ ¼ö ÀÖ¾î¿ä.</p>
+          <p className="text-sm text-amber-900 font-medium">ì¹´ì¹´ì˜¤í†¡(ì¸ì•±)ì—ì„œëŠ” Google ë¡œê·¸ì¸ì´ ì°¨ë‹¨ë  ìˆ˜ ìžˆì–´ìš”.</p>
           <div className="mt-2 flex gap-2">
             <button
               type="button"
               onClick={handleCopyUrl}
               className="flex-1 min-h-[40px] rounded-lg border border-amber-300 bg-white text-amber-900 text-sm font-medium"
             >
-              URL º¹»ç
+              URL ë³µì‚¬
             </button>
             <button
               type="button"
               onClick={handleOpenExternal}
               className="flex-1 min-h-[40px] rounded-lg bg-amber-600 text-white text-sm font-medium"
             >
-              ¿ÜºÎ ºê¶ó¿ìÀú·Î ¿­±â
+              ì™¸ë¶€ ë¸Œë¼ìš°ì €ë¡œ ì—´ê¸°
             </button>
           </div>
         </div>
@@ -160,18 +160,18 @@ function LoginContent() {
           <path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.3 35.2 26.7 36 24 36c-5.2 0-9.6-3.5-11.2-8.2l-6.5 5C9.5 39.6 16.2 44 24 44z" />
           <path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C37 39.2 44 34 44 24c0-1.3-.1-2.7-.4-3.9z" />
         </svg>
-        {googleLoading ? "Google ·Î±×ÀÎ Áß..." : "Google·Î ·Î±×ÀÎ"}
+        {googleLoading ? "Google ë¡œê·¸ì¸ ì¤‘..." : "Googleë¡œ ë¡œê·¸ì¸"}
       </button>
 
       <div className="w-full my-5 flex items-center gap-3">
         <span className="h-px flex-1 bg-neutral-200" />
-        <span className="text-xs text-neutral-400">¶Ç´Â ÀÌ¸ÞÀÏ·Î ·Î±×ÀÎ</span>
+        <span className="text-xs text-neutral-400">ë˜ëŠ” ì´ë©”ì¼ë¡œ ë¡œê·¸ì¸</span>
         <span className="h-px flex-1 bg-neutral-200" />
       </div>
 
       <div className="w-full space-y-2">
         <label htmlFor="email" className="text-sm text-neutral-700 font-medium">
-          ÀÌ¸ÞÀÏ
+          ì´ë©”ì¼
         </label>
         <input
           id="email"
@@ -188,11 +188,11 @@ function LoginContent() {
           disabled={emailLoading || googleLoading}
           className="w-full min-h-[48px] rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 active:scale-[0.98] transition-all disabled:opacity-50"
         >
-          {emailLoading ? "Àü¼Û Áß..." : "·Î±×ÀÎ ¸µÅ© º¸³»±â"}
+          {emailLoading ? "ì „ì†¡ ì¤‘..." : "ë¡œê·¸ì¸ ë§í¬ ë³´ë‚´ê¸°"}
         </button>
       </div>
 
-      <p className="text-xs text-neutral-400 mt-6 text-center">·Î±×ÀÎÇÏ¸é ¼­ºñ½º ÀÌ¿ë¾à°ü ¹× °³ÀÎÁ¤º¸Ã³¸®¹æÄ§¿¡ µ¿ÀÇÇÑ °ÍÀ¸·Î °£ÁÖµË´Ï´Ù.</p>
+      <p className="text-xs text-neutral-400 mt-6 text-center">ë¡œê·¸ì¸í•˜ë©´ ì„œë¹„ìŠ¤ ì´ìš©ì•½ê´€ ë° ê°œì¸ì •ë³´ì²˜ë¦¬ë°©ì¹¨ì— ë™ì˜í•œ ê²ƒìœ¼ë¡œ ê°„ì£¼ë©ë‹ˆë‹¤.</p>
     </main>
   );
 }
@@ -202,7 +202,7 @@ export default function LoginPage() {
     <Suspense
       fallback={
         <main className="max-w-sm mx-auto px-4 py-16">
-          <p className="text-neutral-400 text-center">·Îµù Áß...</p>
+          <p className="text-neutral-400 text-center">ë¡œë”© ì¤‘...</p>
         </main>
       }
     >
