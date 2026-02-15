@@ -13,10 +13,13 @@ function isInAppBrowser(ua: string): boolean {
 
 function LoginContent() {
   const searchParams = useSearchParams();
-  const redirect = searchParams.get("redirect") ?? "/mypage";
-  const urlError = searchParams.get("error");
+  const redirect = searchParams.get("redirect") ?? searchParams.get("next") ?? "/";
 
-  const [error, setError] = useState<string | null>(urlError);
+  const errorParam = searchParams.get("error");
+  const errorCode = searchParams.get("error_code")?.toLowerCase() ?? null;
+  const errorDescription = searchParams.get("error_description");
+
+  const [error, setError] = useState<string | null>(null);
   const [googleLoading, setGoogleLoading] = useState(false);
   const [emailLoading, setEmailLoading] = useState(false);
   const [email, setEmail] = useState("");
@@ -26,13 +29,53 @@ function LoginContent() {
   const callbackUrl = useMemo(() => {
     const baseSiteUrl = process.env.NEXT_PUBLIC_SITE_URL || window.location.origin;
     const url = new URL("/auth/callback", baseSiteUrl);
-    url.searchParams.set("next", redirect);
+    url.searchParams.set("next", redirect || "/");
     return url.toString();
   }, [redirect]);
+
+  const isOtpExpired = errorCode === "otp_expired";
+
+  const initialErrorMessage = useMemo(() => {
+    if (isOtpExpired) {
+      return "로그인 링크가 만료되었거나 이미 사용됐어요. 다시 보내드릴게요.";
+    }
+    if (errorDescription) return errorDescription;
+    if (errorCode) return `로그인 오류가 발생했습니다. (${errorCode})`;
+    if (errorParam) return errorParam;
+    return null;
+  }, [errorCode, errorDescription, errorParam, isOtpExpired]);
 
   useEffect(() => {
     setInAppBrowser(isInAppBrowser(navigator.userAgent));
   }, []);
+
+  useEffect(() => {
+    setError(initialErrorMessage);
+  }, [initialErrorMessage]);
+
+  const sendMagicLink = async (rawEmail: string) => {
+    const normalized = rawEmail.trim().toLowerCase();
+    if (!normalized) {
+      setError("이메일을 입력해 주세요.");
+      return false;
+    }
+
+    const supabase = createClient();
+    const { error: authError } = await supabase.auth.signInWithOtp({
+      email: normalized,
+      options: {
+        emailRedirectTo: callbackUrl,
+      },
+    });
+
+    if (authError) {
+      setError(authError.message);
+      return false;
+    }
+
+    setEmailSentMessage("메일함을 확인해 로그인 링크를 클릭하세요");
+    return true;
+  };
 
   const handleGoogleLogin = async () => {
     setGoogleLoading(true);
@@ -59,33 +102,28 @@ function LoginContent() {
   };
 
   const handleMagicLinkLogin = async () => {
-    const normalized = email.trim().toLowerCase();
-    if (!normalized) {
-      setError("이메일을 입력해 주세요.");
-      return;
-    }
-
     setEmailLoading(true);
     setError(null);
     setEmailSentMessage(null);
 
     try {
-      const supabase = createClient();
-      const { error: authError } = await supabase.auth.signInWithOtp({
-        email: normalized,
-        options: {
-          emailRedirectTo: callbackUrl,
-        },
-      });
-
-      if (authError) {
-        setError(authError.message);
-        return;
-      }
-
-      setEmailSentMessage("메일함을 확인해 로그인 링크를 클릭하세요");
+      await sendMagicLink(email);
     } catch (e) {
       setError(e instanceof Error ? e.message : "이메일 로그인 링크 전송 중 오류가 발생했습니다.");
+    } finally {
+      setEmailLoading(false);
+    }
+  };
+
+  const handleResendMagicLink = async () => {
+    setEmailLoading(true);
+    setError(null);
+    setEmailSentMessage(null);
+
+    try {
+      await sendMagicLink(email);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "로그인 링크 재발송 중 오류가 발생했습니다.");
     } finally {
       setEmailLoading(false);
     }
@@ -116,11 +154,24 @@ function LoginContent() {
   return (
     <main className="max-w-sm mx-auto px-4 py-16 flex flex-col items-center min-h-[70vh] justify-center">
       <h1 className="text-2xl font-bold text-neutral-900 mb-2">로그인</h1>
-      <p className="text-sm text-neutral-500 mb-8 text-center">
-        커뮤니티 참여와 기록 관리를 위해 로그인하세요.
-      </p>
+      <p className="text-sm text-neutral-500 mb-8 text-center">커뮤니티 참여와 기록 관리를 위해 로그인하세요.</p>
 
       {error && <p className="text-sm text-red-600 bg-red-50 rounded-xl p-3 mb-4 w-full text-center">{error}</p>}
+
+      {isOtpExpired && (
+        <div className="w-full mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3">
+          <p className="text-sm text-amber-900 font-medium">로그인 링크가 만료되었거나 이미 사용됐어요. 다시 보내드릴게요.</p>
+          <p className="text-xs text-amber-800 mt-1">인앱 브라우저에서 실패할 수 있어 Chrome/Safari에서 열어주세요.</p>
+          <button
+            type="button"
+            onClick={handleResendMagicLink}
+            disabled={emailLoading || googleLoading}
+            className="mt-3 w-full min-h-[42px] rounded-lg bg-amber-600 text-white text-sm font-medium disabled:opacity-50"
+          >
+            {emailLoading ? "재전송 중..." : "로그인 링크 다시 보내기"}
+          </button>
+        </div>
+      )}
 
       {emailSentMessage && (
         <p className="text-sm text-emerald-700 bg-emerald-50 rounded-xl p-3 mb-4 w-full text-center">{emailSentMessage}</p>
