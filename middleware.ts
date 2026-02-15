@@ -10,14 +10,7 @@ function getAdminEmails(): string[] {
 
 export async function middleware(request: NextRequest) {
   const response = NextResponse.next({ request });
-
-  if (request.nextUrl.pathname.startsWith('/auth/callback')) {
-    return response;
-  }
-
-  if (!request.nextUrl.pathname.startsWith("/admin")) {
-    return response;
-  }
+  const pathname = request.nextUrl.pathname;
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
@@ -40,9 +33,18 @@ export async function middleware(request: NextRequest) {
   } = await supabase.auth.getUser();
   const isAdmin = !!user?.email && getAdminEmails().includes(user.email.toLowerCase());
 
-  if (!isAdmin) {
-    const url = new URL("/", request.url);
+  const protectedPrefixes = ["/community", "/mypage", "/cert/request", "/admin"];
+  const isProtected = protectedPrefixes.some((prefix) => pathname.startsWith(prefix));
+
+  if (isProtected && !user) {
+    const url = new URL("/login", request.url);
+    url.searchParams.set("next", pathname + request.nextUrl.search);
+    url.searchParams.set("redirect", pathname + request.nextUrl.search);
     return NextResponse.redirect(url);
+  }
+
+  if (pathname.startsWith("/admin") && !isAdmin) {
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   return response;

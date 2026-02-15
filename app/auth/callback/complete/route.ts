@@ -53,20 +53,6 @@ export async function GET(request: NextRequest) {
     queryKeys: [...new Set(Array.from(url.searchParams.keys()))],
   };
   console.info("[auth/callback/complete] incoming", logContext);
-
-  if (callbackError || callbackErrorCode) {
-    const reason = `${callbackError ?? "callback_error"}/${callbackErrorCode ?? ""}`;
-    console.error("[auth/callback/complete] callback provider error", {
-      ...logContext,
-      reason,
-    });
-    return buildLoginRedirect(url, next, {
-      error: callbackError ?? "access_denied",
-      errorCode: callbackErrorCode,
-      errorDescription: callbackErrorDescription,
-    });
-  }
-
   const response = NextResponse.redirect(new URL(next, url.origin));
 
   const supabase = createServerClient(
@@ -85,6 +71,31 @@ export async function GET(request: NextRequest) {
       },
     }
   );
+
+  // Session-first guard: ignore callback errors when user is already signed in.
+  const {
+    data: { user: existingUser },
+  } = await supabase.auth.getUser();
+  if (existingUser) {
+    console.info("[auth/callback/complete] existing session found", {
+      ...logContext,
+      userId: existingUser.id,
+    });
+    return response;
+  }
+
+  if (callbackError || callbackErrorCode) {
+    const reason = `${callbackError ?? "callback_error"}/${callbackErrorCode ?? ""}`;
+    console.error("[auth/callback/complete] callback provider error", {
+      ...logContext,
+      reason,
+    });
+    return buildLoginRedirect(url, next, {
+      error: callbackError ?? "access_denied",
+      errorCode: callbackErrorCode,
+      errorDescription: callbackErrorDescription,
+    });
+  }
 
   if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
