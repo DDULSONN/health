@@ -26,12 +26,33 @@ function errorResponse(message: string, details?: string) {
   );
 }
 
+function invalidLinkResponse() {
+  return new NextResponse(
+    `링크가 만료됐거나 잘못되었습니다.\n\n다시 로그인 링크를 요청해 주세요.`,
+    { status: 400, headers: { "content-type": "text/plain; charset=utf-8" } }
+  );
+}
+
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
   const tokenHash = url.searchParams.get("token_hash");
   const otpType = url.searchParams.get("type") as EmailOtpType | null;
+  const accessToken = url.searchParams.get("access_token");
+  const refreshToken = url.searchParams.get("refresh_token");
   const next = safeNextPath(url.searchParams.get("next"));
+
+  const logContext = {
+    path: url.pathname,
+    next,
+    type: otpType,
+    hasCode: Boolean(code),
+    hasTokenHash: Boolean(tokenHash),
+    hasAccessToken: Boolean(accessToken),
+    hasRefreshToken: Boolean(refreshToken),
+    queryKeys: [...new Set(Array.from(url.searchParams.keys()))],
+  };
+  console.info("[auth/callback] Incoming callback", logContext);
 
   const response = NextResponse.redirect(new URL(next, url.origin));
 
@@ -56,6 +77,10 @@ export async function GET(request: NextRequest) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
       const details = `${error.name ?? "AuthApiError"}: ${error.message}`;
+      console.error("[auth/callback] exchangeCodeForSession failed", {
+        ...logContext,
+        reason: details,
+      });
       return errorResponse("exchangeCodeForSession failed", details);
     }
   } else if (tokenHash && otpType) {
@@ -65,10 +90,31 @@ export async function GET(request: NextRequest) {
     });
     if (error) {
       const details = `${error.name ?? "AuthApiError"}: ${error.message}`;
+      console.error("[auth/callback] verifyOtp failed", {
+        ...logContext,
+        reason: details,
+      });
       return errorResponse("verifyOtp failed", details);
     }
+  } else if (accessToken && refreshToken) {
+    const { error } = await supabase.auth.setSession({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+    });
+    if (error) {
+      const details = `${error.name ?? "AuthApiError"}: ${error.message}`;
+      console.error("[auth/callback] setSession failed", {
+        ...logContext,
+        reason: details,
+      });
+      return errorResponse("setSession failed", details);
+    }
   } else {
-    return errorResponse("Missing code parameter");
+    console.error("[auth/callback] Invalid callback parameters", {
+      ...logContext,
+      reason: "No supported auth params",
+    });
+    return invalidLinkResponse();
   }
 
   const {
@@ -78,8 +124,16 @@ export async function GET(request: NextRequest) {
 
   if (userError || !user) {
     const details = userError?.message ?? "No user in session after exchange";
+    console.error("[auth/callback] Session verification failed", {
+      ...logContext,
+      reason: details,
+    });
     return errorResponse("Session verification failed", details);
   }
 
+  console.info("[auth/callback] Callback success", {
+    ...logContext,
+    userId: user.id,
+  });
   return response;
 }
