@@ -56,15 +56,20 @@ async function fetchShareCardBlob(url: string): Promise<ShareCardPayload> {
   const buffer = await res.arrayBuffer();
   const byteLength = buffer.byteLength;
   const blob = new Blob([buffer], { type: contentType || "application/octet-stream" });
+  const bytes = new Uint8Array(buffer);
+  const firstBytes = Array.from(bytes.slice(0, 8))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join(" ");
 
   console.info("[share-card] response check", {
     ok: res.ok,
     status: res.status,
     contentType,
     byteLength,
+    firstBytes,
   });
 
-  if (!res.ok || !contentType.includes("image/png") || byteLength < 2048) {
+  if (!res.ok || !contentType.includes("image/png") || byteLength < 5000) {
     let textSnippet = "";
     try {
       textSnippet = new TextDecoder().decode(buffer).slice(0, 500);
