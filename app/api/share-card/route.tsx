@@ -85,57 +85,46 @@ export async function GET(req: Request) {
             width: "100%",
             height: "100%",
             display: "flex",
-            position: "relative",
-            alignItems: "center",
-            justifyContent: "center",
+            flexDirection: "column",
+            justifyContent: "space-between",
             background:
-              "linear-gradient(165deg, #d9e4fb 0%, #cddcf7 38%, #d9f2ec 100%)",
+              "linear-gradient(160deg, #eef4ff 0%, #e2ebff 45%, #e7f8f2 100%)",
             color: "#0f172a",
-            overflow: "hidden",
             fontFamily: "system-ui, -apple-system, Segoe UI, sans-serif",
+            borderRadius: 50,
+            border: "1px solid rgba(255,255,255,0.7)",
+            boxShadow: "0 18px 44px rgba(51,65,85,0.16)",
+            padding: "56px 58px",
+            overflow: "hidden",
+            position: "relative",
           }}
         >
-          <div
-            style={{
-              display: "flex",
-              position: "absolute",
-              width: 680,
-              height: 680,
-              borderRadius: 9999,
-              background: "radial-gradient(circle, rgba(109,94,246,0.22) 0%, rgba(109,94,246,0) 72%)",
-              top: -150,
-              right: -140,
-            }}
-          />
-          <div
-            style={{
-              display: "flex",
-              position: "absolute",
-              width: 740,
-              height: 740,
-              borderRadius: 9999,
-              background: "radial-gradient(circle, rgba(39,224,179,0.24) 0%, rgba(39,224,179,0) 75%)",
-              bottom: -260,
-              left: -180,
-            }}
-          />
-
-          <div
-            style={{
-              display: "flex",
-              width: 900,
-              height: 1280,
-              justifyContent: "space-between",
-              flexDirection: "column",
-              borderRadius: 40,
-              border: "1px solid rgba(255,255,255,0.55)",
-              background: "linear-gradient(180deg, rgba(255,255,255,0.34) 0%, rgba(255,255,255,0.14) 100%)",
-              boxShadow: "0 24px 60px rgba(31, 41, 55, 0.18)",
-              padding: "52px 54px",
-              zIndex: 1,
-            }}
-          >
-            <div style={{ display: "flex", flexDirection: "column", gap: 34 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 26 }}>
+            <div
+              style={{
+                display: "flex",
+                width: 420,
+                height: 420,
+                borderRadius: 9999,
+                background: "radial-gradient(circle, rgba(109,94,246,0.24) 0%, rgba(109,94,246,0) 74%)",
+                position: "absolute",
+                top: -130,
+                right: -140,
+              }}
+            />
+            <div
+              style={{
+                display: "flex",
+                width: 420,
+                height: 420,
+                borderRadius: 9999,
+                background: "radial-gradient(circle, rgba(39,224,179,0.24) 0%, rgba(39,224,179,0) 75%)",
+                position: "absolute",
+                left: -150,
+                bottom: -150,
+              }}
+            />
+            <div style={{ display: "flex", flexDirection: "column", gap: 22, position: "relative", zIndex: 1 }}>
               <div
                 style={{
                   display: "flex",
@@ -143,15 +132,17 @@ export async function GET(req: Request) {
                   alignItems: "center",
                 }}
               >
-                <div style={{ display: "flex", fontSize: 42, fontWeight: 800, letterSpacing: "0.04em", color: "#1E293B" }}>GYMTOOLS</div>
+                <div style={{ display: "flex", fontSize: 42, fontWeight: 800, letterSpacing: "0.04em", color: "#1E293B" }}>
+                  GYMTOOLS
+                </div>
                 <div style={{ display: "flex", fontSize: 28, fontWeight: 600, color: "#334155" }}>helchang.com</div>
               </div>
               <div
                 style={{
                   display: "flex",
-                  fontSize: 28,
+                  fontSize: 26,
                   fontWeight: 600,
-                  color: "#334155",
+                  color: "#475569",
                 }}
               >
                 짐툴 3대 퍼센트 분석
@@ -160,128 +151,106 @@ export async function GET(req: Request) {
               <div
                 style={{
                   ...chipStyle(),
-                  width: 226,
+                  width: 198,
                   color: "#4338CA",
                   border: "1px solid rgba(67,56,202,0.22)",
-                  background: "rgba(255,255,255,0.56)",
-                  fontSize: 25,
+                  background: "rgba(255,255,255,0.64)",
+                  fontSize: 22,
+                  padding: "10px 18px",
                 }}
               >
                 {`TOP ${formatPercent(safePercentAll)}%`}
               </div>
 
-              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", alignItems: "baseline", gap: 10, letterSpacing: "-0.01em" }}>
-                  <span style={{ display: "flex", fontSize: 64, fontWeight: 800, color: "#0F172A" }}>대한민국 상위</span>
+                  <span style={{ display: "flex", fontSize: 62, fontWeight: 800, color: "#0F172A" }}>대한민국 상위</span>
                   <span style={{ display: "flex", fontSize: 120, fontWeight: 900, color: "#5B4CF0" }}>
                     {`${formatPercent(safePercentAll)}%`}
                   </span>
                 </div>
-                <div style={{ display: "flex", fontSize: 32, fontWeight: 600, color: "#334155" }}>{tagline}</div>
+                <div style={{ display: "flex", fontSize: 30, fontWeight: 600, color: "#334155" }}>{tagline}</div>
               </div>
             </div>
+          </div>
 
-            <div style={{ display: "flex", flexDirection: "column", gap: 20 }}>
-              <div style={{ display: "flex", gap: 12 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 14, position: "relative", zIndex: 1 }}>
+            <div style={{ display: "flex", gap: 12 }}>
+              {[
+                ["SQUAT", squatValue],
+                ["BENCH", benchValue],
+                ["DEAD", deadValue],
+              ].map(([label, value]) => (
                 <div
+                  key={label}
                   style={{
                     ...chipStyle(),
                     flex: 1,
                     borderRadius: 22,
                     justifyContent: "space-between",
-                    background: "rgba(255,255,255,0.48)",
-                    border: "1px solid rgba(255,255,255,0.66)",
+                    background: "rgba(255,255,255,0.56)",
+                    border: "1px solid rgba(255,255,255,0.74)",
                     color: "#1E293B",
-                    padding: "14px 16px",
-                    fontSize: 24,
+                    padding: "14px 14px",
+                    fontSize: 22,
                   }}
                 >
-                  <span style={{ display: "flex", fontWeight: 600, color: "#475569" }}>SQUAT</span>
-                  <span style={{ display: "flex", fontWeight: 800 }}>{squatValue}</span>
+                  <span style={{ display: "flex", fontWeight: 600, color: "#475569" }}>{label}</span>
+                  <span style={{ display: "flex", fontWeight: 800 }}>{value}</span>
                 </div>
-                <div
-                  style={{
-                    ...chipStyle(),
-                    flex: 1,
-                    borderRadius: 22,
-                    justifyContent: "space-between",
-                    background: "rgba(255,255,255,0.48)",
-                    border: "1px solid rgba(255,255,255,0.66)",
-                    color: "#1E293B",
-                    padding: "14px 16px",
-                    fontSize: 24,
-                  }}
-                >
-                  <span style={{ display: "flex", fontWeight: 600, color: "#475569" }}>BENCH</span>
-                  <span style={{ display: "flex", fontWeight: 800 }}>{benchValue}</span>
-                </div>
-                <div
-                  style={{
-                    ...chipStyle(),
-                    flex: 1,
-                    borderRadius: 22,
-                    justifyContent: "space-between",
-                    background: "rgba(255,255,255,0.48)",
-                    border: "1px solid rgba(255,255,255,0.66)",
-                    color: "#1E293B",
-                    padding: "14px 16px",
-                    fontSize: 24,
-                  }}
-                >
-                  <span style={{ display: "flex", fontWeight: 600, color: "#475569" }}>DEAD</span>
-                  <span style={{ display: "flex", fontWeight: 800 }}>{deadValue}</span>
-                </div>
-              </div>
-
-              <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 16 }}>
-                <div
-                  style={{
-                    ...chipStyle(),
-                    borderRadius: 18,
-                    background: "rgba(91,76,240,0.9)",
-                    border: "1px solid rgba(91,76,240,1)",
-                    color: "#FFFFFF",
-                    fontWeight: 800,
-                    fontSize: 32,
-                    padding: "12px 24px",
-                  }}
-                >
-                  {`TOTAL ${safeTotal}kg`}
-                </div>
-                <div style={{ display: "flex", fontSize: 32, fontWeight: 700, color: "#1F2937" }}>{`닉네임 · ${nickname}`}</div>
-              </div>
-
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, alignItems: "center" }}>
-                <div style={{ display: "flex", fontSize: 24, color: "#475569", fontWeight: 600 }}>
-                  {`참고: ${classRange} 체급 백분위 ${formatPercent(classPercentile)}`}
-                </div>
-                {needsReferenceNote ? (
-                  <div style={{ display: "flex", fontSize: 18, color: "#64748B" }}>
-                    ※ 체급 기준은 표본/모델 차이로 참고용입니다
-                  </div>
-                ) : null}
-              </div>
+              ))}
             </div>
 
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "center",
-                fontSize: 28,
-                fontWeight: 600,
-                color: "#334155",
-                borderTop: "1px solid rgba(255,255,255,0.62)",
-                paddingTop: 20,
-              }}
-            >
-              짐툴에서 확인하기 → helchang.com
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 18 }}>
+              <div
+                style={{
+                  ...chipStyle(),
+                  borderRadius: 18,
+                  background: "rgba(91,76,240,0.94)",
+                  border: "1px solid rgba(91,76,240,1)",
+                  color: "#FFFFFF",
+                  fontWeight: 800,
+                  fontSize: 32,
+                  padding: "12px 24px",
+                }}
+              >
+                {`TOTAL ${safeTotal}kg`}
+              </div>
+              <div style={{ display: "flex", fontSize: 32, fontWeight: 700, color: "#1F2937" }}>{`닉네임 · ${nickname}`}</div>
             </div>
+          </div>
+
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, position: "relative", zIndex: 1 }}>
+            <div style={{ display: "flex", fontSize: 24, color: "#475569", fontWeight: 600, justifyContent: "center" }}>
+              {`참고: ${classRange} 체급 백분위 ${formatPercent(classPercentile)}`}
+            </div>
+            {needsReferenceNote ? (
+              <div style={{ display: "flex", fontSize: 18, color: "#64748B", justifyContent: "center" }}>
+                ※ 체급 기준은 표본/모델 차이로 참고용입니다
+              </div>
+            ) : null}
+          </div>
+
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              fontSize: 26,
+              fontWeight: 600,
+              color: "#334155",
+              borderTop: "1px solid rgba(255,255,255,0.75)",
+              paddingTop: 16,
+              position: "relative",
+              zIndex: 1,
+            }}
+          >
+            짐툴에서 확인하기 → helchang.com
           </div>
         </div>
       ),
       {
         width: 1080,
-        height: 1920,
+        height: 1350,
         headers: { "cache-control": "no-store" },
       }
     );
