@@ -1,6 +1,13 @@
-﻿import { ImageResponse } from "@vercel/og";
+﻿import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
+
+function jsonError(status: number, code: string, extra?: Record<string, unknown>) {
+  return new Response(JSON.stringify({ error: code, ...(extra ?? {}) }), {
+    status,
+    headers: { "content-type": "application/json; charset=utf-8" },
+  });
+}
 
 function asNumber(raw: string | null): number {
   const value = Number(raw);
@@ -21,32 +28,34 @@ function getTierMessage(percentAll: number): string {
 
 export async function GET(req: Request) {
   try {
-    const { searchParams } = new URL(req.url);
+    const sp = new URL(req.url).searchParams;
 
-    const totalRaw = asNumber(searchParams.get("total"));
-    const percentAllRaw = asNumber(searchParams.get("percentAll"));
-    const percentByClassRaw = asNumber(searchParams.get("percentByClass"));
-    const classRange = (searchParams.get("classRange") || "").trim();
-    const nickname = sanitizeNickname(searchParams.get("nickname") || "");
+    const totalRaw = asNumber(sp.get("total"));
+    const percentAllRaw = asNumber(sp.get("percentAll"));
+    const percentByClassRaw = asNumber(sp.get("percentByClass"));
+    const classRange = (sp.get("classRange") || "").trim();
+    const nickname = sanitizeNickname(sp.get("nickname") || "");
 
     if (!Number.isFinite(totalRaw) || !Number.isFinite(percentAllRaw) || !Number.isFinite(percentByClassRaw)) {
-      return new Response(JSON.stringify({ error: "invalid_number_params" }), {
-        status: 400,
-        headers: { "content-type": "application/json" },
+      return jsonError(400, "invalid_number_params", {
+        total: sp.get("total"),
+        percentAll: sp.get("percentAll"),
+        percentByClass: sp.get("percentByClass"),
       });
     }
 
-    if (!nickname) {
-      return new Response(JSON.stringify({ error: "missing_nickname" }), {
-        status: 400,
-        headers: { "content-type": "application/json" },
-      });
+    if (!nickname || nickname.length > 12) {
+      return jsonError(400, "invalid_nickname");
+    }
+
+    if (!classRange || classRange.length > 20) {
+      return jsonError(400, "invalid_classRange");
     }
 
     const total = Math.max(0, Math.round(totalRaw));
     const percentAll = Math.max(0, Math.min(100, Number(percentAllRaw.toFixed(2))));
     const percentByClass = Math.max(0, Math.min(100, Number(percentByClassRaw.toFixed(2))));
-    const safeClassRange = (classRange || "체급 정보 없음").slice(0, 28);
+    const safeClassRange = classRange.slice(0, 20);
     const safeNickname = nickname.slice(0, 12);
 
     return new ImageResponse(
@@ -91,9 +100,6 @@ export async function GET(req: Request) {
     );
   } catch (e: unknown) {
     const message = e instanceof Error ? e.message : "unknown";
-    return new Response(JSON.stringify({ error: "share_card_render_failed", message }), {
-      status: 500,
-      headers: { "content-type": "application/json" },
-    });
+    return jsonError(500, "share_card_render_failed", { message });
   }
 }
