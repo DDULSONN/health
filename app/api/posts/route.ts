@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { containsProfanity, getRateLimitRemaining } from "@/lib/moderation";
 import { NextResponse } from "next/server";
 import type { BodycheckGender } from "@/lib/community";
+import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
 
 const POST_COOLDOWN_MS = 30_000;
 const RECORD_TYPES = ["lifts", "1rm", "helltest"];
@@ -62,7 +63,13 @@ export async function GET(request: Request) {
   const enriched = visible.map((p) => ({
     ...p,
     profiles: profileMap.get(p.user_id as string) ?? null,
+    cert_summary: null,
   }));
+
+  const certSummaryMap = await fetchUserCertSummaryMap(userIds, supabase);
+  for (const post of enriched) {
+    post.cert_summary = certSummaryMap.get(post.user_id as string) ?? null;
+  }
 
   return NextResponse.json({ posts: enriched, total: count ?? 0, page });
 }

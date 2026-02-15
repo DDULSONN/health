@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { timeAgo, type Post } from "@/lib/community";
 import { formatKstDateTime } from "@/lib/weekly";
+import VerifiedBadge from "@/components/VerifiedBadge";
 
 type WeeklyTopItem = {
   id: string;
@@ -195,7 +196,10 @@ export default function BodycheckBoardPage() {
                     <h2 className="mt-1 text-sm font-semibold text-neutral-900 truncate">{post.title}</h2>
                     {post.content && <p className="text-xs text-neutral-600 mt-1 line-clamp-2">{post.content}</p>}
                     <p className="text-xs text-indigo-700 mt-1">평균 {avg} / 투표 {voteCount}</p>
-                    <p className="text-xs text-neutral-500 mt-1">작성자 {post.profiles?.nickname ?? "닉네임 없음"}</p>
+                    <div className="mt-1 flex items-center gap-2">
+                      <p className="text-xs text-neutral-500">작성자 {post.profiles?.nickname ?? "닉네임 없음"}</p>
+                      <VerifiedBadge total={post.cert_summary?.total} />
+                    </div>
                   </div>
                   {(post.images?.length ?? 0) > 0 && (
                     <img

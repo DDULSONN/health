@@ -15,6 +15,7 @@ import {
   type Post,
   type PostType,
 } from "@/lib/community";
+import VerifiedBadge from "@/components/VerifiedBadge";
 
 type Tab = "records" | "photo_bodycheck" | "free" | "ranking";
 type RankingData = {
@@ -308,6 +309,7 @@ function PostList({ posts, loading }: { posts: Post[]; loading: boolean }) {
                   <span className="text-xs text-neutral-500">
                     {post.profiles?.nickname ?? "알 수 없음"}
                   </span>
+                  <VerifiedBadge total={post.cert_summary?.total} />
                 </div>
               </div>
 

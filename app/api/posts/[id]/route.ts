@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { containsProfanity } from "@/lib/moderation";
 import { BODYCHECK_SCORE_MAP, type BodycheckRating } from "@/lib/community";
 import { NextResponse } from "next/server";
+import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -56,9 +57,33 @@ export async function GET(_request: Request, { params }: RouteCtx) {
     }
   }
 
-  const enrichedComments = (comments ?? []).map((c) => ({
+  const sortedComments = [...(comments ?? [])].sort((a, b) => {
+    const aParent = (a.parent_id as string | null) ?? a.id;
+    const bParent = (b.parent_id as string | null) ?? b.id;
+    if (aParent !== bParent) {
+      const aParentCreatedAt =
+        (comments ?? []).find((c) => c.id === aParent)?.created_at ?? a.created_at;
+      const bParentCreatedAt =
+        (comments ?? []).find((c) => c.id === bParent)?.created_at ?? b.created_at;
+      return (
+        new Date(aParentCreatedAt).getTime() - new Date(bParentCreatedAt).getTime()
+      );
+    }
+    if ((a.parent_id ? 1 : 0) !== (b.parent_id ? 1 : 0)) {
+      return (a.parent_id ? 1 : 0) - (b.parent_id ? 1 : 0);
+    }
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  });
+
+  const certSummaryMap = await fetchUserCertSummaryMap(
+    [post.user_id as string, ...commentUserIds],
+    supabase
+  );
+
+  const enrichedComments = sortedComments.map((c) => ({
     ...c,
     profiles: commentProfileMap.get(c.user_id as string) ?? null,
+    cert_summary: certSummaryMap.get(c.user_id as string) ?? null,
   }));
 
   let myVote: { rating: BodycheckRating; score: number } | null = null;
@@ -86,6 +111,7 @@ export async function GET(_request: Request, { params }: RouteCtx) {
     post: {
       ...post,
       profiles: authorProfile ?? null,
+      cert_summary: certSummaryMap.get(post.user_id as string) ?? null,
       my_vote: myVote,
       bodycheck_summary:
         post.type === "photo_bodycheck"

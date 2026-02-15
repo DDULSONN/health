@@ -26,6 +26,12 @@ export interface BodycheckSummary {
   average_score: number;
 }
 
+export interface UserCertSummary {
+  user_id: string;
+  total: number;
+  is_verified: boolean;
+}
+
 export interface Post {
   id: string;
   user_id: string;
@@ -44,6 +50,7 @@ export interface Post {
   is_hidden: boolean;
   created_at: string;
   profiles?: { nickname: string; role?: string } | null;
+  cert_summary?: UserCertSummary | null;
   comment_count?: number;
   bodycheck_summary?: BodycheckSummary;
   my_vote?: { rating: BodycheckRating; score: number } | null;
@@ -53,10 +60,13 @@ export interface Comment {
   id: string;
   post_id: string;
   user_id: string;
-  content: string;
+  parent_id?: string | null;
+  content: string | null;
   is_hidden: boolean;
+  deleted_at?: string | null;
   created_at: string;
   profiles?: { nickname: string } | null;
+  cert_summary?: UserCertSummary | null;
 }
 
 export interface Report {
