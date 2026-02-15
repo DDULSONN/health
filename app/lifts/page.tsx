@@ -17,9 +17,6 @@ type SaveRecordStatus = "idle" | "saving" | "done" | "error";
 type ShareCardPayload = {
   blob: Blob;
   objectUrl: string;
-  status: number;
-  contentType: string;
-  byteLength: number;
 };
 
 function formatSexLabel(sex: Sex): string {
@@ -37,17 +34,6 @@ function validateNickname(raw: string): string | null {
 function makePngFilename(nickname: string): string {
   const safe = nickname.trim().replace(/[^0-9A-Za-z가-힣_]/g, "_").slice(0, 12) || "user";
   return `gymtools_percentile_${safe}.png`;
-}
-
-async function downloadShareCard(url: string, filename: string) {
-  const payload = await fetchShareCardBlob(url);
-  const a = document.createElement("a");
-  a.href = payload.objectUrl;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(payload.objectUrl);
 }
 
 async function fetchShareCardBlob(url: string): Promise<ShareCardPayload> {
@@ -89,9 +75,6 @@ async function fetchShareCardBlob(url: string): Promise<ShareCardPayload> {
   return {
     blob,
     objectUrl,
-    status: res.status,
-    contentType,
-    byteLength,
   };
 }
 
@@ -141,6 +124,7 @@ function LiftsContent() {
   const [shareCardBlob, setShareCardBlob] = useState<Blob | null>(null);
   const [shareCardObjectUrl, setShareCardObjectUrl] = useState("");
   const [shareError, setShareError] = useState("");
+  const [shareNotice, setShareNotice] = useState("");
   const [isDownloading, setIsDownloading] = useState(false);
 
   const [rankingModalOpen, setRankingModalOpen] = useState(false);
@@ -315,9 +299,11 @@ function LiftsContent() {
       setShareCardObjectUrl(payload.objectUrl);
       setShareCardBlob(payload.blob);
       setShareError("");
+      setShareNotice("카드가 생성됐어요");
     } catch (e) {
       setShareCardObjectUrl("");
       setShareCardBlob(null);
+      setShareNotice("");
       setShareError(e instanceof Error ? e.message : "이미지 생성 실패");
     }
   }, [classPercentile, hasResult, hasSex, percentiles, result.totalKg, shareNickname, shareCardObjectUrl]);
@@ -329,51 +315,48 @@ function LiftsContent() {
   }, [shareCardObjectUrl]);
 
   const handleDownloadCard = useCallback(async () => {
-    if (!shareCardUrl) return;
+    if (!shareCardBlob) {
+      setShareError("먼저 카드를 생성해 주세요.");
+      return;
+    }
     setIsDownloading(true);
 
     try {
-      if (shareCardBlob) {
-        downloadBlob(shareCardBlob, makePngFilename(shareNickname));
-      } else {
-        await downloadShareCard(shareCardUrl, makePngFilename(shareNickname));
-      }
+      downloadBlob(shareCardBlob, makePngFilename(shareNickname));
       setShareError("");
     } catch (e) {
       setShareError(e instanceof Error ? e.message : "이미지 생성 실패");
     } finally {
       setIsDownloading(false);
     }
-  }, [shareCardUrl, shareNickname, shareCardBlob]);
+  }, [shareNickname, shareCardBlob]);
 
   const handleOpenCard = useCallback(async () => {
-    if (!shareCardUrl) return;
+    if (!shareCardObjectUrl) {
+      setShareError("먼저 카드를 생성해 주세요.");
+      return;
+    }
     try {
-      if (shareCardObjectUrl) {
-        openCardObjectUrl(shareCardObjectUrl);
-      } else {
-        const payload = await fetchShareCardBlob(shareCardUrl);
-        if (shareCardObjectUrl) URL.revokeObjectURL(shareCardObjectUrl);
-        setShareCardObjectUrl(payload.objectUrl);
-        setShareCardBlob(payload.blob);
-        openCardObjectUrl(payload.objectUrl);
-      }
+      openCardObjectUrl(shareCardObjectUrl);
       setShareError("");
     } catch (e) {
       setShareError(e instanceof Error ? e.message : "이미지 열기 실패");
     }
-  }, [shareCardUrl, shareCardObjectUrl]);
+  }, [shareCardObjectUrl]);
 
   const handleShareCard = useCallback(async () => {
-    if (!shareCardUrl) return;
-
-    const absoluteUrl = `${window.location.origin}${shareCardUrl}`;
+    if (!shareCardBlob) {
+      setShareError("먼저 카드를 생성해 주세요.");
+      return;
+    }
+    const filename = makePngFilename(shareNickname);
     if (navigator.share) {
       try {
+        const file = new File([shareCardBlob], filename, { type: "image/png" });
         await navigator.share({
           title: "GYMTOOLS 3대 퍼센트 결과",
-          text: "내 3대 퍼센트 결과를 확인해 보세요.",
-          url: absoluteUrl,
+          text: "내 3대 퍼센트 결과를 공유합니다.",
+          files: [file],
         });
         return;
       } catch {
@@ -382,12 +365,16 @@ function LiftsContent() {
     }
 
     try {
-      await navigator.clipboard.writeText(absoluteUrl);
-      setShareError("공유 링크를 복사했습니다.");
+      if (shareCardObjectUrl) {
+        window.open(shareCardObjectUrl, "_blank", "noopener,noreferrer");
+        setShareNotice("이미지를 열었습니다. 저장 후 공유해 주세요.");
+      } else {
+        setShareError("이미지 공유를 지원하지 않는 브라우저입니다.");
+      }
     } catch {
-      setShareError("공유 링크 복사에 실패했습니다.");
+      setShareError("SNS 공유에 실패했습니다.");
     }
-  }, [shareCardUrl]);
+  }, [shareCardBlob, shareCardObjectUrl, shareNickname]);
 
   const handleOpenRanking = useCallback(async () => {
     const {
@@ -567,6 +554,7 @@ function LiftsContent() {
                 setShareModalOpen(true);
                 setShareError("");
                 setShareCardUrl("");
+                setShareNotice("");
                 if (shareCardObjectUrl) URL.revokeObjectURL(shareCardObjectUrl);
                 setShareCardObjectUrl("");
                 setShareCardBlob(null);
@@ -590,7 +578,9 @@ function LiftsContent() {
         <div className="fixed inset-0 z-50 flex items-end bg-black/45 p-4 sm:items-center sm:justify-center">
           <div className="w-[90%] max-w-sm rounded-2xl bg-white p-4">
             <h3 className="text-base font-semibold text-neutral-900">공유 카드 만들기</h3>
-            <p className="mt-1 text-xs text-neutral-600">공유 카드에 표시할 닉네임을 입력하세요.</p>
+            <p className="mt-1 text-xs text-neutral-600">
+              {shareCardBlob ? "생성 완료! 저장하거나 공유해보세요" : "공유 카드에 표시할 닉네임을 입력하세요"}
+            </p>
 
             <input
               type="text"
@@ -609,41 +599,35 @@ function LiftsContent() {
               카드 생성하기
             </button>
 
+            {shareNotice && <p className="mt-2 text-xs text-emerald-700">{shareNotice}</p>}
             {shareError && <p className="mt-2 text-xs text-red-600">{shareError}</p>}
 
-            {shareCardObjectUrl && (
-              <div className="mt-3 space-y-2">
-                <img
-                  src={shareCardObjectUrl}
-                  alt="3대 퍼센트 공유 카드"
-                  className="w-full rounded-xl border border-neutral-200"
-                />
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={handleOpenCard}
-                    className="min-h-[44px] rounded-lg border border-neutral-300 text-xs font-medium"
-                  >
-                    이미지 열기
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleDownloadCard}
-                    disabled={isDownloading}
-                    className="min-h-[44px] rounded-lg bg-emerald-600 text-xs font-medium text-white disabled:opacity-50"
-                  >
-                    {isDownloading ? "다운로드 중" : "다운로드"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleShareCard}
-                    className="min-h-[44px] rounded-lg bg-indigo-600 text-xs font-medium text-white"
-                  >
-                    SNS 공유
-                  </button>
-                </div>
-              </div>
-            )}
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              <button
+                type="button"
+                onClick={handleOpenCard}
+                disabled={!shareCardObjectUrl}
+                className="min-h-[44px] rounded-lg border border-neutral-300 text-xs font-medium disabled:opacity-50"
+              >
+                이미지 열기
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadCard}
+                disabled={isDownloading || !shareCardBlob}
+                className="min-h-[44px] rounded-lg bg-emerald-600 text-xs font-medium text-white disabled:opacity-50"
+              >
+                {isDownloading ? "다운로드 중" : "다운로드"}
+              </button>
+              <button
+                type="button"
+                onClick={handleShareCard}
+                disabled={!shareCardBlob}
+                className="min-h-[44px] rounded-lg bg-indigo-600 text-xs font-medium text-white disabled:opacity-50"
+              >
+                SNS 공유
+              </button>
+            </div>
 
             <button
               type="button"
@@ -652,6 +636,7 @@ function LiftsContent() {
                 if (shareCardObjectUrl) URL.revokeObjectURL(shareCardObjectUrl);
                 setShareCardObjectUrl("");
                 setShareCardBlob(null);
+                setShareNotice("");
               }}
               className="mt-3 min-h-[44px] w-full rounded-xl border border-neutral-300 text-sm font-medium text-neutral-700"
             >
