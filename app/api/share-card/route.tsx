@@ -82,6 +82,9 @@ export async function GET(req: Request) {
           </div>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "20px", textAlign: "center", marginTop: "20px" }}>
+            <div style={{ fontSize: 30, fontWeight: 700, color: "#fef08a" }}>
+              GYMTOOLS OK · {nickname} · {total}kg
+            </div>
             <div style={{ fontSize: 88, fontWeight: 800, lineHeight: 1.1 }}>대한민국 상위 {percentAll}%</div>
             <div style={{ fontSize: 42, color: "#ccfbf1", fontWeight: 700 }}>{getTierMessage(percentAll)}</div>
             <div style={{ fontSize: 38, color: "#d1fae5" }}>
