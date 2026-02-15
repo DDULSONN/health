@@ -4,53 +4,56 @@ export const runtime = "edge";
 
 type CardTheme = {
   background: string;
-  border: string;
-  titleColor: string;
-  subtitleColor: string;
+  borderColor: string;
+  headerColor: string;
+  mainLabelColor: string;
   percentColor: string;
-  totalColor: string;
-  metricBoxBg: string;
-  metricBoxBorder: string;
-  topLine: string;
+  subTextColor: string;
+  metricColor: string;
+  totalLabelColor: string;
+  totalValueColor: string;
+  nicknameColor: string;
+  brandColor: string;
+  dividerColor: string;
   badgeBg: string;
-  badgeBorder: string;
   badgeText: string;
-  sealBorder: string;
-  sealText: string;
+  totalTopLine: string;
 };
 
 const normalTheme: CardTheme = {
-  background: "linear-gradient(180deg, #f8fbff 0%, #eef4ff 50%, #f4f8ff 100%)",
-  border: "1px solid #dbe4f2",
-  titleColor: "#1e293b",
-  subtitleColor: "#64748b",
-  percentColor: "#5b4cf0",
-  totalColor: "#2f3ca8",
-  metricBoxBg: "rgba(255,255,255,0.65)",
-  metricBoxBorder: "1px solid #d6e1ef",
-  topLine: "transparent",
-  badgeBg: "rgba(91,76,240,0.1)",
-  badgeBorder: "1px solid rgba(91,76,240,0.3)",
-  badgeText: "#4c3fd6",
-  sealBorder: "#94a3b8",
-  sealText: "#475569",
+  background: "linear-gradient(180deg, #F2F4F8 0%, #C9DAEF 100%)",
+  borderColor: "rgba(255,255,255,0.65)",
+  headerColor: "#111111",
+  mainLabelColor: "#222222",
+  percentColor: "#111111",
+  subTextColor: "#444444",
+  metricColor: "#111111",
+  totalLabelColor: "#111111",
+  totalValueColor: "#111111",
+  nicknameColor: "#222222",
+  brandColor: "#555555",
+  dividerColor: "rgba(0,0,0,0.15)",
+  badgeBg: "transparent",
+  badgeText: "transparent",
+  totalTopLine: "transparent",
 };
 
 const eliteTheme: CardTheme = {
-  background: "linear-gradient(180deg, #fffaf0 0%, #fff4d9 42%, #fef0c7 100%)",
-  border: "2px solid #d4a826",
-  titleColor: "#422006",
-  subtitleColor: "#7c5a10",
-  percentColor: "#b8860b",
-  totalColor: "#9a6700",
-  metricBoxBg: "rgba(255,252,240,0.88)",
-  metricBoxBorder: "1px solid #e6c977",
-  topLine: "#d4a826",
-  badgeBg: "linear-gradient(180deg, #ffe8a3 0%, #f8cd5e 100%)",
-  badgeBorder: "1px solid #c6921f",
-  badgeText: "#5c3d00",
-  sealBorder: "#c6921f",
-  sealText: "#7c5700",
+  background: "linear-gradient(180deg, #F2F4F8 0%, #C9DAEF 100%)",
+  borderColor: "rgba(200,168,74,0.55)",
+  headerColor: "#111111",
+  mainLabelColor: "#222222",
+  percentColor: "#C8A84A",
+  subTextColor: "#444444",
+  metricColor: "#111111",
+  totalLabelColor: "#111111",
+  totalValueColor: "#C8A84A",
+  nicknameColor: "#222222",
+  brandColor: "#555555",
+  dividerColor: "rgba(0,0,0,0.15)",
+  badgeBg: "#111111",
+  badgeText: "#F5D36C",
+  totalTopLine: "#C8A84A",
 };
 
 function jsonError(status: number, code: string, extra?: Record<string, unknown>) {
@@ -75,7 +78,7 @@ function formatLiftValue(value: string | null): string {
 }
 
 function getTagline(percentAll: number, isElite: boolean): string {
-  if (isElite) return "상위 1% 미만 · 극소수";
+  if (isElite) return "전국 최상위 레벨";
   if (percentAll <= 5) return "상위 5% 엘리트";
   if (percentAll <= 15) return "상위 15% 헬창";
   if (percentAll <= 30) return "상위 30% 상위권";
@@ -118,36 +121,32 @@ export async function GET(req: Request) {
             height: "100%",
             display: "flex",
             flexDirection: "column",
-            justifyContent: "space-between",
             background: theme.background,
             color: "#0F172A",
             fontFamily: "system-ui, -apple-system, Segoe UI, sans-serif",
-            border: theme.border,
-            borderRadius: 28,
+            border: `1px solid ${theme.borderColor}`,
+            borderRadius: 48,
             overflow: "hidden",
-            padding: "58px 62px",
-            position: "relative",
+            boxShadow: "0 16px 36px rgba(15, 23, 42, 0.14)",
+            padding: "96px",
           }}
         >
-          {isElite ? <div style={{ display: "flex", position: "absolute", top: 0, left: 0, right: 0, height: 6, background: theme.topLine }} /> : null}
-
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", fontSize: 38, fontWeight: 800, letterSpacing: "0.05em", color: theme.titleColor }}>GYMTOOLS</div>
-            <div style={{ display: "flex", fontSize: 21, color: theme.subtitleColor, letterSpacing: "0.08em", fontWeight: 700 }}>3-LIFT PROFILE</div>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", color: theme.headerColor }}>
+            <div style={{ display: "flex", fontSize: 36, fontWeight: 600, letterSpacing: "0.04em" }}>GYMTOOLS</div>
+            <div style={{ display: "flex", fontSize: 36, fontWeight: 600, letterSpacing: "0.04em" }}>3-LIFT PROFILE</div>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 24, marginTop: 40 }}>
             {isElite ? (
               <div
                 style={{
                   display: "flex",
                   alignSelf: "flex-start",
                   borderRadius: 9999,
-                  padding: "10px 20px",
+                  padding: "10px 24px",
                   background: theme.badgeBg,
-                  border: theme.badgeBorder,
                   color: theme.badgeText,
-                  fontSize: 20,
+                  fontSize: 24,
                   fontWeight: 800,
                   letterSpacing: "0.04em",
                 }}
@@ -157,71 +156,41 @@ export async function GET(req: Request) {
             ) : null}
 
             <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
-              <span style={{ display: "flex", fontSize: 54, fontWeight: 700, color: theme.titleColor }}>대한민국 상위</span>
-              <span style={{ display: "flex", fontSize: 140, fontWeight: 900, color: theme.percentColor, letterSpacing: "-0.03em" }}>{`${formatPercent(safePercentAll)}%`}</span>
+              <span style={{ display: "flex", fontSize: 64, fontWeight: 600, color: theme.mainLabelColor }}>대한민국 상위</span>
+              <span style={{ display: "flex", fontSize: 96, fontWeight: 700, color: theme.percentColor }}>{`${formatPercent(safePercentAll)}%`}</span>
             </div>
 
-            <div style={{ display: "flex", fontSize: 33, fontWeight: 600, color: theme.subtitleColor }}>{tagline}</div>
+            <div style={{ display: "flex", fontSize: 36, fontWeight: 600, color: theme.subTextColor }}>{tagline}</div>
           </div>
+
+          <div style={{ display: "flex", width: "100%", height: 1, background: theme.dividerColor, marginTop: 64, marginBottom: 64 }} />
 
           <div
             style={{
               display: "flex",
               flexDirection: "column",
-              gap: 16,
-              border: theme.metricBoxBorder,
-              borderRadius: 22,
-              background: theme.metricBoxBg,
-              padding: "24px 26px",
+              gap: 40,
             }}
           >
-            <div style={{ display: "flex", fontSize: 30, fontWeight: 700, color: theme.titleColor }}>{`SQUAT ${squatValue}  |  BENCH ${benchValue}  |  DEAD ${deadValue}`}</div>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div style={{ display: "flex", fontSize: 46, fontWeight: 900, color: theme.totalColor }}>{`TOTAL ${safeTotal}kg`}</div>
-              <div style={{ display: "flex", fontSize: 32, fontWeight: 700, color: theme.subtitleColor }}>{`닉네임 ${nickname}`}</div>
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 48, fontWeight: 700, color: theme.metricColor, letterSpacing: "0.02em" }}>
+              <span style={{ display: "flex" }}>{`S ${squatValue.replace("kg", "")}`}</span>
+              <span style={{ display: "flex" }}>{`B ${benchValue.replace("kg", "")}`}</span>
+              <span style={{ display: "flex" }}>{`D ${deadValue.replace("kg", "")}`}</span>
             </div>
-          </div>
-
-          <div style={{ display: "flex", borderTop: "1px solid #d8e2f1", paddingTop: 18, alignItems: "center", justifyContent: "space-between" }}>
-            <div style={{ display: "flex", fontSize: 24, color: theme.subtitleColor, fontWeight: 700 }}>helchang.com</div>
-            <div style={{ display: "flex", fontSize: 24, color: theme.subtitleColor, fontWeight: 700 }}>GYMTOOLS</div>
-          </div>
-
-          {isElite ? (
-            <div
-              style={{
-                display: "flex",
-                position: "absolute",
-                right: 34,
-                bottom: 110,
-                width: 128,
-                height: 128,
-                borderRadius: 9999,
-                border: `2px solid ${theme.sealBorder}`,
-                alignItems: "center",
-                justifyContent: "center",
-                background: "rgba(255,255,255,0.55)",
-              }}
-            >
-              <div
-                style={{
-                  display: "flex",
-                  width: 108,
-                  height: 108,
-                  borderRadius: 9999,
-                  border: `1px solid ${theme.sealBorder}`,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <div style={{ display: "flex", flexDirection: "column", textAlign: "center", color: theme.sealText, gap: 2 }}>
-                  <span style={{ display: "flex", justifyContent: "center", fontSize: 11, fontWeight: 800 }}>GYMTOOLS</span>
-                  <span style={{ display: "flex", justifyContent: "center", fontSize: 12, fontWeight: 900 }}>TOP 1%</span>
-                  <span style={{ display: "flex", justifyContent: "center", fontSize: 11, fontWeight: 700 }}>★ ★ ★</span>
-                </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+              {isElite ? <div style={{ display: "flex", width: "100%", height: 3, background: theme.totalTopLine }} /> : null}
+              <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
+                <span style={{ display: "flex", fontSize: 56, fontWeight: 600, color: theme.totalLabelColor }}>TOTAL</span>
+                <span style={{ display: "flex", fontSize: 56, fontWeight: 700, color: theme.totalValueColor }}>{`${safeTotal}kg`}</span>
               </div>
             </div>
-          ) : null}
+          </div>
+
+          <div style={{ display: "flex", fontSize: 36, color: theme.nicknameColor, fontWeight: 600, marginTop: 72 }}>{nickname}</div>
+
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto", paddingTop: 48 }}>
+            <div style={{ display: "flex", fontSize: 28, color: theme.brandColor, fontWeight: 600 }}>GYMTOOLS · helchang.com</div>
+          </div>
         </div>
       ),
       {
