@@ -40,28 +40,19 @@ export async function POST(request: Request, { params }: RouteCtx) {
     return NextResponse.json({ error: "본인 글에는 평가할 수 없습니다." }, { status: 403 });
   }
 
-  const { error: voteErr } = await supabase.from("bodycheck_votes").upsert(
+  const { error: voteErr } = await supabase.from("votes").upsert(
     {
       post_id: postId,
-      user_id: user.id,
+      voter_id: user.id,
       rating,
-      score,
+      value: score,
     },
-    { onConflict: "post_id,user_id" }
+    { onConflict: "post_id,voter_id" }
   );
 
   if (voteErr) {
     console.error("[POST /api/posts/[id]/vote] upsert error:", voteErr.message);
     return NextResponse.json({ error: "투표 저장에 실패했습니다." }, { status: 500 });
-  }
-
-  const { error: rpcErr } = await supabase.rpc("recompute_photo_bodycheck_post_stats", {
-    p_post_id: postId,
-  });
-
-  if (rpcErr) {
-    console.error("[POST /api/posts/[id]/vote] rpc error:", rpcErr.message);
-    return NextResponse.json({ error: "점수 반영에 실패했습니다." }, { status: 500 });
   }
 
   const { data: refreshed, error: refreshErr } = await supabase

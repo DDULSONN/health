@@ -89,16 +89,16 @@ export async function GET(_request: Request, { params }: RouteCtx) {
   let myVote: { rating: BodycheckRating; score: number } | null = null;
   if (post.type === "photo_bodycheck" && user) {
     const { data: vote } = await supabase
-      .from("bodycheck_votes")
-      .select("rating, score")
+      .from("votes")
+      .select("rating, value")
       .eq("post_id", id)
-      .eq("user_id", user.id)
+      .eq("voter_id", user.id)
       .maybeSingle();
 
     if (vote?.rating && vote.rating in BODYCHECK_SCORE_MAP) {
       myVote = {
         rating: vote.rating as BodycheckRating,
-        score: vote.score ?? BODYCHECK_SCORE_MAP[vote.rating as BodycheckRating],
+        score: vote.value ?? BODYCHECK_SCORE_MAP[vote.rating as BodycheckRating],
       };
     }
   }

@@ -30,6 +30,28 @@ export function getKstWeekRange(now = new Date()) {
   };
 }
 
+function getIsoWeekInfo(kstDate: Date) {
+  const target = new Date(kstDate);
+  target.setUTCHours(0, 0, 0, 0);
+  const day = target.getUTCDay() || 7;
+  target.setUTCDate(target.getUTCDate() + 4 - day);
+  const isoYear = target.getUTCFullYear();
+  const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+  const week = Math.ceil((((target.getTime() - yearStart.getTime()) / 86400000) + 1) / 7);
+  return { isoYear, week };
+}
+
+export function getKstWeekId(now = new Date()) {
+  const kstNow = toKstDate(now);
+  const { isoYear, week } = getIsoWeekInfo(kstNow);
+  return `${isoYear}-W${String(week).padStart(2, "0")}`;
+}
+
+export function getPreviousKstWeekId(now = new Date()) {
+  const previous = new Date(now.getTime() - WEEK_MS);
+  return getKstWeekId(previous);
+}
+
 export function getPreviousKstWeekRange(now = new Date()) {
   const currentWeek = getKstWeekRange(now);
   const endUtc = currentWeek.startUtc;

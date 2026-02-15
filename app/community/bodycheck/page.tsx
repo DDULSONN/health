@@ -1,69 +1,83 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { timeAgo, type Post } from "@/lib/community";
-import { formatKstDateTime } from "@/lib/weekly";
 import VerifiedBadge from "@/components/VerifiedBadge";
 
+type RankingGender = "male" | "female";
+
 type WeeklyTopItem = {
-  id: string;
+  post_id: string;
   title: string;
+  user_id: string;
+  images: string[];
+  created_at: string;
   score_sum: number;
   vote_count: number;
-  profiles?: { nickname: string | null } | null;
+  score_avg: number;
+  profiles?: { nickname: string } | null;
 };
 
-type LatestWeeklyResponse =
-  | {
-      mode: "confirmed";
-      week: { start_utc: string; end_utc: string };
-      male: { post_id: string; score: number; post: WeeklyTopItem | null } | null;
-      female: { post_id: string; score: number; post: WeeklyTopItem | null } | null;
-    }
-  | {
-      mode: "collecting";
-      week: { start_utc: string; end_utc: string };
-      male: WeeklyTopItem | null;
-      female: WeeklyTopItem | null;
-    };
+type WeeklyRankingResponse = {
+  week_id: string;
+  gender: RankingGender;
+  min_votes: number;
+  items: WeeklyTopItem[];
+};
 
 export default function BodycheckBoardPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(true);
   const [posts, setPosts] = useState<Post[]>([]);
-  const [latest, setLatest] = useState<LatestWeeklyResponse | null>(null);
   const [userId, setUserId] = useState<string | null>(null);
+  const [rankingGender, setRankingGender] = useState<RankingGender>("male");
+  const [ranking, setRanking] = useState<WeeklyRankingResponse | null>(null);
+  const [rankingLoading, setRankingLoading] = useState(true);
 
   const fetchFeed = useCallback(async () => {
     setLoading(true);
     try {
-      const [postsRes, latestRes] = await Promise.all([
-        fetch("/api/posts?tab=photo_bodycheck&type=photo_bodycheck", { cache: "no-store" }),
-        fetch("/api/weekly-winners/latest", { cache: "no-store" }),
-      ]);
+      const postsRes = await fetch("/api/posts?tab=photo_bodycheck&type=photo_bodycheck", {
+        cache: "no-store",
+      });
 
-      if (postsRes.ok) {
-        const data = await postsRes.json();
-        setPosts(data.posts ?? []);
-      } else {
+      if (!postsRes.ok) {
         setPosts([]);
+        return;
       }
 
-      if (latestRes.ok) {
-        const data = (await latestRes.json()) as LatestWeeklyResponse;
-        setLatest(data);
-      } else {
-        setLatest(null);
-      }
+      const data = await postsRes.json();
+      setPosts(data.posts ?? []);
     } catch (error) {
       console.error(error);
       setPosts([]);
-      setLatest(null);
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  const fetchRanking = useCallback(async (gender: RankingGender) => {
+    setRankingLoading(true);
+    try {
+      const res = await fetch(`/api/rankings/weekly-bodycheck?gender=${gender}&top=3`, {
+        cache: "no-store",
+      });
+
+      if (!res.ok) {
+        setRanking(null);
+        return;
+      }
+
+      const data = (await res.json()) as WeeklyRankingResponse;
+      setRanking(data);
+    } catch (error) {
+      console.error(error);
+      setRanking(null);
+    } finally {
+      setRankingLoading(false);
     }
   }, []);
 
@@ -73,87 +87,103 @@ export default function BodycheckBoardPage() {
       .then(({ data: { user } }) => {
         setUserId(user?.id ?? null);
       });
+
     fetchFeed();
   }, [fetchFeed]);
 
-  const winnerIds = useMemo(() => {
-    if (!latest) return new Set<string>();
-    const ids: string[] = [];
-    if (latest.mode === "confirmed") {
-      if (latest.male?.post_id) ids.push(latest.male.post_id);
-      if (latest.female?.post_id) ids.push(latest.female.post_id);
-    }
-    return new Set(ids);
-  }, [latest]);
+  useEffect(() => {
+    fetchRanking(rankingGender);
+  }, [fetchRanking, rankingGender]);
+
+  const rankingPostIds = useMemo(
+    () => new Set((ranking?.items ?? []).map((item) => item.post_id)),
+    [ranking]
+  );
 
   const handleWrite = () => {
     if (!userId) {
       router.push("/login?redirect=/community/write?type=photo_bodycheck");
       return;
     }
+
     router.push("/community/write?type=photo_bodycheck");
   };
 
+  const top3Items = ranking?.items ?? [];
+
   return (
-    <main className="max-w-2xl mx-auto px-4 py-6">
-      <div className="flex items-center justify-between mb-4">
+    <main className="mx-auto max-w-2xl px-4 py-6">
+      <div className="mb-4 flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">사진 몸평 게시판</h1>
-          <p className="text-sm text-neutral-500 mt-1">사진과 글을 올리고 유저들의 평가를 받아보세요.</p>
+          <p className="mt-1 text-sm text-neutral-500">사진을 공유하고 유저 평가를 받아보세요.</p>
         </div>
         <button
           type="button"
           onClick={handleWrite}
-          className="min-h-[44px] px-4 rounded-xl bg-indigo-600 text-white text-sm font-semibold hover:bg-indigo-700 active:scale-[0.98] transition"
+          className="min-h-[44px] rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white transition hover:bg-indigo-700 active:scale-[0.98]"
         >
           글쓰기
         </button>
       </div>
 
-      <section className="rounded-2xl border border-amber-200 bg-amber-50 p-4 mb-5">
-        <div className="flex items-center justify-between">
-          <p className="text-sm font-bold text-amber-800">🔥 이번주 몸짱</p>
+      <section className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold text-amber-800">이번주 몸짱 TOP3</p>
+            <p className="mt-1 text-xs text-amber-700">
+              {ranking?.week_id ? `${ranking.week_id} 집계` : "이번주 집계"}
+            </p>
+          </div>
           <Link href="/hall-of-fame" className="text-xs text-amber-700 hover:underline">
             명예의 전당
           </Link>
         </div>
-        {latest ? (
-          <p className="text-xs text-neutral-600 mt-1">
-            {latest.mode === "collecting" ? "이번주 집계중" : "확정 주차"} · {formatKstDateTime(latest.week.start_utc)} ~{" "}
-            {formatKstDateTime(latest.week.end_utc)}
+
+        <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-xl border border-amber-200 bg-white">
+          <button
+            type="button"
+            onClick={() => setRankingGender("male")}
+            className={`min-h-[42px] text-sm font-medium ${
+              rankingGender === "male" ? "bg-amber-600 text-white" : "text-amber-800"
+            }`}
+          >
+            남자
+          </button>
+          <button
+            type="button"
+            onClick={() => setRankingGender("female")}
+            className={`min-h-[42px] text-sm font-medium ${
+              rankingGender === "female" ? "bg-amber-600 text-white" : "text-amber-800"
+            }`}
+          >
+            여자
+          </button>
+        </div>
+
+        {rankingLoading ? (
+          <p className="mt-3 text-xs text-neutral-500">랭킹 불러오는 중...</p>
+        ) : top3Items.length === 0 ? (
+          <p className="mt-3 text-sm text-neutral-600">
+            랭킹 집계중입니다. 최소 {ranking?.min_votes ?? 5}표 이상부터 노출됩니다.
           </p>
         ) : (
-          <p className="text-xs text-neutral-600 mt-1">이번주 1위가 아직 없습니다.</p>
+          <div className="mt-3 space-y-2">
+            {top3Items.map((item, idx) => (
+              <Link
+                key={item.post_id}
+                href={`/community/${item.post_id}`}
+                className="block rounded-xl border border-amber-200 bg-white p-3"
+              >
+                <p className="text-xs font-semibold text-amber-700">TOP {idx + 1}</p>
+                <p className="truncate text-sm font-semibold text-neutral-900">{item.title}</p>
+                <p className="mt-1 text-xs text-neutral-600">
+                  {item.profiles?.nickname ?? "익명"} · 평균 {item.score_avg.toFixed(2)} / {item.vote_count}표
+                </p>
+              </Link>
+            ))}
+          </div>
         )}
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-3">
-          <WeeklyWinnerCard
-            label="남자 1위"
-            item={
-              latest?.mode === "confirmed"
-                ? latest.male?.post
-                  ? {
-                      ...(latest.male.post as WeeklyTopItem),
-                      score_sum: latest.male.score,
-                    }
-                  : null
-                : latest?.male ?? null
-            }
-          />
-          <WeeklyWinnerCard
-            label="여자 1위"
-            item={
-              latest?.mode === "confirmed"
-                ? latest.female?.post
-                  ? {
-                      ...(latest.female.post as WeeklyTopItem),
-                      score_sum: latest.female.score,
-                    }
-                  : null
-                : latest?.female ?? null
-            }
-          />
-        </div>
       </section>
 
       <div className="mb-3">
@@ -164,38 +194,40 @@ export default function BodycheckBoardPage() {
 
       <section className="space-y-3">
         {loading ? (
-          <p className="text-neutral-400 text-center py-12">불러오는 중...</p>
+          <p className="py-12 text-center text-neutral-400">불러오는 중...</p>
         ) : posts.length === 0 ? (
-          <p className="text-neutral-400 text-center py-12">아직 사진 몸평 게시글이 없습니다.</p>
+          <p className="py-12 text-center text-neutral-400">아직 사진 몸평 게시글이 없습니다.</p>
         ) : (
           posts.map((post) => {
             const voteCount = Number(post.vote_count ?? 0);
             const scoreSum = Number(post.score_sum ?? 0);
             const avg = voteCount > 0 ? (scoreSum / voteCount).toFixed(2) : "0.00";
-            const isWeeklyWinner = winnerIds.has(post.id);
+            const isTop = rankingPostIds.has(post.id);
 
             return (
               <Link
                 key={post.id}
                 href={`/community/${post.id}`}
-                className="block rounded-2xl border border-neutral-200 bg-white p-3 active:scale-[0.99] transition"
+                className="block rounded-2xl border border-neutral-200 bg-white p-3 transition active:scale-[0.99]"
               >
                 <div className="flex gap-3">
-                  <div className="flex-1 min-w-0">
+                  <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2">
-                      <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-indigo-100 text-indigo-700">
+                      <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
                         사진 몸평 · {post.gender === "female" ? "여성" : "남성"}
                       </span>
-                      {isWeeklyWinner && (
-                        <span className="px-2 py-0.5 rounded-full text-xs font-semibold bg-amber-100 text-amber-700">
-                          🏆 이번주 몸짱
+                      {isTop && (
+                        <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-semibold text-amber-700">
+                          TOP3
                         </span>
                       )}
                       <span className="text-xs text-neutral-400">{timeAgo(post.created_at)}</span>
                     </div>
-                    <h2 className="mt-1 text-sm font-semibold text-neutral-900 truncate">{post.title}</h2>
-                    {post.content && <p className="text-xs text-neutral-600 mt-1 line-clamp-2">{post.content}</p>}
-                    <p className="text-xs text-indigo-700 mt-1">평균 {avg} / 투표 {voteCount}</p>
+                    <h2 className="mt-1 truncate text-sm font-semibold text-neutral-900">{post.title}</h2>
+                    {post.content && <p className="mt-1 line-clamp-2 text-xs text-neutral-600">{post.content}</p>}
+                    <p className="mt-1 text-xs text-indigo-700">
+                      평균 {avg} / 투표 {voteCount}
+                    </p>
                     <div className="mt-1 flex items-center gap-2">
                       <p className="text-xs text-neutral-500">작성자 {post.profiles?.nickname ?? "닉네임 없음"}</p>
                       <VerifiedBadge total={post.cert_summary?.total} />
@@ -205,7 +237,7 @@ export default function BodycheckBoardPage() {
                     <img
                       src={post.images?.[0]}
                       alt=""
-                      className="w-20 h-20 rounded-xl object-cover border border-neutral-100 shrink-0"
+                      className="h-20 w-20 shrink-0 rounded-xl border border-neutral-100 object-cover"
                     />
                   )}
                 </div>
@@ -215,32 +247,5 @@ export default function BodycheckBoardPage() {
         )}
       </section>
     </main>
-  );
-}
-
-function WeeklyWinnerCard({
-  label,
-  item,
-}: {
-  label: string;
-  item: WeeklyTopItem | null;
-}) {
-  if (!item) {
-    return (
-      <div className="rounded-xl border border-neutral-200 bg-white p-3">
-        <p className="text-xs text-neutral-500">{label}</p>
-        <p className="text-sm text-neutral-400 mt-1">아직 없습니다.</p>
-      </div>
-    );
-  }
-
-  return (
-    <Link href={`/community/${item.id}`} className="block rounded-xl border border-amber-200 bg-white p-3">
-      <p className="text-xs text-amber-700 font-semibold">{label}</p>
-      <p className="text-sm text-neutral-900 font-semibold truncate">{item.title}</p>
-      <p className="text-xs text-neutral-600">
-        {item.profiles?.nickname ?? "익명"} · {item.score_sum}점
-      </p>
-    </Link>
   );
 }

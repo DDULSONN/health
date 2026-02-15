@@ -9,10 +9,10 @@ export async function GET(
   const supabase = await createClient();
 
   const { data, error } = await supabase
-    .from("weekly_winners")
-    .select("id, week_start, week_end, male_post_id, female_post_id")
-    .or(`male_post_id.eq.${id},female_post_id.eq.${id}`)
-    .order("week_start", { ascending: false });
+    .from("hall_of_fame")
+    .select("id, week_id, gender, post_id")
+    .eq("post_id", id)
+    .order("week_id", { ascending: false });
 
   if (error) {
     return NextResponse.json({ error: error.message }, { status: 500 });

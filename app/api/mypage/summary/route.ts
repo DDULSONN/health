@@ -22,8 +22,9 @@ export async function GET() {
       .order("created_at", { ascending: false })
       .limit(50),
     supabase
-      .from("weekly_winners")
-      .select("male_post_id, female_post_id"),
+      .from("hall_of_fame")
+      .select("id")
+      .eq("user_id", user.id),
   ]);
 
   if (profileRes.error) {
@@ -40,12 +41,7 @@ export async function GET() {
     (post) => !(post as Record<string, unknown>).is_deleted,
   );
 
-  const myPostIds = new Set(posts.map((post) => post.id));
-  let weeklyWinCount = 0;
-  for (const winner of winnersRes.data ?? []) {
-    if (winner.male_post_id && myPostIds.has(winner.male_post_id)) weeklyWinCount += 1;
-    if (winner.female_post_id && myPostIds.has(winner.female_post_id)) weeklyWinCount += 1;
-  }
+  const weeklyWinCount = winnersRes.data?.length ?? 0;
 
   return NextResponse.json({
     profile: {
