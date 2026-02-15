@@ -16,6 +16,13 @@ function formatPercent(value: number): string {
   return value.toFixed(1);
 }
 
+function formatLiftValue(value: string | null): string {
+  if (!value) return "-";
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return "-";
+  return `${Math.round(n)}kg`;
+}
+
 function getTagline(percentAll: number): string {
   if (percentAll <= 1) return "전국 상위 1% 괴물";
   if (percentAll <= 5) return "상위 5% 엘리트";
@@ -49,6 +56,9 @@ export async function GET(req: Request) {
     const percentByClass = Number(sp.get("percentByClass") ?? "41.2");
     const classRange = (sp.get("classRange") ?? "83~93kg").trim();
     const nickname = (sp.get("nickname") ?? "GymTools").trim();
+    const squatValue = formatLiftValue(sp.get("squat"));
+    const benchValue = formatLiftValue(sp.get("bench"));
+    const deadValue = formatLiftValue(sp.get("dead"));
 
     if (!Number.isFinite(total) || !Number.isFinite(percentAll) || !Number.isFinite(percentByClass)) {
       return jsonError(400, "invalid_number_params", {
@@ -64,7 +74,9 @@ export async function GET(req: Request) {
     const safeTotal = Math.max(0, Math.round(total));
     const safePercentAll = Math.max(0, Math.min(100, percentAll));
     const safePercentByClass = Math.max(0, Math.min(100, percentByClass));
+    const classPercentile = 100 - safePercentByClass;
     const tagline = getTagline(safePercentAll);
+    const needsReferenceNote = safePercentByClass - safePercentAll >= 20;
 
     return new ImageResponse(
       (
@@ -147,9 +159,6 @@ export async function GET(req: Request) {
               <span style={{ display: "flex", fontSize: 74, color: "#EEF1FF" }}>대한민국 상위</span>
               <span style={{ display: "flex", fontSize: 132, color: "#6D5EF6" }}>{`${formatPercent(safePercentAll)}%`}</span>
             </div>
-            <div style={{ display: "flex", fontSize: 46, fontWeight: 600, color: "#E3E7F7" }}>
-              {`${classRange} 체급 상위 ${formatPercent(safePercentByClass)}%`}
-            </div>
             <div style={{ display: "flex", fontSize: 34, color: "#9BA4C5", fontWeight: 500 }}>{tagline}</div>
           </div>
 
@@ -157,13 +166,50 @@ export async function GET(req: Request) {
             style={{
               display: "flex",
               flexDirection: "column",
-              gap: 22,
+              gap: 18,
               zIndex: 1,
             }}
           >
-            <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
-              <div style={chipStyle()}>{classRange}</div>
-              <div style={chipStyle()}>{`TOTAL ${safeTotal}kg`}</div>
+            <div style={{ display: "flex", gap: 14 }}>
+              <div
+                style={{
+                  ...chipStyle(),
+                  flex: 1,
+                  borderRadius: 24,
+                  fontSize: 27,
+                  justifyContent: "space-between",
+                  padding: "14px 18px",
+                }}
+              >
+                <span style={{ display: "flex", color: "#9CA6C6", fontWeight: 600 }}>SQUAT</span>
+                <span style={{ display: "flex", color: "#FFFFFF", fontWeight: 800 }}>{squatValue}</span>
+              </div>
+              <div
+                style={{
+                  ...chipStyle(),
+                  flex: 1,
+                  borderRadius: 24,
+                  fontSize: 27,
+                  justifyContent: "space-between",
+                  padding: "14px 18px",
+                }}
+              >
+                <span style={{ display: "flex", color: "#9CA6C6", fontWeight: 600 }}>BENCH</span>
+                <span style={{ display: "flex", color: "#FFFFFF", fontWeight: 800 }}>{benchValue}</span>
+              </div>
+              <div
+                style={{
+                  ...chipStyle(),
+                  flex: 1,
+                  borderRadius: 24,
+                  fontSize: 27,
+                  justifyContent: "space-between",
+                  padding: "14px 18px",
+                }}
+              >
+                <span style={{ display: "flex", color: "#9CA6C6", fontWeight: 600 }}>DEAD</span>
+                <span style={{ display: "flex", color: "#FFFFFF", fontWeight: 800 }}>{deadValue}</span>
+              </div>
             </div>
             <div
               style={{
@@ -176,8 +222,26 @@ export async function GET(req: Request) {
                 padding: "18px 24px",
               }}
             >
-              <div style={{ display: "flex", fontSize: 30, color: "#BFC7DF" }}>닉네임</div>
-              <div style={{ display: "flex", fontSize: 42, fontWeight: 800, color: "#FFFFFF" }}>{nickname}</div>
+              <div style={chipStyle()}>{`TOTAL ${safeTotal}kg`}</div>
+              <div style={{ display: "flex", fontSize: 34, fontWeight: 700, color: "#EAEFFF" }}>{`닉네임 · ${nickname}`}</div>
+            </div>
+            <div
+              style={{
+                display: "flex",
+                flexDirection: "column",
+                gap: 8,
+                alignItems: "center",
+                padding: "4px 0",
+              }}
+            >
+              <div style={{ display: "flex", fontSize: 28, color: "#CDD5EE", fontWeight: 600 }}>
+                {`참고: ${classRange} 체급 백분위 ${formatPercent(classPercentile)}`}
+              </div>
+              {needsReferenceNote ? (
+                <div style={{ display: "flex", fontSize: 22, color: "#95A0C2" }}>
+                  ※ 체급 기준은 표본/모델 차이로 참고용입니다
+                </div>
+              ) : null}
             </div>
             <div style={{ display: "flex", fontSize: 30, color: "#AAB3CE", justifyContent: "center" }}>
               짐툴에서 확인하기 - helchang.com

@@ -287,6 +287,9 @@ function LiftsContent() {
       percentByClass: String(classPercentile.topPercent),
       classRange: classPercentile.classLabel,
       nickname: normalized,
+      squat: s > 0 ? String(Math.round(s)) : "",
+      bench: b > 0 ? String(Math.round(b)) : "",
+      dead: d > 0 ? String(Math.round(d)) : "",
     });
 
     const url = `/api/share-card?${params.toString()}`;
