@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { makeSubmitCode, normalizeNumber } from "@/lib/certificate";
+import { getConfirmedUserOrResponse } from "@/lib/auth-confirmed";
 
 type CreateBody = {
   sex?: "male" | "female";
@@ -23,18 +24,15 @@ function isHttpUrl(value: string): boolean {
 
 export async function GET() {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
-  }
+  const guard = await getConfirmedUserOrResponse(supabase);
+  if (guard.response) return guard.response;
+  const user = guard.user;
+  if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
   const { data, error } = await supabase
     .from("cert_requests")
     .select(
-      "id, submit_code, status, note, video_url, admin_note, created_at, reviewed_at, sex, bodyweight, squat, bench, deadlift, total, certificates(id, certificate_no, slug, pdf_url, issued_at)",
+      "id, submit_code, status, note, video_url, admin_note, created_at, reviewed_at, sex, bodyweight, squat, bench, deadlift, total, certificates(id, certificate_no, slug, pdf_url, issued_at)"
     )
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
@@ -49,13 +47,10 @@ export async function GET() {
 
 export async function POST(request: Request) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
-  }
+  const guard = await getConfirmedUserOrResponse(supabase);
+  if (guard.response) return guard.response;
+  const user = guard.user;
+  if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
   const body = (await request.json()) as CreateBody;
   const sex = body.sex;
@@ -120,4 +115,3 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ request: data }, { status: 201 });
 }
-

@@ -2,6 +2,7 @@
 import { containsProfanity, getRateLimitRemaining } from "@/lib/moderation";
 import { NextResponse } from "next/server";
 import { getKstDateString } from "@/lib/weekly";
+import { getConfirmedUserOrResponse } from "@/lib/auth-confirmed";
 
 const COMMENT_COOLDOWN_MS = 10_000;
 
@@ -34,10 +35,9 @@ async function trackDailyComment(
 
 export async function POST(request: Request) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const guard = await getConfirmedUserOrResponse(supabase);
+  if (guard.response) return guard.response;
+  const user = guard.user;
   if (!user) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }

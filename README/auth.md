@@ -1,6 +1,6 @@
-# Auth Troubleshooting Checklist
+﻿# Auth Setup Checklist
 
-## 1) Supabase Dashboard Settings
+## 1) Supabase Dashboard
 
 ### Authentication > URL Configuration
 - Site URL: `https://helchang.com`
@@ -13,21 +13,17 @@
 - Confirm email: `ON` (recommended)
 
 ### Authentication > Email > SMTP (Custom SMTP)
-- Resend SMTP settings are saved
-- `From` email uses verified domain (example: `no-reply@helchang.com`)
+- Resend SMTP values are saved
+- Sender address uses verified domain (for example `no-reply@helchang.com`)
 
-## 2) If Verification Email Is Not Delivered
-- Check Supabase Logs for SMTP/auth failures.
-- Verify Resend domain and sender verification status.
-- Confirm there is no typo in SMTP host/port/user/password.
-- Confirm app redirect URL is exactly `https://helchang.com/...`.
+## 2) Delivery Troubleshooting
+- Check Supabase logs for SMTP/auth errors.
+- Check Resend domain/sender verification status.
+- Verify SMTP host, port, user, and password.
+- Confirm redirect URLs exactly match `https://helchang.com/...`.
 
-## 3) App UX Expectations
-- New signup:
-- Show: `가입 요청이 완료되었습니다. 메일함에서 인증 후 로그인하세요.`
-- Existing email signup:
-- Show: `이미 가입된 이메일입니다. 로그인해 주세요.`
-- Offer CTA to login and reset password.
-- Unconfirmed login:
-- Show: `메일 인증이 필요합니다. 인증 후 로그인해주세요.`
-- Offer `인증 메일 다시 보내기`.
+## 3) Expected UX
+- New signup: show `가입 요청이 완료되었습니다. 메일함에서 인증 후 로그인하세요.`
+- Existing email signup: show `이미 가입된 이메일입니다. 로그인해 주세요.`
+- Unconfirmed login: show `메일 인증이 필요합니다. 인증 후 로그인해 주세요.`
+- Provide CTA for login, password reset, and resend verification email.

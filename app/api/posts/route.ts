@@ -1,8 +1,9 @@
-import { createClient } from "@/lib/supabase/server";
+﻿import { createClient } from "@/lib/supabase/server";
 import { containsProfanity, getRateLimitRemaining } from "@/lib/moderation";
 import { NextResponse } from "next/server";
 import type { BodycheckGender } from "@/lib/community";
 import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
+import { getConfirmedUserOrResponse } from "@/lib/auth-confirmed";
 
 const POST_COOLDOWN_MS = 30_000;
 const RECORD_TYPES = ["lifts", "1rm", "helltest"];
@@ -42,13 +43,10 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const visible = (posts ?? []).filter(
-    (p) => !(p as Record<string, unknown>).is_deleted
-  );
-
+  const visible = (posts ?? []).filter((p) => !(p as Record<string, unknown>).is_deleted);
   const userIds = [...new Set(visible.map((p) => p.user_id as string))];
-  const profileMap = new Map<string, { nickname: string; role: string }>();
 
+  const profileMap = new Map<string, { nickname: string; role: string }>();
   if (userIds.length > 0) {
     const { data: profiles } = await supabase
       .from("profiles")
@@ -76,13 +74,10 @@ export async function GET(request: Request) {
 
 export async function POST(request: Request) {
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
-  if (!user) {
-    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
-  }
+  const guard = await getConfirmedUserOrResponse(supabase);
+  if (guard.response) return guard.response;
+  const user = guard.user;
+  if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
   const body = await request.json();
   const { type, title, content, payload_json, images, gender } = body as {
@@ -108,7 +103,7 @@ export async function POST(request: Request) {
       (!squat && !bench && !deadlift) ||
       [squat, bench, deadlift].some((v) => typeof v === "number" && Number.isNaN(v))
     ) {
-      return NextResponse.json({ error: "유효한 기록을 입력해주세요." }, { status: 400 });
+      return NextResponse.json({ error: "유효한 기록을 입력해 주세요." }, { status: 400 });
     }
   }
 
@@ -127,16 +122,10 @@ export async function POST(request: Request) {
 
   if (type === "photo_bodycheck") {
     if (gender !== "male" && gender !== "female") {
-      return NextResponse.json(
-        { error: "사진 몸평 게시글은 성별(male/female)이 필수입니다." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "사진 몸평은 성별(male/female)이 필수입니다." }, { status: 400 });
     }
     if (cleanImages.length < 1 || cleanImages.length > 3) {
-      return NextResponse.json(
-        { error: "사진 몸평 게시글은 사진 1~3장이 필요합니다." },
-        { status: 400 }
-      );
+      return NextResponse.json({ error: "사진 몸평 게시글은 사진 1~3장이 필요합니다." }, { status: 400 });
     }
   }
 
@@ -152,10 +141,7 @@ export async function POST(request: Request) {
       .gte("created_at", today.toISOString());
 
     if ((count ?? 0) >= 1) {
-      return NextResponse.json(
-        { error: "오늘은 이미 기록을 공유했어요. 내일 다시 시도해주세요." },
-        { status: 429 }
-      );
+      return NextResponse.json({ error: "오늘은 이미 기록을 공유했어요. 내일 다시 시도해 주세요." }, { status: 429 });
     }
   }
 
@@ -170,7 +156,7 @@ export async function POST(request: Request) {
   const remaining = getRateLimitRemaining(lastPost?.created_at ?? null, POST_COOLDOWN_MS);
   if (remaining > 0) {
     return NextResponse.json(
-      { error: `${Math.ceil(remaining / 1000)}초 후에 다시 시도해주세요.` },
+      { error: `${Math.ceil(remaining / 1000)}초 후에 다시 시도해 주세요.` },
       { status: 429 }
     );
   }
@@ -178,10 +164,7 @@ export async function POST(request: Request) {
   let cleanPayload = payload_json ?? null;
   if (cleanPayload && typeof cleanPayload === "object") {
     cleanPayload = Object.fromEntries(
-      Object.entries(cleanPayload).map(([k, v]) => [
-        k,
-        typeof v === "number" && Number.isNaN(v) ? 0 : v,
-      ])
+      Object.entries(cleanPayload).map(([k, v]) => [k, typeof v === "number" && Number.isNaN(v) ? 0 : v])
     );
   }
 
@@ -193,9 +176,7 @@ export async function POST(request: Request) {
     payload_json: cleanPayload,
   };
 
-  if (cleanImages.length > 0) {
-    insertData.images = cleanImages;
-  }
+  if (cleanImages.length > 0) insertData.images = cleanImages;
 
   if (type === "photo_bodycheck") {
     insertData.gender = gender;
@@ -207,11 +188,7 @@ export async function POST(request: Request) {
     insertData.rookie_count = 0;
   }
 
-  const { data, error } = await supabase
-    .from("posts")
-    .insert(insertData)
-    .select("id")
-    .single();
+  const { data, error } = await supabase.from("posts").insert(insertData).select("id").single();
 
   if (error) {
     console.error("[POST /api/posts]", error.message);

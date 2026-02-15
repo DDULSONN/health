@@ -4,9 +4,10 @@ import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { isEmailConfirmed } from "@/lib/auth-confirmed";
 
 const STORED_EMAIL_KEY = "recent_login_email";
-const CANONICAL_SITE_URL = "https://helchang.com";
+const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
 const IN_APP_UA_PATTERNS = ["kakaotalk", "instagram", "naver", "fban", "fbav", "line"];
 const FORWARDED_KEYS = [
   "code",
@@ -86,6 +87,7 @@ export default function AuthCallbackPage() {
     const parsed = parseStateFromLocation();
     setState(parsed);
     setInAppBrowser(isInAppBrowser(navigator.userAgent));
+
     const stored = window.localStorage.getItem(STORED_EMAIL_KEY) ?? "";
     if (stored) setEmail(stored);
 
@@ -96,8 +98,14 @@ export default function AuthCallbackPage() {
           data: { session },
         } = await supabase.auth.getSession();
 
-        if (session) {
+        const user = session?.user;
+        if (user && isEmailConfirmed(user)) {
           router.replace(parsed.next || "/");
+          return;
+        }
+
+        if (user && !isEmailConfirmed(user)) {
+          router.replace(`/verify-email?next=${encodeURIComponent(parsed.next || "/")}`);
           return;
         }
       } finally {
@@ -109,13 +117,12 @@ export default function AuthCallbackPage() {
   useEffect(() => {
     if (!state || checkingSession) return;
 
-    const hasError = Boolean(state.error || state.errorCode);
     const shouldForward =
-      Boolean(state.code) ||
       Boolean(state.tokenHash && state.otpType) ||
+      Boolean(state.code) ||
       Boolean(state.accessToken && state.refreshToken);
 
-    if (hasError || !shouldForward) return;
+    if (!shouldForward) return;
 
     const target = new URL("/auth/callback/complete", window.location.origin);
     const params = new URLSearchParams(window.location.search);
@@ -191,32 +198,15 @@ export default function AuthCallbackPage() {
     );
   }
 
-  const hasError = Boolean(state.error || state.errorCode);
   const hasProcessableParams =
-    Boolean(state.code) ||
     Boolean(state.tokenHash && state.otpType) ||
+    Boolean(state.code) ||
     Boolean(state.accessToken && state.refreshToken);
 
-  if (!hasError && hasProcessableParams) {
+  if (hasProcessableParams) {
     return (
       <main className="max-w-sm mx-auto px-4 py-20">
         <p className="text-sm text-neutral-500 text-center">로그인 처리 중입니다...</p>
-      </main>
-    );
-  }
-
-  if (!hasError && !hasProcessableParams) {
-    return (
-      <main className="max-w-sm mx-auto px-4 py-20">
-        <div className="rounded-xl border border-red-200 bg-red-50 p-4">
-          <p className="text-sm text-red-700">잘못된 링크입니다. 다시 로그인해 주세요.</p>
-          <Link
-            href={`/login?error=missing_callback_params&next=${encodeURIComponent(state.next)}`}
-            className="mt-3 inline-flex min-h-[40px] items-center rounded-lg bg-red-600 px-3 text-sm font-medium text-white"
-          >
-            로그인 페이지로 이동
-          </Link>
-        </div>
       </main>
     );
   }
@@ -248,15 +238,23 @@ export default function AuthCallbackPage() {
           {message && <p className="text-xs text-amber-900">{message}</p>}
         </div>
 
-        {inAppBrowser && (
-          <button
-            type="button"
-            onClick={() => window.open(window.location.href, "_blank", "noopener,noreferrer")}
-            className="mt-3 w-full min-h-[40px] rounded-lg border border-amber-400 bg-white text-amber-900 text-sm font-medium"
+        <div className="mt-3 grid grid-cols-1 gap-2">
+          <Link
+            href={`/login?next=${encodeURIComponent(state.next || "/")}`}
+            className="inline-flex min-h-[42px] items-center justify-center rounded-lg bg-white text-amber-900 border border-amber-300 text-sm font-medium"
           >
-            Chrome/Safari로 열기
-          </button>
-        )}
+            로그인 페이지로 이동
+          </Link>
+          {inAppBrowser && (
+            <button
+              type="button"
+              onClick={() => window.open(window.location.href, "_blank", "noopener,noreferrer")}
+              className="min-h-[42px] rounded-lg bg-amber-600 text-white text-sm font-medium"
+            >
+              Chrome/Safari로 열기
+            </button>
+          )}
+        </div>
       </div>
     </main>
   );

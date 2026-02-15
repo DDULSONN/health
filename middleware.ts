@@ -1,5 +1,6 @@
+﻿import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
-import { NextResponse, type NextRequest } from "next/server";
+import { isEmailConfirmed } from "@/lib/auth-confirmed";
 
 function getAdminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "")
@@ -12,34 +13,45 @@ export async function middleware(request: NextRequest) {
   const response = NextResponse.next({ request });
   const pathname = request.nextUrl.pathname;
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "";
-  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
-
-  const supabase = createServerClient(supabaseUrl, supabaseAnonKey, {
-    cookies: {
-      getAll() {
-        return request.cookies.getAll();
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
+    {
+      cookies: {
+        getAll() {
+          return request.cookies.getAll();
+        },
+        setAll(cookiesToSet) {
+          cookiesToSet.forEach(({ name, value, options }) => {
+            response.cookies.set(name, value, options);
+          });
+        },
       },
-      setAll(cookiesToSet) {
-        cookiesToSet.forEach(({ name, value, options }) => {
-          response.cookies.set(name, value, options);
-        });
-      },
-    },
-  });
+    }
+  );
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const isAdmin = !!user?.email && getAdminEmails().includes(user.email.toLowerCase());
 
-  const protectedPrefixes = ["/community", "/mypage", "/cert/request", "/admin"];
+  const isAdmin = !!user?.email && getAdminEmails().includes(user.email.toLowerCase());
+  const confirmed = isEmailConfirmed(user);
+
+  const protectedPrefixes = ["/community", "/mypage", "/cert/request", "/admin", "/certify"];
   const isProtected = protectedPrefixes.some((prefix) => pathname.startsWith(prefix));
+  const isVerifyPage = pathname.startsWith("/verify-email");
 
   if (isProtected && !user) {
     const url = new URL("/login", request.url);
+    const original = pathname + request.nextUrl.search;
+    url.searchParams.set("next", original);
+    url.searchParams.set("redirect", original);
+    return NextResponse.redirect(url);
+  }
+
+  if (isProtected && user && !confirmed && !isVerifyPage) {
+    const url = new URL("/verify-email", request.url);
     url.searchParams.set("next", pathname + request.nextUrl.search);
-    url.searchParams.set("redirect", pathname + request.nextUrl.search);
     return NextResponse.redirect(url);
   }
 
@@ -51,9 +63,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    "/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|api/og).*)",
-  ],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|api/og).*)"],
 };
-
-

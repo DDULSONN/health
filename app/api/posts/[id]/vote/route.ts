@@ -1,6 +1,7 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { BODYCHECK_SCORE_MAP, type BodycheckRating } from "@/lib/community";
+import { getConfirmedUserOrResponse } from "@/lib/auth-confirmed";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -8,10 +9,9 @@ export async function POST(request: Request, { params }: RouteCtx) {
   const { id: postId } = await params;
   const supabase = await createClient();
 
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+  const guard = await getConfirmedUserOrResponse(supabase);
+  if (guard.response) return guard.response;
+  const user = guard.user;
   if (!user) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
@@ -70,9 +70,7 @@ export async function POST(request: Request, { params }: RouteCtx) {
     .eq("id", postId)
     .single();
 
-  if (refreshErr) {
-    return NextResponse.json({ ok: true });
-  }
+  if (refreshErr) return NextResponse.json({ ok: true });
 
   const voteCount = Number(refreshed.vote_count ?? 0);
   const scoreSum = Number(refreshed.score_sum ?? 0);

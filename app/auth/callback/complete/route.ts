@@ -1,12 +1,13 @@
 ﻿import { createServerClient } from "@supabase/ssr";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
+import { isEmailConfirmed } from "@/lib/auth-confirmed";
 
 export const runtime = "nodejs";
 
 function safeNextPath(input: string | null): string {
-  if (!input || !input.startsWith("/")) return "/mypage";
-  if (input.startsWith("//")) return "/mypage";
+  if (!input || !input.startsWith("/")) return "/";
+  if (input.startsWith("//")) return "/";
   return input;
 }
 
@@ -26,6 +27,12 @@ function buildLoginRedirect(
   if (opts.errorCode) loginUrl.searchParams.set("error_code", opts.errorCode);
   if (opts.errorDescription) loginUrl.searchParams.set("error_description", opts.errorDescription);
   return NextResponse.redirect(loginUrl);
+}
+
+function buildVerifyEmailRedirect(requestUrl: URL, next: string) {
+  const verifyUrl = new URL("/verify-email", requestUrl.origin);
+  verifyUrl.searchParams.set("next", next);
+  return NextResponse.redirect(verifyUrl);
 }
 
 export async function GET(request: NextRequest) {
@@ -53,6 +60,7 @@ export async function GET(request: NextRequest) {
     queryKeys: [...new Set(Array.from(url.searchParams.keys()))],
   };
   console.info("[auth/callback/complete] incoming", logContext);
+
   const response = NextResponse.redirect(new URL(next, url.origin));
 
   const supabase = createServerClient(
@@ -72,11 +80,15 @@ export async function GET(request: NextRequest) {
     }
   );
 
-  // Session-first guard: ignore callback errors when user is already signed in.
   const {
     data: { user: existingUser },
   } = await supabase.auth.getUser();
+
   if (existingUser) {
+    if (!isEmailConfirmed(existingUser)) {
+      return buildVerifyEmailRedirect(url, next);
+    }
+
     console.info("[auth/callback/complete] existing session found", {
       ...logContext,
       userId: existingUser.id,
@@ -84,41 +96,8 @@ export async function GET(request: NextRequest) {
     return response;
   }
 
-  if (callbackError || callbackErrorCode) {
-    const reason = `${callbackError ?? "callback_error"}/${callbackErrorCode ?? ""}`;
-    console.error("[auth/callback/complete] callback provider error", {
-      ...logContext,
-      reason,
-    });
-    return buildLoginRedirect(url, next, {
-      error: callbackError ?? "access_denied",
-      errorCode: callbackErrorCode,
-      errorDescription: callbackErrorDescription,
-    });
-  }
-
-  if (code) {
-    const { error } = await supabase.auth.exchangeCodeForSession(code);
-    if (error) {
-      const lower = error.message.toLowerCase();
-      const isFlowStateError =
-        lower.includes("invalid flow state") ||
-        lower.includes("no valid flow state found") ||
-        lower.includes("code verifier");
-      const friendly = isFlowStateError
-        ? "세션 정보가 사라졌습니다. 브라우저를 유지한 상태로 다시 시도해 주세요."
-        : error.message;
-      console.error("[auth/callback/complete] exchangeCodeForSession failed", {
-        ...logContext,
-        reason: error.message,
-      });
-      return buildLoginRedirect(url, next, {
-        error: "exchange_failed",
-        errorCode: isFlowStateError ? "flow_state_missing" : "oauth_code_exchange_failed",
-        errorDescription: friendly,
-      });
-    }
-  } else if (tokenHash && otpType) {
+  // token_hash/type should be handled before generic error branch.
+  if (tokenHash && otpType) {
     const { error } = await supabase.auth.verifyOtp({
       token_hash: tokenHash,
       type: otpType,
@@ -130,8 +109,41 @@ export async function GET(request: NextRequest) {
       });
       return buildLoginRedirect(url, next, {
         error: "verify_otp_failed",
-        errorCode: "otp_verify_failed",
-        errorDescription: error.message,
+        errorCode: callbackErrorCode ?? "otp_verify_failed",
+        errorDescription: callbackErrorDescription ?? error.message,
+      });
+    }
+  } else if (callbackError || callbackErrorCode) {
+    const reason = `${callbackError ?? "callback_error"}/${callbackErrorCode ?? ""}`;
+    console.error("[auth/callback/complete] callback provider error", {
+      ...logContext,
+      reason,
+    });
+    return buildLoginRedirect(url, next, {
+      error: callbackError ?? "access_denied",
+      errorCode: callbackErrorCode,
+      errorDescription: callbackErrorDescription,
+    });
+  } else if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) {
+      const lower = error.message.toLowerCase();
+      const isFlowStateError =
+        lower.includes("invalid flow state") ||
+        lower.includes("no valid flow state found") ||
+        lower.includes("code verifier");
+      const friendly = isFlowStateError
+        ? "세션 정보가 사라졌습니다. 브라우저를 유지한 상태로 다시 시도해 주세요."
+        : error.message;
+
+      console.error("[auth/callback/complete] exchangeCodeForSession failed", {
+        ...logContext,
+        reason: error.message,
+      });
+      return buildLoginRedirect(url, next, {
+        error: "exchange_failed",
+        errorCode: isFlowStateError ? "flow_state_missing" : "oauth_code_exchange_failed",
+        errorDescription: friendly,
       });
     }
   } else if (accessToken && refreshToken) {
@@ -178,6 +190,10 @@ export async function GET(request: NextRequest) {
       errorCode: "session_verification_failed",
       errorDescription: reason,
     });
+  }
+
+  if (!isEmailConfirmed(user)) {
+    return buildVerifyEmailRedirect(url, next);
   }
 
   console.info("[auth/callback/complete] success", {

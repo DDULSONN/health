@@ -4,9 +4,10 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { isEmailConfirmed } from "@/lib/auth-confirmed";
 
 const STORED_EMAIL_KEY = "recent_login_email";
-const CANONICAL_SITE_URL = "https://helchang.com";
+const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
 const IN_APP_UA_PATTERNS = ["kakaotalk", "instagram", "naver", "fban", "fbav", "line"];
 
 type AuthMode = "google" | "password" | "otp";
@@ -99,10 +100,15 @@ function LoginContent() {
           data: { session },
         } = await supabase.auth.getSession();
 
-        if (session) {
+        if (session?.user && isEmailConfirmed(session.user)) {
           setError(null);
           setSuccess("이미 로그인되어 있습니다. 이동 중...");
           setTimeout(() => router.replace(next || "/"), 700);
+          return;
+        }
+
+        if (session?.user && !isEmailConfirmed(session.user)) {
+          router.replace(`/verify-email?next=${encodeURIComponent(next || "/")}`);
           return;
         }
 

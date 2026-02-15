@@ -5,8 +5,10 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-const CANONICAL_SITE_URL = "https://helchang.com";
+const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
 const STORED_EMAIL_KEY = "recent_login_email";
+const NICKNAME_MIN = 2;
+const NICKNAME_MAX = 12;
 
 type SignupStep = "form" | "pending_verify" | "existing_account";
 
@@ -29,6 +31,7 @@ export default function SignupPage() {
   const router = useRouter();
   const [step, setStep] = useState<SignupStep>("form");
   const [email, setEmail] = useState("");
+  const [nickname, setNickname] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
 
@@ -45,8 +48,17 @@ export default function SignupPage() {
 
   const handleSignup = async () => {
     const normalized = email.trim().toLowerCase();
+    const cleanNickname = nickname.trim();
     if (!normalized) {
       setError("이메일을 입력해 주세요.");
+      return;
+    }
+    if (cleanNickname.length < NICKNAME_MIN || cleanNickname.length > NICKNAME_MAX) {
+      setError(`닉네임은 ${NICKNAME_MIN}~${NICKNAME_MAX}자로 입력해 주세요.`);
+      return;
+    }
+    if (!/^[0-9A-Za-z가-힣_]+$/.test(cleanNickname)) {
+      setError("닉네임은 한글/영문/숫자/_만 사용할 수 있습니다.");
       return;
     }
     if (password.length < 8) {
@@ -68,6 +80,7 @@ export default function SignupPage() {
         email: normalized,
         password,
         options: {
+          data: { nickname: cleanNickname },
           emailRedirectTo: buildCanonicalCallbackUrl("/"),
         },
       });
@@ -159,6 +172,19 @@ export default function SignupPage() {
             className="w-full min-h-[48px] rounded-xl border border-neutral-300 px-3 text-neutral-900"
           />
 
+          <label htmlFor="signup-nickname" className="text-sm font-medium text-neutral-700">
+            닉네임
+          </label>
+          <input
+            id="signup-nickname"
+            type="text"
+            value={nickname}
+            onChange={(e) => setNickname(e.target.value)}
+            placeholder="헬창닉네임 (예: 벤치왕김OO)"
+            maxLength={NICKNAME_MAX}
+            className="w-full min-h-[48px] rounded-xl border border-neutral-300 px-3 text-neutral-900"
+          />
+
           <label htmlFor="signup-password" className="text-sm font-medium text-neutral-700">
             비밀번호
           </label>
@@ -183,7 +209,8 @@ export default function SignupPage() {
             className="w-full min-h-[48px] rounded-xl border border-neutral-300 px-3 text-neutral-900"
           />
 
-          <p className="text-xs text-neutral-500 mt-1">비밀번호는 8자 이상이어야 합니다.</p>
+          <p className="text-xs text-neutral-500 mt-1">닉네임은 2~12자, 한글/영문/숫자/_만 사용할 수 있습니다.</p>
+          <p className="text-xs text-neutral-500">비밀번호는 8자 이상이어야 합니다.</p>
           <p className="text-xs text-neutral-400">가입 시 이용약관 및 개인정보처리방침에 동의한 것으로 간주됩니다.</p>
 
           <button
