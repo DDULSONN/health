@@ -27,6 +27,51 @@ function validateNickname(raw: string): string | null {
   return null;
 }
 
+function makePngFilename(nickname: string): string {
+  const safe = nickname.trim().replace(/[^0-9A-Za-z가-힣_]/g, "_").slice(0, 12) || "user";
+  return `gymtools_percentile_${safe}.png`;
+}
+
+async function downloadShareCard(url: string, filename: string) {
+  const res = await fetch(url, { cache: "no-store" });
+  const contentType = res.headers.get("content-type") || "";
+  const buffer = await res.arrayBuffer();
+  const byteLength = buffer.byteLength;
+
+  console.info("[share-card] download check", {
+    ok: res.ok,
+    status: res.status,
+    contentType,
+    byteLength,
+  });
+
+  if (!res.ok || !contentType.includes("image/png") || byteLength < 2048) {
+    let textSnippet = "";
+    try {
+      textSnippet = new TextDecoder().decode(buffer).slice(0, 500);
+    } catch {
+      textSnippet = "";
+    }
+    console.error("Share card API failed", {
+      status: res.status,
+      contentType,
+      byteLength,
+      text: textSnippet,
+    });
+    throw new Error("이미지 생성 실패(서버 응답이 PNG가 아님)");
+  }
+
+  const blob = new Blob([buffer], { type: "image/png" });
+  const objectUrl = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = objectUrl;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(objectUrl);
+}
+
 function getTierMessage(percentAll: number): string {
   if (percentAll <= 1) return "전국 상위 1% 괴물";
   if (percentAll <= 5) return "상위 5% 엘리트";
@@ -230,24 +275,14 @@ function LiftsContent() {
     setIsDownloading(true);
 
     try {
-      const response = await fetch(shareCardUrl);
-      if (!response.ok) throw new Error("이미지 생성 실패");
-
-      const blob = await response.blob();
-      const objectUrl = URL.createObjectURL(blob);
-      const link = document.createElement("a");
-      link.href = objectUrl;
-      link.download = `gymtools-3dae-${Date.now()}.png`;
-      document.body.appendChild(link);
-      link.click();
-      link.remove();
-      URL.revokeObjectURL(objectUrl);
+      await downloadShareCard(shareCardUrl, makePngFilename(shareNickname));
+      setShareError("");
     } catch {
-      window.open(shareCardUrl, "_blank", "noopener,noreferrer");
+      setShareError("이미지 생성 실패: 서버 응답을 확인해 주세요.");
     } finally {
       setIsDownloading(false);
     }
-  }, [shareCardUrl]);
+  }, [shareCardUrl, shareNickname]);
 
   const handleShareCard = useCallback(async () => {
     if (!shareCardUrl) return;
