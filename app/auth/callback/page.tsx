@@ -3,23 +3,12 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
-import { isEmailConfirmed } from "@/lib/auth-confirmed";
 
 const STORED_EMAIL_KEY = "recent_login_email";
 const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
 const IN_APP_UA_PATTERNS = ["kakaotalk", "instagram", "naver", "fban", "fbav", "line"];
-const FORWARDED_KEYS = [
-  "code",
-  "token_hash",
-  "type",
-  "access_token",
-  "refresh_token",
-  "error",
-  "error_code",
-  "error_description",
-  "next",
-] as const;
 
 type CallbackState = {
   next: string;
@@ -81,7 +70,7 @@ export default function AuthCallbackPage() {
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [inAppBrowser, setInAppBrowser] = useState(false);
-  const [checkingSession, setCheckingSession] = useState(true);
+  const [processing, setProcessing] = useState(true);
 
   useEffect(() => {
     const parsed = parseStateFromLocation();
@@ -92,58 +81,65 @@ export default function AuthCallbackPage() {
     if (stored) setEmail(stored);
 
     (async () => {
-      try {
-        const supabase = createClient();
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+      const supabase = createClient();
 
-        const user = session?.user;
-        if (user && isEmailConfirmed(user)) {
+      // 1) Session-first: if session exists, ignore all error params and redirect immediately.
+      const {
+        data: { session: initialSession },
+      } = await supabase.auth.getSession();
+      if (initialSession) {
+        router.replace(parsed.next || "/");
+        return;
+      }
+
+      // 2) token_hash + type (email verification/magic link/recovery)
+      if (parsed.tokenHash && parsed.otpType) {
+        const { error } = await supabase.auth.verifyOtp({
+          token_hash: parsed.tokenHash,
+          type: parsed.otpType as EmailOtpType,
+        });
+
+        if (!error) {
           router.replace(parsed.next || "/");
           return;
         }
+      }
 
-        if (user && !isEmailConfirmed(user)) {
-          router.replace(`/verify-email?next=${encodeURIComponent(parsed.next || "/")}`);
+      // 3) code (OAuth/PKCE)
+      if (parsed.code) {
+        const { error } = await supabase.auth.exchangeCodeForSession(parsed.code);
+
+        if (!error) {
+          router.replace(parsed.next || "/");
           return;
         }
-      } finally {
-        setCheckingSession(false);
       }
+
+      // 4) access_token + refresh_token
+      if (parsed.accessToken && parsed.refreshToken) {
+        const { error } = await supabase.auth.setSession({
+          access_token: parsed.accessToken,
+          refresh_token: parsed.refreshToken,
+        });
+
+        if (!error) {
+          router.replace(parsed.next || "/");
+          return;
+        }
+      }
+
+      // Final guard: sometimes session appears after auth client processes URL.
+      const {
+        data: { session: finalSession },
+      } = await supabase.auth.getSession();
+      if (finalSession) {
+        router.replace(parsed.next || "/");
+        return;
+      }
+
+      setProcessing(false);
     })();
   }, [router]);
-
-  useEffect(() => {
-    if (!state || checkingSession) return;
-
-    const shouldForward =
-      Boolean(state.tokenHash && state.otpType) ||
-      Boolean(state.code) ||
-      Boolean(state.accessToken && state.refreshToken);
-
-    if (!shouldForward) return;
-
-    const target = new URL("/auth/callback/complete", window.location.origin);
-    const params = new URLSearchParams(window.location.search);
-    const hashRaw = window.location.hash.startsWith("#") ? window.location.hash.slice(1) : window.location.hash;
-
-    if (hashRaw) {
-      const hashParams = new URLSearchParams(hashRaw);
-      for (const [key, value] of hashParams.entries()) {
-        if (!params.has(key) && value) params.set(key, value);
-      }
-    }
-
-    if (!params.has("next")) params.set("next", state.next);
-
-    for (const key of FORWARDED_KEYS) {
-      const value = params.get(key);
-      if (value) target.searchParams.set(key, value);
-    }
-
-    router.replace(`${target.pathname}${target.search}`);
-  }, [checkingSession, router, state]);
 
   const errorMessage = useMemo(() => {
     if (!state) return "";
@@ -190,20 +186,7 @@ export default function AuthCallbackPage() {
     }
   };
 
-  if (!state || checkingSession) {
-    return (
-      <main className="max-w-sm mx-auto px-4 py-20">
-        <p className="text-sm text-neutral-500 text-center">로그인 처리 중입니다...</p>
-      </main>
-    );
-  }
-
-  const hasProcessableParams =
-    Boolean(state.tokenHash && state.otpType) ||
-    Boolean(state.code) ||
-    Boolean(state.accessToken && state.refreshToken);
-
-  if (hasProcessableParams) {
+  if (!state || processing) {
     return (
       <main className="max-w-sm mx-auto px-4 py-20">
         <p className="text-sm text-neutral-500 text-center">로그인 처리 중입니다...</p>
