@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
+import type { EmailOtpType } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -28,11 +29,9 @@ function errorResponse(message: string, details?: string) {
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
+  const tokenHash = url.searchParams.get("token_hash");
+  const otpType = url.searchParams.get("type") as EmailOtpType | null;
   const next = safeNextPath(url.searchParams.get("next"));
-
-  if (!code) {
-    return errorResponse("Missing code parameter");
-  }
 
   const response = NextResponse.redirect(new URL(next, url.origin));
 
@@ -53,11 +52,23 @@ export async function GET(request: NextRequest) {
     }
   );
 
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
-
-  if (error) {
-    const details = `${error.name ?? "AuthApiError"}: ${error.message}`;
-    return errorResponse("exchangeCodeForSession failed", details);
+  if (code) {
+    const { error } = await supabase.auth.exchangeCodeForSession(code);
+    if (error) {
+      const details = `${error.name ?? "AuthApiError"}: ${error.message}`;
+      return errorResponse("exchangeCodeForSession failed", details);
+    }
+  } else if (tokenHash && otpType) {
+    const { error } = await supabase.auth.verifyOtp({
+      type: otpType,
+      token_hash: tokenHash,
+    });
+    if (error) {
+      const details = `${error.name ?? "AuthApiError"}: ${error.message}`;
+      return errorResponse("verifyOtp failed", details);
+    }
+  } else {
+    return errorResponse("Missing code parameter");
   }
 
   const {
