@@ -1,11 +1,14 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 const CANONICAL_SITE_URL = "https://helchang.com";
+const STORED_EMAIL_KEY = "recent_login_email";
+
+type SignupStep = "form" | "pending_verify" | "existing_account";
 
 function buildCanonicalCallbackUrl(next: string): string {
   const url = new URL("/auth/callback", CANONICAL_SITE_URL);
@@ -13,16 +16,32 @@ function buildCanonicalCallbackUrl(next: string): string {
   return url.toString();
 }
 
+function isAlreadyRegisteredError(message: string) {
+  const lower = message.toLowerCase();
+  return (
+    lower.includes("already registered") ||
+    lower.includes("already exists") ||
+    lower.includes("user already registered")
+  );
+}
+
 export default function SignupPage() {
   const router = useRouter();
+  const [step, setStep] = useState<SignupStep>("form");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
+
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const [info, setInfo] = useState<string | null>(null);
   const [submittedEmail, setSubmittedEmail] = useState("");
+
+  useEffect(() => {
+    const stored = window.localStorage.getItem(STORED_EMAIL_KEY) ?? "";
+    if (stored) setEmail(stored);
+  }, []);
 
   const handleSignup = async () => {
     const normalized = email.trim().toLowerCase();
@@ -41,11 +60,11 @@ export default function SignupPage() {
 
     setLoading(true);
     setError(null);
-    setSuccess(null);
+    setInfo(null);
 
     try {
       const supabase = createClient();
-      const { error: signUpError } = await supabase.auth.signUp({
+      const { data, error: signUpError } = await supabase.auth.signUp({
         email: normalized,
         password,
         options: {
@@ -53,13 +72,30 @@ export default function SignupPage() {
         },
       });
 
+      const duplicateFromMessage = signUpError ? isAlreadyRegisteredError(signUpError.message) : false;
+      const identities = data.user?.identities;
+      const duplicateFromUserShape =
+        !signUpError &&
+        Array.isArray(identities) &&
+        identities.length === 0;
+
+      if (duplicateFromMessage || duplicateFromUserShape) {
+        window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
+        setSubmittedEmail(normalized);
+        setStep("existing_account");
+        setError("이미 가입된 이메일입니다. 로그인해 주세요.");
+        return;
+      }
+
       if (signUpError) {
         setError(signUpError.message);
         return;
       }
 
+      window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
       setSubmittedEmail(normalized);
-      setSuccess("가입 요청이 완료되었습니다. 메일함에서 인증 후 로그인하세요.");
+      setStep("pending_verify");
+      setInfo("가입 요청이 완료되었습니다. 메일함에서 인증 후 로그인하세요.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "회원가입 처리 중 오류가 발생했습니다.");
     } finally {
@@ -68,7 +104,7 @@ export default function SignupPage() {
   };
 
   const handleResend = async () => {
-    const targetEmail = submittedEmail || email.trim().toLowerCase();
+    const targetEmail = (submittedEmail || email).trim().toLowerCase();
     if (!targetEmail) {
       setError("이메일을 입력해 주세요.");
       return;
@@ -92,7 +128,8 @@ export default function SignupPage() {
         return;
       }
 
-      setSuccess("인증 메일을 다시 보냈습니다. 메일함을 확인해 주세요.");
+      window.localStorage.setItem(STORED_EMAIL_KEY, targetEmail);
+      setInfo("인증 메일을 다시 보냈습니다. 메일함을 확인해 주세요.");
     } catch (e) {
       setError(e instanceof Error ? e.message : "인증 메일 재발송에 실패했습니다.");
     } finally {
@@ -106,9 +143,9 @@ export default function SignupPage() {
       <p className="text-sm text-neutral-500 mb-6">이메일 인증 후 로그인할 수 있습니다.</p>
 
       {error && <p className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-600">{error}</p>}
-      {success && <p className="mb-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700">{success}</p>}
+      {info && <p className="mb-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700">{info}</p>}
 
-      {!success ? (
+      {step === "form" && (
         <div className="space-y-2">
           <label htmlFor="signup-email" className="text-sm font-medium text-neutral-700">
             이메일
@@ -158,11 +195,13 @@ export default function SignupPage() {
             {loading ? "가입 요청 중..." : "이메일로 회원가입"}
           </button>
         </div>
-      ) : (
+      )}
+
+      {step === "pending_verify" && (
         <div className="space-y-2">
           <button
             type="button"
-            onClick={() => router.replace("/login?next=/")}
+            onClick={() => router.replace("/login?tab=password&next=/")}
             className="w-full min-h-[48px] rounded-xl bg-emerald-600 text-white font-medium"
           >
             로그인으로 이동
@@ -178,9 +217,28 @@ export default function SignupPage() {
         </div>
       )}
 
+      {step === "existing_account" && (
+        <div className="space-y-2">
+          <button
+            type="button"
+            onClick={() => router.replace("/login?tab=password&next=/")}
+            className="w-full min-h-[48px] rounded-xl bg-emerald-600 text-white font-medium"
+          >
+            로그인하러 가기
+          </button>
+          <button
+            type="button"
+            onClick={() => router.replace("/login?tab=password&reset=1&next=/")}
+            className="w-full min-h-[48px] rounded-xl border border-neutral-300 text-neutral-700 font-medium"
+          >
+            비밀번호 찾기
+          </button>
+        </div>
+      )}
+
       <p className="mt-6 text-sm text-neutral-600">
         이미 계정이 있나요?{" "}
-        <Link href="/login?next=/" className="text-emerald-700 underline">
+        <Link href="/login?tab=password&next=/" className="text-emerald-700 underline">
           로그인
         </Link>
       </p>

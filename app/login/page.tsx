@@ -47,11 +47,15 @@ function LoginContent() {
   const searchParams = useSearchParams();
 
   const next = safeNextPath(searchParams.get("next") ?? searchParams.get("redirect") ?? "/");
+  const tabParam = searchParams.get("tab");
+  const resetParam = searchParams.get("reset");
   const errorParam = searchParams.get("error");
   const errorCode = searchParams.get("error_code")?.toLowerCase() ?? null;
   const errorDescription = searchParams.get("error_description");
 
-  const [mode, setMode] = useState<AuthMode>("google");
+  const [mode, setMode] = useState<AuthMode>(
+    tabParam === "password" ? "password" : tabParam === "otp" ? "otp" : "google"
+  );
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
@@ -108,6 +112,12 @@ function LoginContent() {
       }
     })();
   }, [initialErrorMessage, next, router]);
+
+  useEffect(() => {
+    if (tabParam === "password") setMode("password");
+    if (tabParam === "otp") setMode("otp");
+    if (tabParam === "google") setMode("google");
+  }, [tabParam]);
 
   const sendMagicLink = async () => {
     const normalized = email.trim().toLowerCase();
@@ -273,6 +283,11 @@ function LoginContent() {
 
       {error && <p className="text-sm text-red-600 bg-red-50 rounded-xl p-3 mb-4 w-full text-center">{error}</p>}
       {success && <p className="text-sm text-emerald-700 bg-emerald-50 rounded-xl p-3 mb-4 w-full text-center">{success}</p>}
+      {tabParam === "password" && resetParam === "1" && (
+        <p className="text-xs text-amber-800 bg-amber-50 rounded-xl p-3 mb-4 w-full text-center">
+          비밀번호를 잊으셨다면 아래 `비밀번호를 잊으셨나요?` 링크를 눌러 재설정하세요.
+        </p>
+      )}
 
       {inAppBrowser && (
         <div className="w-full mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3">
