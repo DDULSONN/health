@@ -59,6 +59,12 @@ export async function GET(req: Request) {
     const dead = fmtLift(sp.get("dead"));
     const hasNickname = nickname.length > 0;
 
+    const sexRaw = (sp.get("sex") ?? sp.get("gender") ?? "").toLowerCase();
+    const sexLabel =
+      sexRaw === "male" || sexRaw === "m" ? "남성 기준" :
+      sexRaw === "female" || sexRaw === "f" ? "여성 기준" :
+      "전체 기준";
+
     return new ImageResponse(
       (
         <div
@@ -83,6 +89,9 @@ export async function GET(req: Request) {
             <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
               <span style={{ display: "flex", fontSize: 30, fontWeight: 500, color: "#444444" }}>대한민국 상위</span>
               <span style={{ display: "flex", fontSize: 34, fontWeight: 800, color: "#C0392B" }}>{`${safePercent.toFixed(1)}%`}</span>
+            </div>
+            <div style={{ display: "flex", fontSize: 15, fontWeight: 400, color: "rgba(0,0,0,0.4)", marginTop: 6 }}>
+              {sexLabel}
             </div>
           </div>
 
