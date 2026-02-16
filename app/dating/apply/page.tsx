@@ -567,6 +567,17 @@ export default function DatingApplyPage() {
                   <strong>[선택]</strong> 콘텐츠 활용에 동의합니다. (인터뷰/후기 제작 가능성, 얼굴·목소리 공개는 별도 동의)
                 </span>
               </label>
+              <div className="rounded-lg border border-neutral-200 bg-white p-3">
+                <p className="text-xs font-semibold text-neutral-800 mb-2">🔒 개인정보 안내 (필수 동의 체크박스 아래 표시)</p>
+                <p className="text-xs text-neutral-700 leading-5">
+                  본 서비스는 매칭 진행 시 상대방에게 일부 개인정보가 전달될 수 있습니다.
+                  (예: 이름, 연락처, 나이, 거주 지역 등 매칭에 필요한 정보)
+                </p>
+                <p className="text-xs text-neutral-700 leading-5 mt-2">
+                  매칭이 성사될 경우, 원활한 소통을 위해 상대방과 직접 연락이 이루어질 수 있습니다.
+                  이에 동의하는 경우에만 신청해 주세요.
+                </p>
+              </div>
             </div>
 
             {/* 고지 문구 */}
