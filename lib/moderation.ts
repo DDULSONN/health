@@ -5,6 +5,28 @@ const BANNED_WORDS = [
   "ㅅㅂ", "ㅂㅅ", "ㅈㄹ", "ㅆㅂ",
 ];
 
+const CONTACT_BANNED_PATTERNS = [
+  /카[카톡]+/i,
+  /카[카]?톡/i,
+  /kakao/i,
+  /카카오/i,
+  /인스타/i,
+  /instagram/i,
+  /insta/i,
+  /오픈채팅/i,
+  /open\.kakao/i,
+  /텔레그램/i,
+  /telegram/i,
+  /010[\s\-]?\d{4}[\s\-]?\d{4}/,
+  /01[16789][\s\-]?\d{3,4}[\s\-]?\d{4}/,
+  /라인\s?아이디/i,
+  /line\s?id/i,
+];
+
+export function containsContactInfo(text: string): boolean {
+  return CONTACT_BANNED_PATTERNS.some((p) => p.test(text));
+}
+
 export function containsProfanity(text: string): boolean {
   const lower = text.toLowerCase();
   return BANNED_WORDS.some((w) => lower.includes(w));

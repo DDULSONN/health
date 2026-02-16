@@ -24,6 +24,12 @@ type Detail = Application & {
   consent_content: boolean;
   photo_urls: string[];
   signed_photos: string[];
+  age: number | null;
+  display_nickname: string | null;
+  total_3lift: number | null;
+  percent_all: number | null;
+  approved_for_public: boolean;
+  thumb_blur_path: string | null;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -55,6 +61,14 @@ export default function AdminDatingPage() {
   const [detail, setDetail] = useState<Detail | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [revealPhone, setRevealPhone] = useState(false);
+
+  // Community fields editing
+  const [editNickname, setEditNickname] = useState("");
+  const [editAge, setEditAge] = useState("");
+  const [editTotal3lift, setEditTotal3lift] = useState("");
+  const [editPercentAll, setEditPercentAll] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [thumbUploading, setThumbUploading] = useState(false);
 
   // 인증 체크
   useEffect(() => {
@@ -98,6 +112,10 @@ export default function AdminDatingPage() {
       if (!res.ok) return;
       const body = await res.json();
       setDetail(body);
+      setEditNickname(body.display_nickname ?? "");
+      setEditAge(body.age != null ? String(body.age) : "");
+      setEditTotal3lift(body.total_3lift != null ? String(body.total_3lift) : "");
+      setEditPercentAll(body.percent_all != null ? String(body.percent_all) : "");
     } finally {
       setDetailLoading(false);
     }
@@ -295,6 +313,162 @@ export default function AdminDatingPage() {
                           {STATUS_LABELS[s]}으로 변경
                         </button>
                       ))}
+                  </div>
+                </div>
+
+                {/* 커뮤니티 공개 설정 */}
+                <div className="mt-5 pt-4 border-t border-neutral-200">
+                  <h3 className="text-sm font-bold text-neutral-800 mb-3">커뮤니티 공개 설정</h3>
+
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm text-neutral-600 w-24 shrink-0">공개 여부</label>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          const next = !detail.approved_for_public;
+                          const res = await fetch(`/api/admin/dating/${detail.id}`, {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ approved_for_public: next }),
+                          });
+                          if (res.ok) setDetail({ ...detail, approved_for_public: next });
+                        }}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${
+                          detail.approved_for_public
+                            ? "bg-emerald-100 text-emerald-700 border-emerald-300"
+                            : "bg-neutral-100 text-neutral-500 border-neutral-300"
+                        }`}
+                      >
+                        {detail.approved_for_public ? "공개 중" : "비공개"}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm text-neutral-600 w-24 shrink-0">닉네임</label>
+                      <input
+                        type="text"
+                        value={editNickname}
+                        onChange={(e) => setEditNickname(e.target.value)}
+                        placeholder="공개 닉네임"
+                        className="flex-1 h-8 rounded-lg border border-neutral-300 px-2 text-sm"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm text-neutral-600 w-24 shrink-0">나이</label>
+                      <input
+                        type="number"
+                        value={editAge}
+                        onChange={(e) => setEditAge(e.target.value)}
+                        placeholder="나이"
+                        min={18}
+                        max={99}
+                        className="w-24 h-8 rounded-lg border border-neutral-300 px-2 text-sm"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm text-neutral-600 w-24 shrink-0">3대 합계</label>
+                      <input
+                        type="number"
+                        value={editTotal3lift}
+                        onChange={(e) => setEditTotal3lift(e.target.value)}
+                        placeholder="kg"
+                        className="w-24 h-8 rounded-lg border border-neutral-300 px-2 text-sm"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm text-neutral-600 w-24 shrink-0">상위 %</label>
+                      <input
+                        type="number"
+                        value={editPercentAll}
+                        onChange={(e) => setEditPercentAll(e.target.value)}
+                        placeholder="%"
+                        step="0.1"
+                        className="w-24 h-8 rounded-lg border border-neutral-300 px-2 text-sm"
+                      />
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <label className="text-sm text-neutral-600 w-24 shrink-0">블러 썸네일</label>
+                      <div className="flex items-center gap-2">
+                        {detail.thumb_blur_path ? (
+                          <span className="text-xs text-emerald-600">업로드됨</span>
+                        ) : (
+                          <span className="text-xs text-neutral-400">없음</span>
+                        )}
+                        <label className="px-3 py-1.5 rounded-lg text-xs font-medium border border-neutral-300 bg-neutral-50 hover:bg-neutral-100 cursor-pointer transition-colors">
+                          {thumbUploading ? "업로드 중..." : "업로드"}
+                          <input
+                            type="file"
+                            accept="image/jpeg,image/png,image/webp"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              setThumbUploading(true);
+                              const fd = new FormData();
+                              fd.append("file", file);
+                              try {
+                                const res = await fetch(`/api/admin/dating/${detail.id}/upload-thumb`, {
+                                  method: "POST",
+                                  body: fd,
+                                });
+                                if (res.ok) {
+                                  const data = await res.json();
+                                  setDetail({ ...detail, thumb_blur_path: data.path });
+                                } else {
+                                  alert("업로드 실패");
+                                }
+                              } catch {
+                                alert("업로드 오류");
+                              }
+                              setThumbUploading(false);
+                              e.target.value = "";
+                            }}
+                          />
+                        </label>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={saving}
+                      onClick={async () => {
+                        setSaving(true);
+                        const updates: Record<string, unknown> = {};
+                        if (editNickname.trim()) updates.display_nickname = editNickname.trim();
+                        if (editAge) updates.age = Number(editAge);
+                        if (editTotal3lift) updates.total_3lift = Number(editTotal3lift);
+                        if (editPercentAll) updates.percent_all = Number(editPercentAll);
+
+                        if (Object.keys(updates).length > 0) {
+                          const res = await fetch(`/api/admin/dating/${detail.id}`, {
+                            method: "PATCH",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify(updates),
+                          });
+                          if (res.ok) {
+                            setDetail({
+                              ...detail,
+                              display_nickname: (updates.display_nickname as string) ?? detail.display_nickname,
+                              age: (updates.age as number) ?? detail.age,
+                              total_3lift: (updates.total_3lift as number) ?? detail.total_3lift,
+                              percent_all: (updates.percent_all as number) ?? detail.percent_all,
+                            });
+                            alert("저장 완료");
+                          } else {
+                            alert("저장 실패");
+                          }
+                        }
+                        setSaving(false);
+                      }}
+                      className="w-full py-2 rounded-xl bg-rose-500 text-white text-sm font-medium hover:bg-rose-600 disabled:opacity-50 transition-all"
+                    >
+                      {saving ? "저장 중..." : "커뮤니티 정보 저장"}
+                    </button>
                   </div>
                 </div>
               </>

@@ -82,12 +82,12 @@ const FEATURES: Feature[] = [
   },
   {
     id: "dating",
-    href: "/dating/apply",
-    title: "소개팅 신청",
+    href: "/community/dating",
+    title: "소개팅",
     emoji: "💘",
-    description: "3대 인증자 소개팅 매칭 서비스",
+    description: "3대 인증자 소개팅 카드 열람 · 댓글",
     accent: "bg-pink-50 border-pink-200 hover:border-pink-400",
-    cta: "신청하기",
+    cta: "소개팅 보기",
   },
 ];
 
