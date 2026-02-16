@@ -2,6 +2,8 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 import type { PostgrestError } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
+export const runtime = "nodejs";
+
 const REGIONS = [
   "서울", "경기", "인천", "부산", "대구", "대전", "광주",
   "울산", "세종", "강원", "충북", "충남", "전북", "전남",
@@ -38,6 +40,35 @@ function formatDbError(error: PostgrestError): string {
 
 function jsonError(status: number, error: string, code: string, details?: string) {
   return NextResponse.json({ error, code, details }, { status });
+}
+
+function internalServerError(message: string, err: unknown, context: string, payload?: Record<string, unknown>) {
+  const e = err instanceof Error ? err : new Error(String(err));
+  const isDev = process.env.NODE_ENV !== "production";
+  const supabaseErrorLike = err as Partial<PostgrestError> | undefined;
+  console.error(`[${context}] unexpected error`, {
+    message: e.message,
+    stack: e.stack,
+    supabase: supabaseErrorLike
+      ? {
+          code: supabaseErrorLike.code,
+          details: supabaseErrorLike.details,
+          hint: supabaseErrorLike.hint,
+          message: supabaseErrorLike.message,
+        }
+      : undefined,
+    payload,
+  });
+
+  return NextResponse.json(
+    {
+      code: "INTERNAL_SERVER_ERROR",
+      message,
+      error: message,
+      ...(isDev ? { debug: e.stack?.split("\n").slice(0, 5).join("\n") } : {}),
+    },
+    { status: 500 }
+  );
 }
 
 function maskPhone(value: string) {
@@ -82,195 +113,218 @@ function mapInsertError(error: PostgrestError): { status: number; code: string; 
 }
 
 export async function POST(request: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  let maskedBody: Record<string, unknown> | undefined;
+  try {
+    const contentType = request.headers.get("content-type") ?? "";
+    if (!contentType.toLowerCase().includes("application/json")) {
+      return jsonError(415, "JSON 요청만 지원합니다.", "UNSUPPORTED_MEDIA_TYPE", `content-type=${contentType || "none"}`);
+    }
 
-  if (!user) {
-    return jsonError(401, "로그인이 필요합니다.", "AUTH_REQUIRED");
-  }
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
-    return jsonError(500, "서버 설정이 올바르지 않습니다.", "CONFIG_ERROR");
-  }
+    if (!user) {
+      return jsonError(401, "로그인이 필요합니다.", "AUTH_REQUIRED");
+    }
 
-  const body = await request.json().catch(() => null);
-  if (!body) {
-    return jsonError(400, "잘못된 요청입니다.", "INVALID_JSON");
-  }
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
+      return jsonError(500, "서버 설정이 올바르지 않습니다.", "CONFIG_ERROR");
+    }
 
-  const { sex, name, phone, region, age, height_cm, job, ideal_type, training_years, consent_privacy, consent_content } = body as {
-    sex?: string;
-    name?: string;
-    phone?: string;
-    region?: string;
-    age?: number | string;
-    height_cm?: number | string;
-    job?: string;
-    ideal_type?: string;
-    training_years?: number | string;
-    consent_privacy?: boolean;
-    consent_content?: boolean;
-  };
+    const body = await request.json().catch(() => null);
+    if (!body) {
+      return jsonError(400, "잘못된 요청입니다.", "INVALID_JSON");
+    }
 
-  const normalizedSex = normalizeSex(sex);
-  const parsedAge = toInteger(age);
-  const parsedHeightCm = toInteger(height_cm);
-  const parsedTrainingYears = toInteger(training_years);
+    const { sex, name, phone, region, age, height_cm, job, ideal_type, training_years, consent_privacy, consent_content } = body as {
+      sex?: string;
+      name?: string;
+      phone?: string;
+      region?: string;
+      age?: number | string;
+      height_cm?: number | string;
+      job?: string;
+      ideal_type?: string;
+      training_years?: number | string;
+      consent_privacy?: boolean;
+      consent_content?: boolean;
+    };
 
-  // 필수 필드 검증
-  if (!normalizedSex) {
-    return jsonError(400, "성별을 선택해주세요.", "VALIDATION_ERROR", "sex must be male|female");
-  }
-  if (!name || name.trim().length < 1 || name.trim().length > 20) {
-    return jsonError(400, "이름을 입력해주세요. (1~20자)", "VALIDATION_ERROR", "name length must be 1-20");
-  }
-  if (!phone || phone.replace(/[^0-9]/g, "").length < 9 || phone.replace(/[^0-9]/g, "").length > 15) {
-    return jsonError(400, "올바른 전화번호를 입력해주세요.", "VALIDATION_ERROR", "phone length must be 9-15");
-  }
-  if (!region || !REGIONS.includes(region)) {
-    return jsonError(400, "지역을 선택해주세요.", "VALIDATION_ERROR", "invalid region");
-  }
-  if (parsedAge == null || parsedAge < 19 || parsedAge > 45) {
-    return jsonError(400, "나이를 올바르게 입력해주세요. (19~45세)", "VALIDATION_ERROR", "age must be 19-45");
-  }
-  if (parsedHeightCm == null || parsedHeightCm < 120 || parsedHeightCm > 220) {
-    return jsonError(400, "키를 올바르게 입력해주세요. (120~220cm)", "VALIDATION_ERROR", "height_cm must be 120-220");
-  }
-  if (!job || job.trim().length < 1 || job.trim().length > 50) {
-    return jsonError(400, "직업을 입력해주세요. (1~50자)", "VALIDATION_ERROR", "job length must be 1-50");
-  }
-  if (!ideal_type || ideal_type.trim().length < 1 || ideal_type.trim().length > 1000) {
-    return jsonError(400, "이상형을 입력해주세요. (1~1000자)", "VALIDATION_ERROR", "ideal_type length must be 1-1000");
-  }
-  if (parsedTrainingYears == null || parsedTrainingYears < 0 || parsedTrainingYears > 30) {
-    return jsonError(400, "운동경력을 입력해주세요. (0~30년)", "VALIDATION_ERROR", "training_years must be 0-30");
-  }
-  if (!consent_privacy) {
-    return jsonError(400, "개인정보 수집·이용에 동의해주세요.", "VALIDATION_ERROR", "consent_privacy must be true");
-  }
+    const normalizedSex = normalizeSex(sex);
+    const parsedAge = toInteger(age);
+    const parsedHeightCm = toInteger(height_cm);
+    const parsedTrainingYears = toInteger(training_years);
+    maskedBody = buildMaskedInsertPayload({
+      sex,
+      name,
+      phone,
+      region,
+      age,
+      height_cm,
+      job,
+      ideal_type,
+      training_years,
+      consent_privacy,
+      consent_content,
+    });
 
-  const adminClient = createAdminClient();
+    // 필수 필드 검증
+    if (!normalizedSex) {
+      return jsonError(400, "성별을 선택해주세요.", "VALIDATION_ERROR", "sex must be male|female");
+    }
+    if (!name || name.trim().length < 1 || name.trim().length > 20) {
+      return jsonError(400, "이름을 입력해주세요. (1~20자)", "VALIDATION_ERROR", "name length must be 1-20");
+    }
+    if (!phone || phone.replace(/[^0-9]/g, "").length < 9 || phone.replace(/[^0-9]/g, "").length > 15) {
+      return jsonError(400, "올바른 전화번호를 입력해주세요.", "VALIDATION_ERROR", "phone length must be 9-15");
+    }
+    if (!region || !REGIONS.includes(region)) {
+      return jsonError(400, "지역을 선택해주세요.", "VALIDATION_ERROR", "invalid region");
+    }
+    if (parsedAge == null || parsedAge < 19 || parsedAge > 45) {
+      return jsonError(400, "나이를 올바르게 입력해주세요. (19~45세)", "VALIDATION_ERROR", "age must be 19-45");
+    }
+    if (parsedHeightCm == null || parsedHeightCm < 120 || parsedHeightCm > 220) {
+      return jsonError(400, "키를 올바르게 입력해주세요. (120~220cm)", "VALIDATION_ERROR", "height_cm must be 120-220");
+    }
+    if (!job || job.trim().length < 1 || job.trim().length > 50) {
+      return jsonError(400, "직업을 입력해주세요. (1~50자)", "VALIDATION_ERROR", "job length must be 1-50");
+    }
+    if (!ideal_type || ideal_type.trim().length < 1 || ideal_type.trim().length > 1000) {
+      return jsonError(400, "이상형을 입력해주세요. (1~1000자)", "VALIDATION_ERROR", "ideal_type length must be 1-1000");
+    }
+    if (parsedTrainingYears == null || parsedTrainingYears < 0 || parsedTrainingYears > 30) {
+      return jsonError(400, "운동경력을 입력해주세요. (0~30년)", "VALIDATION_ERROR", "training_years must be 0-30");
+    }
+    if (!consent_privacy) {
+      return jsonError(400, "개인정보 수집·이용에 동의해주세요.", "VALIDATION_ERROR", "consent_privacy must be true");
+    }
 
-  // 남자: 3대 인증 approved 체크
-  if (normalizedSex === "male") {
-    const { data: cert, error: certError } = await adminClient
-      .from("cert_requests")
+    const adminClient = createAdminClient();
+
+    // 남자: 3대 인증 approved 체크
+    if (normalizedSex === "male") {
+      const { data: cert, error: certError } = await adminClient
+        .from("cert_requests")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("status", "approved")
+        .limit(1)
+        .maybeSingle();
+
+      if (certError) {
+        console.error("[POST /api/dating/apply] cert check failed", certError);
+        return jsonError(500, "인증 상태 확인에 실패했습니다.", "CERT_CHECK_FAILED", formatDbError(certError));
+      }
+
+      if (!cert) {
+        return jsonError(
+          403,
+          "남성은 3대 인증(승인 완료)이 필요합니다. 먼저 인증을 완료해주세요.",
+          "MALE_CERT_REQUIRED"
+        );
+      }
+    }
+
+    // 7일 중복 체크
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
+    const { data: recent, error: recentError } = await adminClient
+      .from("dating_applications")
       .select("id")
       .eq("user_id", user.id)
-      .eq("status", "approved")
+      .in("status", ["submitted", "reviewing"])
+      .gte("created_at", sevenDaysAgo)
       .limit(1)
       .maybeSingle();
 
-    if (certError) {
-      console.error("[POST /api/dating/apply] cert check failed", certError);
-      return jsonError(500, "인증 상태 확인에 실패했습니다.", "CERT_CHECK_FAILED", formatDbError(certError));
+    if (recentError) {
+      console.error("[POST /api/dating/apply] duplicate check failed", recentError);
+      return jsonError(500, "기존 신청 확인에 실패했습니다.", "DUPLICATE_CHECK_FAILED", formatDbError(recentError));
     }
 
-    if (!cert) {
+    if (recent) {
       return jsonError(
-        403,
-        "남성은 3대 인증(승인 완료)이 필요합니다. 먼저 인증을 완료해주세요.",
-        "MALE_CERT_REQUIRED"
+        429,
+        "7일 이내에 이미 신청하셨습니다. 기존 신청이 처리된 후 다시 신청해주세요.",
+        "DUPLICATE_RECENT_APPLICATION"
       );
     }
-  }
 
-  // 7일 중복 체크
-  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-  const { data: recent, error: recentError } = await adminClient
-    .from("dating_applications")
-    .select("id")
-    .eq("user_id", user.id)
-    .in("status", ["submitted", "reviewing"])
-    .gte("created_at", sevenDaysAgo)
-    .limit(1)
-    .maybeSingle();
+    const { data: profile, error: profileError } = await adminClient
+      .from("profiles")
+      .select("nickname")
+      .eq("user_id", user.id)
+      .maybeSingle();
 
-  if (recentError) {
-    console.error("[POST /api/dating/apply] duplicate check failed", recentError);
-    return jsonError(500, "기존 신청 확인에 실패했습니다.", "DUPLICATE_CHECK_FAILED", formatDbError(recentError));
-  }
+    if (profileError) {
+      console.error("[POST /api/dating/apply] profile read failed", profileError);
+    }
 
-  if (recent) {
-    return jsonError(
-      429,
-      "7일 이내에 이미 신청하셨습니다. 기존 신청이 처리된 후 다시 신청해주세요.",
-      "DUPLICATE_RECENT_APPLICATION"
-    );
-  }
+    const displayNickname =
+      typeof profile?.nickname === "string" && profile.nickname.trim().length > 0
+        ? profile.nickname.trim().slice(0, 20)
+        : name.trim().slice(0, 20);
 
-  const { data: profile, error: profileError } = await adminClient
-    .from("profiles")
-    .select("nickname")
-    .eq("user_id", user.id)
-    .maybeSingle();
+    // INSERT (admin client로 insert)
+    const cleanPhone = phone.replace(/[^0-9]/g, "");
+    const insertPayload = {
+      user_id: user.id,
+      sex: normalizedSex,
+      name: name.trim(),
+      phone: cleanPhone,
+      region,
+      age: parsedAge,
+      height_cm: parsedHeightCm,
+      job: job.trim(),
+      ideal_type: ideal_type.trim(),
+      training_years: parsedTrainingYears,
+      display_nickname: displayNickname,
+      consent_privacy: !!consent_privacy,
+      consent_content: !!consent_content,
+      photo_urls: [] as string[],
+      status: "submitted" as const,
+    };
 
-  if (profileError) {
-    console.error("[POST /api/dating/apply] profile read failed", profileError);
-  }
-
-  const displayNickname =
-    typeof profile?.nickname === "string" && profile.nickname.trim().length > 0
-      ? profile.nickname.trim().slice(0, 20)
-      : name.trim().slice(0, 20);
-
-  // INSERT (admin client로 insert)
-  const cleanPhone = phone.replace(/[^0-9]/g, "");
-  const insertPayload = {
-    user_id: user.id,
-    sex: normalizedSex,
-    name: name.trim(),
-    phone: cleanPhone,
-    region,
-    age: parsedAge,
-    height_cm: parsedHeightCm,
-    job: job.trim(),
-    ideal_type: ideal_type.trim(),
-    training_years: parsedTrainingYears,
-    display_nickname: displayNickname,
-    consent_privacy: !!consent_privacy,
-    consent_content: !!consent_content,
-    photo_urls: [] as string[],
-    status: "submitted" as const,
-  };
-
-  const insertBuilder = adminClient
-    .from("dating_applications")
-    .insert(insertPayload)
-    .select("id");
-
-  let { data: app, error } = await insertBuilder.single();
-
-  // Backward compatibility: some environments may still use photo_paths instead of photo_urls.
-  if (error?.code === "42703" && error.message.includes("photo_urls")) {
-    const fallbackPayload = { ...insertPayload, photo_paths: [], photo_urls: undefined } as Record<string, unknown>;
-    const fallbackResult = await adminClient
+    const insertBuilder = adminClient
       .from("dating_applications")
-      .insert(fallbackPayload)
-      .select("id")
-      .single();
-    app = fallbackResult.data;
-    error = fallbackResult.error;
-  }
+      .insert(insertPayload)
+      .select("id");
 
-  if (error) {
-    const maskedPayload = buildMaskedInsertPayload(insertPayload);
-    console.error("[POST /api/dating/apply] insert failed", {
-      rawError: error,
-      message: error.message,
-      details: error.details,
-      hint: error.hint,
-      code: error.code,
-      payload: maskedPayload,
-    });
-    const mapped = mapInsertError(error);
-    return jsonError(mapped.status, mapped.message, mapped.code, formatDbError(error));
-  }
-  if (!app?.id) {
-    return jsonError(500, "신청 생성에 실패했습니다.", "DB_INSERT_FAILED", "insert succeeded but id is missing");
-  }
+    let { data: app, error } = await insertBuilder.single();
 
-  return NextResponse.json({ id: app.id }, { status: 201 });
+    // Backward compatibility: some environments may still use photo_paths instead of photo_urls.
+    if (error?.code === "42703" && error.message.includes("photo_urls")) {
+      const fallbackPayload = { ...insertPayload, photo_paths: [], photo_urls: undefined } as Record<string, unknown>;
+      const fallbackResult = await adminClient
+        .from("dating_applications")
+        .insert(fallbackPayload)
+        .select("id")
+        .single();
+      app = fallbackResult.data;
+      error = fallbackResult.error;
+    }
+
+    if (error) {
+      const maskedPayload = buildMaskedInsertPayload(insertPayload);
+      console.error("[POST /api/dating/apply] insert failed", {
+        rawError: error,
+        message: error.message,
+        details: error.details,
+        hint: error.hint,
+        code: error.code,
+        payload: maskedPayload,
+      });
+      const mapped = mapInsertError(error);
+      return jsonError(mapped.status, mapped.message, mapped.code, formatDbError(error));
+    }
+    if (!app?.id) {
+      return jsonError(500, "신청 생성에 실패했습니다.", "DB_INSERT_FAILED", "insert succeeded but id is missing");
+    }
+
+    return NextResponse.json({ id: app.id }, { status: 201 });
+  } catch (err) {
+    return internalServerError("신청 처리 중 서버 오류가 발생했습니다.", err, "POST /api/dating/apply", maskedBody);
+  }
 }

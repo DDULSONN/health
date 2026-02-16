@@ -49,6 +49,19 @@ function getErrorInfo(err: unknown): { message: string; code?: string; details?:
   return { message: "오류가 발생했습니다." };
 }
 
+function maskApplyPayload(payload: Record<string, unknown>) {
+  const cloned = { ...payload };
+  if (typeof cloned.name === "string") {
+    const name = cloned.name;
+    cloned.name = name.length <= 2 ? `${name[0]}*` : `${name[0]}*${name[name.length - 1]}`;
+  }
+  if (typeof cloned.phone === "string") {
+    const phone = cloned.phone;
+    cloned.phone = phone.length > 4 ? `${phone.slice(0, 3)}****${phone.slice(-2)}` : "***";
+  }
+  return cloned;
+}
+
 export default function DatingApplyPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -160,25 +173,33 @@ export default function DatingApplyPage() {
     setSubmitting(true);
     try {
       // 1) 신청 생성
+      const applyPayload = {
+        sex: normalizedSex,
+        name: name.trim(),
+        phone: phone.trim(),
+        region,
+        age: Number(age),
+        height_cm: Number(heightCm),
+        job: job.trim(),
+        training_years: Number(trainingYears),
+        ideal_type: idealType.trim(),
+        consent_privacy: consentPrivacy,
+        consent_content: consentContent,
+      };
       const res = await fetch("/api/dating/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sex: normalizedSex,
-          name: name.trim(),
-          phone: phone.trim(),
-          region,
-          age: Number(age),
-          height_cm: Number(heightCm),
-          job: job.trim(),
-          training_years: Number(trainingYears),
-          ideal_type: idealType.trim(),
-          consent_privacy: consentPrivacy,
-          consent_content: consentContent,
-        }),
+        body: JSON.stringify(applyPayload),
       });
       const resBody = (await res.json().catch(() => ({}))) as ApiErrorPayload & { id?: string };
       if (!res.ok) {
+        console.error("dating apply request failed", {
+          url: "/api/dating/apply",
+          method: "POST",
+          payload: maskApplyPayload(applyPayload),
+          responseStatus: res.status,
+          responseBody: resBody,
+        });
         throw buildApiError("신청에 실패했습니다.", resBody, res.status);
       }
       const applicationId = resBody.id;
@@ -195,6 +216,19 @@ export default function DatingApplyPage() {
         const uploadRes = await fetch("/api/dating/upload", { method: "POST", body: fd });
         if (!uploadRes.ok) {
           const uploadBody = (await uploadRes.json().catch(() => ({}))) as ApiErrorPayload;
+          console.error("dating upload request failed", {
+            url: "/api/dating/upload",
+            method: "POST",
+            payload: {
+              applicationId,
+              index: i,
+              fileName: photos[i]?.name,
+              fileType: photos[i]?.type,
+              fileSize: photos[i]?.size,
+            },
+            responseStatus: uploadRes.status,
+            responseBody: uploadBody,
+          });
           throw buildApiError(`사진 ${i + 1} 업로드 실패`, uploadBody, uploadRes.status);
         }
       }
