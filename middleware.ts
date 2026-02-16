@@ -37,7 +37,7 @@ export async function middleware(request: NextRequest) {
   const isAdmin = !!user?.email && getAdminEmails().includes(user.email.toLowerCase());
   const confirmed = isEmailConfirmed(user);
 
-  const protectedPrefixes = ["/community", "/mypage", "/cert/request", "/admin", "/certify"];
+  const protectedPrefixes = ["/community", "/mypage", "/cert/request", "/admin", "/certify", "/dating"];
   const isProtected = protectedPrefixes.some((prefix) => pathname.startsWith(prefix));
   const isVerifyPage = pathname.startsWith("/verify-email");
 

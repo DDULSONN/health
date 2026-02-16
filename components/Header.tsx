@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { href: "/snacks", label: "다이어트 간식" },
   { href: "/community/bodycheck", label: "사진 몸평" },
   { href: "/community", label: "커뮤니티" },
+  { href: "/dating/apply", label: "소개팅" },
 ];
 
 export default function Header() {

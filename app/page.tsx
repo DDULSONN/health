@@ -80,6 +80,15 @@ const FEATURES: Feature[] = [
     accent: "bg-cyan-50 border-cyan-200 hover:border-cyan-400",
     cta: "커뮤니티 이동",
   },
+  {
+    id: "dating",
+    href: "/dating/apply",
+    title: "소개팅 신청",
+    emoji: "💘",
+    description: "3대 인증자 소개팅 매칭 서비스",
+    accent: "bg-pink-50 border-pink-200 hover:border-pink-400",
+    cta: "신청하기",
+  },
 ];
 
 export default function HomePage() {
