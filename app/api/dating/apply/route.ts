@@ -55,6 +55,8 @@ function buildMaskedInsertPayload(payload: Record<string, unknown>) {
   const cloned = { ...payload };
   if (typeof cloned.name === "string") cloned.name = maskName(cloned.name);
   if (typeof cloned.phone === "string") cloned.phone = maskPhone(cloned.phone);
+  if (Array.isArray(cloned.photo_urls)) cloned.photo_urls = ["***"];
+  if (Array.isArray(cloned.photo_paths)) cloned.photo_paths = ["***"];
   return cloned;
 }
 
@@ -104,16 +106,18 @@ export async function POST(request: Request) {
     phone?: string;
     region?: string;
     age?: number | string;
-    height_cm?: number;
+    height_cm?: number | string;
     job?: string;
     ideal_type?: string;
-    training_years?: number;
+    training_years?: number | string;
     consent_privacy?: boolean;
     consent_content?: boolean;
   };
 
   const normalizedSex = normalizeSex(sex);
   const parsedAge = toInteger(age);
+  const parsedHeightCm = toInteger(height_cm);
+  const parsedTrainingYears = toInteger(training_years);
 
   // 필수 필드 검증
   if (!normalizedSex) {
@@ -131,7 +135,7 @@ export async function POST(request: Request) {
   if (parsedAge == null || parsedAge < 19 || parsedAge > 45) {
     return jsonError(400, "나이를 올바르게 입력해주세요. (19~45세)", "VALIDATION_ERROR", "age must be 19-45");
   }
-  if (!height_cm || height_cm < 120 || height_cm > 220) {
+  if (parsedHeightCm == null || parsedHeightCm < 120 || parsedHeightCm > 220) {
     return jsonError(400, "키를 올바르게 입력해주세요. (120~220cm)", "VALIDATION_ERROR", "height_cm must be 120-220");
   }
   if (!job || job.trim().length < 1 || job.trim().length > 50) {
@@ -140,7 +144,7 @@ export async function POST(request: Request) {
   if (!ideal_type || ideal_type.trim().length < 1 || ideal_type.trim().length > 1000) {
     return jsonError(400, "이상형을 입력해주세요. (1~1000자)", "VALIDATION_ERROR", "ideal_type length must be 1-1000");
   }
-  if (training_years == null || training_years < 0 || training_years > 30) {
+  if (parsedTrainingYears == null || parsedTrainingYears < 0 || parsedTrainingYears > 30) {
     return jsonError(400, "운동경력을 입력해주세요. (0~30년)", "VALIDATION_ERROR", "training_years must be 0-30");
   }
   if (!consent_privacy) {
@@ -221,10 +225,10 @@ export async function POST(request: Request) {
     phone: cleanPhone,
     region,
     age: parsedAge,
-    height_cm: Math.round(height_cm),
+    height_cm: parsedHeightCm,
     job: job.trim(),
     ideal_type: ideal_type.trim(),
-    training_years: Math.round(training_years),
+    training_years: parsedTrainingYears,
     display_nickname: displayNickname,
     consent_privacy: !!consent_privacy,
     consent_content: !!consent_content,
@@ -254,6 +258,7 @@ export async function POST(request: Request) {
   if (error) {
     const maskedPayload = buildMaskedInsertPayload(insertPayload);
     console.error("[POST /api/dating/apply] insert failed", {
+      rawError: error,
       message: error.message,
       details: error.details,
       hint: error.hint,
