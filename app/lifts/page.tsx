@@ -288,6 +288,7 @@ function LiftsContent() {
       squat: s > 0 ? String(Math.round(s)) : "",
       bench: b > 0 ? String(Math.round(b)) : "",
       dead: d > 0 ? String(Math.round(d)) : "",
+      sex: sex === "male" || sex === "female" ? sex : "",
     });
 
     const url = `/api/share-card?${params.toString()}`;

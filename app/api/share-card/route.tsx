@@ -61,8 +61,8 @@ export async function GET(req: Request) {
 
     const sexRaw = (sp.get("sex") ?? sp.get("gender") ?? "").toLowerCase();
     const sexLabel =
-      sexRaw === "male" || sexRaw === "m" ? "남성 기준" :
-      sexRaw === "female" || sexRaw === "f" ? "여성 기준" :
+      sexRaw === "male" || sexRaw === "m" || sexRaw === "남" || sexRaw === "남자" ? "남성 기준" :
+      sexRaw === "female" || sexRaw === "f" || sexRaw === "여" || sexRaw === "여자" ? "여성 기준" :
       "전체 기준";
 
     return new ImageResponse(
