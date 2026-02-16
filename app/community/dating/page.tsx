@@ -9,6 +9,7 @@ type DatingCard = {
   display_nickname: string;
   age: number;
   thumb_url: string;
+  is_blur_fallback?: boolean;
   total_3lift?: number;
   percent_all?: number;
   training_years?: number;
@@ -36,7 +37,9 @@ export default function DatingListPage() {
   }, []);
 
   useEffect(() => {
-    load();
+    queueMicrotask(() => {
+      void load();
+    });
   }, [load]);
 
   return (
@@ -122,7 +125,7 @@ function MaleCard({ card }: { card: DatingCard }) {
           <img
             src={card.thumb_url}
             alt=""
-            className="w-full h-full object-cover"
+            className={`w-full h-full object-cover ${card.is_blur_fallback ? "scale-110 blur-md" : "blur-sm scale-105"}`}
           />
         </div>
       ) : (
@@ -179,7 +182,7 @@ function FemaleCard({ card }: { card: DatingCard }) {
           <img
             src={card.thumb_url}
             alt=""
-            className="w-full h-full object-cover"
+            className={`w-full h-full object-cover ${card.is_blur_fallback ? "scale-110 blur-md" : "blur-sm scale-105"}`}
           />
         </div>
       ) : (

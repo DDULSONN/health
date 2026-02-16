@@ -1,6 +1,12 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
+function normalizeSex(value: string): "male" | "female" {
+  const v = value.trim().toLowerCase();
+  if (v === "male" || v === "남자" || v === "남성" || v === "m") return "male";
+  return "female";
+}
+
 /** GET /api/dating/public — 공개된 소개팅 카드 목록 (남/여 각 3개) */
 export async function GET() {
   const supabase = await createClient();
@@ -17,20 +23,18 @@ export async function GET() {
   // 남자 TOP 3 (최신순)
   const { data: males } = await adminClient
     .from("dating_applications")
-    .select("id, sex, display_nickname, age, thumb_blur_path, total_3lift, percent_all, training_years, created_at")
-    .eq("sex", "male")
+    .select("id, sex, display_nickname, age, thumb_blur_path, photo_urls, total_3lift, percent_all, training_years, created_at")
+    .in("sex", ["male", "남자", "남성", "m"])
     .eq("approved_for_public", true)
-    .not("thumb_blur_path", "is", null)
     .order("created_at", { ascending: false })
     .limit(3);
 
   // 여자 TOP 3 (최신순)
   const { data: females } = await adminClient
     .from("dating_applications")
-    .select("id, sex, display_nickname, age, thumb_blur_path, total_3lift, percent_all, training_years, created_at")
-    .eq("sex", "female")
+    .select("id, sex, display_nickname, age, thumb_blur_path, photo_urls, total_3lift, percent_all, training_years, created_at")
+    .in("sex", ["female", "여자", "여성", "f"])
     .eq("approved_for_public", true)
-    .not("thumb_blur_path", "is", null)
     .order("created_at", { ascending: false })
     .limit(3);
 
@@ -40,13 +44,28 @@ export async function GET() {
     return Promise.all(
       items.map(async (item) => {
         let thumbUrl = "";
-        if (item.thumb_blur_path) {
+        let isBlurFallback = false;
+        if (item.thumb_blur_path && item.thumb_blur_path.trim().length > 0) {
           const { data } = await adminClient.storage
             .from("dating-photos")
             .createSignedUrl(item.thumb_blur_path, 600);
           thumbUrl = data?.signedUrl ?? "";
         }
-        return { ...item, thumb_url: thumbUrl };
+
+        // Fallback: thumb_blur_path가 없는 기존 데이터는 1번 사진을 CSS blur로 처리해 노출
+        if (!thumbUrl) {
+          const photoPaths = Array.isArray(item.photo_urls) ? item.photo_urls : [];
+          const firstPhotoPath = typeof photoPaths[0] === "string" ? photoPaths[0] : "";
+          if (firstPhotoPath) {
+            const { data } = await adminClient.storage
+              .from("dating-photos")
+              .createSignedUrl(firstPhotoPath, 600);
+            thumbUrl = data?.signedUrl ?? "";
+            isBlurFallback = !!thumbUrl;
+          }
+        }
+
+        return { ...item, sex: normalizeSex(item.sex), thumb_url: thumbUrl, is_blur_fallback: isBlurFallback };
       })
     );
   };

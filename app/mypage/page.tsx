@@ -32,6 +32,16 @@ type SummaryResponse = {
   bodycheck_posts: BodycheckPost[];
 };
 
+type DatingApplicationStatus = {
+  id: string;
+  created_at: string;
+  status: string;
+  approved_for_public: boolean;
+  display_nickname: string | null;
+  age: number | null;
+  training_years: number | null;
+};
+
 type MyCertificate = {
   id: string;
   certificate_no: string;
@@ -73,6 +83,7 @@ export default function MyPage() {
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [certRequests, setCertRequests] = useState<MyCertRequest[]>([]);
+  const [datingApplication, setDatingApplication] = useState<DatingApplicationStatus | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState<MyPageTab>("my_cert");
   const [error, setError] = useState("");
@@ -98,10 +109,11 @@ export default function MyPage() {
           return;
         }
 
-        const [summaryRes, certRes, adminRes] = await Promise.all([
+        const [summaryRes, certRes, adminRes, datingRes] = await Promise.all([
           fetch("/api/mypage/summary", { cache: "no-store" }),
           fetch("/api/cert-requests", { cache: "no-store" }),
           fetch("/api/admin/me", { cache: "no-store" }),
+          fetch("/api/dating/my-application", { cache: "no-store" }),
         ]);
 
         const summaryBody = (await summaryRes.json().catch(() => ({}))) as SummaryResponse & {
@@ -112,6 +124,10 @@ export default function MyPage() {
           requests?: MyCertRequest[];
         };
         const adminBody = (await adminRes.json().catch(() => ({}))) as { isAdmin?: boolean };
+        const datingBody = (await datingRes.json().catch(() => ({}))) as {
+          error?: string;
+          application?: DatingApplicationStatus | null;
+        };
 
         if (!summaryRes.ok) {
           throw new Error(summaryBody.error ?? "마이페이지 정보를 불러오지 못했습니다.");
@@ -124,6 +140,7 @@ export default function MyPage() {
           setSummary(summaryBody);
           setCertRequests(certBody.requests ?? []);
           setIsAdmin(Boolean(adminBody.isAdmin));
+          setDatingApplication(datingBody.application ?? null);
           setError("");
         }
       } catch (e) {
@@ -248,6 +265,20 @@ export default function MyPage() {
   const approvedRequests = certRequests.filter(
     (item) => item.status === "approved" && (item.certificates?.length ?? 0) > 0
   );
+  const datingStatusText: Record<string, string> = {
+    submitted: "접수됨",
+    reviewing: "검토 중",
+    interview: "인터뷰",
+    matched: "매칭 완료",
+    rejected: "보류/거절",
+  };
+  const datingStatusColor: Record<string, string> = {
+    submitted: "bg-neutral-100 text-neutral-700",
+    reviewing: "bg-blue-100 text-blue-700",
+    interview: "bg-purple-100 text-purple-700",
+    matched: "bg-emerald-100 text-emerald-700",
+    rejected: "bg-red-100 text-red-700",
+  };
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
@@ -324,6 +355,44 @@ export default function MyPage() {
           >
             로그아웃
           </button>
+        </div>
+      </section>
+
+      <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
+        <h2 className="text-lg font-bold text-neutral-900 mb-3">소개팅 신청 현황</h2>
+        {datingApplication ? (
+          <div className="space-y-2 text-sm">
+            <p className="text-neutral-600">
+              신청일: <span className="text-neutral-900">{new Date(datingApplication.created_at).toLocaleString("ko-KR")}</span>
+            </p>
+            <p className="text-neutral-600">
+              상태:{" "}
+              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${datingStatusColor[datingApplication.status] ?? "bg-neutral-100 text-neutral-700"}`}>
+                {datingStatusText[datingApplication.status] ?? datingApplication.status}
+              </span>
+            </p>
+            <p className="text-neutral-600">
+              공개 승인:{" "}
+              <span className={datingApplication.approved_for_public ? "text-emerald-700 font-medium" : "text-neutral-500"}>
+                {datingApplication.approved_for_public ? "승인됨" : "미승인"}
+              </span>
+            </p>
+            <div className="flex flex-wrap gap-2 text-xs text-neutral-600">
+              {datingApplication.display_nickname && <span>닉네임: {datingApplication.display_nickname}</span>}
+              {datingApplication.age != null && <span>나이: {datingApplication.age}세</span>}
+              {datingApplication.training_years != null && <span>운동경력: {datingApplication.training_years}년</span>}
+            </div>
+          </div>
+        ) : (
+          <p className="text-sm text-neutral-500">소개팅 신청 내역이 없습니다.</p>
+        )}
+        <div className="mt-4">
+          <Link
+            href="/dating/apply"
+            className="inline-flex min-h-[42px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
+          >
+            신청하러 가기
+          </Link>
         </div>
       </section>
 

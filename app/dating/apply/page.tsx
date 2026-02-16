@@ -49,6 +49,43 @@ function getErrorInfo(err: unknown): { message: string; code?: string; details?:
   return { message: "오류가 발생했습니다." };
 }
 
+async function createBlurThumbnailFile(source: File): Promise<File> {
+  const imageUrl = URL.createObjectURL(source);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("이미지 로드 실패"));
+      el.src = imageUrl;
+    });
+
+    const maxWidth = 960;
+    const ratio = img.width > maxWidth ? maxWidth / img.width : 1;
+    const width = Math.max(1, Math.round(img.width * ratio));
+    const height = Math.max(1, Math.round(img.height * ratio));
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("canvas context 없음");
+
+    ctx.filter = "blur(14px)";
+    ctx.drawImage(img, 0, 0, width, height);
+    ctx.filter = "none";
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((b) => {
+        if (b) resolve(b);
+        else reject(new Error("블러 썸네일 생성 실패"));
+      }, "image/jpeg", 0.72);
+    });
+
+    return new File([blob], "thumb_blur.jpg", { type: "image/jpeg" });
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
+}
+
 function maskApplyPayload(payload: Record<string, unknown>) {
   const cloned = { ...payload };
   if (typeof cloned.name === "string") {
@@ -230,6 +267,29 @@ export default function DatingApplyPage() {
             responseBody: uploadBody,
           });
           throw buildApiError(`사진 ${i + 1} 업로드 실패`, uploadBody, uploadRes.status);
+        }
+      }
+
+      // 3) 첫 번째 사진 기반 블러 썸네일 업로드
+      const firstPhoto = photos[0];
+      if (firstPhoto) {
+        const blurThumbFile = await createBlurThumbnailFile(firstPhoto);
+        const thumbFd = new FormData();
+        thumbFd.append("file", blurThumbFile);
+        thumbFd.append("applicationId", applicationId);
+        thumbFd.append("index", "0");
+        thumbFd.append("isThumb", "true");
+        const thumbRes = await fetch("/api/dating/upload", { method: "POST", body: thumbFd });
+        if (!thumbRes.ok) {
+          const thumbBody = (await thumbRes.json().catch(() => ({}))) as ApiErrorPayload;
+          console.error("dating thumb upload request failed", {
+            url: "/api/dating/upload",
+            method: "POST",
+            payload: { applicationId, isThumb: true, fileName: blurThumbFile.name, fileSize: blurThumbFile.size },
+            responseStatus: thumbRes.status,
+            responseBody: thumbBody,
+          });
+          throw buildApiError("블러 썸네일 업로드 실패", thumbBody, thumbRes.status);
         }
       }
 

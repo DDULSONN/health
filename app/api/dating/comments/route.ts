@@ -1,4 +1,5 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import type { PostgrestError } from "@supabase/supabase-js";
 import { containsProfanity, containsContactInfo, getRateLimitRemaining } from "@/lib/moderation";
 import { NextResponse } from "next/server";
 
@@ -36,7 +37,7 @@ export async function POST(request: Request) {
   }
 
   if (containsContactInfo(content)) {
-    return NextResponse.json({ error: "연락처/SNS 정보는 댓글에 입력할 수 없습니다." }, { status: 400 });
+    return NextResponse.json({ error: "연락처 공유는 금지입니다." }, { status: 400 });
   }
 
   const adminClient = createAdminClient();
@@ -47,7 +48,6 @@ export async function POST(request: Request) {
     .select("id")
     .eq("id", applicationId)
     .eq("approved_for_public", true)
-    .not("thumb_blur_path", "is", null)
     .maybeSingle();
 
   if (!app) {
@@ -82,7 +82,22 @@ export async function POST(request: Request) {
     .single();
 
   if (error) {
-    console.error("[POST /api/dating/comments]", error.message);
+    const lower = (error.message ?? "").toLowerCase();
+    const pg = error as PostgrestError;
+    console.error("[POST /api/dating/comments]", {
+      message: pg.message,
+      details: pg.details,
+      hint: pg.hint,
+      code: pg.code,
+      applicationId,
+      userId: user.id,
+    });
+    if (pg.code === "42501" || lower.includes("row-level security")) {
+      return NextResponse.json({ error: "댓글 권한이 없습니다. 로그인 상태를 확인해 주세요." }, { status: 403 });
+    }
+    if (pg.code === "23503") {
+      return NextResponse.json({ error: "존재하지 않는 카드입니다." }, { status: 404 });
+    }
     return NextResponse.json({ error: "댓글 작성에 실패했습니다." }, { status: 500 });
   }
 

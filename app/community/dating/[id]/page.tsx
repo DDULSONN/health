@@ -11,6 +11,7 @@ type CardDetail = {
   display_nickname: string;
   age: number;
   thumb_url: string;
+  is_blur_fallback?: boolean;
   region: string;
   height_cm: number;
   training_years?: number;
@@ -78,7 +79,9 @@ export default function DatingDetailPage() {
   }, [id, router]);
 
   useEffect(() => {
-    load();
+    queueMicrotask(() => {
+      void load();
+    });
   }, [load]);
 
   const handleSubmitComment = async () => {
@@ -149,59 +152,57 @@ export default function DatingDetailPage() {
       </Link>
 
       {/* 카드 상세 */}
-      <div className="rounded-2xl border border-neutral-200 bg-white p-5 mb-6">
-        <div className="flex items-start gap-4">
-          {card.thumb_url ? (
-            <div className="shrink-0 w-24 h-24 rounded-xl overflow-hidden border border-neutral-100">
-              <img
-                src={card.thumb_url}
-                alt=""
-                className="w-full h-full object-cover"
-              />
-            </div>
-          ) : (
-            <div className="shrink-0 w-24 h-24 rounded-xl bg-neutral-100 flex items-center justify-center text-3xl">
-              {card.sex === "male" ? "🏋️" : "💘"}
-            </div>
+      <div className="rounded-2xl border border-neutral-200 bg-white overflow-hidden mb-6">
+        {card.thumb_url ? (
+          <div className="relative w-full overflow-hidden bg-neutral-100 min-h-[240px] md:min-h-[280px]">
+            <img
+              src={card.thumb_url}
+              alt=""
+              className={`w-full h-full absolute inset-0 object-cover ${card.is_blur_fallback ? "scale-110 blur-md" : "blur-sm scale-105"}`}
+            />
+          </div>
+        ) : (
+          <div className="w-full min-h-[240px] md:min-h-[280px] bg-neutral-100 flex items-center justify-center text-5xl">
+            {card.sex === "male" ? "🏋️" : "💘"}
+          </div>
+        )}
+
+        <div className="p-5">
+          <h2 className="text-xl font-bold text-neutral-900 mb-1">
+            {card.display_nickname}
+          </h2>
+          <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-600">
+            <span>{card.age}세</span>
+            <span className="text-neutral-300">|</span>
+            <span>{card.region}</span>
+            <span className="text-neutral-300">|</span>
+            <span>{card.height_cm}cm</span>
+          </div>
+          {card.training_years != null && (
+            <p className="text-xs text-neutral-500 mt-1">운동경력 {card.training_years}년</p>
           )}
 
-          <div className="flex-1 min-w-0">
-            <h2 className="text-xl font-bold text-neutral-900 mb-1">
-              {card.display_nickname}
-            </h2>
-            <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-600">
-              <span>{card.age}세</span>
-              <span className="text-neutral-300">|</span>
-              <span>{card.region}</span>
-              <span className="text-neutral-300">|</span>
-              <span>{card.height_cm}cm</span>
-            </div>
-            {card.training_years != null && (
-              <p className="text-xs text-neutral-500 mt-1">운동경력 {card.training_years}년</p>
+          {/* 성별별 정보 */}
+          <div className="flex flex-wrap gap-2 mt-3">
+            {card.sex === "male" && (
+              <>
+                {card.total_3lift != null && (
+                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700">
+                    3대 {card.total_3lift}kg
+                  </span>
+                )}
+                {card.percent_all != null && (
+                  <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
+                    상위 {card.percent_all}%
+                  </span>
+                )}
+              </>
             )}
-
-            {/* 성별별 정보 */}
-            <div className="flex flex-wrap gap-2 mt-3">
-              {card.sex === "male" && (
-                <>
-                  {card.total_3lift != null && (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700">
-                      3대 {card.total_3lift}kg
-                    </span>
-                  )}
-                  {card.percent_all != null && (
-                    <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-                      상위 {card.percent_all}%
-                    </span>
-                  )}
-                </>
-              )}
-              {card.sex === "female" && card.has_sbd && (
-                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-700">
-                  SBD 입력
-                </span>
-              )}
-            </div>
+            {card.sex === "female" && card.has_sbd && (
+              <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-700">
+                SBD 입력
+              </span>
+            )}
           </div>
         </div>
       </div>

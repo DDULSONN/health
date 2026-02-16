@@ -1,6 +1,12 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
+function normalizeSex(value: string): "male" | "female" {
+  const v = value.trim().toLowerCase();
+  if (v === "male" || v === "남자" || v === "남성" || v === "m") return "male";
+  return "female";
+}
+
 /** GET /api/dating/[id] — 공개 카드 상세 + 댓글 */
 export async function GET(
   _req: Request,
@@ -21,10 +27,9 @@ export async function GET(
   // 공개 카드만 조회
   const { data: app, error } = await adminClient
     .from("dating_applications")
-    .select("id, sex, display_nickname, age, thumb_blur_path, total_3lift, percent_all, training_years, region, height_cm, created_at")
+    .select("id, sex, display_nickname, age, thumb_blur_path, photo_urls, total_3lift, percent_all, training_years, region, height_cm, created_at")
     .eq("id", id)
     .eq("approved_for_public", true)
-    .not("thumb_blur_path", "is", null)
     .single();
 
   if (error || !app) {
@@ -33,11 +38,23 @@ export async function GET(
 
   // 블러 썸네일 signed URL
   let thumbUrl = "";
+  let isBlurFallback = false;
   if (app.thumb_blur_path) {
     const { data } = await adminClient.storage
       .from("dating-photos")
       .createSignedUrl(app.thumb_blur_path, 600);
     thumbUrl = data?.signedUrl ?? "";
+  }
+  if (!thumbUrl) {
+    const photoPaths = Array.isArray(app.photo_urls) ? app.photo_urls : [];
+    const firstPhotoPath = typeof photoPaths[0] === "string" ? photoPaths[0] : "";
+    if (firstPhotoPath) {
+      const { data } = await adminClient.storage
+        .from("dating-photos")
+        .createSignedUrl(firstPhotoPath, 600);
+      thumbUrl = data?.signedUrl ?? "";
+      isBlurFallback = !!thumbUrl;
+    }
   }
 
   // 댓글 조회
@@ -69,16 +86,17 @@ export async function GET(
   // 성별에 따라 노출 정보 제한
   const card: Record<string, unknown> = {
     id: app.id,
-    sex: app.sex,
+    sex: normalizeSex(app.sex),
     display_nickname: app.display_nickname,
     age: app.age,
     thumb_url: thumbUrl,
+    is_blur_fallback: isBlurFallback,
     region: app.region,
     height_cm: app.height_cm,
     training_years: app.training_years,
   };
 
-  if (app.sex === "male") {
+  if (normalizeSex(app.sex) === "male") {
     card.total_3lift = app.total_3lift;
     card.percent_all = app.percent_all;
   } else {

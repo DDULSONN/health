@@ -82,9 +82,11 @@ export async function POST(request: Request) {
     const file = formData.get("file") as File | null;
     const applicationId = formData.get("applicationId") as string | null;
     const index = formData.get("index") as string | null; // "0" or "1"
+    const isThumb = String(formData.get("isThumb") ?? "").toLowerCase() === "true";
     maskedInput = {
       applicationId: applicationId ? maskId(applicationId) : null,
       index,
+      isThumb,
       fileName: file?.name ?? null,
       fileType: file?.type ?? null,
       fileSize: file?.size ?? null,
@@ -94,7 +96,7 @@ export async function POST(request: Request) {
       return jsonError(400, "필수 파라미터가 누락되었습니다.", "MISSING_PARAMS");
     }
 
-    if (!["0", "1"].includes(index)) {
+    if (!isThumb && !["0", "1"].includes(index)) {
       return jsonError(400, "잘못된 인덱스입니다.", "INVALID_INDEX");
     }
 
@@ -125,7 +127,9 @@ export async function POST(request: Request) {
       return jsonError(403, "권한이 없습니다.", "FORBIDDEN");
     }
 
-    const storagePath = `dating/${user.id}/${applicationId}/${Number(index) + 1}.${ext}`;
+    const storagePath = isThumb
+      ? `dating/${user.id}/${applicationId}/thumb_blur.${ext}`
+      : `dating/${user.id}/${applicationId}/${Number(index) + 1}.${ext}`;
     const buffer = Buffer.from(await file.arrayBuffer());
 
     const { error: uploadError } = await adminClient.storage
@@ -137,14 +141,13 @@ export async function POST(request: Request) {
       return jsonError(500, "업로드에 실패했습니다.", "STORAGE_UPLOAD_FAILED", formatDbError(uploadError));
     }
 
-    // photo_urls 업데이트
-    const currentUrls: string[] = Array.isArray(app.photo_urls) ? [...app.photo_urls] : [];
-    currentUrls[Number(index)] = storagePath;
-    const updatePayload: { photo_urls: string[]; thumb_blur_path?: string } = { photo_urls: currentUrls };
-
-    // 첫 번째 업로드 파일을 기본 썸네일 경로로 기록
-    if (Number(index) === 0 && (!app.thumb_blur_path || String(app.thumb_blur_path).trim().length === 0)) {
+    const updatePayload: { photo_urls?: string[]; thumb_blur_path?: string } = {};
+    if (isThumb) {
       updatePayload.thumb_blur_path = storagePath;
+    } else {
+      const currentUrls: string[] = Array.isArray(app.photo_urls) ? [...app.photo_urls] : [];
+      currentUrls[Number(index)] = storagePath;
+      updatePayload.photo_urls = currentUrls;
     }
 
     const { error: updateError } = await adminClient
