@@ -16,23 +16,47 @@ function kgToLb(kg: number): number {
   return Math.round(kg * 2.2046226218);
 }
 
+function fmtLift(v: string | null): string {
+  if (!v) return "-";
+  const n = Number(v);
+  if (!Number.isFinite(n) || n <= 0) return "-";
+  return String(Math.round(n));
+}
+
 export async function GET(req: Request) {
   try {
     const sp = new URL(req.url).searchParams;
 
-    const total = Number(sp.get("total") ?? "0");
-    const nickname = (sp.get("nickname") ?? "").trim();
+    const totalRaw = sp.get("total");
+    const percentRaw = sp.get("percentAll");
 
-    if (!Number.isFinite(total) || total < 0) {
-      return jsonError(400, "invalid_total", { total: sp.get("total") });
+    if (totalRaw == null || percentRaw == null) {
+      return jsonError(400, "missing_params", {
+        hint: "total and percentAll are required",
+      });
     }
 
+    const total = Number(totalRaw);
+    const percentAll = Number(percentRaw);
+
+    if (!Number.isFinite(total) || total < 0) {
+      return jsonError(400, "invalid_total", { total: totalRaw });
+    }
+    if (!Number.isFinite(percentAll) || percentAll < 0) {
+      return jsonError(400, "invalid_percentAll", { percentAll: percentRaw });
+    }
+
+    const nickname = (sp.get("nickname") ?? "").trim();
     if (nickname && (nickname.length > 12 || !/^[0-9A-Za-z가-힣_]+$/.test(nickname))) {
       return jsonError(400, "invalid_nickname");
     }
 
     const safeTotal = Math.max(0, Math.round(total));
+    const safePercent = Math.max(0, Math.min(100, percentAll));
     const totalLb = kgToLb(safeTotal);
+    const squat = fmtLift(sp.get("squat"));
+    const bench = fmtLift(sp.get("bench"));
+    const dead = fmtLift(sp.get("dead"));
     const hasNickname = nickname.length > 0;
 
     return new ImageResponse(
@@ -42,51 +66,61 @@ export async function GET(req: Request) {
             width: "100%",
             height: "100%",
             display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            background: "white",
+            background: "#FDF2F2",
             fontFamily: "system-ui, -apple-system, Segoe UI, sans-serif",
+            borderRadius: 28,
+            border: "1px solid #F3B3B3",
+            padding: "44px",
+            flexDirection: "column",
+            justifyContent: "space-between",
           }}
         >
-          {/* 카드 */}
-          <div
-            style={{
-              display: "flex",
-              flexDirection: "column",
-              alignItems: "center",
-              justifyContent: "center",
-              width: 820,
-              height: 360,
-              background: "#FCECEC",
-              borderRadius: 28,
-              border: "1px solid rgba(220,80,80,0.2)",
-              boxShadow: "0 2px 12px rgba(0,0,0,0.04)",
-              padding: "0 40px",
-              gap: 0,
-            }}
-          >
-            {/* 라벨 */}
-            <div style={{ display: "flex", fontSize: 18, fontWeight: 500, color: "#999999", letterSpacing: "0.06em", marginBottom: 12 }}>
+          {/* ─── Top: 라벨 + 퍼센트 ─── */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            <div style={{ display: "flex", fontSize: 17, fontWeight: 500, color: "#AAAAAA", letterSpacing: "0.05em" }}>
               3대 합계
             </div>
-
-            {/* 메인 숫자 */}
             <div style={{ display: "flex", alignItems: "baseline", gap: 8 }}>
-              <span style={{ display: "flex", fontSize: 60, fontWeight: 800, color: "#C0392B" }}>{safeTotal}</span>
-              <span style={{ display: "flex", fontSize: 36, fontWeight: 600, color: "#C0392B" }}>kg</span>
+              <span style={{ display: "flex", fontSize: 30, fontWeight: 500, color: "#444444" }}>대한민국 상위</span>
+              <span style={{ display: "flex", fontSize: 34, fontWeight: 800, color: "#C0392B" }}>{`${safePercent.toFixed(1)}%`}</span>
+            </div>
+          </div>
+
+          {/* ─── Middle: S/B/D + TOTAL + lb ─── */}
+          <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 6 }}>
+            {/* S/B/D */}
+            <div style={{ display: "flex", alignItems: "baseline", gap: 14, marginBottom: 8 }}>
+              <span style={{ display: "flex", fontSize: 26, fontWeight: 400, color: "#999999" }}>S</span>
+              <span style={{ display: "flex", fontSize: 26, fontWeight: 700, color: "#333333" }}>{squat}</span>
+              <span style={{ display: "flex", fontSize: 22, color: "#CCCCCC" }}>·</span>
+              <span style={{ display: "flex", fontSize: 26, fontWeight: 400, color: "#999999" }}>B</span>
+              <span style={{ display: "flex", fontSize: 26, fontWeight: 700, color: "#333333" }}>{bench}</span>
+              <span style={{ display: "flex", fontSize: 22, color: "#CCCCCC" }}>·</span>
+              <span style={{ display: "flex", fontSize: 26, fontWeight: 400, color: "#999999" }}>D</span>
+              <span style={{ display: "flex", fontSize: 26, fontWeight: 700, color: "#333333" }}>{dead}</span>
             </div>
 
-            {/* lb 환산 */}
-            <div style={{ display: "flex", fontSize: 24, fontWeight: 500, color: "#D35F5F", marginTop: 8 }}>
+            {/* TOTAL */}
+            <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}>
+              <span style={{ display: "flex", fontSize: 18, fontWeight: 600, color: "#999999", letterSpacing: "0.08em", marginRight: 4 }}>TOTAL</span>
+              <span style={{ display: "flex", fontSize: 60, fontWeight: 800, color: "#C0392B" }}>{safeTotal}</span>
+              <span style={{ display: "flex", fontSize: 32, fontWeight: 600, color: "#C0392B" }}>kg</span>
+            </div>
+
+            {/* lb */}
+            <div style={{ display: "flex", fontSize: 22, fontWeight: 500, color: "#D35F5F" }}>
               {`${totalLb} lb`}
             </div>
+          </div>
 
-            {/* 닉네임 (있을 때만) */}
-            {hasNickname ? (
-              <div style={{ display: "flex", fontSize: 16, fontWeight: 400, color: "#AAAAAA", marginTop: 20 }}>
-                {nickname}
-              </div>
-            ) : null}
+          {/* ─── Bottom: 닉네임 + 푸터 ─── */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+            <div style={{ display: "flex", fontSize: 18, fontWeight: 400, color: "#AAAAAA" }}>
+              {hasNickname ? nickname : ""}
+            </div>
+            <div style={{ display: "flex", fontSize: 15, fontWeight: 400, color: "#CCCCCC", letterSpacing: "0.03em" }}>
+              GYMTOOLS · helchang.com
+            </div>
           </div>
         </div>
       ),
