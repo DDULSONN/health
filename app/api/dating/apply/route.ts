@@ -40,6 +40,45 @@ function jsonError(status: number, error: string, code: string, details?: string
   return NextResponse.json({ error, code, details }, { status });
 }
 
+function maskPhone(value: string) {
+  if (value.length <= 4) return "*".repeat(value.length);
+  return `${value.slice(0, 3)}****${value.slice(-2)}`;
+}
+
+function maskName(value: string) {
+  if (!value) return "";
+  if (value.length <= 2) return `${value[0]}*`;
+  return `${value[0]}*${value[value.length - 1]}`;
+}
+
+function buildMaskedInsertPayload(payload: Record<string, unknown>) {
+  const cloned = { ...payload };
+  if (typeof cloned.name === "string") cloned.name = maskName(cloned.name);
+  if (typeof cloned.phone === "string") cloned.phone = maskPhone(cloned.phone);
+  return cloned;
+}
+
+function mapInsertError(error: PostgrestError): { status: number; code: string; message: string } {
+  const lowerMessage = (error.message ?? "").toLowerCase();
+  const lowerDetails = (error.details ?? "").toLowerCase();
+
+  if (error.code === "23502") {
+    return { status: 400, code: "REQUIRED_FIELD_MISSING", message: "필수 입력이 누락됐어요." };
+  }
+  if (error.code === "23514") {
+    return { status: 400, code: "INVALID_RANGE", message: "나이/키/운동경력 범위를 확인해 주세요." };
+  }
+  if (
+    error.code === "42501" ||
+    lowerMessage.includes("row-level security") ||
+    lowerDetails.includes("row-level security")
+  ) {
+    return { status: 403, code: "RLS_DENIED", message: "남성은 3대 인증 완료 후 신청할 수 있어요." };
+  }
+
+  return { status: 500, code: "DB_INSERT_FAILED", message: "신청 생성에 실패했습니다." };
+}
+
 export async function POST(request: Request) {
   const supabase = await createClient();
   const {
@@ -89,8 +128,8 @@ export async function POST(request: Request) {
   if (!region || !REGIONS.includes(region)) {
     return jsonError(400, "지역을 선택해주세요.", "VALIDATION_ERROR", "invalid region");
   }
-  if (parsedAge == null || parsedAge < 19 || parsedAge > 99) {
-    return jsonError(400, "나이를 올바르게 입력해주세요. (19~99세)", "VALIDATION_ERROR", "age must be 19-99");
+  if (parsedAge == null || parsedAge < 19 || parsedAge > 45) {
+    return jsonError(400, "나이를 올바르게 입력해주세요. (19~45세)", "VALIDATION_ERROR", "age must be 19-45");
   }
   if (!height_cm || height_cm < 120 || height_cm > 220) {
     return jsonError(400, "키를 올바르게 입력해주세요. (120~220cm)", "VALIDATION_ERROR", "height_cm must be 120-220");
@@ -175,30 +214,57 @@ export async function POST(request: Request) {
 
   // INSERT (admin client로 insert)
   const cleanPhone = phone.replace(/[^0-9]/g, "");
-  const { data: app, error } = await adminClient
+  const insertPayload = {
+    user_id: user.id,
+    sex: normalizedSex,
+    name: name.trim(),
+    phone: cleanPhone,
+    region,
+    age: parsedAge,
+    height_cm: Math.round(height_cm),
+    job: job.trim(),
+    ideal_type: ideal_type.trim(),
+    training_years: Math.round(training_years),
+    display_nickname: displayNickname,
+    consent_privacy: !!consent_privacy,
+    consent_content: !!consent_content,
+    photo_urls: [] as string[],
+    status: "submitted" as const,
+  };
+
+  const insertBuilder = adminClient
     .from("dating_applications")
-    .insert({
-      user_id: user.id,
-      sex: normalizedSex,
-      name: name.trim(),
-      phone: cleanPhone,
-      region,
-      age: parsedAge,
-      height_cm: Math.round(height_cm),
-      job: job.trim(),
-      ideal_type: ideal_type.trim(),
-      training_years: Math.round(training_years),
-      display_nickname: displayNickname,
-      consent_privacy: !!consent_privacy,
-      consent_content: !!consent_content,
-      status: "submitted",
-    })
-    .select("id")
-    .single();
+    .insert(insertPayload)
+    .select("id");
+
+  let { data: app, error } = await insertBuilder.single();
+
+  // Backward compatibility: some environments may still use photo_paths instead of photo_urls.
+  if (error?.code === "42703" && error.message.includes("photo_urls")) {
+    const fallbackPayload = { ...insertPayload, photo_paths: [], photo_urls: undefined } as Record<string, unknown>;
+    const fallbackResult = await adminClient
+      .from("dating_applications")
+      .insert(fallbackPayload)
+      .select("id")
+      .single();
+    app = fallbackResult.data;
+    error = fallbackResult.error;
+  }
 
   if (error) {
-    console.error("[POST /api/dating/apply] insert failed", error);
-    return jsonError(500, "신청 생성에 실패했습니다.", "DB_INSERT_FAILED", formatDbError(error));
+    const maskedPayload = buildMaskedInsertPayload(insertPayload);
+    console.error("[POST /api/dating/apply] insert failed", {
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+      code: error.code,
+      payload: maskedPayload,
+    });
+    const mapped = mapInsertError(error);
+    return jsonError(mapped.status, mapped.message, mapped.code, formatDbError(error));
+  }
+  if (!app?.id) {
+    return jsonError(500, "신청 생성에 실패했습니다.", "DB_INSERT_FAILED", "insert succeeded but id is missing");
   }
 
   return NextResponse.json({ id: app.id }, { status: 201 });

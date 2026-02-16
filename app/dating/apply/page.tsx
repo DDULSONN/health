@@ -153,7 +153,7 @@ export default function DatingApplyPage() {
     const normalizedSex = normalizeSex(sex);
     if (!normalizedSex) { setError("성별을 선택해주세요."); return; }
     if (normalizedSex === "male" && !certApproved) { setError("남성은 3대 인증이 필요합니다."); return; }
-    if (!age || Number(age) < 19 || Number(age) > 99) { setError("나이를 입력해주세요. (19~99세)"); return; }
+    if (!age || Number(age) < 19 || Number(age) > 45) { setError("나이를 입력해주세요. (19~45세)"); return; }
     if (!photos[0] || !photos[1]) { setError("사진 2장을 모두 업로드해주세요."); return; }
     if (!consentPrivacy) { setError("개인정보 수집·이용에 동의해주세요."); return; }
 
@@ -369,7 +369,7 @@ export default function DatingApplyPage() {
                 type="number"
                 required
                 min={19}
-                max={99}
+                max={45}
                 value={age}
                 onChange={(e) => setAge(e.target.value)}
                 className="w-full h-12 rounded-xl border border-neutral-300 bg-white px-3"
