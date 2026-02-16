@@ -6,6 +6,8 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 
 type Sex = "male" | "female";
+type ApiErrorPayload = { error?: string; code?: string; details?: string };
+type ExtendedError = Error & { code?: string; details?: string; status?: number };
 
 const REGIONS = [
   "서울", "경기", "인천", "부산", "대구", "대전", "광주",
@@ -15,10 +17,42 @@ const REGIONS = [
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp"]);
+
+function normalizeSex(value: unknown): Sex | null {
+  if (typeof value !== "string") return null;
+  const normalized = value.trim().toLowerCase();
+  if (["male", "m", "남", "남자", "남성"].includes(normalized)) return "male";
+  if (["female", "f", "여", "여자", "여성"].includes(normalized)) return "female";
+  return null;
+}
+
+function getFileExtension(fileName: string): string {
+  const ext = fileName.split(".").pop()?.toLowerCase();
+  return ext && ext.length > 0 ? ext : "";
+}
+
+function buildApiError(defaultMessage: string, body?: ApiErrorPayload, status?: number): ExtendedError {
+  const message = body?.error ?? defaultMessage;
+  const error = new Error(message) as ExtendedError;
+  error.code = body?.code;
+  error.details = body?.details;
+  error.status = status;
+  return error;
+}
+
+function getErrorInfo(err: unknown): { message: string; code?: string; details?: string } {
+  if (err instanceof Error) {
+    const extErr = err as ExtendedError;
+    return { message: err.message, code: extErr.code, details: extErr.details };
+  }
+  return { message: "오류가 발생했습니다." };
+}
 
 export default function DatingApplyPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
+  const isDev = process.env.NODE_ENV !== "production";
 
   const [authChecked, setAuthChecked] = useState(false);
   const [sex, setSex] = useState<Sex | "">("");
@@ -29,6 +63,7 @@ export default function DatingApplyPage() {
   const [name, setName] = useState("");
   const [phone, setPhone] = useState("");
   const [region, setRegion] = useState("");
+  const [age, setAge] = useState("");
   const [heightCm, setHeightCm] = useState("");
   const [job, setJob] = useState("");
   const [trainingYears, setTrainingYears] = useState("");
@@ -94,8 +129,9 @@ export default function DatingApplyPage() {
         setError("사진은 5MB 이하만 가능합니다.");
         return;
       }
-      if (!ALLOWED_TYPES.includes(file.type)) {
-        setError("JPG, PNG, WebP만 업로드할 수 있습니다.");
+      const ext = getFileExtension(file.name);
+      if (!ALLOWED_TYPES.includes(file.type) || !ALLOWED_EXTENSIONS.has(ext)) {
+        setError("JPG, PNG, WebP만 업로드할 수 있습니다. (HEIC 불가)");
         return;
       }
     }
@@ -114,8 +150,10 @@ export default function DatingApplyPage() {
     e.preventDefault();
     setError("");
 
-    if (!sex) { setError("성별을 선택해주세요."); return; }
-    if (sex === "male" && !certApproved) { setError("남성은 3대 인증이 필요합니다."); return; }
+    const normalizedSex = normalizeSex(sex);
+    if (!normalizedSex) { setError("성별을 선택해주세요."); return; }
+    if (normalizedSex === "male" && !certApproved) { setError("남성은 3대 인증이 필요합니다."); return; }
+    if (!age || Number(age) < 19 || Number(age) > 99) { setError("나이를 입력해주세요. (19~99세)"); return; }
     if (!photos[0] || !photos[1]) { setError("사진 2장을 모두 업로드해주세요."); return; }
     if (!consentPrivacy) { setError("개인정보 수집·이용에 동의해주세요."); return; }
 
@@ -126,10 +164,11 @@ export default function DatingApplyPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          sex,
+          sex: normalizedSex,
           name: name.trim(),
           phone: phone.trim(),
           region,
+          age: Number(age),
           height_cm: Number(heightCm),
           job: job.trim(),
           training_years: Number(trainingYears),
@@ -138,9 +177,14 @@ export default function DatingApplyPage() {
           consent_content: consentContent,
         }),
       });
-      const resBody = await res.json().catch(() => ({})) as { id?: string; error?: string };
-      if (!res.ok) throw new Error(resBody.error ?? "신청에 실패했습니다.");
+      const resBody = (await res.json().catch(() => ({}))) as ApiErrorPayload & { id?: string };
+      if (!res.ok) {
+        throw buildApiError("신청에 실패했습니다.", resBody, res.status);
+      }
       const applicationId = resBody.id;
+      if (!applicationId) {
+        throw buildApiError("신청 ID를 받지 못했습니다.", { code: "MISSING_APPLICATION_ID" }, res.status);
+      }
 
       // 2) 사진 2장 업로드
       for (let i = 0; i < 2; i++) {
@@ -150,14 +194,28 @@ export default function DatingApplyPage() {
         fd.append("index", String(i));
         const uploadRes = await fetch("/api/dating/upload", { method: "POST", body: fd });
         if (!uploadRes.ok) {
-          const uploadBody = await uploadRes.json().catch(() => ({})) as { error?: string };
-          throw new Error(uploadBody.error ?? `사진 ${i + 1} 업로드 실패`);
+          const uploadBody = (await uploadRes.json().catch(() => ({}))) as ApiErrorPayload;
+          throw buildApiError(`사진 ${i + 1} 업로드 실패`, uploadBody, uploadRes.status);
         }
       }
 
       setDone(true);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "오류가 발생했습니다.");
+      const info = getErrorInfo(err);
+      console.error("dating apply error", err, {
+        message: info.message,
+        code: info.code,
+        details: info.details,
+      });
+
+      const isBusinessError = info.code === "MALE_CERT_REQUIRED" || info.code === "DUPLICATE_RECENT_APPLICATION";
+      if (isDev || isBusinessError) {
+        const detailText = info.details ? ` (${info.details})` : "";
+        const codeText = info.code ? ` [${info.code}]` : "";
+        setError(`${info.message}${codeText}${detailText}`);
+      } else {
+        setError(info.code ? `신청 실패(코드: ${info.code})` : "신청에 실패했습니다.");
+      }
     } finally {
       setSubmitting(false);
     }
@@ -301,6 +359,21 @@ export default function DatingApplyPage() {
                 onChange={(e) => setHeightCm(e.target.value)}
                 className="w-full h-12 rounded-xl border border-neutral-300 bg-white px-3"
                 placeholder="175"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="age" className="block text-sm font-medium text-neutral-700 mb-1">나이 (필수)</label>
+              <input
+                id="age"
+                type="number"
+                required
+                min={19}
+                max={99}
+                value={age}
+                onChange={(e) => setAge(e.target.value)}
+                className="w-full h-12 rounded-xl border border-neutral-300 bg-white px-3"
+                placeholder="29"
               />
             </div>
 
