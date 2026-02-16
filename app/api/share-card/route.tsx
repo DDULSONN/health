@@ -1,4 +1,4 @@
-﻿import { ImageResponse } from "next/og";
+import { ImageResponse } from "next/og";
 
 export const runtime = "edge";
 
@@ -47,7 +47,7 @@ const eliteTheme: CardTheme = {
   subTextColor: "#444444",
   metricColor: "#111111",
   totalLabelColor: "#111111",
-  totalValueColor: "#C8A84A",
+  totalValueColor: "#111111",
   nicknameColor: "#222222",
   brandColor: "#555555",
   dividerColor: "rgba(0,0,0,0.15)",
@@ -74,7 +74,7 @@ function formatLiftValue(value: string | null): string {
   if (!value) return "-";
   const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return "-";
-  return `${Math.round(n)}kg`;
+  return `${Math.round(n)}`;
 }
 
 function getTagline(percentAll: number, isElite: boolean): string {
@@ -131,22 +131,41 @@ export async function GET(req: Request) {
             padding: "96px",
           }}
         >
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", color: theme.headerColor }}>
+          {/* Header – 두 줄, 왼쪽 정렬 */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "flex-start",
+              gap: 8,
+              color: theme.headerColor,
+            }}
+          >
             <div style={{ display: "flex", fontSize: 36, fontWeight: 600, letterSpacing: "0.04em" }}>GYMTOOLS</div>
             <div style={{ display: "flex", fontSize: 36, fontWeight: 600, letterSpacing: "0.04em" }}>3-LIFT PROFILE</div>
           </div>
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 24, marginTop: 40 }}>
+          {/* 메인 퍼센트 영역 – 중앙 정렬 */}
+          <div
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              alignItems: "center",
+              justifyContent: "center",
+              marginTop: 64,
+              gap: 24,
+            }}
+          >
+            {/* Elite 배지 */}
             {isElite ? (
               <div
                 style={{
                   display: "flex",
-                  alignSelf: "flex-start",
                   borderRadius: 9999,
                   padding: "10px 24px",
                   background: theme.badgeBg,
                   color: theme.badgeText,
-                  fontSize: 24,
+                  fontSize: 28,
                   fontWeight: 800,
                   letterSpacing: "0.04em",
                 }}
@@ -155,41 +174,80 @@ export async function GET(req: Request) {
               </div>
             ) : null}
 
-            <div style={{ display: "flex", alignItems: "baseline", gap: 12 }}>
+            {/* 대한민국 상위 {percentAll}% */}
+            <div style={{ display: "flex", alignItems: "baseline", justifyContent: "center", gap: 12 }}>
               <span style={{ display: "flex", fontSize: 64, fontWeight: 600, color: theme.mainLabelColor }}>대한민국 상위</span>
               <span style={{ display: "flex", fontSize: 96, fontWeight: 700, color: theme.percentColor }}>{`${formatPercent(safePercentAll)}%`}</span>
             </div>
 
-            <div style={{ display: "flex", fontSize: 36, fontWeight: 600, color: theme.subTextColor }}>{tagline}</div>
+            {/* 태그라인 */}
+            <div style={{ display: "flex", fontSize: 36, fontWeight: 400, color: theme.subTextColor }}>{tagline}</div>
           </div>
 
+          {/* 분리선 */}
           <div style={{ display: "flex", width: "100%", height: 1, background: theme.dividerColor, marginTop: 64, marginBottom: 64 }} />
 
+          {/* S/B/D 기록 – 중앙 정렬, · 구분자 */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              alignItems: "center",
+              fontSize: 48,
+              fontWeight: 700,
+              color: theme.metricColor,
+              letterSpacing: "0.02em",
+              gap: 24,
+            }}
+          >
+            <span style={{ display: "flex" }}>{`S ${squatValue}`}</span>
+            <span style={{ display: "flex", fontSize: 48, color: theme.metricColor }}>·</span>
+            <span style={{ display: "flex" }}>{`B ${benchValue}`}</span>
+            <span style={{ display: "flex", fontSize: 48, color: theme.metricColor }}>·</span>
+            <span style={{ display: "flex" }}>{`D ${deadValue}`}</span>
+          </div>
+
+          {/* TOTAL – 두 줄, 중앙 정렬 */}
           <div
             style={{
               display: "flex",
               flexDirection: "column",
-              gap: 40,
+              alignItems: "center",
+              justifyContent: "center",
+              marginTop: 40,
+              gap: 8,
             }}
           >
-            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 48, fontWeight: 700, color: theme.metricColor, letterSpacing: "0.02em" }}>
-              <span style={{ display: "flex" }}>{`S ${squatValue.replace("kg", "")}`}</span>
-              <span style={{ display: "flex" }}>{`B ${benchValue.replace("kg", "")}`}</span>
-              <span style={{ display: "flex" }}>{`D ${deadValue.replace("kg", "")}`}</span>
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
-              {isElite ? <div style={{ display: "flex", width: "100%", height: 3, background: theme.totalTopLine }} /> : null}
-              <div style={{ display: "flex", alignItems: "baseline", gap: 14 }}>
-                <span style={{ display: "flex", fontSize: 56, fontWeight: 600, color: theme.totalLabelColor }}>TOTAL</span>
-                <span style={{ display: "flex", fontSize: 56, fontWeight: 700, color: theme.totalValueColor }}>{`${safeTotal}kg`}</span>
-              </div>
-            </div>
+            {isElite ? <div style={{ display: "flex", width: "100%", height: 3, background: theme.totalTopLine }} /> : null}
+            <div style={{ display: "flex", fontSize: 28, fontWeight: 600, color: theme.totalLabelColor }}>TOTAL</div>
+            <div style={{ display: "flex", fontSize: 64, fontWeight: 700, color: theme.totalValueColor }}>{`${safeTotal}kg`}</div>
           </div>
 
-          <div style={{ display: "flex", fontSize: 36, color: theme.nicknameColor, fontWeight: 600, marginTop: 72 }}>{nickname}</div>
+          {/* 닉네임 – 중앙 정렬 */}
+          <div
+            style={{
+              display: "flex",
+              justifyContent: "center",
+              fontSize: 36,
+              color: theme.nicknameColor,
+              fontWeight: 400,
+              marginTop: 72,
+            }}
+          >
+            {nickname}
+          </div>
 
-          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginTop: "auto", paddingTop: 48 }}>
-            <div style={{ display: "flex", fontSize: 28, color: theme.brandColor, fontWeight: 600 }}>GYMTOOLS · helchang.com</div>
+          {/* 푸터 – 중앙 정렬 */}
+          <div
+            style={{
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+              marginTop: "auto",
+              paddingTop: 48,
+            }}
+          >
+            <div style={{ display: "flex", fontSize: 28, color: theme.brandColor, fontWeight: 400 }}>GYMTOOLS · helchang.com</div>
           </div>
         </div>
       ),
