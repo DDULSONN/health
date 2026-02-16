@@ -31,6 +31,10 @@ alter table public.dating_applications
 alter table public.dating_applications
   add column if not exists display_nickname text null;
 
+-- 운동경력 (년)
+alter table public.dating_applications
+  add column if not exists training_years int null check (training_years between 0 and 30);
+
 -- 인덱스
 create index if not exists idx_dating_apps_public
   on public.dating_applications (approved_for_public, sex, created_at desc)

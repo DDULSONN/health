@@ -308,6 +308,14 @@ export default function MyPage() {
           >
             공식 인증 요청
           </Link>
+          {isAdmin && (
+            <Link
+              href="/admin/dating"
+              className="flex min-h-[44px] items-center rounded-xl border border-pink-200 bg-pink-50 px-4 text-sm font-medium text-pink-700 hover:bg-pink-100"
+            >
+              소개팅 관리
+            </Link>
+          )}
           <button
             type="button"
             onClick={handleLogout}

@@ -21,7 +21,7 @@ export async function GET(
   // 공개 카드만 조회
   const { data: app, error } = await adminClient
     .from("dating_applications")
-    .select("id, sex, display_nickname, age, thumb_blur_path, total_3lift, percent_all, region, height_cm, created_at")
+    .select("id, sex, display_nickname, age, thumb_blur_path, total_3lift, percent_all, training_years, region, height_cm, created_at")
     .eq("id", id)
     .eq("approved_for_public", true)
     .not("thumb_blur_path", "is", null)
@@ -75,6 +75,7 @@ export async function GET(
     thumb_url: thumbUrl,
     region: app.region,
     height_cm: app.height_cm,
+    training_years: app.training_years,
   };
 
   if (app.sex === "male") {

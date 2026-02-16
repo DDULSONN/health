@@ -17,7 +17,7 @@ export async function GET() {
   // 남자 TOP 3 (최신순)
   const { data: males } = await adminClient
     .from("dating_applications")
-    .select("id, sex, display_nickname, age, thumb_blur_path, total_3lift, percent_all, created_at")
+    .select("id, sex, display_nickname, age, thumb_blur_path, total_3lift, percent_all, training_years, created_at")
     .eq("sex", "male")
     .eq("approved_for_public", true)
     .not("thumb_blur_path", "is", null)
@@ -27,7 +27,7 @@ export async function GET() {
   // 여자 TOP 3 (최신순)
   const { data: females } = await adminClient
     .from("dating_applications")
-    .select("id, sex, display_nickname, age, thumb_blur_path, total_3lift, percent_all, created_at")
+    .select("id, sex, display_nickname, age, thumb_blur_path, total_3lift, percent_all, training_years, created_at")
     .eq("sex", "female")
     .eq("approved_for_public", true)
     .not("thumb_blur_path", "is", null)

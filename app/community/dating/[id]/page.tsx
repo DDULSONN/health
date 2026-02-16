@@ -13,6 +13,7 @@ type CardDetail = {
   thumb_url: string;
   region: string;
   height_cm: number;
+  training_years?: number;
   total_3lift?: number;
   percent_all?: number;
   has_sbd?: boolean;
@@ -175,6 +176,9 @@ export default function DatingDetailPage() {
               <span className="text-neutral-300">|</span>
               <span>{card.height_cm}cm</span>
             </div>
+            {card.training_years != null && (
+              <p className="text-xs text-neutral-500 mt-1">운동경력 {card.training_years}년</p>
+            )}
 
             {/* 성별별 정보 */}
             <div className="flex flex-wrap gap-2 mt-3">

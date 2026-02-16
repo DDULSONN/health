@@ -22,10 +22,14 @@ export async function GET(req: Request) {
   const adminClient = createAdminClient();
   let query = adminClient
     .from("dating_applications")
-    .select("id, sex, name, phone, region, height_cm, job, status, created_at", { count: "exact" });
+    .select("id, sex, name, phone, region, height_cm, job, status, created_at, display_nickname, age, training_years, approved_for_public", { count: "exact" });
 
   if (status) query = query.eq("status", status);
   if (sex) query = query.eq("sex", sex);
+
+  const approvedFilter = url.searchParams.get("approved");
+  if (approvedFilter === "true") query = query.eq("approved_for_public", true);
+  else if (approvedFilter === "false") query = query.eq("approved_for_public", false);
 
   query = query.order("created_at", { ascending: false }).range(offset, offset + limit - 1);
 

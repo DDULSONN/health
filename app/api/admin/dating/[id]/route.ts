@@ -68,7 +68,7 @@ export async function PATCH(
   const updates: Record<string, unknown> = {};
 
   if (body.status) {
-    if (!["submitted", "reviewing", "matched", "rejected"].includes(body.status)) {
+    if (!["submitted", "reviewing", "interview", "matched", "rejected"].includes(body.status)) {
       return NextResponse.json({ error: "올바른 상태값이 아닙니다." }, { status: 400 });
     }
     updates.status = body.status;

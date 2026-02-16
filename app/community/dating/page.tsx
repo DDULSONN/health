@@ -11,6 +11,7 @@ type DatingCard = {
   thumb_url: string;
   total_3lift?: number;
   percent_all?: number;
+  training_years?: number;
   created_at: string;
 };
 
@@ -54,13 +55,13 @@ export default function DatingListPage() {
         <p className="text-neutral-400 text-center py-10">로딩 중...</p>
       ) : (
         <div className="space-y-8">
-          {/* 남자 TOP 3 */}
+          {/* 남자 미리보기 */}
           <section>
             <h2 className="text-lg font-bold text-neutral-800 mb-3">
-              💪 근육남 TOP3
+              💪 남자 미리보기
             </h2>
             {males.length === 0 ? (
-              <p className="text-sm text-neutral-400">아직 공개된 카드가 없습니다.</p>
+              <EmptyState />
             ) : (
               <div className="grid grid-cols-1 gap-3">
                 {males.map((card) => (
@@ -76,7 +77,7 @@ export default function DatingListPage() {
               💘 여자 미리보기
             </h2>
             {females.length === 0 ? (
-              <p className="text-sm text-neutral-400">아직 공개된 카드가 없습니다.</p>
+              <EmptyState />
             ) : (
               <div className="grid grid-cols-1 gap-3">
                 {females.map((card) => (
@@ -88,6 +89,25 @@ export default function DatingListPage() {
         </div>
       )}
     </main>
+  );
+}
+
+function EmptyState() {
+  return (
+    <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-6 text-center">
+      <p className="text-sm font-medium text-neutral-600 mb-1">
+        아직 공개된 카드가 없습니다.
+      </p>
+      <p className="text-xs text-neutral-400 mb-4">
+        관리자 승인 후 미리보기에 표시됩니다.
+      </p>
+      <Link
+        href="/dating/apply"
+        className="inline-flex items-center px-4 py-2 rounded-xl bg-pink-500 text-white text-sm font-medium hover:bg-pink-600 active:scale-[0.98] transition-all"
+      >
+        신청하기
+      </Link>
+    </div>
   );
 }
 
@@ -117,6 +137,9 @@ function MaleCard({ card }: { card: DatingCard }) {
           </span>
           <span className="text-xs text-neutral-400">{card.age}세</span>
         </div>
+        {card.training_years != null && (
+          <p className="text-xs text-neutral-500 mb-1">운동경력 {card.training_years}년</p>
+        )}
         <div className="flex items-center gap-2">
           {card.total_3lift != null && (
             <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700">
@@ -171,6 +194,9 @@ function FemaleCard({ card }: { card: DatingCard }) {
           </span>
           <span className="text-xs text-neutral-400">{card.age}세</span>
         </div>
+        {card.training_years != null && (
+          <p className="text-xs text-neutral-500 mb-1">운동경력 {card.training_years}년</p>
+        )}
         {hasSbd && (
           <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-700">
             SBD 입력

@@ -17,15 +17,6 @@ type Feature = {
 
 const FEATURES: Feature[] = [
   {
-    id: "photo_bodycheck",
-    href: "/community/bodycheck",
-    title: "사진 몸평 게시판",
-    emoji: "📸",
-    description: "사진과 글을 올리고 유저들의 몸평을 받아보세요.",
-    accent: "bg-indigo-50 border-indigo-200 hover:border-indigo-400",
-    cta: "몸평 보러가기",
-  },
-  {
     id: "one_rm",
     href: "/1rm",
     title: "1RM 계산기",
@@ -43,6 +34,33 @@ const FEATURES: Feature[] = [
     description: "스쿼트·벤치·데드 합계와 체급 기준 상위%를 확인합니다.",
     accent: "bg-rose-50 border-rose-200 hover:border-rose-400",
     cta: "합계 계산하기",
+  },
+  {
+    id: "photo_bodycheck",
+    href: "/community/bodycheck",
+    title: "사진 몸평 게시판",
+    emoji: "📸",
+    description: "사진과 글을 올리고 유저들의 몸평을 받아보세요.",
+    accent: "bg-indigo-50 border-indigo-200 hover:border-indigo-400",
+    cta: "몸평 보러가기",
+  },
+  {
+    id: "dating",
+    href: "/community/dating",
+    title: "소개팅",
+    emoji: "💘",
+    description: "3대 인증자 소개팅 카드 열람 · 댓글",
+    accent: "bg-pink-50 border-pink-200 hover:border-pink-400",
+    cta: "소개팅 보기",
+  },
+  {
+    id: "community",
+    href: "/community",
+    title: "커뮤니티",
+    emoji: "💬",
+    description: "운동 기록과 노하우를 공유하는 공간입니다.",
+    accent: "bg-cyan-50 border-cyan-200 hover:border-cyan-400",
+    cta: "커뮤니티 이동",
   },
   {
     id: "certify",
@@ -70,24 +88,6 @@ const FEATURES: Feature[] = [
     description: "운동과 식단에 맞는 간식을 추천합니다.",
     accent: "bg-blue-50 border-blue-200 hover:border-blue-400",
     cta: "간식 보기",
-  },
-  {
-    id: "community",
-    href: "/community",
-    title: "커뮤니티",
-    emoji: "💬",
-    description: "운동 기록과 노하우를 공유하는 공간입니다.",
-    accent: "bg-cyan-50 border-cyan-200 hover:border-cyan-400",
-    cta: "커뮤니티 이동",
-  },
-  {
-    id: "dating",
-    href: "/community/dating",
-    title: "소개팅",
-    emoji: "💘",
-    description: "3대 인증자 소개팅 카드 열람 · 댓글",
-    accent: "bg-pink-50 border-pink-200 hover:border-pink-400",
-    cta: "소개팅 보기",
   },
 ];
 

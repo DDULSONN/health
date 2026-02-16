@@ -22,7 +22,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
   }
 
-  const { sex, name, phone, region, height_cm, job, ideal_type, consent_privacy, consent_content } = body as {
+  const { sex, name, phone, region, height_cm, job, ideal_type, training_years, consent_privacy, consent_content } = body as {
     sex?: string;
     name?: string;
     phone?: string;
@@ -30,6 +30,7 @@ export async function POST(request: Request) {
     height_cm?: number;
     job?: string;
     ideal_type?: string;
+    training_years?: number;
     consent_privacy?: boolean;
     consent_content?: boolean;
   };
@@ -55,6 +56,9 @@ export async function POST(request: Request) {
   }
   if (!ideal_type || ideal_type.trim().length < 1 || ideal_type.trim().length > 1000) {
     return NextResponse.json({ error: "이상형을 입력해주세요. (1~1000자)" }, { status: 400 });
+  }
+  if (training_years == null || training_years < 0 || training_years > 30) {
+    return NextResponse.json({ error: "운동경력을 입력해주세요. (0~30년)" }, { status: 400 });
   }
   if (!consent_privacy) {
     return NextResponse.json({ error: "개인정보 수집·이용에 동의해주세요." }, { status: 400 });
@@ -111,6 +115,7 @@ export async function POST(request: Request) {
       height_cm: Math.round(height_cm),
       job: job.trim(),
       ideal_type: ideal_type.trim(),
+      training_years: Math.round(training_years),
       consent_privacy: !!consent_privacy,
       consent_content: !!consent_content,
       status: "submitted",

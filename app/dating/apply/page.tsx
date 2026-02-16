@@ -31,6 +31,7 @@ export default function DatingApplyPage() {
   const [region, setRegion] = useState("");
   const [heightCm, setHeightCm] = useState("");
   const [job, setJob] = useState("");
+  const [trainingYears, setTrainingYears] = useState("");
   const [idealType, setIdealType] = useState("");
 
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
@@ -131,6 +132,7 @@ export default function DatingApplyPage() {
           region,
           height_cm: Number(heightCm),
           job: job.trim(),
+          training_years: Number(trainingYears),
           ideal_type: idealType.trim(),
           consent_privacy: consentPrivacy,
           consent_content: consentContent,
@@ -314,6 +316,22 @@ export default function DatingApplyPage() {
                 className="w-full h-12 rounded-xl border border-neutral-300 bg-white px-3"
                 placeholder="직업"
               />
+            </div>
+
+            <div>
+              <label htmlFor="trainingYears" className="block text-sm font-medium text-neutral-700 mb-1">운동경력 (필수)</label>
+              <input
+                id="trainingYears"
+                type="number"
+                required
+                min={0}
+                max={30}
+                value={trainingYears}
+                onChange={(e) => setTrainingYears(e.target.value)}
+                className="w-full h-12 rounded-xl border border-neutral-300 bg-white px-3"
+                placeholder="년 (0년 = 입문)"
+              />
+              <p className="text-xs text-neutral-400 mt-1">0년(입문)도 가능합니다.</p>
             </div>
 
             <div>

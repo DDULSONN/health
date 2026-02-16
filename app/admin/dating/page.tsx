@@ -15,6 +15,10 @@ type Application = {
   job: string;
   status: string;
   created_at: string;
+  display_nickname: string | null;
+  age: number | null;
+  training_years: number | null;
+  approved_for_public: boolean;
 };
 
 type Detail = Application & {
@@ -35,6 +39,7 @@ type Detail = Application & {
 const STATUS_LABELS: Record<string, string> = {
   submitted: "대기",
   reviewing: "검토중",
+  interview: "인터뷰",
   matched: "매칭됨",
   rejected: "거절",
 };
@@ -42,6 +47,7 @@ const STATUS_LABELS: Record<string, string> = {
 const STATUS_COLORS: Record<string, string> = {
   submitted: "bg-neutral-100 text-neutral-700",
   reviewing: "bg-blue-100 text-blue-700",
+  interview: "bg-purple-100 text-purple-700",
   matched: "bg-emerald-100 text-emerald-700",
   rejected: "bg-red-100 text-red-700",
 };
@@ -56,6 +62,7 @@ export default function AdminDatingPage() {
   const [page, setPage] = useState(1);
   const [filterStatus, setFilterStatus] = useState("");
   const [filterSex, setFilterSex] = useState("");
+  const [filterApproved, setFilterApproved] = useState("");
   const [loading, setLoading] = useState(false);
 
   const [detail, setDetail] = useState<Detail | null>(null);
@@ -89,6 +96,7 @@ export default function AdminDatingPage() {
       const params = new URLSearchParams({ page: String(page) });
       if (filterStatus) params.set("status", filterStatus);
       if (filterSex) params.set("sex", filterSex);
+      if (filterApproved) params.set("approved", filterApproved);
       const res = await fetch(`/api/admin/dating?${params}`, { cache: "no-store" });
       if (!res.ok) return;
       const body = await res.json();
@@ -97,7 +105,7 @@ export default function AdminDatingPage() {
     } finally {
       setLoading(false);
     }
-  }, [page, filterStatus, filterSex]);
+  }, [page, filterStatus, filterSex, filterApproved]);
 
   useEffect(() => {
     if (authChecked) fetchList();
@@ -118,6 +126,30 @@ export default function AdminDatingPage() {
       setEditPercentAll(body.percent_all != null ? String(body.percent_all) : "");
     } finally {
       setDetailLoading(false);
+    }
+  };
+
+  const toggleApproved = async (id: string, current: boolean) => {
+    const res = await fetch(`/api/admin/dating/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ approved_for_public: !current }),
+    });
+    if (res.ok) {
+      setList((prev) => prev.map((item) => item.id === id ? { ...item, approved_for_public: !current } : item));
+      if (detail?.id === id) setDetail({ ...detail!, approved_for_public: !current });
+    }
+  };
+
+  const changeStatusInline = async (id: string, newStatus: string) => {
+    const res = await fetch(`/api/admin/dating/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    if (res.ok) {
+      setList((prev) => prev.map((item) => item.id === id ? { ...item, status: newStatus } : item));
+      if (detail?.id === id) setDetail({ ...detail!, status: newStatus });
     }
   };
 
@@ -162,6 +194,15 @@ export default function AdminDatingPage() {
           <option value="male">남자</option>
           <option value="female">여자</option>
         </select>
+        <select
+          value={filterApproved}
+          onChange={(e) => { setFilterApproved(e.target.value); setPage(1); }}
+          className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+        >
+          <option value="">공개 여부</option>
+          <option value="true">공개</option>
+          <option value="false">비공개</option>
+        </select>
         <span className="text-sm text-neutral-500 self-center ml-2">총 {total}건</span>
       </div>
 
@@ -175,32 +216,50 @@ export default function AdminDatingPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-neutral-200 text-left text-neutral-500">
-                <th className="py-2 pr-3">성별</th>
-                <th className="py-2 pr-3">이름</th>
-                <th className="py-2 pr-3">전화번호</th>
-                <th className="py-2 pr-3">지역</th>
-                <th className="py-2 pr-3">키</th>
-                <th className="py-2 pr-3">직업</th>
-                <th className="py-2 pr-3">상태</th>
-                <th className="py-2 pr-3">날짜</th>
+                <th className="py-2 pr-2">성별</th>
+                <th className="py-2 pr-2">닉네임</th>
+                <th className="py-2 pr-2">나이</th>
+                <th className="py-2 pr-2">경력</th>
+                <th className="py-2 pr-2">지역</th>
+                <th className="py-2 pr-2">상태</th>
+                <th className="py-2 pr-2">공개</th>
+                <th className="py-2 pr-2">날짜</th>
                 <th className="py-2"></th>
               </tr>
             </thead>
             <tbody>
               {list.map((item) => (
                 <tr key={item.id} className="border-b border-neutral-100 hover:bg-neutral-50">
-                  <td className="py-2 pr-3">{item.sex === "male" ? "남" : "여"}</td>
-                  <td className="py-2 pr-3 font-medium">{item.name}</td>
-                  <td className="py-2 pr-3 text-neutral-500">{item.phone_masked}</td>
-                  <td className="py-2 pr-3">{item.region}</td>
-                  <td className="py-2 pr-3">{item.height_cm}cm</td>
-                  <td className="py-2 pr-3">{item.job}</td>
-                  <td className="py-2 pr-3">
-                    <span className={`inline-block px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[item.status] ?? ""}`}>
-                      {STATUS_LABELS[item.status] ?? item.status}
-                    </span>
+                  <td className="py-2 pr-2">{item.sex === "male" ? "남" : "여"}</td>
+                  <td className="py-2 pr-2 font-medium">{item.display_nickname || item.name}</td>
+                  <td className="py-2 pr-2">{item.age ?? "-"}</td>
+                  <td className="py-2 pr-2">{item.training_years != null ? `${item.training_years}년` : "-"}</td>
+                  <td className="py-2 pr-2">{item.region}</td>
+                  <td className="py-2 pr-2">
+                    <select
+                      value={item.status}
+                      onChange={(e) => changeStatusInline(item.id, e.target.value)}
+                      className={`px-1.5 py-0.5 rounded-full text-xs font-medium border-0 cursor-pointer ${STATUS_COLORS[item.status] ?? ""}`}
+                    >
+                      {Object.entries(STATUS_LABELS).map(([k, v]) => (
+                        <option key={k} value={k}>{v}</option>
+                      ))}
+                    </select>
                   </td>
-                  <td className="py-2 pr-3 text-neutral-400">{new Date(item.created_at).toLocaleDateString("ko-KR")}</td>
+                  <td className="py-2 pr-2">
+                    <button
+                      type="button"
+                      onClick={() => toggleApproved(item.id, item.approved_for_public)}
+                      className={`px-2 py-0.5 rounded-full text-xs font-medium transition-colors ${
+                        item.approved_for_public
+                          ? "bg-emerald-100 text-emerald-700"
+                          : "bg-neutral-100 text-neutral-500"
+                      }`}
+                    >
+                      {item.approved_for_public ? "공개" : "비공개"}
+                    </button>
+                  </td>
+                  <td className="py-2 pr-2 text-neutral-400 text-xs">{new Date(item.created_at).toLocaleDateString("ko-KR")}</td>
                   <td className="py-2">
                     <button
                       type="button"
@@ -301,7 +360,7 @@ export default function AdminDatingPage() {
                     </span>
                   </p>
                   <div className="flex flex-wrap gap-2">
-                    {["submitted", "reviewing", "matched", "rejected"]
+                    {["submitted", "reviewing", "interview", "matched", "rejected"]
                       .filter((s) => s !== detail.status)
                       .map((s) => (
                         <button
