@@ -1,5 +1,5 @@
 import Link from "next/link";
-import DailyMissionsWidget from "@/components/DailyMissionsWidget";
+// import DailyMissionsWidget from "@/components/DailyMissionsWidget";
 import MyWeeklyRankCard from "@/components/MyWeeklyRankCard";
 import WeeklyTopBanner from "@/components/WeeklyTopBanner";
 
@@ -86,7 +86,7 @@ export default function HomePage() {
   return (
     <main className="max-w-2xl mx-auto px-4 py-10">
       <WeeklyTopBanner />
-      <DailyMissionsWidget />
+      {/* <DailyMissionsWidget /> */}
       <MyWeeklyRankCard />
 
       <section className="text-center mb-10">
