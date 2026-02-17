@@ -110,7 +110,6 @@ export default function AuthCallbackPage() {
         return Boolean(user && isEmailConfirmed(user));
       };
 
-      // (B) Session-first
       const {
         data: { session: initialSession },
       } = await supabase.auth.getSession();
@@ -119,13 +118,11 @@ export default function AuthCallbackPage() {
         return;
       }
 
-      // (C) If already confirmed, treat as success even if callback error params exist.
       if (await hasConfirmedUser()) {
         setViewState({ kind: "success" });
         return;
       }
 
-      // (D) code
       if (parsed.code) {
         await supabase.auth.exchangeCodeForSession(parsed.code);
         const {
@@ -137,7 +134,6 @@ export default function AuthCallbackPage() {
         }
       }
 
-      // (D) token_hash + type
       if (parsed.tokenHash && parsed.otpType) {
         await supabase.auth.verifyOtp({
           token_hash: parsed.tokenHash,
@@ -152,7 +148,6 @@ export default function AuthCallbackPage() {
         }
       }
 
-      // (D) access_token + refresh_token
       if (parsed.accessToken && parsed.refreshToken) {
         await supabase.auth.setSession({
           access_token: parsed.accessToken,
@@ -167,7 +162,6 @@ export default function AuthCallbackPage() {
         }
       }
 
-      // Final guard for delayed hydration.
       const {
         data: { session: finalSession },
       } = await supabase.auth.getSession();
@@ -176,7 +170,6 @@ export default function AuthCallbackPage() {
         return;
       }
 
-      // (E) True failure only.
       setViewState({
         kind: "failure",
         detail: parsed.errorCode?.toLowerCase() ?? parsed.error?.toLowerCase() ?? "",
@@ -188,18 +181,18 @@ export default function AuthCallbackPage() {
     if (!state) return "";
     const code = state.errorCode?.toLowerCase() ?? state.error?.toLowerCase() ?? "";
 
-    if (code === "otp_expired") return "링크 유효시간이 지나 다시 인증이 필요합니다.";
-    if (code === "access_denied") return "링크를 확인할 수 없었습니다. 다시 인증 메일을 보내드릴게요.";
-    if (code === "flow_state_missing") return "세션 정보가 사라졌습니다. 같은 브라우저에서 다시 시도해 주세요.";
+    if (code === "otp_expired") return "This link has expired. Please request a new one.";
+    if (code === "access_denied") return "This link could not be verified. Please request a new one.";
+    if (code === "flow_state_missing") return "Session state is missing. Please retry in the same browser.";
     if (state.errorDescription) return state.errorDescription;
-    if (state.error || state.errorCode) return "로그인 처리 중 오류가 발생했습니다.";
-    return "인증 링크를 확인할 수 없습니다.";
+    if (state.error || state.errorCode) return "An error occurred while processing sign in.";
+    return "Could not verify this link.";
   }, [state]);
 
   const handleResend = async () => {
     const normalized = email.trim().toLowerCase();
     if (!normalized) {
-      setMessage("이메일을 입력해 주세요.");
+      setMessage("Please enter your email.");
       return;
     }
 
@@ -231,9 +224,9 @@ export default function AuthCallbackPage() {
       }
 
       window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
-      setMessage(isSignupLink ? "인증 메일을 다시 보냈습니다. 메일함을 확인해 주세요." : "메일함을 확인해 로그인 링크를 클릭하세요.");
+      setMessage(isSignupLink ? "Verification email sent again. Please check your inbox." : "Login link sent. Please check your inbox.");
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "로그인 링크 재발송에 실패했습니다.");
+      setMessage(e instanceof Error ? e.message : "Failed to send login link.");
     } finally {
       setSending(false);
     }
@@ -255,16 +248,16 @@ export default function AuthCallbackPage() {
   const handleCopyLink = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
-      setMessage("현재 링크를 복사했습니다.");
+      setMessage("Current link copied.");
     } catch {
-      setMessage("링크 복사에 실패했습니다. 주소창에서 직접 복사해 주세요.");
+      setMessage("Failed to copy link. Please copy it from the address bar.");
     }
   };
 
   if (!state || viewState.kind === "processing") {
     return (
       <main className="max-w-sm mx-auto px-4 py-20">
-        <p className="text-sm text-neutral-500 text-center">로그인 처리 중입니다...</p>
+        <p className="text-sm text-neutral-500 text-center">Processing sign in...</p>
       </main>
     );
   }
@@ -273,21 +266,21 @@ export default function AuthCallbackPage() {
     return (
       <main className="max-w-sm mx-auto px-4 py-16">
         <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4">
-          <h1 className="text-base font-semibold text-emerald-900">이메일 인증 완료!</h1>
-          <p className="mt-1 text-sm text-emerald-800">이제 로그인해서 계속 진행해 주세요.</p>
+          <h1 className="text-base font-semibold text-emerald-900">Email verified</h1>
+          <p className="mt-1 text-sm text-emerald-800">Please sign in to continue.</p>
 
           <div className="mt-4 grid grid-cols-1 gap-2">
             <Link
               href={`/login?next=${encodeURIComponent(state.next || "/")}`}
               className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-emerald-600 text-white text-sm font-medium"
             >
-              로그인하러 가기
+              Go to login
             </Link>
             <Link
               href="/"
               className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-emerald-300 bg-white text-emerald-900 text-sm font-medium"
             >
-              홈으로
+              Go home
             </Link>
           </div>
         </div>
@@ -300,10 +293,10 @@ export default function AuthCallbackPage() {
   return (
     <main className="max-w-sm mx-auto px-4 py-16">
       <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
-        <h1 className="text-base font-semibold text-amber-900">인증 링크가 만료되었어요</h1>
-        <p className="mt-1 text-sm text-amber-800">{isExpired ? "다시 링크를 보내드릴게요." : errorMessage}</p>
+        <h1 className="text-base font-semibold text-amber-900">Verification link expired</h1>
+        <p className="mt-1 text-sm text-amber-800">{isExpired ? "Request a new link below." : errorMessage}</p>
         {inAppBrowser && (
-          <p className="mt-1 text-xs text-amber-800">인앱 브라우저에서는 실패할 수 있어요. Safari/Chrome으로 열어주세요.</p>
+          <p className="mt-1 text-xs text-amber-800">In-app browsers can fail. Open in Safari or Chrome.</p>
         )}
 
         <div className="mt-3 space-y-2">
@@ -321,7 +314,7 @@ export default function AuthCallbackPage() {
             disabled={sending}
             className="w-full min-h-[44px] rounded-lg bg-amber-600 text-white text-sm font-medium disabled:opacity-50"
           >
-            {sending ? "재전송 중..." : "다시 링크 보내기"}
+            {sending ? "Sending..." : "Send new link"}
           </button>
           {message && <p className="text-xs text-amber-900">{message}</p>}
         </div>
@@ -331,7 +324,7 @@ export default function AuthCallbackPage() {
             href={`/login?next=${encodeURIComponent(state.next || "/")}`}
             className="inline-flex min-h-[42px] items-center justify-center rounded-lg bg-white text-amber-900 border border-amber-300 text-sm font-medium"
           >
-            로그인하러 가기
+            Go to login
           </Link>
           {inAppBrowser && (
             <>
@@ -340,14 +333,14 @@ export default function AuthCallbackPage() {
                 onClick={handleOpenExternal}
                 className="min-h-[42px] rounded-lg bg-amber-600 text-white text-sm font-medium"
               >
-                Chrome/Safari로 열기
+                Open in Safari or Chrome
               </button>
               <button
                 type="button"
                 onClick={handleCopyLink}
                 className="min-h-[42px] rounded-lg border border-amber-300 bg-white text-amber-900 text-sm font-medium"
               >
-                링크 복사
+                Copy link
               </button>
             </>
           )}
@@ -355,7 +348,7 @@ export default function AuthCallbackPage() {
             href="/"
             className="inline-flex min-h-[42px] items-center justify-center rounded-lg border border-amber-300 bg-white text-amber-900 text-sm font-medium"
           >
-            홈으로
+            Go home
           </Link>
         </div>
       </div>
