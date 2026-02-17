@@ -196,27 +196,53 @@ export async function POST(req: Request) {
     expires_at: expiresAt,
   };
 
-  let insertRes: any = await adminClient.from("dating_cards").insert(payload).select("id,status").single();
+  const payloadCommon = {
+    owner_user_id: user.id,
+    sex,
+    age,
+    region: region || null,
+    height_cm: heightCm,
+    job: job || null,
+    training_years: trainingYears,
+    ideal_type: idealType || null,
+    total_3lift: sex === "male" ? total3Lift : null,
+    percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
+    is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
+    status: available ? ("public" as const) : ("pending" as const),
+    published_at: publishedAt,
+    expires_at: expiresAt,
+  };
 
-  // Legacy fallback for environments that still use owner_instagram_id/photo_urls and may not have new columns.
-  if (insertRes.error && isMissingColumnError(insertRes.error)) {
-    const legacyPayload = {
-      owner_user_id: user.id,
-      sex,
-      age,
-      region: region || null,
-      height_cm: heightCm,
-      job: job || null,
-      training_years: trainingYears,
-      ideal_type: idealType || null,
+  const insertCandidates: Record<string, unknown>[] = [
+    payload,
+    // Hybrid fallback: old instagram column + new photo column
+    {
+      ...payloadCommon,
+      owner_instagram_id: instagramId,
+      photo_paths: photoPaths,
+      blur_thumb_path: blurThumbPath,
+      display_nickname: displayNickname,
+    },
+    // Legacy fallback: old instagram/photo columns
+    {
+      ...payloadCommon,
       owner_instagram_id: instagramId,
       photo_urls: photoPaths,
-      total_3lift: sex === "male" ? total3Lift : null,
-      percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
-      is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
-      status: available ? ("public" as const) : ("pending" as const),
-    };
-    insertRes = await adminClient.from("dating_cards").insert(legacyPayload).select("id,status").single();
+    },
+    // Hybrid fallback: new instagram + old photo column
+    {
+      ...payloadCommon,
+      instagram_id: instagramId,
+      photo_urls: photoPaths,
+      display_nickname: displayNickname,
+    },
+  ];
+
+  let insertRes: any = null;
+  for (const candidate of insertCandidates) {
+    insertRes = await adminClient.from("dating_cards").insert(candidate).select("id,status").single();
+    if (!insertRes.error) break;
+    if (!isMissingColumnError(insertRes.error)) break;
   }
 
   const { data, error } = insertRes;
