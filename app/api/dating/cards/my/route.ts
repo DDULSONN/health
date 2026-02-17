@@ -227,29 +227,6 @@ export async function POST(req: Request) {
 
   const insertCandidates: Record<string, unknown>[] = [
     payload,
-    // Hybrid fallback: old instagram column + new photo column
-    {
-      ...payloadCommon,
-      owner_instagram_id: instagramId,
-      photo_paths: photoPaths,
-      blur_thumb_path: blurThumbPath,
-      display_nickname: displayNickname,
-    },
-    // Legacy-safe candidate: old instagram + new photo column, no display/published/expires
-    {
-      ...legacyBase,
-      owner_instagram_id: instagramId,
-      photo_paths: photoPaths,
-      total_3lift: sex === "male" ? total3Lift : null,
-      percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
-      is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
-    },
-    // Legacy fallback: old instagram/photo columns
-    {
-      ...payloadCommon,
-      owner_instagram_id: instagramId,
-      photo_urls: photoPaths,
-    },
     // Hybrid fallback: new instagram + old photo column
     {
       ...payloadCommon,
@@ -265,21 +242,6 @@ export async function POST(req: Request) {
       total_3lift: sex === "male" ? total3Lift : null,
       percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
       is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
-    },
-    // Legacy-safe candidate: no display/published/expires
-    {
-      ...legacyBase,
-      owner_instagram_id: instagramId,
-      photo_urls: photoPaths,
-      total_3lift: sex === "male" ? total3Lift : null,
-      percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
-      is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
-    },
-    // Ultra-legacy minimal candidate
-    {
-      ...legacyBase,
-      owner_instagram_id: instagramId,
-      photo_urls: photoPaths,
     },
     // Alternate minimal candidate (new instagram/photo names, no display/published/expires)
     {
