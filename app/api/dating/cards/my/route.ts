@@ -235,6 +235,15 @@ export async function POST(req: Request) {
       blur_thumb_path: blurThumbPath,
       display_nickname: displayNickname,
     },
+    // Legacy-safe candidate: old instagram + new photo column, no display/published/expires
+    {
+      ...legacyBase,
+      owner_instagram_id: instagramId,
+      photo_paths: photoPaths,
+      total_3lift: sex === "male" ? total3Lift : null,
+      percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
+      is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
+    },
     // Legacy fallback: old instagram/photo columns
     {
       ...payloadCommon,
@@ -247,6 +256,15 @@ export async function POST(req: Request) {
       instagram_id: instagramId,
       photo_urls: photoPaths,
       display_nickname: displayNickname,
+    },
+    // Legacy-safe candidate: new instagram + old photo column, no display/published/expires
+    {
+      ...legacyBase,
+      instagram_id: instagramId,
+      photo_urls: photoPaths,
+      total_3lift: sex === "male" ? total3Lift : null,
+      percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
+      is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
     },
     // Legacy-safe candidate: no display/published/expires
     {
