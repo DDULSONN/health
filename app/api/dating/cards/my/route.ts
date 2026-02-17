@@ -81,6 +81,12 @@ export async function POST(req: Request) {
 
   const body = await req.json().catch(() => null);
   if (!body) return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json(
+      { error: "서버 설정 오류입니다. 관리자에게 문의해주세요. (SUPABASE_SERVICE_ROLE_KEY)" },
+      { status: 500 }
+    );
+  }
 
   const sex = (body as { sex?: unknown }).sex;
   if (sex !== "male" && sex !== "female") {
@@ -138,7 +144,16 @@ export async function POST(req: Request) {
   }
 
   const adminClient = createAdminClient();
-  const available = await hasPublicSlot(adminClient, sex);
+  let available = false;
+  try {
+    available = await hasPublicSlot(adminClient, sex);
+  } catch (e) {
+    console.error("[POST /api/dating/cards/my] slot check failed", e);
+    return NextResponse.json(
+      { error: "공개 슬롯 확인에 실패했습니다. 잠시 후 다시 시도해주세요." },
+      { status: 500 }
+    );
+  }
 
   const now = new Date();
   const publishedAt = available ? now.toISOString() : null;
