@@ -34,22 +34,17 @@ create index if not exists idx_dating_apps_user
 -- RLS 활성화
 alter table public.dating_applications enable row level security;
 
--- INSERT: 로그인 유저만 (남자=3대인증 approved 필수, 여자=바로)
+-- INSERT: 로그인 유저만 (임시 정책: 남자 + 3대인증 approved만 허용)
 drop policy if exists "dating_insert_own" on public.dating_applications;
 create policy "dating_insert_own"
   on public.dating_applications for insert
   to authenticated
   with check (
     auth.uid() = user_id
-    and (
-      sex = 'female'
-      or (
-        sex = 'male'
-        and exists (
-          select 1 from public.cert_requests cr
-          where cr.user_id = auth.uid() and cr.status = 'approved'
-        )
-      )
+    and sex = 'male'
+    and exists (
+      select 1 from public.cert_requests cr
+      where cr.user_id = auth.uid() and cr.status = 'approved'
     )
   );
 

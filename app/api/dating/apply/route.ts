@@ -3,6 +3,7 @@ import type { PostgrestError } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+const FEMALE_APPLICATIONS_ENABLED = process.env.DATING_FEMALE_APPLICATIONS_ENABLED === "true";
 
 const REGIONS = [
   "서울", "경기", "인천", "부산", "대구", "대전", "광주",
@@ -185,6 +186,13 @@ export async function POST(request: Request) {
     // 필수 필드 검증
     if (!normalizedSex) {
       return jsonError(400, "성별을 선택해주세요.", "VALIDATION_ERROR", "sex must be male|female");
+    }
+    if (normalizedSex === "female" && !FEMALE_APPLICATIONS_ENABLED) {
+      return jsonError(
+        403,
+        "\uD604\uC7AC \uC5EC\uC790 \uC2E0\uCCAD\uC740 \uBAA8\uC9D1 \uB9C8\uAC10(\uB300\uAE30) \uC0C1\uD0DC\uC785\uB2C8\uB2E4. \uB0A8\uC790 \uC2E0\uCCAD\uB9CC \uBC1B\uACE0 \uC788\uC5B4\uC694. \uCD94\uD6C4 \uC7AC\uC624\uD508 \uC608\uC815\uC785\uB2C8\uB2E4.",
+        "FEMALE_APPLICATIONS_PAUSED"
+      );
     }
     if (!name || name.trim().length < 1 || name.trim().length > 20) {
       return jsonError(400, "이름을 입력해주세요. (1~20자)", "VALIDATION_ERROR", "name length must be 1-20");

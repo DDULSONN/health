@@ -18,6 +18,7 @@ const REGIONS = [
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp"]);
+const FEMALE_APPLICATIONS_ENABLED = process.env.NEXT_PUBLIC_DATING_FEMALE_APPLICATIONS_ENABLED === "true";
 
 function normalizeSex(value: unknown): Sex | null {
   if (typeof value !== "string") return null;
@@ -133,6 +134,7 @@ export default function DatingApplyPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [done, setDone] = useState(false);
+  const femaleApplicationsPaused = !FEMALE_APPLICATIONS_ENABLED;
 
   // 인증 체크
   useEffect(() => {
@@ -207,6 +209,10 @@ export default function DatingApplyPage() {
 
     const normalizedSex = normalizeSex(sex);
     if (!normalizedSex) { setError("성별을 선택해주세요."); return; }
+    if (normalizedSex === "female" && femaleApplicationsPaused) {
+      setError("\uD604\uC7AC \uC5EC\uC790 \uC2E0\uCCAD\uC740 \uBAA8\uC9D1 \uB9C8\uAC10(\uB300\uAE30) \uC0C1\uD0DC\uC785\uB2C8\uB2E4. \uB0A8\uC790 \uC2E0\uCCAD\uB9CC \uBC1B\uACE0 \uC788\uC5B4\uC694. \uCD94\uD6C4 \uC7AC\uC624\uD508 \uC608\uC815\uC785\uB2C8\uB2E4.");
+      return;
+    }
     if (normalizedSex === "male" && !certApproved) { setError("남성은 3대 인증이 필요합니다."); return; }
     if (!age || Number(age) < 19 || Number(age) > 45) { setError("나이를 입력해주세요. (19~45세)"); return; }
     if (!photos[0] || !photos[1]) { setError("사진 2장을 모두 업로드해주세요."); return; }
@@ -380,14 +386,26 @@ export default function DatingApplyPage() {
             <button
               type="button"
               onClick={() => setSex("female")}
+              disabled={femaleApplicationsPaused}
               className={`flex-1 h-11 rounded-xl border text-sm font-medium ${
                 sex === "female" ? "bg-rose-500 text-white border-rose-500" : "bg-white border-neutral-300 text-neutral-700"
-              }`}
+              } ${femaleApplicationsPaused ? "opacity-50 cursor-not-allowed" : ""}`}
             >
-              여자
+              {"\uC5EC\uC790"} {femaleApplicationsPaused ? "(\uBAA8\uC9D1 \uB9C8\uAC10)" : ""}
             </button>
           </div>
         </div>
+
+        {femaleApplicationsPaused && (
+          <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+            <p className="text-sm font-semibold text-neutral-900 mb-1">
+              {"\uC5EC\uC790 \uC2E0\uCCAD\uC740 \uC7A0\uC2DC \uB9C8\uAC10\uB410\uC5B4\uC694"}
+            </p>
+            <p className="text-xs text-neutral-600">
+              {"\uD604\uC7AC \uB0A8\uC790 \uC2E0\uCCAD\uB9CC \uBC1B\uACE0 \uC788\uC2B5\uB2C8\uB2E4. \uC7AC\uC624\uD508 \uC54C\uB9BC\uC744 \uC6D0\uD558\uBA74 \uC778\uC2A4\uD0C0 DM \uB610\uB294 \uACF5\uC9C0\uB97C \uD655\uC778\uD574 \uC8FC\uC138\uC694."}
+            </p>
+          </div>
+        )}
 
         {/* 남자 인증 체크 */}
         {sex === "male" && certChecked && !certApproved && (
@@ -408,7 +426,7 @@ export default function DatingApplyPage() {
         )}
 
         {/* 폼 필드 (성별 선택 + 남자면 인증 필요) */}
-        {(sex === "female" || (sex === "male" && certApproved)) && (
+        {((sex === "female" && !femaleApplicationsPaused) || (sex === "male" && certApproved)) && (
           <>
             <div>
               <label htmlFor="name" className="block text-sm font-medium text-neutral-700 mb-1">이름 (필수)</label>
