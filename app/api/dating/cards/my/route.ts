@@ -26,12 +26,23 @@ function toText(value: unknown, max = 2000): string {
 }
 
 async function hasPublicSlot(adminClient: ReturnType<typeof createAdminClient>, sex: "male" | "female") {
-  const { count, error } = await adminClient
+  let { count, error } = await adminClient
     .from("dating_cards")
     .select("id", { count: "exact", head: true })
     .eq("sex", sex)
     .eq("status", "public")
     .gt("expires_at", new Date().toISOString());
+
+  // Legacy fallback when expires_at column is not available yet.
+  if (error && error.code === "42703") {
+    const legacy = await adminClient
+      .from("dating_cards")
+      .select("id", { count: "exact", head: true })
+      .eq("sex", sex)
+      .eq("status", "public");
+    count = legacy.count;
+    error = legacy.error;
+  }
 
   if (error) throw error;
   return (count ?? 0) < OPEN_CARD_LIMIT_PER_SEX;
@@ -154,10 +165,39 @@ export async function POST(req: Request) {
     expires_at: expiresAt,
   };
 
-  const { data, error } = await adminClient.from("dating_cards").insert(payload).select("id,status").single();
+  let insertRes: any = await adminClient.from("dating_cards").insert(payload).select("id,status").single();
+
+  // Legacy fallback for environments that still use owner_instagram_id/photo_urls and may not have new columns.
+  if (insertRes.error && insertRes.error.code === "42703") {
+    const legacyPayload = {
+      owner_user_id: user.id,
+      sex,
+      age,
+      region: region || null,
+      height_cm: heightCm,
+      job: job || null,
+      training_years: trainingYears,
+      ideal_type: idealType || null,
+      owner_instagram_id: instagramId,
+      photo_urls: photoPaths,
+      total_3lift: sex === "male" ? total3Lift : null,
+      percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
+      is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
+      status: available ? ("public" as const) : ("pending" as const),
+    };
+    insertRes = await adminClient.from("dating_cards").insert(legacyPayload).select("id,status").single();
+  }
+
+  const { data, error } = insertRes;
   if (error) {
     console.error("[POST /api/dating/cards/my] failed", error);
-    return NextResponse.json({ error: "카드 생성에 실패했습니다." }, { status: 500 });
+    if (error.code === "23514") {
+      return NextResponse.json({ error: "입력값이 조건에 맞지 않습니다. 입력 항목을 다시 확인해주세요." }, { status: 400 });
+    }
+    if (error.code === "23502") {
+      return NextResponse.json({ error: "필수 항목 누락으로 카드 생성에 실패했습니다. DB 마이그레이션 상태를 확인해주세요." }, { status: 500 });
+    }
+    return NextResponse.json({ error: `카드 생성에 실패했습니다. ${error.message ?? ""}`.trim() }, { status: 500 });
   }
 
   return NextResponse.json(
