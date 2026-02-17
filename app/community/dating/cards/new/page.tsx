@@ -61,7 +61,6 @@ export default function NewDatingCardPage() {
   const [idealType, setIdealType] = useState("");
   const [instagramId, setInstagramId] = useState("");
   const [total3Lift, setTotal3Lift] = useState("");
-  const [percentAll, setPercentAll] = useState("");
   const [is3LiftVerified, setIs3LiftVerified] = useState(false);
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
   const [submitting, setSubmitting] = useState(false);
@@ -134,7 +133,6 @@ export default function NewDatingCardPage() {
         photo_paths: uploadedRawPaths,
         blur_thumb_path: blurBody.path,
         total_3lift: sex === "male" && total3Lift ? Number(total3Lift) : null,
-        percent_all: sex === "male" && percentAll ? Number(percentAll) : null,
         is_3lift_verified: sex === "male" ? is3LiftVerified : false,
       };
 
@@ -196,7 +194,6 @@ export default function NewDatingCardPage() {
         {sex === "male" && (
           <>
             <Field label="3대 합계(kg)"><input className="input" type="number" min={0} value={total3Lift} onChange={(e) => setTotal3Lift(e.target.value)} /></Field>
-            <Field label="대한민국 상위 %"><input className="input" type="number" step="0.01" min={0} value={percentAll} onChange={(e) => setPercentAll(e.target.value)} /></Field>
             <label className="flex items-center gap-2 text-sm text-neutral-700">
               <input type="checkbox" checked={is3LiftVerified} onChange={(e) => setIs3LiftVerified(e.target.checked)} />
               <span>3대 인증 여부</span>

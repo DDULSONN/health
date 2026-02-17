@@ -15,7 +15,6 @@ type PublicCard = {
   training_years: number | null;
   ideal_type: string | null;
   total_3lift: number | null;
-  percent_all: number | null;
   is_3lift_verified: boolean;
   blur_thumb_url: string;
   expires_at: string;
@@ -208,9 +207,6 @@ function CardRow({ card }: { card: PublicCard }) {
         <div className="mt-2 flex flex-wrap gap-2">
           {card.total_3lift != null && (
             <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700">3대 {card.total_3lift}kg</span>
-          )}
-          {card.percent_all != null && (
-            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">상위 {card.percent_all}%</span>
           )}
         </div>
       )}

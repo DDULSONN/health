@@ -14,7 +14,6 @@ type CardDetail = {
   training_years?: number;
   ideal_type?: string | null;
   total_3lift?: number;
-  percent_all?: number;
   has_sbd?: boolean;
 };
 
@@ -161,11 +160,6 @@ export default function DatingDetailPage() {
               {card.total_3lift != null && (
                 <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700">
                   3-lift {card.total_3lift}kg
-                </span>
-              )}
-              {card.percent_all != null && (
-                <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-700">
-                  Top {card.percent_all}% KR
                 </span>
               )}
             </>

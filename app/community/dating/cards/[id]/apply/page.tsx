@@ -16,7 +16,6 @@ type CardDetail = {
   training_years: number | null;
   ideal_type: string | null;
   total_3lift: number | null;
-  percent_all: number | null;
   is_3lift_verified: boolean;
   blur_thumb_url: string;
   expires_at: string;
