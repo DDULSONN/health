@@ -1,10 +1,11 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { timeAgo } from "@/lib/community";
+import { formatRemainingToKorean } from "@/lib/dating-open";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
 import MyLiftGrowthChart from "@/components/MyLiftGrowthChart";
 import AdminCertReviewPanel from "@/components/AdminCertReviewPanel";
@@ -45,9 +46,12 @@ type DatingApplicationStatus = {
 type MyDatingCard = {
   id: string;
   sex: "male" | "female";
+  display_nickname: string;
   age: number | null;
   region: string | null;
-  status: "pending" | "public" | "hidden";
+  status: "pending" | "public" | "expired" | "hidden";
+  published_at: string | null;
+  expires_at: string | null;
   created_at: string;
 };
 
@@ -55,6 +59,7 @@ type ReceivedCardApplication = {
   id: string;
   card_id: string;
   applicant_user_id: string;
+  applicant_display_nickname: string | null;
   age: number | null;
   height_cm: number | null;
   region: string | null;
@@ -82,17 +87,22 @@ type AdminOpenCard = {
   owner_user_id: string;
   owner_nickname: string | null;
   sex: "male" | "female";
+  display_nickname: string | null;
   age: number | null;
   region: string | null;
   height_cm: number | null;
   job: string | null;
   training_years: number | null;
   ideal_type: string | null;
-  owner_instagram_id: string | null;
+  instagram_id: string | null;
   total_3lift: number | null;
   percent_all: number | null;
   is_3lift_verified: boolean;
-  status: "pending" | "public" | "hidden";
+  photo_paths: string[] | null;
+  blur_thumb_path: string | null;
+  status: "pending" | "public" | "expired" | "hidden";
+  published_at: string | null;
+  expires_at: string | null;
   created_at: string;
 };
 
@@ -101,6 +111,7 @@ type AdminOpenCardApplication = {
   card_id: string;
   applicant_user_id: string;
   applicant_nickname: string | null;
+  applicant_display_nickname: string | null;
   age: number | null;
   height_cm: number | null;
   region: string | null;
@@ -108,7 +119,7 @@ type AdminOpenCardApplication = {
   training_years: number | null;
   intro_text: string | null;
   instagram_id: string;
-  photo_urls: string[];
+  photo_paths: string[];
   status: "submitted" | "accepted" | "rejected" | "canceled";
   created_at: string;
 };
@@ -561,6 +572,53 @@ export default function MyPage() {
       </section>
 
       <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
+        <h2 className="text-lg font-bold text-neutral-900 mb-3">내 오픈카드 상태</h2>
+        {myDatingCards.length === 0 ? (
+          <p className="text-sm text-neutral-500">등록된 오픈카드가 없습니다.</p>
+        ) : (
+          <div className="space-y-3">
+            {myDatingCards.map((card) => (
+              <div key={card.id} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-neutral-900">
+                    {card.display_nickname} / {card.sex === "male" ? "남자" : "여자"}
+                  </p>
+                  <span className="inline-flex rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
+                    {card.status}
+                  </span>
+                </div>
+                <p className="text-xs text-neutral-500 mt-1">
+                  생성일: {new Date(card.created_at).toLocaleDateString("ko-KR")}
+                </p>
+                {card.status === "public" && card.expires_at && (
+                  <p className="text-sm text-amber-700 font-medium mt-1">
+                    공개 중 · 남은 시간 {formatRemainingToKorean(card.expires_at)}
+                  </p>
+                )}
+                {card.status === "pending" && (
+                  <p className="text-sm text-neutral-600 mt-1">대기열에 등록되어 있습니다.</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="mt-4 flex gap-2">
+          <Link
+            href="/dating/card/new"
+            className="inline-flex min-h-[42px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
+          >
+            오픈카드 작성하기
+          </Link>
+          <Link
+            href="/community/dating/cards"
+            className="inline-flex min-h-[42px] items-center rounded-lg border border-neutral-300 px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+          >
+            오픈카드 보기
+          </Link>
+        </div>
+      </section>
+
+      <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
         <h2 className="text-lg font-bold text-neutral-900 mb-3">내 카드 지원자</h2>
         {receivedApplications.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 받은 지원서가 없습니다.</p>
@@ -585,6 +643,7 @@ export default function MyPage() {
                   </div>
 
                   <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
+                    {app.applicant_display_nickname && <span>닉네임 {app.applicant_display_nickname}</span>}
                     {app.age != null && <span>나이 {app.age}</span>}
                     {app.height_cm != null && <span>키 {app.height_cm}cm</span>}
                     {app.region && <span>지역 {app.region}</span>}
@@ -667,7 +726,7 @@ export default function MyPage() {
                 {adminOpenCards.map((card) => (
                   <div key={card.id} className="rounded-xl border border-violet-200 bg-white p-3">
                     <p className="text-sm font-semibold text-neutral-900">
-                      카드 {card.id.slice(0, 8)}... / {card.sex} / 상태 {card.status}
+                      카드 {card.id.slice(0, 8)}... / {card.display_nickname ?? "(닉네임 없음)"} / {card.sex} / 상태 {card.status}
                     </p>
                     <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
                       <span>owner: {card.owner_nickname ?? card.owner_user_id.slice(0, 8)}</span>
@@ -678,10 +737,11 @@ export default function MyPage() {
                       {card.training_years != null && <span>운동 {card.training_years}년</span>}
                       {card.total_3lift != null && <span>3대 {card.total_3lift}kg</span>}
                       {card.percent_all != null && <span>상위 {card.percent_all}%</span>}
+                      <span>3대인증 {card.is_3lift_verified ? "Y" : "N"}</span>
                     </div>
-                    {card.owner_instagram_id && (
+                    {card.instagram_id && (
                       <p className="mt-1 text-xs font-medium text-violet-700">
-                        카드 소유자 인스타: @{card.owner_instagram_id}
+                        카드 소유자 인스타: @{card.instagram_id}
                       </p>
                     )}
                     {card.ideal_type && (
@@ -689,6 +749,24 @@ export default function MyPage() {
                         이상형: {card.ideal_type}
                       </p>
                     )}
+                    {card.published_at && (
+                      <p className="mt-1 text-xs text-emerald-700">
+                        공개 시작: {new Date(card.published_at).toLocaleString("ko-KR")}
+                      </p>
+                    )}
+                    {card.expires_at && (
+                      <p className="mt-1 text-xs text-amber-700">
+                        만료 예정: {new Date(card.expires_at).toLocaleString("ko-KR")}
+                      </p>
+                    )}
+                    {card.blur_thumb_path && (
+                      <p className="mt-1 text-xs text-neutral-500 break-all">
+                        blur 경로: {card.blur_thumb_path}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-neutral-500 break-all">
+                      사진 경로: {Array.isArray(card.photo_paths) ? card.photo_paths.join(", ") : "-"}
+                    </p>
                   </div>
                 ))}
               </div>
@@ -705,6 +783,7 @@ export default function MyPage() {
                     </p>
                     <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
                       <span>지원자: {app.applicant_nickname ?? app.applicant_user_id.slice(0, 8)}</span>
+                      {app.applicant_display_nickname && <span>표시 닉네임: {app.applicant_display_nickname}</span>}
                       {app.age != null && <span>나이 {app.age}</span>}
                       {app.height_cm != null && <span>키 {app.height_cm}cm</span>}
                       {app.region && <span>지역 {app.region}</span>}
@@ -718,7 +797,7 @@ export default function MyPage() {
                       </p>
                     )}
                     <p className="mt-1 text-xs text-neutral-500 break-all">
-                      사진 경로: {Array.isArray(app.photo_urls) ? app.photo_urls.join(", ") : "-"}
+                      사진 경로: {Array.isArray(app.photo_paths) ? app.photo_paths.join(", ") : "-"}
                     </p>
                   </div>
                 ))}

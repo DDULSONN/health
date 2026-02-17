@@ -7,8 +7,8 @@ import { createClient } from "@/lib/supabase/client";
 
 type CardDetail = {
   id: string;
-  owner_user_id: string;
   sex: "male" | "female";
+  display_nickname: string;
   age: number | null;
   region: string | null;
   height_cm: number | null;
@@ -18,8 +18,8 @@ type CardDetail = {
   total_3lift: number | null;
   percent_all: number | null;
   is_3lift_verified: boolean;
-  created_at: string;
-  status: string;
+  blur_thumb_url: string;
+  expires_at: string;
 };
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -45,6 +45,7 @@ export default function DatingCardApplyPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
+  const [displayNickname, setDisplayNickname] = useState("");
   const [age, setAge] = useState("");
   const [heightCm, setHeightCm] = useState("");
   const [region, setRegion] = useState("");
@@ -68,17 +69,17 @@ export default function DatingCardApplyPage() {
       try {
         const res = await fetch(`/api/dating/cards/${id}`);
         if (!res.ok) {
-          router.replace("/community/dating");
+          router.replace("/community/dating/cards");
           return;
         }
-        const data = (await res.json()) as { card?: CardDetail; can_apply?: boolean };
-        if (!data.card || data.can_apply === false) {
-          router.replace("/community/dating");
+        const data = (await res.json()) as { card?: CardDetail };
+        if (!data.card) {
+          router.replace("/community/dating/cards");
           return;
         }
         setCard(data.card);
       } catch {
-        router.replace("/community/dating");
+        router.replace("/community/dating/cards");
       }
       setLoading(false);
     });
@@ -95,32 +96,37 @@ export default function DatingCardApplyPage() {
     setError("");
 
     const normalizedInstagramId = normalizeInstagramId(instagramId);
+    if (!displayNickname.trim()) {
+      setError("닉네임(표시용)을 입력해주세요.");
+      return;
+    }
     if (!validInstagramId(normalizedInstagramId)) {
-      setError("Invalid Instagram ID format.");
+      setError("인스타 아이디 형식을 확인해주세요. (@ 없이 최대 30자)");
       return;
     }
     if (!consent) {
-      setError("Consent is required.");
+      setError("동의가 필요합니다.");
       return;
     }
     if (!photos[0] || !photos[1]) {
-      setError("2 photos are required.");
+      setError("지원 사진 2장이 필요합니다.");
       return;
     }
 
     for (const photo of photos) {
       if (!photo) continue;
       if (!ALLOWED_TYPES.includes(photo.type)) {
-        setError("Only JPG/PNG/WebP is allowed.");
+        setError("사진은 JPG/PNG/WebP만 가능합니다.");
         return;
       }
       if (photo.size > MAX_FILE_SIZE) {
-        setError("Each photo must be 5MB or less.");
+        setError("사진은 장당 5MB 이하만 가능합니다.");
         return;
       }
     }
 
     setSubmitting(true);
+
     try {
       const uploadedPaths: string[] = [];
       for (let i = 0; i < photos.length; i++) {
@@ -128,13 +134,10 @@ export default function DatingCardApplyPage() {
         fd.append("file", photos[i]!);
         fd.append("cardId", id);
         fd.append("index", String(i));
-        const uploadRes = await fetch("/api/dating/cards/upload", {
-          method: "POST",
-          body: fd,
-        });
+        const uploadRes = await fetch("/api/dating/cards/upload", { method: "POST", body: fd });
         const uploadBody = (await uploadRes.json().catch(() => ({}))) as { path?: string; error?: string };
         if (!uploadRes.ok || !uploadBody.path) {
-          setError(uploadBody.error ?? "Photo upload failed.");
+          setError(uploadBody.error ?? "사진 업로드 실패");
           setSubmitting(false);
           return;
         }
@@ -143,6 +146,7 @@ export default function DatingCardApplyPage() {
 
       const payload = {
         card_id: id,
+        applicant_display_nickname: displayNickname.trim(),
         age: Number(age),
         height_cm: Number(heightCm),
         region: region.trim(),
@@ -159,103 +163,98 @@ export default function DatingCardApplyPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
       if (!res.ok) {
-        setError(body.error ?? "Application failed.");
+        setError(body.error ?? (body.code === "DAILY_APPLY_LIMIT" ? "하루 2회 제한에 도달했어요." : "지원 실패"));
         setSubmitting(false);
         return;
       }
 
-      alert("Application submitted.");
+      alert("지원이 완료되었습니다.");
       router.push("/mypage");
     } catch {
-      setError("Network error.");
+      setError("네트워크 오류가 발생했습니다.");
     }
+
     setSubmitting(false);
   };
 
   if (loading || !card) {
     return (
       <main className="max-w-lg mx-auto px-4 py-8">
-        <p className="text-sm text-neutral-500">Loading...</p>
+        <p className="text-sm text-neutral-500">불러오는 중...</p>
       </main>
     );
   }
 
   return (
     <main className="max-w-lg mx-auto px-4 py-8">
-      <Link href="/community/dating" className="text-sm text-neutral-500 hover:text-neutral-700">
-        Back
+      <Link href="/community/dating/cards" className="text-sm text-neutral-500 hover:text-neutral-700">
+        뒤로가기
       </Link>
 
-      <h1 className="text-2xl font-bold text-neutral-900 mt-3">Apply to Card</h1>
-      <p className="text-sm text-neutral-500 mt-1">Card ID: {card.id}</p>
+      <h1 className="text-2xl font-bold text-neutral-900 mt-3">오픈카드 지원하기</h1>
+
+      <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-3">
+        <p className="text-sm font-semibold text-neutral-900">{card.display_nickname}</p>
+        {card.blur_thumb_url && (
+          <div className="mt-2 h-40 rounded-lg overflow-hidden bg-neutral-50 border border-neutral-100 flex items-center justify-center">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={card.blur_thumb_url} alt="" className="h-full w-full object-contain blur-[9px]" />
+          </div>
+        )}
+      </div>
 
       <form onSubmit={handleSubmit} className="space-y-4 mt-6">
-        <Field label="Age" required>
-          <input type="number" min={19} max={99} required value={age} onChange={(e) => setAge(e.target.value)} className="input" />
+        <Field label="닉네임(표시용)" required>
+          <input className="input" required maxLength={20} value={displayNickname} onChange={(e) => setDisplayNickname(e.target.value)} />
         </Field>
 
-        <Field label="Height (cm)" required>
-          <input type="number" min={120} max={230} required value={heightCm} onChange={(e) => setHeightCm(e.target.value)} className="input" />
+        <Field label="나이" required>
+          <input className="input" type="number" min={19} max={99} required value={age} onChange={(e) => setAge(e.target.value)} />
         </Field>
 
-        <Field label="Region" required>
-          <input type="text" required maxLength={30} value={region} onChange={(e) => setRegion(e.target.value)} className="input" />
+        <Field label="키(cm)" required>
+          <input className="input" type="number" min={120} max={230} required value={heightCm} onChange={(e) => setHeightCm(e.target.value)} />
         </Field>
 
-        <Field label="Job" required>
-          <input type="text" required maxLength={50} value={job} onChange={(e) => setJob(e.target.value)} className="input" />
+        <Field label="지역" required>
+          <input className="input" required maxLength={30} value={region} onChange={(e) => setRegion(e.target.value)} />
         </Field>
 
-        <Field label="Training Years" required>
-          <input type="number" min={0} max={50} required value={trainingYears} onChange={(e) => setTrainingYears(e.target.value)} className="input" />
+        <Field label="직업" required>
+          <input className="input" required maxLength={50} value={job} onChange={(e) => setJob(e.target.value)} />
         </Field>
 
-        <Field label="Instagram ID" required>
-          <input
-            type="text"
-            required
-            maxLength={30}
-            value={instagramId}
-            onChange={(e) => setInstagramId(normalizeInstagramId(e.target.value))}
-            className="input"
-            placeholder="instagram_id"
-          />
+        <Field label="운동경력(년)" required>
+          <input className="input" type="number" min={0} max={50} required value={trainingYears} onChange={(e) => setTrainingYears(e.target.value)} />
         </Field>
 
-        <Field label="Intro Text" required>
-          <textarea
-            required
-            rows={4}
-            maxLength={1000}
-            value={introText}
-            onChange={(e) => setIntroText(e.target.value)}
-            className="w-full rounded-xl border border-neutral-300 px-3 py-2"
-          />
+        <Field label="인스타 아이디(@ 없이)" required>
+          <input className="input" required maxLength={30} value={instagramId} onChange={(e) => setInstagramId(normalizeInstagramId(e.target.value))} />
         </Field>
 
-        <Field label="Photo 1" required>
+        <Field label="자기소개" required>
+          <textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" required maxLength={1000} rows={4} value={introText} onChange={(e) => setIntroText(e.target.value)} />
+        </Field>
+
+        <Field label="지원 사진 1" required>
           <input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e) => handlePhotoChange(0, e.target.files?.[0] ?? null)} />
         </Field>
 
-        <Field label="Photo 2" required>
+        <Field label="지원 사진 2" required>
           <input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e) => handlePhotoChange(1, e.target.files?.[0] ?? null)} />
         </Field>
 
         <label className="flex items-start gap-2 text-sm text-neutral-700">
           <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-1" />
-          <span>I agree to submit my information and photos for dating card application.</span>
+          <span>지원 정보(인스타/사진 포함) 제출 및 매칭 진행에 동의합니다.</span>
         </label>
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
-        <button
-          type="submit"
-          disabled={submitting}
-          className="w-full min-h-[46px] rounded-xl bg-pink-500 text-white text-sm font-medium hover:bg-pink-600 disabled:opacity-50"
-        >
-          {submitting ? "Submitting..." : "Submit Application"}
+        <button type="submit" disabled={submitting} className="w-full min-h-[46px] rounded-xl bg-pink-500 text-white text-sm font-medium hover:bg-pink-600 disabled:opacity-50">
+          {submitting ? "지원 중..." : "지원하기"}
         </button>
       </form>
 
@@ -273,7 +272,7 @@ export default function DatingCardApplyPage() {
   );
 }
 
-function Field({ label, required, children }: { label: string; required?: boolean; children: ReactNode }) {
+function Field({ label, required = false, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
     <div>
       <label className="block text-sm font-medium text-neutral-700 mb-1">

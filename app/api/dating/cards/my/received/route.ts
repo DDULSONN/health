@@ -14,7 +14,7 @@ export async function GET() {
   const adminClient = createAdminClient();
   const { data: cards, error: cardsError } = await adminClient
     .from("dating_cards")
-    .select("id, sex, age, region, created_at, status")
+    .select("id, sex, display_nickname, age, region, expires_at, created_at, status")
     .eq("owner_user_id", user.id)
     .order("created_at", { ascending: false });
 
@@ -30,7 +30,7 @@ export async function GET() {
 
   const { data: applications, error: appsError } = await adminClient
     .from("dating_card_applications")
-    .select("id, card_id, applicant_user_id, age, height_cm, region, job, training_years, intro_text, status, created_at, instagram_id, photo_urls")
+    .select("id, card_id, applicant_user_id, applicant_display_nickname, age, height_cm, region, job, training_years, intro_text, status, created_at, instagram_id, photo_paths")
     .in("card_id", cardIds)
     .order("created_at", { ascending: false });
 

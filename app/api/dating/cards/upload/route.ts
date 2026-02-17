@@ -29,13 +29,13 @@ export async function POST(req: Request) {
   }
 
   if (!ALLOWED_TYPES.includes(file.type)) {
-    return NextResponse.json({ error: "JPG/PNG/WebP만 업로드할 수 있습니다." }, { status: 400 });
+    return NextResponse.json({ error: "JPG/PNG/WebP 파일만 업로드할 수 있습니다." }, { status: 400 });
   }
   if (file.size > MAX_FILE_SIZE) {
     return NextResponse.json({ error: "파일은 5MB 이하만 가능합니다." }, { status: 400 });
   }
   if (index < 0 || index > 9) {
-    return NextResponse.json({ error: "index가 올바르지 않습니다." }, { status: 400 });
+    return NextResponse.json({ error: "index 값이 올바르지 않습니다." }, { status: 400 });
   }
 
   const adminClient = createAdminClient();
@@ -44,6 +44,7 @@ export async function POST(req: Request) {
     .select("id, status, owner_user_id")
     .eq("id", cardId)
     .single();
+
   if (cardError || !card) {
     return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
   }
@@ -57,13 +58,11 @@ export async function POST(req: Request) {
   const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
   const path = `card-applications/${user.id}/${cardId}/${Date.now()}-${index}.${ext}`;
 
-  const { error: uploadError } = await adminClient.storage
-    .from("dating-photos")
-    .upload(path, file, {
-      contentType: file.type,
-      upsert: false,
-      cacheControl: "3600",
-    });
+  const { error: uploadError } = await adminClient.storage.from("dating-apply-photos").upload(path, file, {
+    contentType: file.type,
+    upsert: false,
+    cacheControl: "3600",
+  });
 
   if (uploadError) {
     console.error("[POST /api/dating/cards/upload] failed", uploadError);

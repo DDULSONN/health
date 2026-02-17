@@ -28,11 +28,12 @@ export async function GET(req: Request) {
   let query = adminClient
     .from("dating_cards")
     .select(
-      "id, owner_user_id, sex, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, status, created_at",
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, instagram_id, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, status, published_at, expires_at, created_at",
       { count: "exact" }
     )
     .order("created_at", { ascending: false });
-  if (status === "pending" || status === "public" || status === "hidden") {
+
+  if (status === "pending" || status === "public" || status === "expired" || status === "hidden") {
     query = query.eq("status", status);
   }
 

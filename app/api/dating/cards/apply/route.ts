@@ -1,3 +1,4 @@
+﻿import { getKstDayRangeUtc } from "@/lib/dating-open";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -43,6 +44,7 @@ export async function POST(req: Request) {
   const region = sanitizeText((body as { region?: unknown }).region, 30);
   const job = sanitizeText((body as { job?: unknown }).job, 50);
   const introText = sanitizeText((body as { intro_text?: unknown }).intro_text, 1000);
+  const applicantDisplayNickname = sanitizeText((body as { applicant_display_nickname?: unknown }).applicant_display_nickname, 20);
   const instagramId = normalizeInstagramId((body as { instagram_id?: unknown }).instagram_id);
   const photoPathsRaw = (body as { photo_paths?: unknown }).photo_paths;
   const consent = Boolean((body as { consent?: unknown }).consent);
@@ -58,8 +60,11 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
+  if (!applicantDisplayNickname) {
+    return NextResponse.json({ error: "닉네임(표시용)을 입력해주세요." }, { status: 400 });
+  }
   if (!consent) return NextResponse.json({ error: "동의가 필요합니다." }, { status: 400 });
-  if (photoPaths.length !== 2) return NextResponse.json({ error: "사진 2장이 필요합니다." }, { status: 400 });
+  if (photoPaths.length !== 2) return NextResponse.json({ error: "지원 사진은 2장이 필요합니다." }, { status: 400 });
   if (!photoPaths.every((path) => path.startsWith(`card-applications/${user.id}/`))) {
     return NextResponse.json({ error: "업로드 경로가 올바르지 않습니다." }, { status: 400 });
   }
@@ -79,16 +84,42 @@ export async function POST(req: Request) {
   const adminClient = createAdminClient();
   const { data: card, error: cardError } = await adminClient
     .from("dating_cards")
-    .select("id, owner_user_id, status")
+    .select("id, owner_user_id, status, expires_at")
     .eq("id", cardId)
     .single();
   if (cardError || !card) return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
-  if (card.status !== "public") return NextResponse.json({ error: "지원 가능한 카드가 아닙니다." }, { status: 400 });
+  if (card.status !== "public" || !card.expires_at || new Date(card.expires_at).getTime() <= Date.now()) {
+    return NextResponse.json({ error: "지원 가능한 카드가 아닙니다." }, { status: 400 });
+  }
   if (card.owner_user_id === user.id) return NextResponse.json({ error: "본인 카드에는 지원할 수 없습니다." }, { status: 400 });
+
+  const { startUtcIso, endUtcIso } = getKstDayRangeUtc();
+  const { count: todayCount, error: countError } = await adminClient
+    .from("dating_card_applications")
+    .select("id", { head: true, count: "exact" })
+    .eq("applicant_user_id", user.id)
+    .in("status", ["submitted", "accepted", "rejected"])
+    .gte("created_at", startUtcIso)
+    .lt("created_at", endUtcIso);
+
+  if (countError) {
+    console.error("[POST /api/dating/cards/apply] count failed", countError);
+    return NextResponse.json({ error: "지원 횟수 확인에 실패했습니다." }, { status: 500 });
+  }
+  if ((todayCount ?? 0) >= 2) {
+    return NextResponse.json(
+      {
+        code: "DAILY_APPLY_LIMIT",
+        error: "하루 지원 가능 횟수(2회)를 모두 사용했어요. 내일 다시 지원할 수 있어요.",
+      },
+      { status: 429 }
+    );
+  }
 
   const payload = {
     card_id: cardId,
     applicant_user_id: user.id,
+    applicant_display_nickname: applicantDisplayNickname,
     age,
     height_cm: heightCm,
     region,
@@ -96,7 +127,7 @@ export async function POST(req: Request) {
     training_years: trainingYears,
     intro_text: introText,
     instagram_id: instagramId,
-    photo_urls: photoPaths,
+    photo_paths: photoPaths,
     status: "submitted" as const,
   };
 
@@ -108,7 +139,7 @@ export async function POST(req: Request) {
 
   if (error) {
     if (error.code === "23505") {
-      return NextResponse.json({ error: "이미 해당 카드에 지원하셨습니다." }, { status: 409 });
+      return NextResponse.json({ error: "이미 해당 카드에 지원하셨어요." }, { status: 409 });
     }
     console.error("[POST /api/dating/cards/apply] failed", error);
     return NextResponse.json({ error: "지원 처리에 실패했습니다." }, { status: 500 });

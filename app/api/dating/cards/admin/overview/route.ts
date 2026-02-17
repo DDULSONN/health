@@ -18,14 +18,14 @@ export async function GET() {
     adminClient
       .from("dating_cards")
       .select(
-        "id, owner_user_id, sex, age, region, height_cm, job, training_years, ideal_type, owner_instagram_id, total_3lift, percent_all, is_3lift_verified, status, created_at"
+        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, instagram_id, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, status, published_at, expires_at, created_at"
       )
       .order("created_at", { ascending: false })
       .limit(300),
     adminClient
       .from("dating_card_applications")
       .select(
-        "id, card_id, applicant_user_id, age, height_cm, region, job, training_years, intro_text, instagram_id, photo_urls, status, created_at"
+        "id, card_id, applicant_user_id, applicant_display_nickname, age, height_cm, region, job, training_years, intro_text, instagram_id, photo_paths, status, created_at"
       )
       .order("created_at", { ascending: false })
       .limit(1000),
@@ -45,12 +45,10 @@ export async function GET() {
       ...(appsRes.data ?? []).map((app) => app.applicant_user_id),
     ]),
   ];
+
   let nickMap: Record<string, string> = {};
   if (userIds.length > 0) {
-    const profilesRes = await adminClient
-      .from("profiles")
-      .select("user_id, nickname")
-      .in("user_id", userIds);
+    const profilesRes = await adminClient.from("profiles").select("user_id, nickname").in("user_id", userIds);
     if (!profilesRes.error) {
       nickMap = Object.fromEntries((profilesRes.data ?? []).map((p) => [p.user_id, p.nickname]));
     }
@@ -60,6 +58,7 @@ export async function GET() {
     ...card,
     owner_nickname: nickMap[card.owner_user_id] ?? null,
   }));
+
   const applications = (appsRes.data ?? []).map((app) => ({
     ...app,
     applicant_nickname: nickMap[app.applicant_user_id] ?? null,

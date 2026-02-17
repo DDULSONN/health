@@ -1,3 +1,4 @@
+﻿import { OPEN_CARD_EXPIRE_HOURS, OPEN_CARD_LIMIT_PER_SEX } from "@/lib/dating-open";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -19,10 +20,21 @@ function toInt(value: unknown): number | null {
   return null;
 }
 
-function toText(value: unknown, max = 2000): string | null {
-  if (typeof value !== "string") return null;
-  const trimmed = value.trim().slice(0, max);
-  return trimmed.length > 0 ? trimmed : null;
+function toText(value: unknown, max = 2000): string {
+  if (typeof value !== "string") return "";
+  return value.trim().slice(0, max);
+}
+
+async function hasPublicSlot(adminClient: ReturnType<typeof createAdminClient>, sex: "male" | "female") {
+  const { count, error } = await adminClient
+    .from("dating_cards")
+    .select("id", { count: "exact", head: true })
+    .eq("sex", sex)
+    .eq("status", "public")
+    .gt("expires_at", new Date().toISOString());
+
+  if (error) throw error;
+  return (count ?? 0) < OPEN_CARD_LIMIT_PER_SEX;
 }
 
 export async function GET() {
@@ -36,7 +48,7 @@ export async function GET() {
   const { data, error } = await adminClient
     .from("dating_cards")
     .select(
-      "id, owner_user_id, sex, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, status, created_at"
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, status, published_at, expires_at, created_at"
     )
     .eq("owner_user_id", user.id)
     .order("created_at", { ascending: false });
@@ -75,36 +87,88 @@ export async function POST(req: Request) {
       : typeof percentAllRaw === "string" && percentAllRaw.trim()
       ? Number(percentAllRaw)
       : null;
-  const ownerInstagramId = normalizeInstagramId((body as { owner_instagram_id?: unknown }).owner_instagram_id);
-  if (!ownerInstagramId || !validInstagramId(ownerInstagramId)) {
+
+  const displayNickname = toText((body as { display_nickname?: unknown }).display_nickname, 20);
+  const region = toText((body as { region?: unknown }).region, 30);
+  const job = toText((body as { job?: unknown }).job, 50);
+  const idealType = toText((body as { ideal_type?: unknown }).ideal_type, 1000);
+
+  const instagramId = normalizeInstagramId((body as { instagram_id?: unknown }).instagram_id);
+  const photoPathsRaw = (body as { photo_paths?: unknown }).photo_paths;
+  const blurThumbPath = toText((body as { blur_thumb_path?: unknown }).blur_thumb_path, 400);
+
+  const photoPaths = Array.isArray(photoPathsRaw)
+    ? photoPathsRaw.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+
+  if (!displayNickname) return NextResponse.json({ error: "닉네임(표시용)을 입력해주세요." }, { status: 400 });
+  if (!instagramId || !validInstagramId(instagramId)) {
     return NextResponse.json(
       { error: "인스타그램 아이디 형식이 올바르지 않습니다. (@ 제외, 영문/숫자/._, 최대 30자)" },
       { status: 400 }
     );
   }
+  if (age != null && (age < 19 || age > 99)) return NextResponse.json({ error: "나이를 확인해주세요." }, { status: 400 });
+  if (heightCm != null && (heightCm < 120 || heightCm > 230)) return NextResponse.json({ error: "키를 확인해주세요." }, { status: 400 });
+  if (trainingYears != null && (trainingYears < 0 || trainingYears > 50)) {
+    return NextResponse.json({ error: "운동경력을 확인해주세요." }, { status: 400 });
+  }
+  if (photoPaths.length < 1) {
+    return NextResponse.json({ error: "오픈카드 사진은 최소 1장 필요합니다." }, { status: 400 });
+  }
+  if (!blurThumbPath) {
+    return NextResponse.json({ error: "블러 썸네일 생성에 실패했습니다. 다시 시도해주세요." }, { status: 400 });
+  }
+  if (!photoPaths.every((path) => path.startsWith(`cards/${user.id}/raw/`))) {
+    return NextResponse.json({ error: "사진 경로가 올바르지 않습니다." }, { status: 400 });
+  }
+  if (!blurThumbPath.startsWith(`cards/${user.id}/blur/`)) {
+    return NextResponse.json({ error: "블러 썸네일 경로가 올바르지 않습니다." }, { status: 400 });
+  }
+
+  const adminClient = createAdminClient();
+  const available = await hasPublicSlot(adminClient, sex);
+
+  const now = new Date();
+  const publishedAt = available ? now.toISOString() : null;
+  const expiresAt = available ? new Date(now.getTime() + OPEN_CARD_EXPIRE_HOURS * 60 * 60 * 1000).toISOString() : null;
 
   const payload = {
     owner_user_id: user.id,
     sex,
+    display_nickname: displayNickname,
     age,
-    region: toText((body as { region?: unknown }).region, 30),
+    region: region || null,
     height_cm: heightCm,
-    job: toText((body as { job?: unknown }).job, 50),
+    job: job || null,
     training_years: trainingYears,
-    ideal_type: toText((body as { ideal_type?: unknown }).ideal_type, 1000),
-    owner_instagram_id: ownerInstagramId,
+    ideal_type: idealType || null,
+    instagram_id: instagramId,
+    photo_paths: photoPaths,
+    blur_thumb_path: blurThumbPath,
     total_3lift: sex === "male" ? total3Lift : null,
     percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
     is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
-    status: "pending" as const,
+    status: available ? ("public" as const) : ("pending" as const),
+    published_at: publishedAt,
+    expires_at: expiresAt,
   };
 
-  const adminClient = createAdminClient();
-  const { data, error } = await adminClient.from("dating_cards").insert(payload).select("id").single();
+  const { data, error } = await adminClient.from("dating_cards").insert(payload).select("id,status").single();
   if (error) {
     console.error("[POST /api/dating/cards/my] failed", error);
     return NextResponse.json({ error: "카드 생성에 실패했습니다." }, { status: 500 });
   }
 
-  return NextResponse.json({ id: data.id }, { status: 201 });
+  return NextResponse.json(
+    {
+      id: data.id,
+      status: data.status,
+      message:
+        data.status === "public"
+          ? "오픈카드가 공개되었습니다."
+          : "현재 공개 슬롯이 가득 찼어요. 대기열에 등록되었습니다.",
+    },
+    { status: 201 }
+  );
 }

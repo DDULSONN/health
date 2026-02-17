@@ -53,10 +53,7 @@ export async function GET() {
   }
 
   const cardIds = [...new Set(acceptedApps.map((app) => app.card_id))];
-  const cardsRes = await adminClient
-    .from("dating_cards")
-    .select("id, owner_user_id, owner_instagram_id")
-    .in("id", cardIds);
+  const cardsRes = await adminClient.from("dating_cards").select("id, owner_user_id, instagram_id").in("id", cardIds);
   if (cardsRes.error) {
     console.error("[GET /api/dating/cards/my/connections] cards failed", cardsRes.error);
     return NextResponse.json({ error: "연결 정보를 불러오지 못했습니다." }, { status: 500 });
@@ -65,10 +62,7 @@ export async function GET() {
   const cardsById = new Map((cardsRes.data ?? []).map((card) => [card.id, card]));
   const ownerIds = [...new Set((cardsRes.data ?? []).map((card) => card.owner_user_id))];
   const profileIds = [...new Set([...ownerIds, ...acceptedApps.map((app) => app.applicant_user_id)])];
-  const profilesRes = await adminClient
-    .from("profiles")
-    .select("user_id, nickname")
-    .in("user_id", profileIds);
+  const profilesRes = await adminClient.from("profiles").select("user_id, nickname").in("user_id", profileIds);
   const profileMap = new Map((profilesRes.data ?? []).map((p) => [p.user_id, p.nickname]));
 
   const items = acceptedApps
@@ -78,8 +72,8 @@ export async function GET() {
       const isOwnerView = card.owner_user_id === user.id;
       const otherUserId = isOwnerView ? app.applicant_user_id : card.owner_user_id;
       const otherNickname = profileMap.get(otherUserId) ?? "익명";
-      const myInstagram = isOwnerView ? card.owner_instagram_id ?? null : app.instagram_id;
-      const otherInstagram = isOwnerView ? app.instagram_id : card.owner_instagram_id ?? null;
+      const myInstagram = isOwnerView ? card.instagram_id ?? null : app.instagram_id;
+      const otherInstagram = isOwnerView ? app.instagram_id : card.instagram_id ?? null;
       return {
         application_id: app.id,
         card_id: app.card_id,

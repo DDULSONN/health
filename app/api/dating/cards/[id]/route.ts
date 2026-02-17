@@ -1,4 +1,4 @@
-import { createAdminClient } from "@/lib/supabase/server";
+﻿import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 export async function GET(
@@ -10,7 +10,7 @@ export async function GET(
   const { data, error } = await adminClient
     .from("dating_cards")
     .select(
-      "id, owner_user_id, sex, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, created_at, status"
+      "id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, blur_thumb_path, expires_at, created_at, status"
     )
     .eq("id", id)
     .single();
@@ -19,9 +19,36 @@ export async function GET(
     return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
   }
 
-  if (data.status !== "public") {
-    return NextResponse.json({ error: "접근 권한이 없습니다." }, { status: 403 });
+  if (data.status !== "public" || !data.expires_at || new Date(data.expires_at).getTime() <= Date.now()) {
+    return NextResponse.json({ error: "공개 중인 카드가 아닙니다." }, { status: 403 });
   }
 
-  return NextResponse.json({ card: data, can_apply: true });
+  let blurThumbUrl = "";
+  if (data.blur_thumb_path) {
+    const { data: signed } = await adminClient.storage
+      .from("dating-card-photos")
+      .createSignedUrl(data.blur_thumb_path, 600);
+    blurThumbUrl = signed?.signedUrl ?? "";
+  }
+
+  return NextResponse.json({
+    card: {
+      id: data.id,
+      sex: data.sex,
+      display_nickname: data.display_nickname,
+      age: data.age,
+      region: data.region,
+      height_cm: data.height_cm,
+      job: data.job,
+      training_years: data.training_years,
+      ideal_type: data.ideal_type,
+      total_3lift: data.total_3lift,
+      percent_all: data.percent_all,
+      is_3lift_verified: data.is_3lift_verified,
+      blur_thumb_url: blurThumbUrl,
+      expires_at: data.expires_at,
+      created_at: data.created_at,
+    },
+    can_apply: true,
+  });
 }
