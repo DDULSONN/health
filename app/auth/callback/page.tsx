@@ -13,6 +13,7 @@ const IN_APP_UA_PATTERNS = ["kakaotalk", "instagram", "naver", "fban", "fbav", "
 
 type CallbackState = {
   next: string;
+  email: string;
   code: string | null;
   tokenHash: string | null;
   otpType: string | null;
@@ -26,12 +27,16 @@ type CallbackState = {
 type ViewState =
   | { kind: "processing" }
   | { kind: "success" }
-  | { kind: "failure"; detail: string };
+  | { kind: "recovery"; detail: string };
 
 function safeNextPath(input: string | null): string {
   if (!input || !input.startsWith("/")) return "/";
   if (input.startsWith("//")) return "/";
   return input;
+}
+
+function normalizeEmail(input: string | null): string {
+  return (input ?? "").trim().toLowerCase();
 }
 
 function isInAppBrowser(ua: string): boolean {
@@ -52,6 +57,7 @@ function parseStateFromLocation(): CallbackState {
 
   return {
     next: safeNextPath(merged.get("next")),
+    email: normalizeEmail(merged.get("email")),
     code: merged.get("code"),
     tokenHash: merged.get("token_hash"),
     otpType: merged.get("type"),
@@ -69,6 +75,13 @@ function buildCanonicalCallbackUrl(next: string): string {
   return url.toString();
 }
 
+function buildLoginHref(next: string, email: string): string {
+  const params = new URLSearchParams();
+  params.set("next", safeNextPath(next));
+  if (email) params.set("email", email);
+  return `/login?${params.toString()}`;
+}
+
 export default function AuthCallbackPage() {
   const router = useRouter();
   const [state, setState] = useState<CallbackState | null>(null);
@@ -83,8 +96,9 @@ export default function AuthCallbackPage() {
     setState(parsed);
     setInAppBrowser(isInAppBrowser(navigator.userAgent));
 
-    const stored = window.localStorage.getItem(STORED_EMAIL_KEY) ?? "";
-    if (stored) setEmail(stored);
+    const stored = normalizeEmail(window.localStorage.getItem(STORED_EMAIL_KEY));
+    const seedEmail = parsed.email || stored;
+    if (seedEmail) setEmail(seedEmail);
 
     (async () => {
       const supabase = createClient();
@@ -170,29 +184,26 @@ export default function AuthCallbackPage() {
         return;
       }
 
-      setViewState({
-        kind: "failure",
-        detail: parsed.errorCode?.toLowerCase() ?? parsed.error?.toLowerCase() ?? "",
-      });
+      const detail = parsed.errorCode?.toLowerCase() ?? parsed.error?.toLowerCase() ?? "";
+      setViewState({ kind: "recovery", detail });
     })();
   }, [router]);
 
-  const errorMessage = useMemo(() => {
-    if (!state) return "";
-    const code = state.errorCode?.toLowerCase() ?? state.error?.toLowerCase() ?? "";
+  const recoveryMessage = useMemo(() => {
+    if (!state || viewState.kind !== "recovery") return "";
 
-    if (code === "otp_expired") return "This link has expired. Please request a new one.";
-    if (code === "access_denied") return "This link could not be verified. Please request a new one.";
-    if (code === "flow_state_missing") return "Session state is missing. Please retry in the same browser.";
+    if (viewState.detail === "otp_expired" || viewState.detail === "access_denied") {
+      return "링크가 만료되었을 수 있지만, 계정은 정상 생성되었을 수 있어요. 로그인해 보세요.";
+    }
+
     if (state.errorDescription) return state.errorDescription;
-    if (state.error || state.errorCode) return "An error occurred while processing sign in.";
-    return "Could not verify this link.";
-  }, [state]);
+    return "인증 링크를 확인할 수 없지만, 계정은 이미 준비되었을 수 있어요. 로그인해 보세요.";
+  }, [state, viewState]);
 
   const handleResend = async () => {
-    const normalized = email.trim().toLowerCase();
+    const normalized = normalizeEmail(email);
     if (!normalized) {
-      setMessage("Please enter your email.");
+      setMessage("이메일을 입력해 주세요.");
       return;
     }
 
@@ -224,9 +235,9 @@ export default function AuthCallbackPage() {
       }
 
       window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
-      setMessage(isSignupLink ? "Verification email sent again. Please check your inbox." : "Login link sent. Please check your inbox.");
+      setMessage("인증 메일을 보냈어요. 인앱 브라우저에서는 실패할 수 있어 Safari/Chrome으로 열어주세요.");
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "Failed to send login link.");
+      setMessage(e instanceof Error ? e.message : "인증 메일 전송에 실패했어요.");
     } finally {
       setSending(false);
     }
@@ -248,16 +259,16 @@ export default function AuthCallbackPage() {
   const handleCopyLink = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
-      setMessage("Current link copied.");
+      setMessage("현재 링크를 복사했어요.");
     } catch {
-      setMessage("Failed to copy link. Please copy it from the address bar.");
+      setMessage("링크 복사에 실패했어요. 주소창에서 직접 복사해 주세요.");
     }
   };
 
   if (!state || viewState.kind === "processing") {
     return (
       <main className="max-w-sm mx-auto px-4 py-20">
-        <p className="text-sm text-neutral-500 text-center">Processing sign in...</p>
+        <p className="text-sm text-neutral-500 text-center">인증 상태를 확인하고 있어요...</p>
       </main>
     );
   }
@@ -266,21 +277,21 @@ export default function AuthCallbackPage() {
     return (
       <main className="max-w-sm mx-auto px-4 py-16">
         <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4">
-          <h1 className="text-base font-semibold text-emerald-900">Email verified</h1>
-          <p className="mt-1 text-sm text-emerald-800">Please sign in to continue.</p>
+          <h1 className="text-base font-semibold text-emerald-900">이메일 인증 완료!</h1>
+          <p className="mt-1 text-sm text-emerald-800">이제 로그인해서 계속 진행해 주세요.</p>
 
           <div className="mt-4 grid grid-cols-1 gap-2">
             <Link
-              href={`/login?next=${encodeURIComponent(state.next || "/")}`}
+              href={buildLoginHref(state.next || "/", email)}
               className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-emerald-600 text-white text-sm font-medium"
             >
-              Go to login
+              로그인하러 가기
             </Link>
             <Link
               href="/"
               className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-emerald-300 bg-white text-emerald-900 text-sm font-medium"
             >
-              Go home
+              홈으로
             </Link>
           </div>
         </div>
@@ -288,19 +299,25 @@ export default function AuthCallbackPage() {
     );
   }
 
-  const isExpired = viewState.detail === "otp_expired";
-
   return (
     <main className="max-w-sm mx-auto px-4 py-16">
       <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
-        <h1 className="text-base font-semibold text-amber-900">Verification link expired</h1>
-        <p className="mt-1 text-sm text-amber-800">{isExpired ? "Request a new link below." : errorMessage}</p>
-        {inAppBrowser && (
-          <p className="mt-1 text-xs text-amber-800">In-app browsers can fail. Open in Safari or Chrome.</p>
-        )}
+        <h1 className="text-base font-semibold text-amber-900">이메일 인증 확인</h1>
+        <p className="mt-1 text-sm text-amber-800">{recoveryMessage}</p>
 
-        <div className="mt-3 space-y-2">
+        <div className="mt-3 grid grid-cols-1 gap-2">
+          <Link
+            href={buildLoginHref(state.next || "/", email)}
+            className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-amber-600 text-white text-sm font-medium"
+          >
+            로그인하러 가기
+          </Link>
+
+          <label htmlFor="callback-email" className="text-xs text-amber-900">
+            이메일
+          </label>
           <input
+            id="callback-email"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -312,44 +329,31 @@ export default function AuthCallbackPage() {
             type="button"
             onClick={handleResend}
             disabled={sending}
-            className="w-full min-h-[44px] rounded-lg bg-amber-600 text-white text-sm font-medium disabled:opacity-50"
+            className="w-full min-h-[44px] rounded-lg border border-amber-300 bg-white text-amber-900 text-sm font-medium disabled:opacity-50"
           >
-            {sending ? "Sending..." : "Send new link"}
+            {sending ? "재발송 중..." : "인증 메일 다시 받기"}
           </button>
           {message && <p className="text-xs text-amber-900">{message}</p>}
-        </div>
 
-        <div className="mt-3 grid grid-cols-1 gap-2">
-          <Link
-            href={`/login?next=${encodeURIComponent(state.next || "/")}`}
-            className="inline-flex min-h-[42px] items-center justify-center rounded-lg bg-white text-amber-900 border border-amber-300 text-sm font-medium"
-          >
-            Go to login
-          </Link>
           {inAppBrowser && (
             <>
+              <p className="text-xs text-amber-800">인앱 브라우저에서는 실패할 수 있어요. Safari/Chrome으로 열어주세요.</p>
               <button
                 type="button"
                 onClick={handleOpenExternal}
                 className="min-h-[42px] rounded-lg bg-amber-600 text-white text-sm font-medium"
               >
-                Open in Safari or Chrome
+                Safari/Chrome으로 열기
               </button>
               <button
                 type="button"
                 onClick={handleCopyLink}
                 className="min-h-[42px] rounded-lg border border-amber-300 bg-white text-amber-900 text-sm font-medium"
               >
-                Copy link
+                링크 복사
               </button>
             </>
           )}
-          <Link
-            href="/"
-            className="inline-flex min-h-[42px] items-center justify-center rounded-lg border border-amber-300 bg-white text-amber-900 text-sm font-medium"
-          >
-            Go home
-          </Link>
         </div>
       </div>
     </main>
