@@ -77,6 +77,42 @@ type DatingConnection = {
   other_instagram_id: string | null;
 };
 
+type AdminOpenCard = {
+  id: string;
+  owner_user_id: string;
+  owner_nickname: string | null;
+  sex: "male" | "female";
+  age: number | null;
+  region: string | null;
+  height_cm: number | null;
+  job: string | null;
+  training_years: number | null;
+  ideal_type: string | null;
+  owner_instagram_id: string | null;
+  total_3lift: number | null;
+  percent_all: number | null;
+  is_3lift_verified: boolean;
+  status: "pending" | "public" | "hidden";
+  created_at: string;
+};
+
+type AdminOpenCardApplication = {
+  id: string;
+  card_id: string;
+  applicant_user_id: string;
+  applicant_nickname: string | null;
+  age: number | null;
+  height_cm: number | null;
+  region: string | null;
+  job: string | null;
+  training_years: number | null;
+  intro_text: string | null;
+  instagram_id: string;
+  photo_urls: string[];
+  status: "submitted" | "accepted" | "rejected" | "canceled";
+  created_at: string;
+};
+
 type MyCertificate = {
   id: string;
   certificate_no: string;
@@ -122,6 +158,8 @@ export default function MyPage() {
   const [myDatingCards, setMyDatingCards] = useState<MyDatingCard[]>([]);
   const [receivedApplications, setReceivedApplications] = useState<ReceivedCardApplication[]>([]);
   const [datingConnections, setDatingConnections] = useState<DatingConnection[]>([]);
+  const [adminOpenCards, setAdminOpenCards] = useState<AdminOpenCard[]>([]);
+  const [adminOpenCardApplications, setAdminOpenCardApplications] = useState<AdminOpenCardApplication[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState<MyPageTab>("my_cert");
   const [error, setError] = useState("");
@@ -192,14 +230,34 @@ export default function MyPage() {
         }
 
         if (isMounted) {
+          const adminFlag = Boolean(adminBody.isAdmin);
           setSummary(summaryBody);
           setCertRequests(certBody.requests ?? []);
-          setIsAdmin(Boolean(adminBody.isAdmin));
+          setIsAdmin(adminFlag);
           setDatingApplication(datingBody.application ?? null);
           setMyDatingCards(receivedBody.cards ?? []);
           setReceivedApplications(receivedBody.applications ?? []);
           setDatingConnections(connectionsBody.items ?? []);
           setError("");
+
+          if (adminFlag) {
+            const overviewRes = await fetch("/api/dating/cards/admin/overview", { cache: "no-store" });
+            const overviewBody = (await overviewRes.json().catch(() => ({}))) as {
+              error?: string;
+              cards?: AdminOpenCard[];
+              applications?: AdminOpenCardApplication[];
+            };
+            if (!overviewRes.ok) {
+              throw new Error(overviewBody.error ?? "관리자 오픈카드 데이터를 불러오지 못했습니다.");
+            }
+            if (isMounted) {
+              setAdminOpenCards(overviewBody.cards ?? []);
+              setAdminOpenCardApplications(overviewBody.applications ?? []);
+            }
+          } else {
+            setAdminOpenCards([]);
+            setAdminOpenCardApplications([]);
+          }
         }
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
@@ -592,6 +650,83 @@ export default function MyPage() {
           </div>
         )}
       </section>
+
+      {isAdmin && (
+        <section className="mb-5 rounded-2xl border border-violet-200 bg-violet-50/40 p-5">
+          <h2 className="text-lg font-bold text-violet-900 mb-3">오픈카드 전체 내용 (관리자)</h2>
+
+          <div className="space-y-3">
+            <h3 className="text-sm font-semibold text-violet-800">
+              카드 {adminOpenCards.length}건 / 지원서 {adminOpenCardApplications.length}건
+            </h3>
+
+            {adminOpenCards.length === 0 ? (
+              <p className="text-sm text-neutral-600">등록된 오픈카드가 없습니다.</p>
+            ) : (
+              <div className="space-y-2">
+                {adminOpenCards.map((card) => (
+                  <div key={card.id} className="rounded-xl border border-violet-200 bg-white p-3">
+                    <p className="text-sm font-semibold text-neutral-900">
+                      카드 {card.id.slice(0, 8)}... / {card.sex} / 상태 {card.status}
+                    </p>
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
+                      <span>owner: {card.owner_nickname ?? card.owner_user_id.slice(0, 8)}</span>
+                      {card.age != null && <span>나이 {card.age}</span>}
+                      {card.height_cm != null && <span>키 {card.height_cm}cm</span>}
+                      {card.region && <span>지역 {card.region}</span>}
+                      {card.job && <span>직업 {card.job}</span>}
+                      {card.training_years != null && <span>운동 {card.training_years}년</span>}
+                      {card.total_3lift != null && <span>3대 {card.total_3lift}kg</span>}
+                      {card.percent_all != null && <span>상위 {card.percent_all}%</span>}
+                    </div>
+                    {card.owner_instagram_id && (
+                      <p className="mt-1 text-xs font-medium text-violet-700">
+                        카드 소유자 인스타: @{card.owner_instagram_id}
+                      </p>
+                    )}
+                    {card.ideal_type && (
+                      <p className="mt-1 text-xs text-neutral-700 whitespace-pre-wrap break-words">
+                        이상형: {card.ideal_type}
+                      </p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {adminOpenCardApplications.length === 0 ? (
+              <p className="text-sm text-neutral-600">등록된 지원서가 없습니다.</p>
+            ) : (
+              <div className="space-y-2">
+                {adminOpenCardApplications.map((app) => (
+                  <div key={app.id} className="rounded-xl border border-violet-200 bg-white p-3">
+                    <p className="text-sm font-semibold text-neutral-900">
+                      지원서 {app.id.slice(0, 8)}... / 카드 {app.card_id.slice(0, 8)}... / 상태 {app.status}
+                    </p>
+                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
+                      <span>지원자: {app.applicant_nickname ?? app.applicant_user_id.slice(0, 8)}</span>
+                      {app.age != null && <span>나이 {app.age}</span>}
+                      {app.height_cm != null && <span>키 {app.height_cm}cm</span>}
+                      {app.region && <span>지역 {app.region}</span>}
+                      {app.job && <span>직업 {app.job}</span>}
+                      {app.training_years != null && <span>운동 {app.training_years}년</span>}
+                    </div>
+                    <p className="mt-1 text-xs font-medium text-violet-700">인스타: @{app.instagram_id}</p>
+                    {app.intro_text && (
+                      <p className="mt-1 text-xs text-neutral-700 whitespace-pre-wrap break-words">
+                        자기소개: {app.intro_text}
+                      </p>
+                    )}
+                    <p className="mt-1 text-xs text-neutral-500 break-all">
+                      사진 경로: {Array.isArray(app.photo_urls) ? app.photo_urls.join(", ") : "-"}
+                    </p>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       <div className="mb-5">
         <MyLiftGrowthChart />
