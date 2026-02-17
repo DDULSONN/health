@@ -10,6 +10,7 @@ type Application = {
   name: string;
   phone: string;
   phone_masked: string;
+  instagram_id: string | null;
   region: string;
   height_cm: number;
   job: string;
@@ -331,6 +332,38 @@ export default function AdminDatingPage() {
                   <p><span className="text-neutral-500">지역:</span> {detail.region}</p>
                   <p><span className="text-neutral-500">키:</span> {detail.height_cm}cm</p>
                   <p><span className="text-neutral-500">직업:</span> {detail.job}</p>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-neutral-500">인스타그램:</span>
+                    <span className="font-medium text-neutral-800">
+                      {normalizeInstagramHandle(detail.instagram_id) || "-"}
+                    </span>
+                    {normalizeInstagramHandle(detail.instagram_id) && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            try {
+                              await navigator.clipboard.writeText(normalizeInstagramHandle(detail.instagram_id));
+                              alert("인스타그램 아이디를 복사했습니다.");
+                            } catch {
+                              alert("복사에 실패했습니다.");
+                            }
+                          }}
+                          className="px-2 py-1 rounded border border-neutral-300 text-xs text-neutral-700 hover:bg-neutral-50"
+                        >
+                          복사
+                        </button>
+                        <a
+                          href={`https://instagram.com/${encodeURIComponent(normalizeInstagramHandle(detail.instagram_id))}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="px-2 py-1 rounded border border-blue-300 text-xs text-blue-700 hover:bg-blue-50"
+                        >
+                          인스타 열기
+                        </a>
+                      </>
+                    )}
+                  </div>
                   <p><span className="text-neutral-500">이상형:</span></p>
                   <p className="bg-neutral-50 rounded-lg p-3 text-neutral-700 whitespace-pre-wrap">{detail.ideal_type}</p>
                   <p><span className="text-neutral-500">개인정보 동의:</span> {detail.consent_privacy ? "O" : "X"}</p>
@@ -542,4 +575,8 @@ export default function AdminDatingPage() {
 function maskPhone(phone: string): string {
   if (!phone || phone.length < 7) return phone ?? "";
   return phone.slice(0, 3) + "****" + phone.slice(-4);
+}
+
+function normalizeInstagramHandle(value: string | null | undefined): string {
+  return (value ?? "").trim().replace(/^@+/, "");
 }

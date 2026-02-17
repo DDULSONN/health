@@ -27,6 +27,10 @@ function normalizeSex(value: unknown): Sex | null {
   return null;
 }
 
+function normalizeInstagramId(value: string): string {
+  return value.trim().replace(/^@+/, "").replace(/\s+/g, "").slice(0, 30);
+}
+
 function getFileExtension(fileName: string): string {
   const ext = fileName.split(".").pop()?.toLowerCase();
   return ext && ext.length > 0 ? ext : "";
@@ -117,6 +121,7 @@ export default function DatingApplyPage() {
   const [heightCm, setHeightCm] = useState("");
   const [job, setJob] = useState("");
   const [trainingYears, setTrainingYears] = useState("");
+  const [instagramId, setInstagramId] = useState("");
   const [idealType, setIdealType] = useState("");
 
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
@@ -205,6 +210,12 @@ export default function DatingApplyPage() {
     if (normalizedSex === "male" && !certApproved) { setError("남성은 3대 인증이 필요합니다."); return; }
     if (!age || Number(age) < 19 || Number(age) > 45) { setError("나이를 입력해주세요. (19~45세)"); return; }
     if (!photos[0] || !photos[1]) { setError("사진 2장을 모두 업로드해주세요."); return; }
+    const normalizedInstagramId = normalizeInstagramId(instagramId);
+    if (!normalizedInstagramId) { setError("인스타그램 아이디를 입력해주세요."); return; }
+    if (!/^[A-Za-z0-9._]{1,30}$/.test(normalizedInstagramId)) {
+      setError("인스타그램 아이디 형식이 올바르지 않습니다. (@ 제외, 영문/숫자/._, 최대 30자)");
+      return;
+    }
     if (!consentPrivacy) { setError("개인정보 수집·이용에 동의해주세요."); return; }
 
     setSubmitting(true);
@@ -219,6 +230,7 @@ export default function DatingApplyPage() {
         height_cm: Number(heightCm),
         job: job.trim(),
         training_years: Number(trainingYears),
+        instagram_id: normalizedInstagramId,
         ideal_type: idealType.trim(),
         consent_privacy: consentPrivacy,
         consent_content: consentContent,
@@ -502,6 +514,18 @@ export default function DatingApplyPage() {
             </div>
 
             <div>
+              <label htmlFor="instagramId" className="block text-sm font-medium text-neutral-700 mb-1">인스타그램 아이디 (필수)</label>
+              <input
+                id="instagramId"
+                type="text"
+                required
+                maxLength={30}
+                value={instagramId}
+                onChange={(e) => setInstagramId(normalizeInstagramId(e.target.value))}
+                className="w-full h-12 rounded-xl border border-neutral-300 bg-white px-3 mb-3"
+                placeholder="instagram_id (@ 없이 입력)"
+              />
+
               <label htmlFor="idealType" className="block text-sm font-medium text-neutral-700 mb-1">이상형 (필수)</label>
               <textarea
                 id="idealType"
@@ -576,6 +600,9 @@ export default function DatingApplyPage() {
                 <p className="text-xs text-neutral-700 leading-5 mt-2">
                   매칭이 성사될 경우, 원활한 소통을 위해 상대방과 직접 연락이 이루어질 수 있습니다.
                   이에 동의하는 경우에만 신청해 주세요.
+                </p>
+                <p className="text-xs text-neutral-700 leading-5 mt-2">
+                  매칭이 성사되면 연락을 위해 인스타그램 아이디가 상대에게 공유될 수 있습니다.
                 </p>
               </div>
             </div>

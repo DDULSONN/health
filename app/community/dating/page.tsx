@@ -13,8 +13,20 @@ type DatingCard = {
   total_3lift?: number;
   percent_all?: number;
   training_years?: number;
+  ideal_type?: string;
   created_at: string;
 };
+
+function maskIdealTypeForPreview(value?: string): string {
+  const raw = value?.trim() ?? "";
+  if (!raw) return "";
+
+  const sensitivePattern =
+    /(010|@|kakao|openchat|instagram|insta|\uCE74\uD1A1|\uC624\uD508\uCC44\uD305|\uC778\uC2A4\uD0C0)/i;
+
+  if (sensitivePattern.test(raw)) return "***";
+  return raw;
+}
 
 export default function DatingListPage() {
   const [males, setMales] = useState<DatingCard[]>([]);
@@ -115,6 +127,8 @@ function EmptyState() {
 }
 
 function MaleCard({ card }: { card: DatingCard }) {
+  const maskedIdealType = maskIdealTypeForPreview(card.ideal_type);
+
   return (
     <Link
       href={`/community/dating/${card.id}`}
@@ -143,6 +157,7 @@ function MaleCard({ card }: { card: DatingCard }) {
         {card.training_years != null && (
           <p className="text-xs text-neutral-500 mb-1">운동경력 {card.training_years}년</p>
         )}
+        {maskedIdealType && <p className="text-xs text-pink-700 mb-1 truncate">💘 이상형: {maskedIdealType}</p>}
         <div className="flex items-center gap-2">
           {card.total_3lift != null && (
             <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700">
@@ -171,6 +186,7 @@ function MaleCard({ card }: { card: DatingCard }) {
 
 function FemaleCard({ card }: { card: DatingCard }) {
   const hasSbd = card.total_3lift != null && card.total_3lift > 0;
+  const maskedIdealType = maskIdealTypeForPreview(card.ideal_type);
 
   return (
     <Link
@@ -200,6 +216,7 @@ function FemaleCard({ card }: { card: DatingCard }) {
         {card.training_years != null && (
           <p className="text-xs text-neutral-500 mb-1">운동경력 {card.training_years}년</p>
         )}
+        {maskedIdealType && <p className="text-xs text-pink-700 mb-1 truncate">💘 이상형: {maskedIdealType}</p>}
         {hasSbd && (
           <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-pink-100 text-pink-700">
             SBD 입력

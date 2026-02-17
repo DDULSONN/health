@@ -13,6 +13,7 @@ create table if not exists public.dating_applications (
   region text not null,
   height_cm int not null check (height_cm between 120 and 220),
   job text not null,
+  instagram_id text not null check (instagram_id ~ '^[A-Za-z0-9._]{1,30}$'),
   ideal_type text not null check (length(ideal_type) <= 1000),
   photo_urls jsonb not null default '[]'::jsonb,
   consent_privacy boolean not null default false,

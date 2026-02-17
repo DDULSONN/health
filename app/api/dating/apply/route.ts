@@ -27,6 +27,15 @@ function toInteger(value: unknown): number | null {
   return null;
 }
 
+function normalizeInstagramId(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim().replace(/^@+/, "").replace(/\s+/g, "");
+}
+
+function isValidInstagramId(value: string): boolean {
+  return /^[A-Za-z0-9._]{1,30}$/.test(value);
+}
+
 function formatDbError(error: PostgrestError): string {
   return [
     error.code ? `[${error.code}]` : null,
@@ -138,7 +147,7 @@ export async function POST(request: Request) {
       return jsonError(400, "잘못된 요청입니다.", "INVALID_JSON");
     }
 
-    const { sex, name, phone, region, age, height_cm, job, ideal_type, training_years, consent_privacy, consent_content } = body as {
+    const { sex, name, phone, region, age, height_cm, job, ideal_type, training_years, instagram_id, consent_privacy, consent_content } = body as {
       sex?: string;
       name?: string;
       phone?: string;
@@ -148,6 +157,7 @@ export async function POST(request: Request) {
       job?: string;
       ideal_type?: string;
       training_years?: number | string;
+      instagram_id?: string;
       consent_privacy?: boolean;
       consent_content?: boolean;
     };
@@ -156,6 +166,7 @@ export async function POST(request: Request) {
     const parsedAge = toInteger(age);
     const parsedHeightCm = toInteger(height_cm);
     const parsedTrainingYears = toInteger(training_years);
+    const normalizedInstagramId = normalizeInstagramId(instagram_id);
     maskedBody = buildMaskedInsertPayload({
       sex,
       name,
@@ -166,6 +177,7 @@ export async function POST(request: Request) {
       job,
       ideal_type,
       training_years,
+      instagram_id: normalizedInstagramId ? "***" : "",
       consent_privacy,
       consent_content,
     });
@@ -197,6 +209,17 @@ export async function POST(request: Request) {
     }
     if (parsedTrainingYears == null || parsedTrainingYears < 0 || parsedTrainingYears > 30) {
       return jsonError(400, "운동경력을 입력해주세요. (0~30년)", "VALIDATION_ERROR", "training_years must be 0-30");
+    }
+    if (!normalizedInstagramId) {
+      return jsonError(400, "인스타그램 아이디를 입력해주세요.", "VALIDATION_ERROR", "instagram_id is required");
+    }
+    if (!isValidInstagramId(normalizedInstagramId)) {
+      return jsonError(
+        400,
+        "인스타그램 아이디 형식이 올바르지 않습니다. (@ 제외, 영문/숫자/._, 최대 30자)",
+        "VALIDATION_ERROR",
+        "instagram_id must match ^[A-Za-z0-9._]{1,30}$"
+      );
     }
     if (!consent_privacy) {
       return jsonError(400, "개인정보 수집·이용에 동의해주세요.", "VALIDATION_ERROR", "consent_privacy must be true");
@@ -280,6 +303,7 @@ export async function POST(request: Request) {
       job: job.trim(),
       ideal_type: ideal_type.trim(),
       training_years: parsedTrainingYears,
+      instagram_id: normalizedInstagramId,
       display_nickname: displayNickname,
       consent_privacy: !!consent_privacy,
       consent_content: !!consent_content,
