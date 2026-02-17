@@ -3,6 +3,13 @@ import { OPEN_CARD_EXPIRE_HOURS, OPEN_CARD_LIMIT_PER_SEX } from "@/lib/dating-op
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
+function isMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || message.includes("could not find") || message.includes("column");
+}
+
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -41,12 +48,23 @@ export async function PATCH(
   } = { status };
 
   if (status === "public") {
-    const { count, error: slotError } = await adminClient
+    let { count, error: slotError } = await adminClient
       .from("dating_cards")
       .select("id", { count: "exact", head: true })
       .eq("sex", card.sex)
       .eq("status", "public")
       .gt("expires_at", new Date().toISOString());
+
+    // Legacy fallback when expires_at column is not available yet.
+    if (slotError && isMissingColumnError(slotError)) {
+      const legacy = await adminClient
+        .from("dating_cards")
+        .select("id", { count: "exact", head: true })
+        .eq("sex", card.sex)
+        .eq("status", "public");
+      count = legacy.count;
+      slotError = legacy.error;
+    }
 
     if (slotError) {
       console.error("[PATCH /api/admin/dating/cards/[id]] slot count failed", slotError);
@@ -70,9 +88,14 @@ export async function PATCH(
     updatePayload.expires_at = new Date().toISOString();
   }
 
-  const { error } = await adminClient.from("dating_cards").update(updatePayload).eq("id", id);
-  if (error) {
-    console.error("[PATCH /api/admin/dating/cards/[id]] failed", error);
+  let updateRes = await adminClient.from("dating_cards").update(updatePayload).eq("id", id);
+  if (updateRes.error && isMissingColumnError(updateRes.error)) {
+    // Legacy fallback when published_at / expires_at columns are absent.
+    updateRes = await adminClient.from("dating_cards").update({ status }).eq("id", id);
+  }
+
+  if (updateRes.error) {
+    console.error("[PATCH /api/admin/dating/cards/[id]] failed", updateRes.error);
     return NextResponse.json({ error: "상태 변경에 실패했습니다." }, { status: 500 });
   }
 
