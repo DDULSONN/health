@@ -12,9 +12,9 @@ type CardDetail = {
   age: number;
   thumb_url: string;
   is_blur_fallback?: boolean;
-  region: string;
   height_cm: number;
   training_years?: number;
+  ideal_type?: string | null;
   total_3lift?: number;
   percent_all?: number;
   has_sbd?: boolean;
@@ -174,8 +174,6 @@ export default function DatingDetailPage() {
           <div className="flex flex-wrap items-center gap-2 text-sm text-neutral-600">
             <span>{card.age}세</span>
             <span className="text-neutral-300">|</span>
-            <span>{card.region}</span>
-            <span className="text-neutral-300">|</span>
             <span>{card.height_cm}cm</span>
           </div>
           {card.training_years != null && (
@@ -204,6 +202,15 @@ export default function DatingDetailPage() {
               </span>
             )}
           </div>
+
+          {!!card.ideal_type?.trim() && (
+            <div className="mt-4 rounded-xl border border-pink-100 bg-pink-50 p-3">
+              <p className="text-sm font-semibold text-pink-700">💘 이상형</p>
+              <p className="mt-1 text-sm text-neutral-700 whitespace-pre-wrap break-words">
+                {card.ideal_type}
+              </p>
+            </div>
+          )}
         </div>
       </div>
 

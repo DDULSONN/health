@@ -27,7 +27,7 @@ export async function GET(
   // 공개 카드만 조회
   const { data: app, error } = await adminClient
     .from("dating_applications")
-    .select("id, sex, display_nickname, age, thumb_blur_path, photo_urls, total_3lift, percent_all, training_years, region, height_cm, created_at")
+    .select("id, sex, display_nickname, age, thumb_blur_path, total_3lift, percent_all, training_years, height_cm, ideal_type, created_at")
     .eq("id", id)
     .eq("approved_for_public", true)
     .single();
@@ -38,23 +38,12 @@ export async function GET(
 
   // 블러 썸네일 signed URL
   let thumbUrl = "";
-  let isBlurFallback = false;
+  const isBlurFallback = false;
   if (app.thumb_blur_path) {
     const { data } = await adminClient.storage
       .from("dating-photos")
       .createSignedUrl(app.thumb_blur_path, 600);
     thumbUrl = data?.signedUrl ?? "";
-  }
-  if (!thumbUrl) {
-    const photoPaths = Array.isArray(app.photo_urls) ? app.photo_urls : [];
-    const firstPhotoPath = typeof photoPaths[0] === "string" ? photoPaths[0] : "";
-    if (firstPhotoPath) {
-      const { data } = await adminClient.storage
-        .from("dating-photos")
-        .createSignedUrl(firstPhotoPath, 600);
-      thumbUrl = data?.signedUrl ?? "";
-      isBlurFallback = !!thumbUrl;
-    }
   }
 
   // 댓글 조회
@@ -91,9 +80,9 @@ export async function GET(
     age: app.age,
     thumb_url: thumbUrl,
     is_blur_fallback: isBlurFallback,
-    region: app.region,
     height_cm: app.height_cm,
     training_years: app.training_years,
+    ideal_type: app.ideal_type,
   };
 
   if (normalizeSex(app.sex) === "male") {
