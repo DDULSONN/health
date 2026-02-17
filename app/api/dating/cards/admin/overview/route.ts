@@ -14,22 +14,63 @@ export async function GET() {
 
   const adminClient = createAdminClient();
 
-  const [cardsRes, appsRes] = await Promise.all([
-    adminClient
+  let cardsRes: any = await adminClient
+    .from("dating_cards")
+    .select(
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, instagram_id, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, status, published_at, expires_at, created_at"
+    )
+    .order("created_at", { ascending: false })
+    .limit(300);
+
+  if (cardsRes.error && cardsRes.error.code === "42703") {
+    cardsRes = await adminClient
       .from("dating_cards")
       .select(
-        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, instagram_id, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, status, published_at, expires_at, created_at"
+        "id, owner_user_id, sex, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, status, created_at"
       )
       .order("created_at", { ascending: false })
-      .limit(300),
-    adminClient
+      .limit(300);
+
+    cardsRes = {
+      ...cardsRes,
+      data: (cardsRes.data ?? []).map((card: any) => ({
+        ...card,
+        display_nickname: null,
+        instagram_id: null,
+        photo_paths: [],
+        blur_thumb_path: null,
+        published_at: null,
+        expires_at: null,
+      })),
+    };
+  }
+
+  let appsRes: any = await adminClient
+    .from("dating_card_applications")
+    .select(
+      "id, card_id, applicant_user_id, applicant_display_nickname, age, height_cm, region, job, training_years, intro_text, instagram_id, photo_paths, status, created_at"
+    )
+    .order("created_at", { ascending: false })
+    .limit(1000);
+
+  if (appsRes.error && appsRes.error.code === "42703") {
+    appsRes = await adminClient
       .from("dating_card_applications")
       .select(
-        "id, card_id, applicant_user_id, applicant_display_nickname, age, height_cm, region, job, training_years, intro_text, instagram_id, photo_paths, status, created_at"
+        "id, card_id, applicant_user_id, age, height_cm, region, job, training_years, intro_text, instagram_id, photo_urls, status, created_at"
       )
       .order("created_at", { ascending: false })
-      .limit(1000),
-  ]);
+      .limit(1000);
+
+    appsRes = {
+      ...appsRes,
+      data: (appsRes.data ?? []).map((app: any) => ({
+        ...app,
+        applicant_display_nickname: null,
+        photo_paths: app.photo_urls ?? [],
+      })),
+    };
+  }
 
   if (cardsRes.error || appsRes.error) {
     console.error("[GET /api/dating/cards/admin/overview] failed", {
@@ -41,8 +82,8 @@ export async function GET() {
 
   const userIds = [
     ...new Set([
-      ...(cardsRes.data ?? []).map((card) => card.owner_user_id),
-      ...(appsRes.data ?? []).map((app) => app.applicant_user_id),
+      ...(cardsRes.data ?? []).map((card: any) => card.owner_user_id),
+      ...(appsRes.data ?? []).map((app: any) => app.applicant_user_id),
     ]),
   ];
 
@@ -50,16 +91,16 @@ export async function GET() {
   if (userIds.length > 0) {
     const profilesRes = await adminClient.from("profiles").select("user_id, nickname").in("user_id", userIds);
     if (!profilesRes.error) {
-      nickMap = Object.fromEntries((profilesRes.data ?? []).map((p) => [p.user_id, p.nickname]));
+      nickMap = Object.fromEntries((profilesRes.data ?? []).map((p: any) => [p.user_id, p.nickname]));
     }
   }
 
-  const cards = (cardsRes.data ?? []).map((card) => ({
+  const cards = (cardsRes.data ?? []).map((card: any) => ({
     ...card,
     owner_nickname: nickMap[card.owner_user_id] ?? null,
   }));
 
-  const applications = (appsRes.data ?? []).map((app) => ({
+  const applications = (appsRes.data ?? []).map((app: any) => ({
     ...app,
     applicant_nickname: nickMap[app.applicant_user_id] ?? null,
   }));
