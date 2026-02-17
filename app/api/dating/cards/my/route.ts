@@ -213,6 +213,18 @@ export async function POST(req: Request) {
     expires_at: expiresAt,
   };
 
+  const legacyBase = {
+    owner_user_id: user.id,
+    sex,
+    age,
+    region: region || null,
+    height_cm: heightCm,
+    job: job || null,
+    training_years: trainingYears,
+    ideal_type: idealType || null,
+    status: available ? ("public" as const) : ("pending" as const),
+  };
+
   const insertCandidates: Record<string, unknown>[] = [
     payload,
     // Hybrid fallback: old instagram column + new photo column
@@ -235,6 +247,27 @@ export async function POST(req: Request) {
       instagram_id: instagramId,
       photo_urls: photoPaths,
       display_nickname: displayNickname,
+    },
+    // Legacy-safe candidate: no display/published/expires
+    {
+      ...legacyBase,
+      owner_instagram_id: instagramId,
+      photo_urls: photoPaths,
+      total_3lift: sex === "male" ? total3Lift : null,
+      percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
+      is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
+    },
+    // Ultra-legacy minimal candidate
+    {
+      ...legacyBase,
+      owner_instagram_id: instagramId,
+      photo_urls: photoPaths,
+    },
+    // Alternate minimal candidate (new instagram/photo names, no display/published/expires)
+    {
+      ...legacyBase,
+      instagram_id: instagramId,
+      photo_paths: photoPaths,
     },
   ];
 
