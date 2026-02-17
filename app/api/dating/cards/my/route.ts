@@ -44,7 +44,12 @@ async function hasPublicSlot(adminClient: ReturnType<typeof createAdminClient>, 
     error = legacy.error;
   }
 
-  if (error) throw error;
+  // Do not hard-fail card creation when slot query is unstable.
+  // Fallback policy: treat as no available public slot -> create pending card.
+  if (error) {
+    console.error("[hasPublicSlot] failed; fallback to pending", error);
+    return false;
+  }
   return (count ?? 0) < OPEN_CARD_LIMIT_PER_SEX;
 }
 
@@ -144,16 +149,7 @@ export async function POST(req: Request) {
   }
 
   const adminClient = createAdminClient();
-  let available = false;
-  try {
-    available = await hasPublicSlot(adminClient, sex);
-  } catch (e) {
-    console.error("[POST /api/dating/cards/my] slot check failed", e);
-    return NextResponse.json(
-      { error: "공개 슬롯 확인에 실패했습니다. 잠시 후 다시 시도해주세요." },
-      { status: 500 }
-    );
-  }
+  const available = await hasPublicSlot(adminClient, sex);
 
   const now = new Date();
   const publishedAt = available ? now.toISOString() : null;
