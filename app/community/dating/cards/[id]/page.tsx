@@ -70,12 +70,16 @@ export default function OpenCardDetailPage() {
           </span>
         </div>
 
-        {card.blur_thumb_url && (
-          <div className="mt-3 h-56 rounded-xl border border-neutral-100 bg-neutral-50 overflow-hidden flex items-center justify-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={card.blur_thumb_url} alt="" className="h-full w-full object-contain blur-[9px]" />
-          </div>
-        )}
+        <div className="mt-3 h-56 rounded-xl border border-neutral-100 bg-neutral-50 overflow-hidden flex items-center justify-center">
+          {card.blur_thumb_url ? (
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={card.blur_thumb_url} alt="" className="h-full w-full object-contain blur-[9px]" />
+            </>
+          ) : (
+            <div className="h-full w-full animate-pulse bg-neutral-100" />
+          )}
+        </div>
 
         <div className="mt-3 flex flex-wrap gap-2 text-xs text-neutral-600">
           {card.age != null && <span>나이 {card.age}세</span>}

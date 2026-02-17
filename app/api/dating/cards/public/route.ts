@@ -8,6 +8,20 @@ function parseIntSafe(value: string | null, fallback: number) {
   return Math.max(0, Math.floor(num));
 }
 
+async function createBlurThumbSignedUrl(adminClient: ReturnType<typeof createAdminClient>, path: string) {
+  const primary = await adminClient.storage.from("dating-card-photos").createSignedUrl(path, 3600);
+  if (!primary.error && primary.data?.signedUrl) {
+    return primary.data.signedUrl;
+  }
+
+  const legacy = await adminClient.storage.from("dating-photos").createSignedUrl(path, 3600);
+  if (!legacy.error && legacy.data?.signedUrl) {
+    return legacy.data.signedUrl;
+  }
+
+  return "";
+}
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const limit = Math.min(parseIntSafe(searchParams.get("limit"), 20), 50);
@@ -39,10 +53,7 @@ export async function GET(req: Request) {
     (data ?? []).map(async (row) => {
       let blurThumbUrl = "";
       if (row.blur_thumb_path) {
-        const { data: signed } = await adminClient.storage
-          .from("dating-card-photos")
-          .createSignedUrl(row.blur_thumb_path, 600);
-        blurThumbUrl = signed?.signedUrl ?? "";
+        blurThumbUrl = await createBlurThumbSignedUrl(adminClient, row.blur_thumb_path);
       }
       return {
         id: row.id,

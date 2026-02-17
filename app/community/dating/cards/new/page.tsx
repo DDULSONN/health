@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 
@@ -62,8 +62,20 @@ export default function NewDatingCardPage() {
   const [total3Lift, setTotal3Lift] = useState("");
   const [is3LiftVerified, setIs3LiftVerified] = useState(false);
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
+  const [previewUrls, setPreviewUrls] = useState<(string | null)[]>([null, null]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    const urls = photos.map((file) => (file ? URL.createObjectURL(file) : null));
+    setPreviewUrls(urls);
+
+    return () => {
+      urls.forEach((url) => {
+        if (url) URL.revokeObjectURL(url);
+      });
+    };
+  }, [photos]);
 
   const readErrorMessage = async (res: Response, fallback: string) => {
     const text = await res.text().catch(() => "");
@@ -221,9 +233,21 @@ export default function NewDatingCardPage() {
 
         <Field label="오픈카드 사진 1" required>
           <input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e) => setPhotos((prev) => [e.target.files?.[0] ?? null, prev[1]])} />
+          {previewUrls[0] && (
+            <div className="mt-2 h-40 w-full overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={previewUrls[0]} alt="사진 1 미리보기" className="h-full w-full object-contain" />
+            </div>
+          )}
         </Field>
         <Field label="오픈카드 사진 2(선택)">
           <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setPhotos((prev) => [prev[0], e.target.files?.[0] ?? null])} />
+          {previewUrls[1] && (
+            <div className="mt-2 h-40 w-full overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={previewUrls[1]} alt="사진 2 미리보기" className="h-full w-full object-contain" />
+            </div>
+          )}
         </Field>
 
         {error && <p className="text-sm text-red-600">{error}</p>}

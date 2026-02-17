@@ -1,6 +1,20 @@
 ﻿import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
+async function createBlurThumbSignedUrl(adminClient: ReturnType<typeof createAdminClient>, path: string) {
+  const primary = await adminClient.storage.from("dating-card-photos").createSignedUrl(path, 3600);
+  if (!primary.error && primary.data?.signedUrl) {
+    return primary.data.signedUrl;
+  }
+
+  const legacy = await adminClient.storage.from("dating-photos").createSignedUrl(path, 3600);
+  if (!legacy.error && legacy.data?.signedUrl) {
+    return legacy.data.signedUrl;
+  }
+
+  return "";
+}
+
 export async function GET(
   _req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -25,10 +39,7 @@ export async function GET(
 
   let blurThumbUrl = "";
   if (data.blur_thumb_path) {
-    const { data: signed } = await adminClient.storage
-      .from("dating-card-photos")
-      .createSignedUrl(data.blur_thumb_path, 600);
-    blurThumbUrl = signed?.signedUrl ?? "";
+    blurThumbUrl = await createBlurThumbSignedUrl(adminClient, data.blur_thumb_path);
   }
 
   return NextResponse.json({

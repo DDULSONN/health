@@ -43,8 +43,8 @@ export default function DatingCardApplyPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [profileEditUrl, setProfileEditUrl] = useState<string | null>(null);
 
-  const [displayNickname, setDisplayNickname] = useState("");
   const [age, setAge] = useState("");
   const [heightCm, setHeightCm] = useState("");
   const [region, setRegion] = useState("");
@@ -93,12 +93,9 @@ export default function DatingCardApplyPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setProfileEditUrl(null);
 
     const normalizedInstagramId = normalizeInstagramId(instagramId);
-    if (!displayNickname.trim()) {
-      setError("닉네임(표시용)을 입력해주세요.");
-      return;
-    }
     if (!validInstagramId(normalizedInstagramId)) {
       setError("인스타 아이디 형식을 확인해주세요. (@ 없이 최대 30자)");
       return;
@@ -145,7 +142,6 @@ export default function DatingCardApplyPage() {
 
       const payload = {
         card_id: id,
-        applicant_display_nickname: displayNickname.trim(),
         age: Number(age),
         height_cm: Number(heightCm),
         region: region.trim(),
@@ -162,8 +158,15 @@ export default function DatingCardApplyPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        code?: string;
+        profile_edit_url?: string;
+      };
       if (!res.ok) {
+        if (body.profile_edit_url) {
+          setProfileEditUrl(body.profile_edit_url);
+        }
         setError(body.error ?? (body.code === "DAILY_APPLY_LIMIT" ? "하루 2회 제한에 도달했어요." : "지원 실패"));
         setSubmitting(false);
         return;
@@ -205,10 +208,6 @@ export default function DatingCardApplyPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4 mt-6">
-        <Field label="닉네임(표시용)" required>
-          <input className="input" required maxLength={20} value={displayNickname} onChange={(e) => setDisplayNickname(e.target.value)} />
-        </Field>
-
         <Field label="나이" required>
           <input className="input" type="number" min={19} max={99} required value={age} onChange={(e) => setAge(e.target.value)} />
         </Field>
@@ -250,7 +249,16 @@ export default function DatingCardApplyPage() {
           <span>지원 정보(인스타/사진 포함) 제출 및 매칭 진행에 동의합니다.</span>
         </label>
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && (
+          <div className="space-y-2">
+            <p className="text-sm text-red-600">{error}</p>
+            {profileEditUrl && (
+              <Link href={profileEditUrl} className="inline-block text-sm text-pink-700 underline">
+                닉네임 설정하러 가기
+              </Link>
+            )}
+          </div>
+        )}
 
         <button type="submit" disabled={submitting} className="w-full min-h-[46px] rounded-xl bg-pink-500 text-white text-sm font-medium hover:bg-pink-600 disabled:opacity-50">
           {submitting ? "지원 중..." : "지원하기"}

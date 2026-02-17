@@ -44,7 +44,6 @@ export async function POST(req: Request) {
   const region = sanitizeText((body as { region?: unknown }).region, 30);
   const job = sanitizeText((body as { job?: unknown }).job, 50);
   const introText = sanitizeText((body as { intro_text?: unknown }).intro_text, 1000);
-  const applicantDisplayNickname = sanitizeText((body as { applicant_display_nickname?: unknown }).applicant_display_nickname, 20);
   const instagramId = normalizeInstagramId((body as { instagram_id?: unknown }).instagram_id);
   const photoPathsRaw = (body as { photo_paths?: unknown }).photo_paths;
   const consent = Boolean((body as { consent?: unknown }).consent);
@@ -59,9 +58,6 @@ export async function POST(req: Request) {
       { error: "인스타그램 아이디 형식이 올바르지 않습니다. (@ 제외, 영문/숫자/._, 최대 30자)" },
       { status: 400 }
     );
-  }
-  if (!applicantDisplayNickname) {
-    return NextResponse.json({ error: "닉네임(표시용)을 입력해주세요." }, { status: 400 });
   }
   if (!consent) return NextResponse.json({ error: "동의가 필요합니다." }, { status: 400 });
   if (photoPaths.length !== 2) return NextResponse.json({ error: "지원 사진은 2장이 필요합니다." }, { status: 400 });
@@ -82,6 +78,23 @@ export async function POST(req: Request) {
   }
 
   const adminClient = createAdminClient();
+  const profileRes = await adminClient
+    .from("profiles")
+    .select("nickname")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (profileRes.error) {
+    console.error("[POST /api/dating/cards/apply] profile fetch failed", profileRes.error);
+    return NextResponse.json({ error: "닉네임 정보를 불러오지 못했습니다." }, { status: 500 });
+  }
+  const applicantDisplayNickname = sanitizeText(profileRes.data?.nickname, 20);
+  if (!applicantDisplayNickname) {
+    return NextResponse.json(
+      { error: "닉네임 설정 후 이용 가능", profile_edit_url: "/mypage" },
+      { status: 400 }
+    );
+  }
+
   const { data: card, error: cardError } = await adminClient
     .from("dating_cards")
     .select("id, owner_user_id, status, expires_at")

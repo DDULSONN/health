@@ -188,12 +188,16 @@ function CardRow({ card }: { card: PublicCard }) {
         </span>
       </div>
 
-      {card.blur_thumb_url && (
-        <div className="mt-3 h-44 w-full rounded-xl border border-neutral-100 bg-neutral-50 overflow-hidden flex items-center justify-center">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={card.blur_thumb_url} alt="" className="h-full w-full object-contain blur-[9px]" />
-        </div>
-      )}
+      <div className="mt-3 h-44 w-full rounded-xl border border-neutral-100 bg-neutral-50 overflow-hidden flex items-center justify-center">
+        {card.blur_thumb_url ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={card.blur_thumb_url} alt="" className="h-full w-full object-contain blur-[9px]" />
+          </>
+        ) : (
+          <div className="h-full w-full animate-pulse bg-neutral-100" />
+        )}
+      </div>
 
       <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
         {card.height_cm != null && <span>키 {card.height_cm}cm</span>}
