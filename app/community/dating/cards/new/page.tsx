@@ -66,6 +66,19 @@ export default function NewDatingCardPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
+  const readErrorMessage = async (res: Response, fallback: string) => {
+    const text = await res.text().catch(() => "");
+    if (!text) return `${fallback} (HTTP ${res.status})`;
+    try {
+      const parsed = JSON.parse(text) as { error?: string; message?: string };
+      if (parsed.error) return parsed.error;
+      if (parsed.message) return parsed.message;
+    } catch {
+      // not json
+    }
+    return `${fallback} (HTTP ${res.status}) ${text.slice(0, 180)}`;
+  };
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -97,9 +110,14 @@ export default function NewDatingCardPage() {
         fd.append("kind", "raw");
         fd.append("index", String(i));
         const res = await fetch("/api/dating/cards/upload-card", { method: "POST", body: fd });
+        if (!res.ok) {
+          setError(await readErrorMessage(res, "카드 사진 업로드에 실패했습니다."));
+          setSubmitting(false);
+          return;
+        }
         const body = (await res.json().catch(() => ({}))) as { path?: string; error?: string };
-        if (!res.ok || !body.path) {
-          setError(body.error ?? "카드 사진 업로드에 실패했습니다.");
+        if (!body.path) {
+          setError("카드 사진 업로드 응답이 올바르지 않습니다.");
           setSubmitting(false);
           return;
         }
@@ -113,9 +131,14 @@ export default function NewDatingCardPage() {
       blurFd.append("kind", "blur");
       blurFd.append("index", "0");
       const blurRes = await fetch("/api/dating/cards/upload-card", { method: "POST", body: blurFd });
+      if (!blurRes.ok) {
+        setError(await readErrorMessage(blurRes, "블러 썸네일 업로드에 실패했습니다."));
+        setSubmitting(false);
+        return;
+      }
       const blurBody = (await blurRes.json().catch(() => ({}))) as { path?: string; error?: string };
-      if (!blurRes.ok || !blurBody.path) {
-        setError(blurBody.error ?? "블러 썸네일 업로드에 실패했습니다.");
+      if (!blurBody.path) {
+        setError("블러 썸네일 업로드 응답이 올바르지 않습니다.");
         setSubmitting(false);
         return;
       }
@@ -141,12 +164,12 @@ export default function NewDatingCardPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
       if (!res.ok) {
-        setError(body.error ?? "오픈카드 생성에 실패했습니다.");
+        setError(await readErrorMessage(res, "오픈카드 생성에 실패했습니다."));
         setSubmitting(false);
         return;
       }
+      const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
 
       alert(body.message ?? "오픈카드를 생성했습니다.");
       router.push("/mypage");
