@@ -188,18 +188,18 @@ export default function AuthCallbackPage() {
     if (!state) return "";
     const code = state.errorCode?.toLowerCase() ?? state.error?.toLowerCase() ?? "";
 
-    if (code === "otp_expired") return "¸µÅ© À¯È¿½Ã°£ÀÌ Áö³ª ´Ù½Ã ÀÎÁõÀÌ ÇÊ¿äÇÕ´Ï´Ù.";
-    if (code === "access_denied") return "¸µÅ©¸¦ È®ÀÎÇÒ ¼ö ¾ø¾ú½À´Ï´Ù. ´Ù½Ã ÀÎÁõ ¸ŞÀÏÀ» º¸³»µå¸±°Ô¿ä.";
-    if (code === "flow_state_missing") return "¼¼¼Ç Á¤º¸°¡ »ç¶óÁ³½À´Ï´Ù. °°Àº ºê¶ó¿ìÀú¿¡¼­ ´Ù½Ã ½ÃµµÇØ ÁÖ¼¼¿ä.";
+    if (code === "otp_expired") return "ë§í¬ ìœ íš¨ì‹œê°„ì´ ì§€ë‚˜ ë‹¤ì‹œ ì¸ì¦ì´ í•„ìš”í•©ë‹ˆë‹¤.";
+    if (code === "access_denied") return "ë§í¬ë¥¼ í™•ì¸í•  ìˆ˜ ì—†ì—ˆìŠµë‹ˆë‹¤. ë‹¤ì‹œ ì¸ì¦ ë©”ì¼ì„ ë³´ë‚´ë“œë¦´ê²Œìš”.";
+    if (code === "flow_state_missing") return "ì„¸ì…˜ ì •ë³´ê°€ ì‚¬ë¼ì¡ŒìŠµë‹ˆë‹¤. ê°™ì€ ë¸Œë¼ìš°ì €ì—ì„œ ë‹¤ì‹œ ì‹œë„í•´ ì£¼ì„¸ìš”.";
     if (state.errorDescription) return state.errorDescription;
-    if (state.error || state.errorCode) return "·Î±×ÀÎ Ã³¸® Áß ¿À·ù°¡ ¹ß»ıÇß½À´Ï´Ù.";
-    return "ÀÎÁõ ¸µÅ©¸¦ È®ÀÎÇÒ ¼ö ¾ø½À´Ï´Ù.";
+    if (state.error || state.errorCode) return "ë¡œê·¸ì¸ ì²˜ë¦¬ ì¤‘ ì˜¤ë¥˜ê°€ ë°œìƒí–ˆìŠµë‹ˆë‹¤.";
+    return "ì¸ì¦ ë§í¬ë¥¼ í™•ì¸í•  ìˆ˜ ì—†ìŠµë‹ˆë‹¤.";
   }, [state]);
 
   const handleResend = async () => {
     const normalized = email.trim().toLowerCase();
     if (!normalized) {
-      setMessage("ÀÌ¸ŞÀÏÀ» ÀÔ·ÂÇØ ÁÖ¼¼¿ä.");
+      setMessage("ì´ë©”ì¼ì„ ì…ë ¥í•´ ì£¼ì„¸ìš”.");
       return;
     }
 
@@ -231,9 +231,9 @@ export default function AuthCallbackPage() {
       }
 
       window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
-      setMessage(isSignupLink ? "ÀÎÁõ ¸ŞÀÏÀ» ´Ù½Ã º¸³Â½À´Ï´Ù. ¸ŞÀÏÇÔÀ» È®ÀÎÇØ ÁÖ¼¼¿ä." : "¸ŞÀÏÇÔÀ» È®ÀÎÇØ ·Î±×ÀÎ ¸µÅ©¸¦ Å¬¸¯ÇÏ¼¼¿ä.");
+      setMessage(isSignupLink ? "ì¸ì¦ ë©”ì¼ì„ ë‹¤ì‹œ ë³´ëƒˆìŠµë‹ˆë‹¤. ë©”ì¼í•¨ì„ í™•ì¸í•´ ì£¼ì„¸ìš”." : "ë©”ì¼í•¨ì„ í™•ì¸í•´ ë¡œê·¸ì¸ ë§í¬ë¥¼ í´ë¦­í•˜ì„¸ìš”.");
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "·Î±×ÀÎ ¸µÅ© Àç¹ß¼Û¿¡ ½ÇÆĞÇß½À´Ï´Ù.");
+      setMessage(e instanceof Error ? e.message : "ë¡œê·¸ì¸ ë§í¬ ì¬ë°œì†¡ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤.");
     } finally {
       setSending(false);
     }
@@ -255,16 +255,16 @@ export default function AuthCallbackPage() {
   const handleCopyLink = async () => {
     try {
       await navigator.clipboard.writeText(window.location.href);
-      setMessage("ÇöÀç ¸µÅ©¸¦ º¹»çÇß½À´Ï´Ù.");
+      setMessage("í˜„ì¬ ë§í¬ë¥¼ ë³µì‚¬í–ˆìŠµë‹ˆë‹¤.");
     } catch {
-      setMessage("¸µÅ© º¹»ç¿¡ ½ÇÆĞÇß½À´Ï´Ù. ÁÖ¼ÒÃ¢¿¡¼­ Á÷Á¢ º¹»çÇØ ÁÖ¼¼¿ä.");
+      setMessage("ë§í¬ ë³µì‚¬ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤. ì£¼ì†Œì°½ì—ì„œ ì§ì ‘ ë³µì‚¬í•´ ì£¼ì„¸ìš”.");
     }
   };
 
   if (!state || viewState.kind === "processing") {
     return (
       <main className="max-w-sm mx-auto px-4 py-20">
-        <p className="text-sm text-neutral-500 text-center">·Î±×ÀÎ Ã³¸® ÁßÀÔ´Ï´Ù...</p>
+        <p className="text-sm text-neutral-500 text-center">ë¡œê·¸ì¸ ì²˜ë¦¬ ì¤‘ì…ë‹ˆë‹¤...</p>
       </main>
     );
   }
@@ -273,21 +273,21 @@ export default function AuthCallbackPage() {
     return (
       <main className="max-w-sm mx-auto px-4 py-16">
         <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4">
-          <h1 className="text-base font-semibold text-emerald-900">ÀÌ¸ŞÀÏ ÀÎÁõ ¿Ï·á!</h1>
-          <p className="mt-1 text-sm text-emerald-800">ÀÌÁ¦ ·Î±×ÀÎÇØ¼­ °è¼Ó ÁøÇàÇØ ÁÖ¼¼¿ä.</p>
+          <h1 className="text-base font-semibold text-emerald-900">ì´ë©”ì¼ ì¸ì¦ ì™„ë£Œ!</h1>
+          <p className="mt-1 text-sm text-emerald-800">ì´ì œ ë¡œê·¸ì¸í•´ì„œ ê³„ì† ì§„í–‰í•´ ì£¼ì„¸ìš”.</p>
 
           <div className="mt-4 grid grid-cols-1 gap-2">
             <Link
               href={`/login?next=${encodeURIComponent(state.next || "/")}`}
               className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-emerald-600 text-white text-sm font-medium"
             >
-              ·Î±×ÀÎÇÏ·¯ °¡±â
+              ë¡œê·¸ì¸í•˜ëŸ¬ ê°€ê¸°
             </Link>
             <Link
               href="/"
               className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-emerald-300 bg-white text-emerald-900 text-sm font-medium"
             >
-              È¨À¸·Î
+              í™ˆìœ¼ë¡œ
             </Link>
           </div>
         </div>
@@ -300,10 +300,10 @@ export default function AuthCallbackPage() {
   return (
     <main className="max-w-sm mx-auto px-4 py-16">
       <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
-        <h1 className="text-base font-semibold text-amber-900">ÀÎÁõ ¸µÅ©°¡ ¸¸·áµÇ¾ú¾î¿ä</h1>
-        <p className="mt-1 text-sm text-amber-800">{isExpired ? "´Ù½Ã ¸µÅ©¸¦ º¸³»µå¸±°Ô¿ä." : errorMessage}</p>
+        <h1 className="text-base font-semibold text-amber-900">ì¸ì¦ ë§í¬ê°€ ë§Œë£Œë˜ì—ˆì–´ìš”</h1>
+        <p className="mt-1 text-sm text-amber-800">{isExpired ? "ë‹¤ì‹œ ë§í¬ë¥¼ ë³´ë‚´ë“œë¦´ê²Œìš”." : errorMessage}</p>
         {inAppBrowser && (
-          <p className="mt-1 text-xs text-amber-800">ÀÎ¾Û ºê¶ó¿ìÀú¿¡¼­´Â ½ÇÆĞÇÒ ¼ö ÀÖ¾î¿ä. Safari/ChromeÀ¸·Î ¿­¾îÁÖ¼¼¿ä.</p>
+          <p className="mt-1 text-xs text-amber-800">ì¸ì•± ë¸Œë¼ìš°ì €ì—ì„œëŠ” ì‹¤íŒ¨í•  ìˆ˜ ìˆì–´ìš”. Safari/Chromeìœ¼ë¡œ ì—´ì–´ì£¼ì„¸ìš”.</p>
         )}
 
         <div className="mt-3 space-y-2">
@@ -321,7 +321,7 @@ export default function AuthCallbackPage() {
             disabled={sending}
             className="w-full min-h-[44px] rounded-lg bg-amber-600 text-white text-sm font-medium disabled:opacity-50"
           >
-            {sending ? "ÀçÀü¼Û Áß..." : "´Ù½Ã ¸µÅ© º¸³»±â"}
+            {sending ? "ì¬ì „ì†¡ ì¤‘..." : "ë‹¤ì‹œ ë§í¬ ë³´ë‚´ê¸°"}
           </button>
           {message && <p className="text-xs text-amber-900">{message}</p>}
         </div>
@@ -331,7 +331,7 @@ export default function AuthCallbackPage() {
             href={`/login?next=${encodeURIComponent(state.next || "/")}`}
             className="inline-flex min-h-[42px] items-center justify-center rounded-lg bg-white text-amber-900 border border-amber-300 text-sm font-medium"
           >
-            ·Î±×ÀÎÇÏ·¯ °¡±â
+            ë¡œê·¸ì¸í•˜ëŸ¬ ê°€ê¸°
           </Link>
           {inAppBrowser && (
             <>
@@ -340,14 +340,14 @@ export default function AuthCallbackPage() {
                 onClick={handleOpenExternal}
                 className="min-h-[42px] rounded-lg bg-amber-600 text-white text-sm font-medium"
               >
-                Chrome/Safari·Î ¿­±â
+                Chrome/Safarië¡œ ì—´ê¸°
               </button>
               <button
                 type="button"
                 onClick={handleCopyLink}
                 className="min-h-[42px] rounded-lg border border-amber-300 bg-white text-amber-900 text-sm font-medium"
               >
-                ¸µÅ© º¹»ç
+                ë§í¬ ë³µì‚¬
               </button>
             </>
           )}
@@ -355,7 +355,7 @@ export default function AuthCallbackPage() {
             href="/"
             className="inline-flex min-h-[42px] items-center justify-center rounded-lg border border-amber-300 bg-white text-amber-900 text-sm font-medium"
           >
-            È¨À¸·Î
+            í™ˆìœ¼ë¡œ
           </Link>
         </div>
       </div>
