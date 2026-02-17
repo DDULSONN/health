@@ -10,8 +10,17 @@ function getAdminEmails(): string[] {
 }
 
 export async function middleware(request: NextRequest) {
-  const response = NextResponse.next({ request });
   const pathname = request.nextUrl.pathname;
+  const isDatingPublicRoute =
+    pathname === "/community/dating" ||
+    pathname.startsWith("/community/dating/") ||
+    pathname.startsWith("/community/dating/cards/");
+
+  if (isDatingPublicRoute) {
+    return NextResponse.next({ request });
+  }
+
+  const response = NextResponse.next({ request });
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
@@ -38,7 +47,8 @@ export async function middleware(request: NextRequest) {
   const confirmed = isEmailConfirmed(user);
 
   const protectedPrefixes = ["/community", "/mypage", "/cert/request", "/admin", "/certify", "/dating"];
-  const isProtected = protectedPrefixes.some((prefix) => pathname.startsWith(prefix));
+  const isProtected =
+    protectedPrefixes.some((prefix) => pathname.startsWith(prefix)) && !isDatingPublicRoute;
   const isVerifyPage = pathname.startsWith("/verify-email");
 
   if (isProtected && !user) {
