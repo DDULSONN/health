@@ -25,6 +25,13 @@ function toText(value: unknown, max = 2000): string {
   return value.trim().slice(0, max);
 }
 
+function isMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || message.includes("could not find") || message.includes("column");
+}
+
 async function hasPublicSlot(adminClient: ReturnType<typeof createAdminClient>, sex: "male" | "female") {
   let { count, error } = await adminClient
     .from("dating_cards")
@@ -34,7 +41,7 @@ async function hasPublicSlot(adminClient: ReturnType<typeof createAdminClient>, 
     .gt("expires_at", new Date().toISOString());
 
   // Legacy fallback when expires_at column is not available yet.
-  if (error && error.code === "42703") {
+  if (error && isMissingColumnError(error)) {
     const legacy = await adminClient
       .from("dating_cards")
       .select("id", { count: "exact", head: true })
@@ -110,7 +117,6 @@ export async function POST(req: Request) {
       ? Number(percentAllRaw)
       : null;
 
-  const displayNickname = toText((body as { display_nickname?: unknown }).display_nickname, 20);
   const region = toText((body as { region?: unknown }).region, 30);
   const job = toText((body as { job?: unknown }).job, 50);
   const idealType = toText((body as { ideal_type?: unknown }).ideal_type, 1000);
@@ -123,7 +129,6 @@ export async function POST(req: Request) {
     ? photoPathsRaw.filter((item): item is string => typeof item === "string" && item.length > 0)
     : [];
 
-  if (!displayNickname) return NextResponse.json({ error: "닉네임(표시용)을 입력해주세요." }, { status: 400 });
   if (!instagramId || !validInstagramId(instagramId)) {
     return NextResponse.json(
       { error: "인스타그램 아이디 형식이 올바르지 않습니다. (@ 제외, 영문/숫자/._, 최대 30자)" },
@@ -149,6 +154,21 @@ export async function POST(req: Request) {
   }
 
   const adminClient = createAdminClient();
+  const profileRes = await adminClient
+    .from("profiles")
+    .select("nickname")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (profileRes.error) {
+    console.error("[POST /api/dating/cards/my] profile fetch failed", profileRes.error);
+    return NextResponse.json({ error: "닉네임 정보를 불러오지 못했습니다." }, { status: 500 });
+  }
+  const metadataNickname = toText((user.user_metadata as { nickname?: unknown } | null)?.nickname, 20);
+  const displayNickname = toText(profileRes.data?.nickname ?? metadataNickname, 20);
+  if (!displayNickname) {
+    return NextResponse.json({ error: "프로필 닉네임이 없습니다. 닉네임 설정 후 다시 시도해주세요." }, { status: 400 });
+  }
+
   const available = await hasPublicSlot(adminClient, sex);
 
   const now = new Date();
@@ -179,7 +199,7 @@ export async function POST(req: Request) {
   let insertRes: any = await adminClient.from("dating_cards").insert(payload).select("id,status").single();
 
   // Legacy fallback for environments that still use owner_instagram_id/photo_urls and may not have new columns.
-  if (insertRes.error && insertRes.error.code === "42703") {
+  if (insertRes.error && isMissingColumnError(insertRes.error)) {
     const legacyPayload = {
       owner_user_id: user.id,
       sex,

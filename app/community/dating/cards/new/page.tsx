@@ -51,7 +51,6 @@ async function createBlurThumbnailFile(source: File): Promise<File> {
 
 export default function NewDatingCardPage() {
   const router = useRouter();
-  const [displayNickname, setDisplayNickname] = useState("");
   const [sex, setSex] = useState<"male" | "female">("male");
   const [age, setAge] = useState("");
   const [region, setRegion] = useState("");
@@ -144,7 +143,6 @@ export default function NewDatingCardPage() {
       }
 
       const payload = {
-        display_nickname: displayNickname.trim(),
         sex,
         age: age ? Number(age) : null,
         region: region.trim(),
@@ -188,12 +186,9 @@ export default function NewDatingCardPage() {
 
       <h1 className="text-2xl font-bold text-neutral-900 mt-3">오픈카드 작성</h1>
       <p className="text-sm text-neutral-500 mt-1">공개 카드 슬롯 상황에 따라 즉시 공개 또는 대기열로 등록됩니다.</p>
+      <p className="text-sm text-neutral-500 mt-1">닉네임은 가입 시 설정한 프로필 닉네임이 자동으로 반영됩니다.</p>
 
       <form onSubmit={submit} className="space-y-4 mt-6">
-        <Field label="닉네임(표시용)" required>
-          <input className="input" required maxLength={20} value={displayNickname} onChange={(e) => setDisplayNickname(e.target.value)} />
-        </Field>
-
         <div>
           <label className="block text-sm font-medium text-neutral-700 mb-1">성별 *</label>
           <div className="flex gap-2">
