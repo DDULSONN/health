@@ -1,10 +1,11 @@
-ï»¿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import { isEmailConfirmed } from "@/lib/auth-confirmed";
 
 const STORED_EMAIL_KEY = "recent_login_email";
 const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
@@ -21,6 +22,11 @@ type CallbackState = {
   errorCode: string | null;
   errorDescription: string | null;
 };
+
+type ViewState =
+  | { kind: "processing" }
+  | { kind: "success" }
+  | { kind: "failure"; detail: string };
 
 function safeNextPath(input: string | null): string {
   if (!input || !input.startsWith("/")) return "/";
@@ -66,11 +72,11 @@ function buildCanonicalCallbackUrl(next: string): string {
 export default function AuthCallbackPage() {
   const router = useRouter();
   const [state, setState] = useState<CallbackState | null>(null);
+  const [viewState, setViewState] = useState<ViewState>({ kind: "processing" });
   const [email, setEmail] = useState("");
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [inAppBrowser, setInAppBrowser] = useState(false);
-  const [processing, setProcessing] = useState(true);
 
   useEffect(() => {
     const parsed = parseStateFromLocation();
@@ -82,81 +88,118 @@ export default function AuthCallbackPage() {
 
     (async () => {
       const supabase = createClient();
+      const next = parsed.next || "/";
 
-      // 1) Session-first: if session exists, ignore all error params and redirect immediately.
+      const finalizeSuccess = async () => {
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+
+        if (session && next !== "/") {
+          router.replace(next);
+          return;
+        }
+
+        setViewState({ kind: "success" });
+      };
+
+      const hasConfirmedUser = async () => {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        return Boolean(user && isEmailConfirmed(user));
+      };
+
+      // (B) Session-first
       const {
         data: { session: initialSession },
       } = await supabase.auth.getSession();
       if (initialSession) {
-        router.replace(parsed.next || "/");
+        await finalizeSuccess();
         return;
       }
 
-      // 2) token_hash + type (email verification/magic link/recovery)
+      // (C) If already confirmed, treat as success even if callback error params exist.
+      if (await hasConfirmedUser()) {
+        setViewState({ kind: "success" });
+        return;
+      }
+
+      // (D) code
+      if (parsed.code) {
+        await supabase.auth.exchangeCodeForSession(parsed.code);
+        const {
+          data: { session: afterCodeSession },
+        } = await supabase.auth.getSession();
+        if (afterCodeSession || (await hasConfirmedUser())) {
+          await finalizeSuccess();
+          return;
+        }
+      }
+
+      // (D) token_hash + type
       if (parsed.tokenHash && parsed.otpType) {
-        const { error } = await supabase.auth.verifyOtp({
+        await supabase.auth.verifyOtp({
           token_hash: parsed.tokenHash,
           type: parsed.otpType as EmailOtpType,
         });
-
-        if (!error) {
-          router.replace(parsed.next || "/");
+        const {
+          data: { session: afterOtpSession },
+        } = await supabase.auth.getSession();
+        if (afterOtpSession || (await hasConfirmedUser())) {
+          await finalizeSuccess();
           return;
         }
       }
 
-      // 3) code (OAuth/PKCE)
-      if (parsed.code) {
-        const { error } = await supabase.auth.exchangeCodeForSession(parsed.code);
-
-        if (!error) {
-          router.replace(parsed.next || "/");
-          return;
-        }
-      }
-
-      // 4) access_token + refresh_token
+      // (D) access_token + refresh_token
       if (parsed.accessToken && parsed.refreshToken) {
-        const { error } = await supabase.auth.setSession({
+        await supabase.auth.setSession({
           access_token: parsed.accessToken,
           refresh_token: parsed.refreshToken,
         });
-
-        if (!error) {
-          router.replace(parsed.next || "/");
+        const {
+          data: { session: afterTokenSession },
+        } = await supabase.auth.getSession();
+        if (afterTokenSession || (await hasConfirmedUser())) {
+          await finalizeSuccess();
           return;
         }
       }
 
-      // Final guard: sometimes session appears after auth client processes URL.
+      // Final guard for delayed hydration.
       const {
         data: { session: finalSession },
       } = await supabase.auth.getSession();
-      if (finalSession) {
-        router.replace(parsed.next || "/");
+      if (finalSession || (await hasConfirmedUser())) {
+        await finalizeSuccess();
         return;
       }
 
-      setProcessing(false);
+      // (E) True failure only.
+      setViewState({
+        kind: "failure",
+        detail: parsed.errorCode?.toLowerCase() ?? parsed.error?.toLowerCase() ?? "",
+      });
     })();
   }, [router]);
 
   const errorMessage = useMemo(() => {
     if (!state) return "";
-    const code = state.errorCode?.toLowerCase() ?? "";
+    const code = state.errorCode?.toLowerCase() ?? state.error?.toLowerCase() ?? "";
 
-    if (code === "otp_expired") return "ë¡œê·¸ì¸ ë§í¬ê°€ ë§Œë£Œë˜ì—ˆê±°ë‚˜ ì´ë¯¸ ì‚¬ìš©ëì–´ìš”.";
-    if (code === "access_denied") return "ë¡œê·¸ì¸ì´ ê±°ë¶€ë˜ì—ˆê±°ë‚˜ ì·¨ì†Œë˜ì—ˆìŠµë‹ˆë‹¤.";
-    if (code === "flow_state_missing") return "ì„¸ì…˜ ì •ë³´ê°€ ì‚¬ë¼ì¡ŒìŠµë‹ˆë‹¤. ê°™ì€ ë¸Œë¼ìš°ì €ì—ì„œ ë‹¤ì‹œ ì‹œë„í•´ ì£¼ì„¸ìš”.";
+    if (code === "otp_expired") return "¸µÅ© À¯È¿½Ã°£ÀÌ Áö³ª ´Ù½Ã ÀÎÁõÀÌ ÇÊ¿äÇÕ´Ï´Ù.";
+    if (code === "access_denied") return "¸µÅ©¸¦ È®ÀÎÇÒ ¼ö ¾ø¾ú½À´Ï´Ù. ´Ù½Ã ÀÎÁõ ¸ŞÀÏÀ» º¸³»µå¸±°Ô¿ä.";
+    if (code === "flow_state_missing") return "¼¼¼Ç Á¤º¸°¡ »ç¶óÁ³½À´Ï´Ù. °°Àº ºê¶ó¿ìÀú¿¡¼­ ´Ù½Ã ½ÃµµÇØ ÁÖ¼¼¿ä.";
     if (state.errorDescription) return state.errorDescription;
-    if (state.error || state.errorCode) return "ë¡œê·¸ì¸ ì²˜ë¦¬ ì¤‘ ì˜¤ë¥˜ê°€ ë°œìƒí–ˆìŠµë‹ˆë‹¤.";
-    return "ì˜ëª»ëœ ë¡œê·¸ì¸ ë§í¬ì…ë‹ˆë‹¤.";
+    if (state.error || state.errorCode) return "·Î±×ÀÎ Ã³¸® Áß ¿À·ù°¡ ¹ß»ıÇß½À´Ï´Ù.";
+    return "ÀÎÁõ ¸µÅ©¸¦ È®ÀÎÇÒ ¼ö ¾ø½À´Ï´Ù.";
   }, [state]);
 
   const handleResend = async () => {
     const normalized = email.trim().toLowerCase();
     if (!normalized) {
-      setMessage("ì´ë©”ì¼ì„ ì…ë ¥í•´ ì£¼ì„¸ìš”.");
+      setMessage("ÀÌ¸ŞÀÏÀ» ÀÔ·ÂÇØ ÁÖ¼¼¿ä.");
       return;
     }
 
@@ -165,12 +208,22 @@ export default function AuthCallbackPage() {
 
     try {
       const supabase = createClient();
-      const { error } = await supabase.auth.signInWithOtp({
-        email: normalized,
-        options: {
-          emailRedirectTo: buildCanonicalCallbackUrl(state?.next ?? "/"),
-        },
-      });
+      const callbackUrl = buildCanonicalCallbackUrl(state?.next ?? "/");
+      const isSignupLink = state?.otpType === "signup";
+      const { error } = isSignupLink
+        ? await supabase.auth.resend({
+            type: "signup",
+            email: normalized,
+            options: {
+              emailRedirectTo: callbackUrl,
+            },
+          })
+        : await supabase.auth.signInWithOtp({
+            email: normalized,
+            options: {
+              emailRedirectTo: callbackUrl,
+            },
+          });
 
       if (error) {
         setMessage(error.message);
@@ -178,28 +231,80 @@ export default function AuthCallbackPage() {
       }
 
       window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
-      setMessage("ë©”ì¼í•¨ì„ í™•ì¸í•´ ë¡œê·¸ì¸ ë§í¬ë¥¼ í´ë¦­í•˜ì„¸ìš”.");
+      setMessage(isSignupLink ? "ÀÎÁõ ¸ŞÀÏÀ» ´Ù½Ã º¸³Â½À´Ï´Ù. ¸ŞÀÏÇÔÀ» È®ÀÎÇØ ÁÖ¼¼¿ä." : "¸ŞÀÏÇÔÀ» È®ÀÎÇØ ·Î±×ÀÎ ¸µÅ©¸¦ Å¬¸¯ÇÏ¼¼¿ä.");
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "ë¡œê·¸ì¸ ë§í¬ ì¬ë°œì†¡ì— ì‹¤íŒ¨í–ˆìŠµë‹ˆë‹¤.");
+      setMessage(e instanceof Error ? e.message : "·Î±×ÀÎ ¸µÅ© Àç¹ß¼Û¿¡ ½ÇÆĞÇß½À´Ï´Ù.");
     } finally {
       setSending(false);
     }
   };
 
-  if (!state || processing) {
+  const handleOpenExternal = () => {
+    const href = window.location.href;
+    const ua = navigator.userAgent.toLowerCase();
+
+    if (ua.includes("android")) {
+      const withoutProtocol = href.replace(/^https?:\/\//, "");
+      window.location.href = `intent://${withoutProtocol}#Intent;scheme=https;package=com.android.chrome;end`;
+      return;
+    }
+
+    window.open(href, "_blank", "noopener,noreferrer");
+  };
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setMessage("ÇöÀç ¸µÅ©¸¦ º¹»çÇß½À´Ï´Ù.");
+    } catch {
+      setMessage("¸µÅ© º¹»ç¿¡ ½ÇÆĞÇß½À´Ï´Ù. ÁÖ¼ÒÃ¢¿¡¼­ Á÷Á¢ º¹»çÇØ ÁÖ¼¼¿ä.");
+    }
+  };
+
+  if (!state || viewState.kind === "processing") {
     return (
       <main className="max-w-sm mx-auto px-4 py-20">
-        <p className="text-sm text-neutral-500 text-center">ë¡œê·¸ì¸ ì²˜ë¦¬ ì¤‘ì…ë‹ˆë‹¤...</p>
+        <p className="text-sm text-neutral-500 text-center">·Î±×ÀÎ Ã³¸® ÁßÀÔ´Ï´Ù...</p>
       </main>
     );
   }
 
+  if (viewState.kind === "success") {
+    return (
+      <main className="max-w-sm mx-auto px-4 py-16">
+        <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4">
+          <h1 className="text-base font-semibold text-emerald-900">ÀÌ¸ŞÀÏ ÀÎÁõ ¿Ï·á!</h1>
+          <p className="mt-1 text-sm text-emerald-800">ÀÌÁ¦ ·Î±×ÀÎÇØ¼­ °è¼Ó ÁøÇàÇØ ÁÖ¼¼¿ä.</p>
+
+          <div className="mt-4 grid grid-cols-1 gap-2">
+            <Link
+              href={`/login?next=${encodeURIComponent(state.next || "/")}`}
+              className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-emerald-600 text-white text-sm font-medium"
+            >
+              ·Î±×ÀÎÇÏ·¯ °¡±â
+            </Link>
+            <Link
+              href="/"
+              className="inline-flex min-h-[44px] items-center justify-center rounded-lg border border-emerald-300 bg-white text-emerald-900 text-sm font-medium"
+            >
+              È¨À¸·Î
+            </Link>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  const isExpired = viewState.detail === "otp_expired";
+
   return (
     <main className="max-w-sm mx-auto px-4 py-16">
       <div className="rounded-xl border border-amber-300 bg-amber-50 p-4">
-        <p className="text-sm font-medium text-amber-900">{errorMessage}</p>
-        <p className="mt-1 text-xs text-amber-800">ìƒˆ ë¡œê·¸ì¸ ë§í¬ë¥¼ ë‹¤ì‹œ ë³´ë‚´ë“œë¦´ê²Œìš”.</p>
-        <p className="mt-1 text-xs text-amber-800">ì¸ì•± ë¸Œë¼ìš°ì €ì—ì„œ ì‹¤íŒ¨í•  ìˆ˜ ìˆì–´ Chrome/Safariì—ì„œ ì—´ì–´ì£¼ì„¸ìš”.</p>
+        <h1 className="text-base font-semibold text-amber-900">ÀÎÁõ ¸µÅ©°¡ ¸¸·áµÇ¾ú¾î¿ä</h1>
+        <p className="mt-1 text-sm text-amber-800">{isExpired ? "´Ù½Ã ¸µÅ©¸¦ º¸³»µå¸±°Ô¿ä." : errorMessage}</p>
+        {inAppBrowser && (
+          <p className="mt-1 text-xs text-amber-800">ÀÎ¾Û ºê¶ó¿ìÀú¿¡¼­´Â ½ÇÆĞÇÒ ¼ö ÀÖ¾î¿ä. Safari/ChromeÀ¸·Î ¿­¾îÁÖ¼¼¿ä.</p>
+        )}
 
         <div className="mt-3 space-y-2">
           <input
@@ -216,7 +321,7 @@ export default function AuthCallbackPage() {
             disabled={sending}
             className="w-full min-h-[44px] rounded-lg bg-amber-600 text-white text-sm font-medium disabled:opacity-50"
           >
-            {sending ? "ì¬ì „ì†¡ ì¤‘..." : "ë‹¤ì‹œ ë§í¬ ë³´ë‚´ê¸°"}
+            {sending ? "ÀçÀü¼Û Áß..." : "´Ù½Ã ¸µÅ© º¸³»±â"}
           </button>
           {message && <p className="text-xs text-amber-900">{message}</p>}
         </div>
@@ -226,17 +331,32 @@ export default function AuthCallbackPage() {
             href={`/login?next=${encodeURIComponent(state.next || "/")}`}
             className="inline-flex min-h-[42px] items-center justify-center rounded-lg bg-white text-amber-900 border border-amber-300 text-sm font-medium"
           >
-            ë¡œê·¸ì¸ í˜ì´ì§€ë¡œ ì´ë™
+            ·Î±×ÀÎÇÏ·¯ °¡±â
           </Link>
           {inAppBrowser && (
-            <button
-              type="button"
-              onClick={() => window.open(window.location.href, "_blank", "noopener,noreferrer")}
-              className="min-h-[42px] rounded-lg bg-amber-600 text-white text-sm font-medium"
-            >
-              Chrome/Safarië¡œ ì—´ê¸°
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={handleOpenExternal}
+                className="min-h-[42px] rounded-lg bg-amber-600 text-white text-sm font-medium"
+              >
+                Chrome/Safari·Î ¿­±â
+              </button>
+              <button
+                type="button"
+                onClick={handleCopyLink}
+                className="min-h-[42px] rounded-lg border border-amber-300 bg-white text-amber-900 text-sm font-medium"
+              >
+                ¸µÅ© º¹»ç
+              </button>
+            </>
           )}
+          <Link
+            href="/"
+            className="inline-flex min-h-[42px] items-center justify-center rounded-lg border border-amber-300 bg-white text-amber-900 text-sm font-medium"
+          >
+            È¨À¸·Î
+          </Link>
         </div>
       </div>
     </main>
