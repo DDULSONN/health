@@ -11,12 +11,11 @@ function getAdminEmails(): string[] {
 
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
-  const isDatingPublicRoute =
-    pathname === "/community/dating" ||
-    pathname.startsWith("/community/dating/") ||
+  const isOpenCardsRoute =
+    pathname === "/community/dating/cards" ||
     pathname.startsWith("/community/dating/cards/");
 
-  if (isDatingPublicRoute) {
+  if (isOpenCardsRoute) {
     return NextResponse.next({ request });
   }
 
@@ -47,8 +46,7 @@ export async function middleware(request: NextRequest) {
   const confirmed = isEmailConfirmed(user);
 
   const protectedPrefixes = ["/community", "/mypage", "/cert/request", "/admin", "/certify", "/dating"];
-  const isProtected =
-    protectedPrefixes.some((prefix) => pathname.startsWith(prefix)) && !isDatingPublicRoute;
+  const isProtected = protectedPrefixes.some((prefix) => pathname.startsWith(prefix));
   const isVerifyPage = pathname.startsWith("/verify-email");
 
   if (isProtected && !user) {
