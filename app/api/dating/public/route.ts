@@ -7,8 +7,18 @@ function normalizeSex(value: string): "male" | "female" {
   return "female";
 }
 
-/** GET /api/dating/public — 공개된 소개팅 카드 목록 (남/여 각 3개) */
-export async function GET() {
+const MALE_VALUES = ["male", "남자", "남성", "m"];
+const FEMALE_VALUES = ["female", "여자", "여성", "f"];
+
+function parsePositiveInt(value: string | null, fallback: number) {
+  if (!value) return fallback;
+  const parsed = Number(value);
+  if (!Number.isFinite(parsed) || parsed < 0) return fallback;
+  return Math.floor(parsed);
+}
+
+/** GET /api/dating/public — 공개 소개팅 목록(성별별 페이지네이션) */
+export async function GET(req: Request) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -19,59 +29,53 @@ export async function GET() {
   }
 
   const adminClient = createAdminClient();
+  const { searchParams } = new URL(req.url);
+  const sex = searchParams.get("sex");
+  const limit = Math.min(parsePositiveInt(searchParams.get("limit"), 20), 50);
+  const offset = parsePositiveInt(searchParams.get("offset"), 0);
+  const maleOffset = parsePositiveInt(searchParams.get("maleOffset"), 0);
+  const femaleOffset = parsePositiveInt(searchParams.get("femaleOffset"), 0);
 
-  // 남자 TOP 3 (최신순)
-  const { data: males } = await adminClient
-    .from("dating_applications")
-    .select("id, sex, display_nickname, age, thumb_blur_path, photo_urls, total_3lift, percent_all, training_years, ideal_type, created_at")
-    .in("sex", ["male", "남자", "남성", "m"])
-    .eq("approved_for_public", true)
-    .order("created_at", { ascending: false })
-    .limit(3);
+  const fetchBySex = async (targetSex: "male" | "female", fromOffset: number) => {
+    const sexValues = targetSex === "male" ? MALE_VALUES : FEMALE_VALUES;
+    const { data, error } = await adminClient
+      .from("dating_applications")
+      .select("id, sex, display_nickname, age, total_3lift, percent_all, training_years, ideal_type, created_at")
+      .in("sex", sexValues)
+      .eq("approved_for_public", true)
+      .order("created_at", { ascending: false })
+      .range(fromOffset, fromOffset + limit - 1);
 
-  // 여자 TOP 3 (최신순)
-  const { data: females } = await adminClient
-    .from("dating_applications")
-    .select("id, sex, display_nickname, age, thumb_blur_path, photo_urls, total_3lift, percent_all, training_years, ideal_type, created_at")
-    .in("sex", ["female", "여자", "여성", "f"])
-    .eq("approved_for_public", true)
-    .order("created_at", { ascending: false })
-    .limit(3);
-
-  // 블러 썸네일 signed URL 생성
-  const withSignedUrls = async (items: typeof males) => {
-    if (!items) return [];
-    return Promise.all(
-      items.map(async (item) => {
-        let thumbUrl = "";
-        let isBlurFallback = false;
-        if (item.thumb_blur_path && item.thumb_blur_path.trim().length > 0) {
-          const { data } = await adminClient.storage
-            .from("dating-photos")
-            .createSignedUrl(item.thumb_blur_path, 600);
-          thumbUrl = data?.signedUrl ?? "";
-        }
-
-        // Fallback: thumb_blur_path가 없는 기존 데이터는 1번 사진을 CSS blur로 처리해 노출
-        if (!thumbUrl) {
-          const photoPaths = Array.isArray(item.photo_urls) ? item.photo_urls : [];
-          const firstPhotoPath = typeof photoPaths[0] === "string" ? photoPaths[0] : "";
-          if (firstPhotoPath) {
-            const { data } = await adminClient.storage
-              .from("dating-photos")
-              .createSignedUrl(firstPhotoPath, 600);
-            thumbUrl = data?.signedUrl ?? "";
-            isBlurFallback = !!thumbUrl;
-          }
-        }
-
-        return { ...item, sex: normalizeSex(item.sex), thumb_url: thumbUrl, is_blur_fallback: isBlurFallback };
-      })
-    );
+    if (error) throw error;
+    const items = (data ?? []).map((item) => ({ ...item, sex: normalizeSex(item.sex) }));
+    return {
+      items,
+      hasMore: items.length === limit,
+      nextOffset: fromOffset + items.length,
+    };
   };
 
-  const maleCards = await withSignedUrls(males);
-  const femaleCards = await withSignedUrls(females);
+  try {
+    if (sex === "male" || sex === "female") {
+      const result = await fetchBySex(sex, offset);
+      return NextResponse.json(result);
+    }
 
-  return NextResponse.json({ males: maleCards, females: femaleCards });
+    const [maleResult, femaleResult] = await Promise.all([
+      fetchBySex("male", maleOffset),
+      fetchBySex("female", femaleOffset),
+    ]);
+
+    return NextResponse.json({
+      males: maleResult.items,
+      females: femaleResult.items,
+      maleHasMore: maleResult.hasMore,
+      femaleHasMore: femaleResult.hasMore,
+      nextMaleOffset: maleResult.nextOffset,
+      nextFemaleOffset: femaleResult.nextOffset,
+    });
+  } catch (error) {
+    console.error("[GET /api/dating/public] failed", error);
+    return NextResponse.json({ error: "공개 목록을 불러오지 못했습니다." }, { status: 500 });
+  }
 }

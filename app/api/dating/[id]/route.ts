@@ -27,23 +27,13 @@ export async function GET(
   // 공개 카드만 조회
   const { data: app, error } = await adminClient
     .from("dating_applications")
-    .select("id, sex, display_nickname, age, thumb_blur_path, total_3lift, percent_all, training_years, height_cm, ideal_type, created_at")
+    .select("id, sex, display_nickname, age, total_3lift, percent_all, training_years, height_cm, ideal_type, created_at")
     .eq("id", id)
     .eq("approved_for_public", true)
     .single();
 
   if (error || !app) {
     return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
-  }
-
-  // 블러 썸네일 signed URL
-  let thumbUrl = "";
-  const isBlurFallback = false;
-  if (app.thumb_blur_path) {
-    const { data } = await adminClient.storage
-      .from("dating-photos")
-      .createSignedUrl(app.thumb_blur_path, 600);
-    thumbUrl = data?.signedUrl ?? "";
   }
 
   // 댓글 조회
@@ -78,8 +68,6 @@ export async function GET(
     sex: normalizeSex(app.sex),
     display_nickname: app.display_nickname,
     age: app.age,
-    thumb_url: thumbUrl,
-    is_blur_fallback: isBlurFallback,
     height_cm: app.height_cm,
     training_years: app.training_years,
     ideal_type: app.ideal_type,
