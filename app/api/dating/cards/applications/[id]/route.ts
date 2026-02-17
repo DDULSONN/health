@@ -28,6 +28,7 @@ export async function PATCH(
     .select("id, card_id, applicant_user_id, status")
     .eq("id", id)
     .single();
+
   if (appError || !app) {
     return NextResponse.json({ error: "지원서를 찾을 수 없습니다." }, { status: 404 });
   }
@@ -37,6 +38,7 @@ export async function PATCH(
     .select("id, owner_user_id")
     .eq("id", app.card_id)
     .single();
+
   if (cardError || !card) {
     return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
   }
@@ -57,10 +59,39 @@ export async function PATCH(
     .from("dating_card_applications")
     .update({ status })
     .eq("id", id);
+
   if (updateError) {
     console.error("[PATCH /api/dating/cards/applications/[id]] failed", updateError);
     return NextResponse.json({ error: "상태 변경에 실패했습니다." }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, status });
+  if (status === "accepted") {
+    const nowIso = new Date().toISOString();
+
+    const { error: cardHideError } = await adminClient
+      .from("dating_cards")
+      .update({ status: "hidden", expires_at: nowIso })
+      .eq("id", app.card_id);
+
+    if (cardHideError) {
+      console.error("[PATCH /api/dating/cards/applications/[id]] card hide failed", cardHideError);
+      return NextResponse.json(
+        { error: "지원자 수락은 되었지만 카드 내림 처리에 실패했습니다. 관리자에게 문의해주세요." },
+        { status: 500 }
+      );
+    }
+
+    const { error: rejectOthersError } = await adminClient
+      .from("dating_card_applications")
+      .update({ status: "rejected" })
+      .eq("card_id", app.card_id)
+      .eq("status", "submitted")
+      .neq("id", id);
+
+    if (rejectOthersError) {
+      console.error("[PATCH /api/dating/cards/applications/[id]] reject others failed", rejectOthersError);
+    }
+  }
+
+  return NextResponse.json({ ok: true, status, card_hidden: status === "accepted" });
 }
