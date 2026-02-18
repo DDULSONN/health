@@ -51,6 +51,8 @@ async function createBlurThumbnailFile(source: File): Promise<File> {
 
 export default function NewDatingCardPage() {
   const router = useRouter();
+  const [writeEnabled, setWriteEnabled] = useState(true);
+  const [writeSettingLoading, setWriteSettingLoading] = useState(true);
   const [sex, setSex] = useState<"male" | "female">("male");
   const [age, setAge] = useState("");
   const [region, setRegion] = useState("");
@@ -67,6 +69,20 @@ export default function NewDatingCardPage() {
   const [previewUrls, setPreviewUrls] = useState<(string | null)[]>([null, null]);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    queueMicrotask(async () => {
+      try {
+        const res = await fetch("/api/dating/cards/write-enabled", { cache: "no-store" });
+        const body = (await res.json().catch(() => ({}))) as { enabled?: boolean };
+        setWriteEnabled(body.enabled !== false);
+      } catch {
+        setWriteEnabled(true);
+      } finally {
+        setWriteSettingLoading(false);
+      }
+    });
+  }, []);
 
   useEffect(() => {
     const urls = photos.map((file) => (file ? URL.createObjectURL(file) : null));
@@ -95,6 +111,11 @@ export default function NewDatingCardPage() {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+
+    if (!writeEnabled) {
+      setError("현재 오픈카드 작성이 일시 중단되었습니다.");
+      return;
+    }
 
     const validPhotos = photos.filter((p): p is File => Boolean(p));
     if (validPhotos.length < 1) {
@@ -179,7 +200,8 @@ export default function NewDatingCardPage() {
         body: JSON.stringify(payload),
       });
       if (!res.ok) {
-        setError(await readErrorMessage(res, "오픈카드 생성에 실패했습니다."));
+        const message = await readErrorMessage(res, "오픈카드 생성에 실패했습니다.");
+        setError(message);
         setSubmitting(false);
         return;
       }
@@ -203,6 +225,9 @@ export default function NewDatingCardPage() {
       <h1 className="text-2xl font-bold text-neutral-900 mt-3">오픈카드 작성</h1>
       <p className="text-sm text-neutral-500 mt-1">공개 카드 슬롯 상황에 따라 즉시 공개 또는 대기열로 등록됩니다.</p>
       <p className="text-sm text-neutral-500 mt-1">닉네임은 가입 시 설정한 프로필 닉네임이 자동으로 반영됩니다.</p>
+      {!writeSettingLoading && !writeEnabled && (
+        <p className="mt-2 text-sm font-medium text-red-600">현재 오픈카드 작성이 일시 중단되었습니다.</p>
+      )}
 
       <form onSubmit={submit} className="space-y-4 mt-6">
         <div>
@@ -269,7 +294,11 @@ export default function NewDatingCardPage() {
 
         {error && <p className="text-sm text-red-600">{error}</p>}
 
-        <button type="submit" disabled={submitting} className="w-full min-h-[46px] rounded-xl bg-pink-500 text-white text-sm font-medium hover:bg-pink-600 disabled:opacity-50">
+        <button
+          type="submit"
+          disabled={submitting || writeSettingLoading || !writeEnabled}
+          className="w-full min-h-[46px] rounded-xl bg-pink-500 text-white text-sm font-medium hover:bg-pink-600 disabled:opacity-50"
+        >
           {submitting ? "등록 중..." : "오픈카드 등록하기"}
         </button>
       </form>

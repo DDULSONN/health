@@ -128,6 +128,24 @@ export async function POST(req: Request) {
   }
 
   const adminClient = createAdminClient();
+  const writeSettingRes = await adminClient
+    .from("site_settings")
+    .select("value_json")
+    .eq("key", "open_card_write_enabled")
+    .maybeSingle();
+  if (writeSettingRes.error) {
+    console.error("[POST /api/dating/cards/my] settings fetch failed", writeSettingRes.error);
+    return NextResponse.json({ error: "오픈카드 설정을 확인하지 못했습니다." }, { status: 500 });
+  }
+  const writeEnabledRaw = (writeSettingRes.data?.value_json as { enabled?: unknown } | null)?.enabled;
+  const writeEnabled = writeEnabledRaw === false ? false : true;
+  if (!writeEnabled) {
+    return NextResponse.json(
+      { code: "OPEN_CARD_WRITE_DISABLED", error: "현재 오픈카드 작성이 일시 중단되었습니다." },
+      { status: 403 }
+    );
+  }
+
   const profileRes = await adminClient
     .from("profiles")
     .select("nickname")

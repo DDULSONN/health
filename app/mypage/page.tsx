@@ -175,6 +175,8 @@ export default function MyPage() {
   const [adminOpenCards, setAdminOpenCards] = useState<AdminOpenCard[]>([]);
   const [adminOpenCardApplications, setAdminOpenCardApplications] = useState<AdminOpenCardApplication[]>([]);
   const [adminCardSort, setAdminCardSort] = useState<AdminCardSort>("public_first");
+  const [openCardWriteEnabled, setOpenCardWriteEnabled] = useState(true);
+  const [openCardWriteSaving, setOpenCardWriteSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState<MyPageTab>("my_cert");
   const [error, setError] = useState("");
@@ -200,13 +202,14 @@ export default function MyPage() {
           return;
         }
 
-        const [summaryRes, certRes, adminRes, datingRes, receivedRes, connectionsRes] = await Promise.all([
+        const [summaryRes, certRes, adminRes, datingRes, receivedRes, connectionsRes, writeSettingRes] = await Promise.all([
           fetch("/api/mypage/summary", { cache: "no-store" }),
           fetch("/api/cert-requests", { cache: "no-store" }),
           fetch("/api/admin/me", { cache: "no-store" }),
           fetch("/api/dating/my-application", { cache: "no-store" }),
           fetch("/api/dating/cards/my/received", { cache: "no-store" }),
           fetch("/api/dating/cards/my/connections", { cache: "no-store" }),
+          fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
         ]);
 
         const summaryBody = (await summaryRes.json().catch(() => ({}))) as SummaryResponse & {
@@ -229,6 +232,9 @@ export default function MyPage() {
         const connectionsBody = (await connectionsRes.json().catch(() => ({}))) as {
           error?: string;
           items?: DatingConnection[];
+        };
+        const writeSettingBody = (await writeSettingRes.json().catch(() => ({}))) as {
+          enabled?: boolean;
         };
 
         if (!summaryRes.ok) {
@@ -253,6 +259,7 @@ export default function MyPage() {
           setMyDatingCards(receivedBody.cards ?? []);
           setReceivedApplications(receivedBody.applications ?? []);
           setDatingConnections(connectionsBody.items ?? []);
+          setOpenCardWriteEnabled(writeSettingBody.enabled !== false);
           setError("");
 
           if (adminFlag) {
@@ -349,6 +356,25 @@ export default function MyPage() {
     }
     setAdminOpenCards((prev) => prev.filter((card) => card.id !== cardId));
     setAdminOpenCardApplications((prev) => prev.filter((app) => app.card_id !== cardId));
+  };
+
+  const handleAdminToggleOpenCardWrite = async (enabled: boolean) => {
+    setOpenCardWriteSaving(true);
+    try {
+      const res = await fetch("/api/admin/dating/cards/write-enabled", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; enabled?: boolean };
+      if (!res.ok) {
+        alert(body.error ?? "오픈카드 작성 설정 변경에 실패했습니다.");
+        return;
+      }
+      setOpenCardWriteEnabled(body.enabled !== false);
+    } finally {
+      setOpenCardWriteSaving(false);
+    }
   };
 
   const handleChangeNickname = async () => {
@@ -649,12 +675,18 @@ export default function MyPage() {
           </div>
         )}
         <div className="mt-4 flex gap-2">
-          <Link
-            href="/dating/card/new"
-            className="inline-flex min-h-[42px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
-          >
-            오픈카드 작성하기
-          </Link>
+          {openCardWriteEnabled ? (
+            <Link
+              href="/dating/card/new"
+              className="inline-flex min-h-[42px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
+            >
+              오픈카드 작성하기
+            </Link>
+          ) : (
+            <span className="inline-flex min-h-[42px] items-center rounded-lg bg-neutral-300 px-4 text-sm font-medium text-neutral-700">
+              오픈카드 작성 일시중단
+            </span>
+          )}
           <Link
             href="/community/dating/cards"
             className="inline-flex min-h-[42px] items-center rounded-lg border border-neutral-300 px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
@@ -780,6 +812,31 @@ export default function MyPage() {
       {isAdmin && (
         <section className="mb-5 rounded-2xl border border-violet-200 bg-violet-50/40 p-5">
           <h2 className="text-lg font-bold text-violet-900 mb-3">오픈카드 전체 내용 (관리자)</h2>
+
+          <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
+            <p className="text-xs font-semibold text-violet-800">오픈카드 작성 버튼</p>
+            <div className="mt-2 flex items-center gap-2">
+              <button
+                type="button"
+                disabled={openCardWriteSaving}
+                onClick={() => void handleAdminToggleOpenCardWrite(true)}
+                className={`h-8 rounded-md px-3 text-xs font-medium text-white ${openCardWriteEnabled ? "bg-emerald-600" : "bg-neutral-400"}`}
+              >
+                ON
+              </button>
+              <button
+                type="button"
+                disabled={openCardWriteSaving}
+                onClick={() => void handleAdminToggleOpenCardWrite(false)}
+                className={`h-8 rounded-md px-3 text-xs font-medium text-white ${!openCardWriteEnabled ? "bg-rose-600" : "bg-neutral-400"}`}
+              >
+                OFF
+              </button>
+              <span className="text-xs text-neutral-600">
+                현재: {openCardWriteEnabled ? "작성 가능" : "작성 중단"}
+              </span>
+            </div>
+          </div>
 
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
