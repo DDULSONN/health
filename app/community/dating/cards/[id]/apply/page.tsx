@@ -159,11 +159,12 @@ export default function DatingCardApplyPage() {
         body: JSON.stringify(payload),
       });
       const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
         error?: string;
         code?: string;
         message?: string;
         details?: string;
-        request_id?: string;
+        requestId?: string;
         profile_edit_url?: string;
       };
       if (!res.ok) {
@@ -182,7 +183,7 @@ export default function DatingCardApplyPage() {
           body.message ??
           body.details ??
           "지원 처리 중 오류가 발생했습니다.";
-        setError(body.request_id ? `${message} (요청ID: ${body.request_id})` : message);
+        setError(body.requestId ? `${message} (요청ID: ${body.requestId})` : message);
         setSubmitting(false);
         return;
       }

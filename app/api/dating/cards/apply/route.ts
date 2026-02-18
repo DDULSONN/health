@@ -4,13 +4,17 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-type ApiErrorCode =
-  | "BAD_REQUEST"
+type ApiCode =
+  | "SUCCESS"
+  | "UNAUTHORIZED"
+  | "VALIDATION_ERROR"
   | "NICKNAME_REQUIRED"
+  | "CARD_NOT_FOUND"
+  | "CARD_EXPIRED"
+  | "FORBIDDEN"
   | "DAILY_APPLY_LIMIT"
   | "DUPLICATE_APPLICATION"
-  | "FORBIDDEN"
-  | "NOT_FOUND"
+  | "DATABASE_ERROR"
   | "INTERNAL_SERVER_ERROR";
 
 type DbErrorShape = {
@@ -19,6 +23,10 @@ type DbErrorShape = {
   details?: string | null;
   hint?: string | null;
 };
+
+function isDev() {
+  return process.env.NODE_ENV !== "production";
+}
 
 function normalizeInstagramId(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -59,13 +67,10 @@ function maskPayloadForLog(body: unknown) {
   const photoPaths = Array.isArray(b.photo_paths)
     ? b.photo_paths.filter((item): item is string => typeof item === "string")
     : [];
-
   return {
     card_id: typeof b.card_id === "string" ? b.card_id : null,
     age: b.age ?? null,
     height_cm: b.height_cm ?? null,
-    region: typeof b.region === "string" ? b.region.slice(0, 50) : null,
-    job: typeof b.job === "string" ? b.job.slice(0, 50) : null,
     training_years: b.training_years ?? null,
     intro_text_len: typeof b.intro_text === "string" ? b.intro_text.trim().length : 0,
     instagram_id_masked: typeof b.instagram_id === "string" ? `${b.instagram_id.slice(0, 2)}***` : null,
@@ -74,115 +79,140 @@ function maskPayloadForLog(body: unknown) {
   };
 }
 
-function errorResponse(
+function jsonResponse(
   status: number,
-  code: ApiErrorCode,
+  code: ApiCode,
+  requestId: string,
   message: string,
-  details?: string | null,
-  extra?: Record<string, unknown>
+  extra?: Record<string, unknown>,
+  dbError?: DbErrorShape
 ) {
-  return NextResponse.json(
-    {
-      code,
-      message,
-      details: details ?? null,
-      ...extra,
-    },
-    { status }
-  );
+  const payload: Record<string, unknown> = {
+    ok: status >= 200 && status < 300,
+    code,
+    requestId,
+    message,
+    ...extra,
+  };
+
+  if (dbError && isDev()) {
+    payload.supabaseError = {
+      code: dbError.code ?? null,
+      message: dbError.message ?? null,
+      details: dbError.details ?? null,
+      hint: dbError.hint ?? null,
+    };
+  }
+
+  return NextResponse.json(payload, { status });
+}
+
+function mapDbErrorToHttp(code?: string | null): { status: number; apiCode: ApiCode; message: string } {
+  if (code === "23505") return { status: 409, apiCode: "DUPLICATE_APPLICATION", message: "이미 해당 카드에 지원하셨어요." };
+  if (code === "23502") return { status: 400, apiCode: "VALIDATION_ERROR", message: "필수 항목이 누락되었습니다." };
+  if (code === "23503") return { status: 400, apiCode: "VALIDATION_ERROR", message: "참조 데이터가 올바르지 않습니다." };
+  if (code === "42501") return { status: 403, apiCode: "FORBIDDEN", message: "권한이 없어 요청을 처리할 수 없습니다." };
+  return { status: 500, apiCode: "DATABASE_ERROR", message: "지원 처리 중 오류가 발생했습니다." };
 }
 
 export async function POST(req: Request) {
-  let requestBody: unknown = null;
-  let uid: string | null = null;
+  const requestId = crypto.randomUUID();
+  let userId: string | null = null;
+  let body: unknown = null;
 
   try {
     const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-    uid = user?.id ?? null;
+    const userRes = await supabase.auth.getUser();
+    const authError = toDbErrorShape(userRes.error);
+    userId = userRes.data.user?.id ?? null;
+    console.log(`[dating.cards.apply][${requestId}] auth.getUser`, {
+      hasUser: Boolean(userId),
+      userId,
+      authError,
+    });
 
-    if (!user) {
-      return errorResponse(401, "FORBIDDEN", "로그인이 필요합니다.");
+    if (!userId) {
+      return jsonResponse(401, "UNAUTHORIZED", requestId, "로그인이 필요합니다.");
     }
 
-    requestBody = await req.json().catch(() => null);
-    if (!requestBody) {
-      return errorResponse(400, "BAD_REQUEST", "잘못된 요청입니다.");
+    body = await req.json().catch(() => null);
+    console.log(`[dating.cards.apply][${requestId}] body.received`, {
+      userId,
+      payload: maskPayloadForLog(body),
+    });
+    if (!body) {
+      return jsonResponse(400, "VALIDATION_ERROR", requestId, "잘못된 요청입니다.");
     }
 
-    const body = requestBody as Record<string, unknown>;
-    const cardId = sanitizeText(body.card_id, 100);
-    const age = toInt(body.age);
-    const heightCm = toInt(body.height_cm);
-    const trainingYears = toInt(body.training_years);
-    const region = sanitizeText(body.region, 30);
-    const job = sanitizeText(body.job, 50);
-    const introText = sanitizeText(body.intro_text, 1000);
-    const instagramId = normalizeInstagramId(body.instagram_id);
-    const consent = Boolean(body.consent);
-    const photoPathsRaw = body.photo_paths;
+    const input = body as Record<string, unknown>;
+    const cardId = sanitizeText(input.card_id, 100);
+    const age = toInt(input.age);
+    const heightCm = toInt(input.height_cm);
+    const trainingYears = toInt(input.training_years);
+    const region = sanitizeText(input.region, 30);
+    const job = sanitizeText(input.job, 50);
+    const introText = sanitizeText(input.intro_text, 1000);
+    const instagramId = normalizeInstagramId(input.instagram_id);
+    const consent = Boolean(input.consent);
+    const photoPathsRaw = input.photo_paths;
     const photoPaths = Array.isArray(photoPathsRaw)
       ? photoPathsRaw.filter((item): item is string => typeof item === "string" && item.length > 0)
       : [];
 
-    if (!cardId) {
-      return errorResponse(400, "BAD_REQUEST", "카드 정보가 올바르지 않습니다.", "card_id is required");
-    }
-    if (!instagramId) {
-      return errorResponse(400, "BAD_REQUEST", "인스타그램 아이디를 입력해주세요.", "instagram_id is required");
-    }
-    if (!validInstagramId(instagramId)) {
-      return errorResponse(
+    const validationErrors: string[] = [];
+    if (!cardId) validationErrors.push("card_id");
+    if (!instagramId) validationErrors.push("instagram_id");
+    if (!introText) validationErrors.push("intro_text");
+    if (!consent) validationErrors.push("consent");
+    if (photoPaths.length !== 2) validationErrors.push("photo_paths");
+    if (!validInstagramId(instagramId)) validationErrors.push("instagram_id_format");
+    if (age == null || age < 19 || age > 99) validationErrors.push("age");
+    if (heightCm == null || heightCm < 120 || heightCm > 230) validationErrors.push("height_cm");
+    if (trainingYears == null || trainingYears < 0 || trainingYears > 50) validationErrors.push("training_years");
+    if (!photoPaths.every((path) => path.startsWith(`card-applications/${userId}/`))) validationErrors.push("photo_paths_prefix");
+
+    console.log(`[dating.cards.apply][${requestId}] body.validated`, {
+      userId,
+      valid: validationErrors.length === 0,
+      validationErrors,
+    });
+
+    if (validationErrors.length > 0) {
+      return jsonResponse(
         400,
-        "BAD_REQUEST",
-        "인스타그램 아이디 형식이 올바르지 않습니다. (@ 제외, 영문/숫자/._, 최대 30자)"
+        "VALIDATION_ERROR",
+        requestId,
+        "입력값을 확인해주세요.",
+        { fields: validationErrors }
       );
-    }
-    if (!introText) {
-      return errorResponse(400, "BAD_REQUEST", "자기소개를 입력해주세요.", "intro_text is required");
-    }
-    if (!consent) {
-      return errorResponse(400, "BAD_REQUEST", "동의가 필요합니다.", "consent is required");
-    }
-    if (photoPaths.length !== 2) {
-      return errorResponse(400, "BAD_REQUEST", "지원 사진은 2장이 필요합니다.", "photo_paths must contain exactly 2");
-    }
-    if (!photoPaths.every((path) => path.startsWith(`card-applications/${user.id}/`))) {
-      return errorResponse(400, "BAD_REQUEST", "업로드 경로가 올바르지 않습니다.");
-    }
-    if (age == null || age < 19 || age > 99) {
-      return errorResponse(400, "BAD_REQUEST", "나이를 확인해주세요.");
-    }
-    if (heightCm == null || heightCm < 120 || heightCm > 230) {
-      return errorResponse(400, "BAD_REQUEST", "키를 확인해주세요.");
-    }
-    if (trainingYears == null || trainingYears < 0 || trainingYears > 50) {
-      return errorResponse(400, "BAD_REQUEST", "운동경력을 확인해주세요.");
     }
 
     const profileRes = await supabase
       .from("profiles")
       .select("nickname")
-      .eq("user_id", user.id)
+      .eq("user_id", userId)
       .maybeSingle();
-
+    const profileError = toDbErrorShape(profileRes.error);
+    console.log(`[dating.cards.apply][${requestId}] profile.read`, {
+      userId,
+      hasRow: Boolean(profileRes.data),
+      nickname: profileRes.data?.nickname ?? null,
+      profileError,
+    });
     if (profileRes.error) {
-      const dbError = toDbErrorShape(profileRes.error);
-      return errorResponse(
-        dbError.code === "42501" ? 403 : 500,
-        dbError.code === "42501" ? "FORBIDDEN" : "INTERNAL_SERVER_ERROR",
-        "지원 처리 중 오류가 발생했습니다.",
-        dbError.code ?? dbError.message ?? null
-      );
+      const mapped = mapDbErrorToHttp(profileError.code);
+      return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, profileError);
     }
 
     const applicantDisplayNickname = sanitizeText(profileRes.data?.nickname, 20);
     if (!applicantDisplayNickname) {
-      return errorResponse(400, "NICKNAME_REQUIRED", "닉네임 설정 후 이용 가능합니다.", null, {
-        profile_edit_url: "/mypage",
-      });
+      return jsonResponse(
+        400,
+        "NICKNAME_REQUIRED",
+        requestId,
+        "닉네임 설정 후 이용 가능합니다.",
+        { profile_edit_url: "/mypage" }
+      );
     }
 
     const cardRes = await supabase
@@ -190,45 +220,64 @@ export async function POST(req: Request) {
       .select("id, owner_user_id, status, expires_at")
       .eq("id", cardId)
       .single();
-
+    const cardError = toDbErrorShape(cardRes.error);
+    console.log(`[dating.cards.apply][${requestId}] card.read`, {
+      userId,
+      cardId,
+      hasCard: Boolean(cardRes.data),
+      cardStatus: cardRes.data?.status ?? null,
+      cardExpiresAt: cardRes.data?.expires_at ?? null,
+      cardError,
+    });
     if (cardRes.error || !cardRes.data) {
-      return errorResponse(404, "NOT_FOUND", "카드를 찾을 수 없습니다.");
+      if (cardError.code === "PGRST116") {
+        return jsonResponse(404, "CARD_NOT_FOUND", requestId, "카드를 찾을 수 없습니다.");
+      }
+      const mapped = mapDbErrorToHttp(cardError.code);
+      return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, cardError);
     }
 
     const card = cardRes.data;
-    if (card.status !== "public" || !card.expires_at || new Date(card.expires_at).getTime() <= Date.now()) {
-      return errorResponse(400, "BAD_REQUEST", "지원 가능한 카드가 아닙니다.");
+    if (card.owner_user_id === userId) {
+      return jsonResponse(403, "FORBIDDEN", requestId, "본인 카드에는 지원할 수 없습니다.");
     }
-    if (card.owner_user_id === user.id) {
-      return errorResponse(400, "BAD_REQUEST", "본인 카드에는 지원할 수 없습니다.");
+    if (card.status === "expired") {
+      return jsonResponse(410, "CARD_EXPIRED", requestId, "카드가 만료되었습니다.");
+    }
+    if (card.status !== "public") {
+      return jsonResponse(403, "FORBIDDEN", requestId, "지원 가능한 카드가 아닙니다.");
+    }
+    if (!card.expires_at || new Date(card.expires_at).getTime() <= Date.now()) {
+      return jsonResponse(410, "CARD_EXPIRED", requestId, "카드가 만료되었습니다.");
     }
 
     const { startUtcIso, endUtcIso } = getKstDayRangeUtc();
     const countRes = await supabase
       .from("dating_card_applications")
       .select("id", { head: true, count: "exact" })
-      .eq("applicant_user_id", user.id)
+      .eq("applicant_user_id", userId)
       .in("status", ["submitted", "accepted", "rejected"])
       .gte("created_at", startUtcIso)
       .lt("created_at", endUtcIso);
-
+    const countError = toDbErrorShape(countRes.error);
+    console.log(`[dating.cards.apply][${requestId}] daily.count`, {
+      userId,
+      startUtcIso,
+      endUtcIso,
+      todayCount: countRes.count ?? 0,
+      countError,
+    });
     if (countRes.error) {
-      const dbError = toDbErrorShape(countRes.error);
-      return errorResponse(
-        dbError.code === "42501" ? 403 : 500,
-        dbError.code === "42501" ? "FORBIDDEN" : "INTERNAL_SERVER_ERROR",
-        "지원 처리 중 오류가 발생했습니다.",
-        dbError.code ?? dbError.message ?? null
-      );
+      const mapped = mapDbErrorToHttp(countError.code);
+      return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, countError);
     }
-
     if ((countRes.count ?? 0) >= 2) {
-      return errorResponse(429, "DAILY_APPLY_LIMIT", "하루 2회 지원 가능, 내일 다시");
+      return jsonResponse(429, "DAILY_APPLY_LIMIT", requestId, "하루 2회 지원 가능, 내일 다시");
     }
 
-    const payload = {
+    const insertPayload = {
       card_id: cardId,
-      applicant_user_id: user.id,
+      applicant_user_id: userId,
       applicant_display_nickname: applicantDisplayNickname,
       age,
       height_cm: heightCm,
@@ -243,43 +292,38 @@ export async function POST(req: Request) {
 
     const insertRes = await supabase
       .from("dating_card_applications")
-      .insert(payload)
+      .insert(insertPayload)
       .select("id")
       .single();
-
+    const insertError = toDbErrorShape(insertRes.error);
+    console.log(`[dating.cards.apply][${requestId}] insert.result`, {
+      userId,
+      cardId,
+      insertedId: insertRes.data?.id ?? null,
+      insertErrorRaw: JSON.stringify(insertError),
+    });
     if (insertRes.error) {
-      const dbError = toDbErrorShape(insertRes.error);
-      if (dbError.code === "23505") {
-        return errorResponse(409, "DUPLICATE_APPLICATION", "이미 해당 카드에 지원하셨어요.");
-      }
-      if (dbError.code === "42501") {
-        return errorResponse(403, "FORBIDDEN", "권한이 없어 지원할 수 없습니다.", dbError.code);
-      }
-      if (dbError.code === "23502") {
-        return errorResponse(
-          400,
-          "BAD_REQUEST",
-          "필수값이 누락되었습니다. 인스타그램/자기소개/사진 2장을 확인해주세요.",
-          dbError.code
-        );
-      }
-      return errorResponse(500, "INTERNAL_SERVER_ERROR", "지원 처리 중 오류가 발생했습니다.", dbError.code ?? dbError.message ?? null);
+      const mapped = mapDbErrorToHttp(insertError.code);
+      return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, insertError);
     }
 
-    return NextResponse.json({ id: insertRes.data.id }, { status: 200 });
+    return jsonResponse(200, "SUCCESS", requestId, "지원이 완료되었습니다.", { id: insertRes.data.id });
   } catch (error) {
     const dbError = toDbErrorShape(error);
-    console.error("[POST /api/dating/cards/apply] unhandled error", {
-      uid,
-      payload: maskPayloadForLog(requestBody),
+    console.error(`[dating.cards.apply][${requestId}] unhandled`, {
+      userId,
+      payload: maskPayloadForLog(body),
       dbError,
-      errorMessage: error instanceof Error ? error.message : String(error),
+      stack: error instanceof Error ? error.stack : undefined,
+      message: error instanceof Error ? error.message : String(error),
     });
-    return errorResponse(
+    return jsonResponse(
       500,
       "INTERNAL_SERVER_ERROR",
+      requestId,
       "지원 처리 중 오류가 발생했습니다.",
-      dbError.code ?? dbError.message ?? (error instanceof Error ? error.message : "unknown error")
+      undefined,
+      dbError
     );
   }
 }
