@@ -15,9 +15,11 @@ type CardDetail = {
   job: string | null;
   training_years: number | null;
   ideal_type: string | null;
+  strengths_text: string | null;
+  photo_visibility: "blur" | "public";
   total_3lift: number | null;
   is_3lift_verified: boolean;
-  blur_thumb_url: string;
+  image_url: string;
   expires_at: string;
 };
 
@@ -71,10 +73,14 @@ export default function OpenCardDetailPage() {
         </div>
 
         <div className="mt-3 h-56 rounded-xl border border-neutral-100 bg-neutral-50 overflow-hidden flex items-center justify-center">
-          {card.blur_thumb_url ? (
+          {card.image_url ? (
             <>
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={card.blur_thumb_url} alt="" className="h-full w-full object-contain blur-[9px]" />
+              <img
+                src={card.image_url}
+                alt=""
+                className={`h-full w-full object-contain ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
+              />
             </>
           ) : (
             <div className="h-full w-full animate-pulse bg-neutral-100" />
@@ -101,6 +107,13 @@ export default function OpenCardDetailPage() {
           <div className="mt-4 rounded-xl border border-pink-100 bg-pink-50 p-3">
             <p className="text-sm font-semibold text-pink-700">💘 이상형</p>
             <p className="mt-1 text-sm text-neutral-700 whitespace-pre-wrap break-words">{card.ideal_type}</p>
+          </div>
+        )}
+
+        {card.strengths_text && (
+          <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
+            <p className="text-sm font-semibold text-emerald-700">✨ 내 장점</p>
+            <p className="mt-1 text-sm text-neutral-700 whitespace-pre-wrap break-words">{card.strengths_text}</p>
           </div>
         )}
 

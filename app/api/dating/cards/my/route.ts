@@ -42,7 +42,7 @@ export async function GET() {
   const { data, error } = await adminClient
     .from("dating_cards")
     .select(
-      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, status, published_at, expires_at, created_at"
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, status, published_at, expires_at, created_at"
     )
     .eq("owner_user_id", user.id)
     .order("created_at", { ascending: false });
@@ -91,6 +91,9 @@ export async function POST(req: Request) {
   const region = toText((body as { region?: unknown }).region, 30);
   const job = toText((body as { job?: unknown }).job, 50);
   const idealType = toText((body as { ideal_type?: unknown }).ideal_type, 1000);
+  const strengthsText = toText((body as { strengths_text?: unknown }).strengths_text, 150);
+  const photoVisibilityRaw = (body as { photo_visibility?: unknown }).photo_visibility;
+  const photoVisibility = photoVisibilityRaw === "public" ? "public" : "blur";
 
   const instagramId = normalizeInstagramId((body as { instagram_id?: unknown }).instagram_id);
   const photoPathsRaw = (body as { photo_paths?: unknown }).photo_paths;
@@ -153,6 +156,8 @@ export async function POST(req: Request) {
     job: job || null,
     training_years: trainingYears,
     ideal_type: idealType || null,
+    strengths_text: strengthsText || null,
+    photo_visibility: photoVisibility,
     instagram_id: instagramId,
     photo_paths: photoPaths,
     blur_thumb_path: blurThumbPath,
@@ -173,6 +178,8 @@ export async function POST(req: Request) {
     job: job || null,
     training_years: trainingYears,
     ideal_type: idealType || null,
+    strengths_text: strengthsText || null,
+    photo_visibility: photoVisibility,
     total_3lift: sex === "male" ? total3Lift : null,
     percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
     is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
@@ -201,12 +208,16 @@ export async function POST(req: Request) {
       instagram_id: instagramId,
       photo_urls: photoPaths,
       display_nickname: displayNickname,
+      strengths_text: strengthsText || null,
+      photo_visibility: photoVisibility,
     },
     // Legacy-safe candidate: new instagram + old photo column, no display/published/expires
     {
       ...legacyBase,
       instagram_id: instagramId,
       photo_urls: photoPaths,
+      strengths_text: strengthsText || null,
+      photo_visibility: photoVisibility,
       total_3lift: sex === "male" ? total3Lift : null,
       percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
       is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),

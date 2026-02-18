@@ -8,7 +8,28 @@ function parseIntSafe(value: string | null, fallback: number) {
   return Math.max(0, Math.floor(num));
 }
 
+function isMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || message.includes("could not find") || message.includes("column");
+}
+
 async function createBlurThumbSignedUrl(adminClient: ReturnType<typeof createAdminClient>, path: string) {
+  const primary = await adminClient.storage.from("dating-card-photos").createSignedUrl(path, 3600);
+  if (!primary.error && primary.data?.signedUrl) {
+    return primary.data.signedUrl;
+  }
+
+  const legacy = await adminClient.storage.from("dating-photos").createSignedUrl(path, 3600);
+  if (!legacy.error && legacy.data?.signedUrl) {
+    return legacy.data.signedUrl;
+  }
+
+  return "";
+}
+
+async function createOriginalPhotoSignedUrl(adminClient: ReturnType<typeof createAdminClient>, path: string) {
   const primary = await adminClient.storage.from("dating-card-photos").createSignedUrl(path, 3600);
   if (!primary.error && primary.data?.signedUrl) {
     return primary.data.signedUrl;
@@ -32,7 +53,7 @@ export async function GET(req: Request) {
   let query = adminClient
     .from("dating_cards")
     .select(
-      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, blur_thumb_path, expires_at, created_at",
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, expires_at, created_at",
       { count: "exact" }
     )
     .eq("status", "public")
@@ -43,7 +64,29 @@ export async function GET(req: Request) {
     query = query.eq("sex", sex);
   }
 
-  const { data, error, count } = await query.range(offset, offset + limit - 1);
+  let { data, error, count } = await query.range(offset, offset + limit - 1);
+  if (error && isMissingColumnError(error)) {
+    let legacyQuery = adminClient
+      .from("dating_cards")
+      .select(
+        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, expires_at, created_at",
+        { count: "exact" }
+      )
+      .eq("status", "public")
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false });
+    if (sex === "male" || sex === "female") {
+      legacyQuery = legacyQuery.eq("sex", sex);
+    }
+    const legacyRes = await legacyQuery.range(offset, offset + limit - 1);
+    data = (legacyRes.data ?? []).map((row) => ({
+      ...row,
+      strengths_text: null,
+      photo_visibility: "blur",
+    }));
+    error = legacyRes.error;
+    count = legacyRes.count;
+  }
   if (error) {
     console.error("[GET /api/dating/cards/public] failed", error);
     return NextResponse.json({ error: "카드 목록을 불러오지 못했습니다." }, { status: 500 });
@@ -51,9 +94,18 @@ export async function GET(req: Request) {
 
   const items = await Promise.all(
     (data ?? []).map(async (row) => {
-      let blurThumbUrl = "";
-      if (row.blur_thumb_path) {
-        blurThumbUrl = await createBlurThumbSignedUrl(adminClient, row.blur_thumb_path);
+      const photoVisibility = row.photo_visibility === "public" ? "public" : "blur";
+      const firstPhotoPath =
+        Array.isArray(row.photo_paths) && row.photo_paths.length > 0 && typeof row.photo_paths[0] === "string"
+          ? row.photo_paths[0]
+          : "";
+
+      let imageUrl = "";
+      if (photoVisibility === "public" && firstPhotoPath) {
+        imageUrl = await createOriginalPhotoSignedUrl(adminClient, firstPhotoPath);
+      }
+      if (!imageUrl && row.blur_thumb_path) {
+        imageUrl = await createBlurThumbSignedUrl(adminClient, row.blur_thumb_path);
       }
       return {
         id: row.id,
@@ -65,10 +117,12 @@ export async function GET(req: Request) {
         job: row.job,
         training_years: row.training_years,
         ideal_type: row.ideal_type,
+        strengths_text: row.strengths_text,
+        photo_visibility: photoVisibility,
         total_3lift: row.total_3lift,
         percent_all: row.percent_all,
         is_3lift_verified: row.is_3lift_verified,
-        blur_thumb_url: blurThumbUrl,
+        image_url: imageUrl,
         expires_at: row.expires_at,
         created_at: row.created_at,
       };

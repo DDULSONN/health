@@ -15,9 +15,11 @@ type CardDetail = {
   job: string | null;
   training_years: number | null;
   ideal_type: string | null;
+  strengths_text: string | null;
+  photo_visibility: "blur" | "public";
   total_3lift: number | null;
   is_3lift_verified: boolean;
-  blur_thumb_url: string;
+  image_url: string;
   expires_at: string;
 };
 
@@ -215,10 +217,14 @@ export default function DatingCardApplyPage() {
 
       <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-3">
         <p className="text-sm font-semibold text-neutral-900">{card.display_nickname}</p>
-        {card.blur_thumb_url && (
+        {card.image_url && (
           <div className="mt-2 h-40 rounded-lg overflow-hidden bg-neutral-50 border border-neutral-100 flex items-center justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={card.blur_thumb_url} alt="" className="h-full w-full object-contain blur-[9px]" />
+            <img
+              src={card.image_url}
+              alt=""
+              className={`h-full w-full object-contain ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
+            />
           </div>
         )}
       </div>

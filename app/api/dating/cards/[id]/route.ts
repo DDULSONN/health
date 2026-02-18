@@ -1,6 +1,13 @@
 ﻿import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
+function isMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || message.includes("could not find") || message.includes("column");
+}
+
 async function createBlurThumbSignedUrl(adminClient: ReturnType<typeof createAdminClient>, path: string) {
   const primary = await adminClient.storage.from("dating-card-photos").createSignedUrl(path, 3600);
   if (!primary.error && primary.data?.signedUrl) {
@@ -15,19 +22,50 @@ async function createBlurThumbSignedUrl(adminClient: ReturnType<typeof createAdm
   return "";
 }
 
-export async function GET(
-  _req: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
+async function createOriginalPhotoSignedUrl(adminClient: ReturnType<typeof createAdminClient>, path: string) {
+  const primary = await adminClient.storage.from("dating-card-photos").createSignedUrl(path, 3600);
+  if (!primary.error && primary.data?.signedUrl) {
+    return primary.data.signedUrl;
+  }
+
+  const legacy = await adminClient.storage.from("dating-photos").createSignedUrl(path, 3600);
+  if (!legacy.error && legacy.data?.signedUrl) {
+    return legacy.data.signedUrl;
+  }
+
+  return "";
+}
+
+export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const adminClient = createAdminClient();
-  const { data, error } = await adminClient
+
+  let { data, error } = await adminClient
     .from("dating_cards")
     .select(
-      "id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, blur_thumb_path, expires_at, created_at, status"
+      "id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, expires_at, created_at, status"
     )
     .eq("id", id)
     .single();
+
+  if (error && isMissingColumnError(error)) {
+    const legacyRes = await adminClient
+      .from("dating_cards")
+      .select(
+        "id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, expires_at, created_at, status"
+      )
+      .eq("id", id)
+      .single();
+
+    data = legacyRes.data
+      ? {
+          ...legacyRes.data,
+          strengths_text: null,
+          photo_visibility: "blur",
+        }
+      : null;
+    error = legacyRes.error;
+  }
 
   if (error || !data) {
     return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
@@ -37,9 +75,18 @@ export async function GET(
     return NextResponse.json({ error: "공개 중인 카드가 아닙니다." }, { status: 403 });
   }
 
-  let blurThumbUrl = "";
-  if (data.blur_thumb_path) {
-    blurThumbUrl = await createBlurThumbSignedUrl(adminClient, data.blur_thumb_path);
+  const photoVisibility = data.photo_visibility === "public" ? "public" : "blur";
+  const firstPhotoPath =
+    Array.isArray(data.photo_paths) && data.photo_paths.length > 0 && typeof data.photo_paths[0] === "string"
+      ? data.photo_paths[0]
+      : "";
+
+  let imageUrl = "";
+  if (photoVisibility === "public" && firstPhotoPath) {
+    imageUrl = await createOriginalPhotoSignedUrl(adminClient, firstPhotoPath);
+  }
+  if (!imageUrl && data.blur_thumb_path) {
+    imageUrl = await createBlurThumbSignedUrl(adminClient, data.blur_thumb_path);
   }
 
   return NextResponse.json({
@@ -53,10 +100,12 @@ export async function GET(
       job: data.job,
       training_years: data.training_years,
       ideal_type: data.ideal_type,
+      strengths_text: data.strengths_text,
+      photo_visibility: photoVisibility,
       total_3lift: data.total_3lift,
       percent_all: data.percent_all,
       is_3lift_verified: data.is_3lift_verified,
-      blur_thumb_url: blurThumbUrl,
+      image_url: imageUrl,
       expires_at: data.expires_at,
       created_at: data.created_at,
     },

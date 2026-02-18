@@ -58,7 +58,9 @@ export default function NewDatingCardPage() {
   const [job, setJob] = useState("");
   const [trainingYears, setTrainingYears] = useState("");
   const [idealType, setIdealType] = useState("");
+  const [strengthsText, setStrengthsText] = useState("");
   const [instagramId, setInstagramId] = useState("");
+  const [photoVisibility, setPhotoVisibility] = useState<"blur" | "public">("blur");
   const [total3Lift, setTotal3Lift] = useState("");
   const [is3LiftVerified, setIs3LiftVerified] = useState(false);
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
@@ -162,6 +164,8 @@ export default function NewDatingCardPage() {
         job: job.trim(),
         training_years: trainingYears ? Number(trainingYears) : null,
         ideal_type: idealType.trim(),
+        strengths_text: strengthsText.trim(),
+        photo_visibility: photoVisibility,
         instagram_id: normalizeInstagramId(instagramId),
         photo_paths: uploadedRawPaths,
         blur_thumb_path: blurBody.path,
@@ -219,7 +223,20 @@ export default function NewDatingCardPage() {
         <Field label="직업"><input className="input" maxLength={50} value={job} onChange={(e) => setJob(e.target.value)} /></Field>
         <Field label="운동경력(년)"><input className="input" type="number" min={0} max={50} value={trainingYears} onChange={(e) => setTrainingYears(e.target.value)} /></Field>
         <Field label="이상형(상세 전체 공개)"><textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" maxLength={1000} rows={4} value={idealType} onChange={(e) => setIdealType(e.target.value)} /></Field>
+        <Field label="내 장점(공개, 최대 150자)"><textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" maxLength={150} rows={3} value={strengthsText} onChange={(e) => setStrengthsText(e.target.value)} /></Field>
         <Field label="인스타그램 아이디(필수, @ 없이)" required><input className="input" required maxLength={30} value={instagramId} onChange={(e) => setInstagramId(normalizeInstagramId(e.target.value))} /></Field>
+        <label className="flex items-start gap-2 text-sm text-neutral-700">
+          <input
+            type="checkbox"
+            checked={photoVisibility === "public"}
+            onChange={(e) => setPhotoVisibility(e.target.checked ? "public" : "blur")}
+            className="mt-1"
+          />
+          <span>
+            사진을 블러 없이 공개합니다.
+            <span className="block text-xs text-neutral-500 mt-1">체크 시 공개 목록/상세에 원본 첫 사진이 표시됩니다.</span>
+          </span>
+        </label>
 
         {sex === "male" && (
           <>

@@ -14,9 +14,11 @@ type PublicCard = {
   job: string | null;
   training_years: number | null;
   ideal_type: string | null;
+  strengths_text: string | null;
+  photo_visibility: "blur" | "public";
   total_3lift: number | null;
   is_3lift_verified: boolean;
-  blur_thumb_url: string;
+  image_url: string;
   expires_at: string;
   created_at: string;
 };
@@ -210,10 +212,14 @@ function CardRow({ card }: { card: PublicCard }) {
       </div>
 
       <div className="mt-3 h-44 w-full rounded-xl border border-neutral-100 bg-neutral-50 overflow-hidden flex items-center justify-center">
-        {card.blur_thumb_url ? (
+        {card.image_url ? (
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={card.blur_thumb_url} alt="" className="h-full w-full object-contain blur-[9px]" />
+            <img
+              src={card.image_url}
+              alt=""
+              className={`h-full w-full object-contain ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
+            />
           </>
         ) : (
           <div className="h-full w-full animate-pulse bg-neutral-100" />
@@ -227,6 +233,7 @@ function CardRow({ card }: { card: PublicCard }) {
       </div>
 
       {ideal && <p className="mt-2 text-xs text-pink-700 truncate">💘 이상형: {ideal}</p>}
+      {card.strengths_text && <p className="mt-1 text-xs text-emerald-700 truncate">✨ 내 장점: {card.strengths_text}</p>}
 
       {card.sex === "male" && (
         <div className="mt-2 flex flex-wrap gap-2">
