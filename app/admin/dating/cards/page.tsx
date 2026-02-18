@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type AdminCard = {
   id: string;
@@ -34,9 +34,12 @@ type AdminReport = {
   created_at: string;
 };
 
+type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
+
 export default function AdminDatingCardsPage() {
   const [cards, setCards] = useState<AdminCard[]>([]);
   const [reports, setReports] = useState<AdminReport[]>([]);
+  const [cardSort, setCardSort] = useState<AdminCardSort>("public_first");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -50,14 +53,15 @@ export default function AdminDatingCardsPage() {
       ]);
       const cardsBody = (await cardsRes.json().catch(() => ({}))) as { items?: AdminCard[]; error?: string };
       const reportsBody = (await reportsRes.json().catch(() => ({}))) as { items?: AdminReport[]; error?: string };
-      if (!cardsRes.ok) throw new Error(cardsBody.error ?? "Failed to load cards");
-      if (!reportsRes.ok) throw new Error(reportsBody.error ?? "Failed to load reports");
+      if (!cardsRes.ok) throw new Error(cardsBody.error ?? "카드 목록을 불러오지 못했습니다.");
+      if (!reportsRes.ok) throw new Error(reportsBody.error ?? "신고 목록을 불러오지 못했습니다.");
       setCards(cardsBody.items ?? []);
       setReports(reportsBody.items ?? []);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Unknown error");
+      setError(e instanceof Error ? e.message : "알 수 없는 오류가 발생했습니다.");
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -66,7 +70,35 @@ export default function AdminDatingCardsPage() {
     });
   }, [load]);
 
-  const updateCardStatus = async (id: string, status: "pending" | "public" | "expired" | "hidden") => {
+  const sortedCards = useMemo(() => {
+    const publicFirstRank: Record<AdminCard["status"], number> = {
+      public: 0,
+      pending: 1,
+      hidden: 2,
+      expired: 3,
+    };
+    const pendingFirstRank: Record<AdminCard["status"], number> = {
+      pending: 0,
+      public: 1,
+      hidden: 2,
+      expired: 3,
+    };
+
+    return [...cards].sort((a, b) => {
+      if (cardSort === "newest") {
+        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }
+      if (cardSort === "oldest") {
+        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+      }
+      if (cardSort === "pending_first") {
+        return pendingFirstRank[a.status] - pendingFirstRank[b.status];
+      }
+      return publicFirstRank[a.status] - publicFirstRank[b.status];
+    });
+  }, [cards, cardSort]);
+
+  const updateCardStatus = async (id: string, status: AdminCard["status"]) => {
     const res = await fetch(`/api/admin/dating/cards/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -74,31 +106,15 @@ export default function AdminDatingCardsPage() {
     });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) {
-      alert(body.error ?? "Failed to update card status");
+      alert(body.error ?? "카드 상태 변경에 실패했습니다.");
       return;
     }
     setCards((prev) => prev.map((card) => (card.id === id ? { ...card, status } : card)));
   };
 
-  const updateReportStatus = async (id: string, status: "open" | "resolved" | "dismissed") => {
-    const res = await fetch(`/api/admin/dating/reports/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
-    });
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) {
-      alert(body.error ?? "Failed to update report status");
-      return;
-    }
-    setReports((prev) => prev.map((report) => (report.id === id ? { ...report, status } : report)));
-  };
-
   const deleteCard = async (id: string) => {
     if (!confirm("이 카드를 삭제할까요?")) return;
-    const res = await fetch(`/api/admin/dating/cards/${id}`, {
-      method: "DELETE",
-    });
+    const res = await fetch(`/api/admin/dating/cards/${id}`, { method: "DELETE" });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) {
       alert(body.error ?? "카드 삭제에 실패했습니다.");
@@ -107,9 +123,23 @@ export default function AdminDatingCardsPage() {
     setCards((prev) => prev.filter((card) => card.id !== id));
   };
 
+  const updateReportStatus = async (id: string, status: AdminReport["status"]) => {
+    const res = await fetch(`/api/admin/dating/reports/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      alert(body.error ?? "신고 상태 변경에 실패했습니다.");
+      return;
+    }
+    setReports((prev) => prev.map((report) => (report.id === id ? { ...report, status } : report)));
+  };
+
   return (
-    <main className="max-w-5xl mx-auto px-4 py-6">
-      <h1 className="text-2xl font-bold text-neutral-900 mb-4">오픈카드 모더레이션</h1>
+    <main className="mx-auto max-w-5xl px-4 py-6">
+      <h1 className="mb-4 text-2xl font-bold text-neutral-900">오픈카드 모더레이션</h1>
 
       {loading ? (
         <p className="text-neutral-500">불러오는 중...</p>
@@ -118,9 +148,22 @@ export default function AdminDatingCardsPage() {
       ) : (
         <>
           <section className="mb-8">
-            <h2 className="text-lg font-semibold text-neutral-900 mb-3">카드 전체 내용</h2>
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold text-neutral-900">카드 전체 내용</h2>
+              <select
+                value={cardSort}
+                onChange={(e) => setCardSort(e.target.value as AdminCardSort)}
+                className="h-8 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-800"
+              >
+                <option value="public_first">공개중 우선</option>
+                <option value="pending_first">대기 우선</option>
+                <option value="newest">최신순</option>
+                <option value="oldest">오래된순</option>
+              </select>
+            </div>
+
             <div className="space-y-3">
-              {cards.map((card) => (
+              {sortedCards.map((card) => (
                 <div key={card.id} className="rounded-xl border border-neutral-200 bg-white p-3">
                   <div className="flex items-center justify-between gap-3">
                     <p className="text-sm font-semibold text-neutral-900">
@@ -129,8 +172,8 @@ export default function AdminDatingCardsPage() {
                     <span className="text-xs text-neutral-500">{new Date(card.created_at).toLocaleString("ko-KR")}</span>
                   </div>
 
-                  <p className="mt-1 text-xs text-neutral-700 break-all">card_id: {card.id}</p>
-                  <p className="mt-1 text-xs text-neutral-700 break-all">owner_user_id: {card.owner_user_id}</p>
+                  <p className="mt-1 break-all text-xs text-neutral-700">card_id: {card.id}</p>
+                  <p className="mt-1 break-all text-xs text-neutral-700">owner_user_id: {card.owner_user_id}</p>
                   {card.instagram_id && <p className="mt-1 text-xs text-violet-700">owner instagram: @{card.instagram_id}</p>}
 
                   <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-700">
@@ -145,13 +188,13 @@ export default function AdminDatingCardsPage() {
                   </div>
 
                   {card.ideal_type && (
-                    <p className="mt-2 text-xs text-neutral-700 whitespace-pre-wrap break-words">이상형: {card.ideal_type}</p>
+                    <p className="mt-2 whitespace-pre-wrap break-words text-xs text-neutral-700">이상형: {card.ideal_type}</p>
                   )}
 
                   {card.blur_thumb_path && (
-                    <p className="mt-1 text-xs text-neutral-500 break-all">blur_thumb_path: {card.blur_thumb_path}</p>
+                    <p className="mt-1 break-all text-xs text-neutral-500">blur_thumb_path: {card.blur_thumb_path}</p>
                   )}
-                  <p className="mt-1 text-xs text-neutral-500 break-all">
+                  <p className="mt-1 break-all text-xs text-neutral-500">
                     photo_paths: {Array.isArray(card.photo_paths) ? card.photo_paths.join(", ") : "-"}
                   </p>
 
@@ -162,7 +205,7 @@ export default function AdminDatingCardsPage() {
                     <p className="mt-1 text-xs text-amber-700">만료 예정: {new Date(card.expires_at).toLocaleString("ko-KR")}</p>
                   )}
 
-                  <div className="mt-2 flex gap-2">
+                  <div className="mt-2 flex flex-wrap gap-2">
                     <button onClick={() => void updateCardStatus(card.id, "public")} className="h-8 rounded-md bg-emerald-600 px-3 text-xs text-white">
                       공개
                     </button>
@@ -181,18 +224,18 @@ export default function AdminDatingCardsPage() {
                   </div>
                 </div>
               ))}
-              {cards.length === 0 && <p className="text-sm text-neutral-500">카드가 없습니다.</p>}
+              {sortedCards.length === 0 && <p className="text-sm text-neutral-500">카드가 없습니다.</p>}
             </div>
           </section>
 
           <section>
-            <h2 className="text-lg font-semibold text-neutral-900 mb-3">신고</h2>
+            <h2 className="mb-3 text-lg font-semibold text-neutral-900">신고</h2>
             <div className="space-y-3">
               {reports.map((report) => (
                 <div key={report.id} className="rounded-xl border border-neutral-200 bg-white p-3">
                   <p className="text-sm font-medium text-neutral-900">카드: {report.card_id}</p>
-                  <p className="text-sm text-neutral-700 mt-1 whitespace-pre-wrap">{report.reason}</p>
-                  <p className="text-xs text-neutral-500 mt-1">{new Date(report.created_at).toLocaleString("ko-KR")}</p>
+                  <p className="mt-1 whitespace-pre-wrap text-sm text-neutral-700">{report.reason}</p>
+                  <p className="mt-1 text-xs text-neutral-500">{new Date(report.created_at).toLocaleString("ko-KR")}</p>
                   <div className="mt-2 flex gap-2">
                     <button onClick={() => void updateReportStatus(report.id, "resolved")} className="h-8 rounded-md bg-emerald-600 px-3 text-xs text-white">
                       해결
