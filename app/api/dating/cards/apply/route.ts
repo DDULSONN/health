@@ -14,6 +14,7 @@ type ApiCode =
   | "FORBIDDEN"
   | "DAILY_APPLY_LIMIT"
   | "DUPLICATE_APPLICATION"
+  | "SCHEMA_MISMATCH"
   | "DATABASE_ERROR"
   | "INTERNAL_SERVER_ERROR";
 
@@ -112,6 +113,7 @@ function mapDbErrorToHttp(code?: string | null): { status: number; apiCode: ApiC
   if (code === "23502") return { status: 400, apiCode: "VALIDATION_ERROR", message: "필수 항목이 누락되었습니다." };
   if (code === "23503") return { status: 400, apiCode: "VALIDATION_ERROR", message: "참조 데이터가 올바르지 않습니다." };
   if (code === "42501") return { status: 403, apiCode: "FORBIDDEN", message: "권한이 없어 요청을 처리할 수 없습니다." };
+  if (code === "PGRST204") return { status: 503, apiCode: "SCHEMA_MISMATCH", message: "서버 스키마 불일치로 잠시 처리할 수 없습니다." };
   return { status: 500, apiCode: "DATABASE_ERROR", message: "지원 처리 중 오류가 발생했습니다." };
 }
 
@@ -300,12 +302,41 @@ export async function POST(req: Request) {
       status: "submitted" as const,
     };
 
-    const insertRes = await supabase
+    const insertPayloadNoNickname = {
+      card_id: cardId,
+      applicant_user_id: userId,
+      age,
+      height_cm: heightCm,
+      region,
+      job,
+      training_years: trainingYears,
+      intro_text: introText,
+      instagram_id: instagramId,
+      photo_paths: photoPaths,
+      status: "submitted" as const,
+    };
+
+    let insertRes = await supabase
       .from("dating_card_applications")
       .insert(insertPayload)
       .select("id")
       .single();
-    const insertError = toDbErrorShape(insertRes.error);
+    let insertError = toDbErrorShape(insertRes.error);
+
+    // Fallback for legacy schema without applicant_display_nickname
+    if (insertRes.error && insertError.code === "PGRST204") {
+      const pgrstMessage = `${insertError.message ?? ""} ${insertError.details ?? ""}`.toLowerCase();
+      if (pgrstMessage.includes("applicant_display_nickname")) {
+        console.log(`[apply] ${requestId} L7 insert.retry_without_nickname`);
+        insertRes = await supabase
+          .from("dating_card_applications")
+          .insert(insertPayloadNoNickname)
+          .select("id")
+          .single();
+        insertError = toDbErrorShape(insertRes.error);
+      }
+    }
+
     console.log(`[apply] ${requestId} L7 insert.result`, {
       userId,
       cardId,
