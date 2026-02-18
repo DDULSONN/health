@@ -232,16 +232,16 @@ export default function MyPage() {
         };
 
         if (!summaryRes.ok) {
-          throw new Error(summaryBody.error ?? "留덉씠?섏씠吏 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??");
+          throw new Error(summaryBody.error ?? "마이페이지 정보를 불러오지 못했습니다.");
         }
         if (!certRes.ok) {
-          throw new Error(certBody.error ?? "?몄쬆 ?붿껌 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??");
+          throw new Error(certBody.error ?? "인증 요청 정보를 불러오지 못했습니다.");
         }
         if (!receivedRes.ok) {
-          throw new Error(receivedBody.error ?? "??移대뱶 吏?먯옄瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??");
+          throw new Error(receivedBody.error ?? "내 카드 지원자를 불러오지 못했습니다.");
         }
         if (!connectionsRes.ok) {
-          throw new Error(connectionsBody.error ?? "?몄뒪? 援먰솚 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??");
+          throw new Error(connectionsBody.error ?? "인스타 교환 정보를 불러오지 못했습니다.");
         }
 
         if (isMounted) {
@@ -263,7 +263,7 @@ export default function MyPage() {
               applications?: AdminOpenCardApplication[];
             };
             if (!overviewRes.ok) {
-              throw new Error(overviewBody.error ?? "愿由ъ옄 ?ㅽ뵂移대뱶 ?곗씠?곕? 遺덈윭?ㅼ? 紐삵뻽?듬땲??");
+              throw new Error(overviewBody.error ?? "관리자 오픈카드 데이터를 불러오지 못했습니다.");
             }
             if (isMounted) {
               setAdminOpenCards(overviewBody.cards ?? []);
@@ -312,7 +312,7 @@ export default function MyPage() {
     });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) {
-      alert(body.error ?? "?곹깭 蹂寃쎌뿉 ?ㅽ뙣?덉뒿?덈떎.");
+      alert(body.error ?? "상태 변경에 실패했습니다.");
       return;
     }
 
@@ -375,12 +375,12 @@ export default function MyPage() {
 
       const result = data as ChangeNicknameResult | null;
       if (!result?.success) {
-        const message = result?.message ?? "?됰꽕??蹂寃쎌뿉 ?ㅽ뙣?덉뒿?덈떎.";
+        const message = result?.message ?? "닉네임 변경에 실패했습니다.";
         setNicknameError(message);
         return;
       }
 
-      setNicknameInfo("?됰꽕?꾩씠 蹂寃쎈릺?덉뒿?덈떎.");
+      setNicknameInfo("닉네임이 변경되었습니다.");
       setNicknameOpen(false);
       setNewNickname("");
 
@@ -403,7 +403,7 @@ export default function MyPage() {
         };
       });
     } catch (e) {
-      setNicknameError(e instanceof Error ? e.message : "?됰꽕??蹂寃쎌뿉 ?ㅽ뙣?덉뒿?덈떎.");
+      setNicknameError(e instanceof Error ? e.message : "닉네임 변경에 실패했습니다.");
     } finally {
       setSavingNickname(false);
     }
@@ -496,7 +496,7 @@ export default function MyPage() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h1 className="text-2xl font-bold text-neutral-900">留덉씠?섏씠吏</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">마이페이지</h1>
         <p className="mt-1 text-sm text-neutral-600">{nickname}</p>
         <p className="mt-0.5 text-xs text-neutral-500">{email}</p>
 
@@ -506,10 +506,10 @@ export default function MyPage() {
               <p className="text-sm font-semibold text-neutral-800">닉네임</p>
               <p className="mt-1 text-xs text-neutral-600">
                 {remainingFree > 0
-                  ? `臾대즺 蹂寃?${remainingFree}???⑥쓬`
+                  ? `무료 변경 ${remainingFree}회 남음`
                   : credits > 0
-                  ? `異붽? 蹂寃쎄텒 ${credits}媛?蹂댁쑀`
-                  : "臾대즺 蹂寃??꾨즺"}
+                  ? `추가 변경권 ${credits}개 보유`
+                  : "무료 변경 완료"}
               </p>
             </div>
             <button
@@ -523,18 +523,19 @@ export default function MyPage() {
               disabled={!canChangeNickname}
               className="min-h-[40px] rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              ?됰꽕??蹂寃?            </button>
+              닉네임 변경
+            </button>
           </div>
           {!canChangeNickname && (
             <p className="mt-2 text-xs text-amber-700">
-              ?됰꽕??蹂寃쎌? 1??臾대즺?낅땲?? 異붽? 蹂寃쎌? 以鍮?以묒엯?덈떎.
+              닉네임 변경은 1회 무료입니다. 추가 변경권 기능은 준비 중입니다.
             </p>
           )}
           {nicknameInfo && <p className="mt-2 text-xs text-emerald-700">{nicknameInfo}</p>}
         </div>
 
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
-          <p className="text-sm font-semibold text-amber-800">二쇨컙 紐몄㎟ ?좎젙 ?잛닔</p>
+          <p className="text-sm font-semibold text-amber-800">주간 몸평 우승 횟수</p>
           <p className="mt-1 text-xl font-bold text-amber-900">{weeklyWinCount}회</p>
         </div>
 
@@ -543,13 +544,13 @@ export default function MyPage() {
             href="/my-records"
             className="flex min-h-[44px] items-center rounded-xl border border-neutral-200 px-4 text-sm text-neutral-700 hover:bg-neutral-50"
           >
-            ??3? 湲곕줉
+            내 3대 기록
           </Link>
           <Link
             href="/certify"
             className="flex min-h-[44px] items-center rounded-xl border border-neutral-200 px-4 text-sm text-neutral-700 hover:bg-neutral-50"
           >
-            怨듭떇 ?몄쬆 ?붿껌
+            공식 인증 요청
           </Link>
           {isAdmin && (
             <>
@@ -557,12 +558,14 @@ export default function MyPage() {
                 href="/admin/dating"
                 className="flex min-h-[44px] items-center rounded-xl border border-pink-200 bg-pink-50 px-4 text-sm font-medium text-pink-700 hover:bg-pink-100"
               >
-                ?뚭컻??愿由?              </Link>
+                소개팅 신청 관리
+              </Link>
               <Link
                 href="/admin/dating/cards"
                 className="flex min-h-[44px] items-center rounded-xl border border-violet-200 bg-violet-50 px-4 text-sm font-medium text-violet-700 hover:bg-violet-100"
               >
-                移대뱶 紐⑤뜑?덉씠??              </Link>
+                카드 모더레이션
+              </Link>
             </>
           )}
           <button
@@ -571,74 +574,75 @@ export default function MyPage() {
             disabled={loggingOut}
             className="min-h-[44px] rounded-xl bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
           >
-            濡쒓렇?꾩썐
+            로그아웃
           </button>
         </div>
       </section>
 
       <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h2 className="text-lg font-bold text-neutral-900 mb-3">?뚭컻???좎껌 ?꾪솴</h2>
+        <h2 className="text-lg font-bold text-neutral-900 mb-3">소개팅 신청 현황</h2>
         {datingApplication ? (
           <div className="space-y-2 text-sm">
             <p className="text-neutral-600">
-              ?좎껌?? <span className="text-neutral-900">{new Date(datingApplication.created_at).toLocaleString("ko-KR")}</span>
+              신청일 <span className="text-neutral-900">{new Date(datingApplication.created_at).toLocaleString("ko-KR")}</span>
             </p>
             <p className="text-neutral-600">
-              ?곹깭:{" "}
+              상태:{" "}
               <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${datingStatusColor[datingApplication.status] ?? "bg-neutral-100 text-neutral-700"}`}>
                 {datingStatusText[datingApplication.status] ?? datingApplication.status}
               </span>
             </p>
             <p className="text-neutral-600">
-              怨듦컻 ?뱀씤:{" "}
+              공개 승인:{" "}
               <span className={datingApplication.approved_for_public ? "text-emerald-700 font-medium" : "text-neutral-500"}>
                 {datingApplication.approved_for_public ? "승인됨" : "미승인"}
               </span>
             </p>
             <div className="flex flex-wrap gap-2 text-xs text-neutral-600">
-              {datingApplication.display_nickname && <span>?됰꽕?? {datingApplication.display_nickname}</span>}
-              {datingApplication.age != null && <span>?섏씠: {datingApplication.age}세</span>}
-              {datingApplication.training_years != null && <span>?대룞寃쎈젰: {datingApplication.training_years}년</span>}
+              {datingApplication.display_nickname && <span>닉네임: {datingApplication.display_nickname}</span>}
+              {datingApplication.age != null && <span>나이: {datingApplication.age}세</span>}
+              {datingApplication.training_years != null && <span>운동경력: {datingApplication.training_years}년</span>}
             </div>
           </div>
         ) : (
-          <p className="text-sm text-neutral-500">?뚭컻???좎껌 ?댁뿭???놁뒿?덈떎.</p>
+          <p className="text-sm text-neutral-500">소개팅 신청 내역이 없습니다.</p>
         )}
         <div className="mt-4">
           <Link
             href="/dating/apply"
             className="inline-flex min-h-[42px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
           >
-            ?좎껌?섎윭 媛湲?          </Link>
+            신청하러 가기
+          </Link>
         </div>
       </section>
 
       <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h2 className="text-lg font-bold text-neutral-900 mb-3">???ㅽ뵂移대뱶 ?곹깭</h2>
+        <h2 className="text-lg font-bold text-neutral-900 mb-3">내 오픈카드 상태</h2>
         {myDatingCards.length === 0 ? (
-          <p className="text-sm text-neutral-500">?깅줉???ㅽ뵂移대뱶媛 ?놁뒿?덈떎.</p>
+          <p className="text-sm text-neutral-500">등록한 오픈카드가 없습니다.</p>
         ) : (
           <div className="space-y-3">
             {myDatingCards.map((card) => (
               <div key={card.id} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium text-neutral-900">
-                    {card.display_nickname} / {card.sex === "male" ? "?⑥옄" : "?ъ옄"}
+                    {card.display_nickname} / {card.sex === "male" ? "남자" : "여자"}
                   </p>
                   <span className="inline-flex rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
                     {card.status}
                   </span>
                 </div>
                 <p className="text-xs text-neutral-500 mt-1">
-                  ?앹꽦?? {new Date(card.created_at).toLocaleDateString("ko-KR")}
+                  생성일 {new Date(card.created_at).toLocaleDateString("ko-KR")}
                 </p>
                 {card.status === "public" && card.expires_at && (
                   <p className="text-sm text-amber-700 font-medium mt-1">
-                    怨듦컻 以?쨌 ?⑥? ?쒓컙 {formatRemainingToKorean(card.expires_at)}
+                    공개 중 · 남은 시간 {formatRemainingToKorean(card.expires_at)}
                   </p>
                 )}
                 {card.status === "pending" && (
-                  <p className="text-sm text-neutral-600 mt-1">?湲곗뿴???깅줉?섏뼱 ?덉뒿?덈떎.</p>
+                  <p className="text-sm text-neutral-600 mt-1">대기열에 등록되어 있습니다.</p>
                 )}
               </div>
             ))}
@@ -649,21 +653,21 @@ export default function MyPage() {
             href="/dating/card/new"
             className="inline-flex min-h-[42px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
           >
-            ?ㅽ뵂移대뱶 ?묒꽦?섍린
+            오픈카드 작성하기
           </Link>
           <Link
             href="/community/dating/cards"
             className="inline-flex min-h-[42px] items-center rounded-lg border border-neutral-300 px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
           >
-            ?ㅽ뵂移대뱶 蹂닿린
+            오픈카드 보러가기
           </Link>
         </div>
       </section>
 
       <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h2 className="text-lg font-bold text-neutral-900 mb-3">??移대뱶 吏?먯옄</h2>
+        <h2 className="text-lg font-bold text-neutral-900 mb-3">내 카드 지원자</h2>
         {receivedApplications.length === 0 ? (
-          <p className="text-sm text-neutral-500">?꾩쭅 諛쏆? 吏?먯꽌媛 ?놁뒿?덈떎.</p>
+          <p className="text-sm text-neutral-500">아직 받은 지원서가 없습니다.</p>
         ) : (
           <div className="space-y-3">
             {receivedApplications.map((app) => {
@@ -672,7 +676,7 @@ export default function MyPage() {
                 <div key={app.id} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-sm font-medium text-neutral-900">
-                      移대뱶 {card?.sex === "male" ? "?⑥옄" : card?.sex === "female" ? "?ъ옄" : ""} / 吏?먯씪{" "}
+                      카드 {card?.sex === "male" ? "남자" : card?.sex === "female" ? "여자" : ""} / 지원일{" "}
                       {new Date(app.created_at).toLocaleDateString("ko-KR")}
                     </div>
                     <span
@@ -685,12 +689,12 @@ export default function MyPage() {
                   </div>
 
                   <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
-                    {app.applicant_display_nickname && <span>?됰꽕??{app.applicant_display_nickname}</span>}
-                    {app.age != null && <span>?섏씠 {app.age}</span>}
-                    {app.height_cm != null && <span>??{app.height_cm}cm</span>}
-                    {app.region && <span>吏??{app.region}</span>}
-                    {app.job && <span>吏곸뾽 {app.job}</span>}
-                    {app.training_years != null && <span>?대룞 {app.training_years}년</span>}
+                    {app.applicant_display_nickname && <span>닉네임 {app.applicant_display_nickname}</span>}
+                    {app.age != null && <span>나이 {app.age}</span>}
+                    {app.height_cm != null && <span>키 {app.height_cm}cm</span>}
+                    {app.region && <span>지역 {app.region}</span>}
+                    {app.job && <span>직업 {app.job}</span>}
+                    {app.training_years != null && <span>운동 {app.training_years}년</span>}
                   </div>
 
                   {app.intro_text && (
@@ -710,7 +714,7 @@ export default function MyPage() {
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={url}
-                            alt={`吏?먯옄 ?ъ쭊 ${idx + 1}`}
+                            alt={`지원자 사진 ${idx + 1}`}
                             className="h-32 w-full object-cover"
                           />
                         </a>
@@ -719,7 +723,7 @@ export default function MyPage() {
                   )}
 
                   {app.status === "accepted" && app.instagram_id && (
-                    <p className="mt-2 text-sm text-emerald-700 font-medium">吏?먯옄 ?몄뒪?: @{app.instagram_id}</p>
+                    <p className="mt-2 text-sm text-emerald-700 font-medium">지원자 인스타: @{app.instagram_id}</p>
                   )}
 
                   {app.status === "submitted" && (
@@ -729,14 +733,14 @@ export default function MyPage() {
                         onClick={() => void handleCardApplicationStatus(app.id, "accepted")}
                         className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white"
                       >
-                        ?섎씫
+                        수락
                       </button>
                       <button
                         type="button"
                         onClick={() => void handleCardApplicationStatus(app.id, "rejected")}
                         className="h-9 rounded-lg bg-red-600 px-3 text-xs font-medium text-white"
                       >
-                        嫄곗젅
+                        거절
                       </button>
                     </div>
                   )}
@@ -748,23 +752,23 @@ export default function MyPage() {
       </section>
 
       <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h2 className="text-lg font-bold text-neutral-900 mb-3">留ㅼ묶 ?몄뒪? 援먰솚</h2>
+        <h2 className="text-lg font-bold text-neutral-900 mb-3">매칭 인스타 교환</h2>
         {datingConnections.length === 0 ? (
-          <p className="text-sm text-neutral-500">?꾩쭅 ?섎씫???곌껐???놁뒿?덈떎.</p>
+          <p className="text-sm text-neutral-500">아직 수락된 연결이 없습니다.</p>
         ) : (
           <div className="space-y-3">
             {datingConnections.map((item) => (
               <div key={item.application_id} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
                 <p className="text-sm font-medium text-neutral-900">{item.other_nickname}</p>
                 <p className="text-xs text-neutral-500 mt-1">
-                  ?곌껐?? {new Date(item.created_at).toLocaleDateString("ko-KR")}
+                  연결일 {new Date(item.created_at).toLocaleDateString("ko-KR")}
                 </p>
                 {item.my_instagram_id && (
-                  <p className="text-sm text-neutral-700 mt-2">???몄뒪?: @{item.my_instagram_id}</p>
+                  <p className="text-sm text-neutral-700 mt-2">내 인스타: @{item.my_instagram_id}</p>
                 )}
                 {item.other_instagram_id && (
                   <p className="text-sm text-emerald-700 font-medium mt-1">
-                    ?곷? ?몄뒪?: @{item.other_instagram_id}
+                    상대 인스타: @{item.other_instagram_id}
                   </p>
                 )}
               </div>
@@ -775,12 +779,12 @@ export default function MyPage() {
 
       {isAdmin && (
         <section className="mb-5 rounded-2xl border border-violet-200 bg-violet-50/40 p-5">
-          <h2 className="text-lg font-bold text-violet-900 mb-3">?ㅽ뵂移대뱶 ?꾩껜 ?댁슜 (愿由ъ옄)</h2>
+          <h2 className="text-lg font-bold text-violet-900 mb-3">오픈카드 전체 내용 (관리자)</h2>
 
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-violet-800">
-                移대뱶 {adminOpenCards.length}嫄?/ 吏?먯꽌 {adminOpenCardApplications.length}嫄?
+                카드 {adminOpenCards.length}건 / 지원서 {adminOpenCardApplications.length}건
               </h3>
               <select
                 value={adminCardSort}
@@ -795,52 +799,52 @@ export default function MyPage() {
             </div>
 
             {adminOpenCards.length === 0 ? (
-              <p className="text-sm text-neutral-600">?깅줉???ㅽ뵂移대뱶媛 ?놁뒿?덈떎.</p>
+              <p className="text-sm text-neutral-600">등록된 오픈카드가 없습니다.</p>
             ) : (
               <div className="space-y-2">
                 {sortedAdminOpenCards.map((card) => (
                   <div key={card.id} className="rounded-xl border border-violet-200 bg-white p-3">
                     <p className="text-sm font-semibold text-neutral-900">
-                      移대뱶 {card.id.slice(0, 8)}... / {card.display_nickname ?? "(?됰꽕???놁쓬)"} / {card.sex} / ?곹깭 {card.status}
+                      카드 {card.id.slice(0, 8)}... / {card.display_nickname ?? "(닉네임 없음)"} / {card.sex} / 상태 {card.status}
                     </p>
                     <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
                       <span>owner: {card.owner_nickname ?? card.owner_user_id.slice(0, 8)}</span>
-                      {card.age != null && <span>?섏씠 {card.age}</span>}
-                      {card.height_cm != null && <span>??{card.height_cm}cm</span>}
-                      {card.region && <span>吏??{card.region}</span>}
-                      {card.job && <span>吏곸뾽 {card.job}</span>}
-                      {card.training_years != null && <span>?대룞 {card.training_years}년</span>}
-                      {card.total_3lift != null && <span>3? {card.total_3lift}kg</span>}
-                      {card.percent_all != null && <span>?곸쐞 {card.percent_all}%</span>}
-                      <span>3??몄쬆 {card.is_3lift_verified ? "Y" : "N"}</span>
+                      {card.age != null && <span>나이 {card.age}</span>}
+                      {card.height_cm != null && <span>키 {card.height_cm}cm</span>}
+                      {card.region && <span>지역 {card.region}</span>}
+                      {card.job && <span>직업 {card.job}</span>}
+                      {card.training_years != null && <span>운동 {card.training_years}년</span>}
+                      {card.total_3lift != null && <span>3대 {card.total_3lift}kg</span>}
+                      {card.percent_all != null && <span>상위 {card.percent_all}%</span>}
+                      <span>3대인증 {card.is_3lift_verified ? "Y" : "N"}</span>
                     </div>
                     {card.instagram_id && (
                       <p className="mt-1 text-xs font-medium text-violet-700">
-                        移대뱶 ?뚯쑀???몄뒪?: @{card.instagram_id}
+                        카드 소유자 인스타: @{card.instagram_id}
                       </p>
                     )}
                     {card.ideal_type && (
                       <p className="mt-1 text-xs text-neutral-700 whitespace-pre-wrap break-words">
-                        ?댁긽?? {card.ideal_type}
+                        이상형: {card.ideal_type}
                       </p>
                     )}
                     {card.published_at && (
                       <p className="mt-1 text-xs text-emerald-700">
-                        怨듦컻 ?쒖옉: {new Date(card.published_at).toLocaleString("ko-KR")}
+                        공개 시작: {new Date(card.published_at).toLocaleString("ko-KR")}
                       </p>
                     )}
                     {card.expires_at && (
                       <p className="mt-1 text-xs text-amber-700">
-                        留뚮즺 ?덉젙: {new Date(card.expires_at).toLocaleString("ko-KR")}
+                        만료 예정: {new Date(card.expires_at).toLocaleString("ko-KR")}
                       </p>
                     )}
                     {card.blur_thumb_path && (
                       <p className="mt-1 text-xs text-neutral-500 break-all">
-                        blur 寃쎈줈: {card.blur_thumb_path}
+                        blur 경로: {card.blur_thumb_path}
                       </p>
                     )}
                     <p className="mt-1 text-xs text-neutral-500 break-all">
-                      ?ъ쭊 寃쎈줈: {Array.isArray(card.photo_paths) ? card.photo_paths.join(", ") : "-"}
+                      사진 경로: {Array.isArray(card.photo_paths) ? card.photo_paths.join(", ") : "-"}
                     </p>
                     <div className="mt-2">
                       <button
@@ -857,31 +861,31 @@ export default function MyPage() {
             )}
 
             {adminOpenCardApplications.length === 0 ? (
-              <p className="text-sm text-neutral-600">?깅줉??吏?먯꽌媛 ?놁뒿?덈떎.</p>
+              <p className="text-sm text-neutral-600">등록된 지원서가 없습니다.</p>
             ) : (
               <div className="space-y-2">
                 {adminOpenCardApplications.map((app) => (
                   <div key={app.id} className="rounded-xl border border-violet-200 bg-white p-3">
                     <p className="text-sm font-semibold text-neutral-900">
-                      吏?먯꽌 {app.id.slice(0, 8)}... / 移대뱶 {app.card_id.slice(0, 8)}... / ?곹깭 {app.status}
+                      지원서 {app.id.slice(0, 8)}... / 카드 {app.card_id.slice(0, 8)}... / 상태 {app.status}
                     </p>
                     <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
-                      <span>吏?먯옄: {app.applicant_nickname ?? app.applicant_user_id.slice(0, 8)}</span>
-                      {app.applicant_display_nickname && <span>?쒖떆 ?됰꽕?? {app.applicant_display_nickname}</span>}
-                      {app.age != null && <span>?섏씠 {app.age}</span>}
-                      {app.height_cm != null && <span>??{app.height_cm}cm</span>}
-                      {app.region && <span>吏??{app.region}</span>}
-                      {app.job && <span>吏곸뾽 {app.job}</span>}
-                      {app.training_years != null && <span>?대룞 {app.training_years}년</span>}
+                      <span>지원자: {app.applicant_nickname ?? app.applicant_user_id.slice(0, 8)}</span>
+                      {app.applicant_display_nickname && <span>표시 닉네임: {app.applicant_display_nickname}</span>}
+                      {app.age != null && <span>나이 {app.age}</span>}
+                      {app.height_cm != null && <span>키 {app.height_cm}cm</span>}
+                      {app.region && <span>지역 {app.region}</span>}
+                      {app.job && <span>직업 {app.job}</span>}
+                      {app.training_years != null && <span>운동 {app.training_years}년</span>}
                     </div>
-                    <p className="mt-1 text-xs font-medium text-violet-700">?몄뒪?: @{app.instagram_id}</p>
+                    <p className="mt-1 text-xs font-medium text-violet-700">인스타: @{app.instagram_id}</p>
                     {app.intro_text && (
                       <p className="mt-1 text-xs text-neutral-700 whitespace-pre-wrap break-words">
-                        ?먭린?뚭컻: {app.intro_text}
+                        자기소개: {app.intro_text}
                       </p>
                     )}
                     <p className="mt-1 text-xs text-neutral-500 break-all">
-                      ?ъ쭊 寃쎈줈: {Array.isArray(app.photo_paths) ? app.photo_paths.join(", ") : "-"}
+                      사진 경로: {Array.isArray(app.photo_paths) ? app.photo_paths.join(", ") : "-"}
                     </p>
                   </div>
                 ))}
@@ -906,7 +910,7 @@ export default function MyPage() {
                 : "border-neutral-300 bg-white text-neutral-700"
             }`}
           >
-            ???몄쬆
+            내 인증서
           </button>
           <button
             type="button"
@@ -917,7 +921,7 @@ export default function MyPage() {
                 : "border-neutral-300 bg-white text-neutral-700"
             }`}
           >
-            ?붿껌 ?꾪솴
+            요청 현황
           </button>
           {isAdmin && (
             <button
@@ -929,17 +933,17 @@ export default function MyPage() {
                   : "border-neutral-300 bg-white text-neutral-700"
               }`}
             >
-              愿由ъ옄 ?ъ궗
+              관리자 심사
             </button>
           )}
         </div>
 
         {activeTab === "my_cert" && (
           <>
-            <h2 className="mb-3 text-lg font-bold text-neutral-900">???몄쬆</h2>
+            <h2 className="mb-3 text-lg font-bold text-neutral-900">내 인증서</h2>
             {approvedRequests.length === 0 ? (
               <p className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-500">
-                諛쒓툒???몄쬆?쒓? ?놁뒿?덈떎.
+                발급된 인증서가 없습니다.
               </p>
             ) : (
               <div className="space-y-3">
@@ -949,8 +953,8 @@ export default function MyPage() {
                   const verifyPath = `/cert/${cert.slug}`;
                   return (
                     <div key={item.id} className="rounded-2xl border border-neutral-200 bg-white p-4">
-                      <p className="text-sm font-semibold text-neutral-900">?몄쬆踰덊샇: {cert.certificate_no}</p>
-                      <p className="mt-1 text-xs text-neutral-500">諛쒓툒?? {timeAgo(cert.issued_at)}</p>
+                      <p className="text-sm font-semibold text-neutral-900">인증번호: {cert.certificate_no}</p>
+                      <p className="mt-1 text-xs text-neutral-500">발급일: {timeAgo(cert.issued_at)}</p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <a
                           href={cert.pdf_url}
@@ -958,7 +962,7 @@ export default function MyPage() {
                           rel="noreferrer"
                           className="flex h-9 items-center rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white"
                         >
-                          PDF ?ㅼ슫濡쒕뱶
+                          PDF 다운로드
                         </a>
                         <button
                           type="button"
@@ -968,7 +972,7 @@ export default function MyPage() {
                           }}
                           className="h-9 rounded-lg bg-neutral-900 px-3 text-xs font-medium text-white"
                         >
-                          寃利?留곹겕 蹂듭궗
+                          검증 링크 복사
                         </button>
                       </div>
                     </div>
@@ -981,34 +985,34 @@ export default function MyPage() {
 
         {activeTab === "request_status" && (
           <>
-            <h2 className="mb-3 text-lg font-bold text-neutral-900">?붿껌 ?꾪솴</h2>
+            <h2 className="mb-3 text-lg font-bold text-neutral-900">요청 현황</h2>
             {certRequests.length === 0 ? (
               <p className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-500">
-                ?몄쬆 ?붿껌 ?댁뿭???놁뒿?덈떎.
+                인증 요청 내역이 없습니다.
               </p>
             ) : (
               <div className="space-y-3">
                 {certRequests.map((item) => (
                   <div key={item.id} className="rounded-2xl border border-neutral-200 bg-white p-4">
                     <p className="text-sm font-semibold text-neutral-900">
-                      ?쒖텧肄붾뱶: <span className="font-bold">{item.submit_code}</span>
+                      제출코드: <span className="font-bold">{item.submit_code}</span>
                     </p>
                     <p className="mt-1 text-xs text-neutral-500">
-                      ?곹깭: {item.status} / ?⑷퀎 {item.total}kg / {timeAgo(item.created_at)}
+                      상태: {item.status} / 합계 {item.total}kg / {timeAgo(item.created_at)}
                     </p>
                     {item.video_url && (
                       <p className="mt-1 break-all text-xs text-neutral-600">
-                        ?곸긽 留곹겕:{" "}
+                        영상 링크:{" "}
                         <a href={item.video_url} target="_blank" rel="noreferrer" className="text-blue-600 underline">
                           {item.video_url}
                         </a>
                       </p>
                     )}
                     {item.status === "needs_info" && item.admin_note && (
-                      <p className="mt-2 text-xs text-amber-700">愿由ъ옄 ?붿껌: {item.admin_note}</p>
+                      <p className="mt-2 text-xs text-amber-700">관리자 요청: {item.admin_note}</p>
                     )}
                     {item.status === "rejected" && item.admin_note && (
-                      <p className="mt-2 text-xs text-red-700">嫄곗젅 ?ъ쑀: {item.admin_note}</p>
+                      <p className="mt-2 text-xs text-red-700">거절 사유: {item.admin_note}</p>
                     )}
                   </div>
                 ))}
@@ -1021,22 +1025,22 @@ export default function MyPage() {
           <>
             {isAdmin ? (
               <>
-                <h2 className="mb-3 text-lg font-bold text-neutral-900">愿由ъ옄 ?ъ궗</h2>
+                <h2 className="mb-3 text-lg font-bold text-neutral-900">관리자 심사</h2>
                 <AdminCertReviewPanel />
               </>
             ) : (
-              <p className="text-sm text-red-600">403: ?묎렐 沅뚰븳???놁뒿?덈떎.</p>
+              <p className="text-sm text-red-600">403: 접근 권한이 없습니다.</p>
             )}
           </>
         )}
       </section>
 
       <section>
-        <h2 className="mb-3 text-lg font-bold text-neutral-900">???ъ쭊 紐명룊 寃뚯떆湲</h2>
+        <h2 className="mb-3 text-lg font-bold text-neutral-900">내 사진 몸평 게시글</h2>
 
         {posts.length === 0 ? (
           <p className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-500">
-            ?꾩쭅 ?깅줉???ъ쭊 紐명룊 寃뚯떆湲???놁뒿?덈떎.
+            아직 등록한 사진 몸평 게시글이 없습니다.
           </p>
         ) : (
           <div className="space-y-3">
@@ -1051,7 +1055,7 @@ export default function MyPage() {
                     <p className="text-xs text-neutral-400">{timeAgo(post.created_at)}</p>
                     <p className="mt-1 truncate text-sm font-semibold text-neutral-900">{post.title}</p>
                     <p className="mt-1 text-xs text-indigo-700">
-                      ?됯퇏 {post.average_score.toFixed(2)} / ?ы몴 {post.vote_count}
+                      평균 {post.average_score.toFixed(2)} / 투표 {post.vote_count}
                     </p>
                   </div>
                   {(post.images?.length ?? 0) > 0 && (
@@ -1072,7 +1076,7 @@ export default function MyPage() {
         <div className="fixed inset-0 z-50 flex items-end bg-black/40 p-4 sm:items-center sm:justify-center">
           <div className="w-full max-w-sm rounded-2xl bg-white p-4">
             <h3 className="text-base font-semibold text-neutral-900">닉네임 변경</h3>
-            <p className="mt-1 text-xs text-neutral-600">2~12?? ?쒓?/?곷Ц/?レ옄/_留??ъ슜 媛?ν빀?덈떎.</p>
+            <p className="mt-1 text-xs text-neutral-600">2~12자, 한글/영문/숫자/_ 만 사용 가능합니다.</p>
 
             <input
               type="text"
@@ -1091,7 +1095,7 @@ export default function MyPage() {
                 onClick={() => setNicknameOpen(false)}
                 className="min-h-[42px] rounded-lg border border-neutral-300 text-sm font-medium text-neutral-700"
               >
-                痍⑥냼
+                취소
               </button>
               <button
                 type="button"
