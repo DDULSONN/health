@@ -69,6 +69,7 @@ type ReceivedCardApplication = {
   status: "submitted" | "accepted" | "rejected" | "canceled";
   created_at: string;
   instagram_id: string | null;
+  photo_signed_urls?: string[];
 };
 
 type DatingConnection = {
@@ -653,6 +654,27 @@ export default function MyPage() {
 
                   {app.intro_text && (
                     <p className="mt-2 text-sm text-neutral-700 whitespace-pre-wrap break-words">{app.intro_text}</p>
+                  )}
+
+                  {Array.isArray(app.photo_signed_urls) && app.photo_signed_urls.length > 0 && (
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {app.photo_signed_urls.map((url, idx) => (
+                        <a
+                          key={`${app.id}-${idx}`}
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={url}
+                            alt={`지원자 사진 ${idx + 1}`}
+                            className="h-32 w-full object-cover"
+                          />
+                        </a>
+                      ))}
+                    </div>
                   )}
 
                   {app.status === "accepted" && app.instagram_id && (

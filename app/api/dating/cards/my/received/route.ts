@@ -1,6 +1,27 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
+async function createApplyPhotoSignedUrl(
+  adminClient: ReturnType<typeof createAdminClient>,
+  path: string
+) {
+  const primary = await adminClient.storage
+    .from("dating-apply-photos")
+    .createSignedUrl(path, 3600);
+  if (!primary.error && primary.data?.signedUrl) {
+    return primary.data.signedUrl;
+  }
+
+  const legacy = await adminClient.storage
+    .from("dating-photos")
+    .createSignedUrl(path, 3600);
+  if (!legacy.error && legacy.data?.signedUrl) {
+    return legacy.data.signedUrl;
+  }
+
+  return "";
+}
+
 export async function GET() {
   const supabase = await createClient();
   const {
@@ -71,10 +92,23 @@ export async function GET() {
     return NextResponse.json({ error: "지원자 목록을 불러오지 못했습니다." }, { status: 500 });
   }
 
-  const safeApps = (applications ?? []).map((app) => ({
-    ...app,
-    instagram_id: app.status === "accepted" ? app.instagram_id : null,
-  }));
+  const safeApps = await Promise.all(
+    (applications ?? []).map(async (app) => {
+      const rawPhotoPaths = Array.isArray(app.photo_paths)
+        ? app.photo_paths.filter((item): item is string => typeof item === "string" && item.length > 0)
+        : [];
+
+      const signedUrls = await Promise.all(
+        rawPhotoPaths.map((path) => createApplyPhotoSignedUrl(adminClient, path))
+      );
+
+      return {
+        ...app,
+        instagram_id: app.status === "accepted" ? app.instagram_id : null,
+        photo_signed_urls: signedUrls.filter((url) => url.length > 0),
+      };
+    })
+  );
 
   return NextResponse.json({ cards: cards ?? [], applications: safeApps });
 }
