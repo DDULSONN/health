@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { getKstWeekRange } from "@/lib/weekly";
 
 type WinnerPost = {
@@ -13,7 +13,7 @@ type WinnerPost = {
 };
 
 async function fetchLiveTopByGender(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  supabase: ReturnType<typeof createAdminClient>,
   gender: "male" | "female",
   startUtcIso: string,
   endUtcIso: string,
@@ -38,7 +38,7 @@ async function fetchLiveTopByGender(
 }
 
 export async function GET() {
-  const supabase = await createClient();
+  const supabase = createAdminClient();
 
   const { data: latestWinner, error } = await supabase
     .from("weekly_winners")
