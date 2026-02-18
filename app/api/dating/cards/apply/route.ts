@@ -316,24 +316,60 @@ export async function POST(req: Request) {
       status: "submitted" as const,
     };
 
-    let insertRes = await supabase
-      .from("dating_card_applications")
-      .insert(insertPayload)
-      .select("id")
-      .single();
-    let insertError = toDbErrorShape(insertRes.error);
+    const insertPayloadLegacyPhoto = {
+      card_id: cardId,
+      applicant_user_id: userId,
+      applicant_display_nickname: applicantDisplayNickname,
+      age,
+      height_cm: heightCm,
+      region,
+      job,
+      training_years: trainingYears,
+      intro_text: introText,
+      instagram_id: instagramId,
+      photo_urls: photoPaths,
+      status: "submitted" as const,
+    };
 
-    // Fallback for legacy schema without applicant_display_nickname
-    if (insertRes.error && insertError.code === "PGRST204") {
-      const pgrstMessage = `${insertError.message ?? ""} ${insertError.details ?? ""}`.toLowerCase();
-      if (pgrstMessage.includes("applicant_display_nickname")) {
-        console.log(`[apply] ${requestId} L7 insert.retry_without_nickname`);
-        insertRes = await supabase
-          .from("dating_card_applications")
-          .insert(insertPayloadNoNickname)
-          .select("id")
-          .single();
-        insertError = toDbErrorShape(insertRes.error);
+    const insertPayloadLegacyPhotoNoNickname = {
+      card_id: cardId,
+      applicant_user_id: userId,
+      age,
+      height_cm: heightCm,
+      region,
+      job,
+      training_years: trainingYears,
+      intro_text: introText,
+      instagram_id: instagramId,
+      photo_urls: photoPaths,
+      status: "submitted" as const,
+    };
+
+    const candidates: Array<{ label: string; payload: Record<string, unknown> }> = [
+      { label: "new_with_nickname", payload: insertPayload },
+      { label: "new_no_nickname", payload: insertPayloadNoNickname },
+      { label: "legacy_photo_with_nickname", payload: insertPayloadLegacyPhoto },
+      { label: "legacy_photo_no_nickname", payload: insertPayloadLegacyPhotoNoNickname },
+    ];
+
+    let insertRes: { data: { id: string } | null; error: unknown } = { data: null, error: null };
+    let insertError: DbErrorShape = {};
+
+    for (const candidate of candidates) {
+      console.log(`[apply] ${requestId} L7 insert.try`, { candidate: candidate.label });
+      const res = await supabase
+        .from("dating_card_applications")
+        .insert(candidate.payload)
+        .select("id")
+        .single();
+      insertRes = { data: (res.data as { id: string } | null) ?? null, error: res.error };
+      insertError = toDbErrorShape(res.error);
+      if (!res.error) {
+        break;
+      }
+      logSupabaseError(requestId, `L7 insert.${candidate.label}`, insertError);
+      if (insertError.code !== "PGRST204") {
+        break;
       }
     }
 
@@ -347,6 +383,9 @@ export async function POST(req: Request) {
       logSupabaseError(requestId, "L7 insert.result", insertError);
       const mapped = mapDbErrorToHttp(insertError.code);
       return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, insertError);
+    }
+    if (!insertRes.data?.id) {
+      return jsonResponse(500, "DATABASE_ERROR", requestId, "지원 처리 중 오류가 발생했습니다.");
     }
 
     console.log(`[apply] ${requestId} L8 before return`, {
