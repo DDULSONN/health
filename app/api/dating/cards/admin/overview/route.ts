@@ -20,7 +20,7 @@ export async function GET() {
       "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, instagram_id, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, status, published_at, expires_at, created_at"
     )
     .order("created_at", { ascending: false })
-    .limit(300);
+    .limit(2000);
 
   if (cardsRes.error && cardsRes.error.code === "42703") {
     cardsRes = await adminClient
@@ -29,7 +29,7 @@ export async function GET() {
         "id, owner_user_id, sex, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, status, created_at"
       )
       .order("created_at", { ascending: false })
-      .limit(300);
+      .limit(2000);
 
     cardsRes = {
       ...cardsRes,

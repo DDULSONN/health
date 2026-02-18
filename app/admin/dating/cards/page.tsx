@@ -52,7 +52,7 @@ export default function AdminDatingCardsPage() {
     setError("");
     try {
       const [cardsRes, reportsRes] = await Promise.all([
-        fetch("/api/admin/dating/cards?limit=100", { cache: "no-store" }),
+        fetch("/api/admin/dating/cards?limit=2000", { cache: "no-store" }),
         fetch("/api/admin/dating/reports", { cache: "no-store" }),
       ]);
       const cardsBody = (await cardsRes.json().catch(() => ({}))) as { items?: AdminCard[]; error?: string };
