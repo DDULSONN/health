@@ -161,13 +161,28 @@ export default function DatingCardApplyPage() {
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
         code?: string;
+        message?: string;
+        details?: string;
+        request_id?: string;
         profile_edit_url?: string;
       };
       if (!res.ok) {
         if (body.profile_edit_url) {
           setProfileEditUrl(body.profile_edit_url);
         }
-        setError(body.error ?? (body.code === "DAILY_APPLY_LIMIT" ? "하루 2회 제한에 도달했어요." : "지원 실패"));
+        const mappedByCode: Record<string, string> = {
+          NICKNAME_REQUIRED: "닉네임 설정 후 이용 가능합니다.",
+          DAILY_APPLY_LIMIT: "하루 2회 지원 가능, 내일 다시",
+          DUPLICATE_APPLICATION: "이미 해당 카드에 지원하셨어요.",
+          FORBIDDEN: "권한이 없어 지원할 수 없습니다.",
+        };
+        const message =
+          (body.code && mappedByCode[body.code]) ??
+          body.error ??
+          body.message ??
+          body.details ??
+          "지원 처리 중 오류가 발생했습니다.";
+        setError(body.request_id ? `${message} (요청ID: ${body.request_id})` : message);
         setSubmitting(false);
         return;
       }
