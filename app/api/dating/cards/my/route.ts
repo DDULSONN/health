@@ -1,5 +1,4 @@
-﻿import { OPEN_CARD_EXPIRE_HOURS, OPEN_CARD_LIMIT_PER_SEX } from "@/lib/dating-open";
-import { createClient, createAdminClient } from "@/lib/supabase/server";
+﻿import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 function normalizeInstagramId(value: unknown): string {
@@ -30,34 +29,6 @@ function isMissingColumnError(error: unknown): boolean {
   const code = String((error as { code?: unknown }).code ?? "");
   const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
   return code === "42703" || code === "PGRST204" || message.includes("could not find") || message.includes("column");
-}
-
-async function hasPublicSlot(adminClient: ReturnType<typeof createAdminClient>, sex: "male" | "female") {
-  let { count, error } = await adminClient
-    .from("dating_cards")
-    .select("id", { count: "exact", head: true })
-    .eq("sex", sex)
-    .eq("status", "public")
-    .gt("expires_at", new Date().toISOString());
-
-  // Legacy fallback when expires_at column is not available yet.
-  if (error && isMissingColumnError(error)) {
-    const legacy = await adminClient
-      .from("dating_cards")
-      .select("id", { count: "exact", head: true })
-      .eq("sex", sex)
-      .eq("status", "public");
-    count = legacy.count;
-    error = legacy.error;
-  }
-
-  // Do not hard-fail card creation when slot query is unstable.
-  // Fallback policy: treat as no available public slot -> create pending card.
-  if (error) {
-    console.error("[hasPublicSlot] failed; fallback to pending", error);
-    return false;
-  }
-  return (count ?? 0) < OPEN_CARD_LIMIT_PER_SEX;
 }
 
 export async function GET() {
@@ -169,11 +140,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "프로필 닉네임이 없습니다. 닉네임 설정 후 다시 시도해주세요." }, { status: 400 });
   }
 
-  const available = await hasPublicSlot(adminClient, sex);
-
-  const now = new Date();
-  const publishedAt = available ? now.toISOString() : null;
-  const expiresAt = available ? new Date(now.getTime() + OPEN_CARD_EXPIRE_HOURS * 60 * 60 * 1000).toISOString() : null;
+  const publishedAt = null;
+  const expiresAt = null;
 
   const payload = {
     owner_user_id: user.id,
@@ -191,7 +159,7 @@ export async function POST(req: Request) {
     total_3lift: sex === "male" ? total3Lift : null,
     percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
     is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
-    status: available ? ("public" as const) : ("pending" as const),
+    status: "pending" as const,
     published_at: publishedAt,
     expires_at: expiresAt,
   };
@@ -208,7 +176,7 @@ export async function POST(req: Request) {
     total_3lift: sex === "male" ? total3Lift : null,
     percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
     is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
-    status: available ? ("public" as const) : ("pending" as const),
+    status: "pending" as const,
     published_at: publishedAt,
     expires_at: expiresAt,
   };
@@ -222,7 +190,7 @@ export async function POST(req: Request) {
     job: job || null,
     training_years: trainingYears,
     ideal_type: idealType || null,
-    status: available ? ("public" as const) : ("pending" as const),
+    status: "pending" as const,
   };
 
   const insertCandidates: Record<string, unknown>[] = [
@@ -274,11 +242,9 @@ export async function POST(req: Request) {
     {
       id: data.id,
       status: data.status,
-      message:
-        data.status === "public"
-          ? "오픈카드가 공개되었습니다."
-          : "현재 공개 슬롯이 가득 찼어요. 대기열에 등록되었습니다.",
+      message: "오픈카드가 대기열에 등록되었습니다.",
     },
     { status: 201 }
   );
 }
+

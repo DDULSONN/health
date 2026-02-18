@@ -94,6 +94,19 @@ export default function AdminDatingCardsPage() {
     setReports((prev) => prev.map((report) => (report.id === id ? { ...report, status } : report)));
   };
 
+  const deleteCard = async (id: string) => {
+    if (!confirm("이 카드를 삭제할까요?")) return;
+    const res = await fetch(`/api/admin/dating/cards/${id}`, {
+      method: "DELETE",
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      alert(body.error ?? "카드 삭제에 실패했습니다.");
+      return;
+    }
+    setCards((prev) => prev.filter((card) => card.id !== id));
+  };
+
   return (
     <main className="max-w-5xl mx-auto px-4 py-6">
       <h1 className="text-2xl font-bold text-neutral-900 mb-4">오픈카드 모더레이션</h1>
@@ -161,6 +174,9 @@ export default function AdminDatingCardsPage() {
                     </button>
                     <button onClick={() => void updateCardStatus(card.id, "expired")} className="h-8 rounded-md bg-zinc-600 px-3 text-xs text-white">
                       만료
+                    </button>
+                    <button onClick={() => void deleteCard(card.id)} className="h-8 rounded-md bg-rose-700 px-3 text-xs text-white">
+                      삭제
                     </button>
                   </div>
                 </div>

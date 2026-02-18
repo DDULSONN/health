@@ -1,4 +1,5 @@
 import { isAdminEmail } from "@/lib/admin";
+import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -35,7 +36,7 @@ export async function PATCH(
 
   const { data: card, error: cardError } = await adminClient
     .from("dating_cards")
-    .select("id, owner_user_id")
+    .select("id, owner_user_id, sex")
     .eq("id", app.card_id)
     .single();
 
@@ -90,6 +91,13 @@ export async function PATCH(
 
     if (rejectOthersError) {
       console.error("[PATCH /api/dating/cards/applications/[id]] reject others failed", rejectOthersError);
+    }
+
+    const sex = card.sex === "female" ? "female" : "male";
+    try {
+      await promotePendingCardsBySex(adminClient, sex);
+    } catch (promoteError) {
+      console.error("[PATCH /api/dating/cards/applications/[id]] promote pending failed", promoteError);
     }
   }
 

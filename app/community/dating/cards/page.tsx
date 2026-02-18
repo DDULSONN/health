@@ -21,6 +21,11 @@ type PublicCard = {
   created_at: string;
 };
 
+type QueueStats = {
+  male: { pending_count: number; public_count: number; slot_limit: number };
+  female: { pending_count: number; public_count: number; slot_limit: number };
+};
+
 const PAGE_SIZE = 20;
 
 function maskIdealTypeForPreview(value: string | null): string {
@@ -51,6 +56,7 @@ export default function OpenCardsPage() {
   const [maleHasMore, setMaleHasMore] = useState(true);
   const [femaleHasMore, setFemaleHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
+  const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -61,13 +67,23 @@ export default function OpenCardsPage() {
   const loadInitial = useCallback(async () => {
     setLoading(true);
     try {
-      const [m, f] = await Promise.all([fetchBySex("male", 0), fetchBySex("female", 0)]);
+      const [m, f, qsRes] = await Promise.all([
+        fetchBySex("male", 0),
+        fetchBySex("female", 0),
+        fetch("/api/dating/cards/queue-stats", { cache: "no-store" }),
+      ]);
       setMales(m.items ?? []);
       setFemales(f.items ?? []);
       setMaleOffset(m.nextOffset ?? (m.items?.length ?? 0));
       setFemaleOffset(f.nextOffset ?? (f.items?.length ?? 0));
       setMaleHasMore(Boolean(m.hasMore));
       setFemaleHasMore(Boolean(f.hasMore));
+      if (qsRes.ok) {
+        const qsBody = (await qsRes.json()) as QueueStats;
+        setQueueStats(qsBody);
+      } else {
+        setQueueStats(null);
+      }
     } catch (e) {
       console.error("open cards load failed", e);
     }
@@ -113,6 +129,11 @@ export default function OpenCardsPage() {
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">오픈카드</h1>
           <p className="text-sm text-neutral-500 mt-1">공개 카드는 48시간 동안 노출됩니다.</p>
+          {queueStats && (
+            <p className="text-xs text-neutral-500 mt-1">
+              대기열: 남자 {queueStats.male.pending_count}명 / 여자 {queueStats.female.pending_count}명
+            </p>
+          )}
         </div>
         <Link
           href="/dating/card/new"

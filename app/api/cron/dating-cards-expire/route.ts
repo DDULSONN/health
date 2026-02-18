@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
 import { NextResponse } from "next/server";
 
 function isAuthorized(request: Request): boolean {
@@ -26,5 +27,21 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, expired_count: data?.length ?? 0 });
+  const promotedMale = await promotePendingCardsBySex(adminClient, "male").catch((e) => {
+    console.error("[GET /api/cron/dating-cards-expire] promote male failed", e);
+    return { sex: "male" as const, promotedIds: [], publicCount: 0 };
+  });
+  const promotedFemale = await promotePendingCardsBySex(adminClient, "female").catch((e) => {
+    console.error("[GET /api/cron/dating-cards-expire] promote female failed", e);
+    return { sex: "female" as const, promotedIds: [], publicCount: 0 };
+  });
+
+  return NextResponse.json({
+    ok: true,
+    expired_count: data?.length ?? 0,
+    promoted: {
+      male: promotedMale.promotedIds.length,
+      female: promotedFemale.promotedIds.length,
+    },
+  });
 }
