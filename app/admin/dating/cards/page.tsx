@@ -34,12 +34,16 @@ type AdminReport = {
   created_at: string;
 };
 
-type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
+type AdminCardSort = "newest" | "oldest" | "pending_first";
+type AdminCardFilter = "all" | "public" | "pending" | "hidden" | "expired";
 
 export default function AdminDatingCardsPage() {
   const [cards, setCards] = useState<AdminCard[]>([]);
   const [reports, setReports] = useState<AdminReport[]>([]);
-  const [cardSort, setCardSort] = useState<AdminCardSort>("public_first");
+  const [cardSort, setCardSort] = useState<AdminCardSort>("newest");
+  const [cardFilter, setCardFilter] = useState<AdminCardFilter>("public");
+  const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
 
@@ -70,33 +74,55 @@ export default function AdminDatingCardsPage() {
     });
   }, [load]);
 
-  const sortedCards = useMemo(() => {
-    const publicFirstRank: Record<AdminCard["status"], number> = {
-      public: 0,
-      pending: 1,
-      hidden: 2,
-      expired: 3,
-    };
+  const visibleCards = useMemo(() => {
+    const base = cards.filter((card) => (cardFilter === "all" ? true : card.status === cardFilter));
     const pendingFirstRank: Record<AdminCard["status"], number> = {
       pending: 0,
       public: 1,
       hidden: 2,
       expired: 3,
     };
-
-    return [...cards].sort((a, b) => {
+    return [...base].sort((a, b) => {
       if (cardSort === "newest") {
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
       }
       if (cardSort === "oldest") {
         return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
       }
-      if (cardSort === "pending_first") {
-        return pendingFirstRank[a.status] - pendingFirstRank[b.status];
-      }
-      return publicFirstRank[a.status] - publicFirstRank[b.status];
+      const rankGap = pendingFirstRank[a.status] - pendingFirstRank[b.status];
+      if (rankGap !== 0) return rankGap;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [cards, cardSort]);
+  }, [cards, cardFilter, cardSort]);
+
+  useEffect(() => {
+    const visibleIds = new Set(visibleCards.map((card) => card.id));
+    setSelectedCardIds((prev) => prev.filter((id) => visibleIds.has(id)));
+  }, [visibleCards]);
+
+  const allVisibleSelected = visibleCards.length > 0 && visibleCards.every((card) => selectedCardIds.includes(card.id));
+
+  const toggleCardSelection = (id: string, checked: boolean) => {
+    setSelectedCardIds((prev) => {
+      if (checked) {
+        if (prev.includes(id)) return prev;
+        return [...prev, id];
+      }
+      return prev.filter((v) => v !== id);
+    });
+  };
+
+  const toggleAllVisibleSelection = (checked: boolean) => {
+    if (!checked) {
+      setSelectedCardIds((prev) => prev.filter((id) => !visibleCards.some((card) => card.id === id)));
+      return;
+    }
+    setSelectedCardIds((prev) => {
+      const next = new Set(prev);
+      visibleCards.forEach((card) => next.add(card.id));
+      return [...next];
+    });
+  };
 
   const updateCardStatus = async (id: string, status: AdminCard["status"]) => {
     const res = await fetch(`/api/admin/dating/cards/${id}`, {
@@ -112,15 +138,53 @@ export default function AdminDatingCardsPage() {
     setCards((prev) => prev.map((card) => (card.id === id ? { ...card, status } : card)));
   };
 
+  const deleteCards = async (ids: string[]) => {
+    const results = await Promise.allSettled(
+      ids.map(async (id) => {
+        const res = await fetch(`/api/admin/dating/cards/${id}`, { method: "DELETE" });
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        if (!res.ok) {
+          throw new Error(body.error ?? `카드 삭제 실패: ${id}`);
+        }
+        return id;
+      })
+    );
+
+    const deletedIds: string[] = [];
+    const failed: string[] = [];
+
+    results.forEach((result, index) => {
+      if (result.status === "fulfilled") {
+        deletedIds.push(result.value);
+      } else {
+        failed.push(ids[index]);
+      }
+    });
+
+    if (deletedIds.length > 0) {
+      setCards((prev) => prev.filter((card) => !deletedIds.includes(card.id)));
+      setSelectedCardIds((prev) => prev.filter((id) => !deletedIds.includes(id)));
+    }
+
+    if (failed.length > 0) {
+      alert(`${failed.length}개 삭제 실패. 다시 시도해주세요.`);
+    }
+  };
+
   const deleteCard = async (id: string) => {
     if (!confirm("이 카드를 삭제할까요?")) return;
-    const res = await fetch(`/api/admin/dating/cards/${id}`, { method: "DELETE" });
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) {
-      alert(body.error ?? "카드 삭제에 실패했습니다.");
-      return;
+    await deleteCards([id]);
+  };
+
+  const deleteSelectedCards = async () => {
+    if (selectedCardIds.length === 0) return;
+    if (!confirm(`선택한 ${selectedCardIds.length}개 카드를 삭제할까요?`)) return;
+    setBulkDeleting(true);
+    try {
+      await deleteCards(selectedCardIds);
+    } finally {
+      setBulkDeleting(false);
     }
-    setCards((prev) => prev.filter((card) => card.id !== id));
   };
 
   const updateReportStatus = async (id: string, status: AdminReport["status"]) => {
@@ -148,27 +212,67 @@ export default function AdminDatingCardsPage() {
       ) : (
         <>
           <section className="mb-8">
-            <div className="mb-3 flex items-center justify-between gap-3">
+            <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold text-neutral-900">카드 전체 내용</h2>
-              <select
-                value={cardSort}
-                onChange={(e) => setCardSort(e.target.value as AdminCardSort)}
-                className="h-8 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-800"
+              <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={cardFilter}
+                  onChange={(e) => setCardFilter(e.target.value as AdminCardFilter)}
+                  className="h-8 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-800"
+                >
+                  <option value="public">공개중만</option>
+                  <option value="pending">대기만</option>
+                  <option value="all">전체</option>
+                  <option value="hidden">숨김만</option>
+                  <option value="expired">만료만</option>
+                </select>
+                <select
+                  value={cardSort}
+                  onChange={(e) => setCardSort(e.target.value as AdminCardSort)}
+                  className="h-8 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-800"
+                >
+                  <option value="newest">최신순</option>
+                  <option value="oldest">오래된순</option>
+                  <option value="pending_first">대기 우선</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="mb-3 flex flex-wrap items-center gap-2 rounded-lg border border-neutral-200 bg-neutral-50 p-2">
+              <label className="inline-flex items-center gap-2 text-xs text-neutral-700">
+                <input
+                  type="checkbox"
+                  checked={allVisibleSelected}
+                  onChange={(e) => toggleAllVisibleSelection(e.target.checked)}
+                />
+                전체 선택
+              </label>
+              <span className="text-xs text-neutral-600">선택 {selectedCardIds.length}개</span>
+              <button
+                type="button"
+                onClick={() => void deleteSelectedCards()}
+                disabled={selectedCardIds.length === 0 || bulkDeleting}
+                className="h-8 rounded-md bg-rose-700 px-3 text-xs text-white disabled:cursor-not-allowed disabled:opacity-50"
               >
-                <option value="public_first">공개중 우선</option>
-                <option value="pending_first">대기 우선</option>
-                <option value="newest">최신순</option>
-                <option value="oldest">오래된순</option>
-              </select>
+                {bulkDeleting ? "삭제 중..." : "선택 삭제"}
+              </button>
             </div>
 
             <div className="space-y-3">
-              {sortedCards.map((card) => (
+              {visibleCards.map((card) => (
                 <div key={card.id} className="rounded-xl border border-neutral-200 bg-white p-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <p className="text-sm font-semibold text-neutral-900">
-                      {card.display_nickname || "(닉네임 없음)"} / {card.sex === "male" ? "남자" : "여자"} / 상태: {card.status}
-                    </p>
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        checked={selectedCardIds.includes(card.id)}
+                        onChange={(e) => toggleCardSelection(card.id, e.target.checked)}
+                        className="mt-1"
+                      />
+                      <p className="text-sm font-semibold text-neutral-900">
+                        {card.display_nickname || "(닉네임 없음)"} / {card.sex === "male" ? "남자" : "여자"} / 상태: {card.status}
+                      </p>
+                    </div>
                     <span className="text-xs text-neutral-500">{new Date(card.created_at).toLocaleString("ko-KR")}</span>
                   </div>
 
@@ -224,7 +328,7 @@ export default function AdminDatingCardsPage() {
                   </div>
                 </div>
               ))}
-              {sortedCards.length === 0 && <p className="text-sm text-neutral-500">카드가 없습니다.</p>}
+              {visibleCards.length === 0 && <p className="text-sm text-neutral-500">해당 조건의 카드가 없습니다.</p>}
             </div>
           </section>
 
