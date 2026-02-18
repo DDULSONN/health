@@ -1,4 +1,4 @@
-import { getKstDayRangeUtc } from "@/lib/dating-open";
+﻿import { getKstDayRangeUtc } from "@/lib/dating-open";
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -115,31 +115,46 @@ function mapDbErrorToHttp(code?: string | null): { status: number; apiCode: ApiC
   return { status: 500, apiCode: "DATABASE_ERROR", message: "지원 처리 중 오류가 발생했습니다." };
 }
 
+function logSupabaseError(requestId: string, stage: string, dbError: DbErrorShape) {
+  console.error(`[apply] ${requestId} ${stage} SUPABASE_ERROR`, {
+    code: dbError.code ?? null,
+    message: dbError.message ?? null,
+    details: dbError.details ?? null,
+    hint: dbError.hint ?? null,
+  });
+}
+
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
   let userId: string | null = null;
   let body: unknown = null;
 
   try {
+    console.log(`[apply] ${requestId} L1 start`);
+
     const supabase = await createClient();
     const userRes = await supabase.auth.getUser();
     const authError = toDbErrorShape(userRes.error);
     userId = userRes.data.user?.id ?? null;
-    console.log(`[dating.cards.apply][${requestId}] auth.getUser`, {
+    console.log(`[apply] ${requestId} L2 auth.getUser`, {
       hasUser: Boolean(userId),
       userId,
-      authError,
+      hasError: Boolean(userRes.error),
     });
+    if (userRes.error) {
+      logSupabaseError(requestId, "L2 auth.getUser", authError);
+    }
 
     if (!userId) {
       return jsonResponse(401, "UNAUTHORIZED", requestId, "로그인이 필요합니다.");
     }
 
     body = await req.json().catch(() => null);
-    console.log(`[dating.cards.apply][${requestId}] body.received`, {
+    console.log(`[apply] ${requestId} L3 body.received`, {
       userId,
       payload: maskPayloadForLog(body),
     });
+
     if (!body) {
       return jsonResponse(400, "VALIDATION_ERROR", requestId, "잘못된 요청입니다.");
     }
@@ -171,20 +186,14 @@ export async function POST(req: Request) {
     if (trainingYears == null || trainingYears < 0 || trainingYears > 50) validationErrors.push("training_years");
     if (!photoPaths.every((path) => path.startsWith(`card-applications/${userId}/`))) validationErrors.push("photo_paths_prefix");
 
-    console.log(`[dating.cards.apply][${requestId}] body.validated`, {
+    console.log(`[apply] ${requestId} L3 body.validated`, {
       userId,
       valid: validationErrors.length === 0,
       validationErrors,
     });
 
     if (validationErrors.length > 0) {
-      return jsonResponse(
-        400,
-        "VALIDATION_ERROR",
-        requestId,
-        "입력값을 확인해주세요.",
-        { fields: validationErrors }
-      );
+      return jsonResponse(400, "VALIDATION_ERROR", requestId, "입력값을 확인해주세요.", { fields: validationErrors });
     }
 
     const profileRes = await supabase
@@ -193,26 +202,23 @@ export async function POST(req: Request) {
       .eq("user_id", userId)
       .maybeSingle();
     const profileError = toDbErrorShape(profileRes.error);
-    console.log(`[dating.cards.apply][${requestId}] profile.read`, {
+    console.log(`[apply] ${requestId} L4 profile.read`, {
       userId,
       hasRow: Boolean(profileRes.data),
       nickname: profileRes.data?.nickname ?? null,
-      profileError,
+      hasError: Boolean(profileRes.error),
     });
     if (profileRes.error) {
+      logSupabaseError(requestId, "L4 profile.read", profileError);
       const mapped = mapDbErrorToHttp(profileError.code);
       return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, profileError);
     }
 
     const applicantDisplayNickname = sanitizeText(profileRes.data?.nickname, 20);
     if (!applicantDisplayNickname) {
-      return jsonResponse(
-        400,
-        "NICKNAME_REQUIRED",
-        requestId,
-        "닉네임 설정 후 이용 가능합니다.",
-        { profile_edit_url: "/mypage" }
-      );
+      return jsonResponse(400, "NICKNAME_REQUIRED", requestId, "닉네임 설정 후 이용 가능합니다.", {
+        profile_edit_url: "/mypage",
+      });
     }
 
     const cardRes = await supabase
@@ -221,15 +227,18 @@ export async function POST(req: Request) {
       .eq("id", cardId)
       .single();
     const cardError = toDbErrorShape(cardRes.error);
-    console.log(`[dating.cards.apply][${requestId}] card.read`, {
+    console.log(`[apply] ${requestId} L5 card.read`, {
       userId,
       cardId,
       hasCard: Boolean(cardRes.data),
       cardStatus: cardRes.data?.status ?? null,
       cardExpiresAt: cardRes.data?.expires_at ?? null,
-      cardError,
+      hasError: Boolean(cardRes.error),
     });
     if (cardRes.error || !cardRes.data) {
+      if (cardRes.error) {
+        logSupabaseError(requestId, "L5 card.read", cardError);
+      }
       if (cardError.code === "PGRST116") {
         return jsonResponse(404, "CARD_NOT_FOUND", requestId, "카드를 찾을 수 없습니다.");
       }
@@ -260,14 +269,15 @@ export async function POST(req: Request) {
       .gte("created_at", startUtcIso)
       .lt("created_at", endUtcIso);
     const countError = toDbErrorShape(countRes.error);
-    console.log(`[dating.cards.apply][${requestId}] daily.count`, {
+    console.log(`[apply] ${requestId} L6 daily.count`, {
       userId,
       startUtcIso,
       endUtcIso,
       todayCount: countRes.count ?? 0,
-      countError,
+      hasError: Boolean(countRes.error),
     });
     if (countRes.error) {
+      logSupabaseError(requestId, "L6 daily.count", countError);
       const mapped = mapDbErrorToHttp(countError.code);
       return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, countError);
     }
@@ -296,34 +306,40 @@ export async function POST(req: Request) {
       .select("id")
       .single();
     const insertError = toDbErrorShape(insertRes.error);
-    console.log(`[dating.cards.apply][${requestId}] insert.result`, {
+    console.log(`[apply] ${requestId} L7 insert.result`, {
       userId,
       cardId,
       insertedId: insertRes.data?.id ?? null,
-      insertErrorRaw: JSON.stringify(insertError),
+      hasError: Boolean(insertRes.error),
     });
     if (insertRes.error) {
+      logSupabaseError(requestId, "L7 insert.result", insertError);
       const mapped = mapDbErrorToHttp(insertError.code);
       return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, insertError);
     }
 
+    console.log(`[apply] ${requestId} L8 before return`, {
+      userId,
+      cardId,
+      insertedId: insertRes.data.id,
+    });
+
     return jsonResponse(200, "SUCCESS", requestId, "지원이 완료되었습니다.", { id: insertRes.data.id });
-  } catch (error) {
-    const dbError = toDbErrorShape(error);
-    console.error(`[dating.cards.apply][${requestId}] unhandled`, {
+  } catch (e) {
+    const dbError = toDbErrorShape(e);
+    console.error(`[apply] ${requestId} ERROR`, {
+      message: e instanceof Error ? e.message : undefined,
+      stack: e instanceof Error ? e.stack : undefined,
+      name: e instanceof Error ? e.name : undefined,
+    });
+    if (dbError.code || dbError.message || dbError.details || dbError.hint) {
+      logSupabaseError(requestId, "catch", dbError);
+    }
+    console.error(`[apply] ${requestId} ERROR_CONTEXT`, {
       userId,
       payload: maskPayloadForLog(body),
-      dbError,
-      stack: error instanceof Error ? error.stack : undefined,
-      message: error instanceof Error ? error.message : String(error),
     });
-    return jsonResponse(
-      500,
-      "INTERNAL_SERVER_ERROR",
-      requestId,
-      "지원 처리 중 오류가 발생했습니다.",
-      undefined,
-      dbError
-    );
+
+    return jsonResponse(500, "INTERNAL_SERVER_ERROR", requestId, "지원 처리 중 오류가 발생했습니다.", undefined, dbError);
   }
 }
