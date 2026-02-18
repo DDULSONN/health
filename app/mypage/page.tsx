@@ -464,39 +464,34 @@ export default function MyPage() {
     canceled: "bg-neutral-200 text-neutral-600",
   };
   const myCardsById = new Map(myDatingCards.map((card) => [card.id, card]));
-  const sortedAdminOpenCards = useMemo(() => {
-    const statusRankPublicFirst: Record<AdminOpenCard["status"], number> = {
-      public: 0,
-      pending: 1,
-      hidden: 2,
-      expired: 3,
-    };
-    const statusRankPendingFirst: Record<AdminOpenCard["status"], number> = {
-      pending: 0,
-      public: 1,
-      hidden: 2,
-      expired: 3,
-    };
-
-    const items = [...adminOpenCards];
-    items.sort((a, b) => {
-      if (adminCardSort === "newest") {
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      }
-      if (adminCardSort === "oldest") {
-        return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-      }
-      if (adminCardSort === "public_first") {
-        const diff = statusRankPublicFirst[a.status] - statusRankPublicFirst[b.status];
-        if (diff !== 0) return diff;
-        return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-      }
-      const diff = statusRankPendingFirst[a.status] - statusRankPendingFirst[b.status];
-      if (diff !== 0) return diff;
+  const statusRankPublicFirst: Record<AdminOpenCard["status"], number> = {
+    public: 0,
+    pending: 1,
+    hidden: 2,
+    expired: 3,
+  };
+  const statusRankPendingFirst: Record<AdminOpenCard["status"], number> = {
+    pending: 0,
+    public: 1,
+    hidden: 2,
+    expired: 3,
+  };
+  const sortedAdminOpenCards = [...adminOpenCards].sort((a, b) => {
+    if (adminCardSort === "newest") {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+    if (adminCardSort === "oldest") {
       return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-    });
-    return items;
-  }, [adminOpenCards, adminCardSort]);
+    }
+    if (adminCardSort === "public_first") {
+      const diff = statusRankPublicFirst[a.status] - statusRankPublicFirst[b.status];
+      if (diff !== 0) return diff;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+    const diff = statusRankPendingFirst[a.status] - statusRankPendingFirst[b.status];
+    if (diff !== 0) return diff;
+    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  });
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
