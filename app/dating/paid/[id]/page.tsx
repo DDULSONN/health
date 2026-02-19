@@ -45,7 +45,6 @@ export default function PaidCardDetailPage() {
         setCard(body.card);
       } catch {
         router.replace("/dating/paid");
-        return;
       } finally {
         setLoading(false);
       }
@@ -55,7 +54,7 @@ export default function PaidCardDetailPage() {
   if (loading) {
     return (
       <main className="mx-auto max-w-2xl px-4 py-8">
-        <p className="text-sm text-neutral-500">Loading...</p>
+        <p className="text-sm text-neutral-500">불러오는 중...</p>
       </main>
     );
   }
@@ -65,7 +64,7 @@ export default function PaidCardDetailPage() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <Link href="/dating/paid" className="text-sm text-neutral-500 hover:text-neutral-700">
-        Back
+        목록으로
       </Link>
 
       <section className="mt-3 rounded-2xl border border-neutral-200 bg-white p-4">
@@ -101,7 +100,7 @@ export default function PaidCardDetailPage() {
 
         {card.ideal_text ? (
           <div className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-3">
-            <p className="text-sm font-semibold text-rose-800">이상형</p>
+            <p className="text-sm font-semibold text-rose-800">💘 이상형</p>
             <p className="mt-1 whitespace-pre-wrap break-words text-sm text-rose-900">{card.ideal_text}</p>
           </div>
         ) : null}

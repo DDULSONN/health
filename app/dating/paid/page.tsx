@@ -84,7 +84,6 @@ export default function DatingPaidPage() {
   const [trainingYears, setTrainingYears] = useState("");
   const [strengthsText, setStrengthsText] = useState("");
   const [idealText, setIdealText] = useState("");
-  const [introText, setIntroText] = useState("");
   const [instagramId, setInstagramId] = useState("");
   const [photoVisibility, setPhotoVisibility] = useState<"blur" | "public">("blur");
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
@@ -200,7 +199,6 @@ export default function DatingPaidPage() {
         training_years: trainingYears ? Number(trainingYears) : null,
         strengths_text: strengthsText.trim(),
         ideal_text: idealText.trim(),
-        intro_text: introText.trim(),
         instagram_id: normalizedInstagramId,
         photo_visibility: photoVisibility,
         blur_thumb_path: blurThumbPath || null,
@@ -232,7 +230,6 @@ export default function DatingPaidPage() {
       setTrainingYears("");
       setStrengthsText("");
       setIdealText("");
-      setIntroText("");
       setInstagramId("");
     } catch {
       setError("네트워크 오류가 발생했습니다.");
@@ -292,7 +289,6 @@ export default function DatingPaidPage() {
 
             <textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" rows={3} maxLength={300} placeholder="내 장점" value={strengthsText} onChange={(e) => setStrengthsText(e.target.value)} />
             <textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" rows={3} maxLength={1000} placeholder="이상형" value={idealText} onChange={(e) => setIdealText(e.target.value)} />
-            <textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" rows={4} maxLength={1000} placeholder="자기소개" value={introText} onChange={(e) => setIntroText(e.target.value)} />
 
             <input className="input" placeholder="인스타그램 아이디(@ 없이, 필수)" required maxLength={30} value={instagramId} onChange={(e) => setInstagramId(normalizeInstagramId(e.target.value))} />
 
@@ -407,7 +403,7 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
                 )}
               </div>
               {item.strengths_text && <p className="mt-2 text-sm text-emerald-700">내 장점: {item.strengths_text}</p>}
-              {item.ideal_text && <p className="mt-1 text-sm text-rose-700">이상형: {item.ideal_text}</p>}
+              {item.ideal_text && <p className="mt-1 text-sm text-rose-700">💘 이상형: {item.ideal_text}</p>}
               {item.intro_text && <p className="mt-1 text-sm text-neutral-700 whitespace-pre-wrap break-words">{item.intro_text}</p>}
               <div className="mt-3 flex items-center gap-2">
                 <Link
@@ -430,4 +426,3 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
     </section>
   );
 }
-
