@@ -158,6 +158,18 @@ type AdminOpenCardApplication = {
 
 type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
 
+type AdminApplyCreditOrder = {
+  id: string;
+  user_id: string;
+  nickname: string | null;
+  pack_size: number;
+  amount: number;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+  processed_at: string | null;
+  memo: string | null;
+};
+
 type MyCertificate = {
   id: string;
   certificate_no: string;
@@ -208,6 +220,8 @@ export default function MyPage() {
   const [adminOpenCards, setAdminOpenCards] = useState<AdminOpenCard[]>([]);
   const [adminOpenCardApplications, setAdminOpenCardApplications] = useState<AdminOpenCardApplication[]>([]);
   const [adminCardSort, setAdminCardSort] = useState<AdminCardSort>("public_first");
+  const [adminApplyCreditOrders, setAdminApplyCreditOrders] = useState<AdminApplyCreditOrder[]>([]);
+  const [approvingOrderIds, setApprovingOrderIds] = useState<string[]>([]);
   const [openCardWriteEnabled, setOpenCardWriteEnabled] = useState(true);
   const [openCardWriteSaving, setOpenCardWriteSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -315,22 +329,34 @@ export default function MyPage() {
           setError("");
 
           if (adminFlag) {
-            const overviewRes = await fetch("/api/dating/cards/admin/overview", { cache: "no-store" });
+            const [overviewRes, ordersRes] = await Promise.all([
+              fetch("/api/dating/cards/admin/overview", { cache: "no-store" }),
+              fetch("/api/admin/dating/apply-credits/orders?status=pending", { cache: "no-store" }),
+            ]);
             const overviewBody = (await overviewRes.json().catch(() => ({}))) as {
               error?: string;
               cards?: AdminOpenCard[];
               applications?: AdminOpenCardApplication[];
             };
+            const ordersBody = (await ordersRes.json().catch(() => ({}))) as {
+              error?: string;
+              items?: AdminApplyCreditOrder[];
+            };
             if (!overviewRes.ok) {
               throw new Error(overviewBody.error ?? "관리자 오픈카드 데이터를 불러오지 못했습니다.");
+            }
+            if (!ordersRes.ok) {
+              throw new Error(ordersBody.error ?? "지원권 주문 목록을 불러오지 못했습니다.");
             }
             if (isMounted) {
               setAdminOpenCards(overviewBody.cards ?? []);
               setAdminOpenCardApplications(overviewBody.applications ?? []);
+              setAdminApplyCreditOrders(ordersBody.items ?? []);
             }
           } else {
             setAdminOpenCards([]);
             setAdminOpenCardApplications([]);
+            setAdminApplyCreditOrders([]);
           }
         }
       } catch (e) {
@@ -473,6 +499,35 @@ export default function MyPage() {
       setOpenCardWriteEnabled(body.enabled !== false);
     } finally {
       setOpenCardWriteSaving(false);
+    }
+  };
+
+  const handleAdminApproveApplyCreditOrder = async (orderId: string) => {
+    if (approvingOrderIds.includes(orderId)) return;
+    setApprovingOrderIds((prev) => [...prev, orderId]);
+    try {
+      const res = await fetch("/api/admin/dating/apply-credits/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        alreadyApproved?: boolean;
+      };
+      if (!res.ok || !body.ok) {
+        alert(body.message ?? "지원권 승인에 실패했습니다.");
+        return;
+      }
+
+      if (body.alreadyApproved) {
+        alert("이미 승인된 주문입니다.");
+      }
+
+      setAdminApplyCreditOrders((prev) => prev.filter((item) => item.id !== orderId));
+    } finally {
+      setApprovingOrderIds((prev) => prev.filter((id) => id !== orderId));
     }
   };
 
@@ -1008,6 +1063,45 @@ export default function MyPage() {
                 현재: {openCardWriteEnabled ? "작성 가능" : "작성 중단"}
               </span>
             </div>
+          </div>
+
+          <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
+            <p className="text-xs font-semibold text-violet-800">
+              지원권 주문 승인 대기 {adminApplyCreditOrders.length}건
+            </p>
+            {adminApplyCreditOrders.length === 0 ? (
+              <p className="mt-2 text-xs text-neutral-500">승인 대기 주문이 없습니다.</p>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {adminApplyCreditOrders.map((order) => {
+                  const approving = approvingOrderIds.includes(order.id);
+                  return (
+                    <div
+                      key={order.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-100 bg-violet-50/40 px-2 py-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-neutral-900">
+                          {order.nickname ?? order.user_id.slice(0, 8)} / +{order.pack_size}장 /{" "}
+                          {order.amount.toLocaleString("ko-KR")}원
+                        </p>
+                        <p className="text-[11px] text-neutral-500 break-all">
+                          주문ID {order.id} / {new Date(order.created_at).toLocaleString("ko-KR")}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={approving}
+                        onClick={() => void handleAdminApproveApplyCreditOrder(order.id)}
+                        className="h-8 rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                      >
+                        {approving ? "처리 중..." : "승인"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
 
           <div className="space-y-3">

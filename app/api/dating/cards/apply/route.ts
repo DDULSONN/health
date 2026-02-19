@@ -1,5 +1,4 @@
-﻿import { getKstDayRangeUtc } from "@/lib/dating-open";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -124,6 +123,17 @@ function logSupabaseError(requestId: string, stage: string, dbError: DbErrorShap
     details: dbError.details ?? null,
     hint: dbError.hint ?? null,
   });
+}
+
+type ConsumeTokenResult = {
+  used: "base" | "credit" | "none";
+  base_used: number;
+  credits_remaining: number;
+};
+
+function safeNumber(value: unknown, fallback = 0): number {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  return fallback;
 }
 
 export async function POST(req: Request) {
@@ -262,29 +272,36 @@ export async function POST(req: Request) {
       return jsonResponse(410, "CARD_EXPIRED", requestId, "카드가 만료되었습니다.");
     }
 
-    const { startUtcIso, endUtcIso } = getKstDayRangeUtc();
-    const countRes = await supabase
-      .from("dating_card_applications")
-      .select("id", { head: true, count: "exact" })
-      .eq("applicant_user_id", userId)
-      .in("status", ["submitted", "accepted", "rejected"])
-      .gte("created_at", startUtcIso)
-      .lt("created_at", endUtcIso);
-    const countError = toDbErrorShape(countRes.error);
-    console.log(`[apply] ${requestId} L6 daily.count`, {
+    const adminClient = createAdminClient();
+    const consumeRes = await adminClient.rpc("consume_apply_token", { p_user_id: userId });
+    const consumeError = toDbErrorShape(consumeRes.error);
+    const consumeRow = (Array.isArray(consumeRes.data) ? consumeRes.data[0] : null) as
+      | { used?: string; base_used?: number; credits_remaining?: number }
+      | null;
+    const tokenUsage: ConsumeTokenResult = {
+      used:
+        consumeRow?.used === "base" || consumeRow?.used === "credit" || consumeRow?.used === "none"
+          ? consumeRow.used
+          : "none",
+      base_used: safeNumber(consumeRow?.base_used),
+      credits_remaining: safeNumber(consumeRow?.credits_remaining),
+    };
+
+    console.log(`[apply] ${requestId} L6 token.consume`, {
       userId,
-      startUtcIso,
-      endUtcIso,
-      todayCount: countRes.count ?? 0,
-      hasError: Boolean(countRes.error),
+      tokenUsage,
+      hasError: Boolean(consumeRes.error),
     });
-    if (countRes.error) {
-      logSupabaseError(requestId, "L6 daily.count", countError);
-      const mapped = mapDbErrorToHttp(countError.code);
-      return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, countError);
+    if (consumeRes.error) {
+      logSupabaseError(requestId, "L6 token.consume", consumeError);
+      const mapped = mapDbErrorToHttp(consumeError.code);
+      return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, consumeError);
     }
-    if ((countRes.count ?? 0) >= 2) {
-      return jsonResponse(429, "DAILY_APPLY_LIMIT", requestId, "하루 2회 지원 가능, 내일 다시");
+    if (tokenUsage.used === "none") {
+      return jsonResponse(429, "DAILY_APPLY_LIMIT", requestId, "하루 지원 가능 횟수(2회)를 모두 사용했어요. 내일 다시 지원할 수 있어요.", {
+        baseRemaining: Math.max(0, 2 - tokenUsage.base_used),
+        creditsRemaining: Math.max(0, tokenUsage.credits_remaining),
+      });
     }
 
     const insertPayload = {
@@ -380,11 +397,33 @@ export async function POST(req: Request) {
       hasError: Boolean(insertRes.error),
     });
     if (insertRes.error) {
+      if (tokenUsage.used === "base" || tokenUsage.used === "credit") {
+        const refundRes = await adminClient.rpc("refund_apply_token", {
+          p_user_id: userId,
+          p_used: tokenUsage.used,
+        });
+        if (refundRes.error) {
+          logSupabaseError(requestId, "L7 token.refund", toDbErrorShape(refundRes.error));
+        } else {
+          console.log(`[apply] ${requestId} L7 token.refund`, { refunded: true, used: tokenUsage.used });
+        }
+      }
       logSupabaseError(requestId, "L7 insert.result", insertError);
       const mapped = mapDbErrorToHttp(insertError.code);
       return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, insertError);
     }
     if (!insertRes.data?.id) {
+      if (tokenUsage.used === "base" || tokenUsage.used === "credit") {
+        const refundRes = await adminClient.rpc("refund_apply_token", {
+          p_user_id: userId,
+          p_used: tokenUsage.used,
+        });
+        if (refundRes.error) {
+          logSupabaseError(requestId, "L7 token.refund", toDbErrorShape(refundRes.error));
+        } else {
+          console.log(`[apply] ${requestId} L7 token.refund`, { refunded: true, used: tokenUsage.used });
+        }
+      }
       return jsonResponse(500, "DATABASE_ERROR", requestId, "지원 처리 중 오류가 발생했습니다.");
     }
 
@@ -394,7 +433,12 @@ export async function POST(req: Request) {
       insertedId: insertRes.data.id,
     });
 
-    return jsonResponse(200, "SUCCESS", requestId, "지원이 완료되었습니다.", { id: insertRes.data.id });
+    return jsonResponse(200, "SUCCESS", requestId, "지원이 완료되었습니다.", {
+      id: insertRes.data.id,
+      usedToken: tokenUsage.used,
+      baseRemaining: Math.max(0, 2 - tokenUsage.base_used),
+      creditsRemaining: Math.max(0, tokenUsage.credits_remaining),
+    });
   } catch (e) {
     const dbError = toDbErrorShape(e);
     console.error(`[apply] ${requestId} ERROR`, {
@@ -413,3 +457,4 @@ export async function POST(req: Request) {
     return jsonResponse(500, "INTERNAL_SERVER_ERROR", requestId, "지원 처리 중 오류가 발생했습니다.", undefined, dbError);
   }
 }
+
