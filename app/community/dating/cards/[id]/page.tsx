@@ -99,6 +99,9 @@ export default function OpenCardDetailPage() {
           {card.height_cm != null && <span>키 {card.height_cm}cm</span>}
           {card.job && <span>직업 {card.job}</span>}
           {card.training_years != null && <span>운동 {card.training_years}년</span>}
+          {card.is_3lift_verified && (
+            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">3대인증 완료</span>
+          )}
         </div>
 
         {card.sex === "male" && (
