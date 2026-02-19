@@ -1,5 +1,10 @@
-export const OPEN_CARD_LIMIT_PER_SEX = 15;
+export const OPEN_CARD_LIMIT_MALE = 15;
+export const OPEN_CARD_LIMIT_FEMALE = 20;
 export const OPEN_CARD_EXPIRE_HOURS = 48;
+
+export function getOpenCardLimitBySex(sex: "male" | "female"): number {
+  return sex === "female" ? OPEN_CARD_LIMIT_FEMALE : OPEN_CARD_LIMIT_MALE;
+}
 
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 

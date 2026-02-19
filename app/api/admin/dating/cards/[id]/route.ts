@@ -1,6 +1,6 @@
 ﻿import { isAdminEmail } from "@/lib/admin";
 import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
-import { OPEN_CARD_EXPIRE_HOURS, OPEN_CARD_LIMIT_PER_SEX } from "@/lib/dating-open";
+import { OPEN_CARD_EXPIRE_HOURS, getOpenCardLimitBySex } from "@/lib/dating-open";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -49,6 +49,8 @@ export async function PATCH(
   } = { status };
 
   if (status === "public") {
+    const slotLimit = getOpenCardLimitBySex(card.sex === "female" ? "female" : "male");
+
     let { count, error: slotError } = await adminClient
       .from("dating_cards")
       .select("id", { count: "exact", head: true })
@@ -72,7 +74,7 @@ export async function PATCH(
       return NextResponse.json({ error: "怨듦컻 ?щ’ ?뺤씤???ㅽ뙣?덉뒿?덈떎." }, { status: 500 });
     }
 
-    if ((count ?? 0) >= OPEN_CARD_LIMIT_PER_SEX) {
+    if ((count ?? 0) >= slotLimit) {
       return NextResponse.json(
         { error: "?꾩옱 怨듦컻 ?щ’??媛??李쇱뼱?? ?湲곗뿴???깅줉?댁＜?몄슂.", code: "PUBLIC_SLOT_FULL" },
         { status: 409 }
@@ -154,6 +156,3 @@ export async function DELETE(
 
   return NextResponse.json({ ok: true, deleted: true, id });
 }
-
-
-

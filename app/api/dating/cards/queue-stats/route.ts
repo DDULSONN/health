@@ -1,4 +1,4 @@
-﻿import { OPEN_CARD_LIMIT_PER_SEX } from "@/lib/dating-open";
+﻿import { getOpenCardLimitBySex } from "@/lib/dating-open";
 import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -71,12 +71,12 @@ export async function GET() {
       male: {
         public_count: malePublic,
         pending_count: malePending,
-        slot_limit: OPEN_CARD_LIMIT_PER_SEX,
+        slot_limit: getOpenCardLimitBySex("male"),
       },
       female: {
         public_count: femalePublic,
         pending_count: femalePending,
-        slot_limit: OPEN_CARD_LIMIT_PER_SEX,
+        slot_limit: getOpenCardLimitBySex("female"),
       },
       accepted_matches_count: acceptedMatches,
     });
