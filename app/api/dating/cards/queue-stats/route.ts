@@ -43,17 +43,28 @@ async function countPending(adminClient: ReturnType<typeof createAdminClient>, s
   return count ?? 0;
 }
 
+async function countAcceptedMatches(adminClient: ReturnType<typeof createAdminClient>) {
+  const { count, error } = await adminClient
+    .from("dating_card_applications")
+    .select("id", { head: true, count: "exact" })
+    .eq("status", "accepted");
+
+  if (error) throw error;
+  return count ?? 0;
+}
+
 export async function GET() {
   const adminClient = createAdminClient();
 
   try {
     await syncOpenCardQueue(adminClient);
 
-    const [malePublic, femalePublic, malePending, femalePending] = await Promise.all([
+    const [malePublic, femalePublic, malePending, femalePending, acceptedMatches] = await Promise.all([
       countPublic(adminClient, "male"),
       countPublic(adminClient, "female"),
       countPending(adminClient, "male"),
       countPending(adminClient, "female"),
+      countAcceptedMatches(adminClient),
     ]);
 
     return NextResponse.json({
@@ -67,6 +78,7 @@ export async function GET() {
         pending_count: femalePending,
         slot_limit: OPEN_CARD_LIMIT_PER_SEX,
       },
+      accepted_matches_count: acceptedMatches,
     });
   } catch (error) {
     console.error("[GET /api/dating/cards/queue-stats] failed", error);

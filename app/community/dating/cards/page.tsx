@@ -26,6 +26,7 @@ type PublicCard = {
 type QueueStats = {
   male: { pending_count: number; public_count: number; slot_limit: number };
   female: { pending_count: number; public_count: number; slot_limit: number };
+  accepted_matches_count?: number;
 };
 
 const PAGE_SIZE = 20;
@@ -139,9 +140,12 @@ export default function OpenCardsPage() {
           <h1 className="text-2xl font-bold text-neutral-900">오픈카드</h1>
           <p className="text-sm text-neutral-500 mt-1">공개 카드는 48시간 동안 노출됩니다.</p>
           {queueStats && (
-            <p className="text-xs text-neutral-500 mt-1">
-              대기열: 남자 {queueStats.male.pending_count}명 / 여자 {queueStats.female.pending_count}명
-            </p>
+            <>
+              <p className="text-xs text-neutral-500 mt-1">
+                대기열: 남자 {queueStats.male.pending_count}명 / 여자 {queueStats.female.pending_count}명
+              </p>
+              <p className="text-xs text-neutral-500 mt-1">지원-수락(매칭) 누적 {queueStats.accepted_matches_count ?? 0}명</p>
+            </>
           )}
         </div>
         <Link
