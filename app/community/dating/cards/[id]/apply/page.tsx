@@ -19,7 +19,7 @@ type CardDetail = {
   photo_visibility: "blur" | "public";
   total_3lift: number | null;
   is_3lift_verified: boolean;
-  image_url: string;
+  image_urls: string[];
   expires_at: string;
 };
 
@@ -217,14 +217,22 @@ export default function DatingCardApplyPage() {
 
       <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-3">
         <p className="text-sm font-semibold text-neutral-900">{card.display_nickname}</p>
-        {card.image_url && (
-          <div className="mt-2 h-40 rounded-lg overflow-hidden bg-neutral-50 border border-neutral-100 flex items-center justify-center">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={card.image_url}
-              alt=""
-              className={`h-full w-full object-contain ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
-            />
+        {card.image_urls.length > 0 && (
+          <div
+            className={`mt-2 rounded-lg overflow-hidden bg-neutral-50 border border-neutral-100 ${
+              card.image_urls.length >= 2 ? "grid grid-cols-2 gap-1 h-40" : "h-40 flex items-center justify-center"
+            }`}
+          >
+            {card.image_urls.map((url, idx) => (
+              <div key={`${card.id}-${idx}`} className="h-full w-full flex items-center justify-center bg-neutral-50">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={url}
+                  alt=""
+                  className={`h-full w-full object-contain ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
+                />
+              </div>
+            ))}
           </div>
         )}
       </div>

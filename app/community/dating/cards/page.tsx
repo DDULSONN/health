@@ -18,7 +18,7 @@ type PublicCard = {
   photo_visibility: "blur" | "public";
   total_3lift: number | null;
   is_3lift_verified: boolean;
-  image_url: string;
+  image_urls: string[];
   expires_at: string;
   created_at: string;
 };
@@ -211,16 +211,22 @@ function CardRow({ card }: { card: PublicCard }) {
         </span>
       </div>
 
-      <div className="mt-3 h-44 w-full rounded-xl border border-neutral-100 bg-neutral-50 overflow-hidden flex items-center justify-center">
-        {card.image_url ? (
-          <>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={card.image_url}
-              alt=""
-              className={`h-full w-full object-contain ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
-            />
-          </>
+      <div
+        className={`mt-3 w-full rounded-xl border border-neutral-100 bg-neutral-50 overflow-hidden ${
+          card.image_urls.length >= 2 ? "grid grid-cols-2 gap-1 h-44" : "h-44 flex items-center justify-center"
+        }`}
+      >
+        {card.image_urls.length > 0 ? (
+          card.image_urls.map((url, idx) => (
+            <div key={`${card.id}-${idx}`} className="h-full w-full flex items-center justify-center bg-neutral-50">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={url}
+                alt=""
+                className={`h-full w-full object-contain ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
+              />
+            </div>
+          ))
         ) : (
           <div className="h-full w-full animate-pulse bg-neutral-100" />
         )}

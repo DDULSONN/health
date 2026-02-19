@@ -118,8 +118,8 @@ export default function NewDatingCardPage() {
     }
 
     const validPhotos = photos.filter((p): p is File => Boolean(p));
-    if (validPhotos.length < 1) {
-      setError("오픈카드 사진은 최소 1장 필요합니다.");
+    if (validPhotos.length < 2) {
+      setError("오픈카드 사진은 2장 모두 필요합니다.");
       return;
     }
 
@@ -259,7 +259,7 @@ export default function NewDatingCardPage() {
           />
           <span>
             사진을 블러 없이 공개합니다.
-            <span className="block text-xs text-neutral-500 mt-1">체크 시 공개 목록/상세에 원본 첫 사진이 표시됩니다.</span>
+            <span className="block text-xs text-neutral-500 mt-1">체크 시 공개 목록/상세에 원본 사진 2장이 표시됩니다.</span>
           </span>
         </label>
 
@@ -282,8 +282,8 @@ export default function NewDatingCardPage() {
             </div>
           )}
         </Field>
-        <Field label="오픈카드 사진 2(선택)">
-          <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setPhotos((prev) => [prev[0], e.target.files?.[0] ?? null])} />
+        <Field label="오픈카드 사진 2" required>
+          <input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e) => setPhotos((prev) => [prev[0], e.target.files?.[0] ?? null])} />
           {previewUrls[1] && (
             <div className="mt-2 h-40 w-full overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
               {/* eslint-disable-next-line @next/next/no-img-element */}

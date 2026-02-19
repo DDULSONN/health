@@ -114,8 +114,8 @@ export async function POST(req: Request) {
   if (trainingYears != null && (trainingYears < 0 || trainingYears > 50)) {
     return NextResponse.json({ error: "운동경력을 확인해주세요." }, { status: 400 });
   }
-  if (photoPaths.length < 1) {
-    return NextResponse.json({ error: "오픈카드 사진은 최소 1장 필요합니다." }, { status: 400 });
+  if (photoPaths.length < 2) {
+    return NextResponse.json({ error: "오픈카드 사진은 2장 필요합니다." }, { status: 400 });
   }
   if (!blurThumbPath) {
     return NextResponse.json({ error: "블러 썸네일 생성에 실패했습니다. 다시 시도해주세요." }, { status: 400 });

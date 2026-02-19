@@ -43,6 +43,29 @@ async function createOriginalPhotoSignedUrl(adminClient: ReturnType<typeof creat
   return "";
 }
 
+async function createSignedImageUrls(
+  adminClient: ReturnType<typeof createAdminClient>,
+  photoPaths: unknown,
+  blurThumbPath: unknown
+) {
+  const rawPaths = Array.isArray(photoPaths)
+    ? photoPaths.filter((item): item is string => typeof item === "string" && item.length > 0).slice(0, 2)
+    : [];
+
+  const urls = (
+    await Promise.all(rawPaths.map((path) => createOriginalPhotoSignedUrl(adminClient, path)))
+  ).filter((url): url is string => Boolean(url));
+
+  if (urls.length > 0) return urls;
+
+  if (typeof blurThumbPath === "string" && blurThumbPath) {
+    const fallback = await createBlurThumbSignedUrl(adminClient, blurThumbPath);
+    if (fallback) return [fallback];
+  }
+
+  return [];
+}
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const limit = Math.min(parseIntSafe(searchParams.get("limit"), 20), 50);
@@ -95,18 +118,7 @@ export async function GET(req: Request) {
   const items = await Promise.all(
     (data ?? []).map(async (row) => {
       const photoVisibility = row.photo_visibility === "public" ? "public" : "blur";
-      const firstPhotoPath =
-        Array.isArray(row.photo_paths) && row.photo_paths.length > 0 && typeof row.photo_paths[0] === "string"
-          ? row.photo_paths[0]
-          : "";
-
-      let imageUrl = "";
-      if (photoVisibility === "public" && firstPhotoPath) {
-        imageUrl = await createOriginalPhotoSignedUrl(adminClient, firstPhotoPath);
-      }
-      if (!imageUrl && row.blur_thumb_path) {
-        imageUrl = await createBlurThumbSignedUrl(adminClient, row.blur_thumb_path);
-      }
+      const imageUrls = await createSignedImageUrls(adminClient, row.photo_paths, row.blur_thumb_path);
       return {
         id: row.id,
         sex: row.sex,
@@ -122,7 +134,7 @@ export async function GET(req: Request) {
         total_3lift: row.total_3lift,
         percent_all: row.percent_all,
         is_3lift_verified: row.is_3lift_verified,
-        image_url: imageUrl,
+        image_urls: imageUrls,
         expires_at: row.expires_at,
         created_at: row.created_at,
       };

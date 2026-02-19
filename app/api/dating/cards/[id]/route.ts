@@ -36,6 +36,29 @@ async function createOriginalPhotoSignedUrl(adminClient: ReturnType<typeof creat
   return "";
 }
 
+async function createSignedImageUrls(
+  adminClient: ReturnType<typeof createAdminClient>,
+  photoPaths: unknown,
+  blurThumbPath: unknown
+) {
+  const rawPaths = Array.isArray(photoPaths)
+    ? photoPaths.filter((item): item is string => typeof item === "string" && item.length > 0).slice(0, 2)
+    : [];
+
+  const urls = (
+    await Promise.all(rawPaths.map((path) => createOriginalPhotoSignedUrl(adminClient, path)))
+  ).filter((url): url is string => Boolean(url));
+
+  if (urls.length > 0) return urls;
+
+  if (typeof blurThumbPath === "string" && blurThumbPath) {
+    const fallback = await createBlurThumbSignedUrl(adminClient, blurThumbPath);
+    if (fallback) return [fallback];
+  }
+
+  return [];
+}
+
 export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const adminClient = createAdminClient();
@@ -76,18 +99,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   }
 
   const photoVisibility = data.photo_visibility === "public" ? "public" : "blur";
-  const firstPhotoPath =
-    Array.isArray(data.photo_paths) && data.photo_paths.length > 0 && typeof data.photo_paths[0] === "string"
-      ? data.photo_paths[0]
-      : "";
-
-  let imageUrl = "";
-  if (photoVisibility === "public" && firstPhotoPath) {
-    imageUrl = await createOriginalPhotoSignedUrl(adminClient, firstPhotoPath);
-  }
-  if (!imageUrl && data.blur_thumb_path) {
-    imageUrl = await createBlurThumbSignedUrl(adminClient, data.blur_thumb_path);
-  }
+  const imageUrls = await createSignedImageUrls(adminClient, data.photo_paths, data.blur_thumb_path);
 
   return NextResponse.json({
     card: {
@@ -105,7 +117,7 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       total_3lift: data.total_3lift,
       percent_all: data.percent_all,
       is_3lift_verified: data.is_3lift_verified,
-      image_url: imageUrl,
+      image_urls: imageUrls,
       expires_at: data.expires_at,
       created_at: data.created_at,
     },
