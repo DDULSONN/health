@@ -186,6 +186,7 @@ type AdminOpenCardApplication = {
 };
 
 type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
+type AdminApplicationSort = "newest" | "oldest" | "submitted_first" | "accepted_first";
 
 type AdminApplyCreditOrder = {
   id: string;
@@ -250,6 +251,7 @@ export default function MyPage() {
   const [adminOpenCards, setAdminOpenCards] = useState<AdminOpenCard[]>([]);
   const [adminOpenCardApplications, setAdminOpenCardApplications] = useState<AdminOpenCardApplication[]>([]);
   const [adminCardSort, setAdminCardSort] = useState<AdminCardSort>("public_first");
+  const [adminApplicationSort, setAdminApplicationSort] = useState<AdminApplicationSort>("newest");
   const [adminApplyCreditOrders, setAdminApplyCreditOrders] = useState<AdminApplyCreditOrder[]>([]);
   const [approvingOrderIds, setApprovingOrderIds] = useState<string[]>([]);
   const [openCardWriteEnabled, setOpenCardWriteEnabled] = useState(true);
@@ -710,6 +712,34 @@ export default function MyPage() {
     const diff = statusRankPendingFirst[a.status] - statusRankPendingFirst[b.status];
     if (diff !== 0) return diff;
     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+  });
+  const appStatusRankSubmittedFirst: Record<AdminOpenCardApplication["status"], number> = {
+    submitted: 0,
+    accepted: 1,
+    rejected: 2,
+    canceled: 3,
+  };
+  const appStatusRankAcceptedFirst: Record<AdminOpenCardApplication["status"], number> = {
+    accepted: 0,
+    submitted: 1,
+    rejected: 2,
+    canceled: 3,
+  };
+  const sortedAdminOpenCardApplications = [...adminOpenCardApplications].sort((a, b) => {
+    if (adminApplicationSort === "newest") {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+    if (adminApplicationSort === "oldest") {
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    }
+    if (adminApplicationSort === "submitted_first") {
+      const diff = appStatusRankSubmittedFirst[a.status] - appStatusRankSubmittedFirst[b.status];
+      if (diff !== 0) return diff;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+    const diff = appStatusRankAcceptedFirst[a.status] - appStatusRankAcceptedFirst[b.status];
+    if (diff !== 0) return diff;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 
   return (
@@ -1178,20 +1208,32 @@ export default function MyPage() {
           </div>
 
           <div className="space-y-3">
-            <div className="flex items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-violet-800">
                 카드 {adminOpenCards.length}건 / 전체 지원 이력 {adminOpenCardApplications.length}건
               </h3>
-              <select
-                value={adminCardSort}
-                onChange={(e) => setAdminCardSort(e.target.value as AdminCardSort)}
-                className="h-8 rounded-md border border-violet-200 bg-white px-2 text-xs text-violet-800"
-              >
-                <option value="public_first">공개중 우선</option>
-                <option value="pending_first">대기 우선</option>
-                <option value="newest">최신순</option>
-                <option value="oldest">오래된순</option>
-              </select>
+              <div className="flex items-center gap-2">
+                <select
+                  value={adminCardSort}
+                  onChange={(e) => setAdminCardSort(e.target.value as AdminCardSort)}
+                  className="h-8 rounded-md border border-violet-200 bg-white px-2 text-xs text-violet-800"
+                >
+                  <option value="public_first">카드: 공개중 우선</option>
+                  <option value="pending_first">카드: 대기 우선</option>
+                  <option value="newest">카드: 최신순</option>
+                  <option value="oldest">카드: 오래된순</option>
+                </select>
+                <select
+                  value={adminApplicationSort}
+                  onChange={(e) => setAdminApplicationSort(e.target.value as AdminApplicationSort)}
+                  className="h-8 rounded-md border border-violet-200 bg-white px-2 text-xs text-violet-800"
+                >
+                  <option value="newest">지원이력: 최신순</option>
+                  <option value="oldest">지원이력: 오래된순</option>
+                  <option value="submitted_first">지원이력: 대기 우선</option>
+                  <option value="accepted_first">지원이력: 수락 우선</option>
+                </select>
+              </div>
             </div>
 
             {adminOpenCards.length === 0 ? (
@@ -1260,7 +1302,7 @@ export default function MyPage() {
               <p className="text-sm text-neutral-600">등록된 지원 이력이 없습니다.</p>
             ) : (
               <div className="space-y-2">
-                {adminOpenCardApplications.map((app) => (
+                {sortedAdminOpenCardApplications.map((app) => (
                   <div key={app.id} className="rounded-xl border border-violet-200 bg-white p-3">
                     <p className="text-sm font-semibold text-neutral-900">
                       지원서 {app.id.slice(0, 8)}... / 카드 {app.card_id.slice(0, 8)}... / 상태 {app.status}

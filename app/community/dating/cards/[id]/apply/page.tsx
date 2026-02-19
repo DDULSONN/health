@@ -25,6 +25,7 @@ type CardDetail = {
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
 
 function normalizeInstagramId(value: string) {
   return value.trim().replace(/^@+/, "").replace(/\s+/g, "").slice(0, 30);
@@ -45,7 +46,10 @@ export default function DatingCardApplyPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
+  const [errorCode, setErrorCode] = useState<string>("");
   const [profileEditUrl, setProfileEditUrl] = useState<string | null>(null);
+  const [creditRequesting, setCreditRequesting] = useState(false);
+  const [creditOrderId, setCreditOrderId] = useState<string>("");
 
   const [age, setAge] = useState("");
   const [heightCm, setHeightCm] = useState("");
@@ -95,7 +99,9 @@ export default function DatingCardApplyPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
+    setErrorCode("");
     setProfileEditUrl(null);
+    setCreditOrderId("");
 
     const normalizedInstagramId = normalizeInstagramId(instagramId);
     if (!validInstagramId(normalizedInstagramId)) {
@@ -170,6 +176,7 @@ export default function DatingCardApplyPage() {
         profile_edit_url?: string;
       };
       if (!res.ok) {
+        setErrorCode(body.code ?? "");
         if (body.profile_edit_url) {
           setProfileEditUrl(body.profile_edit_url);
         }
@@ -197,6 +204,28 @@ export default function DatingCardApplyPage() {
     }
 
     setSubmitting(false);
+  };
+
+  const handleRequestApplyCredits = async () => {
+    setCreditRequesting(true);
+    setCreditOrderId("");
+    try {
+      const res = await fetch("/api/dating/apply-credits/request", { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        orderId?: string;
+        message?: string;
+      };
+      if (!res.ok || !body.ok || !body.orderId) {
+        setError(body.message ?? "지원권 신청 생성에 실패했습니다.");
+        return;
+      }
+      setCreditOrderId(body.orderId);
+    } catch {
+      setError("지원권 신청 중 네트워크 오류가 발생했습니다.");
+    } finally {
+      setCreditRequesting(false);
+    }
   };
 
   if (loading || !card) {
@@ -286,6 +315,34 @@ export default function DatingCardApplyPage() {
               <Link href={profileEditUrl} className="inline-block text-sm text-pink-700 underline">
                 닉네임 설정하러 가기
               </Link>
+            )}
+            {errorCode === "DAILY_APPLY_LIMIT" && (
+              <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <p className="text-xs text-amber-800">지원권 3장(5,000원) 구매 신청 후 오픈카톡으로 문의해 주세요.</p>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleRequestApplyCredits()}
+                    disabled={creditRequesting}
+                    className="inline-flex min-h-[36px] items-center rounded-md bg-amber-500 px-3 text-xs font-medium text-white disabled:opacity-50"
+                  >
+                    {creditRequesting ? "신청 중..." : "지원권 구매 신청"}
+                  </button>
+                  <a
+                    href={OPEN_KAKAO_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex min-h-[36px] items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-800"
+                  >
+                    오픈카톡 이동
+                  </a>
+                </div>
+                {creditOrderId && (
+                  <p className="mt-2 text-xs text-amber-900">
+                    신청 완료: {creditOrderId} (오픈카톡으로 닉네임 + 신청ID 전송)
+                  </p>
+                )}
+              </div>
             )}
           </div>
         )}
