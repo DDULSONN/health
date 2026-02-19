@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -136,22 +136,22 @@ export default function DatingPaidPage() {
 
     const normalizedInstagramId = normalizeInstagramId(instagramId);
     if (!/^[A-Za-z0-9._]{1,30}$/.test(normalizedInstagramId)) {
-      setError("?몄뒪?洹몃옩 ?꾩씠???뺤떇???뺤씤?댁＜?몄슂. (@ ?놁씠 理쒕? 30??");
+      setError("인스타그램 아이디 형식을 확인해 주세요. (@ 제외, 최대 30자)");
       return;
     }
 
     const validPhotos = photos.filter((p): p is File => Boolean(p));
     if (validPhotos.length < 1) {
-      setError("?ъ쭊? 理쒖냼 1???꾩슂?⑸땲??");
+      setError("사진은 최소 1장 필요합니다.");
       return;
     }
     for (const photo of validPhotos) {
       if (!ALLOWED_TYPES.includes(photo.type)) {
-        setError("?ъ쭊? JPG/PNG/WebP留??낅줈?쒗븷 ???덉뒿?덈떎.");
+        setError("사진은 JPG/PNG/WebP만 업로드할 수 있습니다.");
         return;
       }
       if (photo.size > MAX_FILE_SIZE) {
-        setError("?ъ쭊? ?λ떦 5MB ?댄븯留?媛?ν빀?덈떎.");
+        setError("사진은 장당 5MB 이하만 가능합니다.");
         return;
       }
     }
@@ -167,7 +167,7 @@ export default function DatingPaidPage() {
         const res = await fetch("/api/dating/cards/upload-card", { method: "POST", body: fd });
         const body = (await res.json().catch(() => ({}))) as { path?: string; error?: string };
         if (!res.ok || !body.path) {
-          setError(body.error ?? "?ъ쭊 ?낅줈?쒖뿉 ?ㅽ뙣?덉뒿?덈떎.");
+          setError(body.error ?? "사진 업로드에 실패했습니다.");
           setSubmitting(false);
           return;
         }
@@ -184,7 +184,7 @@ export default function DatingPaidPage() {
         const blurRes = await fetch("/api/dating/cards/upload-card", { method: "POST", body: blurFd });
         const blurBody = (await blurRes.json().catch(() => ({}))) as { path?: string; error?: string };
         if (!blurRes.ok || !blurBody.path) {
-          setError(blurBody.error ?? "釉붾윭 ?몃꽕???낅줈?쒖뿉 ?ㅽ뙣?덉뒿?덈떎.");
+          setError(blurBody.error ?? "블러 썸네일 업로드에 실패했습니다.");
           setSubmitting(false);
           return;
         }
@@ -218,7 +218,7 @@ export default function DatingPaidPage() {
         message?: string;
       };
       if (!createRes.ok || !createBody.ok || !createBody.paidCardId) {
-        setError(createBody.message ?? "?좊즺 ?좎껌 ?앹꽦???ㅽ뙣?덉뒿?덈떎.");
+        setError(createBody.message ?? "유료 요청 생성에 실패했습니다.");
         setSubmitting(false);
         return;
       }
@@ -235,7 +235,7 @@ export default function DatingPaidPage() {
       setIntroText("");
       setInstagramId("");
     } catch {
-      setError("?ㅽ듃?뚰겕 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.");
+      setError("네트워크 오류가 발생했습니다.");
     } finally {
       setSubmitting(false);
     }
@@ -250,110 +250,110 @@ export default function DatingPaidPage() {
     <main className="max-w-4xl mx-auto px-4 py-6">
       <div className="mb-5 flex flex-wrap items-center gap-2">
         <Link href="/community/dating/cards" className="rounded-full border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50">
-          ?ㅽ뵂移대뱶
+          오픈카드
         </Link>
-        <span className="rounded-full border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700">?뵦24?쒓컙 怨좎젙</span>
+        <span className="rounded-full border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700">🔥24시간 고정</span>
       </div>
 
       <section className="rounded-2xl border border-neutral-200 bg-white p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-neutral-900">?뵦24?쒓컙 怨좎젙 ?좎껌</h1>
+          <h1 className="text-xl font-bold text-neutral-900">🔥24시간 고정 신청</h1>
           <button
             type="button"
             onClick={() => setFormOpen((prev) => !prev)}
             className="rounded-lg bg-rose-500 px-3 py-2 text-sm font-medium text-white hover:bg-rose-600"
           >
-            ?좎껌?섍린
+            신청하기
           </button>
         </div>
-        <p className="text-sm text-neutral-600">?좎껌 ??寃곗젣 ?뺤씤???꾨즺?섎㈃ ?댁쁺?먭? ?뱀씤?섍퀬 24?쒓컙 ?몄텧?⑸땲??</p>
+        <p className="text-sm text-neutral-600">신청 후 결제 확인이 완료되면 운영자가 확인하고 24시간 노출합니다.</p>
       </section>
 
       {formOpen && (
-      <section id="paid-create-form" className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
-        <h2 className="text-lg font-bold text-neutral-900">?좊즺 ?좎껌 ?묒꽦</h2>
-        <form onSubmit={handleSubmit} className="mt-4 space-y-3">
-          <div className="flex gap-2">
-            <button type="button" onClick={() => setGender("M")} className={`h-10 rounded-lg border px-4 text-sm ${gender === "M" ? "border-rose-500 bg-rose-500 text-white" : "border-neutral-300 bg-white text-neutral-700"}`}>
-              ?⑥옄
-            </button>
-            <button type="button" onClick={() => setGender("F")} className={`h-10 rounded-lg border px-4 text-sm ${gender === "F" ? "border-rose-500 bg-rose-500 text-white" : "border-neutral-300 bg-white text-neutral-700"}`}>
-              ?ъ옄
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <input className="input" placeholder="?섏씠" type="number" min={19} max={99} value={age} onChange={(e) => setAge(e.target.value)} />
-            <input className="input" placeholder="지역" maxLength={50} value={region} onChange={(e) => setRegion(e.target.value)} />
-            <input className="input" placeholder="??cm)" type="number" min={120} max={230} value={heightCm} onChange={(e) => setHeightCm(e.target.value)} />
-            <input className="input" placeholder="吏곸뾽" maxLength={80} value={job} onChange={(e) => setJob(e.target.value)} />
-            <input className="input md:col-span-2" placeholder="?대룞寃쎈젰(??" type="number" min={0} max={50} value={trainingYears} onChange={(e) => setTrainingYears(e.target.value)} />
-          </div>
-
-          <textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" rows={3} maxLength={300} placeholder="???μ젏" value={strengthsText} onChange={(e) => setStrengthsText(e.target.value)} />
-          <textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" rows={3} maxLength={1000} placeholder="이상형" value={idealText} onChange={(e) => setIdealText(e.target.value)} />
-          <textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" rows={4} maxLength={1000} placeholder="?먭린?뚭컻" value={introText} onChange={(e) => setIntroText(e.target.value)} />
-
-          <input className="input" placeholder="?몄뒪?洹몃옩 ?꾩씠??@ ?놁씠, ?꾩닔)" required maxLength={30} value={instagramId} onChange={(e) => setInstagramId(normalizeInstagramId(e.target.value))} />
-
-          <label className="inline-flex items-start gap-2 text-sm text-neutral-700">
-            <input type="checkbox" checked={photoVisibility === "public"} onChange={(e) => setPhotoVisibility(e.target.checked ? "public" : "blur")} className="mt-1" />
-            <span>?ъ쭊??釉붾윭 ?놁씠 怨듦컻?⑸땲?? (誘몄꽑????釉붾윭)</span>
-          </label>
-
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            <div>
-              <label className="mb-1 block text-sm text-neutral-700">?ъ쭊 1 (?꾩닔)</label>
-              <input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e) => setPhotos((prev) => [e.target.files?.[0] ?? null, prev[1]])} />
-              {previewUrls[0] && (
-                <div className="mt-2 h-36 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={previewUrls[0]} alt="" className="h-full w-full object-contain" />
-                </div>
-              )}
+        <section id="paid-create-form" className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
+          <h2 className="text-lg font-bold text-neutral-900">유료 신청 작성</h2>
+          <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+            <div className="flex gap-2">
+              <button type="button" onClick={() => setGender("M")} className={`h-10 rounded-lg border px-4 text-sm ${gender === "M" ? "border-rose-500 bg-rose-500 text-white" : "border-neutral-300 bg-white text-neutral-700"}`}>
+                남자
+              </button>
+              <button type="button" onClick={() => setGender("F")} className={`h-10 rounded-lg border px-4 text-sm ${gender === "F" ? "border-rose-500 bg-rose-500 text-white" : "border-neutral-300 bg-white text-neutral-700"}`}>
+                여자
+              </button>
             </div>
-            <div>
-              <label className="mb-1 block text-sm text-neutral-700">?ъ쭊 2 (?좏깮)</label>
-              <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setPhotos((prev) => [prev[0], e.target.files?.[0] ?? null])} />
-              {previewUrls[1] && (
-                <div className="mt-2 h-36 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={previewUrls[1]} alt="" className="h-full w-full object-contain" />
-                </div>
-              )}
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <input className="input" placeholder="나이" type="number" min={19} max={99} value={age} onChange={(e) => setAge(e.target.value)} />
+              <input className="input" placeholder="지역" maxLength={50} value={region} onChange={(e) => setRegion(e.target.value)} />
+              <input className="input" placeholder="키(cm)" type="number" min={120} max={230} value={heightCm} onChange={(e) => setHeightCm(e.target.value)} />
+              <input className="input" placeholder="직업" maxLength={80} value={job} onChange={(e) => setJob(e.target.value)} />
+              <input className="input md:col-span-2" placeholder="운동경력(년)" type="number" min={0} max={50} value={trainingYears} onChange={(e) => setTrainingYears(e.target.value)} />
             </div>
-          </div>
 
-          {error && <p className="text-sm text-red-600">{error}</p>}
+            <textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" rows={3} maxLength={300} placeholder="내 장점" value={strengthsText} onChange={(e) => setStrengthsText(e.target.value)} />
+            <textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" rows={3} maxLength={1000} placeholder="이상형" value={idealText} onChange={(e) => setIdealText(e.target.value)} />
+            <textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" rows={4} maxLength={1000} placeholder="자기소개" value={introText} onChange={(e) => setIntroText(e.target.value)} />
 
-          <button type="submit" disabled={submitting} className="h-11 rounded-xl bg-rose-500 px-4 text-sm font-medium text-white hover:bg-rose-600 disabled:opacity-50">
-            {submitting ? "?좎껌 以?.." : "?좊즺 ?좎껌 ?깅줉"}
-          </button>
-        </form>
+            <input className="input" placeholder="인스타그램 아이디(@ 없이, 필수)" required maxLength={30} value={instagramId} onChange={(e) => setInstagramId(normalizeInstagramId(e.target.value))} />
 
-        {successId && (
-          <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-            <p className="font-semibold">?좎껌???묒닔?섏뿀?듬땲??</p>
-            <p className="mt-1">?좎껌ID: {successId}</p>
-            <p className="mt-1">?낃툑 ???ㅽ뵂移댄넚?쇰줈 "?됰꽕???좎껌ID" 蹂대궡硫??뺤씤 ???낅줈?쒕맗?덈떎.</p>
-            <a href={openKakaoUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-emerald-700">
-              ?ㅽ뵂移댄넚 ?대룞
-            </a>
-          </div>
-        )}
-      </section>
+            <label className="inline-flex items-start gap-2 text-sm text-neutral-700">
+              <input type="checkbox" checked={photoVisibility === "public"} onChange={(e) => setPhotoVisibility(e.target.checked ? "public" : "blur")} className="mt-1" />
+              <span>사진을 블러 없이 공개합니다. (미선택 시 블러 처리)</span>
+            </label>
+
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+              <div>
+                <label className="mb-1 block text-sm text-neutral-700">사진 1 (필수)</label>
+                <input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e) => setPhotos((prev) => [e.target.files?.[0] ?? null, prev[1]])} />
+                {previewUrls[0] && (
+                  <div className="mt-2 h-36 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={previewUrls[0]} alt="" className="h-full w-full object-contain" />
+                  </div>
+                )}
+              </div>
+              <div>
+                <label className="mb-1 block text-sm text-neutral-700">사진 2 (선택)</label>
+                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setPhotos((prev) => [prev[0], e.target.files?.[0] ?? null])} />
+                {previewUrls[1] && (
+                  <div className="mt-2 h-36 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={previewUrls[1]} alt="" className="h-full w-full object-contain" />
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {error && <p className="text-sm text-red-600">{error}</p>}
+
+            <button type="submit" disabled={submitting} className="h-11 rounded-xl bg-rose-500 px-4 text-sm font-medium text-white hover:bg-rose-600 disabled:opacity-50">
+              {submitting ? "신청 중..." : "유료 신청 등록"}
+            </button>
+          </form>
+
+          {successId && (
+            <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
+              <p className="font-semibold">신청이 접수되었습니다.</p>
+              <p className="mt-1">신청ID: {successId}</p>
+              <p className="mt-1">입금 후 오픈카톡으로 "닉네임 + 신청ID"를 보내주시면 확인 후 업로드됩니다.</p>
+              <a href={openKakaoUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-emerald-700">
+                오픈카톡 이동
+              </a>
+            </div>
+          )}
+        </section>
       )}
 
       <section className="mt-5">
-        <h2 className="text-lg font-bold text-neutral-900">?뱀씤??24?쒓컙 怨좎젙</h2>
+        <h2 className="text-lg font-bold text-neutral-900">확인된 24시간 고정</h2>
         {loading ? (
-          <p className="mt-2 text-sm text-neutral-500">遺덈윭?ㅻ뒗 以?..</p>
+          <p className="mt-2 text-sm text-neutral-500">불러오는 중...</p>
         ) : items.length === 0 ? (
-          <p className="mt-2 text-sm text-neutral-500">?꾩옱 怨듦컻 以묒씤 怨좎젙 移대뱶媛 ?놁뒿?덈떎.</p>
+          <p className="mt-2 text-sm text-neutral-500">현재 공개 중인 고정 카드가 없습니다.</p>
         ) : (
           <div className="mt-3 space-y-6">
-            <GenderSection title="?⑥옄 24?쒓컙 怨좎젙" items={maleItems} />
-            <GenderSection title="?ъ옄 24?쒓컙 怨좎젙" items={femaleItems} />
+            <GenderSection title="남자 24시간 고정" items={maleItems} />
+            <GenderSection title="여자 24시간 고정" items={femaleItems} />
           </div>
         )}
       </section>
@@ -377,7 +377,7 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
     <section>
       <h3 className="mb-2 text-base font-semibold text-neutral-800">{title}</h3>
       {items.length === 0 ? (
-        <p className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-500">?꾩옱 ?몄텧 以묒씤 移대뱶媛 ?놁뒿?덈떎.</p>
+        <p className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-500">현재 노출 중인 카드가 없습니다.</p>
       ) : (
         <div className="grid grid-cols-1 gap-3">
           {items.map((item) => (
@@ -385,9 +385,7 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
               <div className="flex items-center justify-between gap-2">
                 <p className="font-semibold text-neutral-900">{item.nickname}</p>
                 {item.expires_at ? (
-                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                    ??{formatRemainingToKorean(item.expires_at)}
-                  </span>
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{formatRemainingToKorean(item.expires_at)}</span>
                 ) : null}
               </div>
               {item.thumbUrl ? (
@@ -405,11 +403,11 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
                 {item.job && <span>{item.job}</span>}
                 {item.training_years != null && <span>운동 {item.training_years}년</span>}
                 {item.gender === "M" && item.is_3lift_verified && (
-                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700">3-lift verified</span>
+                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-medium text-emerald-700">3대인증 완료</span>
                 )}
               </div>
-              {item.strengths_text && <p className="mt-2 text-sm text-emerald-700">???μ젏: {item.strengths_text}</p>}
-              {item.ideal_text && <p className="mt-1 text-sm text-rose-700">?댁긽?? {item.ideal_text}</p>}
+              {item.strengths_text && <p className="mt-2 text-sm text-emerald-700">내 장점: {item.strengths_text}</p>}
+              {item.ideal_text && <p className="mt-1 text-sm text-rose-700">이상형: {item.ideal_text}</p>}
               {item.intro_text && <p className="mt-1 text-sm text-neutral-700 whitespace-pre-wrap break-words">{item.intro_text}</p>}
               <div className="mt-3 flex items-center gap-2">
                 <Link
@@ -422,7 +420,8 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
                   href={`/dating/paid/${item.id}/apply`}
                   className="inline-flex min-h-[40px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
                 >
-                  吏?먰븯湲?                </Link>
+                  지원하기
+                </Link>
               </div>
             </article>
           ))}
