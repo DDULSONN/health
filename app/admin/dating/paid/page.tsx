@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -24,6 +24,18 @@ type PaidAdminItem = {
   previewUrl: string;
 };
 
+type ApplyCreditOrderItem = {
+  id: string;
+  user_id: string;
+  nickname: string | null;
+  pack_size: number;
+  amount: number;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+  processed_at: string | null;
+  memo: string | null;
+};
+
 type StatusFilter = "all" | "pending" | "approved" | "rejected" | "expired";
 
 const STATUS_LABEL: Record<PaidAdminItem["status"], string> = {
@@ -42,6 +54,7 @@ const STATUS_STYLE: Record<PaidAdminItem["status"], string> = {
 
 export default function AdminDatingPaidPage() {
   const [items, setItems] = useState<PaidAdminItem[]>([]);
+  const [creditOrders, setCreditOrders] = useState<ApplyCreditOrderItem[]>([]);
   const [filter, setFilter] = useState<StatusFilter>("pending");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -52,10 +65,22 @@ export default function AdminDatingPaidPage() {
     setError("");
     try {
       const qs = filter === "all" ? "" : `?status=${filter}`;
-      const res = await fetch(`/api/admin/dating/paid${qs}`, { cache: "no-store" });
+      const [res, ordersRes] = await Promise.all([
+        fetch(`/api/admin/dating/paid${qs}`, { cache: "no-store" }),
+        fetch("/api/admin/dating/apply-credits/orders?status=pending&limit=100", { cache: "no-store" }),
+      ]);
+
       const body = (await res.json().catch(() => ({}))) as { items?: PaidAdminItem[]; message?: string };
-      if (!res.ok) throw new Error(body.message ?? "유료 신청 목록을 불러오지 못했습니다.");
+      const ordersBody = (await ordersRes.json().catch(() => ({}))) as {
+        items?: ApplyCreditOrderItem[];
+        message?: string;
+      };
+
+      if (!res.ok) throw new Error(body.message ?? "유료 요청 목록을 불러오지 못했습니다.");
+      if (!ordersRes.ok) throw new Error(ordersBody.message ?? "지원권 주문 목록을 불러오지 못했습니다.");
+
       setItems(Array.isArray(body.items) ? body.items : []);
+      setCreditOrders(Array.isArray(ordersBody.items) ? ordersBody.items : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "알 수 없는 오류");
     } finally {
@@ -129,6 +154,25 @@ export default function AdminDatingPaidPage() {
     }
   };
 
+  const handleApproveCreditOrder = async (orderId: string) => {
+    setActingId(orderId);
+    try {
+      const res = await fetch("/api/admin/dating/apply-credits/approve", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orderId }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+      if (!res.ok || !body.ok) {
+        alert(body.message ?? "지원권 승인 처리에 실패했습니다.");
+        return;
+      }
+      setCreditOrders((prev) => prev.filter((order) => order.id !== orderId));
+    } finally {
+      setActingId("");
+    }
+  };
+
   const visibleItems = useMemo(() => {
     if (filter === "all") return items;
     return items.filter((item) => item.status === filter);
@@ -137,7 +181,7 @@ export default function AdminDatingPaidPage() {
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold text-neutral-900">유료 신청 관리</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">유료 요청 관리</h1>
         <div className="flex items-center gap-2">
           <Link
             href="/admin/dating/cards"
@@ -154,6 +198,43 @@ export default function AdminDatingPaidPage() {
           </button>
         </div>
       </div>
+
+      <section className="mb-4 rounded-xl border border-emerald-200 bg-emerald-50/50 p-3">
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-emerald-900">지원권 주문 승인 대기 {creditOrders.length}건</h2>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="rounded-md border border-emerald-300 bg-white px-2 py-1 text-xs text-emerald-800 hover:bg-emerald-50"
+          >
+            새로고침
+          </button>
+        </div>
+        {creditOrders.length === 0 ? (
+          <p className="text-xs text-neutral-600">승인 대기 주문이 없습니다.</p>
+        ) : (
+          <div className="space-y-2">
+            {creditOrders.map((order) => (
+              <div key={order.id} className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-emerald-200 bg-white px-2 py-2">
+                <div className="text-xs text-neutral-700">
+                  <p>
+                    {order.nickname ?? order.user_id.slice(0, 8)} / +{order.pack_size}장 / {order.amount.toLocaleString("ko-KR")}원
+                  </p>
+                  <p className="text-neutral-500">주문ID {order.id} / {new Date(order.created_at).toLocaleString("ko-KR")}</p>
+                </div>
+                <button
+                  type="button"
+                  disabled={actingId === order.id}
+                  onClick={() => void handleApproveCreditOrder(order.id)}
+                  className="h-8 rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                >
+                  {actingId === order.id ? "처리 중..." : "승인"}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
 
       <div className="mb-4 flex items-center gap-2">
         <select
@@ -175,7 +256,7 @@ export default function AdminDatingPaidPage() {
       ) : error ? (
         <p className="text-sm text-red-600">{error}</p>
       ) : visibleItems.length === 0 ? (
-        <p className="text-sm text-neutral-500">해당 조건의 유료 신청이 없습니다.</p>
+        <p className="text-sm text-neutral-500">해당 조건의 유료 요청이 없습니다.</p>
       ) : (
         <div className="space-y-3">
           {visibleItems.map((item) => (
@@ -189,7 +270,7 @@ export default function AdminDatingPaidPage() {
                 </span>
               </div>
 
-              <p className="mt-1 break-all text-xs text-neutral-500">신청ID: {item.id}</p>
+              <p className="mt-1 break-all text-xs text-neutral-500">요청ID: {item.id}</p>
               <p className="mt-1 break-all text-xs text-neutral-500">user_id: {item.user_id}</p>
               <p className="mt-1 text-xs font-medium text-violet-700">인스타: @{item.instagram_id}</p>
 
@@ -213,7 +294,7 @@ export default function AdminDatingPaidPage() {
               {item.intro_text && <p className="mt-1 text-xs text-neutral-700 whitespace-pre-wrap break-words">소개: {item.intro_text}</p>}
 
               <div className="mt-2 text-xs text-neutral-500">
-                <p>신청일: {new Date(item.created_at).toLocaleString("ko-KR")}</p>
+                <p>요청일: {new Date(item.created_at).toLocaleString("ko-KR")}</p>
                 {item.paid_at && <p>승인일: {new Date(item.paid_at).toLocaleString("ko-KR")}</p>}
                 {item.expires_at && <p>만료일: {new Date(item.expires_at).toLocaleString("ko-KR")}</p>}
               </div>
@@ -233,7 +314,7 @@ export default function AdminDatingPaidPage() {
                   onClick={() => void handleReject(item.id)}
                   className="h-8 rounded-md bg-rose-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                 >
-                  거부
+                  거절
                 </button>
               </div>
             </article>
