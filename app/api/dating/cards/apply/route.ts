@@ -1,3 +1,4 @@
+﻿import { getKstDayRangeUtc } from "@/lib/dating-open";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -112,10 +113,11 @@ function mapDbErrorToHttp(code?: string | null): { status: number; apiCode: ApiC
   if (code === "23502") return { status: 400, apiCode: "VALIDATION_ERROR", message: "필수 항목이 누락되었습니다." };
   if (code === "23503") return { status: 400, apiCode: "VALIDATION_ERROR", message: "참조 데이터가 올바르지 않습니다." };
   if (code === "42501") return { status: 403, apiCode: "FORBIDDEN", message: "권한이 없어 요청을 처리할 수 없습니다." };
-  if (code === "PGRST204") return { status: 503, apiCode: "SCHEMA_MISMATCH", message: "서버 스키마 불일치로 잠시 처리할 수 없습니다." };
+  if (code === "PGRST202" || code === "PGRST204" || code === "42883") {
+    return { status: 503, apiCode: "SCHEMA_MISMATCH", message: "서버 스키마 불일치로 잠시 처리할 수 없습니다." };
+  }
   return { status: 500, apiCode: "DATABASE_ERROR", message: "지원 처리 중 오류가 발생했습니다." };
 }
-
 function logSupabaseError(requestId: string, stage: string, dbError: DbErrorShape) {
   console.error(`[apply] ${requestId} ${stage} SUPABASE_ERROR`, {
     code: dbError.code ?? null,
@@ -136,6 +138,17 @@ function safeNumber(value: unknown, fallback = 0): number {
   return fallback;
 }
 
+function isMissingTokenRpcError(dbError: DbErrorShape): boolean {
+  const code = String(dbError.code ?? "");
+  const message = String(dbError.message ?? "").toLowerCase();
+  return (
+    code === "PGRST202" ||
+    code === "PGRST204" ||
+    code === "42883" ||
+    message.includes("consume_apply_token") ||
+    (message.includes("function") && message.includes("does not exist"))
+  );
+}
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
   let userId: string | null = null;
@@ -158,7 +171,7 @@ export async function POST(req: Request) {
     }
 
     if (!userId) {
-      return jsonResponse(401, "UNAUTHORIZED", requestId, "로그인이 필요합니다.");
+      return jsonResponse(401, "UNAUTHORIZED", requestId, "濡쒓렇?몄씠 ?꾩슂?⑸땲??");
     }
 
     body = await req.json().catch(() => null);
@@ -168,7 +181,7 @@ export async function POST(req: Request) {
     });
 
     if (!body) {
-      return jsonResponse(400, "VALIDATION_ERROR", requestId, "잘못된 요청입니다.");
+      return jsonResponse(400, "VALIDATION_ERROR", requestId, "?섎せ???붿껌?낅땲??");
     }
 
     const input = body as Record<string, unknown>;
@@ -205,7 +218,7 @@ export async function POST(req: Request) {
     });
 
     if (validationErrors.length > 0) {
-      return jsonResponse(400, "VALIDATION_ERROR", requestId, "입력값을 확인해주세요.", { fields: validationErrors });
+      return jsonResponse(400, "VALIDATION_ERROR", requestId, "?낅젰媛믪쓣 ?뺤씤?댁＜?몄슂.", { fields: validationErrors });
     }
 
     const profileRes = await supabase
@@ -228,7 +241,7 @@ export async function POST(req: Request) {
 
     const applicantDisplayNickname = sanitizeText(profileRes.data?.nickname, 20);
     if (!applicantDisplayNickname) {
-      return jsonResponse(400, "NICKNAME_REQUIRED", requestId, "닉네임 설정 후 이용 가능합니다.", {
+      return jsonResponse(400, "NICKNAME_REQUIRED", requestId, "?됰꽕???ㅼ젙 ???댁슜 媛?ν빀?덈떎.", {
         profile_edit_url: "/mypage",
       });
     }
@@ -252,7 +265,7 @@ export async function POST(req: Request) {
         logSupabaseError(requestId, "L5 card.read", cardError);
       }
       if (cardError.code === "PGRST116") {
-        return jsonResponse(404, "CARD_NOT_FOUND", requestId, "카드를 찾을 수 없습니다.");
+        return jsonResponse(404, "CARD_NOT_FOUND", requestId, "移대뱶瑜?李얠쓣 ???놁뒿?덈떎.");
       }
       const mapped = mapDbErrorToHttp(cardError.code);
       return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, cardError);
@@ -260,16 +273,16 @@ export async function POST(req: Request) {
 
     const card = cardRes.data;
     if (card.owner_user_id === userId) {
-      return jsonResponse(403, "FORBIDDEN", requestId, "본인 카드에는 지원할 수 없습니다.");
+      return jsonResponse(403, "FORBIDDEN", requestId, "蹂몄씤 移대뱶?먮뒗 吏?먰븷 ???놁뒿?덈떎.");
     }
     if (card.status === "expired") {
-      return jsonResponse(410, "CARD_EXPIRED", requestId, "카드가 만료되었습니다.");
+      return jsonResponse(410, "CARD_EXPIRED", requestId, "移대뱶媛 留뚮즺?섏뿀?듬땲??");
     }
     if (card.status !== "public") {
-      return jsonResponse(403, "FORBIDDEN", requestId, "지원 가능한 카드가 아닙니다.");
+      return jsonResponse(403, "FORBIDDEN", requestId, "吏??媛?ν븳 移대뱶媛 ?꾨떃?덈떎.");
     }
     if (!card.expires_at || new Date(card.expires_at).getTime() <= Date.now()) {
-      return jsonResponse(410, "CARD_EXPIRED", requestId, "카드가 만료되었습니다.");
+      return jsonResponse(410, "CARD_EXPIRED", requestId, "移대뱶媛 留뚮즺?섏뿀?듬땲??");
     }
 
     const adminClient = createAdminClient();
@@ -278,7 +291,7 @@ export async function POST(req: Request) {
     const consumeRow = (Array.isArray(consumeRes.data) ? consumeRes.data[0] : null) as
       | { used?: string; base_used?: number; credits_remaining?: number }
       | null;
-    const tokenUsage: ConsumeTokenResult = {
+    let tokenUsage: ConsumeTokenResult = {
       used:
         consumeRow?.used === "base" || consumeRow?.used === "credit" || consumeRow?.used === "none"
           ? consumeRow.used
@@ -292,13 +305,54 @@ export async function POST(req: Request) {
       tokenUsage,
       hasError: Boolean(consumeRes.error),
     });
-    if (consumeRes.error) {
+    if (consumeRes.error && isMissingTokenRpcError(consumeError)) {
+      console.warn(`[apply] ${requestId} L6 token.consume fallback_to_legacy_daily_limit`, {
+        userId,
+        code: consumeError.code ?? null,
+        message: consumeError.message ?? null,
+      });
+
+      const { startUtcIso, endUtcIso } = getKstDayRangeUtc();
+      const countRes = await supabase
+        .from("dating_card_applications")
+        .select("id", { head: true, count: "exact" })
+        .eq("applicant_user_id", userId)
+        .in("status", ["submitted", "accepted", "rejected"])
+        .gte("created_at", startUtcIso)
+        .lt("created_at", endUtcIso);
+      const countError = toDbErrorShape(countRes.error);
+      if (countRes.error) {
+        logSupabaseError(requestId, "L6 fallback.daily.count", countError);
+        const mapped = mapDbErrorToHttp(countError.code);
+        return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, countError);
+      }
+
+      const todayCount = countRes.count ?? 0;
+      if (todayCount >= 2) {
+        return jsonResponse(
+          429,
+          "DAILY_APPLY_LIMIT",
+          requestId,
+          "하루 지원 가능 횟수(2회)를 모두 사용했어요. 내일 다시 지원할 수 있어요.",
+          {
+            baseRemaining: 0,
+            creditsRemaining: 0,
+          }
+        );
+      }
+
+      tokenUsage = {
+        used: "base",
+        base_used: Math.min(2, todayCount + 1),
+        credits_remaining: 0,
+      };
+    } else if (consumeRes.error) {
       logSupabaseError(requestId, "L6 token.consume", consumeError);
       const mapped = mapDbErrorToHttp(consumeError.code);
       return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, consumeError);
     }
     if (tokenUsage.used === "none") {
-      return jsonResponse(429, "DAILY_APPLY_LIMIT", requestId, "하루 지원 가능 횟수(2회)를 모두 사용했어요. 내일 다시 지원할 수 있어요.", {
+      return jsonResponse(429, "DAILY_APPLY_LIMIT", requestId, "?섎（ 吏??媛???잛닔(2??瑜?紐⑤몢 ?ъ슜?덉뼱?? ?댁씪 ?ㅼ떆 吏?먰븷 ???덉뼱??", {
         baseRemaining: Math.max(0, 2 - tokenUsage.base_used),
         creditsRemaining: Math.max(0, tokenUsage.credits_remaining),
       });
@@ -424,7 +478,7 @@ export async function POST(req: Request) {
           console.log(`[apply] ${requestId} L7 token.refund`, { refunded: true, used: tokenUsage.used });
         }
       }
-      return jsonResponse(500, "DATABASE_ERROR", requestId, "지원 처리 중 오류가 발생했습니다.");
+      return jsonResponse(500, "DATABASE_ERROR", requestId, "吏??泥섎━ 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.");
     }
 
     console.log(`[apply] ${requestId} L8 before return`, {
@@ -433,7 +487,7 @@ export async function POST(req: Request) {
       insertedId: insertRes.data.id,
     });
 
-    return jsonResponse(200, "SUCCESS", requestId, "지원이 완료되었습니다.", {
+    return jsonResponse(200, "SUCCESS", requestId, "吏?먯씠 ?꾨즺?섏뿀?듬땲??", {
       id: insertRes.data.id,
       usedToken: tokenUsage.used,
       baseRemaining: Math.max(0, 2 - tokenUsage.base_used),
@@ -454,7 +508,12 @@ export async function POST(req: Request) {
       payload: maskPayloadForLog(body),
     });
 
-    return jsonResponse(500, "INTERNAL_SERVER_ERROR", requestId, "지원 처리 중 오류가 발생했습니다.", undefined, dbError);
+    return jsonResponse(500, "INTERNAL_SERVER_ERROR", requestId, "吏??泥섎━ 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.", undefined, dbError);
   }
 }
+
+
+
+
+
 
