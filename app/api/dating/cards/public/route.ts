@@ -1,4 +1,5 @@
-﻿import { createAdminClient } from "@/lib/supabase/server";
+﻿import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
+import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 function parseIntSafe(value: string | null, fallback: number) {
@@ -100,6 +101,10 @@ export async function GET(req: Request) {
   const sex = searchParams.get("sex");
 
   const adminClient = createAdminClient();
+  await syncOpenCardQueue(adminClient).catch((error) => {
+    console.error("[GET /api/dating/cards/public] queue sync failed", error);
+  });
+
   let query = adminClient
     .from("dating_cards")
     .select(

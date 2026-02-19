@@ -93,3 +93,31 @@ export async function promotePendingCardsBySex(
 
   return { sex, promotedIds, publicCount };
 }
+
+export async function syncOpenCardQueue(
+  adminClient: ReturnType<typeof createAdminClient>
+) {
+  const nowIso = new Date().toISOString();
+
+  const expireRes = await adminClient
+    .from("dating_cards")
+    .update({ status: "expired" })
+    .eq("status", "public")
+    .lte("expires_at", nowIso)
+    .select("id,sex");
+
+  if (expireRes.error && !isMissingColumnError(expireRes.error)) {
+    throw expireRes.error;
+  }
+
+  const male = await promotePendingCardsBySex(adminClient, "male");
+  const female = await promotePendingCardsBySex(adminClient, "female");
+
+  return {
+    expiredIds: (expireRes.data ?? []).map((row) => row.id),
+    promoted: {
+      male: male.promotedIds,
+      female: female.promotedIds,
+    },
+  };
+}

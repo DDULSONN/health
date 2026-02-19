@@ -1,4 +1,5 @@
-import { OPEN_CARD_LIMIT_PER_SEX } from "@/lib/dating-open";
+﻿import { OPEN_CARD_LIMIT_PER_SEX } from "@/lib/dating-open";
+import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -46,6 +47,8 @@ export async function GET() {
   const adminClient = createAdminClient();
 
   try {
+    await syncOpenCardQueue(adminClient);
+
     const [malePublic, femalePublic, malePending, femalePending] = await Promise.all([
       countPublic(adminClient, "male"),
       countPublic(adminClient, "female"),

@@ -34,7 +34,7 @@ export async function PATCH(
   const adminClient = createAdminClient();
   const { data: card, error: cardError } = await adminClient
     .from("dating_cards")
-    .select("id, sex")
+    .select("id, sex, status")
     .eq("id", id)
     .single();
 
@@ -100,7 +100,7 @@ export async function PATCH(
     return NextResponse.json({ error: "?곹깭 蹂寃쎌뿉 ?ㅽ뙣?덉뒿?덈떎." }, { status: 500 });
   }
 
-  if (status === "hidden" || status === "expired") {
+  if ((card.status === "public" && status !== "public") || status === "hidden" || status === "expired") {
     const sex = card.sex === "female" ? "female" : "male";
     try {
       await promotePendingCardsBySex(adminClient, sex);
