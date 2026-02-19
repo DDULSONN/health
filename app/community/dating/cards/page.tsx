@@ -127,6 +127,13 @@ export default function OpenCardsPage() {
 
   return (
     <main className="max-w-3xl mx-auto px-4 py-6">
+      <div className="mb-4 flex flex-wrap items-center gap-2">
+        <span className="rounded-full border border-neutral-300 bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white">오픈카드</span>
+        <Link href="/dating/paid" className="rounded-full border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700 hover:bg-rose-100">
+          🔥24시간 고정
+        </Link>
+      </div>
+
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">오픈카드</h1>
