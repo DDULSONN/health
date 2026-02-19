@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { formatRemainingToKorean } from "@/lib/dating-open";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -72,6 +73,7 @@ export default function DatingPaidPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [successId, setSuccessId] = useState("");
+  const [formOpen, setFormOpen] = useState(false);
 
   const [gender, setGender] = useState<"M" | "F">("M");
   const [age, setAge] = useState("");
@@ -86,6 +88,7 @@ export default function DatingPaidPage() {
   const [photoVisibility, setPhotoVisibility] = useState<"blur" | "public">("blur");
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
   const [previewUrls, setPreviewUrls] = useState<(string | null)[]>([null, null]);
+  const [tick, setTick] = useState(0);
 
   useEffect(() => {
     queueMicrotask(async () => {
@@ -111,6 +114,11 @@ export default function DatingPaidPage() {
       });
     };
   }, [photos]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setTick((v) => v + 1), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -232,6 +240,11 @@ export default function DatingPaidPage() {
     }
   };
 
+  const maleItems = useMemo(() => items.filter((item) => item.gender === "M"), [items]);
+  const femaleItems = useMemo(() => items.filter((item) => item.gender === "F"), [items]);
+  const nowTick = useMemo(() => tick, [tick]);
+  void nowTick;
+
   return (
     <main className="max-w-4xl mx-auto px-4 py-6">
       <div className="mb-5 flex flex-wrap items-center gap-2">
@@ -244,13 +257,18 @@ export default function DatingPaidPage() {
       <section className="rounded-2xl border border-neutral-200 bg-white p-4">
         <div className="mb-3 flex items-center justify-between">
           <h1 className="text-xl font-bold text-neutral-900">🔥24시간 고정 신청</h1>
-          <a href="#paid-create-form" className="rounded-lg bg-rose-500 px-3 py-2 text-sm font-medium text-white hover:bg-rose-600">
+          <button
+            type="button"
+            onClick={() => setFormOpen((prev) => !prev)}
+            className="rounded-lg bg-rose-500 px-3 py-2 text-sm font-medium text-white hover:bg-rose-600"
+          >
             신청하기
-          </a>
+          </button>
         </div>
         <p className="text-sm text-neutral-600">신청 후 결제 확인이 완료되면 운영자가 승인하고 24시간 노출됩니다.</p>
       </section>
 
+      {formOpen && (
       <section id="paid-create-form" className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
         <h2 className="text-lg font-bold text-neutral-900">유료 신청 작성</h2>
         <form onSubmit={handleSubmit} className="mt-4 space-y-3">
@@ -323,6 +341,7 @@ export default function DatingPaidPage() {
           </div>
         )}
       </section>
+      )}
 
       <section className="mt-5">
         <h2 className="text-lg font-bold text-neutral-900">승인된 24시간 고정</h2>
@@ -331,33 +350,9 @@ export default function DatingPaidPage() {
         ) : items.length === 0 ? (
           <p className="mt-2 text-sm text-neutral-500">현재 공개 중인 고정 카드가 없습니다.</p>
         ) : (
-          <div className="mt-3 grid grid-cols-1 gap-3">
-            {items.map((item) => (
-              <article key={item.id} className="rounded-2xl border border-neutral-200 bg-white p-4">
-                <div className="flex items-center justify-between">
-                  <p className="font-semibold text-neutral-900">{item.nickname}</p>
-                  <p className="text-xs text-neutral-500">{item.gender === "M" ? "남자" : "여자"}</p>
-                </div>
-                {item.thumbUrl ? (
-                  <div className="mt-2 h-44 overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={item.thumbUrl} alt="" className="h-full w-full object-contain" />
-                  </div>
-                ) : (
-                  <div className="mt-2 h-44 rounded-xl border border-neutral-100 bg-neutral-50" />
-                )}
-                <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
-                  {item.age != null && <span>{item.age}세</span>}
-                  {item.region && <span>{item.region}</span>}
-                  {item.height_cm != null && <span>{item.height_cm}cm</span>}
-                  {item.job && <span>{item.job}</span>}
-                  {item.training_years != null && <span>운동 {item.training_years}년</span>}
-                </div>
-                {item.strengths_text && <p className="mt-2 text-sm text-emerald-700">내 장점: {item.strengths_text}</p>}
-                {item.ideal_text && <p className="mt-1 text-sm text-rose-700">이상형: {item.ideal_text}</p>}
-                {item.intro_text && <p className="mt-1 text-sm text-neutral-700 whitespace-pre-wrap break-words">{item.intro_text}</p>}
-              </article>
-            ))}
+          <div className="mt-3 space-y-6">
+            <GenderSection title="남자 24시간 고정" items={maleItems} />
+            <GenderSection title="여자 24시간 고정" items={femaleItems} />
           </div>
         )}
       </section>
@@ -373,5 +368,49 @@ export default function DatingPaidPage() {
         }
       `}</style>
     </main>
+  );
+}
+
+function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
+  return (
+    <section>
+      <h3 className="mb-2 text-base font-semibold text-neutral-800">{title}</h3>
+      {items.length === 0 ? (
+        <p className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-sm text-neutral-500">현재 노출 중인 카드가 없습니다.</p>
+      ) : (
+        <div className="grid grid-cols-1 gap-3">
+          {items.map((item) => (
+            <article key={item.id} className="rounded-2xl border border-neutral-200 bg-white p-4">
+              <div className="flex items-center justify-between gap-2">
+                <p className="font-semibold text-neutral-900">{item.nickname}</p>
+                {item.expires_at ? (
+                  <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                    ⏳ {formatRemainingToKorean(item.expires_at)}
+                  </span>
+                ) : null}
+              </div>
+              {item.thumbUrl ? (
+                <div className="mt-2 h-44 overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={item.thumbUrl} alt="" className="h-full w-full object-contain" />
+                </div>
+              ) : (
+                <div className="mt-2 h-44 rounded-xl border border-neutral-100 bg-neutral-50" />
+              )}
+              <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
+                {item.age != null && <span>{item.age}세</span>}
+                {item.region && <span>{item.region}</span>}
+                {item.height_cm != null && <span>{item.height_cm}cm</span>}
+                {item.job && <span>{item.job}</span>}
+                {item.training_years != null && <span>운동 {item.training_years}년</span>}
+              </div>
+              {item.strengths_text && <p className="mt-2 text-sm text-emerald-700">내 장점: {item.strengths_text}</p>}
+              {item.ideal_text && <p className="mt-1 text-sm text-rose-700">이상형: {item.ideal_text}</p>}
+              {item.intro_text && <p className="mt-1 text-sm text-neutral-700 whitespace-pre-wrap break-words">{item.intro_text}</p>}
+            </article>
+          ))}
+        </div>
+      )}
+    </section>
   );
 }

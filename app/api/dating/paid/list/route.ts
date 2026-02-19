@@ -24,6 +24,16 @@ export async function GET() {
     const admin = createAdminClient();
     const nowIso = new Date().toISOString();
 
+    // Opportunistic expiration so stale approved cards are 내려감 even without cron timing drift.
+    const expireRes = await admin
+      .from("dating_paid_cards")
+      .update({ status: "expired" })
+      .eq("status", "approved")
+      .lte("expires_at", nowIso);
+    if (expireRes.error) {
+      console.error(`[dating-paid-list] ${requestId} expire update error`, expireRes.error);
+    }
+
     const { data, error } = await admin
       .from("dating_paid_cards")
       .select(

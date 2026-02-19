@@ -56,8 +56,18 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const status = searchParams.get("status");
+    const nowIso = new Date().toISOString();
 
     const admin = createAdminClient();
+    const expireRes = await admin
+      .from("dating_paid_cards")
+      .update({ status: "expired" })
+      .eq("status", "approved")
+      .lte("expires_at", nowIso);
+    if (expireRes.error) {
+      console.error(`[admin-dating-paid-list] ${requestId} expire update error`, expireRes.error);
+    }
+
     let query = admin
       .from("dating_paid_cards")
       .select(
