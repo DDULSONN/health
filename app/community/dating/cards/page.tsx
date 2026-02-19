@@ -160,8 +160,20 @@ export default function OpenCardsPage() {
         <p className="text-neutral-400 text-center py-10">불러오는 중...</p>
       ) : (
         <div className="space-y-8">
-          <Section title="남자 오픈카드" items={males} hasMore={maleHasMore} onMore={loadMoreMale} />
-          <Section title="여자 오픈카드" items={females} hasMore={femaleHasMore} onMore={loadMoreFemale} />
+          <Section
+            title="남자 오픈카드"
+            currentCount={queueStats?.male.public_count ?? males.length}
+            items={males}
+            hasMore={maleHasMore}
+            onMore={loadMoreMale}
+          />
+          <Section
+            title="여자 오픈카드"
+            currentCount={queueStats?.female.public_count ?? females.length}
+            items={females}
+            hasMore={femaleHasMore}
+            onMore={loadMoreFemale}
+          />
         </div>
       )}
     </main>
@@ -170,18 +182,22 @@ export default function OpenCardsPage() {
 
 function Section({
   title,
+  currentCount,
   items,
   hasMore,
   onMore,
 }: {
   title: string;
+  currentCount: number;
   items: PublicCard[];
   hasMore: boolean;
   onMore: () => void;
 }) {
   return (
     <section>
-      <h2 className="text-lg font-bold text-neutral-800 mb-3">{title}</h2>
+      <h2 className="text-lg font-bold text-neutral-800 mb-3">
+        {title} <span className="text-sm font-medium text-neutral-500">({currentCount}명 공개중)</span>
+      </h2>
       {items.length === 0 ? (
         <p className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-500">현재 공개된 카드가 없습니다.</p>
       ) : (
