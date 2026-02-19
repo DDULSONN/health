@@ -171,6 +171,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "프로필 닉네임이 없습니다. 닉네임 설정 후 다시 시도해주세요." }, { status: 400 });
   }
 
+  let is3LiftVerified = false;
+  if (sex === "male") {
+    const certRes = await adminClient
+      .from("cert_requests")
+      .select("id")
+      .eq("user_id", user.id)
+      .eq("status", "approved")
+      .limit(1)
+      .maybeSingle();
+
+    if (certRes.error) {
+      console.error("[POST /api/dating/cards/my] cert fetch failed", certRes.error);
+      return NextResponse.json({ error: "3대 인증 상태를 확인하지 못했습니다." }, { status: 500 });
+    }
+    is3LiftVerified = Boolean(certRes.data);
+  }
+
   const publishedAt = null;
   const expiresAt = null;
 
@@ -192,7 +209,7 @@ export async function POST(req: Request) {
     blur_paths: blurPaths,
     total_3lift: sex === "male" ? total3Lift : null,
     percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
-    is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
+    is_3lift_verified: is3LiftVerified,
     status: "pending" as const,
     published_at: publishedAt,
     expires_at: expiresAt,
@@ -211,7 +228,7 @@ export async function POST(req: Request) {
       photo_visibility: photoVisibility,
       total_3lift: sex === "male" ? total3Lift : null,
       percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
-      is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
+      is_3lift_verified: is3LiftVerified,
       status: "pending" as const,
     published_at: publishedAt,
     expires_at: expiresAt,
@@ -250,7 +267,7 @@ export async function POST(req: Request) {
       photo_visibility: photoVisibility,
       total_3lift: sex === "male" ? total3Lift : null,
       percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
-      is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
+      is_3lift_verified: is3LiftVerified,
     },
     // Alternate minimal candidate (new instagram/photo names, no display/published/expires)
     {
