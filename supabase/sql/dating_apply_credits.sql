@@ -119,9 +119,9 @@ begin
   for update;
 
   if coalesce(v_base_used, 0) < 2 then
-    update public.user_daily_apply_usage
-    set base_used = base_used + 1, updated_at = now()
-    where user_id = p_user_id and kst_date = v_kst_date;
+    update public.user_daily_apply_usage as u
+    set base_used = u.base_used + 1, updated_at = now()
+    where u.user_id = p_user_id and u.kst_date = v_kst_date;
 
     select u.base_used
       into v_base_used
@@ -184,11 +184,11 @@ declare
   v_credits int := 0;
 begin
   if p_used = 'base' then
-    update public.user_daily_apply_usage
-    set base_used = greatest(base_used - 1, 0),
+    update public.user_daily_apply_usage as u
+    set base_used = greatest(u.base_used - 1, 0),
         updated_at = now()
-    where user_id = p_user_id
-      and kst_date = v_kst_date;
+    where u.user_id = p_user_id
+      and u.kst_date = v_kst_date;
   elsif p_used = 'credit' then
     insert into public.user_apply_credits (user_id, credits, updated_at)
     values (p_user_id, 1, now())
