@@ -73,6 +73,30 @@ type ReceivedCardApplication = {
   photo_signed_urls?: string[];
 };
 
+type MyAppliedCardApplication = {
+  id: string;
+  card_id: string;
+  applicant_display_nickname: string | null;
+  age: number | null;
+  height_cm: number | null;
+  region: string | null;
+  job: string | null;
+  training_years: number | null;
+  intro_text: string | null;
+  status: "submitted" | "accepted" | "rejected" | "canceled";
+  created_at: string;
+  card: {
+    id: string;
+    sex: "male" | "female";
+    display_nickname: string | null;
+    status: "pending" | "public" | "expired" | "hidden";
+    expires_at: string | null;
+    created_at: string;
+    owner_user_id: string;
+    owner_nickname: string | null;
+  } | null;
+};
+
 type DatingConnection = {
   application_id: string;
   card_id: string;
@@ -154,6 +178,11 @@ type AdminOpenCardApplication = {
   photo_paths: string[];
   status: "submitted" | "accepted" | "rejected" | "canceled";
   created_at: string;
+  card_owner_user_id?: string | null;
+  card_owner_nickname?: string | null;
+  card_display_nickname?: string | null;
+  card_sex?: "male" | "female" | null;
+  card_status?: "pending" | "public" | "expired" | "hidden" | null;
 };
 
 type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
@@ -214,6 +243,7 @@ export default function MyPage() {
   const [datingApplication, setDatingApplication] = useState<DatingApplicationStatus | null>(null);
   const [myDatingCards, setMyDatingCards] = useState<MyDatingCard[]>([]);
   const [receivedApplications, setReceivedApplications] = useState<ReceivedCardApplication[]>([]);
+  const [myAppliedCardApplications, setMyAppliedCardApplications] = useState<MyAppliedCardApplication[]>([]);
   const [myPaidCards, setMyPaidCards] = useState<MyPaidCard[]>([]);
   const [receivedPaidApplications, setReceivedPaidApplications] = useState<ReceivedPaidApplication[]>([]);
   const [datingConnections, setDatingConnections] = useState<DatingConnection[]>([]);
@@ -249,12 +279,13 @@ export default function MyPage() {
           return;
         }
 
-        const [summaryRes, certRes, adminRes, datingRes, receivedRes, paidReceivedRes, connectionsRes, paidConnectionsRes, writeSettingRes] = await Promise.all([
+        const [summaryRes, certRes, adminRes, datingRes, receivedRes, appliedRes, paidReceivedRes, connectionsRes, paidConnectionsRes, writeSettingRes] = await Promise.all([
           fetch("/api/mypage/summary", { cache: "no-store" }),
           fetch("/api/cert-requests", { cache: "no-store" }),
           fetch("/api/admin/me", { cache: "no-store" }),
           fetch("/api/dating/my-application", { cache: "no-store" }),
           fetch("/api/dating/cards/my/received", { cache: "no-store" }),
+          fetch("/api/dating/cards/my/applied", { cache: "no-store" }),
           fetch("/api/dating/paid/my/received", { cache: "no-store" }),
           fetch("/api/dating/cards/my/connections", { cache: "no-store" }),
           fetch("/api/dating/paid/my/connections", { cache: "no-store" }),
@@ -277,6 +308,10 @@ export default function MyPage() {
           error?: string;
           cards?: MyDatingCard[];
           applications?: ReceivedCardApplication[];
+        };
+        const appliedBody = (await appliedRes.json().catch(() => ({}))) as {
+          error?: string;
+          applications?: MyAppliedCardApplication[];
         };
         const paidReceivedBody = (await paidReceivedRes.json().catch(() => ({}))) as {
           error?: string;
@@ -304,6 +339,9 @@ export default function MyPage() {
         if (!receivedRes.ok) {
           throw new Error(receivedBody.error ?? "내 카드 지원자를 불러오지 못했습니다.");
         }
+        if (!appliedRes.ok) {
+          throw new Error(appliedBody.error ?? "내 오픈카드 지원 이력을 불러오지 못했습니다.");
+        }
         if (!paidReceivedRes.ok) {
           throw new Error(paidReceivedBody.error ?? "내 유료카드 지원자를 불러오지 못했습니다.");
         }
@@ -322,6 +360,7 @@ export default function MyPage() {
           setDatingApplication(datingBody.application ?? null);
           setMyDatingCards(receivedBody.cards ?? []);
           setReceivedApplications(receivedBody.applications ?? []);
+          setMyAppliedCardApplications(appliedBody.applications ?? []);
           setMyPaidCards(paidReceivedBody.cards ?? []);
           setReceivedPaidApplications(paidReceivedBody.applications ?? []);
           setDatingConnections([...(connectionsBody.items ?? []), ...(paidConnectionsBody.items ?? [])]);
@@ -1009,6 +1048,40 @@ export default function MyPage() {
       </section>
 
       <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
+        <h2 className="text-lg font-bold text-neutral-900 mb-3">내 오픈카드 지원 이력</h2>
+        {myAppliedCardApplications.length === 0 ? (
+          <p className="text-sm text-neutral-500">아직 지원한 내역이 없습니다.</p>
+        ) : (
+          <div className="space-y-3">
+            {myAppliedCardApplications.map((app) => (
+              <div key={app.id} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-neutral-900">
+                    {app.card?.display_nickname ?? "(카드 닉네임 없음)"} /{" "}
+                    {app.card?.sex === "male" ? "남자 카드" : app.card?.sex === "female" ? "여자 카드" : "카드"}
+                  </p>
+                  <span
+                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                      cardAppStatusColor[app.status] ?? "bg-neutral-100 text-neutral-700"
+                    }`}
+                  >
+                    {cardAppStatusText[app.status] ?? app.status}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-neutral-500">
+                  지원일 {new Date(app.created_at).toLocaleString("ko-KR")}
+                  {app.card?.owner_nickname ? ` / 카드 작성자 ${app.card.owner_nickname}` : ""}
+                </p>
+                {app.intro_text && (
+                  <p className="mt-2 text-sm text-neutral-700 whitespace-pre-wrap break-words">{app.intro_text}</p>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+
+      <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
         <h2 className="text-lg font-bold text-neutral-900 mb-3">매칭 인스타 교환</h2>
         {datingConnections.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 수락된 연결이 없습니다.</p>
@@ -1107,7 +1180,7 @@ export default function MyPage() {
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-violet-800">
-                카드 {adminOpenCards.length}건 / 지원서 {adminOpenCardApplications.length}건
+                카드 {adminOpenCards.length}건 / 전체 지원 이력 {adminOpenCardApplications.length}건
               </h3>
               <select
                 value={adminCardSort}
@@ -1184,7 +1257,7 @@ export default function MyPage() {
             )}
 
             {adminOpenCardApplications.length === 0 ? (
-              <p className="text-sm text-neutral-600">등록된 지원서가 없습니다.</p>
+              <p className="text-sm text-neutral-600">등록된 지원 이력이 없습니다.</p>
             ) : (
               <div className="space-y-2">
                 {adminOpenCardApplications.map((app) => (
@@ -1194,6 +1267,10 @@ export default function MyPage() {
                     </p>
                     <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
                       <span>지원자: {app.applicant_nickname ?? app.applicant_user_id.slice(0, 8)}</span>
+                      {app.card_owner_nickname && <span>카드 작성자: {app.card_owner_nickname}</span>}
+                      {app.card_display_nickname && <span>카드 닉네임: {app.card_display_nickname}</span>}
+                      {app.card_sex && <span>카드 성별: {app.card_sex === "male" ? "남자" : "여자"}</span>}
+                      {app.card_status && <span>카드 상태: {app.card_status}</span>}
                       {app.applicant_display_nickname && <span>표시 닉네임: {app.applicant_display_nickname}</span>}
                       {app.age != null && <span>나이 {app.age}</span>}
                       {app.height_cm != null && <span>키 {app.height_cm}cm</span>}

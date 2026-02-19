@@ -51,7 +51,7 @@ export async function GET() {
       "id, card_id, applicant_user_id, applicant_display_nickname, age, height_cm, region, job, training_years, intro_text, instagram_id, photo_paths, status, created_at"
     )
     .order("created_at", { ascending: false })
-    .limit(1000);
+    .limit(5000);
 
   if (appsRes.error && appsRes.error.code === "42703") {
     appsRes = await adminClient
@@ -60,7 +60,7 @@ export async function GET() {
         "id, card_id, applicant_user_id, age, height_cm, region, job, training_years, intro_text, instagram_id, photo_urls, status, created_at"
       )
       .order("created_at", { ascending: false })
-      .limit(1000);
+      .limit(5000);
 
     appsRes = {
       ...appsRes,
@@ -100,10 +100,19 @@ export async function GET() {
     owner_nickname: nickMap[card.owner_user_id] ?? null,
   }));
 
-  const applications = (appsRes.data ?? []).map((app: any) => ({
-    ...app,
-    applicant_nickname: nickMap[app.applicant_user_id] ?? null,
-  }));
+  const cardsById: Record<string, any> = Object.fromEntries((cards ?? cardsRes.data ?? []).map((c: any) => [c.id, c]));
+  const applications = (appsRes.data ?? []).map((app: any) => {
+    const card = cardsById[app.card_id];
+    return {
+      ...app,
+      applicant_nickname: nickMap[app.applicant_user_id] ?? null,
+      card_owner_user_id: card?.owner_user_id ?? null,
+      card_owner_nickname: card?.owner_nickname ?? null,
+      card_display_nickname: card?.display_nickname ?? null,
+      card_sex: card?.sex ?? null,
+      card_status: card?.status ?? null,
+    };
+  });
 
   return NextResponse.json({ cards, applications });
 }
