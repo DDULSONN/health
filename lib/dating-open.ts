@@ -1,4 +1,4 @@
-export const OPEN_CARD_LIMIT_PER_SEX = 10;
+export const OPEN_CARD_LIMIT_PER_SEX = 15;
 export const OPEN_CARD_EXPIRE_HOURS = 48;
 
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
