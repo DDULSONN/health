@@ -98,9 +98,13 @@ export async function POST(req: Request) {
   const instagramId = normalizeInstagramId((body as { instagram_id?: unknown }).instagram_id);
   const photoPathsRaw = (body as { photo_paths?: unknown }).photo_paths;
   const blurThumbPath = toText((body as { blur_thumb_path?: unknown }).blur_thumb_path, 400);
+  const blurPathsRaw = (body as { blur_paths?: unknown }).blur_paths;
 
   const photoPaths = Array.isArray(photoPathsRaw)
     ? photoPathsRaw.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+  const blurPaths = Array.isArray(blurPathsRaw)
+    ? blurPathsRaw.filter((item): item is string => typeof item === "string" && item.length > 0)
     : [];
 
   if (!instagramId || !validInstagramId(instagramId)) {
@@ -120,11 +124,17 @@ export async function POST(req: Request) {
   if (!blurThumbPath) {
     return NextResponse.json({ error: "블러 썸네일 생성에 실패했습니다. 다시 시도해주세요." }, { status: 400 });
   }
+  if (blurPaths.length < 2) {
+    return NextResponse.json({ error: "블러 이미지 2장 생성에 실패했습니다. 다시 시도해주세요." }, { status: 400 });
+  }
   if (!photoPaths.every((path) => path.startsWith(`cards/${user.id}/raw/`))) {
     return NextResponse.json({ error: "사진 경로가 올바르지 않습니다." }, { status: 400 });
   }
   if (!blurThumbPath.startsWith(`cards/${user.id}/blur/`)) {
     return NextResponse.json({ error: "블러 썸네일 경로가 올바르지 않습니다." }, { status: 400 });
+  }
+  if (!blurPaths.every((path) => path.startsWith(`cards/${user.id}/blur/`))) {
+    return NextResponse.json({ error: "블러 이미지 경로가 올바르지 않습니다." }, { status: 400 });
   }
 
   const adminClient = createAdminClient();
@@ -179,6 +189,7 @@ export async function POST(req: Request) {
     instagram_id: instagramId,
     photo_paths: photoPaths,
     blur_thumb_path: blurThumbPath,
+    blur_paths: blurPaths,
     total_3lift: sex === "male" ? total3Lift : null,
     percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
     is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
@@ -197,11 +208,11 @@ export async function POST(req: Request) {
     training_years: trainingYears,
     ideal_type: idealType || null,
     strengths_text: strengthsText || null,
-    photo_visibility: photoVisibility,
-    total_3lift: sex === "male" ? total3Lift : null,
-    percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
-    is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
-    status: "pending" as const,
+      photo_visibility: photoVisibility,
+      total_3lift: sex === "male" ? total3Lift : null,
+      percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
+      is_3lift_verified: Boolean((body as { is_3lift_verified?: unknown }).is_3lift_verified),
+      status: "pending" as const,
     published_at: publishedAt,
     expires_at: expiresAt,
   };
@@ -228,6 +239,7 @@ export async function POST(req: Request) {
       display_nickname: displayNickname,
       strengths_text: strengthsText || null,
       photo_visibility: photoVisibility,
+      blur_paths: blurPaths,
     },
     // Legacy-safe candidate: new instagram + old photo column, no display/published/expires
     {

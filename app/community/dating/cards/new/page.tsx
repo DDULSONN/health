@@ -158,23 +158,26 @@ export default function NewDatingCardPage() {
         uploadedRawPaths.push(body.path);
       }
 
-      const blurSource = validPhotos[0];
-      const blurFile = await createBlurThumbnailFile(blurSource);
-      const blurFd = new FormData();
-      blurFd.append("file", blurFile);
-      blurFd.append("kind", "blur");
-      blurFd.append("index", "0");
-      const blurRes = await fetch("/api/dating/cards/upload-card", { method: "POST", body: blurFd });
-      if (!blurRes.ok) {
-        setError(await readErrorMessage(blurRes, "블러 썸네일 업로드에 실패했습니다."));
-        setSubmitting(false);
-        return;
-      }
-      const blurBody = (await blurRes.json().catch(() => ({}))) as { path?: string; error?: string };
-      if (!blurBody.path) {
-        setError("블러 썸네일 업로드 응답이 올바르지 않습니다.");
-        setSubmitting(false);
-        return;
+      const uploadedBlurPaths: string[] = [];
+      for (let i = 0; i < validPhotos.length; i++) {
+        const blurFile = await createBlurThumbnailFile(validPhotos[i]);
+        const blurFd = new FormData();
+        blurFd.append("file", blurFile);
+        blurFd.append("kind", "blur");
+        blurFd.append("index", String(i));
+        const blurRes = await fetch("/api/dating/cards/upload-card", { method: "POST", body: blurFd });
+        if (!blurRes.ok) {
+          setError(await readErrorMessage(blurRes, "블러 썸네일 업로드에 실패했습니다."));
+          setSubmitting(false);
+          return;
+        }
+        const blurBody = (await blurRes.json().catch(() => ({}))) as { path?: string; error?: string };
+        if (!blurBody.path) {
+          setError("블러 썸네일 업로드 응답이 올바르지 않습니다.");
+          setSubmitting(false);
+          return;
+        }
+        uploadedBlurPaths.push(blurBody.path);
       }
 
       const payload = {
@@ -189,7 +192,8 @@ export default function NewDatingCardPage() {
         photo_visibility: photoVisibility,
         instagram_id: normalizeInstagramId(instagramId),
         photo_paths: uploadedRawPaths,
-        blur_thumb_path: blurBody.path,
+        blur_thumb_path: uploadedBlurPaths[0] ?? "",
+        blur_paths: uploadedBlurPaths,
         total_3lift: sex === "male" && total3Lift ? Number(total3Lift) : null,
         is_3lift_verified: sex === "male" ? is3LiftVerified : false,
       };
