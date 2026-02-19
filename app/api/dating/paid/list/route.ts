@@ -37,7 +37,7 @@ export async function GET() {
     const { data, error } = await admin
       .from("dating_paid_cards")
       .select(
-        "id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,photo_visibility,blur_thumb_path,photo_paths,expires_at,paid_at,created_at"
+        "id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,is_3lift_verified,photo_visibility,blur_thumb_path,photo_paths,expires_at,paid_at,created_at"
       )
       .eq("status", "approved")
       .gt("expires_at", nowIso)
@@ -72,6 +72,7 @@ export async function GET() {
           height_cm: row.height_cm,
           job: row.job,
           training_years: row.training_years,
+          is_3lift_verified: Boolean(row.is_3lift_verified),
           strengths_text: row.strengths_text,
           ideal_text: row.ideal_text,
           intro_text: row.intro_text,

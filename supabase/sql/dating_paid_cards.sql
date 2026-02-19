@@ -12,6 +12,7 @@ create table if not exists public.dating_paid_cards (
   height_cm int null,
   job text null,
   training_years int null,
+  is_3lift_verified boolean not null default false,
   strengths_text text null,
   ideal_text text null,
   intro_text text null,

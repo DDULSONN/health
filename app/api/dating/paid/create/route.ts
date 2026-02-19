@@ -1,4 +1,4 @@
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+﻿import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 type CreateBody = {
@@ -76,9 +76,9 @@ export async function POST(req: Request) {
       ? body.photo_paths.filter((x): x is string => typeof x === "string" && x.length > 0)
       : [];
 
-    if (!gender) return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "성별을 확인해주세요." });
+    if (!gender) return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "성별을 확인해 주세요." });
     if (!instagramId || !/^[A-Za-z0-9._]{1,30}$/.test(instagramId)) {
-      return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "인스타그램 아이디 형식을 확인해주세요." });
+      return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "인스타그램 아이디 형식을 확인해 주세요." });
     }
     if (photoPaths.length < 1) {
       return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "사진은 최소 1장 필요합니다." });
@@ -110,6 +110,23 @@ export async function POST(req: Request) {
       return json(400, { ok: false, code: "NICKNAME_REQUIRED", requestId, message: "닉네임 설정 후 이용 가능합니다." });
     }
 
+    let is3LiftVerified = false;
+    if (gender === "M") {
+      const certRes = await adminClient
+        .from("cert_requests")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("status", "approved")
+        .limit(1)
+        .maybeSingle();
+
+      if (certRes.error) {
+        console.error(`[dating-paid-create] ${requestId} cert read error`, certRes.error);
+        return json(500, { ok: false, code: "CERT_READ_FAILED", requestId, message: "3대 인증 정보를 불러오지 못했습니다." });
+      }
+      is3LiftVerified = Boolean(certRes.data);
+    }
+
     const insertRes = await adminClient
       .from("dating_paid_cards")
       .insert({
@@ -128,6 +145,7 @@ export async function POST(req: Request) {
         photo_visibility: photoVisibility,
         blur_thumb_path: blurThumbPath || null,
         photo_paths: photoPaths,
+        is_3lift_verified: is3LiftVerified,
         status: "pending",
       })
       .select("id")
@@ -139,7 +157,7 @@ export async function POST(req: Request) {
         ok: false,
         code: "CREATE_FAILED",
         requestId,
-        message: "유료 신청 생성에 실패했습니다.",
+        message: "유료 요청 생성에 실패했습니다.",
       });
     }
 
