@@ -407,6 +407,14 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
               {item.strengths_text && <p className="mt-2 text-sm text-emerald-700">내 장점: {item.strengths_text}</p>}
               {item.ideal_text && <p className="mt-1 text-sm text-rose-700">이상형: {item.ideal_text}</p>}
               {item.intro_text && <p className="mt-1 text-sm text-neutral-700 whitespace-pre-wrap break-words">{item.intro_text}</p>}
+              <div className="mt-3">
+                <Link
+                  href={`/dating/paid/${item.id}/apply`}
+                  className="inline-flex min-h-[40px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
+                >
+                  지원하기
+                </Link>
+              </div>
             </article>
           ))}
         </div>

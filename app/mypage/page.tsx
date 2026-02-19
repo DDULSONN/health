@@ -81,6 +81,36 @@ type DatingConnection = {
   other_nickname: string;
   my_instagram_id: string | null;
   other_instagram_id: string | null;
+  source?: "open" | "paid";
+};
+
+type MyPaidCard = {
+  id: string;
+  nickname: string;
+  gender: "M" | "F";
+  age: number | null;
+  region: string | null;
+  status: "pending" | "approved" | "rejected" | "expired";
+  paid_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+};
+
+type ReceivedPaidApplication = {
+  id: string;
+  card_id: string;
+  applicant_user_id: string;
+  applicant_display_nickname: string | null;
+  age: number | null;
+  height_cm: number | null;
+  region: string | null;
+  job: string | null;
+  training_years: number | null;
+  intro_text: string | null;
+  status: "submitted" | "accepted" | "rejected" | "canceled";
+  created_at: string;
+  instagram_id: string | null;
+  photo_signed_urls?: string[];
 };
 
 type AdminOpenCard = {
@@ -171,6 +201,8 @@ export default function MyPage() {
   const [datingApplication, setDatingApplication] = useState<DatingApplicationStatus | null>(null);
   const [myDatingCards, setMyDatingCards] = useState<MyDatingCard[]>([]);
   const [receivedApplications, setReceivedApplications] = useState<ReceivedCardApplication[]>([]);
+  const [myPaidCards, setMyPaidCards] = useState<MyPaidCard[]>([]);
+  const [receivedPaidApplications, setReceivedPaidApplications] = useState<ReceivedPaidApplication[]>([]);
   const [datingConnections, setDatingConnections] = useState<DatingConnection[]>([]);
   const [adminOpenCards, setAdminOpenCards] = useState<AdminOpenCard[]>([]);
   const [adminOpenCardApplications, setAdminOpenCardApplications] = useState<AdminOpenCardApplication[]>([]);
@@ -202,13 +234,15 @@ export default function MyPage() {
           return;
         }
 
-        const [summaryRes, certRes, adminRes, datingRes, receivedRes, connectionsRes, writeSettingRes] = await Promise.all([
+        const [summaryRes, certRes, adminRes, datingRes, receivedRes, paidReceivedRes, connectionsRes, paidConnectionsRes, writeSettingRes] = await Promise.all([
           fetch("/api/mypage/summary", { cache: "no-store" }),
           fetch("/api/cert-requests", { cache: "no-store" }),
           fetch("/api/admin/me", { cache: "no-store" }),
           fetch("/api/dating/my-application", { cache: "no-store" }),
           fetch("/api/dating/cards/my/received", { cache: "no-store" }),
+          fetch("/api/dating/paid/my/received", { cache: "no-store" }),
           fetch("/api/dating/cards/my/connections", { cache: "no-store" }),
+          fetch("/api/dating/paid/my/connections", { cache: "no-store" }),
           fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
         ]);
 
@@ -229,7 +263,16 @@ export default function MyPage() {
           cards?: MyDatingCard[];
           applications?: ReceivedCardApplication[];
         };
+        const paidReceivedBody = (await paidReceivedRes.json().catch(() => ({}))) as {
+          error?: string;
+          cards?: MyPaidCard[];
+          applications?: ReceivedPaidApplication[];
+        };
         const connectionsBody = (await connectionsRes.json().catch(() => ({}))) as {
+          error?: string;
+          items?: DatingConnection[];
+        };
+        const paidConnectionsBody = (await paidConnectionsRes.json().catch(() => ({}))) as {
           error?: string;
           items?: DatingConnection[];
         };
@@ -246,8 +289,14 @@ export default function MyPage() {
         if (!receivedRes.ok) {
           throw new Error(receivedBody.error ?? "내 카드 지원자를 불러오지 못했습니다.");
         }
+        if (!paidReceivedRes.ok) {
+          throw new Error(paidReceivedBody.error ?? "내 유료카드 지원자를 불러오지 못했습니다.");
+        }
         if (!connectionsRes.ok) {
           throw new Error(connectionsBody.error ?? "인스타 교환 정보를 불러오지 못했습니다.");
+        }
+        if (!paidConnectionsRes.ok) {
+          throw new Error(paidConnectionsBody.error ?? "유료 인스타 교환 정보를 불러오지 못했습니다.");
         }
 
         if (isMounted) {
@@ -258,7 +307,9 @@ export default function MyPage() {
           setDatingApplication(datingBody.application ?? null);
           setMyDatingCards(receivedBody.cards ?? []);
           setReceivedApplications(receivedBody.applications ?? []);
-          setDatingConnections(connectionsBody.items ?? []);
+          setMyPaidCards(paidReceivedBody.cards ?? []);
+          setReceivedPaidApplications(paidReceivedBody.applications ?? []);
+          setDatingConnections([...(connectionsBody.items ?? []), ...(paidConnectionsBody.items ?? [])]);
           setOpenCardWriteEnabled(writeSettingBody.enabled !== false);
           setError("");
 
@@ -332,6 +383,25 @@ export default function MyPage() {
             }
           : app
       )
+    );
+  };
+
+  const handlePaidApplicationStatus = async (
+    applicationId: string,
+    nextStatus: "accepted" | "rejected"
+  ) => {
+    const res = await fetch(`/api/dating/paid/applications/${applicationId}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: nextStatus }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      alert(body.error ?? "상태 변경에 실패했습니다.");
+      return;
+    }
+    setReceivedPaidApplications((prev) =>
+      prev.map((app) => (app.id === applicationId ? { ...app, status: nextStatus } : app))
     );
   };
 
@@ -609,6 +679,71 @@ export default function MyPage() {
             로그아웃
           </button>
         </div>
+      </section>
+
+      <section className="mb-5 rounded-2xl border border-rose-200 bg-rose-50/30 p-5">
+        <h2 className="text-lg font-bold text-rose-900 mb-3">내 유료카드 지원자</h2>
+        {myPaidCards.length === 0 ? (
+          <p className="text-sm text-neutral-500">등록한 유료카드가 없습니다.</p>
+        ) : (
+          <div className="space-y-3">
+            {receivedPaidApplications.map((app) => {
+              const card = myPaidCards.find((c) => c.id === app.card_id);
+              return (
+                <div key={app.id} className="rounded-xl border border-rose-200 bg-white p-3">
+                  <p className="text-sm font-medium text-neutral-900">
+                    카드 {card?.nickname ?? app.card_id.slice(0, 8)} / 지원자 {app.applicant_display_nickname ?? "익명"}
+                  </p>
+                  <p className="mt-1 text-xs text-neutral-500">
+                    상태{" "}
+                    <span className={`inline-flex rounded-full px-2 py-0.5 ${cardAppStatusColor[app.status] ?? "bg-neutral-100 text-neutral-700"}`}>
+                      {cardAppStatusText[app.status] ?? app.status}
+                    </span>
+                  </p>
+                  <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
+                    {app.age != null && <span>나이 {app.age}</span>}
+                    {app.height_cm != null && <span>키 {app.height_cm}cm</span>}
+                    {app.region && <span>지역 {app.region}</span>}
+                    {app.job && <span>직업 {app.job}</span>}
+                    {app.training_years != null && <span>운동 {app.training_years}년</span>}
+                  </div>
+                  {app.intro_text && <p className="mt-2 text-xs text-neutral-700 whitespace-pre-wrap break-words">{app.intro_text}</p>}
+                  {Array.isArray(app.photo_signed_urls) && app.photo_signed_urls.length > 0 && (
+                    <div className="mt-2 grid grid-cols-2 gap-2">
+                      {app.photo_signed_urls.map((url, idx) => (
+                        <a key={`${app.id}-${idx}`} href={url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-lg border border-neutral-200">
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img src={url} alt={`유료 지원자 사진 ${idx + 1}`} className="h-32 w-full object-cover" />
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                  {app.status === "accepted" && app.instagram_id && (
+                    <p className="mt-2 text-sm text-emerald-700 font-medium">지원자 인스타: @{app.instagram_id}</p>
+                  )}
+                  {app.status === "submitted" && (
+                    <div className="mt-3 flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void handlePaidApplicationStatus(app.id, "accepted")}
+                        className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white"
+                      >
+                        수락
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handlePaidApplicationStatus(app.id, "rejected")}
+                        className="h-9 rounded-lg bg-red-600 px-3 text-xs font-medium text-white"
+                      >
+                        거절
+                      </button>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
       </section>
 
       <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
