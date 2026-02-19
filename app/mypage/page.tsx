@@ -187,6 +187,7 @@ type AdminOpenCardApplication = {
 
 type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
 type AdminApplicationSort = "newest" | "oldest" | "submitted_first" | "accepted_first";
+type AdminDataView = "cards" | "applications";
 
 type AdminApplyCreditOrder = {
   id: string;
@@ -252,6 +253,7 @@ export default function MyPage() {
   const [adminOpenCardApplications, setAdminOpenCardApplications] = useState<AdminOpenCardApplication[]>([]);
   const [adminCardSort, setAdminCardSort] = useState<AdminCardSort>("public_first");
   const [adminApplicationSort, setAdminApplicationSort] = useState<AdminApplicationSort>("newest");
+  const [adminDataView, setAdminDataView] = useState<AdminDataView>("cards");
   const [adminApplyCreditOrders, setAdminApplyCreditOrders] = useState<AdminApplyCreditOrder[]>([]);
   const [approvingOrderIds, setApprovingOrderIds] = useState<string[]>([]);
   const [openCardWriteEnabled, setOpenCardWriteEnabled] = useState(true);
@@ -1213,92 +1215,115 @@ export default function MyPage() {
                 카드 {adminOpenCards.length}건 / 전체 지원 이력 {adminOpenCardApplications.length}건
               </h3>
               <div className="flex items-center gap-2">
-                <select
-                  value={adminCardSort}
-                  onChange={(e) => setAdminCardSort(e.target.value as AdminCardSort)}
-                  className="h-8 rounded-md border border-violet-200 bg-white px-2 text-xs text-violet-800"
-                >
-                  <option value="public_first">카드: 공개중 우선</option>
-                  <option value="pending_first">카드: 대기 우선</option>
-                  <option value="newest">카드: 최신순</option>
-                  <option value="oldest">카드: 오래된순</option>
-                </select>
-                <select
-                  value={adminApplicationSort}
-                  onChange={(e) => setAdminApplicationSort(e.target.value as AdminApplicationSort)}
-                  className="h-8 rounded-md border border-violet-200 bg-white px-2 text-xs text-violet-800"
-                >
-                  <option value="newest">지원이력: 최신순</option>
-                  <option value="oldest">지원이력: 오래된순</option>
-                  <option value="submitted_first">지원이력: 대기 우선</option>
-                  <option value="accepted_first">지원이력: 수락 우선</option>
-                </select>
+                <div className="inline-flex rounded-md border border-violet-200 bg-white p-0.5">
+                  <button
+                    type="button"
+                    onClick={() => setAdminDataView("cards")}
+                    className={`h-7 rounded px-2 text-xs ${
+                      adminDataView === "cards" ? "bg-violet-600 text-white" : "text-violet-800"
+                    }`}
+                  >
+                    카드 보기
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAdminDataView("applications")}
+                    className={`h-7 rounded px-2 text-xs ${
+                      adminDataView === "applications" ? "bg-violet-600 text-white" : "text-violet-800"
+                    }`}
+                  >
+                    지원이력 보기
+                  </button>
+                </div>
+                {adminDataView === "cards" ? (
+                  <select
+                    value={adminCardSort}
+                    onChange={(e) => setAdminCardSort(e.target.value as AdminCardSort)}
+                    className="h-8 rounded-md border border-violet-200 bg-white px-2 text-xs text-violet-800"
+                  >
+                    <option value="public_first">카드: 공개중 우선</option>
+                    <option value="pending_first">카드: 대기 우선</option>
+                    <option value="newest">카드: 최신순</option>
+                    <option value="oldest">카드: 오래된순</option>
+                  </select>
+                ) : (
+                  <select
+                    value={adminApplicationSort}
+                    onChange={(e) => setAdminApplicationSort(e.target.value as AdminApplicationSort)}
+                    className="h-8 rounded-md border border-violet-200 bg-white px-2 text-xs text-violet-800"
+                  >
+                    <option value="newest">지원이력: 최신순</option>
+                    <option value="oldest">지원이력: 오래된순</option>
+                    <option value="submitted_first">지원이력: 대기 우선</option>
+                    <option value="accepted_first">지원이력: 수락 우선</option>
+                  </select>
+                )}
               </div>
             </div>
 
-            {adminOpenCards.length === 0 ? (
-              <p className="text-sm text-neutral-600">등록된 오픈카드가 없습니다.</p>
-            ) : (
-              <div className="space-y-2">
-                {sortedAdminOpenCards.map((card) => (
-                  <div key={card.id} className="rounded-xl border border-violet-200 bg-white p-3">
-                    <p className="text-sm font-semibold text-neutral-900">
-                      카드 {card.id.slice(0, 8)}... / {card.display_nickname ?? "(닉네임 없음)"} / {card.sex} / 상태 {card.status}
-                    </p>
-                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
-                      <span>owner: {card.owner_nickname ?? card.owner_user_id.slice(0, 8)}</span>
-                      {card.age != null && <span>나이 {card.age}</span>}
-                      {card.height_cm != null && <span>키 {card.height_cm}cm</span>}
-                      {card.region && <span>지역 {card.region}</span>}
-                      {card.job && <span>직업 {card.job}</span>}
-                      {card.training_years != null && <span>운동 {card.training_years}년</span>}
-                      {card.total_3lift != null && <span>3대 {card.total_3lift}kg</span>}
-                      {card.percent_all != null && <span>상위 {card.percent_all}%</span>}
-                      <span>3대인증 {card.is_3lift_verified ? "Y" : "N"}</span>
-                    </div>
-                    {card.instagram_id && (
-                      <p className="mt-1 text-xs font-medium text-violet-700">
-                        카드 소유자 인스타: @{card.instagram_id}
+            {adminDataView === "cards" ? (
+              adminOpenCards.length === 0 ? (
+                <p className="text-sm text-neutral-600">등록된 오픈카드가 없습니다.</p>
+              ) : (
+                <div className="space-y-2">
+                  {sortedAdminOpenCards.map((card) => (
+                    <div key={card.id} className="rounded-xl border border-violet-200 bg-white p-3">
+                      <p className="text-sm font-semibold text-neutral-900">
+                        카드 {card.id.slice(0, 8)}... / {card.display_nickname ?? "(닉네임 없음)"} / {card.sex} / 상태 {card.status}
                       </p>
-                    )}
-                    {card.ideal_type && (
-                      <p className="mt-1 text-xs text-neutral-700 whitespace-pre-wrap break-words">
-                        이상형: {card.ideal_type}
-                      </p>
-                    )}
-                    {card.published_at && (
-                      <p className="mt-1 text-xs text-emerald-700">
-                        공개 시작: {new Date(card.published_at).toLocaleString("ko-KR")}
-                      </p>
-                    )}
-                    {card.expires_at && (
-                      <p className="mt-1 text-xs text-amber-700">
-                        만료 예정: {new Date(card.expires_at).toLocaleString("ko-KR")}
-                      </p>
-                    )}
-                    {card.blur_thumb_path && (
+                      <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
+                        <span>owner: {card.owner_nickname ?? card.owner_user_id.slice(0, 8)}</span>
+                        {card.age != null && <span>나이 {card.age}</span>}
+                        {card.height_cm != null && <span>키 {card.height_cm}cm</span>}
+                        {card.region && <span>지역 {card.region}</span>}
+                        {card.job && <span>직업 {card.job}</span>}
+                        {card.training_years != null && <span>운동 {card.training_years}년</span>}
+                        {card.total_3lift != null && <span>3대 {card.total_3lift}kg</span>}
+                        {card.percent_all != null && <span>상위 {card.percent_all}%</span>}
+                        <span>3대인증 {card.is_3lift_verified ? "Y" : "N"}</span>
+                      </div>
+                      {card.instagram_id && (
+                        <p className="mt-1 text-xs font-medium text-violet-700">
+                          카드 소유자 인스타: @{card.instagram_id}
+                        </p>
+                      )}
+                      {card.ideal_type && (
+                        <p className="mt-1 text-xs text-neutral-700 whitespace-pre-wrap break-words">
+                          이상형: {card.ideal_type}
+                        </p>
+                      )}
+                      {card.published_at && (
+                        <p className="mt-1 text-xs text-emerald-700">
+                          공개 시작: {new Date(card.published_at).toLocaleString("ko-KR")}
+                        </p>
+                      )}
+                      {card.expires_at && (
+                        <p className="mt-1 text-xs text-amber-700">
+                          만료 예정: {new Date(card.expires_at).toLocaleString("ko-KR")}
+                        </p>
+                      )}
+                      {card.blur_thumb_path && (
+                        <p className="mt-1 text-xs text-neutral-500 break-all">
+                          blur 경로: {card.blur_thumb_path}
+                        </p>
+                      )}
                       <p className="mt-1 text-xs text-neutral-500 break-all">
-                        blur 경로: {card.blur_thumb_path}
+                        사진 경로: {Array.isArray(card.photo_paths) ? card.photo_paths.join(", ") : "-"}
                       </p>
-                    )}
-                    <p className="mt-1 text-xs text-neutral-500 break-all">
-                      사진 경로: {Array.isArray(card.photo_paths) ? card.photo_paths.join(", ") : "-"}
-                    </p>
-                    <div className="mt-2">
-                      <button
-                        type="button"
-                        onClick={() => void handleAdminDeleteOpenCard(card.id)}
-                        className="h-8 rounded-md bg-red-600 px-3 text-xs font-medium text-white"
-                      >
-                        삭제
-                      </button>
+                      <div className="mt-2">
+                        <button
+                          type="button"
+                          onClick={() => void handleAdminDeleteOpenCard(card.id)}
+                          className="h-8 rounded-md bg-red-600 px-3 text-xs font-medium text-white"
+                        >
+                          삭제
+                        </button>
+                      </div>
                     </div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {adminOpenCardApplications.length === 0 ? (
+                  ))}
+                </div>
+              )
+            ) : adminOpenCardApplications.length === 0 ? (
               <p className="text-sm text-neutral-600">등록된 지원 이력이 없습니다.</p>
             ) : (
               <div className="space-y-2">
