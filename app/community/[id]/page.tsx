@@ -41,6 +41,9 @@ export default function PostDetailPage() {
   const [toast, setToast] = useState("");
   const [reportTarget, setReportTarget] = useState<ReportTarget>(null);
   const [reportReason, setReportReason] = useState("");
+  const [mailModalOpen, setMailModalOpen] = useState(false);
+  const [mailContent, setMailContent] = useState("");
+  const [mailSending, setMailSending] = useState(false);
   const [lightboxIdx, setLightboxIdx] = useState<number | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState(false);
@@ -309,6 +312,36 @@ export default function PostDetailPage() {
     }
   };
 
+  const handleSendMail = async () => {
+    if (!post) return;
+    const content = mailContent.trim();
+    if (!content) return;
+    if (!userId) {
+      router.push(`/login?redirect=/community/${id}`);
+      return;
+    }
+    setMailSending(true);
+    try {
+      const res = await fetch("/api/body-eval/mail/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ post_id: post.id, content }),
+      });
+      const data = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; code?: string };
+      if (!res.ok || !data.ok) {
+        showToast(data.message ?? "메일 전송에 실패했습니다.");
+        return;
+      }
+      setMailModalOpen(false);
+      setMailContent("");
+      showToast("메일을 보냈습니다. 마이페이지 메일함에서 확인하세요.");
+    } catch {
+      showToast("메일 전송 중 오류가 발생했습니다.");
+    } finally {
+      setMailSending(false);
+    }
+  };
+
   const confirmDeletePost = async () => {
     const res = await fetch(`/api/posts/${id}`, { method: "DELETE" });
     if (res.ok) {
@@ -451,6 +484,24 @@ export default function PostDetailPage() {
           <span className="text-xs text-neutral-500">{post.profiles?.nickname ?? "닉네임 없음"}</span>
           <VerifiedBadge total={post.cert_summary?.total} />
         </div>
+
+        {post.type === "photo_bodycheck" && !isOwner && (
+          <div className="mt-3">
+            <button
+              type="button"
+              onClick={() => {
+                if (!userId) {
+                  router.push(`/login?redirect=/community/${id}`);
+                  return;
+                }
+                setMailModalOpen(true);
+              }}
+              className="inline-flex min-h-[40px] items-center rounded-lg border border-emerald-300 bg-emerald-50 px-3 text-sm font-medium text-emerald-700 hover:bg-emerald-100"
+            >
+              ✉️ 메일 보내기
+            </button>
+          </div>
+        )}
 
         {post.type === "photo_bodycheck" && summary && (
           <section className="mt-5 pt-4 border-t border-neutral-100">
@@ -668,6 +719,43 @@ export default function PostDetailPage() {
                 신고
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {mailModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
+          <div className="w-full max-w-md rounded-2xl bg-white p-5">
+            <h3 className="text-base font-semibold text-neutral-900">메일 보내기</h3>
+            <p className="mt-1 text-xs text-neutral-500">몸평 글 작성자에게만 전달됩니다.</p>
+            <textarea
+              value={mailContent}
+              onChange={(e) => setMailContent(e.target.value)}
+              rows={5}
+              maxLength={2000}
+              placeholder="내용을 입력하세요"
+              className="mt-3 w-full resize-none rounded-xl border border-neutral-300 p-3 text-sm"
+            />
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => setMailModalOpen(false)}
+                className="flex-1 min-h-[42px] rounded-xl border border-neutral-300 text-sm font-medium text-neutral-700"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSendMail()}
+                disabled={mailSending || !mailContent.trim()}
+                className="flex-1 min-h-[42px] rounded-xl bg-emerald-600 text-sm font-medium text-white disabled:opacity-50"
+              >
+                {mailSending ? "전송 중..." : "전송"}
+              </button>
+            </div>
+            <Link href="/mypage" className="mt-3 inline-block text-xs text-emerald-700 underline">
+              메일함으로 이동
+            </Link>
           </div>
         </div>
       )}

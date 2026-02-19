@@ -9,6 +9,7 @@ import { formatRemainingToKorean } from "@/lib/dating-open";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
 import MyLiftGrowthChart from "@/components/MyLiftGrowthChart";
 import AdminCertReviewPanel from "@/components/AdminCertReviewPanel";
+import BodyEvalMailbox from "@/components/BodyEvalMailbox";
 
 type MyPageTab = "my_cert" | "request_status" | "admin_review";
 
@@ -400,9 +401,37 @@ export default function MyPage() {
       alert(body.error ?? "상태 변경에 실패했습니다.");
       return;
     }
-    setReceivedPaidApplications((prev) =>
-      prev.map((app) => (app.id === applicationId ? { ...app, status: nextStatus } : app))
-    );
+    const [paidReceivedRes, paidConnectionsRes] = await Promise.all([
+      fetch("/api/dating/paid/my/received", { cache: "no-store" }),
+      fetch("/api/dating/paid/my/connections", { cache: "no-store" }),
+    ]);
+
+    const paidReceivedBody = (await paidReceivedRes.json().catch(() => ({}))) as {
+      cards?: MyPaidCard[];
+      applications?: ReceivedPaidApplication[];
+      error?: string;
+    };
+    const paidConnectionsBody = (await paidConnectionsRes.json().catch(() => ({}))) as {
+      items?: DatingConnection[];
+      error?: string;
+    };
+
+    if (paidReceivedRes.ok) {
+      setMyPaidCards(paidReceivedBody.cards ?? []);
+      setReceivedPaidApplications(paidReceivedBody.applications ?? []);
+    } else {
+      setReceivedPaidApplications((prev) =>
+        prev.map((app) => (app.id === applicationId ? { ...app, status: nextStatus } : app))
+      );
+    }
+
+    if (paidConnectionsRes.ok) {
+      const paidItems = paidConnectionsBody.items ?? [];
+      setDatingConnections((prev) => {
+        const openItems = prev.filter((item) => item.source !== "paid");
+        return [...openItems, ...paidItems];
+      });
+    }
   };
 
   const copyToClipboard = async (text: string) => {
@@ -949,6 +978,8 @@ export default function MyPage() {
           </div>
         )}
       </section>
+
+      <BodyEvalMailbox />
 
       {isAdmin && (
         <section className="mb-5 rounded-2xl border border-violet-200 bg-violet-50/40 p-5">
