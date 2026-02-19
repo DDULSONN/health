@@ -30,6 +30,7 @@ export default function CertifyPage() {
   const [error, setError] = useState("");
   const [submitCode, setSubmitCode] = useState("");
   const [authChecked, setAuthChecked] = useState(false);
+  const [approvedTotalCount, setApprovedTotalCount] = useState<number | null>(null);
 
   useEffect(() => {
     (async () => {
@@ -43,6 +44,21 @@ export default function CertifyPage() {
       setAuthChecked(true);
     })();
   }, [router, supabase]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const response = await fetch("/api/cert-requests/stats", { cache: "no-store" });
+        if (!response.ok) return;
+        const body = (await response.json().catch(() => ({}))) as { approved_total_count?: number };
+        if (typeof body.approved_total_count === "number") {
+          setApprovedTotalCount(body.approved_total_count);
+        }
+      } catch (statsError) {
+        console.error("cert stats load failed", statsError);
+      }
+    })();
+  }, []);
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -134,6 +150,9 @@ export default function CertifyPage() {
   return (
     <main className="max-w-md mx-auto px-4 py-8">
       <h1 className="text-2xl font-bold text-neutral-900 mb-4">공식 3대 인증 신청</h1>
+      {approvedTotalCount != null && (
+        <p className="mb-3 text-sm text-emerald-700">누적 인증 완료 {approvedTotalCount.toLocaleString("ko-KR")}명</p>
+      )}
       <form onSubmit={handleSubmit} className="space-y-3">
         <div>
           <p className="text-sm font-medium text-neutral-700 mb-2">성별 (필수)</p>
@@ -230,4 +249,3 @@ export default function CertifyPage() {
     </main>
   );
 }
-
