@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
 type AdminCard = {
@@ -203,7 +204,15 @@ export default function AdminDatingCardsPage() {
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
-      <h1 className="mb-4 text-2xl font-bold text-neutral-900">오픈카드 모더레이션</h1>
+      <div className="mb-4 flex items-center justify-between gap-2">
+        <h1 className="text-2xl font-bold text-neutral-900">오픈카드 모더레이션</h1>
+        <Link
+          href="/admin/dating/paid"
+          className="rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-xs font-medium text-violet-700 hover:bg-violet-100"
+        >
+          유료 신청 관리
+        </Link>
+      </div>
 
       {loading ? (
         <p className="text-neutral-500">불러오는 중...</p>

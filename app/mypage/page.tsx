@@ -592,6 +592,12 @@ export default function MyPage() {
               >
                 카드 모더레이션
               </Link>
+              <Link
+                href="/admin/dating/paid"
+                className="flex min-h-[44px] items-center rounded-xl border border-rose-200 bg-rose-50 px-4 text-sm font-medium text-rose-700 hover:bg-rose-100"
+              >
+                유료 신청 관리
+              </Link>
             </>
           )}
           <button
