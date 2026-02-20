@@ -185,6 +185,29 @@ type AdminOpenCardApplication = {
   card_status?: "pending" | "public" | "expired" | "hidden" | null;
 };
 
+type AdminPaidCardApplication = {
+  id: string;
+  card_id: string;
+  applicant_user_id: string;
+  applicant_nickname: string | null;
+  applicant_display_nickname: string | null;
+  age: number | null;
+  height_cm: number | null;
+  region: string | null;
+  job: string | null;
+  training_years: number | null;
+  intro_text: string | null;
+  instagram_id: string;
+  photo_paths: string[];
+  status: "submitted" | "accepted" | "rejected" | "canceled";
+  created_at: string;
+  card_owner_user_id?: string | null;
+  card_owner_nickname?: string | null;
+  card_nickname?: string | null;
+  card_gender?: "M" | "F" | null;
+  card_status?: "pending" | "approved" | "rejected" | "expired" | null;
+};
+
 type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
 type AdminApplicationSort = "newest" | "oldest" | "submitted_first" | "accepted_first";
 type AdminDataView = "cards" | "applications";
@@ -251,6 +274,7 @@ export default function MyPage() {
   const [datingConnections, setDatingConnections] = useState<DatingConnection[]>([]);
   const [adminOpenCards, setAdminOpenCards] = useState<AdminOpenCard[]>([]);
   const [adminOpenCardApplications, setAdminOpenCardApplications] = useState<AdminOpenCardApplication[]>([]);
+  const [adminPaidCardApplications, setAdminPaidCardApplications] = useState<AdminPaidCardApplication[]>([]);
   const [adminCardSort, setAdminCardSort] = useState<AdminCardSort>("public_first");
   const [adminApplicationSort, setAdminApplicationSort] = useState<AdminApplicationSort>("newest");
   const [adminDataView, setAdminDataView] = useState<AdminDataView>("cards");
@@ -372,9 +396,10 @@ export default function MyPage() {
           setError("");
 
           if (adminFlag) {
-            const [overviewRes, ordersRes] = await Promise.all([
+            const [overviewRes, ordersRes, paidAppsRes] = await Promise.all([
               fetch("/api/dating/cards/admin/overview", { cache: "no-store" }),
               fetch("/api/admin/dating/apply-credits/orders?status=pending", { cache: "no-store" }),
+              fetch("/api/admin/dating/paid/applications", { cache: "no-store" }),
             ]);
             const overviewBody = (await overviewRes.json().catch(() => ({}))) as {
               error?: string;
@@ -385,20 +410,29 @@ export default function MyPage() {
               error?: string;
               items?: AdminApplyCreditOrder[];
             };
+            const paidAppsBody = (await paidAppsRes.json().catch(() => ({}))) as {
+              error?: string;
+              items?: AdminPaidCardApplication[];
+            };
             if (!overviewRes.ok) {
               throw new Error(overviewBody.error ?? "관리자 오픈카드 데이터를 불러오지 못했습니다.");
             }
             if (!ordersRes.ok) {
               throw new Error(ordersBody.error ?? "지원권 주문 목록을 불러오지 못했습니다.");
             }
+            if (!paidAppsRes.ok) {
+              throw new Error(paidAppsBody.error ?? "관리자 24시간 카드 지원 이력을 불러오지 못했습니다.");
+            }
             if (isMounted) {
               setAdminOpenCards(overviewBody.cards ?? []);
               setAdminOpenCardApplications(overviewBody.applications ?? []);
+              setAdminPaidCardApplications(paidAppsBody.items ?? []);
               setAdminApplyCreditOrders(ordersBody.items ?? []);
             }
           } else {
             setAdminOpenCards([]);
             setAdminOpenCardApplications([]);
+            setAdminPaidCardApplications([]);
             setAdminApplyCreditOrders([]);
           }
         }
@@ -728,6 +762,22 @@ export default function MyPage() {
     canceled: 3,
   };
   const sortedAdminOpenCardApplications = [...adminOpenCardApplications].sort((a, b) => {
+    if (adminApplicationSort === "newest") {
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+    if (adminApplicationSort === "oldest") {
+      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+    }
+    if (adminApplicationSort === "submitted_first") {
+      const diff = appStatusRankSubmittedFirst[a.status] - appStatusRankSubmittedFirst[b.status];
+      if (diff !== 0) return diff;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    }
+    const diff = appStatusRankAcceptedFirst[a.status] - appStatusRankAcceptedFirst[b.status];
+    if (diff !== 0) return diff;
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+  const sortedAdminPaidCardApplications = [...adminPaidCardApplications].sort((a, b) => {
     if (adminApplicationSort === "newest") {
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     }
@@ -1212,7 +1262,7 @@ export default function MyPage() {
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-violet-800">
-                카드 {adminOpenCards.length}건 / 전체 지원 이력 {adminOpenCardApplications.length}건
+                카드 {adminOpenCards.length}건 / 오픈카드 지원 {adminOpenCardApplications.length}건 / 24시간 지원 {adminPaidCardApplications.length}건
               </h3>
               <div className="flex items-center gap-2">
                 <div className="inline-flex rounded-md border border-violet-200 bg-white p-0.5">
@@ -1323,39 +1373,80 @@ export default function MyPage() {
                   ))}
                 </div>
               )
-            ) : adminOpenCardApplications.length === 0 ? (
+            ) : adminOpenCardApplications.length === 0 && adminPaidCardApplications.length === 0 ? (
               <p className="text-sm text-neutral-600">등록된 지원 이력이 없습니다.</p>
             ) : (
               <div className="space-y-2">
-                {sortedAdminOpenCardApplications.map((app) => (
-                  <div key={app.id} className="rounded-xl border border-violet-200 bg-white p-3">
-                    <p className="text-sm font-semibold text-neutral-900">
-                      지원서 {app.id.slice(0, 8)}... / 카드 {app.card_id.slice(0, 8)}... / 상태 {app.status}
-                    </p>
-                    <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
-                      <span>지원자: {app.applicant_nickname ?? app.applicant_user_id.slice(0, 8)}</span>
-                      {app.card_owner_nickname && <span>카드 작성자: {app.card_owner_nickname}</span>}
-                      {app.card_display_nickname && <span>카드 닉네임: {app.card_display_nickname}</span>}
-                      {app.card_sex && <span>카드 성별: {app.card_sex === "male" ? "남자" : "여자"}</span>}
-                      {app.card_status && <span>카드 상태: {app.card_status}</span>}
-                      {app.applicant_display_nickname && <span>표시 닉네임: {app.applicant_display_nickname}</span>}
-                      {app.age != null && <span>나이 {app.age}</span>}
-                      {app.height_cm != null && <span>키 {app.height_cm}cm</span>}
-                      {app.region && <span>지역 {app.region}</span>}
-                      {app.job && <span>직업 {app.job}</span>}
-                      {app.training_years != null && <span>운동 {app.training_years}년</span>}
-                    </div>
-                    <p className="mt-1 text-xs font-medium text-violet-700">인스타: @{app.instagram_id}</p>
-                    {app.intro_text && (
-                      <p className="mt-1 text-xs text-neutral-700 whitespace-pre-wrap break-words">
-                        자기소개: {app.intro_text}
-                      </p>
-                    )}
-                    <p className="mt-1 text-xs text-neutral-500 break-all">
-                      사진 경로: {Array.isArray(app.photo_paths) ? app.photo_paths.join(", ") : "-"}
-                    </p>
+                {adminOpenCardApplications.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-violet-700">오픈카드 지원 이력</p>
+                    {sortedAdminOpenCardApplications.map((app) => (
+                      <div key={app.id} className="rounded-xl border border-violet-200 bg-white p-3">
+                        <p className="text-sm font-semibold text-neutral-900">
+                          지원서 {app.id.slice(0, 8)}... / 카드 {app.card_id.slice(0, 8)}... / 상태 {app.status}
+                        </p>
+                        <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
+                          <span>지원자: {app.applicant_nickname ?? app.applicant_user_id.slice(0, 8)}</span>
+                          {app.card_owner_nickname && <span>카드 작성자: {app.card_owner_nickname}</span>}
+                          {app.card_display_nickname && <span>카드 닉네임: {app.card_display_nickname}</span>}
+                          {app.card_sex && <span>카드 성별: {app.card_sex === "male" ? "남자" : "여자"}</span>}
+                          {app.card_status && <span>카드 상태: {app.card_status}</span>}
+                          {app.applicant_display_nickname && <span>표시 닉네임: {app.applicant_display_nickname}</span>}
+                          {app.age != null && <span>나이 {app.age}</span>}
+                          {app.height_cm != null && <span>키 {app.height_cm}cm</span>}
+                          {app.region && <span>지역 {app.region}</span>}
+                          {app.job && <span>직업 {app.job}</span>}
+                          {app.training_years != null && <span>운동 {app.training_years}년</span>}
+                        </div>
+                        <p className="mt-1 text-xs font-medium text-violet-700">인스타: @{app.instagram_id}</p>
+                        {app.intro_text && (
+                          <p className="mt-1 text-xs text-neutral-700 whitespace-pre-wrap break-words">
+                            자기소개: {app.intro_text}
+                          </p>
+                        )}
+                        <p className="mt-1 text-xs text-neutral-500 break-all">
+                          사진 경로: {Array.isArray(app.photo_paths) ? app.photo_paths.join(", ") : "-"}
+                        </p>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
+                {adminPaidCardApplications.length > 0 && (
+                  <div className="space-y-2">
+                    <p className="text-xs font-semibold text-rose-700">24시간 카드 지원 이력</p>
+                    {sortedAdminPaidCardApplications.map((app) => (
+                      <div key={app.id} className="rounded-xl border border-rose-200 bg-rose-50/30 p-3">
+                        <p className="text-sm font-semibold text-neutral-900">
+                          지원서 {app.id.slice(0, 8)}... / 24시간 카드 {app.card_id.slice(0, 8)}... / 상태 {app.status}
+                        </p>
+                        <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
+                          <span>지원자: {app.applicant_nickname ?? app.applicant_user_id.slice(0, 8)}</span>
+                          {app.card_owner_nickname && <span>카드 작성자: {app.card_owner_nickname}</span>}
+                          {app.card_nickname && <span>카드 닉네임: {app.card_nickname}</span>}
+                          {app.card_gender && <span>카드 성별: {app.card_gender === "M" ? "남자" : "여자"}</span>}
+                          {app.card_status && <span>카드 상태: {app.card_status}</span>}
+                          {app.applicant_display_nickname && <span>표시 닉네임: {app.applicant_display_nickname}</span>}
+                          {app.age != null && <span>나이 {app.age}</span>}
+                          {app.height_cm != null && <span>키 {app.height_cm}cm</span>}
+                          {app.region && <span>지역 {app.region}</span>}
+                          {app.job && <span>직업 {app.job}</span>}
+                          {app.training_years != null && <span>운동 {app.training_years}년</span>}
+                        </div>
+                        <p className="mt-1 text-xs font-medium text-rose-700">
+                          인스타: {app.instagram_id ? `@${app.instagram_id}` : "-"}
+                        </p>
+                        {app.intro_text && (
+                          <p className="mt-1 text-xs text-neutral-700 whitespace-pre-wrap break-words">
+                            자기소개: {app.intro_text}
+                          </p>
+                        )}
+                        <p className="mt-1 text-xs text-neutral-500 break-all">
+                          사진 경로: {Array.isArray(app.photo_paths) ? app.photo_paths.join(", ") : "-"}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </div>
