@@ -29,6 +29,22 @@ type QueueStats = {
   accepted_matches_count?: number;
 };
 
+type PaidCard = {
+  id: string;
+  nickname: string;
+  gender: "M" | "F";
+  age: number | null;
+  region: string | null;
+  height_cm: number | null;
+  job: string | null;
+  training_years: number | null;
+  is_3lift_verified: boolean;
+  strengths_text: string | null;
+  ideal_text: string | null;
+  thumbUrl: string;
+  expires_at: string | null;
+};
+
 const PAGE_SIZE = 20;
 
 function maskIdealTypeForPreview(value: string | null): string {
@@ -60,6 +76,7 @@ export default function OpenCardsPage() {
   const [femaleHasMore, setFemaleHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
   const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
+  const [paidItems, setPaidItems] = useState<PaidCard[]>([]);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -70,10 +87,11 @@ export default function OpenCardsPage() {
   const loadInitial = useCallback(async () => {
     setLoading(true);
     try {
-      const [m, f, qsRes] = await Promise.all([
+      const [m, f, qsRes, paidRes] = await Promise.all([
         fetchBySex("male", 0),
         fetchBySex("female", 0),
         fetch("/api/dating/cards/queue-stats", { cache: "no-store" }),
+        fetch("/api/dating/paid/list", { cache: "no-store" }),
       ]);
       setMales(m.items ?? []);
       setFemales(f.items ?? []);
@@ -86,6 +104,12 @@ export default function OpenCardsPage() {
         setQueueStats(qsBody);
       } else {
         setQueueStats(null);
+      }
+      if (paidRes.ok) {
+        const paidBody = (await paidRes.json()) as { items?: PaidCard[] };
+        setPaidItems(Array.isArray(paidBody.items) ? paidBody.items : []);
+      } else {
+        setPaidItems([]);
       }
     } catch (e) {
       console.error("open cards load failed", e);
@@ -125,6 +149,9 @@ export default function OpenCardsPage() {
 
   const nowLabel = useMemo(() => tick, [tick]);
   void nowLabel;
+  const malePaidItems = useMemo(() => paidItems.filter((item) => item.gender === "M"), [paidItems]);
+  const femalePaidItems = useMemo(() => paidItems.filter((item) => item.gender === "F"), [paidItems]);
+  const paidCount = paidItems.length;
 
   return (
     <main className="max-w-3xl mx-auto px-4 py-6">
@@ -139,6 +166,7 @@ export default function OpenCardsPage() {
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">오픈카드</h1>
           <p className="text-sm text-neutral-500 mt-1">공개 카드는 48시간 동안 노출됩니다.</p>
+          <p className="text-xs text-rose-600 mt-1">현재 24시간 고정 {paidCount}명 노출중</p>
           {queueStats && (
             <>
               <p className="text-xs text-neutral-500 mt-1">
@@ -163,6 +191,7 @@ export default function OpenCardsPage() {
           <Section
             title="남자 오픈카드"
             currentCount={queueStats?.male.public_count ?? males.length}
+            paidItems={malePaidItems}
             items={males}
             hasMore={maleHasMore}
             onMore={loadMoreMale}
@@ -170,6 +199,7 @@ export default function OpenCardsPage() {
           <Section
             title="여자 오픈카드"
             currentCount={queueStats?.female.public_count ?? females.length}
+            paidItems={femalePaidItems}
             items={females}
             hasMore={femaleHasMore}
             onMore={loadMoreFemale}
@@ -183,25 +213,36 @@ export default function OpenCardsPage() {
 function Section({
   title,
   currentCount,
+  paidItems,
   items,
   hasMore,
   onMore,
 }: {
   title: string;
   currentCount: number;
+  paidItems: PaidCard[];
   items: PublicCard[];
   hasMore: boolean;
   onMore: () => void;
 }) {
+  const hasAnyItems = paidItems.length > 0 || items.length > 0;
+
   return (
     <section>
       <h2 className="text-lg font-bold text-neutral-800 mb-3">
         {title} <span className="text-sm font-medium text-neutral-500">({currentCount}명 공개중)</span>
       </h2>
-      {items.length === 0 ? (
+      {!hasAnyItems ? (
         <p className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-500">현재 공개된 카드가 없습니다.</p>
       ) : (
         <>
+          {paidItems.length > 0 && (
+            <div className="mb-3 grid grid-cols-1 gap-3">
+              {paidItems.map((card) => (
+                <PaidCardRow key={card.id} card={card} />
+              ))}
+            </div>
+          )}
           <div className="grid grid-cols-1 gap-3">
             {items.map((card) => (
               <CardRow key={card.id} card={card} />
@@ -219,6 +260,58 @@ function Section({
         </>
       )}
     </section>
+  );
+}
+
+function PaidCardRow({ card }: { card: PaidCard }) {
+  return (
+    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+      <div className="flex items-start justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm text-neutral-700">
+          <span className="inline-flex rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">24시간 고정</span>
+          <span className="font-semibold text-neutral-900">{card.nickname}</span>
+          {card.age != null && <span>{card.age}세</span>}
+          {card.region && <span>{card.region}</span>}
+        </div>
+        {card.expires_at && (
+          <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">⏳ {formatRemainingToKorean(card.expires_at)}</span>
+        )}
+      </div>
+
+      {card.thumbUrl ? (
+        <div className="mt-3 h-44 overflow-hidden rounded-xl border border-rose-100 bg-white">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={card.thumbUrl} alt="" className="h-full w-full object-contain" />
+        </div>
+      ) : (
+        <div className="mt-3 h-44 rounded-xl border border-rose-100 bg-white" />
+      )}
+
+      <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
+        {card.height_cm != null && <span>키 {card.height_cm}cm</span>}
+        {card.job && <span>직업 {card.job}</span>}
+        {card.training_years != null && <span>운동 {card.training_years}년</span>}
+        {card.is_3lift_verified && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">3대인증 완료</span>}
+      </div>
+
+      {card.ideal_text && <p className="mt-2 text-xs text-pink-700 truncate">💘 이상형: {card.ideal_text}</p>}
+      {card.strengths_text && <p className="mt-1 text-xs text-emerald-700 truncate">✨ 내 장점: {card.strengths_text}</p>}
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <Link
+          href={`/dating/paid/${card.id}`}
+          className="inline-flex min-h-[40px] items-center rounded-lg border border-neutral-300 px-4 text-sm text-neutral-700 hover:bg-neutral-50"
+        >
+          상세보기
+        </Link>
+        <Link
+          href={`/dating/paid/${card.id}/apply`}
+          className="inline-flex min-h-[40px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
+        >
+          지원하기
+        </Link>
+      </div>
+    </div>
   );
 }
 

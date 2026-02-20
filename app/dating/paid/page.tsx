@@ -263,7 +263,7 @@ export default function DatingPaidPage() {
             신청하기
           </button>
         </div>
-        <p className="text-sm text-neutral-600">신청 후 결제 확인이 완료되면 운영자가 확인하고 24시간 노출합니다.</p>
+        <p className="text-sm text-neutral-600">지원서 여러 장 수락 가능 · 24시간 글에는 하루 지원권 차감 없이 지원 가능 · 남/녀 오픈카드 최상단에 24시 지원자 노출</p>
       </section>
 
       {formOpen && (
@@ -331,7 +331,7 @@ export default function DatingPaidPage() {
             <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
               <p className="font-semibold">신청이 접수되었습니다.</p>
               <p className="mt-1">신청ID: {successId}</p>
-              <p className="mt-1">입금 후 오픈카톡으로 "닉네임 + 신청ID"를 보내주시면 확인 후 업로드됩니다.</p>
+              <p className="mt-1">입금 후 오픈카톡으로 &quot;닉네임 + 신청ID&quot;를 보내주시면 확인 후 업로드됩니다.</p>
               <a href={openKakaoUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-emerald-700">
                 오픈카톡 이동
               </a>
@@ -426,3 +426,4 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
     </section>
   );
 }
+
