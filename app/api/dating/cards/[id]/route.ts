@@ -1,6 +1,10 @@
-﻿import { extractClientIp, checkRateLimit } from "@/lib/request-rate-limit";
+import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
+import { getCachedSignedUrlResolved } from "@/lib/signed-url-cache";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+
+const SIGNED_URL_TTL_SEC = 3600;
+
 function isMissingColumnError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const code = String((error as { code?: unknown }).code ?? "");
@@ -8,46 +12,33 @@ function isMissingColumnError(error: unknown): boolean {
   return code === "42703" || code === "PGRST204" || message.includes("could not find") || message.includes("column");
 }
 
-async function createBlurThumbSignedUrl(adminClient: ReturnType<typeof createAdminClient>, path: string) {
-  const primary = await adminClient.storage.from("dating-card-photos").createSignedUrl(path, 3600);
-  if (!primary.error && primary.data?.signedUrl) {
-    return primary.data.signedUrl;
-  }
+type SignCounters = {
+  signCalls: number;
+  cacheHit: number;
+  cacheMiss: number;
+};
 
-  const legacy = await adminClient.storage.from("dating-photos").createSignedUrl(path, 3600);
-  if (!legacy.error && legacy.data?.signedUrl) {
-    return legacy.data.signedUrl;
-  }
-
-  return "";
-}
-
-async function createOriginalPhotoSignedUrl(adminClient: ReturnType<typeof createAdminClient>, path: string) {
-  const primary = await adminClient.storage.from("dating-card-photos").createSignedUrl(path, 3600);
-  if (!primary.error && primary.data?.signedUrl) {
-    return primary.data.signedUrl;
-  }
-
-  const legacy = await adminClient.storage.from("dating-photos").createSignedUrl(path, 3600);
-  if (!legacy.error && legacy.data?.signedUrl) {
-    return legacy.data.signedUrl;
-  }
-
-  return "";
-}
-
-async function createBlurPhotoSignedUrl(adminClient: ReturnType<typeof createAdminClient>, path: string) {
-  const primary = await adminClient.storage.from("dating-card-photos").createSignedUrl(path, 3600);
-  if (!primary.error && primary.data?.signedUrl) {
-    return primary.data.signedUrl;
-  }
-
-  const legacy = await adminClient.storage.from("dating-photos").createSignedUrl(path, 3600);
-  if (!legacy.error && legacy.data?.signedUrl) {
-    return legacy.data.signedUrl;
-  }
-
-  return "";
+async function signPathWithCache(
+  adminClient: ReturnType<typeof createAdminClient>,
+  path: string,
+  requestId: string,
+  counters: SignCounters
+) {
+  const result = await getCachedSignedUrlResolved({
+    requestId,
+    path,
+    ttlSec: SIGNED_URL_TTL_SEC,
+    buckets: ["dating-card-photos", "dating-photos"],
+    createSignedUrl: async (bucket, p, ttlSec) => {
+      counters.signCalls += 1;
+      const signRes = await adminClient.storage.from(bucket).createSignedUrl(p, ttlSec);
+      if (signRes.error || !signRes.data?.signedUrl) return "";
+      return signRes.data.signedUrl;
+    },
+  });
+  if (result.cacheStatus === "hit") counters.cacheHit += 1;
+  if (result.cacheStatus === "miss") counters.cacheMiss += 1;
+  return result.url;
 }
 
 async function createSignedImageUrls(
@@ -55,31 +46,37 @@ async function createSignedImageUrls(
   photoPaths: unknown,
   blurPaths: unknown,
   blurThumbPath: unknown,
-  photoVisibility: "blur" | "public"
+  photoVisibility: "blur" | "public",
+  requestId: string,
+  counters: SignCounters
 ) {
   if (photoVisibility === "public") {
     const rawPaths = Array.isArray(photoPaths)
       ? photoPaths.filter((item): item is string => typeof item === "string" && item.length > 0).slice(0, 2)
       : [];
-    const rawUrls = (
-      await Promise.all(rawPaths.map((path) => createOriginalPhotoSignedUrl(adminClient, path)))
-    ).filter((url): url is string => Boolean(url));
+    const rawUrls: string[] = [];
+    for (const rawPath of rawPaths) {
+      const signed = await signPathWithCache(adminClient, rawPath, requestId, counters);
+      if (signed) rawUrls.push(signed);
+    }
     if (rawUrls.length > 0) return rawUrls;
   }
 
   const blurPathList = Array.isArray(blurPaths)
     ? blurPaths.filter((item): item is string => typeof item === "string" && item.length > 0).slice(0, 2)
     : [];
-  const blurUrls = (
-    await Promise.all(blurPathList.map((path) => createBlurPhotoSignedUrl(adminClient, path)))
-  ).filter((url): url is string => Boolean(url));
+  const blurUrls: string[] = [];
+  for (const blurPath of blurPathList) {
+    const signed = await signPathWithCache(adminClient, blurPath, requestId, counters);
+    if (signed) blurUrls.push(signed);
+  }
   if (blurUrls.length > 0) return blurUrls;
 
   if (typeof blurThumbPath === "string" && blurThumbPath) {
-    const fallback = await createBlurThumbSignedUrl(adminClient, blurThumbPath);
-    if (fallback) {
-      if (photoVisibility === "blur") return [fallback, fallback];
-      return [fallback];
+    const thumb = await signPathWithCache(adminClient, blurThumbPath, requestId, counters);
+    if (thumb) {
+      if (photoVisibility === "blur") return [thumb, thumb];
+      return [thumb];
     }
   }
 
@@ -87,19 +84,29 @@ async function createSignedImageUrls(
 }
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const requestId = crypto.randomUUID();
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const rateLimitKey = user?.id ? `user:${user.id}` : `ip:${extractClientIp(req)}`;
-  const rateLimit = checkRateLimit(`dating-cards:signed-urls:${rateLimitKey}`, 20, 60_000);
+  const ip = extractClientIp(req);
+
+  const rateLimit = await checkRouteRateLimit({
+    requestId,
+    scope: "dating-cards-signed-urls",
+    userId: user?.id ?? null,
+    ip,
+    userLimitPerMin: 20,
+    ipLimitPerMin: 60,
+  });
   if (!rateLimit.allowed) {
     return NextResponse.json(
-      { code: "RATE_LIMIT" },
+      { code: "RATE_LIMIT", message: "Too many requests" },
       { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSec) } }
     );
   }
 
+  const counters: SignCounters = { signCalls: 0, cacheHit: 0, cacheMiss: 0 };
   const { id } = await params;
   const adminClient = createAdminClient();
 
@@ -145,7 +152,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     data.photo_paths,
     data.blur_paths,
     data.blur_thumb_path,
-    photoVisibility
+    photoVisibility,
+    requestId,
+    counters
+  );
+
+  console.log(
+    `[signedUrl.stats] requestId=${requestId} scope=dating-cards-signed-urls signCalls=${counters.signCalls} cacheHit=${counters.cacheHit} cacheMiss=${counters.cacheMiss}`
   );
 
   return NextResponse.json({
@@ -171,4 +184,3 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     can_apply: true,
   });
 }
-

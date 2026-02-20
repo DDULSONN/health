@@ -1,7 +1,11 @@
-﻿import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
-import { extractClientIp, checkRateLimit } from "@/lib/request-rate-limit";
+import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
+import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
+import { getCachedSignedUrlResolved } from "@/lib/signed-url-cache";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+
+const SIGNED_URL_TTL_SEC = 3600;
+const RAW_COUNT_MAX = 40;
 
 function parseIntSafe(value: string | null, fallback: number) {
   if (!value) return fallback;
@@ -17,46 +21,37 @@ function isMissingColumnError(error: unknown): boolean {
   return code === "42703" || code === "PGRST204" || message.includes("could not find") || message.includes("column");
 }
 
-async function createBlurThumbSignedUrl(adminClient: ReturnType<typeof createAdminClient>, path: string) {
-  const primary = await adminClient.storage.from("dating-card-photos").createSignedUrl(path, 3600);
-  if (!primary.error && primary.data?.signedUrl) {
-    return primary.data.signedUrl;
-  }
+type SignCounters = {
+  signCalls: number;
+  cacheHit: number;
+  cacheMiss: number;
+  rawCount: number;
+  rawGuardExceeded: boolean;
+  rawGuardFallbackCount: number;
+};
 
-  const legacy = await adminClient.storage.from("dating-photos").createSignedUrl(path, 3600);
-  if (!legacy.error && legacy.data?.signedUrl) {
-    return legacy.data.signedUrl;
-  }
+async function signPathWithCache(
+  adminClient: ReturnType<typeof createAdminClient>,
+  path: string,
+  requestId: string,
+  counters: SignCounters
+) {
+  const result = await getCachedSignedUrlResolved({
+    requestId,
+    path,
+    ttlSec: SIGNED_URL_TTL_SEC,
+    buckets: ["dating-card-photos", "dating-photos"],
+    createSignedUrl: async (bucket, p, ttlSec) => {
+      counters.signCalls += 1;
+      const signRes = await adminClient.storage.from(bucket).createSignedUrl(p, ttlSec);
+      if (signRes.error || !signRes.data?.signedUrl) return "";
+      return signRes.data.signedUrl;
+    },
+  });
 
-  return "";
-}
-
-async function createOriginalPhotoSignedUrl(adminClient: ReturnType<typeof createAdminClient>, path: string) {
-  const primary = await adminClient.storage.from("dating-card-photos").createSignedUrl(path, 3600);
-  if (!primary.error && primary.data?.signedUrl) {
-    return primary.data.signedUrl;
-  }
-
-  const legacy = await adminClient.storage.from("dating-photos").createSignedUrl(path, 3600);
-  if (!legacy.error && legacy.data?.signedUrl) {
-    return legacy.data.signedUrl;
-  }
-
-  return "";
-}
-
-async function createBlurPhotoSignedUrl(adminClient: ReturnType<typeof createAdminClient>, path: string) {
-  const primary = await adminClient.storage.from("dating-card-photos").createSignedUrl(path, 3600);
-  if (!primary.error && primary.data?.signedUrl) {
-    return primary.data.signedUrl;
-  }
-
-  const legacy = await adminClient.storage.from("dating-photos").createSignedUrl(path, 3600);
-  if (!legacy.error && legacy.data?.signedUrl) {
-    return legacy.data.signedUrl;
-  }
-
-  return "";
+  if (result.cacheStatus === "hit") counters.cacheHit += 1;
+  if (result.cacheStatus === "miss") counters.cacheMiss += 1;
+  return result.url;
 }
 
 async function createSignedImageUrls(
@@ -64,31 +59,46 @@ async function createSignedImageUrls(
   photoPaths: unknown,
   blurPaths: unknown,
   blurThumbPath: unknown,
-  photoVisibility: "blur" | "public"
+  photoVisibility: "blur" | "public",
+  requestId: string,
+  counters: SignCounters
 ) {
   if (photoVisibility === "public") {
     const rawPaths = Array.isArray(photoPaths)
       ? photoPaths.filter((item): item is string => typeof item === "string" && item.length > 0).slice(0, 2)
       : [];
-    const rawUrls = (
-      await Promise.all(rawPaths.map((path) => createOriginalPhotoSignedUrl(adminClient, path)))
-    ).filter((url): url is string => Boolean(url));
-    if (rawUrls.length > 0) return rawUrls;
+
+    const rawUrls: string[] = [];
+    for (const rawPath of rawPaths) {
+      if (counters.rawCount >= RAW_COUNT_MAX) {
+        counters.rawGuardExceeded = true;
+        counters.rawGuardFallbackCount += 1;
+        break;
+      }
+      const signed = await signPathWithCache(adminClient, rawPath, requestId, counters);
+      if (signed) {
+        rawUrls.push(signed);
+        counters.rawCount += 1;
+      }
+    }
+    if (rawUrls.length > 0 && !counters.rawGuardExceeded) return rawUrls;
   }
 
   const blurPathList = Array.isArray(blurPaths)
     ? blurPaths.filter((item): item is string => typeof item === "string" && item.length > 0).slice(0, 2)
     : [];
-  const blurUrls = (
-    await Promise.all(blurPathList.map((path) => createBlurPhotoSignedUrl(adminClient, path)))
-  ).filter((url): url is string => Boolean(url));
+  const blurUrls: string[] = [];
+  for (const blurPath of blurPathList) {
+    const signed = await signPathWithCache(adminClient, blurPath, requestId, counters);
+    if (signed) blurUrls.push(signed);
+  }
   if (blurUrls.length > 0) return blurUrls;
 
   if (typeof blurThumbPath === "string" && blurThumbPath) {
-    const fallback = await createBlurThumbSignedUrl(adminClient, blurThumbPath);
-    if (fallback) {
-      if (photoVisibility === "blur") return [fallback, fallback];
-      return [fallback];
+    const thumb = await signPathWithCache(adminClient, blurThumbPath, requestId, counters);
+    if (thumb) {
+      if (photoVisibility === "blur") return [thumb, thumb];
+      return [thumb];
     }
   }
 
@@ -96,18 +106,36 @@ async function createSignedImageUrls(
 }
 
 export async function GET(req: Request) {
+  const requestId = crypto.randomUUID();
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  const rateLimitKey = user?.id ? `user:${user.id}` : `ip:${extractClientIp(req)}`;
-  const rateLimit = checkRateLimit(`dating-cards:list:${rateLimitKey}`, 20, 60_000);
+  const ip = extractClientIp(req);
+
+  const rateLimit = await checkRouteRateLimit({
+    requestId,
+    scope: "dating-cards-list",
+    userId: user?.id ?? null,
+    ip,
+    userLimitPerMin: 20,
+    ipLimitPerMin: 60,
+  });
   if (!rateLimit.allowed) {
     return NextResponse.json(
-      { code: "RATE_LIMIT" },
+      { code: "RATE_LIMIT", message: "Too many requests" },
       { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSec) } }
     );
   }
+
+  const counters: SignCounters = {
+    signCalls: 0,
+    cacheHit: 0,
+    cacheMiss: 0,
+    rawCount: 0,
+    rawGuardExceeded: false,
+    rawGuardFallbackCount: 0,
+  };
 
   const { searchParams } = new URL(req.url);
   const limit = Math.min(parseIntSafe(searchParams.get("limit"), 20), 50);
@@ -116,7 +144,7 @@ export async function GET(req: Request) {
 
   const adminClient = createAdminClient();
   await syncOpenCardQueue(adminClient).catch((error) => {
-    console.error("[GET /api/dating/cards/public] queue sync failed", error);
+    console.error(`[GET /api/dating/cards/list] requestId=${requestId} queue sync failed`, error);
   });
 
   let query = adminClient
@@ -158,7 +186,7 @@ export async function GET(req: Request) {
     count = legacyRes.count;
   }
   if (error) {
-    console.error("[GET /api/dating/cards/public] failed", error);
+    console.error(`[GET /api/dating/cards/list] requestId=${requestId} failed`, error);
     return NextResponse.json({ error: "카드 목록을 불러오지 못했습니다." }, { status: 500 });
   }
 
@@ -170,7 +198,9 @@ export async function GET(req: Request) {
         row.photo_paths,
         row.blur_paths,
         row.blur_thumb_path,
-        photoVisibility
+        photoVisibility,
+        requestId,
+        counters
       );
       return {
         id: row.id,
@@ -194,7 +224,17 @@ export async function GET(req: Request) {
     })
   );
 
+  console.log(
+    `[signedUrl.guard] requestId=${requestId} rawCount=${counters.rawCount} exceeded=${counters.rawGuardExceeded} fallbackCount=${counters.rawGuardFallbackCount}`
+  );
+  console.log(
+    `[signedUrl.stats] requestId=${requestId} signCalls=${counters.signCalls} cacheHit=${counters.cacheHit} cacheMiss=${counters.cacheMiss}`
+  );
+
   const nextOffset = offset + items.length;
   const hasMore = (count ?? 0) > nextOffset;
-  return NextResponse.json({ items, nextOffset, hasMore, total: count ?? 0 });
+  return NextResponse.json(
+    { items, nextOffset, hasMore, total: count ?? 0 },
+    { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } }
+  );
 }
