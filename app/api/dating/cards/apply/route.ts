@@ -149,6 +149,16 @@ function isMissingTokenRpcError(dbError: DbErrorShape): boolean {
     (message.includes("function") && message.includes("does not exist"))
   );
 }
+
+async function withSlowQueryLog<T>(requestId: string, queryName: string, fn: () => Promise<T>, warnMs = 200): Promise<T> {
+  const started = Date.now();
+  const result = await fn();
+  const elapsed = Date.now() - started;
+  if (elapsed > warnMs) {
+    console.warn(`[slow.query] requestId=${requestId} name=${queryName} durationMs=${elapsed}`);
+  }
+  return result;
+}
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
   let userId: string | null = null;
@@ -313,21 +323,24 @@ export async function POST(req: Request) {
       });
 
       const { startUtcIso, endUtcIso } = getKstDayRangeUtc();
-      const countRes = await supabase
-        .from("dating_card_applications")
-        .select("id", { head: true, count: "exact" })
-        .eq("applicant_user_id", userId)
-        .in("status", ["submitted", "accepted", "rejected"])
-        .gte("created_at", startUtcIso)
-        .lt("created_at", endUtcIso);
-      const countError = toDbErrorShape(countRes.error);
-      if (countRes.error) {
-        logSupabaseError(requestId, "L6 fallback.daily.count", countError);
-        const mapped = mapDbErrorToHttp(countError.code);
-        return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, countError);
+      const todayRowsRes = await withSlowQueryLog(requestId, "daily_apply_usage_fallback", async () =>
+        supabase
+          .from("dating_card_applications")
+          .select("id")
+          .eq("applicant_user_id", userId)
+          .in("status", ["submitted", "accepted", "rejected"])
+          .gte("created_at", startUtcIso)
+          .lt("created_at", endUtcIso)
+          .limit(2)
+      );
+      const todayRowsError = toDbErrorShape(todayRowsRes.error);
+      if (todayRowsRes.error) {
+        logSupabaseError(requestId, "L6 fallback.daily.count", todayRowsError);
+        const mapped = mapDbErrorToHttp(todayRowsError.code);
+        return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, todayRowsError);
       }
 
-      const todayCount = countRes.count ?? 0;
+      const todayCount = Array.isArray(todayRowsRes.data) ? todayRowsRes.data.length : 0;
       if (todayCount >= 2) {
         return jsonResponse(
           429,

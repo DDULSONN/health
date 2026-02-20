@@ -56,22 +56,32 @@ function maskIdealTypeForPreview(value: string | null): string {
   return raw;
 }
 
-async function fetchBySex(sex: "male" | "female", offset: number) {
-  const params = new URLSearchParams({ sex, limit: String(PAGE_SIZE), offset: String(offset) });
+async function fetchBySex(
+  sex: "male" | "female",
+  _offsetLegacy: number,
+  cursorCreatedAt: string | null,
+  cursorId: string | null
+) {
+  const params = new URLSearchParams({ sex, limit: String(PAGE_SIZE) });
+  if (cursorCreatedAt) params.set("cursorCreatedAt", cursorCreatedAt);
+  if (cursorId) params.set("cursorId", cursorId);
   const res = await fetch(`/api/dating/cards/list?${params.toString()}`);
   if (!res.ok) throw new Error("failed to load open cards");
   return (await res.json()) as {
     items: PublicCard[];
     hasMore: boolean;
-    nextOffset: number;
+    nextCursorCreatedAt: string | null;
+    nextCursorId: string | null;
   };
 }
 
 export default function OpenCardsPage() {
   const [males, setMales] = useState<PublicCard[]>([]);
   const [females, setFemales] = useState<PublicCard[]>([]);
-  const [maleOffset, setMaleOffset] = useState(0);
-  const [femaleOffset, setFemaleOffset] = useState(0);
+  const [maleCursorCreatedAt, setMaleCursorCreatedAt] = useState<string | null>(null);
+  const [maleCursorId, setMaleCursorId] = useState<string | null>(null);
+  const [femaleCursorCreatedAt, setFemaleCursorCreatedAt] = useState<string | null>(null);
+  const [femaleCursorId, setFemaleCursorId] = useState<string | null>(null);
   const [maleHasMore, setMaleHasMore] = useState(true);
   const [femaleHasMore, setFemaleHasMore] = useState(true);
   const [loading, setLoading] = useState(true);
@@ -88,15 +98,17 @@ export default function OpenCardsPage() {
     setLoading(true);
     try {
       const [m, f, qsRes, paidRes] = await Promise.all([
-        fetchBySex("male", 0),
-        fetchBySex("female", 0),
+        fetchBySex("male", 0, null, null),
+        fetchBySex("female", 0, null, null),
         fetch("/api/dating/cards/queue-stats", { cache: "no-store" }),
         fetch("/api/dating/paid/list", { cache: "no-store" }),
       ]);
       setMales(m.items ?? []);
       setFemales(f.items ?? []);
-      setMaleOffset(m.nextOffset ?? (m.items?.length ?? 0));
-      setFemaleOffset(f.nextOffset ?? (f.items?.length ?? 0));
+      setMaleCursorCreatedAt(m.nextCursorCreatedAt ?? null);
+      setMaleCursorId(m.nextCursorId ?? null);
+      setFemaleCursorCreatedAt(f.nextCursorCreatedAt ?? null);
+      setFemaleCursorId(f.nextCursorId ?? null);
       setMaleHasMore(Boolean(m.hasMore));
       setFemaleHasMore(Boolean(f.hasMore));
       if (qsRes.ok) {
@@ -126,26 +138,28 @@ export default function OpenCardsPage() {
   const loadMoreMale = useCallback(async () => {
     if (!maleHasMore) return;
     try {
-      const m = await fetchBySex("male", maleOffset);
+      const m = await fetchBySex("male", 0, maleCursorCreatedAt, maleCursorId);
       setMales((prev) => [...prev, ...(m.items ?? [])]);
-      setMaleOffset(m.nextOffset ?? maleOffset + (m.items?.length ?? 0));
+      setMaleCursorCreatedAt(m.nextCursorCreatedAt ?? null);
+      setMaleCursorId(m.nextCursorId ?? null);
       setMaleHasMore(Boolean(m.hasMore));
     } catch (e) {
       console.error("open cards load more male failed", e);
     }
-  }, [maleHasMore, maleOffset]);
+  }, [maleHasMore, maleCursorCreatedAt, maleCursorId]);
 
   const loadMoreFemale = useCallback(async () => {
     if (!femaleHasMore) return;
     try {
-      const f = await fetchBySex("female", femaleOffset);
+      const f = await fetchBySex("female", 0, femaleCursorCreatedAt, femaleCursorId);
       setFemales((prev) => [...prev, ...(f.items ?? [])]);
-      setFemaleOffset(f.nextOffset ?? femaleOffset + (f.items?.length ?? 0));
+      setFemaleCursorCreatedAt(f.nextCursorCreatedAt ?? null);
+      setFemaleCursorId(f.nextCursorId ?? null);
       setFemaleHasMore(Boolean(f.hasMore));
     } catch (e) {
       console.error("open cards load more female failed", e);
     }
-  }, [femaleHasMore, femaleOffset]);
+  }, [femaleHasMore, femaleCursorCreatedAt, femaleCursorId]);
 
   const nowLabel = useMemo(() => tick, [tick]);
   void nowLabel;

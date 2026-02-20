@@ -14,6 +14,19 @@ function parseIntSafe(value: string | null, fallback: number) {
   return Math.max(0, Math.floor(num));
 }
 
+function parseCursorTs(value: string | null): string | null {
+  if (!value) return null;
+  const ts = new Date(value);
+  if (Number.isNaN(ts.getTime())) return null;
+  return ts.toISOString();
+}
+
+function parseCursorId(value: string | null): string | null {
+  if (!value) return null;
+  const v = value.trim();
+  return v.length > 0 ? v : null;
+}
+
 function isMissingColumnError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const code = String((error as { code?: unknown }).code ?? "");
@@ -139,7 +152,8 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const limit = Math.min(parseIntSafe(searchParams.get("limit"), 20), 50);
-  const offset = parseIntSafe(searchParams.get("offset"), 0);
+  const cursorCreatedAt = parseCursorTs(searchParams.get("cursorCreatedAt"));
+  const cursorId = parseCursorId(searchParams.get("cursorId"));
   const sex = searchParams.get("sex");
 
   const adminClient = createAdminClient();
@@ -150,32 +164,54 @@ export async function GET(req: Request) {
   let query = adminClient
     .from("dating_cards")
     .select(
-      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, expires_at, created_at",
-      { count: "exact" }
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, expires_at, created_at"
     )
     .eq("status", "public")
     .gt("expires_at", new Date().toISOString())
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(limit + 1);
 
   if (sex === "male" || sex === "female") {
     query = query.eq("sex", sex);
   }
+  if (cursorCreatedAt && cursorId) {
+    query = query.or(`created_at.lt.${cursorCreatedAt},and(created_at.eq.${cursorCreatedAt},id.lt.${cursorId})`);
+  } else if (cursorCreatedAt) {
+    query = query.lt("created_at", cursorCreatedAt);
+  }
 
-  let { data, error, count } = await query.range(offset, offset + limit - 1);
+  const queryStart = Date.now();
+  let { data, error } = await query;
+  const queryMs = Date.now() - queryStart;
+  if (queryMs > 200) {
+    console.warn(`[slow.query] requestId=${requestId} name=dating_cards_public durationMs=${queryMs}`);
+  }
   if (error && isMissingColumnError(error)) {
     let legacyQuery = adminClient
       .from("dating_cards")
       .select(
-        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, expires_at, created_at",
-        { count: "exact" }
+        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, expires_at, created_at"
       )
       .eq("status", "public")
       .gt("expires_at", new Date().toISOString())
-      .order("created_at", { ascending: false });
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(limit + 1);
     if (sex === "male" || sex === "female") {
       legacyQuery = legacyQuery.eq("sex", sex);
     }
-    const legacyRes = await legacyQuery.range(offset, offset + limit - 1);
+    if (cursorCreatedAt && cursorId) {
+      legacyQuery = legacyQuery.or(`created_at.lt.${cursorCreatedAt},and(created_at.eq.${cursorCreatedAt},id.lt.${cursorId})`);
+    } else if (cursorCreatedAt) {
+      legacyQuery = legacyQuery.lt("created_at", cursorCreatedAt);
+    }
+    const legacyStart = Date.now();
+    const legacyRes = await legacyQuery;
+    const legacyMs = Date.now() - legacyStart;
+    if (legacyMs > 200) {
+      console.warn(`[slow.query] requestId=${requestId} name=dating_cards_public_legacy durationMs=${legacyMs}`);
+    }
     data = (legacyRes.data ?? []).map((row) => ({
       ...row,
       strengths_text: null,
@@ -183,15 +219,18 @@ export async function GET(req: Request) {
       blur_paths: [],
     }));
     error = legacyRes.error;
-    count = legacyRes.count;
   }
   if (error) {
     console.error(`[GET /api/dating/cards/list] requestId=${requestId} failed`, error);
     return NextResponse.json({ error: "카드 목록을 불러오지 못했습니다." }, { status: 500 });
   }
 
+  const rows = data ?? [];
+  const hasMore = rows.length > limit;
+  const pageRows = hasMore ? rows.slice(0, limit) : rows;
+
   const items = await Promise.all(
-    (data ?? []).map(async (row) => {
+    pageRows.map(async (row) => {
       const photoVisibility = row.photo_visibility === "public" ? "public" : "blur";
       const imageUrls = await createSignedImageUrls(
         adminClient,
@@ -231,10 +270,14 @@ export async function GET(req: Request) {
     `[signedUrl.stats] requestId=${requestId} signCalls=${counters.signCalls} cacheHit=${counters.cacheHit} cacheMiss=${counters.cacheMiss}`
   );
 
-  const nextOffset = offset + items.length;
-  const hasMore = (count ?? 0) > nextOffset;
+  const lastItem = items.length > 0 ? items[items.length - 1] : null;
   return NextResponse.json(
-    { items, nextOffset, hasMore, total: count ?? 0 },
+    {
+      items,
+      hasMore,
+      nextCursorCreatedAt: hasMore && lastItem ? lastItem.created_at : null,
+      nextCursorId: hasMore && lastItem ? lastItem.id : null,
+    },
     { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } }
   );
 }
