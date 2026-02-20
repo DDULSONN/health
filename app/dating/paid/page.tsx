@@ -250,6 +250,14 @@ export default function DatingPaidPage() {
           오픈카드
         </Link>
         <span className="rounded-full border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700">🔥24시간 고정</span>
+        <a
+          href={openKakaoUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700 hover:bg-emerald-100"
+        >
+          구매문의(오픈카톡)
+        </a>
       </div>
 
       <section className="rounded-2xl border border-neutral-200 bg-white p-4">
@@ -331,7 +339,7 @@ export default function DatingPaidPage() {
             <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
               <p className="font-semibold">신청이 접수되었습니다.</p>
               <p className="mt-1">신청ID: {successId}</p>
-              <p className="mt-1">입금 후 오픈카톡으로 &quot;닉네임 + 신청ID&quot;를 보내주시면 확인 후 업로드됩니다.</p>
+              <p className="mt-1">결제는 오픈카톡에서 진행됩니다. 오픈카톡으로 &quot;닉네임 + 신청ID&quot;를 보내주세요.</p>
               <a href={openKakaoUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-emerald-700">
                 오픈카톡 이동
               </a>
