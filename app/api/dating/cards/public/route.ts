@@ -1,5 +1,6 @@
 ﻿import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
-import { createAdminClient } from "@/lib/supabase/server";
+import { extractClientIp, checkRateLimit } from "@/lib/request-rate-limit";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 function parseIntSafe(value: string | null, fallback: number) {
@@ -95,6 +96,19 @@ async function createSignedImageUrls(
 }
 
 export async function GET(req: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const rateLimitKey = user?.id ? `user:${user.id}` : `ip:${extractClientIp(req)}`;
+  const rateLimit = checkRateLimit(`dating-cards:list:${rateLimitKey}`, 20, 60_000);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { code: "RATE_LIMIT" },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSec) } }
+    );
+  }
+
   const { searchParams } = new URL(req.url);
   const limit = Math.min(parseIntSafe(searchParams.get("limit"), 20), 50);
   const offset = parseIntSafe(searchParams.get("offset"), 0);

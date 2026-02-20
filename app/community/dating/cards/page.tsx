@@ -58,7 +58,7 @@ function maskIdealTypeForPreview(value: string | null): string {
 
 async function fetchBySex(sex: "male" | "female", offset: number) {
   const params = new URLSearchParams({ sex, limit: String(PAGE_SIZE), offset: String(offset) });
-  const res = await fetch(`/api/dating/cards/public?${params.toString()}`);
+  const res = await fetch(`/api/dating/cards/list?${params.toString()}`);
   if (!res.ok) throw new Error("failed to load open cards");
   return (await res.json()) as {
     items: PublicCard[];

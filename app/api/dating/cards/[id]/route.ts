@@ -1,6 +1,6 @@
-﻿import { createAdminClient } from "@/lib/supabase/server";
+﻿import { extractClientIp, checkRateLimit } from "@/lib/request-rate-limit";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
-
 function isMissingColumnError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const code = String((error as { code?: unknown }).code ?? "");
@@ -86,7 +86,20 @@ async function createSignedImageUrls(
   return [];
 }
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const rateLimitKey = user?.id ? `user:${user.id}` : `ip:${extractClientIp(req)}`;
+  const rateLimit = checkRateLimit(`dating-cards:signed-urls:${rateLimitKey}`, 20, 60_000);
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { code: "RATE_LIMIT" },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSec) } }
+    );
+  }
+
   const { id } = await params;
   const adminClient = createAdminClient();
 
@@ -158,3 +171,4 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
     can_apply: true,
   });
 }
+
