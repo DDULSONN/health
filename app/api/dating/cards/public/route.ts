@@ -7,9 +7,11 @@ import { NextResponse } from "next/server";
 
 const SIGNED_URL_TTL_SEC = 3600;
 const RAW_COUNT_MAX = 40;
-const RAW_LIST_TRANSFORM = { width: 1200, quality: 78 };
+const RAW_LIST_TRANSFORM = { width: 720, quality: 72 };
 const BLUR_LIST_TRANSFORM = { width: 720, quality: 70 };
 const LITE_PUBLIC_BUCKET = "dating-card-lite";
+const LITE_PUBLIC_RENDER_WIDTH = 640;
+const LITE_PUBLIC_RENDER_QUALITY = 70;
 const LITE_PUBLIC_PROBE_TTL_MS = 6 * 60 * 60 * 1000;
 const LITE_PUBLIC_NEGATIVE_PROBE_TTL_MS = 5 * 60 * 1000;
 
@@ -70,7 +72,7 @@ async function getLitePublicUrlIfAvailable(
   if (cachedProbe && cachedProbe.expiresAtEpochMs > now) {
     if (!cachedProbe.exists) return "";
     const publicUrlCached = adminClient.storage.from(LITE_PUBLIC_BUCKET).getPublicUrl(litePath).data.publicUrl;
-    return typeof publicUrlCached === "string" ? publicUrlCached : "";
+    return typeof publicUrlCached === "string" ? toPublicRenderListUrl(publicUrlCached) : "";
   }
 
   const marker = await kvGetString(`litepublic:${litePath}`);
@@ -78,13 +80,13 @@ async function getLitePublicUrlIfAvailable(
   if (typeof publicUrl !== "string" || !publicUrl) return "";
   if (marker) {
     litePublicProbeCache.set(litePath, { exists: true, expiresAtEpochMs: now + LITE_PUBLIC_PROBE_TTL_MS });
-    return publicUrl;
+    return toPublicRenderListUrl(publicUrl);
   }
 
   const probe = await fetch(publicUrl, { method: "HEAD", cache: "no-store" }).catch(() => null);
   if (probe?.ok) {
     litePublicProbeCache.set(litePath, { exists: true, expiresAtEpochMs: now + LITE_PUBLIC_PROBE_TTL_MS });
-    return publicUrl;
+    return toPublicRenderListUrl(publicUrl);
   }
 
   litePublicProbeCache.set(litePath, {
@@ -92,6 +94,12 @@ async function getLitePublicUrlIfAvailable(
     expiresAtEpochMs: now + LITE_PUBLIC_NEGATIVE_PROBE_TTL_MS,
   });
   return "";
+}
+
+function toPublicRenderListUrl(publicUrl: string): string {
+  const converted = publicUrl.replace("/storage/v1/object/public/", "/storage/v1/render/image/public/");
+  const separator = converted.includes("?") ? "&" : "?";
+  return `${converted}${separator}width=${LITE_PUBLIC_RENDER_WIDTH}&quality=${LITE_PUBLIC_RENDER_QUALITY}`;
 }
 
 async function signPathWithCache(
