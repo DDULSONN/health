@@ -1,7 +1,6 @@
-﻿import { createAdminClient, createClient } from "@/lib/supabase/server";
+﻿import { createClient } from "@/lib/supabase/server";
 import { containsProfanity, getRateLimitRemaining } from "@/lib/moderation";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
-import { getCachedSignedUrlWithBucket } from "@/lib/signed-url-cache";
 import { NextResponse } from "next/server";
 import type { BodycheckGender } from "@/lib/community";
 import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
@@ -12,66 +11,45 @@ const RECORD_TYPES = ["lifts", "1rm", "helltest"];
 const BODYCHECK_TYPES = ["photo_bodycheck"];
 const BODYCHECK_LIST_IMAGE_WIDTH = 960;
 const BODYCHECK_LIST_IMAGE_QUALITY = 72;
-const COMMUNITY_LIST_TRANSFORM = { width: 1200, quality: 78 };
-const COMMUNITY_SIGNED_URL_TTL_SEC = 3600;
 
 async function resolveCommunityImageUrl(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  adminClient: ReturnType<typeof createAdminClient>,
-  requestId: string,
-  raw: unknown,
-  counters: { signCalls: number; cacheHit: number; cacheMiss: number }
+  raw: unknown
 ): Promise<string | null> {
-  const url = toCommunityPublicUrl(supabase, raw);
-  if (!url) return null;
-  const marker = "/storage/v1/object/public/community/";
-  const idx = url.indexOf(marker);
-  if (idx < 0) return url;
-  const path = url.slice(idx + marker.length).split("?")[0] ?? "";
-  if (!path) return url;
-
-  const signed = await getCachedSignedUrlWithBucket({
-    requestId,
-    bucket: "community",
-    path,
-    cachePath: `${path}::list:w${COMMUNITY_LIST_TRANSFORM.width}:q${COMMUNITY_LIST_TRANSFORM.quality}`,
-    ttlSec: COMMUNITY_SIGNED_URL_TTL_SEC,
-    getSignCallCount: () => counters.signCalls,
-    createSignedUrl: async (bucket, p, ttlSec) => {
-      counters.signCalls += 1;
-      const transformed = await adminClient.storage
-        .from(bucket)
-        .createSignedUrl(p, ttlSec, { transform: COMMUNITY_LIST_TRANSFORM });
-      if (!transformed.error && transformed.data?.signedUrl) return transformed.data.signedUrl;
-      const fallback = await adminClient.storage.from(bucket).createSignedUrl(p, ttlSec);
-      if (fallback.error || !fallback.data?.signedUrl) return "";
-      return fallback.data.signedUrl;
-    },
-  });
-  if (signed.cacheStatus === "hit") counters.cacheHit += 1;
-  if (signed.cacheStatus === "miss") counters.cacheMiss += 1;
-  if (signed.url) return signed.url;
-  return url;
+  const path = toCommunityPublicPath(raw);
+  if (path) {
+    const renderUrl = toCommunityRenderPublicUrl(path);
+    if (renderUrl) return renderUrl;
+    return supabase.storage.from("community").getPublicUrl(path).data.publicUrl;
+  }
+  if (typeof raw === "string") {
+    const value = raw.trim();
+    if (value.startsWith("http://") || value.startsWith("https://")) return value;
+  }
+  return null;
 }
-
-function toCommunityPublicUrl(supabase: Awaited<ReturnType<typeof createClient>>, raw: unknown): string | null {
+function toCommunityPublicPath(raw: unknown): string | null {
   if (typeof raw !== "string") return null;
   const value = raw.trim();
   if (!value) return null;
 
   const publicPathToken = "/storage/v1/object/public/community/";
   const renderPathToken = "/storage/v1/render/image/public/community/";
+  const renderSignedPathToken = "/storage/v1/render/image/sign/community/";
   const publicIdx = value.indexOf(publicPathToken);
   if (publicIdx >= 0) {
     const path = value.slice(publicIdx + publicPathToken.length).split("?")[0] ?? "";
-    if (!path) return null;
-    return supabase.storage.from("community").getPublicUrl(path).data.publicUrl;
+    return path || null;
   }
   const renderIdx = value.indexOf(renderPathToken);
   if (renderIdx >= 0) {
     const path = value.slice(renderIdx + renderPathToken.length).split("?")[0] ?? "";
-    if (!path) return null;
-    return supabase.storage.from("community").getPublicUrl(path).data.publicUrl;
+    return path || null;
+  }
+  const renderSignedIdx = value.indexOf(renderSignedPathToken);
+  if (renderSignedIdx >= 0) {
+    const path = value.slice(renderSignedIdx + renderSignedPathToken.length).split("?")[0] ?? "";
+    return path || null;
   }
   if (value.startsWith("http://") || value.startsWith("https://")) return value;
 
@@ -86,8 +64,19 @@ function toCommunityPublicUrl(supabase: Awaited<ReturnType<typeof createClient>>
   } else if (path.startsWith("/")) {
     path = path.slice(1);
   }
-  if (!path) return null;
-  return supabase.storage.from("community").getPublicUrl(path).data.publicUrl;
+  return path || null;
+}
+
+function toCommunityRenderPublicUrl(path: string): string | null {
+  const base = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim().replace(/\/$/, "");
+  if (!base) return null;
+  const encodedPath = path
+    .split("/")
+    .filter(Boolean)
+    .map((part) => encodeURIComponent(part))
+    .join("/");
+  if (!encodedPath) return null;
+  return `${base}/storage/v1/render/image/public/community/${encodedPath}?width=${BODYCHECK_LIST_IMAGE_WIDTH}&quality=${BODYCHECK_LIST_IMAGE_QUALITY}`;
 }
 
 function extractThumbImages(payload: unknown): string[] {
@@ -107,7 +96,6 @@ export async function GET(request: Request) {
   const offset = (page - 1) * limit;
 
   const supabase = await createClient();
-  const adminClient = createAdminClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -164,13 +152,12 @@ export async function GET(request: Request) {
     }
   }
 
-  const signCounters = { signCalls: 0, cacheHit: 0, cacheMiss: 0 };
   const enriched = await Promise.all(visible.map(async (p) => {
     const originalImages = Array.isArray((p as Record<string, unknown>).images)
       ? (
           await Promise.all(
             ((p as Record<string, unknown>).images as unknown[]).map((img) =>
-              resolveCommunityImageUrl(supabase, adminClient, requestId, img, signCounters)
+              resolveCommunityImageUrl(supabase, img)
             )
           )
         ).filter((img): img is string => typeof img === "string")
@@ -178,7 +165,7 @@ export async function GET(request: Request) {
     const thumbImages = (
       await Promise.all(
         extractThumbImages((p as { payload_json?: unknown }).payload_json).map((img) =>
-          resolveCommunityImageUrl(supabase, adminClient, requestId, img, signCounters)
+          resolveCommunityImageUrl(supabase, img)
         )
       )
     ).filter((img): img is string => typeof img === "string");
@@ -203,12 +190,6 @@ export async function GET(request: Request) {
   console.log(
     `[posts.metrics] requestId=${requestId} path=/api/posts page=${page} totalPosts=${enriched.length} transformedBodycheckImages=${transformedBodycheckImages}`
   );
-  const signedTotal = signCounters.cacheHit + signCounters.cacheMiss;
-  const cacheHitRatePct = signedTotal > 0 ? Math.round((signCounters.cacheHit / signedTotal) * 1000) / 10 : 0;
-  console.log(
-    `[posts.signedUrl] requestId=${requestId} path=/api/posts signCalls=${signCounters.signCalls} cacheHit=${signCounters.cacheHit} cacheMiss=${signCounters.cacheMiss} cacheHitRatePct=${cacheHitRatePct}`
-  );
-
   return NextResponse.json(
     { posts: enriched, total: count ?? 0, page },
     {
@@ -282,7 +263,11 @@ export async function POST(request: Request) {
 
   const cleanImages = Array.isArray(images)
     ? images
-        .map((url: unknown) => toCommunityPublicUrl(supabase, url))
+        .map((url: unknown) => {
+          const path = toCommunityPublicPath(url);
+          if (!path) return null;
+          return supabase.storage.from("community").getPublicUrl(path).data.publicUrl;
+        })
         .filter((url): url is string => typeof url === "string")
         .slice(0, 3)
     : [];
@@ -335,7 +320,11 @@ export async function POST(request: Request) {
     );
     if (type === "photo_bodycheck" && Array.isArray(normalizedPayload.thumb_images)) {
       normalizedPayload.thumb_images = normalizedPayload.thumb_images
-        .map((url: unknown) => toCommunityPublicUrl(supabase, url))
+        .map((url: unknown) => {
+          const path = toCommunityPublicPath(url);
+          if (!path) return null;
+          return supabase.storage.from("community").getPublicUrl(path).data.publicUrl;
+        })
         .filter((url): url is string => typeof url === "string")
         .slice(0, 3);
     }
@@ -371,4 +360,3 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ id: data.id }, { status: 201 });
 }
-
