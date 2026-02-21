@@ -49,6 +49,41 @@ async function createBlurThumbnailFile(source: File): Promise<File> {
   }
 }
 
+async function createLiteFile(source: File): Promise<File> {
+  const imageUrl = URL.createObjectURL(source);
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("이미지 로드 실패"));
+      el.src = imageUrl;
+    });
+
+    const maxEdge = 1200;
+    const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+    const width = Math.max(1, Math.round(img.width * scale));
+    const height = Math.max(1, Math.round(img.height * scale));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) throw new Error("canvas context 없음");
+    ctx.drawImage(img, 0, 0, width, height);
+
+    const blob = await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((b) => {
+        if (b) resolve(b);
+        else reject(new Error("lite 이미지 생성 실패"));
+      }, "image/webp", 0.78);
+    });
+
+    return new File([blob], "lite.webp", { type: "image/webp" });
+  } finally {
+    URL.revokeObjectURL(imageUrl);
+  }
+}
+
 export default function NewDatingCardPage() {
   const router = useRouter();
   const [writeEnabled, setWriteEnabled] = useState(true);
@@ -138,9 +173,11 @@ export default function NewDatingCardPage() {
     try {
       const uploadedRawPaths: string[] = [];
       for (let i = 0; i < validPhotos.length; i++) {
+        const assetId = crypto.randomUUID();
         const fd = new FormData();
         fd.append("file", validPhotos[i]);
         fd.append("kind", "raw");
+        fd.append("asset_id", assetId);
         fd.append("index", String(i));
         const res = await fetch("/api/dating/cards/upload-card", { method: "POST", body: fd });
         if (!res.ok) {
@@ -155,6 +192,19 @@ export default function NewDatingCardPage() {
           return;
         }
         uploadedRawPaths.push(body.path);
+
+        const liteFile = await createLiteFile(validPhotos[i]);
+        const liteFd = new FormData();
+        liteFd.append("file", liteFile);
+        liteFd.append("kind", "lite");
+        liteFd.append("asset_id", assetId);
+        liteFd.append("index", String(i));
+        const liteRes = await fetch("/api/dating/cards/upload-card", { method: "POST", body: liteFd });
+        if (!liteRes.ok) {
+          setError(await readErrorMessage(liteRes, "라이트 이미지 업로드에 실패했습니다."));
+          setSubmitting(false);
+          return;
+        }
       }
 
       const uploadedBlurPaths: string[] = [];

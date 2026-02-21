@@ -4,11 +4,24 @@ import { getCachedSignedUrlResolved } from "@/lib/signed-url-cache";
 import { NextResponse } from "next/server";
 
 const SIGNED_URL_TTL_SEC = 3600;
-const RAW_LIST_TRANSFORM = { width: 1280, quality: 85 };
+const RAW_LIST_TRANSFORM = { width: 1200, quality: 78 };
 const BLUR_LIST_TRANSFORM = { width: 720, quality: 70 };
 
 function json(status: number, payload: Record<string, unknown>) {
-  return NextResponse.json(payload, { status });
+  return NextResponse.json(payload, {
+    status,
+    headers: {
+      "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+      Pragma: "no-cache",
+      Expires: "0",
+      "CDN-Cache-Control": "no-store",
+      "Vercel-CDN-Cache-Control": "no-store",
+    },
+  });
+}
+
+function toLitePath(rawPath: string): string {
+  return rawPath.replace("/raw/", "/lite/").replace(/\.[^.\/]+$/, ".webp");
 }
 
 type SignCounters = { signCalls: number; cacheHit: number; cacheMiss: number; rawSigned: number; blurSigned: number };
@@ -105,7 +118,10 @@ export async function GET(req: Request) {
 
         let thumbUrl = "";
         if (row.photo_visibility === "public" && firstPath) {
-          thumbUrl = await createSignedUrl(admin, requestId, firstPath, counters, "raw-list");
+          thumbUrl = await createSignedUrl(admin, requestId, toLitePath(firstPath), counters, "raw-list");
+          if (!thumbUrl) {
+            thumbUrl = await createSignedUrl(admin, requestId, firstPath, counters, "raw-list");
+          }
           if (thumbUrl) counters.rawSigned += 1;
         } else if (row.blur_thumb_path) {
           thumbUrl = await createSignedUrl(admin, requestId, row.blur_thumb_path, counters, "blur-list");

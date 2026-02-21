@@ -12,7 +12,7 @@ const RECORD_TYPES = ["lifts", "1rm", "helltest"];
 const BODYCHECK_TYPES = ["photo_bodycheck"];
 const BODYCHECK_LIST_IMAGE_WIDTH = 960;
 const BODYCHECK_LIST_IMAGE_QUALITY = 72;
-const ENABLE_BODYCHECK_RENDER_TRANSFORM = false;
+const COMMUNITY_LIST_TRANSFORM = { width: 1200, quality: 78 };
 const COMMUNITY_SIGNED_URL_TTL_SEC = 3600;
 
 async function resolveCommunityImageUrl(
@@ -34,13 +34,18 @@ async function resolveCommunityImageUrl(
     requestId,
     bucket: "community",
     path,
+    cachePath: `${path}::list:w${COMMUNITY_LIST_TRANSFORM.width}:q${COMMUNITY_LIST_TRANSFORM.quality}`,
     ttlSec: COMMUNITY_SIGNED_URL_TTL_SEC,
     getSignCallCount: () => counters.signCalls,
     createSignedUrl: async (bucket, p, ttlSec) => {
       counters.signCalls += 1;
-      const res = await adminClient.storage.from(bucket).createSignedUrl(p, ttlSec);
-      if (res.error || !res.data?.signedUrl) return "";
-      return res.data.signedUrl;
+      const transformed = await adminClient.storage
+        .from(bucket)
+        .createSignedUrl(p, ttlSec, { transform: COMMUNITY_LIST_TRANSFORM });
+      if (!transformed.error && transformed.data?.signedUrl) return transformed.data.signedUrl;
+      const fallback = await adminClient.storage.from(bucket).createSignedUrl(p, ttlSec);
+      if (fallback.error || !fallback.data?.signedUrl) return "";
+      return fallback.data.signedUrl;
     },
   });
   if (signed.cacheStatus === "hit") counters.cacheHit += 1;
@@ -83,18 +88,6 @@ function toCommunityPublicUrl(supabase: Awaited<ReturnType<typeof createClient>>
   }
   if (!path) return null;
   return supabase.storage.from("community").getPublicUrl(path).data.publicUrl;
-}
-
-function toBodycheckListImageUrl(url: unknown): unknown {
-  if (typeof url !== "string") return url;
-  const marker = "/storage/v1/object/public/community/";
-  const idx = url.indexOf(marker);
-  if (idx < 0) return url;
-  const pathWithQuery = url.slice(idx + marker.length);
-  const pathOnly = pathWithQuery.split("?")[0] ?? "";
-  if (!pathOnly) return url;
-  const origin = url.slice(0, idx);
-  return `${origin}/storage/v1/render/image/public/community/${pathOnly}?width=${BODYCHECK_LIST_IMAGE_WIDTH}&quality=${BODYCHECK_LIST_IMAGE_QUALITY}&format=webp`;
 }
 
 function extractThumbImages(payload: unknown): string[] {
@@ -173,7 +166,6 @@ export async function GET(request: Request) {
 
   const signCounters = { signCalls: 0, cacheHit: 0, cacheMiss: 0 };
   const enriched = await Promise.all(visible.map(async (p) => {
-    const isBodycheck = (p.type as string) === "photo_bodycheck";
     const originalImages = Array.isArray((p as Record<string, unknown>).images)
       ? (
           await Promise.all(
@@ -190,14 +182,10 @@ export async function GET(request: Request) {
         )
       )
     ).filter((img): img is string => typeof img === "string");
-    const transformedThumbImages = thumbImages.map((img) =>
-      isBodycheck && ENABLE_BODYCHECK_RENDER_TRANSFORM ? (toBodycheckListImageUrl(img) as string) : img
-    );
-
     return {
       ...p,
       images: originalImages,
-      thumb_images: transformedThumbImages,
+      thumb_images: thumbImages,
       profiles: profileMap.get(p.user_id as string) ?? null,
       cert_summary: null,
     };

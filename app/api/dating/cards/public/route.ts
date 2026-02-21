@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 
 const SIGNED_URL_TTL_SEC = 3600;
 const RAW_COUNT_MAX = 40;
-const RAW_LIST_TRANSFORM = { width: 1280, quality: 85 };
+const RAW_LIST_TRANSFORM = { width: 1200, quality: 78 };
 const BLUR_LIST_TRANSFORM = { width: 720, quality: 70 };
 
 function parseIntSafe(value: string | null, fallback: number) {
@@ -45,6 +45,10 @@ type SignCounters = {
   rawGuardExceeded: boolean;
   rawGuardFallbackCount: number;
 };
+
+function toLitePath(rawPath: string): string {
+  return rawPath.replace("/raw/", "/lite/").replace(/\.[^.\/]+$/, ".webp");
+}
 
 async function signPathWithCache(
   adminClient: ReturnType<typeof createAdminClient>,
@@ -94,6 +98,13 @@ async function createSignedImageUrls(
 
     const rawUrls: string[] = [];
     for (const rawPath of rawPaths) {
+      const litePath = toLitePath(rawPath);
+      const liteSigned = await signPathWithCache(adminClient, litePath, requestId, counters, "raw-list");
+      if (liteSigned) {
+        rawUrls.push(liteSigned);
+        counters.rawCount += 1;
+        continue;
+      }
       if (counters.rawCount >= RAW_COUNT_MAX) {
         counters.rawGuardExceeded = true;
         counters.rawGuardFallbackCount += 1;
@@ -305,6 +316,14 @@ export async function GET(req: Request) {
       nextCursorCreatedAt: hasMore && lastItem ? lastItem.created_at : null,
       nextCursorId: hasMore && lastItem ? lastItem.id : null,
     },
-    { headers: { "Cache-Control": "private, max-age=30, stale-while-revalidate=60" } }
+    {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        Pragma: "no-cache",
+        Expires: "0",
+        "CDN-Cache-Control": "no-store",
+        "Vercel-CDN-Cache-Control": "no-store",
+      },
+    }
   );
 }

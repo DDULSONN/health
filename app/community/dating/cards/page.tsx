@@ -65,7 +65,7 @@ async function fetchBySex(
   const params = new URLSearchParams({ sex, limit: String(PAGE_SIZE) });
   if (cursorCreatedAt) params.set("cursorCreatedAt", cursorCreatedAt);
   if (cursorId) params.set("cursorId", cursorId);
-  const res = await fetch(`/api/dating/cards/list?${params.toString()}`);
+  const res = await fetch(`/api/dating/cards/list?${params.toString()}`, { cache: "no-store" });
   if (!res.ok) throw new Error("failed to load open cards");
   return (await res.json()) as {
     items: PublicCard[];
