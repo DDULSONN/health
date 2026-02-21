@@ -295,7 +295,7 @@ function PaidCardRow({ card }: { card: PaidCard }) {
       {card.thumbUrl ? (
         <div className="mt-3 h-44 overflow-hidden rounded-xl border border-rose-100 bg-white">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={card.thumbUrl} alt="" className="h-full w-full object-cover object-center" />
+          <img src={card.thumbUrl} alt="" className="h-full w-full object-contain" />
         </div>
       ) : (
         <div className="mt-3 h-44 rounded-xl border border-rose-100 bg-white" />
@@ -357,7 +357,7 @@ function CardRow({ card }: { card: PublicCard }) {
               <img
                 src={url}
                 alt=""
-                className={`h-full w-full object-cover object-center ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
+                className={`h-full w-full object-contain ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
               />
             </div>
           ))
