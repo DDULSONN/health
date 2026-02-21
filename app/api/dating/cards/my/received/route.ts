@@ -1,37 +1,66 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
+import { getCachedSignedUrlResolved } from "@/lib/signed-url-cache";
 import { NextResponse } from "next/server";
+
+const SIGNED_URL_TTL_SEC = 3600;
+
+type SignCounters = { signCalls: number; cacheHit: number; cacheMiss: number };
 
 async function createApplyPhotoSignedUrl(
   adminClient: ReturnType<typeof createAdminClient>,
-  path: string
+  path: string,
+  requestId: string,
+  counters: SignCounters
 ) {
-  const primary = await adminClient.storage
-    .from("dating-apply-photos")
-    .createSignedUrl(path, 3600);
-  if (!primary.error && primary.data?.signedUrl) {
-    return primary.data.signedUrl;
-  }
+  const result = await getCachedSignedUrlResolved({
+    requestId,
+    path,
+    ttlSec: SIGNED_URL_TTL_SEC,
+    buckets: ["dating-apply-photos", "dating-photos"],
+    getSignCallCount: () => counters.signCalls,
+    createSignedUrl: async (bucket, p, ttlSec) => {
+      counters.signCalls += 1;
+      const signRes = await adminClient.storage.from(bucket).createSignedUrl(p, ttlSec);
+      if (signRes.error || !signRes.data?.signedUrl) return "";
+      return signRes.data.signedUrl;
+    },
+  });
 
-  const legacy = await adminClient.storage
-    .from("dating-photos")
-    .createSignedUrl(path, 3600);
-  if (!legacy.error && legacy.data?.signedUrl) {
-    return legacy.data.signedUrl;
-  }
-
-  return "";
+  if (result.cacheStatus === "hit") counters.cacheHit += 1;
+  if (result.cacheStatus === "miss") counters.cacheMiss += 1;
+  return result.url;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
+  const requestId = crypto.randomUUID();
   const supabase = await createClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const ip = extractClientIp(req);
+
+  const rateLimit = await checkRouteRateLimit({
+    requestId,
+    scope: "dating-cards-my-received",
+    userId: user?.id ?? null,
+    ip,
+    userLimitPerMin: 30,
+    ipLimitPerMin: 120,
+    path: "/api/dating/cards/my/received",
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { code: "RATE_LIMIT", message: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSec) } }
+    );
+  }
 
   if (!user) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
 
+  const counters: SignCounters = { signCalls: 0, cacheHit: 0, cacheMiss: 0 };
   const adminClient = createAdminClient();
   let { data: cards, error: cardsError } = await adminClient
     .from("dating_cards")
@@ -56,7 +85,12 @@ export async function GET() {
   }
 
   if (cardsError) {
-    console.error("[GET /api/dating/cards/my/received] cards failed", cardsError);
+    console.error("[GET /api/dating/cards/my/received] cards failed", {
+      requestId,
+      code: cardsError.code ?? null,
+      message: cardsError.message ?? null,
+      stack: cardsError instanceof Error ? cardsError.stack : undefined,
+    });
     return NextResponse.json({ error: "내 카드를 불러오지 못했습니다." }, { status: 500 });
   }
 
@@ -88,10 +122,16 @@ export async function GET() {
   }
 
   if (appsError) {
-    console.error("[GET /api/dating/cards/my/received] apps failed", appsError);
+    console.error("[GET /api/dating/cards/my/received] apps failed", {
+      requestId,
+      code: appsError.code ?? null,
+      message: appsError.message ?? null,
+      stack: appsError instanceof Error ? appsError.stack : undefined,
+    });
     return NextResponse.json({ error: "지원자 목록을 불러오지 못했습니다." }, { status: 500 });
   }
 
+  let rawSignedCount = 0;
   const safeApps = await Promise.all(
     (applications ?? []).map(async (app) => {
       const rawPhotoPaths = Array.isArray(app.photo_paths)
@@ -99,15 +139,23 @@ export async function GET() {
         : [];
 
       const signedUrls = await Promise.all(
-        rawPhotoPaths.map((path) => createApplyPhotoSignedUrl(adminClient, path))
+        rawPhotoPaths.map((path) => createApplyPhotoSignedUrl(adminClient, path, requestId, counters))
       );
+      const filteredUrls = signedUrls.filter((url) => url.length > 0);
+      rawSignedCount += filteredUrls.length;
 
       return {
         ...app,
         instagram_id: app.status === "accepted" ? app.instagram_id : null,
-        photo_signed_urls: signedUrls.filter((url) => url.length > 0),
+        photo_signed_urls: filteredUrls,
       };
     })
+  );
+
+  const signedTotal = counters.cacheHit + counters.cacheMiss;
+  const cacheHitRatePct = signedTotal > 0 ? Math.round((counters.cacheHit / signedTotal) * 1000) / 10 : 0;
+  console.log(
+    `[list.metrics] requestId=${requestId} path=/api/dating/cards/my/received cards=${(cards ?? []).length} rawSigned=${rawSignedCount} blurSigned=0 cacheHitRatePct=${cacheHitRatePct} signCalls=${counters.signCalls}`
   );
 
   return NextResponse.json({ cards: cards ?? [], applications: safeApps });

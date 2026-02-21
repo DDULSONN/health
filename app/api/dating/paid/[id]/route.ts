@@ -1,9 +1,34 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
+import { getCachedSignedUrlResolved } from "@/lib/signed-url-cache";
 import { NextResponse } from "next/server";
 
-export async function GET(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+const SIGNED_URL_TTL_SEC = 3600;
+
+export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const requestId = crypto.randomUUID();
+  const ip = extractClientIp(req);
+  const rateLimit = await checkRouteRateLimit({
+    requestId,
+    scope: "dating-paid-signed-urls",
+    userId: null,
+    ip,
+    userLimitPerMin: 30,
+    ipLimitPerMin: 120,
+    path: "/api/dating/paid/[id]",
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { code: "RATE_LIMIT", message: "Too many requests" },
+      { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSec) } }
+    );
+  }
+
   const { id } = await params;
   const admin = createAdminClient();
+  let signCalls = 0;
+  let cacheHit = 0;
+  let cacheMiss = 0;
 
   const { data, error } = await admin
     .from("dating_paid_cards")
@@ -28,11 +53,22 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
       : "";
 
   const createSignedUrl = async (path: string) => {
-    const primary = await admin.storage.from("dating-card-photos").createSignedUrl(path, 3600);
-    if (!primary.error && primary.data?.signedUrl) return primary.data.signedUrl;
-    const legacy = await admin.storage.from("dating-photos").createSignedUrl(path, 3600);
-    if (!legacy.error && legacy.data?.signedUrl) return legacy.data.signedUrl;
-    return "";
+    const result = await getCachedSignedUrlResolved({
+      requestId,
+      path,
+      ttlSec: SIGNED_URL_TTL_SEC,
+      buckets: ["dating-card-photos", "dating-photos"],
+      getSignCallCount: () => signCalls,
+      createSignedUrl: async (bucket, p, ttlSec) => {
+        signCalls += 1;
+        const signRes = await admin.storage.from(bucket).createSignedUrl(p, ttlSec);
+        if (signRes.error || !signRes.data?.signedUrl) return "";
+        return signRes.data.signedUrl;
+      },
+    });
+    if (result.cacheStatus === "hit") cacheHit += 1;
+    if (result.cacheStatus === "miss") cacheMiss += 1;
+    return result.url;
   };
 
   let imageUrl = "";
@@ -41,6 +77,9 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   } else if (data.blur_thumb_path) {
     imageUrl = await createSignedUrl(data.blur_thumb_path);
   }
+  console.log(
+    `[signedUrl.stats] requestId=${requestId} path=/api/dating/paid/[id] signCalls=${signCalls} cacheHit=${cacheHit} cacheMiss=${cacheMiss}`
+  );
 
   return NextResponse.json({
     card: {

@@ -1,4 +1,5 @@
-﻿import { getKstDayRangeUtc } from "@/lib/dating-open";
+import { getKstDayRangeUtc } from "@/lib/dating-open";
+import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -16,6 +17,7 @@ type ApiCode =
   | "DUPLICATE_APPLICATION"
   | "SCHEMA_MISMATCH"
   | "DATABASE_ERROR"
+  | "RATE_LIMIT"
   | "INTERNAL_SERVER_ERROR";
 
 type DbErrorShape = {
@@ -171,6 +173,19 @@ export async function POST(req: Request) {
     const userRes = await supabase.auth.getUser();
     const authError = toDbErrorShape(userRes.error);
     userId = userRes.data.user?.id ?? null;
+    const ip = extractClientIp(req);
+    const rateLimit = await checkRouteRateLimit({
+      requestId,
+      scope: "dating-cards-apply",
+      userId,
+      ip,
+      userLimitPerMin: 10,
+      ipLimitPerMin: 60,
+      path: "/api/dating/cards/apply",
+    });
+    if (!rateLimit.allowed) {
+      return jsonResponse(429, "RATE_LIMIT", requestId, "Too many requests");
+    }
     console.log(`[apply] ${requestId} L2 auth.getUser`, {
       hasUser: Boolean(userId),
       userId,

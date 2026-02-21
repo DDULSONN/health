@@ -29,6 +29,7 @@ async function signPathWithCache(
     path,
     ttlSec: SIGNED_URL_TTL_SEC,
     buckets: ["dating-card-photos", "dating-photos"],
+    getSignCallCount: () => counters.signCalls,
     createSignedUrl: async (bucket, p, ttlSec) => {
       counters.signCalls += 1;
       const signRes = await adminClient.storage.from(bucket).createSignedUrl(p, ttlSec);
@@ -96,8 +97,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     scope: "dating-cards-signed-urls",
     userId: user?.id ?? null,
     ip,
-    userLimitPerMin: 20,
-    ipLimitPerMin: 60,
+    userLimitPerMin: 30,
+    ipLimitPerMin: 120,
+    path: "/api/dating/cards/[id]",
   });
   if (!rateLimit.allowed) {
     return NextResponse.json(

@@ -1,4 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
+import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { NextResponse } from "next/server";
 
 function normalizeInstagramId(value: unknown): string {
@@ -54,6 +55,22 @@ export async function POST(req: Request) {
       data: { user },
       error: authError,
     } = await supabase.auth.getUser();
+    const ip = extractClientIp(req);
+    const rateLimit = await checkRouteRateLimit({
+      requestId,
+      scope: "dating-paid-apply",
+      userId: user?.id ?? null,
+      ip,
+      userLimitPerMin: 10,
+      ipLimitPerMin: 60,
+      path: "/api/dating/paid/apply",
+    });
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { ok: false, code: "RATE_LIMIT", requestId, message: "Too many requests" },
+        { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSec) } }
+      );
+    }
 
     if (authError || !user) {
       return NextResponse.json({ ok: false, code: "UNAUTHORIZED", requestId, message: "로그인이 필요합니다." }, { status: 401 });

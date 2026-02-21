@@ -1,4 +1,4 @@
-import { kvGetJson, kvGetString, kvSetJson, kvSetString } from "@/lib/edge-kv";
+import { kvGetJson, kvGetString, kvIncrWindow, kvSetJson, kvSetString } from "@/lib/edge-kv";
 
 type SignedUrlCacheValue = {
   url: string;
@@ -10,6 +10,7 @@ type SignedUrlResult = {
   cacheStatus: "hit" | "miss";
   signCalled: boolean;
   bucket: string;
+  ttlRemainingMs: number;
 };
 
 type SignedUrlOptions = {
@@ -18,6 +19,7 @@ type SignedUrlOptions = {
   path: string;
   ttlSec?: number;
   refreshBeforeMs?: number;
+  getSignCallCount?: () => number;
   createSignedUrl: (bucket: string, path: string, ttlSec: number) => Promise<string>;
 };
 
@@ -29,6 +31,27 @@ function bucketHintKey(path: string) {
   return `signedurlbucket:${path}`;
 }
 
+function pathTail(path: string) {
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length === 0) return "";
+  return parts.slice(-2).join("/");
+}
+
+async function recordMissBurst(requestId: string, bucket: string) {
+  const hour = await kvIncrWindow(`signedurl:miss:hour:${bucket}`, 60 * 60);
+  if (hour.count === 1000 || hour.count === 5000 || hour.count === 10000) {
+    console.warn(
+      `[signedUrl.burst] requestId=${requestId} bucket=${bucket} window=hour count=${hour.count} provider=${hour.provider}`
+    );
+  }
+  const day = await kvIncrWindow(`signedurl:miss:day:${bucket}`, 24 * 60 * 60);
+  if (day.count === 10000 || day.count === 50000 || day.count === 100000) {
+    console.warn(
+      `[signedUrl.burst] requestId=${requestId} bucket=${bucket} window=day count=${day.count} provider=${day.provider}`
+    );
+  }
+}
+
 export async function getCachedSignedUrlWithBucket(options: SignedUrlOptions): Promise<SignedUrlResult> {
   const ttlSec = options.ttlSec ?? 3600;
   const refreshBeforeMs = options.refreshBeforeMs ?? 10 * 60 * 1000;
@@ -38,26 +61,36 @@ export async function getCachedSignedUrlWithBucket(options: SignedUrlOptions): P
   const cached = await kvGetJson<SignedUrlCacheValue>(key);
   if (cached?.url && cached.expiresAtEpochMs - now > refreshBeforeMs) {
     const ttlRemaining = cached.expiresAtEpochMs - now;
+    const signCallCount = options.getSignCallCount?.() ?? 0;
     console.log(
-      `[signedUrl.cache] hit requestId=${options.requestId} key=${key} path=${options.path} ttlRemainingMs=${ttlRemaining}`
+      `[signedUrl.cache] requestId=${options.requestId} cache=hit bucket=${options.bucket} pathTail=${pathTail(
+        options.path
+      )} ttlRemainingMs=${ttlRemaining} signCallCount=${signCallCount}`
     );
     return {
       url: cached.url,
       cacheStatus: "hit",
       signCalled: false,
       bucket: options.bucket,
+      ttlRemainingMs: ttlRemaining,
     };
   }
 
-  console.log(`[signedUrl.cache] miss requestId=${options.requestId} key=${key} path=${options.path}`);
+  const signCallCountBefore = options.getSignCallCount?.() ?? 0;
+  console.log(
+    `[signedUrl.cache] requestId=${options.requestId} cache=miss bucket=${options.bucket} pathTail=${pathTail(
+      options.path
+    )} ttlRemainingMs=0 signCallCount=${signCallCountBefore}`
+  );
+  await recordMissBurst(options.requestId, options.bucket);
   const url = await options.createSignedUrl(options.bucket, options.path, ttlSec);
   if (!url) {
-    return { url: "", cacheStatus: "miss", signCalled: true, bucket: options.bucket };
+    return { url: "", cacheStatus: "miss", signCalled: true, bucket: options.bucket, ttlRemainingMs: 0 };
   }
 
   const expiresAtEpochMs = now + ttlSec * 1000;
   await kvSetJson(key, { url, expiresAtEpochMs }, ttlSec);
-  return { url, cacheStatus: "miss", signCalled: true, bucket: options.bucket };
+  return { url, cacheStatus: "miss", signCalled: true, bucket: options.bucket, ttlRemainingMs: ttlSec * 1000 };
 }
 
 type ResolvedSignedUrlOptions = {
@@ -66,6 +99,7 @@ type ResolvedSignedUrlOptions = {
   buckets: string[];
   ttlSec?: number;
   refreshBeforeMs?: number;
+  getSignCallCount?: () => number;
   createSignedUrl: (bucket: string, path: string, ttlSec: number) => Promise<string>;
 };
 
@@ -82,6 +116,7 @@ export async function getCachedSignedUrlResolved(options: ResolvedSignedUrlOptio
       path: options.path,
       ttlSec: options.ttlSec,
       refreshBeforeMs: options.refreshBeforeMs,
+      getSignCallCount: options.getSignCallCount,
       createSignedUrl: options.createSignedUrl,
     });
     if (result.url) {
@@ -90,5 +125,5 @@ export async function getCachedSignedUrlResolved(options: ResolvedSignedUrlOptio
     }
   }
 
-  return { url: "", cacheStatus: "miss", signCalled: false, bucket: "" };
+  return { url: "", cacheStatus: "miss", signCalled: false, bucket: "", ttlRemainingMs: 0 };
 }

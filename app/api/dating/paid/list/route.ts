@@ -1,27 +1,60 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
+import { getCachedSignedUrlResolved } from "@/lib/signed-url-cache";
 import { NextResponse } from "next/server";
+
+const SIGNED_URL_TTL_SEC = 3600;
 
 function json(status: number, payload: Record<string, unknown>) {
   return NextResponse.json(payload, { status });
 }
 
-async function createSignedUrl(path: string) {
-  const admin = createAdminClient();
-  const primary = await admin.storage.from("dating-card-photos").createSignedUrl(path, 3600);
-  if (!primary.error && primary.data?.signedUrl) return primary.data.signedUrl;
+type SignCounters = { signCalls: number; cacheHit: number; cacheMiss: number; rawSigned: number; blurSigned: number };
 
-  const legacy = await admin.storage.from("dating-photos").createSignedUrl(path, 3600);
-  if (!legacy.error && legacy.data?.signedUrl) return legacy.data.signedUrl;
-
-  return "";
+async function createSignedUrl(
+  admin: ReturnType<typeof createAdminClient>,
+  requestId: string,
+  path: string,
+  counters: SignCounters
+) {
+  const result = await getCachedSignedUrlResolved({
+    requestId,
+    path,
+    ttlSec: SIGNED_URL_TTL_SEC,
+    buckets: ["dating-card-photos", "dating-photos"],
+    getSignCallCount: () => counters.signCalls,
+    createSignedUrl: async (bucket, p, ttlSec) => {
+      counters.signCalls += 1;
+      const signRes = await admin.storage.from(bucket).createSignedUrl(p, ttlSec);
+      if (signRes.error || !signRes.data?.signedUrl) return "";
+      return signRes.data.signedUrl;
+    },
+  });
+  if (result.cacheStatus === "hit") counters.cacheHit += 1;
+  if (result.cacheStatus === "miss") counters.cacheMiss += 1;
+  return result.url;
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const requestId = crypto.randomUUID();
   console.log(`[dating-paid-list] ${requestId} start`);
 
   try {
     const admin = createAdminClient();
+    const ip = extractClientIp(req);
+    const rateLimit = await checkRouteRateLimit({
+      requestId,
+      scope: "dating-paid-list",
+      userId: null,
+      ip,
+      userLimitPerMin: 30,
+      ipLimitPerMin: 120,
+      path: "/api/dating/paid/list",
+    });
+    if (!rateLimit.allowed) {
+      return json(429, { ok: false, code: "RATE_LIMIT", requestId, message: "Too many requests" });
+    }
+    const counters: SignCounters = { signCalls: 0, cacheHit: 0, cacheMiss: 0, rawSigned: 0, blurSigned: 0 };
     const nowIso = new Date().toISOString();
 
     // Opportunistic expiration so stale approved cards are 내려감 even without cron timing drift.
@@ -45,7 +78,12 @@ export async function GET() {
       .order("created_at", { ascending: true });
 
     if (error) {
-      console.error(`[dating-paid-list] ${requestId} query error`, error);
+      const err = error as { code?: string; message?: string };
+      console.error(`[dating-paid-list] ${requestId} query error`, {
+        code: err?.code ?? null,
+        message: err?.message ?? null,
+        stack: error instanceof Error ? error.stack : undefined,
+      });
       return json(500, { ok: false, code: "LIST_FAILED", requestId, message: "목록을 불러오지 못했습니다." });
     }
 
@@ -58,9 +96,11 @@ export async function GET() {
 
         let thumbUrl = "";
         if (row.photo_visibility === "public" && firstPath) {
-          thumbUrl = await createSignedUrl(firstPath);
+          thumbUrl = await createSignedUrl(admin, requestId, firstPath, counters);
+          if (thumbUrl) counters.rawSigned += 1;
         } else if (row.blur_thumb_path) {
-          thumbUrl = await createSignedUrl(row.blur_thumb_path);
+          thumbUrl = await createSignedUrl(admin, requestId, row.blur_thumb_path, counters);
+          if (thumbUrl) counters.blurSigned += 1;
         }
 
         return {
@@ -83,9 +123,18 @@ export async function GET() {
       })
     );
 
+    const signedTotal = counters.cacheHit + counters.cacheMiss;
+    const cacheHitRatePct = signedTotal > 0 ? Math.round((counters.cacheHit / signedTotal) * 1000) / 10 : 0;
+    console.log(
+      `[list.metrics] requestId=${requestId} path=/api/dating/paid/list cards=${items.length} rawSigned=${counters.rawSigned} blurSigned=${counters.blurSigned} cacheHitRatePct=${cacheHitRatePct} signCalls=${counters.signCalls}`
+    );
+
     return json(200, { ok: true, requestId, items });
   } catch (error) {
-    console.error(`[dating-paid-list] ${requestId} unhandled`, error);
+    console.error(`[dating-paid-list] ${requestId} unhandled`, {
+      message: error instanceof Error ? error.message : null,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return json(500, { ok: false, code: "INTERNAL_SERVER_ERROR", requestId, message: "서버 오류가 발생했습니다." });
   }
 }

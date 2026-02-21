@@ -39,6 +39,7 @@ type SignCounters = {
   cacheHit: number;
   cacheMiss: number;
   rawCount: number;
+  blurCount: number;
   rawGuardExceeded: boolean;
   rawGuardFallbackCount: number;
 };
@@ -54,6 +55,7 @@ async function signPathWithCache(
     path,
     ttlSec: SIGNED_URL_TTL_SEC,
     buckets: ["dating-card-photos", "dating-photos"],
+    getSignCallCount: () => counters.signCalls,
     createSignedUrl: async (bucket, p, ttlSec) => {
       counters.signCalls += 1;
       const signRes = await adminClient.storage.from(bucket).createSignedUrl(p, ttlSec);
@@ -103,13 +105,17 @@ async function createSignedImageUrls(
   const blurUrls: string[] = [];
   for (const blurPath of blurPathList) {
     const signed = await signPathWithCache(adminClient, blurPath, requestId, counters);
-    if (signed) blurUrls.push(signed);
+    if (signed) {
+      blurUrls.push(signed);
+      counters.blurCount += 1;
+    }
   }
   if (blurUrls.length > 0) return blurUrls;
 
   if (typeof blurThumbPath === "string" && blurThumbPath) {
     const thumb = await signPathWithCache(adminClient, blurThumbPath, requestId, counters);
     if (thumb) {
+      counters.blurCount += 1;
       if (photoVisibility === "blur") return [thumb, thumb];
       return [thumb];
     }
@@ -131,8 +137,9 @@ export async function GET(req: Request) {
     scope: "dating-cards-list",
     userId: user?.id ?? null,
     ip,
-    userLimitPerMin: 20,
-    ipLimitPerMin: 60,
+    userLimitPerMin: 30,
+    ipLimitPerMin: 120,
+    path: "/api/dating/cards/public",
   });
   if (!rateLimit.allowed) {
     return NextResponse.json(
@@ -146,6 +153,7 @@ export async function GET(req: Request) {
     cacheHit: 0,
     cacheMiss: 0,
     rawCount: 0,
+    blurCount: 0,
     rawGuardExceeded: false,
     rawGuardFallbackCount: 0,
   };
@@ -221,7 +229,12 @@ export async function GET(req: Request) {
     error = legacyRes.error;
   }
   if (error) {
-    console.error(`[GET /api/dating/cards/list] requestId=${requestId} failed`, error);
+    const err = error as { code?: string; message?: string };
+    console.error(`[GET /api/dating/cards/list] requestId=${requestId} failed`, {
+      code: err?.code ?? null,
+      message: err?.message ?? null,
+      stack: error instanceof Error ? error.stack : undefined,
+    });
     return NextResponse.json({ error: "카드 목록을 불러오지 못했습니다." }, { status: 500 });
   }
 
@@ -268,6 +281,11 @@ export async function GET(req: Request) {
   );
   console.log(
     `[signedUrl.stats] requestId=${requestId} signCalls=${counters.signCalls} cacheHit=${counters.cacheHit} cacheMiss=${counters.cacheMiss}`
+  );
+  const signedTotal = counters.cacheHit + counters.cacheMiss;
+  const cacheHitRatePct = signedTotal > 0 ? Math.round((counters.cacheHit / signedTotal) * 1000) / 10 : 0;
+  console.log(
+    `[list.metrics] requestId=${requestId} path=/api/dating/cards/public cards=${items.length} rawSigned=${counters.rawCount} blurSigned=${counters.blurCount} cacheHitRatePct=${cacheHitRatePct} signCalls=${counters.signCalls}`
   );
 
   const lastItem = items.length > 0 ? items[items.length - 1] : null;

@@ -10,6 +10,8 @@ type MemoryCounter = {
 
 const memValues = new Map<string, MemoryValue>();
 const memCounters = new Map<string, MemoryCounter>();
+let warnedMemoryFallbackValue = false;
+let warnedMemoryFallbackCounter = false;
 
 function getUpstashConfig() {
   const url = process.env.UPSTASH_REDIS_REST_URL?.trim();
@@ -39,6 +41,19 @@ async function upstashCommand(command: string[]) {
   }
 }
 
+function warnMemoryFallback(kind: "values" | "counters") {
+  if (kind === "values") {
+    if (warnedMemoryFallbackValue) return;
+    warnedMemoryFallbackValue = true;
+  } else {
+    if (warnedMemoryFallbackCounter) return;
+    warnedMemoryFallbackCounter = true;
+  }
+  console.warn(
+    `[edge-kv] provider=memory reason=missing_or_unavailable_upstash warning=serverless_restart_can_reduce_cache_hit_rate kind=${kind}`
+  );
+}
+
 export async function kvGetString(key: string): Promise<string | null> {
   const remote = await upstashCommand(["GET", key]);
   if (typeof remote === "string") return remote;
@@ -58,6 +73,7 @@ export async function kvSetString(key: string, value: string, ttlSec: number): P
   const remote = await upstashCommand(["SET", key, value, "EX", String(safeTtl)]);
   if (remote !== null) return;
 
+  warnMemoryFallback("values");
   memValues.set(key, {
     value,
     expiresAtEpochMs: Date.now() + safeTtl * 1000,
@@ -95,6 +111,7 @@ export async function kvIncrWindow(
   }
 
   const now = Date.now();
+  warnMemoryFallback("counters");
   const current = memCounters.get(key);
   if (!current || current.resetAtEpochMs <= now) {
     memCounters.set(key, { count: 1, resetAtEpochMs: now + safeWindow * 1000 });

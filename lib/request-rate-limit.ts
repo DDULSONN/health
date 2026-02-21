@@ -57,7 +57,17 @@ type RouteRateLimitOptions = {
   ip: string;
   userLimitPerMin: number;
   ipLimitPerMin: number;
+  path?: string;
 };
+
+function hashKey(input: string) {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
 
 export async function checkRouteRateLimit(options: RouteRateLimitOptions) {
   const isUser = Boolean(options.userId);
@@ -68,7 +78,7 @@ export async function checkRouteRateLimit(options: RouteRateLimitOptions) {
   const allowed = result.count <= limit;
 
   console.log(
-    `[ratelimit] requestId=${options.requestId} key=${subject} count=${result.count} limit=${limit} scope=${options.scope} provider=${result.provider} allowed=${allowed}`
+    `[ratelimit] requestId=${options.requestId} keyHash=${hashKey(subject)} path=${options.path ?? options.scope} count=${result.count}/${limit} blocked=${!allowed} scope=${options.scope} provider=${result.provider}`
   );
 
   return {
