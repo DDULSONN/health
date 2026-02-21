@@ -5,11 +5,12 @@ import { kvGetString } from "@/lib/edge-kv";
 import { NextResponse } from "next/server";
 
 const SIGNED_URL_TTL_SEC = 3600;
+const THUMB_LIST_TRANSFORM = { width: 560, quality: 68 };
 const RAW_LIST_TRANSFORM = { width: 720, quality: 72 };
 const BLUR_LIST_TRANSFORM = { width: 720, quality: 70 };
 const LITE_PUBLIC_BUCKET = "dating-card-lite";
-const LITE_PUBLIC_RENDER_WIDTH = 640;
-const LITE_PUBLIC_RENDER_QUALITY = 70;
+const LITE_PUBLIC_RENDER_WIDTH = 560;
+const LITE_PUBLIC_RENDER_QUALITY = 68;
 const LITE_PUBLIC_PROBE_TTL_MS = 6 * 60 * 60 * 1000;
 const LITE_PUBLIC_NEGATIVE_PROBE_TTL_MS = 5 * 60 * 1000;
 
@@ -35,6 +36,10 @@ function json(status: number, payload: Record<string, unknown>) {
 
 function toLitePath(rawPath: string): string {
   return rawPath.replace("/raw/", "/lite/").replace(/\.[^.\/]+$/, ".webp");
+}
+
+function toThumbPath(rawPath: string): string {
+  return rawPath.replace("/raw/", "/thumb/").replace(/\.[^.\/]+$/, ".webp");
 }
 
 async function getLitePublicUrlIfAvailable(
@@ -83,9 +88,10 @@ async function createSignedUrl(
   requestId: string,
   path: string,
   counters: SignCounters,
-  variant: "raw-list" | "blur-list"
+  variant: "thumb-list" | "raw-list" | "blur-list"
 ) {
-  const transform = variant === "raw-list" ? RAW_LIST_TRANSFORM : BLUR_LIST_TRANSFORM;
+  const transform =
+    variant === "thumb-list" ? THUMB_LIST_TRANSFORM : variant === "raw-list" ? RAW_LIST_TRANSFORM : BLUR_LIST_TRANSFORM;
   const result = await getCachedSignedUrlResolved({
     requestId,
     path,
@@ -170,8 +176,15 @@ export async function GET(req: Request) {
 
         let thumbUrl = "";
         if (row.photo_visibility === "public" && firstPath) {
+          const thumbPath = toThumbPath(firstPath);
+          thumbUrl = await getLitePublicUrlIfAvailable(admin, thumbPath);
+          if (!thumbUrl) {
+            thumbUrl = await createSignedUrl(admin, requestId, thumbPath, counters, "thumb-list");
+          }
           const litePath = toLitePath(firstPath);
-          thumbUrl = await getLitePublicUrlIfAvailable(admin, litePath);
+          if (!thumbUrl) {
+            thumbUrl = await getLitePublicUrlIfAvailable(admin, litePath);
+          }
           if (!thumbUrl) {
             thumbUrl = await createSignedUrl(admin, requestId, litePath, counters, "raw-list");
           }
