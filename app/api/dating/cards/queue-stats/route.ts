@@ -55,16 +55,33 @@ async function countAcceptedMatches(adminClient: ReturnType<typeof createAdminCl
 
 export async function GET() {
   const adminClient = createAdminClient();
+  const requestId = crypto.randomUUID();
 
   try {
     await syncOpenCardQueue(adminClient);
+  } catch (error) {
+    console.error("[GET /api/dating/cards/queue-stats] queue sync failed", {
+      requestId,
+      error,
+    });
+  }
 
+  const safeCount = async (label: string, fn: () => Promise<number>) => {
+    try {
+      return await fn();
+    } catch (error) {
+      console.error("[GET /api/dating/cards/queue-stats] count failed", { requestId, label, error });
+      return 0;
+    }
+  };
+
+  try {
     const [malePublic, femalePublic, malePending, femalePending, acceptedMatches] = await Promise.all([
-      countPublic(adminClient, "male"),
-      countPublic(adminClient, "female"),
-      countPending(adminClient, "male"),
-      countPending(adminClient, "female"),
-      countAcceptedMatches(adminClient),
+      safeCount("malePublic", () => countPublic(adminClient, "male")),
+      safeCount("femalePublic", () => countPublic(adminClient, "female")),
+      safeCount("malePending", () => countPending(adminClient, "male")),
+      safeCount("femalePending", () => countPending(adminClient, "female")),
+      safeCount("acceptedMatches", () => countAcceptedMatches(adminClient)),
     ]);
 
     return NextResponse.json({
@@ -81,7 +98,14 @@ export async function GET() {
       accepted_matches_count: acceptedMatches,
     });
   } catch (error) {
-    console.error("[GET /api/dating/cards/queue-stats] failed", error);
-    return NextResponse.json({ error: "대기열 정보를 불러오지 못했습니다." }, { status: 500 });
+    console.error("[GET /api/dating/cards/queue-stats] failed", { requestId, error });
+    return NextResponse.json(
+      {
+        male: { public_count: 0, pending_count: 0, slot_limit: getOpenCardLimitBySex("male") },
+        female: { public_count: 0, pending_count: 0, slot_limit: getOpenCardLimitBySex("female") },
+        accepted_matches_count: 0,
+      },
+      { status: 200 }
+    );
   }
 }
