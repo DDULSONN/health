@@ -41,11 +41,26 @@ export function extractStorageObjectPath(raw: unknown, bucket: string): string |
   const proxySignedExtracted = extractFromToken(value, proxySignedToken);
   if (proxySignedExtracted) return decodeURIComponent(proxySignedExtracted);
 
+  // Legacy proxy format fallback: /i/public-lite/<objectPath>, /i/signed/<objectPath>
+  // and variant that accidentally included bucket in legacy payload.
+  const legacyProxyPublic = extractFromToken(value, "/i/public-lite/");
+  if (legacyProxyPublic) {
+    const decoded = decodeURIComponent(legacyProxyPublic);
+    return decoded.startsWith(`${normalizedBucket}/`) ? decoded.slice(normalizedBucket.length + 1) : decoded;
+  }
+  const legacyProxySigned = extractFromToken(value, "/i/signed/");
+  if (legacyProxySigned) {
+    const decoded = decodeURIComponent(legacyProxySigned);
+    return decoded.startsWith(`${normalizedBucket}/`) ? decoded.slice(normalizedBucket.length + 1) : decoded;
+  }
+
   const tokens = [
     `/storage/v1/object/public/${normalizedBucket}/`,
     `/storage/v1/object/sign/${normalizedBucket}/`,
+    `/storage/v1/object/authenticated/${normalizedBucket}/`,
     `/storage/v1/render/image/public/${normalizedBucket}/`,
     `/storage/v1/render/image/sign/${normalizedBucket}/`,
+    `/storage/v1/render/image/authenticated/${normalizedBucket}/`,
   ];
 
   for (const token of tokens) {
