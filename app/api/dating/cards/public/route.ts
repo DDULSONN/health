@@ -128,25 +128,11 @@ async function createSignedImageUrls(
         counters.rawCount += 1;
         continue;
       }
-      const thumbSigned = buildSignedImageUrl("dating-card-photos", thumbPath);
-      if (thumbSigned) {
-        rawUrls.push(thumbSigned);
-        counters.rawCount += 1;
-        counters.cacheMiss += 1;
-        continue;
-      }
       const litePath = toLitePath(rawPath);
       const litePublicUrl = await getLitePublicUrlIfAvailable(adminClient, litePath);
       if (litePublicUrl) {
         rawUrls.push(litePublicUrl);
         counters.rawCount += 1;
-        continue;
-      }
-      const liteSigned = buildSignedImageUrl("dating-card-photos", litePath);
-      if (liteSigned) {
-        rawUrls.push(liteSigned);
-        counters.rawCount += 1;
-        counters.cacheMiss += 1;
         continue;
       }
       if (counters.rawCount >= RAW_COUNT_MAX) {
