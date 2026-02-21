@@ -18,6 +18,10 @@ type SignCounters = {
   cacheMiss: number;
 };
 
+function toLitePath(rawPath: string): string {
+  return rawPath.replace("/raw/", "/lite/").replace(/\.[^.\/]+$/, ".webp");
+}
+
 async function signPathWithCache(
   adminClient: ReturnType<typeof createAdminClient>,
   path: string,
@@ -57,8 +61,14 @@ async function createSignedImageUrls(
       : [];
     const rawUrls: string[] = [];
     for (const rawPath of rawPaths) {
-      const signed = await signPathWithCache(adminClient, rawPath, requestId, counters);
-      if (signed) rawUrls.push(signed);
+      const litePath = toLitePath(rawPath);
+      const liteSigned = await signPathWithCache(adminClient, litePath, requestId, counters);
+      if (liteSigned) {
+        rawUrls.push(liteSigned);
+        continue;
+      }
+      const rawSigned = await signPathWithCache(adminClient, rawPath, requestId, counters);
+      if (rawSigned) rawUrls.push(rawSigned);
     }
     if (rawUrls.length > 0) return rawUrls;
   }
