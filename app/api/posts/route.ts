@@ -112,7 +112,8 @@ export async function GET(request: Request) {
   }
   const transformedBodycheckImages = enriched.reduce((acc, post) => {
     if ((post.type as string) !== "photo_bodycheck") return acc;
-    return acc + (Array.isArray((post as Record<string, unknown>).images) ? (post as Record<string, unknown>).images.length : 0);
+    const images = (post as { images?: unknown }).images;
+    return acc + (Array.isArray(images) ? images.length : 0);
   }, 0);
   console.log(
     `[posts.metrics] requestId=${requestId} path=/api/posts page=${page} totalPosts=${enriched.length} transformedBodycheckImages=${transformedBodycheckImages}`
