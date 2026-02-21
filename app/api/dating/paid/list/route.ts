@@ -1,11 +1,22 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { getCachedSignedUrlResolved } from "@/lib/signed-url-cache";
+import { kvGetString } from "@/lib/edge-kv";
 import { NextResponse } from "next/server";
 
 const SIGNED_URL_TTL_SEC = 3600;
 const RAW_LIST_TRANSFORM = { width: 1200, quality: 78 };
 const BLUR_LIST_TRANSFORM = { width: 720, quality: 70 };
+const LITE_PUBLIC_BUCKET = "dating-card-lite";
+const LITE_PUBLIC_PROBE_TTL_MS = 6 * 60 * 60 * 1000;
+const LITE_PUBLIC_NEGATIVE_PROBE_TTL_MS = 5 * 60 * 1000;
+
+type LitePublicProbeCacheValue = {
+  exists: boolean;
+  expiresAtEpochMs: number;
+};
+
+const litePublicProbeCache = new Map<string, LitePublicProbeCacheValue>();
 
 function json(status: number, payload: Record<string, unknown>) {
   return NextResponse.json(payload, {
@@ -22,6 +33,39 @@ function json(status: number, payload: Record<string, unknown>) {
 
 function toLitePath(rawPath: string): string {
   return rawPath.replace("/raw/", "/lite/").replace(/\.[^.\/]+$/, ".webp");
+}
+
+async function getLitePublicUrlIfAvailable(
+  admin: ReturnType<typeof createAdminClient>,
+  litePath: string
+): Promise<string> {
+  const now = Date.now();
+  const cachedProbe = litePublicProbeCache.get(litePath);
+  if (cachedProbe && cachedProbe.expiresAtEpochMs > now) {
+    if (!cachedProbe.exists) return "";
+    const publicUrlCached = admin.storage.from(LITE_PUBLIC_BUCKET).getPublicUrl(litePath).data.publicUrl;
+    return typeof publicUrlCached === "string" ? publicUrlCached : "";
+  }
+
+  const marker = await kvGetString(`litepublic:${litePath}`);
+  const publicUrl = admin.storage.from(LITE_PUBLIC_BUCKET).getPublicUrl(litePath).data.publicUrl;
+  if (typeof publicUrl !== "string" || !publicUrl) return "";
+  if (marker) {
+    litePublicProbeCache.set(litePath, { exists: true, expiresAtEpochMs: now + LITE_PUBLIC_PROBE_TTL_MS });
+    return publicUrl;
+  }
+
+  const probe = await fetch(publicUrl, { method: "HEAD", cache: "no-store" }).catch(() => null);
+  if (probe?.ok) {
+    litePublicProbeCache.set(litePath, { exists: true, expiresAtEpochMs: now + LITE_PUBLIC_PROBE_TTL_MS });
+    return publicUrl;
+  }
+
+  litePublicProbeCache.set(litePath, {
+    exists: false,
+    expiresAtEpochMs: now + LITE_PUBLIC_NEGATIVE_PROBE_TTL_MS,
+  });
+  return "";
 }
 
 type SignCounters = { signCalls: number; cacheHit: number; cacheMiss: number; rawSigned: number; blurSigned: number };
@@ -118,7 +162,11 @@ export async function GET(req: Request) {
 
         let thumbUrl = "";
         if (row.photo_visibility === "public" && firstPath) {
-          thumbUrl = await createSignedUrl(admin, requestId, toLitePath(firstPath), counters, "raw-list");
+          const litePath = toLitePath(firstPath);
+          thumbUrl = await getLitePublicUrlIfAvailable(admin, litePath);
+          if (!thumbUrl) {
+            thumbUrl = await createSignedUrl(admin, requestId, litePath, counters, "raw-list");
+          }
           if (!thumbUrl) {
             thumbUrl = await createSignedUrl(admin, requestId, firstPath, counters, "raw-list");
           }
