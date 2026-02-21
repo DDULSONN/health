@@ -27,7 +27,7 @@ function decodeSegments(parts: string[]): string {
   return parts.map((v) => decodeURIComponent(v)).join("/");
 }
 
-async function fetchPublicLite(bucket: string, objectPath: string, method: string) {
+async function fetchPublicLite(bucket: string, objectPath: string, method: string, requestId: string) {
   const admin = createAdminClient();
   const publicUrl = admin.storage.from(bucket).getPublicUrl(objectPath).data.publicUrl;
   if (!publicUrl) return new Response("Not Found", { status: 404 });
@@ -37,6 +37,12 @@ async function fetchPublicLite(bucket: string, objectPath: string, method: strin
     cache: "no-store",
   }).catch(() => null);
   if (!upstream) return new Response("Bad Gateway", { status: 502 });
+
+  // Some legacy community images can be non-public/misconfigured even though list payload expects public.
+  // In that case, retry through signed fetch so thumbnails don't randomly break.
+  if (!upstream.ok && bucket === "community") {
+    return fetchSigned(bucket, objectPath, method, requestId);
+  }
 
   const headers = pickUpstreamHeaders(upstream.headers);
   headers.set("Cache-Control", "public, max-age=86400, s-maxage=2592000, stale-while-revalidate=86400");
@@ -119,7 +125,7 @@ async function handler(req: Request, params: Promise<{ slug: string[] }>) {
   if (!bucket || !objectPath) return new Response("Bad Request", { status: 400 });
 
   if (mode === "public-lite") {
-    return fetchPublicLite(bucket, objectPath, req.method);
+    return fetchPublicLite(bucket, objectPath, req.method, requestId);
   }
   if (mode === "signed") {
     return fetchSigned(bucket, objectPath, req.method, requestId);
