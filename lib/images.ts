@@ -1,4 +1,5 @@
 const FORBIDDEN_IMAGE_URL_PATTERN = /(supabase\.co|\/storage\/v1\/|\/render\/image\/)/i;
+const PUBLIC_LITE_URL_VERSION = "20260221-1";
 
 function encodePath(path: string): string {
   return path
@@ -87,7 +88,7 @@ export function buildPublicLiteImageUrl(bucket: string, objectPath: string): str
   const safeBucket = assertSafeObjectPath(bucket);
   const safePath = assertSafeObjectPath(objectPath);
   if (!safeBucket || !safePath) return "";
-  return `/i/public-lite/${encodePath(safeBucket)}/${encodePath(safePath)}`;
+  return `/i/public-lite/${encodePath(safeBucket)}/${encodePath(safePath)}?v=${PUBLIC_LITE_URL_VERSION}`;
 }
 
 export function buildSignedImageUrl(bucket: string, objectPath: string): string {

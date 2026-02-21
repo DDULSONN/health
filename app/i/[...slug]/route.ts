@@ -44,6 +44,16 @@ async function fetchPublicLite(bucket: string, objectPath: string, method: strin
     return fetchSigned(bucket, objectPath, method, requestId);
   }
 
+  if (!upstream.ok) {
+    const headers = pickUpstreamHeaders(upstream.headers);
+    headers.set("Cache-Control", "no-store");
+    headers.delete("set-cookie");
+    return new Response(method === "HEAD" ? null : upstream.body, {
+      status: upstream.status,
+      headers,
+    });
+  }
+
   const headers = pickUpstreamHeaders(upstream.headers);
   headers.set("Cache-Control", "public, max-age=86400, s-maxage=2592000, stale-while-revalidate=86400");
   headers.delete("set-cookie");
