@@ -170,7 +170,18 @@ export async function GET(request: Request) {
     `[posts.metrics] requestId=${requestId} path=/api/posts page=${page} totalPosts=${enriched.length} transformedBodycheckImages=${transformedBodycheckImages}`
   );
 
-  return NextResponse.json({ posts: enriched, total: count ?? 0, page });
+  return NextResponse.json(
+    { posts: enriched, total: count ?? 0, page },
+    {
+      headers: {
+        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+        Pragma: "no-cache",
+        Expires: "0",
+        "CDN-Cache-Control": "no-store",
+        "Vercel-CDN-Cache-Control": "no-store",
+      },
+    }
+  );
 }
 
 export async function POST(request: Request) {

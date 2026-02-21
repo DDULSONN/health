@@ -73,7 +73,7 @@ export default function CommunityPage() {
     if (tab === "photo_bodycheck") params.set("type", "photo_bodycheck");
 
     try {
-      const res = await fetch(`/api/posts?${params}`);
+      const res = await fetch(`/api/posts?${params}`, { cache: "no-store" });
       if (res.ok) {
         const data = await res.json();
         setPosts(data.posts);
