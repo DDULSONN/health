@@ -1,4 +1,5 @@
-﻿import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { kvSetString } from "@/lib/edge-kv";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -6,10 +7,27 @@ export const runtime = "nodejs";
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const CARD_BUCKET = "dating-card-photos";
+const LITE_PUBLIC_BUCKET = "dating-card-lite";
 
 async function ensureCardBucket(adminClient: ReturnType<typeof createAdminClient>) {
   const { error } = await adminClient.storage.createBucket(CARD_BUCKET, {
     public: false,
+    fileSizeLimit: `${MAX_FILE_SIZE}`,
+    allowedMimeTypes: ALLOWED_TYPES,
+  });
+
+  if (!error) return;
+
+  const message = (error.message ?? "").toLowerCase();
+  const alreadyExists = message.includes("already") || message.includes("duplicate");
+  if (!alreadyExists) {
+    throw error;
+  }
+}
+
+async function ensureLitePublicBucket(adminClient: ReturnType<typeof createAdminClient>) {
+  const { error } = await adminClient.storage.createBucket(LITE_PUBLIC_BUCKET, {
+    public: true,
     fileSizeLimit: `${MAX_FILE_SIZE}`,
     allowedMimeTypes: ALLOWED_TYPES,
   });
@@ -46,6 +64,34 @@ async function uploadCardPhoto(
     contentType: file.type,
     upsert: false,
     cacheControl: "3600",
+  });
+
+  return { error: secondTry.error };
+}
+
+async function uploadLitePublicPhoto(
+  adminClient: ReturnType<typeof createAdminClient>,
+  path: string,
+  file: File
+) {
+  const firstTry = await adminClient.storage.from(LITE_PUBLIC_BUCKET).upload(path, file, {
+    contentType: file.type,
+    upsert: false,
+    cacheControl: "31536000",
+  });
+
+  if (!firstTry.error) return { error: null as null | { message?: string } };
+
+  const message = (firstTry.error.message ?? "").toLowerCase();
+  const bucketMissing = message.includes("bucket") && message.includes("not");
+  if (!bucketMissing) return { error: firstTry.error };
+
+  await ensureLitePublicBucket(adminClient);
+
+  const secondTry = await adminClient.storage.from(LITE_PUBLIC_BUCKET).upload(path, file, {
+    contentType: file.type,
+    upsert: false,
+    cacheControl: "31536000",
   });
 
   return { error: secondTry.error };
@@ -111,6 +157,18 @@ export async function POST(req: Request) {
         { error: `移대뱶 ?ъ쭊 ?낅줈?쒖뿉 ?ㅽ뙣?덉뒿?덈떎. ${error.message ?? "?좎떆 ???ㅼ떆 ?쒕룄?댁＜?몄슂."}` },
         { status: 500 }
       );
+    }
+
+    if (kind === "lite") {
+      const litePublicRes = await uploadLitePublicPhoto(adminClient, path, file);
+      if (litePublicRes.error) {
+        console.warn("[POST /api/dating/cards/upload-card] lite public upload failed", {
+          pathTail: path.split("/").slice(-2).join("/"),
+          message: litePublicRes.error.message ?? null,
+        });
+      } else {
+        await kvSetString(`litepublic:${path}`, "1", 365 * 24 * 60 * 60);
+      }
     }
 
     return NextResponse.json({ path }, { status: 201 });

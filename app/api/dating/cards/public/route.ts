@@ -1,6 +1,7 @@
 import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { getCachedSignedUrlResolved } from "@/lib/signed-url-cache";
+import { kvGetString } from "@/lib/edge-kv";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -8,6 +9,7 @@ const SIGNED_URL_TTL_SEC = 3600;
 const RAW_COUNT_MAX = 40;
 const RAW_LIST_TRANSFORM = { width: 1200, quality: 78 };
 const BLUR_LIST_TRANSFORM = { width: 720, quality: 70 };
+const LITE_PUBLIC_BUCKET = "dating-card-lite";
 
 function parseIntSafe(value: string | null, fallback: number) {
   if (!value) return fallback;
@@ -48,6 +50,16 @@ type SignCounters = {
 
 function toLitePath(rawPath: string): string {
   return rawPath.replace("/raw/", "/lite/").replace(/\.[^.\/]+$/, ".webp");
+}
+
+async function getLitePublicUrlIfAvailable(
+  adminClient: ReturnType<typeof createAdminClient>,
+  litePath: string
+): Promise<string> {
+  const marker = await kvGetString(`litepublic:${litePath}`);
+  if (!marker) return "";
+  const publicUrl = adminClient.storage.from(LITE_PUBLIC_BUCKET).getPublicUrl(litePath).data.publicUrl;
+  return typeof publicUrl === "string" ? publicUrl : "";
 }
 
 async function signPathWithCache(
@@ -99,6 +111,12 @@ async function createSignedImageUrls(
     const rawUrls: string[] = [];
     for (const rawPath of rawPaths) {
       const litePath = toLitePath(rawPath);
+      const litePublicUrl = await getLitePublicUrlIfAvailable(adminClient, litePath);
+      if (litePublicUrl) {
+        rawUrls.push(litePublicUrl);
+        counters.rawCount += 1;
+        continue;
+      }
       const liteSigned = await signPathWithCache(adminClient, litePath, requestId, counters, "raw-list");
       if (liteSigned) {
         rawUrls.push(liteSigned);
