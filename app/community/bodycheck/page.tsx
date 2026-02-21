@@ -203,8 +203,10 @@ export default function BodycheckBoardPage() {
             const scoreSum = Number(post.score_sum ?? 0);
             const avg = voteCount > 0 ? (scoreSum / voteCount).toFixed(2) : "0.00";
             const isTop = rankingPostIds.has(post.id);
-            const previewImage = post.thumb_images?.[0] ?? post.images?.[0] ?? "";
-            const fallbackImage = post.images?.[0] ?? "";
+            const thumbnailCandidates = [...(post.thumb_images ?? []), ...(post.images ?? [])].filter(
+              (url): url is string => typeof url === "string" && url.length > 0
+            );
+            const previewImage = thumbnailCandidates[0] ?? "";
 
             return (
               <Link
@@ -238,11 +240,17 @@ export default function BodycheckBoardPage() {
                   {previewImage && (
                     <img
                       src={previewImage}
-                      data-fallback={fallbackImage}
+                      data-candidates={thumbnailCandidates.join("\n")}
+                      data-candidate-index="0"
                       onError={(e) => {
-                        const fallback = e.currentTarget.dataset.fallback;
-                        if (fallback && e.currentTarget.src !== fallback) {
-                          e.currentTarget.src = fallback;
+                        const candidates = (e.currentTarget.dataset.candidates ?? "")
+                          .split("\n")
+                          .filter(Boolean);
+                        const currentIdx = Number(e.currentTarget.dataset.candidateIndex ?? "0");
+                        const nextIdx = currentIdx + 1;
+                        if (nextIdx < candidates.length) {
+                          e.currentTarget.dataset.candidateIndex = String(nextIdx);
+                          e.currentTarget.src = candidates[nextIdx] as string;
                         }
                       }}
                       alt=""

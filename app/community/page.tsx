@@ -266,9 +266,11 @@ function PostList({ posts, loading }: { posts: Post[]; loading: boolean }) {
       {posts.map((post) => {
         const badge = getBadgeFromPayload(post.type, post.payload_json);
         const icon = POST_TYPE_ICONS[post.type];
-        const previewImage = post.thumb_images?.[0] ?? post.images?.[0] ?? "";
-        const fallbackImage = post.images?.[0] ?? "";
-        const hasImages = Boolean(previewImage);
+        const thumbnailCandidates = [...(post.thumb_images ?? []), ...(post.images ?? [])].filter(
+          (url): url is string => typeof url === "string" && url.length > 0
+        );
+        const previewImage = thumbnailCandidates[0] ?? "";
+        const hasImages = thumbnailCandidates.length > 0;
         const avg =
           post.type === "photo_bodycheck" ? getBodycheckAverage(post) : null;
         const voteCount = Number(post.vote_count ?? 0);
@@ -324,11 +326,17 @@ function PostList({ posts, loading }: { posts: Post[]; loading: boolean }) {
                 <div className="shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-neutral-100">
                   <img
                     src={previewImage}
-                    data-fallback={fallbackImage}
+                    data-candidates={thumbnailCandidates.join("\n")}
+                    data-candidate-index="0"
                     onError={(e) => {
-                      const fallback = e.currentTarget.dataset.fallback;
-                      if (fallback && e.currentTarget.src !== fallback) {
-                        e.currentTarget.src = fallback;
+                      const candidates = (e.currentTarget.dataset.candidates ?? "")
+                        .split("\n")
+                        .filter(Boolean);
+                      const currentIdx = Number(e.currentTarget.dataset.candidateIndex ?? "0");
+                      const nextIdx = currentIdx + 1;
+                      if (nextIdx < candidates.length) {
+                        e.currentTarget.dataset.candidateIndex = String(nextIdx);
+                        e.currentTarget.src = candidates[nextIdx] as string;
                       }
                     }}
                     alt=""
