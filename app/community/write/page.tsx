@@ -12,6 +12,8 @@ const CATEGORIES = [
 
 const MAX_IMAGES = 3;
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const THUMB_MAX_EDGE = 960;
+const THUMB_QUALITY = 0.72;
 
 export default function WritePage() {
   const router = useRouter();
@@ -22,6 +24,7 @@ export default function WritePage() {
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
   const [images, setImages] = useState<string[]>([]);
+  const [thumbImages, setThumbImages] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -62,6 +65,54 @@ export default function WritePage() {
     return CATEGORIES.find((v) => v.value === category)?.desc ?? "";
   }, [category]);
 
+  async function uploadFileToCommunity(file: File) {
+    const formData = new FormData();
+    formData.append("file", file);
+    const res = await fetch("/api/upload", {
+      method: "POST",
+      body: formData,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.error ?? "이미지 업로드에 실패했습니다.");
+    }
+    const body = (await res.json()) as { url?: string };
+    if (!body.url) throw new Error("이미지 URL이 없습니다.");
+    return body.url;
+  }
+
+  async function createThumbFile(file: File) {
+    const objectUrl = URL.createObjectURL(file);
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const el = new Image();
+        el.onload = () => resolve(el);
+        el.onerror = () => reject(new Error("이미지를 읽지 못했습니다."));
+        el.src = objectUrl;
+      });
+      const srcW = img.naturalWidth || img.width;
+      const srcH = img.naturalHeight || img.height;
+      if (!srcW || !srcH) throw new Error("유효하지 않은 이미지 크기입니다.");
+      const scale = Math.min(1, THUMB_MAX_EDGE / Math.max(srcW, srcH));
+      const targetW = Math.max(1, Math.round(srcW * scale));
+      const targetH = Math.max(1, Math.round(srcH * scale));
+      const canvas = document.createElement("canvas");
+      canvas.width = targetW;
+      canvas.height = targetH;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) throw new Error("썸네일 캔버스를 만들지 못했습니다.");
+      ctx.drawImage(img, 0, 0, targetW, targetH);
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, "image/webp", THUMB_QUALITY);
+      });
+      if (!blob) throw new Error("썸네일 생성에 실패했습니다.");
+      const baseName = file.name.replace(/\.[^.]+$/, "");
+      return new File([blob], `${baseName}-thumb.webp`, { type: "image/webp" });
+    } finally {
+      URL.revokeObjectURL(objectUrl);
+    }
+  }
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files ?? []);
     if (files.length === 0) return;
@@ -84,20 +135,16 @@ export default function WritePage() {
         continue;
       }
 
-      const formData = new FormData();
-      formData.append("file", file);
-
       try {
-        const res = await fetch("/api/upload", {
-          method: "POST",
-          body: formData,
-        });
-        if (res.ok) {
-          const { url } = await res.json();
-          setImages((prev) => [...prev, url]);
+        const url = await uploadFileToCommunity(file);
+        setImages((prev) => [...prev, url]);
+
+        if (isPhotoBodycheck) {
+          const thumbFile = await createThumbFile(file);
+          const thumbUrl = await uploadFileToCommunity(thumbFile);
+          setThumbImages((prev) => [...prev, thumbUrl]);
         } else {
-          const data = await res.json();
-          setError(data.error ?? "이미지 업로드에 실패했습니다.");
+          setThumbImages((prev) => [...prev, ""]);
         }
       } catch {
         setError("이미지 업로드 중 오류가 발생했습니다.");
@@ -113,6 +160,7 @@ export default function WritePage() {
 
   const removeImage = (index: number) => {
     setImages((prev) => prev.filter((_, i) => i !== index));
+    setThumbImages((prev) => prev.filter((_, i) => i !== index));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -147,6 +195,10 @@ export default function WritePage() {
           type: category,
           title: title.trim(),
           content: content.trim() || null,
+          payload_json:
+            isPhotoBodycheck && thumbImages.some((url) => typeof url === "string" && url.length > 0)
+              ? { thumb_images: thumbImages.filter((url) => typeof url === "string" && url.length > 0).slice(0, MAX_IMAGES) }
+              : undefined,
           images,
           gender: isPhotoBodycheck ? gender : undefined,
         }),

@@ -11,6 +11,7 @@ const RECORD_TYPES = ["lifts", "1rm", "helltest"];
 const BODYCHECK_TYPES = ["photo_bodycheck"];
 const BODYCHECK_LIST_IMAGE_WIDTH = 960;
 const BODYCHECK_LIST_IMAGE_QUALITY = 72;
+const ENABLE_BODYCHECK_RENDER_TRANSFORM = false;
 
 function toBodycheckListImageUrl(url: unknown): unknown {
   if (typeof url !== "string") return url;
@@ -22,6 +23,13 @@ function toBodycheckListImageUrl(url: unknown): unknown {
   if (!pathOnly) return url;
   const origin = url.slice(0, idx);
   return `${origin}/storage/v1/render/image/public/community/${pathOnly}?width=${BODYCHECK_LIST_IMAGE_WIDTH}&quality=${BODYCHECK_LIST_IMAGE_QUALITY}&format=webp`;
+}
+
+function extractThumbImages(payload: unknown): string[] {
+  if (!payload || typeof payload !== "object") return [];
+  const raw = (payload as { thumb_images?: unknown }).thumb_images;
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((item): item is string => typeof item === "string" && item.startsWith("http")).slice(0, 3);
 }
 
 export async function GET(request: Request) {
@@ -92,11 +100,14 @@ export async function GET(request: Request) {
 
   const enriched = visible.map((p) => {
     const isBodycheck = (p.type as string) === "photo_bodycheck";
-    const images = Array.isArray((p as Record<string, unknown>).images)
-      ? ((p as Record<string, unknown>).images as unknown[]).map((img) =>
-          isBodycheck ? toBodycheckListImageUrl(img) : img
-        )
-      : (p as Record<string, unknown>).images;
+    const originalImages = Array.isArray((p as Record<string, unknown>).images)
+      ? ((p as Record<string, unknown>).images as unknown[]).filter((img): img is string => typeof img === "string")
+      : [];
+    const thumbImages = extractThumbImages((p as { payload_json?: unknown }).payload_json);
+    const sourceImages = isBodycheck && thumbImages.length > 0 ? thumbImages : originalImages;
+    const images = sourceImages.map((img) =>
+      isBodycheck && ENABLE_BODYCHECK_RENDER_TRANSFORM ? (toBodycheckListImageUrl(img) as string) : img
+    );
 
     return {
       ...p,
