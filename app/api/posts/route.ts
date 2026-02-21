@@ -1,6 +1,7 @@
-﻿import { createClient } from "@/lib/supabase/server";
+﻿import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { containsProfanity, getRateLimitRemaining } from "@/lib/moderation";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
+import { getCachedSignedUrlWithBucket } from "@/lib/signed-url-cache";
 import { NextResponse } from "next/server";
 import type { BodycheckGender } from "@/lib/community";
 import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
@@ -12,6 +13,41 @@ const BODYCHECK_TYPES = ["photo_bodycheck"];
 const BODYCHECK_LIST_IMAGE_WIDTH = 960;
 const BODYCHECK_LIST_IMAGE_QUALITY = 72;
 const ENABLE_BODYCHECK_RENDER_TRANSFORM = false;
+const COMMUNITY_SIGNED_URL_TTL_SEC = 3600;
+
+async function resolveCommunityImageUrl(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  adminClient: ReturnType<typeof createAdminClient>,
+  requestId: string,
+  raw: unknown,
+  counters: { signCalls: number; cacheHit: number; cacheMiss: number }
+): Promise<string | null> {
+  const url = toCommunityPublicUrl(supabase, raw);
+  if (!url) return null;
+  const marker = "/storage/v1/object/public/community/";
+  const idx = url.indexOf(marker);
+  if (idx < 0) return url;
+  const path = url.slice(idx + marker.length).split("?")[0] ?? "";
+  if (!path) return url;
+
+  const signed = await getCachedSignedUrlWithBucket({
+    requestId,
+    bucket: "community",
+    path,
+    ttlSec: COMMUNITY_SIGNED_URL_TTL_SEC,
+    getSignCallCount: () => counters.signCalls,
+    createSignedUrl: async (bucket, p, ttlSec) => {
+      counters.signCalls += 1;
+      const res = await adminClient.storage.from(bucket).createSignedUrl(p, ttlSec);
+      if (res.error || !res.data?.signedUrl) return "";
+      return res.data.signedUrl;
+    },
+  });
+  if (signed.cacheStatus === "hit") counters.cacheHit += 1;
+  if (signed.cacheStatus === "miss") counters.cacheMiss += 1;
+  if (signed.url) return signed.url;
+  return url;
+}
 
 function toCommunityPublicUrl(supabase: Awaited<ReturnType<typeof createClient>>, raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -78,6 +114,7 @@ export async function GET(request: Request) {
   const offset = (page - 1) * limit;
 
   const supabase = await createClient();
+  const adminClient = createAdminClient();
   const {
     data: { user },
   } = await supabase.auth.getUser();
@@ -134,16 +171,25 @@ export async function GET(request: Request) {
     }
   }
 
-  const enriched = visible.map((p) => {
+  const signCounters = { signCalls: 0, cacheHit: 0, cacheMiss: 0 };
+  const enriched = await Promise.all(visible.map(async (p) => {
     const isBodycheck = (p.type as string) === "photo_bodycheck";
     const originalImages = Array.isArray((p as Record<string, unknown>).images)
-      ? ((p as Record<string, unknown>).images as unknown[])
-          .map((img) => toCommunityPublicUrl(supabase, img))
-          .filter((img): img is string => typeof img === "string")
+      ? (
+          await Promise.all(
+            ((p as Record<string, unknown>).images as unknown[]).map((img) =>
+              resolveCommunityImageUrl(supabase, adminClient, requestId, img, signCounters)
+            )
+          )
+        ).filter((img): img is string => typeof img === "string")
       : [];
-    const thumbImages = extractThumbImages((p as { payload_json?: unknown }).payload_json)
-      .map((img) => toCommunityPublicUrl(supabase, img))
-      .filter((img): img is string => typeof img === "string");
+    const thumbImages = (
+      await Promise.all(
+        extractThumbImages((p as { payload_json?: unknown }).payload_json).map((img) =>
+          resolveCommunityImageUrl(supabase, adminClient, requestId, img, signCounters)
+        )
+      )
+    ).filter((img): img is string => typeof img === "string");
     const transformedThumbImages = thumbImages.map((img) =>
       isBodycheck && ENABLE_BODYCHECK_RENDER_TRANSFORM ? (toBodycheckListImageUrl(img) as string) : img
     );
@@ -155,7 +201,7 @@ export async function GET(request: Request) {
       profiles: profileMap.get(p.user_id as string) ?? null,
       cert_summary: null,
     };
-  });
+  }));
 
   const certSummaryMap = await fetchUserCertSummaryMap(userIds, supabase);
   for (const post of enriched) {
@@ -168,6 +214,11 @@ export async function GET(request: Request) {
   }, 0);
   console.log(
     `[posts.metrics] requestId=${requestId} path=/api/posts page=${page} totalPosts=${enriched.length} transformedBodycheckImages=${transformedBodycheckImages}`
+  );
+  const signedTotal = signCounters.cacheHit + signCounters.cacheMiss;
+  const cacheHitRatePct = signedTotal > 0 ? Math.round((signCounters.cacheHit / signedTotal) * 1000) / 10 : 0;
+  console.log(
+    `[posts.signedUrl] requestId=${requestId} path=/api/posts signCalls=${signCounters.signCalls} cacheHit=${signCounters.cacheHit} cacheMiss=${signCounters.cacheMiss} cacheHitRatePct=${cacheHitRatePct}`
   );
 
   return NextResponse.json(
@@ -332,3 +383,4 @@ export async function POST(request: Request) {
 
   return NextResponse.json({ id: data.id }, { status: 201 });
 }
+
