@@ -17,6 +17,21 @@ function toCommunityPublicUrl(supabase: Awaited<ReturnType<typeof createClient>>
   if (typeof raw !== "string") return null;
   const value = raw.trim();
   if (!value) return null;
+
+  const publicPathToken = "/storage/v1/object/public/community/";
+  const renderPathToken = "/storage/v1/render/image/public/community/";
+  const publicIdx = value.indexOf(publicPathToken);
+  if (publicIdx >= 0) {
+    const path = value.slice(publicIdx + publicPathToken.length).split("?")[0] ?? "";
+    if (!path) return null;
+    return supabase.storage.from("community").getPublicUrl(path).data.publicUrl;
+  }
+  const renderIdx = value.indexOf(renderPathToken);
+  if (renderIdx >= 0) {
+    const path = value.slice(renderIdx + renderPathToken.length).split("?")[0] ?? "";
+    if (!path) return null;
+    return supabase.storage.from("community").getPublicUrl(path).data.publicUrl;
+  }
   if (value.startsWith("http://") || value.startsWith("https://")) return value;
 
   const publicPrefix = "/storage/v1/object/public/community/";

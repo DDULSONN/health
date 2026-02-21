@@ -7,6 +7,35 @@ import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
+function toCommunityPublicUrl(supabase: Awaited<ReturnType<typeof createClient>>, raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const value = raw.trim();
+  if (!value) return null;
+
+  const publicPathToken = "/storage/v1/object/public/community/";
+  const renderPathToken = "/storage/v1/render/image/public/community/";
+  const publicIdx = value.indexOf(publicPathToken);
+  if (publicIdx >= 0) {
+    const path = value.slice(publicIdx + publicPathToken.length).split("?")[0] ?? "";
+    if (!path) return null;
+    return supabase.storage.from("community").getPublicUrl(path).data.publicUrl;
+  }
+  const renderIdx = value.indexOf(renderPathToken);
+  if (renderIdx >= 0) {
+    const path = value.slice(renderIdx + renderPathToken.length).split("?")[0] ?? "";
+    if (!path) return null;
+    return supabase.storage.from("community").getPublicUrl(path).data.publicUrl;
+  }
+  if (value.startsWith("http://") || value.startsWith("https://")) return value;
+
+  const rawPath = value
+    .replace(/^\/?storage\/v1\/object\/public\/community\//, "")
+    .replace(/^\/?community\//, "")
+    .replace(/^\//, "");
+  if (!rawPath) return null;
+  return supabase.storage.from("community").getPublicUrl(rawPath).data.publicUrl;
+}
+
 export async function GET(request: Request, { params }: RouteCtx) {
   const requestId = crypto.randomUUID();
   const { id } = await params;
@@ -121,10 +150,16 @@ export async function GET(request: Request, { params }: RouteCtx) {
   const voteCount = Number(post.vote_count ?? 0);
   const scoreSum = Number(post.score_sum ?? 0);
   const averageScore = voteCount > 0 ? Number((scoreSum / voteCount).toFixed(2)) : 0;
+  const normalizedImages = Array.isArray((post as { images?: unknown }).images)
+    ? ((post as { images?: unknown[] }).images ?? [])
+        .map((img) => toCommunityPublicUrl(supabase, img))
+        .filter((img): img is string => typeof img === "string")
+    : [];
 
   return NextResponse.json({
     post: {
       ...post,
+      images: normalizedImages,
       profiles: authorProfile ?? null,
       cert_summary: certSummaryMap.get(post.user_id as string) ?? null,
       my_vote: myVote,
@@ -203,7 +238,8 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   if (images !== undefined) {
     const cleanImages = Array.isArray(images)
       ? images
-          .filter((u: unknown) => typeof u === "string" && u.startsWith("http"))
+          .map((u: unknown) => toCommunityPublicUrl(supabase, u))
+          .filter((u): u is string => typeof u === "string")
           .slice(0, 3)
       : [];
 
