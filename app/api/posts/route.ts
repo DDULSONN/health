@@ -13,6 +13,27 @@ const BODYCHECK_LIST_IMAGE_WIDTH = 960;
 const BODYCHECK_LIST_IMAGE_QUALITY = 72;
 const ENABLE_BODYCHECK_RENDER_TRANSFORM = false;
 
+function toCommunityPublicUrl(supabase: Awaited<ReturnType<typeof createClient>>, raw: unknown): string | null {
+  if (typeof raw !== "string") return null;
+  const value = raw.trim();
+  if (!value) return null;
+  if (value.startsWith("http://") || value.startsWith("https://")) return value;
+
+  const publicPrefix = "/storage/v1/object/public/community/";
+  let path = value;
+  if (path.startsWith(publicPrefix)) {
+    path = path.slice(publicPrefix.length);
+  } else if (path.startsWith("storage/v1/object/public/community/")) {
+    path = path.slice("storage/v1/object/public/community/".length);
+  } else if (path.startsWith("community/")) {
+    path = path.slice("community/".length);
+  } else if (path.startsWith("/")) {
+    path = path.slice(1);
+  }
+  if (!path) return null;
+  return supabase.storage.from("community").getPublicUrl(path).data.publicUrl;
+}
+
 function toBodycheckListImageUrl(url: unknown): unknown {
   if (typeof url !== "string") return url;
   const marker = "/storage/v1/object/public/community/";
@@ -101,9 +122,13 @@ export async function GET(request: Request) {
   const enriched = visible.map((p) => {
     const isBodycheck = (p.type as string) === "photo_bodycheck";
     const originalImages = Array.isArray((p as Record<string, unknown>).images)
-      ? ((p as Record<string, unknown>).images as unknown[]).filter((img): img is string => typeof img === "string")
+      ? ((p as Record<string, unknown>).images as unknown[])
+          .map((img) => toCommunityPublicUrl(supabase, img))
+          .filter((img): img is string => typeof img === "string")
       : [];
-    const thumbImages = extractThumbImages((p as { payload_json?: unknown }).payload_json);
+    const thumbImages = extractThumbImages((p as { payload_json?: unknown }).payload_json)
+      .map((img) => toCommunityPublicUrl(supabase, img))
+      .filter((img): img is string => typeof img === "string");
     const transformedThumbImages = thumbImages.map((img) =>
       isBodycheck && ENABLE_BODYCHECK_RENDER_TRANSFORM ? (toBodycheckListImageUrl(img) as string) : img
     );
@@ -192,7 +217,8 @@ export async function POST(request: Request) {
 
   const cleanImages = Array.isArray(images)
     ? images
-        .filter((url: unknown) => typeof url === "string" && url.startsWith("http"))
+        .map((url: unknown) => toCommunityPublicUrl(supabase, url))
+        .filter((url): url is string => typeof url === "string")
         .slice(0, 3)
     : [];
 
@@ -239,9 +265,16 @@ export async function POST(request: Request) {
 
   let cleanPayload = payload_json ?? null;
   if (cleanPayload && typeof cleanPayload === "object") {
-    cleanPayload = Object.fromEntries(
+    const normalizedPayload = Object.fromEntries(
       Object.entries(cleanPayload).map(([k, v]) => [k, typeof v === "number" && Number.isNaN(v) ? 0 : v])
     );
+    if (type === "photo_bodycheck" && Array.isArray(normalizedPayload.thumb_images)) {
+      normalizedPayload.thumb_images = normalizedPayload.thumb_images
+        .map((url: unknown) => toCommunityPublicUrl(supabase, url))
+        .filter((url): url is string => typeof url === "string")
+        .slice(0, 3);
+    }
+    cleanPayload = normalizedPayload;
   }
 
   const insertData: Record<string, unknown> = {
