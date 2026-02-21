@@ -26,6 +26,22 @@ type PaidItem = {
   paid_at: string | null;
 };
 
+type EditablePaidCard = {
+  id: string;
+  gender: "M" | "F";
+  age: number | null;
+  region: string | null;
+  height_cm: number | null;
+  job: string | null;
+  training_years: number | null;
+  strengths_text: string | null;
+  ideal_text: string | null;
+  instagram_id: string | null;
+  photo_visibility: "blur" | "public";
+  blur_thumb_path: string | null;
+  photo_paths: string[];
+};
+
 function normalizeInstagramId(value: string) {
   return value.trim().replace(/^@+/, "").replace(/\s+/g, "").slice(0, 30);
 }
@@ -66,6 +82,8 @@ async function createBlurThumbnailFile(source: File): Promise<File> {
 }
 
 export default function DatingPaidPage() {
+  const [editId, setEditId] = useState("");
+  const isEditMode = editId.length > 0;
   const supabase = useMemo(() => createClient(), []);
   const openKakaoUrl = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
 
@@ -75,6 +93,7 @@ export default function DatingPaidPage() {
   const [error, setError] = useState("");
   const [successId, setSuccessId] = useState("");
   const [formOpen, setFormOpen] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
 
   const [gender, setGender] = useState<"M" | "F">("M");
   const [age, setAge] = useState("");
@@ -88,6 +107,8 @@ export default function DatingPaidPage() {
   const [photoVisibility, setPhotoVisibility] = useState<"blur" | "public">("blur");
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
   const [previewUrls, setPreviewUrls] = useState<(string | null)[]>([null, null]);
+  const [existingRawPaths, setExistingRawPaths] = useState<string[]>([]);
+  const [existingBlurThumbPath, setExistingBlurThumbPath] = useState("");
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -120,6 +141,49 @@ export default function DatingPaidPage() {
     return () => window.clearInterval(timer);
   }, []);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const nextId = new URLSearchParams(window.location.search).get("editId") ?? "";
+    setEditId(nextId);
+  }, []);
+
+  useEffect(() => {
+    if (!isEditMode || !editId) return;
+    let cancelled = false;
+    setFormOpen(true);
+    setEditLoading(true);
+    queueMicrotask(async () => {
+      try {
+        const res = await fetch(`/api/dating/paid/create?id=${encodeURIComponent(editId)}`, { cache: "no-store" });
+        const body = (await res.json().catch(() => ({}))) as { card?: EditablePaidCard; message?: string };
+        if (!res.ok || !body.card) {
+          if (!cancelled) setError(body.message ?? "수정할 유료카드를 불러오지 못했습니다.");
+          return;
+        }
+        if (cancelled) return;
+        setGender(body.card.gender);
+        setAge(body.card.age != null ? String(body.card.age) : "");
+        setRegion(body.card.region ?? "");
+        setHeightCm(body.card.height_cm != null ? String(body.card.height_cm) : "");
+        setJob(body.card.job ?? "");
+        setTrainingYears(body.card.training_years != null ? String(body.card.training_years) : "");
+        setStrengthsText(body.card.strengths_text ?? "");
+        setIdealText(body.card.ideal_text ?? "");
+        setInstagramId(body.card.instagram_id ?? "");
+        setPhotoVisibility(body.card.photo_visibility === "public" ? "public" : "blur");
+        setExistingRawPaths(Array.isArray(body.card.photo_paths) ? body.card.photo_paths : []);
+        setExistingBlurThumbPath(body.card.blur_thumb_path ?? "");
+      } catch {
+        if (!cancelled) setError("수정할 유료카드를 불러오지 못했습니다.");
+      } finally {
+        if (!cancelled) setEditLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [editId, isEditMode]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
@@ -139,12 +203,12 @@ export default function DatingPaidPage() {
       return;
     }
 
-    const validPhotos = photos.filter((p): p is File => Boolean(p));
-    if (validPhotos.length < 1) {
+    const hasAtLeastOnePhoto = photos.some(Boolean) || existingRawPaths.length > 0;
+    if (!hasAtLeastOnePhoto) {
       setError("사진은 최소 1장 필요합니다.");
       return;
     }
-    for (const photo of validPhotos) {
+    for (const photo of photos.filter((p): p is File => Boolean(p))) {
       if (!ALLOWED_TYPES.includes(photo.type)) {
         setError("사진은 JPG/PNG/WebP만 업로드할 수 있습니다.");
         return;
@@ -157,11 +221,15 @@ export default function DatingPaidPage() {
 
     setSubmitting(true);
     try {
-      const uploadedRawPaths: string[] = [];
-      for (let i = 0; i < validPhotos.length; i++) {
+      const nextRawPaths = [...existingRawPaths];
+      for (let i = 0; i < 2; i++) {
+        const photo = photos[i];
+        if (!photo) continue;
+        const assetId = crypto.randomUUID();
         const fd = new FormData();
-        fd.append("file", validPhotos[i]);
+        fd.append("file", photo);
         fd.append("kind", "raw");
+        fd.append("asset_id", assetId);
         fd.append("index", String(i));
         const res = await fetch("/api/dating/cards/upload-card", { method: "POST", body: fd });
         const body = (await res.json().catch(() => ({}))) as { path?: string; error?: string };
@@ -170,12 +238,48 @@ export default function DatingPaidPage() {
           setSubmitting(false);
           return;
         }
-        uploadedRawPaths.push(body.path);
+        nextRawPaths[i] = body.path;
+
+        const imageUrl = URL.createObjectURL(photo);
+        try {
+          const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+            const el = new Image();
+            el.onload = () => resolve(el);
+            el.onerror = () => reject(new Error("image-load-failed"));
+            el.src = imageUrl;
+          });
+          const maxEdge = 1200;
+          const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+          const width = Math.max(1, Math.round(img.width * scale));
+          const height = Math.max(1, Math.round(img.height * scale));
+          const canvas = document.createElement("canvas");
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) throw new Error("canvas-context-missing");
+          ctx.drawImage(img, 0, 0, width, height);
+          const liteBlob = await new Promise<Blob>((resolve, reject) => {
+            canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("lite-generate-failed"))), "image/webp", 0.78);
+          });
+          const liteFd = new FormData();
+          liteFd.append("file", new File([liteBlob], "lite.webp", { type: "image/webp" }));
+          liteFd.append("kind", "lite");
+          liteFd.append("asset_id", assetId);
+          liteFd.append("index", String(i));
+          const liteRes = await fetch("/api/dating/cards/upload-card", { method: "POST", body: liteFd });
+          if (!liteRes.ok) {
+            setError("라이트 이미지 업로드에 실패했습니다.");
+            setSubmitting(false);
+            return;
+          }
+        } finally {
+          URL.revokeObjectURL(imageUrl);
+        }
       }
 
-      let blurThumbPath = "";
-      if (photoVisibility === "blur") {
-        const blurFile = await createBlurThumbnailFile(validPhotos[0]);
+      let blurThumbPath = existingBlurThumbPath;
+      if (photoVisibility === "blur" && photos[0]) {
+        const blurFile = await createBlurThumbnailFile(photos[0]);
         const blurFd = new FormData();
         blurFd.append("file", blurFile);
         blurFd.append("kind", "blur");
@@ -189,8 +293,20 @@ export default function DatingPaidPage() {
         }
         blurThumbPath = blurBody.path;
       }
+      if (photoVisibility === "blur" && !blurThumbPath) {
+        setError("블러 썸네일 경로가 필요합니다.");
+        setSubmitting(false);
+        return;
+      }
+      const filteredRawPaths = nextRawPaths.filter((path): path is string => typeof path === "string" && path.length > 0);
+      if (filteredRawPaths.length < 1) {
+        setError("사진은 최소 1장 필요합니다.");
+        setSubmitting(false);
+        return;
+      }
 
       const payload = {
+        ...(isEditMode ? { id: editId } : {}),
         gender,
         age: age ? Number(age) : null,
         region: region.trim(),
@@ -202,11 +318,11 @@ export default function DatingPaidPage() {
         instagram_id: normalizedInstagramId,
         photo_visibility: photoVisibility,
         blur_thumb_path: blurThumbPath || null,
-        photo_paths: uploadedRawPaths,
+        photo_paths: filteredRawPaths,
       };
 
       const createRes = await fetch("/api/dating/paid/create", {
-        method: "POST",
+        method: isEditMode ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -276,8 +392,9 @@ export default function DatingPaidPage() {
 
       {formOpen && (
         <section id="paid-create-form" className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
-          <h2 className="text-lg font-bold text-neutral-900">유료 신청 작성</h2>
+          <h2 className="text-lg font-bold text-neutral-900">{isEditMode ? "유료 신청 수정" : "유료 신청 작성"}</h2>
           <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+            {editLoading && <p className="text-sm text-neutral-500">기존 카드 정보를 불러오는 중...</p>}
             <div className="flex gap-2">
               <button type="button" onClick={() => setGender("M")} className={`h-10 rounded-lg border px-4 text-sm ${gender === "M" ? "border-rose-500 bg-rose-500 text-white" : "border-neutral-300 bg-white text-neutral-700"}`}>
                 남자
@@ -308,7 +425,7 @@ export default function DatingPaidPage() {
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm text-neutral-700">사진 1 (필수)</label>
-                <input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e) => setPhotos((prev) => [e.target.files?.[0] ?? null, prev[1]])} />
+                <input type="file" accept="image/jpeg,image/png,image/webp" required={!isEditMode} onChange={(e) => setPhotos((prev) => [e.target.files?.[0] ?? null, prev[1]])} />
                 {previewUrls[0] && (
                   <div className="mt-2 h-36 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -330,8 +447,8 @@ export default function DatingPaidPage() {
 
             {error && <p className="text-sm text-red-600">{error}</p>}
 
-            <button type="submit" disabled={submitting} className="h-11 rounded-xl bg-rose-500 px-4 text-sm font-medium text-white hover:bg-rose-600 disabled:opacity-50">
-              {submitting ? "신청 중..." : "유료 신청 등록"}
+            <button type="submit" disabled={submitting || editLoading} className="h-11 rounded-xl bg-rose-500 px-4 text-sm font-medium text-white hover:bg-rose-600 disabled:opacity-50">
+              {submitting ? "신청 중..." : isEditMode ? "유료 신청 수정" : "유료 신청 등록"}
             </button>
           </form>
 
@@ -434,4 +551,3 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
     </section>
   );
 }
-

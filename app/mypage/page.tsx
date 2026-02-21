@@ -892,6 +892,31 @@ export default function MyPage() {
           <p className="text-sm text-neutral-500">등록한 유료카드가 없습니다.</p>
         ) : (
           <div className="space-y-3">
+            {myPaidCards.map((card) => (
+              <div key={card.id} className="rounded-xl border border-rose-200 bg-white p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-neutral-900">
+                    {card.nickname} / {card.gender === "M" ? "남자" : "여자"}
+                  </p>
+                  <span className="inline-flex rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
+                    {card.status}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-neutral-500">
+                  생성일 {new Date(card.created_at).toLocaleDateString("ko-KR")}
+                </p>
+                {card.status === "pending" && (
+                  <div className="mt-2">
+                    <Link
+                      href={`/dating/paid?editId=${card.id}`}
+                      className="inline-flex h-8 items-center rounded-md border border-rose-300 bg-white px-3 text-xs font-medium text-rose-700 hover:bg-rose-50"
+                    >
+                      내용 수정
+                    </Link>
+                  </div>
+                )}
+              </div>
+            ))}
             {receivedPaidApplications.map((app) => {
               const card = myPaidCards.find((c) => c.id === app.card_id);
               return (
@@ -1014,7 +1039,15 @@ export default function MyPage() {
                   </p>
                 )}
                 {card.status === "pending" && (
-                  <p className="text-sm text-neutral-600 mt-1">대기열에 등록되어 있습니다.</p>
+                  <div className="mt-1 flex items-center justify-between gap-2">
+                    <p className="text-sm text-neutral-600">대기열에 등록되어 있습니다.</p>
+                    <Link
+                      href={`/dating/card/new?editId=${card.id}`}
+                      className="inline-flex h-8 items-center rounded-md border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700 hover:bg-pink-50"
+                    >
+                      내용 수정
+                    </Link>
+                  </div>
                 )}
               </div>
             ))}

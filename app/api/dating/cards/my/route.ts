@@ -42,7 +42,7 @@ export async function GET() {
   const { data, error } = await adminClient
     .from("dating_cards")
     .select(
-      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, status, published_at, expires_at, created_at"
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, instagram_id, photo_paths, blur_thumb_path, blur_paths, total_3lift, percent_all, is_3lift_verified, status, published_at, expires_at, created_at"
     )
     .eq("owner_user_id", user.id)
     .order("created_at", { ascending: false });
@@ -301,5 +301,206 @@ export async function POST(req: Request) {
     },
     { status: 201 }
   );
+}
+
+export async function PATCH(req: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+
+  const body = await req.json().catch(() => null);
+  if (!body) return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return NextResponse.json(
+      { error: "서버 설정 오류입니다. 관리자에게 문의해주세요. (SUPABASE_SERVICE_ROLE_KEY)" },
+      { status: 500 }
+    );
+  }
+
+  const cardId = toText((body as { id?: unknown }).id, 100);
+  if (!cardId) {
+    return NextResponse.json({ error: "수정할 카드 ID가 필요합니다." }, { status: 400 });
+  }
+
+  const sex = (body as { sex?: unknown }).sex;
+  if (sex !== "male" && sex !== "female") {
+    return NextResponse.json({ error: "성별을 확인해주세요." }, { status: 400 });
+  }
+
+  const age = toInt((body as { age?: unknown }).age);
+  const heightCm = toInt((body as { height_cm?: unknown }).height_cm);
+  const trainingYears = toInt((body as { training_years?: unknown }).training_years);
+  const total3Lift = toInt((body as { total_3lift?: unknown }).total_3lift);
+  const percentAllRaw = (body as { percent_all?: unknown }).percent_all;
+  const percentAll =
+    typeof percentAllRaw === "number"
+      ? percentAllRaw
+      : typeof percentAllRaw === "string" && percentAllRaw.trim()
+      ? Number(percentAllRaw)
+      : null;
+
+  const region = toText((body as { region?: unknown }).region, 30);
+  const job = toText((body as { job?: unknown }).job, 50);
+  const idealType = toText((body as { ideal_type?: unknown }).ideal_type, 1000);
+  const strengthsText = toText((body as { strengths_text?: unknown }).strengths_text, 150);
+  const photoVisibilityRaw = (body as { photo_visibility?: unknown }).photo_visibility;
+  const photoVisibility = photoVisibilityRaw === "public" ? "public" : "blur";
+
+  const instagramId = normalizeInstagramId((body as { instagram_id?: unknown }).instagram_id);
+  const photoPathsRaw = (body as { photo_paths?: unknown }).photo_paths;
+  const blurThumbPath = toText((body as { blur_thumb_path?: unknown }).blur_thumb_path, 400);
+  const blurPathsRaw = (body as { blur_paths?: unknown }).blur_paths;
+
+  const photoPaths = Array.isArray(photoPathsRaw)
+    ? photoPathsRaw.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+  const blurPaths = Array.isArray(blurPathsRaw)
+    ? blurPathsRaw.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+
+  if (!instagramId || !validInstagramId(instagramId)) {
+    return NextResponse.json(
+      { error: "인스타그램 아이디 형식이 올바르지 않습니다. (@ 제외, 영문/숫자/._, 최대 30자)" },
+      { status: 400 }
+    );
+  }
+  if (age != null && (age < 19 || age > 99)) return NextResponse.json({ error: "나이를 확인해주세요." }, { status: 400 });
+  if (heightCm != null && (heightCm < 120 || heightCm > 230)) return NextResponse.json({ error: "키를 확인해주세요." }, { status: 400 });
+  if (trainingYears != null && (trainingYears < 0 || trainingYears > 50)) {
+    return NextResponse.json({ error: "운동경력을 확인해주세요." }, { status: 400 });
+  }
+  if (photoPaths.length < 2) {
+    return NextResponse.json({ error: "오픈카드 사진은 2장 필요합니다." }, { status: 400 });
+  }
+  if (!blurThumbPath) {
+    return NextResponse.json({ error: "블러 썸네일 생성에 실패했습니다. 다시 시도해주세요." }, { status: 400 });
+  }
+  if (blurPaths.length < 2) {
+    return NextResponse.json({ error: "블러 이미지 2장 생성에 실패했습니다. 다시 시도해주세요." }, { status: 400 });
+  }
+  if (!photoPaths.every((path) => path.startsWith(`cards/${user.id}/raw/`))) {
+    return NextResponse.json({ error: "사진 경로가 올바르지 않습니다." }, { status: 400 });
+  }
+  if (!blurThumbPath.startsWith(`cards/${user.id}/blur/`)) {
+    return NextResponse.json({ error: "블러 썸네일 경로가 올바르지 않습니다." }, { status: 400 });
+  }
+  if (!blurPaths.every((path) => path.startsWith(`cards/${user.id}/blur/`))) {
+    return NextResponse.json({ error: "블러 이미지 경로가 올바르지 않습니다." }, { status: 400 });
+  }
+
+  const adminClient = createAdminClient();
+  const cardRes = await adminClient
+    .from("dating_cards")
+    .select("id,owner_user_id,status")
+    .eq("id", cardId)
+    .maybeSingle();
+  if (cardRes.error || !cardRes.data || cardRes.data.owner_user_id !== user.id) {
+    return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
+  }
+  if (cardRes.data.status !== "pending") {
+    return NextResponse.json({ error: "대기중 카드만 수정할 수 있습니다." }, { status: 400 });
+  }
+
+  const profileRes = await adminClient
+    .from("profiles")
+    .select("nickname")
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (profileRes.error) {
+    console.error("[PATCH /api/dating/cards/my] profile fetch failed", profileRes.error);
+    return NextResponse.json({ error: "닉네임 정보를 불러오지 못했습니다." }, { status: 500 });
+  }
+  const metadataNickname = toText((user.user_metadata as { nickname?: unknown } | null)?.nickname, 20);
+  const displayNickname = toText(profileRes.data?.nickname ?? metadataNickname, 20);
+  if (!displayNickname) {
+    return NextResponse.json({ error: "프로필 닉네임이 없습니다. 닉네임 설정 후 다시 시도해주세요." }, { status: 400 });
+  }
+
+  const certRes = await adminClient
+    .from("cert_requests")
+    .select("id")
+    .eq("user_id", user.id)
+    .eq("status", "approved")
+    .limit(1)
+    .maybeSingle();
+
+  if (certRes.error) {
+    console.error("[PATCH /api/dating/cards/my] cert fetch failed", certRes.error);
+    return NextResponse.json({ error: "3대 인증 상태를 확인하지 못했습니다." }, { status: 500 });
+  }
+  const is3LiftVerified = Boolean(certRes.data);
+
+  const updateCandidates: Record<string, unknown>[] = [
+    {
+      sex,
+      display_nickname: displayNickname,
+      age,
+      region: region || null,
+      height_cm: heightCm,
+      job: job || null,
+      training_years: trainingYears,
+      ideal_type: idealType || null,
+      strengths_text: strengthsText || null,
+      photo_visibility: photoVisibility,
+      instagram_id: instagramId,
+      photo_paths: photoPaths,
+      blur_thumb_path: blurThumbPath,
+      blur_paths: blurPaths,
+      total_3lift: sex === "male" ? total3Lift : null,
+      percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
+      is_3lift_verified: is3LiftVerified,
+      status: "pending" as const,
+      published_at: null,
+      expires_at: null,
+    },
+    {
+      sex,
+      age,
+      region: region || null,
+      height_cm: heightCm,
+      job: job || null,
+      training_years: trainingYears,
+      ideal_type: idealType || null,
+      strengths_text: strengthsText || null,
+      photo_visibility: photoVisibility,
+      instagram_id: instagramId,
+      photo_urls: photoPaths,
+      total_3lift: sex === "male" ? total3Lift : null,
+      percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
+      is_3lift_verified: is3LiftVerified,
+      status: "pending" as const,
+    },
+  ];
+
+  let updateRes: any = null;
+  for (const candidate of updateCandidates) {
+    updateRes = await adminClient
+      .from("dating_cards")
+      .update(candidate)
+      .eq("id", cardId)
+      .eq("owner_user_id", user.id)
+      .eq("status", "pending")
+      .select("id,status")
+      .maybeSingle();
+    if (!updateRes.error) break;
+    if (!isMissingColumnError(updateRes.error)) break;
+  }
+
+  const { data, error } = updateRes;
+  if (error || !data) {
+    console.error("[PATCH /api/dating/cards/my] failed", error);
+    if (error?.code === "23514") {
+      return NextResponse.json({ error: "입력값이 조건에 맞지 않습니다. 입력 항목을 다시 확인해주세요." }, { status: 400 });
+    }
+    return NextResponse.json({ error: `카드 수정에 실패했습니다. ${error?.message ?? ""}`.trim() }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    id: data.id,
+    status: data.status,
+    message: "대기중 오픈카드가 수정되었습니다.",
+  });
 }
 

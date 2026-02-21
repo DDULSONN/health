@@ -7,6 +7,25 @@ import Link from "next/link";
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
+type MyCardItem = {
+  id: string;
+  sex: "male" | "female";
+  age: number | null;
+  region: string | null;
+  height_cm: number | null;
+  job: string | null;
+  training_years: number | null;
+  ideal_type: string | null;
+  strengths_text: string | null;
+  photo_visibility: "blur" | "public";
+  instagram_id: string | null;
+  photo_paths: string[] | null;
+  blur_thumb_path: string | null;
+  blur_paths: string[] | null;
+  total_3lift: number | null;
+  status: "pending" | "public" | "expired" | "hidden";
+};
+
 function normalizeInstagramId(value: string) {
   return value.trim().replace(/^@+/, "").replace(/\s+/g, "").slice(0, 30);
 }
@@ -86,8 +105,11 @@ async function createLiteFile(source: File): Promise<File> {
 
 export default function NewDatingCardPage() {
   const router = useRouter();
+  const [editId, setEditId] = useState("");
+  const isEditMode = editId.length > 0;
   const [writeEnabled, setWriteEnabled] = useState(true);
   const [writeSettingLoading, setWriteSettingLoading] = useState(true);
+  const [editLoading, setEditLoading] = useState(false);
   const [sex, setSex] = useState<"male" | "female">("male");
   const [age, setAge] = useState("");
   const [region, setRegion] = useState("");
@@ -101,6 +123,9 @@ export default function NewDatingCardPage() {
   const [total3Lift, setTotal3Lift] = useState("");
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
   const [previewUrls, setPreviewUrls] = useState<(string | null)[]>([null, null]);
+  const [existingRawPaths, setExistingRawPaths] = useState<string[]>([]);
+  const [existingBlurPaths, setExistingBlurPaths] = useState<string[]>([]);
+  const [existingBlurThumbPath, setExistingBlurThumbPath] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
 
@@ -129,6 +154,55 @@ export default function NewDatingCardPage() {
     };
   }, [photos]);
 
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const nextId = new URLSearchParams(window.location.search).get("editId") ?? "";
+    setEditId(nextId);
+  }, []);
+
+  useEffect(() => {
+    if (!isEditMode || !editId) return;
+    let cancelled = false;
+    setEditLoading(true);
+    queueMicrotask(async () => {
+      try {
+        const res = await fetch("/api/dating/cards/my", { cache: "no-store" });
+        const body = (await res.json().catch(() => ({}))) as { items?: MyCardItem[]; error?: string };
+        if (!res.ok) {
+          if (!cancelled) setError(body.error ?? "수정할 카드를 불러오지 못했습니다.");
+          return;
+        }
+        const item = (body.items ?? []).find((card) => card.id === editId);
+        if (!item || item.status !== "pending") {
+          if (!cancelled) setError("대기중 오픈카드만 수정할 수 있습니다.");
+          return;
+        }
+        if (cancelled) return;
+        setSex(item.sex);
+        setAge(item.age != null ? String(item.age) : "");
+        setRegion(item.region ?? "");
+        setHeightCm(item.height_cm != null ? String(item.height_cm) : "");
+        setJob(item.job ?? "");
+        setTrainingYears(item.training_years != null ? String(item.training_years) : "");
+        setIdealType(item.ideal_type ?? "");
+        setStrengthsText(item.strengths_text ?? "");
+        setPhotoVisibility(item.photo_visibility === "public" ? "public" : "blur");
+        setInstagramId(item.instagram_id ?? "");
+        setTotal3Lift(item.total_3lift != null ? String(item.total_3lift) : "");
+        setExistingRawPaths(Array.isArray(item.photo_paths) ? item.photo_paths : []);
+        setExistingBlurPaths(Array.isArray(item.blur_paths) ? item.blur_paths : []);
+        setExistingBlurThumbPath(item.blur_thumb_path ?? "");
+      } catch {
+        if (!cancelled) setError("수정할 카드를 불러오지 못했습니다.");
+      } finally {
+        if (!cancelled) setEditLoading(false);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [editId, isEditMode]);
+
   const readErrorMessage = async (res: Response, fallback: string) => {
     const text = await res.text().catch(() => "");
     if (!text) return `${fallback} (HTTP ${res.status})`;
@@ -151,13 +225,14 @@ export default function NewDatingCardPage() {
       return;
     }
 
-    const validPhotos = photos.filter((p): p is File => Boolean(p));
-    if (validPhotos.length < 2) {
+    const hasPhotoSlot0 = Boolean(photos[0]) || Boolean(existingRawPaths[0]);
+    const hasPhotoSlot1 = Boolean(photos[1]) || Boolean(existingRawPaths[1]);
+    if (!hasPhotoSlot0 || !hasPhotoSlot1) {
       setError("오픈카드 사진은 2장 모두 필요합니다.");
       return;
     }
 
-    for (const photo of validPhotos) {
+    for (const photo of photos.filter((p): p is File => Boolean(p))) {
       if (!ALLOWED_TYPES.includes(photo.type)) {
         setError("사진은 JPG/PNG/WebP만 업로드할 수 있습니다.");
         return;
@@ -171,11 +246,17 @@ export default function NewDatingCardPage() {
     setSubmitting(true);
 
     try {
-      const uploadedRawPaths: string[] = [];
-      for (let i = 0; i < validPhotos.length; i++) {
+      const nextRawPaths = [...existingRawPaths];
+      const nextBlurPaths = [...existingBlurPaths];
+      let nextBlurThumbPath = existingBlurThumbPath;
+
+      for (let i = 0; i < 2; i++) {
+        const photo = photos[i];
+        if (!photo) continue;
+
         const assetId = crypto.randomUUID();
         const fd = new FormData();
-        fd.append("file", validPhotos[i]);
+        fd.append("file", photo);
         fd.append("kind", "raw");
         fd.append("asset_id", assetId);
         fd.append("index", String(i));
@@ -191,9 +272,9 @@ export default function NewDatingCardPage() {
           setSubmitting(false);
           return;
         }
-        uploadedRawPaths.push(body.path);
+        nextRawPaths[i] = body.path;
 
-        const liteFile = await createLiteFile(validPhotos[i]);
+        const liteFile = await createLiteFile(photo);
         const liteFd = new FormData();
         liteFd.append("file", liteFile);
         liteFd.append("kind", "lite");
@@ -205,11 +286,8 @@ export default function NewDatingCardPage() {
           setSubmitting(false);
           return;
         }
-      }
 
-      const uploadedBlurPaths: string[] = [];
-      for (let i = 0; i < validPhotos.length; i++) {
-        const blurFile = await createBlurThumbnailFile(validPhotos[i]);
+        const blurFile = await createBlurThumbnailFile(photo);
         const blurFd = new FormData();
         blurFd.append("file", blurFile);
         blurFd.append("kind", "blur");
@@ -226,10 +304,23 @@ export default function NewDatingCardPage() {
           setSubmitting(false);
           return;
         }
-        uploadedBlurPaths.push(blurBody.path);
+        nextBlurPaths[i] = blurBody.path;
+        if (i === 0) nextBlurThumbPath = blurBody.path;
+      }
+
+      if (nextRawPaths.length < 2 || !nextRawPaths[0] || !nextRawPaths[1]) {
+        setError("오픈카드 사진은 2장 모두 필요합니다.");
+        setSubmitting(false);
+        return;
+      }
+      if (nextBlurPaths.length < 2 || !nextBlurPaths[0] || !nextBlurPaths[1] || !nextBlurThumbPath) {
+        setError("블러 이미지 2장 생성에 실패했습니다. 다시 시도해주세요.");
+        setSubmitting(false);
+        return;
       }
 
       const payload = {
+        ...(isEditMode ? { id: editId } : {}),
         sex,
         age: age ? Number(age) : null,
         region: region.trim(),
@@ -240,14 +331,14 @@ export default function NewDatingCardPage() {
         strengths_text: strengthsText.trim(),
         photo_visibility: photoVisibility,
         instagram_id: normalizeInstagramId(instagramId),
-        photo_paths: uploadedRawPaths,
-        blur_thumb_path: uploadedBlurPaths[0] ?? "",
-        blur_paths: uploadedBlurPaths,
+        photo_paths: nextRawPaths,
+        blur_thumb_path: nextBlurThumbPath,
+        blur_paths: nextBlurPaths,
         total_3lift: sex === "male" && total3Lift ? Number(total3Lift) : null,
       };
 
       const res = await fetch("/api/dating/cards/my", {
-        method: "POST",
+        method: isEditMode ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
@@ -259,7 +350,7 @@ export default function NewDatingCardPage() {
       }
       const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
 
-      alert(body.message ?? "오픈카드를 생성했습니다.");
+      alert(body.message ?? (isEditMode ? "오픈카드를 수정했습니다." : "오픈카드를 생성했습니다."));
       router.push("/mypage");
     } catch {
       setError("네트워크 오류가 발생했습니다.");
@@ -275,6 +366,7 @@ export default function NewDatingCardPage() {
       </Link>
 
       <h1 className="text-2xl font-bold text-neutral-900 mt-3">오픈카드 작성</h1>
+      {isEditMode && <p className="text-sm text-amber-700 mt-1">대기중 오픈카드 수정 모드</p>}
       <p className="text-sm text-neutral-500 mt-1">공개 카드 슬롯 상황에 따라 즉시 공개 또는 대기열로 등록됩니다.</p>
       <p className="text-sm text-neutral-500 mt-1">닉네임은 가입 시 설정한 프로필 닉네임이 자동으로 반영됩니다.</p>
       {!writeSettingLoading && !writeEnabled && (
@@ -282,6 +374,7 @@ export default function NewDatingCardPage() {
       )}
 
       <form onSubmit={submit} className="space-y-4 mt-6">
+        {editLoading && <p className="text-sm text-neutral-500">기존 카드 정보를 불러오는 중...</p>}
         <div>
           <label className="block text-sm font-medium text-neutral-700 mb-1">성별 *</label>
           <div className="flex gap-2">
@@ -322,7 +415,7 @@ export default function NewDatingCardPage() {
         )}
 
         <Field label="오픈카드 사진 1" required>
-          <input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e) => setPhotos((prev) => [e.target.files?.[0] ?? null, prev[1]])} />
+          <input type="file" accept="image/jpeg,image/png,image/webp" required={!isEditMode} onChange={(e) => setPhotos((prev) => [e.target.files?.[0] ?? null, prev[1]])} />
           {previewUrls[0] && (
             <div className="mt-2 h-40 w-full overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -331,7 +424,7 @@ export default function NewDatingCardPage() {
           )}
         </Field>
         <Field label="오픈카드 사진 2" required>
-          <input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e) => setPhotos((prev) => [prev[0], e.target.files?.[0] ?? null])} />
+          <input type="file" accept="image/jpeg,image/png,image/webp" required={!isEditMode} onChange={(e) => setPhotos((prev) => [prev[0], e.target.files?.[0] ?? null])} />
           {previewUrls[1] && (
             <div className="mt-2 h-40 w-full overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
               {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -344,10 +437,10 @@ export default function NewDatingCardPage() {
 
         <button
           type="submit"
-          disabled={submitting || writeSettingLoading || !writeEnabled}
+          disabled={submitting || editLoading || (!isEditMode && (writeSettingLoading || !writeEnabled))}
           className="w-full min-h-[46px] rounded-xl bg-pink-500 text-white text-sm font-medium hover:bg-pink-600 disabled:opacity-50"
         >
-          {submitting ? "등록 중..." : "오픈카드 등록하기"}
+          {submitting ? "처리 중..." : isEditMode ? "오픈카드 수정하기" : "오픈카드 등록하기"}
         </button>
       </form>
 
