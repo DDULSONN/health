@@ -1,18 +1,33 @@
 import { createClient } from "@/lib/supabase/server";
 import { containsProfanity } from "@/lib/moderation";
 import { BODYCHECK_SCORE_MAP, type BodycheckRating } from "@/lib/community";
+import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { NextResponse } from "next/server";
 import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
-export async function GET(_request: Request, { params }: RouteCtx) {
+export async function GET(request: Request, { params }: RouteCtx) {
+  const requestId = crypto.randomUUID();
   const { id } = await params;
   const supabase = await createClient();
 
   const {
     data: { user },
   } = await supabase.auth.getUser();
+  const ip = extractClientIp(request);
+  const rateLimit = await checkRouteRateLimit({
+    requestId,
+    scope: "posts-detail",
+    userId: user?.id ?? null,
+    ip,
+    userLimitPerMin: 60,
+    ipLimitPerMin: 240,
+    path: "/api/posts/[id]",
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." }, { status: 429 });
+  }
 
   const { data: post, error: postErr } = await supabase
     .from("posts")

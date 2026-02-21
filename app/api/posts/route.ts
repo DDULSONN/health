@@ -1,5 +1,6 @@
 ﻿import { createClient } from "@/lib/supabase/server";
 import { containsProfanity, getRateLimitRemaining } from "@/lib/moderation";
+import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { NextResponse } from "next/server";
 import type { BodycheckGender } from "@/lib/community";
 import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
@@ -8,8 +9,23 @@ import { getConfirmedUserOrResponse } from "@/lib/auth-confirmed";
 const POST_COOLDOWN_MS = 30_000;
 const RECORD_TYPES = ["lifts", "1rm", "helltest"];
 const BODYCHECK_TYPES = ["photo_bodycheck"];
+const BODYCHECK_LIST_IMAGE_WIDTH = 960;
+const BODYCHECK_LIST_IMAGE_QUALITY = 72;
+
+function toBodycheckListImageUrl(url: unknown): unknown {
+  if (typeof url !== "string") return url;
+  const marker = "/storage/v1/object/public/community/";
+  const idx = url.indexOf(marker);
+  if (idx < 0) return url;
+  const pathWithQuery = url.slice(idx + marker.length);
+  const pathOnly = pathWithQuery.split("?")[0] ?? "";
+  if (!pathOnly) return url;
+  const origin = url.slice(0, idx);
+  return `${origin}/storage/v1/render/image/public/community/${pathOnly}?width=${BODYCHECK_LIST_IMAGE_WIDTH}&quality=${BODYCHECK_LIST_IMAGE_QUALITY}&format=webp`;
+}
 
 export async function GET(request: Request) {
+  const requestId = crypto.randomUUID();
   const { searchParams } = new URL(request.url);
   const type = searchParams.get("type");
   const tab = searchParams.get("tab");
@@ -18,6 +34,22 @@ export async function GET(request: Request) {
   const offset = (page - 1) * limit;
 
   const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  const ip = extractClientIp(request);
+  const rateLimit = await checkRouteRateLimit({
+    requestId,
+    scope: "posts-list",
+    userId: user?.id ?? null,
+    ip,
+    userLimitPerMin: 40,
+    ipLimitPerMin: 160,
+    path: "/api/posts",
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." }, { status: 429 });
+  }
 
   let query = supabase
     .from("posts")
@@ -58,26 +90,58 @@ export async function GET(request: Request) {
     }
   }
 
-  const enriched = visible.map((p) => ({
-    ...p,
-    profiles: profileMap.get(p.user_id as string) ?? null,
-    cert_summary: null,
-  }));
+  const enriched = visible.map((p) => {
+    const isBodycheck = (p.type as string) === "photo_bodycheck";
+    const images = Array.isArray((p as Record<string, unknown>).images)
+      ? ((p as Record<string, unknown>).images as unknown[]).map((img) =>
+          isBodycheck ? toBodycheckListImageUrl(img) : img
+        )
+      : (p as Record<string, unknown>).images;
+
+    return {
+      ...p,
+      images,
+      profiles: profileMap.get(p.user_id as string) ?? null,
+      cert_summary: null,
+    };
+  });
 
   const certSummaryMap = await fetchUserCertSummaryMap(userIds, supabase);
   for (const post of enriched) {
     post.cert_summary = certSummaryMap.get(post.user_id as string) ?? null;
   }
+  const transformedBodycheckImages = enriched.reduce((acc, post) => {
+    if ((post.type as string) !== "photo_bodycheck") return acc;
+    return acc + (Array.isArray((post as Record<string, unknown>).images) ? (post as Record<string, unknown>).images.length : 0);
+  }, 0);
+  console.log(
+    `[posts.metrics] requestId=${requestId} path=/api/posts page=${page} totalPosts=${enriched.length} transformedBodycheckImages=${transformedBodycheckImages}`
+  );
 
   return NextResponse.json({ posts: enriched, total: count ?? 0, page });
 }
 
 export async function POST(request: Request) {
+  const requestId = crypto.randomUUID();
+  const ip = extractClientIp(request);
   const supabase = await createClient();
   const guard = await getConfirmedUserOrResponse(supabase);
   if (guard.response) return guard.response;
   const user = guard.user;
   if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+
+  const rateLimit = await checkRouteRateLimit({
+    requestId,
+    scope: "posts-create",
+    userId: user.id,
+    ip,
+    userLimitPerMin: 10,
+    ipLimitPerMin: 60,
+    path: "/api/posts",
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." }, { status: 429 });
+  }
 
   const body = await request.json();
   const { type, title, content, payload_json, images, gender } = body as {

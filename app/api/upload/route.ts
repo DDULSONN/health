@@ -1,4 +1,5 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { NextResponse } from "next/server";
 
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
@@ -6,6 +7,7 @@ const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 /** POST /api/upload — 이미지 업로드 (Supabase Storage) */
 export async function POST(request: Request) {
+  const requestId = crypto.randomUUID();
   const supabase = await createClient();
   const {
     data: { user },
@@ -16,6 +18,19 @@ export async function POST(request: Request) {
       { error: "로그인이 필요합니다." },
       { status: 401 }
     );
+  }
+  const ip = extractClientIp(request);
+  const rateLimit = await checkRouteRateLimit({
+    requestId,
+    scope: "community-upload",
+    userId: user.id,
+    ip,
+    userLimitPerMin: 20,
+    ipLimitPerMin: 80,
+    path: "/api/upload",
+  });
+  if (!rateLimit.allowed) {
+    return NextResponse.json({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." }, { status: 429 });
   }
 
   const formData = await request.formData();
