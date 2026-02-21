@@ -1,7 +1,7 @@
 ﻿import Link from "next/link";
 import type { Metadata } from "next";
 import { createClient } from "@/lib/supabase/server";
-import { buildPublicLiteImageUrl, extractStorageObjectPath } from "@/lib/images";
+import { buildSignedImageUrl, extractStorageObjectPath } from "@/lib/images";
 
 export const metadata: Metadata = {
   title: "명예의 전당 | GymTools",
@@ -41,7 +41,7 @@ export default async function HallOfFamePage() {
     const path = extractStorageObjectPath(baseRow.image_url, "community");
     const row: HallOfFameRow = {
       ...baseRow,
-      image_url: path ? buildPublicLiteImageUrl("community", path) : null,
+      image_url: path ? buildSignedImageUrl("community", path) : null,
     };
     if (!grouped.has(row.week_id)) {
       grouped.set(row.week_id, { male: null, female: null });

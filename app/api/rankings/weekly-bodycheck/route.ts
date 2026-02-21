@@ -2,7 +2,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getKstWeekId } from "@/lib/weekly";
 import type { BodycheckGender } from "@/lib/community";
-import { buildPublicLiteImageUrl, extractStorageObjectPath } from "@/lib/images";
+import { buildSignedImageUrl, extractStorageObjectPath } from "@/lib/images";
 
 const MIN_VOTES = 5;
 
@@ -40,7 +40,7 @@ function normalizeCommunityImages(raw: unknown): string[] {
     .map((item) => {
       const path = extractStorageObjectPath(item, "community");
       if (!path) return "";
-      return buildPublicLiteImageUrl("community", path);
+      return buildSignedImageUrl("community", path);
     })
     .filter((item): item is string => typeof item === "string" && item.length > 0)
     .slice(0, 3);

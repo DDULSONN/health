@@ -2,7 +2,7 @@
 import { containsProfanity, getRateLimitRemaining } from "@/lib/moderation";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { NextResponse } from "next/server";
-import { buildPublicLiteImageUrl, extractStorageObjectPath } from "@/lib/images";
+import { buildSignedImageUrl, extractStorageObjectPath } from "@/lib/images";
 import type { BodycheckGender } from "@/lib/community";
 import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
 import { getConfirmedUserOrResponse } from "@/lib/auth-confirmed";
@@ -17,7 +17,7 @@ async function resolveCommunityImageUrl(
 ): Promise<string | null> {
   const path = toCommunityPublicPath(raw);
   if (path) {
-    return buildPublicLiteImageUrl("community", path);
+    return buildSignedImageUrl("community", path);
   }
   if (typeof raw === "string") {
     const value = raw.trim();

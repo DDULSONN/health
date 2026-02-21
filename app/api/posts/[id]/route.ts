@@ -2,7 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import { containsProfanity } from "@/lib/moderation";
 import { BODYCHECK_SCORE_MAP, type BodycheckRating } from "@/lib/community";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
-import { buildPublicLiteImageUrl, extractStorageObjectPath } from "@/lib/images";
+import { buildSignedImageUrl, extractStorageObjectPath } from "@/lib/images";
 import { NextResponse } from "next/server";
 import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
 
@@ -19,7 +19,7 @@ async function resolveCommunityImageUrl(
   _counters: { signCalls: number; cacheHit: number; cacheMiss: number }
 ): Promise<string | null> {
   const path = toCommunityPublicPath(raw);
-  if (path) return buildPublicLiteImageUrl("community", path);
+  if (path) return buildSignedImageUrl("community", path);
   if (typeof raw === "string") {
     const value = raw.trim();
     if (value.startsWith("http://") || value.startsWith("https://")) {
