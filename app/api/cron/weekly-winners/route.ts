@@ -6,6 +6,7 @@ const MIN_VOTES = 5;
 
 type WeeklyTop = {
   post_id: string;
+  score_sum: number;
   score_avg: number;
   vote_count: number;
   posts: {
@@ -31,10 +32,11 @@ async function fetchTopByGender(
 ): Promise<WeeklyTop | null> {
   const { data, error } = await supabase
     .from("post_score_weekly")
-    .select("post_id, score_avg, vote_count, posts!inner(user_id, images)")
+    .select("post_id, score_sum, score_avg, vote_count, posts!inner(user_id, images)")
     .eq("week_id", weekId)
     .eq("gender", gender)
     .gte("vote_count", MIN_VOTES)
+    .order("score_sum", { ascending: false })
     .order("score_avg", { ascending: false })
     .order("vote_count", { ascending: false })
     .order("updated_at", { ascending: true })

@@ -64,6 +64,7 @@ export async function GET(request: Request) {
     .eq("week_id", weekId)
     .eq("gender", gender)
     .gte("vote_count", MIN_VOTES)
+    .order("score_sum", { ascending: false })
     .order("score_avg", { ascending: false })
     .order("vote_count", { ascending: false })
     .order("updated_at", { ascending: true })
