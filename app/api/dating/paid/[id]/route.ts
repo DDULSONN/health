@@ -1,7 +1,17 @@
 import { createAdminClient } from "@/lib/supabase/server";
-import { buildSignedImageUrl } from "@/lib/images";
+import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { NextResponse } from "next/server";
+
+function normalizeDatingPhotoPath(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  const value = raw.trim();
+  if (!value) return "";
+  return (
+    extractStorageObjectPathFromBuckets(value, ["dating-card-photos", "dating-photos"]) ??
+    value
+  );
+}
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const requestId = crypto.randomUUID();
@@ -46,8 +56,8 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   const firstPath =
-    Array.isArray(data.photo_paths) && data.photo_paths.length > 0 && typeof data.photo_paths[0] === "string"
-      ? data.photo_paths[0]
+    Array.isArray(data.photo_paths) && data.photo_paths.length > 0
+      ? normalizeDatingPhotoPath(data.photo_paths[0])
       : "";
 
   const createSignedUrl = async (path: string) => {
@@ -59,8 +69,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   let imageUrl = "";
   if (data.photo_visibility === "public" && firstPath) {
     imageUrl = await createSignedUrl(firstPath);
-  } else if (data.blur_thumb_path) {
-    imageUrl = await createSignedUrl(data.blur_thumb_path);
+  } else {
+    const blurThumbPath = normalizeDatingPhotoPath(data.blur_thumb_path);
+    if (blurThumbPath) {
+      imageUrl = await createSignedUrl(blurThumbPath);
+    }
   }
   console.log(
     `[signedUrl.stats] requestId=${requestId} path=/api/dating/paid/[id] signCalls=${signCalls} cacheHit=${cacheHit} cacheMiss=${cacheMiss}`

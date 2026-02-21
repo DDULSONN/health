@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
-import { buildPublicLiteImageUrl, buildSignedImageUrl } from "@/lib/images";
+import { buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { kvGetString } from "@/lib/edge-kv";
 import { NextResponse } from "next/server";
 
@@ -34,6 +34,16 @@ function toLitePath(rawPath: string): string {
 
 function toThumbPath(rawPath: string): string {
   return rawPath.replace("/raw/", "/thumb/").replace(/\.[^.\/]+$/, ".webp");
+}
+
+function normalizeDatingPhotoPath(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  const value = raw.trim();
+  if (!value) return "";
+  return (
+    extractStorageObjectPathFromBuckets(value, ["dating-card-photos", "dating-photos"]) ??
+    value
+  );
 }
 
 async function getLitePublicUrlIfAvailable(
@@ -139,8 +149,8 @@ export async function GET(req: Request) {
     const items = await Promise.all(
       (data ?? []).map(async (row) => {
         const firstPath =
-          Array.isArray(row.photo_paths) && row.photo_paths.length > 0 && typeof row.photo_paths[0] === "string"
-            ? row.photo_paths[0]
+          Array.isArray(row.photo_paths) && row.photo_paths.length > 0
+            ? normalizeDatingPhotoPath(row.photo_paths[0])
             : "";
 
         let thumbUrl = "";
@@ -161,8 +171,11 @@ export async function GET(req: Request) {
             thumbUrl = await createSignedUrl(admin, requestId, firstPath, counters, "raw-list");
           }
           if (thumbUrl) counters.rawSigned += 1;
-        } else if (row.blur_thumb_path) {
-          thumbUrl = await createSignedUrl(admin, requestId, row.blur_thumb_path, counters, "blur-list");
+        } else {
+          const blurThumbPath = normalizeDatingPhotoPath(row.blur_thumb_path);
+          if (blurThumbPath) {
+            thumbUrl = await createSignedUrl(admin, requestId, blurThumbPath, counters, "blur-list");
+          }
           if (thumbUrl) counters.blurSigned += 1;
         }
 

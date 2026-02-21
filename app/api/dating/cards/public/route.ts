@@ -1,5 +1,5 @@
 import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
-import { buildPublicLiteImageUrl, buildSignedImageUrl } from "@/lib/images";
+import { buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { kvGetString } from "@/lib/edge-kv";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -62,6 +62,16 @@ function toThumbPath(rawPath: string): string {
   return rawPath.replace("/raw/", "/thumb/").replace(/\.[^.\/]+$/, ".webp");
 }
 
+function normalizeDatingPhotoPath(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  const value = raw.trim();
+  if (!value) return "";
+  return (
+    extractStorageObjectPathFromBuckets(value, ["dating-card-photos", "dating-photos"]) ??
+    value
+  );
+}
+
 async function getLitePublicUrlIfAvailable(
   adminClient: ReturnType<typeof createAdminClient>,
   litePath: string
@@ -106,7 +116,7 @@ async function createSignedImageUrls(
 ) {
   if (photoVisibility === "public") {
     const rawPaths = Array.isArray(photoPaths)
-      ? photoPaths.filter((item): item is string => typeof item === "string" && item.length > 0).slice(0, 2)
+      ? photoPaths.map((item) => normalizeDatingPhotoPath(item)).filter((item) => item.length > 0).slice(0, 2)
       : [];
 
     const rawUrls: string[] = [];
@@ -155,7 +165,7 @@ async function createSignedImageUrls(
   }
 
   const blurPathList = Array.isArray(blurPaths)
-    ? blurPaths.filter((item): item is string => typeof item === "string" && item.length > 0).slice(0, 2)
+    ? blurPaths.map((item) => normalizeDatingPhotoPath(item)).filter((item) => item.length > 0).slice(0, 2)
     : [];
   const blurUrls: string[] = [];
   for (const blurPath of blurPathList) {
@@ -168,8 +178,9 @@ async function createSignedImageUrls(
   }
   if (blurUrls.length > 0) return blurUrls;
 
-  if (typeof blurThumbPath === "string" && blurThumbPath) {
-    const thumb = buildSignedImageUrl("dating-card-photos", blurThumbPath);
+  const normalizedBlurThumbPath = normalizeDatingPhotoPath(blurThumbPath);
+  if (normalizedBlurThumbPath) {
+    const thumb = buildSignedImageUrl("dating-card-photos", normalizedBlurThumbPath);
     if (thumb) {
       counters.blurCount += 1;
       counters.cacheMiss += 1;

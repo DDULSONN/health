@@ -1,4 +1,4 @@
-import { buildSignedImageUrl } from "@/lib/images";
+import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -15,6 +15,16 @@ type SignCounters = {
   cacheHit: number;
   cacheMiss: number;
 };
+
+function normalizeDatingPhotoPath(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  const value = raw.trim();
+  if (!value) return "";
+  return (
+    extractStorageObjectPathFromBuckets(value, ["dating-card-photos", "dating-photos"]) ??
+    value
+  );
+}
 
 async function signPathWithCache(
   _adminClient: ReturnType<typeof createAdminClient>,
@@ -38,7 +48,7 @@ async function createSignedImageUrls(
 ) {
   if (photoVisibility === "public") {
     const rawPaths = Array.isArray(photoPaths)
-      ? photoPaths.filter((item): item is string => typeof item === "string" && item.length > 0).slice(0, 2)
+      ? photoPaths.map((item) => normalizeDatingPhotoPath(item)).filter((item) => item.length > 0).slice(0, 2)
       : [];
     const rawUrls: string[] = [];
     for (const rawPath of rawPaths) {
@@ -49,7 +59,7 @@ async function createSignedImageUrls(
   }
 
   const blurPathList = Array.isArray(blurPaths)
-    ? blurPaths.filter((item): item is string => typeof item === "string" && item.length > 0).slice(0, 2)
+    ? blurPaths.map((item) => normalizeDatingPhotoPath(item)).filter((item) => item.length > 0).slice(0, 2)
     : [];
   const blurUrls: string[] = [];
   for (const blurPath of blurPathList) {
@@ -58,8 +68,9 @@ async function createSignedImageUrls(
   }
   if (blurUrls.length > 0) return blurUrls;
 
-  if (typeof blurThumbPath === "string" && blurThumbPath) {
-    const thumb = await signPathWithCache(adminClient, blurThumbPath, requestId, counters);
+  const normalizedBlurThumbPath = normalizeDatingPhotoPath(blurThumbPath);
+  if (normalizedBlurThumbPath) {
+    const thumb = await signPathWithCache(adminClient, normalizedBlurThumbPath, requestId, counters);
     if (thumb) {
       if (photoVisibility === "blur") return [thumb, thumb];
       return [thumb];

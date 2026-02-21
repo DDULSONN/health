@@ -60,6 +60,14 @@ export function extractStorageObjectPath(raw: unknown, bucket: string): string |
   return null;
 }
 
+export function extractStorageObjectPathFromBuckets(raw: unknown, buckets: string[]): string | null {
+  for (const bucket of buckets) {
+    const path = extractStorageObjectPath(raw, bucket);
+    if (path) return path;
+  }
+  return null;
+}
+
 export function buildPublicLiteImageUrl(bucket: string, objectPath: string): string {
   const safeBucket = assertSafeObjectPath(bucket);
   const safePath = assertSafeObjectPath(objectPath);
