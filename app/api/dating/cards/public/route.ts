@@ -62,6 +62,10 @@ function toThumbPath(rawPath: string): string {
   return rawPath.replace("/raw/", "/thumb/").replace(/\.[^.\/]+$/, ".webp");
 }
 
+function toBlurWebpPath(path: string): string {
+  return path.includes("/blur/") ? path.replace(/\.[^.\/]+$/, ".webp") : path;
+}
+
 function normalizeDatingPhotoPath(raw: unknown): string {
   if (typeof raw !== "string") return "";
   const value = raw.trim();
@@ -154,8 +158,15 @@ async function createSignedImageUrls(
     ? blurPaths.map((item) => normalizeDatingPhotoPath(item)).filter((item) => item.length > 0).slice(0, 2)
     : [];
   const blurUrls: string[] = [];
-  for (const blurPath of blurPathList) {
-    const signed = buildSignedImageUrl("dating-card-photos", blurPath);
+  for (const originalBlurPath of blurPathList) {
+    const blurWebpPath = toBlurWebpPath(originalBlurPath);
+    const blurPublicUrl = await getLitePublicUrlIfAvailable(adminClient, blurWebpPath);
+    if (blurPublicUrl) {
+      blurUrls.push(blurPublicUrl);
+      counters.blurCount += 1;
+      continue;
+    }
+    const signed = buildSignedImageUrl("dating-card-photos", originalBlurPath);
     if (signed) {
       blurUrls.push(signed);
       counters.blurCount += 1;
@@ -166,12 +177,19 @@ async function createSignedImageUrls(
 
   const normalizedBlurThumbPath = normalizeDatingPhotoPath(blurThumbPath);
   if (normalizedBlurThumbPath) {
-    const thumb = buildSignedImageUrl("dating-card-photos", normalizedBlurThumbPath);
-    if (thumb) {
+    const blurThumbWebpPath = toBlurWebpPath(normalizedBlurThumbPath);
+    const publicThumb = await getLitePublicUrlIfAvailable(adminClient, blurThumbWebpPath);
+    if (publicThumb) {
+      counters.blurCount += 1;
+      if (photoVisibility === "blur") return [publicThumb, publicThumb];
+      return [publicThumb];
+    }
+    const signedThumb = buildSignedImageUrl("dating-card-photos", normalizedBlurThumbPath);
+    if (signedThumb) {
       counters.blurCount += 1;
       counters.cacheMiss += 1;
-      if (photoVisibility === "blur") return [thumb, thumb];
-      return [thumb];
+      if (photoVisibility === "blur") return [signedThumb, signedThumb];
+      return [signedThumb];
     }
   }
 

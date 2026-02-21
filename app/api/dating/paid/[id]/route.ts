@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/server";
-import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
+import { buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
+import { kvGetString } from "@/lib/edge-kv";
 import { NextResponse } from "next/server";
 
 function normalizeDatingPhotoPath(raw: unknown): string {
@@ -11,6 +12,54 @@ function normalizeDatingPhotoPath(raw: unknown): string {
     extractStorageObjectPathFromBuckets(value, ["dating-card-photos", "dating-photos"]) ??
     value
   );
+}
+
+const LITE_PUBLIC_BUCKET = "dating-card-lite";
+const LITE_PUBLIC_PROBE_TTL_MS = 6 * 60 * 60 * 1000;
+const LITE_PUBLIC_NEGATIVE_PROBE_TTL_MS = 5 * 60 * 1000;
+
+type LitePublicProbeCacheValue = {
+  exists: boolean;
+  expiresAtEpochMs: number;
+};
+
+const litePublicProbeCache = new Map<string, LitePublicProbeCacheValue>();
+
+function toBlurWebpPath(path: string): string {
+  return path.includes("/blur/") ? path.replace(/\.[^.\/]+$/, ".webp") : path;
+}
+
+async function getLitePublicUrlIfAvailable(
+  admin: ReturnType<typeof createAdminClient>,
+  litePath: string
+): Promise<string> {
+  const now = Date.now();
+  const cachedProbe = litePublicProbeCache.get(litePath);
+  if (cachedProbe && cachedProbe.expiresAtEpochMs > now) {
+    if (!cachedProbe.exists) return "";
+    return buildPublicLiteImageUrl(LITE_PUBLIC_BUCKET, litePath);
+  }
+
+  const marker = await kvGetString(`litepublic:${litePath}`);
+  const proxyUrl = buildPublicLiteImageUrl(LITE_PUBLIC_BUCKET, litePath);
+  if (!proxyUrl) return "";
+  const publicUrl = admin.storage.from(LITE_PUBLIC_BUCKET).getPublicUrl(litePath).data.publicUrl;
+  if (typeof publicUrl !== "string" || !publicUrl) return "";
+  if (marker) {
+    litePublicProbeCache.set(litePath, { exists: true, expiresAtEpochMs: now + LITE_PUBLIC_PROBE_TTL_MS });
+    return proxyUrl;
+  }
+
+  const probe = await fetch(publicUrl, { method: "HEAD", cache: "no-store" }).catch(() => null);
+  if (probe?.ok) {
+    litePublicProbeCache.set(litePath, { exists: true, expiresAtEpochMs: now + LITE_PUBLIC_PROBE_TTL_MS });
+    return proxyUrl;
+  }
+  litePublicProbeCache.set(litePath, {
+    exists: false,
+    expiresAtEpochMs: now + LITE_PUBLIC_NEGATIVE_PROBE_TTL_MS,
+  });
+  return "";
 }
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -72,7 +121,11 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   } else {
     const blurThumbPath = normalizeDatingPhotoPath(data.blur_thumb_path);
     if (blurThumbPath) {
-      imageUrl = await createSignedUrl(blurThumbPath);
+      const blurWebpPath = toBlurWebpPath(blurThumbPath);
+      imageUrl = await getLitePublicUrlIfAvailable(admin, blurWebpPath);
+      if (!imageUrl) {
+        imageUrl = await createSignedUrl(blurThumbPath);
+      }
     }
   }
   console.log(

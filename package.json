@@ -11,7 +11,9 @@
     "backfill:dating-lite:dry": "node scripts/backfill-dating-lite.mjs --verbose",
     "backfill:dating-lite:apply": "node scripts/backfill-dating-lite.mjs --apply --concurrency=4",
     "backfill:dating-lite-public:dry": "node scripts/backfill-dating-lite-public.mjs --verbose",
-    "backfill:dating-lite-public:apply": "node scripts/backfill-dating-lite-public.mjs --apply --concurrency=4"
+    "backfill:dating-lite-public:apply": "node scripts/backfill-dating-lite-public.mjs --apply --concurrency=4",
+    "backfill:dating-blur-webp:dry": "node scripts/backfill-dating-blur-webp.mjs --verbose",
+    "backfill:dating-blur-webp:apply": "node scripts/backfill-dating-blur-webp.mjs --apply --concurrency=4"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.3.2",

@@ -1,6 +1,7 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { kvSetString } from "@/lib/edge-kv";
 import { NextResponse } from "next/server";
+import sharp from "sharp";
 
 export const runtime = "nodejs";
 
@@ -9,6 +10,8 @@ const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const CARD_BUCKET = "dating-card-photos";
 const LITE_PUBLIC_BUCKET = "dating-card-lite";
 const THUMB_TRANSFORM = { width: 560, quality: 68 };
+const BLUR_WIDTH = 560;
+const BLUR_QUALITY = 68;
 
 async function ensureCardBucket(adminClient: ReturnType<typeof createAdminClient>) {
   const { error } = await adminClient.storage.createBucket(CARD_BUCKET, {
@@ -45,10 +48,13 @@ async function ensureLitePublicBucket(adminClient: ReturnType<typeof createAdmin
 async function uploadCardPhoto(
   adminClient: ReturnType<typeof createAdminClient>,
   path: string,
-  file: File
+  file: File,
+  override?: { contentType: string; bytes: Buffer }
 ) {
-  const firstTry = await adminClient.storage.from(CARD_BUCKET).upload(path, file, {
-    contentType: file.type,
+  const payload = override?.bytes ?? file;
+  const contentType = override?.contentType ?? file.type;
+  const firstTry = await adminClient.storage.from(CARD_BUCKET).upload(path, payload, {
+    contentType,
     upsert: false,
     cacheControl: "3600",
   });
@@ -61,8 +67,8 @@ async function uploadCardPhoto(
 
   await ensureCardBucket(adminClient);
 
-  const secondTry = await adminClient.storage.from(CARD_BUCKET).upload(path, file, {
-    contentType: file.type,
+  const secondTry = await adminClient.storage.from(CARD_BUCKET).upload(path, payload, {
+    contentType,
     upsert: false,
     cacheControl: "3600",
   });
@@ -73,10 +79,13 @@ async function uploadCardPhoto(
 async function uploadLitePublicPhoto(
   adminClient: ReturnType<typeof createAdminClient>,
   path: string,
-  file: File
+  file: File,
+  override?: { contentType: string; bytes: Buffer }
 ) {
-  const firstTry = await adminClient.storage.from(LITE_PUBLIC_BUCKET).upload(path, file, {
-    contentType: file.type,
+  const payload = override?.bytes ?? file;
+  const contentType = override?.contentType ?? file.type;
+  const firstTry = await adminClient.storage.from(LITE_PUBLIC_BUCKET).upload(path, payload, {
+    contentType,
     upsert: false,
     cacheControl: "31536000",
   });
@@ -89,8 +98,8 @@ async function uploadLitePublicPhoto(
 
   await ensureLitePublicBucket(adminClient);
 
-  const secondTry = await adminClient.storage.from(LITE_PUBLIC_BUCKET).upload(path, file, {
-    contentType: file.type,
+  const secondTry = await adminClient.storage.from(LITE_PUBLIC_BUCKET).upload(path, payload, {
+    contentType,
     upsert: false,
     cacheControl: "31536000",
   });
@@ -100,6 +109,15 @@ async function uploadLitePublicPhoto(
 
 function toThumbPath(litePath: string): string {
   return litePath.replace("/lite/", "/thumb/").replace(/\.[^.\/]+$/, ".webp");
+}
+
+async function toBlurWebpBytes(file: File): Promise<Buffer> {
+  const input = Buffer.from(await file.arrayBuffer());
+  return sharp(input)
+    .rotate()
+    .resize({ width: BLUR_WIDTH, withoutEnlargement: true })
+    .webp({ quality: BLUR_QUALITY })
+    .toBuffer();
 }
 
 async function generateThumbBytes(
@@ -177,14 +195,21 @@ export async function POST(req: Request) {
   }
 
   const safeAssetId = assetIdRaw.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
-  const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+  const ext = kind === "blur" ? "webp" : file.type === "image/png" ? "png" : file.type === "webp" ? "webp" : "jpg";
   const folder = kind === "blur" ? "blur" : kind === "lite" ? "lite" : "raw";
   const baseName = safeAssetId || `${Date.now()}`;
   const path = `cards/${user.id}/${folder}/${baseName}-${index}.${ext}`;
 
   try {
     const adminClient = createAdminClient();
-    const { error } = await uploadCardPhoto(adminClient, path, file);
+    const blurUploadOverride =
+      kind === "blur"
+        ? {
+            contentType: "image/webp",
+            bytes: await toBlurWebpBytes(file),
+          }
+        : undefined;
+    const { error } = await uploadCardPhoto(adminClient, path, file, blurUploadOverride);
 
     if (error) {
       console.error("[POST /api/dating/cards/upload-card] failed", error);
@@ -194,10 +219,10 @@ export async function POST(req: Request) {
       );
     }
 
-    if (kind === "lite") {
-      const litePublicRes = await uploadLitePublicPhoto(adminClient, path, file);
+    if (kind === "lite" || kind === "blur") {
+      const litePublicRes = await uploadLitePublicPhoto(adminClient, path, file, blurUploadOverride);
       if (litePublicRes.error) {
-        console.warn("[POST /api/dating/cards/upload-card] lite public upload failed", {
+        console.warn("[POST /api/dating/cards/upload-card] public mirror upload failed", {
           pathTail: path.split("/").slice(-2).join("/"),
           message: litePublicRes.error.message ?? null,
         });
@@ -205,26 +230,28 @@ export async function POST(req: Request) {
         await kvSetString(`litepublic:${path}`, "1", 365 * 24 * 60 * 60);
       }
 
-      const thumbPath = toThumbPath(path);
-      const thumbBytes = await generateThumbBytes(adminClient, path);
-      if (!thumbBytes) {
-        console.warn("[POST /api/dating/cards/upload-card] thumb generation failed", {
-          pathTail: thumbPath.split("/").slice(-2).join("/"),
-        });
-      } else {
-        const privateOk = await uploadBytesToBucket(adminClient, CARD_BUCKET, thumbPath, thumbBytes, "3600");
-        if (!privateOk) {
-          console.warn("[POST /api/dating/cards/upload-card] thumb private upload failed", {
-            pathTail: thumbPath.split("/").slice(-2).join("/"),
-          });
-        }
-        const publicOk = await uploadBytesToBucket(adminClient, LITE_PUBLIC_BUCKET, thumbPath, thumbBytes, "31536000");
-        if (!publicOk) {
-          console.warn("[POST /api/dating/cards/upload-card] thumb public upload failed", {
+      if (kind === "lite") {
+        const thumbPath = toThumbPath(path);
+        const thumbBytes = await generateThumbBytes(adminClient, path);
+        if (!thumbBytes) {
+          console.warn("[POST /api/dating/cards/upload-card] thumb generation failed", {
             pathTail: thumbPath.split("/").slice(-2).join("/"),
           });
         } else {
-          await kvSetString(`litepublic:${thumbPath}`, "1", 365 * 24 * 60 * 60);
+          const privateOk = await uploadBytesToBucket(adminClient, CARD_BUCKET, thumbPath, thumbBytes, "3600");
+          if (!privateOk) {
+            console.warn("[POST /api/dating/cards/upload-card] thumb private upload failed", {
+              pathTail: thumbPath.split("/").slice(-2).join("/"),
+            });
+          }
+          const publicOk = await uploadBytesToBucket(adminClient, LITE_PUBLIC_BUCKET, thumbPath, thumbBytes, "31536000");
+          if (!publicOk) {
+            console.warn("[POST /api/dating/cards/upload-card] thumb public upload failed", {
+              pathTail: thumbPath.split("/").slice(-2).join("/"),
+            });
+          } else {
+            await kvSetString(`litepublic:${thumbPath}`, "1", 365 * 24 * 60 * 60);
+          }
         }
       }
     }

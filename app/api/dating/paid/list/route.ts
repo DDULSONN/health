@@ -36,6 +36,10 @@ function toThumbPath(rawPath: string): string {
   return rawPath.replace("/raw/", "/thumb/").replace(/\.[^.\/]+$/, ".webp");
 }
 
+function toBlurWebpPath(path: string): string {
+  return path.includes("/blur/") ? path.replace(/\.[^.\/]+$/, ".webp") : path;
+}
+
 function normalizeDatingPhotoPath(raw: unknown): string {
   if (typeof raw !== "string") return "";
   const value = raw.trim();
@@ -168,7 +172,11 @@ export async function GET(req: Request) {
         } else {
           const blurThumbPath = normalizeDatingPhotoPath(row.blur_thumb_path);
           if (blurThumbPath) {
-            thumbUrl = await createSignedUrl(admin, requestId, blurThumbPath, counters, "blur-list");
+            const blurWebpPath = toBlurWebpPath(blurThumbPath);
+            thumbUrl = await getLitePublicUrlIfAvailable(admin, blurWebpPath);
+            if (!thumbUrl) {
+              thumbUrl = await createSignedUrl(admin, requestId, blurThumbPath, counters, "blur-list");
+            }
           }
           if (thumbUrl) counters.blurSigned += 1;
         }
