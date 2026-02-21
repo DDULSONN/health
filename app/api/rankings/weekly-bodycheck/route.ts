@@ -2,6 +2,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getKstWeekId } from "@/lib/weekly";
 import type { BodycheckGender } from "@/lib/community";
+import { buildPublicLiteImageUrl, extractStorageObjectPath } from "@/lib/images";
 
 const MIN_VOTES = 5;
 
@@ -31,6 +32,18 @@ type WeeklyRow = {
 function getPost(row: WeeklyRow) {
   if (!row.posts) return null;
   return Array.isArray(row.posts) ? row.posts[0] : row.posts;
+}
+
+function normalizeCommunityImages(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  return raw
+    .map((item) => {
+      const path = extractStorageObjectPath(item, "community");
+      if (!path) return "";
+      return buildPublicLiteImageUrl("community", path);
+    })
+    .filter((item): item is string => typeof item === "string" && item.length > 0)
+    .slice(0, 3);
 }
 
 export async function GET(request: Request) {
@@ -86,7 +99,7 @@ export async function GET(request: Request) {
         post_id: row.post_id,
         title: post?.title ?? "",
         user_id: post?.user_id ?? "",
-        images: post?.images ?? [],
+        images: normalizeCommunityImages(post?.images ?? []),
         created_at: post?.created_at ?? null,
         score_sum: Number(row.score_sum ?? 0),
         vote_count: Number(row.vote_count ?? 0),

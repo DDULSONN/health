@@ -1,4 +1,5 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { buildPublicLiteImageUrl } from "@/lib/images";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { NextResponse } from "next/server";
 
@@ -72,9 +73,6 @@ export async function POST(request: Request) {
     );
   }
 
-  const {
-    data: { publicUrl },
-  } = adminSupabase.storage.from("community").getPublicUrl(path);
-
-  return NextResponse.json({ url: publicUrl });
+  const proxyUrl = buildPublicLiteImageUrl("community", path);
+  return NextResponse.json({ path, url: proxyUrl });
 }

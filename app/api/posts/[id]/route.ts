@@ -1,82 +1,41 @@
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { createClient } from "@/lib/supabase/server";
 import { containsProfanity } from "@/lib/moderation";
 import { BODYCHECK_SCORE_MAP, type BodycheckRating } from "@/lib/community";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
-import { getCachedSignedUrlWithBucket } from "@/lib/signed-url-cache";
+import { buildPublicLiteImageUrl, extractStorageObjectPath } from "@/lib/images";
 import { NextResponse } from "next/server";
 import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
 
 type RouteCtx = { params: Promise<{ id: string }> };
-const COMMUNITY_SIGNED_URL_TTL_SEC = 3600;
 
-function toCommunityPublicUrl(supabase: Awaited<ReturnType<typeof createClient>>, raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
-  const value = raw.trim();
-  if (!value) return null;
-
-  const publicPathToken = "/storage/v1/object/public/community/";
-  const renderPathToken = "/storage/v1/render/image/public/community/";
-  const publicIdx = value.indexOf(publicPathToken);
-  if (publicIdx >= 0) {
-    const path = value.slice(publicIdx + publicPathToken.length).split("?")[0] ?? "";
-    if (!path) return null;
-    return supabase.storage.from("community").getPublicUrl(path).data.publicUrl;
-  }
-  const renderIdx = value.indexOf(renderPathToken);
-  if (renderIdx >= 0) {
-    const path = value.slice(renderIdx + renderPathToken.length).split("?")[0] ?? "";
-    if (!path) return null;
-    return supabase.storage.from("community").getPublicUrl(path).data.publicUrl;
-  }
-  if (value.startsWith("http://") || value.startsWith("https://")) return value;
-
-  const rawPath = value
-    .replace(/^\/?storage\/v1\/object\/public\/community\//, "")
-    .replace(/^\/?community\//, "")
-    .replace(/^\//, "");
-  if (!rawPath) return null;
-  return supabase.storage.from("community").getPublicUrl(rawPath).data.publicUrl;
+function toCommunityPublicPath(raw: unknown): string | null {
+  return extractStorageObjectPath(raw, "community");
 }
 
 async function resolveCommunityImageUrl(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  adminClient: ReturnType<typeof createAdminClient>,
-  requestId: string,
+  _supabase: Awaited<ReturnType<typeof createClient>>,
+  _requestId: string,
   raw: unknown,
-  counters: { signCalls: number; cacheHit: number; cacheMiss: number }
+  _counters: { signCalls: number; cacheHit: number; cacheMiss: number }
 ): Promise<string | null> {
-  const url = toCommunityPublicUrl(supabase, raw);
-  if (!url) return null;
-  const marker = "/storage/v1/object/public/community/";
-  const idx = url.indexOf(marker);
-  if (idx < 0) return url;
-  const path = url.slice(idx + marker.length).split("?")[0] ?? "";
-  if (!path) return url;
-
-  const signed = await getCachedSignedUrlWithBucket({
-    requestId,
-    bucket: "community",
-    path,
-    ttlSec: COMMUNITY_SIGNED_URL_TTL_SEC,
-    getSignCallCount: () => counters.signCalls,
-    createSignedUrl: async (bucket, p, ttlSec) => {
-      counters.signCalls += 1;
-      const res = await adminClient.storage.from(bucket).createSignedUrl(p, ttlSec);
-      if (res.error || !res.data?.signedUrl) return "";
-      return res.data.signedUrl;
-    },
-  });
-  if (signed.cacheStatus === "hit") counters.cacheHit += 1;
-  if (signed.cacheStatus === "miss") counters.cacheMiss += 1;
-  if (signed.url) return signed.url;
-  return url;
+  const path = toCommunityPublicPath(raw);
+  if (path) return buildPublicLiteImageUrl("community", path);
+  if (typeof raw === "string") {
+    const value = raw.trim();
+    if (value.startsWith("http://") || value.startsWith("https://")) {
+      if (value.includes("supabase.co") || value.includes("/storage/v1/") || value.includes("/render/image/")) {
+        return null;
+      }
+      return value;
+    }
+  }
+  return null;
 }
 
 export async function GET(request: Request, { params }: RouteCtx) {
   const requestId = crypto.randomUUID();
   const { id } = await params;
   const supabase = await createClient();
-  const adminClient = createAdminClient();
 
   const {
     data: { user },
@@ -192,7 +151,7 @@ export async function GET(request: Request, { params }: RouteCtx) {
     ? (
         await Promise.all(
           ((post as { images?: unknown[] }).images ?? []).map((img) =>
-            resolveCommunityImageUrl(supabase, adminClient, requestId, img, signCounters)
+            resolveCommunityImageUrl(supabase, requestId, img, signCounters)
           )
         )
       ).filter((img): img is string => typeof img === "string")
@@ -283,8 +242,8 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
   if (images !== undefined) {
     const cleanImages = Array.isArray(images)
       ? images
-          .map((u: unknown) => toCommunityPublicUrl(supabase, u))
-          .filter((u): u is string => typeof u === "string")
+          .map((u: unknown) => toCommunityPublicPath(u))
+          .filter((u): u is string => typeof u === "string" && u.length > 0)
           .slice(0, 3)
       : [];
 

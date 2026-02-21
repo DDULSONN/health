@@ -2,6 +2,7 @@
 import { containsProfanity, getRateLimitRemaining } from "@/lib/moderation";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { NextResponse } from "next/server";
+import { buildPublicLiteImageUrl, extractStorageObjectPath } from "@/lib/images";
 import type { BodycheckGender } from "@/lib/community";
 import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
 import { getConfirmedUserOrResponse } from "@/lib/auth-confirmed";
@@ -9,81 +10,35 @@ import { getConfirmedUserOrResponse } from "@/lib/auth-confirmed";
 const POST_COOLDOWN_MS = 30_000;
 const RECORD_TYPES = ["lifts", "1rm", "helltest"];
 const BODYCHECK_TYPES = ["photo_bodycheck"];
-const BODYCHECK_LIST_IMAGE_WIDTH = 960;
-const BODYCHECK_LIST_IMAGE_QUALITY = 72;
 
 async function resolveCommunityImageUrl(
-  supabase: Awaited<ReturnType<typeof createClient>>,
+  _supabase: Awaited<ReturnType<typeof createClient>>,
   raw: unknown
 ): Promise<string | null> {
   const path = toCommunityPublicPath(raw);
   if (path) {
-    const renderUrl = toCommunityRenderPublicUrl(path);
-    if (renderUrl) return renderUrl;
-    return supabase.storage.from("community").getPublicUrl(path).data.publicUrl;
+    return buildPublicLiteImageUrl("community", path);
   }
   if (typeof raw === "string") {
     const value = raw.trim();
-    if (value.startsWith("http://") || value.startsWith("https://")) return value;
+    if (value.startsWith("http://") || value.startsWith("https://")) {
+      if (value.includes("supabase.co") || value.includes("/storage/v1/") || value.includes("/render/image/")) {
+        return null;
+      }
+      return value;
+    }
   }
   return null;
 }
 function toCommunityPublicPath(raw: unknown): string | null {
-  if (typeof raw !== "string") return null;
-  const value = raw.trim();
-  if (!value) return null;
-
-  const publicPathToken = "/storage/v1/object/public/community/";
-  const renderPathToken = "/storage/v1/render/image/public/community/";
-  const renderSignedPathToken = "/storage/v1/render/image/sign/community/";
-  const publicIdx = value.indexOf(publicPathToken);
-  if (publicIdx >= 0) {
-    const path = value.slice(publicIdx + publicPathToken.length).split("?")[0] ?? "";
-    return path || null;
-  }
-  const renderIdx = value.indexOf(renderPathToken);
-  if (renderIdx >= 0) {
-    const path = value.slice(renderIdx + renderPathToken.length).split("?")[0] ?? "";
-    return path || null;
-  }
-  const renderSignedIdx = value.indexOf(renderSignedPathToken);
-  if (renderSignedIdx >= 0) {
-    const path = value.slice(renderSignedIdx + renderSignedPathToken.length).split("?")[0] ?? "";
-    return path || null;
-  }
-  if (value.startsWith("http://") || value.startsWith("https://")) return value;
-
-  const publicPrefix = "/storage/v1/object/public/community/";
-  let path = value;
-  if (path.startsWith(publicPrefix)) {
-    path = path.slice(publicPrefix.length);
-  } else if (path.startsWith("storage/v1/object/public/community/")) {
-    path = path.slice("storage/v1/object/public/community/".length);
-  } else if (path.startsWith("community/")) {
-    path = path.slice("community/".length);
-  } else if (path.startsWith("/")) {
-    path = path.slice(1);
-  }
-  return path || null;
-}
-
-function toCommunityRenderPublicUrl(path: string): string | null {
-  const base = process.env.NEXT_PUBLIC_SUPABASE_URL?.trim().replace(/\/$/, "");
-  if (!base) return null;
-  const encodedPath = path
-    .split("/")
-    .filter(Boolean)
-    .map((part) => encodeURIComponent(part))
-    .join("/");
-  if (!encodedPath) return null;
-  return `${base}/storage/v1/render/image/public/community/${encodedPath}?width=${BODYCHECK_LIST_IMAGE_WIDTH}&quality=${BODYCHECK_LIST_IMAGE_QUALITY}`;
+  return extractStorageObjectPath(raw, "community");
 }
 
 function extractThumbImages(payload: unknown): string[] {
   if (!payload || typeof payload !== "object") return [];
   const raw = (payload as { thumb_images?: unknown }).thumb_images;
   if (!Array.isArray(raw)) return [];
-  return raw.filter((item): item is string => typeof item === "string" && item.startsWith("http")).slice(0, 3);
+  return raw.filter((item): item is string => typeof item === "string" && item.trim().length > 0).slice(0, 3);
 }
 
 export async function GET(request: Request) {
@@ -263,12 +218,8 @@ export async function POST(request: Request) {
 
   const cleanImages = Array.isArray(images)
     ? images
-        .map((url: unknown) => {
-          const path = toCommunityPublicPath(url);
-          if (!path) return null;
-          return supabase.storage.from("community").getPublicUrl(path).data.publicUrl;
-        })
-        .filter((url): url is string => typeof url === "string")
+        .map((url: unknown) => toCommunityPublicPath(url))
+        .filter((path): path is string => typeof path === "string" && path.length > 0)
         .slice(0, 3)
     : [];
 
@@ -320,12 +271,8 @@ export async function POST(request: Request) {
     );
     if (type === "photo_bodycheck" && Array.isArray(normalizedPayload.thumb_images)) {
       normalizedPayload.thumb_images = normalizedPayload.thumb_images
-        .map((url: unknown) => {
-          const path = toCommunityPublicPath(url);
-          if (!path) return null;
-          return supabase.storage.from("community").getPublicUrl(path).data.publicUrl;
-        })
-        .filter((url): url is string => typeof url === "string")
+        .map((url: unknown) => toCommunityPublicPath(url))
+        .filter((path): path is string => typeof path === "string" && path.length > 0)
         .slice(0, 3);
     }
     cleanPayload = normalizedPayload;

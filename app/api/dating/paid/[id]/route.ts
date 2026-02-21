@@ -1,9 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { buildSignedImageUrl } from "@/lib/images";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
-import { getCachedSignedUrlResolved } from "@/lib/signed-url-cache";
 import { NextResponse } from "next/server";
-
-const SIGNED_URL_TTL_SEC = 3600;
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const requestId = crypto.randomUUID();
@@ -26,7 +24,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const { id } = await params;
   const admin = createAdminClient();
-  let signCalls = 0;
+  const signCalls = 0;
   let cacheHit = 0;
   let cacheMiss = 0;
 
@@ -53,22 +51,9 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       : "";
 
   const createSignedUrl = async (path: string) => {
-    const result = await getCachedSignedUrlResolved({
-      requestId,
-      path,
-      ttlSec: SIGNED_URL_TTL_SEC,
-      buckets: ["dating-card-photos", "dating-photos"],
-      getSignCallCount: () => signCalls,
-      createSignedUrl: async (bucket, p, ttlSec) => {
-        signCalls += 1;
-        const signRes = await admin.storage.from(bucket).createSignedUrl(p, ttlSec);
-        if (signRes.error || !signRes.data?.signedUrl) return "";
-        return signRes.data.signedUrl;
-      },
-    });
-    if (result.cacheStatus === "hit") cacheHit += 1;
-    if (result.cacheStatus === "miss") cacheMiss += 1;
-    return result.url;
+    const proxy = buildSignedImageUrl("dating-card-photos", path);
+    if (proxy) cacheMiss += 1;
+    return proxy;
   };
 
   let imageUrl = "";

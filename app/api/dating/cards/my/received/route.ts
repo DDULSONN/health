@@ -1,35 +1,19 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
-import { getCachedSignedUrlResolved } from "@/lib/signed-url-cache";
+import { buildSignedImageUrl } from "@/lib/images";
 import { NextResponse } from "next/server";
-
-const SIGNED_URL_TTL_SEC = 3600;
 
 type SignCounters = { signCalls: number; cacheHit: number; cacheMiss: number };
 
 async function createApplyPhotoSignedUrl(
-  adminClient: ReturnType<typeof createAdminClient>,
+  _adminClient: ReturnType<typeof createAdminClient>,
   path: string,
-  requestId: string,
+  _requestId: string,
   counters: SignCounters
 ) {
-  const result = await getCachedSignedUrlResolved({
-    requestId,
-    path,
-    ttlSec: SIGNED_URL_TTL_SEC,
-    buckets: ["dating-apply-photos", "dating-photos"],
-    getSignCallCount: () => counters.signCalls,
-    createSignedUrl: async (bucket, p, ttlSec) => {
-      counters.signCalls += 1;
-      const signRes = await adminClient.storage.from(bucket).createSignedUrl(p, ttlSec);
-      if (signRes.error || !signRes.data?.signedUrl) return "";
-      return signRes.data.signedUrl;
-    },
-  });
-
-  if (result.cacheStatus === "hit") counters.cacheHit += 1;
-  if (result.cacheStatus === "miss") counters.cacheMiss += 1;
-  return result.url;
+  const proxy = buildSignedImageUrl("dating-apply-photos", path);
+  if (proxy) counters.cacheMiss += 1;
+  return proxy;
 }
 
 export async function GET(req: Request) {

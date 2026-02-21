@@ -1,9 +1,7 @@
+import { buildSignedImageUrl } from "@/lib/images";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
-import { getCachedSignedUrlResolved } from "@/lib/signed-url-cache";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
-
-const SIGNED_URL_TTL_SEC = 3600;
 
 function isMissingColumnError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -18,32 +16,15 @@ type SignCounters = {
   cacheMiss: number;
 };
 
-function toLitePath(rawPath: string): string {
-  return rawPath.replace("/raw/", "/lite/").replace(/\.[^.\/]+$/, ".webp");
-}
-
 async function signPathWithCache(
-  adminClient: ReturnType<typeof createAdminClient>,
+  _adminClient: ReturnType<typeof createAdminClient>,
   path: string,
-  requestId: string,
+  _requestId: string,
   counters: SignCounters
 ) {
-  const result = await getCachedSignedUrlResolved({
-    requestId,
-    path,
-    ttlSec: SIGNED_URL_TTL_SEC,
-    buckets: ["dating-card-photos", "dating-photos"],
-    getSignCallCount: () => counters.signCalls,
-    createSignedUrl: async (bucket, p, ttlSec) => {
-      counters.signCalls += 1;
-      const signRes = await adminClient.storage.from(bucket).createSignedUrl(p, ttlSec);
-      if (signRes.error || !signRes.data?.signedUrl) return "";
-      return signRes.data.signedUrl;
-    },
-  });
-  if (result.cacheStatus === "hit") counters.cacheHit += 1;
-  if (result.cacheStatus === "miss") counters.cacheMiss += 1;
-  return result.url;
+  const proxy = buildSignedImageUrl("dating-card-photos", path);
+  if (proxy) counters.cacheMiss += 1;
+  return proxy;
 }
 
 async function createSignedImageUrls(
@@ -61,12 +42,6 @@ async function createSignedImageUrls(
       : [];
     const rawUrls: string[] = [];
     for (const rawPath of rawPaths) {
-      const litePath = toLitePath(rawPath);
-      const liteSigned = await signPathWithCache(adminClient, litePath, requestId, counters);
-      if (liteSigned) {
-        rawUrls.push(liteSigned);
-        continue;
-      }
       const rawSigned = await signPathWithCache(adminClient, rawPath, requestId, counters);
       if (rawSigned) rawUrls.push(rawSigned);
     }

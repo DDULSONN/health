@@ -7,6 +7,7 @@
     "build": "next build --webpack",
     "start": "next start",
     "lint": "eslint",
+    "check:image-proxy": "node scripts/check-no-direct-supabase-image-urls.mjs",
     "backfill:dating-lite:dry": "node scripts/backfill-dating-lite.mjs --verbose",
     "backfill:dating-lite:apply": "node scripts/backfill-dating-lite.mjs --apply --concurrency=4",
     "backfill:dating-lite-public:dry": "node scripts/backfill-dating-lite-public.mjs --verbose",

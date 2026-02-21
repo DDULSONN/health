@@ -1,16 +1,10 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
-import { getCachedSignedUrlResolved } from "@/lib/signed-url-cache";
+import { buildPublicLiteImageUrl, buildSignedImageUrl } from "@/lib/images";
 import { kvGetString } from "@/lib/edge-kv";
 import { NextResponse } from "next/server";
 
-const SIGNED_URL_TTL_SEC = 3600;
-const THUMB_LIST_TRANSFORM = { width: 560, quality: 68 };
-const RAW_LIST_TRANSFORM = { width: 720, quality: 72 };
-const BLUR_LIST_TRANSFORM = { width: 720, quality: 70 };
 const LITE_PUBLIC_BUCKET = "dating-card-lite";
-const LITE_PUBLIC_RENDER_WIDTH = 560;
-const LITE_PUBLIC_RENDER_QUALITY = 68;
 const LITE_PUBLIC_PROBE_TTL_MS = 6 * 60 * 60 * 1000;
 const LITE_PUBLIC_NEGATIVE_PROBE_TTL_MS = 5 * 60 * 1000;
 
@@ -50,22 +44,23 @@ async function getLitePublicUrlIfAvailable(
   const cachedProbe = litePublicProbeCache.get(litePath);
   if (cachedProbe && cachedProbe.expiresAtEpochMs > now) {
     if (!cachedProbe.exists) return "";
-    const publicUrlCached = admin.storage.from(LITE_PUBLIC_BUCKET).getPublicUrl(litePath).data.publicUrl;
-    return typeof publicUrlCached === "string" ? toPublicRenderListUrl(publicUrlCached) : "";
+    return buildPublicLiteImageUrl(LITE_PUBLIC_BUCKET, litePath);
   }
 
   const marker = await kvGetString(`litepublic:${litePath}`);
+  const proxyUrl = buildPublicLiteImageUrl(LITE_PUBLIC_BUCKET, litePath);
+  if (!proxyUrl) return "";
   const publicUrl = admin.storage.from(LITE_PUBLIC_BUCKET).getPublicUrl(litePath).data.publicUrl;
   if (typeof publicUrl !== "string" || !publicUrl) return "";
   if (marker) {
     litePublicProbeCache.set(litePath, { exists: true, expiresAtEpochMs: now + LITE_PUBLIC_PROBE_TTL_MS });
-    return toPublicRenderListUrl(publicUrl);
+    return proxyUrl;
   }
 
   const probe = await fetch(publicUrl, { method: "HEAD", cache: "no-store" }).catch(() => null);
   if (probe?.ok) {
     litePublicProbeCache.set(litePath, { exists: true, expiresAtEpochMs: now + LITE_PUBLIC_PROBE_TTL_MS });
-    return toPublicRenderListUrl(publicUrl);
+    return proxyUrl;
   }
 
   litePublicProbeCache.set(litePath, {
@@ -75,44 +70,18 @@ async function getLitePublicUrlIfAvailable(
   return "";
 }
 
-function toPublicRenderListUrl(publicUrl: string): string {
-  const converted = publicUrl.replace("/storage/v1/object/public/", "/storage/v1/render/image/public/");
-  const separator = converted.includes("?") ? "&" : "?";
-  return `${converted}${separator}width=${LITE_PUBLIC_RENDER_WIDTH}&quality=${LITE_PUBLIC_RENDER_QUALITY}`;
-}
-
 type SignCounters = { signCalls: number; cacheHit: number; cacheMiss: number; rawSigned: number; blurSigned: number };
 
 async function createSignedUrl(
-  admin: ReturnType<typeof createAdminClient>,
-  requestId: string,
+  _admin: ReturnType<typeof createAdminClient>,
+  _requestId: string,
   path: string,
   counters: SignCounters,
-  variant: "thumb-list" | "raw-list" | "blur-list"
+  _variant: "thumb-list" | "raw-list" | "blur-list"
 ) {
-  const transform =
-    variant === "thumb-list" ? THUMB_LIST_TRANSFORM : variant === "raw-list" ? RAW_LIST_TRANSFORM : BLUR_LIST_TRANSFORM;
-  const result = await getCachedSignedUrlResolved({
-    requestId,
-    path,
-    cachePath: `${path}::${variant}:w${transform.width}:q${transform.quality}`,
-    ttlSec: SIGNED_URL_TTL_SEC,
-    buckets: ["dating-card-photos", "dating-photos"],
-    getSignCallCount: () => counters.signCalls,
-    createSignedUrl: async (bucket, p, ttlSec) => {
-      counters.signCalls += 1;
-      const transformed = await admin.storage
-        .from(bucket)
-        .createSignedUrl(p, ttlSec, { transform });
-      if (!transformed.error && transformed.data?.signedUrl) return transformed.data.signedUrl;
-      const fallback = await admin.storage.from(bucket).createSignedUrl(p, ttlSec);
-      if (fallback.error || !fallback.data?.signedUrl) return "";
-      return fallback.data.signedUrl;
-    },
-  });
-  if (result.cacheStatus === "hit") counters.cacheHit += 1;
-  if (result.cacheStatus === "miss") counters.cacheMiss += 1;
-  return result.url;
+  const proxy = buildSignedImageUrl("dating-card-photos", path);
+  if (proxy) counters.cacheMiss += 1;
+  return proxy;
 }
 
 export async function GET(req: Request) {
