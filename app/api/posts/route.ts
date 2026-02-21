@@ -104,14 +104,14 @@ export async function GET(request: Request) {
       ? ((p as Record<string, unknown>).images as unknown[]).filter((img): img is string => typeof img === "string")
       : [];
     const thumbImages = extractThumbImages((p as { payload_json?: unknown }).payload_json);
-    const sourceImages = isBodycheck && thumbImages.length > 0 ? thumbImages : originalImages;
-    const images = sourceImages.map((img) =>
+    const transformedThumbImages = thumbImages.map((img) =>
       isBodycheck && ENABLE_BODYCHECK_RENDER_TRANSFORM ? (toBodycheckListImageUrl(img) as string) : img
     );
 
     return {
       ...p,
-      images,
+      images: originalImages,
+      thumb_images: transformedThumbImages,
       profiles: profileMap.get(p.user_id as string) ?? null,
       cert_summary: null,
     };
@@ -123,8 +123,8 @@ export async function GET(request: Request) {
   }
   const transformedBodycheckImages = enriched.reduce((acc, post) => {
     if ((post.type as string) !== "photo_bodycheck") return acc;
-    const images = (post as { images?: unknown }).images;
-    return acc + (Array.isArray(images) ? images.length : 0);
+    const thumbImages = (post as { thumb_images?: unknown }).thumb_images;
+    return acc + (Array.isArray(thumbImages) ? thumbImages.length : 0);
   }, 0);
   console.log(
     `[posts.metrics] requestId=${requestId} path=/api/posts page=${page} totalPosts=${enriched.length} transformedBodycheckImages=${transformedBodycheckImages}`

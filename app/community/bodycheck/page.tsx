@@ -203,6 +203,8 @@ export default function BodycheckBoardPage() {
             const scoreSum = Number(post.score_sum ?? 0);
             const avg = voteCount > 0 ? (scoreSum / voteCount).toFixed(2) : "0.00";
             const isTop = rankingPostIds.has(post.id);
+            const previewImage = post.thumb_images?.[0] ?? post.images?.[0] ?? "";
+            const fallbackImage = post.images?.[0] ?? "";
 
             return (
               <Link
@@ -233,9 +235,16 @@ export default function BodycheckBoardPage() {
                       <VerifiedBadge total={post.cert_summary?.total} />
                     </div>
                   </div>
-                  {(post.images?.length ?? 0) > 0 && (
+                  {previewImage && (
                     <img
-                      src={post.images?.[0]}
+                      src={previewImage}
+                      data-fallback={fallbackImage}
+                      onError={(e) => {
+                        const fallback = e.currentTarget.dataset.fallback;
+                        if (fallback && e.currentTarget.src !== fallback) {
+                          e.currentTarget.src = fallback;
+                        }
+                      }}
                       alt=""
                       className="h-20 w-20 shrink-0 rounded-xl border border-neutral-100 object-cover"
                     />

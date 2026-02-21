@@ -100,8 +100,13 @@ export default function CommunityPage() {
   }, []);
 
   useEffect(() => {
-    if (tab === "ranking") loadRankings();
-    else loadFeed();
+    queueMicrotask(() => {
+      if (tab === "ranking") {
+        void loadRankings();
+      } else {
+        void loadFeed();
+      }
+    });
   }, [tab, loadFeed, loadRankings]);
 
   const handleWrite = () => {
@@ -261,7 +266,9 @@ function PostList({ posts, loading }: { posts: Post[]; loading: boolean }) {
       {posts.map((post) => {
         const badge = getBadgeFromPayload(post.type, post.payload_json);
         const icon = POST_TYPE_ICONS[post.type];
-        const hasImages = post.images && post.images.length > 0;
+        const previewImage = post.thumb_images?.[0] ?? post.images?.[0] ?? "";
+        const fallbackImage = post.images?.[0] ?? "";
+        const hasImages = Boolean(previewImage);
         const avg =
           post.type === "photo_bodycheck" ? getBodycheckAverage(post) : null;
         const voteCount = Number(post.vote_count ?? 0);
@@ -316,7 +323,14 @@ function PostList({ posts, loading }: { posts: Post[]; loading: boolean }) {
               {hasImages && (
                 <div className="shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-neutral-100">
                   <img
-                    src={post.images![0]}
+                    src={previewImage}
+                    data-fallback={fallbackImage}
+                    onError={(e) => {
+                      const fallback = e.currentTarget.dataset.fallback;
+                      if (fallback && e.currentTarget.src !== fallback) {
+                        e.currentTarget.src = fallback;
+                      }
+                    }}
                     alt=""
                     className="w-full h-full object-cover"
                   />

@@ -40,6 +40,7 @@ export interface Post {
   content: string | null;
   payload_json: Record<string, unknown> | null;
   images?: string[];
+  thumb_images?: string[];
   gender?: BodycheckGender | null;
   score_sum?: number;
   vote_count?: number;
