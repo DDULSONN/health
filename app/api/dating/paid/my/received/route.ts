@@ -1,9 +1,19 @@
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
-import { buildSignedImageUrl } from "@/lib/images";
+import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { NextResponse } from "next/server";
 
 type SignCounters = { signCalls: number; cacheHit: number; cacheMiss: number };
+
+function normalizeApplyPhotoPath(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  const value = raw.trim();
+  if (!value) return "";
+  return (
+    extractStorageObjectPathFromBuckets(value, ["dating-apply-photos", "dating-photos"]) ??
+    value
+  );
+}
 
 async function createApplyPhotoSignedUrl(
   _adminClient: ReturnType<typeof createAdminClient>,
@@ -83,7 +93,9 @@ export async function GET(req: Request) {
   const safeApps = await Promise.all(
     (apps ?? []).map(async (app) => {
       const rawPaths = Array.isArray(app.photo_paths)
-        ? app.photo_paths.filter((item): item is string => typeof item === "string" && item.length > 0)
+        ? app.photo_paths
+            .map((item) => normalizeApplyPhotoPath(item))
+            .filter((item): item is string => typeof item === "string" && item.length > 0)
         : [];
       const signed = await Promise.all(rawPaths.map((p) => createApplyPhotoSignedUrl(admin, p, requestId, counters)));
       const filtered = signed.filter((u) => u.length > 0);
