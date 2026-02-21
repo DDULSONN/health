@@ -6,6 +6,8 @@ import { NextResponse } from "next/server";
 
 const SIGNED_URL_TTL_SEC = 3600;
 const RAW_COUNT_MAX = 40;
+const RAW_LIST_TRANSFORM = { width: 1280, quality: 85 };
+const BLUR_LIST_TRANSFORM = { width: 720, quality: 70 };
 
 function parseIntSafe(value: string | null, fallback: number) {
   if (!value) return fallback;
@@ -48,19 +50,26 @@ async function signPathWithCache(
   adminClient: ReturnType<typeof createAdminClient>,
   path: string,
   requestId: string,
-  counters: SignCounters
+  counters: SignCounters,
+  variant: "raw-list" | "blur-list"
 ) {
+  const transform = variant === "raw-list" ? RAW_LIST_TRANSFORM : BLUR_LIST_TRANSFORM;
   const result = await getCachedSignedUrlResolved({
     requestId,
     path,
+    cachePath: `${path}::${variant}:w${transform.width}:q${transform.quality}`,
     ttlSec: SIGNED_URL_TTL_SEC,
     buckets: ["dating-card-photos", "dating-photos"],
     getSignCallCount: () => counters.signCalls,
     createSignedUrl: async (bucket, p, ttlSec) => {
       counters.signCalls += 1;
-      const signRes = await adminClient.storage.from(bucket).createSignedUrl(p, ttlSec);
-      if (signRes.error || !signRes.data?.signedUrl) return "";
-      return signRes.data.signedUrl;
+      const transformed = await adminClient.storage
+        .from(bucket)
+        .createSignedUrl(p, ttlSec, { transform });
+      if (!transformed.error && transformed.data?.signedUrl) return transformed.data.signedUrl;
+      const fallback = await adminClient.storage.from(bucket).createSignedUrl(p, ttlSec);
+      if (fallback.error || !fallback.data?.signedUrl) return "";
+      return fallback.data.signedUrl;
     },
   });
 
@@ -90,7 +99,7 @@ async function createSignedImageUrls(
         counters.rawGuardFallbackCount += 1;
         break;
       }
-      const signed = await signPathWithCache(adminClient, rawPath, requestId, counters);
+      const signed = await signPathWithCache(adminClient, rawPath, requestId, counters, "raw-list");
       if (signed) {
         rawUrls.push(signed);
         counters.rawCount += 1;
@@ -104,7 +113,7 @@ async function createSignedImageUrls(
     : [];
   const blurUrls: string[] = [];
   for (const blurPath of blurPathList) {
-    const signed = await signPathWithCache(adminClient, blurPath, requestId, counters);
+    const signed = await signPathWithCache(adminClient, blurPath, requestId, counters, "blur-list");
     if (signed) {
       blurUrls.push(signed);
       counters.blurCount += 1;
@@ -113,7 +122,7 @@ async function createSignedImageUrls(
   if (blurUrls.length > 0) return blurUrls;
 
   if (typeof blurThumbPath === "string" && blurThumbPath) {
-    const thumb = await signPathWithCache(adminClient, blurThumbPath, requestId, counters);
+    const thumb = await signPathWithCache(adminClient, blurThumbPath, requestId, counters, "blur-list");
     if (thumb) {
       counters.blurCount += 1;
       if (photoVisibility === "blur") return [thumb, thumb];

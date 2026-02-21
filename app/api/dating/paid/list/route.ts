@@ -4,6 +4,8 @@ import { getCachedSignedUrlResolved } from "@/lib/signed-url-cache";
 import { NextResponse } from "next/server";
 
 const SIGNED_URL_TTL_SEC = 3600;
+const RAW_LIST_TRANSFORM = { width: 1280, quality: 85 };
+const BLUR_LIST_TRANSFORM = { width: 720, quality: 70 };
 
 function json(status: number, payload: Record<string, unknown>) {
   return NextResponse.json(payload, { status });
@@ -15,19 +17,26 @@ async function createSignedUrl(
   admin: ReturnType<typeof createAdminClient>,
   requestId: string,
   path: string,
-  counters: SignCounters
+  counters: SignCounters,
+  variant: "raw-list" | "blur-list"
 ) {
+  const transform = variant === "raw-list" ? RAW_LIST_TRANSFORM : BLUR_LIST_TRANSFORM;
   const result = await getCachedSignedUrlResolved({
     requestId,
     path,
+    cachePath: `${path}::${variant}:w${transform.width}:q${transform.quality}`,
     ttlSec: SIGNED_URL_TTL_SEC,
     buckets: ["dating-card-photos", "dating-photos"],
     getSignCallCount: () => counters.signCalls,
     createSignedUrl: async (bucket, p, ttlSec) => {
       counters.signCalls += 1;
-      const signRes = await admin.storage.from(bucket).createSignedUrl(p, ttlSec);
-      if (signRes.error || !signRes.data?.signedUrl) return "";
-      return signRes.data.signedUrl;
+      const transformed = await admin.storage
+        .from(bucket)
+        .createSignedUrl(p, ttlSec, { transform });
+      if (!transformed.error && transformed.data?.signedUrl) return transformed.data.signedUrl;
+      const fallback = await admin.storage.from(bucket).createSignedUrl(p, ttlSec);
+      if (fallback.error || !fallback.data?.signedUrl) return "";
+      return fallback.data.signedUrl;
     },
   });
   if (result.cacheStatus === "hit") counters.cacheHit += 1;
@@ -96,10 +105,10 @@ export async function GET(req: Request) {
 
         let thumbUrl = "";
         if (row.photo_visibility === "public" && firstPath) {
-          thumbUrl = await createSignedUrl(admin, requestId, firstPath, counters);
+          thumbUrl = await createSignedUrl(admin, requestId, firstPath, counters, "raw-list");
           if (thumbUrl) counters.rawSigned += 1;
         } else if (row.blur_thumb_path) {
-          thumbUrl = await createSignedUrl(admin, requestId, row.blur_thumb_path, counters);
+          thumbUrl = await createSignedUrl(admin, requestId, row.blur_thumb_path, counters, "blur-list");
           if (thumbUrl) counters.blurSigned += 1;
         }
 

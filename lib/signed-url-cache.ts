@@ -17,6 +17,7 @@ type SignedUrlOptions = {
   requestId: string;
   bucket: string;
   path: string;
+  cachePath?: string;
   ttlSec?: number;
   refreshBeforeMs?: number;
   getSignCallCount?: () => number;
@@ -55,7 +56,7 @@ async function recordMissBurst(requestId: string, bucket: string) {
 export async function getCachedSignedUrlWithBucket(options: SignedUrlOptions): Promise<SignedUrlResult> {
   const ttlSec = options.ttlSec ?? 3600;
   const refreshBeforeMs = options.refreshBeforeMs ?? 10 * 60 * 1000;
-  const key = cacheKey(options.bucket, options.path);
+  const key = cacheKey(options.bucket, options.cachePath ?? options.path);
   const now = Date.now();
 
   const cached = await kvGetJson<SignedUrlCacheValue>(key);
@@ -96,6 +97,7 @@ export async function getCachedSignedUrlWithBucket(options: SignedUrlOptions): P
 type ResolvedSignedUrlOptions = {
   requestId: string;
   path: string;
+  cachePath?: string;
   buckets: string[];
   ttlSec?: number;
   refreshBeforeMs?: number;
@@ -114,6 +116,7 @@ export async function getCachedSignedUrlResolved(options: ResolvedSignedUrlOptio
       requestId: options.requestId,
       bucket,
       path: options.path,
+      cachePath: options.cachePath,
       ttlSec: options.ttlSec,
       refreshBeforeMs: options.refreshBeforeMs,
       getSignCallCount: options.getSignCallCount,
