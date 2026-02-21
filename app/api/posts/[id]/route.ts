@@ -1,11 +1,13 @@
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { containsProfanity } from "@/lib/moderation";
 import { BODYCHECK_SCORE_MAP, type BodycheckRating } from "@/lib/community";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
+import { getCachedSignedUrlWithBucket } from "@/lib/signed-url-cache";
 import { NextResponse } from "next/server";
 import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
 
 type RouteCtx = { params: Promise<{ id: string }> };
+const COMMUNITY_SIGNED_URL_TTL_SEC = 3600;
 
 function toCommunityPublicUrl(supabase: Awaited<ReturnType<typeof createClient>>, raw: unknown): string | null {
   if (typeof raw !== "string") return null;
@@ -36,10 +38,45 @@ function toCommunityPublicUrl(supabase: Awaited<ReturnType<typeof createClient>>
   return supabase.storage.from("community").getPublicUrl(rawPath).data.publicUrl;
 }
 
+async function resolveCommunityImageUrl(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  adminClient: ReturnType<typeof createAdminClient>,
+  requestId: string,
+  raw: unknown,
+  counters: { signCalls: number; cacheHit: number; cacheMiss: number }
+): Promise<string | null> {
+  const url = toCommunityPublicUrl(supabase, raw);
+  if (!url) return null;
+  const marker = "/storage/v1/object/public/community/";
+  const idx = url.indexOf(marker);
+  if (idx < 0) return url;
+  const path = url.slice(idx + marker.length).split("?")[0] ?? "";
+  if (!path) return url;
+
+  const signed = await getCachedSignedUrlWithBucket({
+    requestId,
+    bucket: "community",
+    path,
+    ttlSec: COMMUNITY_SIGNED_URL_TTL_SEC,
+    getSignCallCount: () => counters.signCalls,
+    createSignedUrl: async (bucket, p, ttlSec) => {
+      counters.signCalls += 1;
+      const res = await adminClient.storage.from(bucket).createSignedUrl(p, ttlSec);
+      if (res.error || !res.data?.signedUrl) return "";
+      return res.data.signedUrl;
+    },
+  });
+  if (signed.cacheStatus === "hit") counters.cacheHit += 1;
+  if (signed.cacheStatus === "miss") counters.cacheMiss += 1;
+  if (signed.url) return signed.url;
+  return url;
+}
+
 export async function GET(request: Request, { params }: RouteCtx) {
   const requestId = crypto.randomUUID();
   const { id } = await params;
   const supabase = await createClient();
+  const adminClient = createAdminClient();
 
   const {
     data: { user },
@@ -150,11 +187,19 @@ export async function GET(request: Request, { params }: RouteCtx) {
   const voteCount = Number(post.vote_count ?? 0);
   const scoreSum = Number(post.score_sum ?? 0);
   const averageScore = voteCount > 0 ? Number((scoreSum / voteCount).toFixed(2)) : 0;
+  const signCounters = { signCalls: 0, cacheHit: 0, cacheMiss: 0 };
   const normalizedImages = Array.isArray((post as { images?: unknown }).images)
-    ? ((post as { images?: unknown[] }).images ?? [])
-        .map((img) => toCommunityPublicUrl(supabase, img))
-        .filter((img): img is string => typeof img === "string")
+    ? (
+        await Promise.all(
+          ((post as { images?: unknown[] }).images ?? []).map((img) =>
+            resolveCommunityImageUrl(supabase, adminClient, requestId, img, signCounters)
+          )
+        )
+      ).filter((img): img is string => typeof img === "string")
     : [];
+  console.log(
+    `[posts.detail.signedUrl] requestId=${requestId} path=/api/posts/[id] postId=${id} signCalls=${signCounters.signCalls} cacheHit=${signCounters.cacheHit} cacheMiss=${signCounters.cacheMiss}`
+  );
 
   return NextResponse.json({
     post: {
