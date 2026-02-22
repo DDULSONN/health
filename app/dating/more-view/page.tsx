@@ -87,6 +87,7 @@ export default function MoreViewPage() {
 
       <section className="rounded-2xl border border-pink-200 bg-pink-50 p-5">
         <h1 className="text-lg font-bold text-pink-900">이상형 더보기(유료)</h1>
+        <p className="mt-2 text-sm font-semibold text-pink-900">💖 공개 전 대기열 프로필을 먼저 확인하고, 빠르게 지원 기회를 잡을 수 있어요.</p>
         <p className="mt-2 text-sm text-pink-800">구매 후 3시간 동안만 이용 가능하며, 대기열 랜덤 10명이 1회 고정으로 노출됩니다.</p>
         <p className="mt-1 text-sm text-pink-800">신청 후 오픈카톡으로 닉네임/신청ID를 보내주시면 승인 처리됩니다.</p>
 
@@ -121,4 +122,3 @@ export default function MoreViewPage() {
     </main>
   );
 }
-
