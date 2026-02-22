@@ -9,6 +9,8 @@ function isAllowedAdRoute(pathname: string): boolean {
   const exact = new Set<string>([
     "/community",
     "/community/bodycheck",
+    "/community/dating",
+    "/community/dating/cards",
     "/hall-of-fame",
     "/protein",
     "/1rm",
@@ -19,6 +21,7 @@ function isAllowedAdRoute(pathname: string): boolean {
 
   // Allow ad script only for content-detail pages.
   if (/^\/community\/[0-9a-f-]{8,}$/i.test(pathname)) return true;
+  if (/^\/community\/dating\/cards\/[0-9a-f-]{8,}$/i.test(pathname)) return true;
 
   return false;
 }
@@ -37,4 +40,3 @@ export default function AdSenseBootstrap() {
     />
   );
 }
-
