@@ -271,7 +271,7 @@ export default function OpenCardsPage() {
           🔥24시간 고정
         </Link>
         <Link href="/dating/more-view" className="rounded-full border border-pink-300 bg-pink-50 px-3 py-1.5 text-sm font-semibold text-pink-700 hover:bg-pink-100">
-          이상형 더보기(유료)
+          이상형 더보기
         </Link>
       </div>
 
