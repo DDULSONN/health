@@ -1,7 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
-import { kvGetString } from "@/lib/edge-kv";
+import { kvGetString, kvSetString } from "@/lib/edge-kv";
 import { NextResponse } from "next/server";
 
 const LITE_PUBLIC_BUCKET = "dating-card-lite";
@@ -62,6 +62,7 @@ async function getLitePublicUrlIfAvailable(
   }
 
   const marker = await kvGetString(`litepublic:${litePath}`);
+  const missingMarker = await kvGetString(`litepublic:missing:${litePath}`);
   const proxyUrl = buildPublicLiteImageUrl(LITE_PUBLIC_BUCKET, litePath);
   if (!proxyUrl) return "";
   const publicUrl = admin.storage.from(LITE_PUBLIC_BUCKET).getPublicUrl(litePath).data.publicUrl;
@@ -69,6 +70,10 @@ async function getLitePublicUrlIfAvailable(
   if (marker) {
     litePublicProbeCache.set(litePath, { exists: true, expiresAtEpochMs: now + LITE_PUBLIC_PROBE_TTL_MS });
     return proxyUrl;
+  }
+  if (missingMarker) {
+    litePublicProbeCache.set(litePath, { exists: false, expiresAtEpochMs: now + LITE_PUBLIC_NEGATIVE_PROBE_TTL_MS });
+    return "";
   }
 
   const probe = await fetch(publicUrl, { method: "HEAD", cache: "no-store" }).catch(() => null);
@@ -81,6 +86,7 @@ async function getLitePublicUrlIfAvailable(
     exists: false,
     expiresAtEpochMs: now + LITE_PUBLIC_NEGATIVE_PROBE_TTL_MS,
   });
+  await kvSetString(`litepublic:missing:${litePath}`, "1", Math.ceil(LITE_PUBLIC_NEGATIVE_PROBE_TTL_MS / 1000));
   return "";
 }
 
