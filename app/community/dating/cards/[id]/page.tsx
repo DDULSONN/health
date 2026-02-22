@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useState } from "react";
@@ -20,7 +20,7 @@ type CardDetail = {
   total_3lift: number | null;
   is_3lift_verified: boolean;
   image_urls: string[];
-  expires_at: string;
+  expires_at: string | null;
 };
 
 export default function OpenCardDetailPage() {
@@ -68,7 +68,7 @@ export default function OpenCardDetailPage() {
         <div className="flex items-center justify-between gap-2">
           <h1 className="text-xl font-bold text-neutral-900">{card.display_nickname}</h1>
           <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-            ⏳ {formatRemainingToKorean(card.expires_at)}
+            {card.expires_at ? `⏳ ${formatRemainingToKorean(card.expires_at)}` : "대기열"}
           </span>
         </div>
 
@@ -114,14 +114,14 @@ export default function OpenCardDetailPage() {
 
         {card.ideal_type && (
           <div className="mt-4 rounded-xl border border-pink-100 bg-pink-50 p-3">
-            <p className="text-sm font-semibold text-pink-700">💘 이상형</p>
+            <p className="text-sm font-semibold text-pink-700">?? 이상형</p>
             <p className="mt-1 text-sm text-neutral-700 whitespace-pre-wrap break-words">{card.ideal_type}</p>
           </div>
         )}
 
         {card.strengths_text && (
           <div className="mt-3 rounded-xl border border-emerald-100 bg-emerald-50 p-3">
-            <p className="text-sm font-semibold text-emerald-700">✨ 내 장점</p>
+            <p className="text-sm font-semibold text-emerald-700">? 내 장점</p>
             <p className="mt-1 text-sm text-neutral-700 whitespace-pre-wrap break-words">{card.strengths_text}</p>
           </div>
         )}
@@ -138,3 +138,4 @@ export default function OpenCardDetailPage() {
     </main>
   );
 }
+

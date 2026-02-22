@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
@@ -20,7 +20,7 @@ type CardDetail = {
   total_3lift: number | null;
   is_3lift_verified: boolean;
   image_urls: string[];
-  expires_at: string;
+  expires_at: string | null;
 };
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
@@ -376,3 +376,4 @@ function Field({ label, required = false, children }: { label: string; required?
     </div>
   );
 }
+

@@ -1,4 +1,5 @@
 import { buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
+import { hasMoreViewAccess } from "@/lib/dating-more-view";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { kvGetString } from "@/lib/edge-kv";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -199,11 +200,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   if (error || !data) {
-    return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
+    return NextResponse.json({ error: "移대뱶瑜?李얠쓣 ???놁뒿?덈떎." }, { status: 404 });
   }
 
-  if (data.status !== "public" || !data.expires_at || new Date(data.expires_at).getTime() <= Date.now()) {
-    return NextResponse.json({ error: "공개 중인 카드가 아닙니다." }, { status: 403 });
+  const isPublicAvailable = data.status === "public" && !!data.expires_at && new Date(data.expires_at).getTime() > Date.now();
+  let canReadPending = false;
+  if (!isPublicAvailable && data.status === "pending" && user?.id) {
+    canReadPending = await hasMoreViewAccess(adminClient, user.id, data.sex);
+  }
+
+  if (!isPublicAvailable && !canReadPending) {
+    return NextResponse.json({ error: "怨듦컻 以묒씤 移대뱶媛 ?꾨떃?덈떎." }, { status: 403 });
   }
 
   const photoVisibility = data.photo_visibility === "public" ? "public" : "blur";

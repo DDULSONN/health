@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
@@ -19,7 +19,7 @@ type PublicCard = {
   total_3lift: number | null;
   is_3lift_verified: boolean;
   image_urls: string[];
-  expires_at: string;
+  expires_at: string | null;
   created_at: string;
 };
 
@@ -27,6 +27,13 @@ type QueueStats = {
   male: { pending_count: number; public_count: number; slot_limit: number };
   female: { pending_count: number; public_count: number; slot_limit: number };
   accepted_matches_count?: number;
+};
+type MoreViewStatus = "none" | "pending" | "approved" | "rejected";
+type MoreViewStatusResponse = {
+  ok?: boolean;
+  loggedIn?: boolean;
+  male?: MoreViewStatus;
+  female?: MoreViewStatus;
 };
 
 type PaidCard = {
@@ -87,6 +94,18 @@ export default function OpenCardsPage() {
   const [loading, setLoading] = useState(true);
   const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
   const [paidItems, setPaidItems] = useState<PaidCard[]>([]);
+  const [moreViewStatus, setMoreViewStatus] = useState<{
+    loggedIn: boolean;
+    male: MoreViewStatus;
+    female: MoreViewStatus;
+  }>({
+    loggedIn: false,
+    male: "none",
+    female: "none",
+  });
+  const [moreViewMale, setMoreViewMale] = useState<PublicCard[]>([]);
+  const [moreViewFemale, setMoreViewFemale] = useState<PublicCard[]>([]);
+  const [moreViewSubmitting, setMoreViewSubmitting] = useState<null | "male" | "female">(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -97,11 +116,12 @@ export default function OpenCardsPage() {
   const loadInitial = useCallback(async () => {
     setLoading(true);
     try {
-      const [m, f, qsRes, paidRes] = await Promise.all([
+      const [m, f, qsRes, paidRes, mvStatusRes] = await Promise.all([
         fetchBySex("male", 0, null, null),
         fetchBySex("female", 0, null, null),
         fetch("/api/dating/cards/queue-stats", { cache: "no-store" }),
         fetch("/api/dating/paid/list", { cache: "no-store" }),
+        fetch("/api/dating/cards/more-view/status", { cache: "no-store" }),
       ]);
       setMales(m.items ?? []);
       setFemales(f.items ?? []);
@@ -123,6 +143,43 @@ export default function OpenCardsPage() {
       } else {
         setPaidItems([]);
       }
+
+      const mvStatusBody = (await mvStatusRes.json().catch(() => ({}))) as MoreViewStatusResponse;
+      const nextStatus = {
+        loggedIn: mvStatusBody.loggedIn === true,
+        male: mvStatusBody.male ?? "none",
+        female: mvStatusBody.female ?? "none",
+      };
+      setMoreViewStatus(nextStatus);
+
+      const pendingFetches: Promise<void>[] = [];
+      if (nextStatus.male === "approved") {
+        pendingFetches.push(
+          fetch("/api/dating/cards/more-view/list?sex=male", { cache: "no-store" })
+            .then(async (res) => {
+              if (!res.ok) return;
+              const body = (await res.json()) as { items?: PublicCard[] };
+              setMoreViewMale(Array.isArray(body.items) ? body.items : []);
+            })
+            .catch(() => undefined)
+        );
+      } else {
+        setMoreViewMale([]);
+      }
+      if (nextStatus.female === "approved") {
+        pendingFetches.push(
+          fetch("/api/dating/cards/more-view/list?sex=female", { cache: "no-store" })
+            .then(async (res) => {
+              if (!res.ok) return;
+              const body = (await res.json()) as { items?: PublicCard[] };
+              setMoreViewFemale(Array.isArray(body.items) ? body.items : []);
+            })
+            .catch(() => undefined)
+        );
+      } else {
+        setMoreViewFemale([]);
+      }
+      await Promise.all(pendingFetches);
     } catch (e) {
       console.error("open cards load failed", e);
     }
@@ -134,6 +191,47 @@ export default function OpenCardsPage() {
       void loadInitial();
     });
   }, [loadInitial]);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void (async () => {
+        try {
+          const mvStatusRes = await fetch("/api/dating/cards/more-view/status", { cache: "no-store" });
+          if (!mvStatusRes.ok) return;
+          const mvStatusBody = (await mvStatusRes.json()) as MoreViewStatusResponse;
+          const nextStatus = {
+            loggedIn: mvStatusBody.loggedIn === true,
+            male: mvStatusBody.male ?? "none",
+            female: mvStatusBody.female ?? "none",
+          };
+          setMoreViewStatus(nextStatus);
+
+          if (nextStatus.male === "approved") {
+            const maleRes = await fetch("/api/dating/cards/more-view/list?sex=male", { cache: "no-store" });
+            if (maleRes.ok) {
+              const body = (await maleRes.json()) as { items?: PublicCard[] };
+              setMoreViewMale(Array.isArray(body.items) ? body.items : []);
+            }
+          } else {
+            setMoreViewMale([]);
+          }
+          if (nextStatus.female === "approved") {
+            const femaleRes = await fetch("/api/dating/cards/more-view/list?sex=female", { cache: "no-store" });
+            if (femaleRes.ok) {
+              const body = (await femaleRes.json()) as { items?: PublicCard[] };
+              setMoreViewFemale(Array.isArray(body.items) ? body.items : []);
+            }
+          } else {
+            setMoreViewFemale([]);
+          }
+        } catch {
+          // keep current UI state on polling error
+        }
+      })();
+    }, 15000);
+
+    return () => window.clearInterval(timer);
+  }, []);
 
   const loadMoreMale = useCallback(async () => {
     if (!maleHasMore) return;
@@ -166,6 +264,33 @@ export default function OpenCardsPage() {
   const malePaidItems = useMemo(() => paidItems.filter((item) => item.gender === "M"), [paidItems]);
   const femalePaidItems = useMemo(() => paidItems.filter((item) => item.gender === "F"), [paidItems]);
   const paidCount = paidItems.length;
+  const requestMoreView = useCallback(async (sex: "male" | "female") => {
+    if (moreViewSubmitting) return;
+    setMoreViewSubmitting(sex);
+    try {
+      const res = await fetch("/api/dating/cards/more-view/request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sex }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { status?: MoreViewStatus; message?: string };
+      if (!res.ok) {
+        alert(body.message ?? "신청에 실패했습니다.");
+        return;
+      }
+      if (body.status === "approved") {
+        setMoreViewStatus((prev) => ({ ...prev, [sex]: "approved", loggedIn: true }));
+      } else {
+        setMoreViewStatus((prev) => ({ ...prev, [sex]: "pending", loggedIn: true }));
+        alert("신청이 접수되었습니다. 관리자 승인 후 노출됩니다.");
+      }
+      await loadInitial();
+    } catch {
+      alert("신청 처리 중 오류가 발생했습니다.");
+    } finally {
+      setMoreViewSubmitting(null);
+    }
+  }, [loadInitial, moreViewSubmitting]);
 
   return (
     <main className="max-w-3xl mx-auto px-4 py-6">
@@ -193,6 +318,29 @@ export default function OpenCardsPage() {
           오픈카드 작성
         </Link>
       </div>
+      <div className="mb-6 rounded-2xl border border-pink-200 bg-pink-50 p-4">
+        <p className="text-sm font-semibold text-pink-800">이상형 더보기 신청</p>
+        <p className="mt-1 text-xs text-pink-700">대기열 카드 중 랜덤 10명을 먼저 보고 바로 지원할 수 있습니다. (성별별 승인)</p>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            type="button"
+            onClick={() => void requestMoreView("male")}
+            disabled={!moreViewStatus.loggedIn || moreViewStatus.male === "approved" || moreViewSubmitting === "male"}
+            className="min-h-[40px] rounded-lg border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700 disabled:opacity-50"
+          >
+            남자 더보기 {moreViewStatus.male === "approved" ? "승인됨" : moreViewStatus.male === "pending" ? "심사중" : "신청"}
+          </button>
+          <button
+            type="button"
+            onClick={() => void requestMoreView("female")}
+            disabled={!moreViewStatus.loggedIn || moreViewStatus.female === "approved" || moreViewSubmitting === "female"}
+            className="min-h-[40px] rounded-lg border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700 disabled:opacity-50"
+          >
+            여자 더보기 {moreViewStatus.female === "approved" ? "승인됨" : moreViewStatus.female === "pending" ? "심사중" : "신청"}
+          </button>
+          {!moreViewStatus.loggedIn && <span className="inline-flex items-center text-xs text-neutral-500">로그인 후 신청 가능</span>}
+        </div>
+      </div>
 
       {loading ? (
         <p className="text-neutral-400 text-center py-10">불러오는 중...</p>
@@ -203,6 +351,7 @@ export default function OpenCardsPage() {
             currentCount={queueStats?.male.public_count ?? males.length}
             paidItems={malePaidItems}
             items={males}
+            moreViewItems={moreViewMale}
             hasMore={maleHasMore}
             onMore={loadMoreMale}
           />
@@ -211,6 +360,7 @@ export default function OpenCardsPage() {
             currentCount={queueStats?.female.public_count ?? females.length}
             paidItems={femalePaidItems}
             items={females}
+            moreViewItems={moreViewFemale}
             hasMore={femaleHasMore}
             onMore={loadMoreFemale}
           />
@@ -225,6 +375,7 @@ function Section({
   currentCount,
   paidItems,
   items,
+  moreViewItems,
   hasMore,
   onMore,
 }: {
@@ -232,10 +383,11 @@ function Section({
   currentCount: number;
   paidItems: PaidCard[];
   items: PublicCard[];
+  moreViewItems: PublicCard[];
   hasMore: boolean;
   onMore: () => void;
 }) {
-  const hasAnyItems = paidItems.length > 0 || items.length > 0;
+  const hasAnyItems = paidItems.length > 0 || items.length > 0 || moreViewItems.length > 0;
 
   return (
     <section>
@@ -258,6 +410,16 @@ function Section({
               <CardRow key={card.id} card={card} />
             ))}
           </div>
+          {moreViewItems.length > 0 && (
+            <div className="mt-3 rounded-xl border border-dashed border-pink-300 bg-pink-50/60 p-2">
+              <p className="mb-2 px-1 text-xs font-semibold text-pink-700">이상형 더보기 (랜덤 10명)</p>
+              <div className="grid grid-cols-1 gap-3">
+                {moreViewItems.map((card) => (
+                  <CardRow key={`more-${card.id}`} card={card} />
+                ))}
+              </div>
+            </div>
+          )}
           {hasMore && (
             <button
               type="button"
@@ -337,7 +499,7 @@ function CardRow({ card }: { card: PublicCard }) {
           {card.region && <span>{card.region}</span>}
         </div>
         <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-          ⏳ {formatRemainingToKorean(card.expires_at)}
+          {card.expires_at ? `⏳ ${formatRemainingToKorean(card.expires_at)}` : "대기열"}
         </span>
       </div>
 

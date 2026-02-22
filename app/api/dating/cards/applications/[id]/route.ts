@@ -36,7 +36,7 @@ export async function PATCH(
 
   const { data: card, error: cardError } = await adminClient
     .from("dating_cards")
-    .select("id, owner_user_id, sex")
+    .select("id, owner_user_id, sex, status")
     .eq("id", app.card_id)
     .single();
 
@@ -66,7 +66,7 @@ export async function PATCH(
     return NextResponse.json({ error: "상태 변경에 실패했습니다." }, { status: 500 });
   }
 
-  if (status === "accepted") {
+  if (status === "accepted" && card.status === "public") {
     const nowIso = new Date().toISOString();
 
     const { error: cardHideError } = await adminClient
@@ -101,5 +101,9 @@ export async function PATCH(
     }
   }
 
-  return NextResponse.json({ ok: true, status, card_hidden: status === "accepted" });
+  return NextResponse.json({
+    ok: true,
+    status,
+    card_hidden: status === "accepted" && card.status === "public",
+  });
 }

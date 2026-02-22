@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -223,6 +223,16 @@ type AdminApplyCreditOrder = {
   processed_at: string | null;
   memo: string | null;
 };
+type AdminMoreViewRequest = {
+  id: string;
+  user_id: string;
+  nickname: string | null;
+  sex: "male" | "female";
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+  reviewed_at: string | null;
+  note: string | null;
+};
 
 type MyCertificate = {
   id: string;
@@ -279,7 +289,9 @@ export default function MyPage() {
   const [adminApplicationSort, setAdminApplicationSort] = useState<AdminApplicationSort>("newest");
   const [adminDataView, setAdminDataView] = useState<AdminDataView>("cards");
   const [adminApplyCreditOrders, setAdminApplyCreditOrders] = useState<AdminApplyCreditOrder[]>([]);
+  const [adminMoreViewRequests, setAdminMoreViewRequests] = useState<AdminMoreViewRequest[]>([]);
   const [approvingOrderIds, setApprovingOrderIds] = useState<string[]>([]);
+  const [processingMoreViewIds, setProcessingMoreViewIds] = useState<string[]>([]);
   const [openCardWriteEnabled, setOpenCardWriteEnabled] = useState(true);
   const [openCardWriteSaving, setOpenCardWriteSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -396,10 +408,11 @@ export default function MyPage() {
           setError("");
 
           if (adminFlag) {
-            const [overviewRes, ordersRes, paidAppsRes] = await Promise.all([
+            const [overviewRes, ordersRes, paidAppsRes, moreViewRes] = await Promise.all([
               fetch("/api/dating/cards/admin/overview", { cache: "no-store" }),
               fetch("/api/admin/dating/apply-credits/orders?status=pending", { cache: "no-store" }),
               fetch("/api/admin/dating/paid/applications", { cache: "no-store" }),
+              fetch("/api/admin/dating/cards/more-view/requests?status=pending", { cache: "no-store" }),
             ]);
             const overviewBody = (await overviewRes.json().catch(() => ({}))) as {
               error?: string;
@@ -413,6 +426,10 @@ export default function MyPage() {
             const paidAppsBody = (await paidAppsRes.json().catch(() => ({}))) as {
               error?: string;
               items?: AdminPaidCardApplication[];
+            };
+            const moreViewBody = (await moreViewRes.json().catch(() => ({}))) as {
+              error?: string;
+              items?: AdminMoreViewRequest[];
             };
             if (!overviewRes.ok) {
               throw new Error(overviewBody.error ?? "관리자 오픈카드 데이터를 불러오지 못했습니다.");
@@ -428,12 +445,14 @@ export default function MyPage() {
               setAdminOpenCardApplications(overviewBody.applications ?? []);
               setAdminPaidCardApplications(paidAppsBody.items ?? []);
               setAdminApplyCreditOrders(ordersBody.items ?? []);
+              setAdminMoreViewRequests(moreViewRes.ok ? moreViewBody.items ?? [] : []);
             }
           } else {
             setAdminOpenCards([]);
             setAdminOpenCardApplications([]);
             setAdminPaidCardApplications([]);
             setAdminApplyCreditOrders([]);
+            setAdminMoreViewRequests([]);
           }
         }
       } catch (e) {
@@ -619,6 +638,29 @@ export default function MyPage() {
       setAdminApplyCreditOrders((prev) => prev.filter((item) => item.id !== orderId));
     } finally {
       setApprovingOrderIds((prev) => prev.filter((id) => id !== orderId));
+    }
+  };
+
+  const handleAdminProcessMoreViewRequest = async (
+    requestId: string,
+    status: "approved" | "rejected"
+  ) => {
+    if (processingMoreViewIds.includes(requestId)) return;
+    setProcessingMoreViewIds((prev) => [...prev, requestId]);
+    try {
+      const res = await fetch(`/api/admin/dating/cards/more-view/requests/${requestId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+      if (!res.ok || !body.ok) {
+        alert(body.message ?? "이상형 더보기 신청 처리에 실패했습니다.");
+        return;
+      }
+      setAdminMoreViewRequests((prev) => prev.filter((item) => item.id !== requestId));
+    } finally {
+      setProcessingMoreViewIds((prev) => prev.filter((id) => id !== requestId));
     }
   };
 
@@ -1319,6 +1361,54 @@ export default function MyPage() {
             )}
           </div>
 
+          <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
+            <p className="text-xs font-semibold text-violet-800">
+              이상형 더보기 승인 대기 {adminMoreViewRequests.length}건
+            </p>
+            {adminMoreViewRequests.length === 0 ? (
+              <p className="mt-2 text-xs text-neutral-500">승인 대기 신청이 없습니다.</p>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {adminMoreViewRequests.map((item) => {
+                  const processing = processingMoreViewIds.includes(item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-100 bg-violet-50/40 px-2 py-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-neutral-900">
+                          {item.nickname ?? item.user_id.slice(0, 8)} / {item.sex === "male" ? "남자 더보기" : "여자 더보기"}
+                        </p>
+                        <p className="text-[11px] text-neutral-500 break-all">
+                          신청ID {item.id} / {new Date(item.created_at).toLocaleString("ko-KR")}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={processing}
+                          onClick={() => void handleAdminProcessMoreViewRequest(item.id, "approved")}
+                          className="h-8 rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                        >
+                          승인
+                        </button>
+                        <button
+                          type="button"
+                          disabled={processing}
+                          onClick={() => void handleAdminProcessMoreViewRequest(item.id, "rejected")}
+                          className="h-8 rounded-md bg-rose-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                        >
+                          거절
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-violet-800">
@@ -1730,4 +1820,3 @@ export default function MyPage() {
     </main>
   );
 }
-
