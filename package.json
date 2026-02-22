@@ -13,7 +13,8 @@
     "backfill:dating-lite-public:dry": "node scripts/backfill-dating-lite-public.mjs --verbose",
     "backfill:dating-lite-public:apply": "node scripts/backfill-dating-lite-public.mjs --apply --concurrency=4",
     "backfill:dating-blur-webp:dry": "node scripts/backfill-dating-blur-webp.mjs --verbose",
-    "backfill:dating-blur-webp:apply": "node scripts/backfill-dating-blur-webp.mjs --apply --concurrency=4"
+    "backfill:dating-blur-webp:apply": "node scripts/backfill-dating-blur-webp.mjs --apply --concurrency=4",
+    "audit:image-leaks": "node scripts/audit-image-url-leaks.mjs"
   },
   "dependencies": {
     "@react-pdf/renderer": "^4.3.2",
