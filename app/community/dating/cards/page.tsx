@@ -53,6 +53,7 @@ type PaidCard = {
 };
 
 const PAGE_SIZE = 20;
+const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
 
 function maskIdealTypeForPreview(value: string | null): string {
   const raw = (value ?? "").trim();
@@ -267,27 +268,40 @@ export default function OpenCardsPage() {
   const requestMoreView = useCallback(async (sex: "male" | "female") => {
     if (moreViewSubmitting) return;
     setMoreViewSubmitting(sex);
+    const popup = window.open(OPEN_KAKAO_URL, "_blank", "noopener,noreferrer");
     try {
       const res = await fetch("/api/dating/cards/more-view/request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ sex }),
       });
-      const body = (await res.json().catch(() => ({}))) as { status?: MoreViewStatus; message?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        status?: MoreViewStatus;
+        message?: string;
+        requestRowId?: string;
+      };
       if (!res.ok) {
         alert(body.message ?? "신청에 실패했습니다.");
         return;
       }
       if (body.status === "approved") {
         setMoreViewStatus((prev) => ({ ...prev, [sex]: "approved", loggedIn: true }));
+        alert("이미 승인된 상태입니다. 오픈카톡으로 문의해 주세요.");
       } else {
         setMoreViewStatus((prev) => ({ ...prev, [sex]: "pending", loggedIn: true }));
-        alert("신청이 접수되었습니다. 관리자 승인 후 노출됩니다.");
+        if (body.requestRowId) {
+          alert(`신청 접수 완료 (${body.requestRowId}). 오픈카톡으로 닉네임 + 신청ID를 보내주세요.`);
+        } else {
+          alert("신청이 접수되었습니다. 오픈카톡으로 닉네임을 보내주세요.");
+        }
       }
       await loadInitial();
     } catch {
       alert("신청 처리 중 오류가 발생했습니다.");
     } finally {
+      if (!popup || popup.closed) {
+        window.open(OPEN_KAKAO_URL, "_blank", "noopener,noreferrer");
+      }
       setMoreViewSubmitting(null);
     }
   }, [loadInitial, moreViewSubmitting]);
@@ -319,8 +333,8 @@ export default function OpenCardsPage() {
         </Link>
       </div>
       <div className="mb-6 rounded-2xl border border-pink-200 bg-pink-50 p-4">
-        <p className="text-sm font-semibold text-pink-800">이상형 더보기 신청</p>
-        <p className="mt-1 text-xs text-pink-700">대기열 카드 중 랜덤 10명을 먼저 보고 바로 지원할 수 있습니다. (성별별 승인)</p>
+        <p className="text-sm font-semibold text-pink-800">이상형 더보기 신청 (유료)</p>
+        <p className="mt-1 text-xs text-pink-700">유료 기능입니다. 신청 후 오픈카톡으로 닉네임/신청ID를 보내주시면 승인 처리됩니다.</p>
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"
