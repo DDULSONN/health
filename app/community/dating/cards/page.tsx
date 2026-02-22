@@ -53,7 +53,6 @@ type PaidCard = {
 };
 
 const PAGE_SIZE = 20;
-const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
 
 function maskIdealTypeForPreview(value: string | null): string {
   const raw = (value ?? "").trim();
@@ -106,7 +105,6 @@ export default function OpenCardsPage() {
   });
   const [moreViewMale, setMoreViewMale] = useState<PublicCard[]>([]);
   const [moreViewFemale, setMoreViewFemale] = useState<PublicCard[]>([]);
-  const [moreViewSubmitting, setMoreViewSubmitting] = useState<null | "male" | "female">(null);
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
@@ -265,49 +263,15 @@ export default function OpenCardsPage() {
   const malePaidItems = useMemo(() => paidItems.filter((item) => item.gender === "M"), [paidItems]);
   const femalePaidItems = useMemo(() => paidItems.filter((item) => item.gender === "F"), [paidItems]);
   const paidCount = paidItems.length;
-  const requestMoreView = useCallback(async (sex: "male" | "female") => {
-    if (moreViewSubmitting) return;
-    setMoreViewSubmitting(sex);
-    try {
-      const res = await fetch("/api/dating/cards/more-view/request", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sex }),
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        status?: MoreViewStatus;
-        message?: string;
-        requestRowId?: string;
-      };
-      if (!res.ok) {
-        alert(body.message ?? "신청에 실패했습니다.");
-        return;
-      }
-      if (body.status === "approved") {
-        setMoreViewStatus((prev) => ({ ...prev, [sex]: "approved", loggedIn: true }));
-        alert("이미 승인된 상태입니다. 구매 후 3시간 이용, 랜덤 10명 고정 노출입니다.");
-      } else {
-        setMoreViewStatus((prev) => ({ ...prev, [sex]: "pending", loggedIn: true }));
-        if (body.requestRowId) {
-          alert(`신청 접수 완료 (${body.requestRowId}). 구매 후 3시간 이용/랜덤 10명 고정입니다. 오픈카톡으로 닉네임 + 신청ID를 보내주세요.`);
-        } else {
-          alert("신청이 접수되었습니다. 구매 후 3시간 이용/랜덤 10명 고정입니다. 오픈카톡으로 닉네임을 보내주세요.");
-        }
-      }
-      await loadInitial();
-    } catch {
-      alert("신청 처리 중 오류가 발생했습니다.");
-    } finally {
-      setMoreViewSubmitting(null);
-    }
-  }, [loadInitial, moreViewSubmitting]);
-
   return (
     <main className="max-w-3xl mx-auto px-4 py-6">
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-neutral-300 bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white">오픈카드</span>
         <Link href="/dating/paid" className="rounded-full border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700 hover:bg-rose-100">
           🔥24시간 고정
+        </Link>
+        <Link href="/dating/more-view" className="rounded-full border border-pink-300 bg-pink-50 px-3 py-1.5 text-sm font-semibold text-pink-700 hover:bg-pink-100">
+          이상형 더보기(유료)
         </Link>
       </div>
 
@@ -328,39 +292,6 @@ export default function OpenCardsPage() {
           오픈카드 작성
         </Link>
       </div>
-      <div className="mb-6 rounded-2xl border border-pink-200 bg-pink-50 p-4">
-        <p className="text-sm font-semibold text-pink-800">이상형 더보기 신청 (유료)</p>
-        <p className="mt-1 text-xs text-pink-700">구매 후 3시간 동안만 이용 가능하며, 대기열에서 랜덤 10명이 1회 고정으로 노출됩니다.</p>
-        <p className="mt-1 text-xs text-pink-700">신청 후 오픈카톡으로 닉네임/신청ID를 보내주시면 승인 처리됩니다.</p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <button
-            type="button"
-            onClick={() => void requestMoreView("male")}
-            disabled={!moreViewStatus.loggedIn || moreViewStatus.male === "approved" || moreViewSubmitting === "male"}
-            className="min-h-[40px] rounded-lg border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700 disabled:opacity-50"
-          >
-            남자 더보기 {moreViewStatus.male === "approved" ? "승인됨" : moreViewStatus.male === "pending" ? "심사중" : "신청"}
-          </button>
-          <button
-            type="button"
-            onClick={() => void requestMoreView("female")}
-            disabled={!moreViewStatus.loggedIn || moreViewStatus.female === "approved" || moreViewSubmitting === "female"}
-            className="min-h-[40px] rounded-lg border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700 disabled:opacity-50"
-          >
-            여자 더보기 {moreViewStatus.female === "approved" ? "승인됨" : moreViewStatus.female === "pending" ? "심사중" : "신청"}
-          </button>
-          <a
-            href={OPEN_KAKAO_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex min-h-[40px] items-center rounded-lg border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700"
-          >
-            오픈카톡 링크
-          </a>
-          {!moreViewStatus.loggedIn && <span className="inline-flex items-center text-xs text-neutral-500">로그인 후 신청 가능</span>}
-        </div>
-      </div>
-
       {loading ? (
         <p className="text-neutral-400 text-center py-10">불러오는 중...</p>
       ) : (
