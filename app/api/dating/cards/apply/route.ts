@@ -455,12 +455,15 @@ export async function POST(req: Request) {
       { label: "legacy_photo_no_nickname", payload: insertPayloadLegacyPhotoNoNickname },
     ];
 
+    const useAdminInsert = card.status === "pending" && allowedByMoreView;
+    const applicationWriter = useAdminInsert ? adminClient : supabase;
+
     let insertRes: { data: { id: string } | null; error: unknown } = { data: null, error: null };
     let insertError: DbErrorShape = {};
 
     for (const candidate of candidates) {
       console.log(`[apply] ${requestId} L7 insert.try`, { candidate: candidate.label });
-      const res = await supabase
+      const res = await applicationWriter
         .from("dating_card_applications")
         .insert(candidate.payload)
         .select("id")

@@ -81,7 +81,16 @@ export async function POST(req: Request) {
     content,
   });
   if (insertRes.error) {
-    return NextResponse.json({ ok: false, code: "REPLY_FAILED", message: "답장 전송에 실패했습니다." }, { status: 500 });
+    console.error("[POST /api/body-eval/mail/reply] insert failed", insertRes.error);
+    return NextResponse.json(
+      {
+        ok: false,
+        code: "REPLY_FAILED",
+        message: "답장 전송에 실패했습니다.",
+        details: insertRes.error.message,
+      },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({ ok: true });
