@@ -23,6 +23,11 @@ function pickUpstreamHeaders(src: Headers): Headers {
   return dst;
 }
 
+function isCacheableImage(headers: Headers): boolean {
+  const contentType = headers.get("content-type")?.toLowerCase() ?? "";
+  return contentType.startsWith("image/");
+}
+
 function decodeSegments(parts: string[]): string {
   return parts.map((v) => decodeURIComponent(v)).join("/");
 }
@@ -55,7 +60,12 @@ async function fetchPublicLite(bucket: string, objectPath: string, method: strin
   }
 
   const headers = pickUpstreamHeaders(upstream.headers);
-  headers.set("Cache-Control", "public, max-age=86400, s-maxage=2592000, stale-while-revalidate=86400");
+  if (isCacheableImage(upstream.headers)) {
+    headers.set("Cache-Control", "public, max-age=86400, s-maxage=2592000, stale-while-revalidate=604800");
+    headers.set("Vary", "Accept");
+  } else {
+    headers.set("Cache-Control", "no-store");
+  }
   headers.delete("set-cookie");
   return new Response(method === "HEAD" ? null : upstream.body, {
     status: upstream.status,
@@ -82,7 +92,7 @@ async function createSignedUpstreamUrl(bucket: string, objectPath: string, reque
   if (signed.url) return signed.url;
 
   // Legacy fallback for old paths that may still live in dating-photos.
-  if (bucket === "dating-card-photos") {
+  if (bucket === "dating-card-photos" || bucket === "dating-apply-photos") {
     const fallback = await getCachedSignedUrlWithBucket({
       requestId,
       bucket: "dating-photos",
@@ -114,7 +124,13 @@ async function fetchSigned(bucket: string, objectPath: string, method: string, r
   if (!upstream) return new Response("Bad Gateway", { status: 502 });
 
   const headers = pickUpstreamHeaders(upstream.headers);
-  headers.set("Cache-Control", "no-store");
+  if (upstream.ok && isCacheableImage(upstream.headers)) {
+    // Signed fetch still benefits from edge/browser caching because this proxy URL is stable.
+    headers.set("Cache-Control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800");
+    headers.set("Vary", "Accept");
+  } else {
+    headers.set("Cache-Control", "no-store");
+  }
   headers.delete("set-cookie");
   return new Response(method === "HEAD" ? null : upstream.body, {
     status: upstream.status,
