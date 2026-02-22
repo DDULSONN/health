@@ -150,6 +150,13 @@ async function createSignedImageUrls(
         counters.rawGuardFallbackCount += 1;
         break;
       }
+      const liteSigned = buildSignedImageUrl("dating-card-photos", litePath);
+      if (liteSigned) {
+        rawUrls.push(liteSigned);
+        counters.rawCount += 1;
+        counters.cacheMiss += 1;
+        continue;
+      }
       const signed = buildSignedImageUrl("dating-card-photos", rawPath);
       if (signed) {
         rawUrls.push(signed);

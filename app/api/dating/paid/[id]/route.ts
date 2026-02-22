@@ -29,6 +29,14 @@ function toBlurWebpPath(path: string): string {
   return path.includes("/blur/") ? path.replace(/\.[^.\/]+$/, ".webp") : path;
 }
 
+function toThumbPath(rawPath: string): string {
+  return rawPath.replace("/raw/", "/thumb/").replace(/\.[^.\/]+$/, ".webp");
+}
+
+function toLitePath(rawPath: string): string {
+  return rawPath.replace("/raw/", "/lite/").replace(/\.[^.\/]+$/, ".webp");
+}
+
 async function getLitePublicUrlIfAvailable(
   admin: ReturnType<typeof createAdminClient>,
   litePath: string
@@ -123,7 +131,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   let imageUrl = "";
   if (data.photo_visibility === "public" && firstPath) {
-    imageUrl = await createSignedUrl(firstPath);
+    imageUrl = await getLitePublicUrlIfAvailable(admin, toThumbPath(firstPath));
+    if (!imageUrl) imageUrl = await getLitePublicUrlIfAvailable(admin, toLitePath(firstPath));
+    if (!imageUrl) imageUrl = await createSignedUrl(toLitePath(firstPath));
+    if (!imageUrl) imageUrl = await createSignedUrl(firstPath);
   } else {
     const blurThumbPath = normalizeDatingPhotoPath(data.blur_thumb_path);
     if (blurThumbPath) {

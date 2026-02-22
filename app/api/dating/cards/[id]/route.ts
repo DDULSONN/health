@@ -54,6 +54,14 @@ function toBlurWebpPath(path: string): string {
   return path.includes("/blur/") ? path.replace(/\.[^.\/]+$/, ".webp") : path;
 }
 
+function toThumbPath(rawPath: string): string {
+  return rawPath.replace("/raw/", "/thumb/").replace(/\.[^.\/]+$/, ".webp");
+}
+
+function toLitePath(rawPath: string): string {
+  return rawPath.replace("/raw/", "/lite/").replace(/\.[^.\/]+$/, ".webp");
+}
+
 async function getLitePublicUrlIfAvailable(
   adminClient: ReturnType<typeof createAdminClient>,
   litePath: string
@@ -109,6 +117,21 @@ async function createSignedImageUrls(
       : [];
     const rawUrls: string[] = [];
     for (const rawPath of rawPaths) {
+      const thumbPublic = await getLitePublicUrlIfAvailable(adminClient, toThumbPath(rawPath));
+      if (thumbPublic) {
+        rawUrls.push(thumbPublic);
+        continue;
+      }
+      const litePublic = await getLitePublicUrlIfAvailable(adminClient, toLitePath(rawPath));
+      if (litePublic) {
+        rawUrls.push(litePublic);
+        continue;
+      }
+      const liteSigned = await signPathWithCache(adminClient, toLitePath(rawPath), requestId, counters);
+      if (liteSigned) {
+        rawUrls.push(liteSigned);
+        continue;
+      }
       const rawSigned = await signPathWithCache(adminClient, rawPath, requestId, counters);
       if (rawSigned) rawUrls.push(rawSigned);
     }

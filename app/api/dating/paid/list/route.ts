@@ -172,6 +172,9 @@ export async function GET(req: Request) {
             thumbUrl = await getLitePublicUrlIfAvailable(admin, litePath);
           }
           if (!thumbUrl) {
+            thumbUrl = await createSignedUrl(admin, requestId, litePath, counters, "raw-list");
+          }
+          if (!thumbUrl) {
             thumbUrl = await createSignedUrl(admin, requestId, firstPath, counters, "raw-list");
           }
           if (thumbUrl) counters.rawSigned += 1;
