@@ -268,7 +268,6 @@ export default function OpenCardsPage() {
   const requestMoreView = useCallback(async (sex: "male" | "female") => {
     if (moreViewSubmitting) return;
     setMoreViewSubmitting(sex);
-    const popup = window.open(OPEN_KAKAO_URL, "_blank", "noopener,noreferrer");
     try {
       const res = await fetch("/api/dating/cards/more-view/request", {
         method: "POST",
@@ -299,9 +298,6 @@ export default function OpenCardsPage() {
     } catch {
       alert("신청 처리 중 오류가 발생했습니다.");
     } finally {
-      if (!popup || popup.closed) {
-        window.open(OPEN_KAKAO_URL, "_blank", "noopener,noreferrer");
-      }
       setMoreViewSubmitting(null);
     }
   }, [loadInitial, moreViewSubmitting]);
@@ -353,6 +349,14 @@ export default function OpenCardsPage() {
           >
             여자 더보기 {moreViewStatus.female === "approved" ? "승인됨" : moreViewStatus.female === "pending" ? "심사중" : "신청"}
           </button>
+          <a
+            href={OPEN_KAKAO_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-h-[40px] items-center rounded-lg border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700"
+          >
+            오픈카톡 링크
+          </a>
           {!moreViewStatus.loggedIn && <span className="inline-flex items-center text-xs text-neutral-500">로그인 후 신청 가능</span>}
         </div>
       </div>
