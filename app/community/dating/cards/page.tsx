@@ -286,13 +286,13 @@ export default function OpenCardsPage() {
       }
       if (body.status === "approved") {
         setMoreViewStatus((prev) => ({ ...prev, [sex]: "approved", loggedIn: true }));
-        alert("이미 승인된 상태입니다. 오픈카톡으로 문의해 주세요.");
+        alert("이미 승인된 상태입니다. 구매 후 3시간 이용, 랜덤 10명 고정 노출입니다.");
       } else {
         setMoreViewStatus((prev) => ({ ...prev, [sex]: "pending", loggedIn: true }));
         if (body.requestRowId) {
-          alert(`신청 접수 완료 (${body.requestRowId}). 오픈카톡으로 닉네임 + 신청ID를 보내주세요.`);
+          alert(`신청 접수 완료 (${body.requestRowId}). 구매 후 3시간 이용/랜덤 10명 고정입니다. 오픈카톡으로 닉네임 + 신청ID를 보내주세요.`);
         } else {
-          alert("신청이 접수되었습니다. 오픈카톡으로 닉네임을 보내주세요.");
+          alert("신청이 접수되었습니다. 구매 후 3시간 이용/랜덤 10명 고정입니다. 오픈카톡으로 닉네임을 보내주세요.");
         }
       }
       await loadInitial();
@@ -334,7 +334,8 @@ export default function OpenCardsPage() {
       </div>
       <div className="mb-6 rounded-2xl border border-pink-200 bg-pink-50 p-4">
         <p className="text-sm font-semibold text-pink-800">이상형 더보기 신청 (유료)</p>
-        <p className="mt-1 text-xs text-pink-700">유료 기능입니다. 신청 후 오픈카톡으로 닉네임/신청ID를 보내주시면 승인 처리됩니다.</p>
+        <p className="mt-1 text-xs text-pink-700">구매 후 3시간 동안만 이용 가능하며, 대기열에서 랜덤 10명이 1회 고정으로 노출됩니다.</p>
+        <p className="mt-1 text-xs text-pink-700">신청 후 오픈카톡으로 닉네임/신청ID를 보내주시면 승인 처리됩니다.</p>
         <div className="mt-3 flex flex-wrap gap-2">
           <button
             type="button"

@@ -15,6 +15,14 @@ function isAllowedAdmin(userId: string, email?: string | null) {
   return isAdminEmail(email);
 }
 
+function isMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { code?: string; message?: string };
+  const code = String(e.code ?? "");
+  const message = String(e.message ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || message.includes("column");
+}
+
 export async function GET(req: Request) {
   const requestId = crypto.randomUUID();
 
@@ -38,7 +46,7 @@ export async function GET(req: Request) {
     const admin = createAdminClient();
     let query = admin
       .from("dating_more_view_requests")
-      .select("id,user_id,sex,status,note,created_at,reviewed_at,reviewed_by_user_id")
+      .select("id,user_id,sex,status,note,created_at,reviewed_at,reviewed_by_user_id,access_expires_at")
       .order("created_at", { ascending: false })
       .limit(200);
 
@@ -46,14 +54,31 @@ export async function GET(req: Request) {
       query = query.eq("status", status);
     }
 
-    const rowsRes = await query;
+    let rowsRes: any = await query;
+    if (rowsRes.error && isMissingColumnError(rowsRes.error)) {
+      let legacyQuery = admin
+        .from("dating_more_view_requests")
+        .select("id,user_id,sex,status,note,created_at,reviewed_at,reviewed_by_user_id")
+        .order("created_at", { ascending: false })
+        .limit(200);
+      if (status === "pending" || status === "approved" || status === "rejected") {
+        legacyQuery = legacyQuery.eq("status", status);
+      }
+      rowsRes = await legacyQuery;
+    }
     if (rowsRes.error) {
       console.error(`[admin-more-view-list] ${requestId} query failed`, rowsRes.error);
       return NextResponse.json({ ok: false, code: "LIST_FAILED", requestId, message: "목록 조회에 실패했습니다." }, { status: 500 });
     }
 
-    const rows = Array.isArray(rowsRes.data) ? rowsRes.data : [];
-    const userIds = [...new Set(rows.map((row) => row.user_id).filter(Boolean))];
+    const rows: Array<Record<string, unknown>> = Array.isArray(rowsRes.data) ? rowsRes.data : [];
+    const userIds = [
+      ...new Set(
+        rows
+          .map((row) => (typeof row.user_id === "string" ? row.user_id : ""))
+          .filter((value) => value.length > 0)
+      ),
+    ];
     const profileMap = new Map<string, string | null>();
 
     if (userIds.length > 0) {
@@ -68,10 +93,13 @@ export async function GET(req: Request) {
     return NextResponse.json({
       ok: true,
       requestId,
-      items: rows.map((row) => ({
-        ...row,
-        nickname: profileMap.get(row.user_id) ?? null,
-      })),
+      items: rows.map((row) => {
+        const userId = typeof row.user_id === "string" ? row.user_id : "";
+        return {
+          ...row,
+          nickname: userId ? profileMap.get(userId) ?? null : null,
+        };
+      }),
     });
   } catch (error) {
     console.error(`[admin-more-view-list] ${requestId} unhandled`, error);

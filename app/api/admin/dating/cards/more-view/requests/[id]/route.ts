@@ -4,6 +4,14 @@ import { NextResponse } from "next/server";
 
 type Body = { status?: unknown; note?: unknown };
 
+function isMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const e = error as { code?: string; message?: string };
+  const code = String(e.code ?? "");
+  const message = String(e.message ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || message.includes("column");
+}
+
 function parseAdminUserIds() {
   return (process.env.ADMIN_USER_IDS ?? "")
     .split(",")
@@ -38,24 +46,42 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
     const body = ((await req.json().catch(() => null)) ?? {}) as Body;
     const status = body.status === "approved" || body.status === "rejected" ? body.status : null;
     const note = typeof body.note === "string" ? body.note.trim().slice(0, 500) : null;
+    const accessExpiresAt = status === "approved" ? new Date(Date.now() + 3 * 60 * 60 * 1000).toISOString() : null;
 
     if (!status) {
       return NextResponse.json({ ok: false, code: "VALIDATION_ERROR", requestId, message: "status 값이 올바르지 않습니다." }, { status: 400 });
     }
 
     const admin = createAdminClient();
-    const updateRes = await admin
+    let updateRes = await admin
       .from("dating_more_view_requests")
       .update({
         status,
         note,
         reviewed_at: new Date().toISOString(),
         reviewed_by_user_id: user.id,
+        access_expires_at: accessExpiresAt,
+        snapshot_card_ids: [],
       })
       .eq("id", id)
       .eq("status", "pending")
       .select("id,user_id,sex,status")
       .maybeSingle();
+
+    if (updateRes.error && isMissingColumnError(updateRes.error)) {
+      updateRes = await admin
+        .from("dating_more_view_requests")
+        .update({
+          status,
+          note,
+          reviewed_at: new Date().toISOString(),
+          reviewed_by_user_id: user.id,
+        })
+        .eq("id", id)
+        .eq("status", "pending")
+        .select("id,user_id,sex,status")
+        .maybeSingle();
+    }
 
     if (updateRes.error) {
       console.error(`[admin-more-view-patch] ${requestId} update failed`, updateRes.error);

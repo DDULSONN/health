@@ -1,4 +1,4 @@
-import { normalizeCardSex } from "@/lib/dating-more-view";
+import { getActiveMoreViewGrant, normalizeCardSex } from "@/lib/dating-more-view";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -30,16 +30,8 @@ export async function POST(req: Request) {
 
     const admin = createAdminClient();
 
-    const approvedRes = await admin
-      .from("dating_more_view_requests")
-      .select("id")
-      .eq("user_id", user.id)
-      .eq("sex", sex)
-      .eq("status", "approved")
-      .limit(1)
-      .maybeSingle();
-
-    if (approvedRes.data) {
+    const activeGrant = await getActiveMoreViewGrant(admin, user.id, sex);
+    if (activeGrant) {
       return json(200, { ok: true, code: "ALREADY_APPROVED", requestId, sex, status: "approved" });
     }
 

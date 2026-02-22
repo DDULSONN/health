@@ -1,4 +1,4 @@
-import { hasMoreViewAccess, normalizeCardSex } from "@/lib/dating-more-view";
+import { getActiveMoreViewGrant, normalizeCardSex } from "@/lib/dating-more-view";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -81,12 +81,12 @@ export async function GET(req: Request) {
     }
 
     const admin = createAdminClient();
-    const allowed = await hasMoreViewAccess(admin, user.id, sex);
-    if (!allowed) {
-      return NextResponse.json({ error: "이상형 더보기 승인 후 이용 가능합니다." }, { status: 403 });
+    const activeGrant = await getActiveMoreViewGrant(admin, user.id, sex);
+    if (!activeGrant) {
+      return NextResponse.json({ error: "이상형 더보기는 승인 후 3시간 동안만 이용 가능합니다." }, { status: 403 });
     }
 
-    const cardsRes = await admin
+    const pendingCardsRes = await admin
       .from("dating_cards")
       .select(
         "id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, expires_at, created_at, status"
@@ -94,17 +94,38 @@ export async function GET(req: Request) {
       .eq("status", "pending")
       .eq("sex", sex)
       .order("created_at", { ascending: false })
-      .limit(40);
+      .limit(200);
 
-    if (cardsRes.error) {
-      console.error(`[more-view-list] ${requestId} query failed`, cardsRes.error);
+    if (pendingCardsRes.error) {
+      console.error(`[more-view-list] ${requestId} query failed`, pendingCardsRes.error);
       return NextResponse.json({ error: "더보기 목록을 불러오지 못했습니다." }, { status: 500 });
     }
 
-    const rows = Array.isArray(cardsRes.data) ? cardsRes.data : [];
-    const shuffled = [...rows].sort(() => Math.random() - 0.5).slice(0, 10);
+    const pendingRows = Array.isArray(pendingCardsRes.data) ? pendingCardsRes.data : [];
+    const pendingById = new Map(
+      pendingRows
+        .map((row) => [String((row as { id?: string }).id ?? ""), row] as const)
+        .filter(([id]) => id.length > 0)
+    );
 
-    const items = shuffled.map((row) => {
+    let selectedCardIds = activeGrant.snapshotCardIds.filter((id) => pendingById.has(id)).slice(0, 10);
+    if (selectedCardIds.length === 0) {
+      selectedCardIds = [...pendingById.keys()].sort(() => Math.random() - 0.5).slice(0, 10);
+      if (selectedCardIds.length > 0) {
+        await admin
+          .from("dating_more_view_requests")
+          .update({ snapshot_card_ids: selectedCardIds })
+          .eq("id", activeGrant.requestId)
+          .eq("status", "approved")
+          .eq("sex", sex);
+      }
+    }
+
+    const selectedRows = selectedCardIds
+      .map((id) => pendingById.get(id))
+      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+
+    const items = selectedRows.map((row) => {
       const photoVisibility = row.photo_visibility === "public" ? "public" : "blur";
       return {
         id: row.id,
@@ -128,7 +149,10 @@ export async function GET(req: Request) {
     });
 
     return NextResponse.json(
-      { items },
+      {
+        items,
+        expiresAt: activeGrant.accessExpiresAt,
+      },
       {
         headers: {
           "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
