@@ -9,7 +9,8 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const CARD_BUCKET = "dating-card-photos";
 const LITE_PUBLIC_BUCKET = "dating-card-lite";
-const THUMB_TRANSFORM = { width: 560, quality: 68 };
+const THUMB_WIDTH = 560;
+const THUMB_QUALITY = 68;
 const BLUR_WIDTH = 560;
 const BLUR_QUALITY = 68;
 
@@ -120,17 +121,13 @@ async function toBlurWebpBytes(file: File): Promise<Buffer> {
     .toBuffer();
 }
 
-async function generateThumbBytes(
-  adminClient: ReturnType<typeof createAdminClient>,
-  litePath: string
-): Promise<Buffer | null> {
-  const signed = await adminClient.storage.from(CARD_BUCKET).createSignedUrl(litePath, 600, {
-    transform: THUMB_TRANSFORM,
-  });
-  if (signed.error || !signed.data?.signedUrl) return null;
-  const res = await fetch(signed.data.signedUrl, { cache: "no-store" }).catch(() => null);
-  if (!res || !res.ok) return null;
-  return Buffer.from(await res.arrayBuffer());
+async function generateThumbBytes(file: File): Promise<Buffer | null> {
+  const input = Buffer.from(await file.arrayBuffer());
+  return sharp(input)
+    .rotate()
+    .resize({ width: THUMB_WIDTH, withoutEnlargement: true })
+    .webp({ quality: THUMB_QUALITY })
+    .toBuffer();
 }
 
 async function uploadBytesToBucket(
@@ -232,7 +229,7 @@ export async function POST(req: Request) {
 
       if (kind === "lite") {
         const thumbPath = toThumbPath(path);
-        const thumbBytes = await generateThumbBytes(adminClient, path);
+        const thumbBytes = await generateThumbBytes(file);
         if (!thumbBytes) {
           console.warn("[POST /api/dating/cards/upload-card] thumb generation failed", {
             pathTail: thumbPath.split("/").slice(-2).join("/"),
