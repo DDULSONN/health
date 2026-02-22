@@ -84,6 +84,65 @@ async function promoteOnePending(
   return pendingCard.id;
 }
 
+async function trimPublicOverflowBySex(
+  adminClient: ReturnType<typeof createAdminClient>,
+  sex: CardSex
+) {
+  const slotLimit = getOpenCardLimitBySex(sex);
+
+  let { data, error } = await adminClient
+    .from("dating_cards")
+    .select("id, created_at")
+    .eq("sex", sex)
+    .eq("status", "public")
+    .gt("expires_at", new Date().toISOString())
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .limit(500);
+
+  if (error && isMissingColumnError(error)) {
+    const legacy = await adminClient
+      .from("dating_cards")
+      .select("id, created_at")
+      .eq("sex", sex)
+      .eq("status", "public")
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .limit(500);
+    data = legacy.data;
+    error = legacy.error;
+  }
+
+  if (error) throw error;
+
+  const rows = Array.isArray(data) ? data : [];
+  if (rows.length <= slotLimit) return [];
+
+  const overflowIds = rows.slice(slotLimit).map((row) => row.id).filter(Boolean);
+  if (overflowIds.length === 0) return [];
+
+  let updateRes = await adminClient
+    .from("dating_cards")
+    .update({
+      status: "pending",
+      published_at: null,
+      expires_at: null,
+    })
+    .in("id", overflowIds)
+    .eq("status", "public");
+
+  if (updateRes.error && isMissingColumnError(updateRes.error)) {
+    updateRes = await adminClient
+      .from("dating_cards")
+      .update({ status: "pending" })
+      .in("id", overflowIds)
+      .eq("status", "public");
+  }
+
+  if (updateRes.error) throw updateRes.error;
+  return overflowIds;
+}
+
 export async function promotePendingCardsBySex(
   adminClient: ReturnType<typeof createAdminClient>,
   sex: CardSex
@@ -132,11 +191,18 @@ export async function syncOpenCardQueue(
     throw expireRes.error;
   }
 
+  const trimmedMaleIds = await trimPublicOverflowBySex(adminClient, "male");
+  const trimmedFemaleIds = await trimPublicOverflowBySex(adminClient, "female");
+
   const male = await promotePendingCardsBySex(adminClient, "male");
   const female = await promotePendingCardsBySex(adminClient, "female");
 
   return {
     expiredIds: (expireRes.data ?? []).map((row) => row.id),
+    trimmed: {
+      male: trimmedMaleIds,
+      female: trimmedFemaleIds,
+    },
     promoted: {
       male: male.promotedIds,
       female: female.promotedIds,
