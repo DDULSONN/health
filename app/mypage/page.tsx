@@ -579,6 +579,20 @@ export default function MyPage() {
     }
   };
 
+  const handleDeleteMyOpenCard = async (cardId: string) => {
+    if (!confirm("대기중 오픈카드를 삭제할까요?")) return;
+    const res = await fetch(`/api/dating/cards/my?id=${encodeURIComponent(cardId)}`, {
+      method: "DELETE",
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+    if (!res.ok) {
+      alert(body.error ?? "오픈카드 삭제에 실패했습니다.");
+      return;
+    }
+    setMyDatingCards((prev) => prev.filter((card) => card.id !== cardId));
+    alert(body.message ?? "대기중 오픈카드가 삭제되었습니다.");
+  };
+
   const handleAdminApproveApplyCreditOrder = async (orderId: string) => {
     if (approvingOrderIds.includes(orderId)) return;
     setApprovingOrderIds((prev) => [...prev, orderId]);
@@ -721,6 +735,7 @@ export default function MyPage() {
     canceled: "bg-neutral-200 text-neutral-600",
   };
   const myCardsById = new Map(myDatingCards.map((card) => [card.id, card]));
+  const hasActiveOpenCard = myDatingCards.some((card) => card.status === "pending" || card.status === "public");
   const statusRankPublicFirst: Record<AdminOpenCard["status"], number> = {
     public: 0,
     pending: 1,
@@ -1041,20 +1056,32 @@ export default function MyPage() {
                 {card.status === "pending" && (
                   <div className="mt-1 flex items-center justify-between gap-2">
                     <p className="text-sm text-neutral-600">대기열에 등록되어 있습니다.</p>
-                    <Link
-                      href={`/dating/card/new?editId=${card.id}`}
-                      className="inline-flex h-8 items-center rounded-md border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700 hover:bg-pink-50"
-                    >
-                      내용 수정
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link
+                        href={`/dating/card/new?editId=${card.id}`}
+                        className="inline-flex h-8 items-center rounded-md border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700 hover:bg-pink-50"
+                      >
+                        내용 수정
+                      </Link>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteMyOpenCard(card.id)}
+                        className="inline-flex h-8 items-center rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-700 hover:bg-red-50"
+                      >
+                        삭제
+                      </button>
+                    </div>
                   </div>
                 )}
               </div>
             ))}
           </div>
         )}
+        {hasActiveOpenCard && (
+          <p className="mb-2 text-xs text-amber-700">오픈카드는 1장만 유지할 수 있습니다. 기존 카드(대기중/공개중) 처리 후 새로 작성할 수 있습니다.</p>
+        )}
         <div className="mt-4 flex gap-2">
-          {openCardWriteEnabled ? (
+          {openCardWriteEnabled && !hasActiveOpenCard ? (
             <Link
               href="/dating/card/new"
               className="inline-flex min-h-[42px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
@@ -1063,7 +1090,7 @@ export default function MyPage() {
             </Link>
           ) : (
             <span className="inline-flex min-h-[42px] items-center rounded-lg bg-neutral-300 px-4 text-sm font-medium text-neutral-700">
-              오픈카드 작성 일시중단
+              {openCardWriteEnabled ? "오픈카드 1장 제한" : "오픈카드 작성 일시중단"}
             </span>
           )}
           <Link

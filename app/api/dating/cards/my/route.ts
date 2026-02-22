@@ -156,6 +156,24 @@ export async function POST(req: Request) {
     );
   }
 
+  const activeCardRes = await adminClient
+    .from("dating_cards")
+    .select("id,status")
+    .eq("owner_user_id", user.id)
+    .in("status", ["pending", "public"])
+    .limit(1)
+    .maybeSingle();
+  if (activeCardRes.error) {
+    console.error("[POST /api/dating/cards/my] active card fetch failed", activeCardRes.error);
+    return NextResponse.json({ error: "기존 오픈카드 상태를 확인하지 못했습니다." }, { status: 500 });
+  }
+  if (activeCardRes.data) {
+    return NextResponse.json(
+      { code: "OPEN_CARD_SINGLE_LIMIT", error: "오픈카드는 1장만 유지할 수 있습니다. 기존 카드 수정/삭제 후 다시 시도해주세요." },
+      { status: 409 }
+    );
+  }
+
   const profileRes = await adminClient
     .from("profiles")
     .select("nickname")
@@ -502,5 +520,48 @@ export async function PATCH(req: Request) {
     status: data.status,
     message: "대기중 오픈카드가 수정되었습니다.",
   });
+}
+
+export async function DELETE(req: Request) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+
+  const { searchParams } = new URL(req.url);
+  const cardId = toText(searchParams.get("id"), 100);
+  if (!cardId) {
+    return NextResponse.json({ error: "삭제할 카드 ID가 필요합니다." }, { status: 400 });
+  }
+
+  const adminClient = createAdminClient();
+  const cardRes = await adminClient
+    .from("dating_cards")
+    .select("id,owner_user_id,status")
+    .eq("id", cardId)
+    .maybeSingle();
+
+  if (cardRes.error || !cardRes.data || cardRes.data.owner_user_id !== user.id) {
+    return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
+  }
+
+  if (cardRes.data.status !== "pending") {
+    return NextResponse.json({ error: "대기중 카드만 삭제할 수 있습니다." }, { status: 400 });
+  }
+
+  const deleteRes = await adminClient
+    .from("dating_cards")
+    .delete()
+    .eq("id", cardId)
+    .eq("owner_user_id", user.id)
+    .eq("status", "pending");
+
+  if (deleteRes.error) {
+    console.error("[DELETE /api/dating/cards/my] failed", deleteRes.error);
+    return NextResponse.json({ error: "카드 삭제에 실패했습니다." }, { status: 500 });
+  }
+
+  return NextResponse.json({ id: cardId, message: "대기중 오픈카드가 삭제되었습니다." });
 }
 
