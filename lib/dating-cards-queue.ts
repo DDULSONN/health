@@ -10,6 +10,13 @@ function isMissingColumnError(error: unknown): boolean {
   return code === "42703" || code === "PGRST204" || message.includes("could not find") || message.includes("column");
 }
 
+function isStatusConstraintError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return code === "23514" || message.includes("status_check") || message.includes("check constraint");
+}
+
 async function getPublicCount(
   adminClient: ReturnType<typeof createAdminClient>,
   sex: CardSex
@@ -100,14 +107,28 @@ export async function syncOpenCardQueue(
 ) {
   const nowIso = new Date().toISOString();
 
-  const expireRes = await adminClient
+  let expireRes = await adminClient
     .from("dating_cards")
     .update({ status: "expired" })
     .eq("status", "public")
     .lte("expires_at", nowIso)
     .select("id,sex");
 
-  if (expireRes.error && !isMissingColumnError(expireRes.error)) {
+  if (expireRes.error && isStatusConstraintError(expireRes.error)) {
+    // Some environments still have a legacy status CHECK without 'expired'.
+    // Fallback to 'hidden' so expired slots are still freed for pending promotion.
+    const fallbackRes = await adminClient
+      .from("dating_cards")
+      .update({ status: "hidden" })
+      .eq("status", "public")
+      .lte("expires_at", nowIso)
+      .select("id,sex");
+    if (!fallbackRes.error) {
+      expireRes = fallbackRes;
+    } else if (!isMissingColumnError(fallbackRes.error)) {
+      throw fallbackRes.error;
+    }
+  } else if (expireRes.error && !isMissingColumnError(expireRes.error)) {
     throw expireRes.error;
   }
 
