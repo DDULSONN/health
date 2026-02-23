@@ -1,5 +1,5 @@
 export const OPEN_CARD_LIMIT_MALE = 20;
-export const OPEN_CARD_LIMIT_FEMALE = 20;
+export const OPEN_CARD_LIMIT_FEMALE = 25;
 export const OPEN_CARD_EXPIRE_HOURS = 48;
 
 export function getOpenCardLimitBySex(sex: "male" | "female"): number {
