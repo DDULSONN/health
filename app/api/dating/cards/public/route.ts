@@ -136,25 +136,18 @@ async function createSignedImageUrls(
         counters.rawGuardFallbackCount += 1;
         break;
       }
-      const signed = buildSignedImageUrl("dating-card-photos", rawPath);
-      if (signed) {
-        rawUrls.push(signed);
+      const litePath = toLitePath(rawPath);
+      const litePublicUrl = await getLitePublicUrlIfAvailable(adminClient, litePath);
+      if (litePublicUrl) {
+        rawUrls.push(litePublicUrl);
         counters.rawCount += 1;
-        counters.cacheMiss += 1;
         continue;
       }
-      const litePath = toLitePath(rawPath);
       const liteSigned = buildSignedImageUrl("dating-card-photos", litePath);
       if (liteSigned) {
         rawUrls.push(liteSigned);
         counters.rawCount += 1;
         counters.cacheMiss += 1;
-        continue;
-      }
-      const litePublicUrl = await getLitePublicUrlIfAvailable(adminClient, litePath);
-      if (litePublicUrl) {
-        rawUrls.push(litePublicUrl);
-        counters.rawCount += 1;
         continue;
       }
       const thumbPath = toThumbPath(rawPath);
