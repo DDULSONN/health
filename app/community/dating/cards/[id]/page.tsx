@@ -73,23 +73,23 @@ export default function OpenCardDetailPage() {
         </div>
 
         <div
-          className={`mt-3 rounded-xl border border-neutral-100 bg-neutral-50 overflow-hidden ${
-            card.image_urls.length >= 2 ? "grid grid-cols-2 gap-1 h-56" : "h-56 flex items-center justify-center"
+          className={`mt-3 overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50 ${
+            card.image_urls.length >= 2 ? "grid grid-cols-2 gap-1" : ""
           }`}
         >
           {card.image_urls.length > 0 ? (
             card.image_urls.map((url, idx) => (
-              <div key={`${card.id}-${idx}`} className="h-full w-full flex items-center justify-center bg-neutral-50">
+              <div key={`${card.id}-${idx}`} className="flex h-52 w-full items-center justify-center bg-neutral-50 md:h-56">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={url}
                   alt=""
-                  className={`h-full w-full object-contain ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
+                  className={`max-h-full max-w-full h-auto w-auto object-contain object-center ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
                 />
               </div>
             ))
           ) : (
-            <div className="h-full w-full animate-pulse bg-neutral-100" />
+            <div className="h-52 w-full animate-pulse bg-neutral-100 md:h-56" />
           )}
         </div>
 

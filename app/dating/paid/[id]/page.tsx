@@ -78,16 +78,16 @@ export default function PaidCardDetailPage() {
         {card.image_urls.length > 0 ? (
           <div
             className={`mt-3 overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50 ${
-              card.image_urls.length >= 2 ? "grid h-64 grid-cols-2 gap-1" : "h-64"
+              card.image_urls.length >= 2 ? "grid grid-cols-2 gap-1" : ""
             }`}
           >
             {card.image_urls.map((url, idx) => (
-              <div key={`${card.id}-${idx}`} className="h-full w-full bg-neutral-50">
+              <div key={`${card.id}-${idx}`} className="flex h-56 w-full items-center justify-center bg-neutral-50 md:h-64">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={url}
                   alt=""
-                  className={`h-full w-full object-contain ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
+                  className={`max-h-full max-w-full h-auto w-auto object-contain object-center ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
                 />
               </div>
             ))}
