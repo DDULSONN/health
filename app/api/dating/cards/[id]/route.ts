@@ -133,17 +133,24 @@ async function createSignedImageUrls(
       : [];
     const rawUrls: string[] = [];
     for (const rawPath of rawPaths) {
-      const litePublic = await getLitePublicUrlIfAvailable(adminClient, toLitePath(rawPath));
-      if (litePublic) {
-        rawUrls.push(litePublic);
-        continue;
-      }
-      const liteSigned = await signPathWithCache(adminClient, toLitePath(rawPath), requestId, counters);
+      const litePath = toLitePath(rawPath);
+      const liteSigned = await signPathWithCache(adminClient, litePath, requestId, counters);
       if (liteSigned) {
         rawUrls.push(liteSigned);
         continue;
       }
-      const thumbPublic = await getLitePublicUrlIfAvailable(adminClient, toThumbPath(rawPath));
+      const litePublic = await getLitePublicUrlIfAvailable(adminClient, litePath);
+      if (litePublic) {
+        rawUrls.push(litePublic);
+        continue;
+      }
+      const thumbPath = toThumbPath(rawPath);
+      const thumbSigned = await signPathWithCache(adminClient, thumbPath, requestId, counters);
+      if (thumbSigned) {
+        rawUrls.push(thumbSigned);
+        continue;
+      }
+      const thumbPublic = await getLitePublicUrlIfAvailable(adminClient, thumbPath);
       if (thumbPublic) {
         rawUrls.push(thumbPublic);
         continue;
