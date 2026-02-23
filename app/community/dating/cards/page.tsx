@@ -401,9 +401,9 @@ function PaidCardRow({ card }: { card: PaidCard }) {
       </div>
 
       {card.thumbUrl ? (
-        <div className="mt-3 h-44 overflow-hidden rounded-xl border border-rose-100 bg-white">
+        <div className="mt-3 flex h-44 items-center justify-center overflow-hidden rounded-xl border border-rose-100 bg-white">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={card.thumbUrl} alt="" className="h-full w-full object-contain" />
+          <img src={card.thumbUrl} alt="" className="max-h-full max-w-full h-auto w-auto object-contain object-center" />
         </div>
       ) : (
         <div className="mt-3 h-44 rounded-xl border border-rose-100 bg-white" />
@@ -453,14 +453,14 @@ function CardRow({ card }: { card: PublicCard }) {
         </span>
       </div>
 
-      <div className="mt-3 h-36 w-full overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50 md:h-44">
+      <div className="mt-3 flex h-36 w-full items-center justify-center overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50 md:h-44">
         {card.image_urls.length > 0 ? (
-          <div className="h-full w-full flex items-center justify-center bg-neutral-50">
+          <div className="flex h-full w-full items-center justify-center bg-neutral-50">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={card.image_urls[0]}
               alt=""
-              className={`h-full w-full object-contain ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
+              className={`max-h-full max-w-full h-auto w-auto object-contain object-center ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
             />
           </div>
         ) : (
