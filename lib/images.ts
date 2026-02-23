@@ -96,10 +96,17 @@ export function buildSignedImageUrl(bucket: string, objectPath: string): string 
   const safePath = assertSafeObjectPath(objectPath);
   if (!safeBucket || !safePath) return "";
 
-  // 운영 정책: dating-card-photos 원본(raw) 서명 URL은 캐시/트래픽 급증 방지를 위해 금지
+  // 운영 정책: dating-card-photos 원본(raw) 서명 URL은 캐시/트래픽 급증 방지를 위해 기본 금지
   if (safeBucket === "dating-card-photos" && safePath.includes("/raw/")) {
     return "";
   }
 
+  return `/i/signed/${encodePath(safeBucket)}/${encodePath(safePath)}`;
+}
+
+export function buildSignedImageUrlAllowRaw(bucket: string, objectPath: string): string {
+  const safeBucket = assertSafeObjectPath(bucket);
+  const safePath = assertSafeObjectPath(objectPath);
+  if (!safeBucket || !safePath) return "";
   return `/i/signed/${encodePath(safeBucket)}/${encodePath(safePath)}`;
 }

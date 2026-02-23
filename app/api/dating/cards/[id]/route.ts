@@ -1,4 +1,4 @@
-import { buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
+import { buildPublicLiteImageUrl, buildSignedImageUrl, buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { hasMoreViewAccess } from "@/lib/dating-more-view";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { kvGetString, kvSetString } from "@/lib/edge-kv";
@@ -43,9 +43,12 @@ async function signPathWithCache(
   _adminClient: ReturnType<typeof createAdminClient>,
   path: string,
   _requestId: string,
-  counters: SignCounters
+  counters: SignCounters,
+  allowRaw = false
 ) {
-  const proxy = buildSignedImageUrl("dating-card-photos", path);
+  const proxy = allowRaw
+    ? buildSignedImageUrlAllowRaw("dating-card-photos", path)
+    : buildSignedImageUrl("dating-card-photos", path);
   if (proxy) counters.cacheMiss += 1;
   return proxy;
 }
@@ -128,7 +131,12 @@ async function createSignedImageUrls(
         continue;
       }
       const thumbPublic = await getLitePublicUrlIfAvailable(adminClient, toThumbPath(rawPath));
-      if (thumbPublic) rawUrls.push(thumbPublic);
+      if (thumbPublic) {
+        rawUrls.push(thumbPublic);
+        continue;
+      }
+      const rawSigned = await signPathWithCache(adminClient, rawPath, requestId, counters, true);
+      if (rawSigned) rawUrls.push(rawSigned);
     }
     if (rawUrls.length > 0) return rawUrls;
   }

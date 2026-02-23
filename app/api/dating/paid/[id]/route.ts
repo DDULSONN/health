@@ -1,5 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/server";
-import { buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
+import { buildPublicLiteImageUrl, buildSignedImageUrl, buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { kvGetString, kvSetString } from "@/lib/edge-kv";
 import { NextResponse } from "next/server";
@@ -125,8 +125,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
         .slice(0, 2)
     : [];
 
-  const createSignedUrl = async (path: string) => {
-    const proxy = buildSignedImageUrl("dating-card-photos", path);
+  const createSignedUrl = async (path: string, allowRaw = false) => {
+    const proxy = allowRaw
+      ? buildSignedImageUrlAllowRaw("dating-card-photos", path)
+      : buildSignedImageUrl("dating-card-photos", path);
     if (proxy) cacheMiss += 1;
     return proxy;
   };
@@ -137,6 +139,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       let url = await getLitePublicUrlIfAvailable(admin, toLitePath(rawPath));
       if (!url) url = await createSignedUrl(toLitePath(rawPath));
       if (!url) url = await getLitePublicUrlIfAvailable(admin, toThumbPath(rawPath));
+      if (!url) url = await createSignedUrl(rawPath, true);
       if (url) imageUrls.push(url);
     }
   } else {
@@ -144,6 +147,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       let url = await getLitePublicUrlIfAvailable(admin, toLitePath(rawPath));
       if (!url) url = await createSignedUrl(toLitePath(rawPath));
       if (!url) url = await getLitePublicUrlIfAvailable(admin, toThumbPath(rawPath));
+      if (!url) url = await createSignedUrl(rawPath, true);
       if (url) imageUrls.push(url);
     }
 
