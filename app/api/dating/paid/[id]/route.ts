@@ -134,17 +134,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const imageUrls: string[] = [];
   if (data.photo_visibility === "public") {
     for (const rawPath of rawPaths) {
-      let url = await getLitePublicUrlIfAvailable(admin, toLitePath(rawPath));
+      let url = await createSignedUrl(rawPath);
       if (!url) url = await createSignedUrl(toLitePath(rawPath));
-      if (!url) url = await createSignedUrl(rawPath);
+      if (!url) url = await getLitePublicUrlIfAvailable(admin, toLitePath(rawPath));
       if (!url) url = await getLitePublicUrlIfAvailable(admin, toThumbPath(rawPath));
       if (url) imageUrls.push(url);
     }
   } else {
     for (const rawPath of rawPaths) {
-      let url = await getLitePublicUrlIfAvailable(admin, toLitePath(rawPath));
+      let url = await createSignedUrl(rawPath);
       if (!url) url = await createSignedUrl(toLitePath(rawPath));
-      if (!url) url = await createSignedUrl(rawPath);
+      if (!url) url = await getLitePublicUrlIfAvailable(admin, toLitePath(rawPath));
       if (!url) url = await getLitePublicUrlIfAvailable(admin, toThumbPath(rawPath));
       if (url) imageUrls.push(url);
     }
