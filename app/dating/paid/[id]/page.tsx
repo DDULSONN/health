@@ -22,6 +22,11 @@ type PaidCardDetail = {
   photo_visibility: "blur" | "public";
 };
 
+type PaidListItem = {
+  id: string;
+  thumbUrl: string;
+};
+
 export default function PaidCardDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -42,7 +47,24 @@ export default function PaidCardDetailPage() {
           router.replace("/dating/paid");
           return;
         }
-        setCard(body.card);
+
+        let nextCard = body.card;
+        if (!Array.isArray(nextCard.image_urls) || nextCard.image_urls.length === 0) {
+          try {
+            const listRes = await fetch("/api/dating/paid/list", { cache: "no-store" });
+            if (listRes.ok) {
+              const listBody = (await listRes.json().catch(() => ({}))) as { items?: PaidListItem[] };
+              const matched = Array.isArray(listBody.items) ? listBody.items.find((item) => item.id === id) : undefined;
+              if (matched?.thumbUrl) {
+                nextCard = { ...nextCard, image_urls: [matched.thumbUrl] };
+              }
+            }
+          } catch {
+            // keep original card when list fallback fails
+          }
+        }
+
+        setCard(nextCard);
       } catch {
         router.replace("/dating/paid");
       } finally {
