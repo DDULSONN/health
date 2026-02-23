@@ -117,14 +117,9 @@ async function createSignedImageUrls(
       : [];
     const rawUrls: string[] = [];
     for (const rawPath of rawPaths) {
-      const thumbPublic = await getLitePublicUrlIfAvailable(adminClient, toThumbPath(rawPath));
-      if (thumbPublic) {
-        rawUrls.push(thumbPublic);
-        continue;
-      }
-      const litePublic = await getLitePublicUrlIfAvailable(adminClient, toLitePath(rawPath));
-      if (litePublic) {
-        rawUrls.push(litePublic);
+      const rawSigned = await signPathWithCache(adminClient, rawPath, requestId, counters);
+      if (rawSigned) {
+        rawUrls.push(rawSigned);
         continue;
       }
       const liteSigned = await signPathWithCache(adminClient, toLitePath(rawPath), requestId, counters);
@@ -132,8 +127,13 @@ async function createSignedImageUrls(
         rawUrls.push(liteSigned);
         continue;
       }
-      const rawSigned = await signPathWithCache(adminClient, rawPath, requestId, counters);
-      if (rawSigned) rawUrls.push(rawSigned);
+      const litePublic = await getLitePublicUrlIfAvailable(adminClient, toLitePath(rawPath));
+      if (litePublic) {
+        rawUrls.push(litePublic);
+        continue;
+      }
+      const thumbPublic = await getLitePublicUrlIfAvailable(adminClient, toThumbPath(rawPath));
+      if (thumbPublic) rawUrls.push(thumbPublic);
     }
     if (rawUrls.length > 0) return rawUrls;
   }
@@ -143,14 +143,14 @@ async function createSignedImageUrls(
     : [];
   const blurUrls: string[] = [];
   for (const originalBlurPath of blurPathList) {
-    const blurWebpPath = toBlurWebpPath(originalBlurPath);
-    const blurPublicUrl = await getLitePublicUrlIfAvailable(adminClient, blurWebpPath);
-    if (blurPublicUrl) {
-      blurUrls.push(blurPublicUrl);
+    const signed = await signPathWithCache(adminClient, originalBlurPath, requestId, counters);
+    if (signed) {
+      blurUrls.push(signed);
       continue;
     }
-    const signed = await signPathWithCache(adminClient, originalBlurPath, requestId, counters);
-    if (signed) blurUrls.push(signed);
+    const blurWebpPath = toBlurWebpPath(originalBlurPath);
+    const blurPublicUrl = await getLitePublicUrlIfAvailable(adminClient, blurWebpPath);
+    if (blurPublicUrl) blurUrls.push(blurPublicUrl);
   }
   if (blurUrls.length > 0) return blurUrls;
 
