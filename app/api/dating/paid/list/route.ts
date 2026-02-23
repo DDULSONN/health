@@ -158,21 +158,26 @@ export async function GET(req: Request) {
 
     const items = await Promise.all(
       (data ?? []).map(async (row) => {
-        const firstPath =
-          Array.isArray(row.photo_paths) && row.photo_paths.length > 0
-            ? normalizeDatingPhotoPath(row.photo_paths[0])
-            : "";
+        const rawPaths = Array.isArray(row.photo_paths)
+          ? row.photo_paths
+              .map((item) => normalizeDatingPhotoPath(item))
+              .filter((item) => item.length > 0)
+              .slice(0, 2)
+          : [];
 
         let thumbUrl = "";
-        if (row.photo_visibility === "public" && firstPath) {
-          const litePath = toLitePath(firstPath);
-          thumbUrl = await getLitePublicUrlIfAvailable(admin, litePath);
-          if (!thumbUrl) {
-            thumbUrl = await createSignedUrl(admin, requestId, litePath, counters, "raw-list");
-          }
-          if (!thumbUrl) {
-            const thumbPath = toThumbPath(firstPath);
-            thumbUrl = await getLitePublicUrlIfAvailable(admin, thumbPath);
+        if (row.photo_visibility === "public" && rawPaths.length > 0) {
+          for (const rawPath of rawPaths) {
+            const litePath = toLitePath(rawPath);
+            thumbUrl = await getLitePublicUrlIfAvailable(admin, litePath);
+            if (!thumbUrl) {
+              thumbUrl = await createSignedUrl(admin, requestId, litePath, counters, "raw-list");
+            }
+            if (!thumbUrl) {
+              const thumbPath = toThumbPath(rawPath);
+              thumbUrl = await getLitePublicUrlIfAvailable(admin, thumbPath);
+            }
+            if (thumbUrl) break;
           }
           if (thumbUrl) counters.rawSigned += 1;
         } else {
