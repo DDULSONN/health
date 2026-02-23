@@ -510,9 +510,11 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
                 ) : null}
               </div>
               {item.thumbUrl ? (
-                <div className="mt-2 flex h-44 items-center justify-center overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50">
+                <div className="relative mt-2 flex h-44 items-center justify-center overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={item.thumbUrl} alt="" className="max-h-full max-w-full h-auto w-auto object-contain object-center" />
+                  <img src={item.thumbUrl} alt="" className="absolute inset-0 h-full w-full object-cover opacity-30 blur-sm" />
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img src={item.thumbUrl} alt="" className="relative z-10 max-h-full max-w-full h-auto w-auto object-contain object-center" />
                 </div>
               ) : (
                 <div className="mt-2 h-44 rounded-xl border border-neutral-100 bg-neutral-50" />
