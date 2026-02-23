@@ -171,9 +171,6 @@ export async function GET(req: Request) {
             const litePath = toLitePath(rawPath);
             thumbUrl = await getLitePublicUrlIfAvailable(admin, litePath);
             if (!thumbUrl) {
-              thumbUrl = await createSignedUrl(admin, requestId, litePath, counters, "raw-list");
-            }
-            if (!thumbUrl) {
               const thumbPath = toThumbPath(rawPath);
               thumbUrl = await getLitePublicUrlIfAvailable(admin, thumbPath);
             }

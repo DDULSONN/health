@@ -143,13 +143,6 @@ async function createSignedImageUrls(
         counters.rawCount += 1;
         continue;
       }
-      const liteSigned = buildSignedImageUrl("dating-card-photos", litePath);
-      if (liteSigned) {
-        rawUrls.push(liteSigned);
-        counters.rawCount += 1;
-        counters.cacheMiss += 1;
-        continue;
-      }
       const thumbPath = toThumbPath(rawPath);
       const thumbPublicUrl = await getLitePublicUrlIfAvailable(adminClient, thumbPath);
       if (thumbPublicUrl) {
