@@ -165,17 +165,17 @@ export async function GET(req: Request) {
 
         let thumbUrl = "";
         if (row.photo_visibility === "public" && firstPath) {
+          thumbUrl = await createSignedUrl(admin, requestId, firstPath, counters, "raw-list");
           const litePath = toLitePath(firstPath);
-          thumbUrl = await getLitePublicUrlIfAvailable(admin, litePath);
           if (!thumbUrl) {
             thumbUrl = await createSignedUrl(admin, requestId, litePath, counters, "raw-list");
           }
           if (!thumbUrl) {
-            const thumbPath = toThumbPath(firstPath);
-            thumbUrl = await getLitePublicUrlIfAvailable(admin, thumbPath);
+            thumbUrl = await getLitePublicUrlIfAvailable(admin, litePath);
           }
           if (!thumbUrl) {
-            thumbUrl = await createSignedUrl(admin, requestId, firstPath, counters, "raw-list");
+            const thumbPath = toThumbPath(firstPath);
+            thumbUrl = await getLitePublicUrlIfAvailable(admin, thumbPath);
           }
           if (thumbUrl) counters.rawSigned += 1;
         } else {

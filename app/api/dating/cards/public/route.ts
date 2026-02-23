@@ -131,18 +131,19 @@ async function createSignedImageUrls(
 
     const rawUrls: string[] = [];
     for (const rawPath of rawPaths) {
-      const litePath = toLitePath(rawPath);
-      const litePublicUrl = await getLitePublicUrlIfAvailable(adminClient, litePath);
-      if (litePublicUrl) {
-        rawUrls.push(litePublicUrl);
-        counters.rawCount += 1;
-        continue;
-      }
       if (counters.rawCount >= RAW_COUNT_MAX) {
         counters.rawGuardExceeded = true;
         counters.rawGuardFallbackCount += 1;
         break;
       }
+      const signed = buildSignedImageUrl("dating-card-photos", rawPath);
+      if (signed) {
+        rawUrls.push(signed);
+        counters.rawCount += 1;
+        counters.cacheMiss += 1;
+        continue;
+      }
+      const litePath = toLitePath(rawPath);
       const liteSigned = buildSignedImageUrl("dating-card-photos", litePath);
       if (liteSigned) {
         rawUrls.push(liteSigned);
@@ -150,18 +151,17 @@ async function createSignedImageUrls(
         counters.cacheMiss += 1;
         continue;
       }
+      const litePublicUrl = await getLitePublicUrlIfAvailable(adminClient, litePath);
+      if (litePublicUrl) {
+        rawUrls.push(litePublicUrl);
+        counters.rawCount += 1;
+        continue;
+      }
       const thumbPath = toThumbPath(rawPath);
       const thumbPublicUrl = await getLitePublicUrlIfAvailable(adminClient, thumbPath);
       if (thumbPublicUrl) {
         rawUrls.push(thumbPublicUrl);
         counters.rawCount += 1;
-        continue;
-      }
-      const signed = buildSignedImageUrl("dating-card-photos", rawPath);
-      if (signed) {
-        rawUrls.push(signed);
-        counters.rawCount += 1;
-        counters.cacheMiss += 1;
       }
     }
     if (rawUrls.length > 0 && !counters.rawGuardExceeded) return rawUrls;
