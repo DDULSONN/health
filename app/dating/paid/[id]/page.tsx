@@ -18,7 +18,7 @@ type PaidCardDetail = {
   ideal_text: string | null;
   intro_text: string | null;
   expires_at: string;
-  image_url: string;
+  image_urls: string[];
   photo_visibility: "blur" | "public";
 };
 
@@ -75,10 +75,22 @@ export default function PaidCardDetailPage() {
           </span>
         </div>
 
-        {card.image_url ? (
-          <div className="mt-3 h-64 overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={card.image_url} alt="" className="h-full w-full object-contain" />
+        {card.image_urls.length > 0 ? (
+          <div
+            className={`mt-3 overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50 ${
+              card.image_urls.length >= 2 ? "grid h-64 grid-cols-2 gap-1" : "h-64"
+            }`}
+          >
+            {card.image_urls.map((url, idx) => (
+              <div key={`${card.id}-${idx}`} className="h-full w-full bg-neutral-50">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={url}
+                  alt=""
+                  className={`h-full w-full object-contain ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
+                />
+              </div>
+            ))}
           </div>
         ) : null}
 

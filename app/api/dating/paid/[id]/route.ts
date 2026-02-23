@@ -98,7 +98,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const { id } = await params;
   const admin = createAdminClient();
   const signCalls = 0;
-  let cacheHit = 0;
+  const cacheHit = 0;
   let cacheMiss = 0;
 
   const { data, error } = await admin
@@ -118,10 +118,12 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: "지원 가능한 카드가 아닙니다." }, { status: 403 });
   }
 
-  const firstPath =
-    Array.isArray(data.photo_paths) && data.photo_paths.length > 0
-      ? normalizeDatingPhotoPath(data.photo_paths[0])
-      : "";
+  const rawPaths = Array.isArray(data.photo_paths)
+    ? data.photo_paths
+        .map((item) => normalizeDatingPhotoPath(item))
+        .filter((item) => item.length > 0)
+        .slice(0, 2)
+    : [];
 
   const createSignedUrl = async (path: string) => {
     const proxy = buildSignedImageUrl("dating-card-photos", path);
@@ -129,19 +131,33 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return proxy;
   };
 
-  let imageUrl = "";
-  if (data.photo_visibility === "public" && firstPath) {
-    imageUrl = await getLitePublicUrlIfAvailable(admin, toThumbPath(firstPath));
-    if (!imageUrl) imageUrl = await getLitePublicUrlIfAvailable(admin, toLitePath(firstPath));
-    if (!imageUrl) imageUrl = await createSignedUrl(toLitePath(firstPath));
-    if (!imageUrl) imageUrl = await createSignedUrl(firstPath);
+  const imageUrls: string[] = [];
+  if (data.photo_visibility === "public") {
+    for (const rawPath of rawPaths) {
+      let url = await getLitePublicUrlIfAvailable(admin, toThumbPath(rawPath));
+      if (!url) url = await getLitePublicUrlIfAvailable(admin, toLitePath(rawPath));
+      if (!url) url = await createSignedUrl(toLitePath(rawPath));
+      if (!url) url = await createSignedUrl(rawPath);
+      if (url) imageUrls.push(url);
+    }
   } else {
-    const blurThumbPath = normalizeDatingPhotoPath(data.blur_thumb_path);
-    if (blurThumbPath) {
-      const blurWebpPath = toBlurWebpPath(blurThumbPath);
-      imageUrl = await getLitePublicUrlIfAvailable(admin, blurWebpPath);
-      if (!imageUrl) {
-        imageUrl = await createSignedUrl(blurThumbPath);
+    for (const rawPath of rawPaths) {
+      let url = await getLitePublicUrlIfAvailable(admin, toThumbPath(rawPath));
+      if (!url) url = await getLitePublicUrlIfAvailable(admin, toLitePath(rawPath));
+      if (!url) url = await createSignedUrl(toLitePath(rawPath));
+      if (!url) url = await createSignedUrl(rawPath);
+      if (url) imageUrls.push(url);
+    }
+
+    if (imageUrls.length === 0) {
+      const blurThumbPath = normalizeDatingPhotoPath(data.blur_thumb_path);
+      if (blurThumbPath) {
+        const blurWebpPath = toBlurWebpPath(blurThumbPath);
+        let blurUrl = await getLitePublicUrlIfAvailable(admin, blurWebpPath);
+        if (!blurUrl) {
+          blurUrl = await createSignedUrl(blurThumbPath);
+        }
+        if (blurUrl) imageUrls.push(blurUrl);
       }
     }
   }
@@ -163,7 +179,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       ideal_text: data.ideal_text,
       intro_text: data.intro_text,
       expires_at: data.expires_at,
-      image_url: imageUrl,
+      image_urls: imageUrls,
       photo_visibility: data.photo_visibility === "public" ? "public" : "blur",
     },
   });
