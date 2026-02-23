@@ -192,6 +192,17 @@ async function createSignedImageUrls(
     }
   }
 
+  // 마지막 안전장치: blur/lite 자산 누락 시 raw signed를 상세에서만 제한적으로 허용
+  const emergencyRawPaths = Array.isArray(photoPaths)
+    ? photoPaths.map((item) => normalizeDatingPhotoPath(item)).filter((item) => item.length > 0).slice(0, 2)
+    : [];
+  const emergencyRawUrls: string[] = [];
+  for (const rawPath of emergencyRawPaths) {
+    const rawSigned = await signPathWithCache(adminClient, rawPath, requestId, counters, true);
+    if (rawSigned) emergencyRawUrls.push(rawSigned);
+  }
+  if (emergencyRawUrls.length > 0) return emergencyRawUrls;
+
   return [];
 }
 
