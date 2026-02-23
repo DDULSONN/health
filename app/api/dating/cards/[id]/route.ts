@@ -46,11 +46,24 @@ async function signPathWithCache(
   counters: SignCounters,
   allowRaw = false
 ) {
-  const proxy = allowRaw
+  const primary = allowRaw
     ? buildSignedImageUrlAllowRaw("dating-card-photos", path)
     : buildSignedImageUrl("dating-card-photos", path);
-  if (proxy) counters.cacheMiss += 1;
-  return proxy;
+  if (primary) {
+    counters.cacheMiss += 1;
+    return primary;
+  }
+
+  // lite/thumb가 dating-card-lite 버킷에만 있는 케이스 fallback
+  if (path.includes("/lite/") || path.includes("/thumb/")) {
+    const liteBucketSigned = buildSignedImageUrlAllowRaw("dating-card-lite", path);
+    if (liteBucketSigned) {
+      counters.cacheMiss += 1;
+      return liteBucketSigned;
+    }
+  }
+
+  return "";
 }
 
 function toBlurWebpPath(path: string): string {

@@ -126,11 +126,23 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     : [];
 
   const createSignedUrl = async (path: string, allowRaw = false) => {
-    const proxy = allowRaw
+    const primary = allowRaw
       ? buildSignedImageUrlAllowRaw("dating-card-photos", path)
       : buildSignedImageUrl("dating-card-photos", path);
-    if (proxy) cacheMiss += 1;
-    return proxy;
+    if (primary) {
+      cacheMiss += 1;
+      return primary;
+    }
+
+    if (path.includes("/lite/") || path.includes("/thumb/")) {
+      const liteBucketSigned = buildSignedImageUrlAllowRaw("dating-card-lite", path);
+      if (liteBucketSigned) {
+        cacheMiss += 1;
+        return liteBucketSigned;
+      }
+    }
+
+    return "";
   };
 
   const imageUrls: string[] = [];
