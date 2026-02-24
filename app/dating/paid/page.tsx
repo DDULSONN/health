@@ -388,6 +388,7 @@ export default function DatingPaidPage() {
           </button>
         </div>
         <p className="text-sm text-neutral-600">대기열 없이 게시 · 지원서 여러 장 수락 가능 · 24시간 글에는 하루 지원권 차감 없이 지원 가능 · 남/녀 오픈카드 최상단에 24시 지원자 노출</p>
+        <p className="mt-2 text-xs text-neutral-500">가격: 15,000원</p>
       </section>
 
       {formOpen && (
