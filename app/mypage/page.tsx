@@ -51,6 +51,7 @@ type MyDatingCard = {
   age: number | null;
   region: string | null;
   status: "pending" | "public" | "expired" | "hidden";
+  queue_position?: number | null;
   published_at: string | null;
   expires_at: string | null;
   created_at: string;
@@ -1097,7 +1098,10 @@ export default function MyPage() {
                 )}
                 {card.status === "pending" && (
                   <div className="mt-1 flex items-center justify-between gap-2">
-                    <p className="text-sm text-neutral-600">대기열에 등록되어 있습니다.</p>
+                    <p className="text-sm text-neutral-600">
+                      대기열에 등록되어 있습니다.
+                      {typeof card.queue_position === "number" && card.queue_position > 0 ? ` (현재 ${card.queue_position}번째)` : ""}
+                    </p>
                     <div className="flex items-center gap-2">
                       <Link
                         href={`/dating/card/new?editId=${card.id}`}

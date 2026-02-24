@@ -1,6 +1,7 @@
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
+import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
 import { NextResponse } from "next/server";
 
 type SignCounters = { signCalls: number; cacheHit: number; cacheMiss: number };
@@ -24,6 +25,34 @@ async function createApplyPhotoSignedUrl(
   const proxy = buildSignedImageUrl("dating-apply-photos", path);
   if (proxy) counters.cacheMiss += 1;
   return proxy;
+}
+
+async function getPendingQueuePosition(
+  adminClient: ReturnType<typeof createAdminClient>,
+  sex: "male" | "female",
+  createdAt: string,
+  cardId: string
+): Promise<number | null> {
+  const [beforeRes, sameTsRes] = await Promise.all([
+    adminClient
+      .from("dating_cards")
+      .select("id", { head: true, count: "exact" })
+      .eq("sex", sex)
+      .eq("status", "pending")
+      .lt("created_at", createdAt),
+    adminClient
+      .from("dating_cards")
+      .select("id", { head: true, count: "exact" })
+      .eq("sex", sex)
+      .eq("status", "pending")
+      .eq("created_at", createdAt)
+      .lte("id", cardId),
+  ]);
+
+  if (beforeRes.error || sameTsRes.error) {
+    return null;
+  }
+  return (beforeRes.count ?? 0) + (sameTsRes.count ?? 0);
 }
 
 export async function GET(req: Request) {
@@ -56,6 +85,13 @@ export async function GET(req: Request) {
 
   const counters: SignCounters = { signCalls: 0, cacheHit: 0, cacheMiss: 0 };
   const adminClient = createAdminClient();
+
+  try {
+    await syncOpenCardQueue(adminClient);
+  } catch (error) {
+    console.error("[GET /api/dating/cards/my/received] queue sync failed", { requestId, error });
+  }
+
   let { data: cards, error: cardsError } = await adminClient
     .from("dating_cards")
     .select("id, sex, display_nickname, age, region, expires_at, created_at, status")
@@ -154,5 +190,24 @@ export async function GET(req: Request) {
     `[list.metrics] requestId=${requestId} path=/api/dating/cards/my/received cards=${(cards ?? []).length} rawSigned=${rawSignedCount} blurSigned=0 cacheHitRatePct=${cacheHitRatePct} signCalls=${counters.signCalls}`
   );
 
-  return NextResponse.json({ cards: cards ?? [], applications: safeApps });
+  const rawCards = Array.isArray(cards) ? cards : [];
+  const cardsWithQueuePosition = await Promise.all(
+    rawCards.map(async (card) => {
+      if (!card || card.status !== "pending") {
+        return { ...card, queue_position: null };
+      }
+      const queuePosition = await getPendingQueuePosition(
+        adminClient,
+        card.sex as "male" | "female",
+        card.created_at,
+        card.id
+      );
+      return {
+        ...card,
+        queue_position: queuePosition,
+      };
+    })
+  );
+
+  return NextResponse.json({ cards: cardsWithQueuePosition, applications: safeApps });
 }
