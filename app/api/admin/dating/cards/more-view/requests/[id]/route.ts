@@ -25,6 +25,41 @@ function isAllowedAdmin(userId: string, email?: string | null) {
   return isAdminEmail(email);
 }
 
+async function grantApplyCredit(admin: ReturnType<typeof createAdminClient>, userId: string, requestId: string) {
+  const nowIso = new Date().toISOString();
+  const creditRes = await admin
+    .from("user_apply_credits")
+    .select("credits")
+    .eq("user_id", userId)
+    .maybeSingle();
+  if (creditRes.error) {
+    console.error(`[admin-more-view-patch] ${requestId} credit read failed`, creditRes.error);
+    return false;
+  }
+
+  if (!creditRes.data) {
+    const insertRes = await admin
+      .from("user_apply_credits")
+      .insert({ user_id: userId, credits: 1, updated_at: nowIso });
+    if (insertRes.error) {
+      console.error(`[admin-more-view-patch] ${requestId} credit insert failed`, insertRes.error);
+      return false;
+    }
+    return true;
+  }
+
+  const currentCredits = Number(creditRes.data.credits ?? 0);
+  const updateRes = await admin
+    .from("user_apply_credits")
+    .update({ credits: Math.max(0, currentCredits) + 1, updated_at: nowIso })
+    .eq("user_id", userId);
+  if (updateRes.error) {
+    console.error(`[admin-more-view-patch] ${requestId} credit update failed`, updateRes.error);
+    return false;
+  }
+  return true;
+}
+
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const requestId = crypto.randomUUID();
 
@@ -90,6 +125,26 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
     if (!updateRes.data) {
       return NextResponse.json({ ok: false, code: "NOT_PENDING", requestId, message: "대기중 신청만 처리할 수 있습니다." }, { status: 409 });
+    }
+
+    if (status === "approved") {
+      const creditGranted = await grantApplyCredit(admin, updateRes.data.user_id, requestId);
+      if (!creditGranted) {
+        await admin
+          .from("dating_more_view_requests")
+          .update({
+            status: "pending",
+            access_expires_at: null,
+            snapshot_card_ids: [],
+          })
+          .eq("id", id)
+          .eq("status", "approved");
+
+        return NextResponse.json(
+          { ok: false, code: "CREDIT_GRANT_FAILED", requestId, message: "지원권 지급에 실패했습니다." },
+          { status: 500 }
+        );
+      }
     }
 
     return NextResponse.json({ ok: true, requestId, item: updateRes.data });

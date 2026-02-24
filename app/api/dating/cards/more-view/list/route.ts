@@ -45,6 +45,7 @@ function toImageUrls(photoVisibility: "blur" | "public", photoPaths: unknown, bl
 
 export async function GET(req: Request) {
   const requestId = crypto.randomUUID();
+  const snapshotSize = 15;
 
   try {
     const supabase = await createClient();
@@ -108,9 +109,9 @@ export async function GET(req: Request) {
         .filter(([id]) => id.length > 0)
     );
 
-    let selectedCardIds = activeGrant.snapshotCardIds.filter((id) => pendingById.has(id)).slice(0, 10);
+    let selectedCardIds = activeGrant.snapshotCardIds.filter((id) => pendingById.has(id)).slice(0, snapshotSize);
     if (selectedCardIds.length === 0) {
-      selectedCardIds = [...pendingById.keys()].sort(() => Math.random() - 0.5).slice(0, 10);
+      selectedCardIds = [...pendingById.keys()].sort(() => Math.random() - 0.5).slice(0, snapshotSize);
       if (selectedCardIds.length > 0) {
         await admin
           .from("dating_more_view_requests")

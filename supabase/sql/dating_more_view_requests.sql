@@ -1,6 +1,6 @@
 -- More-view request flow for open cards (male/female split)
 -- - Admin approval grants a 3-hour access window
--- - First list call stores a fixed random snapshot (up to 10 card IDs)
+-- - First list call stores a fixed random snapshot (up to 15 card IDs)
 
 create table if not exists public.dating_more_view_requests (
   id uuid primary key default gen_random_uuid(),
