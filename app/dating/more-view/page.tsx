@@ -20,6 +20,8 @@ export default function MoreViewPage() {
     female: "none",
   });
   const [submitting, setSubmitting] = useState<null | "male" | "female">(null);
+  const [creditRequesting, setCreditRequesting] = useState(false);
+  const [creditOrderId, setCreditOrderId] = useState("");
 
   const loadStatus = useCallback(async () => {
     try {
@@ -76,6 +78,29 @@ export default function MoreViewPage() {
     [loadStatus, submitting]
   );
 
+  const handleRequestApplyCredits = useCallback(async () => {
+    if (!status.loggedIn || creditRequesting) return;
+    setCreditRequesting(true);
+    setCreditOrderId("");
+    try {
+      const res = await fetch("/api/dating/apply-credits/request", { method: "POST" });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        orderId?: string;
+        message?: string;
+      };
+      if (!res.ok || !body.ok || !body.orderId) {
+        alert(body.message ?? "지원권 신청 생성에 실패했습니다.");
+        return;
+      }
+      setCreditOrderId(body.orderId);
+    } catch {
+      alert("지원권 신청 중 네트워크 오류가 발생했습니다.");
+    } finally {
+      setCreditRequesting(false);
+    }
+  }, [creditRequesting, status.loggedIn]);
+
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
       <div className="mb-4 flex items-center gap-2">
@@ -117,6 +142,29 @@ export default function MoreViewPage() {
             오픈카톡 링크
           </a>
           {!status.loggedIn && <span className="inline-flex items-center text-xs text-neutral-500">로그인 후 신청 가능</span>}
+        </div>
+
+        <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+          <p className="text-xs text-amber-800">지원권 3장(5,000원) 구매 신청</p>
+          <div className="mt-2 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void handleRequestApplyCredits()}
+              disabled={!status.loggedIn || creditRequesting}
+              className="inline-flex min-h-[36px] items-center rounded-md bg-amber-500 px-3 text-xs font-medium text-white disabled:opacity-50"
+            >
+              {creditRequesting ? "신청 중..." : "지원권 구매 신청"}
+            </button>
+            <a
+              href={OPEN_KAKAO_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-h-[36px] items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-800"
+            >
+              오픈카톡 이동
+            </a>
+          </div>
+          {creditOrderId && <p className="mt-2 text-xs text-amber-900">신청 완료: {creditOrderId} (오픈카톡으로 닉네임 + 신청ID 전송)</p>}
         </div>
       </section>
     </main>
