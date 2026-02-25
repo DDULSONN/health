@@ -1,6 +1,7 @@
-﻿export function normalizeCityToken(token: string): string {
+export function normalizeCityToken(token: string): string {
   const t = token.trim().replace(/[()]/g, "");
-  return t.replace(/(특별자치도|특별자치시|특별시|광역시|자치시|자치도|시|군|구)$/u, "");
+  const onlyName = t.replace(/[^0-9A-Za-z가-힣]/g, "");
+  return onlyName.replace(/(특별자치도|특별자치시|특별시|광역시|자치시|자치도|시|군|구)$/u, "");
 }
 
 const PROVINCE_TOKENS = new Set([
@@ -50,12 +51,66 @@ const PROVINCE_TOKENS = new Set([
   "제주특별자치도",
 ]);
 
+const PROVINCE_PREFIXES = [...PROVINCE_TOKENS].sort((a, b) => b.length - a.length);
+
+const CITY_ALIASES: Record<string, string> = {
+  동탄: "화성",
+};
+
+const SEOUL_DISTRICTS = new Set([
+  "강남",
+  "강동",
+  "강북",
+  "강서",
+  "관악",
+  "광진",
+  "구로",
+  "금천",
+  "노원",
+  "도봉",
+  "동대문",
+  "동작",
+  "마포",
+  "서대문",
+  "서초",
+  "성동",
+  "성북",
+  "송파",
+  "양천",
+  "영등포",
+  "용산",
+  "은평",
+  "종로",
+  "중",
+  "중랑",
+]);
+
+function withMetroAlias(city: string, raw: string): string {
+  if (CITY_ALIASES[city]) return CITY_ALIASES[city];
+
+  if (SEOUL_DISTRICTS.has(city)) return "서울";
+
+  // Ambiguous district names: prefer explicit province hint when present.
+  if (city === "강서" && /부산|부산시|부산광역시/u.test(raw)) return "부산";
+
+  return city;
+}
+
+function extractFromPrefixedToken(token: string): string {
+  for (const prefix of PROVINCE_PREFIXES) {
+    if (!token.startsWith(prefix)) continue;
+    const rest = token.slice(prefix.length).trim();
+    if (rest.length >= 2) return rest;
+  }
+  return "";
+}
+
 export function extractCityFromRegion(region: string | null): string | null {
   const raw = (region ?? "").trim();
   if (!raw) return null;
 
   const tokens = raw
-    .replace(/[,-]/g, " ")
+    .replace(/[,\-|/|·]/g, " ")
     .split(/\s+/)
     .map((v) => v.trim())
     .filter(Boolean);
@@ -63,8 +118,8 @@ export function extractCityFromRegion(region: string | null): string | null {
   if (tokens.length === 0) return null;
 
   const first = tokens[0];
-  const cityToken = PROVINCE_TOKENS.has(first) ? tokens[1] ?? "" : first;
-  const city = normalizeCityToken(cityToken);
+  const cityToken = PROVINCE_TOKENS.has(first) ? tokens[1] ?? "" : extractFromPrefixedToken(first) || first;
+  const city = withMetroAlias(normalizeCityToken(cityToken), raw);
   if (!city || city.length < 2) return null;
   return city;
 }
