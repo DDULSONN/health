@@ -1,5 +1,6 @@
-import { buildPublicLiteImageUrl, buildSignedImageUrl, buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
+﻿import { buildPublicLiteImageUrl, buildSignedImageUrl, buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { hasMoreViewAccess } from "@/lib/dating-more-view";
+import { hasCityViewAccess } from "@/lib/dating-city-view";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { kvGetString, kvSetString } from "@/lib/edge-kv";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -54,7 +55,7 @@ async function signPathWithCache(
     return primary;
   }
 
-  // lite/thumb가 dating-card-lite 버킷에만 있는 케이스 fallback
+  // lite/thumb媛 dating-card-lite 踰꾪궥?먮쭔 ?덈뒗 耳?댁뒪 fallback
   if (path.includes("/lite/") || path.includes("/thumb/")) {
     const liteBucketSigned = buildSignedImageUrlAllowRaw("dating-card-lite", path);
     if (liteBucketSigned) {
@@ -182,7 +183,7 @@ async function createSignedImageUrls(
     }
   }
 
-  // 마지막 안전장치: blur/lite 자산 누락 시 raw signed를 상세에서만 제한적으로 허용
+  // 留덉?留??덉쟾?μ튂: blur/lite ?먯궛 ?꾨씫 ??raw signed瑜??곸꽭?먯꽌留??쒗븳?곸쑝濡??덉슜
   const emergencyRawPaths = Array.isArray(photoPaths)
     ? photoPaths.map((item) => normalizeDatingPhotoPath(item)).filter((item) => item.length > 0).slice(0, 2)
     : [];
@@ -253,17 +254,19 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   if (error || !data) {
-    return NextResponse.json({ error: "移대뱶瑜?李얠쓣 ???놁뒿?덈떎." }, { status: 404 });
+    return NextResponse.json({ error: "燁삳?諭띄몴?筌≪뼚??????곷뮸??덈뼄." }, { status: 404 });
   }
 
   const isPublicAvailable = data.status === "public" && !!data.expires_at && new Date(data.expires_at).getTime() > Date.now();
   let canReadPending = false;
   if (!isPublicAvailable && data.status === "pending" && user?.id) {
-    canReadPending = await hasMoreViewAccess(adminClient, user.id, data.sex);
+    const byMoreView = await hasMoreViewAccess(adminClient, user.id, data.sex);
+    const byCityView = await hasCityViewAccess(adminClient, user.id, data.region ?? null);
+    canReadPending = byMoreView || byCityView;
   }
 
   if (!isPublicAvailable && !canReadPending) {
-    return NextResponse.json({ error: "怨듦컻 以묒씤 移대뱶媛 ?꾨떃?덈떎." }, { status: 403 });
+    return NextResponse.json({ error: "?⑤벀而?餓λ쵐??燁삳?諭뜹첎? ?袁⑤뻸??덈뼄." }, { status: 403 });
   }
 
   const photoVisibility = data.photo_visibility === "public" ? "public" : "blur";
@@ -304,3 +307,5 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     can_apply: true,
   });
 }
+
+

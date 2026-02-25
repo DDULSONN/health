@@ -1,5 +1,6 @@
-import { getKstDayRangeUtc } from "@/lib/dating-open";
+﻿import { getKstDayRangeUtc } from "@/lib/dating-open";
 import { hasMoreViewAccess } from "@/lib/dating-more-view";
+import { hasCityViewAccess } from "@/lib/dating-city-view";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -112,14 +113,14 @@ function jsonResponse(
 }
 
 function mapDbErrorToHttp(code?: string | null): { status: number; apiCode: ApiCode; message: string } {
-  if (code === "23505") return { status: 409, apiCode: "DUPLICATE_APPLICATION", message: "?대? ?대떦 移대뱶??吏?먰븯?⑥뼱??" };
-  if (code === "23502") return { status: 400, apiCode: "VALIDATION_ERROR", message: "?꾩닔 ??ぉ???꾨씫?섏뿀?듬땲??" };
-  if (code === "23503") return { status: 400, apiCode: "VALIDATION_ERROR", message: "李몄“ ?곗씠?곌? ?щ컮瑜댁? ?딆뒿?덈떎." };
-  if (code === "42501") return { status: 403, apiCode: "FORBIDDEN", message: "沅뚰븳???놁뼱 ?붿껌??泥섎━?????놁뒿?덈떎." };
+  if (code === "23505") return { status: 409, apiCode: "DUPLICATE_APPLICATION", message: "??? ????燁삳?諭??筌왖?癒곕릭??λ선??" };
+  if (code === "23502") return { status: 400, apiCode: "VALIDATION_ERROR", message: "?袁⑸땾 ??????袁⑥뵭??뤿???щ빍??" };
+  if (code === "23503") return { status: 400, apiCode: "VALIDATION_ERROR", message: "筌〓챷???怨쀬뵠?怨? ??而?몴?? ??녿뮸??덈뼄." };
+  if (code === "42501") return { status: 403, apiCode: "FORBIDDEN", message: "亦낅슦釉????곷선 ?遺욧퍕??筌ｌ꼶???????곷뮸??덈뼄." };
   if (code === "PGRST202" || code === "PGRST204" || code === "42883") {
-    return { status: 503, apiCode: "SCHEMA_MISMATCH", message: "?쒕쾭 ?ㅽ궎留?遺덉씪移섎줈 ?좎떆 泥섎━?????놁뒿?덈떎." };
+    return { status: 503, apiCode: "SCHEMA_MISMATCH", message: "??뺤쒔 ??쎄텕筌??븍뜆?ょ㎉?롮쨮 ?醫롫뻻 筌ｌ꼶???????곷뮸??덈뼄." };
   }
-  return { status: 500, apiCode: "DATABASE_ERROR", message: "吏??泥섎━ 以??ㅻ쪟媛 諛쒖깮?덉뒿?덈떎." };
+  return { status: 500, apiCode: "DATABASE_ERROR", message: "筌왖??筌ｌ꼶??餓???살첒揶쎛 獄쏆뮇源??됰뮸??덈뼄." };
 }
 function logSupabaseError(requestId: string, stage: string, dbError: DbErrorShape) {
   console.error(`[apply] ${requestId} ${stage} SUPABASE_ERROR`, {
@@ -197,7 +198,7 @@ export async function POST(req: Request) {
     }
 
     if (!userId) {
-      return jsonResponse(401, "UNAUTHORIZED", requestId, "嚥≪뮄??紐꾩뵠 ?袁⑹뒄??몃빍??");
+      return jsonResponse(401, "UNAUTHORIZED", requestId, "?β돦裕??筌뤾쑴逾??熬곣뫗???紐껊퉵??");
     }
 
     body = await req.json().catch(() => null);
@@ -207,7 +208,7 @@ export async function POST(req: Request) {
     });
 
     if (!body) {
-      return jsonResponse(400, "VALIDATION_ERROR", requestId, "??롢걵???遺욧퍕??낅빍??");
+      return jsonResponse(400, "VALIDATION_ERROR", requestId, "??濡?굘????븐슙????낅퉵??");
     }
 
     const input = body as Record<string, unknown>;
@@ -244,7 +245,7 @@ export async function POST(req: Request) {
     });
 
     if (validationErrors.length > 0) {
-      return jsonResponse(400, "VALIDATION_ERROR", requestId, "??낆젾揶쏅????類ㅼ뵥??곻폒?紐꾩뒄.", { fields: validationErrors });
+      return jsonResponse(400, "VALIDATION_ERROR", requestId, "???놁졑?띠룆????筌먦끉逾??怨삵룖?筌뤾쑴??", { fields: validationErrors });
     }
 
     const profileRes = await supabase
@@ -267,7 +268,7 @@ export async function POST(req: Request) {
 
     const applicantDisplayNickname = sanitizeText(profileRes.data?.nickname, 20);
     if (!applicantDisplayNickname) {
-      return jsonResponse(400, "NICKNAME_REQUIRED", requestId, "??곌퐬????쇱젟 ????곸뒠 揶쎛?館鍮??덈뼄.", {
+      return jsonResponse(400, "NICKNAME_REQUIRED", requestId, "??怨뚰맟?????깆젧 ????怨몃뮔 ?띠럾??繞③뜮????덈펲.", {
         profile_edit_url: "/mypage",
       });
     }
@@ -275,7 +276,7 @@ export async function POST(req: Request) {
     const adminClient = createAdminClient();
     const cardRes = await adminClient
       .from("dating_cards")
-      .select("id, owner_user_id, status, expires_at, sex")
+      .select("id, owner_user_id, status, expires_at, sex, region")
       .eq("id", cardId)
       .single();
     const cardError = toDbErrorShape(cardRes.error);
@@ -292,7 +293,7 @@ export async function POST(req: Request) {
         logSupabaseError(requestId, "L5 card.read", cardError);
       }
       if (cardError.code === "PGRST116") {
-        return jsonResponse(404, "CARD_NOT_FOUND", requestId, "燁삳?諭띄몴?筌≪뼚??????곷뮸??덈뼄.");
+        return jsonResponse(404, "CARD_NOT_FOUND", requestId, "?곸궠?獄?쓣紐?嶺뚢돦堉??????怨룸????덈펲.");
       }
       const mapped = mapDbErrorToHttp(cardError.code);
       return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, cardError);
@@ -300,20 +301,22 @@ export async function POST(req: Request) {
 
     const card = cardRes.data;
     if (card.owner_user_id === userId) {
-      return jsonResponse(403, "FORBIDDEN", requestId, "癰귣챷??燁삳?諭?癒?뮉 筌왖?癒곕막 ????곷뮸??덈뼄.");
+      return jsonResponse(403, "FORBIDDEN", requestId, "?곌랜梨???곸궠?獄???裕?嶺뚯솘???믨퀡留?????怨룸????덈펲.");
     }
     if (card.status === "expired") {
-      return jsonResponse(410, "CARD_EXPIRED", requestId, "燁삳?諭뜹첎? 筌띾슢利??뤿???щ빍??");
+      return jsonResponse(410, "CARD_EXPIRED", requestId, "?곸궠?獄?쑚泥? 嶺뚮씭??쭩??琉????鍮??");
     }
     let allowedByMoreView = false;
+    let allowedByCityView = false;
     if (card.status === "pending") {
       allowedByMoreView = await hasMoreViewAccess(adminClient, userId, card.sex);
+      allowedByCityView = await hasCityViewAccess(adminClient, userId, card.region ?? null);
     }
-    if (card.status !== "public" && !allowedByMoreView) {
-      return jsonResponse(403, "FORBIDDEN", requestId, "지원 가능한 카드가 아닙니다.");
+    if (card.status !== "public" && !allowedByMoreView && !allowedByCityView) {
+      return jsonResponse(403, "FORBIDDEN", requestId, "吏??媛?ν븳 移대뱶媛 ?꾨떃?덈떎.");
     }
     if (card.status === "public" && (!card.expires_at || new Date(card.expires_at).getTime() <= Date.now())) {
-      return jsonResponse(410, "CARD_EXPIRED", requestId, "카드가 만료되었습니다.");
+      return jsonResponse(410, "CARD_EXPIRED", requestId, "移대뱶媛 留뚮즺?섏뿀?듬땲??");
     }
     const consumeRes = await adminClient.rpc("consume_apply_token", { p_user_id: userId });
     const consumeError = toDbErrorShape(consumeRes.error);
@@ -365,7 +368,7 @@ export async function POST(req: Request) {
           429,
           "DAILY_APPLY_LIMIT",
           requestId,
-          "?섎（ 吏??媛???잛닔(2??瑜?紐⑤몢 ?ъ슜?덉뼱?? ?댁씪 ?ㅼ떆 吏?먰븷 ???덉뼱??",
+          "??롳펷 筌왖??揶쎛????쏅땾(2????筌뤴뫀紐??????됰선?? ??곸뵬 ??쇰뻻 筌왖?癒곕막 ????됰선??",
           {
             baseRemaining: 0,
             creditsRemaining: 0,
@@ -384,7 +387,7 @@ export async function POST(req: Request) {
       return jsonResponse(mapped.status, mapped.apiCode, requestId, mapped.message, undefined, consumeError);
     }
     if (tokenUsage.used === "none") {
-      return jsonResponse(429, "DAILY_APPLY_LIMIT", requestId, "??롳펷 筌왖??揶쎛????쏅땾(2????筌뤴뫀紐??????됰선?? ??곸뵬 ??쇰뻻 筌왖?癒곕막 ????됰선??", {
+      return jsonResponse(429, "DAILY_APPLY_LIMIT", requestId, "??濡논렩 嶺뚯솘????띠럾??????낅빢(2????嶺뚮ㅄ維筌???????곗꽑?? ??怨몃뎄 ???곕뻣 嶺뚯솘???믨퀡留??????곗꽑??", {
         baseRemaining: Math.max(0, 2 - tokenUsage.base_used),
         creditsRemaining: Math.max(0, tokenUsage.credits_remaining),
       });
@@ -455,7 +458,7 @@ export async function POST(req: Request) {
       { label: "legacy_photo_no_nickname", payload: insertPayloadLegacyPhotoNoNickname },
     ];
 
-    const useAdminInsert = card.status === "pending" && allowedByMoreView;
+    const useAdminInsert = card.status === "pending" && (allowedByMoreView || allowedByCityView);
     const applicationWriter = useAdminInsert ? adminClient : supabase;
 
     let insertRes: { data: { id: string } | null; error: unknown } = { data: null, error: null };
@@ -513,7 +516,7 @@ export async function POST(req: Request) {
           console.log(`[apply] ${requestId} L7 token.refund`, { refunded: true, used: tokenUsage.used });
         }
       }
-      return jsonResponse(500, "DATABASE_ERROR", requestId, "筌왖??筌ｌ꼶??餓???살첒揶쎛 獄쏆뮇源??됰뮸??덈뼄.");
+      return jsonResponse(500, "DATABASE_ERROR", requestId, "嶺뚯솘???嶺뚳퐣瑗??繞????댁쾼?띠럾? ?꾩룇裕뉑틦???곕????덈펲.");
     }
 
     console.log(`[apply] ${requestId} L8 before return`, {
@@ -522,7 +525,7 @@ export async function POST(req: Request) {
       insertedId: insertRes.data.id,
     });
 
-    return jsonResponse(200, "SUCCESS", requestId, "筌왖?癒?뵠 ?袁⑥┷??뤿???щ빍??", {
+    return jsonResponse(200, "SUCCESS", requestId, "嶺뚯솘????逾??熬곣뫁???琉????鍮??", {
       id: insertRes.data.id,
       usedToken: tokenUsage.used,
       baseRemaining: Math.max(0, 2 - tokenUsage.base_used),
@@ -543,9 +546,14 @@ export async function POST(req: Request) {
       payload: maskPayloadForLog(body),
     });
 
-    return jsonResponse(500, "INTERNAL_SERVER_ERROR", requestId, "筌왖??筌ｌ꼶??餓???살첒揶쎛 獄쏆뮇源??됰뮸??덈뼄.", undefined, dbError);
+    return jsonResponse(500, "INTERNAL_SERVER_ERROR", requestId, "嶺뚯솘???嶺뚳퐣瑗??繞????댁쾼?띠럾? ?꾩룇裕뉑틦???곕????덈펲.", undefined, dbError);
   }
 }
+
+
+
+
+
 
 
 

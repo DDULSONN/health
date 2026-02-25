@@ -23,6 +23,11 @@ function isMissingColumnError(error: unknown): boolean {
   return code === "42703" || code === "PGRST204" || message.includes("column");
 }
 
+type MoreViewListQueryResult = {
+  data: Array<Record<string, unknown>> | null;
+  error: { code?: string; message?: string } | null;
+};
+
 export async function GET(req: Request) {
   const requestId = crypto.randomUUID();
 
@@ -54,7 +59,7 @@ export async function GET(req: Request) {
       query = query.eq("status", status);
     }
 
-    let rowsRes: any = await query;
+    let rowsRes = (await query) as MoreViewListQueryResult;
     if (rowsRes.error && isMissingColumnError(rowsRes.error)) {
       let legacyQuery = admin
         .from("dating_more_view_requests")
@@ -64,7 +69,7 @@ export async function GET(req: Request) {
       if (status === "pending" || status === "approved" || status === "rejected") {
         legacyQuery = legacyQuery.eq("status", status);
       }
-      rowsRes = await legacyQuery;
+      rowsRes = (await legacyQuery) as MoreViewListQueryResult;
     }
     if (rowsRes.error) {
       console.error(`[admin-more-view-list] ${requestId} query failed`, rowsRes.error);

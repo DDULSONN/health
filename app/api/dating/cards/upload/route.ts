@@ -1,5 +1,6 @@
-import { createClient, createAdminClient } from "@/lib/supabase/server";
+﻿import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { hasMoreViewAccess } from "@/lib/dating-more-view";
+import { hasCityViewAccess } from "@/lib/dating-city-view";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -14,49 +15,53 @@ export async function POST(req: Request) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return NextResponse.json({ error: "濡쒓렇?몄씠 ?꾩슂?⑸땲??" }, { status: 401 });
+    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
 
   const form = await req.formData().catch(() => null);
   if (!form) {
-    return NextResponse.json({ error: "?섎せ???붿껌?낅땲??" }, { status: 400 });
+    return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
   }
 
   const file = form.get("file");
   const cardId = String(form.get("cardId") ?? "");
   const index = Number(String(form.get("index") ?? "0"));
   if (!(file instanceof File) || !cardId) {
-    return NextResponse.json({ error: "file/cardId媛 ?꾩슂?⑸땲??" }, { status: 400 });
+    return NextResponse.json({ error: "file/cardId가 필요합니다." }, { status: 400 });
   }
 
   if (!ALLOWED_TYPES.includes(file.type)) {
-    return NextResponse.json({ error: "JPG/PNG/WebP ?뚯씪留??낅줈?쒗븷 ???덉뒿?덈떎." }, { status: 400 });
+    return NextResponse.json({ error: "JPG/PNG/WebP만 업로드 가능합니다." }, { status: 400 });
   }
   if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: "?뚯씪? 5MB ?댄븯留?媛?ν빀?덈떎." }, { status: 400 });
+    return NextResponse.json({ error: "사진은 5MB 이하만 가능합니다." }, { status: 400 });
   }
   if (index < 0 || index > 9) {
-    return NextResponse.json({ error: "index 媛믪씠 ?щ컮瑜댁? ?딆뒿?덈떎." }, { status: 400 });
+    return NextResponse.json({ error: "index 값이 올바르지 않습니다." }, { status: 400 });
   }
 
   const adminClient = createAdminClient();
   const { data: card, error: cardError } = await adminClient
     .from("dating_cards")
-    .select("id, status, owner_user_id, sex, expires_at")
+    .select("id, status, owner_user_id, sex, region, expires_at")
     .eq("id", cardId)
     .single();
 
   if (cardError || !card) {
-    return NextResponse.json({ error: "移대뱶瑜?李얠쓣 ???놁뒿?덈떎." }, { status: 404 });
+    return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
   }
   if (card.owner_user_id === user.id) {
-    return NextResponse.json({ error: "蹂몄씤 移대뱶?먮뒗 吏?먰븷 ???놁뒿?덈떎." }, { status: 400 });
+    return NextResponse.json({ error: "본인 카드에는 지원할 수 없습니다." }, { status: 400 });
   }
+
   let allowedByMoreView = false;
+  let allowedByCityView = false;
   if (card.status === "pending") {
     allowedByMoreView = await hasMoreViewAccess(adminClient, user.id, card.sex);
+    allowedByCityView = await hasCityViewAccess(adminClient, user.id, card.region ?? null);
   }
-  if (card.status !== "public" && !allowedByMoreView) {
+
+  if (card.status !== "public" && !allowedByMoreView && !allowedByCityView) {
     return NextResponse.json({ error: "지원 가능한 카드가 아닙니다." }, { status: 400 });
   }
   if (card.status === "public" && (!card.expires_at || new Date(card.expires_at).getTime() <= Date.now())) {
@@ -74,7 +79,7 @@ export async function POST(req: Request) {
 
   if (uploadError) {
     console.error("[POST /api/dating/cards/upload] failed", uploadError);
-    return NextResponse.json({ error: "?ъ쭊 ?낅줈?쒖뿉 ?ㅽ뙣?덉뒿?덈떎." }, { status: 500 });
+    return NextResponse.json({ error: "사진 업로드에 실패했습니다." }, { status: 500 });
   }
 
   return NextResponse.json({ path }, { status: 201 });

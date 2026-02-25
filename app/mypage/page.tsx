@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -234,6 +234,16 @@ type AdminMoreViewRequest = {
   reviewed_at: string | null;
   note: string | null;
 };
+type AdminCityViewRequest = {
+  id: string;
+  user_id: string;
+  nickname: string | null;
+  city: string;
+  status: "pending" | "approved" | "rejected";
+  created_at: string;
+  reviewed_at: string | null;
+  note: string | null;
+};
 
 type MyCertificate = {
   id: string;
@@ -269,6 +279,10 @@ type ChangeNicknameResult = {
   nickname_change_credits?: number;
 };
 
+type ApplyCreditsStatusResponse = {
+  creditsRemaining?: number;
+};
+
 export default function MyPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -291,14 +305,17 @@ export default function MyPage() {
   const [adminDataView, setAdminDataView] = useState<AdminDataView>("cards");
   const [adminApplyCreditOrders, setAdminApplyCreditOrders] = useState<AdminApplyCreditOrder[]>([]);
   const [adminMoreViewRequests, setAdminMoreViewRequests] = useState<AdminMoreViewRequest[]>([]);
+  const [adminCityViewRequests, setAdminCityViewRequests] = useState<AdminCityViewRequest[]>([]);
   const [approvingOrderIds, setApprovingOrderIds] = useState<string[]>([]);
   const [processingMoreViewIds, setProcessingMoreViewIds] = useState<string[]>([]);
+  const [processingCityViewIds, setProcessingCityViewIds] = useState<string[]>([]);
   const [openCardWriteEnabled, setOpenCardWriteEnabled] = useState(true);
   const [openCardWriteSaving, setOpenCardWriteSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState<MyPageTab>("my_cert");
   const [error, setError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
+  const [applyCreditsRemaining, setApplyCreditsRemaining] = useState(0);
 
   const [nicknameOpen, setNicknameOpen] = useState(false);
   const [newNickname, setNewNickname] = useState("");
@@ -320,7 +337,19 @@ export default function MyPage() {
           return;
         }
 
-        const [summaryRes, certRes, adminRes, datingRes, receivedRes, appliedRes, paidReceivedRes, connectionsRes, paidConnectionsRes, writeSettingRes] = await Promise.all([
+        const [
+          summaryRes,
+          certRes,
+          adminRes,
+          datingRes,
+          receivedRes,
+          appliedRes,
+          paidReceivedRes,
+          connectionsRes,
+          paidConnectionsRes,
+          writeSettingRes,
+          applyCreditsStatusRes,
+        ] = await Promise.all([
           fetch("/api/mypage/summary", { cache: "no-store" }),
           fetch("/api/cert-requests", { cache: "no-store" }),
           fetch("/api/admin/me", { cache: "no-store" }),
@@ -331,6 +360,7 @@ export default function MyPage() {
           fetch("/api/dating/cards/my/connections", { cache: "no-store" }),
           fetch("/api/dating/paid/my/connections", { cache: "no-store" }),
           fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
+          fetch("/api/dating/apply-credits/status", { cache: "no-store" }),
         ]);
 
         const summaryBody = (await summaryRes.json().catch(() => ({}))) as SummaryResponse & {
@@ -370,27 +400,28 @@ export default function MyPage() {
         const writeSettingBody = (await writeSettingRes.json().catch(() => ({}))) as {
           enabled?: boolean;
         };
+        const applyCreditsBody = (await applyCreditsStatusRes.json().catch(() => ({}))) as ApplyCreditsStatusResponse;
 
         if (!summaryRes.ok) {
-          throw new Error(summaryBody.error ?? "마이페이지 정보를 불러오지 못했습니다.");
+          throw new Error(summaryBody.error ?? "留덉씠?섏씠吏 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??");
         }
         if (!certRes.ok) {
-          throw new Error(certBody.error ?? "인증 요청 정보를 불러오지 못했습니다.");
+          throw new Error(certBody.error ?? "?몄쬆 ?붿껌 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??");
         }
         if (!receivedRes.ok) {
-          throw new Error(receivedBody.error ?? "내 카드 지원자를 불러오지 못했습니다.");
+          throw new Error(receivedBody.error ?? "??移대뱶 吏?먯옄瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??");
         }
         if (!appliedRes.ok) {
-          throw new Error(appliedBody.error ?? "내 오픈카드 지원 이력을 불러오지 못했습니다.");
+          throw new Error(appliedBody.error ?? "???ㅽ뵂移대뱶 吏???대젰??遺덈윭?ㅼ? 紐삵뻽?듬땲??");
         }
         if (!paidReceivedRes.ok) {
-          throw new Error(paidReceivedBody.error ?? "내 유료카드 지원자를 불러오지 못했습니다.");
+          throw new Error(paidReceivedBody.error ?? "???좊즺移대뱶 吏?먯옄瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??");
         }
         if (!connectionsRes.ok) {
-          throw new Error(connectionsBody.error ?? "인스타 교환 정보를 불러오지 못했습니다.");
+          throw new Error(connectionsBody.error ?? "?몄뒪? 援먰솚 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??");
         }
         if (!paidConnectionsRes.ok) {
-          throw new Error(paidConnectionsBody.error ?? "유료 인스타 교환 정보를 불러오지 못했습니다.");
+          throw new Error(paidConnectionsBody.error ?? "?좊즺 ?몄뒪? 援먰솚 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??");
         }
 
         if (isMounted) {
@@ -406,14 +437,16 @@ export default function MyPage() {
           setReceivedPaidApplications(paidReceivedBody.applications ?? []);
           setDatingConnections([...(connectionsBody.items ?? []), ...(paidConnectionsBody.items ?? [])]);
           setOpenCardWriteEnabled(writeSettingBody.enabled !== false);
+          setApplyCreditsRemaining(Math.max(0, Number(applyCreditsBody.creditsRemaining ?? 0)));
           setError("");
 
           if (adminFlag) {
-            const [overviewRes, ordersRes, paidAppsRes, moreViewRes] = await Promise.all([
+            const [overviewRes, ordersRes, paidAppsRes, moreViewRes, cityViewRes] = await Promise.all([
               fetch("/api/dating/cards/admin/overview", { cache: "no-store" }),
               fetch("/api/admin/dating/apply-credits/orders?status=pending", { cache: "no-store" }),
               fetch("/api/admin/dating/paid/applications", { cache: "no-store" }),
               fetch("/api/admin/dating/cards/more-view/requests?status=pending", { cache: "no-store" }),
+              fetch("/api/admin/dating/cards/city-view/requests?status=pending", { cache: "no-store" }),
             ]);
             const overviewBody = (await overviewRes.json().catch(() => ({}))) as {
               error?: string;
@@ -432,14 +465,18 @@ export default function MyPage() {
               error?: string;
               items?: AdminMoreViewRequest[];
             };
+            const cityViewBody = (await cityViewRes.json().catch(() => ({}))) as {
+              error?: string;
+              items?: AdminCityViewRequest[];
+            };
             if (!overviewRes.ok) {
-              throw new Error(overviewBody.error ?? "관리자 오픈카드 데이터를 불러오지 못했습니다.");
+              throw new Error(overviewBody.error ?? "愿由ъ옄 ?ㅽ뵂移대뱶 ?곗씠?곕? 遺덈윭?ㅼ? 紐삵뻽?듬땲??");
             }
             if (!ordersRes.ok) {
-              throw new Error(ordersBody.error ?? "지원권 주문 목록을 불러오지 못했습니다.");
+              throw new Error(ordersBody.error ?? "吏?먭텒 二쇰Ц 紐⑸줉??遺덈윭?ㅼ? 紐삵뻽?듬땲??");
             }
             if (!paidAppsRes.ok) {
-              throw new Error(paidAppsBody.error ?? "관리자 24시간 카드 지원 이력을 불러오지 못했습니다.");
+              throw new Error(paidAppsBody.error ?? "愿由ъ옄 24?쒓컙 移대뱶 吏???대젰??遺덈윭?ㅼ? 紐삵뻽?듬땲??");
             }
             if (isMounted) {
               setAdminOpenCards(overviewBody.cards ?? []);
@@ -447,6 +484,7 @@ export default function MyPage() {
               setAdminPaidCardApplications(paidAppsBody.items ?? []);
               setAdminApplyCreditOrders(ordersBody.items ?? []);
               setAdminMoreViewRequests(moreViewRes.ok ? moreViewBody.items ?? [] : []);
+              setAdminCityViewRequests(cityViewRes.ok ? cityViewBody.items ?? [] : []);
             }
           } else {
             setAdminOpenCards([]);
@@ -454,6 +492,7 @@ export default function MyPage() {
             setAdminPaidCardApplications([]);
             setAdminApplyCreditOrders([]);
             setAdminMoreViewRequests([]);
+            setAdminCityViewRequests([]);
           }
         }
       } catch (e) {
@@ -494,7 +533,7 @@ export default function MyPage() {
     });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) {
-      alert(body.error ?? "상태 변경에 실패했습니다.");
+      alert(body.error ?? "?곹깭 蹂寃쎌뿉 ?ㅽ뙣?덉뒿?덈떎.");
       return;
     }
 
@@ -521,7 +560,7 @@ export default function MyPage() {
     });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) {
-      alert(body.error ?? "상태 변경에 실패했습니다.");
+      alert(body.error ?? "?곹깭 蹂寃쎌뿉 ?ㅽ뙣?덉뒿?덈떎.");
       return;
     }
     const [paidReceivedRes, paidConnectionsRes] = await Promise.all([
@@ -560,20 +599,20 @@ export default function MyPage() {
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
-      alert("蹂듭궗?섏뿀?듬땲??");
+      alert("癰귣벊沅??뤿???щ빍??");
     } catch {
-      alert("蹂듭궗???ㅽ뙣?덉뒿?덈떎.");
+      alert("癰귣벊沅????쎈솭??됰뮸??덈뼄.");
     }
   };
 
   const handleAdminDeleteOpenCard = async (cardId: string) => {
-    if (!confirm("해당 오픈카드를 삭제할까요?")) return;
+    if (!confirm("?대떦 ?ㅽ뵂移대뱶瑜???젣?좉퉴??")) return;
     const res = await fetch(`/api/admin/dating/cards/${cardId}`, {
       method: "DELETE",
     });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) {
-      alert(body.error ?? "카드 삭제에 실패했습니다.");
+      alert(body.error ?? "移대뱶 ??젣???ㅽ뙣?덉뒿?덈떎.");
       return;
     }
     setAdminOpenCards((prev) => prev.filter((card) => card.id !== cardId));
@@ -590,7 +629,7 @@ export default function MyPage() {
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string; enabled?: boolean };
       if (!res.ok) {
-        alert(body.error ?? "오픈카드 작성 설정 변경에 실패했습니다.");
+        alert(body.error ?? "?ㅽ뵂移대뱶 ?묒꽦 ?ㅼ젙 蹂寃쎌뿉 ?ㅽ뙣?덉뒿?덈떎.");
         return;
       }
       setOpenCardWriteEnabled(body.enabled !== false);
@@ -600,17 +639,17 @@ export default function MyPage() {
   };
 
   const handleDeleteMyOpenCard = async (cardId: string) => {
-    if (!confirm("대기중 오픈카드를 삭제할까요?")) return;
+    if (!confirm("?湲곗쨷 ?ㅽ뵂移대뱶瑜???젣?좉퉴??")) return;
     const res = await fetch(`/api/dating/cards/my?id=${encodeURIComponent(cardId)}`, {
       method: "DELETE",
     });
     const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
     if (!res.ok) {
-      alert(body.error ?? "오픈카드 삭제에 실패했습니다.");
+      alert(body.error ?? "?ㅽ뵂移대뱶 ??젣???ㅽ뙣?덉뒿?덈떎.");
       return;
     }
     setMyDatingCards((prev) => prev.filter((card) => card.id !== cardId));
-    alert(body.message ?? "대기중 오픈카드가 삭제되었습니다.");
+    alert(body.message ?? "?湲곗쨷 ?ㅽ뵂移대뱶媛 ??젣?섏뿀?듬땲??");
   };
 
   const handleAdminApproveApplyCreditOrder = async (orderId: string) => {
@@ -628,12 +667,12 @@ export default function MyPage() {
         alreadyApproved?: boolean;
       };
       if (!res.ok || !body.ok) {
-        alert(body.message ?? "지원권 승인에 실패했습니다.");
+        alert(body.message ?? "吏?먭텒 ?뱀씤???ㅽ뙣?덉뒿?덈떎.");
         return;
       }
 
       if (body.alreadyApproved) {
-        alert("이미 승인된 주문입니다.");
+        alert("?대? ?뱀씤??二쇰Ц?낅땲??");
       }
 
       setAdminApplyCreditOrders((prev) => prev.filter((item) => item.id !== orderId));
@@ -656,12 +695,35 @@ export default function MyPage() {
       });
       const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string };
       if (!res.ok || !body.ok) {
-        alert(body.message ?? "이상형 더보기 신청 처리에 실패했습니다.");
+        alert(body.message ?? "?댁긽???붾낫湲??좎껌 泥섎━???ㅽ뙣?덉뒿?덈떎.");
         return;
       }
       setAdminMoreViewRequests((prev) => prev.filter((item) => item.id !== requestId));
     } finally {
       setProcessingMoreViewIds((prev) => prev.filter((id) => id !== requestId));
+    }
+  };
+
+  const handleAdminProcessCityViewRequest = async (
+    requestId: string,
+    status: "approved" | "rejected"
+  ) => {
+    if (processingCityViewIds.includes(requestId)) return;
+    setProcessingCityViewIds((prev) => [...prev, requestId]);
+    try {
+      const res = await fetch(`/api/admin/dating/cards/city-view/requests/${requestId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+      if (!res.ok || !body.ok) {
+        alert(body.message ?? "도시 더보기 신청 처리에 실패했습니다.");
+        return;
+      }
+      setAdminCityViewRequests((prev) => prev.filter((item) => item.id !== requestId));
+    } finally {
+      setProcessingCityViewIds((prev) => prev.filter((id) => id !== requestId));
     }
   };
 
@@ -689,12 +751,12 @@ export default function MyPage() {
 
       const result = data as ChangeNicknameResult | null;
       if (!result?.success) {
-        const message = result?.message ?? "닉네임 변경에 실패했습니다.";
+        const message = result?.message ?? "?됰꽕??蹂寃쎌뿉 ?ㅽ뙣?덉뒿?덈떎.";
         setNicknameError(message);
         return;
       }
 
-      setNicknameInfo("닉네임이 변경되었습니다.");
+      setNicknameInfo("?됰꽕?꾩씠 蹂寃쎈릺?덉뒿?덈떎.");
       setNicknameOpen(false);
       setNewNickname("");
 
@@ -717,7 +779,7 @@ export default function MyPage() {
         };
       });
     } catch (e) {
-      setNicknameError(e instanceof Error ? e.message : "닉네임 변경에 실패했습니다.");
+      setNicknameError(e instanceof Error ? e.message : "?됰꽕??蹂寃쎌뿉 ?ㅽ뙣?덉뒿?덈떎.");
     } finally {
       setSavingNickname(false);
     }
@@ -726,7 +788,7 @@ export default function MyPage() {
   if (loading) {
     return (
       <main className="mx-auto max-w-2xl px-4 py-10">
-        <p className="text-center text-neutral-400">遺덈윭?ㅻ뒗 以?..</p>
+        <p className="text-center text-neutral-400">불러오는 중...</p>
       </main>
     );
   }
@@ -739,7 +801,7 @@ export default function MyPage() {
     );
   }
 
-  const nickname = summary?.profile.nickname ?? "닉네임 미설정";
+  const nickname = summary?.profile.nickname ?? "닉네임 없음";
   const email = summary?.profile.email ?? "이메일 없음";
   const posts = summary?.bodycheck_posts ?? [];
   const weeklyWinCount = summary?.weekly_win_count ?? 0;
@@ -753,7 +815,7 @@ export default function MyPage() {
   );
   const datingStatusText: Record<string, string> = {
     submitted: "접수",
-    reviewing: "검토 중",
+    reviewing: "검토중",
     interview: "인터뷰",
     matched: "매칭 완료",
     rejected: "보류/거절",
@@ -855,7 +917,7 @@ export default function MyPage() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h1 className="text-2xl font-bold text-neutral-900">마이페이지</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">留덉씠?섏씠吏</h1>
         <p className="mt-1 text-sm text-neutral-600">{nickname}</p>
         <p className="mt-0.5 text-xs text-neutral-500">{email}</p>
 
@@ -868,7 +930,7 @@ export default function MyPage() {
                   ? `무료 변경 ${remainingFree}회 남음`
                   : credits > 0
                   ? `추가 변경권 ${credits}개 보유`
-                  : "무료 변경 완료"}
+                  : "무료 변경권 소진"}
               </p>
             </div>
             <button
@@ -882,20 +944,19 @@ export default function MyPage() {
               disabled={!canChangeNickname}
               className="min-h-[40px] rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
-              닉네임 변경
-            </button>
+              ?됰꽕??蹂寃?            </button>
           </div>
           {!canChangeNickname && (
             <p className="mt-2 text-xs text-amber-700">
-              닉네임 변경은 1회 무료입니다. 추가 변경권 기능은 준비 중입니다.
+              ?됰꽕??蹂寃쎌? 1??臾대즺?낅땲?? 異붽? 蹂寃쎄텒 湲곕뒫? 以鍮?以묒엯?덈떎.
             </p>
           )}
           {nicknameInfo && <p className="mt-2 text-xs text-emerald-700">{nicknameInfo}</p>}
         </div>
 
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
-          <p className="text-sm font-semibold text-amber-800">주간 몸평 우승 횟수</p>
-          <p className="mt-1 text-xl font-bold text-amber-900">{weeklyWinCount}회</p>
+          <p className="text-sm font-semibold text-amber-800">주간 몸평 계정 점수</p>
+          <p className="mt-1 text-xl font-bold text-amber-900">{weeklyWinCount}점</p>
         </div>
 
         <div className="mt-4 flex flex-wrap gap-2">
@@ -909,7 +970,7 @@ export default function MyPage() {
             href="/certify"
             className="flex min-h-[44px] items-center rounded-xl border border-neutral-200 px-4 text-sm text-neutral-700 hover:bg-neutral-50"
           >
-            공식 인증 요청
+            3대 인증 신청
           </Link>
           {isAdmin && (
             <>
@@ -917,20 +978,17 @@ export default function MyPage() {
                 href="/admin/dating"
                 className="flex min-h-[44px] items-center rounded-xl border border-pink-200 bg-pink-50 px-4 text-sm font-medium text-pink-700 hover:bg-pink-100"
               >
-                소개팅 신청 관리
-              </Link>
+                ?뚭컻???좎껌 愿由?              </Link>
               <Link
                 href="/admin/dating/cards"
                 className="flex min-h-[44px] items-center rounded-xl border border-violet-200 bg-violet-50 px-4 text-sm font-medium text-violet-700 hover:bg-violet-100"
               >
-                카드 모더레이션
-              </Link>
+                移대뱶 紐⑤뜑?덉씠??              </Link>
               <Link
                 href="/admin/dating/paid"
                 className="flex min-h-[44px] items-center rounded-xl border border-rose-200 bg-rose-50 px-4 text-sm font-medium text-rose-700 hover:bg-rose-100"
               >
-                유료 신청 관리
-              </Link>
+                ?좊즺 ?좎껌 愿由?              </Link>
             </>
           )}
           <button
@@ -939,29 +997,29 @@ export default function MyPage() {
             disabled={loggingOut}
             className="min-h-[44px] rounded-xl bg-red-600 px-4 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-60"
           >
-            로그아웃
+            濡쒓렇?꾩썐
           </button>
         </div>
       </section>
 
       <section className="mb-5 rounded-2xl border border-rose-200 bg-rose-50/30 p-5">
-        <h2 className="text-lg font-bold text-rose-900 mb-3">내 유료카드 지원자</h2>
+        <h2 className="text-lg font-bold text-rose-900 mb-3">???좊즺移대뱶 吏?먯옄</h2>
         {myPaidCards.length === 0 ? (
-          <p className="text-sm text-neutral-500">등록한 유료카드가 없습니다.</p>
+          <p className="text-sm text-neutral-500">?깅줉???좊즺移대뱶媛 ?놁뒿?덈떎.</p>
         ) : (
           <div className="space-y-3">
             {myPaidCards.map((card) => (
               <div key={card.id} className="rounded-xl border border-rose-200 bg-white p-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium text-neutral-900">
-                    {card.nickname} / {card.gender === "M" ? "남자" : "여자"}
+                    {card.nickname} / {card.gender === "M" ? "?⑥옄" : "?ъ옄"}
                   </p>
                   <span className="inline-flex rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
                     {card.status}
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-neutral-500">
-                  생성일 {new Date(card.created_at).toLocaleDateString("ko-KR")}
+                  ?앹꽦??{new Date(card.created_at).toLocaleDateString("ko-KR")}
                 </p>
                 {card.status === "pending" && (
                   <div className="mt-2">
@@ -969,7 +1027,7 @@ export default function MyPage() {
                       href={`/dating/paid?editId=${card.id}`}
                       className="inline-flex h-8 items-center rounded-md border border-rose-300 bg-white px-3 text-xs font-medium text-rose-700 hover:bg-rose-50"
                     >
-                      내용 수정
+                      ?댁슜 ?섏젙
                     </Link>
                   </div>
                 )}
@@ -980,10 +1038,10 @@ export default function MyPage() {
               return (
                 <div key={app.id} className="rounded-xl border border-rose-200 bg-white p-3">
                   <p className="text-sm font-medium text-neutral-900">
-                    카드 {card?.nickname ?? app.card_id.slice(0, 8)} / 지원자 {app.applicant_display_nickname ?? "익명"}
+                    移대뱶 {card?.nickname ?? app.card_id.slice(0, 8)} / 吏?먯옄 {app.applicant_display_nickname ?? "?듬챸"}
                   </p>
                   <p className="mt-1 text-xs text-neutral-500">
-                    상태{" "}
+                    ?곹깭{" "}
                     <span className={`inline-flex rounded-full px-2 py-0.5 ${cardAppStatusColor[app.status] ?? "bg-neutral-100 text-neutral-700"}`}>
                       {cardAppStatusText[app.status] ?? app.status}
                     </span>
@@ -1007,7 +1065,7 @@ export default function MyPage() {
                     </div>
                   )}
                   {app.status === "accepted" && app.instagram_id && (
-                    <p className="mt-2 text-sm text-emerald-700 font-medium">지원자 인스타: @{app.instagram_id}</p>
+                    <p className="mt-2 text-sm text-emerald-700 font-medium">吏?먯옄 ?몄뒪?: @{app.instagram_id}</p>
                   )}
                   {app.status === "submitted" && (
                     <div className="mt-3 flex gap-2">
@@ -1016,14 +1074,14 @@ export default function MyPage() {
                         onClick={() => void handlePaidApplicationStatus(app.id, "accepted")}
                         className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white"
                       >
-                        수락
+                        ?섎씫
                       </button>
                       <button
                         type="button"
                         onClick={() => void handlePaidApplicationStatus(app.id, "rejected")}
                         className="h-9 rounded-lg bg-red-600 px-3 text-xs font-medium text-white"
                       >
-                        거절
+                        嫄곗젅
                       </button>
                     </div>
                   )}
@@ -1035,24 +1093,24 @@ export default function MyPage() {
       </section>
 
       <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h2 className="text-lg font-bold text-neutral-900 mb-3">소개팅 신청 현황</h2>
+        <h2 className="text-lg font-bold text-neutral-900 mb-3">?뚭컻???좎껌 ?꾪솴</h2>
         {datingApplication ? (
           <div className="space-y-2 text-sm">
             <p className="text-neutral-600">
-              신청일 <span className="text-neutral-900">{new Date(datingApplication.created_at).toLocaleString("ko-KR")}</span>
+              ?좎껌??<span className="text-neutral-900">{new Date(datingApplication.created_at).toLocaleString("ko-KR")}</span>
             </p>
             <p className="text-neutral-600">
-              상태:{" "}
+              ?곹깭:{" "}
               <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${datingStatusColor[datingApplication.status] ?? "bg-neutral-100 text-neutral-700"}`}>
                 {datingStatusText[datingApplication.status] ?? datingApplication.status}
               </span>
             </p>
-            <p className="text-neutral-600">
-              공개 승인:{" "}
+            <p className="text-neutral-600">공개 승인:
               <span className={datingApplication.approved_for_public ? "text-emerald-700 font-medium" : "text-neutral-500"}>
                 {datingApplication.approved_for_public ? "승인됨" : "미승인"}
               </span>
             </p>
+
             <div className="flex flex-wrap gap-2 text-xs text-neutral-600">
               {datingApplication.display_nickname && <span>닉네임: {datingApplication.display_nickname}</span>}
               {datingApplication.age != null && <span>나이: {datingApplication.age}세</span>}
@@ -1060,61 +1118,67 @@ export default function MyPage() {
             </div>
           </div>
         ) : (
-          <p className="text-sm text-neutral-500">소개팅 신청 내역이 없습니다.</p>
+          <p className="text-sm text-neutral-500">?뚭컻???좎껌 ?댁뿭???놁뒿?덈떎.</p>
         )}
         <div className="mt-4">
           <Link
             href="/dating/apply"
             className="inline-flex min-h-[42px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
           >
-            신청하러 가기
-          </Link>
+            ?좎껌?섎윭 媛湲?          </Link>
         </div>
       </section>
 
+      <section className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-5">
+        <h2 className="text-lg font-bold text-emerald-900 mb-2">지원권 현황</h2>
+        <p className="text-sm text-emerald-900">
+          기본 하루 2장(별도) / 추가 지원권 <span className="font-semibold">{applyCreditsRemaining}장</span>
+        </p>
+      </section>
+
       <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h2 className="text-lg font-bold text-neutral-900 mb-3">내 오픈카드 상태</h2>
+        <h2 className="text-lg font-bold text-neutral-900 mb-3">???ㅽ뵂移대뱶 ?곹깭</h2>
         {myDatingCards.length === 0 ? (
-          <p className="text-sm text-neutral-500">등록한 오픈카드가 없습니다.</p>
+          <p className="text-sm text-neutral-500">?깅줉???ㅽ뵂移대뱶媛 ?놁뒿?덈떎.</p>
         ) : (
           <div className="space-y-3">
             {myDatingCards.map((card) => (
               <div key={card.id} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium text-neutral-900">
-                    {card.display_nickname} / {card.sex === "male" ? "남자" : "여자"}
+                    {card.display_nickname} / {card.sex === "male" ? "?⑥옄" : "?ъ옄"}
                   </p>
                   <span className="inline-flex rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
                     {card.status}
                   </span>
                 </div>
                 <p className="text-xs text-neutral-500 mt-1">
-                  생성일 {new Date(card.created_at).toLocaleDateString("ko-KR")}
+                  ?앹꽦??{new Date(card.created_at).toLocaleDateString("ko-KR")}
                 </p>
                 {card.status === "public" && card.expires_at && (
                   <p className="text-sm text-amber-700 font-medium mt-1">
-                    공개 중 · 남은 시간 {formatRemainingToKorean(card.expires_at)}
+                    怨듦컻 以?쨌 ?⑥? ?쒓컙 {formatRemainingToKorean(card.expires_at)}
                   </p>
                 )}
                 {card.status === "pending" && (
                   <div className="mt-1 flex items-center justify-between gap-2">
                     <p className="text-sm text-neutral-600">
-                      대기열에 등록되어 있습니다.
-                      {typeof card.queue_position === "number" && card.queue_position > 0 ? ` (현재 ${card.queue_position}번째)` : ""}
+                      ?湲곗뿴???깅줉?섏뼱 ?덉뒿?덈떎.
+                      {typeof card.queue_position === "number" && card.queue_position > 0 ? ` (?꾩옱 ${card.queue_position}踰덉㎏)` : ""}
                     </p>
                     <div className="flex items-center gap-2">
                       <Link
                         href={`/dating/card/new?editId=${card.id}`}
                         className="inline-flex h-8 items-center rounded-md border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700 hover:bg-pink-50"
                       >
-                        내용 수정
+                        ?댁슜 ?섏젙
                       </Link>
                       <button
                         type="button"
                         onClick={() => void handleDeleteMyOpenCard(card.id)}
                         className="inline-flex h-8 items-center rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-700 hover:bg-red-50"
                       >
-                        삭제
+                        ??젣
                       </button>
                     </div>
                   </div>
@@ -1124,7 +1188,7 @@ export default function MyPage() {
           </div>
         )}
         {hasActiveOpenCard && (
-          <p className="mb-2 text-xs text-amber-700">오픈카드는 1장만 유지할 수 있습니다. 기존 카드(대기중/공개중) 처리 후 새로 작성할 수 있습니다.</p>
+          <p className="mb-2 text-xs text-amber-700">?ㅽ뵂移대뱶??1?λ쭔 ?좎??????덉뒿?덈떎. 湲곗〈 移대뱶(?湲곗쨷/怨듦컻以? 泥섎━ ???덈줈 ?묒꽦?????덉뒿?덈떎.</p>
         )}
         <div className="mt-4 flex gap-2">
           {openCardWriteEnabled && !hasActiveOpenCard ? (
@@ -1132,26 +1196,25 @@ export default function MyPage() {
               href="/dating/card/new"
               className="inline-flex min-h-[42px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
             >
-              오픈카드 작성하기
+              ?ㅽ뵂移대뱶 ?묒꽦?섍린
             </Link>
           ) : (
             <span className="inline-flex min-h-[42px] items-center rounded-lg bg-neutral-300 px-4 text-sm font-medium text-neutral-700">
-              {openCardWriteEnabled ? "오픈카드 1장 제한" : "오픈카드 작성 일시중단"}
+              {openCardWriteEnabled ? "?ㅽ뵂移대뱶 1???쒗븳" : "?ㅽ뵂移대뱶 ?묒꽦 ?쇱떆以묐떒"}
             </span>
           )}
           <Link
             href="/community/dating/cards"
             className="inline-flex min-h-[42px] items-center rounded-lg border border-neutral-300 px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
           >
-            오픈카드 보러가기
-          </Link>
+            ?ㅽ뵂移대뱶 蹂대윭媛湲?          </Link>
         </div>
       </section>
 
       <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h2 className="text-lg font-bold text-neutral-900 mb-3">내 카드 지원자</h2>
+        <h2 className="text-lg font-bold text-neutral-900 mb-3">??移대뱶 吏?먯옄</h2>
         {receivedApplications.length === 0 ? (
-          <p className="text-sm text-neutral-500">아직 받은 지원서가 없습니다.</p>
+          <p className="text-sm text-neutral-500">?꾩쭅 諛쏆? 吏?먯꽌媛 ?놁뒿?덈떎.</p>
         ) : (
           <div className="space-y-3">
             {receivedApplications.map((app) => {
@@ -1160,7 +1223,7 @@ export default function MyPage() {
                 <div key={app.id} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <div className="text-sm font-medium text-neutral-900">
-                      카드 {card?.sex === "male" ? "남자" : card?.sex === "female" ? "여자" : ""} / 지원일{" "}
+                      移대뱶 {card?.sex === "male" ? "?⑥옄" : card?.sex === "female" ? "?ъ옄" : ""} / 吏?먯씪{" "}
                       {new Date(app.created_at).toLocaleDateString("ko-KR")}
                     </div>
                     <span
@@ -1173,7 +1236,7 @@ export default function MyPage() {
                   </div>
 
                   <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
-                    {app.applicant_display_nickname && <span>닉네임 {app.applicant_display_nickname}</span>}
+                    {app.applicant_display_nickname && <span>닉네임: {app.applicant_display_nickname}</span>}
                     {app.age != null && <span>나이 {app.age}</span>}
                     {app.height_cm != null && <span>키 {app.height_cm}cm</span>}
                     {app.region && <span>지역 {app.region}</span>}
@@ -1198,7 +1261,7 @@ export default function MyPage() {
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={url}
-                            alt={`지원자 사진 ${idx + 1}`}
+                            alt={`吏?먯옄 ?ъ쭊 ${idx + 1}`}
                             className="h-32 w-full object-cover"
                           />
                         </a>
@@ -1207,7 +1270,7 @@ export default function MyPage() {
                   )}
 
                   {app.status === "accepted" && app.instagram_id && (
-                    <p className="mt-2 text-sm text-emerald-700 font-medium">지원자 인스타: @{app.instagram_id}</p>
+                    <p className="mt-2 text-sm text-emerald-700 font-medium">吏?먯옄 ?몄뒪?: @{app.instagram_id}</p>
                   )}
 
                   {app.status === "submitted" && (
@@ -1217,14 +1280,14 @@ export default function MyPage() {
                         onClick={() => void handleCardApplicationStatus(app.id, "accepted")}
                         className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white"
                       >
-                        수락
+                        ?섎씫
                       </button>
                       <button
                         type="button"
                         onClick={() => void handleCardApplicationStatus(app.id, "rejected")}
                         className="h-9 rounded-lg bg-red-600 px-3 text-xs font-medium text-white"
                       >
-                        거절
+                        嫄곗젅
                       </button>
                     </div>
                   )}
@@ -1236,17 +1299,17 @@ export default function MyPage() {
       </section>
 
       <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h2 className="text-lg font-bold text-neutral-900 mb-3">내 오픈카드 지원 이력</h2>
+        <h2 className="text-lg font-bold text-neutral-900 mb-3">???ㅽ뵂移대뱶 吏???대젰</h2>
         {myAppliedCardApplications.length === 0 ? (
-          <p className="text-sm text-neutral-500">아직 지원한 내역이 없습니다.</p>
+          <p className="text-sm text-neutral-500">?꾩쭅 吏?먰븳 ?댁뿭???놁뒿?덈떎.</p>
         ) : (
           <div className="space-y-3">
             {myAppliedCardApplications.map((app) => (
               <div key={app.id} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium text-neutral-900">
-                    {app.card?.display_nickname ?? "(카드 닉네임 없음)"} /{" "}
-                    {app.card?.sex === "male" ? "남자 카드" : app.card?.sex === "female" ? "여자 카드" : "카드"}
+                    {app.card?.display_nickname ?? "(移대뱶 ?됰꽕???놁쓬)"} /{" "}
+                    {app.card?.sex === "male" ? "?⑥옄 移대뱶" : app.card?.sex === "female" ? "?ъ옄 移대뱶" : "移대뱶"}
                   </p>
                   <span
                     className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
@@ -1257,8 +1320,8 @@ export default function MyPage() {
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-neutral-500">
-                  지원일 {new Date(app.created_at).toLocaleString("ko-KR")}
-                  {app.card?.owner_nickname ? ` / 카드 작성자 ${app.card.owner_nickname}` : ""}
+                  吏?먯씪 {new Date(app.created_at).toLocaleString("ko-KR")}
+                  {app.card?.owner_nickname ? ` / 移대뱶 ?묒꽦??${app.card.owner_nickname}` : ""}
                 </p>
                 {app.intro_text && (
                   <p className="mt-2 text-sm text-neutral-700 whitespace-pre-wrap break-words">{app.intro_text}</p>
@@ -1270,23 +1333,23 @@ export default function MyPage() {
       </section>
 
       <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h2 className="text-lg font-bold text-neutral-900 mb-3">매칭 인스타 교환</h2>
+        <h2 className="text-lg font-bold text-neutral-900 mb-3">留ㅼ묶 ?몄뒪? 援먰솚</h2>
         {datingConnections.length === 0 ? (
-          <p className="text-sm text-neutral-500">아직 수락된 연결이 없습니다.</p>
+          <p className="text-sm text-neutral-500">?꾩쭅 ?섎씫???곌껐???놁뒿?덈떎.</p>
         ) : (
           <div className="space-y-3">
             {datingConnections.map((item) => (
               <div key={item.application_id} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
                 <p className="text-sm font-medium text-neutral-900">{item.other_nickname}</p>
                 <p className="text-xs text-neutral-500 mt-1">
-                  연결일 {new Date(item.created_at).toLocaleDateString("ko-KR")}
+                  ?곌껐??{new Date(item.created_at).toLocaleDateString("ko-KR")}
                 </p>
                 {item.my_instagram_id && (
-                  <p className="text-sm text-neutral-700 mt-2">내 인스타: @{item.my_instagram_id}</p>
+                  <p className="text-sm text-neutral-700 mt-2">???몄뒪?: @{item.my_instagram_id}</p>
                 )}
                 {item.other_instagram_id && (
                   <p className="text-sm text-emerald-700 font-medium mt-1">
-                    상대 인스타: @{item.other_instagram_id}
+                    ?곷? ?몄뒪?: @{item.other_instagram_id}
                   </p>
                 )}
               </div>
@@ -1299,10 +1362,10 @@ export default function MyPage() {
 
       {isAdmin && (
         <section className="mb-5 rounded-2xl border border-violet-200 bg-violet-50/40 p-5">
-          <h2 className="text-lg font-bold text-violet-900 mb-3">오픈카드 전체 내용 (관리자)</h2>
+          <h2 className="text-lg font-bold text-violet-900 mb-3">?ㅽ뵂移대뱶 ?꾩껜 ?댁슜 (愿由ъ옄)</h2>
 
           <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
-            <p className="text-xs font-semibold text-violet-800">오픈카드 작성 버튼</p>
+            <p className="text-xs font-semibold text-violet-800">?ㅽ뵂移대뱶 ?묒꽦 踰꾪듉</p>
             <div className="mt-2 flex items-center gap-2">
               <button
                 type="button"
@@ -1328,10 +1391,9 @@ export default function MyPage() {
 
           <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
             <p className="text-xs font-semibold text-violet-800">
-              지원권 주문 승인 대기 {adminApplyCreditOrders.length}건
-            </p>
+              吏?먭텒 二쇰Ц ?뱀씤 ?湲?{adminApplyCreditOrders.length}嫄?            </p>
             {adminApplyCreditOrders.length === 0 ? (
-              <p className="mt-2 text-xs text-neutral-500">승인 대기 주문이 없습니다.</p>
+              <p className="mt-2 text-xs text-neutral-500">?뱀씤 ?湲?二쇰Ц???놁뒿?덈떎.</p>
             ) : (
               <div className="mt-2 space-y-2">
                 {adminApplyCreditOrders.map((order) => {
@@ -1343,11 +1405,10 @@ export default function MyPage() {
                     >
                       <div className="min-w-0">
                         <p className="text-xs font-medium text-neutral-900">
-                          {order.nickname ?? order.user_id.slice(0, 8)} / +{order.pack_size}장 /{" "}
-                          {order.amount.toLocaleString("ko-KR")}원
-                        </p>
+                          {order.nickname ?? order.user_id.slice(0, 8)} / +{order.pack_size}??/{" "}
+                          {order.amount.toLocaleString("ko-KR")}??                        </p>
                         <p className="text-[11px] text-neutral-500 break-all">
-                          주문ID {order.id} / {new Date(order.created_at).toLocaleString("ko-KR")}
+                          二쇰ЦID {order.id} / {new Date(order.created_at).toLocaleString("ko-KR")}
                         </p>
                       </div>
                       <button
@@ -1356,7 +1417,7 @@ export default function MyPage() {
                         onClick={() => void handleAdminApproveApplyCreditOrder(order.id)}
                         className="h-8 rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                       >
-                        {approving ? "처리 중..." : "승인"}
+                        {approving ? "泥섎━ 以?.." : "?뱀씤"}
                       </button>
                     </div>
                   );
@@ -1367,10 +1428,9 @@ export default function MyPage() {
 
           <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
             <p className="text-xs font-semibold text-violet-800">
-              이상형 더보기 승인 대기 {adminMoreViewRequests.length}건
-            </p>
+              ?댁긽???붾낫湲??뱀씤 ?湲?{adminMoreViewRequests.length}嫄?            </p>
             {adminMoreViewRequests.length === 0 ? (
-              <p className="mt-2 text-xs text-neutral-500">승인 대기 신청이 없습니다.</p>
+              <p className="mt-2 text-xs text-neutral-500">?뱀씤 ?湲??좎껌???놁뒿?덈떎.</p>
             ) : (
               <div className="mt-2 space-y-2">
                 {adminMoreViewRequests.map((item) => {
@@ -1395,12 +1455,60 @@ export default function MyPage() {
                           onClick={() => void handleAdminProcessMoreViewRequest(item.id, "approved")}
                           className="h-8 rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                         >
-                          승인
+                          ?뱀씤
                         </button>
                         <button
                           type="button"
                           disabled={processing}
                           onClick={() => void handleAdminProcessMoreViewRequest(item.id, "rejected")}
+                          className="h-8 rounded-md bg-rose-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                        >
+                          嫄곗젅
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
+            <p className="text-xs font-semibold text-violet-800">
+              내 가까운 이상형 승인 대기 {adminCityViewRequests.length}건
+            </p>
+            {adminCityViewRequests.length === 0 ? (
+              <p className="mt-2 text-xs text-neutral-500">승인 대기 신청이 없습니다.</p>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {adminCityViewRequests.map((item) => {
+                  const processing = processingCityViewIds.includes(item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-100 bg-violet-50/40 px-2 py-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-neutral-900">
+                          {item.nickname ?? item.user_id.slice(0, 8)} / 도시 {item.city}
+                        </p>
+                        <p className="text-[11px] text-neutral-500 break-all">
+                          신청ID {item.id} / {new Date(item.created_at).toLocaleString("ko-KR")}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={processing}
+                          onClick={() => void handleAdminProcessCityViewRequest(item.id, "approved")}
+                          className="h-8 rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                        >
+                          승인
+                        </button>
+                        <button
+                          type="button"
+                          disabled={processing}
+                          onClick={() => void handleAdminProcessCityViewRequest(item.id, "rejected")}
                           className="h-8 rounded-md bg-rose-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                         >
                           거절
@@ -1416,8 +1524,7 @@ export default function MyPage() {
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-violet-800">
-                카드 {adminOpenCards.length}건 / 오픈카드 지원 {adminOpenCardApplications.length}건 / 24시간 지원 {adminPaidCardApplications.length}건
-              </h3>
+                移대뱶 {adminOpenCards.length}嫄?/ ?ㅽ뵂移대뱶 吏??{adminOpenCardApplications.length}嫄?/ 24?쒓컙 吏??{adminPaidCardApplications.length}嫄?              </h3>
               <div className="flex items-center gap-2">
                 <div className="inline-flex rounded-md border border-violet-200 bg-white p-0.5">
                   <button
@@ -1427,7 +1534,7 @@ export default function MyPage() {
                       adminDataView === "cards" ? "bg-violet-600 text-white" : "text-violet-800"
                     }`}
                   >
-                    카드 보기
+                    移대뱶 蹂닿린
                   </button>
                   <button
                     type="button"
@@ -1436,7 +1543,7 @@ export default function MyPage() {
                       adminDataView === "applications" ? "bg-violet-600 text-white" : "text-violet-800"
                     }`}
                   >
-                    지원이력 보기
+                    吏?먯씠??蹂닿린
                   </button>
                 </div>
                 {adminDataView === "cards" ? (
@@ -1467,13 +1574,13 @@ export default function MyPage() {
 
             {adminDataView === "cards" ? (
               adminOpenCards.length === 0 ? (
-                <p className="text-sm text-neutral-600">등록된 오픈카드가 없습니다.</p>
+                <p className="text-sm text-neutral-600">?깅줉???ㅽ뵂移대뱶媛 ?놁뒿?덈떎.</p>
               ) : (
                 <div className="space-y-2">
                   {sortedAdminOpenCards.map((card) => (
                     <div key={card.id} className="rounded-xl border border-violet-200 bg-white p-3">
                       <p className="text-sm font-semibold text-neutral-900">
-                        카드 {card.id.slice(0, 8)}... / {card.display_nickname ?? "(닉네임 없음)"} / {card.sex} / 상태 {card.status}
+                        移대뱶 {card.id.slice(0, 8)}... / {card.display_nickname ?? "(?됰꽕???놁쓬)"} / {card.sex} / ?곹깭 {card.status}
                       </p>
                       <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
                         <span>owner: {card.owner_nickname ?? card.owner_user_id.slice(0, 8)}</span>
@@ -1493,26 +1600,26 @@ export default function MyPage() {
                       )}
                       {card.ideal_type && (
                         <p className="mt-1 text-xs text-neutral-700 whitespace-pre-wrap break-words">
-                          이상형: {card.ideal_type}
+                          ?댁긽?? {card.ideal_type}
                         </p>
                       )}
                       {card.published_at && (
                         <p className="mt-1 text-xs text-emerald-700">
-                          공개 시작: {new Date(card.published_at).toLocaleString("ko-KR")}
+                          怨듦컻 ?쒖옉: {new Date(card.published_at).toLocaleString("ko-KR")}
                         </p>
                       )}
                       {card.expires_at && (
                         <p className="mt-1 text-xs text-amber-700">
-                          만료 예정: {new Date(card.expires_at).toLocaleString("ko-KR")}
+                          留뚮즺 ?덉젙: {new Date(card.expires_at).toLocaleString("ko-KR")}
                         </p>
                       )}
                       {card.blur_thumb_path && (
                         <p className="mt-1 text-xs text-neutral-500 break-all">
-                          blur 경로: {card.blur_thumb_path}
+                          blur 寃쎈줈: {card.blur_thumb_path}
                         </p>
                       )}
                       <p className="mt-1 text-xs text-neutral-500 break-all">
-                        사진 경로: {Array.isArray(card.photo_paths) ? card.photo_paths.join(", ") : "-"}
+                        ?ъ쭊 寃쎈줈: {Array.isArray(card.photo_paths) ? card.photo_paths.join(", ") : "-"}
                       </p>
                       <div className="mt-2">
                         <button
@@ -1520,7 +1627,7 @@ export default function MyPage() {
                           onClick={() => void handleAdminDeleteOpenCard(card.id)}
                           className="h-8 rounded-md bg-red-600 px-3 text-xs font-medium text-white"
                         >
-                          삭제
+                          ??젣
                         </button>
                       </div>
                     </div>
@@ -1528,21 +1635,21 @@ export default function MyPage() {
                 </div>
               )
             ) : adminOpenCardApplications.length === 0 && adminPaidCardApplications.length === 0 ? (
-              <p className="text-sm text-neutral-600">등록된 지원 이력이 없습니다.</p>
+              <p className="text-sm text-neutral-600">?깅줉??吏???대젰???놁뒿?덈떎.</p>
             ) : (
               <div className="space-y-2">
                 {adminOpenCardApplications.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-xs font-semibold text-violet-700">오픈카드 지원 이력</p>
+                    <p className="text-xs font-semibold text-violet-700">?ㅽ뵂移대뱶 吏???대젰</p>
                     {sortedAdminOpenCardApplications.map((app) => (
                       <div key={app.id} className="rounded-xl border border-violet-200 bg-white p-3">
                         <p className="text-sm font-semibold text-neutral-900">
-                          지원서 {app.id.slice(0, 8)}... / 카드 {app.card_id.slice(0, 8)}... / 상태 {app.status}
+                          吏?먯꽌 {app.id.slice(0, 8)}... / 移대뱶 {app.card_id.slice(0, 8)}... / ?곹깭 {app.status}
                         </p>
                         <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
-                          <span>지원자: {app.applicant_nickname ?? app.applicant_user_id.slice(0, 8)}</span>
-                          {app.card_owner_nickname && <span>카드 작성자: {app.card_owner_nickname}</span>}
-                          {app.card_display_nickname && <span>카드 닉네임: {app.card_display_nickname}</span>}
+                          <span>吏?먯옄: {app.applicant_nickname ?? app.applicant_user_id.slice(0, 8)}</span>
+                          {app.card_owner_nickname && <span>移대뱶 ?묒꽦?? {app.card_owner_nickname}</span>}
+                          {app.card_display_nickname && <span>移대뱶 ?됰꽕?? {app.card_display_nickname}</span>}
                           {app.card_sex && <span>카드 성별: {app.card_sex === "male" ? "남자" : "여자"}</span>}
                           {app.card_status && <span>카드 상태: {app.card_status}</span>}
                           {app.applicant_display_nickname && <span>표시 닉네임: {app.applicant_display_nickname}</span>}
@@ -1559,7 +1666,7 @@ export default function MyPage() {
                           </p>
                         )}
                         <p className="mt-1 text-xs text-neutral-500 break-all">
-                          사진 경로: {Array.isArray(app.photo_paths) ? app.photo_paths.join(", ") : "-"}
+                          ?ъ쭊 寃쎈줈: {Array.isArray(app.photo_paths) ? app.photo_paths.join(", ") : "-"}
                         </p>
                       </div>
                     ))}
@@ -1567,16 +1674,16 @@ export default function MyPage() {
                 )}
                 {adminPaidCardApplications.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-xs font-semibold text-rose-700">24시간 카드 지원 이력</p>
+                    <p className="text-xs font-semibold text-rose-700">24?쒓컙 移대뱶 吏???대젰</p>
                     {sortedAdminPaidCardApplications.map((app) => (
                       <div key={app.id} className="rounded-xl border border-rose-200 bg-rose-50/30 p-3">
                         <p className="text-sm font-semibold text-neutral-900">
-                          지원서 {app.id.slice(0, 8)}... / 24시간 카드 {app.card_id.slice(0, 8)}... / 상태 {app.status}
+                          吏?먯꽌 {app.id.slice(0, 8)}... / 24?쒓컙 移대뱶 {app.card_id.slice(0, 8)}... / ?곹깭 {app.status}
                         </p>
                         <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
-                          <span>지원자: {app.applicant_nickname ?? app.applicant_user_id.slice(0, 8)}</span>
-                          {app.card_owner_nickname && <span>카드 작성자: {app.card_owner_nickname}</span>}
-                          {app.card_nickname && <span>카드 닉네임: {app.card_nickname}</span>}
+                          <span>吏?먯옄: {app.applicant_nickname ?? app.applicant_user_id.slice(0, 8)}</span>
+                          {app.card_owner_nickname && <span>移대뱶 ?묒꽦?? {app.card_owner_nickname}</span>}
+                          {app.card_nickname && <span>移대뱶 ?됰꽕?? {app.card_nickname}</span>}
                           {app.card_gender && <span>카드 성별: {app.card_gender === "M" ? "남자" : "여자"}</span>}
                           {app.card_status && <span>카드 상태: {app.card_status}</span>}
                           {app.applicant_display_nickname && <span>표시 닉네임: {app.applicant_display_nickname}</span>}
@@ -1595,7 +1702,7 @@ export default function MyPage() {
                           </p>
                         )}
                         <p className="mt-1 text-xs text-neutral-500 break-all">
-                          사진 경로: {Array.isArray(app.photo_paths) ? app.photo_paths.join(", ") : "-"}
+                          ?ъ쭊 寃쎈줈: {Array.isArray(app.photo_paths) ? app.photo_paths.join(", ") : "-"}
                         </p>
                       </div>
                     ))}
@@ -1622,8 +1729,7 @@ export default function MyPage() {
                 : "border-neutral-300 bg-white text-neutral-700"
             }`}
           >
-            내 인증서
-          </button>
+            ???몄쬆??          </button>
           <button
             type="button"
             onClick={() => setActiveTab("request_status")}
@@ -1633,7 +1739,7 @@ export default function MyPage() {
                 : "border-neutral-300 bg-white text-neutral-700"
             }`}
           >
-            요청 현황
+            ?붿껌 ?꾪솴
           </button>
           {isAdmin && (
             <button
@@ -1645,7 +1751,7 @@ export default function MyPage() {
                   : "border-neutral-300 bg-white text-neutral-700"
               }`}
             >
-              관리자 심사
+              愿由ъ옄 ?ъ궗
             </button>
           )}
         </div>
@@ -1655,7 +1761,7 @@ export default function MyPage() {
             <h2 className="mb-3 text-lg font-bold text-neutral-900">내 인증서</h2>
             {approvedRequests.length === 0 ? (
               <p className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-500">
-                발급된 인증서가 없습니다.
+                諛쒓툒???몄쬆?쒓? ?놁뒿?덈떎.
               </p>
             ) : (
               <div className="space-y-3">
@@ -1665,8 +1771,8 @@ export default function MyPage() {
                   const verifyPath = `/cert/${cert.slug}`;
                   return (
                     <div key={item.id} className="rounded-2xl border border-neutral-200 bg-white p-4">
-                      <p className="text-sm font-semibold text-neutral-900">인증번호: {cert.certificate_no}</p>
-                      <p className="mt-1 text-xs text-neutral-500">발급일: {timeAgo(cert.issued_at)}</p>
+                      <p className="text-sm font-semibold text-neutral-900">?몄쬆踰덊샇: {cert.certificate_no}</p>
+                      <p className="mt-1 text-xs text-neutral-500">諛쒓툒?? {timeAgo(cert.issued_at)}</p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <a
                           href={cert.pdf_url}
@@ -1674,7 +1780,7 @@ export default function MyPage() {
                           rel="noreferrer"
                           className="flex h-9 items-center rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white"
                         >
-                          PDF 다운로드
+                          PDF ?ㅼ슫濡쒕뱶
                         </a>
                         <button
                           type="button"
@@ -1684,7 +1790,7 @@ export default function MyPage() {
                           }}
                           className="h-9 rounded-lg bg-neutral-900 px-3 text-xs font-medium text-white"
                         >
-                          검증 링크 복사
+                          寃利?留곹겕 蹂듭궗
                         </button>
                       </div>
                     </div>
@@ -1697,34 +1803,34 @@ export default function MyPage() {
 
         {activeTab === "request_status" && (
           <>
-            <h2 className="mb-3 text-lg font-bold text-neutral-900">요청 현황</h2>
+            <h2 className="mb-3 text-lg font-bold text-neutral-900">?붿껌 ?꾪솴</h2>
             {certRequests.length === 0 ? (
               <p className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-500">
-                인증 요청 내역이 없습니다.
+                ?몄쬆 ?붿껌 ?댁뿭???놁뒿?덈떎.
               </p>
             ) : (
               <div className="space-y-3">
                 {certRequests.map((item) => (
                   <div key={item.id} className="rounded-2xl border border-neutral-200 bg-white p-4">
                     <p className="text-sm font-semibold text-neutral-900">
-                      제출코드: <span className="font-bold">{item.submit_code}</span>
+                      ?쒖텧肄붾뱶: <span className="font-bold">{item.submit_code}</span>
                     </p>
                     <p className="mt-1 text-xs text-neutral-500">
-                      상태: {item.status} / 합계 {item.total}kg / {timeAgo(item.created_at)}
+                      ?곹깭: {item.status} / ?⑷퀎 {item.total}kg / {timeAgo(item.created_at)}
                     </p>
                     {item.video_url && (
                       <p className="mt-1 break-all text-xs text-neutral-600">
-                        영상 링크:{" "}
+                        ?곸긽 留곹겕:{" "}
                         <a href={item.video_url} target="_blank" rel="noreferrer" className="text-blue-600 underline">
                           {item.video_url}
                         </a>
                       </p>
                     )}
                     {item.status === "needs_info" && item.admin_note && (
-                      <p className="mt-2 text-xs text-amber-700">관리자 요청: {item.admin_note}</p>
+                      <p className="mt-2 text-xs text-amber-700">愿由ъ옄 ?붿껌: {item.admin_note}</p>
                     )}
                     {item.status === "rejected" && item.admin_note && (
-                      <p className="mt-2 text-xs text-red-700">거절 사유: {item.admin_note}</p>
+                      <p className="mt-2 text-xs text-red-700">嫄곗젅 ?ъ쑀: {item.admin_note}</p>
                     )}
                   </div>
                 ))}
@@ -1737,22 +1843,22 @@ export default function MyPage() {
           <>
             {isAdmin ? (
               <>
-                <h2 className="mb-3 text-lg font-bold text-neutral-900">관리자 심사</h2>
+                <h2 className="mb-3 text-lg font-bold text-neutral-900">愿由ъ옄 ?ъ궗</h2>
                 <AdminCertReviewPanel />
               </>
             ) : (
-              <p className="text-sm text-red-600">403: 접근 권한이 없습니다.</p>
+              <p className="text-sm text-red-600">403: ?묎렐 沅뚰븳???놁뒿?덈떎.</p>
             )}
           </>
         )}
       </section>
 
       <section>
-        <h2 className="mb-3 text-lg font-bold text-neutral-900">내 사진 몸평 게시글</h2>
+        <h2 className="mb-3 text-lg font-bold text-neutral-900">???ъ쭊 紐명룊 寃뚯떆湲</h2>
 
         {posts.length === 0 ? (
           <p className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-500">
-            아직 등록한 사진 몸평 게시글이 없습니다.
+            ?꾩쭅 ?깅줉???ъ쭊 紐명룊 寃뚯떆湲???놁뒿?덈떎.
           </p>
         ) : (
           <div className="space-y-3">
@@ -1767,7 +1873,7 @@ export default function MyPage() {
                     <p className="text-xs text-neutral-400">{timeAgo(post.created_at)}</p>
                     <p className="mt-1 truncate text-sm font-semibold text-neutral-900">{post.title}</p>
                     <p className="mt-1 text-xs text-indigo-700">
-                      평균 {post.average_score.toFixed(2)} / 투표 {post.vote_count}
+                      ?됯퇏 {post.average_score.toFixed(2)} / ?ы몴 {post.vote_count}
                     </p>
                   </div>
                   {(post.images?.length ?? 0) > 0 && (
@@ -1807,7 +1913,7 @@ export default function MyPage() {
                 onClick={() => setNicknameOpen(false)}
                 className="min-h-[42px] rounded-lg border border-neutral-300 text-sm font-medium text-neutral-700"
               >
-                취소
+                痍⑥냼
               </button>
               <button
                 type="button"
@@ -1824,3 +1930,4 @@ export default function MyPage() {
     </main>
   );
 }
+

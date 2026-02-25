@@ -206,12 +206,20 @@ export default function AdminDatingCardsPage() {
     <main className="mx-auto max-w-5xl px-4 py-6">
       <div className="mb-4 flex items-center justify-between gap-2">
         <h1 className="text-2xl font-bold text-neutral-900">오픈카드 모더레이션</h1>
-        <Link
-          href="/admin/dating/paid"
-          className="rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-xs font-medium text-violet-700 hover:bg-violet-100"
-        >
-          유료 신청 관리
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/admin/dating/more-view"
+            className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-xs text-neutral-700 hover:bg-neutral-50"
+          >
+            이상형 더보기 신청
+          </Link>
+          <Link
+            href="/admin/dating/paid"
+            className="rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-xs font-medium text-violet-700 hover:bg-violet-100"
+          >
+            유료 신청 관리
+          </Link>
+        </div>
       </div>
 
       {loading ? (
