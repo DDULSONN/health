@@ -283,12 +283,12 @@ export default function OpenCardsPage() {
   return (
     <main className="max-w-3xl mx-auto px-4 py-6">
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <span className="rounded-full border border-neutral-300 bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white">?ㅽ뵂移대뱶</span>
+        <span className="rounded-full border border-neutral-300 bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white">오픈카드</span>
         <Link href="/dating/paid" className="rounded-full border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700 hover:bg-rose-100">
-          ?뵦24?쒓컙 怨좎젙
+          픽24시간 고정
         </Link>
         <Link href="/dating/more-view" className="rounded-full border border-pink-300 bg-pink-50 px-3 py-1.5 text-sm font-semibold text-pink-700 hover:bg-pink-100">
-          ?댁긽???붾낫湲?
+          이상형 더보기
         </Link>
         <Link href="/dating/nearby-view" className="rounded-full border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-semibold text-sky-700 hover:bg-sky-100">
           내 가까운 이상형
@@ -297,7 +297,7 @@ export default function OpenCardsPage() {
 
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">?ㅽ뵂移대뱶</h1>
+          <h1 className="text-2xl font-bold text-neutral-900">오픈카드</h1>
           <p className="text-sm text-neutral-500 mt-1">공개 카드는 36시간 동안 노출됩니다.</p>
           <p className="text-xs text-rose-600 mt-1">현재 24시간 고정 {paidCount}명 노출중</p>
           <p className="text-xs text-neutral-500 mt-1">대기열: 남자 {queueStats?.male.pending_count ?? 0}명 / 여자 {queueStats?.female.pending_count ?? 0}명</p>
@@ -309,15 +309,15 @@ export default function OpenCardsPage() {
           href="/dating/card/new"
           className="inline-flex min-h-[40px] items-center rounded-lg border border-pink-200 bg-pink-50 px-3 text-sm font-medium text-pink-700 hover:bg-pink-100"
         >
-          ?ㅽ뵂移대뱶 ?묒꽦
+          오픈카드 작성
         </Link>
       </div>
       {loading ? (
-        <p className="text-neutral-400 text-center py-10">遺덈윭?ㅻ뒗 以?..</p>
+        <p className="text-neutral-400 text-center py-10">불러오는 중...</p>
       ) : (
         <div className="space-y-8">
           <Section
-            title="?⑥옄 ?ㅽ뵂移대뱶"
+            title="남자 오픈카드"
             currentCount={queueStats?.male.public_count ?? males.length}
             paidItems={malePaidItems}
             items={males}
@@ -326,7 +326,7 @@ export default function OpenCardsPage() {
             onMore={loadMoreMale}
           />
           <Section
-            title="?ъ옄 ?ㅽ뵂移대뱶"
+            title="여자 오픈카드"
             currentCount={queueStats?.female.public_count ?? females.length}
             paidItems={femalePaidItems}
             items={females}
@@ -362,10 +362,10 @@ function Section({
   return (
     <section>
       <h2 className="text-lg font-bold text-neutral-800 mb-3">
-        {title} <span className="text-sm font-medium text-neutral-500">({currentCount}紐?怨듦컻以?</span>
+        {title} <span className="text-sm font-medium text-neutral-500">({currentCount}명 공개중)</span>
       </h2>
       {!hasAnyItems ? (
-        <p className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-500">?꾩옱 怨듦컻??移대뱶媛 ?놁뒿?덈떎.</p>
+        <p className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-500">현재 공개중인 카드가 없습니다.</p>
       ) : (
         <>
           {paidItems.length > 0 && (
@@ -382,7 +382,7 @@ function Section({
           </div>
           {moreViewItems.length > 0 && (
             <div className="mt-3 rounded-xl border border-dashed border-pink-300 bg-pink-50/60 p-2">
-              <p className="mb-2 px-1 text-xs font-semibold text-pink-700">?댁긽???붾낫湲?(?쒕뜡 15紐?</p>
+              <p className="mb-2 px-1 text-xs font-semibold text-pink-700">이상형 더보기 (추가 15명)</p>
               <div className="grid grid-cols-1 gap-3">
                 {moreViewItems.map((card) => (
                   <CardRow key={`more-${card.id}`} card={card} />
@@ -396,7 +396,7 @@ function Section({
               onClick={onMore}
               className="mt-3 w-full min-h-[44px] rounded-xl border border-neutral-300 bg-white text-sm font-medium text-neutral-700 hover:bg-neutral-50"
             >
-              ??蹂닿린
+              더보기
             </button>
           )}
         </>
@@ -410,13 +410,13 @@ function PaidCardRow({ card }: { card: PaidCard }) {
     <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-neutral-700">
-          <span className="inline-flex rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">24?쒓컙 怨좎젙</span>
+          <span className="inline-flex rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">픽24시간 고정</span>
           <span className="font-semibold text-neutral-900">{card.nickname}</span>
           {card.age != null && <span>{card.age}세</span>}
           {card.region && <span>{card.region}</span>}
         </div>
         {card.expires_at && (
-          <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">??{formatRemainingToKorean(card.expires_at)}</span>
+          <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">잔여 {formatRemainingToKorean(card.expires_at)}</span>
         )}
       </div>
 
@@ -432,27 +432,27 @@ function PaidCardRow({ card }: { card: PaidCard }) {
       )}
 
       <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
-        {card.height_cm != null && <span>??{card.height_cm}cm</span>}
-        {card.job && <span>吏곸뾽 {card.job}</span>}
+        {card.height_cm != null && <span>키 {card.height_cm}cm</span>}
+        {card.job && <span>직업 {card.job}</span>}
         {card.training_years != null && <span>운동 {card.training_years}년</span>}
-        {card.is_3lift_verified && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">3??몄쬆 ?꾨즺</span>}
+        {card.is_3lift_verified && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">3대인증 완료</span>}
       </div>
 
-      {card.ideal_text && <p className="mt-2 text-xs text-pink-700 truncate">?뮊 ?댁긽?? {card.ideal_text}</p>}
-      {card.strengths_text && <p className="mt-1 text-xs text-emerald-700 truncate">?????μ젏: {card.strengths_text}</p>}
+      {card.ideal_text && <p className="mt-2 text-xs text-pink-700 truncate">이상형: {card.ideal_text}</p>}
+      {card.strengths_text && <p className="mt-1 text-xs text-emerald-700 truncate">내 장점: {card.strengths_text}</p>}
 
       <div className="mt-3 flex flex-wrap gap-2">
         <Link
           href={`/dating/paid/${card.id}`}
           className="inline-flex min-h-[40px] items-center rounded-lg border border-neutral-300 px-4 text-sm text-neutral-700 hover:bg-neutral-50"
         >
-          ?곸꽭蹂닿린
+          상세보기
         </Link>
         <Link
           href={`/dating/paid/${card.id}/apply`}
           className="inline-flex min-h-[40px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
         >
-          吏?먰븯湲?
+          지원하기
         </Link>
       </div>
     </div>
@@ -471,7 +471,7 @@ function CardRow({ card }: { card: PublicCard }) {
           {card.region && <span>{card.region}</span>}
         </div>
         <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-          {card.expires_at ? `??${formatRemainingToKorean(card.expires_at)}` : "?湲곗뿴"}
+          {card.expires_at ? `잔여 ${formatRemainingToKorean(card.expires_at)}` : "대기열"}
         </span>
       </div>
 
@@ -497,21 +497,21 @@ function CardRow({ card }: { card: PublicCard }) {
       </div>
 
       <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
-        {card.height_cm != null && <span>??{card.height_cm}cm</span>}
-        {card.job && <span>吏곸뾽 {card.job}</span>}
+        {card.height_cm != null && <span>키 {card.height_cm}cm</span>}
+        {card.job && <span>직업 {card.job}</span>}
         {card.training_years != null && <span>운동 {card.training_years}년</span>}
         {card.is_3lift_verified && (
-          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">3??몄쬆 ?꾨즺</span>
+          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">3대인증 완료</span>
         )}
       </div>
 
-      {ideal && <p className="mt-2 text-xs text-pink-700 truncate">?뮊 ?댁긽?? {ideal}</p>}
-      {card.strengths_text && <p className="mt-1 text-xs text-emerald-700 truncate">?????μ젏: {card.strengths_text}</p>}
+      {ideal && <p className="mt-2 text-xs text-pink-700 truncate">이상형: {ideal}</p>}
+      {card.strengths_text && <p className="mt-1 text-xs text-emerald-700 truncate">내 장점: {card.strengths_text}</p>}
 
       {card.sex === "male" && (
         <div className="mt-2 flex flex-wrap gap-2">
           {card.total_3lift != null && (
-            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700">3? {card.total_3lift}kg</span>
+            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700">3대 {card.total_3lift}kg</span>
           )}
         </div>
       )}
@@ -521,13 +521,13 @@ function CardRow({ card }: { card: PublicCard }) {
           href={`/community/dating/cards/${card.id}`}
           className="inline-flex min-h-[40px] items-center rounded-lg border border-neutral-300 px-4 text-sm text-neutral-700 hover:bg-neutral-50"
         >
-          ?곸꽭蹂닿린
+          상세보기
         </Link>
         <Link
           href={`/community/dating/cards/${card.id}/apply`}
           className="inline-flex min-h-[40px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
         >
-          吏?먰븯湲?
+          지원하기
         </Link>
       </div>
     </div>
