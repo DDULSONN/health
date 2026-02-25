@@ -285,14 +285,17 @@ export default function OpenCardsPage() {
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-neutral-300 bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white">오픈카드</span>
         <Link href="/dating/paid" className="rounded-full border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700 hover:bg-rose-100">
-          픽24시간 고정
+          🔥24시 고정
         </Link>
         <Link href="/dating/more-view" className="rounded-full border border-pink-300 bg-pink-50 px-3 py-1.5 text-sm font-semibold text-pink-700 hover:bg-pink-100">
           이상형 더보기
         </Link>
-        <Link href="/dating/nearby-view" className="rounded-full border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-semibold text-sky-700 hover:bg-sky-100">
+        <span
+          aria-disabled="true"
+          className="cursor-not-allowed rounded-full border border-sky-200 bg-sky-50/60 px-3 py-1.5 text-sm font-semibold text-sky-400"
+        >
           내 가까운 이상형
-        </Link>
+        </span>
       </div>
 
       <div className="flex items-center justify-between mb-6">
@@ -408,7 +411,7 @@ function PaidCardRow({ card }: { card: PaidCard }) {
     <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-neutral-700">
-          <span className="inline-flex rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">픽24시간 고정</span>
+          <span className="inline-flex rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">🔥24시 고정</span>
           <span className="font-semibold text-neutral-900">{card.nickname}</span>
           {card.age != null && <span>{card.age}세</span>}
           {card.region && <span>{card.region}</span>}
