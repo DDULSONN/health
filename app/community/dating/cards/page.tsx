@@ -383,7 +383,7 @@ function Section({
           </div>
           {moreViewItems.length > 0 && (
             <div className="mt-3 rounded-xl border border-dashed border-pink-300 bg-pink-50/60 p-2">
-              <p className="mb-2 px-1 text-xs font-semibold text-pink-700">이상형 더보기 (추가 15명)</p>
+              <p className="mb-2 px-1 text-xs font-semibold text-pink-700">이상형 더보기 (추가 25명)</p>
               <div className="grid grid-cols-1 gap-3">
                 {moreViewItems.map((card) => (
                   <CardRow key={`more-${card.id}`} card={card} />
@@ -534,4 +534,5 @@ function CardRow({ card }: { card: PublicCard }) {
     </div>
   );
 }
+
 
