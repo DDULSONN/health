@@ -32,7 +32,7 @@ async function buildProvinceStats(admin: ReturnType<typeof createAdminClient>): 
     map.set(province, prev);
   }
 
-  const order = new Map(PROVINCE_ORDER.map((name, idx) => [name, idx]));
+  const order = new Map<string, number>(PROVINCE_ORDER.map((name, idx) => [name, idx]));
   return [...map.values()].sort((a, b) => {
     const ai = order.get(a.province) ?? 999;
     const bi = order.get(b.province) ?? 999;
@@ -47,7 +47,7 @@ export async function GET() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!isAllowedAdminUser(user?.id, user?.email)) {
+  if (!user || !isAllowedAdminUser(user.id, user.email)) {
     return NextResponse.json({ ok: false, message: "관리자 전용 기능입니다." }, { status: 403 });
   }
 
