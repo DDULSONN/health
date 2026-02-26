@@ -14,6 +14,7 @@ type CityStatusResponse = {
   ok?: boolean;
   loggedIn?: boolean;
   activeCities?: string[];
+  activeCityDetails?: Array<{ province: string; expiresAt: string }>;
   pendingCities?: string[];
   provinceStats?: ProvinceStat[];
 };
@@ -31,22 +32,30 @@ type CardItem = {
 
 export default function NearbyViewPage() {
   const [submittingProvince, setSubmittingProvince] = useState("");
-  const [status, setStatus] = useState<CityStatusResponse>({ loggedIn: false, activeCities: [], pendingCities: [], provinceStats: [] });
+  const [status, setStatus] = useState<CityStatusResponse>({ loggedIn: false, activeCities: [], activeCityDetails: [], pendingCities: [], provinceStats: [] });
   const [accessDenied, setAccessDenied] = useState(false);
   const [selectedProvince, setSelectedProvince] = useState<string>("");
+  const [activeSex, setActiveSex] = useState<"male" | "female">("male");
   const [items, setItems] = useState<CardItem[]>([]);
   const [loading, setLoading] = useState(false);
+  const [tick, setTick] = useState(0);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setTick((v) => v + 1), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
 
   const loadStatus = useCallback(async () => {
     const res = await fetch("/api/dating/cards/city-view/status", { cache: "no-store" });
     if (res.status === 403) {
       setAccessDenied(true);
-      setStatus({ loggedIn: false, activeCities: [], pendingCities: [], provinceStats: [] });
+      setStatus({ loggedIn: false, activeCities: [], activeCityDetails: [], pendingCities: [], provinceStats: [] });
       return;
     }
     setAccessDenied(false);
     const body = (await res.json().catch(() => ({}))) as CityStatusResponse;
     const active = Array.isArray(body.activeCities) ? body.activeCities : [];
+    const activeCityDetails = Array.isArray(body.activeCityDetails) ? body.activeCityDetails : [];
     const pending = Array.isArray(body.pendingCities) ? body.pendingCities : [];
     const provinceStats = Array.isArray(body.provinceStats) ? body.provinceStats : [];
 
@@ -54,6 +63,7 @@ export default function NearbyViewPage() {
       ok: body.ok,
       loggedIn: body.loggedIn === true,
       activeCities: active,
+      activeCityDetails,
       pendingCities: pending,
       provinceStats,
     });
@@ -116,6 +126,11 @@ export default function NearbyViewPage() {
 
   const maleItems = useMemo(() => items.filter((i) => i.sex === "male"), [items]);
   const femaleItems = useMemo(() => items.filter((i) => i.sex === "female"), [items]);
+  const selectedExpiresAt = useMemo(
+    () => (status.activeCityDetails ?? []).find((v) => v.province === selectedProvince)?.expiresAt ?? null,
+    [selectedProvince, status.activeCityDetails]
+  );
+  void tick;
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-6">
@@ -159,13 +174,18 @@ export default function NearbyViewPage() {
                 </div>
                 <div className="flex items-center gap-2">
                   {isActive ? (
-                    <button
-                      type="button"
-                      onClick={() => setSelectedProvince(stat.province)}
-                      className={`h-8 rounded-md px-3 text-xs font-medium ${selectedProvince === stat.province ? "bg-sky-700 text-white" : "bg-sky-600 text-white hover:bg-sky-700"}`}
-                    >
-                      보기
-                    </button>
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedProvince(stat.province)}
+                        className={`h-8 rounded-md px-3 text-xs font-medium ${selectedProvince === stat.province ? "bg-sky-700 text-white" : "bg-sky-600 text-white hover:bg-sky-700"}`}
+                      >
+                        보기
+                      </button>
+                      <span className="text-xs text-sky-700">
+                        {formatRemaining((status.activeCityDetails ?? []).find((v) => v.province === stat.province)?.expiresAt ?? null)}
+                      </span>
+                    </>
                   ) : isPending ? (
                     <span className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-700">승인대기</span>
                   ) : (
@@ -192,13 +212,42 @@ export default function NearbyViewPage() {
           <p className="text-sm text-neutral-500">불러오는 중...</p>
         ) : (
           <div className="space-y-5">
-            <CardSection title={`${selectedProvince} 남자 대기카드`} items={maleItems} />
-            <CardSection title={`${selectedProvince} 여자 대기카드`} items={femaleItems} />
+            <div className="flex items-center justify-between">
+              <h2 className="text-sm font-semibold text-neutral-800">{selectedProvince} 대기카드</h2>
+              <span className="text-xs text-sky-700">남은 시간 {formatRemaining(selectedExpiresAt)}</span>
+            </div>
+            <div className="flex gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveSex("male")}
+                className={`h-8 rounded-md px-3 text-xs font-medium ${activeSex === "male" ? "bg-sky-700 text-white" : "border border-sky-300 bg-sky-50 text-sky-700"}`}
+              >
+                남자 {maleItems.length}명
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSex("female")}
+                className={`h-8 rounded-md px-3 text-xs font-medium ${activeSex === "female" ? "bg-pink-600 text-white" : "border border-pink-300 bg-pink-50 text-pink-700"}`}
+              >
+                여자 {femaleItems.length}명
+              </button>
+            </div>
+            <CardSection title={activeSex === "male" ? `${selectedProvince} 남자 대기카드` : `${selectedProvince} 여자 대기카드`} items={activeSex === "male" ? maleItems : femaleItems} />
           </div>
         )}
       </section>}
     </main>
   );
+}
+
+function formatRemaining(expiresAt: string | null): string {
+  if (!expiresAt) return "-";
+  const ms = new Date(expiresAt).getTime() - Date.now();
+  if (!Number.isFinite(ms) || ms <= 0) return "만료";
+  const totalMin = Math.floor(ms / 60_000);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
+  return `${h}시간 ${m}분`;
 }
 
 function CardSection({ title, items }: { title: string; items: CardItem[] }) {
