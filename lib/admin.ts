@@ -8,9 +8,24 @@ function parseAdminEmails(): string[] {
     .filter(Boolean);
 }
 
+function parseAdminUserIds(): string[] {
+  const raw = process.env.ADMIN_USER_IDS ?? "";
+  return raw
+    .split(",")
+    .map((id) => id.trim())
+    .filter(Boolean);
+}
+
 export function isAdminEmail(email: string | null | undefined): boolean {
   if (!email) return false;
   return parseAdminEmails().includes(email.toLowerCase());
+}
+
+export function isAllowedAdminUser(userId: string | null | undefined, email: string | null | undefined): boolean {
+  if (!userId) return false;
+  const allowlist = parseAdminUserIds();
+  if (allowlist.length > 0) return allowlist.includes(userId);
+  return isAdminEmail(email);
 }
 
 export async function getServerUserAndAdminStatus() {
@@ -21,7 +36,6 @@ export async function getServerUserAndAdminStatus() {
 
   return {
     user,
-    isAdmin: isAdminEmail(user?.email),
+    isAdmin: isAllowedAdminUser(user?.id, user?.email),
   };
 }
-
