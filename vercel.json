@@ -2,10 +2,6 @@
   "buildCommand": "next build --webpack",
   "crons": [
     {
-      "path": "/api/cron/dating-city-view-expire",
-      "schedule": "*/10 * * * *"
-    },
-    {
       "path": "/api/cron/weekly-winners",
       "schedule": "0 15 * * 0"
     }
