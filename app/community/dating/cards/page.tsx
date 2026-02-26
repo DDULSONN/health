@@ -290,12 +290,12 @@ export default function OpenCardsPage() {
         <Link href="/dating/more-view" className="rounded-full border border-pink-300 bg-pink-50 px-3 py-1.5 text-sm font-semibold text-pink-700 hover:bg-pink-100">
           이상형 더보기
         </Link>
-        <span
-          aria-disabled="true"
-          className="cursor-not-allowed rounded-full border border-sky-200 bg-sky-50/60 px-3 py-1.5 text-sm font-semibold text-sky-400"
+        <Link
+          href="/dating/nearby-view"
+          className="rounded-full border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-semibold text-sky-700 hover:bg-sky-100"
         >
           내 가까운 이상형
-        </span>
+        </Link>
       </div>
 
       <div className="flex items-center justify-between mb-6">

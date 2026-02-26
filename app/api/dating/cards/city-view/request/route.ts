@@ -1,4 +1,4 @@
-﻿import { extractCityFromRegion } from "@/lib/region-city";
+﻿import { extractProvinceFromRegion } from "@/lib/region-city";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -12,12 +12,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: "로그인이 필요합니다." }, { status: 401 });
   }
 
-  const body = (await req.json().catch(() => null)) as { city?: unknown } | null;
-  const cityRaw = typeof body?.city === "string" ? body.city.trim() : "";
-  const city = extractCityFromRegion(cityRaw) ?? cityRaw;
+  const body = (await req.json().catch(() => null)) as { city?: unknown; province?: unknown } | null;
+  const provinceRaw = typeof body?.province === "string" ? body.province.trim() : typeof body?.city === "string" ? body.city.trim() : "";
+  const province = extractProvinceFromRegion(provinceRaw) ?? provinceRaw;
 
-  if (!city || city.length < 2 || city.length > 20) {
-    return NextResponse.json({ ok: false, message: "도시명을 확인해주세요." }, { status: 400 });
+  if (!province || province.length < 2 || province.length > 20) {
+    return NextResponse.json({ ok: false, message: "도/광역시명을 확인해주세요." }, { status: 400 });
   }
 
   const admin = createAdminClient();
@@ -26,19 +26,19 @@ export async function POST(req: Request) {
     .from("dating_city_view_requests")
     .select("id")
     .eq("user_id", user.id)
-    .eq("city", city)
+    .eq("city", province)
     .eq("status", "pending")
     .maybeSingle();
 
   if (pendingRes.data) {
-    return NextResponse.json({ ok: true, status: "pending", city });
+    return NextResponse.json({ ok: true, status: "pending", province });
   }
 
   const activeApprovedRes = await admin
     .from("dating_city_view_requests")
     .select("id,access_expires_at")
     .eq("user_id", user.id)
-    .eq("city", city)
+    .eq("city", province)
     .eq("status", "approved")
     .order("reviewed_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
@@ -51,13 +51,13 @@ export async function POST(req: Request) {
       return Number.isFinite(t) && t > Date.now();
     });
     if (active) {
-      return NextResponse.json({ ok: true, status: "approved", city });
+      return NextResponse.json({ ok: true, status: "approved", province });
     }
   }
 
   const insertRes = await admin.from("dating_city_view_requests").insert({
     user_id: user.id,
-    city,
+    city: province,
     status: "pending",
   });
 
@@ -65,5 +65,5 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: "신청 생성에 실패했습니다." }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, status: "pending", city, message: "신청이 접수되었습니다." });
+  return NextResponse.json({ ok: true, status: "pending", province, message: "신청이 접수되었습니다." });
 }

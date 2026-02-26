@@ -1,5 +1,5 @@
 ﻿import { getActiveApprovedCities } from "@/lib/dating-city-view";
-import { extractCityFromRegion } from "@/lib/region-city";
+import { extractProvinceFromRegion } from "@/lib/region-city";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -54,16 +54,16 @@ export async function GET(req: Request) {
   }
 
   const { searchParams } = new URL(req.url);
-  const cityRaw = (searchParams.get("city") ?? "").trim();
-  const city = extractCityFromRegion(cityRaw) ?? cityRaw;
-  if (!city) {
-    return NextResponse.json({ error: "city 값이 필요합니다." }, { status: 400 });
+  const provinceRaw = (searchParams.get("province") ?? searchParams.get("city") ?? "").trim();
+  const province = extractProvinceFromRegion(provinceRaw) ?? provinceRaw;
+  if (!province) {
+    return NextResponse.json({ error: "province 값이 필요합니다." }, { status: 400 });
   }
 
   const admin = createAdminClient();
   const activeCities = await getActiveApprovedCities(admin, user.id);
-  if (!activeCities.includes(city)) {
-    return NextResponse.json({ error: "해당 도시는 승인 후 이용 가능합니다." }, { status: 403 });
+  if (!activeCities.includes(province)) {
+    return NextResponse.json({ error: "해당 도/광역시는 승인 후 이용 가능합니다." }, { status: 403 });
   }
 
   const pendingCardsRes = await admin
@@ -73,14 +73,14 @@ export async function GET(req: Request) {
     )
     .eq("status", "pending")
     .order("created_at", { ascending: false })
-    .limit(5000);
+    .limit(10000);
 
   if (pendingCardsRes.error) {
     return NextResponse.json({ error: "목록을 불러오지 못했습니다." }, { status: 500 });
   }
 
   const rows = Array.isArray(pendingCardsRes.data) ? pendingCardsRes.data : [];
-  const selected = rows.filter((row) => extractCityFromRegion(row.region) === city).slice(0, 300);
+  const selected = rows.filter((row) => extractProvinceFromRegion(row.region) === province).slice(0, 500);
 
   const items = selected.map((row) => {
     const photoVisibility = row.photo_visibility === "public" ? "public" : "blur";
@@ -105,5 +105,5 @@ export async function GET(req: Request) {
     };
   });
 
-  return NextResponse.json({ items, city });
+  return NextResponse.json({ items, province });
 }

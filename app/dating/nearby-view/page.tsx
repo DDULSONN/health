@@ -3,11 +3,19 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 
+type ProvinceStat = {
+  province: string;
+  total: number;
+  male: number;
+  female: number;
+};
+
 type CityStatusResponse = {
   ok?: boolean;
   loggedIn?: boolean;
   activeCities?: string[];
   pendingCities?: string[];
+  provinceStats?: ProvinceStat[];
 };
 
 type CardItem = {
@@ -22,10 +30,9 @@ type CardItem = {
 };
 
 export default function NearbyViewPage() {
-  const [cityInput, setCityInput] = useState("");
-  const [submitting, setSubmitting] = useState(false);
-  const [status, setStatus] = useState<CityStatusResponse>({ loggedIn: false, activeCities: [], pendingCities: [] });
-  const [selectedCity, setSelectedCity] = useState<string>("");
+  const [submittingProvince, setSubmittingProvince] = useState("");
+  const [status, setStatus] = useState<CityStatusResponse>({ loggedIn: false, activeCities: [], pendingCities: [], provinceStats: [] });
+  const [selectedProvince, setSelectedProvince] = useState<string>("");
   const [items, setItems] = useState<CardItem[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -33,22 +40,27 @@ export default function NearbyViewPage() {
     const res = await fetch("/api/dating/cards/city-view/status", { cache: "no-store" });
     const body = (await res.json().catch(() => ({}))) as CityStatusResponse;
     const active = Array.isArray(body.activeCities) ? body.activeCities : [];
+    const pending = Array.isArray(body.pendingCities) ? body.pendingCities : [];
+    const provinceStats = Array.isArray(body.provinceStats) ? body.provinceStats : [];
+
     setStatus({
       ok: body.ok,
       loggedIn: body.loggedIn === true,
       activeCities: active,
-      pendingCities: Array.isArray(body.pendingCities) ? body.pendingCities : [],
+      pendingCities: pending,
+      provinceStats,
     });
-    if (!selectedCity && active.length > 0) {
-      setSelectedCity(active[0]);
-    }
-  }, [selectedCity]);
 
-  const loadList = useCallback(async (city: string) => {
-    if (!city) return;
+    if (!selectedProvince && active.length > 0) {
+      setSelectedProvince(active[0]);
+    }
+  }, [selectedProvince]);
+
+  const loadList = useCallback(async (province: string) => {
+    if (!province) return;
     setLoading(true);
     try {
-      const res = await fetch(`/api/dating/cards/city-view/list?city=${encodeURIComponent(city)}`, { cache: "no-store" });
+      const res = await fetch(`/api/dating/cards/city-view/list?province=${encodeURIComponent(province)}`, { cache: "no-store" });
       if (!res.ok) {
         setItems([]);
         return;
@@ -65,32 +77,35 @@ export default function NearbyViewPage() {
   }, [loadStatus]);
 
   useEffect(() => {
-    if (!selectedCity) return;
-    void loadList(selectedCity);
-  }, [selectedCity, loadList]);
+    if (!selectedProvince) return;
+    void loadList(selectedProvince);
+  }, [selectedProvince, loadList]);
 
-  const handleRequest = useCallback(async () => {
-    const city = cityInput.trim();
-    if (!city || submitting) return;
-    setSubmitting(true);
-    try {
-      const res = await fetch("/api/dating/cards/city-view/request", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ city }),
-      });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; city?: string };
-      if (!res.ok || !body.ok) {
-        alert(body.message ?? "신청에 실패했습니다.");
-        return;
+  const handleRequestProvince = useCallback(
+    async (province: string) => {
+      if (!province || !status.loggedIn || submittingProvince) return;
+      setSubmittingProvince(province);
+      try {
+        const res = await fetch("/api/dating/cards/city-view/request", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ province }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; province?: string; status?: "pending" | "approved" | "rejected" };
+        if (!res.ok || !body.ok) {
+          alert(body.message ?? "신청에 실패했습니다.");
+          return;
+        }
+        await loadStatus();
+        if (body.province && body.status === "approved") {
+          setSelectedProvince(body.province);
+        }
+      } finally {
+        setSubmittingProvince("");
       }
-      setCityInput("");
-      await loadStatus();
-      if (body.city) setSelectedCity(body.city);
-    } finally {
-      setSubmitting(false);
-    }
-  }, [cityInput, submitting, loadStatus]);
+    },
+    [loadStatus, status.loggedIn, submittingProvince]
+  );
 
   const maleItems = useMemo(() => items.filter((i) => i.sex === "male"), [items]);
   const femaleItems = useMemo(() => items.filter((i) => i.sex === "female"), [items]);
@@ -106,54 +121,65 @@ export default function NearbyViewPage() {
 
       <section className="rounded-2xl border border-sky-200 bg-sky-50 p-5">
         <h1 className="text-lg font-bold text-sky-900">내 가까운 이상형</h1>
-        <p className="mt-2 text-sm text-sky-800">도시를 신청하고 승인되면 해당 도시의 대기중 오픈카드를 3시간 동안 볼 수 있습니다.</p>
-        <p className="mt-1 text-xs text-sky-900">가격: 도시당 5,000원</p>
-        <p className="mt-1 text-xs text-sky-900">승인 시 지원권 1장이 추가 지급됩니다.</p>
-        <p className="mt-1 text-xs text-sky-800">3시간 만료 후 같은 도시도 다시 신청 가능합니다.</p>
-
-        <div className="mt-3 flex flex-wrap gap-2">
-          <input
-            value={cityInput}
-            onChange={(e) => setCityInput(e.target.value)}
-            placeholder="예: 수원, 동탄, 당진"
-            className="min-h-[40px] min-w-[200px] rounded-lg border border-sky-300 bg-white px-3 text-sm"
-          />
-          <button
-            type="button"
-            onClick={() => void handleRequest()}
-            disabled={!status.loggedIn || submitting}
-            className="min-h-[40px] rounded-lg bg-sky-600 px-3 text-sm font-medium text-white disabled:opacity-50"
-          >
-            {submitting ? "신청 중..." : "도시 신청"}
-          </button>
-        </div>
-
-        <p className="mt-2 text-xs text-sky-800">승인 대기 도시: {status.pendingCities?.join(", ") || "없음"}</p>
-        {!status.loggedIn && <p className="mt-1 text-xs text-neutral-500">로그인 후 신청 가능합니다.</p>}
+        <p className="mt-2 text-sm text-sky-800">도/광역시별 대기 인원을 확인하고 신청하면, 승인 후 3시간 동안 해당 지역 대기 카드를 볼 수 있습니다.</p>
+        <p className="mt-1 text-xs text-sky-900">가격: 지역당 5,000원</p>
+        <p className="mt-1 text-xs text-sky-900">승인 시 지원권 1장 추가 지급</p>
+        <p className="mt-1 text-xs text-sky-800">3시간 만료 후 같은 지역 재신청 가능</p>
+        {!status.loggedIn && <p className="mt-2 text-xs text-neutral-500">로그인 후 신청 가능합니다.</p>}
       </section>
 
       <section className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
-        <div className="mb-3 flex flex-wrap gap-2">
-          {(status.activeCities ?? []).map((city) => (
-            <button
-              key={city}
-              type="button"
-              onClick={() => setSelectedCity(city)}
-              className={`h-8 rounded-full border px-3 text-xs ${selectedCity === city ? "border-sky-600 bg-sky-600 text-white" : "border-sky-300 bg-sky-50 text-sky-700"}`}
-            >
-              {city}
-            </button>
-          ))}
+        <h2 className="mb-3 text-sm font-semibold text-neutral-800">도/광역시별 대기 인원</h2>
+        <div className="space-y-2">
+          {(status.provinceStats ?? []).length === 0 && <p className="text-xs text-neutral-500">대기 카드가 없습니다.</p>}
+          {(status.provinceStats ?? []).map((stat) => {
+            const isActive = (status.activeCities ?? []).includes(stat.province);
+            const isPending = (status.pendingCities ?? []).includes(stat.province);
+            return (
+              <div key={stat.province} className="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2">
+                <div>
+                  <p className="text-sm font-medium text-neutral-900">{stat.province}</p>
+                  <p className="text-xs text-neutral-600">
+                    총 {stat.total}명 (남 {stat.male} / 여 {stat.female})
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  {isActive ? (
+                    <button
+                      type="button"
+                      onClick={() => setSelectedProvince(stat.province)}
+                      className={`h-8 rounded-md px-3 text-xs font-medium ${selectedProvince === stat.province ? "bg-sky-700 text-white" : "bg-sky-600 text-white hover:bg-sky-700"}`}
+                    >
+                      보기
+                    </button>
+                  ) : isPending ? (
+                    <span className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-700">승인대기</span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => void handleRequestProvince(stat.province)}
+                      disabled={!status.loggedIn || Boolean(submittingProvince)}
+                      className="h-8 rounded-md bg-sky-600 px-3 text-xs font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+                    >
+                      {submittingProvince === stat.province ? "신청 중..." : "신청"}
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })}
         </div>
+      </section>
 
-        {!selectedCity ? (
-          <p className="text-sm text-neutral-500">승인된 도시가 없습니다.</p>
+      <section className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
+        {!selectedProvince ? (
+          <p className="text-sm text-neutral-500">승인된 지역이 없습니다.</p>
         ) : loading ? (
           <p className="text-sm text-neutral-500">불러오는 중...</p>
         ) : (
           <div className="space-y-5">
-            <CardSection title={`${selectedCity} 남자 대기카드`} items={maleItems} />
-            <CardSection title={`${selectedCity} 여자 대기카드`} items={femaleItems} />
+            <CardSection title={`${selectedProvince} 남자 대기카드`} items={maleItems} />
+            <CardSection title={`${selectedProvince} 여자 대기카드`} items={femaleItems} />
           </div>
         )}
       </section>

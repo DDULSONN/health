@@ -1,4 +1,4 @@
-﻿import { extractCityFromRegion } from "@/lib/region-city";
+﻿import { extractProvinceFromRegion } from "@/lib/region-city";
 import type { createAdminClient } from "@/lib/supabase/server";
 
 function normalizeIsoDate(value: unknown): string | null {
@@ -13,14 +13,14 @@ export async function hasCityViewAccess(
   userId: string,
   region: string | null
 ): Promise<boolean> {
-  const city = extractCityFromRegion(region);
-  if (!city) return false;
+  const province = extractProvinceFromRegion(region);
+  if (!province) return false;
 
   const res = await adminClient
     .from("dating_city_view_requests")
     .select("id,access_expires_at")
     .eq("user_id", userId)
-    .eq("city", city)
+    .eq("city", province)
     .eq("status", "approved")
     .order("reviewed_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
