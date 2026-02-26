@@ -30,6 +30,8 @@ type CardItem = {
   image_urls: string[];
 };
 
+const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
+
 export default function NearbyViewPage() {
   const [submittingProvince, setSubmittingProvince] = useState("");
   const [status, setStatus] = useState<CityStatusResponse>({ loggedIn: false, activeCities: [], activeCityDetails: [], pendingCities: [], provinceStats: [] });
@@ -153,6 +155,18 @@ export default function NearbyViewPage() {
         <p className="mt-1 text-xs text-sky-900">가격: 지역당 5,000원</p>
         <p className="mt-1 text-xs text-sky-900">승인 시 지원권 1장 추가 지급</p>
         <p className="mt-1 text-xs text-sky-800">3시간 만료 후 같은 지역 재신청 가능</p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <a
+            href={OPEN_KAKAO_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex min-h-[34px] items-center rounded-md border border-sky-300 bg-white px-3 text-xs font-medium text-sky-700 hover:bg-sky-100"
+          >
+            오픈카톡 문의/구매
+          </a>
+          <span className="text-xs text-sky-800">입금 후 닉네임 + 신청 지역 전달하면 승인 처리됩니다.</span>
+        </div>
+        <p className="mt-1 text-[11px] text-sky-700">구매 안내: 승인 전에는 카드 열람이 불가하며, 승인 후 3시간 동안만 이용 가능합니다.</p>
         {!status.loggedIn && <p className="mt-2 text-xs text-neutral-500">로그인 후 신청 가능합니다.</p>}
       </section>
       )}
