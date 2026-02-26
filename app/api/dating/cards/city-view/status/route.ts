@@ -1,6 +1,6 @@
 ﻿import { isAllowedAdminUser } from "@/lib/admin";
 import { getActiveApprovedCities } from "@/lib/dating-city-view";
-import { extractProvinceFromRegion } from "@/lib/region-city";
+import { extractProvinceFromRegion, PROVINCE_ORDER } from "@/lib/region-city";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -32,7 +32,13 @@ async function buildProvinceStats(admin: ReturnType<typeof createAdminClient>): 
     map.set(province, prev);
   }
 
-  return [...map.values()].sort((a, b) => b.total - a.total || a.province.localeCompare(b.province, "ko"));
+  const order = new Map(PROVINCE_ORDER.map((name, idx) => [name, idx]));
+  return [...map.values()].sort((a, b) => {
+    const ai = order.get(a.province) ?? 999;
+    const bi = order.get(b.province) ?? 999;
+    if (ai !== bi) return ai - bi;
+    return b.total - a.total;
+  });
 }
 
 export async function GET() {
@@ -60,7 +66,13 @@ export async function GET() {
   ]);
 
   const pendingCities = Array.isArray(pendingRes.data)
-    ? [...new Set(pendingRes.data.map((row: { city?: string }) => String(row.city ?? "").trim()).filter(Boolean))]
+    ? [
+        ...new Set(
+          pendingRes.data
+            .map((row: { city?: string }) => extractProvinceFromRegion(String(row.city ?? "").trim()) ?? String(row.city ?? "").trim())
+            .filter(Boolean)
+        ),
+      ]
     : [];
 
   return NextResponse.json({

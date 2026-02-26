@@ -54,7 +54,8 @@ export async function getActiveApprovedCities(
 
   const cities: string[] = [];
   for (const row of res.data as Array<{ city: string; access_expires_at: string | null }>) {
-    const city = typeof row.city === "string" ? row.city.trim() : "";
+    const rawCity = typeof row.city === "string" ? row.city.trim() : "";
+    const city = extractProvinceFromRegion(rawCity) ?? rawCity;
     if (!city || cities.includes(city)) continue;
     const expiresAtIso = normalizeIsoDate(row.access_expires_at);
     if (!expiresAtIso) continue;
