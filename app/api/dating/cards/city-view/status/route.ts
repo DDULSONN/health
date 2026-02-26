@@ -1,5 +1,4 @@
-﻿import { isAllowedAdminUser } from "@/lib/admin";
-import { extractProvinceFromRegion, PROVINCE_ORDER } from "@/lib/region-city";
+﻿import { extractProvinceFromRegion, PROVINCE_ORDER } from "@/lib/region-city";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -58,12 +57,19 @@ export async function GET() {
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user || !isAllowedAdminUser(user.id, user.email)) {
-    return NextResponse.json({ ok: false, message: "관리자 전용 기능입니다." }, { status: 403 });
-  }
-
   const admin = createAdminClient();
   const provinceStats = await buildProvinceStats(admin);
+
+  if (!user) {
+    return NextResponse.json({
+      ok: true,
+      loggedIn: false,
+      activeCities: [],
+      activeCityDetails: [],
+      pendingCities: [],
+      provinceStats,
+    });
+  }
 
   const [approvedRes, pendingRes] = await Promise.all([
     admin

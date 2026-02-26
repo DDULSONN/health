@@ -35,7 +35,6 @@ const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
 export default function NearbyViewPage() {
   const [submittingProvince, setSubmittingProvince] = useState("");
   const [status, setStatus] = useState<CityStatusResponse>({ loggedIn: false, activeCities: [], activeCityDetails: [], pendingCities: [], provinceStats: [] });
-  const [accessDenied, setAccessDenied] = useState(false);
   const [selectedProvince, setSelectedProvince] = useState<string>("");
   const [activeSex, setActiveSex] = useState<"male" | "female">("male");
   const [items, setItems] = useState<CardItem[]>([]);
@@ -49,12 +48,10 @@ export default function NearbyViewPage() {
 
   const loadStatus = useCallback(async () => {
     const res = await fetch("/api/dating/cards/city-view/status", { cache: "no-store" });
-    if (res.status === 403) {
-      setAccessDenied(true);
+    if (!res.ok) {
       setStatus({ loggedIn: false, activeCities: [], activeCityDetails: [], pendingCities: [], provinceStats: [] });
       return;
     }
-    setAccessDenied(false);
     const body = (await res.json().catch(() => ({}))) as CityStatusResponse;
     const active = Array.isArray(body.activeCities) ? body.activeCities : [];
     const activeCityDetails = Array.isArray(body.activeCityDetails) ? body.activeCityDetails : [];
@@ -143,12 +140,6 @@ export default function NearbyViewPage() {
         <span className="rounded-full border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-semibold text-sky-700">내 가까운 이상형</span>
       </div>
 
-      {accessDenied ? (
-        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5">
-          <h1 className="text-lg font-bold text-amber-900">관리자 전용</h1>
-          <p className="mt-2 text-sm text-amber-800">현재 이 탭은 임시로 관리자만 접근 가능합니다.</p>
-        </section>
-      ) : (
       <section className="rounded-2xl border border-sky-200 bg-sky-50 p-5">
         <h1 className="text-lg font-bold text-sky-900">내 가까운 이상형</h1>
         <p className="mt-2 text-sm text-sky-800">도/광역시별 대기 인원을 확인하고 신청하면, 승인 후 3시간 동안 해당 지역 대기 카드를 볼 수 있습니다.</p>
@@ -169,9 +160,8 @@ export default function NearbyViewPage() {
         <p className="mt-1 text-[11px] text-sky-700">구매 안내: 승인 전에는 카드 열람이 불가하며, 승인 후 3시간 동안만 이용 가능합니다.</p>
         {!status.loggedIn && <p className="mt-2 text-xs text-neutral-500">로그인 후 신청 가능합니다.</p>}
       </section>
-      )}
 
-      {!accessDenied && <section className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
+      <section className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
         <h2 className="mb-3 text-sm font-semibold text-neutral-800">도/광역시별 대기 인원</h2>
         <div className="space-y-2">
           {(status.provinceStats ?? []).length === 0 && <p className="text-xs text-neutral-500">대기 카드가 없습니다.</p>}
@@ -217,9 +207,9 @@ export default function NearbyViewPage() {
             );
           })}
         </div>
-      </section>}
+      </section>
 
-      {!accessDenied && <section className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
+      <section className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
         {!selectedProvince ? (
           <p className="text-sm text-neutral-500">승인된 지역이 없습니다.</p>
         ) : loading ? (
@@ -249,7 +239,7 @@ export default function NearbyViewPage() {
             <CardSection title={activeSex === "male" ? `${selectedProvince} 남자 대기카드` : `${selectedProvince} 여자 대기카드`} items={activeSex === "male" ? maleItems : femaleItems} />
           </div>
         )}
-      </section>}
+      </section>
     </main>
   );
 }

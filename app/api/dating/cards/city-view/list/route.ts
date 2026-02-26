@@ -1,5 +1,4 @@
-﻿import { isAllowedAdminUser } from "@/lib/admin";
-import { getActiveApprovedCities } from "@/lib/dating-city-view";
+﻿import { getActiveApprovedCities } from "@/lib/dating-city-view";
 import { extractProvinceFromRegion } from "@/lib/region-city";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -52,9 +51,6 @@ export async function GET(req: Request) {
 
   if (!user) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
-  }
-  if (!isAllowedAdminUser(user.id, user.email)) {
-    return NextResponse.json({ error: "관리자 전용 기능입니다." }, { status: 403 });
   }
 
   const { searchParams } = new URL(req.url);
