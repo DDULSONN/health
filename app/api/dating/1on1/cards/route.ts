@@ -1,6 +1,6 @@
 import { isAllowedAdminUser } from "@/lib/admin";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
-import { getDatingOneOnOneWriteStatus, isPhoneVerified } from "@/lib/dating-1on1";
+import { getDatingOneOnOneWriteStatus, getProfilePhoneVerification } from "@/lib/dating-1on1";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -179,7 +179,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Writing is paused." }, { status: 403 });
   }
 
-  if (!isPhoneVerified(user)) {
+  const phoneState = await getProfilePhoneVerification(admin, user.id);
+  if (!phoneState.phoneVerified || !phoneState.phoneE164) {
     return NextResponse.json({ error: "Phone verification is required." }, { status: 403 });
   }
 
@@ -213,7 +214,7 @@ export async function POST(req: Request) {
   const heightCm = toInt(body.height_cm);
   const job = (body.job ?? "").trim();
   const region = (body.region ?? "").trim();
-  const phone = (body.phone ?? "").replace(/[^0-9]/g, "");
+  const phone = phoneState.phoneE164;
   const introText = (body.intro_text ?? "").trim();
   const strengthsText = (body.strengths_text ?? "").trim();
   const preferredPartnerText = (body.preferred_partner_text ?? "").trim();
@@ -246,9 +247,6 @@ export async function POST(req: Request) {
   }
   if (!region || region.length > 80) {
     return NextResponse.json({ error: "Region must be 1-80 characters." }, { status: 400 });
-  }
-  if (phone.length < 9 || phone.length > 15) {
-    return NextResponse.json({ error: "Phone number must be 9-15 digits." }, { status: 400 });
   }
   if (!introText || introText.length > 2000) {
     return NextResponse.json({ error: "Introduction must be 1-2000 characters." }, { status: 400 });

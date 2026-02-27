@@ -1,5 +1,5 @@
 import { isAllowedAdminUser } from "@/lib/admin";
-import { getDatingOneOnOneWriteStatus, isPhoneVerified } from "@/lib/dating-1on1";
+import { getDatingOneOnOneWriteStatus, getProfilePhoneVerification } from "@/lib/dating-1on1";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -21,9 +21,9 @@ export async function GET() {
   }
 
   const isAdmin = isAllowedAdminUser(user.id, user.email);
-  const phoneVerified = isPhoneVerified(user);
-
   const admin = createAdminClient();
+  const phoneState = await getProfilePhoneVerification(admin, user.id);
+  const phoneVerified = phoneState.phoneVerified;
   const writeStatus = await getDatingOneOnOneWriteStatus(admin);
   const canWrite = isAdmin && phoneVerified && writeStatus === "approved";
 
@@ -31,6 +31,8 @@ export async function GET() {
     loggedIn: true,
     isAdmin,
     phoneVerified,
+    phoneE164: phoneState.phoneE164,
+    phoneVerifiedAt: phoneState.phoneVerifiedAt,
     writeStatus,
     canWrite,
     reason: canWrite
@@ -42,4 +44,3 @@ export async function GET() {
       : "WRITE_PAUSED",
   });
 }
-

@@ -28,6 +28,9 @@ type SummaryResponse = {
     nickname: string | null;
     nickname_changed_count: number;
     nickname_change_credits: number;
+    phone_verified: boolean;
+    phone_e164: string | null;
+    phone_verified_at: string | null;
     email: string | null;
   };
   weekly_win_count: number;
@@ -349,6 +352,13 @@ export default function MyPage() {
   const [nicknameError, setNicknameError] = useState("");
   const [nicknameInfo, setNicknameInfo] = useState("");
   const [savingNickname, setSavingNickname] = useState(false);
+  const [phoneInput, setPhoneInput] = useState("");
+  const [phoneOtpCode, setPhoneOtpCode] = useState("");
+  const [phoneOtpPending, setPhoneOtpPending] = useState<string | null>(null);
+  const [sendingPhoneOtp, setSendingPhoneOtp] = useState(false);
+  const [verifyingPhoneOtp, setVerifyingPhoneOtp] = useState(false);
+  const [phoneVerifyError, setPhoneVerifyError] = useState("");
+  const [phoneVerifyInfo, setPhoneVerifyInfo] = useState("");
 
   useEffect(() => {
     let isMounted = true;
@@ -557,6 +567,107 @@ export default function MyPage() {
     await supabase.auth.signOut();
     router.push("/");
     router.refresh();
+  };
+
+  const normalizePhoneForOtp = (raw: string): string => {
+    const digits = raw.replace(/[^0-9]/g, "");
+    if (!digits) return "";
+    if (digits.startsWith("0")) return `+82${digits.slice(1)}`;
+    if (digits.startsWith("82")) return `+${digits}`;
+    if (digits.startsWith("1")) return `+${digits}`;
+    return `+${digits}`;
+  };
+
+  const maskPhone = (phone: string | null | undefined) => {
+    const value = (phone ?? "").trim();
+    if (!value) return "-";
+    const digits = value.replace(/[^0-9]/g, "");
+    if (digits.length < 7) return value;
+    return `${digits.slice(0, 3)}****${digits.slice(-4)}`;
+  };
+
+  const handleSendPhoneOtp = async () => {
+    if (sendingPhoneOtp) return;
+    setPhoneVerifyError("");
+    setPhoneVerifyInfo("");
+    const e164 = normalizePhoneForOtp(phoneInput);
+    if (!e164 || e164.length < 11) {
+      setPhoneVerifyError("휴대폰 번호를 올바르게 입력해주세요.");
+      return;
+    }
+
+    setSendingPhoneOtp(true);
+    try {
+      const { error: updateError } = await supabase.auth.updateUser({ phone: e164 });
+      if (updateError) {
+        setPhoneVerifyError(updateError.message);
+        return;
+      }
+      setPhoneOtpPending(e164);
+      setPhoneVerifyInfo("인증번호를 발송했습니다. 문자로 받은 코드를 입력해주세요.");
+    } finally {
+      setSendingPhoneOtp(false);
+    }
+  };
+
+  const handleVerifyPhoneOtp = async () => {
+    if (verifyingPhoneOtp) return;
+    setPhoneVerifyError("");
+    setPhoneVerifyInfo("");
+    if (!phoneOtpPending) {
+      setPhoneVerifyError("먼저 인증번호를 발송해주세요.");
+      return;
+    }
+    if (!phoneOtpCode.trim()) {
+      setPhoneVerifyError("인증번호를 입력해주세요.");
+      return;
+    }
+
+    setVerifyingPhoneOtp(true);
+    try {
+      const { error: verifyError } = await supabase.auth.verifyOtp({
+        phone: phoneOtpPending,
+        token: phoneOtpCode.trim(),
+        type: "phone_change",
+      });
+      if (verifyError) {
+        setPhoneVerifyError(verifyError.message);
+        return;
+      }
+
+      const syncRes = await fetch("/api/mypage/phone-verification/sync", {
+        method: "POST",
+      });
+      const syncBody = (await syncRes.json().catch(() => ({}))) as {
+        error?: string;
+        phone_verified?: boolean;
+        phone_e164?: string | null;
+        phone_verified_at?: string | null;
+      };
+      if (!syncRes.ok || syncBody.phone_verified !== true) {
+        setPhoneVerifyError(syncBody.error ?? "인증 정보 동기화에 실패했습니다.");
+        return;
+      }
+
+      setSummary((prev) =>
+        prev
+          ? {
+              ...prev,
+              profile: {
+                ...prev.profile,
+                phone_verified: true,
+                phone_e164: syncBody.phone_e164 ?? null,
+                phone_verified_at: syncBody.phone_verified_at ?? null,
+              },
+            }
+          : prev
+      );
+      setPhoneOtpCode("");
+      setPhoneOtpPending(null);
+      setPhoneVerifyInfo("휴대폰 인증이 완료되었습니다.");
+    } finally {
+      setVerifyingPhoneOtp(false);
+    }
   };
 
   const handleDeleteMyAppliedCardApplication = async (applicationId: string) => {
@@ -885,6 +996,9 @@ export default function MyPage() {
   const weeklyWinCount = summary?.weekly_win_count ?? 0;
   const changedCount = summary?.profile.nickname_changed_count ?? 0;
   const credits = summary?.profile.nickname_change_credits ?? 0;
+  const phoneVerified = summary?.profile.phone_verified === true;
+  const phoneE164 = summary?.profile.phone_e164 ?? null;
+  const phoneVerifiedAt = summary?.profile.phone_verified_at ?? null;
   const canChangeNickname = changedCount < 1 || credits > 0;
   const remainingFree = Math.max(0, 1 - changedCount);
 
@@ -1031,6 +1145,65 @@ export default function MyPage() {
             </p>
           )}
           {nicknameInfo && <p className="mt-2 text-xs text-emerald-700">{nicknameInfo}</p>}
+        </div>
+
+        <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+          <p className="text-sm font-semibold text-neutral-800">휴대폰 인증</p>
+          <p className="mt-1 text-xs text-neutral-600">
+            상태:{" "}
+            <span className={phoneVerified ? "font-medium text-emerald-700" : "font-medium text-amber-700"}>
+              {phoneVerified ? "인증 완료" : "미인증"}
+            </span>
+            {phoneE164 ? ` / 번호 ${maskPhone(phoneE164)}` : ""}
+          </p>
+          {phoneVerifiedAt && (
+            <p className="mt-1 text-xs text-neutral-500">
+              인증일: {new Date(phoneVerifiedAt).toLocaleString("ko-KR")}
+            </p>
+          )}
+
+          {!phoneVerified && (
+            <div className="mt-3 space-y-2">
+              <input
+                type="tel"
+                value={phoneInput}
+                onChange={(e) => setPhoneInput(e.target.value)}
+                placeholder="휴대폰 번호 (예: 01012345678)"
+                className="h-10 w-full rounded-lg border border-neutral-300 px-3 text-sm"
+              />
+              <button
+                type="button"
+                onClick={() => void handleSendPhoneOtp()}
+                disabled={sendingPhoneOtp}
+                className="h-10 rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-700 disabled:opacity-60"
+              >
+                {sendingPhoneOtp ? "발송 중..." : "인증번호 발송"}
+              </button>
+
+              {phoneOtpPending && (
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    value={phoneOtpCode}
+                    onChange={(e) => setPhoneOtpCode(e.target.value)}
+                    placeholder="문자 인증번호"
+                    className="h-10 w-full rounded-lg border border-neutral-300 px-3 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleVerifyPhoneOtp()}
+                    disabled={verifyingPhoneOtp}
+                    className="h-10 rounded-lg bg-neutral-900 px-3 text-sm font-medium text-white disabled:opacity-60"
+                  >
+                    {verifyingPhoneOtp ? "확인 중..." : "인증번호 확인"}
+                  </button>
+                </div>
+              )}
+
+              {phoneVerifyError && <p className="text-xs text-red-600">{phoneVerifyError}</p>}
+              {phoneVerifyInfo && <p className="text-xs text-emerald-700">{phoneVerifyInfo}</p>}
+            </div>
+          )}
         </div>
 
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">

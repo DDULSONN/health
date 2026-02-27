@@ -75,7 +75,6 @@ export default function DatingOneOnOnePage() {
   const [heightCm, setHeightCm] = useState("");
   const [job, setJob] = useState("");
   const [region, setRegion] = useState("");
-  const [phone, setPhone] = useState("");
   const [introText, setIntroText] = useState("");
   const [strengthsText, setStrengthsText] = useState("");
   const [preferredPartnerText, setPreferredPartnerText] = useState("");
@@ -198,7 +197,6 @@ export default function DatingOneOnOnePage() {
         height_cm: Number(heightCm),
         job: job.trim(),
         region: region.trim(),
-        phone: phone.trim(),
         intro_text: introText.trim(),
         strengths_text: strengthsText.trim(),
         preferred_partner_text: preferredPartnerText.trim(),
@@ -228,7 +226,6 @@ export default function DatingOneOnOnePage() {
       setHeightCm("");
       setJob("");
       setRegion("");
-      setPhone("");
       setIntroText("");
       setStrengthsText("");
       setPreferredPartnerText("");
@@ -391,13 +388,6 @@ export default function DatingOneOnOnePage() {
             value={region}
             onChange={(e) => setRegion(e.target.value)}
             placeholder="지역 (시군구 기준)"
-            className="h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm"
-            required
-          />
-          <input
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
-            placeholder="전화번호"
             className="h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm"
             required
           />

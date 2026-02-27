@@ -6,8 +6,10 @@ type SiteSettingRow = {
   value_json: Record<string, unknown> | null;
 };
 
-type AuthUserLike = User & {
-  phone_confirmed_at?: string | null;
+type ProfilePhoneRow = {
+  phone_verified: boolean | null;
+  phone_e164: string | null;
+  phone_verified_at: string | null;
 };
 
 export async function getDatingOneOnOneWriteStatus(
@@ -27,13 +29,19 @@ export async function getDatingOneOnOneWriteStatus(
   return statusRaw === "approved" ? "approved" : "paused";
 }
 
-export function isPhoneVerified(user: User): boolean {
-  const candidate = user as AuthUserLike;
-  const hasPhone = typeof candidate.phone === "string" && candidate.phone.trim().length > 0;
-  const confirmedAt =
-    typeof candidate.phone_confirmed_at === "string" && candidate.phone_confirmed_at.length > 0;
-  const metadata = (candidate.user_metadata ?? {}) as Record<string, unknown>;
-  const metadataVerified = metadata.phone_verified === true || metadata.phoneVerified === true;
-  return hasPhone && (confirmedAt || metadataVerified);
-}
+export async function getProfilePhoneVerification(
+  adminClient: SupabaseClient,
+  userId: string
+): Promise<{ phoneVerified: boolean; phoneE164: string | null; phoneVerifiedAt: string | null }> {
+  const { data } = await adminClient
+    .from("profiles")
+    .select("phone_verified,phone_e164,phone_verified_at")
+    .eq("user_id", userId)
+    .maybeSingle<ProfilePhoneRow>();
 
+  return {
+    phoneVerified: data?.phone_verified === true,
+    phoneE164: data?.phone_e164 ?? null,
+    phoneVerifiedAt: data?.phone_verified_at ?? null,
+  };
+}

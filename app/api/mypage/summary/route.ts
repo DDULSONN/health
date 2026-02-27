@@ -14,7 +14,7 @@ export async function GET() {
   const [profileRes, bodycheckRes, winnersRes] = await Promise.all([
     supabase
       .from("profiles")
-      .select("nickname, nickname_changed_count, nickname_change_credits")
+      .select("nickname, nickname_changed_count, nickname_change_credits, phone_verified, phone_e164, phone_verified_at")
       .eq("user_id", user.id)
       .maybeSingle(),
     supabase
@@ -52,6 +52,9 @@ export async function GET() {
       nickname: profileRes.data?.nickname ?? null,
       nickname_changed_count: Number(profileRes.data?.nickname_changed_count ?? 0),
       nickname_change_credits: Number(profileRes.data?.nickname_change_credits ?? 0),
+      phone_verified: profileRes.data?.phone_verified === true,
+      phone_e164: profileRes.data?.phone_e164 ?? null,
+      phone_verified_at: profileRes.data?.phone_verified_at ?? null,
       email: user.email ?? null,
     },
     weekly_win_count: weeklyWinCount,
