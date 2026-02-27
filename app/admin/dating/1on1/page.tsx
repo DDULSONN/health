@@ -335,7 +335,7 @@ export default function AdminDatingOneOnOnePage() {
                   </span>
                 </div>
 
-                <div className="mt-2 grid grid-cols-2 gap-2 md:grid-cols-4">
+                <div className="mt-2 grid grid-cols-2 gap-2">
                   {item.photo_signed_urls.map((url, idx) => (
                     <a
                       key={`${item.id}-${idx}`}
@@ -345,7 +345,9 @@ export default function AdminDatingOneOnOnePage() {
                       className="block overflow-hidden rounded-md border border-neutral-200 bg-neutral-50"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={url} alt={`1:1 카드 사진 ${idx + 1}`} className="h-28 w-full object-cover" />
+                      <div className="flex h-28 w-full items-center justify-center bg-white">
+                        <img src={url} alt={`1:1 카드 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
+                      </div>
                     </a>
                   ))}
                 </div>

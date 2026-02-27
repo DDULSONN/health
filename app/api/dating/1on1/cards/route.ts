@@ -271,10 +271,10 @@ export async function POST(req: Request) {
   const photoPaths = rawPaths
     .map((path) => normalizePath(path))
     .filter((path): path is string => typeof path === "string" && path.length > 0)
-    .slice(0, 4);
+    .slice(0, 2);
 
-  if (photoPaths.length === 0) {
-    return NextResponse.json({ error: "At least one photo is required." }, { status: 400 });
+  if (photoPaths.length !== 2) {
+    return NextResponse.json({ error: "Exactly two photos are required." }, { status: 400 });
   }
 
   const { data, error } = await admin

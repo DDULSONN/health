@@ -139,7 +139,7 @@ export default function DatingOneOnOnePage() {
 
   const handlePhotoChange = (files: FileList | null) => {
     if (!files) return;
-    const picked = Array.from(files).slice(0, 4);
+    const picked = Array.from(files).slice(0, 2);
     setPhotos(picked);
   };
 
@@ -165,8 +165,8 @@ export default function DatingOneOnOnePage() {
       setError("필수 동의 항목을 모두 체크해주세요.");
       return;
     }
-    if (photos.length === 0) {
-      setError("사진을 최소 1장 업로드해주세요.");
+    if (photos.length !== 2) {
+      setError("사진은 정확히 2장을 업로드해주세요.");
       return;
     }
 
@@ -437,7 +437,7 @@ export default function DatingOneOnOnePage() {
             </select>
           </div>
           <div>
-            <label className="mb-1 block text-sm font-medium text-neutral-700">사진 업로드 (최대 4장)</label>
+            <label className="mb-1 block text-sm font-medium text-neutral-700">사진 업로드 (정확히 2장)</label>
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp"
@@ -445,7 +445,7 @@ export default function DatingOneOnOnePage() {
               onChange={(e) => handlePhotoChange(e.target.files)}
               className="block w-full text-sm"
             />
-            <p className="mt-1 text-xs text-neutral-500">업로드 시 WebP로 최적화 저장됩니다.</p>
+            <p className="mt-1 text-xs text-neutral-500">업로드 시 WebP로 최적화 저장됩니다. 2장 초과 선택 시 앞 2장만 사용됩니다.</p>
           </div>
           <button
             type="submit"
@@ -484,7 +484,9 @@ export default function DatingOneOnOnePage() {
                       className="block overflow-hidden rounded-md border border-neutral-200 bg-white"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img src={url} alt={`소개팅 신청 사진 ${idx + 1}`} className="h-32 w-full object-cover" />
+                      <div className="flex h-32 w-full items-center justify-center bg-neutral-50">
+                        <img src={url} alt={`소개팅 신청 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
+                      </div>
                     </a>
                   ))}
                 </div>

@@ -52,8 +52,8 @@ export async function POST(req: Request) {
 
   const webpBytes = await sharp(Buffer.from(await file.arrayBuffer()))
     .rotate()
-    .resize({ width: 1400, withoutEnlargement: true })
-    .webp({ quality: 76 })
+    .resize({ width: 1200, withoutEnlargement: true, fit: "inside" })
+    .webp({ quality: 72 })
     .toBuffer();
 
   const path = `cards/${user.id}/${Date.now()}-${crypto.randomUUID()}.webp`;
@@ -84,4 +84,3 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ path }, { status: 201 });
 }
-
