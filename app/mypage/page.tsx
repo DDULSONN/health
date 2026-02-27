@@ -598,12 +598,17 @@ export default function MyPage() {
 
     setSendingPhoneOtp(true);
     try {
-      const { error: updateError } = await supabase.auth.updateUser({ phone: e164 });
-      if (updateError) {
-        setPhoneVerifyError(updateError.message);
+      const res = await fetch("/api/mypage/phone-verification/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ phone: e164 }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean; pendingPhone?: string };
+      if (!res.ok || !body.ok) {
+        setPhoneVerifyError(body.error ?? "인증번호 발송에 실패했습니다.");
         return;
       }
-      setPhoneOtpPending(e164);
+      setPhoneOtpPending(body.pendingPhone ?? e164);
       setPhoneVerifyInfo("인증번호를 발송했습니다. 문자로 받은 코드를 입력해주세요.");
     } finally {
       setSendingPhoneOtp(false);

@@ -90,7 +90,7 @@ export async function GET(req: Request) {
     const pendingCardsRes = await admin
       .from("dating_cards")
       .select(
-        "id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, expires_at, created_at, status"
+        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, expires_at, created_at, status"
       )
       .eq("status", "pending")
       .eq("sex", sex)
@@ -125,6 +125,16 @@ export async function GET(req: Request) {
     const selectedRows = selectedCardIds
       .map((id) => pendingById.get(id))
       .filter((row): row is NonNullable<typeof row> => Boolean(row));
+    const ownerIds = [...new Set(selectedRows.map((row) => String(row.owner_user_id ?? "")).filter((id) => id.length > 0))];
+    const phoneVerifiedByOwner = new Map<string, boolean>();
+    if (ownerIds.length > 0) {
+      const profileRes = await admin.from("profiles").select("user_id,phone_verified").in("user_id", ownerIds);
+      if (!profileRes.error && Array.isArray(profileRes.data)) {
+        for (const profile of profileRes.data as Array<{ user_id: string; phone_verified: boolean | null }>) {
+          phoneVerifiedByOwner.set(String(profile.user_id), profile.phone_verified === true);
+        }
+      }
+    }
 
     const items = selectedRows.map((row) => {
       const photoVisibility = row.photo_visibility === "public" ? "public" : "blur";
@@ -132,6 +142,7 @@ export async function GET(req: Request) {
         id: row.id,
         sex: row.sex,
         display_nickname: row.display_nickname,
+        is_phone_verified: phoneVerifiedByOwner.get(String(row.owner_user_id ?? "")) === true,
         age: row.age,
         region: row.region,
         height_cm: row.height_cm,

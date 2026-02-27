@@ -4,10 +4,12 @@ import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { formatRemainingToKorean } from "@/lib/dating-open";
+import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 
 type PaidCardDetail = {
   id: string;
   nickname: string;
+  is_phone_verified?: boolean;
   gender: "M" | "F";
   age: number | null;
   region: string | null;
@@ -91,7 +93,10 @@ export default function PaidCardDetailPage() {
 
       <section className="mt-3 rounded-2xl border border-neutral-200 bg-white p-4">
         <div className="flex items-center justify-between gap-2">
-          <h1 className="text-xl font-bold text-neutral-900">{card.nickname}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-neutral-900">{card.nickname}</h1>
+            <PhoneVerifiedBadge verified={card.is_phone_verified} />
+          </div>
           <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
             {formatRemainingToKorean(card.expires_at)}
           </span>

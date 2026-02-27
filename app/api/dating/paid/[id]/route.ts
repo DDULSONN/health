@@ -104,7 +104,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const { data, error } = await admin
     .from("dating_paid_cards")
     .select(
-      "id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,photo_visibility,blur_thumb_path,photo_paths,status,expires_at,paid_at,created_at"
+      "id,user_id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,photo_visibility,blur_thumb_path,photo_paths,status,expires_at,paid_at,created_at"
     )
     .eq("id", id)
     .single();
@@ -185,11 +185,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   console.log(
     `[signedUrl.stats] requestId=${requestId} path=/api/dating/paid/[id] signCalls=${signCalls} cacheHit=${cacheHit} cacheMiss=${cacheMiss}`
   );
+  let isPhoneVerified = false;
+  if (data.user_id) {
+    const profileRes = await admin.from("profiles").select("phone_verified").eq("user_id", data.user_id).maybeSingle();
+    isPhoneVerified = profileRes.data?.phone_verified === true;
+  }
 
   return NextResponse.json({
     card: {
       id: data.id,
       nickname: data.nickname,
+      is_phone_verified: isPhoneVerified,
       gender: data.gender,
       age: data.age,
       region: data.region,

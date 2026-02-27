@@ -228,7 +228,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   let { data, error } = await adminClient
     .from("dating_cards")
     .select(
-      "id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, expires_at, created_at, status"
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, expires_at, created_at, status"
     )
     .eq("id", id)
     .single();
@@ -237,7 +237,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const legacyRes = await adminClient
       .from("dating_cards")
       .select(
-        "id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, expires_at, created_at, status"
+        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, expires_at, created_at, status"
       )
       .eq("id", id)
       .single();
@@ -270,6 +270,15 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   const photoVisibility = data.photo_visibility === "public" ? "public" : "blur";
+  let isPhoneVerified = false;
+  if (data.owner_user_id) {
+    const profileRes = await adminClient
+      .from("profiles")
+      .select("phone_verified")
+      .eq("user_id", data.owner_user_id)
+      .maybeSingle();
+    isPhoneVerified = profileRes.data?.phone_verified === true;
+  }
   const imageUrls = await createSignedImageUrls(
     adminClient,
     data.photo_paths,
@@ -289,6 +298,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       id: data.id,
       sex: data.sex,
       display_nickname: data.display_nickname,
+      is_phone_verified: isPhoneVerified,
       age: data.age,
       region: data.region,
       height_cm: data.height_cm,

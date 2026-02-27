@@ -312,6 +312,16 @@ export async function GET(req: Request) {
   const rows = data ?? [];
   const hasMore = rows.length > limit;
   const pageRows = hasMore ? rows.slice(0, limit) : rows;
+  const ownerIds = [...new Set(pageRows.map((row) => String(row.owner_user_id ?? "")).filter((id) => id.length > 0))];
+  const phoneVerifiedByOwner = new Map<string, boolean>();
+  if (ownerIds.length > 0) {
+    const profileRes = await adminClient.from("profiles").select("user_id,phone_verified").in("user_id", ownerIds);
+    if (!profileRes.error && Array.isArray(profileRes.data)) {
+      for (const profile of profileRes.data as Array<{ user_id: string; phone_verified: boolean | null }>) {
+        phoneVerifiedByOwner.set(String(profile.user_id), profile.phone_verified === true);
+      }
+    }
+  }
 
   const items = await Promise.all(
     pageRows.map(async (row) => {
@@ -328,6 +338,7 @@ export async function GET(req: Request) {
         id: row.id,
         sex: row.sex,
         display_nickname: row.display_nickname,
+        is_phone_verified: phoneVerifiedByOwner.get(String(row.owner_user_id ?? "")) === true,
         age: row.age,
         region: row.region,
         height_cm: row.height_cm,

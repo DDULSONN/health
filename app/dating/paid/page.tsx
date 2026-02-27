@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { formatRemainingToKorean } from "@/lib/dating-open";
+import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -11,6 +12,7 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024;
 type PaidItem = {
   id: string;
   nickname: string;
+  is_phone_verified?: boolean;
   gender: "M" | "F";
   age: number | null;
   region: string | null;
@@ -505,7 +507,10 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
           {items.map((item) => (
             <article key={item.id} className="rounded-2xl border border-neutral-200 bg-white p-4">
               <div className="flex items-center justify-between gap-2">
-                <p className="font-semibold text-neutral-900">{item.nickname}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-semibold text-neutral-900">{item.nickname}</p>
+                  <PhoneVerifiedBadge verified={item.is_phone_verified} />
+                </div>
                 {item.expires_at ? (
                   <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{formatRemainingToKorean(item.expires_at)}</span>
                 ) : null}

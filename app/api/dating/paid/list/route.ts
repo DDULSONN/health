@@ -139,7 +139,7 @@ export async function GET(req: Request) {
     const { data, error } = await admin
       .from("dating_paid_cards")
       .select(
-        "id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,is_3lift_verified,photo_visibility,blur_thumb_path,photo_paths,expires_at,paid_at,created_at"
+        "id,user_id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,is_3lift_verified,photo_visibility,blur_thumb_path,photo_paths,expires_at,paid_at,created_at"
       )
       .eq("status", "approved")
       .gt("expires_at", nowIso)
@@ -156,8 +156,20 @@ export async function GET(req: Request) {
       return json(500, { ok: false, code: "LIST_FAILED", requestId, message: "목록을 불러오지 못했습니다." });
     }
 
+    const rows = data ?? [];
+    const ownerIds = [...new Set(rows.map((row) => String(row.user_id ?? "")).filter((id) => id.length > 0))];
+    const phoneVerifiedByOwner = new Map<string, boolean>();
+    if (ownerIds.length > 0) {
+      const profileRes = await admin.from("profiles").select("user_id,phone_verified").in("user_id", ownerIds);
+      if (!profileRes.error && Array.isArray(profileRes.data)) {
+        for (const profile of profileRes.data as Array<{ user_id: string; phone_verified: boolean | null }>) {
+          phoneVerifiedByOwner.set(String(profile.user_id), profile.phone_verified === true);
+        }
+      }
+    }
+
     const items = await Promise.all(
-      (data ?? []).map(async (row) => {
+      rows.map(async (row) => {
         const rawPaths = Array.isArray(row.photo_paths)
           ? row.photo_paths
               .map((item) => normalizeDatingPhotoPath(item))
@@ -192,6 +204,7 @@ export async function GET(req: Request) {
         return {
           id: row.id,
           nickname: row.nickname,
+          is_phone_verified: phoneVerifiedByOwner.get(String(row.user_id ?? "")) === true,
           gender: row.gender,
           age: row.age,
           region: row.region,

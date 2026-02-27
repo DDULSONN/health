@@ -4,11 +4,13 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { formatRemainingToKorean } from "@/lib/dating-open";
+import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 
 type CardDetail = {
   id: string;
   sex: "male" | "female";
   display_nickname: string;
+  is_phone_verified?: boolean;
   age: number | null;
   region: string | null;
   height_cm: number | null;
@@ -66,7 +68,10 @@ export default function OpenCardDetailPage() {
 
       <div className="rounded-2xl border border-neutral-200 bg-white p-5 mt-4">
         <div className="flex items-center justify-between gap-2">
-          <h1 className="text-xl font-bold text-neutral-900">{card.display_nickname}</h1>
+          <div className="flex items-center gap-2">
+            <h1 className="text-xl font-bold text-neutral-900">{card.display_nickname}</h1>
+            <PhoneVerifiedBadge verified={card.is_phone_verified} />
+          </div>
           <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
             {card.expires_at ? `⏳ ${formatRemainingToKorean(card.expires_at)}` : "대기열"}
           </span>

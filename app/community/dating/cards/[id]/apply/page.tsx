@@ -4,11 +4,13 @@ import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
+import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 
 type CardDetail = {
   id: string;
   sex: "male" | "female";
   display_nickname: string;
+  is_phone_verified?: boolean;
   age: number | null;
   region: string | null;
   height_cm: number | null;
@@ -245,7 +247,10 @@ export default function DatingCardApplyPage() {
       <h1 className="text-2xl font-bold text-neutral-900 mt-3">오픈카드 지원하기</h1>
 
       <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-3">
-        <p className="text-sm font-semibold text-neutral-900">{card.display_nickname}</p>
+        <div className="flex items-center gap-2">
+          <p className="text-sm font-semibold text-neutral-900">{card.display_nickname}</p>
+          <PhoneVerifiedBadge verified={card.is_phone_verified} />
+        </div>
         {card.image_urls.length > 0 && (
           <div
             className={`mt-2 rounded-lg overflow-hidden bg-neutral-50 border border-neutral-100 ${

@@ -3,11 +3,13 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { formatRemainingToKorean } from "@/lib/dating-open";
+import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 
 type PublicCard = {
   id: string;
   sex: "male" | "female";
   display_nickname: string;
+  is_phone_verified?: boolean;
   age: number | null;
   region: string | null;
   height_cm: number | null;
@@ -49,6 +51,7 @@ type MoreViewStatusResponse = {
 type PaidCard = {
   id: string;
   nickname: string;
+  is_phone_verified?: boolean;
   gender: "M" | "F";
   age: number | null;
   region: string | null;
@@ -413,6 +416,7 @@ function PaidCardRow({ card }: { card: PaidCard }) {
         <div className="flex items-center gap-2 text-sm text-neutral-700">
           <span className="inline-flex rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">🔥24시 고정</span>
           <span className="font-semibold text-neutral-900">{card.nickname}</span>
+          <PhoneVerifiedBadge verified={card.is_phone_verified} />
           {card.age != null && <span>{card.age}세</span>}
           {card.region && <span>{card.region}</span>}
         </div>
@@ -468,6 +472,7 @@ function CardRow({ card }: { card: PublicCard }) {
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-neutral-700">
           <span className="font-semibold text-neutral-900">{card.display_nickname}</span>
+          <PhoneVerifiedBadge verified={card.is_phone_verified} />
           {card.age != null && <span>{card.age}세</span>}
           {card.region && <span>{card.region}</span>}
         </div>

@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 
 type ProvinceStat = {
   province: string;
@@ -23,6 +24,7 @@ type CardItem = {
   id: string;
   sex: "male" | "female";
   display_nickname: string;
+  is_phone_verified?: boolean;
   age: number | null;
   region: string | null;
   job: string | null;
@@ -268,6 +270,7 @@ function CardSection({ title, items }: { title: string; items: CardItem[] }) {
                 <p className="text-sm font-medium text-neutral-900">
                   {card.display_nickname} {card.age != null ? `${card.age}세` : ""}
                 </p>
+                <PhoneVerifiedBadge verified={card.is_phone_verified} />
                 <span className="text-xs text-neutral-500">{card.region ?? "-"}</span>
               </div>
               {card.job && <p className="mt-1 text-xs text-neutral-600">직업 {card.job}</p>}
