@@ -279,6 +279,30 @@ type ChangeNicknameResult = {
   nickname_change_credits?: number;
 };
 
+type MyAppliedPaidApplication = {
+  id: string;
+  card_id: string;
+  applicant_display_nickname: string | null;
+  age: number | null;
+  height_cm: number | null;
+  region: string | null;
+  job: string | null;
+  training_years: number | null;
+  intro_text: string | null;
+  status: "submitted" | "accepted" | "rejected" | "canceled";
+  created_at: string;
+  card: {
+    id: string;
+    gender: "M" | "F";
+    nickname: string | null;
+    status: "pending" | "approved" | "rejected" | "expired";
+    expires_at: string | null;
+    created_at: string;
+    owner_user_id: string;
+    owner_nickname: string | null;
+  } | null;
+};
+
 type ApplyCreditsStatusResponse = {
   creditsRemaining?: number;
 };
@@ -296,6 +320,7 @@ export default function MyPage() {
   const [myAppliedCardApplications, setMyAppliedCardApplications] = useState<MyAppliedCardApplication[]>([]);
   const [myPaidCards, setMyPaidCards] = useState<MyPaidCard[]>([]);
   const [receivedPaidApplications, setReceivedPaidApplications] = useState<ReceivedPaidApplication[]>([]);
+  const [myAppliedPaidApplications, setMyAppliedPaidApplications] = useState<MyAppliedPaidApplication[]>([]);
   const [datingConnections, setDatingConnections] = useState<DatingConnection[]>([]);
   const [adminOpenCards, setAdminOpenCards] = useState<AdminOpenCard[]>([]);
   const [adminOpenCardApplications, setAdminOpenCardApplications] = useState<AdminOpenCardApplication[]>([]);
@@ -347,6 +372,7 @@ export default function MyPage() {
           receivedRes,
           appliedRes,
           paidReceivedRes,
+          paidAppliedRes,
           connectionsRes,
           paidConnectionsRes,
           writeSettingRes,
@@ -359,6 +385,7 @@ export default function MyPage() {
           fetch("/api/dating/cards/my/received", { cache: "no-store" }),
           fetch("/api/dating/cards/my/applied", { cache: "no-store" }),
           fetch("/api/dating/paid/my/received", { cache: "no-store" }),
+          fetch("/api/dating/paid/my/applied", { cache: "no-store" }),
           fetch("/api/dating/cards/my/connections", { cache: "no-store" }),
           fetch("/api/dating/paid/my/connections", { cache: "no-store" }),
           fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
@@ -391,6 +418,10 @@ export default function MyPage() {
           cards?: MyPaidCard[];
           applications?: ReceivedPaidApplication[];
         };
+        const paidAppliedBody = (await paidAppliedRes.json().catch(() => ({}))) as {
+          error?: string;
+          applications?: MyAppliedPaidApplication[];
+        };
         const connectionsBody = (await connectionsRes.json().catch(() => ({}))) as {
           error?: string;
           items?: DatingConnection[];
@@ -419,6 +450,9 @@ export default function MyPage() {
         if (!paidReceivedRes.ok) {
           throw new Error(paidReceivedBody.error ?? "내 유료카드 지원자를 불러오지 못했습니다.");
         }
+        if (!paidAppliedRes.ok) {
+          throw new Error(paidAppliedBody.error ?? "내 유료카드 지원 이력을 불러오지 못했습니다.");
+        }
         if (!connectionsRes.ok) {
           throw new Error(connectionsBody.error ?? "인스타 교환 정보를 불러오지 못했습니다.");
         }
@@ -437,6 +471,7 @@ export default function MyPage() {
           setMyAppliedCardApplications(appliedBody.applications ?? []);
           setMyPaidCards(paidReceivedBody.cards ?? []);
           setReceivedPaidApplications(paidReceivedBody.applications ?? []);
+          setMyAppliedPaidApplications(paidAppliedBody.applications ?? []);
           setDatingConnections([...(connectionsBody.items ?? []), ...(paidConnectionsBody.items ?? [])]);
           setOpenCardWriteEnabled(writeSettingBody.enabled !== false);
           setApplyCreditsRemaining(Math.max(0, Number(applyCreditsBody.creditsRemaining ?? 0)));
@@ -1143,6 +1178,40 @@ export default function MyPage() {
                 </div>
               );
             })}
+          </div>
+        )}
+      </section>
+
+      <section className="mb-5 rounded-2xl border border-rose-200 bg-white p-5">
+        <h2 className="text-lg font-bold text-rose-900 mb-3">내 24고정카드 지원 이력</h2>
+        {myAppliedPaidApplications.length === 0 ? (
+          <p className="text-sm text-neutral-500">아직 지원한 내역이 없습니다.</p>
+        ) : (
+          <div className="space-y-3">
+            {myAppliedPaidApplications.map((app) => (
+              <div key={app.id} className="rounded-xl border border-rose-200 bg-rose-50/30 p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-neutral-900">
+                    {app.card?.nickname ?? "(카드 닉네임 없음)"} /{" "}
+                    {app.card?.gender === "M" ? "남자 카드" : app.card?.gender === "F" ? "여자 카드" : "카드"}
+                  </p>
+                  <span
+                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                      cardAppStatusColor[app.status] ?? "bg-neutral-100 text-neutral-700"
+                    }`}
+                  >
+                    {cardAppStatusText[app.status] ?? app.status}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-neutral-500">
+                  지원일 {new Date(app.created_at).toLocaleString("ko-KR")}
+                  {app.card?.owner_nickname ? ` / 카드 작성자 ${app.card.owner_nickname}` : ""}
+                </p>
+                {app.intro_text && (
+                  <p className="mt-2 text-sm text-neutral-700 whitespace-pre-wrap break-words">{app.intro_text}</p>
+                )}
+              </div>
+            ))}
           </div>
         )}
       </section>
