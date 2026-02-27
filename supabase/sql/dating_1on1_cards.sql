@@ -3,6 +3,7 @@ begin;
 create table if not exists public.dating_1on1_cards (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
+  sex text not null check (sex in ('male', 'female')),
   name text not null check (char_length(name) between 1 and 30),
   birth_year int not null check (birth_year between 1960 and 2010),
   height_cm int not null check (height_cm between 120 and 230),
@@ -24,6 +25,34 @@ create table if not exists public.dating_1on1_cards (
   updated_at timestamptz not null default now()
 );
 
+alter table public.dating_1on1_cards
+  add column if not exists sex text;
+
+update public.dating_1on1_cards
+set sex = coalesce(sex, 'male')
+where sex is null;
+
+alter table public.dating_1on1_cards
+  alter column sex set not null;
+
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'dating_1on1_cards_sex_check'
+  ) then
+    alter table public.dating_1on1_cards
+      add constraint dating_1on1_cards_sex_check check (sex in ('male', 'female'));
+  end if;
+end $$;
+
+alter table public.dating_1on1_cards
+  add column if not exists admin_note text,
+  add column if not exists admin_tags text[] not null default '{}'::text[],
+  add column if not exists reviewed_by_user_id uuid references auth.users(id) on delete set null,
+  add column if not exists reviewed_at timestamptz;
+
 create index if not exists idx_dating_1on1_cards_created_at
   on public.dating_1on1_cards (created_at desc);
 
@@ -32,6 +61,16 @@ create index if not exists idx_dating_1on1_cards_user_id
 
 create index if not exists idx_dating_1on1_cards_status
   on public.dating_1on1_cards (status, created_at desc);
+
+create index if not exists idx_dating_1on1_cards_region
+  on public.dating_1on1_cards (region);
+
+create index if not exists idx_dating_1on1_cards_birth_year
+  on public.dating_1on1_cards (birth_year);
+
+create unique index if not exists uq_dating_1on1_active_per_user
+  on public.dating_1on1_cards (user_id)
+  where status in ('submitted', 'reviewing', 'approved');
 
 alter table public.dating_1on1_cards enable row level security;
 
@@ -95,4 +134,3 @@ on conflict (key) do nothing;
 commit;
 
 notify pgrst, 'reload schema';
-

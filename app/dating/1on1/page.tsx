@@ -16,6 +16,7 @@ type WriteStatusResponse = {
 
 type CardItem = {
   id: string;
+  sex: "male" | "female";
   name: string;
   birth_year: number;
   height_cm: number;
@@ -68,6 +69,7 @@ export default function DatingOneOnOnePage() {
   const [status, setStatus] = useState<WriteStatusResponse | null>(null);
   const [cards, setCards] = useState<CardItem[]>([]);
 
+  const [sex, setSex] = useState<"male" | "female">("male");
   const [name, setName] = useState("");
   const [birthYear, setBirthYear] = useState("");
   const [heightCm, setHeightCm] = useState("");
@@ -190,6 +192,7 @@ export default function DatingOneOnOnePage() {
       }
 
       const payload = {
+        sex,
         name: name.trim(),
         birth_year: Number(birthYear),
         height_cm: Number(heightCm),
@@ -220,6 +223,7 @@ export default function DatingOneOnOnePage() {
 
       setInfo("신청 카드가 저장되었습니다.");
       setName("");
+      setSex("male");
       setBirthYear("");
       setHeightCm("");
       setJob("");
@@ -332,6 +336,9 @@ export default function DatingOneOnOnePage() {
         <p className="mt-1 text-xs text-neutral-500">
           로그인 + 휴대폰 인증 + write status 승인 상태에서만 저장됩니다.
         </p>
+        <p className="mt-1 text-xs text-neutral-500">
+          신청 후 본인 수정은 불가하며, 활성 신청(접수/검토/승인) 1건만 유지됩니다.
+        </p>
         {status.phoneVerified ? null : (
           <p className="mt-2 text-xs font-medium text-amber-700">휴대폰 인증이 완료된 계정만 신청할 수 있습니다.</p>
         )}
@@ -342,6 +349,14 @@ export default function DatingOneOnOnePage() {
         {info && <p className="mt-2 text-sm text-emerald-700">{info}</p>}
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-3">
+          <select
+            value={sex}
+            onChange={(e) => setSex(e.target.value as "male" | "female")}
+            className="h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm"
+          >
+            <option value="male">성별: 남자</option>
+            <option value="female">성별: 여자</option>
+          </select>
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
@@ -500,4 +515,3 @@ export default function DatingOneOnOnePage() {
     </main>
   );
 }
-

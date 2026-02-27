@@ -1071,6 +1071,12 @@ export default function MyPage() {
               >
                 유료 요청 관리
               </Link>
+              <Link
+                href="/admin/dating/1on1"
+                className="flex min-h-[44px] items-center rounded-xl border border-sky-200 bg-sky-50 px-4 text-sm font-medium text-sky-700 hover:bg-sky-100"
+              >
+                1:1 이상형 관리
+              </Link>
             </>
           )}
           <button

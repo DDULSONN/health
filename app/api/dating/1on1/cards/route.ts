@@ -5,6 +5,7 @@ import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 type InputPayload = {
+  sex?: string;
   name?: string;
   birth_year?: number | string;
   height_cm?: number | string;
@@ -23,6 +24,7 @@ type InputPayload = {
   consent_privacy?: boolean;
 };
 
+const SEX_VALUES = new Set(["male", "female"]);
 const SMOKING_VALUES = new Set(["non_smoker", "occasional", "smoker"]);
 const WORKOUT_VALUES = new Set(["none", "1_2", "3_4", "5_plus"]);
 
@@ -42,7 +44,12 @@ function normalizePath(raw: unknown): string {
   return extractStorageObjectPathFromBuckets(trimmed, ["dating-1on1-photos"]) ?? trimmed;
 }
 
-export async function GET() {
+function toCurrentAge(birthYear: number | null | undefined): number | null {
+  if (!birthYear || !Number.isFinite(birthYear)) return null;
+  return new Date().getFullYear() - birthYear + 1;
+}
+
+export async function GET(req: Request) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -56,11 +63,20 @@ export async function GET() {
     return NextResponse.json({ error: "Admin only" }, { status: 403 });
   }
 
+  const { searchParams } = new URL(req.url);
+  const sex = searchParams.get("sex")?.trim() ?? "";
+  const region = searchParams.get("region")?.trim() ?? "";
+  const status = searchParams.get("status")?.trim() ?? "";
+  const q = searchParams.get("q")?.trim() ?? "";
+  const minAge = toInt(searchParams.get("minAge") ?? "");
+  const maxAge = toInt(searchParams.get("maxAge") ?? "");
+  const sort = (searchParams.get("sort") ?? "created_desc").trim();
+
   const admin = createAdminClient();
   const { data, error } = await admin
     .from("dating_1on1_cards")
     .select(
-      "id,user_id,name,birth_year,height_cm,job,region,phone,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,photo_paths,created_at"
+      "id,user_id,sex,name,birth_year,height_cm,job,region,phone,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,photo_paths,admin_note,admin_tags,reviewed_by_user_id,reviewed_at,created_at"
     )
     .order("created_at", { ascending: false })
     .limit(300);
@@ -70,7 +86,7 @@ export async function GET() {
     return NextResponse.json({ error: "Failed to load cards." }, { status: 500 });
   }
 
-  const items = (data ?? []).map((row) => {
+  const normalized = (data ?? []).map((row) => {
     const paths = Array.isArray(row.photo_paths)
       ? row.photo_paths
           .map((path) => normalizePath(path))
@@ -83,10 +99,64 @@ export async function GET() {
     return {
       ...row,
       photo_signed_urls,
+      age: toCurrentAge(row.birth_year),
     };
   });
 
-  return NextResponse.json({ items });
+  let items = normalized;
+  if (sex && SEX_VALUES.has(sex)) {
+    items = items.filter((item) => item.sex === sex);
+  }
+  if (region) {
+    items = items.filter((item) => item.region?.includes(region));
+  }
+  if (status && ["submitted", "reviewing", "approved", "rejected"].includes(status)) {
+    items = items.filter((item) => item.status === status);
+  }
+  if (minAge != null) {
+    items = items.filter((item) => (item.age ?? 0) >= minAge);
+  }
+  if (maxAge != null) {
+    items = items.filter((item) => (item.age ?? 999) <= maxAge);
+  }
+  if (q) {
+    const needle = q.toLowerCase();
+    items = items.filter((item) => {
+      const fields = [
+        item.name,
+        item.job,
+        item.region,
+        item.intro_text,
+        item.strengths_text,
+        item.preferred_partner_text,
+        Array.isArray(item.admin_tags) ? item.admin_tags.join(" ") : "",
+        typeof item.admin_note === "string" ? item.admin_note : "",
+      ];
+      return fields.some((field) => String(field ?? "").toLowerCase().includes(needle));
+    });
+  }
+
+  items = [...items].sort((a, b) => {
+    if (sort === "age_asc") return (a.age ?? 0) - (b.age ?? 0);
+    if (sort === "age_desc") return (b.age ?? 0) - (a.age ?? 0);
+    if (sort === "region_asc") return (a.region ?? "").localeCompare(b.region ?? "", "ko");
+    if (sort === "region_desc") return (b.region ?? "").localeCompare(a.region ?? "", "ko");
+    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+  });
+
+  const summarize = (rows: Array<{ status: string }>) => ({
+    total: rows.length,
+    submitted: rows.filter((r) => r.status === "submitted").length,
+    reviewing: rows.filter((r) => r.status === "reviewing").length,
+    approved: rows.filter((r) => r.status === "approved").length,
+    rejected: rows.filter((r) => r.status === "rejected").length,
+  });
+
+  return NextResponse.json({
+    items,
+    counts_total: summarize(normalized),
+    counts_filtered: summarize(items),
+  });
 }
 
 export async function POST(req: Request) {
@@ -113,11 +183,31 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Phone verification is required." }, { status: 403 });
   }
 
+  const duplicateRes = await admin
+    .from("dating_1on1_cards")
+    .select("id,status,created_at")
+    .eq("user_id", user.id)
+    .in("status", ["submitted", "reviewing", "approved"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (duplicateRes.error) {
+    console.error("[POST /api/dating/1on1/cards] duplicate check failed", duplicateRes.error);
+    return NextResponse.json({ error: "Failed to check duplicate request." }, { status: 500 });
+  }
+  if (duplicateRes.data) {
+    return NextResponse.json(
+      { error: "An active request already exists. Complete it before creating a new one." },
+      { status: 409 }
+    );
+  }
+
   const body = (await req.json().catch(() => null)) as InputPayload | null;
   if (!body) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
   }
 
+  const sex = (body.sex ?? "").trim();
   const name = (body.name ?? "").trim();
   const birthYear = toInt(body.birth_year);
   const heightCm = toInt(body.height_cm);
@@ -139,6 +229,9 @@ export async function POST(req: Request) {
   const feeConsent = body.consent_fee === true;
   const privacyConsent = body.consent_privacy === true;
 
+  if (!SEX_VALUES.has(sex)) {
+    return NextResponse.json({ error: "Sex value is invalid." }, { status: 400 });
+  }
   if (!name || name.length > 30) {
     return NextResponse.json({ error: "Name must be 1-30 characters." }, { status: 400 });
   }
@@ -190,6 +283,7 @@ export async function POST(req: Request) {
     .from("dating_1on1_cards")
     .insert({
       user_id: user.id,
+      sex,
       name,
       birth_year: birthYear,
       height_cm: heightCm,
@@ -218,4 +312,3 @@ export async function POST(req: Request) {
 
   return NextResponse.json({ id: data.id }, { status: 201 });
 }
-
