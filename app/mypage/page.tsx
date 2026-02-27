@@ -315,6 +315,8 @@ export default function MyPage() {
   const [activeTab, setActiveTab] = useState<MyPageTab>("my_cert");
   const [error, setError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deletingAppliedIds, setDeletingAppliedIds] = useState<string[]>([]);
   const [applyCreditsRemaining, setApplyCreditsRemaining] = useState(0);
 
   const [nicknameOpen, setNicknameOpen] = useState(false);
@@ -520,6 +522,47 @@ export default function MyPage() {
     await supabase.auth.signOut();
     router.push("/");
     router.refresh();
+  };
+
+  const handleDeleteMyAppliedCardApplication = async (applicationId: string) => {
+    if (deletingAppliedIds.includes(applicationId)) return;
+    if (!confirm("내가 보낸 지원서를 삭제할까요?")) return;
+
+    setDeletingAppliedIds((prev) => [...prev, applicationId]);
+    try {
+      const res = await fetch(`/api/dating/cards/my/applied/${applicationId}`, {
+        method: "DELETE",
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean };
+      if (!res.ok || !body.ok) {
+        alert(body.error ?? "지원서 삭제에 실패했습니다.");
+        return;
+      }
+      setMyAppliedCardApplications((prev) => prev.filter((app) => app.id !== applicationId));
+    } finally {
+      setDeletingAppliedIds((prev) => prev.filter((id) => id !== applicationId));
+    }
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deletingAccount) return;
+    if (!confirm("정말 탈퇴하시겠습니까? 탈퇴 후 계정 복구는 불가능합니다.")) return;
+    if (!confirm("마지막 확인: 탈퇴 시 데이터가 삭제되고 복구할 수 없습니다.")) return;
+
+    setDeletingAccount(true);
+    try {
+      const res = await fetch("/api/mypage/account", { method: "DELETE" });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean };
+      if (!res.ok || !body.ok) {
+        alert(body.error ?? "회원 탈퇴에 실패했습니다.");
+        return;
+      }
+      await supabase.auth.signOut();
+      router.push("/");
+      router.refresh();
+    } finally {
+      setDeletingAccount(false);
+    }
   };
 
   const handleCardApplicationStatus = async (
@@ -1003,6 +1046,14 @@ export default function MyPage() {
           >
             로그아웃
           </button>
+          <button
+            type="button"
+            onClick={() => void handleDeleteAccount()}
+            disabled={deletingAccount}
+            className="min-h-[44px] rounded-xl border border-red-300 bg-white px-4 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
+          >
+            {deletingAccount ? "탈퇴 처리 중..." : "회원 탈퇴"}
+          </button>
         </div>
       </section>
 
@@ -1332,6 +1383,20 @@ export default function MyPage() {
                 {app.intro_text && (
                   <p className="mt-2 text-sm text-neutral-700 whitespace-pre-wrap break-words">{app.intro_text}</p>
                 )}
+                <div className="mt-3">
+                  {app.status === "accepted" ? (
+                    <p className="text-xs text-neutral-500">수락된 지원서는 삭제할 수 없습니다.</p>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled={deletingAppliedIds.includes(app.id)}
+                      onClick={() => void handleDeleteMyAppliedCardApplication(app.id)}
+                      className="h-8 rounded-md border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60"
+                    >
+                      {deletingAppliedIds.includes(app.id) ? "삭제 중..." : "지원서 삭제"}
+                    </button>
+                  )}
+                </div>
               </div>
             ))}
           </div>
