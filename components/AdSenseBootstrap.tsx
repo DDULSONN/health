@@ -15,7 +15,6 @@ function isAllowedAdRoute(pathname: string): boolean {
     "/protein",
     "/1rm",
     "/lifts",
-    "/snacks",
   ]);
   if (exact.has(pathname)) return true;
 

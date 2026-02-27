@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
-import { isAdminEmail } from "@/lib/admin";
+import { isAllowedAdminUser } from "@/lib/admin";
 
 export async function GET() {
   const supabase = await createClient();
@@ -13,7 +13,6 @@ export async function GET() {
   }
 
   return NextResponse.json({
-    isAdmin: isAdminEmail(user.email),
+    isAdmin: isAllowedAdminUser(user.id, user.email),
   });
 }
-

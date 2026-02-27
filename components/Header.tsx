@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
@@ -12,8 +12,7 @@ const NAV_ITEMS = [
   { href: "/community/dating", label: "소개팅" },
   { href: "/community", label: "커뮤니티" },
   { href: "/certify", label: "3대 인증" },
-  { href: "/helltest", label: "헬창 판독기" },
-  { href: "/snacks", label: "다이어트 간식" },
+  { href: "/helltest", label: "헬스 테스트" },
 ];
 
 export default function Header() {
@@ -112,20 +111,20 @@ export default function Header() {
   };
 
   return (
-    <header className="sticky top-0 z-50 bg-white/85 backdrop-blur-md border-b border-neutral-200">
-      <div className="max-w-5xl mx-auto px-4 h-14 flex items-center justify-between">
+    <header className="sticky top-0 z-50 border-b border-neutral-200 bg-white/85 backdrop-blur-md">
+      <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
         <Link href="/" className="text-lg font-bold text-emerald-600 hover:text-emerald-700">
           짐툴
         </Link>
 
-        <nav className="hidden md:flex items-center gap-1">
+        <nav className="hidden items-center gap-1 md:flex">
           {NAV_ITEMS.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`px-3 py-1.5 rounded-lg text-sm font-medium ${
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
                   active ? "bg-emerald-100 text-emerald-700" : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
                 }`}
               >
@@ -136,8 +135,21 @@ export default function Header() {
 
           {authChecked && isAdmin && (
             <Link
+              href="/dating/1on1"
+              className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
+                pathname === "/dating/1on1" || pathname.startsWith("/dating/1on1/")
+                  ? "bg-emerald-100 text-emerald-700"
+                  : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
+              }`}
+            >
+              1:1 소개팅
+            </Link>
+          )}
+
+          {authChecked && isAdmin && (
+            <Link
               href="/admin/cert-requests"
-              className="ml-1 px-3 py-1.5 rounded-lg text-sm font-medium bg-neutral-900 text-white hover:bg-black"
+              className="ml-1 rounded-lg bg-neutral-900 px-3 py-1.5 text-sm font-medium text-white hover:bg-black"
             >
               인증 심사
             </Link>
@@ -147,7 +159,7 @@ export default function Header() {
             <Link href="/notifications" className="relative px-2 py-1 text-neutral-600 hover:text-neutral-900" aria-label="알림">
               <span className="text-lg">🔔</span>
               {unreadCount > 0 && (
-                <span className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-500 text-white text-[10px] leading-[18px] text-center font-bold">
+                <span className="absolute -right-1 -top-1 h-[18px] min-w-[18px] rounded-full bg-red-500 px-1 text-center text-[10px] font-bold leading-[18px] text-white">
                   {unreadCount > 99 ? "99+" : unreadCount}
                 </span>
               )}
@@ -160,12 +172,12 @@ export default function Header() {
                 <button
                   type="button"
                   onClick={() => setMenuOpen((prev) => !prev)}
-                  className="px-3 py-1.5 rounded-lg text-sm font-medium text-neutral-700 hover:bg-neutral-100"
+                  className="rounded-lg px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-100"
                 >
-                  {userLabel} ▼
+                  {userLabel} 님
                 </button>
                 {menuOpen && (
-                  <div className="absolute right-0 mt-1 w-44 rounded-xl border border-neutral-200 bg-white shadow-lg overflow-hidden">
+                  <div className="absolute right-0 mt-1 w-44 overflow-hidden rounded-xl border border-neutral-200 bg-white shadow-lg">
                     <Link href="/mypage" onClick={() => setMenuOpen(false)} className="block px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50">
                       마이페이지
                     </Link>
@@ -176,7 +188,7 @@ export default function Header() {
                       type="button"
                       onClick={handleLogout}
                       disabled={loggingOut}
-                      className="w-full text-left px-3 py-2 text-sm text-red-600 hover:bg-red-50 disabled:opacity-60"
+                      className="w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-60"
                     >
                       로그아웃
                     </button>
@@ -186,7 +198,7 @@ export default function Header() {
             ) : (
               <Link
                 href={`/login?redirect=${encodeURIComponent(pathname)}`}
-                className="ml-2 px-3 py-1.5 rounded-lg text-sm font-medium text-emerald-600 hover:bg-emerald-50"
+                className="ml-2 rounded-lg px-3 py-1.5 text-sm font-medium text-emerald-600 hover:bg-emerald-50"
               >
                 로그인
               </Link>
@@ -196,10 +208,10 @@ export default function Header() {
         <button
           type="button"
           onClick={() => setMobileOpen((prev) => !prev)}
-          className="md:hidden p-2 rounded-lg hover:bg-neutral-100"
+          className="rounded-lg p-2 hover:bg-neutral-100 md:hidden"
           aria-label={mobileOpen ? "메뉴 닫기" : "메뉴 열기"}
         >
-          <svg className="w-5 h-5 text-neutral-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="h-5 w-5 text-neutral-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             {mobileOpen ? (
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
             ) : (
@@ -210,7 +222,7 @@ export default function Header() {
       </div>
 
       {mobileOpen && (
-        <nav className="md:hidden border-t border-neutral-100 bg-white px-4 pb-3 pt-2">
+        <nav className="border-t border-neutral-100 bg-white px-4 pb-3 pt-2 md:hidden">
           {NAV_ITEMS.map((item) => {
             const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
             return (
@@ -218,7 +230,7 @@ export default function Header() {
                 key={item.href}
                 href={item.href}
                 onClick={() => setMobileOpen(false)}
-                className={`block py-2.5 px-3 rounded-lg text-sm font-medium ${
+                className={`block rounded-lg px-3 py-2.5 text-sm font-medium ${
                   active ? "bg-emerald-50 text-emerald-700" : "text-neutral-600 hover:bg-neutral-50"
                 }`}
               >
@@ -229,9 +241,23 @@ export default function Header() {
 
           {authChecked && isAdmin && (
             <Link
+              href="/dating/1on1"
+              onClick={() => setMobileOpen(false)}
+              className={`block rounded-lg px-3 py-2.5 text-sm font-medium ${
+                pathname === "/dating/1on1" || pathname.startsWith("/dating/1on1/")
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "text-neutral-600 hover:bg-neutral-50"
+              }`}
+            >
+              1:1 소개팅
+            </Link>
+          )}
+
+          {authChecked && isAdmin && (
+            <Link
               href="/admin/cert-requests"
               onClick={() => setMobileOpen(false)}
-              className="block mt-1 py-2.5 px-3 rounded-lg text-sm font-medium bg-neutral-900 text-white"
+              className="mt-1 block rounded-lg bg-neutral-900 px-3 py-2.5 text-sm font-medium text-white"
             >
               인증 심사
             </Link>
@@ -239,22 +265,22 @@ export default function Header() {
 
           {authChecked &&
             (userLabel ? (
-              <div className="mt-2 border-t border-neutral-100 pt-2 space-y-1">
+              <div className="mt-2 space-y-1 border-t border-neutral-100 pt-2">
                 <p className="px-3 text-sm font-medium text-neutral-700">{userLabel}</p>
-                <Link href="/notifications" onClick={() => setMobileOpen(false)} className="block py-2.5 px-3 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50">
+                <Link href="/notifications" onClick={() => setMobileOpen(false)} className="block rounded-lg px-3 py-2.5 text-sm text-neutral-600 hover:bg-neutral-50">
                   알림 {unreadCount > 0 ? `(${unreadCount})` : ""}
                 </Link>
-                <Link href="/mypage" onClick={() => setMobileOpen(false)} className="block py-2.5 px-3 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50">
+                <Link href="/mypage" onClick={() => setMobileOpen(false)} className="block rounded-lg px-3 py-2.5 text-sm text-neutral-600 hover:bg-neutral-50">
                   마이페이지
                 </Link>
-                <Link href="/hall-of-fame" onClick={() => setMobileOpen(false)} className="block py-2.5 px-3 rounded-lg text-sm text-neutral-600 hover:bg-neutral-50">
+                <Link href="/hall-of-fame" onClick={() => setMobileOpen(false)} className="block rounded-lg px-3 py-2.5 text-sm text-neutral-600 hover:bg-neutral-50">
                   명예의 전당
                 </Link>
                 <button
                   type="button"
                   onClick={handleLogout}
                   disabled={loggingOut}
-                  className="w-full text-left py-2.5 px-3 rounded-lg text-sm text-red-600 hover:bg-red-50 disabled:opacity-60"
+                  className="w-full rounded-lg px-3 py-2.5 text-left text-sm text-red-600 hover:bg-red-50 disabled:opacity-60"
                 >
                   로그아웃
                 </button>
@@ -263,7 +289,7 @@ export default function Header() {
               <Link
                 href={`/login?redirect=${encodeURIComponent(pathname)}`}
                 onClick={() => setMobileOpen(false)}
-                className="block mt-2 py-2.5 px-3 rounded-lg text-sm font-medium text-emerald-600 hover:bg-emerald-50"
+                className="mt-2 block rounded-lg px-3 py-2.5 text-sm font-medium text-emerald-600 hover:bg-emerald-50"
               >
                 로그인
               </Link>
@@ -273,4 +299,3 @@ export default function Header() {
     </header>
   );
 }
-

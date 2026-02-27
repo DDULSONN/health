@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
@@ -94,33 +94,34 @@ function ResultContent() {
 
   if (resultId === null) {
     return (
-      <main className="min-h-screen flex items-center justify-center p-6 max-w-md mx-auto">
+      <main className="mx-auto flex min-h-screen max-w-md items-center justify-center p-6">
         <p className="text-neutral-500">결과를 불러오는 중...</p>
       </main>
     );
   }
 
   const result = RESULTS[resultId];
-  const tags = tagScores ?? {
-    heavy: 0,
-    routine: 0,
-    talk: 0,
-    pump: 0,
-    manage: 0,
-    newbie: 0,
-    frame: 0,
-    egennam: 0,
-  };
+  const tags =
+    tagScores ?? {
+      heavy: 0,
+      routine: 0,
+      talk: 0,
+      pump: 0,
+      manage: 0,
+      newbie: 0,
+      frame: 0,
+      egennam: 0,
+    };
 
   return (
-    <main className="min-h-screen flex flex-col p-4 pb-8 max-w-md mx-auto">
+    <main className="mx-auto flex min-h-screen max-w-md flex-col p-4 pb-8">
       <ResultCard result={result} totalScore={totalScore} tagScores={tags} className="mb-6" />
 
       <div className="space-y-3">
         <button
           type="button"
           onClick={handleShare}
-          className="w-full min-h-[56px] rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 active:scale-[0.98] transition-all"
+          className="w-full min-h-[56px] rounded-xl bg-emerald-600 font-medium text-white transition-all hover:bg-emerald-700 active:scale-[0.98]"
         >
           {shareStatus === "copied"
             ? "클립보드에 복사됨"
@@ -131,7 +132,7 @@ function ResultContent() {
         <button
           type="button"
           onClick={handleRetry}
-          className="w-full min-h-[56px] rounded-xl bg-neutral-200 text-neutral-800 font-medium hover:bg-neutral-300 active:scale-[0.98] transition-all"
+          className="w-full min-h-[56px] rounded-xl bg-neutral-200 font-medium text-neutral-800 transition-all hover:bg-neutral-300 active:scale-[0.98]"
         >
           다시하기
         </button>
@@ -142,31 +143,31 @@ function ResultContent() {
         />
       </div>
 
-      <div className="mt-6 pt-4 border-t border-neutral-200 space-y-2">
-        <p className="text-sm text-neutral-500 text-center mb-3">다른 기능도 사용해보세요</p>
+      <div className="mt-6 space-y-2 border-t border-neutral-200 pt-4">
+        <p className="mb-3 text-center text-sm text-neutral-500">다른 기능도 사용해보세요</p>
         <div className="grid grid-cols-1 gap-2">
           <Link
             href="/1rm"
-            className="block text-center py-3 px-4 rounded-xl bg-emerald-50 text-emerald-700 font-medium text-sm hover:bg-emerald-100 transition-colors"
+            className="block rounded-xl bg-emerald-50 px-4 py-3 text-center text-sm font-medium text-emerald-700 transition-colors hover:bg-emerald-100"
           >
-            💪 1RM 계산기
+            🏋️ 1RM 계산기
           </Link>
           <Link
-            href="/snacks"
-            className="block text-center py-3 px-4 rounded-xl bg-blue-50 text-blue-700 font-medium text-sm hover:bg-blue-100 transition-colors"
+            href="/dating/1on1"
+            className="block rounded-xl bg-blue-50 px-4 py-3 text-center text-sm font-medium text-blue-700 transition-colors hover:bg-blue-100"
           >
-            🥜 다이어트 간식
+            🤝 1:1 오프라인 소개팅
           </Link>
           <Link
             href="/community/bodycheck"
-            className="block text-center py-3 px-4 rounded-xl bg-indigo-50 text-indigo-700 font-medium text-sm hover:bg-indigo-100 transition-colors"
+            className="block rounded-xl bg-indigo-50 px-4 py-3 text-center text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
           >
             📸 사진 몸평 게시판
           </Link>
         </div>
       </div>
 
-      <Link href="/" className="block text-center mt-4 text-sm text-neutral-500 hover:text-neutral-700">
+      <Link href="/" className="mt-4 block text-center text-sm text-neutral-500 hover:text-neutral-700">
         홈으로
       </Link>
     </main>
@@ -177,7 +178,7 @@ export default function ResultPage() {
   return (
     <Suspense
       fallback={
-        <main className="min-h-screen flex items-center justify-center p-6 max-w-md mx-auto">
+        <main className="mx-auto flex min-h-screen max-w-md items-center justify-center p-6">
           <p className="text-neutral-500">결과를 불러오는 중...</p>
         </main>
       }

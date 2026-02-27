@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 // import DailyMissionsWidget from "@/components/DailyMissionsWidget";
 import MyWeeklyRankCard from "@/components/MyWeeklyRankCard";
 import WeeklyTopBanner from "@/components/WeeklyTopBanner";
@@ -30,8 +30,8 @@ const FEATURES: Feature[] = [
     id: "lifts",
     href: "/lifts",
     title: "3대 합계 계산기",
-    emoji: "🏆",
-    description: "스쿼트·벤치·데드 합계와 체급 기준 상위%를 확인합니다.",
+    emoji: "📈",
+    description: "스쿼트/벤치/데드 합계를 계산하고 상위 퍼센트를 확인합니다.",
     accent: "bg-rose-50 border-rose-200 hover:border-rose-400",
     cta: "합계 계산하기",
   },
@@ -49,7 +49,7 @@ const FEATURES: Feature[] = [
     href: "/community/dating",
     title: "소개팅",
     emoji: "💘",
-    description: "3대 인증자 소개팅 카드 열람 · 댓글",
+    description: "3대 인증자 소개팅 카드 열람 및 지원",
     accent: "bg-pink-50 border-pink-200 hover:border-pink-400",
     cta: "소개팅 보기",
   },
@@ -58,7 +58,7 @@ const FEATURES: Feature[] = [
     href: "/community",
     title: "커뮤니티",
     emoji: "💬",
-    description: "운동 기록과 노하우를 공유하는 공간입니다.",
+    description: "운동 기록과 후기를 공유하는 공간입니다.",
     accent: "bg-cyan-50 border-cyan-200 hover:border-cyan-400",
     cta: "커뮤니티 이동",
   },
@@ -69,25 +69,25 @@ const FEATURES: Feature[] = [
     emoji: "✅",
     description: "영상 검증 후 QR 인증서(PDF) 발급",
     accent: "bg-lime-50 border-lime-200 hover:border-lime-400",
-    cta: "인증 신청하기",
+    cta: "인증 요청하기",
   },
   {
     id: "helltest",
     href: "/helltest",
-    title: "헬창 판독기",
-    emoji: "🧪",
-    description: "20문항으로 알아보는 나의 헬창력 테스트",
+    title: "헬스 성격 테스트",
+    emoji: "🧠",
+    description: "20문항으로 알아보는 나의 운동 성향 테스트",
     accent: "bg-amber-50 border-amber-200 hover:border-amber-400",
     cta: "테스트 시작",
   },
   {
-    id: "snacks",
-    href: "/snacks",
-    title: "다이어트 간식",
-    emoji: "🥗",
-    description: "운동과 식단에 맞는 간식을 추천합니다.",
+    id: "dating_1on1",
+    href: "/dating/1on1",
+    title: "1:1 오프라인 소개팅",
+    emoji: "🤝",
+    description: "운영자 직접 매칭 소개팅 신청 (현재 관리자 전용 임시 오픈)",
     accent: "bg-blue-50 border-blue-200 hover:border-blue-400",
-    cta: "간식 보기",
+    cta: "1:1 소개팅 이동",
   },
 ];
 
@@ -100,7 +100,7 @@ export default function HomePage() {
 
       <section className="text-center mb-10">
         <h1 className="text-3xl font-bold text-neutral-900 mb-2">짐툴 (GymTools)</h1>
-        <p className="text-neutral-500 text-base">헬스 계산기 · 몸평 · 헬창 판독</p>
+        <p className="text-neutral-500 text-base">헬스 계산기 · 몸평 · 테스트</p>
       </section>
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -122,11 +122,7 @@ export default function HomePage() {
                     {feature.title}
                   </h2>
                   <p className="mt-1 text-sm text-neutral-600 leading-relaxed">{feature.description}</p>
-                  {feature.cta && (
-                    <p className="mt-3 text-xs font-semibold text-emerald-700">
-                      {feature.cta}
-                    </p>
-                  )}
+                  {feature.cta && <p className="mt-3 text-xs font-semibold text-emerald-700">{feature.cta}</p>}
                 </div>
               </div>
             </Link>
@@ -136,10 +132,9 @@ export default function HomePage() {
 
       <section className="mt-10 rounded-2xl border border-neutral-200 bg-neutral-50 p-5">
         <p className="text-sm leading-relaxed text-neutral-700">
-          짐툴(GymTools)은 헬스 유저를 위한 1RM 계산기, 3대 합계 계산기, 헬창 판독기와 몸평 게시판을 제공하는 사이트입니다.
+          짐툴(GymTools)은 헬스 유저를 위한 1RM 계산기, 3대 합계 계산기, 성격 테스트, 몸평 게시판을 제공합니다.
         </p>
       </section>
     </main>
   );
 }
-
