@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { getPreviousKstWeekId } from "@/lib/weekly";
+import { getKstWeekRangeFromWeekId, getPreviousKstWeekId } from "@/lib/weekly";
 
 const MIN_VOTES = 5;
 const MAX_BACKFILL_WEEKS = 12;
@@ -14,11 +14,6 @@ type WeeklyTop = {
     user_id: string;
     images: string[] | null;
   } | null;
-};
-
-type HallOfFameKeyRow = {
-  week_id: string;
-  gender: "male" | "female";
 };
 
 function isAuthorized(request: Request): boolean {
@@ -70,18 +65,6 @@ async function fetchCandidateWeekIds(
   return weekIds.slice(0, MAX_BACKFILL_WEEKS);
 }
 
-async function fetchHallOfFameRows(
-  supabase: Awaited<ReturnType<typeof createAdminClient>>,
-  weekIds: string[]
-): Promise<HallOfFameKeyRow[]> {
-  if (weekIds.length === 0) return [];
-
-  const { data, error } = await supabase.from("hall_of_fame").select("week_id, gender").in("week_id", weekIds);
-  if (error) throw error;
-
-  return (data ?? []) as HallOfFameKeyRow[];
-}
-
 async function getNickname(
   supabase: Awaited<ReturnType<typeof createAdminClient>>,
   userId: string
@@ -102,21 +85,41 @@ export async function GET(request: Request) {
 
   try {
     const candidateWeekIds = forcedWeekId ? [forcedWeekId] : await fetchCandidateWeekIds(supabase, latestClosedWeekId);
-    const hofRows = await fetchHallOfFameRows(supabase, candidateWeekIds);
-    const hofSet = new Set(hofRows.map((row) => `${row.week_id}:${row.gender}`));
-
-    const weekIdsToProcess = candidateWeekIds.filter((weekId) => {
-      return !hofSet.has(`${weekId}:male`) || !hofSet.has(`${weekId}:female`);
-    });
-
     const inserted: Array<{ week_id: string; gender: "male" | "female" }> = [];
     const skipped: Array<{ week_id: string; reason: string }> = [];
+    const snapshots: Array<{ week_id: string; male_post_id: string | null; female_post_id: string | null }> = [];
 
-    for (const weekId of weekIdsToProcess) {
+    for (const weekId of candidateWeekIds) {
+      const weekRange = getKstWeekRangeFromWeekId(weekId);
+      if (!weekRange) {
+        skipped.push({ week_id: weekId, reason: "invalid_week_id" });
+        continue;
+      }
+
       const [maleTop, femaleTop] = await Promise.all([
         fetchTopByGender(supabase, weekId, "male"),
         fetchTopByGender(supabase, weekId, "female"),
       ]);
+
+      const weeklySnapshotRes = await supabase.from("weekly_winners").upsert(
+        {
+          week_start: weekRange.startUtcIso,
+          week_end: weekRange.endUtcIso,
+          male_post_id: maleTop?.post_id ?? null,
+          female_post_id: femaleTop?.post_id ?? null,
+          male_score: Math.max(0, Number(maleTop?.score_sum ?? 0)),
+          female_score: Math.max(0, Number(femaleTop?.score_sum ?? 0)),
+        },
+        { onConflict: "week_start" }
+      );
+      if (weeklySnapshotRes.error) {
+        return NextResponse.json({ error: weeklySnapshotRes.error.message, week_id: weekId, target: "weekly_winners" }, { status: 500 });
+      }
+      snapshots.push({
+        week_id: weekId,
+        male_post_id: maleTop?.post_id ?? null,
+        female_post_id: femaleTop?.post_id ?? null,
+      });
 
       if (maleTop?.posts?.user_id) {
         const nickname = await getNickname(supabase, maleTop.posts.user_id);
@@ -170,10 +173,11 @@ export async function GET(request: Request) {
       latest_closed_week_id: latestClosedWeekId,
       forced_week_id: forcedWeekId,
       scanned_week_ids: candidateWeekIds,
-      processed_week_ids: weekIdsToProcess,
+      processed_week_ids: candidateWeekIds,
+      snapshots,
       inserted,
       skipped,
-      no_op: inserted.length === 0,
+      no_op: inserted.length === 0 && snapshots.length === 0,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

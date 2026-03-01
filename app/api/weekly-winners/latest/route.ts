@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
-import { getKstWeekRange } from "@/lib/weekly";
+import { getKstWeekRange, getPreviousKstWeekRange } from "@/lib/weekly";
 
 type WinnerPost = {
   id: string;
@@ -81,11 +81,14 @@ export async function GET() {
   }
 
   const currentWeek = getKstWeekRange();
-  const isCurrentWeekConfirmed = Boolean(
-    latestWinner && latestWinner.week_start === currentWeek.startUtcIso,
+  const latestClosedWeek = getPreviousKstWeekRange();
+  const isLatestClosedWeekConfirmed = Boolean(
+    latestWinner &&
+      latestWinner.week_start === latestClosedWeek.startUtcIso &&
+      latestWinner.week_end === latestClosedWeek.endUtcIso,
   );
 
-  if (isCurrentWeekConfirmed && latestWinner) {
+  if (isLatestClosedWeekConfirmed && latestWinner) {
     return NextResponse.json({
       mode: "confirmed",
       week: {

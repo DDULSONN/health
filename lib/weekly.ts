@@ -65,6 +65,38 @@ export function getPreviousKstWeekRange(now = new Date()) {
   };
 }
 
+export function getKstWeekRangeFromWeekId(weekId: string) {
+  const match = /^(\d{4})-W(\d{2})$/.exec(weekId.trim());
+  if (!match) return null;
+
+  const isoYear = Number(match[1]);
+  const isoWeek = Number(match[2]);
+  if (!Number.isInteger(isoYear) || !Number.isInteger(isoWeek) || isoWeek < 1 || isoWeek > 53) {
+    return null;
+  }
+
+  const jan4Kst = new Date(Date.UTC(isoYear, 0, 4));
+  const jan4Day = jan4Kst.getUTCDay() || 7;
+
+  const firstMondayKst = new Date(jan4Kst);
+  firstMondayKst.setUTCDate(jan4Kst.getUTCDate() - (jan4Day - 1));
+  firstMondayKst.setUTCHours(0, 0, 0, 0);
+
+  const startKst = new Date(firstMondayKst);
+  startKst.setUTCDate(firstMondayKst.getUTCDate() + (isoWeek - 1) * 7);
+
+  const endKst = new Date(startKst.getTime() + WEEK_MS);
+  const startUtc = fromKstDate(startKst);
+  const endUtc = fromKstDate(endKst);
+
+  return {
+    startUtc,
+    endUtc,
+    startUtcIso: startUtc.toISOString(),
+    endUtcIso: endUtc.toISOString(),
+  };
+}
+
 export function formatKstDateTime(value: string | Date) {
   const date = typeof value === "string" ? new Date(value) : value;
   return new Intl.DateTimeFormat("ko-KR", {
