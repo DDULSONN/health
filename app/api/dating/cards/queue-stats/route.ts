@@ -13,6 +13,19 @@ function isMissingColumnError(error: unknown): boolean {
   return code === "42703" || code === "PGRST204" || message.includes("could not find") || message.includes("column");
 }
 
+function isMissingRelationError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return (
+    code === "42P01" ||
+    code === "PGRST205" ||
+    message.includes("does not exist") ||
+    message.includes("relation") ||
+    message.includes("could not find the table")
+  );
+}
+
 async function countPublic(adminClient: ReturnType<typeof createAdminClient>, sex: "male" | "female") {
   let { count, error } = await adminClient
     .from("dating_cards")
@@ -75,13 +88,24 @@ async function pendingRegionDistribution(
 }
 
 async function countAcceptedMatches(adminClient: ReturnType<typeof createAdminClient>) {
-  const { count, error } = await adminClient
+  const acceptedRes = await adminClient
     .from("dating_card_applications")
     .select("id", { head: true, count: "exact" })
     .eq("status", "accepted");
 
-  if (error) throw error;
-  return count ?? 0;
+  if (acceptedRes.error) throw acceptedRes.error;
+
+  const swipeRes = await adminClient
+    .from("dating_card_swipe_matches")
+    .select("id", { head: true, count: "exact" });
+
+  if (swipeRes.error && !isMissingRelationError(swipeRes.error)) {
+    throw swipeRes.error;
+  }
+
+  const acceptedCount = acceptedRes.count ?? 0;
+  const swipeCount = isMissingRelationError(swipeRes.error) ? 0 : (swipeRes.count ?? 0);
+  return acceptedCount + swipeCount;
 }
 
 export async function GET() {
