@@ -3,7 +3,6 @@ import { getKstDayRangeUtc } from "@/lib/dating-open";
 import { createAdminClient } from "@/lib/supabase/server";
 
 export const SWIPE_DAILY_LIMIT = 10;
-const ELIGIBLE_CARD_STATUSES = new Set(["public", "expired", "hidden"]);
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -93,10 +92,6 @@ function pickPreviewImage(row: DatingCardRow): string | null {
   }
 
   return null;
-}
-
-export function isSwipeEligibleStatus(status: string | null | undefined): boolean {
-  return ELIGIBLE_CARD_STATUSES.has(String(status ?? ""));
 }
 
 export function getSwipeDayRangeUtc(now = new Date()) {
@@ -192,7 +187,6 @@ export async function getSwipeCandidate(
     if (seenOwners.has(ownerId)) continue;
 
     if (excludedUserIds.has(ownerId)) continue;
-    if (!isSwipeEligibleStatus(row.status)) continue;
     if (!String(row.instagram_id ?? "").trim()) continue;
     seenOwners.add(ownerId);
 

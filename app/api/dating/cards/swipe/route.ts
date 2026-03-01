@@ -3,7 +3,6 @@ import {
   getLatestSwipeCardForUser,
   getSwipeCandidate,
   getSwipeDailyUsage,
-  isSwipeEligibleStatus,
   sendDatingEmailNotification,
   SWIPE_DAILY_LIMIT,
 } from "@/lib/dating-swipe";
@@ -39,7 +38,7 @@ export async function GET(req: Request) {
       remaining: 0,
       limit: SWIPE_DAILY_LIMIT,
       candidate: null,
-      reason: "로그인 후 이용할 수 있습니다.",
+      reason: "?棺??짆????????⑤챶裕???????怨?????덊렡.",
     });
   }
 
@@ -60,7 +59,7 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const sex = sanitizeSex(searchParams.get("sex"));
   if (!sex) {
-    return NextResponse.json({ error: "성별이 올바르지 않습니다." }, { status: 400 });
+    return NextResponse.json({ error: "?濚밸Ŧ援???????筌?? ?????????덊렡." }, { status: 400 });
   }
 
   const adminClient = createAdminClient();
@@ -74,7 +73,7 @@ export async function GET(req: Request) {
         remaining: 0,
         limit: SWIPE_DAILY_LIMIT,
         candidate: null,
-        reason: "오픈카드를 한 번 이상 등록한 사용자만 이용할 수 있습니다.",
+        reason: "????딄묻?怨멸텭????ｏ쭗????????⑤?彛??濚밸Ŧ援욃ㅇ?????????????⑤챶裕???????怨?????덊렡.",
       });
     }
 
@@ -87,7 +86,7 @@ export async function GET(req: Request) {
         remaining,
         limit: SWIPE_DAILY_LIMIT,
         candidate: null,
-        reason: "오늘 라이크/넘기기 한도를 모두 사용했습니다.",
+        reason: "????몄툜 ??繹먮끏???????꾨탿????筌먲퐣???癲ル슢?꾤땟?嶺???????怨?????덊렡.",
       });
     }
 
@@ -98,11 +97,11 @@ export async function GET(req: Request) {
       remaining,
       limit: SWIPE_DAILY_LIMIT,
       candidate,
-      reason: candidate ? null : "현재 보여줄 후보가 없습니다.",
+      reason: candidate ? null : "??ш끽維???怨뚮옖???덩?????ш끽維亦낅쉠琉??쎛 ???⑤８?????덊렡.",
     });
   } catch (error) {
     console.error("[GET /api/dating/cards/swipe] failed", error);
-    return NextResponse.json({ error: "스와이프 후보를 불러오지 못했습니다." }, { status: 500 });
+    return NextResponse.json({ error: "?????熬곣뫀????ш끽維亦????됰씭????? 癲ル슢履뉑쾮?彛??????" }, { status: 500 });
   }
 }
 
@@ -113,7 +112,7 @@ export async function POST(req: Request) {
   } = await supabase.auth.getUser();
 
   if (!user) {
-    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+    return NextResponse.json({ error: "?棺??짆??嶺뚮ㅎ?닻???ш끽維???筌뤾퍓???" }, { status: 401 });
   }
 
   const ip = extractClientIp(req);
@@ -145,10 +144,10 @@ export async function POST(req: Request) {
   const targetCardId = String(body?.target_card_id ?? "").trim();
 
   if (!sex || !action || !targetUserId || !targetCardId) {
-    return NextResponse.json({ error: "요청 값이 올바르지 않습니다." }, { status: 400 });
+    return NextResponse.json({ error: "??釉먯뒜????좊즴???????筌?? ?????????덊렡." }, { status: 400 });
   }
   if (targetUserId === user.id) {
-    return NextResponse.json({ error: "본인 카드는 처리할 수 없습니다." }, { status: 400 });
+    return NextResponse.json({ error: "?怨뚮옖筌???怨멸텭????癲ル슪?ｇ몭????????⑤８?????덊렡." }, { status: 400 });
   }
 
   const adminClient = createAdminClient();
@@ -156,12 +155,12 @@ export async function POST(req: Request) {
   try {
     const myCard = await getLatestSwipeCardForUser(adminClient, user.id);
     if (!myCard) {
-      return NextResponse.json({ error: "오픈카드 이력이 있어야 이용할 수 있습니다." }, { status: 403 });
+      return NextResponse.json({ error: "????딄묻?怨멸텭????????????怨쀪퐨?????⑤챶裕???????怨?????덊렡." }, { status: 403 });
     }
 
     const used = await getSwipeDailyUsage(adminClient, user.id);
     if (used >= SWIPE_DAILY_LIMIT) {
-      return NextResponse.json({ error: "오늘 라이크/넘기기 한도를 모두 사용했습니다." }, { status: 429 });
+      return NextResponse.json({ error: "????몄툜 ??繹먮끏???????꾨탿????筌먲퐣???癲ル슢?꾤땟?嶺???????怨?????덊렡." }, { status: 429 });
     }
 
     const dupRes = await adminClient
@@ -175,7 +174,7 @@ export async function POST(req: Request) {
       throw dupRes.error;
     }
     if (dupRes.data?.id) {
-      return NextResponse.json({ error: "이미 처리한 상대입니다." }, { status: 409 });
+      return NextResponse.json({ error: "???? 癲ル슪?ｇ몭??????????낇돲??" }, { status: 409 });
     }
 
     const targetRes = await adminClient
@@ -190,13 +189,10 @@ export async function POST(req: Request) {
     }
     const targetCard = targetRes.data;
     if (!targetCard || targetCard.owner_user_id !== targetUserId || targetCard.sex !== sex) {
-      return NextResponse.json({ error: "상대 카드를 찾을 수 없습니다." }, { status: 404 });
-    }
-    if (!isSwipeEligibleStatus(targetCard.status)) {
-      return NextResponse.json({ error: "현재 처리할 수 없는 카드입니다." }, { status: 409 });
+      return NextResponse.json({ error: "??? ?怨멸텭????ｏ쭗?癲ル슓??젆???????⑤８?????덊렡." }, { status: 404 });
     }
     if (!String(targetCard.instagram_id ?? "").trim()) {
-      return NextResponse.json({ error: "상대 인스타 정보가 없습니다." }, { status: 400 });
+      return NextResponse.json({ error: "??? ?嶺뚮ㅎ?ц짆?? ?嶺뚮㉡?€쾮戮る쨬??쎛 ???⑤８?????덊렡." }, { status: 400 });
     }
 
     const insertRes = await adminClient
@@ -214,7 +210,7 @@ export async function POST(req: Request) {
 
     if (insertRes.error) {
       console.error("[POST /api/dating/cards/swipe] insert failed", insertRes.error);
-      return NextResponse.json({ error: "스와이프 저장에 실패했습니다." }, { status: 500 });
+      return NextResponse.json({ error: "?????熬곣뫀???????묎덩?????됰꽡???怨?????덊렡." }, { status: 500 });
     }
 
     let matchPayload:
@@ -239,12 +235,12 @@ export async function POST(req: Request) {
         throw reverseLikeRes.error;
       }
 
-      const targetNickname = String(targetCard.display_nickname ?? "익명").trim() || "익명";
+      const targetNickname = String(targetCard.display_nickname ?? "Someone").trim() || "Someone";
       const sentLikeEmail = await sendDatingEmailNotification(
         adminClient,
         targetUserId,
-        "새 라이크가 도착했습니다",
-        `${myCard.display_nickname ?? "익명"}님이 회원님의 오픈카드에 라이크를 보냈습니다.\n사이트에서 확인해보세요.`
+        "New like on your open card",
+        `${myCard.display_nickname ?? "Someone"} liked your open card.` + "`n" + "Check the site for details."
       );
       if (!sentLikeEmail) {
         console.info("[POST /api/dating/cards/swipe] like email skipped", {
@@ -291,14 +287,14 @@ export async function POST(req: Request) {
           sendDatingEmailNotification(
             adminClient,
             user.id,
-            "오픈카드 자동 매칭이 성사되었습니다",
-            `${targetNickname}님과 서로 라이크하여 자동 매칭되었습니다.\n상대 인스타: @${otherInstagramId}`
+            "New auto match on open cards",
+            `You and ${targetNickname} liked each other.` + "`n" + `Other Instagram: @${otherInstagramId}`
           ),
           sendDatingEmailNotification(
             adminClient,
             targetUserId,
-            "오픈카드 자동 매칭이 성사되었습니다",
-            `${myCard.display_nickname ?? "익명"}님과 서로 라이크하여 자동 매칭되었습니다.\n사이트 마이페이지에서 인스타를 확인해보세요.`
+            "New auto match on open cards",
+            `You and ${myCard.display_nickname ?? "Someone"} liked each other.` + "`n" + "Check the site mypage for Instagram details.",
           ),
         ]);
       }
@@ -311,6 +307,6 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("[POST /api/dating/cards/swipe] failed", error);
-    return NextResponse.json({ error: "스와이프 처리에 실패했습니다." }, { status: 500 });
+    return NextResponse.json({ error: "?????熬곣뫀??癲ル슪?ｇ몭???????됰꽡???怨?????덊렡." }, { status: 500 });
   }
 }
