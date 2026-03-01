@@ -98,6 +98,21 @@ export function getSwipeDayRangeUtc(now = new Date()) {
   return getKstDayRangeUtc(now);
 }
 
+function getSwipeDayKeyKst(now = new Date()): string {
+  const kstMillis = now.getTime() + 9 * 60 * 60 * 1000;
+  return new Date(kstMillis).toISOString().slice(0, 10);
+}
+
+function getDeterministicCandidateRank(actorUserId: string, dayKey: string, ownerId: string, cardId: string): number {
+  const source = `${actorUserId}|${dayKey}|${ownerId}|${cardId}`;
+  let hash = 2166136261;
+  for (let i = 0; i < source.length; i += 1) {
+    hash ^= source.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
 export async function getSwipeDailyUsage(adminClient: AdminClient, actorUserId: string): Promise<number> {
   const { startUtcIso, endUtcIso } = getSwipeDayRangeUtc();
   const res = await adminClient
@@ -181,37 +196,51 @@ export async function getSwipeCandidate(
   }
 
   const seenOwners = new Set<string>();
+  const dayKey = getSwipeDayKeyKst();
+  const candidates: Array<{ rank: number; candidate: SwipeCandidate }> = [];
+
   for (const row of (cardsRes.data ?? []) as DatingCardRow[]) {
     const ownerId = String(row.owner_user_id ?? "").trim();
     if (!ownerId || ownerId === actorUserId) continue;
     if (seenOwners.has(ownerId)) continue;
-
     if (excludedUserIds.has(ownerId)) continue;
     if (!String(row.instagram_id ?? "").trim()) continue;
     seenOwners.add(ownerId);
 
-    return {
-      user_id: ownerId,
-      card_id: row.id,
-      sex: row.sex,
-      display_nickname: String(row.display_nickname ?? "익명").trim() || "익명",
-      age: row.age ?? null,
-      region: row.region ?? null,
-      height_cm: row.height_cm ?? null,
-      job: row.job ?? null,
-      training_years: row.training_years ?? null,
-      ideal_type: row.ideal_type ?? null,
-      strengths_text: row.strengths_text ?? null,
-      total_3lift: row.total_3lift ?? null,
-      is_3lift_verified: row.is_3lift_verified === true,
-      photo_visibility: row.photo_visibility === "public" ? "public" : "blur",
-      image_url: pickPreviewImage(row),
-      source_status: row.status,
-      created_at: row.created_at,
-    };
+    candidates.push({
+      rank: getDeterministicCandidateRank(actorUserId, dayKey, ownerId, row.id),
+      candidate: {
+        user_id: ownerId,
+        card_id: row.id,
+        sex: row.sex,
+        display_nickname: String(row.display_nickname ?? "익명").trim() || "익명",
+        age: row.age ?? null,
+        region: row.region ?? null,
+        height_cm: row.height_cm ?? null,
+        job: row.job ?? null,
+        training_years: row.training_years ?? null,
+        ideal_type: row.ideal_type ?? null,
+        strengths_text: row.strengths_text ?? null,
+        total_3lift: row.total_3lift ?? null,
+        is_3lift_verified: row.is_3lift_verified === true,
+        photo_visibility: row.photo_visibility === "public" ? "public" : "blur",
+        image_url: pickPreviewImage(row),
+        source_status: row.status,
+        created_at: row.created_at,
+      },
+    });
   }
 
-  return null;
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  candidates.sort((a, b) => {
+    if (a.rank !== b.rank) return a.rank - b.rank;
+    return b.candidate.created_at.localeCompare(a.candidate.created_at);
+  });
+
+  return candidates[0]?.candidate ?? null;
 }
 
 export async function sendDatingEmailNotification(
