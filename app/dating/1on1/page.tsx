@@ -1,8 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
 type WriteStatusResponse = {
@@ -53,6 +53,20 @@ function smokingLabel(value: CardItem["smoking"]): string {
   return "흡연";
 }
 
+export default function DatingOneOnOnePage() {
+  return (
+    <Suspense
+      fallback={
+        <main className="mx-auto max-w-3xl px-4 py-10">
+          <p className="text-sm text-neutral-500">로딩 중...</p>
+        </main>
+      }
+    >
+      <DatingOneOnOnePageContent />
+    </Suspense>
+  );
+}
+
 function workoutLabel(value: CardItem["workout_frequency"]): string {
   if (value === "none") return "안 함";
   if (value === "1_2") return "주 1-2회";
@@ -61,9 +75,12 @@ function workoutLabel(value: CardItem["workout_frequency"]): string {
   return "-";
 }
 
-export default function DatingOneOnOnePage() {
+function DatingOneOnOnePageContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
+  const editId = (searchParams.get("editId") ?? "").trim();
+  const isEditMode = editId.length > 0;
 
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<WriteStatusResponse | null>(null);
@@ -81,6 +98,7 @@ export default function DatingOneOnOnePage() {
   const [smoking, setSmoking] = useState<"non_smoker" | "occasional" | "smoker">("non_smoker");
   const [workoutFrequency, setWorkoutFrequency] = useState("");
   const [photos, setPhotos] = useState<File[]>([]);
+  const [existingPhotoUrls, setExistingPhotoUrls] = useState<string[]>([]);
 
   const [consentFakeInfo, setConsentFakeInfo] = useState(false);
   const [consentNoShow, setConsentNoShow] = useState(false);
@@ -92,6 +110,7 @@ export default function DatingOneOnOnePage() {
   const [info, setInfo] = useState("");
 
   const allConsented = consentFakeInfo && consentNoShow && consentFee && consentPrivacy;
+  const canSubmitForm = isEditMode ? true : Boolean(status?.canWrite);
 
   useEffect(() => {
     let mounted = true;
@@ -124,6 +143,38 @@ export default function DatingOneOnOnePage() {
           if (!mounted) return;
           setCards(cardsBody.items ?? []);
         }
+
+        if (isEditMode) {
+          const myRes = await fetch("/api/dating/1on1/my", { cache: "no-store" });
+          const myBody = (await myRes.json().catch(() => ({}))) as { items?: CardItem[]; error?: string };
+          if (!myRes.ok) {
+            throw new Error(myBody.error ?? "수정할 신청서를 불러오지 못했습니다.");
+          }
+          const editTarget = (myBody.items ?? []).find((item) => item.id === editId);
+          if (!editTarget) {
+            throw new Error("수정할 신청서를 찾지 못했습니다.");
+          }
+          if (editTarget.status !== "submitted") {
+            throw new Error("접수중 상태일 때만 수정할 수 있습니다.");
+          }
+          if (!mounted) return;
+          setSex(editTarget.sex);
+          setName(editTarget.name);
+          setBirthYear(String(editTarget.birth_year));
+          setHeightCm(String(editTarget.height_cm));
+          setJob(editTarget.job);
+          setRegion(editTarget.region);
+          setIntroText(editTarget.intro_text);
+          setStrengthsText(editTarget.strengths_text);
+          setPreferredPartnerText(editTarget.preferred_partner_text);
+          setSmoking(editTarget.smoking);
+          setWorkoutFrequency(editTarget.workout_frequency ?? "");
+          setExistingPhotoUrls(Array.isArray(editTarget.photo_signed_urls) ? editTarget.photo_signed_urls : []);
+          setConsentFakeInfo(true);
+          setConsentNoShow(true);
+          setConsentFee(true);
+          setConsentPrivacy(true);
+        }
       } catch (e) {
         if (!mounted) return;
         setError(e instanceof Error ? e.message : String(e));
@@ -135,7 +186,7 @@ export default function DatingOneOnOnePage() {
     return () => {
       mounted = false;
     };
-  }, [router, supabase]);
+  }, [editId, isEditMode, router, supabase]);
 
   const handlePhotoChange = (files: FileList | null) => {
     if (!files) return;
@@ -157,7 +208,7 @@ export default function DatingOneOnOnePage() {
     setError("");
     setInfo("");
 
-    if (!status?.canWrite) {
+    if (!isEditMode && !status?.canWrite) {
       setError("현재 글쓰기 권한이 없습니다.");
       return;
     }
@@ -165,29 +216,31 @@ export default function DatingOneOnOnePage() {
       setError("필수 동의 항목을 모두 체크해주세요.");
       return;
     }
-    if (photos.length !== 2) {
-      setError("사진은 정확히 2장을 업로드해주세요.");
+    if ((!isEditMode && photos.length !== 2) || (isEditMode && photos.length > 0 && photos.length !== 2)) {
+      setError("사진은 새로 바꿀 때도 정확히 2장을 업로드해주세요.");
       return;
     }
 
     setSubmitting(true);
     try {
       const uploadedPaths: string[] = [];
-      for (const file of photos) {
-        const fd = new FormData();
-        fd.append("file", file);
-        const uploadRes = await fetch("/api/dating/1on1/upload", {
-          method: "POST",
-          body: fd,
-        });
-        const uploadBody = (await uploadRes.json().catch(() => ({}))) as {
-          path?: string;
-          error?: string;
-        };
-        if (!uploadRes.ok || !uploadBody.path) {
-          throw new Error(uploadBody.error ?? "사진 업로드에 실패했습니다.");
+      if (photos.length > 0) {
+        for (const file of photos) {
+          const fd = new FormData();
+          fd.append("file", file);
+          const uploadRes = await fetch("/api/dating/1on1/upload", {
+            method: "POST",
+            body: fd,
+          });
+          const uploadBody = (await uploadRes.json().catch(() => ({}))) as {
+            path?: string;
+            error?: string;
+          };
+          if (!uploadRes.ok || !uploadBody.path) {
+            throw new Error(uploadBody.error ?? "사진 업로드에 실패했습니다.");
+          }
+          uploadedPaths.push(uploadBody.path);
         }
-        uploadedPaths.push(uploadBody.path);
       }
 
       const payload = {
@@ -202,24 +255,24 @@ export default function DatingOneOnOnePage() {
         preferred_partner_text: preferredPartnerText.trim(),
         smoking,
         workout_frequency: workoutFrequency || null,
-        photo_paths: uploadedPaths,
+        ...(uploadedPaths.length > 0 ? { photo_paths: uploadedPaths } : {}),
         consent_fake_info: consentFakeInfo,
         consent_no_show: consentNoShow,
         consent_fee: consentFee,
         consent_privacy: consentPrivacy,
       };
 
-      const res = await fetch("/api/dating/1on1/cards", {
-        method: "POST",
+      const res = await fetch(isEditMode ? "/api/dating/1on1/my" : "/api/dating/1on1/cards", {
+        method: isEditMode ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
+        body: JSON.stringify(isEditMode ? { id: editId, ...payload } : payload),
       });
       const body = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
       if (!res.ok) {
         throw new Error(body.error ?? "신청 저장에 실패했습니다.");
       }
 
-      setInfo("신청 카드가 저장되었습니다.");
+      setInfo(isEditMode ? "신청서가 수정되었습니다." : "신청 카드가 등록되었습니다.");
       setName("");
       setSex("male");
       setBirthYear("");
@@ -232,12 +285,18 @@ export default function DatingOneOnOnePage() {
       setSmoking("non_smoker");
       setWorkoutFrequency("");
       setPhotos([]);
+      setExistingPhotoUrls([]);
       setConsentFakeInfo(false);
       setConsentNoShow(false);
       setConsentFee(false);
       setConsentPrivacy(false);
 
-      await reloadCards();
+      if (status?.isAdmin) {
+        await reloadCards();
+      }
+      if (isEditMode) {
+        router.replace("/mypage");
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -253,13 +312,21 @@ export default function DatingOneOnOnePage() {
     );
   }
 
-  if (!status?.isAdmin) {
+  if (!status) {
+    return (
+      <main className="mx-auto max-w-3xl px-4 py-10">
+        <p className="text-sm text-red-600">권한 상태를 확인하지 못했습니다.</p>
+      </main>
+    );
+  }
+
+  if (!status.isAdmin && !isEditMode) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-10">
         <section className="rounded-2xl border border-neutral-200 bg-white p-6">
           <h1 className="text-xl font-bold text-neutral-900">1:1 오프라인 소개팅</h1>
           <p className="mt-2 text-sm text-neutral-600">
-            현재 이 탭은 관리자 전용으로 임시 운영 중입니다. 일반 오픈 전까지 접근이 제한됩니다.
+            현재 이 탭은 관리자 전용으로 임시 운영 중입니다. 일반 오픈 전까지는 접근이 제한됩니다.
           </p>
           <Link
             href="/"
@@ -275,14 +342,16 @@ export default function DatingOneOnOnePage() {
   return (
     <main className="mx-auto max-w-3xl px-4 py-8">
       <section className="rounded-2xl border border-neutral-200 bg-white p-5">
-        <h1 className="text-2xl font-bold text-neutral-900">1:1 오프라인 소개팅</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">
+          {isEditMode ? "1:1 오프라인 소개팅 신청서 수정" : "1:1 오프라인 소개팅"}
+        </h1>
         <p className="mt-2 text-sm text-neutral-700">
           운영자가 직접 매칭하는 오프라인 소개팅 서비스입니다.
         </p>
         <p className="text-sm text-neutral-700">신청은 무료이며, 매칭 성사 시에만 매칭비가 발생합니다.</p>
         <p className="text-sm text-neutral-700">신청 내용은 외부에 공개되지 않습니다.</p>
         <p className="mt-2 text-xs text-neutral-500">
-          카드 본문은 상대 전달용 정보이며, 전화번호는 운영자 전용으로 분리 저장됩니다.
+          카드 본문에는 전달용 정보만 담기며, 휴대폰 번호는 운영자 확인용으로만 별도 보관됩니다.
         </p>
       </section>
 
@@ -329,18 +398,18 @@ export default function DatingOneOnOnePage() {
       </section>
 
       <section className="mt-4 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h2 className="text-lg font-semibold text-neutral-900">신청 작성</h2>
+        <h2 className="text-lg font-semibold text-neutral-900">{isEditMode ? "신청서 수정" : "신청 작성"}</h2>
         <p className="mt-1 text-xs text-neutral-500">
-          로그인 + 휴대폰 인증 + write status 승인 상태에서만 저장됩니다.
+          로그인 + 휴대폰 인증 + 작성 권한 승인 상태에서만 새 신청이 가능합니다.
         </p>
         <p className="mt-1 text-xs text-neutral-500">
-          신청 후 본인 수정은 불가하며, 활성 신청(접수/검토/승인) 1건만 유지됩니다.
+          접수중 상태일 때만 본인 신청서를 수정할 수 있습니다.
         </p>
-        {status.phoneVerified ? null : (
+        {!isEditMode && !status.phoneVerified && (
           <p className="mt-2 text-xs font-medium text-amber-700">휴대폰 인증이 완료된 계정만 신청할 수 있습니다.</p>
         )}
-        {status.writeStatus === "approved" ? null : (
-          <p className="mt-2 text-xs font-medium text-amber-700">현재 작성이 일시 중지되어 있습니다.</p>
+        {!isEditMode && status.writeStatus !== "approved" && (
+          <p className="mt-2 text-xs font-medium text-amber-700">현재 새 신청 작성은 일시 중지되어 있습니다.</p>
         )}
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
         {info && <p className="mt-2 text-sm text-emerald-700">{info}</p>}
@@ -445,65 +514,95 @@ export default function DatingOneOnOnePage() {
               onChange={(e) => handlePhotoChange(e.target.files)}
               className="block w-full text-sm"
             />
-            <p className="mt-1 text-xs text-neutral-500">업로드 시 WebP로 최적화 저장됩니다. 2장 초과 선택 시 앞 2장만 사용됩니다.</p>
-          </div>
-          <button
-            type="submit"
-            disabled={!allConsented || !status.canWrite || submitting}
-            className="h-11 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {submitting ? "저장 중..." : "글 쓰기"}
-          </button>
-        </form>
-      </section>
-
-      <section className="mt-4 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h2 className="text-lg font-semibold text-neutral-900">저장된 신청 카드 (관리자 전용)</h2>
-        {cards.length === 0 ? (
-          <p className="mt-2 text-sm text-neutral-500">저장된 신청이 없습니다.</p>
-        ) : (
-          <div className="mt-3 space-y-3">
-            {cards.map((card) => (
-              <article key={card.id} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-semibold text-neutral-900">
-                    {card.name} / {card.birth_year}년생 / {card.height_cm}cm
-                  </p>
-                  <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs text-neutral-700">{card.status}</span>
-                </div>
-                <p className="mt-1 text-xs text-neutral-500">
-                  직업 {card.job} / 지역 {card.region} / 작성일 {new Date(card.created_at).toLocaleString("ko-KR")}
-                </p>
+            <p className="mt-1 text-xs text-neutral-500">
+              업로드 시 WebP로 최적화됩니다. 2장을 초과해 선택해도 앞의 2장만 사용됩니다.
+            </p>
+            {isEditMode && existingPhotoUrls.length > 0 && (
+              <div className="mt-2">
+                <p className="text-xs text-neutral-500">새 사진을 올리지 않으면 기존 사진 2장이 유지됩니다.</p>
                 <div className="mt-2 grid grid-cols-2 gap-2">
-                  {card.photo_signed_urls.map((url, idx) => (
+                  {existingPhotoUrls.map((url, idx) => (
                     <a
-                      key={`${card.id}-${idx}`}
+                      key={`existing-${idx}`}
                       href={url}
                       target="_blank"
                       rel="noreferrer"
                       className="block overflow-hidden rounded-md border border-neutral-200 bg-white"
                     >
                       {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <div className="flex h-32 w-full items-center justify-center bg-neutral-50">
-                        <img src={url} alt={`소개팅 신청 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
+                      <div className="flex h-24 w-full items-center justify-center bg-neutral-50">
+                        <img src={url} alt={`기존 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
                       </div>
                     </a>
                   ))}
                 </div>
-                <p className="mt-2 text-sm text-neutral-800 whitespace-pre-wrap">{card.intro_text}</p>
-                <p className="mt-1 text-sm text-neutral-700">장점: {card.strengths_text}</p>
-                <p className="mt-1 text-sm text-neutral-700">원하는 점: {card.preferred_partner_text}</p>
-                <p className="mt-1 text-xs text-neutral-600">
-                  흡연 {smokingLabel(card.smoking)} / 운동 빈도 {workoutLabel(card.workout_frequency)}
-                </p>
-                <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1">
-                  <p className="text-xs font-medium text-amber-800">운영자 전용 연락처: {card.phone}</p>
-                </div>
-              </article>
-            ))}
+              </div>
+            )}
           </div>
-        )}
+          <button
+            type="submit"
+            disabled={!allConsented || !canSubmitForm || submitting}
+            className="h-11 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {submitting ? "처리 중..." : isEditMode ? "수정 저장" : "글 쓰기"}
+          </button>
+        </form>
       </section>
+
+      {status.isAdmin && (
+        <section className="mt-4 rounded-2xl border border-neutral-200 bg-white p-5">
+          <h2 className="text-lg font-semibold text-neutral-900">등록된 신청 카드 (관리자 전용)</h2>
+          {cards.length === 0 ? (
+            <p className="mt-2 text-sm text-neutral-500">등록된 신청이 없습니다.</p>
+          ) : (
+            <div className="mt-3 space-y-3">
+              {cards.map((card) => (
+                <article key={card.id} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-semibold text-neutral-900">
+                      {card.name} / {card.birth_year}년생 / {card.height_cm}cm
+                    </p>
+                    <span className="rounded-full bg-neutral-200 px-2 py-0.5 text-xs text-neutral-700">{card.status}</span>
+                  </div>
+                  <p className="mt-1 text-xs text-neutral-500">
+                    직업 {card.job} / 지역 {card.region} / 작성일 {new Date(card.created_at).toLocaleString("ko-KR")}
+                  </p>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    {card.photo_signed_urls.map((url, idx) => (
+                      <a
+                        key={`${card.id}-${idx}`}
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block overflow-hidden rounded-md border border-neutral-200 bg-white"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <div className="flex h-32 w-full items-center justify-center bg-neutral-50">
+                          <img
+                            src={url}
+                            alt={`소개팅 신청 사진 ${idx + 1}`}
+                            className="max-h-full max-w-full object-contain"
+                          />
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-sm text-neutral-800 whitespace-pre-wrap">{card.intro_text}</p>
+                  <p className="mt-1 text-sm text-neutral-700">장점: {card.strengths_text}</p>
+                  <p className="mt-1 text-sm text-neutral-700">원하는 점: {card.preferred_partner_text}</p>
+                  <p className="mt-1 text-xs text-neutral-600">
+                    흡연 {smokingLabel(card.smoking)} / 운동 빈도 {workoutLabel(card.workout_frequency)}
+                  </p>
+                  <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2 py-1">
+                    <p className="text-xs font-medium text-amber-800">운영자 확인용 연락처: {card.phone}</p>
+                  </div>
+                </article>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
     </main>
   );
 }
+

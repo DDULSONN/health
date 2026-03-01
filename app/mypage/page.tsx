@@ -142,6 +142,28 @@ type ReceivedPaidApplication = {
   photo_signed_urls?: string[];
 };
 
+type MyOneOnOneCard = {
+  id: string;
+  sex: "male" | "female";
+  name: string;
+  age: number | null;
+  birth_year: number;
+  height_cm: number;
+  job: string;
+  region: string;
+  intro_text: string;
+  strengths_text: string;
+  preferred_partner_text: string;
+  smoking: "non_smoker" | "occasional" | "smoker";
+  workout_frequency: "none" | "1_2" | "3_4" | "5_plus" | null;
+  status: "submitted" | "reviewing" | "approved" | "rejected";
+  admin_note?: string | null;
+  admin_tags?: string[] | null;
+  reviewed_at?: string | null;
+  created_at: string;
+  photo_signed_urls?: string[];
+};
+
 type AdminOpenCard = {
   id: string;
   owner_user_id: string;
@@ -324,6 +346,7 @@ export default function MyPage() {
   const [myPaidCards, setMyPaidCards] = useState<MyPaidCard[]>([]);
   const [receivedPaidApplications, setReceivedPaidApplications] = useState<ReceivedPaidApplication[]>([]);
   const [myAppliedPaidApplications, setMyAppliedPaidApplications] = useState<MyAppliedPaidApplication[]>([]);
+  const [myOneOnOneCards, setMyOneOnOneCards] = useState<MyOneOnOneCard[]>([]);
   const [datingConnections, setDatingConnections] = useState<DatingConnection[]>([]);
   const [adminOpenCards, setAdminOpenCards] = useState<AdminOpenCard[]>([]);
   const [adminOpenCardApplications, setAdminOpenCardApplications] = useState<AdminOpenCardApplication[]>([]);
@@ -383,6 +406,7 @@ export default function MyPage() {
           appliedRes,
           paidReceivedRes,
           paidAppliedRes,
+          oneOnOneRes,
           connectionsRes,
           paidConnectionsRes,
           writeSettingRes,
@@ -396,6 +420,7 @@ export default function MyPage() {
           fetch("/api/dating/cards/my/applied", { cache: "no-store" }),
           fetch("/api/dating/paid/my/received", { cache: "no-store" }),
           fetch("/api/dating/paid/my/applied", { cache: "no-store" }),
+          fetch("/api/dating/1on1/my", { cache: "no-store" }),
           fetch("/api/dating/cards/my/connections", { cache: "no-store" }),
           fetch("/api/dating/paid/my/connections", { cache: "no-store" }),
           fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
@@ -432,6 +457,10 @@ export default function MyPage() {
           error?: string;
           applications?: MyAppliedPaidApplication[];
         };
+        const oneOnOneBody = (await oneOnOneRes.json().catch(() => ({}))) as {
+          error?: string;
+          items?: MyOneOnOneCard[];
+        };
         const connectionsBody = (await connectionsRes.json().catch(() => ({}))) as {
           error?: string;
           items?: DatingConnection[];
@@ -463,6 +492,9 @@ export default function MyPage() {
         if (!paidAppliedRes.ok) {
           throw new Error(paidAppliedBody.error ?? "내 유료카드 지원 이력을 불러오지 못했습니다.");
         }
+        if (!oneOnOneRes.ok) {
+          throw new Error(oneOnOneBody.error ?? "내 1:1 소개팅 신청 내역을 불러오지 못했습니다.");
+        }
         if (!connectionsRes.ok) {
           throw new Error(connectionsBody.error ?? "인스타 교환 정보를 불러오지 못했습니다.");
         }
@@ -482,6 +514,7 @@ export default function MyPage() {
           setMyPaidCards(paidReceivedBody.cards ?? []);
           setReceivedPaidApplications(paidReceivedBody.applications ?? []);
           setMyAppliedPaidApplications(paidAppliedBody.applications ?? []);
+          setMyOneOnOneCards(oneOnOneBody.items ?? []);
           setDatingConnections([...(connectionsBody.items ?? []), ...(paidConnectionsBody.items ?? [])]);
           setOpenCardWriteEnabled(writeSettingBody.enabled !== false);
           setApplyCreditsRemaining(Math.max(0, Number(applyCreditsBody.creditsRemaining ?? 0)));
@@ -1436,6 +1469,86 @@ export default function MyPage() {
             신청하러 가기
           </Link>
         </div>
+      </section>
+
+      <section className="mb-5 rounded-2xl border border-sky-200 bg-sky-50/30 p-5">
+        <h2 className="text-lg font-bold text-sky-900 mb-3">내 1:1 소개팅 신청 내역</h2>
+        {myOneOnOneCards.length === 0 ? (
+          <p className="text-sm text-neutral-500">아직 신청한 내역이 없습니다.</p>
+        ) : (
+          <div className="space-y-3">
+            {myOneOnOneCards.map((item) => (
+              <div key={item.id} className="rounded-xl border border-sky-200 bg-white p-3">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="text-sm font-medium text-neutral-900">
+                    {item.name} / {item.sex === "male" ? "남자" : "여자"} / {item.age ?? "-"}세
+                  </p>
+                  <span
+                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                      datingStatusColor[item.status] ?? "bg-neutral-100 text-neutral-700"
+                    }`}
+                  >
+                    {item.status}
+                  </span>
+                </div>
+                <p className="mt-1 text-xs text-neutral-500">
+                  신청일 {new Date(item.created_at).toLocaleString("ko-KR")}
+                  {item.reviewed_at ? ` / 최근 검토 ${new Date(item.reviewed_at).toLocaleString("ko-KR")}` : ""}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
+                  <span>출생연도 {item.birth_year}</span>
+                  <span>키 {item.height_cm}cm</span>
+                  <span>직업 {item.job}</span>
+                  <span>지역 {item.region}</span>
+                </div>
+                {item.intro_text && (
+                  <p className="mt-2 text-sm text-neutral-700 whitespace-pre-wrap break-words">{item.intro_text}</p>
+                )}
+                <p className="mt-1 text-xs text-neutral-700">장점: {item.strengths_text}</p>
+                <p className="mt-1 text-xs text-neutral-700">원하는 점: {item.preferred_partner_text}</p>
+                {item.admin_note && (
+                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
+                    <p className="text-xs font-medium text-amber-800">운영 메모: {item.admin_note}</p>
+                  </div>
+                )}
+                {Array.isArray(item.photo_signed_urls) && item.photo_signed_urls.length > 0 && (
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {item.photo_signed_urls.map((url, idx) => (
+                      <a
+                        key={`${item.id}-${idx}`}
+                        href={url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <div className="flex h-32 w-full items-center justify-center bg-neutral-50">
+                          <img src={url} alt={`1:1 신청 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-3 flex gap-2">
+                  <Link
+                    href="/dating/1on1"
+                    className="inline-flex h-8 items-center rounded-md border border-sky-300 bg-white px-3 text-xs font-medium text-sky-700 hover:bg-sky-50"
+                  >
+                    1:1 소개팅 페이지
+                  </Link>
+                  {item.status === "submitted" && (
+                    <Link
+                      href={`/dating/1on1?editId=${item.id}`}
+                      className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                    >
+                      신청서 수정
+                    </Link>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
 
       <section className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-5">
