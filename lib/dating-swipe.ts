@@ -138,7 +138,6 @@ export async function getLatestSwipeCardForUser(
   for (const row of (res.data ?? []) as DatingCardRow[]) {
     const instagramId = String(row.instagram_id ?? "").trim();
     if (!instagramId) continue;
-    if (!isSwipeEligibleStatus(row.status)) continue;
     return {
       ...row,
       instagram_id: instagramId,
