@@ -471,7 +471,9 @@ export default function OpenCardsPage() {
           <div>
             <h2 className="text-lg font-bold text-neutral-900">빠른 매칭</h2>
             <p className="mt-1 text-xs text-neutral-600">
-              라이크 또는 넘기기 후 바로 다음 후보가 나옵니다. 하루 최대 {swipeState.limit}명까지 가능합니다.
+              오픈카드 이력 중 랜덤으로 하루 최대 {swipeState.limit}명을 빠르게 확인할 수 있습니다.
+              <br />
+              서로 라이크하면 자동 매칭되며, 다음 후보가 바로 표시됩니다.
             </p>
           </div>
           <span className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold text-amber-700">
