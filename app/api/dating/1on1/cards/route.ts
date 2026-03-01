@@ -177,10 +177,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  if (!isAllowedAdminUser(user.id, user.email)) {
-    return NextResponse.json({ error: "Admin only" }, { status: 403 });
-  }
-
   const admin = createAdminClient();
   const writeStatus = await getDatingOneOnOneWriteStatus(admin);
   if (writeStatus !== "approved") {

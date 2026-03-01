@@ -25,7 +25,7 @@ export async function GET() {
   const phoneState = await getProfilePhoneVerification(admin, user.id);
   const phoneVerified = phoneState.phoneVerified;
   const writeStatus = await getDatingOneOnOneWriteStatus(admin);
-  const canWrite = isAdmin && phoneVerified && writeStatus === "approved";
+  const canWrite = phoneVerified && writeStatus === "approved";
 
   return NextResponse.json({
     loggedIn: true,
@@ -37,8 +37,6 @@ export async function GET() {
     canWrite,
     reason: canWrite
       ? null
-      : !isAdmin
-      ? "ADMIN_ONLY"
       : !phoneVerified
       ? "PHONE_NOT_VERIFIED"
       : "WRITE_PAUSED",
