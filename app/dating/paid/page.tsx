@@ -367,7 +367,7 @@ export default function DatingPaidPage() {
         <Link href="/community/dating/cards" className="rounded-full border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50">
           오픈카드
         </Link>
-        <span className="rounded-full border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700">🔥24시간 고정</span>
+        <span className="rounded-full border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700">대기 없이 등록</span>
         <a
           href={openKakaoUrl}
           target="_blank"

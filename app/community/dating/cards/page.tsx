@@ -412,7 +412,7 @@ export default function OpenCardsPage() {
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-neutral-300 bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white">오픈카드</span>
         <Link href="/dating/paid" className="rounded-full border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700 hover:bg-rose-100">
-          🔥24시 고정
+          대기 없이 등록
         </Link>
         <Link href="/dating/more-view" className="rounded-full border border-pink-300 bg-pink-50 px-3 py-1.5 text-sm font-semibold text-pink-700 hover:bg-pink-100">
           이상형 더보기
