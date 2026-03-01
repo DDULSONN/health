@@ -31,6 +31,7 @@ type SummaryResponse = {
     phone_verified: boolean;
     phone_e164: string | null;
     phone_verified_at: string | null;
+    swipe_profile_visible: boolean;
     email: string | null;
   };
   weekly_win_count: number;
@@ -382,6 +383,7 @@ export default function MyPage() {
   const [verifyingPhoneOtp, setVerifyingPhoneOtp] = useState(false);
   const [phoneVerifyError, setPhoneVerifyError] = useState("");
   const [phoneVerifyInfo, setPhoneVerifyInfo] = useState("");
+  const [savingSwipeVisibility, setSavingSwipeVisibility] = useState(false);
 
   useEffect(() => {
     let isMounted = true;
@@ -708,6 +710,36 @@ export default function MyPage() {
       setPhoneVerifyInfo("휴대폰 인증이 완료되었습니다.");
     } finally {
       setVerifyingPhoneOtp(false);
+    }
+  };
+
+  const handleToggleSwipeVisibility = async (enabled: boolean) => {
+    if (savingSwipeVisibility) return;
+    setSavingSwipeVisibility(true);
+    try {
+      const res = await fetch("/api/mypage/swipe-visibility", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; enabled?: boolean; ok?: boolean };
+      if (!res.ok || !body.ok) {
+        alert(body.error ?? "빠른매칭 노출 설정 변경에 실패했습니다.");
+        return;
+      }
+      setSummary((prev) =>
+        prev
+          ? {
+              ...prev,
+              profile: {
+                ...prev.profile,
+                swipe_profile_visible: body.enabled !== false,
+              },
+            }
+          : prev
+      );
+    } finally {
+      setSavingSwipeVisibility(false);
     }
   };
 
@@ -1040,6 +1072,7 @@ export default function MyPage() {
   const phoneVerified = summary?.profile.phone_verified === true;
   const phoneE164 = summary?.profile.phone_e164 ?? null;
   const phoneVerifiedAt = summary?.profile.phone_verified_at ?? null;
+  const swipeProfileVisible = summary?.profile.swipe_profile_visible !== false;
   const canChangeNickname = changedCount < 1 || credits > 0;
   const remainingFree = Math.max(0, 1 - changedCount);
 
@@ -1245,6 +1278,42 @@ export default function MyPage() {
               {phoneVerifyInfo && <p className="text-xs text-emerald-700">{phoneVerifyInfo}</p>}
             </div>
           )}
+        </div>
+
+        <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-neutral-800">빠른매칭 노출</p>
+              <p className="mt-1 text-xs text-neutral-600">
+                빠른매칭에서 내 카드가 보일지 설정합니다. 기본값은 노출 ON입니다.
+              </p>
+            </div>
+            <span
+              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                swipeProfileVisible ? "bg-emerald-100 text-emerald-700" : "bg-neutral-200 text-neutral-700"
+              }`}
+            >
+              {swipeProfileVisible ? "ON" : "OFF"}
+            </span>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void handleToggleSwipeVisibility(true)}
+              disabled={savingSwipeVisibility || swipeProfileVisible}
+              className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              내 카드 보이기
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleToggleSwipeVisibility(false)}
+              disabled={savingSwipeVisibility || !swipeProfileVisible}
+              className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              숨기기
+            </button>
+          </div>
         </div>
 
         <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">

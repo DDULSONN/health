@@ -11,12 +11,21 @@ export async function GET() {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const [profileRes, bodycheckRes, winnersRes] = await Promise.all([
-    supabase
+  let profileRes = await supabase
+    .from("profiles")
+    .select("nickname, nickname_changed_count, nickname_change_credits, phone_verified, phone_e164, phone_verified_at, swipe_profile_visible")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (profileRes.error && profileRes.error.message?.includes("swipe_profile_visible")) {
+    profileRes = await supabase
       .from("profiles")
       .select("nickname, nickname_changed_count, nickname_change_credits, phone_verified, phone_e164, phone_verified_at")
       .eq("user_id", user.id)
-      .maybeSingle(),
+      .maybeSingle();
+  }
+
+  const [bodycheckRes, winnersRes] = await Promise.all([
     supabase
       .from("posts")
       .select("id, title, created_at, score_sum, vote_count, images, is_deleted")
@@ -55,6 +64,7 @@ export async function GET() {
       phone_verified: profileRes.data?.phone_verified === true,
       phone_e164: profileRes.data?.phone_e164 ?? null,
       phone_verified_at: profileRes.data?.phone_verified_at ?? null,
+      swipe_profile_visible: profileRes.data?.swipe_profile_visible !== false,
       email: user.email ?? null,
     },
     weekly_win_count: weeklyWinCount,

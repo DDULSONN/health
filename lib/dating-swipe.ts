@@ -30,6 +30,11 @@ type DatingCardRow = {
   created_at: string;
 };
 
+type ProfileSwipeVisibilityRow = {
+  user_id: string;
+  swipe_profile_visible: boolean | null;
+};
+
 export type SwipeCandidate = {
   user_id: string;
   card_id: string;
@@ -183,6 +188,36 @@ export async function getSwipeCandidate(
   if (matchesRes.error) throw matchesRes.error;
   if (cardsRes.error) throw cardsRes.error;
 
+  const ownerIds = Array.from(
+    new Set(
+      ((cardsRes.data ?? []) as DatingCardRow[])
+        .map((row) => String(row.owner_user_id ?? "").trim())
+        .filter((value) => value.length > 0)
+    )
+  );
+  const visibilityByUserId = new Map<string, boolean>();
+  if (ownerIds.length > 0) {
+    const profilesRes = await adminClient
+      .from("profiles")
+      .select("user_id, swipe_profile_visible")
+      .in("user_id", ownerIds);
+
+    if (profilesRes.error && !profilesRes.error.message?.includes("swipe_profile_visible")) {
+      throw profilesRes.error;
+    }
+
+    const profileRows =
+      profilesRes.error && profilesRes.error.message?.includes("swipe_profile_visible")
+        ? []
+        : ((profilesRes.data ?? []) as ProfileSwipeVisibilityRow[]);
+
+    for (const row of profileRows) {
+      const userId = String(row.user_id ?? "").trim();
+      if (!userId) continue;
+      visibilityByUserId.set(userId, row.swipe_profile_visible !== false);
+    }
+  }
+
   const excludedUserIds = new Set<string>();
   for (const row of swipesRes.data ?? []) {
     const userId = String(row.target_user_id ?? "").trim();
@@ -204,6 +239,7 @@ export async function getSwipeCandidate(
     if (!ownerId || ownerId === actorUserId) continue;
     if (seenOwners.has(ownerId)) continue;
     if (excludedUserIds.has(ownerId)) continue;
+    if (visibilityByUserId.get(ownerId) === false) continue;
     if (!String(row.instagram_id ?? "").trim()) continue;
     seenOwners.add(ownerId);
 
