@@ -1,6 +1,11 @@
 import { isAllowedAdminUser } from "@/lib/admin";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
-import { getDatingOneOnOneWriteStatus, getProfilePhoneVerification } from "@/lib/dating-1on1";
+import {
+  DATING_ONE_ON_ONE_ACTIVE_STATUSES,
+  expireStaleDatingOneOnOneCards,
+  getDatingOneOnOneWriteStatus,
+  getProfilePhoneVerification,
+} from "@/lib/dating-1on1";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -73,6 +78,9 @@ export async function GET(req: Request) {
   const sort = (searchParams.get("sort") ?? "created_desc").trim();
 
   const admin = createAdminClient();
+  await expireStaleDatingOneOnOneCards(admin).catch((error) => {
+    console.error("[GET /api/dating/1on1/cards] stale expire failed", error);
+  });
   const { data, error } = await admin
     .from("dating_1on1_cards")
     .select(
@@ -184,11 +192,18 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Phone verification is required." }, { status: 403 });
   }
 
+  try {
+    await expireStaleDatingOneOnOneCards(admin, user.id);
+  } catch (error) {
+    console.error("[POST /api/dating/1on1/cards] stale expire failed", error);
+    return NextResponse.json({ error: "Failed to refresh old requests." }, { status: 500 });
+  }
+
   const duplicateRes = await admin
     .from("dating_1on1_cards")
     .select("id,status,created_at")
     .eq("user_id", user.id)
-    .in("status", ["submitted", "reviewing", "approved"])
+    .in("status", [...DATING_ONE_ON_ONE_ACTIVE_STATUSES])
     .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();

@@ -1,5 +1,5 @@
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
-import { getDatingOneOnOneWriteStatus, getProfilePhoneVerification } from "@/lib/dating-1on1";
+import { expireStaleDatingOneOnOneCards, getDatingOneOnOneWriteStatus, getProfilePhoneVerification } from "@/lib/dating-1on1";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -59,6 +59,9 @@ export async function GET() {
   }
 
   const admin = createAdminClient();
+  await expireStaleDatingOneOnOneCards(admin, user.id).catch((error) => {
+    console.error("[GET /api/dating/1on1/my] stale expire failed", error);
+  });
   const { data, error } = await admin
     .from("dating_1on1_cards")
     .select(
@@ -114,6 +117,12 @@ export async function PATCH(req: Request) {
   }
 
   const admin = createAdminClient();
+  try {
+    await expireStaleDatingOneOnOneCards(admin, user.id);
+  } catch (error) {
+    console.error("[PATCH /api/dating/1on1/my] stale expire failed", error);
+    return NextResponse.json({ error: "Failed to refresh old request." }, { status: 500 });
+  }
   const writeStatus = await getDatingOneOnOneWriteStatus(admin);
   if (writeStatus !== "approved") {
     return NextResponse.json({ error: "Writing is paused." }, { status: 403 });
