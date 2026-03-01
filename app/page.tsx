@@ -85,7 +85,7 @@ const FEATURES: Feature[] = [
     href: "/dating/1on1",
     title: "1:1 오프라인 소개팅",
     emoji: "🤝",
-    description: "운영자 직접 매칭 소개팅 신청 (현재 관리자 전용 임시 오픈)",
+    description: "운영자가 직접 매칭하는 오프라인 소개팅 신청",
     accent: "bg-blue-50 border-blue-200 hover:border-blue-400",
     cta: "1:1 소개팅 이동",
   },
