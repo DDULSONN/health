@@ -106,12 +106,23 @@ type DatingConnection = {
   application_id: string;
   card_id: string;
   created_at: string;
-  role: "owner" | "applicant";
+  role: "owner" | "applicant" | "swipe_match";
   other_user_id: string;
   other_nickname: string;
   my_instagram_id: string | null;
   other_instagram_id: string | null;
-  source?: "open" | "paid";
+  source?: "open" | "paid" | "swipe";
+  matched_card?: {
+    display_nickname: string;
+    sex: "male" | "female" | null;
+    age: number | null;
+    region: string | null;
+    height_cm: number | null;
+    job: string | null;
+    training_years: number | null;
+    ideal_type: string | null;
+    strengths_text: string | null;
+  } | null;
 };
 
 type MyPaidCard = {
@@ -1853,6 +1864,9 @@ export default function MyPage() {
                 <p className="text-xs text-neutral-500 mt-1">
                   연결일 {new Date(item.created_at).toLocaleDateString("ko-KR")}
                 </p>
+                <p className="mt-1 text-xs font-medium text-neutral-600">
+                  {item.role === "swipe_match" ? "연결 방식: 서로 라이크 자동 매칭" : "연결 방식: 지원서 수락 매칭"}
+                </p>
                 {item.my_instagram_id && (
                   <p className="text-sm text-neutral-700 mt-2">내 인스타: @{item.my_instagram_id}</p>
                 )}
@@ -1860,6 +1874,27 @@ export default function MyPage() {
                   <p className="text-sm text-emerald-700 font-medium mt-1">
                     상대 인스타: @{item.other_instagram_id}
                   </p>
+                )}
+                {item.role === "swipe_match" && item.matched_card && (
+                  <div className="mt-3 rounded-lg border border-emerald-200 bg-white p-3">
+                    <p className="text-xs font-semibold text-emerald-700">자동매칭된 상대 오픈카드</p>
+                    <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
+                      <span>{item.matched_card.sex === "male" ? "남자" : item.matched_card.sex === "female" ? "여자" : "성별 미기재"}</span>
+                      {item.matched_card.age != null && <span>나이 {item.matched_card.age}</span>}
+                      {item.matched_card.height_cm != null && <span>키 {item.matched_card.height_cm}cm</span>}
+                      {item.matched_card.region && <span>지역 {item.matched_card.region}</span>}
+                      {item.matched_card.job && <span>직업 {item.matched_card.job}</span>}
+                      {item.matched_card.training_years != null && <span>운동 {item.matched_card.training_years}년</span>}
+                    </div>
+                    {item.matched_card.ideal_type && (
+                      <p className="mt-2 text-sm text-neutral-700 break-words">이상형: {item.matched_card.ideal_type}</p>
+                    )}
+                    {item.matched_card.strengths_text && (
+                      <p className="mt-1 text-sm text-neutral-700 whitespace-pre-wrap break-words">
+                        자기소개/장점: {item.matched_card.strengths_text}
+                      </p>
+                    )}
+                  </div>
                 )}
               </div>
             ))}

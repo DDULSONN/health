@@ -37,6 +37,15 @@ type CardRow = {
   id: string;
   owner_user_id: string;
   instagram_id: string | null;
+  sex: "male" | "female" | null;
+  display_nickname: string | null;
+  age: number | null;
+  region: string | null;
+  height_cm: number | null;
+  job: string | null;
+  training_years: number | null;
+  ideal_type: string | null;
+  strengths_text: string | null;
 };
 
 type ProfileRow = {
@@ -129,7 +138,12 @@ export async function GET() {
 
   const cardsRes =
     cardIds.length > 0
-      ? await adminClient.from("dating_cards").select("id, owner_user_id, instagram_id").in("id", cardIds)
+      ? await adminClient
+          .from("dating_cards")
+          .select(
+            "id, owner_user_id, instagram_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text"
+          )
+          .in("id", cardIds)
       : { data: [], error: null };
 
   if (cardsRes.error) {
@@ -147,6 +161,11 @@ export async function GET() {
       ? await adminClient.from("profiles").select("user_id, nickname").in("user_id", profileIds)
       : { data: [], error: null };
 
+  if (profilesRes.error) {
+    console.error("[GET /api/dating/cards/my/connections] profiles failed", profilesRes.error);
+    return NextResponse.json({ error: "연결 정보를 불러오지 못했습니다." }, { status: 500 });
+  }
+
   const profileMap = new Map(((profilesRes.data ?? []) as ProfileRow[]).map((p) => [p.user_id, p.nickname]));
 
   const acceptedItems = acceptedApps
@@ -155,7 +174,7 @@ export async function GET() {
       if (!card) return null;
       const isOwnerView = card.owner_user_id === user.id;
       const otherUserId = isOwnerView ? app.applicant_user_id : card.owner_user_id;
-      const otherNickname = profileMap.get(otherUserId) ?? "익명";
+      const otherNickname = String(profileMap.get(otherUserId) ?? "익명").trim() || "익명";
       const myInstagram = isOwnerView ? card.instagram_id ?? null : app.instagram_id;
       const otherInstagram = isOwnerView ? app.instagram_id : card.instagram_id ?? null;
       return {
@@ -167,6 +186,8 @@ export async function GET() {
         other_nickname: otherNickname,
         my_instagram_id: myInstagram,
         other_instagram_id: otherInstagram,
+        source: "open",
+        matched_card: null,
       };
     })
     .filter(Boolean);
@@ -176,9 +197,10 @@ export async function GET() {
       const isUserA = match.user_a_id === user.id;
       const otherUserId = isUserA ? match.user_b_id : match.user_a_id;
       const otherCardId = isUserA ? match.user_b_card_id : match.user_a_card_id;
-      const otherNickname = profileMap.get(otherUserId) ?? "익명";
+      const otherNickname = String(profileMap.get(otherUserId) ?? "익명").trim() || "익명";
       const myInstagram = isUserA ? match.user_a_instagram_id : match.user_b_instagram_id;
       const otherInstagram = isUserA ? match.user_b_instagram_id : match.user_a_instagram_id;
+      const otherCard = cardsById.get(otherCardId);
       return {
         application_id: match.id,
         card_id: otherCardId,
@@ -188,11 +210,23 @@ export async function GET() {
         other_nickname: otherNickname,
         my_instagram_id: myInstagram ?? null,
         other_instagram_id: otherInstagram ?? null,
-        source: "open",
+        source: "swipe",
+        matched_card: otherCard
+          ? {
+              display_nickname: String(otherCard.display_nickname ?? otherNickname).trim() || otherNickname,
+              sex: otherCard.sex ?? null,
+              age: otherCard.age ?? null,
+              region: otherCard.region ?? null,
+              height_cm: otherCard.height_cm ?? null,
+              job: otherCard.job ?? null,
+              training_years: otherCard.training_years ?? null,
+              ideal_type: otherCard.ideal_type ?? null,
+              strengths_text: otherCard.strengths_text ?? null,
+            }
+          : null,
       };
     })
     .filter(Boolean);
 
   return NextResponse.json({ items: [...acceptedItems, ...swipeItems] });
 }
-
