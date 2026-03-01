@@ -496,10 +496,10 @@ export default function MyPage() {
           throw new Error(oneOnOneBody.error ?? "내 1:1 소개팅 신청 내역을 불러오지 못했습니다.");
         }
         if (!connectionsRes.ok) {
-          throw new Error(connectionsBody.error ?? "인스타 교환 정보를 불러오지 못했습니다.");
+          console.error("[mypage] open connections load failed", connectionsBody.error ?? "unknown error");
         }
         if (!paidConnectionsRes.ok) {
-          throw new Error(paidConnectionsBody.error ?? "유료 인스타 교환 정보를 불러오지 못했습니다.");
+          console.error("[mypage] paid connections load failed", paidConnectionsBody.error ?? "unknown error");
         }
 
         if (isMounted) {
@@ -515,7 +515,10 @@ export default function MyPage() {
           setReceivedPaidApplications(paidReceivedBody.applications ?? []);
           setMyAppliedPaidApplications(paidAppliedBody.applications ?? []);
           setMyOneOnOneCards(oneOnOneBody.items ?? []);
-          setDatingConnections([...(connectionsBody.items ?? []), ...(paidConnectionsBody.items ?? [])]);
+          setDatingConnections([
+            ...(connectionsRes.ok ? (connectionsBody.items ?? []) : []),
+            ...(paidConnectionsRes.ok ? (paidConnectionsBody.items ?? []) : []),
+          ]);
           setOpenCardWriteEnabled(writeSettingBody.enabled !== false);
           setApplyCreditsRemaining(Math.max(0, Number(applyCreditsBody.creditsRemaining ?? 0)));
           setError("");

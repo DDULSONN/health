@@ -1,5 +1,48 @@
-import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+
+function isMissingRelationError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return (
+    code === "42P01" ||
+    code === "PGRST205" ||
+    message.includes("does not exist") ||
+    message.includes("relation") ||
+    message.includes("could not find the table")
+  );
+}
+
+type AcceptedApplication = {
+  id: string;
+  card_id: string;
+  applicant_user_id: string;
+  instagram_id: string | null;
+  created_at: string;
+};
+
+type SwipeMatch = {
+  id: string;
+  user_a_id: string;
+  user_b_id: string;
+  user_a_card_id: string;
+  user_b_card_id: string;
+  user_a_instagram_id: string | null;
+  user_b_instagram_id: string | null;
+  created_at: string;
+};
+
+type CardRow = {
+  id: string;
+  owner_user_id: string;
+  instagram_id: string | null;
+};
+
+type ProfileRow = {
+  user_id: string;
+  nickname: string | null;
+};
 
 export async function GET() {
   const supabase = await createClient();
@@ -47,6 +90,7 @@ export async function GET() {
     return NextResponse.json({ error: "연결 정보를 불러오지 못했습니다." }, { status: 500 });
   }
 
+  let swipeMatches: SwipeMatch[] = [];
   const swipeMatchesRes = await adminClient
     .from("dating_card_swipe_matches")
     .select(
@@ -56,12 +100,21 @@ export async function GET() {
     .order("created_at", { ascending: false });
 
   if (swipeMatchesRes.error) {
-    console.error("[GET /api/dating/cards/my/connections] swipe matches failed", swipeMatchesRes.error);
-    return NextResponse.json({ error: "?곌껐 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??" }, { status: 500 });
+    if (isMissingRelationError(swipeMatchesRes.error)) {
+      console.warn("[GET /api/dating/cards/my/connections] swipe table missing, skipping");
+    } else {
+      console.error("[GET /api/dating/cards/my/connections] swipe matches failed", swipeMatchesRes.error);
+      return NextResponse.json({ error: "연결 정보를 불러오지 못했습니다." }, { status: 500 });
+    }
+  } else {
+    swipeMatches = (swipeMatchesRes.data ?? []) as SwipeMatch[];
   }
 
-  const acceptedApps = [...(myAppliedRes.data ?? []), ...(ownerAcceptedRes.data ?? [])];
-  const swipeMatches = swipeMatchesRes.data ?? [];
+  const acceptedApps = [
+    ...((myAppliedRes.data ?? []) as AcceptedApplication[]),
+    ...((ownerAcceptedRes.data ?? []) as AcceptedApplication[]),
+  ];
+
   if (acceptedApps.length === 0 && swipeMatches.length === 0) {
     return NextResponse.json({ items: [] });
   }
@@ -73,18 +126,28 @@ export async function GET() {
       ...swipeMatches.map((match) => match.user_b_card_id),
     ]),
   ];
-  const cardsRes = await adminClient.from("dating_cards").select("id, owner_user_id, instagram_id").in("id", cardIds);
+
+  const cardsRes =
+    cardIds.length > 0
+      ? await adminClient.from("dating_cards").select("id, owner_user_id, instagram_id").in("id", cardIds)
+      : { data: [], error: null };
+
   if (cardsRes.error) {
     console.error("[GET /api/dating/cards/my/connections] cards failed", cardsRes.error);
     return NextResponse.json({ error: "연결 정보를 불러오지 못했습니다." }, { status: 500 });
   }
 
-  const cardsById = new Map((cardsRes.data ?? []).map((card) => [card.id, card]));
-  const ownerIds = [...new Set((cardsRes.data ?? []).map((card) => card.owner_user_id))];
+  const cardsById = new Map(((cardsRes.data ?? []) as CardRow[]).map((card) => [card.id, card]));
+  const ownerIds = [...new Set(((cardsRes.data ?? []) as CardRow[]).map((card) => card.owner_user_id))];
   const swipeUserIds = swipeMatches.flatMap((match) => [match.user_a_id, match.user_b_id]);
   const profileIds = [...new Set([...ownerIds, ...acceptedApps.map((app) => app.applicant_user_id), ...swipeUserIds])];
-  const profilesRes = await adminClient.from("profiles").select("user_id, nickname").in("user_id", profileIds);
-  const profileMap = new Map((profilesRes.data ?? []).map((p) => [p.user_id, p.nickname]));
+
+  const profilesRes =
+    profileIds.length > 0
+      ? await adminClient.from("profiles").select("user_id, nickname").in("user_id", profileIds)
+      : { data: [], error: null };
+
+  const profileMap = new Map(((profilesRes.data ?? []) as ProfileRow[]).map((p) => [p.user_id, p.nickname]));
 
   const acceptedItems = acceptedApps
     .map((app) => {
@@ -113,7 +176,7 @@ export async function GET() {
       const isUserA = match.user_a_id === user.id;
       const otherUserId = isUserA ? match.user_b_id : match.user_a_id;
       const otherCardId = isUserA ? match.user_b_card_id : match.user_a_card_id;
-      const otherNickname = profileMap.get(otherUserId) ?? "?듬챸";
+      const otherNickname = profileMap.get(otherUserId) ?? "익명";
       const myInstagram = isUserA ? match.user_a_instagram_id : match.user_b_instagram_id;
       const otherInstagram = isUserA ? match.user_b_instagram_id : match.user_a_instagram_id;
       return {
@@ -132,3 +195,4 @@ export async function GET() {
 
   return NextResponse.json({ items: [...acceptedItems, ...swipeItems] });
 }
+
