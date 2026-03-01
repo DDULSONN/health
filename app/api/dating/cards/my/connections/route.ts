@@ -47,12 +47,32 @@ export async function GET() {
     return NextResponse.json({ error: "연결 정보를 불러오지 못했습니다." }, { status: 500 });
   }
 
+  const swipeMatchesRes = await adminClient
+    .from("dating_card_swipe_matches")
+    .select(
+      "id, user_a_id, user_b_id, user_a_card_id, user_b_card_id, user_a_instagram_id, user_b_instagram_id, created_at"
+    )
+    .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`)
+    .order("created_at", { ascending: false });
+
+  if (swipeMatchesRes.error) {
+    console.error("[GET /api/dating/cards/my/connections] swipe matches failed", swipeMatchesRes.error);
+    return NextResponse.json({ error: "?곌껐 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??" }, { status: 500 });
+  }
+
   const acceptedApps = [...(myAppliedRes.data ?? []), ...(ownerAcceptedRes.data ?? [])];
-  if (acceptedApps.length === 0) {
+  const swipeMatches = swipeMatchesRes.data ?? [];
+  if (acceptedApps.length === 0 && swipeMatches.length === 0) {
     return NextResponse.json({ items: [] });
   }
 
-  const cardIds = [...new Set(acceptedApps.map((app) => app.card_id))];
+  const cardIds = [
+    ...new Set([
+      ...acceptedApps.map((app) => app.card_id),
+      ...swipeMatches.map((match) => match.user_a_card_id),
+      ...swipeMatches.map((match) => match.user_b_card_id),
+    ]),
+  ];
   const cardsRes = await adminClient.from("dating_cards").select("id, owner_user_id, instagram_id").in("id", cardIds);
   if (cardsRes.error) {
     console.error("[GET /api/dating/cards/my/connections] cards failed", cardsRes.error);
@@ -61,11 +81,12 @@ export async function GET() {
 
   const cardsById = new Map((cardsRes.data ?? []).map((card) => [card.id, card]));
   const ownerIds = [...new Set((cardsRes.data ?? []).map((card) => card.owner_user_id))];
-  const profileIds = [...new Set([...ownerIds, ...acceptedApps.map((app) => app.applicant_user_id)])];
+  const swipeUserIds = swipeMatches.flatMap((match) => [match.user_a_id, match.user_b_id]);
+  const profileIds = [...new Set([...ownerIds, ...acceptedApps.map((app) => app.applicant_user_id), ...swipeUserIds])];
   const profilesRes = await adminClient.from("profiles").select("user_id, nickname").in("user_id", profileIds);
   const profileMap = new Map((profilesRes.data ?? []).map((p) => [p.user_id, p.nickname]));
 
-  const items = acceptedApps
+  const acceptedItems = acceptedApps
     .map((app) => {
       const card = cardsById.get(app.card_id);
       if (!card) return null;
@@ -87,5 +108,27 @@ export async function GET() {
     })
     .filter(Boolean);
 
-  return NextResponse.json({ items });
+  const swipeItems = swipeMatches
+    .map((match) => {
+      const isUserA = match.user_a_id === user.id;
+      const otherUserId = isUserA ? match.user_b_id : match.user_a_id;
+      const otherCardId = isUserA ? match.user_b_card_id : match.user_a_card_id;
+      const otherNickname = profileMap.get(otherUserId) ?? "?듬챸";
+      const myInstagram = isUserA ? match.user_a_instagram_id : match.user_b_instagram_id;
+      const otherInstagram = isUserA ? match.user_b_instagram_id : match.user_a_instagram_id;
+      return {
+        application_id: match.id,
+        card_id: otherCardId,
+        created_at: match.created_at,
+        role: "swipe_match",
+        other_user_id: otherUserId,
+        other_nickname: otherNickname,
+        my_instagram_id: myInstagram ?? null,
+        other_instagram_id: otherInstagram ?? null,
+        source: "open",
+      };
+    })
+    .filter(Boolean);
+
+  return NextResponse.json({ items: [...acceptedItems, ...swipeItems] });
 }

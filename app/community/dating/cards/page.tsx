@@ -65,6 +65,35 @@ type PaidCard = {
   expires_at: string | null;
 };
 
+type SwipeCandidate = {
+  user_id: string;
+  card_id: string;
+  sex: "male" | "female";
+  display_nickname: string;
+  age: number | null;
+  region: string | null;
+  height_cm: number | null;
+  job: string | null;
+  training_years: number | null;
+  ideal_type: string | null;
+  strengths_text: string | null;
+  total_3lift: number | null;
+  is_3lift_verified: boolean;
+  photo_visibility: "blur" | "public";
+  image_url: string | null;
+  source_status: string;
+  created_at: string;
+};
+
+type SwipeState = {
+  loggedIn: boolean;
+  canSwipe: boolean;
+  remaining: number;
+  limit: number;
+  candidate: SwipeCandidate | null;
+  reason: string | null;
+};
+
 const PAGE_SIZE = 20;
 
 function maskIdealTypeForPreview(value: string | null): string {
@@ -96,6 +125,7 @@ async function fetchBySex(
 }
 
 export default function OpenCardsPage() {
+  const [activeSex, setActiveSex] = useState<"male" | "female">("female");
   const [males, setMales] = useState<PublicCard[]>([]);
   const [females, setFemales] = useState<PublicCard[]>([]);
   const [maleCursorCreatedAt, setMaleCursorCreatedAt] = useState<string | null>(null);
@@ -119,6 +149,17 @@ export default function OpenCardsPage() {
   const [moreViewMale, setMoreViewMale] = useState<PublicCard[]>([]);
   const [moreViewFemale, setMoreViewFemale] = useState<PublicCard[]>([]);
   const [tick, setTick] = useState(0);
+  const [swipeLoading, setSwipeLoading] = useState(true);
+  const [swipeSubmitting, setSwipeSubmitting] = useState(false);
+  const [swipeMessage, setSwipeMessage] = useState("");
+  const [swipeState, setSwipeState] = useState<SwipeState>({
+    loggedIn: false,
+    canSwipe: false,
+    remaining: 0,
+    limit: 10,
+    candidate: null,
+    reason: null,
+  });
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick((v) => v + 1), 60_000);
@@ -278,11 +319,94 @@ export default function OpenCardsPage() {
     }
   }, [femaleHasMore, femaleCursorCreatedAt, femaleCursorId]);
 
+  const loadSwipe = useCallback(async (sex: "male" | "female") => {
+    setSwipeLoading(true);
+    try {
+      const res = await fetch(`/api/dating/cards/swipe?sex=${sex}`, { cache: "no-store" });
+      const body = (await res.json().catch(() => ({}))) as SwipeState & { error?: string };
+      if (!res.ok) {
+        throw new Error(body.error ?? "스와이프 후보를 불러오지 못했습니다.");
+      }
+      setSwipeState({
+        loggedIn: body.loggedIn === true,
+        canSwipe: body.canSwipe === true,
+        remaining: Math.max(0, Number(body.remaining ?? 0)),
+        limit: Math.max(1, Number(body.limit ?? 10)),
+        candidate: body.candidate ?? null,
+        reason: body.reason ?? null,
+      });
+    } catch (error) {
+      console.error("swipe load failed", error);
+      setSwipeState({
+        loggedIn: false,
+        canSwipe: false,
+        remaining: 0,
+        limit: 10,
+        candidate: null,
+        reason: error instanceof Error ? error.message : "스와이프 후보를 불러오지 못했습니다.",
+      });
+    } finally {
+      setSwipeLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    setSwipeMessage("");
+    void loadSwipe(activeSex);
+  }, [activeSex, loadSwipe]);
+
+  const handleSwipe = useCallback(
+    async (action: "like" | "pass") => {
+      if (!swipeState.candidate || swipeSubmitting) return;
+      setSwipeSubmitting(true);
+      setSwipeMessage("");
+      try {
+        const res = await fetch("/api/dating/cards/swipe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            sex: activeSex,
+            action,
+            target_user_id: swipeState.candidate.user_id,
+            target_card_id: swipeState.candidate.card_id,
+          }),
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+          match?: { other_instagram_id: string; other_nickname: string } | null;
+        };
+        if (!res.ok) {
+          throw new Error(body.error ?? "처리에 실패했습니다.");
+        }
+        if (body.match?.other_instagram_id) {
+          setSwipeMessage(`매칭 성사! 상대 인스타: @${body.match.other_instagram_id}`);
+        } else if (action === "like") {
+          setSwipeMessage("라이크를 보냈습니다.");
+        } else {
+          setSwipeMessage("다음 후보로 넘겼습니다.");
+        }
+        await loadSwipe(activeSex);
+      } catch (error) {
+        console.error("swipe submit failed", error);
+        setSwipeMessage(error instanceof Error ? error.message : "처리에 실패했습니다.");
+      } finally {
+        setSwipeSubmitting(false);
+      }
+    },
+    [activeSex, loadSwipe, swipeState.candidate, swipeSubmitting]
+  );
+
   const nowLabel = useMemo(() => tick, [tick]);
   void nowLabel;
   const malePaidItems = useMemo(() => paidItems.filter((item) => item.gender === "M"), [paidItems]);
   const femalePaidItems = useMemo(() => paidItems.filter((item) => item.gender === "F"), [paidItems]);
   const paidCount = paidItems.length;
+  const activeOpenItems = activeSex === "male" ? males : females;
+  const activePaidItems = activeSex === "male" ? malePaidItems : femalePaidItems;
+  const activeMoreViewItems = activeSex === "male" ? moreViewMale : moreViewFemale;
+  const activeHasMore = activeSex === "male" ? maleHasMore : femaleHasMore;
+  const activeCurrentCount = activeSex === "male" ? (queueStats?.male.public_count ?? males.length) : (queueStats?.female.public_count ?? females.length);
   return (
     <main className="max-w-3xl mx-auto px-4 py-6">
       <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -316,29 +440,131 @@ export default function OpenCardsPage() {
           오픈카드 작성
         </Link>
       </div>
+
+      <div className="mb-4 flex gap-2">
+        <button
+          type="button"
+          onClick={() => setActiveSex("male")}
+          className={`inline-flex min-h-[40px] items-center rounded-full border px-4 text-sm font-semibold ${
+            activeSex === "male"
+              ? "border-sky-500 bg-sky-500 text-white"
+              : "border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50"
+          }`}
+        >
+          남자 카드
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveSex("female")}
+          className={`inline-flex min-h-[40px] items-center rounded-full border px-4 text-sm font-semibold ${
+            activeSex === "female"
+              ? "border-pink-500 bg-pink-500 text-white"
+              : "border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50"
+          }`}
+        >
+          여자 카드
+        </button>
+      </div>
+
+      <section className="mb-6 rounded-2xl border border-amber-200 bg-amber-50/80 p-4">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-neutral-900">빠른 매칭</h2>
+            <p className="mt-1 text-xs text-neutral-600">
+              라이크 또는 넘기기 후 바로 다음 후보가 나옵니다. 하루 최대 {swipeState.limit}명까지 가능합니다.
+            </p>
+          </div>
+          <span className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold text-amber-700">
+            오늘 남은 횟수 {swipeState.remaining}
+          </span>
+        </div>
+        {swipeMessage && <p className="mt-3 text-sm font-medium text-emerald-700">{swipeMessage}</p>}
+        {swipeLoading ? (
+          <p className="mt-4 text-sm text-neutral-500">후보를 불러오는 중...</p>
+        ) : !swipeState.candidate ? (
+          <p className="mt-4 text-sm text-neutral-600">{swipeState.reason ?? "현재 보여줄 후보가 없습니다."}</p>
+        ) : (
+          <div className="mt-4 rounded-2xl border border-white/80 bg-white p-4">
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex items-center gap-2 text-sm text-neutral-700">
+                <span className="font-semibold text-neutral-900">{swipeState.candidate.display_nickname}</span>
+                {swipeState.candidate.age != null && <span>{swipeState.candidate.age}세</span>}
+                {swipeState.candidate.region && <span>{swipeState.candidate.region}</span>}
+              </div>
+              <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
+                {swipeState.candidate.source_status === "public" ? "공개중" : "지난 카드"}
+              </span>
+            </div>
+
+            <div className="mt-3 flex h-56 w-full items-center justify-center overflow-hidden rounded-xl border border-amber-100 bg-neutral-50">
+              {swipeState.candidate.image_url ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img
+                  src={swipeState.candidate.image_url}
+                  alt=""
+                  className={`max-h-full max-w-full object-contain ${
+                    swipeState.candidate.photo_visibility === "public" ? "" : "blur-[9px]"
+                  }`}
+                />
+              ) : (
+                <div className="h-full w-full animate-pulse bg-neutral-100" />
+              )}
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2 text-xs text-neutral-600">
+              {swipeState.candidate.height_cm != null && <span>키 {swipeState.candidate.height_cm}cm</span>}
+              {swipeState.candidate.job && <span>직업 {swipeState.candidate.job}</span>}
+              {swipeState.candidate.training_years != null && <span>운동 {swipeState.candidate.training_years}년</span>}
+              {swipeState.candidate.is_3lift_verified && (
+                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">3대인증 완료</span>
+              )}
+              {swipeState.candidate.sex === "male" && swipeState.candidate.total_3lift != null && (
+                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">
+                  3대 {swipeState.candidate.total_3lift}kg
+                </span>
+              )}
+            </div>
+            {swipeState.candidate.ideal_type && (
+              <p className="mt-2 text-xs text-pink-700 truncate">이상형: {maskIdealTypeForPreview(swipeState.candidate.ideal_type)}</p>
+            )}
+            {swipeState.candidate.strengths_text && (
+              <p className="mt-1 text-xs text-emerald-700 truncate">내 장점: {swipeState.candidate.strengths_text}</p>
+            )}
+
+            <div className="mt-4 flex gap-2">
+              <button
+                type="button"
+                onClick={() => void handleSwipe("pass")}
+                disabled={swipeSubmitting}
+                className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-xl border border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                넘기기
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleSwipe("like")}
+                disabled={swipeSubmitting}
+                className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-xl bg-pink-500 px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                라이크
+              </button>
+            </div>
+          </div>
+        )}
+      </section>
+
       {loading ? (
         <p className="text-neutral-400 text-center py-10">불러오는 중...</p>
       ) : (
-        <div className="space-y-8">
-          <Section
-            title="남자 오픈카드"
-            currentCount={queueStats?.male.public_count ?? males.length}
-            paidItems={malePaidItems}
-            items={males}
-            moreViewItems={moreViewMale}
-            hasMore={maleHasMore}
-            onMore={loadMoreMale}
-          />
-          <Section
-            title="여자 오픈카드"
-            currentCount={queueStats?.female.public_count ?? females.length}
-            paidItems={femalePaidItems}
-            items={females}
-            moreViewItems={moreViewFemale}
-            hasMore={femaleHasMore}
-            onMore={loadMoreFemale}
-          />
-        </div>
+        <Section
+          title={activeSex === "male" ? "남자 오픈카드" : "여자 오픈카드"}
+          currentCount={activeCurrentCount}
+          paidItems={activePaidItems}
+          items={activeOpenItems}
+          moreViewItems={activeMoreViewItems}
+          hasMore={activeHasMore}
+          onMore={activeSex === "male" ? loadMoreMale : loadMoreFemale}
+        />
       )}
     </main>
   );
