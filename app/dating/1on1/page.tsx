@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -96,7 +96,8 @@ function DatingOneOnOnePageContent() {
   const [preferredPartnerText, setPreferredPartnerText] = useState("");
   const [smoking, setSmoking] = useState<"non_smoker" | "occasional" | "smoker">("non_smoker");
   const [workoutFrequency, setWorkoutFrequency] = useState("");
-  const [photos, setPhotos] = useState<File[]>([]);
+  const [photoSlotOne, setPhotoSlotOne] = useState<File | null>(null);
+  const [photoSlotTwo, setPhotoSlotTwo] = useState<File | null>(null);
   const [existingPhotoUrls, setExistingPhotoUrls] = useState<string[]>([]);
 
   const [consentFakeInfo, setConsentFakeInfo] = useState(false);
@@ -110,6 +111,7 @@ function DatingOneOnOnePageContent() {
 
   const allConsented = consentFakeInfo && consentNoShow && consentFee && consentPrivacy;
   const canSubmitForm = isEditMode ? true : Boolean(status?.canWrite);
+  const selectedPhotos = [photoSlotOne, photoSlotTwo].filter((file): file is File => Boolean(file));
 
   useEffect(() => {
     let mounted = true;
@@ -137,7 +139,7 @@ function DatingOneOnOnePageContent() {
           const cardsRes = await fetch("/api/dating/1on1/cards", { cache: "no-store" });
           const cardsBody = (await cardsRes.json().catch(() => ({}))) as { items?: CardItem[]; error?: string };
           if (!cardsRes.ok) {
-            throw new Error(cardsBody.error ?? "카드 목록을 불러오지 못했습니다.");
+            throw new Error(cardsBody.error ?? "신청 목록을 불러오지 못했습니다.");
           }
           if (!mounted) return;
           setCards(cardsBody.items ?? []);
@@ -188,16 +190,28 @@ function DatingOneOnOnePageContent() {
     };
   }, [editId, isEditMode, router, supabase]);
 
-  const handlePhotoChange = (files: FileList | null) => {
-    if (!files) return;
-    setPhotos(Array.from(files).slice(0, 2));
+  const handleSlotChange = (slot: 1 | 2, files: FileList | null) => {
+    const picked = files?.[0] ?? null;
+    if (slot === 1) {
+      setPhotoSlotOne(picked);
+      return;
+    }
+    setPhotoSlotTwo(picked);
+  };
+
+  const clearSlot = (slot: 1 | 2) => {
+    if (slot === 1) {
+      setPhotoSlotOne(null);
+      return;
+    }
+    setPhotoSlotTwo(null);
   };
 
   const reloadCards = async () => {
     const cardsRes = await fetch("/api/dating/1on1/cards", { cache: "no-store" });
     const cardsBody = (await cardsRes.json().catch(() => ({}))) as { items?: CardItem[]; error?: string };
     if (!cardsRes.ok) {
-      throw new Error(cardsBody.error ?? "카드 목록을 불러오지 못했습니다.");
+      throw new Error(cardsBody.error ?? "신청 목록을 불러오지 못했습니다.");
     }
     setCards(cardsBody.items ?? []);
   };
@@ -215,16 +229,16 @@ function DatingOneOnOnePageContent() {
       setError("필수 동의 항목을 모두 체크해주세요.");
       return;
     }
-    if ((!isEditMode && photos.length !== 2) || (isEditMode && photos.length > 0 && photos.length !== 2)) {
-      setError("사진은 정확히 2장을 업로드해주세요.");
+    if ((!isEditMode && selectedPhotos.length !== 2) || (isEditMode && selectedPhotos.length > 0 && selectedPhotos.length !== 2)) {
+      setError(isEditMode ? "사진을 변경하려면 사진 1과 사진 2를 모두 선택해주세요." : "사진 1과 사진 2를 모두 업로드해주세요.");
       return;
     }
 
     setSubmitting(true);
     try {
       const uploadedPaths: string[] = [];
-      if (photos.length > 0) {
-        for (const file of photos) {
+      if (selectedPhotos.length > 0) {
+        for (const file of selectedPhotos) {
           const fd = new FormData();
           fd.append("file", file);
           const uploadRes = await fetch("/api/dating/1on1/upload", {
@@ -263,7 +277,7 @@ function DatingOneOnOnePageContent() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(isEditMode ? { id: editId, ...payload } : payload),
       });
-      const body = (await res.json().catch(() => ({}))) as { id?: string; error?: string };
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         throw new Error(body.error ?? "신청 저장에 실패했습니다.");
       }
@@ -280,7 +294,8 @@ function DatingOneOnOnePageContent() {
       setPreferredPartnerText("");
       setSmoking("non_smoker");
       setWorkoutFrequency("");
-      setPhotos([]);
+      setPhotoSlotOne(null);
+      setPhotoSlotTwo(null);
       setExistingPhotoUrls([]);
       setConsentFakeInfo(false);
       setConsentNoShow(false);
@@ -390,13 +405,45 @@ function DatingOneOnOnePageContent() {
               ))}
             </select>
           </div>
+
           <div>
-            <label className="mb-1 block text-sm font-medium text-neutral-700">사진 업로드 (정확히 2장)</label>
-            <input type="file" accept="image/jpeg,image/png,image/webp" multiple onChange={(e) => handlePhotoChange(e.target.files)} className="block w-full text-sm" />
-            <p className="mt-1 text-xs text-neutral-500">업로드 시 WebP로 최적화됩니다. 2장을 초과해 선택해도 앞의 2장만 사용됩니다.</p>
+            <label className="mb-2 block text-sm font-medium text-neutral-700">사진 업로드</label>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+                <p className="text-sm font-medium text-neutral-800">사진 1</p>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) => handleSlotChange(1, e.target.files)}
+                  className="mt-2 block w-full text-sm"
+                />
+                <p className="mt-2 text-xs text-neutral-500">{photoSlotOne ? photoSlotOne.name : "아직 선택하지 않았습니다."}</p>
+                {photoSlotOne && (
+                  <button type="button" onClick={() => clearSlot(1)} className="mt-2 text-xs font-medium text-neutral-600 underline">
+                    사진 1 선택 취소
+                  </button>
+                )}
+              </div>
+              <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+                <p className="text-sm font-medium text-neutral-800">사진 2</p>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  onChange={(e) => handleSlotChange(2, e.target.files)}
+                  className="mt-2 block w-full text-sm"
+                />
+                <p className="mt-2 text-xs text-neutral-500">{photoSlotTwo ? photoSlotTwo.name : "아직 선택하지 않았습니다."}</p>
+                {photoSlotTwo && (
+                  <button type="button" onClick={() => clearSlot(2)} className="mt-2 text-xs font-medium text-neutral-600 underline">
+                    사진 2 선택 취소
+                  </button>
+                )}
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-neutral-500">두 장 모두 업로드해야 신청할 수 있습니다. 업로드 시 WebP로 최적화됩니다.</p>
             {isEditMode && existingPhotoUrls.length > 0 && (
-              <div className="mt-2">
-                <p className="text-xs text-neutral-500">새 사진을 올리지 않으면 기존 사진 2장이 유지됩니다.</p>
+              <div className="mt-3">
+                <p className="text-xs text-neutral-500">수정 시 사진을 바꾸지 않으면 기존 사진 2장이 유지됩니다. 바꾸려면 사진 1과 사진 2를 모두 새로 선택해주세요.</p>
                 <div className="mt-2 grid grid-cols-2 gap-2">
                   {existingPhotoUrls.map((url, idx) => (
                     <a key={`existing-${idx}`} href={url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-md border border-neutral-200 bg-white">
@@ -409,6 +456,7 @@ function DatingOneOnOnePageContent() {
               </div>
             )}
           </div>
+
           <button type="submit" disabled={!allConsented || !canSubmitForm || submitting} className="h-11 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
             {submitting ? "처리 중..." : isEditMode ? "수정 저장" : "글 쓰기"}
           </button>
