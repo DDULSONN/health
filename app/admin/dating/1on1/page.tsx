@@ -41,6 +41,31 @@ function statusBadgeClass(status: StatusValue): string {
   return "bg-rose-100 text-rose-700";
 }
 
+function statusLabel(status: StatusValue): string {
+  if (status === "submitted") return "접수";
+  if (status === "reviewing") return "검토 중";
+  if (status === "approved") return "승인";
+  return "거절";
+}
+
+function sexLabel(sex: CardItem["sex"]): string {
+  return sex === "male" ? "남성" : "여성";
+}
+
+function smokingLabel(value: CardItem["smoking"]): string {
+  if (value === "non_smoker") return "비흡연";
+  if (value === "occasional") return "가끔";
+  return "흡연";
+}
+
+function workoutLabel(value: CardItem["workout_frequency"]): string {
+  if (value === "none") return "안함";
+  if (value === "1_2") return "주 1-2회";
+  if (value === "3_4") return "주 3-4회";
+  if (value === "5_plus") return "주 5회 이상";
+  return "-";
+}
+
 export default function AdminDatingOneOnOnePage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -318,45 +343,87 @@ export default function AdminDatingOneOnOnePage() {
           {items.map((item) => {
             const saving = savingIds.includes(item.id);
             return (
-              <article key={item.id} className="rounded-2xl border border-neutral-200 bg-white p-4">
-                <p className="text-sm font-semibold text-neutral-900">
-                  {item.sex === "male" ? "남" : "여"} / {item.name} / {item.age ?? "-"}세 / {item.region}
-                </p>
-                <p className="mt-1 text-xs text-neutral-500">
-                  직업 {item.job} / 키 {item.height_cm}cm / 작성일 {new Date(item.created_at).toLocaleString("ko-KR")}
-                </p>
-                <p className="mt-1 text-xs text-neutral-500">
-                  최근 검토 {item.reviewed_at ? new Date(item.reviewed_at).toLocaleString("ko-KR") : "-"}
-                  {item.reviewed_by_user_id ? ` / 검토자 ${item.reviewed_by_user_id.slice(0, 8)}...` : ""}
-                </p>
-                <div className="mt-1">
-                  <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusBadgeClass(item.status)}`}>
-                    {item.status}
-                  </span>
-                </div>
-
-                <div className="mt-2 grid grid-cols-2 gap-2">
-                  {item.photo_signed_urls.map((url, idx) => (
-                    <a
-                      key={`${item.id}-${idx}`}
-                      href={url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="block overflow-hidden rounded-md border border-neutral-200 bg-neutral-50"
-                    >
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <div className="flex h-28 w-full items-center justify-center bg-white">
-                        <img src={url} alt={`1:1 카드 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
+              <article key={item.id} className="overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-sm">
+                <div className="border-b border-neutral-200 bg-gradient-to-r from-neutral-50 to-white px-5 py-4">
+                  <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <h2 className="text-lg font-bold text-neutral-900">{item.name}</h2>
+                        <span className="rounded-full bg-neutral-900 px-2.5 py-1 text-[11px] font-semibold text-white">
+                          {sexLabel(item.sex)}
+                        </span>
+                        <span className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${statusBadgeClass(item.status)}`}>
+                          {statusLabel(item.status)}
+                        </span>
                       </div>
-                    </a>
-                  ))}
+                      <p className="mt-2 text-sm text-neutral-600">
+                        {item.age ?? "-"}세 · {item.height_cm}cm · {item.job} · {item.region}
+                      </p>
+                    </div>
+                    <div className="rounded-2xl border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-500">
+                      <p>작성일 {new Date(item.created_at).toLocaleString("ko-KR")}</p>
+                      <p className="mt-1">
+                        최근 검토 {item.reviewed_at ? new Date(item.reviewed_at).toLocaleString("ko-KR") : "-"}
+                        {item.reviewed_by_user_id ? ` / ${item.reviewed_by_user_id.slice(0, 8)}...` : ""}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                      출생 {item.birth_year}년
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                      흡연 {smokingLabel(item.smoking)}
+                    </span>
+                    <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
+                      운동 {workoutLabel(item.workout_frequency)}
+                    </span>
+                  </div>
                 </div>
 
-                <p className="mt-2 whitespace-pre-wrap text-sm text-neutral-800">{item.intro_text}</p>
-                <p className="mt-1 text-sm text-neutral-700">장점: {item.strengths_text}</p>
-                <p className="mt-1 text-sm text-neutral-700">원하는 점: {item.preferred_partner_text}</p>
+                <div className="grid gap-5 px-5 py-5 lg:grid-cols-[260px_minmax(0,1fr)]">
+                  <div>
+                    <div className="grid grid-cols-2 gap-2">
+                      {item.photo_signed_urls.map((url, idx) => (
+                        <a
+                          key={`${item.id}-${idx}`}
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block overflow-hidden rounded-2xl border border-neutral-200 bg-neutral-50"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <div className="flex h-40 w-full items-center justify-center bg-white">
+                            <img src={url} alt={`1:1 카드 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                    <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3">
+                      <p className="text-[11px] font-semibold tracking-wide text-amber-800">운영자 전용 연락처</p>
+                      <p className="mt-1 text-sm font-semibold text-amber-900">{item.phone}</p>
+                    </div>
+                  </div>
 
-                <div className="mt-3 grid grid-cols-1 gap-2 md:grid-cols-3">
+                  <div className="space-y-4">
+                    <section className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3">
+                      <p className="text-[11px] font-semibold tracking-wide text-neutral-500">자기소개</p>
+                      <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-neutral-800">{item.intro_text}</p>
+                    </section>
+
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <section className="rounded-2xl border border-neutral-200 bg-white px-4 py-3">
+                        <p className="text-[11px] font-semibold tracking-wide text-neutral-500">장점</p>
+                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-neutral-800">{item.strengths_text}</p>
+                      </section>
+                      <section className="rounded-2xl border border-neutral-200 bg-white px-4 py-3">
+                        <p className="text-[11px] font-semibold tracking-wide text-neutral-500">원하는 점</p>
+                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-neutral-800">{item.preferred_partner_text}</p>
+                      </section>
+                    </div>
+
+                    <section className="rounded-2xl border border-neutral-200 bg-white px-4 py-4">
+                      <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
                   <select
                     value={editStatusById[item.id] ?? item.status}
                     onChange={(e) =>
@@ -383,20 +450,19 @@ export default function AdminDatingOneOnOnePage() {
                   >
                     {saving ? "저장 중..." : "상태/메모 저장"}
                   </button>
-                </div>
-                <p className="mt-1 text-[11px] text-neutral-500">
-                  상태 전환 규칙: submitted → reviewing/rejected, reviewing → approved/rejected, approved/rejected는 고정
-                </p>
+                      </div>
+                      <p className="mt-2 text-[11px] text-neutral-500">
+                        상태 전환 규칙: submitted → reviewing/rejected, reviewing → approved/rejected, approved/rejected는 고정
+                      </p>
 
-                <textarea
-                  value={editNoteById[item.id] ?? ""}
-                  onChange={(e) => setEditNoteById((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                  placeholder="관리 메모"
-                  className="mt-2 min-h-20 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-                />
-
-                <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-2 py-1">
-                  <p className="text-xs font-medium text-amber-800">운영자 전용 연락처: {item.phone}</p>
+                      <textarea
+                        value={editNoteById[item.id] ?? ""}
+                        onChange={(e) => setEditNoteById((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                        placeholder="관리 메모"
+                        className="mt-3 min-h-24 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
+                      />
+                    </section>
+                  </div>
                 </div>
               </article>
             );
