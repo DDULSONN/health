@@ -60,6 +60,20 @@ function workoutLabel(value: CardItem["workout_frequency"]): string {
   return "-";
 }
 
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+  try {
+    return await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 export default function DatingOneOnOnePage() {
   return (
     <Suspense
@@ -241,10 +255,10 @@ function DatingOneOnOnePageContent() {
         for (const file of selectedPhotos) {
           const fd = new FormData();
           fd.append("file", file);
-          const uploadRes = await fetch("/api/dating/1on1/upload", {
+          const uploadRes = await fetchWithTimeout("/api/dating/1on1/upload", {
             method: "POST",
             body: fd,
-          });
+          }, 45000);
           const uploadBody = (await uploadRes.json().catch(() => ({}))) as { path?: string; error?: string };
           if (!uploadRes.ok || !uploadBody.path) {
             throw new Error(uploadBody.error ?? "사진 업로드에 실패했습니다.");
@@ -272,11 +286,11 @@ function DatingOneOnOnePageContent() {
         consent_privacy: consentPrivacy,
       };
 
-      const res = await fetch(isEditMode ? "/api/dating/1on1/my" : "/api/dating/1on1/cards", {
+      const res = await fetchWithTimeout(isEditMode ? "/api/dating/1on1/my" : "/api/dating/1on1/cards", {
         method: isEditMode ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(isEditMode ? { id: editId, ...payload } : payload),
-      });
+      }, 45000);
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         throw new Error(body.error ?? "신청 저장에 실패했습니다.");
@@ -309,6 +323,10 @@ function DatingOneOnOnePageContent() {
         router.replace("/mypage");
       }
     } catch (e) {
+      if (e instanceof DOMException && e.name === "AbortError") {
+        setError("요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.");
+        return;
+      }
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSubmitting(false);
