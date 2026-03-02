@@ -1,4 +1,3 @@
-import { isAllowedAdminUser } from "@/lib/admin";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
@@ -30,10 +29,6 @@ export async function POST(req: Request) {
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  if (!isAllowedAdminUser(user.id, user.email)) {
-    return NextResponse.json({ error: "Admin only" }, { status: 403 });
   }
 
   const form = await req.formData().catch(() => null);
