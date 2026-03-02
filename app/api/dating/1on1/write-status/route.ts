@@ -17,6 +17,7 @@ export async function GET() {
       writeStatus: "paused",
       canWrite: false,
       reason: "AUTH_REQUIRED",
+      totalApplications: 0,
     });
   }
 
@@ -26,6 +27,10 @@ export async function GET() {
   const phoneVerified = phoneState.phoneVerified;
   const writeStatus = await getDatingOneOnOneWriteStatus(admin);
   const canWrite = phoneVerified && writeStatus === "approved";
+  const countRes = await admin
+    .from("dating_1on1_cards")
+    .select("id", { count: "exact", head: true });
+  const totalApplications = countRes.error ? 0 : Math.max(0, Number(countRes.count ?? 0));
 
   return NextResponse.json({
     loggedIn: true,
@@ -35,6 +40,7 @@ export async function GET() {
     phoneVerifiedAt: phoneState.phoneVerifiedAt,
     writeStatus,
     canWrite,
+    totalApplications,
     reason: canWrite
       ? null
       : !phoneVerified
