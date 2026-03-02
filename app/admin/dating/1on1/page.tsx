@@ -399,10 +399,6 @@ export default function AdminDatingOneOnOnePage() {
                         </a>
                       ))}
                     </div>
-                    <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3">
-                      <p className="text-[11px] font-semibold tracking-wide text-amber-800">운영자 전용 연락처</p>
-                      <p className="mt-1 text-sm font-semibold text-amber-900">{item.phone}</p>
-                    </div>
                   </div>
 
                   <div className="space-y-4">
@@ -461,6 +457,11 @@ export default function AdminDatingOneOnOnePage() {
                         placeholder="관리 메모"
                         className="mt-3 min-h-24 w-full rounded-xl border border-neutral-300 px-3 py-2 text-sm"
                       />
+
+                      <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-3 py-3">
+                        <p className="text-[11px] font-semibold tracking-wide text-amber-800">운영자 전용 연락처</p>
+                        <p className="mt-1 text-sm font-semibold text-amber-900">{item.phone}</p>
+                      </div>
                     </section>
                   </div>
                 </div>
