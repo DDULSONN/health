@@ -357,7 +357,7 @@ function DatingOneOnOnePageContent() {
           {isEditMode ? "1:1 오프라인 소개팅 신청서 수정" : "1:1 오프라인 소개팅"}
         </h1>
         <p className="mt-2 text-sm text-neutral-700">운영자가 직접 매칭하는 오프라인 소개팅 서비스입니다.</p>
-        <p className="text-sm text-neutral-700">신청은 무료이며, 매칭 성사 시에만 매칭비가 발생합니다.</p>
+        <p className="text-sm text-neutral-700">신청은 무료이며, 매칭 성사 시에만 매칭비 20,000원이 발생합니다.</p>
         <p className="text-sm text-neutral-700">신청 내용은 외부에 공개되지 않습니다.</p>
         <p className="mt-2 text-sm font-medium text-emerald-700">
           지금까지 {Number(status?.totalApplications ?? 0).toLocaleString("ko-KR")}명이 1:1 소개팅을 신청했습니다.
