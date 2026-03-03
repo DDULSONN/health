@@ -48,6 +48,13 @@ function normalizeInstagramId(value: string) {
   return value.trim().replace(/^@+/, "").replace(/\s+/g, "").slice(0, 30);
 }
 
+function createClientAssetId() {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `asset-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 async function createBlurThumbnailFile(source: File): Promise<File> {
   const imageUrl = URL.createObjectURL(source);
   try {
@@ -227,7 +234,7 @@ export default function DatingPaidPage() {
       for (let i = 0; i < 2; i++) {
         const photo = photos[i];
         if (!photo) continue;
-        const assetId = crypto.randomUUID();
+        const assetId = createClientAssetId();
         const fd = new FormData();
         fd.append("file", photo);
         fd.append("kind", "raw");
@@ -349,8 +356,8 @@ export default function DatingPaidPage() {
       setStrengthsText("");
       setIdealText("");
       setInstagramId("");
-    } catch {
-      setError("네트워크 오류가 발생했습니다.");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "네트워크 오류가 발생했습니다.");
     } finally {
       setSubmitting(false);
     }
