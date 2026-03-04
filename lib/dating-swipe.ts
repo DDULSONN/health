@@ -2,7 +2,7 @@ import { buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathF
 import { getKstDayRangeUtc } from "@/lib/dating-open";
 import { createAdminClient } from "@/lib/supabase/server";
 
-export const SWIPE_DAILY_LIMIT = 10;
+export const SWIPE_DAILY_LIMIT = 5;
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
