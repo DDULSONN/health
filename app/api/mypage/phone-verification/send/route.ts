@@ -8,70 +8,117 @@ function normalizeToE164(raw: string): string {
   if (!digits) return "";
   if (digits.startsWith("0")) return `+82${digits.slice(1)}`;
   if (digits.startsWith("82")) return `+${digits}`;
-  if (digits.startsWith("1")) return `+${digits}`;
+  if (digits.startsWith("1") && digits.length === 11) return `+${digits}`;
   return `+${digits}`;
+}
+
+function isLikelyValidE164(phone: string): boolean {
+  return /^\+[1-9][0-9]{7,14}$/.test(phone);
+}
+
+function hashForLog(input: string): string {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return (hash >>> 0).toString(16);
+}
+
+function mapAuthErrorToUserMessage(message: string): string {
+  const lower = message.toLowerCase();
+  if (lower.includes("already") && lower.includes("phone")) {
+    return "이미 다른 계정에 등록된 번호입니다.";
+  }
+  if (lower.includes("invalid") && lower.includes("phone")) {
+    return "전화번호 형식이 올바르지 않습니다.";
+  }
+  if ((lower.includes("sms") || lower.includes("otp")) && (lower.includes("rate") || lower.includes("too many"))) {
+    return "문자 발송이 지연 중입니다. 잠시 후 다시 시도해주세요.";
+  }
+  return "인증번호 발송에 실패했습니다. 잠시 후 다시 시도해주세요.";
 }
 
 async function enforceOtpWindowLimit(key: string, windowSec: number, limit: number) {
   const result = await kvIncrWindow(key, windowSec);
   if (result.count > limit) {
-    return { allowed: false, retryAfterSec: result.ttlRemainingSec };
+    return { allowed: false, retryAfterSec: result.ttlRemainingSec, count: result.count, provider: result.provider };
   }
-  return { allowed: true, retryAfterSec: 0 };
+  return { allowed: true, retryAfterSec: 0, count: result.count, provider: result.provider };
 }
 
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
 
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  try {
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  const ip = extractClientIp(req);
-  const routeLimit = await checkRouteRateLimit({
-    requestId,
-    scope: "mypage-phone-otp-send",
-    userId: user.id,
-    ip,
-    userLimitPerMin: 3,
-    ipLimitPerMin: 10,
-    path: "/api/mypage/phone-verification/send",
-  });
-  if (!routeLimit.allowed) {
-    return NextResponse.json(
-      { error: `요청이 너무 많습니다. ${routeLimit.retryAfterSec}초 후 다시 시도해주세요.` },
-      { status: 429, headers: { "Retry-After": String(routeLimit.retryAfterSec) } }
+    if (!user) {
+      return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+    }
+
+    const ip = extractClientIp(req);
+    const routeLimit = await checkRouteRateLimit({
+      requestId,
+      scope: "mypage-phone-otp-send",
+      userId: user.id,
+      ip,
+      userLimitPerMin: 3,
+      ipLimitPerMin: 20,
+      path: "/api/mypage/phone-verification/send",
+    });
+    if (!routeLimit.allowed) {
+      return NextResponse.json(
+        { error: `요청이 너무 많습니다. ${routeLimit.retryAfterSec}초 후 다시 시도해주세요.`, retryAfterSec: routeLimit.retryAfterSec },
+        { status: 429, headers: { "Retry-After": String(routeLimit.retryAfterSec) } }
+      );
+    }
+
+    const body = (await req.json().catch(() => ({}))) as { phone?: string };
+    const phoneE164 = normalizeToE164(body.phone ?? "");
+    if (!phoneE164 || !isLikelyValidE164(phoneE164)) {
+      return NextResponse.json({ error: "휴대폰 번호를 올바르게 입력해주세요." }, { status: 400 });
+    }
+
+    const windowRules = [
+      { key: `phone-otp-send:user:${user.id}:60`, windowSec: 60, limit: 1, label: "user_60s" },
+      { key: `phone-otp-send:user:${user.id}:600`, windowSec: 600, limit: 5, label: "user_10m" },
+      { key: `phone-otp-send:user:${user.id}:86400`, windowSec: 86400, limit: 15, label: "user_1d" },
+      { key: `phone-otp-send:ip:${ip}:3600`, windowSec: 3600, limit: 60, label: "ip_1h" },
+    ] as const;
+    const checks = await Promise.all(windowRules.map((rule) => enforceOtpWindowLimit(rule.key, rule.windowSec, rule.limit)));
+    const blockedIndex = checks.findIndex((item) => !item.allowed);
+    if (blockedIndex >= 0) {
+      const blocked = checks[blockedIndex];
+      const rule = windowRules[blockedIndex];
+      console.warn(
+        `[phone-otp-send] blocked requestId=${requestId} user=${user.id} ipHash=${hashForLog(ip)} phoneHash=${hashForLog(phoneE164)} rule=${rule.label} count=${blocked.count}/${rule.limit} provider=${blocked.provider}`
+      );
+      return NextResponse.json(
+        { error: `인증번호 재발송이 너무 잦습니다. ${blocked.retryAfterSec}초 후 다시 시도해주세요.`, retryAfterSec: blocked.retryAfterSec },
+        { status: 429, headers: { "Retry-After": String(blocked.retryAfterSec) } }
+      );
+    }
+
+    const { error } = await supabase.auth.updateUser({ phone: phoneE164 });
+    if (error) {
+      console.warn(
+        `[phone-otp-send] supabase_auth_error requestId=${requestId} user=${user.id} ipHash=${hashForLog(ip)} phoneHash=${hashForLog(phoneE164)} message=${JSON.stringify(
+          error.message
+        )}`
+      );
+      return NextResponse.json({ error: mapAuthErrorToUserMessage(error.message), code: "SUPABASE_AUTH_ERROR" }, { status: 400 });
+    }
+
+    console.info(
+      `[phone-otp-send] queued requestId=${requestId} user=${user.id} ipHash=${hashForLog(ip)} phoneHash=${hashForLog(phoneE164)}`
     );
+    return NextResponse.json({ ok: true, pendingPhone: phoneE164 });
+  } catch (error) {
+    console.error("[POST /api/mypage/phone-verification/send] failed", { requestId, error });
+    return NextResponse.json({ error: "인증번호 발송 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요." }, { status: 500 });
   }
-
-  const body = (await req.json().catch(() => ({}))) as { phone?: string };
-  const phoneE164 = normalizeToE164(body.phone ?? "");
-  if (!phoneE164 || phoneE164.length < 11) {
-    return NextResponse.json({ error: "휴대폰 번호를 올바르게 입력해주세요." }, { status: 400 });
-  }
-
-  const windowChecks = [
-    await enforceOtpWindowLimit(`phone-otp-send:user:${user.id}:60`, 60, 1),
-    await enforceOtpWindowLimit(`phone-otp-send:user:${user.id}:600`, 600, 3),
-    await enforceOtpWindowLimit(`phone-otp-send:user:${user.id}:86400`, 86400, 10),
-    await enforceOtpWindowLimit(`phone-otp-send:ip:${ip}:3600`, 3600, 20),
-  ];
-  const blocked = windowChecks.find((item) => !item.allowed);
-  if (blocked) {
-    return NextResponse.json(
-      { error: `인증번호 재발송이 너무 잦습니다. ${blocked.retryAfterSec}초 후 다시 시도해주세요.` },
-      { status: 429, headers: { "Retry-After": String(blocked.retryAfterSec) } }
-    );
-  }
-
-  const { error } = await supabase.auth.updateUser({ phone: phoneE164 });
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 400 });
-  }
-
-  return NextResponse.json({ ok: true, pendingPhone: phoneE164 });
 }

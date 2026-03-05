@@ -1,4 +1,4 @@
-export const OPEN_CARD_LIMIT_MALE = 15;
+export const OPEN_CARD_LIMIT_MALE = 20;
 export const OPEN_CARD_LIMIT_FEMALE = 20;
 export const OPEN_CARD_EXPIRE_HOURS = 24;
 
