@@ -596,11 +596,7 @@ function Section({
 }) {
   const pinnedPaidItems = paidItems.filter((card) => card.display_mode !== "instant_public");
   const instantPaidItems = paidItems.filter((card) => card.display_mode === "instant_public");
-  const mixedItems = [
-    ...instantPaidItems.map((card) => ({ kind: "paid" as const, createdAt: new Date(card.created_at).getTime(), card })),
-    ...items.map((card) => ({ kind: "open" as const, createdAt: new Date(card.created_at).getTime(), card })),
-  ].sort((a, b) => b.createdAt - a.createdAt);
-  const hasAnyItems = pinnedPaidItems.length > 0 || mixedItems.length > 0 || moreViewItems.length > 0;
+  const hasAnyItems = pinnedPaidItems.length > 0 || items.length > 0 || instantPaidItems.length > 0 || moreViewItems.length > 0;
 
   return (
     <section>
@@ -619,12 +615,11 @@ function Section({
             </div>
           )}
           <div className="grid grid-cols-1 gap-3">
-            {mixedItems.map((entry) => (
-              entry.kind === "paid" ? (
-                <PaidCardRow key={`paid-${entry.card.id}`} card={entry.card} />
-              ) : (
-                <CardRow key={entry.card.id} card={entry.card} />
-              )
+            {items.map((card) => (
+              <CardRow key={card.id} card={card} />
+            ))}
+            {instantPaidItems.map((card) => (
+              <PaidCardRow key={`paid-${card.id}`} card={card} />
             ))}
           </div>
           {moreViewItems.length > 0 && (
@@ -656,16 +651,12 @@ function PaidCardRow({ card }: { card: PaidCard }) {
   const isPriority = card.display_mode !== "instant_public";
 
   return (
-    <div className={`rounded-2xl border p-4 ${isPriority ? "border-rose-200 bg-rose-50" : "border-emerald-200 bg-emerald-50"}`}>
+    <div className={`rounded-2xl border p-4 ${isPriority ? "border-rose-200 bg-rose-50" : "border-neutral-200 bg-white"}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-neutral-700">
-          <span
-            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold text-white ${
-              isPriority ? "bg-rose-500" : "bg-emerald-600"
-            }`}
-          >
-            {isPriority ? "🔥24시 고정" : "⚡새치기"}
-          </span>
+          {isPriority && (
+            <span className="inline-flex rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">🔥24시 고정</span>
+          )}
           <span className="font-semibold text-neutral-900">{card.nickname}</span>
           <PhoneVerifiedBadge verified={card.is_phone_verified} />
           {card.age != null && <span>{card.age}세</span>}
