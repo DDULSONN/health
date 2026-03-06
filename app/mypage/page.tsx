@@ -249,6 +249,7 @@ type AdminPaidCardApplication = {
 type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
 type AdminApplicationSort = "newest" | "oldest" | "submitted_first" | "accepted_first";
 type AdminDataView = "cards" | "applications";
+type AdminManageTab = "open_cards" | "apply_credits" | "more_view" | "city_view";
 
 type AdminApplyCreditOrder = {
   id: string;
@@ -366,6 +367,7 @@ export default function MyPage() {
   const [adminCardSort, setAdminCardSort] = useState<AdminCardSort>("public_first");
   const [adminApplicationSort, setAdminApplicationSort] = useState<AdminApplicationSort>("newest");
   const [adminDataView, setAdminDataView] = useState<AdminDataView>("cards");
+  const [adminManageTab, setAdminManageTab] = useState<AdminManageTab>("open_cards");
   const [adminApplyCreditOrders, setAdminApplyCreditOrders] = useState<AdminApplyCreditOrder[]>([]);
   const [adminMoreViewRequests, setAdminMoreViewRequests] = useState<AdminMoreViewRequest[]>([]);
   const [adminCityViewRequests, setAdminCityViewRequests] = useState<AdminCityViewRequest[]>([]);
@@ -1908,6 +1910,46 @@ export default function MyPage() {
         <section className="mb-5 rounded-2xl border border-violet-200 bg-violet-50/40 p-5">
           <h2 className="text-lg font-bold text-violet-900 mb-3">오픈카드 전체 내용 (관리자)</h2>
 
+          <div className="mb-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setAdminManageTab("open_cards")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "open_cards" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              오픈카드
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdminManageTab("apply_credits")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "apply_credits" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              지원권 주문
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdminManageTab("more_view")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "more_view" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              이상형 더보기
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdminManageTab("city_view")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "city_view" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              가까운 이상형
+            </button>
+          </div>
+
+          {adminManageTab === "open_cards" && (
           <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
             <p className="text-xs font-semibold text-violet-800">오픈카드 작성 버튼</p>
             <div className="mt-2 flex items-center gap-2">
@@ -1932,7 +1974,9 @@ export default function MyPage() {
               </span>
             </div>
           </div>
+          )}
 
+          {adminManageTab === "apply_credits" && (
           <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
             <p className="text-xs font-semibold text-violet-800">
               지원권 주문 승인 대기 {adminApplyCreditOrders.length}건
@@ -1971,7 +2015,9 @@ export default function MyPage() {
               </div>
             )}
           </div>
+          )}
 
+          {adminManageTab === "more_view" && (
           <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
             <p className="text-xs font-semibold text-violet-800">
               이상형 더보기 승인 대기 {adminMoreViewRequests.length}건
@@ -2019,7 +2065,9 @@ export default function MyPage() {
               </div>
             )}
           </div>
+          )}
 
+          {adminManageTab === "city_view" && (
           <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
             <p className="text-xs font-semibold text-violet-800">
               내 가까운 이상형 승인 대기 {adminCityViewRequests.length}건
@@ -2067,7 +2115,9 @@ export default function MyPage() {
               </div>
             )}
           </div>
+          )}
 
+          {adminManageTab === "open_cards" && (
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-violet-800">
@@ -2259,6 +2309,7 @@ export default function MyPage() {
               </div>
             )}
           </div>
+          )}
         </section>
       )}
 
