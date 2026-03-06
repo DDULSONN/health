@@ -108,35 +108,36 @@ export async function GET(req: Request) {
   }
 
   const adminClient = createAdminClient();
-  let rowRes = await adminClient
+  const rowRes = await adminClient
     .from("dating_paid_cards")
     .select("id,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,photo_visibility,display_mode,blur_thumb_path,photo_paths,status")
     .eq("id", id)
     .eq("user_id", user.id)
     .maybeSingle();
 
-  if (rowRes.error && isMissingColumnError(rowRes.error)) {
+  let rowData: Record<string, unknown> | null = (rowRes.data as Record<string, unknown> | null) ?? null;
+  let rowError = rowRes.error;
+
+  if (rowError && isMissingColumnError(rowError)) {
     const legacy = await adminClient
       .from("dating_paid_cards")
       .select("id,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,photo_visibility,blur_thumb_path,photo_paths,status")
       .eq("id", id)
       .eq("user_id", user.id)
       .maybeSingle();
-    rowRes = {
-      ...legacy,
-      data: legacy.data
-        ? {
-            ...legacy.data,
-            display_mode: "priority_24h",
-          }
-        : legacy.data,
-    };
+    rowError = legacy.error;
+    rowData = legacy.data
+      ? {
+          ...(legacy.data as Record<string, unknown>),
+          display_mode: "priority_24h",
+        }
+      : null;
   }
 
-  if (rowRes.error || !rowRes.data) {
+  if (rowError || !rowData) {
     return json(404, { ok: false, code: "NOT_FOUND", requestId, message: "유료 카드를 찾을 수 없습니다." });
   }
-  if (rowRes.data.status !== "pending") {
+  if (String(rowData.status ?? "") !== "pending") {
     return json(400, { ok: false, code: "NOT_PENDING", requestId, message: "대기중 카드만 수정할 수 있습니다." });
   }
 
@@ -144,21 +145,21 @@ export async function GET(req: Request) {
     ok: true,
     requestId,
     card: {
-      id: rowRes.data.id,
-      gender: rowRes.data.gender,
-      age: rowRes.data.age,
-      region: rowRes.data.region,
-      height_cm: rowRes.data.height_cm,
-      job: rowRes.data.job,
-      training_years: rowRes.data.training_years,
-      strengths_text: rowRes.data.strengths_text,
-      ideal_text: rowRes.data.ideal_text,
-      intro_text: rowRes.data.intro_text,
-      instagram_id: rowRes.data.instagram_id,
-      photo_visibility: rowRes.data.photo_visibility === "public" ? "public" : "blur",
-      display_mode: rowRes.data.display_mode === "instant_public" ? "instant_public" : "priority_24h",
-      blur_thumb_path: rowRes.data.blur_thumb_path,
-      photo_paths: Array.isArray(rowRes.data.photo_paths) ? rowRes.data.photo_paths : [],
+      id: String(rowData.id ?? ""),
+      gender: rowData.gender === "F" ? "F" : "M",
+      age: typeof rowData.age === "number" ? rowData.age : null,
+      region: typeof rowData.region === "string" ? rowData.region : null,
+      height_cm: typeof rowData.height_cm === "number" ? rowData.height_cm : null,
+      job: typeof rowData.job === "string" ? rowData.job : null,
+      training_years: typeof rowData.training_years === "number" ? rowData.training_years : null,
+      strengths_text: typeof rowData.strengths_text === "string" ? rowData.strengths_text : null,
+      ideal_text: typeof rowData.ideal_text === "string" ? rowData.ideal_text : null,
+      intro_text: typeof rowData.intro_text === "string" ? rowData.intro_text : null,
+      instagram_id: typeof rowData.instagram_id === "string" ? rowData.instagram_id : null,
+      photo_visibility: rowData.photo_visibility === "public" ? "public" : "blur",
+      display_mode: rowData.display_mode === "instant_public" ? "instant_public" : "priority_24h",
+      blur_thumb_path: typeof rowData.blur_thumb_path === "string" ? rowData.blur_thumb_path : null,
+      photo_paths: Array.isArray(rowData.photo_paths) ? (rowData.photo_paths as string[]) : [],
     },
   });
 }

@@ -16,11 +16,37 @@ type WeeklyTop = {
   } | null;
 };
 
+function normalizeWeeklyTop(raw: unknown): WeeklyTop | null {
+  if (!raw || typeof raw !== "object") return null;
+  const row = raw as Record<string, unknown>;
+  const postsRaw = row.posts;
+  const postsRow =
+    Array.isArray(postsRaw) && postsRaw.length > 0 && typeof postsRaw[0] === "object" && postsRaw[0] !== null
+      ? (postsRaw[0] as Record<string, unknown>)
+      : postsRaw && typeof postsRaw === "object"
+        ? (postsRaw as Record<string, unknown>)
+        : null;
+
+  return {
+    post_id: String(row.post_id ?? ""),
+    score_sum: Number(row.score_sum ?? 0),
+    score_avg: Number(row.score_avg ?? 0),
+    vote_count: Number(row.vote_count ?? 0),
+    posts: postsRow
+      ? {
+          user_id: String(postsRow.user_id ?? ""),
+          images: Array.isArray(postsRow.images) ? (postsRow.images as string[]) : null,
+        }
+      : null,
+  };
+}
+
 function isAuthorized(request: Request): boolean {
+  const vercelCronHeader = request.headers.get("x-vercel-cron");
+  if (vercelCronHeader) return true;
+
   const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) {
-    return Boolean(request.headers.get("x-vercel-cron"));
-  }
+  if (!cronSecret) return false;
 
   const auth = request.headers.get("authorization");
   return auth === `Bearer ${cronSecret}`;
@@ -31,21 +57,37 @@ async function fetchTopByGender(
   weekId: string,
   gender: "male" | "female"
 ): Promise<WeeklyTop | null> {
-  const { data, error } = await supabase
+  const baseQuery = supabase
     .from("post_score_weekly")
     .select("post_id, score_sum, score_avg, vote_count, posts!inner(user_id, images)")
     .eq("week_id", weekId)
-    .eq("gender", gender)
+    .eq("gender", gender);
+
+  const rankedQuery = baseQuery
     .gte("vote_count", MIN_VOTES)
     .order("score_sum", { ascending: false })
     .order("score_avg", { ascending: false })
     .order("vote_count", { ascending: false })
     .order("updated_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .limit(1);
 
+  const { data, error } = await rankedQuery.maybeSingle();
   if (error) throw error;
-  return (data as WeeklyTop | null) ?? null;
+  const normalizedTop = normalizeWeeklyTop(data);
+  if (normalizedTop?.post_id) return normalizedTop;
+
+  // Fallback: if no one reached MIN_VOTES, still pin weekly 1st among existing votes.
+  const fallbackQuery = baseQuery
+    .order("score_sum", { ascending: false })
+    .order("score_avg", { ascending: false })
+    .order("vote_count", { ascending: false })
+    .order("updated_at", { ascending: true })
+    .limit(1);
+
+  const { data: fallbackData, error: fallbackError } = await fallbackQuery.maybeSingle();
+  if (fallbackError) throw fallbackError;
+  const normalizedFallback = normalizeWeeklyTop(fallbackData);
+  return normalizedFallback?.post_id ? normalizedFallback : null;
 }
 
 async function fetchCandidateWeekIds(
@@ -75,7 +117,7 @@ async function getNickname(
 
 export async function GET(request: Request) {
   if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
+    return NextResponse.json({ error: "unauthorized", reason: "missing_valid_cron_auth" }, { status: 401 });
   }
 
   const url = new URL(request.url);

@@ -22,6 +22,14 @@ function isMissingColumnError(error: unknown): boolean {
   return code === "42703" || code === "PGRST204" || message.includes("column") || message.includes("display_mode");
 }
 
+function toTimeMs(value: unknown): number {
+  if (typeof value === "string" || typeof value === "number" || value instanceof Date) {
+    const t = new Date(value).getTime();
+    return Number.isFinite(t) ? t : 0;
+  }
+  return 0;
+}
+
 function json(status: number, payload: Record<string, unknown>) {
   return NextResponse.json(payload, {
     status,
@@ -142,7 +150,7 @@ export async function GET(req: Request) {
       console.error(`[dating-paid-list] ${requestId} expire update error`, expireRes.error);
     }
 
-    let queryRes = await admin
+    const queryRes = await admin
       .from("dating_paid_cards")
       .select(
         "id,user_id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,is_3lift_verified,photo_visibility,display_mode,blur_thumb_path,photo_paths,expires_at,paid_at,created_at"
@@ -150,7 +158,10 @@ export async function GET(req: Request) {
       .eq("status", "approved")
       .gt("expires_at", nowIso);
 
-    if (queryRes.error && isMissingColumnError(queryRes.error)) {
+    let rowsData = (queryRes.data as Array<Record<string, unknown>> | null) ?? null;
+    let rowsError = queryRes.error;
+
+    if (rowsError && isMissingColumnError(rowsError)) {
       const legacy = await admin
         .from("dating_paid_cards")
         .select(
@@ -158,28 +169,24 @@ export async function GET(req: Request) {
         )
         .eq("status", "approved")
         .gt("expires_at", nowIso);
-      queryRes = {
-        ...legacy,
-        data: (legacy.data ?? []).map((row) => ({
-          ...row,
-          display_mode: "priority_24h",
-        })),
-      };
+      rowsError = legacy.error;
+      rowsData = (legacy.data ?? []).map((row) => ({
+        ...(row as Record<string, unknown>),
+        display_mode: "priority_24h",
+      }));
     }
 
-    const { data, error } = queryRes;
-
-    if (error) {
-      const err = error as { code?: string; message?: string };
+    if (rowsError) {
+      const err = rowsError as { code?: string; message?: string };
       console.error(`[dating-paid-list] ${requestId} query error`, {
         code: err?.code ?? null,
         message: err?.message ?? null,
-        stack: error instanceof Error ? error.stack : undefined,
+        stack: rowsError instanceof Error ? rowsError.stack : undefined,
       });
       return json(500, { ok: false, code: "LIST_FAILED", requestId, message: "목록을 불러오지 못했습니다." });
     }
 
-    const rows = (data ?? []).sort((a, b) => {
+    const rows = (rowsData ?? []).sort((a, b) => {
       const aMode = a.display_mode === "instant_public" ? "instant_public" : "priority_24h";
       const bMode = b.display_mode === "instant_public" ? "instant_public" : "priority_24h";
       const aRank = aMode === "priority_24h" ? 0 : 1;
@@ -187,16 +194,16 @@ export async function GET(req: Request) {
       if (aRank !== bRank) return aRank - bRank;
 
       if (aMode === "priority_24h" && bMode === "priority_24h") {
-        const aPaid = new Date(a.paid_at ?? 0).getTime();
-        const bPaid = new Date(b.paid_at ?? 0).getTime();
+        const aPaid = toTimeMs(a.paid_at);
+        const bPaid = toTimeMs(b.paid_at);
         if (aPaid !== bPaid) return aPaid - bPaid;
-        const aCreated = new Date(a.created_at ?? 0).getTime();
-        const bCreated = new Date(b.created_at ?? 0).getTime();
+        const aCreated = toTimeMs(a.created_at);
+        const bCreated = toTimeMs(b.created_at);
         return aCreated - bCreated;
       }
 
-      const aCreated = new Date(a.created_at ?? 0).getTime();
-      const bCreated = new Date(b.created_at ?? 0).getTime();
+      const aCreated = toTimeMs(a.created_at);
+      const bCreated = toTimeMs(b.created_at);
       return bCreated - aCreated;
     });
     const ownerIds = [...new Set(rows.map((row) => String(row.user_id ?? "")).filter((id) => id.length > 0))];
