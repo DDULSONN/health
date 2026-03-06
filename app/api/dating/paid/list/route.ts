@@ -267,6 +267,7 @@ export async function GET(req: Request) {
           thumbUrl,
           expires_at: row.expires_at,
           paid_at: row.paid_at,
+          created_at: row.created_at,
           display_mode: row.display_mode === "instant_public" ? "instant_public" : "priority_24h",
         };
       })

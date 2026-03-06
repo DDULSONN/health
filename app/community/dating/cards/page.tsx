@@ -63,6 +63,8 @@ type PaidCard = {
   ideal_text: string | null;
   thumbUrl: string;
   expires_at: string | null;
+  created_at: string;
+  display_mode?: "priority_24h" | "instant_public";
 };
 
 type SwipeCandidate = {
@@ -401,7 +403,10 @@ export default function OpenCardsPage() {
   void nowLabel;
   const malePaidItems = useMemo(() => paidItems.filter((item) => item.gender === "M"), [paidItems]);
   const femalePaidItems = useMemo(() => paidItems.filter((item) => item.gender === "F"), [paidItems]);
-  const paidCount = paidItems.length;
+  const fixedPaidCount = useMemo(
+    () => paidItems.filter((item) => item.display_mode !== "instant_public").length,
+    [paidItems]
+  );
   const activeOpenItems = activeSex === "male" ? males : females;
   const activePaidItems = activeSex === "male" ? malePaidItems : femalePaidItems;
   const activeMoreViewItems = activeSex === "male" ? moreViewMale : moreViewFemale;
@@ -429,7 +434,7 @@ export default function OpenCardsPage() {
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">오픈카드</h1>
           <p className="text-sm text-neutral-500 mt-1">공개 카드는 24시간 동안 노출됩니다.</p>
-          <p className="text-xs text-rose-600 mt-1">현재 24시간 고정 {paidCount}명 노출중</p>
+          <p className="text-xs text-rose-600 mt-1">현재 24시간 고정 {fixedPaidCount}명 노출중</p>
           <p className="text-xs text-neutral-500 mt-1">대기열: 남자 {queueStats?.male.pending_count ?? 0}명 / 여자 {queueStats?.female.pending_count ?? 0}명</p>
           <p className="text-xs text-neutral-500 mt-1">누적 매칭 {queueStats?.accepted_matches_count ?? 0}명</p>
         </div>
@@ -589,7 +594,13 @@ function Section({
   hasMore: boolean;
   onMore: () => void;
 }) {
-  const hasAnyItems = paidItems.length > 0 || items.length > 0 || moreViewItems.length > 0;
+  const pinnedPaidItems = paidItems.filter((card) => card.display_mode !== "instant_public");
+  const instantPaidItems = paidItems.filter((card) => card.display_mode === "instant_public");
+  const mixedItems = [
+    ...instantPaidItems.map((card) => ({ kind: "paid" as const, createdAt: new Date(card.created_at).getTime(), card })),
+    ...items.map((card) => ({ kind: "open" as const, createdAt: new Date(card.created_at).getTime(), card })),
+  ].sort((a, b) => b.createdAt - a.createdAt);
+  const hasAnyItems = pinnedPaidItems.length > 0 || mixedItems.length > 0 || moreViewItems.length > 0;
 
   return (
     <section>
@@ -600,16 +611,20 @@ function Section({
         <p className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-500">현재 공개중인 카드가 없습니다.</p>
       ) : (
         <>
-          {paidItems.length > 0 && (
+          {pinnedPaidItems.length > 0 && (
             <div className="mb-3 grid grid-cols-1 gap-3">
-              {paidItems.map((card) => (
+              {pinnedPaidItems.map((card) => (
                 <PaidCardRow key={card.id} card={card} />
               ))}
             </div>
           )}
           <div className="grid grid-cols-1 gap-3">
-            {items.map((card) => (
-              <CardRow key={card.id} card={card} />
+            {mixedItems.map((entry) => (
+              entry.kind === "paid" ? (
+                <PaidCardRow key={`paid-${entry.card.id}`} card={entry.card} />
+              ) : (
+                <CardRow key={entry.card.id} card={entry.card} />
+              )
             ))}
           </div>
           {moreViewItems.length > 0 && (
@@ -638,11 +653,19 @@ function Section({
 }
 
 function PaidCardRow({ card }: { card: PaidCard }) {
+  const isPriority = card.display_mode !== "instant_public";
+
   return (
-    <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4">
+    <div className={`rounded-2xl border p-4 ${isPriority ? "border-rose-200 bg-rose-50" : "border-emerald-200 bg-emerald-50"}`}>
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-neutral-700">
-          <span className="inline-flex rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">🔥24시 고정</span>
+          <span
+            className={`inline-flex rounded-full px-2 py-0.5 text-xs font-semibold text-white ${
+              isPriority ? "bg-rose-500" : "bg-emerald-600"
+            }`}
+          >
+            {isPriority ? "🔥24시 고정" : "⚡새치기"}
+          </span>
           <span className="font-semibold text-neutral-900">{card.nickname}</span>
           <PhoneVerifiedBadge verified={card.is_phone_verified} />
           {card.age != null && <span>{card.age}세</span>}
