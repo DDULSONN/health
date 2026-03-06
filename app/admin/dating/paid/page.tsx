@@ -60,6 +60,7 @@ export default function AdminDatingPaidPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actingId, setActingId] = useState<string>("");
+  const [copiedId, setCopiedId] = useState("");
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -170,6 +171,18 @@ export default function AdminDatingPaidPage() {
       setItems((prev) => prev.filter((item) => item.id !== paidCardId));
     } finally {
       setActingId("");
+    }
+  };
+
+  const handleCopyId = async (id: string) => {
+    try {
+      await navigator.clipboard.writeText(id);
+      setCopiedId(id);
+      window.setTimeout(() => {
+        setCopiedId((prev) => (prev === id ? "" : prev));
+      }, 1200);
+    } catch {
+      alert("ID 복사에 실패했습니다.");
     }
   };
 
@@ -295,7 +308,16 @@ export default function AdminDatingPaidPage() {
                 </span>
               </div>
 
-              <p className="mt-1 break-all text-xs text-neutral-500">요청ID: {item.id}</p>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="rounded bg-neutral-100 px-2 py-1 font-mono text-xs text-neutral-700">카드ID: {item.id}</span>
+                <button
+                  type="button"
+                  onClick={() => void handleCopyId(item.id)}
+                  className="h-7 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-700 hover:bg-neutral-50"
+                >
+                  {copiedId === item.id ? "복사됨" : "ID 복사"}
+                </button>
+              </div>
               <p className="mt-1 break-all text-xs text-neutral-500">user_id: {item.user_id}</p>
               <p className="mt-1 text-xs font-medium text-violet-700">인스타: @{item.instagram_id}</p>
               <p className="mt-1 text-xs text-neutral-600">
