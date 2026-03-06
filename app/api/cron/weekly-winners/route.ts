@@ -3,7 +3,8 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { getKstWeekRangeFromWeekId, getPreviousKstWeekId } from "@/lib/weekly";
 
 const MIN_VOTES = 5;
-const MAX_BACKFILL_WEEKS = 12;
+const MAX_BACKFILL_WEEKS = 520;
+const WEEK_ID_FETCH_PAGE_SIZE = 1000;
 
 type WeeklyTop = {
   post_id: string;
@@ -94,17 +95,33 @@ async function fetchCandidateWeekIds(
   supabase: Awaited<ReturnType<typeof createAdminClient>>,
   latestClosedWeekId: string
 ): Promise<string[]> {
-  const { data, error } = await supabase
-    .from("post_score_weekly")
-    .select("week_id")
-    .lte("week_id", latestClosedWeekId)
-    .order("week_id", { ascending: false })
-    .limit(2000);
+  const weekIdSet = new Set<string>();
+  let from = 0;
 
-  if (error) throw error;
+  while (weekIdSet.size < MAX_BACKFILL_WEEKS) {
+    const to = from + WEEK_ID_FETCH_PAGE_SIZE - 1;
+    const { data, error } = await supabase
+      .from("post_score_weekly")
+      .select("week_id")
+      .lte("week_id", latestClosedWeekId)
+      .order("week_id", { ascending: false })
+      .range(from, to);
 
-  const weekIds = [...new Set((data ?? []).map((row) => row.week_id).filter(Boolean))] as string[];
-  return weekIds.slice(0, MAX_BACKFILL_WEEKS);
+    if (error) throw error;
+
+    const rows = data ?? [];
+    for (const row of rows) {
+      const weekId = String(row.week_id ?? "");
+      if (!weekId) continue;
+      weekIdSet.add(weekId);
+      if (weekIdSet.size >= MAX_BACKFILL_WEEKS) break;
+    }
+
+    if (rows.length < WEEK_ID_FETCH_PAGE_SIZE) break;
+    from += WEEK_ID_FETCH_PAGE_SIZE;
+  }
+
+  return Array.from(weekIdSet);
 }
 
 async function getNickname(

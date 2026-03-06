@@ -19,14 +19,35 @@ type HallOfFameRow = {
   vote_count: number;
 };
 
+const HOF_PAGE_SIZE = 1000;
+const HOF_MAX_ROWS = 5000;
+
 export default async function HallOfFamePage() {
   const supabase = await createClient();
 
-  const { data, error } = await supabase
-    .from("hall_of_fame")
-    .select("id, week_id, gender, post_id, nickname, image_url, score_avg, vote_count")
-    .order("week_id", { ascending: false })
-    .limit(104);
+  const allRows: HallOfFameRow[] = [];
+  let from = 0;
+  let error: { message: string } | null = null;
+
+  while (allRows.length < HOF_MAX_ROWS) {
+    const to = from + HOF_PAGE_SIZE - 1;
+    const pageRes = await supabase
+      .from("hall_of_fame")
+      .select("id, week_id, gender, post_id, nickname, image_url, score_avg, vote_count")
+      .order("week_id", { ascending: false })
+      .range(from, to);
+
+    if (pageRes.error) {
+      error = pageRes.error;
+      break;
+    }
+
+    const rows = (pageRes.data ?? []) as HallOfFameRow[];
+    allRows.push(...rows);
+
+    if (rows.length < HOF_PAGE_SIZE) break;
+    from += HOF_PAGE_SIZE;
+  }
 
   if (error) {
     return (
@@ -37,7 +58,7 @@ export default async function HallOfFamePage() {
   }
 
   const grouped = new Map<string, { male: HallOfFameRow | null; female: HallOfFameRow | null }>();
-  for (const baseRow of (data ?? []) as HallOfFameRow[]) {
+  for (const baseRow of allRows) {
     const path = extractStorageObjectPath(baseRow.image_url, "community");
     const row: HallOfFameRow = {
       ...baseRow,
