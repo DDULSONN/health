@@ -155,6 +155,24 @@ export default function AdminDatingPaidPage() {
     }
   };
 
+  const handleDelete = async (paidCardId: string) => {
+    if (!confirm("이 유료 카드를 완전히 삭제할까요?")) return;
+    setActingId(paidCardId);
+    try {
+      const res = await fetch(`/api/admin/dating/paid/${paidCardId}`, {
+        method: "DELETE",
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        alert(body.error ?? "삭제 처리에 실패했습니다.");
+        return;
+      }
+      setItems((prev) => prev.filter((item) => item.id !== paidCardId));
+    } finally {
+      setActingId("");
+    }
+  };
+
   const handleApproveCreditOrder = async (orderId: string) => {
     setActingId(orderId);
     try {
@@ -325,6 +343,14 @@ export default function AdminDatingPaidPage() {
                   className="h-8 rounded-md bg-rose-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                 >
                   거절
+                </button>
+                <button
+                  type="button"
+                  disabled={actingId === item.id}
+                  onClick={() => void handleDelete(item.id)}
+                  className="h-8 rounded-md bg-neutral-800 px-3 text-xs font-medium text-white disabled:opacity-50"
+                >
+                  삭제
                 </button>
               </div>
             </article>
