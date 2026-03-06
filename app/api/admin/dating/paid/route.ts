@@ -6,6 +6,13 @@ function json(status: number, payload: Record<string, unknown>) {
   return NextResponse.json(payload, { status });
 }
 
+function isMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || message.includes("column") || message.includes("display_mode");
+}
+
 function parseAdminUserIds() {
   return (process.env.ADMIN_USER_IDS ?? "")
     .split(",")
@@ -71,7 +78,7 @@ export async function GET(req: Request) {
     let query = admin
       .from("dating_paid_cards")
       .select(
-        "id,user_id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,photo_visibility,blur_thumb_path,photo_paths,status,paid_at,expires_at,created_at"
+        "id,user_id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,photo_visibility,display_mode,blur_thumb_path,photo_paths,status,paid_at,expires_at,created_at"
       )
       .order("created_at", { ascending: false });
 
@@ -79,7 +86,21 @@ export async function GET(req: Request) {
       query = query.eq("status", status);
     }
 
-    const { data, error } = await query;
+    let { data, error } = await query;
+    if (error && isMissingColumnError(error)) {
+      const legacyQuery = admin
+        .from("dating_paid_cards")
+        .select(
+          "id,user_id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,photo_visibility,blur_thumb_path,photo_paths,status,paid_at,expires_at,created_at"
+        )
+        .order("created_at", { ascending: false });
+      if (status === "pending" || status === "approved" || status === "rejected" || status === "expired") {
+        legacyQuery.eq("status", status);
+      }
+      const legacyRes = await legacyQuery;
+      data = (legacyRes.data ?? []).map((row) => ({ ...row, display_mode: "priority_24h" }));
+      error = legacyRes.error;
+    }
     if (error) {
       console.error(`[admin-dating-paid-list] ${requestId} query error`, error);
       return json(500, { ok: false, code: "LIST_FAILED", requestId, message: "유료 신청 목록을 불러오지 못했습니다." });
@@ -115,6 +136,7 @@ export async function GET(req: Request) {
           ideal_text: row.ideal_text,
           intro_text: row.intro_text,
           instagram_id: row.instagram_id,
+          display_mode: row.display_mode === "instant_public" ? "instant_public" : "priority_24h",
           status: row.status,
           paid_at: row.paid_at,
           expires_at: row.expires_at,

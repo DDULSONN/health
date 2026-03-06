@@ -392,8 +392,8 @@ export default function NewDatingCardPage() {
         <Field label="키(cm)"><input className="input" type="number" min={120} max={230} value={heightCm} onChange={(e) => setHeightCm(e.target.value)} /></Field>
         <Field label="직업"><input className="input" maxLength={50} value={job} onChange={(e) => setJob(e.target.value)} /></Field>
         <Field label="운동경력(년)"><input className="input" type="number" min={0} max={50} value={trainingYears} onChange={(e) => setTrainingYears(e.target.value)} /></Field>
-        <Field label="이상형(상세 전체 공개)"><textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" maxLength={1000} rows={4} value={idealType} onChange={(e) => setIdealType(e.target.value)} /></Field>
-        <Field label="내 장점(공개, 최대 150자)"><textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" maxLength={150} rows={3} value={strengthsText} onChange={(e) => setStrengthsText(e.target.value)} /></Field>
+        <Field label="이상형(상세 전체 공개)"><textarea className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-neutral-900 placeholder:text-neutral-500" maxLength={1000} rows={4} value={idealType} onChange={(e) => setIdealType(e.target.value)} /></Field>
+        <Field label="내 장점(공개, 최대 150자)"><textarea className="w-full rounded-xl border border-neutral-300 bg-white px-3 py-2 text-neutral-900 placeholder:text-neutral-500" maxLength={150} rows={3} value={strengthsText} onChange={(e) => setStrengthsText(e.target.value)} /></Field>
         <Field label="인스타그램 아이디(필수, @ 없이)" required><input className="input" required maxLength={30} value={instagramId} onChange={(e) => setInstagramId(normalizeInstagramId(e.target.value))} /></Field>
         <label className="flex items-start gap-2 text-sm text-neutral-700">
           <input
@@ -452,6 +452,10 @@ export default function NewDatingCardPage() {
           border-radius: 0.75rem;
           padding: 0 0.75rem;
           background: white;
+          color: #171717;
+        }
+        .input::placeholder {
+          color: #737373;
         }
       `}</style>
     </main>

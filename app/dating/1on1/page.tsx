@@ -403,25 +403,25 @@ function DatingOneOnOnePageContent() {
         {info && <p className="mt-2 text-sm text-emerald-700">{info}</p>}
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-3">
-          <select value={sex} onChange={(e) => setSex(e.target.value as "male" | "female")} className="h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm">
+          <select value={sex} onChange={(e) => setSex(e.target.value as "male" | "female")} className="h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-900">
             <option value="male">성별: 남자</option>
             <option value="female">성별: 여자</option>
           </select>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="이름 (실명 또는 활동명)" className="h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm" required />
-          <input value={birthYear} onChange={(e) => setBirthYear(e.target.value)} placeholder="나이 (출생연도 권장, 예: 1996)" className="h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm" inputMode="numeric" required />
-          <input value={heightCm} onChange={(e) => setHeightCm(e.target.value)} placeholder="키(cm)" className="h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm" inputMode="numeric" required />
-          <input value={job} onChange={(e) => setJob(e.target.value)} placeholder="직업" className="h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm" required />
-          <input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="지역 (시군구 기준)" className="h-11 w-full rounded-lg border border-neutral-300 px-3 text-sm" required />
-          <textarea value={introText} onChange={(e) => setIntroText(e.target.value)} placeholder="자기소개" className="min-h-24 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm" required />
-          <textarea value={strengthsText} onChange={(e) => setStrengthsText(e.target.value)} placeholder="자기 장점" className="min-h-20 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm" required />
-          <textarea value={preferredPartnerText} onChange={(e) => setPreferredPartnerText(e.target.value)} placeholder="상대방에게 원하는 점" className="min-h-20 w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm" required />
+          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="이름 (실명 또는 활동명)" className="h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-900 placeholder:text-neutral-500" required />
+          <input value={birthYear} onChange={(e) => setBirthYear(e.target.value)} placeholder="나이 (출생연도 권장, 예: 1996)" className="h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-900 placeholder:text-neutral-500" inputMode="numeric" required />
+          <input value={heightCm} onChange={(e) => setHeightCm(e.target.value)} placeholder="키(cm)" className="h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-900 placeholder:text-neutral-500" inputMode="numeric" required />
+          <input value={job} onChange={(e) => setJob(e.target.value)} placeholder="직업" className="h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-900 placeholder:text-neutral-500" required />
+          <input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="지역 (시군구 기준)" className="h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-900 placeholder:text-neutral-500" required />
+          <textarea value={introText} onChange={(e) => setIntroText(e.target.value)} placeholder="자기소개" className="min-h-24 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-500" required />
+          <textarea value={strengthsText} onChange={(e) => setStrengthsText(e.target.value)} placeholder="자기 장점" className="min-h-20 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-500" required />
+          <textarea value={preferredPartnerText} onChange={(e) => setPreferredPartnerText(e.target.value)} placeholder="상대방에게 원하는 점" className="min-h-20 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-500" required />
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <select value={smoking} onChange={(e) => setSmoking(e.target.value as "non_smoker" | "occasional" | "smoker")} className="h-11 rounded-lg border border-neutral-300 px-3 text-sm">
+            <select value={smoking} onChange={(e) => setSmoking(e.target.value as "non_smoker" | "occasional" | "smoker")} className="h-11 rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-900">
               {SMOKING_OPTIONS.map((item) => (
                 <option key={item.value} value={item.value}>흡연 여부: {item.label}</option>
               ))}
             </select>
-            <select value={workoutFrequency} onChange={(e) => setWorkoutFrequency(e.target.value)} className="h-11 rounded-lg border border-neutral-300 px-3 text-sm">
+            <select value={workoutFrequency} onChange={(e) => setWorkoutFrequency(e.target.value)} className="h-11 rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-900">
               {WORKOUT_OPTIONS.map((item) => (
                 <option key={item.value || "empty"} value={item.value}>운동 빈도: {item.label}</option>
               ))}

@@ -17,6 +17,7 @@ type PaidAdminItem = {
   ideal_text: string | null;
   intro_text: string | null;
   instagram_id: string;
+  display_mode?: "priority_24h" | "instant_public";
   status: "pending" | "approved" | "rejected" | "expired";
   paid_at: string | null;
   expires_at: string | null;
@@ -279,6 +280,9 @@ export default function AdminDatingPaidPage() {
               <p className="mt-1 break-all text-xs text-neutral-500">요청ID: {item.id}</p>
               <p className="mt-1 break-all text-xs text-neutral-500">user_id: {item.user_id}</p>
               <p className="mt-1 text-xs font-medium text-violet-700">인스타: @{item.instagram_id}</p>
+              <p className="mt-1 text-xs text-neutral-600">
+                노출방식: {item.display_mode === "instant_public" ? "즉시공개(비고정)" : "24시간 상단고정"}
+              </p>
 
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-700">
                 {item.age != null && <span>나이 {item.age}</span>}

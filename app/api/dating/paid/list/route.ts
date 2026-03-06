@@ -15,6 +15,13 @@ type LitePublicProbeCacheValue = {
 
 const litePublicProbeCache = new Map<string, LitePublicProbeCacheValue>();
 
+function isMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || message.includes("column") || message.includes("display_mode");
+}
+
 function json(status: number, payload: Record<string, unknown>) {
   return NextResponse.json(payload, {
     status,
@@ -96,8 +103,7 @@ async function createSignedUrl(
   _admin: ReturnType<typeof createAdminClient>,
   _requestId: string,
   path: string,
-  counters: SignCounters,
-  _variant: "thumb-list" | "raw-list" | "blur-list"
+  counters: SignCounters
 ) {
   const proxy = buildSignedImageUrl("dating-card-photos", path);
   if (proxy) counters.cacheMiss += 1;
@@ -136,15 +142,32 @@ export async function GET(req: Request) {
       console.error(`[dating-paid-list] ${requestId} expire update error`, expireRes.error);
     }
 
-    const { data, error } = await admin
+    let queryRes = await admin
       .from("dating_paid_cards")
       .select(
-        "id,user_id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,is_3lift_verified,photo_visibility,blur_thumb_path,photo_paths,expires_at,paid_at,created_at"
+        "id,user_id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,is_3lift_verified,photo_visibility,display_mode,blur_thumb_path,photo_paths,expires_at,paid_at,created_at"
       )
       .eq("status", "approved")
-      .gt("expires_at", nowIso)
-      .order("paid_at", { ascending: true, nullsFirst: false })
-      .order("created_at", { ascending: true });
+      .gt("expires_at", nowIso);
+
+    if (queryRes.error && isMissingColumnError(queryRes.error)) {
+      const legacy = await admin
+        .from("dating_paid_cards")
+        .select(
+          "id,user_id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,is_3lift_verified,photo_visibility,blur_thumb_path,photo_paths,expires_at,paid_at,created_at"
+        )
+        .eq("status", "approved")
+        .gt("expires_at", nowIso);
+      queryRes = {
+        ...legacy,
+        data: (legacy.data ?? []).map((row) => ({
+          ...row,
+          display_mode: "priority_24h",
+        })),
+      };
+    }
+
+    const { data, error } = queryRes;
 
     if (error) {
       const err = error as { code?: string; message?: string };
@@ -156,7 +179,26 @@ export async function GET(req: Request) {
       return json(500, { ok: false, code: "LIST_FAILED", requestId, message: "목록을 불러오지 못했습니다." });
     }
 
-    const rows = data ?? [];
+    const rows = (data ?? []).sort((a, b) => {
+      const aMode = a.display_mode === "instant_public" ? "instant_public" : "priority_24h";
+      const bMode = b.display_mode === "instant_public" ? "instant_public" : "priority_24h";
+      const aRank = aMode === "priority_24h" ? 0 : 1;
+      const bRank = bMode === "priority_24h" ? 0 : 1;
+      if (aRank !== bRank) return aRank - bRank;
+
+      if (aMode === "priority_24h" && bMode === "priority_24h") {
+        const aPaid = new Date(a.paid_at ?? 0).getTime();
+        const bPaid = new Date(b.paid_at ?? 0).getTime();
+        if (aPaid !== bPaid) return aPaid - bPaid;
+        const aCreated = new Date(a.created_at ?? 0).getTime();
+        const bCreated = new Date(b.created_at ?? 0).getTime();
+        return aCreated - bCreated;
+      }
+
+      const aCreated = new Date(a.created_at ?? 0).getTime();
+      const bCreated = new Date(b.created_at ?? 0).getTime();
+      return bCreated - aCreated;
+    });
     const ownerIds = [...new Set(rows.map((row) => String(row.user_id ?? "")).filter((id) => id.length > 0))];
     const phoneVerifiedByOwner = new Map<string, boolean>();
     if (ownerIds.length > 0) {
@@ -195,7 +237,7 @@ export async function GET(req: Request) {
             const blurWebpPath = toBlurWebpPath(blurThumbPath);
             thumbUrl = await getLitePublicUrlIfAvailable(admin, blurWebpPath);
             if (!thumbUrl) {
-              thumbUrl = await createSignedUrl(admin, requestId, blurThumbPath, counters, "blur-list");
+              thumbUrl = await createSignedUrl(admin, requestId, blurThumbPath, counters);
             }
           }
           if (thumbUrl) counters.blurSigned += 1;
@@ -218,6 +260,7 @@ export async function GET(req: Request) {
           thumbUrl,
           expires_at: row.expires_at,
           paid_at: row.paid_at,
+          display_mode: row.display_mode === "instant_public" ? "instant_public" : "priority_24h",
         };
       })
     );

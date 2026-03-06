@@ -26,6 +26,7 @@ type PaidItem = {
   thumbUrl: string;
   expires_at: string | null;
   paid_at: string | null;
+  display_mode?: "priority_24h" | "instant_public";
 };
 
 type EditablePaidCard = {
@@ -40,6 +41,7 @@ type EditablePaidCard = {
   ideal_text: string | null;
   instagram_id: string | null;
   photo_visibility: "blur" | "public";
+  display_mode?: "priority_24h" | "instant_public";
   blur_thumb_path: string | null;
   photo_paths: string[];
 };
@@ -114,6 +116,7 @@ export default function DatingPaidPage() {
   const [idealText, setIdealText] = useState("");
   const [instagramId, setInstagramId] = useState("");
   const [photoVisibility, setPhotoVisibility] = useState<"blur" | "public">("blur");
+  const [displayMode, setDisplayMode] = useState<"priority_24h" | "instant_public">("priority_24h");
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
   const [previewUrls, setPreviewUrls] = useState<(string | null)[]>([null, null]);
   const [existingRawPaths, setExistingRawPaths] = useState<string[]>([]);
@@ -180,6 +183,7 @@ export default function DatingPaidPage() {
         setIdealText(body.card.ideal_text ?? "");
         setInstagramId(body.card.instagram_id ?? "");
         setPhotoVisibility(body.card.photo_visibility === "public" ? "public" : "blur");
+        setDisplayMode(body.card.display_mode === "instant_public" ? "instant_public" : "priority_24h");
         setExistingRawPaths(Array.isArray(body.card.photo_paths) ? body.card.photo_paths : []);
         setExistingBlurThumbPath(body.card.blur_thumb_path ?? "");
       } catch {
@@ -326,6 +330,7 @@ export default function DatingPaidPage() {
         ideal_text: idealText.trim(),
         instagram_id: normalizedInstagramId,
         photo_visibility: photoVisibility,
+        display_mode: displayMode,
         blur_thumb_path: blurThumbPath || null,
         photo_paths: filteredRawPaths,
       };
@@ -356,6 +361,7 @@ export default function DatingPaidPage() {
       setStrengthsText("");
       setIdealText("");
       setInstagramId("");
+      setDisplayMode("priority_24h");
     } catch (e) {
       setError(e instanceof Error ? e.message : "네트워크 오류가 발생했습니다.");
     } finally {
@@ -412,6 +418,33 @@ export default function DatingPaidPage() {
               <button type="button" onClick={() => setGender("F")} className={`h-10 rounded-lg border px-4 text-sm ${gender === "F" ? "border-rose-500 bg-rose-500 text-white" : "border-neutral-300 bg-white text-neutral-700"}`}>
                 여자
               </button>
+            </div>
+
+            <div className="rounded-xl border border-neutral-200 p-3">
+              <p className="text-sm font-medium text-neutral-900">노출 방식</p>
+              <div className="mt-2 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setDisplayMode("priority_24h")}
+                  className={`h-9 rounded-lg border px-3 text-sm ${
+                    displayMode === "priority_24h" ? "border-rose-500 bg-rose-500 text-white" : "border-neutral-300 bg-white text-neutral-700"
+                  }`}
+                >
+                  24시간 상단고정
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setDisplayMode("instant_public")}
+                  className={`h-9 rounded-lg border px-3 text-sm ${
+                    displayMode === "instant_public" ? "border-emerald-600 bg-emerald-600 text-white" : "border-neutral-300 bg-white text-neutral-700"
+                  }`}
+                >
+                  즉시공개(비고정)
+                </button>
+              </div>
+              <p className="mt-2 text-xs text-neutral-500">
+                {displayMode === "priority_24h" ? "24시간 상단고정 노출됩니다." : "상단 고정 없이 일반 카드 흐름으로 자연스럽게 노출됩니다."}
+              </p>
             </div>
 
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
@@ -497,6 +530,17 @@ export default function DatingPaidPage() {
           border-radius: 0.75rem;
           padding: 0 0.75rem;
           background: #fff;
+          color: #171717;
+        }
+        .input::placeholder {
+          color: #737373;
+        }
+        textarea {
+          background: #fff;
+          color: #171717;
+        }
+        textarea::placeholder {
+          color: #737373;
         }
       `}</style>
     </main>
@@ -517,6 +561,13 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
                 <div className="flex items-center gap-2">
                   <p className="font-semibold text-neutral-900">{item.nickname}</p>
                   <PhoneVerifiedBadge verified={item.is_phone_verified} />
+                  <span
+                    className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                      item.display_mode === "instant_public" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
+                    }`}
+                  >
+                    {item.display_mode === "instant_public" ? "즉시공개" : "24h 고정"}
+                  </span>
                 </div>
                 {item.expires_at ? (
                   <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">{formatRemainingToKorean(item.expires_at)}</span>

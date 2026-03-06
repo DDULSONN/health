@@ -14,6 +14,7 @@ type CreateBody = {
   intro_text?: unknown;
   instagram_id?: unknown;
   photo_visibility?: unknown;
+  display_mode?: unknown;
   blur_thumb_path?: unknown;
   photo_paths?: unknown;
 };
@@ -31,6 +32,7 @@ type ParsedPaidPayload = {
   introText: string;
   instagramId: string;
   photoVisibility: "public" | "blur";
+  displayMode: "priority_24h" | "instant_public";
   blurThumbPath: string;
   photoPaths: string[];
 };
@@ -58,6 +60,13 @@ function json(status: number, payload: Record<string, unknown>) {
   return NextResponse.json(payload, { status });
 }
 
+function isMissingColumnError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || message.includes("column") || message.includes("display_mode");
+}
+
 function parsePayload(body: CreateBody): ParsedPaidPayload {
   return {
     id: toText(body.id, 100),
@@ -72,6 +81,7 @@ function parsePayload(body: CreateBody): ParsedPaidPayload {
     introText: toText(body.intro_text, 1000),
     instagramId: normalizeInstagramId(body.instagram_id),
     photoVisibility: body.photo_visibility === "public" ? "public" : "blur",
+    displayMode: body.display_mode === "instant_public" ? "instant_public" : "priority_24h",
     blurThumbPath: toText(body.blur_thumb_path, 500),
     photoPaths: Array.isArray(body.photo_paths)
       ? body.photo_paths.filter((x): x is string => typeof x === "string" && x.length > 0)
@@ -98,12 +108,30 @@ export async function GET(req: Request) {
   }
 
   const adminClient = createAdminClient();
-  const rowRes = await adminClient
+  let rowRes = await adminClient
     .from("dating_paid_cards")
-    .select("id,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,photo_visibility,blur_thumb_path,photo_paths,status")
+    .select("id,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,photo_visibility,display_mode,blur_thumb_path,photo_paths,status")
     .eq("id", id)
     .eq("user_id", user.id)
     .maybeSingle();
+
+  if (rowRes.error && isMissingColumnError(rowRes.error)) {
+    const legacy = await adminClient
+      .from("dating_paid_cards")
+      .select("id,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,photo_visibility,blur_thumb_path,photo_paths,status")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    rowRes = {
+      ...legacy,
+      data: legacy.data
+        ? {
+            ...legacy.data,
+            display_mode: "priority_24h",
+          }
+        : legacy.data,
+    };
+  }
 
   if (rowRes.error || !rowRes.data) {
     return json(404, { ok: false, code: "NOT_FOUND", requestId, message: "유료 카드를 찾을 수 없습니다." });
@@ -128,6 +156,7 @@ export async function GET(req: Request) {
       intro_text: rowRes.data.intro_text,
       instagram_id: rowRes.data.instagram_id,
       photo_visibility: rowRes.data.photo_visibility === "public" ? "public" : "blur",
+      display_mode: rowRes.data.display_mode === "instant_public" ? "instant_public" : "priority_24h",
       blur_thumb_path: rowRes.data.blur_thumb_path,
       photo_paths: Array.isArray(rowRes.data.photo_paths) ? rowRes.data.photo_paths : [],
     },
@@ -167,6 +196,7 @@ export async function POST(req: Request) {
       introText,
       instagramId,
       photoVisibility,
+      displayMode,
       blurThumbPath,
       photoPaths,
     } = parsed;
@@ -222,29 +252,42 @@ export async function POST(req: Request) {
       is3LiftVerified = Boolean(certRes.data);
     }
 
-    const insertRes = await adminClient
+    const insertPayload = {
+      user_id: user.id,
+      nickname,
+      gender,
+      age,
+      region: region || null,
+      height_cm: heightCm,
+      job: job || null,
+      training_years: trainingYears,
+      strengths_text: strengthsText || null,
+      ideal_text: idealText || null,
+      intro_text: introText || null,
+      instagram_id: instagramId,
+      photo_visibility: photoVisibility,
+      display_mode: displayMode,
+      blur_thumb_path: blurThumbPath || null,
+      photo_paths: photoPaths,
+      is_3lift_verified: is3LiftVerified,
+      status: "pending",
+    };
+
+    let insertRes = await adminClient
       .from("dating_paid_cards")
-      .insert({
-        user_id: user.id,
-        nickname,
-        gender,
-        age,
-        region: region || null,
-        height_cm: heightCm,
-        job: job || null,
-        training_years: trainingYears,
-        strengths_text: strengthsText || null,
-        ideal_text: idealText || null,
-        intro_text: introText || null,
-        instagram_id: instagramId,
-        photo_visibility: photoVisibility,
-        blur_thumb_path: blurThumbPath || null,
-        photo_paths: photoPaths,
-        is_3lift_verified: is3LiftVerified,
-        status: "pending",
-      })
+      .insert(insertPayload)
       .select("id")
       .single();
+
+    if (insertRes.error && isMissingColumnError(insertRes.error)) {
+      const legacyPayload = { ...insertPayload } as Record<string, unknown>;
+      delete legacyPayload.display_mode;
+      insertRes = await adminClient
+        .from("dating_paid_cards")
+        .insert(legacyPayload)
+        .select("id")
+        .single();
+    }
 
     if (insertRes.error || !insertRes.data) {
       console.error(`[dating-paid-create] ${requestId} insert error`, insertRes.error);
@@ -293,6 +336,7 @@ export async function PATCH(req: Request) {
       introText,
       instagramId,
       photoVisibility,
+      displayMode,
       blurThumbPath,
       photoPaths,
     } = parsed;
@@ -359,31 +403,47 @@ export async function PATCH(req: Request) {
       is3LiftVerified = Boolean(certRes.data);
     }
 
-    const updateRes = await adminClient
+    const updatePayload = {
+      nickname,
+      gender,
+      age,
+      region: region || null,
+      height_cm: heightCm,
+      job: job || null,
+      training_years: trainingYears,
+      strengths_text: strengthsText || null,
+      ideal_text: idealText || null,
+      intro_text: introText || null,
+      instagram_id: instagramId,
+      photo_visibility: photoVisibility,
+      display_mode: displayMode,
+      blur_thumb_path: blurThumbPath || null,
+      photo_paths: photoPaths,
+      is_3lift_verified: is3LiftVerified,
+      status: "pending",
+    };
+
+    let updateRes = await adminClient
       .from("dating_paid_cards")
-      .update({
-        nickname,
-        gender,
-        age,
-        region: region || null,
-        height_cm: heightCm,
-        job: job || null,
-        training_years: trainingYears,
-        strengths_text: strengthsText || null,
-        ideal_text: idealText || null,
-        intro_text: introText || null,
-        instagram_id: instagramId,
-        photo_visibility: photoVisibility,
-        blur_thumb_path: blurThumbPath || null,
-        photo_paths: photoPaths,
-        is_3lift_verified: is3LiftVerified,
-        status: "pending",
-      })
+      .update(updatePayload)
       .eq("id", id)
       .eq("user_id", user.id)
       .eq("status", "pending")
       .select("id")
       .maybeSingle();
+
+    if (updateRes.error && isMissingColumnError(updateRes.error)) {
+      const legacyPayload = { ...updatePayload } as Record<string, unknown>;
+      delete legacyPayload.display_mode;
+      updateRes = await adminClient
+        .from("dating_paid_cards")
+        .update(legacyPayload)
+        .eq("id", id)
+        .eq("user_id", user.id)
+        .eq("status", "pending")
+        .select("id")
+        .maybeSingle();
+    }
 
     if (updateRes.error || !updateRes.data) {
       console.error(`[dating-paid-update] ${requestId} update error`, updateRes.error);
