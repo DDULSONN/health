@@ -369,8 +369,9 @@ export default function DatingPaidPage() {
     }
   };
 
-  const maleItems = useMemo(() => items.filter((item) => item.gender === "M"), [items]);
-  const femaleItems = useMemo(() => items.filter((item) => item.gender === "F"), [items]);
+  const fixedItems = useMemo(() => items.filter((item) => item.display_mode !== "instant_public"), [items]);
+  const maleItems = useMemo(() => fixedItems.filter((item) => item.gender === "M"), [fixedItems]);
+  const femaleItems = useMemo(() => fixedItems.filter((item) => item.gender === "F"), [fixedItems]);
   const nowTick = useMemo(() => tick, [tick]);
   void nowTick;
 
@@ -512,7 +513,7 @@ export default function DatingPaidPage() {
         <h2 className="text-lg font-bold text-neutral-900">확인된 24시간 고정</h2>
         {loading ? (
           <p className="mt-2 text-sm text-neutral-500">불러오는 중...</p>
-        ) : items.length === 0 ? (
+        ) : fixedItems.length === 0 ? (
           <p className="mt-2 text-sm text-neutral-500">현재 공개 중인 고정 카드가 없습니다.</p>
         ) : (
           <div className="mt-3 space-y-6">
