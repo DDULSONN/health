@@ -274,20 +274,19 @@ export async function POST(req: Request) {
       status: "pending",
     };
 
-    let insertRes = await adminClient
+    const insertRes = await adminClient
       .from("dating_paid_cards")
       .insert(insertPayload)
       .select("id")
       .single();
 
     if (insertRes.error && isMissingColumnError(insertRes.error)) {
-      const legacyPayload = { ...insertPayload } as Record<string, unknown>;
-      delete legacyPayload.display_mode;
-      insertRes = await adminClient
-        .from("dating_paid_cards")
-        .insert(legacyPayload)
-        .select("id")
-        .single();
+      return json(503, {
+        ok: false,
+        code: "SCHEMA_MISMATCH",
+        requestId,
+        message: "display_mode 컬럼이 없어 새치기(비고정) 모드를 저장할 수 없습니다. 마이그레이션을 먼저 적용해주세요.",
+      });
     }
 
     if (insertRes.error || !insertRes.data) {
@@ -424,7 +423,7 @@ export async function PATCH(req: Request) {
       status: "pending",
     };
 
-    let updateRes = await adminClient
+    const updateRes = await adminClient
       .from("dating_paid_cards")
       .update(updatePayload)
       .eq("id", id)
@@ -434,16 +433,12 @@ export async function PATCH(req: Request) {
       .maybeSingle();
 
     if (updateRes.error && isMissingColumnError(updateRes.error)) {
-      const legacyPayload = { ...updatePayload } as Record<string, unknown>;
-      delete legacyPayload.display_mode;
-      updateRes = await adminClient
-        .from("dating_paid_cards")
-        .update(legacyPayload)
-        .eq("id", id)
-        .eq("user_id", user.id)
-        .eq("status", "pending")
-        .select("id")
-        .maybeSingle();
+      return json(503, {
+        ok: false,
+        code: "SCHEMA_MISMATCH",
+        requestId,
+        message: "display_mode 컬럼이 없어 새치기(비고정) 모드를 저장할 수 없습니다. 마이그레이션을 먼저 적용해주세요.",
+      });
     }
 
     if (updateRes.error || !updateRes.data) {

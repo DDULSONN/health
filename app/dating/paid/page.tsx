@@ -439,11 +439,11 @@ export default function DatingPaidPage() {
                     displayMode === "instant_public" ? "border-emerald-600 bg-emerald-600 text-white" : "border-neutral-300 bg-white text-neutral-700"
                   }`}
                 >
-                  즉시공개(비고정)
+                  새치기(비고정)
                 </button>
               </div>
               <p className="mt-2 text-xs text-neutral-500">
-                {displayMode === "priority_24h" ? "24시간 상단고정 노출됩니다." : "상단 고정 없이 일반 카드 흐름으로 자연스럽게 노출됩니다."}
+                {displayMode === "priority_24h" ? "24시간 상단고정으로 노출됩니다." : "상단 고정 없이 일반 카드 흐름으로 자연스럽게 노출됩니다."}
               </p>
             </div>
 
@@ -566,7 +566,7 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
                       item.display_mode === "instant_public" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
                     }`}
                   >
-                    {item.display_mode === "instant_public" ? "즉시공개" : "24h 고정"}
+                    {item.display_mode === "instant_public" ? "새치기" : "24h 상단고정"}
                   </span>
                 </div>
                 {item.expires_at ? (
