@@ -596,7 +596,14 @@ function Section({
 }) {
   const pinnedPaidItems = paidItems.filter((card) => card.display_mode !== "instant_public");
   const instantPaidItems = paidItems.filter((card) => card.display_mode === "instant_public");
-  const hasAnyItems = pinnedPaidItems.length > 0 || items.length > 0 || instantPaidItems.length > 0 || moreViewItems.length > 0;
+  const mixedItems = [
+    ...items.map((card) => ({ kind: "open" as const, createdAt: new Date(card.created_at).getTime(), id: card.id, card })),
+    ...instantPaidItems.map((card) => ({ kind: "paid" as const, createdAt: new Date(card.created_at).getTime(), id: card.id, card })),
+  ].sort((a, b) => {
+    if (b.createdAt !== a.createdAt) return b.createdAt - a.createdAt;
+    return b.id.localeCompare(a.id);
+  });
+  const hasAnyItems = pinnedPaidItems.length > 0 || mixedItems.length > 0 || moreViewItems.length > 0;
 
   return (
     <section>
@@ -615,11 +622,12 @@ function Section({
             </div>
           )}
           <div className="grid grid-cols-1 gap-3">
-            {items.map((card) => (
-              <CardRow key={card.id} card={card} />
-            ))}
-            {instantPaidItems.map((card) => (
-              <PaidCardRow key={`paid-${card.id}`} card={card} />
+            {mixedItems.map((entry) => (
+              entry.kind === "open" ? (
+                <CardRow key={entry.id} card={entry.card} />
+              ) : (
+                <PaidCardRow key={`paid-${entry.id}`} card={entry.card} />
+              )
             ))}
           </div>
           {moreViewItems.length > 0 && (
