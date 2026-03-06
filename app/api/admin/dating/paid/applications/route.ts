@@ -2,8 +2,29 @@ import { isAdminEmail } from "@/lib/admin";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
+const PAGE_SIZE = 1000;
+
 function json(status: number, payload: Record<string, unknown>) {
   return NextResponse.json(payload, { status });
+}
+
+async function fetchAllRows<T>(
+  fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>
+) {
+  const all: T[] = [];
+  let from = 0;
+  while (true) {
+    const to = from + PAGE_SIZE - 1;
+    const page = await fetchPage(from, to);
+    if (page.error) {
+      return { data: null as T[] | null, error: page.error };
+    }
+    const rows = page.data ?? [];
+    all.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+  return { data: all, error: null as unknown };
 }
 
 function parseAdminUserIds() {
@@ -55,13 +76,15 @@ export async function GET() {
     }
 
     const admin = createAdminClient();
-    const appsRes = await admin
-      .from("dating_paid_card_applications")
-      .select(
-        "id,paid_card_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,intro_text,instagram_id,photo_paths,status,created_at"
-      )
-      .order("created_at", { ascending: false })
-      .limit(5000);
+    const appsRes = await fetchAllRows<PaidApplicationRow>((from, to) =>
+      admin
+        .from("dating_paid_card_applications")
+        .select(
+          "id,paid_card_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,intro_text,instagram_id,photo_paths,status,created_at"
+        )
+        .order("created_at", { ascending: false })
+        .range(from, to)
+    );
 
     if (appsRes.error) {
       console.error("[GET /api/admin/dating/paid/applications] apps failed", appsRes.error);
