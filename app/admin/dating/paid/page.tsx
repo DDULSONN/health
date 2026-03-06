@@ -56,7 +56,7 @@ const STATUS_STYLE: Record<PaidAdminItem["status"], string> = {
 export default function AdminDatingPaidPage() {
   const [items, setItems] = useState<PaidAdminItem[]>([]);
   const [creditOrders, setCreditOrders] = useState<ApplyCreditOrderItem[]>([]);
-  const [filter, setFilter] = useState<StatusFilter>("pending");
+  const [filter, setFilter] = useState<StatusFilter>("all");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actingId, setActingId] = useState<string>("");
@@ -249,11 +249,11 @@ export default function AdminDatingPaidPage() {
           onChange={(e) => setFilter(e.target.value as StatusFilter)}
           className="h-9 rounded-md border border-neutral-300 bg-white px-2 text-sm text-neutral-800"
         >
+          <option value="all">전체</option>
           <option value="pending">대기만</option>
           <option value="approved">승인만</option>
           <option value="rejected">거절만</option>
           <option value="expired">만료만</option>
-          <option value="all">전체</option>
         </select>
         <span className="text-sm text-neutral-500">총 {visibleItems.length}건</span>
       </div>
