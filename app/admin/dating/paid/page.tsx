@@ -56,7 +56,7 @@ const STATUS_STYLE: Record<PaidAdminItem["status"], string> = {
 export default function AdminDatingPaidPage() {
   const [items, setItems] = useState<PaidAdminItem[]>([]);
   const [creditOrders, setCreditOrders] = useState<ApplyCreditOrderItem[]>([]);
-  const [filter, setFilter] = useState<StatusFilter>("all");
+  const [filter, setFilter] = useState<StatusFilter>("approved");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [actingId, setActingId] = useState<string>("");
