@@ -10,10 +10,10 @@ function readViewerFingerprint(request: Request): string | null {
 }
 
 const REWARD_RULES = [
-  { code: "level_3_credit", label: "Level 3 Reward", condition: "level", threshold: 3, amount: 1 },
-  { code: "level_5_credit", label: "Level 5 Reward", condition: "level", threshold: 5, amount: 1 },
-  { code: "level_10_credit_pack", label: "Level 10 Reward", condition: "level", threshold: 10, amount: 3 },
-  { code: "votes_200_credit_pack", label: "200 Votes Reward", condition: "votes", threshold: 200, amount: 2 },
+  { code: "level_3_credit", label: "레벨 3 보상", condition: "level", threshold: 3, amount: 1 },
+  { code: "level_5_credit", label: "레벨 5 보상", condition: "level", threshold: 5, amount: 1 },
+  { code: "level_10_credit_pack", label: "레벨 10 보상", condition: "level", threshold: 10, amount: 3 },
+  { code: "votes_200_credit_pack", label: "200표 달성 보상", condition: "votes", threshold: 200, amount: 2 },
 ] as const;
 
 export async function GET(request: Request) {
@@ -67,11 +67,11 @@ export async function GET(request: Request) {
   const level = Number(profile.level ?? 1);
   const streak = Number(profile.vote_streak_days ?? 0);
   const achievements: Array<{ key: string; label: string; earned: boolean }> = [
-    { key: "voter_10", label: "First 10 Votes", earned: totalVotes >= 10 },
-    { key: "voter_50", label: "50 Votes", earned: totalVotes >= 50 },
-    { key: "voter_200", label: "200 Votes", earned: totalVotes >= 200 },
-    { key: "streak_3", label: "3-day Streak", earned: streak >= 3 },
-    { key: "streak_7", label: "7-day Streak", earned: streak >= 7 },
+    { key: "voter_10", label: "첫 10표", earned: totalVotes >= 10 },
+    { key: "voter_50", label: "50표 달성", earned: totalVotes >= 50 },
+    { key: "voter_200", label: "200표 달성", earned: totalVotes >= 200 },
+    { key: "streak_3", label: "3일 연속 투표", earned: streak >= 3 },
+    { key: "streak_7", label: "7일 연속 투표", earned: streak >= 7 },
   ];
 
   const claimedSet = new Set<string>();

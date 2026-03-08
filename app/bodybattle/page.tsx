@@ -121,7 +121,7 @@ type ScoreboardItem = {
 
 type JoinForm = {
   gender: "male" | "female";
-  image_urls_text: string;
+  image_urls: string[];
   consent_policy: boolean;
   consent_instagram_reels: boolean;
 };
@@ -143,7 +143,7 @@ type SeasonSummary = {
 
 const INITIAL_JOIN_FORM: JoinForm = {
   gender: "male",
-  image_urls_text: "",
+  image_urls: [],
   consent_policy: false,
   consent_instagram_reels: false,
 };
@@ -176,6 +176,7 @@ export default function BodyBattlePage() {
   const [applicantsHasMore, setApplicantsHasMore] = useState(false);
   const [applyError, setApplyError] = useState<string | null>(null);
   const [joinSubmitting, setJoinSubmitting] = useState(false);
+  const [joinUploading, setJoinUploading] = useState(false);
   const [joinForm, setJoinForm] = useState<JoinForm>(INITIAL_JOIN_FORM);
   const [commentInputByEntry, setCommentInputByEntry] = useState<Record<string, string>>({});
   const [commentSubmittingByEntry, setCommentSubmittingByEntry] = useState<Record<string, boolean>>({});
@@ -198,13 +199,13 @@ export default function BodyBattlePage() {
       const res = await fetch("/api/bodybattle/current", { cache: "no-store" });
       const data = (await res.json()) as CurrentPayload;
       if (!res.ok || !data.ok) {
-        setError("Failed to load current matchup.");
+        setError("현재 대결 정보를 불러오지 못했습니다.");
         setPayload(null);
       } else {
         setPayload(data);
       }
     } catch {
-      setError("Network error while loading matchup.");
+      setError("대결 정보를 불러오는 중 네트워크 오류가 발생했습니다.");
       setPayload(null);
     } finally {
       setLoading(false);
@@ -218,7 +219,7 @@ export default function BodyBattlePage() {
       const res = await fetch(`/api/bodybattle/applicants?page=${page}&limit=20`, { cache: "no-store" });
       const data = (await res.json()) as ApplicantsPayload;
       if (!res.ok || !data.ok) {
-        setApplyError("Failed to load applicants.");
+        setApplyError("신청자 목록을 불러오지 못했습니다.");
         if (!append) setApplicantsData(null);
       } else {
         setApplicantsData((prev) => {
@@ -230,7 +231,7 @@ export default function BodyBattlePage() {
         setApplicantsHasMore(Boolean(data.has_more));
       }
     } catch {
-      setApplyError("Network error while loading applicants.");
+      setApplyError("신청자 목록을 불러오는 중 네트워크 오류가 발생했습니다.");
       if (!append) setApplicantsData(null);
     } finally {
       setApplicantsLoading(false);
@@ -306,7 +307,7 @@ export default function BodyBattlePage() {
         reward?: VoteFeedback["reward"];
       };
       if (!res.ok || !data.ok) {
-        setError(data.message ?? "Failed to submit vote.");
+        setError(data.message ?? "투표 처리에 실패했습니다.");
         return;
       }
       if (data.progress) setProgress(data.progress);
@@ -320,7 +321,7 @@ export default function BodyBattlePage() {
       if (tab === "apply") await loadApplicants(1, false);
       await Promise.all([loadMyProgress(), loadScoreboard()]);
     } catch {
-      setError("Network error while submitting vote.");
+      setError("투표 중 네트워크 오류가 발생했습니다.");
     } finally {
       setSubmitting(false);
     }
@@ -338,12 +339,12 @@ export default function BodyBattlePage() {
       });
       const data = (await res.json()) as { ok?: boolean; message?: string };
       if (!res.ok || !data.ok) {
-        setError(data.message ?? "Failed to claim reward.");
+        setError(data.message ?? "보상 수령에 실패했습니다.");
         return;
       }
       await loadMyProgress();
     } catch {
-      setError("Network error while claiming reward.");
+      setError("보상 수령 중 네트워크 오류가 발생했습니다.");
     } finally {
       setClaimingCode(null);
     }
@@ -352,16 +353,17 @@ export default function BodyBattlePage() {
   async function submitJoin() {
     const seasonId = applicantsData?.season?.id ?? payload?.season?.id ?? null;
     if (!seasonId) {
-      setApplyError("No active season.");
+      setApplyError("현재 신청 가능한 시즌이 없습니다.");
       return;
     }
-    const imageUrls = joinForm.image_urls_text
-      .split("\n")
-      .map((line) => line.trim())
-      .filter((line) => line.length > 0);
+    const imageUrls = joinForm.image_urls;
 
     if (!joinForm.consent_policy || !joinForm.consent_instagram_reels) {
       setApplyError("필수 동의 항목을 모두 체크해 주세요.");
+      return;
+    }
+    if (imageUrls.length < 1) {
+      setApplyError("이미지를 최소 1장 업로드해 주세요.");
       return;
     }
 
@@ -381,15 +383,57 @@ export default function BodyBattlePage() {
       });
       const data = (await res.json()) as { ok?: boolean; message?: string };
       if (!res.ok || !data.ok) {
-        setApplyError(data.message ?? "Failed to submit application.");
+        setApplyError(data.message ?? "신청 처리에 실패했습니다.");
         return;
       }
       setJoinForm(INITIAL_JOIN_FORM);
       await loadApplicants(1, false);
     } catch {
-      setApplyError("Network error while submitting application.");
+      setApplyError("신청 중 네트워크 오류가 발생했습니다.");
     } finally {
       setJoinSubmitting(false);
+    }
+  }
+
+  async function handleJoinImageUpload(files: FileList | null) {
+    if (!files || files.length === 0) return;
+    const remains = Math.max(0, 2 - joinForm.image_urls.length);
+    if (remains <= 0) {
+      setApplyError("이미지는 최대 2장까지 업로드할 수 있습니다.");
+      return;
+    }
+
+    const picked = Array.from(files).slice(0, remains);
+    setJoinUploading(true);
+    setApplyError(null);
+    const uploaded: string[] = [];
+    try {
+      for (const file of picked) {
+        if (!file.type.startsWith("image/")) {
+          setApplyError("이미지 파일만 업로드할 수 있습니다.");
+          continue;
+        }
+        const fd = new FormData();
+        fd.append("file", file);
+        const res = await fetch("/api/upload", {
+          method: "POST",
+          body: fd,
+        });
+        const data = (await res.json().catch(() => null)) as { url?: string; error?: string } | null;
+        if (!res.ok || !data?.url) {
+          setApplyError(data?.error ?? "이미지 업로드에 실패했습니다.");
+          continue;
+        }
+        uploaded.push(data.url);
+      }
+      if (uploaded.length > 0) {
+        setJoinForm((prev) => ({
+          ...prev,
+          image_urls: [...prev.image_urls, ...uploaded].slice(0, 2),
+        }));
+      }
+    } finally {
+      setJoinUploading(false);
     }
   }
 
@@ -406,35 +450,35 @@ export default function BodyBattlePage() {
       });
       const data = (await res.json()) as { ok?: boolean; message?: string };
       if (!res.ok || !data.ok) {
-        setApplyError(data.message ?? "Failed to submit comment.");
+        setApplyError(data.message ?? "댓글 등록에 실패했습니다.");
         return;
       }
       setCommentInputByEntry((prev) => ({ ...prev, [entryId]: "" }));
       await loadApplicants(1, false);
     } catch {
-      setApplyError("Network error while submitting comment.");
+      setApplyError("댓글 등록 중 네트워크 오류가 발생했습니다.");
     } finally {
       setCommentSubmittingByEntry((prev) => ({ ...prev, [entryId]: false }));
     }
   }
 
   async function deleteComment(commentId: string) {
-    if (!confirm("?볤?????젣?좉퉴??")) return;
+    if (!confirm("댓글을 삭제할까요?")) return;
     try {
       const res = await fetch(`/api/bodybattle/comments/${commentId}`, { method: "DELETE" });
       if (!res.ok) {
         const data = (await res.json().catch(() => null)) as { message?: string } | null;
-        setApplyError(data?.message ?? "Failed to delete comment.");
+        setApplyError(data?.message ?? "댓글 삭제에 실패했습니다.");
         return;
       }
       await loadApplicants(1, false);
     } catch {
-      setApplyError("Network error while deleting comment.");
+      setApplyError("댓글 삭제 중 네트워크 오류가 발생했습니다.");
     }
   }
 
   async function reportEntry(entryId: string, seasonId: string, source: "matchup" | "applicant") {
-    const reason = window.prompt("Report reason (spam, abuse, stolen photo, etc)");
+    const reason = window.prompt("신고 사유를 입력해 주세요. (도용, 부적절한 사진 등)");
     if (!reason || !reason.trim()) return;
 
     try {
@@ -449,7 +493,7 @@ export default function BodyBattlePage() {
       });
       const data = (await res.json().catch(() => null)) as { ok?: boolean; message?: string } | null;
       if (!res.ok || !data?.ok) {
-        const message = data?.message ?? "Failed to report.";
+        const message = data?.message ?? "신고 처리에 실패했습니다.";
         if (source === "applicant") setApplyError(message);
         else setError(message);
         return;
@@ -461,8 +505,8 @@ export default function BodyBattlePage() {
         await loadCurrent();
       }
     } catch {
-      if (source === "applicant") setApplyError("Network error while reporting.");
-      else setError("Network error while reporting.");
+      if (source === "applicant") setApplyError("신고 중 네트워크 오류가 발생했습니다.");
+      else setError("신고 중 네트워크 오류가 발생했습니다.");
     }
   }
 
@@ -496,15 +540,15 @@ export default function BodyBattlePage() {
     <main className="mx-auto max-w-3xl px-4 py-6">
       <div className="mb-5 flex items-center justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">BodyBattle</h1>
-          <p className="mt-1 text-sm text-neutral-500">Weekly training-based champion battle.</p>
+          <h1 className="text-2xl font-bold text-neutral-900">바디배틀</h1>
+          <p className="mt-1 text-sm text-neutral-500">주간 운동 완성도 챔피언전</p>
         </div>
         <div className="flex gap-2">
           <Link href="/bodybattle/ranking" className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium text-neutral-700">
-            Weekly Ranking
+            주간 랭킹
           </Link>
           <Link href="/bodybattle/hall-of-fame" className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium text-neutral-700">
-            Hall of Fame
+            명예의 전당
           </Link>
         </div>
       </div>
@@ -531,10 +575,10 @@ export default function BodyBattlePage() {
           {progress ? (
             <section className="mb-3 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
               <p className="text-sm font-semibold text-emerald-900">
-                Lv.{progress.level} · XP {progress.xp} · Next {progress.xp_next_level}
+                레벨 {progress.level} · XP {progress.xp} · 다음 {progress.xp_next_level}
               </p>
               <p className="mt-1 text-xs text-emerald-800">
-                Total votes {progress.total_votes} · Today {progress.daily_votes} · Streak {progress.vote_streak_days}d · Apply credits {creditsRemaining}
+                누적 투표 {progress.total_votes} · 오늘 {progress.daily_votes} · 연속 {progress.vote_streak_days}일 · 지원권 {creditsRemaining}
               </p>
               <div className="mt-2 flex flex-wrap gap-1">
                 {achievements.map((item) => (
@@ -551,10 +595,10 @@ export default function BodyBattlePage() {
                   {rewards.map((reward) => (
                     <div key={reward.code} className="flex items-center justify-between rounded-lg bg-white px-2 py-1">
                       <p className="text-xs text-neutral-700">
-                        {reward.label} · +{reward.amount} credit
+                        {reward.label} · +{reward.amount} 지원권
                       </p>
                       {reward.claimed ? (
-                        <span className="text-xs text-emerald-700">Claimed</span>
+                        <span className="text-xs text-emerald-700">수령 완료</span>
                       ) : reward.claimable ? (
                         <button
                           type="button"
@@ -562,10 +606,10 @@ export default function BodyBattlePage() {
                           disabled={claimingCode === reward.code}
                           className="rounded bg-emerald-600 px-2 py-1 text-xs font-semibold text-white disabled:opacity-50"
                         >
-                          {claimingCode === reward.code ? "..." : "Claim"}
+                          {claimingCode === reward.code ? "..." : "수령"}
                         </button>
                       ) : (
-                        <span className="text-xs text-neutral-400">{reward.met ? "Ready" : "Locked"}</span>
+                        <span className="text-xs text-neutral-400">{reward.met ? "수령 가능" : "잠김"}</span>
                       )}
                     </div>
                   ))}
@@ -574,43 +618,43 @@ export default function BodyBattlePage() {
             </section>
           ) : null}
 
-          {loading ? <p className="text-sm text-neutral-500">Loading matchup...</p> : null}
+          {loading ? <p className="text-sm text-neutral-500">대결 카드 불러오는 중...</p> : null}
           {error ? <p className="mb-3 text-sm text-red-600">{error}</p> : null}
 
           {voteFeedback ? (
             <section className="mb-3 rounded-2xl border border-blue-200 bg-blue-50 p-4">
               <p className="text-sm font-semibold text-blue-900">+{voteFeedback.reward.xp_gained} XP</p>
               <p className="mt-1 text-xs text-blue-800">
-                Left {voteFeedback.matchup_stats.left_pct}% · Similar {voteFeedback.matchup_stats.draw_pct}% · Right {voteFeedback.matchup_stats.right_pct}% · Total {voteFeedback.matchup_stats.total}
+                왼쪽 {voteFeedback.matchup_stats.left_pct}% · 비슷함 {voteFeedback.matchup_stats.draw_pct}% · 오른쪽 {voteFeedback.matchup_stats.right_pct}% · 총 {voteFeedback.matchup_stats.total}표
               </p>
             </section>
           ) : null}
 
           <section className="mb-3 rounded-2xl border border-neutral-200 bg-white p-4">
             <div className="mb-2 flex items-center justify-between">
-              <p className="text-sm font-semibold text-neutral-900">Voter Scoreboard</p>
+              <p className="text-sm font-semibold text-neutral-900">투표 점수판</p>
               <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => setScoreMode("all")}
                   className={`rounded px-2 py-1 text-[11px] ${scoreMode === "all" ? "bg-neutral-800 text-white" : "bg-neutral-100 text-neutral-600"}`}
                 >
-                  All
+                  전체
                 </button>
                 <button
                   type="button"
                   onClick={() => setScoreMode("weekly")}
                   className={`rounded px-2 py-1 text-[11px] ${scoreMode === "weekly" ? "bg-neutral-800 text-white" : "bg-neutral-100 text-neutral-600"}`}
                 >
-                  Weekly
+                  주간
                 </button>
               </div>
             </div>
-            {scoreboardLoading ? <p className="text-xs text-neutral-500">Loading scoreboard...</p> : null}
-            {!scoreboardLoading && scoreboard.length === 0 ? <p className="text-xs text-neutral-500">No score data yet.</p> : null}
+            {scoreboardLoading ? <p className="text-xs text-neutral-500">점수판 불러오는 중...</p> : null}
+            {!scoreboardLoading && scoreboard.length === 0 ? <p className="text-xs text-neutral-500">아직 점수 데이터가 없습니다.</p> : null}
             {myScoreboardRow ? (
               <p className="mb-2 text-xs font-semibold text-blue-700">
-                You: #{myScoreboardRow.rank} · {myScoreboardRow.nickname}
+                내 순위: #{myScoreboardRow.rank} · {myScoreboardRow.nickname}
               </p>
             ) : null}
             <div className="space-y-1">
@@ -623,7 +667,7 @@ export default function BodyBattlePage() {
                     #{row.rank} {row.nickname}
                   </p>
                   <p className="text-xs text-neutral-600">
-                    {scoreMode === "weekly" ? `Weekly XP ${row.weekly_xp} · Weekly Votes ${row.weekly_votes}` : `Lv.${row.level} · XP ${row.xp} · Votes ${row.total_votes}`}
+                    {scoreMode === "weekly" ? `주간 XP ${row.weekly_xp} · 주간 투표 ${row.weekly_votes}` : `Lv.${row.level} · XP ${row.xp} · 투표 ${row.total_votes}`}
                     {row.streak_badge ? ` · ${row.streak_badge}` : ""}
                   </p>
                 </div>
@@ -634,27 +678,27 @@ export default function BodyBattlePage() {
           {seasonSummary?.latest ? (
             <section className="mb-3 rounded-2xl border border-amber-200 bg-amber-50 p-4">
               <p className="text-xs font-semibold text-amber-800">
-                Last Finalized: {seasonSummary.latest.week_id ?? "-"} · {seasonSummary.latest.theme_label ?? "-"}
+                최근 종료 시즌: {seasonSummary.latest.week_id ?? "-"} · {seasonSummary.latest.theme_label ?? "-"}
               </p>
               <p className="mt-1 text-sm text-amber-900">
-                Champion: {seasonSummary.latest.champion?.nickname ?? "TBD"} {seasonSummary.latest.champion?.rating ? `(Rating ${seasonSummary.latest.champion.rating})` : ""}
+                챔피언: {seasonSummary.latest.champion?.nickname ?? "미정"} {seasonSummary.latest.champion?.rating ? `(레이팅 ${seasonSummary.latest.champion.rating})` : ""}
               </p>
               {seasonSummary.me ? (
-                <p className="mt-1 text-xs text-amber-900">Your rank in that season: #{seasonSummary.me.rank ?? "-"}</p>
+                <p className="mt-1 text-xs text-amber-900">해당 시즌 내 순위: #{seasonSummary.me.rank ?? "-"}</p>
               ) : null}
             </section>
           ) : null}
 
           {!loading && !payload?.season ? (
             <section className="rounded-2xl border border-neutral-200 bg-white p-5">
-              <p className="text-sm text-neutral-700">No active season right now.</p>
+              <p className="text-sm text-neutral-700">현재 진행 중인 시즌이 없습니다.</p>
             </section>
           ) : null}
 
           {!loading && payload?.season && !payload.matchup ? (
             <section className="rounded-2xl border border-neutral-200 bg-white p-5">
               <p className="text-sm font-semibold text-neutral-800">{payload.season.week_id}</p>
-              <p className="mt-1 text-sm text-neutral-600">{payload.message ?? "Not enough entries to build a matchup yet."}</p>
+              <p className="mt-1 text-sm text-neutral-600">{payload.message ?? "대결 매칭을 만들 참가자가 아직 부족합니다."}</p>
             </section>
           ) : null}
 
@@ -674,7 +718,7 @@ export default function BodyBattlePage() {
                   )}
                   <p className="mt-2 text-sm font-semibold text-neutral-900">{payload.matchup.left.nickname}</p>
                   <p className="text-xs text-neutral-500">
-                    Rating {Number(payload.matchup.left.rating ?? 1000).toFixed(0)} · Streak {Number(payload.matchup.left.current_streak ?? 0)}
+                    레이팅 {Number(payload.matchup.left.rating ?? 1000).toFixed(0)} · 연승 {Number(payload.matchup.left.current_streak ?? 0)}
                   </p>
                   {isLoggedIn && payload.season ? (
                     <button
@@ -682,7 +726,7 @@ export default function BodyBattlePage() {
                       onClick={() => reportEntry(payload.matchup!.left.id, payload.season!.id, "matchup")}
                       className="mt-2 text-xs text-red-500"
                     >
-                      Report
+                      신고
                     </button>
                   ) : null}
                 </article>
@@ -694,7 +738,7 @@ export default function BodyBattlePage() {
                   )}
                   <p className="mt-2 text-sm font-semibold text-neutral-900">{payload.matchup.right.nickname}</p>
                   <p className="text-xs text-neutral-500">
-                    Rating {Number(payload.matchup.right.rating ?? 1000).toFixed(0)} · Streak {Number(payload.matchup.right.current_streak ?? 0)}
+                    레이팅 {Number(payload.matchup.right.rating ?? 1000).toFixed(0)} · 연승 {Number(payload.matchup.right.current_streak ?? 0)}
                   </p>
                   {isLoggedIn && payload.season ? (
                     <button
@@ -702,7 +746,7 @@ export default function BodyBattlePage() {
                       onClick={() => reportEntry(payload.matchup!.right.id, payload.season!.id, "matchup")}
                       className="mt-2 text-xs text-red-500"
                     >
-                      Report
+                      신고
                     </button>
                   ) : null}
                 </article>
@@ -715,7 +759,7 @@ export default function BodyBattlePage() {
                   disabled={submitting}
                   className="min-h-[44px] rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white disabled:opacity-50"
                 >
-                  Left wins
+                  왼쪽 선택
                 </button>
                 <button
                   type="button"
@@ -723,7 +767,7 @@ export default function BodyBattlePage() {
                   disabled={submitting}
                   className="min-h-[44px] rounded-lg bg-neutral-700 px-3 text-sm font-semibold text-white disabled:opacity-50"
                 >
-                  Similar
+                  비슷함
                 </button>
                 <button
                   type="button"
@@ -731,7 +775,7 @@ export default function BodyBattlePage() {
                   disabled={submitting}
                   className="min-h-[44px] rounded-lg bg-blue-600 px-3 text-sm font-semibold text-white disabled:opacity-50"
                 >
-                  Right wins
+                  오른쪽 선택
                 </button>
               </div>
             </section>
@@ -741,15 +785,15 @@ export default function BodyBattlePage() {
         <section className="space-y-4">
           <article className="rounded-2xl border border-neutral-200 bg-white p-4">
             <p className="text-sm font-semibold text-neutral-900">
-              {applicantsData?.season ? `${applicantsData.season.week_id} · ${applicantsData.season.theme_label}` : "No season"}
+              {applicantsData?.season ? `${applicantsData.season.week_id} · ${applicantsData.season.theme_label}` : "시즌 없음"}
             </p>
             <p className="mt-1 text-xs text-neutral-500">이미지 URL을 줄바꿈으로 입력하세요. 최대 2장.</p>
 
             {!isLoggedIn ? (
               <p className="mt-3 text-sm text-neutral-500">
-                Login required for apply/comment.{" "}
+                신청/댓글은 로그인 후 이용할 수 있습니다.{" "}
                 <Link href="/login" className="text-blue-600 underline">
-                  Login
+                  로그인
                 </Link>
               </p>
             ) : (
@@ -758,25 +802,56 @@ export default function BodyBattlePage() {
                   <button
                     type="button"
                     onClick={() => setJoinForm((prev) => ({ ...prev, gender: "male" }))}
-                    className={`min-h-[40px] rounded-lg border text-sm ${joinForm.gender === "male" ? "bg-blue-600 border-blue-600 text-white" : "border-neutral-300 text-neutral-700"}`}
+                    className={`min-h-[44px] rounded-lg border text-sm ${joinForm.gender === "male" ? "bg-blue-600 border-blue-600 text-white" : "border-neutral-300 text-neutral-700"}`}
                   >
-                    Male
+                    남성
                   </button>
                   <button
                     type="button"
                     onClick={() => setJoinForm((prev) => ({ ...prev, gender: "female" }))}
-                    className={`min-h-[40px] rounded-lg border text-sm ${joinForm.gender === "female" ? "bg-blue-600 border-blue-600 text-white" : "border-neutral-300 text-neutral-700"}`}
+                    className={`min-h-[44px] rounded-lg border text-sm ${joinForm.gender === "female" ? "bg-blue-600 border-blue-600 text-white" : "border-neutral-300 text-neutral-700"}`}
                   >
-                    Female
+                    여성
                   </button>
                 </div>
-                <textarea
-                  value={joinForm.image_urls_text}
-                  onChange={(e) => setJoinForm((prev) => ({ ...prev, image_urls_text: e.target.value }))}
-                  rows={2}
-                  placeholder={"이미지 URL (한 줄에 1개)\nhttps://..."}
-                  className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-                />
+                <label className="flex min-h-[44px] cursor-pointer items-center justify-center rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-sm font-semibold text-blue-700">
+                  {joinUploading ? "업로드 중..." : "사진 업로드 (최대 2장)"}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    multiple
+                    capture="environment"
+                    className="hidden"
+                    disabled={joinUploading}
+                    onChange={(e) => {
+                      void handleJoinImageUpload(e.target.files);
+                      e.currentTarget.value = "";
+                    }}
+                  />
+                </label>
+                {joinForm.image_urls.length > 0 ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    {joinForm.image_urls.map((url) => {
+                      const preview = toBodyBattleImageUrl(url, { width: 320, quality: 70 });
+                      return (
+                        <div key={url} className="relative overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100">
+                          {preview ? <Image src={preview} alt="" width={320} height={320} className="h-28 w-full object-cover" unoptimized /> : null}
+                          <button
+                            type="button"
+                            onClick={() =>
+                              setJoinForm((prev) => ({ ...prev, image_urls: prev.image_urls.filter((v) => v !== url) }))
+                            }
+                            className="absolute right-1 top-1 rounded bg-black/70 px-2 py-1 text-[11px] text-white"
+                          >
+                            삭제
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <p className="text-xs text-neutral-500">아직 업로드한 사진이 없습니다.</p>
+                )}
                 <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
                   <p className="font-semibold">신청 전 주의사항</p>
                   <p className="mt-1">본인 사진만 업로드할 수 있으며, 타인 사진/도용/무단 사용 시 삭제 및 이용 제한됩니다.</p>
@@ -804,10 +879,10 @@ export default function BodyBattlePage() {
                 <button
                   type="button"
                   onClick={submitJoin}
-                  disabled={joinSubmitting || !joinForm.consent_policy || !joinForm.consent_instagram_reels}
+                  disabled={joinSubmitting || joinUploading || !joinForm.consent_policy || !joinForm.consent_instagram_reels}
                   className="min-h-[44px] rounded-lg bg-blue-600 px-4 text-sm font-semibold text-white disabled:opacity-50"
                 >
-                  {joinSubmitting ? "Submitting..." : "Submit"}
+                  {joinSubmitting ? "신청 중..." : "신청하기"}
                 </button>
               </div>
             )}
@@ -832,24 +907,26 @@ export default function BodyBattlePage() {
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-sm font-semibold text-neutral-900">{entry.user_nickname}</p>
                     <p className="text-xs text-neutral-500">{entry.gender} · {timeAgo(entry.created_at)}</p>
-                    <p className="mt-1 text-xs text-neutral-600">Status: {entry.moderation_status}</p>
+                    <p className="mt-1 text-xs text-neutral-600">
+                      상태: {entry.moderation_status === "approved" ? "승인" : entry.moderation_status === "pending" ? "검수중" : "반려"}
+                    </p>
                     {isLoggedIn && applicantsData?.season ? (
                       <button
                         type="button"
                         onClick={() => reportEntry(entry.id, applicantsData.season!.id, "applicant")}
                         className="mt-1 text-xs text-red-500"
                       >
-                        Report
+                        신고
                       </button>
                     ) : null}
                   </div>
                 </div>
 
                 {entry.intro_text ? <p className="mt-3 whitespace-pre-wrap break-words text-sm text-neutral-700">{entry.intro_text}</p> : null}
-                {entry.champion_comment ? <p className="mt-2 text-xs text-neutral-500">Quote: {entry.champion_comment}</p> : null}
+                {entry.champion_comment ? <p className="mt-2 text-xs text-neutral-500">한마디: {entry.champion_comment}</p> : null}
 
                 <section className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
-                  <p className="text-xs font-semibold text-neutral-700">Comments {entry.comments.length}</p>
+                  <p className="text-xs font-semibold text-neutral-700">댓글 {entry.comments.length}</p>
                   <div className="mt-2 space-y-2">
                     {entry.comments.map((comment) => (
                       <div key={comment.id} className="rounded-lg bg-white p-2">
@@ -857,12 +934,12 @@ export default function BodyBattlePage() {
                           <p className="text-xs font-semibold text-neutral-700">{comment.nickname}</p>
                           {(comment.is_mine || userId === comment.user_id) && !comment.deleted_at ? (
                             <button type="button" onClick={() => deleteComment(comment.id)} className="text-xs text-red-500">
-                              Delete
+                              삭제
                             </button>
                           ) : null}
                         </div>
                         {comment.deleted_at ? (
-                          <p className="text-xs text-neutral-400 italic">Deleted comment.</p>
+                          <p className="text-xs text-neutral-400 italic">삭제된 댓글입니다.</p>
                         ) : (
                           <p className="whitespace-pre-wrap break-words text-sm text-neutral-700">{comment.content}</p>
                         )}
@@ -877,7 +954,7 @@ export default function BodyBattlePage() {
                         onChange={(e) => setCommentInputByEntry((prev) => ({ ...prev, [entry.id]: e.target.value }))}
                         rows={2}
                         maxLength={500}
-                        placeholder="Write comment"
+                        placeholder="댓글을 입력해 주세요"
                         className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
                       />
                       <div className="mt-2 flex items-center justify-between">
@@ -888,7 +965,7 @@ export default function BodyBattlePage() {
                           disabled={commentSubmitting || commentText.trim().length === 0}
                           className="min-h-[36px] rounded-lg bg-neutral-800 px-3 text-xs font-semibold text-white disabled:opacity-50"
                         >
-                          {commentSubmitting ? "Posting..." : "Post"}
+                          {commentSubmitting ? "등록 중..." : "등록"}
                         </button>
                       </div>
                     </div>
@@ -905,7 +982,7 @@ export default function BodyBattlePage() {
                 disabled={applicantsLoading}
                 className="min-h-[40px] rounded-lg border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-700 disabled:opacity-50"
               >
-                {applicantsLoading ? "Loading..." : "Load more"}
+                {applicantsLoading ? "불러오는 중..." : "더 보기"}
               </button>
             </div>
           ) : null}

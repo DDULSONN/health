@@ -1,6 +1,7 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 // import DailyMissionsWidget from "@/components/DailyMissionsWidget";
 import WeeklyTopBanner from "@/components/WeeklyTopBanner";
+import HomeBodyBattleQuickVote from "@/components/HomeBodyBattleQuickVote";
 
 type Feature = {
   id: string;
@@ -48,7 +49,7 @@ const FEATURES: Feature[] = [
     href: "/bodybattle",
     title: "BodyBattle",
     emoji: "🥇",
-    description: "주간 부위 챔피언전 A/B 투표 랭킹전",
+    description: "운동 사진 A/B 투표",
     accent: "bg-orange-50 border-orange-200 hover:border-orange-400",
     cta: "배틀 시작",
   },
@@ -103,20 +104,7 @@ export default function HomePage() {
   return (
     <main className="max-w-2xl mx-auto px-4 py-10">
       <WeeklyTopBanner />
-      <section className="mb-5 rounded-2xl border border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-orange-800">BodyBattle 투표</p>
-            <p className="mt-1 text-xs text-neutral-600">이번 주 부위 챔피언전 A/B 투표에 바로 참여하세요.</p>
-          </div>
-          <Link
-            href="/bodybattle"
-            className="shrink-0 rounded-lg bg-orange-600 px-3 py-2 text-xs font-semibold text-white hover:bg-orange-700"
-          >
-            투표 시작
-          </Link>
-        </div>
-      </section>
+      <HomeBodyBattleQuickVote />
       {/* <DailyMissionsWidget /> */}
 
       <section className="text-center mb-10">
@@ -147,7 +135,7 @@ export default function HomePage() {
                 </div>
               </div>
             </Link>
-          ) : null,
+          ) : null
         )}
       </section>
 
