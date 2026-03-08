@@ -11,6 +11,7 @@ function getAdminEmails(): string[] {
 
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
+  const isApiRoute = pathname.startsWith("/api/");
   const isOpenCardsRoute =
     pathname === "/community/dating/cards" ||
     pathname.startsWith("/community/dating/cards/");
@@ -21,11 +22,9 @@ export async function middleware(request: NextRequest) {
 
   const response = NextResponse.next({ request });
 
-  const isBodyBattlePath =
-    pathname === "/bodybattle" ||
-    pathname.startsWith("/bodybattle/") ||
-    pathname.startsWith("/api/bodybattle") ||
-    pathname.startsWith("/api/admin/bodybattle");
+  const isBodyBattlePagePath = pathname === "/bodybattle" || pathname.startsWith("/bodybattle/");
+  const isBodyBattleApiPath = pathname.startsWith("/api/bodybattle") || pathname.startsWith("/api/admin/bodybattle");
+  const isBodyBattlePath = isBodyBattlePagePath || isBodyBattleApiPath;
   if (isBodyBattlePath) {
     response.headers.set("Cache-Control", "no-store, max-age=0, s-maxage=0, must-revalidate");
     response.headers.set("Pragma", "no-cache");
@@ -60,6 +59,17 @@ export async function middleware(request: NextRequest) {
   const isProtected = protectedPrefixes.some((prefix) => pathname.startsWith(prefix));
   const isVerifyPage = pathname.startsWith("/verify-email");
 
+  if (isBodyBattlePath && !user) {
+    if (isApiRoute) {
+      return NextResponse.json({ ok: false, message: "Login is required." }, { status: 401 });
+    }
+    const url = new URL("/login", request.url);
+    const original = pathname + request.nextUrl.search;
+    url.searchParams.set("next", original);
+    url.searchParams.set("redirect", original);
+    return NextResponse.redirect(url);
+  }
+
   if (isProtected && !user) {
     const url = new URL("/login", request.url);
     const original = pathname + request.nextUrl.search;
@@ -75,6 +85,13 @@ export async function middleware(request: NextRequest) {
   }
 
   if (pathname.startsWith("/admin") && !isAdmin) {
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
+  if (isBodyBattlePath && !isAdmin) {
+    if (isApiRoute) {
+      return NextResponse.json({ ok: false, message: "Admin only." }, { status: 403 });
+    }
     return NextResponse.redirect(new URL("/", request.url));
   }
 

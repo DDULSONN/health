@@ -249,7 +249,28 @@ type AdminPaidCardApplication = {
 type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
 type AdminApplicationSort = "newest" | "oldest" | "submitted_first" | "accepted_first";
 type AdminDataView = "cards" | "applications";
-type AdminManageTab = "open_cards" | "apply_credits" | "more_view" | "city_view";
+type AdminManageTab = "open_cards" | "apply_credits" | "more_view" | "city_view" | "bodybattle";
+
+type AdminBodyBattleOverview = {
+  season: {
+    id: string;
+    week_id: string;
+    theme_slug: string;
+    theme_label: string;
+    start_at: string;
+    end_at: string;
+    status: "draft" | "active" | "closed";
+  } | null;
+  counts: {
+    entries_total: number;
+    entries_pending: number;
+    entries_approved_active: number;
+    entries_hidden: number;
+    reports_open: number;
+    votes_total: number;
+    rewards_claimed: number;
+  } | null;
+};
 
 type AdminApplyCreditOrder = {
   id: string;
@@ -371,6 +392,8 @@ export default function MyPage() {
   const [adminApplyCreditOrders, setAdminApplyCreditOrders] = useState<AdminApplyCreditOrder[]>([]);
   const [adminMoreViewRequests, setAdminMoreViewRequests] = useState<AdminMoreViewRequest[]>([]);
   const [adminCityViewRequests, setAdminCityViewRequests] = useState<AdminCityViewRequest[]>([]);
+  const [adminBodyBattleOverview, setAdminBodyBattleOverview] = useState<AdminBodyBattleOverview | null>(null);
+  const [runningBodyBattleAdminTask, setRunningBodyBattleAdminTask] = useState(false);
   const [approvingOrderIds, setApprovingOrderIds] = useState<string[]>([]);
   const [processingMoreViewIds, setProcessingMoreViewIds] = useState<string[]>([]);
   const [processingCityViewIds, setProcessingCityViewIds] = useState<string[]>([]);
@@ -539,12 +562,13 @@ export default function MyPage() {
           setError("");
 
           if (adminFlag) {
-            const [overviewRes, ordersRes, paidAppsRes, moreViewRes, cityViewRes] = await Promise.all([
+            const [overviewRes, ordersRes, paidAppsRes, moreViewRes, cityViewRes, bodyBattleOverviewRes] = await Promise.all([
               fetch("/api/dating/cards/admin/overview", { cache: "no-store" }),
               fetch("/api/admin/dating/apply-credits/orders?status=pending", { cache: "no-store" }),
               fetch("/api/admin/dating/paid/applications", { cache: "no-store" }),
               fetch("/api/admin/dating/cards/more-view/requests?status=pending", { cache: "no-store" }),
               fetch("/api/admin/dating/cards/city-view/requests?status=pending", { cache: "no-store" }),
+              fetch("/api/admin/bodybattle/overview", { cache: "no-store" }),
             ]);
             const overviewBody = (await overviewRes.json().catch(() => ({}))) as {
               error?: string;
@@ -567,6 +591,12 @@ export default function MyPage() {
               error?: string;
               items?: AdminCityViewRequest[];
             };
+            const bodyBattleOverviewBody = (await bodyBattleOverviewRes.json().catch(() => ({}))) as {
+              ok?: boolean;
+              message?: string;
+              season?: AdminBodyBattleOverview["season"];
+              counts?: AdminBodyBattleOverview["counts"];
+            };
             if (!overviewRes.ok) {
               throw new Error(overviewBody.error ?? "관리자 오픈카드 데이터를 불러오지 못했습니다.");
             }
@@ -583,6 +613,11 @@ export default function MyPage() {
               setAdminApplyCreditOrders(ordersBody.items ?? []);
               setAdminMoreViewRequests(moreViewRes.ok ? moreViewBody.items ?? [] : []);
               setAdminCityViewRequests(cityViewRes.ok ? cityViewBody.items ?? [] : []);
+              setAdminBodyBattleOverview(
+                bodyBattleOverviewRes.ok && bodyBattleOverviewBody.ok
+                  ? { season: bodyBattleOverviewBody.season ?? null, counts: bodyBattleOverviewBody.counts ?? null }
+                  : null
+              );
             }
           } else {
             setAdminOpenCards([]);
@@ -591,6 +626,7 @@ export default function MyPage() {
             setAdminApplyCreditOrders([]);
             setAdminMoreViewRequests([]);
             setAdminCityViewRequests([]);
+            setAdminBodyBattleOverview(null);
           }
         }
       } catch (e) {
@@ -1002,6 +1038,44 @@ export default function MyPage() {
     }
   };
 
+  const handleAdminRunBodyBattleOps = async () => {
+    if (runningBodyBattleAdminTask) return;
+    setRunningBodyBattleAdminTask(true);
+    try {
+      const res = await fetch("/api/admin/bodybattle/season/run", {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        overview?: AdminBodyBattleOverview;
+      };
+      if (!res.ok || !body.ok) {
+        alert(body.message ?? "바디배틀 운영 작업 실행에 실패했습니다.");
+        return;
+      }
+      if (body.overview) {
+        setAdminBodyBattleOverview(body.overview);
+      } else {
+        const refreshRes = await fetch("/api/admin/bodybattle/overview", { cache: "no-store" });
+        const refreshBody = (await refreshRes.json().catch(() => ({}))) as {
+          ok?: boolean;
+          season?: AdminBodyBattleOverview["season"];
+          counts?: AdminBodyBattleOverview["counts"];
+        };
+        if (refreshRes.ok && refreshBody.ok) {
+          setAdminBodyBattleOverview({
+            season: refreshBody.season ?? null,
+            counts: refreshBody.counts ?? null,
+          });
+        }
+      }
+      alert("바디배틀 운영 작업을 실행했습니다.");
+    } finally {
+      setRunningBodyBattleAdminTask(false);
+    }
+  };
+
   const handleChangeNickname = async () => {
     const normalized = normalizeNickname(newNickname);
     const invalid = validateNickname(normalized);
@@ -1372,6 +1446,12 @@ export default function MyPage() {
                 className="flex min-h-[44px] items-center rounded-xl border border-sky-200 bg-sky-50 px-4 text-sm font-medium text-sky-700 hover:bg-sky-100"
               >
                 1:1 이상형 관리
+              </Link>
+              <Link
+                href="/admin/bodybattle"
+                className="flex min-h-[44px] items-center rounded-xl border border-orange-200 bg-orange-50 px-4 text-sm font-medium text-orange-700 hover:bg-orange-100"
+              >
+                바디배틀 관리
               </Link>
             </>
           )}
@@ -1947,6 +2027,15 @@ export default function MyPage() {
             >
               가까운 이상형
             </button>
+            <button
+              type="button"
+              onClick={() => setAdminManageTab("bodybattle")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "bodybattle" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              바디배틀
+            </button>
           </div>
 
           {adminManageTab === "open_cards" && (
@@ -2114,6 +2203,51 @@ export default function MyPage() {
                 })}
               </div>
             )}
+          </div>
+          )}
+
+          {adminManageTab === "bodybattle" && (
+          <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-violet-800">바디배틀 운영</p>
+              <button
+                type="button"
+                disabled={runningBodyBattleAdminTask}
+                onClick={() => void handleAdminRunBodyBattleOps()}
+                className="h-8 rounded-md bg-violet-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+              >
+                {runningBodyBattleAdminTask ? "실행 중..." : "시즌 작업 실행"}
+              </button>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              <Link
+                href="/admin/bodybattle"
+                className="h-8 rounded-md border border-violet-200 bg-violet-50 px-3 text-xs font-medium text-violet-700 inline-flex items-center"
+              >
+                바디배틀 관리자 페이지
+              </Link>
+              <Link
+                href="/bodybattle"
+                className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-700 inline-flex items-center"
+              >
+                바디배틀 화면(관리자)
+              </Link>
+            </div>
+            <div className="mt-3 rounded-lg border border-violet-100 bg-violet-50/40 p-2 text-xs text-neutral-700">
+              <p>
+                현재 시즌:{" "}
+                {adminBodyBattleOverview?.season
+                  ? `${adminBodyBattleOverview.season.week_id} / ${adminBodyBattleOverview.season.theme_label} (${adminBodyBattleOverview.season.status})`
+                  : "없음"}
+              </p>
+              <p className="mt-1">
+                참가 {adminBodyBattleOverview?.counts?.entries_total ?? 0} · 승인활성 {adminBodyBattleOverview?.counts?.entries_approved_active ?? 0}
+                {" "}· 검수대기 {adminBodyBattleOverview?.counts?.entries_pending ?? 0} · 신고대기 {adminBodyBattleOverview?.counts?.reports_open ?? 0}
+              </p>
+              <p className="mt-1">
+                투표 {adminBodyBattleOverview?.counts?.votes_total ?? 0} · 보상수령 {adminBodyBattleOverview?.counts?.rewards_claimed ?? 0}
+              </p>
+            </div>
           </div>
           )}
 

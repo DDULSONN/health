@@ -40,12 +40,18 @@ export default function HomeBodyBattleQuickVote() {
   const [error, setError] = useState<string | null>(null);
   const [payload, setPayload] = useState<CurrentPayload | null>(null);
   const [feedback, setFeedback] = useState<VoteFeedback | null>(null);
+  const [hidden, setHidden] = useState(false);
 
   async function loadCurrent() {
     setLoading(true);
     setError(null);
     try {
       const res = await fetch("/api/bodybattle/current", { cache: "no-store" });
+      if (res.status === 401 || res.status === 403) {
+        setHidden(true);
+        setPayload(null);
+        return;
+      }
       const data = (await res.json()) as CurrentPayload;
       if (!res.ok || !data.ok) {
         setError("바디배틀 정보를 불러오지 못했습니다.");
@@ -101,6 +107,8 @@ export default function HomeBodyBattleQuickVote() {
 
   const leftImage = toBodyBattleImageUrl(payload?.matchup?.left.image_url, { width: 720, quality: 72 });
   const rightImage = toBodyBattleImageUrl(payload?.matchup?.right.image_url, { width: 720, quality: 72 });
+
+  if (hidden) return null;
 
   return (
     <section className="mb-5 rounded-2xl border border-orange-200 bg-gradient-to-r from-orange-50 to-amber-50 p-4">
