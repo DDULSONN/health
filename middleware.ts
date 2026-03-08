@@ -21,6 +21,17 @@ export async function middleware(request: NextRequest) {
 
   const response = NextResponse.next({ request });
 
+  const isBodyBattlePath =
+    pathname === "/bodybattle" ||
+    pathname.startsWith("/bodybattle/") ||
+    pathname.startsWith("/api/bodybattle") ||
+    pathname.startsWith("/api/admin/bodybattle");
+  if (isBodyBattlePath) {
+    response.headers.set("Cache-Control", "no-store, max-age=0, s-maxage=0, must-revalidate");
+    response.headers.set("Pragma", "no-cache");
+    response.headers.set("Expires", "0");
+  }
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "",
