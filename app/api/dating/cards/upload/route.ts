@@ -1,7 +1,6 @@
-﻿import { randomUUID } from "crypto";
-import { hasCityViewAccess } from "@/lib/dating-city-view";
+﻿import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { hasMoreViewAccess } from "@/lib/dating-more-view";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { hasCityViewAccess } from "@/lib/dating-city-view";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -70,25 +69,18 @@ export async function POST(req: Request) {
   }
 
   const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+  const path = `card-applications/${user.id}/${cardId}/${Date.now()}-${index}.${ext}`;
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const path = `card-applications/${user.id}/${cardId}/${Date.now()}-${index}-${randomUUID()}.${ext}`;
-    const { error: uploadError } = await adminClient.storage.from("dating-apply-photos").upload(path, file, {
-      contentType: file.type,
-      upsert: false,
-      cacheControl: "3600",
-    });
+  const { error: uploadError } = await adminClient.storage.from("dating-apply-photos").upload(path, file, {
+    contentType: file.type,
+    upsert: false,
+    cacheControl: "3600",
+  });
 
-    if (!uploadError) {
-      return NextResponse.json({ path }, { status: 201 });
-    }
-
-    console.error("[POST /api/dating/cards/upload] failed", {
-      attempt: attempt + 1,
-      path,
-      uploadError,
-    });
+  if (uploadError) {
+    console.error("[POST /api/dating/cards/upload] failed", uploadError);
+    return NextResponse.json({ error: "사진 업로드에 실패했습니다." }, { status: 500 });
   }
 
-  return NextResponse.json({ error: "사진 업로드에 실패했습니다. 잠시 후 다시 시도해주세요." }, { status: 500 });
+  return NextResponse.json({ path }, { status: 201 });
 }

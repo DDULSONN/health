@@ -1,4 +1,3 @@
-﻿import { randomUUID } from "crypto";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -18,9 +17,7 @@ export async function POST(req: Request) {
   }
 
   const form = await req.formData().catch(() => null);
-  if (!form) {
-    return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
-  }
+  if (!form) return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
 
   const file = form.get("file");
   const paidCardId = String(form.get("paidCardId") ?? "");
@@ -29,10 +26,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "file/paidCardId가 필요합니다." }, { status: 400 });
   }
   if (!ALLOWED_TYPES.includes(file.type)) {
-    return NextResponse.json({ error: "JPG/PNG/WebP만 업로드 가능합니다." }, { status: 400 });
+    return NextResponse.json({ error: "JPG/PNG/WebP 파일만 가능합니다." }, { status: 400 });
   }
   if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: "사진은 5MB 이하만 가능합니다." }, { status: 400 });
+    return NextResponse.json({ error: "파일은 5MB 이하만 가능합니다." }, { status: 400 });
   }
   if (index < 0 || index > 9) {
     return NextResponse.json({ error: "index 값이 올바르지 않습니다." }, { status: 400 });
@@ -41,7 +38,7 @@ export async function POST(req: Request) {
   const admin = createAdminClient();
   const { data: card, error: cardError } = await admin
     .from("dating_paid_cards")
-    .select("id, status, user_id, expires_at")
+    .select("id,status,user_id,expires_at")
     .eq("id", paidCardId)
     .single();
 
@@ -56,25 +53,18 @@ export async function POST(req: Request) {
   }
 
   const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+  const path = `paid-card-applications/${user.id}/${paidCardId}/${Date.now()}-${index}.${ext}`;
 
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const path = `paid-card-applications/${user.id}/${paidCardId}/${Date.now()}-${index}-${randomUUID()}.${ext}`;
-    const { error: uploadError } = await admin.storage.from("dating-apply-photos").upload(path, file, {
-      contentType: file.type,
-      upsert: false,
-      cacheControl: "3600",
-    });
+  const { error: uploadError } = await admin.storage.from("dating-apply-photos").upload(path, file, {
+    contentType: file.type,
+    upsert: false,
+    cacheControl: "3600",
+  });
 
-    if (!uploadError) {
-      return NextResponse.json({ path }, { status: 201 });
-    }
-
-    console.error("[POST /api/dating/paid/upload] failed", {
-      attempt: attempt + 1,
-      path,
-      uploadError,
-    });
+  if (uploadError) {
+    console.error("[POST /api/dating/paid/upload] failed", uploadError);
+    return NextResponse.json({ error: "사진 업로드에 실패했습니다." }, { status: 500 });
   }
 
-  return NextResponse.json({ error: "사진 업로드에 실패했습니다. 잠시 후 다시 시도해주세요." }, { status: 500 });
+  return NextResponse.json({ path }, { status: 201 });
 }
