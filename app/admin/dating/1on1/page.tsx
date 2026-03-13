@@ -589,6 +589,9 @@ export default function AdminDatingOneOnOnePage() {
                           </span>
                           <span className="truncate text-neutral-500">{card.job}</span>
                         </div>
+                        <p className="mt-2 line-clamp-3 text-xs text-neutral-700 whitespace-pre-wrap break-words">
+                          원하는 점: {card.preferred_partner_text}
+                        </p>
                       </button>
                     );
                   })}
@@ -602,6 +605,9 @@ export default function AdminDatingOneOnOnePage() {
                   {sexLabel(selectedSourceCard.sex)} / {selectedSourceCard.age ?? "-"}세 / {selectedSourceCard.height_cm}cm
                 </p>
                 <p className="mt-1">{selectedSourceCard.job} / {selectedSourceCard.region}</p>
+                <p className="mt-2 whitespace-pre-wrap break-words text-sky-950">
+                  원하는 점: {selectedSourceCard.preferred_partner_text}
+                </p>
               </div>
             )}
           </div>
