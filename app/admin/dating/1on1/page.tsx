@@ -440,7 +440,10 @@ export default function AdminDatingOneOnOnePage() {
 
         <div className="mt-4 grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
           <div className="rounded-2xl border border-sky-200 bg-white p-3">
-            <p className="text-xs font-semibold text-sky-800">후보를 받을 카드</p>
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs font-semibold text-sky-800">후보를 받을 카드</p>
+              <p className="text-xs text-neutral-500">승인 {approvedCards.length}명</p>
+            </div>
             <select
               value={selectedSourceCardId}
               onChange={(e) => {
@@ -456,6 +459,39 @@ export default function AdminDatingOneOnOnePage() {
                 </option>
               ))}
             </select>
+            {approvedCards.length === 0 ? (
+              <p className="mt-3 text-sm text-neutral-500">현재 조회 결과에 승인된 카드가 없습니다.</p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                <p className="text-[11px] font-semibold tracking-wide text-neutral-500">빠른 선택</p>
+                <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
+                  {approvedCards.map((card) => {
+                    const selected = card.id === selectedSourceCardId;
+                    return (
+                      <button
+                        key={card.id}
+                        type="button"
+                        onClick={() => {
+                          setSelectedSourceCardId(card.id);
+                          setSelectedCandidateCardIds([]);
+                        }}
+                        className={`w-full rounded-xl border px-3 py-3 text-left transition ${
+                          selected ? "border-sky-500 bg-sky-50" : "border-neutral-200 bg-neutral-50 hover:border-sky-300"
+                        }`}
+                      >
+                        <p className="text-sm font-semibold text-neutral-900">
+                          {card.name} / {sexLabel(card.sex)}
+                        </p>
+                        <p className="mt-1 text-xs text-neutral-600">
+                          {card.age ?? "-"}세 / {card.height_cm}cm / {card.region}
+                        </p>
+                        <p className="mt-1 truncate text-xs text-neutral-500">{card.job}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {selectedSourceCard && (
               <div className="mt-3 rounded-xl border border-sky-100 bg-sky-50 p-3 text-xs text-sky-900">
                 <p className="font-semibold">{selectedSourceCard.name}</p>
@@ -473,11 +509,17 @@ export default function AdminDatingOneOnOnePage() {
               <p className="text-xs text-neutral-500">{selectedCandidateCardIds.length}명 선택됨</p>
             </div>
             {!selectedSourceCard ? (
-              <p className="mt-3 text-sm text-neutral-500">왼쪽에서 기준 카드를 먼저 선택해주세요.</p>
+              <div className="mt-3 rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-4 text-sm text-neutral-500">
+                왼쪽 카드 목록이나 드롭다운에서 기준 카드를 먼저 선택해주세요.
+              </div>
             ) : selectableCandidateCards.length === 0 ? (
               <p className="mt-3 text-sm text-neutral-500">조건에 맞는 승인 후보가 없습니다.</p>
             ) : (
-              <div className="mt-3 grid gap-2 md:grid-cols-2">
+              <div className="mt-3">
+                <p className="mb-2 text-xs text-neutral-500">
+                  {selectedSourceCard.name} 님에게 보낼 수 있는 반대 성별 승인 후보 {selectableCandidateCards.length}명
+                </p>
+                <div className="grid gap-2 md:grid-cols-2">
                 {selectableCandidateCards.map((card) => {
                   const checked = selectedCandidateCardIds.includes(card.id);
                   return (
@@ -505,6 +547,7 @@ export default function AdminDatingOneOnOnePage() {
                     </label>
                   );
                 })}
+                </div>
               </div>
             )}
           </div>
