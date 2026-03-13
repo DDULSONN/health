@@ -147,10 +147,12 @@ const INITIAL_SELECTION_FILTER: SelectionFilter = {
 };
 
 function applySelectionFilter(cards: CardItem[], filter: SelectionFilter): CardItem[] {
-  const minAge = Number(filter.minAge);
-  const maxAge = Number(filter.maxAge);
-  const hasMinAge = Number.isFinite(minAge);
-  const hasMaxAge = Number.isFinite(maxAge);
+  const minAgeRaw = filter.minAge.trim();
+  const maxAgeRaw = filter.maxAge.trim();
+  const minAge = minAgeRaw ? Number(minAgeRaw) : null;
+  const maxAge = maxAgeRaw ? Number(maxAgeRaw) : null;
+  const hasMinAge = minAge != null && Number.isFinite(minAge);
+  const hasMaxAge = maxAge != null && Number.isFinite(maxAge);
   const needle = filter.q.trim().toLowerCase();
 
   return [...cards]
