@@ -23,6 +23,12 @@ type EntryRow = {
   id: string;
   nickname: string;
   gender: "male" | "female";
+  intro_text: string | null;
+  image_urls: string[];
+  rating: number;
+  wins: number;
+  losses: number;
+  votes_received: number;
   moderation_status: "pending" | "approved" | "rejected";
   status: "active" | "inactive" | "hidden";
   report_count: number;
@@ -97,6 +103,8 @@ export default function AdminBodyBattlePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [running, setRunning] = useState(false);
+  const [bulkApproving, setBulkApproving] = useState(false);
+  const [lightboxUrl, setLightboxUrl] = useState<string | null>(null);
   const [entryQuery, setEntryQuery] = useState("");
   const [seasonItems, setSeasonItems] = useState<SeasonPlannerItem[]>([]);
   const [seasonThemes, setSeasonThemes] = useState<SeasonThemeOption[]>([]);
@@ -253,6 +261,21 @@ export default function AdminBodyBattlePage() {
     }
   }
 
+  async function bulkApprovePending() {
+    const pending = entries.filter((e) => e.moderation_status === "pending");
+    if (pending.length === 0) return;
+    setBulkApproving(true);
+    setError(null);
+    try {
+      await Promise.all(pending.map((e) => patchEntry(e.id, { moderation_status: "approved" })));
+      await loadEntries();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBulkApproving(false);
+    }
+  }
+
   async function patchEntry(id: string, body: Record<string, unknown>) {
     const res = await fetch(`/api/admin/bodybattle/entries/${id}`, {
       method: "PATCH",
@@ -360,20 +383,60 @@ export default function AdminBodyBattlePage() {
 
       {tab === "entries" ? (
         <section className="space-y-2">
-          <input
-            value={entryQuery}
-            onChange={(e) => setEntryQuery(e.target.value)}
-            placeholder="닉네임/ID/상태 검색"
-            className="w-full rounded-lg border border-neutral-300 px-3 py-2 text-sm"
-          />
+          <div className="flex gap-2">
+            <input
+              value={entryQuery}
+              onChange={(e) => setEntryQuery(e.target.value)}
+              placeholder="닉네임/ID/상태 검색"
+              className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm"
+            />
+            <button
+              type="button"
+              disabled={bulkApproving || entries.filter((e) => e.moderation_status === "pending").length === 0}
+              onClick={() => void bulkApprovePending()}
+              className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
+            >
+              {bulkApproving ? "승인 중..." : `대기 ${entries.filter((e) => e.moderation_status === "pending").length}건 일괄승인`}
+            </button>
+          </div>
           {filteredEntries.map((entry) => (
             <article key={entry.id} className="rounded-xl border border-neutral-200 bg-white p-3">
-              <p className="text-sm font-semibold text-neutral-900">
-                {entry.nickname} ({entry.gender}) · {entry.id.slice(0, 8)}...
-              </p>
-              <p className="mt-1 text-xs text-neutral-600">
-                moderation={entry.moderation_status} · status={entry.status} · reports={entry.report_count}
-              </p>
+              <div className="flex items-start gap-3">
+                {entry.image_urls?.length > 0 && (
+                  <div className="flex shrink-0 gap-1">
+                    {entry.image_urls.slice(0, 2).map((url) => (
+                      <button
+                        key={url}
+                        type="button"
+                        onClick={() => setLightboxUrl(url)}
+                        className="h-16 w-16 overflow-hidden rounded-lg border border-neutral-200 bg-neutral-100"
+                      >
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img src={url} alt="" className="h-full w-full object-cover" />
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-neutral-900">
+                    {entry.nickname} <span className="font-normal text-neutral-500">({entry.gender})</span>
+                  </p>
+                  <p className="mt-0.5 text-xs text-neutral-500">
+                    {entry.id.slice(0, 8)}... · rating {entry.rating} · {entry.wins}W {entry.losses}L · votes {entry.votes_received}
+                  </p>
+                  <p className="mt-0.5 text-xs">
+                    <span className={`font-semibold ${entry.moderation_status === "pending" ? "text-amber-600" : entry.moderation_status === "approved" ? "text-emerald-600" : "text-red-600"}`}>
+                      {entry.moderation_status}
+                    </span>
+                    {" · "}
+                    <span className={entry.status === "hidden" ? "text-red-500" : "text-neutral-500"}>{entry.status}</span>
+                    {entry.report_count > 0 && <span className="ml-1 text-red-500"> · 신고 {entry.report_count}건</span>}
+                  </p>
+                  {entry.intro_text && (
+                    <p className="mt-1 line-clamp-1 text-xs text-neutral-400">{entry.intro_text}</p>
+                  )}
+                </div>
+              </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
@@ -409,6 +472,23 @@ export default function AdminBodyBattlePage() {
         </section>
       ) : null}
 
+      {lightboxUrl && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
+          onClick={() => setLightboxUrl(null)}
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={lightboxUrl} alt="" className="max-h-[90vh] max-w-[90vw] rounded-xl object-contain" onClick={(e) => e.stopPropagation()} />
+          <button
+            type="button"
+            onClick={() => setLightboxUrl(null)}
+            className="absolute right-4 top-4 rounded-full bg-white/20 px-3 py-1 text-sm text-white"
+          >
+            닫기
+          </button>
+        </div>
+      )}
+
       {tab === "anomalies" ? (
         <section className="space-y-3">
           {anomalies.length === 0 ? <p className="text-sm text-neutral-500">최근 24시간 이상행동 없음</p> : null}
@@ -418,8 +498,21 @@ export default function AdminBodyBattlePage() {
                 {item.actor_key} · score {item.score}
               </p>
               <p className="mt-1 text-xs text-amber-800">
-                votes {item.votes} · matchups {item.distinct_matchups} · dominant {item.dominant_entry_id?.slice(0, 8) ?? "-"} ({item.dominant_entry_votes})
+                votes {item.votes} · matchups {item.distinct_matchups} · dominant {item.dominant_entry_id?.slice(0, 8) ?? "-"} ({item.dominant_entry_votes}표)
               </p>
+              {item.dominant_entry_id && (
+                <button
+                  type="button"
+                  onClick={() =>
+                    patchEntry(item.dominant_entry_id!, { status: "hidden" })
+                      .then(() => loadCurrentTab("anomalies"))
+                      .catch((e) => setError(String(e)))
+                  }
+                  className="mt-2 rounded bg-neutral-800 px-2 py-1 text-xs text-white"
+                >
+                  지배 항목 숨기기
+                </button>
+              )}
             </article>
           ))}
 

@@ -12,6 +12,31 @@ type JoinBody = {
 
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024;
 
+// SSRF 방지: 허용된 외부 이미지 도메인만 허용
+const ALLOWED_IMAGE_DOMAINS = [
+  "instagram.com",
+  "cdninstagram.com",
+  "scontent.cdninstagram.com",
+  "fbcdn.net",
+  "i.imgur.com",
+  "imgur.com",
+  "pbs.twimg.com",
+  "abs.twimg.com",
+];
+
+function isAllowedImageDomain(value: string): boolean {
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:") return false;
+    const hostname = url.hostname.toLowerCase();
+    return ALLOWED_IMAGE_DOMAINS.some(
+      (allowed) => hostname === allowed || hostname.endsWith("." + allowed)
+    );
+  } catch {
+    return false;
+  }
+}
+
 function isValidHttpUrl(value: string) {
   try {
     const url = new URL(value);
@@ -27,7 +52,7 @@ async function validateRemoteImage(url: string) {
   try {
     const headRes = await fetch(url, {
       method: "HEAD",
-      redirect: "follow",
+      redirect: "manual", // redirect 차단 (SSRF 방지)
       signal: controller.signal,
       cache: "no-store",
     });
@@ -85,6 +110,9 @@ export async function POST(request: Request) {
   if (imageUrls.some((url) => !isValidHttpUrl(url))) {
     return NextResponse.json({ ok: false, message: "Image URL must be valid http/https URL." }, { status: 400 });
   }
+  if (imageUrls.some((url) => !isAllowedImageDomain(url))) {
+    return NextResponse.json({ ok: false, message: "Image URL domain is not allowed." }, { status: 400 });
+  }
 
   const admin = createAdminClient();
   const seasonRes = await admin
@@ -110,6 +138,23 @@ export async function POST(request: Request) {
   const imageCheckError = imageChecks.find((message) => Boolean(message));
   if (imageCheckError) {
     return NextResponse.json({ ok: false, message: imageCheckError }, { status: 400 });
+  }
+
+  // 승인된 항목은 재제출 불가
+  const existingEntryRes = await admin
+    .from("bodybattle_entries")
+    .select("id,moderation_status")
+    .eq("season_id", seasonId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (existingEntryRes.error) {
+    return NextResponse.json({ ok: false, message: existingEntryRes.error.message }, { status: 500 });
+  }
+  if (existingEntryRes.data && existingEntryRes.data.moderation_status !== "pending") {
+    return NextResponse.json(
+      { ok: false, message: "Entry has already been reviewed and cannot be modified." },
+      { status: 409 }
+    );
   }
 
   const dupChecks = await Promise.all(

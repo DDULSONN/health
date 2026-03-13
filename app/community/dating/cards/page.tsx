@@ -154,6 +154,7 @@ export default function OpenCardsPage() {
   const [swipeLoading, setSwipeLoading] = useState(true);
   const [swipeSubmitting, setSwipeSubmitting] = useState(false);
   const [swipeMessage, setSwipeMessage] = useState("");
+  const [swipeImgFailed, setSwipeImgFailed] = useState(false);
   const [swipeState, setSwipeState] = useState<SwipeState>({
     loggedIn: false,
     canSwipe: false,
@@ -329,6 +330,7 @@ export default function OpenCardsPage() {
       if (!res.ok) {
         throw new Error(body.error ?? "스와이프 후보를 불러오지 못했습니다.");
       }
+      setSwipeImgFailed(false);
       setSwipeState({
         loggedIn: body.loggedIn === true,
         canSwipe: body.canSwipe === true,
@@ -504,17 +506,18 @@ export default function OpenCardsPage() {
             </div>
 
             <div className="mt-3 flex h-56 w-full items-center justify-center overflow-hidden rounded-xl border border-amber-100 bg-neutral-50">
-              {swipeState.candidate.image_url ? (
+              {swipeState.candidate.image_url && !swipeImgFailed ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
                   src={swipeState.candidate.image_url}
                   alt=""
+                  onError={() => setSwipeImgFailed(true)}
                   className={`max-h-full max-w-full object-contain ${
                     swipeState.candidate.photo_visibility === "public" ? "" : "blur-[9px]"
                   }`}
                 />
               ) : (
-                <div className="h-full w-full animate-pulse bg-neutral-100" />
+                <span className="text-sm text-neutral-400">사진 없음</span>
               )}
             </div>
 
@@ -532,10 +535,10 @@ export default function OpenCardsPage() {
               )}
             </div>
             {swipeState.candidate.ideal_type && (
-              <p className="mt-2 text-xs text-pink-700 truncate">이상형: {maskIdealTypeForPreview(swipeState.candidate.ideal_type)}</p>
+              <p className="mt-2 line-clamp-2 text-xs text-pink-700">이상형: {maskIdealTypeForPreview(swipeState.candidate.ideal_type)}</p>
             )}
             {swipeState.candidate.strengths_text && (
-              <p className="mt-1 text-xs text-emerald-700 truncate">내 장점: {swipeState.candidate.strengths_text}</p>
+              <p className="mt-1 line-clamp-2 text-xs text-emerald-700">내 장점: {swipeState.candidate.strengths_text}</p>
             )}
 
             <div className="mt-4 flex gap-2">
@@ -708,6 +711,7 @@ function PaidCardRow({ card }: { card: PaidCard }) {
 
 function CardRow({ card }: { card: PublicCard }) {
   const ideal = maskIdealTypeForPreview(card.ideal_type);
+  const [imgFailed, setImgFailed] = useState(false);
 
   return (
     <div className="rounded-2xl border border-neutral-200 bg-white p-4">
@@ -724,12 +728,13 @@ function CardRow({ card }: { card: PublicCard }) {
       </div>
 
       <div className="mt-3 h-36 w-full overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50 md:h-44">
-        {card.image_urls.length > 0 ? (
+        {card.image_urls.length > 0 && !imgFailed ? (
           <div className="relative flex h-full w-full items-center justify-center bg-neutral-50">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={card.image_urls[0]}
               alt=""
+              onError={() => setImgFailed(true)}
               className={`absolute inset-0 h-full w-full object-cover opacity-30 ${card.photo_visibility === "public" ? "blur-sm" : "blur-[10px]"}`}
             />
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -740,7 +745,9 @@ function CardRow({ card }: { card: PublicCard }) {
             />
           </div>
         ) : (
-          <div className="h-full w-full animate-pulse bg-neutral-100" />
+          <div className="flex h-full w-full items-center justify-center">
+            <span className="text-sm text-neutral-400">사진 없음</span>
+          </div>
         )}
       </div>
 
@@ -751,23 +758,18 @@ function CardRow({ card }: { card: PublicCard }) {
         {card.is_3lift_verified && (
           <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">3대인증 완료</span>
         )}
+        {card.sex === "male" && card.total_3lift != null && (
+          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700">3대 {card.total_3lift}kg</span>
+        )}
       </div>
 
-      {ideal && <p className="mt-2 text-xs text-pink-700 truncate">이상형: {ideal}</p>}
-      {card.strengths_text && <p className="mt-1 text-xs text-emerald-700 truncate">내 장점: {card.strengths_text}</p>}
-
-      {card.sex === "male" && (
-        <div className="mt-2 flex flex-wrap gap-2">
-          {card.total_3lift != null && (
-            <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700">3대 {card.total_3lift}kg</span>
-          )}
-        </div>
-      )}
+      {ideal && <p className="mt-2 line-clamp-2 text-xs text-pink-700">이상형: {ideal}</p>}
+      {card.strengths_text && <p className="mt-1 line-clamp-2 text-xs text-emerald-700">내 장점: {card.strengths_text}</p>}
 
       <div className="mt-3 flex flex-wrap gap-2">
         <Link
           href={`/community/dating/cards/${card.id}`}
-          className="inline-flex min-h-[40px] items-center rounded-lg border border-neutral-300 px-4 text-sm text-neutral-700 hover:bg-neutral-50"
+          className="inline-flex min-h-[40px] items-center rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-700"
         >
           상세보기
         </Link>
