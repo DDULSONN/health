@@ -1878,6 +1878,7 @@ export default function MyPage() {
                   {candidateDecisionRequests.length > 0 && (
                     <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
                       <p className="text-sm font-semibold text-amber-900">상대가 나를 선택함</p>
+                      <p className="mt-1 text-xs text-amber-700">프로필을 확인한 뒤 수락 여부를 결정해주세요.</p>
                       <div className="mt-3 space-y-2">
                         {candidateDecisionRequests.map((match) => {
                           const processing = processingOneOnOneMatchIds.includes(match.id);
@@ -1885,12 +1886,41 @@ export default function MyPage() {
                           if (!card) return null;
                           return (
                             <div key={match.id} className="rounded-lg border border-amber-200 bg-white p-3">
-                              <p className="text-sm font-medium text-neutral-900">
-                                {card.name}님이 당신을 선택했습니다. 수락하면 바로 최종 매칭 완료됩니다.
-                              </p>
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-medium text-neutral-900">
+                                  {card.name} / {card.age ?? "-"}세 / {card.region}
+                                </p>
+                                <span
+                                  className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                    oneOnOneMatchStateColor[match.state]
+                                  }`}
+                                >
+                                  {oneOnOneMatchStateText[match.state]}
+                                </span>
+                              </div>
                               <p className="mt-1 text-xs text-neutral-600">
-                                {card.age ?? "-"}세 / {card.region} / {card.job}
+                                {card.height_cm}cm / {card.job} / {new Date(match.created_at).toLocaleString("ko-KR")}
                               </p>
+                              <p className="mt-2 text-xs text-neutral-700 whitespace-pre-wrap break-words">{card.intro_text}</p>
+                              <p className="mt-2 text-xs text-neutral-700">장점: {card.strengths_text}</p>
+                              <p className="mt-1 text-xs text-neutral-700">원하는 점: {card.preferred_partner_text}</p>
+                              {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
+                                <div className="mt-2 grid grid-cols-2 gap-2">
+                                  {card.photo_signed_urls.map((url, idx) => (
+                                    <a
+                                      key={`${match.id}-candidate-${idx}`}
+                                      href={url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
+                                    >
+                                      <div className="flex h-24 w-full items-center justify-center bg-neutral-50">
+                                        <img src={url} alt={`선택된 상대 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
+                                      </div>
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
                               <div className="mt-3 flex gap-2">
                                 <button
                                   type="button"
