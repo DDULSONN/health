@@ -1817,7 +1817,7 @@ export default function MyPage() {
                   {incomingCandidates.length > 0 && (
                     <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/50 p-3">
                       <p className="text-sm font-semibold text-sky-900">운영자가 보낸 후보</p>
-                      <p className="mt-1 text-xs text-sky-700">여러 후보 중 한 명을 선택하면 그 사람에게 수락 요청이 전달됩니다.</p>
+                      <p className="mt-1 text-xs text-sky-700">원하는 후보를 여러 명 선택할 수 있고, 선택된 사람마다 수락 요청이 전달됩니다.</p>
                       <div className="mt-3 space-y-2">
                         {incomingCandidates.map((match) => {
                           const processing = processingOneOnOneMatchIds.includes(match.id);

@@ -1,7 +1,7 @@
 import { isAllowedAdminUser } from "@/lib/admin";
 import {
   DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES,
-  DATING_ONE_ON_ONE_MATCH_SINGLE_TRACK_STATES,
+  DATING_ONE_ON_ONE_MATCH_CANDIDATE_SINGLE_TRACK_STATES,
   type DatingOneOnOneMatchRow,
   getDatingOneOnOneCardsByIds,
 } from "@/lib/dating-1on1";
@@ -128,22 +128,6 @@ export async function POST(req: Request) {
   if (!sourceRes.data) {
     return NextResponse.json({ error: "Source card not found." }, { status: 404 });
   }
-  const trackRes = await admin
-    .from("dating_1on1_match_proposals")
-    .select("id,state,candidate_card_id")
-    .eq("source_card_id", sourceCardId)
-    .in("state", [...DATING_ONE_ON_ONE_MATCH_SINGLE_TRACK_STATES])
-    .limit(5);
-  if (trackRes.error) {
-    console.error("[POST /api/dating/1on1/matches/admin] source track check failed", trackRes.error);
-    return NextResponse.json({ error: "Failed to validate source card state." }, { status: 500 });
-  }
-  if ((trackRes.data ?? []).length > 0) {
-    return NextResponse.json(
-      { error: "This card already has an active selected/finalizing match." },
-      { status: 409 }
-    );
-  }
 
   const candidatesRes = await admin
     .from("dating_1on1_cards")
@@ -156,9 +140,7 @@ export async function POST(req: Request) {
   }
 
   const candidateRows = (candidatesRes.data ?? []).filter(
-    (row) =>
-      row.user_id !== sourceRes.data?.user_id &&
-      row.sex !== sourceRes.data?.sex
+    (row) => row.user_id !== sourceRes.data?.user_id && row.sex !== sourceRes.data?.sex
   );
 
   if (candidateRows.length === 0) {
@@ -175,7 +157,7 @@ export async function POST(req: Request) {
       "candidate_card_id",
       candidateRows.map((row) => row.id)
     )
-    .in("state", [...DATING_ONE_ON_ONE_MATCH_SINGLE_TRACK_STATES]);
+    .in("state", [...DATING_ONE_ON_ONE_MATCH_CANDIDATE_SINGLE_TRACK_STATES]);
 
   if (candidateTrackRes.error) {
     console.error("[POST /api/dating/1on1/matches/admin] candidate track check failed", candidateTrackRes.error);

@@ -100,21 +100,6 @@ export async function POST(
     if (!updateRes.data) {
       return NextResponse.json({ error: "Candidate was already handled." }, { status: 409 });
     }
-
-    const siblingsRes = await admin
-      .from("dating_1on1_match_proposals")
-      .update({
-        state: "source_skipped",
-        updated_at: nowIso,
-      })
-      .eq("source_card_id", row.source_card_id)
-      .eq("state", "proposed")
-      .neq("id", matchId);
-
-    if (siblingsRes.error) {
-      console.error("[POST /api/dating/1on1/matches/[id]] sibling close failed", siblingsRes.error);
-      return NextResponse.json({ error: "Candidate selected, but sibling proposals failed to close." }, { status: 500 });
-    }
   }
 
   if (body.action === "candidate_accept") {
