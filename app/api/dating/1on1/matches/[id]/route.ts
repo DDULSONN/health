@@ -113,7 +113,7 @@ export async function POST(
     const updateRes = await admin
       .from("dating_1on1_match_proposals")
       .update({
-        state: "candidate_accepted",
+        state: "mutual_accepted",
         candidate_responded_at: nowIso,
         updated_at: nowIso,
       })
@@ -124,7 +124,7 @@ export async function POST(
 
     if (updateRes.error) {
       console.error("[POST /api/dating/1on1/matches/[id]] candidate accept failed", updateRes.error);
-      return NextResponse.json({ error: "Failed to accept candidate request." }, { status: 500 });
+      return NextResponse.json({ error: "Failed to complete mutual accept." }, { status: 500 });
     }
     if (!updateRes.data) {
       return NextResponse.json({ error: "This request was already handled." }, { status: 409 });

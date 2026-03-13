@@ -1886,7 +1886,7 @@ export default function MyPage() {
                           return (
                             <div key={match.id} className="rounded-lg border border-amber-200 bg-white p-3">
                               <p className="text-sm font-medium text-neutral-900">
-                                {card.name}님이 당신을 선택했습니다. 수락 여부를 결정해주세요.
+                                {card.name}님이 당신을 선택했습니다. 수락하면 바로 최종 매칭 완료됩니다.
                               </p>
                               <p className="mt-1 text-xs text-neutral-600">
                                 {card.age ?? "-"}세 / {card.region} / {card.job}
@@ -1933,7 +1933,7 @@ export default function MyPage() {
                                   {oneOnOneMatchStateText[match.state]}
                                 </span>
                               </div>
-                              <p className="mt-1 text-xs text-neutral-600">상대 응답을 기다리는 중입니다.</p>
+                              <p className="mt-1 text-xs text-neutral-600">상대가 수락하면 바로 최종 매칭 완료로 처리됩니다.</p>
                             </div>
                           );
                         })}

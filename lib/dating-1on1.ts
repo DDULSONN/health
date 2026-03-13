@@ -4,7 +4,7 @@ import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/
 export type DatingOneOnOneWriteStatus = "approved" | "paused";
 export const DATING_ONE_ON_ONE_ACTIVE_STATUSES = ["submitted", "reviewing", "approved"] as const;
 export const DATING_ONE_ON_ONE_AUTO_EXPIRE_DAYS = 30;
-export const DATING_ONE_ON_ONE_MATCH_SOURCE_PENDING_STATES = ["proposed", "candidate_accepted"] as const;
+export const DATING_ONE_ON_ONE_MATCH_SOURCE_PENDING_STATES = ["proposed"] as const;
 export const DATING_ONE_ON_ONE_MATCH_CANDIDATE_PENDING_STATES = ["source_selected"] as const;
 export const DATING_ONE_ON_ONE_MATCH_TERMINAL_STATES = [
   "source_skipped",
