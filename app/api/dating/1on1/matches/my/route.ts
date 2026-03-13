@@ -4,6 +4,36 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
+const MY_MATCH_BATCH_SIZE = 500;
+
+async function fetchAllMyMatches(admin: ReturnType<typeof createAdminClient>, userId: string) {
+  const rows: DatingOneOnOneMatchRow[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await admin
+      .from("dating_1on1_match_proposals")
+      .select(
+        "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at"
+      )
+      .or(`source_user_id.eq.${userId},candidate_user_id.eq.${userId}`)
+      .order("created_at", { ascending: false })
+      .range(from, from + MY_MATCH_BATCH_SIZE - 1);
+
+    if (error) {
+      throw error;
+    }
+
+    const batch = (data ?? []) as DatingOneOnOneMatchRow[];
+    rows.push(...batch);
+
+    if (batch.length < MY_MATCH_BATCH_SIZE) break;
+    from += MY_MATCH_BATCH_SIZE;
+  }
+
+  return rows;
+}
+
 export async function GET(req: Request) {
   const { user } = await getRequestAuthContext(req);
 
@@ -12,21 +42,13 @@ export async function GET(req: Request) {
   }
 
   const admin = createAdminClient();
-  const { data, error } = await admin
-    .from("dating_1on1_match_proposals")
-    .select(
-      "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at"
-    )
-    .or(`source_user_id.eq.${user.id},candidate_user_id.eq.${user.id}`)
-    .order("created_at", { ascending: false })
-    .limit(200);
-
-  if (error) {
+  let rows: DatingOneOnOneMatchRow[];
+  try {
+    rows = await fetchAllMyMatches(admin, user.id);
+  } catch (error) {
     console.error("[GET /api/dating/1on1/matches/my] failed", error);
     return NextResponse.json({ error: "Failed to load match proposals." }, { status: 500 });
   }
-
-  const rows = (data ?? []) as DatingOneOnOneMatchRow[];
   const cardMap = await getDatingOneOnOneCardsByIds(
     admin,
     rows.flatMap((row) => [row.source_card_id, row.candidate_card_id])

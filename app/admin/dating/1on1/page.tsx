@@ -34,6 +34,14 @@ type SortKey = "created_desc" | "age_asc" | "age_desc" | "region_asc" | "region_
 type StatusFilter = "" | "submitted" | "reviewing" | "approved" | "rejected";
 type StatusValue = "submitted" | "reviewing" | "approved" | "rejected";
 type Counts = { total: number; submitted: number; reviewing: number; approved: number; rejected: number };
+type SelectionFilter = {
+  q: string;
+  sex: "" | "male" | "female";
+  region: string;
+  minAge: string;
+  maxAge: string;
+  sort: SortKey;
+};
 
 type MatchCard = {
   id: string;
@@ -129,6 +137,43 @@ function matchStateBadgeClass(state: AdminMatchItem["state"]): string {
   return "bg-neutral-100 text-neutral-700";
 }
 
+const INITIAL_SELECTION_FILTER: SelectionFilter = {
+  q: "",
+  sex: "",
+  region: "",
+  minAge: "",
+  maxAge: "",
+  sort: "created_desc",
+};
+
+function applySelectionFilter(cards: CardItem[], filter: SelectionFilter): CardItem[] {
+  const minAge = Number(filter.minAge);
+  const maxAge = Number(filter.maxAge);
+  const hasMinAge = Number.isFinite(minAge);
+  const hasMaxAge = Number.isFinite(maxAge);
+  const needle = filter.q.trim().toLowerCase();
+
+  return [...cards]
+    .filter((card) => {
+      if (filter.sex && card.sex !== filter.sex) return false;
+      if (filter.region.trim() && !card.region.toLowerCase().includes(filter.region.trim().toLowerCase())) return false;
+      if (hasMinAge && (card.age ?? 0) < minAge) return false;
+      if (hasMaxAge && (card.age ?? 999) > maxAge) return false;
+      if (needle) {
+        const fields = [card.name, card.job, card.region, card.intro_text, card.strengths_text, card.preferred_partner_text];
+        if (!fields.some((field) => String(field ?? "").toLowerCase().includes(needle))) return false;
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      if (filter.sort === "age_asc") return (a.age ?? 0) - (b.age ?? 0);
+      if (filter.sort === "age_desc") return (b.age ?? 0) - (a.age ?? 0);
+      if (filter.sort === "region_asc") return (a.region ?? "").localeCompare(b.region ?? "", "ko");
+      if (filter.sort === "region_desc") return (b.region ?? "").localeCompare(a.region ?? "", "ko");
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+}
+
 export default function AdminDatingOneOnOnePage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -162,6 +207,8 @@ export default function AdminDatingOneOnOnePage() {
   const [status, setStatus] = useState<StatusFilter>("");
   const [q, setQ] = useState("");
   const [sort, setSort] = useState<SortKey>("created_desc");
+  const [sourceFilter, setSourceFilter] = useState<SelectionFilter>(INITIAL_SELECTION_FILTER);
+  const [candidateFilter, setCandidateFilter] = useState<SelectionFilter>(INITIAL_SELECTION_FILTER);
 
   const [savingIds, setSavingIds] = useState<string[]>([]);
   const [editStatusById, setEditStatusById] = useState<Record<string, StatusValue>>({});
@@ -334,6 +381,7 @@ export default function AdminDatingOneOnOnePage() {
     }
   };
 
+  const filteredSourceCards = applySelectionFilter(items, sourceFilter);
   const selectedSourceCard = items.find((item) => item.id === selectedSourceCardId) ?? null;
   const selectableCandidateCards = selectedSourceCard
     ? items.filter(
@@ -343,6 +391,7 @@ export default function AdminDatingOneOnOnePage() {
           item.sex !== selectedSourceCard.sex
       )
     : [];
+  const filteredCandidateCards = applySelectionFilter(selectableCandidateCards, candidateFilter);
   const visibleMatches =
     matchStateFilter === "mutual_only"
       ? matchItems.filter((item) => item.state === "mutual_accepted")
@@ -441,7 +490,55 @@ export default function AdminDatingOneOnOnePage() {
           <div className="rounded-2xl border border-sky-200 bg-white p-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-semibold text-sky-800">후보를 받을 카드</p>
-              <p className="text-xs text-neutral-500">조회 {items.length}명</p>
+              <p className="text-xs text-neutral-500">필터 결과 {filteredSourceCards.length}명</p>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <input
+                value={sourceFilter.q}
+                onChange={(e) => setSourceFilter((prev) => ({ ...prev, q: e.target.value }))}
+                placeholder="검색"
+                className="col-span-2 h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+              />
+              <select
+                value={sourceFilter.sex}
+                onChange={(e) => setSourceFilter((prev) => ({ ...prev, sex: e.target.value as SelectionFilter["sex"] }))}
+                className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+              >
+                <option value="">성별 전체</option>
+                <option value="male">남성</option>
+                <option value="female">여성</option>
+              </select>
+              <input
+                value={sourceFilter.region}
+                onChange={(e) => setSourceFilter((prev) => ({ ...prev, region: e.target.value }))}
+                placeholder="지역"
+                className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+              />
+              <input
+                value={sourceFilter.minAge}
+                onChange={(e) => setSourceFilter((prev) => ({ ...prev, minAge: e.target.value }))}
+                placeholder="최소 나이"
+                inputMode="numeric"
+                className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+              />
+              <input
+                value={sourceFilter.maxAge}
+                onChange={(e) => setSourceFilter((prev) => ({ ...prev, maxAge: e.target.value }))}
+                placeholder="최대 나이"
+                inputMode="numeric"
+                className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+              />
+              <select
+                value={sourceFilter.sort}
+                onChange={(e) => setSourceFilter((prev) => ({ ...prev, sort: e.target.value as SortKey }))}
+                className="col-span-2 h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+              >
+                <option value="created_desc">최신순</option>
+                <option value="age_asc">나이 오름차순</option>
+                <option value="age_desc">나이 내림차순</option>
+                <option value="region_asc">지역 오름차순</option>
+                <option value="region_desc">지역 내림차순</option>
+              </select>
             </div>
             <select
               value={selectedSourceCardId}
@@ -452,19 +549,19 @@ export default function AdminDatingOneOnOnePage() {
               className="mt-2 h-10 w-full rounded-lg border border-neutral-300 px-2 text-sm"
             >
               <option value="">카드 선택</option>
-              {items.map((card) => (
+              {filteredSourceCards.map((card) => (
                 <option key={card.id} value={card.id}>
                   [{statusLabel(card.status)}] {card.name} / {sexLabel(card.sex)} / {card.age ?? "-"}세 / {card.region}
                 </option>
               ))}
             </select>
-            {items.length === 0 ? (
-              <p className="mt-3 text-sm text-neutral-500">현재 조회 결과에 카드가 없습니다.</p>
+            {filteredSourceCards.length === 0 ? (
+              <p className="mt-3 text-sm text-neutral-500">조건에 맞는 기준 카드가 없습니다.</p>
             ) : (
               <div className="mt-3 space-y-2">
                 <p className="text-[11px] font-semibold tracking-wide text-neutral-500">빠른 선택</p>
                 <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
-                  {items.map((card) => {
+                  {filteredSourceCards.map((card) => {
                     const selected = card.id === selectedSourceCardId;
                     return (
                       <button
@@ -510,7 +607,7 @@ export default function AdminDatingOneOnOnePage() {
           <div className="rounded-2xl border border-sky-200 bg-white p-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-semibold text-sky-800">보낼 후보 선택</p>
-              <p className="text-xs text-neutral-500">{selectedCandidateCardIds.length}명 선택됨</p>
+              <p className="text-xs text-neutral-500">{selectedCandidateCardIds.length}명 선택됨 / {filteredCandidateCards.length}명 표시</p>
             </div>
             {!selectedSourceCard ? (
               <div className="mt-3 rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-4 text-sm text-neutral-500">
@@ -520,11 +617,64 @@ export default function AdminDatingOneOnOnePage() {
               <p className="mt-3 text-sm text-neutral-500">조건에 맞는 후보 카드가 없습니다.</p>
             ) : (
               <div className="mt-3">
+                <div className="grid grid-cols-2 gap-2">
+                  <input
+                    value={candidateFilter.q}
+                    onChange={(e) => setCandidateFilter((prev) => ({ ...prev, q: e.target.value }))}
+                    placeholder="후보 검색"
+                    className="col-span-2 h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+                  />
+                  <select
+                    value={candidateFilter.sex}
+                    onChange={(e) => setCandidateFilter((prev) => ({ ...prev, sex: e.target.value as SelectionFilter["sex"] }))}
+                    className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+                  >
+                    <option value="">성별 전체</option>
+                    <option value="male">남성</option>
+                    <option value="female">여성</option>
+                  </select>
+                  <input
+                    value={candidateFilter.region}
+                    onChange={(e) => setCandidateFilter((prev) => ({ ...prev, region: e.target.value }))}
+                    placeholder="지역"
+                    className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+                  />
+                  <input
+                    value={candidateFilter.minAge}
+                    onChange={(e) => setCandidateFilter((prev) => ({ ...prev, minAge: e.target.value }))}
+                    placeholder="최소 나이"
+                    inputMode="numeric"
+                    className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+                  />
+                  <input
+                    value={candidateFilter.maxAge}
+                    onChange={(e) => setCandidateFilter((prev) => ({ ...prev, maxAge: e.target.value }))}
+                    placeholder="최대 나이"
+                    inputMode="numeric"
+                    className="h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+                  />
+                  <select
+                    value={candidateFilter.sort}
+                    onChange={(e) => setCandidateFilter((prev) => ({ ...prev, sort: e.target.value as SortKey }))}
+                    className="col-span-2 h-9 rounded-lg border border-neutral-300 px-2 text-sm"
+                  >
+                    <option value="created_desc">최신순</option>
+                    <option value="age_asc">나이 오름차순</option>
+                    <option value="age_desc">나이 내림차순</option>
+                    <option value="region_asc">지역 오름차순</option>
+                    <option value="region_desc">지역 내림차순</option>
+                  </select>
+                </div>
                 <p className="mb-2 text-xs text-neutral-500">
-                  {selectedSourceCard.name} 님에게 보낼 수 있는 반대 성별 후보 {selectableCandidateCards.length}명
+                  {selectedSourceCard.name} 님에게 보낼 수 있는 반대 성별 후보 {selectableCandidateCards.length}명 중 {filteredCandidateCards.length}명 표시 중
                 </p>
+                {filteredCandidateCards.length === 0 ? (
+                  <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-4 text-sm text-neutral-500">
+                    후보 필터 조건에 맞는 카드가 없습니다.
+                  </div>
+                ) : (
                 <div className="grid gap-2 md:grid-cols-2">
-                {selectableCandidateCards.map((card) => {
+                {filteredCandidateCards.map((card) => {
                   const checked = selectedCandidateCardIds.includes(card.id);
                   return (
                     <label
@@ -557,6 +707,7 @@ export default function AdminDatingOneOnOnePage() {
                   );
                 })}
                 </div>
+                )}
               </div>
             )}
           </div>

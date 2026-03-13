@@ -30,9 +30,34 @@ type InputPayload = {
   consent_privacy?: boolean;
 };
 
+type AdminCardRow = {
+  id: string;
+  user_id: string;
+  sex: "male" | "female";
+  name: string;
+  birth_year: number;
+  height_cm: number;
+  job: string;
+  region: string;
+  phone: string;
+  intro_text: string;
+  strengths_text: string;
+  preferred_partner_text: string;
+  smoking: "non_smoker" | "occasional" | "smoker";
+  workout_frequency: "none" | "1_2" | "3_4" | "5_plus" | null;
+  status: "submitted" | "reviewing" | "approved" | "rejected";
+  photo_paths: string[] | null;
+  admin_note?: string | null;
+  admin_tags?: string[] | null;
+  reviewed_by_user_id?: string | null;
+  reviewed_at?: string | null;
+  created_at: string;
+};
+
 const SEX_VALUES = new Set(["male", "female"]);
 const SMOKING_VALUES = new Set(["non_smoker", "occasional", "smoker"]);
 const WORKOUT_VALUES = new Set(["none", "1_2", "3_4", "5_plus"]);
+const ADMIN_CARD_BATCH_SIZE = 1000;
 
 function toInt(value: number | string | undefined): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return Math.round(value);
@@ -53,6 +78,31 @@ function normalizePath(raw: unknown): string {
 function toCurrentAge(birthYear: number | null | undefined): number | null {
   if (!birthYear || !Number.isFinite(birthYear)) return null;
   return new Date().getFullYear() - birthYear + 1;
+}
+
+async function fetchAllAdminCards(admin: ReturnType<typeof createAdminClient>) {
+  const rows: AdminCardRow[] = [];
+  let from = 0;
+
+  while (true) {
+    const { data, error } = await admin
+      .from("dating_1on1_cards")
+      .select(
+        "id,user_id,sex,name,birth_year,height_cm,job,region,phone,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,photo_paths,admin_note,admin_tags,reviewed_by_user_id,reviewed_at,created_at"
+      )
+      .order("created_at", { ascending: false })
+      .range(from, from + ADMIN_CARD_BATCH_SIZE - 1);
+
+    if (error) throw error;
+
+    const batch = (data ?? []) as AdminCardRow[];
+    rows.push(...batch);
+
+    if (batch.length < ADMIN_CARD_BATCH_SIZE) break;
+    from += ADMIN_CARD_BATCH_SIZE;
+  }
+
+  return rows;
 }
 
 export async function GET(req: Request) {
@@ -79,15 +129,10 @@ export async function GET(req: Request) {
   await expireStaleDatingOneOnOneCards(admin).catch((error) => {
     console.error("[GET /api/dating/1on1/cards] stale expire failed", error);
   });
-  const { data, error } = await admin
-    .from("dating_1on1_cards")
-    .select(
-      "id,user_id,sex,name,birth_year,height_cm,job,region,phone,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,photo_paths,admin_note,admin_tags,reviewed_by_user_id,reviewed_at,created_at"
-    )
-    .order("created_at", { ascending: false })
-    .limit(300);
-
-  if (error) {
+  let data;
+  try {
+    data = await fetchAllAdminCards(admin);
+  } catch (error) {
     console.error("[GET /api/dating/1on1/cards] failed", error);
     return NextResponse.json({ error: "Failed to load cards." }, { status: 500 });
   }
