@@ -247,11 +247,11 @@ export default function AdminDatingOneOnOnePage() {
     );
     hydrateEditors(rows);
     if (!selectedSourceCardId) {
-      const firstApproved = rows.find((row) => row.status === "approved");
-      if (firstApproved) {
-        setSelectedSourceCardId(firstApproved.id);
+      const firstRow = rows[0];
+      if (firstRow) {
+        setSelectedSourceCardId(firstRow.id);
       }
-    } else if (!rows.some((row) => row.id === selectedSourceCardId && row.status === "approved")) {
+    } else if (!rows.some((row) => row.id === selectedSourceCardId)) {
       setSelectedSourceCardId("");
       setSelectedCandidateCardIds([]);
     }
@@ -334,10 +334,9 @@ export default function AdminDatingOneOnOnePage() {
     }
   };
 
-  const approvedCards = items.filter((item) => item.status === "approved");
-  const selectedSourceCard = approvedCards.find((item) => item.id === selectedSourceCardId) ?? null;
+  const selectedSourceCard = items.find((item) => item.id === selectedSourceCardId) ?? null;
   const selectableCandidateCards = selectedSourceCard
-    ? approvedCards.filter(
+    ? items.filter(
         (item) =>
           item.id !== selectedSourceCard.id &&
           item.user_id !== selectedSourceCard.user_id &&
@@ -426,7 +425,7 @@ export default function AdminDatingOneOnOnePage() {
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-sky-900">1:1 후보 보내기</h2>
-            <p className="text-xs text-sky-700">승인된 카드 기준으로 한 사람에게 여러 후보를 한 번에 보냅니다.</p>
+            <p className="text-xs text-sky-700">현재 조회/정렬 결과 전체를 기준으로 한 사람에게 여러 후보를 한 번에 보냅니다.</p>
           </div>
           <button
             type="button"
@@ -442,7 +441,7 @@ export default function AdminDatingOneOnOnePage() {
           <div className="rounded-2xl border border-sky-200 bg-white p-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs font-semibold text-sky-800">후보를 받을 카드</p>
-              <p className="text-xs text-neutral-500">승인 {approvedCards.length}명</p>
+              <p className="text-xs text-neutral-500">조회 {items.length}명</p>
             </div>
             <select
               value={selectedSourceCardId}
@@ -452,20 +451,20 @@ export default function AdminDatingOneOnOnePage() {
               }}
               className="mt-2 h-10 w-full rounded-lg border border-neutral-300 px-2 text-sm"
             >
-              <option value="">승인 카드 선택</option>
-              {approvedCards.map((card) => (
+              <option value="">카드 선택</option>
+              {items.map((card) => (
                 <option key={card.id} value={card.id}>
-                  {card.name} / {sexLabel(card.sex)} / {card.age ?? "-"}세 / {card.region}
+                  [{statusLabel(card.status)}] {card.name} / {sexLabel(card.sex)} / {card.age ?? "-"}세 / {card.region}
                 </option>
               ))}
             </select>
-            {approvedCards.length === 0 ? (
-              <p className="mt-3 text-sm text-neutral-500">현재 조회 결과에 승인된 카드가 없습니다.</p>
+            {items.length === 0 ? (
+              <p className="mt-3 text-sm text-neutral-500">현재 조회 결과에 카드가 없습니다.</p>
             ) : (
               <div className="mt-3 space-y-2">
                 <p className="text-[11px] font-semibold tracking-wide text-neutral-500">빠른 선택</p>
                 <div className="max-h-80 space-y-2 overflow-y-auto pr-1">
-                  {approvedCards.map((card) => {
+                  {items.map((card) => {
                     const selected = card.id === selectedSourceCardId;
                     return (
                       <button
@@ -485,7 +484,12 @@ export default function AdminDatingOneOnOnePage() {
                         <p className="mt-1 text-xs text-neutral-600">
                           {card.age ?? "-"}세 / {card.height_cm}cm / {card.region}
                         </p>
-                        <p className="mt-1 truncate text-xs text-neutral-500">{card.job}</p>
+                        <div className="mt-1 flex items-center gap-2 text-xs">
+                          <span className={`inline-flex rounded-full px-2 py-0.5 font-medium ${statusBadgeClass(card.status)}`}>
+                            {statusLabel(card.status)}
+                          </span>
+                          <span className="truncate text-neutral-500">{card.job}</span>
+                        </div>
                       </button>
                     );
                   })}
@@ -513,11 +517,11 @@ export default function AdminDatingOneOnOnePage() {
                 왼쪽 카드 목록이나 드롭다운에서 기준 카드를 먼저 선택해주세요.
               </div>
             ) : selectableCandidateCards.length === 0 ? (
-              <p className="mt-3 text-sm text-neutral-500">조건에 맞는 승인 후보가 없습니다.</p>
+              <p className="mt-3 text-sm text-neutral-500">조건에 맞는 후보 카드가 없습니다.</p>
             ) : (
               <div className="mt-3">
                 <p className="mb-2 text-xs text-neutral-500">
-                  {selectedSourceCard.name} 님에게 보낼 수 있는 반대 성별 승인 후보 {selectableCandidateCards.length}명
+                  {selectedSourceCard.name} 님에게 보낼 수 있는 반대 성별 후보 {selectableCandidateCards.length}명
                 </p>
                 <div className="grid gap-2 md:grid-cols-2">
                 {selectableCandidateCards.map((card) => {
@@ -540,7 +544,12 @@ export default function AdminDatingOneOnOnePage() {
                           <p className="text-sm font-medium text-neutral-900">
                             {card.name} / {card.age ?? "-"}세 / {card.region}
                           </p>
-                          <p className="mt-1 text-xs text-neutral-600">{card.height_cm}cm / {card.job}</p>
+                          <div className="mt-1 flex items-center gap-2 text-xs">
+                            <span className={`inline-flex rounded-full px-2 py-0.5 font-medium ${statusBadgeClass(card.status)}`}>
+                              {statusLabel(card.status)}
+                            </span>
+                            <span className="text-neutral-600">{card.height_cm}cm / {card.job}</span>
+                          </div>
                           <p className="mt-2 text-xs text-neutral-700 whitespace-pre-wrap break-words">{card.intro_text}</p>
                         </div>
                       </div>

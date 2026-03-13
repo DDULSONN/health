@@ -128,10 +128,6 @@ export async function POST(req: Request) {
   if (!sourceRes.data) {
     return NextResponse.json({ error: "Source card not found." }, { status: 404 });
   }
-  if (sourceRes.data.status !== "approved") {
-    return NextResponse.json({ error: "Only approved cards can receive match candidates." }, { status: 409 });
-  }
-
   const trackRes = await admin
     .from("dating_1on1_match_proposals")
     .select("id,state,candidate_card_id")
@@ -161,14 +157,13 @@ export async function POST(req: Request) {
 
   const candidateRows = (candidatesRes.data ?? []).filter(
     (row) =>
-      row.status === "approved" &&
       row.user_id !== sourceRes.data?.user_id &&
       row.sex !== sourceRes.data?.sex
   );
 
   if (candidateRows.length === 0) {
     return NextResponse.json(
-      { error: "No valid candidate cards were found. Candidates must be approved, opposite sex, and different users." },
+      { error: "선택 가능한 후보 카드가 없습니다. 본인 카드 제외, 다른 성별 카드만 보낼 수 있습니다." },
       { status: 409 }
     );
   }
