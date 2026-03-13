@@ -1,7 +1,8 @@
-﻿import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { hasMoreViewAccess } from "@/lib/dating-more-view";
 import { hasCityViewAccess } from "@/lib/dating-city-view";
 import { NextResponse } from "next/server";
+import { getRequestAuthContext } from "@/lib/supabase/request";
 
 export const runtime = "nodejs";
 
@@ -9,10 +10,7 @@ const MAX_FILE_SIZE = 5 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 export async function POST(req: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getRequestAuthContext(req);
 
   if (!user) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });

@@ -1,12 +1,10 @@
 ﻿import { extractProvinceFromRegion } from "@/lib/region-city";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { getRequestAuthContext } from "@/lib/supabase/request";
+import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 export async function POST(req: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getRequestAuthContext(req);
 
   if (!user) {
     return NextResponse.json({ ok: false, message: "로그인이 필요합니다." }, { status: 401 });

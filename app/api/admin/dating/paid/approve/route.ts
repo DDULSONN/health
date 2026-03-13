@@ -1,4 +1,5 @@
 import { isAdminEmail } from "@/lib/admin";
+import { approvePaidCard } from "@/lib/dating-purchase-fulfillment";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -53,31 +54,14 @@ export async function POST(req: Request) {
       return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "paidCardId가 필요합니다." });
     }
 
-    const now = new Date();
-    const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
     const admin = createAdminClient();
+    const approved = await approvePaidCard(admin, { paidCardId });
 
-    const updateRes = await admin
-      .from("dating_paid_cards")
-      .update({
-        status: "approved",
-        paid_at: now.toISOString(),
-        expires_at: expiresAt.toISOString(),
-      })
-      .eq("id", paidCardId)
-      .select("id")
-      .single();
-
-    if (updateRes.error) {
-      const notFound = updateRes.error.code === "PGRST116";
-      if (notFound) {
-        return json(404, { ok: false, code: "NOT_FOUND", requestId, message: "대상을 찾을 수 없습니다." });
-      }
-      console.error(`[dating-paid-approve] ${requestId} update error`, updateRes.error);
-      return json(500, { ok: false, code: "APPROVE_FAILED", requestId, message: "승인 처리에 실패했습니다." });
+    if (!approved) {
+      return json(404, { ok: false, code: "NOT_FOUND", requestId, message: "대상을 찾을 수 없거나 이미 처리되었습니다." });
     }
 
-    return json(200, { ok: true, requestId });
+    return json(200, { ok: true, requestId, item: approved });
   } catch (error) {
     console.error(`[dating-paid-approve] ${requestId} unhandled`, error);
     return json(500, { ok: false, code: "INTERNAL_SERVER_ERROR", requestId, message: "서버 오류가 발생했습니다." });

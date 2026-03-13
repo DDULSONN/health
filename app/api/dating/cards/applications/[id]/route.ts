@@ -1,6 +1,8 @@
-import { isAdminEmail } from "@/lib/admin";
+﻿import { isAdminEmail } from "@/lib/admin";
 import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
-import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { sendExpoPushToUser } from "@/lib/expo-push";
+import { createAdminClient } from "@/lib/supabase/server";
+import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
 export async function PATCH(
@@ -8,10 +10,7 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getRequestAuthContext(req);
 
   if (!user) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
@@ -26,7 +25,7 @@ export async function PATCH(
   const adminClient = createAdminClient();
   const { data: app, error: appError } = await adminClient
     .from("dating_card_applications")
-    .select("id, card_id, applicant_user_id, status")
+    .select("id, card_id, applicant_user_id, applicant_display_nickname, status")
     .eq("id", id)
     .single();
 
@@ -36,7 +35,7 @@ export async function PATCH(
 
   const { data: card, error: cardError } = await adminClient
     .from("dating_cards")
-    .select("id, owner_user_id, sex, status")
+    .select("id, owner_user_id, sex, status, display_nickname")
     .eq("id", app.card_id)
     .single();
 
@@ -56,10 +55,7 @@ export async function PATCH(
     return NextResponse.json({ error: "처리 권한이 없습니다." }, { status: 403 });
   }
 
-  const { error: updateError } = await adminClient
-    .from("dating_card_applications")
-    .update({ status })
-    .eq("id", id);
+  const { error: updateError } = await adminClient.from("dating_card_applications").update({ status }).eq("id", id);
 
   if (updateError) {
     console.error("[PATCH /api/dating/cards/applications/[id]] failed", updateError);
@@ -77,7 +73,7 @@ export async function PATCH(
     if (cardHideError) {
       console.error("[PATCH /api/dating/cards/applications/[id]] card hide failed", cardHideError);
       return NextResponse.json(
-        { error: "지원자 수락은 되었지만 카드 내림 처리에 실패했습니다. 관리자에게 문의해주세요." },
+        { error: "지원자 수락은 됐지만 카드 숨김 처리에 실패했습니다. 관리자에게 문의해주세요." },
         { status: 500 }
       );
     }
@@ -99,6 +95,46 @@ export async function PATCH(
     } catch (promoteError) {
       console.error("[PATCH /api/dating/cards/applications/[id]] promote pending failed", promoteError);
     }
+  }
+
+  if ((status === "accepted" || status === "rejected") && app.applicant_user_id) {
+    const notificationType = status === "accepted" ? "dating_application_accepted" : "dating_application_rejected";
+    const title = status === "accepted" ? "지원이 수락됐습니다" : "지원 결과가 도착했습니다";
+    const bodyText =
+      status === "accepted"
+        ? `${card.display_nickname ?? "오픈카드"} 지원이 수락되었습니다.`
+        : `${card.display_nickname ?? "오픈카드"} 지원이 거절되었습니다.`;
+
+    await adminClient
+      .from("notifications")
+      .insert({
+        user_id: app.applicant_user_id,
+        actor_id: card.owner_user_id,
+        type: notificationType,
+        post_id: null,
+        comment_id: null,
+        meta_json: {
+          card_id: app.card_id,
+          application_id: app.id,
+        },
+      })
+      .then(({ error }) => {
+        if (error) {
+          console.error("[PATCH /api/dating/cards/applications/[id]] notification insert failed", error);
+        }
+      });
+
+    await sendExpoPushToUser(adminClient, app.applicant_user_id, {
+      title,
+      body: bodyText,
+      data: {
+        type: notificationType,
+        cardId: app.card_id,
+        applicationId: app.id,
+      },
+    }).catch((pushError) => {
+      console.error("[PATCH /api/dating/cards/applications/[id]] expo push failed", pushError);
+    });
   }
 
   return NextResponse.json({

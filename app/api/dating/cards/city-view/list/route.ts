@@ -1,7 +1,9 @@
 ﻿import { getActiveApprovedCities } from "@/lib/dating-city-view";
 import { extractProvinceFromRegion } from "@/lib/region-city";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { getRequestAuthContext } from "@/lib/supabase/request";
+import { createAdminClient } from "@/lib/supabase/server";
+import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { NextResponse } from "next/server";
 
 function normalizePath(value: unknown): string {
@@ -44,10 +46,7 @@ function toImageUrls(photoVisibility: "blur" | "public", photoPaths: unknown, bl
 }
 
 export async function GET(req: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getRequestAuthContext(req);
 
   if (!user) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
@@ -61,6 +60,7 @@ export async function GET(req: Request) {
   }
 
   const admin = createAdminClient();
+  const blockedUserIds = await getDatingBlockedUserIds(admin, user.id);
   const activeCities = await getActiveApprovedCities(admin, user.id);
   if (!activeCities.includes(province)) {
     return NextResponse.json({ error: "해당 도/광역시는 승인 후 이용 가능합니다." }, { status: 403 });
@@ -80,7 +80,10 @@ export async function GET(req: Request) {
   }
 
   const rows = Array.isArray(pendingCardsRes.data) ? pendingCardsRes.data : [];
-  const selected = rows.filter((row) => extractProvinceFromRegion(row.region) === province).slice(0, 500);
+  const selected = rows
+    .filter((row) => extractProvinceFromRegion(row.region) === province)
+    .filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")))
+    .slice(0, 500);
   const ownerIds = [...new Set(selected.map((row) => String(row.owner_user_id ?? "")).filter((id) => id.length > 0))];
   const phoneVerifiedByOwner = new Map<string, boolean>();
   if (ownerIds.length > 0) {
@@ -118,3 +121,5 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ items, province });
 }
+
+

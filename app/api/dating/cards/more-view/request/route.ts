@@ -1,5 +1,6 @@
-import { getActiveMoreViewGrant, normalizeCardSex } from "@/lib/dating-more-view";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+﻿import { getActiveMoreViewGrant, normalizeCardSex } from "@/lib/dating-more-view";
+import { createAdminClient } from "@/lib/supabase/server";
+import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
 type Body = { sex?: unknown };
@@ -12,13 +13,8 @@ export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    const { user } = await getRequestAuthContext(req);
+    if (!user) {
       return json(401, { ok: false, code: "UNAUTHORIZED", requestId, message: "로그인이 필요합니다." });
     }
 
@@ -60,7 +56,7 @@ export async function POST(req: Request) {
 
     if (insertRes.error || !insertRes.data) {
       console.error(`[more-view-request] ${requestId} insert error`, insertRes.error);
-      return json(500, { ok: false, code: "CREATE_REQUEST_FAILED", requestId, message: "신청 생성에 실패했습니다." });
+      return json(500, { ok: false, code: "CREATE_REQUEST_FAILED", requestId, message: "요청 생성에 실패했습니다." });
     }
 
     return json(200, {
@@ -70,7 +66,7 @@ export async function POST(req: Request) {
       requestRowId: insertRes.data.id,
       sex,
       status: "pending",
-      message: "신청이 접수되었습니다.",
+      message: "요청이 접수되었습니다.",
     });
   } catch (error) {
     console.error(`[more-view-request] ${requestId} unhandled`, error);

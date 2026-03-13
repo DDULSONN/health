@@ -178,7 +178,7 @@ export async function GET(request: Request) {
         ok: true,
         season,
         matchup: null,
-        message: "Not enough entries yet. Invite more participants.",
+        message: "아직 대결을 만들 만큼 신청자가 모이지 않았습니다.",
       }),
       viewerFingerprint,
       request

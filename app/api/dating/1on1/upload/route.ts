@@ -1,4 +1,5 @@
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
+import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
@@ -22,10 +23,7 @@ async function ensureBucket(adminClient: ReturnType<typeof createAdminClient>) {
 }
 
 export async function POST(req: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getRequestAuthContext(req);
 
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });

@@ -6,7 +6,7 @@ import { NextResponse } from "next/server";
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
-/** POST /api/upload - 이미지 업로드 (Supabase Storage) */
+/** POST /api/upload - 이미지 업로드(Supabase Storage) */
 export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
   const supabase = await createClient();

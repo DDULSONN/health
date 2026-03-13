@@ -1,8 +1,10 @@
 import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
+import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
+import { getRequestAuthContext } from "@/lib/supabase/request";
 import { kvGetString, kvSetString } from "@/lib/edge-kv";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 const RAW_COUNT_MAX = 40;
@@ -197,10 +199,7 @@ async function createSignedImageUrls(
 
 export async function GET(req: Request) {
   const requestId = crypto.randomUUID();
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getRequestAuthContext(req);
   const ip = extractClientIp(req);
 
   const rateLimit = await checkRouteRateLimit({
@@ -311,7 +310,11 @@ export async function GET(req: Request) {
 
   const rows = data ?? [];
   const hasMore = rows.length > limit;
-  const pageRows = hasMore ? rows.slice(0, limit) : rows;
+  let pageRows = hasMore ? rows.slice(0, limit) : rows;
+  if (user?.id) {
+    const blockedUserIds = await getDatingBlockedUserIds(adminClient, user.id);
+    pageRows = pageRows.filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")));
+  }
   const ownerIds = [...new Set(pageRows.map((row) => String(row.owner_user_id ?? "")).filter((id) => id.length > 0))];
   const phoneVerifiedByOwner = new Map<string, boolean>();
   if (ownerIds.length > 0) {

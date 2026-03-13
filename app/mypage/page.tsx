@@ -29,10 +29,8 @@ type SummaryResponse = {
     nickname_changed_count: number;
     nickname_change_credits: number;
     phone_verified: boolean;
-    phone_e164: string | null;
     phone_verified_at: string | null;
     swipe_profile_visible: boolean;
-    email: string | null;
   };
   weekly_win_count: number;
   bodycheck_posts: BodycheckPost[];
@@ -174,6 +172,50 @@ type MyOneOnOneCard = {
   reviewed_at?: string | null;
   created_at: string;
   photo_signed_urls?: string[];
+};
+
+type MyOneOnOneMatchCard = {
+  id: string;
+  sex: "male" | "female";
+  name: string;
+  age: number | null;
+  birth_year: number;
+  height_cm: number;
+  job: string;
+  region: string;
+  intro_text: string;
+  strengths_text: string;
+  preferred_partner_text: string;
+  smoking: "non_smoker" | "occasional" | "smoker";
+  workout_frequency: "none" | "1_2" | "3_4" | "5_plus" | null;
+  status: "submitted" | "reviewing" | "approved" | "rejected";
+  created_at: string;
+  photo_signed_urls?: string[];
+};
+
+type MyOneOnOneMatch = {
+  id: string;
+  role: "source" | "candidate";
+  state:
+    | "proposed"
+    | "source_selected"
+    | "source_skipped"
+    | "candidate_accepted"
+    | "candidate_rejected"
+    | "source_declined"
+    | "admin_canceled"
+    | "mutual_accepted";
+  action_required: boolean;
+  source_card_id: string;
+  candidate_card_id: string;
+  source_selected_at: string | null;
+  candidate_responded_at: string | null;
+  source_final_responded_at: string | null;
+  created_at: string;
+  updated_at: string;
+  source_card: MyOneOnOneMatchCard | null;
+  candidate_card: MyOneOnOneMatchCard | null;
+  counterparty_card: MyOneOnOneMatchCard | null;
 };
 
 type AdminOpenCard = {
@@ -381,6 +423,7 @@ export default function MyPage() {
   const [receivedPaidApplications, setReceivedPaidApplications] = useState<ReceivedPaidApplication[]>([]);
   const [myAppliedPaidApplications, setMyAppliedPaidApplications] = useState<MyAppliedPaidApplication[]>([]);
   const [myOneOnOneCards, setMyOneOnOneCards] = useState<MyOneOnOneCard[]>([]);
+  const [myOneOnOneMatches, setMyOneOnOneMatches] = useState<MyOneOnOneMatch[]>([]);
   const [datingConnections, setDatingConnections] = useState<DatingConnection[]>([]);
   const [adminOpenCards, setAdminOpenCards] = useState<AdminOpenCard[]>([]);
   const [adminOpenCardApplications, setAdminOpenCardApplications] = useState<AdminOpenCardApplication[]>([]);
@@ -397,6 +440,7 @@ export default function MyPage() {
   const [approvingOrderIds, setApprovingOrderIds] = useState<string[]>([]);
   const [processingMoreViewIds, setProcessingMoreViewIds] = useState<string[]>([]);
   const [processingCityViewIds, setProcessingCityViewIds] = useState<string[]>([]);
+  const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
   const [openCardWriteEnabled, setOpenCardWriteEnabled] = useState(true);
   const [openCardWriteSaving, setOpenCardWriteSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -445,6 +489,7 @@ export default function MyPage() {
           paidReceivedRes,
           paidAppliedRes,
           oneOnOneRes,
+          oneOnOneMatchesRes,
           connectionsRes,
           paidConnectionsRes,
           writeSettingRes,
@@ -459,6 +504,7 @@ export default function MyPage() {
           fetch("/api/dating/paid/my/received", { cache: "no-store" }),
           fetch("/api/dating/paid/my/applied", { cache: "no-store" }),
           fetch("/api/dating/1on1/my", { cache: "no-store" }),
+          fetch("/api/dating/1on1/matches/my", { cache: "no-store" }),
           fetch("/api/dating/cards/my/connections", { cache: "no-store" }),
           fetch("/api/dating/paid/my/connections", { cache: "no-store" }),
           fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
@@ -499,6 +545,10 @@ export default function MyPage() {
           error?: string;
           items?: MyOneOnOneCard[];
         };
+        const oneOnOneMatchesBody = (await oneOnOneMatchesRes.json().catch(() => ({}))) as {
+          error?: string;
+          items?: MyOneOnOneMatch[];
+        };
         const connectionsBody = (await connectionsRes.json().catch(() => ({}))) as {
           error?: string;
           items?: DatingConnection[];
@@ -533,6 +583,9 @@ export default function MyPage() {
         if (!oneOnOneRes.ok) {
           throw new Error(oneOnOneBody.error ?? "내 1:1 소개팅 신청 내역을 불러오지 못했습니다.");
         }
+        if (!oneOnOneMatchesRes.ok) {
+          console.error("[mypage] 1on1 matches load failed", oneOnOneMatchesBody.error ?? "unknown error");
+        }
         if (!connectionsRes.ok) {
           console.error("[mypage] open connections load failed", connectionsBody.error ?? "unknown error");
         }
@@ -553,6 +606,7 @@ export default function MyPage() {
           setReceivedPaidApplications(paidReceivedBody.applications ?? []);
           setMyAppliedPaidApplications(paidAppliedBody.applications ?? []);
           setMyOneOnOneCards(oneOnOneBody.items ?? []);
+          setMyOneOnOneMatches(oneOnOneMatchesRes.ok ? (oneOnOneMatchesBody.items ?? []) : []);
           setDatingConnections([
             ...(connectionsRes.ok ? (connectionsBody.items ?? []) : []),
             ...(paidConnectionsRes.ok ? (paidConnectionsBody.items ?? []) : []),
@@ -665,14 +719,6 @@ export default function MyPage() {
     return `+${digits}`;
   };
 
-  const maskPhone = (phone: string | null | undefined) => {
-    const value = (phone ?? "").trim();
-    if (!value) return "-";
-    const digits = value.replace(/[^0-9]/g, "");
-    if (digits.length < 7) return value;
-    return `${digits.slice(0, 3)}****${digits.slice(-4)}`;
-  };
-
   const handleSendPhoneOtp = async () => {
     if (sendingPhoneOtp) return;
     setPhoneVerifyError("");
@@ -733,7 +779,6 @@ export default function MyPage() {
       const syncBody = (await syncRes.json().catch(() => ({}))) as {
         error?: string;
         phone_verified?: boolean;
-        phone_e164?: string | null;
         phone_verified_at?: string | null;
       };
       if (!syncRes.ok || syncBody.phone_verified !== true) {
@@ -748,7 +793,6 @@ export default function MyPage() {
               profile: {
                 ...prev.profile,
                 phone_verified: true,
-                phone_e164: syncBody.phone_e164 ?? null,
                 phone_verified_at: syncBody.phone_verified_at ?? null,
               },
             }
@@ -898,12 +942,46 @@ export default function MyPage() {
       );
     }
 
-    if (paidConnectionsRes.ok) {
+  if (paidConnectionsRes.ok) {
       const paidItems = paidConnectionsBody.items ?? [];
       setDatingConnections((prev) => {
         const openItems = prev.filter((item) => item.source !== "paid");
         return [...openItems, ...paidItems];
       });
+    }
+  };
+
+  const reloadOneOnOneMatches = async () => {
+    const res = await fetch("/api/dating/1on1/matches/my", { cache: "no-store" });
+    const body = (await res.json().catch(() => ({}))) as { items?: MyOneOnOneMatch[]; error?: string };
+    if (!res.ok) {
+      throw new Error(body.error ?? "1:1 매칭 후보를 다시 불러오지 못했습니다.");
+    }
+    setMyOneOnOneMatches(body.items ?? []);
+  };
+
+  const handleOneOnOneMatchAction = async (
+    matchId: string,
+    action: "select_candidate" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject"
+  ) => {
+    if (processingOneOnOneMatchIds.includes(matchId)) return;
+    setProcessingOneOnOneMatchIds((prev) => [...prev, matchId]);
+    try {
+      const res = await fetch(`/api/dating/1on1/matches/${matchId}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) {
+        alert(body.error ?? "1:1 매칭 처리에 실패했습니다.");
+        return;
+      }
+      await reloadOneOnOneMatches();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "1:1 매칭 처리에 실패했습니다.");
+    } finally {
+      setProcessingOneOnOneMatchIds((prev) => prev.filter((id) => id !== matchId));
     }
   };
 
@@ -1151,13 +1229,11 @@ export default function MyPage() {
   }
 
   const nickname = summary?.profile.nickname ?? "닉네임 없음";
-  const email = summary?.profile.email ?? "이메일 없음";
   const posts = summary?.bodycheck_posts ?? [];
   const weeklyWinCount = summary?.weekly_win_count ?? 0;
   const changedCount = summary?.profile.nickname_changed_count ?? 0;
   const credits = summary?.profile.nickname_change_credits ?? 0;
   const phoneVerified = summary?.profile.phone_verified === true;
-  const phoneE164 = summary?.profile.phone_e164 ?? null;
   const phoneVerifiedAt = summary?.profile.phone_verified_at ?? null;
   const swipeProfileVisible = summary?.profile.swipe_profile_visible !== false;
   const canChangeNickname = changedCount < 1 || credits > 0;
@@ -1180,6 +1256,26 @@ export default function MyPage() {
     matched: "bg-emerald-100 text-emerald-700",
     rejected: "bg-red-100 text-red-700",
   };
+  const oneOnOneMatchStateText: Record<MyOneOnOneMatch["state"], string> = {
+    proposed: "후보 도착",
+    source_selected: "상대 응답 대기",
+    source_skipped: "다른 후보 선택",
+    candidate_accepted: "최종 수락 대기",
+    candidate_rejected: "상대 거절",
+    source_declined: "최종 거절",
+    admin_canceled: "관리자 종료",
+    mutual_accepted: "쌍방 수락 완료",
+  };
+  const oneOnOneMatchStateColor: Record<MyOneOnOneMatch["state"], string> = {
+    proposed: "bg-sky-100 text-sky-700",
+    source_selected: "bg-amber-100 text-amber-700",
+    source_skipped: "bg-neutral-100 text-neutral-600",
+    candidate_accepted: "bg-violet-100 text-violet-700",
+    candidate_rejected: "bg-red-100 text-red-700",
+    source_declined: "bg-red-100 text-red-700",
+    admin_canceled: "bg-neutral-200 text-neutral-700",
+    mutual_accepted: "bg-emerald-100 text-emerald-700",
+  };
   const cardAppStatusText: Record<string, string> = {
     submitted: "대기",
     accepted: "수락",
@@ -1193,6 +1289,15 @@ export default function MyPage() {
     canceled: "bg-neutral-200 text-neutral-600",
   };
   const myCardsById = new Map(myDatingCards.map((card) => [card.id, card]));
+  const myOneOnOneMatchesByCardId = new Map<string, MyOneOnOneMatch[]>();
+  for (const match of myOneOnOneMatches) {
+    const keys = new Set([match.source_card_id, match.candidate_card_id]);
+    for (const key of keys) {
+      const bucket = myOneOnOneMatchesByCardId.get(key) ?? [];
+      bucket.push(match);
+      myOneOnOneMatchesByCardId.set(key, bucket);
+    }
+  }
   const hasActiveOpenCard = myDatingCards.some((card) => card.status === "pending" || card.status === "public");
   const statusRankPublicFirst: Record<AdminOpenCard["status"], number> = {
     public: 0,
@@ -1272,7 +1377,6 @@ export default function MyPage() {
       <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
         <h1 className="text-2xl font-bold text-neutral-900">마이페이지</h1>
         <p className="mt-1 text-sm text-neutral-600">{nickname}</p>
-        <p className="mt-0.5 text-xs text-neutral-500">{email}</p>
 
         <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
           <div className="flex items-center justify-between gap-3">
@@ -1315,7 +1419,6 @@ export default function MyPage() {
             <span className={phoneVerified ? "font-medium text-emerald-700" : "font-medium text-amber-700"}>
               {phoneVerified ? "인증 완료" : "미인증"}
             </span>
-            {phoneE164 ? ` / 번호 ${maskPhone(phoneE164)}` : ""}
           </p>
           {phoneVerifiedAt && (
             <p className="mt-1 text-xs text-neutral-500">
@@ -1642,76 +1745,306 @@ export default function MyPage() {
           <p className="text-sm text-neutral-500">아직 신청한 내역이 없습니다.</p>
         ) : (
           <div className="space-y-3">
-            {myOneOnOneCards.map((item) => (
-              <div key={item.id} className="rounded-xl border border-sky-200 bg-white p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-sm font-medium text-neutral-900">
-                    {item.name} / {item.sex === "male" ? "남자" : "여자"} / {item.age ?? "-"}세
-                  </p>
-                  <span
-                    className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
-                      datingStatusColor[item.status] ?? "bg-neutral-100 text-neutral-700"
-                    }`}
-                  >
-                    {item.status}
-                  </span>
-                </div>
-                <p className="mt-1 text-xs text-neutral-500">
-                  신청일 {new Date(item.created_at).toLocaleString("ko-KR")}
-                  {item.reviewed_at ? ` / 최근 검토 ${new Date(item.reviewed_at).toLocaleString("ko-KR")}` : ""}
-                </p>
-                <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
-                  <span>출생연도 {item.birth_year}</span>
-                  <span>키 {item.height_cm}cm</span>
-                  <span>직업 {item.job}</span>
-                  <span>지역 {item.region}</span>
-                </div>
-                {item.intro_text && (
-                  <p className="mt-2 text-sm text-neutral-700 whitespace-pre-wrap break-words">{item.intro_text}</p>
-                )}
-                <p className="mt-1 text-xs text-neutral-700">장점: {item.strengths_text}</p>
-                <p className="mt-1 text-xs text-neutral-700">원하는 점: {item.preferred_partner_text}</p>
-                {item.admin_note && (
-                  <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
-                    <p className="text-xs font-medium text-amber-800">운영 메모: {item.admin_note}</p>
-                  </div>
-                )}
-                {Array.isArray(item.photo_signed_urls) && item.photo_signed_urls.length > 0 && (
-                  <div className="mt-3 grid grid-cols-2 gap-2">
-                    {item.photo_signed_urls.map((url, idx) => (
-                      <a
-                        key={`${item.id}-${idx}`}
-                        href={url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
-                      >
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <div className="flex h-32 w-full items-center justify-center bg-neutral-50">
-                          <img src={url} alt={`1:1 신청 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
-                        </div>
-                      </a>
-                    ))}
-                  </div>
-                )}
-                <div className="mt-3 flex gap-2">
-                  <Link
-                    href="/dating/1on1"
-                    className="inline-flex h-8 items-center rounded-md border border-sky-300 bg-white px-3 text-xs font-medium text-sky-700 hover:bg-sky-50"
-                  >
-                    1:1 소개팅 페이지
-                  </Link>
-                  {item.status === "submitted" && (
-                    <Link
-                      href={`/dating/1on1?editId=${item.id}`}
-                      className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 hover:bg-amber-50"
+            {myOneOnOneCards.map((item) => {
+              const relatedMatches = myOneOnOneMatchesByCardId.get(item.id) ?? [];
+              const incomingCandidates = relatedMatches.filter((match) => match.role === "source" && match.state === "proposed");
+              const waitingCandidateResponses = relatedMatches.filter(
+                (match) => match.role === "source" && match.state === "source_selected"
+              );
+              const finalAcceptRequests = relatedMatches.filter(
+                (match) => match.role === "source" && match.state === "candidate_accepted"
+              );
+              const candidateDecisionRequests = relatedMatches.filter(
+                (match) => match.role === "candidate" && match.state === "source_selected"
+              );
+              const mutualAcceptedMatches = relatedMatches.filter((match) => match.state === "mutual_accepted");
+              const closedMatches = relatedMatches.filter((match) =>
+                ["source_skipped", "candidate_rejected", "source_declined", "admin_canceled"].includes(match.state)
+              );
+
+              return (
+                <div key={item.id} className="rounded-xl border border-sky-200 bg-white p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-sm font-medium text-neutral-900">
+                      {item.name} / {item.sex === "male" ? "남자" : "여자"} / {item.age ?? "-"}세
+                    </p>
+                    <span
+                      className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+                        datingStatusColor[item.status] ?? "bg-neutral-100 text-neutral-700"
+                      }`}
                     >
-                      신청서 수정
-                    </Link>
+                      {item.status}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-xs text-neutral-500">
+                    신청일 {new Date(item.created_at).toLocaleString("ko-KR")}
+                    {item.reviewed_at ? ` / 최근 검토 ${new Date(item.reviewed_at).toLocaleString("ko-KR")}` : ""}
+                  </p>
+                  <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
+                    <span>출생연도 {item.birth_year}</span>
+                    <span>키 {item.height_cm}cm</span>
+                    <span>직업 {item.job}</span>
+                    <span>지역 {item.region}</span>
+                  </div>
+                  {item.intro_text && (
+                    <p className="mt-2 text-sm text-neutral-700 whitespace-pre-wrap break-words">{item.intro_text}</p>
                   )}
+                  <p className="mt-1 text-xs text-neutral-700">장점: {item.strengths_text}</p>
+                  <p className="mt-1 text-xs text-neutral-700">원하는 점: {item.preferred_partner_text}</p>
+                  {item.admin_note && (
+                    <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-2">
+                      <p className="text-xs font-medium text-amber-800">운영 메모: {item.admin_note}</p>
+                    </div>
+                  )}
+                  {Array.isArray(item.photo_signed_urls) && item.photo_signed_urls.length > 0 && (
+                    <div className="mt-3 grid grid-cols-2 gap-2">
+                      {item.photo_signed_urls.map((url, idx) => (
+                        <a
+                          key={`${item.id}-${idx}`}
+                          href={url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
+                        >
+                          <div className="flex h-32 w-full items-center justify-center bg-neutral-50">
+                            <img src={url} alt={`1:1 신청 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
+                          </div>
+                        </a>
+                      ))}
+                    </div>
+                  )}
+
+                  {incomingCandidates.length > 0 && (
+                    <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/50 p-3">
+                      <p className="text-sm font-semibold text-sky-900">운영자가 보낸 후보</p>
+                      <p className="mt-1 text-xs text-sky-700">여러 후보 중 한 명을 선택하면 그 사람에게 수락 요청이 전달됩니다.</p>
+                      <div className="mt-3 space-y-2">
+                        {incomingCandidates.map((match) => {
+                          const processing = processingOneOnOneMatchIds.includes(match.id);
+                          const card = match.counterparty_card;
+                          if (!card) return null;
+                          return (
+                            <div key={match.id} className="rounded-lg border border-sky-200 bg-white p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-medium text-neutral-900">
+                                  {card.name} / {card.age ?? "-"}세 / {card.region}
+                                </p>
+                                <span
+                                  className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                    oneOnOneMatchStateColor[match.state]
+                                  }`}
+                                >
+                                  {oneOnOneMatchStateText[match.state]}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-xs text-neutral-600">
+                                {card.height_cm}cm / {card.job} / {new Date(match.created_at).toLocaleString("ko-KR")}
+                              </p>
+                              <p className="mt-2 text-xs text-neutral-700 whitespace-pre-wrap break-words">{card.intro_text}</p>
+                              {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
+                                <div className="mt-2 grid grid-cols-2 gap-2">
+                                  {card.photo_signed_urls.map((url, idx) => (
+                                    <a
+                                      key={`${match.id}-${idx}`}
+                                      href={url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
+                                    >
+                                      <div className="flex h-24 w-full items-center justify-center bg-neutral-50">
+                                        <img src={url} alt={`후보 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
+                                      </div>
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
+                              <div className="mt-3">
+                                <button
+                                  type="button"
+                                  disabled={processing}
+                                  onClick={() => void handleOneOnOneMatchAction(match.id, "select_candidate")}
+                                  className="inline-flex h-8 items-center rounded-md bg-sky-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                                >
+                                  {processing ? "처리 중..." : "이 후보 선택"}
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {candidateDecisionRequests.length > 0 && (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                      <p className="text-sm font-semibold text-amber-900">상대가 나를 선택함</p>
+                      <div className="mt-3 space-y-2">
+                        {candidateDecisionRequests.map((match) => {
+                          const processing = processingOneOnOneMatchIds.includes(match.id);
+                          const card = match.counterparty_card;
+                          if (!card) return null;
+                          return (
+                            <div key={match.id} className="rounded-lg border border-amber-200 bg-white p-3">
+                              <p className="text-sm font-medium text-neutral-900">
+                                {card.name}님이 당신을 선택했습니다. 수락 여부를 결정해주세요.
+                              </p>
+                              <p className="mt-1 text-xs text-neutral-600">
+                                {card.age ?? "-"}세 / {card.region} / {card.job}
+                              </p>
+                              <div className="mt-3 flex gap-2">
+                                <button
+                                  type="button"
+                                  disabled={processing}
+                                  onClick={() => void handleOneOnOneMatchAction(match.id, "candidate_accept")}
+                                  className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                                >
+                                  {processing ? "처리 중..." : "수락"}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={processing}
+                                  onClick={() => void handleOneOnOneMatchAction(match.id, "candidate_reject")}
+                                  className="inline-flex h-8 items-center rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-700 disabled:opacity-50"
+                                >
+                                  거절
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {waitingCandidateResponses.length > 0 && (
+                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3">
+                      <p className="text-sm font-semibold text-amber-900">내가 선택한 후보</p>
+                      <div className="mt-2 space-y-2">
+                        {waitingCandidateResponses.map((match) => {
+                          const card = match.counterparty_card;
+                          if (!card) return null;
+                          return (
+                            <div key={match.id} className="rounded-lg border border-amber-200 bg-white p-3">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-medium text-neutral-900">
+                                  {card.name} / {card.age ?? "-"}세 / {card.region}
+                                </p>
+                                <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${oneOnOneMatchStateColor[match.state]}`}>
+                                  {oneOnOneMatchStateText[match.state]}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-xs text-neutral-600">상대 응답을 기다리는 중입니다.</p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {finalAcceptRequests.length > 0 && (
+                    <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50/50 p-3">
+                      <p className="text-sm font-semibold text-violet-900">최종 수락 요청</p>
+                      <div className="mt-3 space-y-2">
+                        {finalAcceptRequests.map((match) => {
+                          const processing = processingOneOnOneMatchIds.includes(match.id);
+                          const card = match.counterparty_card;
+                          if (!card) return null;
+                          return (
+                            <div key={match.id} className="rounded-lg border border-violet-200 bg-white p-3">
+                              <p className="text-sm font-medium text-neutral-900">
+                                {card.name}님이 수락했습니다. 당신도 최종 수락할까요?
+                              </p>
+                              <p className="mt-1 text-xs text-neutral-600">
+                                {card.age ?? "-"}세 / {card.region} / {card.job}
+                              </p>
+                              <div className="mt-3 flex gap-2">
+                                <button
+                                  type="button"
+                                  disabled={processing}
+                                  onClick={() => void handleOneOnOneMatchAction(match.id, "source_accept")}
+                                  className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                                >
+                                  {processing ? "처리 중..." : "최종 수락"}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={processing}
+                                  onClick={() => void handleOneOnOneMatchAction(match.id, "source_reject")}
+                                  className="inline-flex h-8 items-center rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-700 disabled:opacity-50"
+                                >
+                                  거절
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {mutualAcceptedMatches.length > 0 && (
+                    <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
+                      <p className="text-sm font-semibold text-emerald-900">쌍방 수락 완료</p>
+                      <div className="mt-2 space-y-2">
+                        {mutualAcceptedMatches.map((match) => {
+                          const card = match.counterparty_card;
+                          if (!card) return null;
+                          return (
+                            <div key={match.id} className="rounded-lg border border-emerald-200 bg-white p-3">
+                              <p className="text-sm font-medium text-neutral-900">
+                                {card.name} / {card.age ?? "-"}세 / {card.region}
+                              </p>
+                              <p className="mt-1 text-xs text-emerald-700">
+                                양쪽 수락이 완료되었습니다. 관리자 페이지에서 최종 정리됩니다.
+                              </p>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  {closedMatches.length > 0 && (
+                    <div className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+                      <p className="text-sm font-semibold text-neutral-800">지난 매칭 기록</p>
+                      <div className="mt-2 space-y-2">
+                        {closedMatches.map((match) => {
+                          const card = match.counterparty_card;
+                          if (!card) return null;
+                          return (
+                            <div key={match.id} className="flex items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2">
+                              <p className="text-xs text-neutral-700">
+                                {card.name} / {card.age ?? "-"}세 / {card.region}
+                              </p>
+                              <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${oneOnOneMatchStateColor[match.state]}`}>
+                                {oneOnOneMatchStateText[match.state]}
+                              </span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="mt-3 flex gap-2">
+                    <Link
+                      href="/dating/1on1"
+                      className="inline-flex h-8 items-center rounded-md border border-sky-300 bg-white px-3 text-xs font-medium text-sky-700 hover:bg-sky-50"
+                    >
+                      1:1 소개팅 페이지
+                    </Link>
+                    {item.status === "submitted" && (
+                      <Link
+                        href={`/dating/1on1?editId=${item.id}`}
+                        className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                      >
+                        신청서 수정
+                      </Link>
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </section>

@@ -1,4 +1,6 @@
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+﻿import { createAdminClient } from "@/lib/supabase/server";
+import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
 function isMissingRelationError(error: unknown): boolean {
@@ -53,17 +55,15 @@ type ProfileRow = {
   nickname: string | null;
 };
 
-export async function GET() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export async function GET(req: Request) {
+  const { user } = await getRequestAuthContext(req);
 
   if (!user) {
-    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+    return NextResponse.json({ error: "濡쒓렇?몄씠 ?꾩슂?⑸땲??" }, { status: 401 });
   }
 
   const adminClient = createAdminClient();
+  const blockedUserIds = await getDatingBlockedUserIds(adminClient, user.id);
 
   const [ownedCardsRes, myAppliedRes] = await Promise.all([
     adminClient.from("dating_cards").select("id, owner_user_id").eq("owner_user_id", user.id),
@@ -80,7 +80,7 @@ export async function GET() {
       ownedCardsError: ownedCardsRes.error,
       myAppliedError: myAppliedRes.error,
     });
-    return NextResponse.json({ error: "연결 정보를 불러오지 못했습니다." }, { status: 500 });
+    return NextResponse.json({ error: "?곌껐 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??" }, { status: 500 });
   }
 
   const ownedCardIds = (ownedCardsRes.data ?? []).map((card) => card.id);
@@ -96,7 +96,7 @@ export async function GET() {
 
   if (ownerAcceptedRes.error) {
     console.error("[GET /api/dating/cards/my/connections] owner accepted failed", ownerAcceptedRes.error);
-    return NextResponse.json({ error: "연결 정보를 불러오지 못했습니다." }, { status: 500 });
+    return NextResponse.json({ error: "?곌껐 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??" }, { status: 500 });
   }
 
   let swipeMatches: SwipeMatch[] = [];
@@ -113,7 +113,7 @@ export async function GET() {
       console.warn("[GET /api/dating/cards/my/connections] swipe table missing, skipping");
     } else {
       console.error("[GET /api/dating/cards/my/connections] swipe matches failed", swipeMatchesRes.error);
-      return NextResponse.json({ error: "연결 정보를 불러오지 못했습니다." }, { status: 500 });
+      return NextResponse.json({ error: "?곌껐 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??" }, { status: 500 });
     }
   } else {
     swipeMatches = (swipeMatchesRes.data ?? []) as SwipeMatch[];
@@ -123,6 +123,11 @@ export async function GET() {
     ...((myAppliedRes.data ?? []) as AcceptedApplication[]),
     ...((ownerAcceptedRes.data ?? []) as AcceptedApplication[]),
   ];
+
+  swipeMatches = swipeMatches.filter((match) => {
+    const otherUserId = match.user_a_id === user.id ? match.user_b_id : match.user_a_id;
+    return !blockedUserIds.has(otherUserId);
+  });
 
   if (acceptedApps.length === 0 && swipeMatches.length === 0) {
     return NextResponse.json({ items: [] });
@@ -148,7 +153,7 @@ export async function GET() {
 
   if (cardsRes.error) {
     console.error("[GET /api/dating/cards/my/connections] cards failed", cardsRes.error);
-    return NextResponse.json({ error: "연결 정보를 불러오지 못했습니다." }, { status: 500 });
+    return NextResponse.json({ error: "?곌껐 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??" }, { status: 500 });
   }
 
   const cardsById = new Map(((cardsRes.data ?? []) as CardRow[]).map((card) => [card.id, card]));
@@ -163,7 +168,7 @@ export async function GET() {
 
   if (profilesRes.error) {
     console.error("[GET /api/dating/cards/my/connections] profiles failed", profilesRes.error);
-    return NextResponse.json({ error: "연결 정보를 불러오지 못했습니다." }, { status: 500 });
+    return NextResponse.json({ error: "?곌껐 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??" }, { status: 500 });
   }
 
   const profileMap = new Map(((profilesRes.data ?? []) as ProfileRow[]).map((p) => [p.user_id, p.nickname]));
@@ -174,7 +179,8 @@ export async function GET() {
       if (!card) return null;
       const isOwnerView = card.owner_user_id === user.id;
       const otherUserId = isOwnerView ? app.applicant_user_id : card.owner_user_id;
-      const otherNickname = String(profileMap.get(otherUserId) ?? "익명").trim() || "익명";
+      if (blockedUserIds.has(otherUserId)) return null;
+      const otherNickname = String(profileMap.get(otherUserId) ?? "?듬챸").trim() || "?듬챸";
       const myInstagram = isOwnerView ? card.instagram_id ?? null : app.instagram_id;
       const otherInstagram = isOwnerView ? app.instagram_id : card.instagram_id ?? null;
       return {
@@ -197,7 +203,7 @@ export async function GET() {
       const isUserA = match.user_a_id === user.id;
       const otherUserId = isUserA ? match.user_b_id : match.user_a_id;
       const otherCardId = isUserA ? match.user_b_card_id : match.user_a_card_id;
-      const otherNickname = String(profileMap.get(otherUserId) ?? "익명").trim() || "익명";
+      const otherNickname = String(profileMap.get(otherUserId) ?? "?듬챸").trim() || "?듬챸";
       const myInstagram = isUserA ? match.user_a_instagram_id : match.user_b_instagram_id;
       const otherInstagram = isUserA ? match.user_b_instagram_id : match.user_a_instagram_id;
       const otherCard = cardsById.get(otherCardId);
@@ -230,3 +236,4 @@ export async function GET() {
 
   return NextResponse.json({ items: [...acceptedItems, ...swipeItems] });
 }
+

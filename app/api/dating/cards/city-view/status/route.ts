@@ -1,5 +1,6 @@
 ﻿import { extractProvinceFromRegion, PROVINCE_ORDER } from "@/lib/region-city";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { getRequestAuthContext } from "@/lib/supabase/request";
+import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 type ProvinceStat = {
@@ -51,12 +52,8 @@ async function buildProvinceStats(admin: ReturnType<typeof createAdminClient>): 
   });
 }
 
-export async function GET() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-
+export async function GET(req: Request) {
+  const { user } = await getRequestAuthContext(req);
   const admin = createAdminClient();
   const provinceStats = await buildProvinceStats(admin);
 

@@ -1,4 +1,4 @@
-import { createClient } from "@/lib/supabase/server";
+import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
 function json(status: number, payload: Record<string, unknown>) {
@@ -10,17 +10,12 @@ function getKstDateString(now = new Date()): string {
   return new Date(kstMs).toISOString().slice(0, 10);
 }
 
-export async function GET() {
+export async function GET(req: Request) {
   const requestId = crypto.randomUUID();
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    const { client: supabase, user } = await getRequestAuthContext(req);
+    if (!user) {
       return json(401, { ok: false, code: "UNAUTHORIZED", requestId, message: "로그인이 필요합니다." });
     }
 

@@ -43,14 +43,38 @@ export async function GET(request: Request) {
     data: { user },
   } = await supabase.auth.getUser();
 
-  const seasonBaseQuery = admin
-    .from("bodybattle_seasons")
-    .select("id,week_id,theme_slug,theme_label,start_at,end_at,status")
-    .order("start_at", { ascending: false })
-    .limit(1);
-  const seasonRes = seasonId
-    ? await seasonBaseQuery.eq("id", seasonId).maybeSingle()
-    : await seasonBaseQuery.in("status", ["active", "closed"]).maybeSingle();
+  let seasonRes;
+  if (seasonId) {
+    seasonRes = await admin
+      .from("bodybattle_seasons")
+      .select("id,week_id,theme_slug,theme_label,start_at,end_at,status")
+      .eq("id", seasonId)
+      .maybeSingle();
+  } else {
+    const nowIso = new Date().toISOString();
+    seasonRes = await admin
+      .from("bodybattle_seasons")
+      .select("id,week_id,theme_slug,theme_label,start_at,end_at,status")
+      .eq("status", "active")
+      .lte("start_at", nowIso)
+      .gt("end_at", nowIso)
+      .order("start_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!seasonRes.error && !seasonRes.data) {
+      await admin.rpc("bodybattle_ensure_current_season");
+      seasonRes = await admin
+        .from("bodybattle_seasons")
+        .select("id,week_id,theme_slug,theme_label,start_at,end_at,status")
+        .eq("status", "active")
+        .lte("start_at", nowIso)
+        .gt("end_at", nowIso)
+        .order("start_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+    }
+  }
 
   if (seasonRes.error) {
     return NextResponse.json({ ok: false, message: seasonRes.error.message }, { status: 500 });
@@ -135,7 +159,7 @@ export async function GET(request: Request) {
     items,
     page,
     limit,
-    has_more: allEntries.length > limit,
+    has_more: allEntries.length > entries.length,
   });
 }
 

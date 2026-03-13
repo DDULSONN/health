@@ -1,5 +1,11 @@
-import { buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
+import {
+  buildPublicLiteImageUrl,
+  buildSignedImageUrl,
+  buildSignedImageUrlAllowRaw,
+  extractStorageObjectPathFromBuckets,
+} from "@/lib/images";
 import { getKstDayRangeUtc } from "@/lib/dating-open";
+import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { createAdminClient } from "@/lib/supabase/server";
 
 export const SWIPE_DAILY_LIMIT = 5;
@@ -70,6 +76,10 @@ function toBlurWebpPath(path: string): string {
   return path.includes("/blur/") ? path.replace(/\.[^.\/]+$/, ".webp") : path;
 }
 
+function toThumbPath(rawPath: string): string {
+  return rawPath.replace("/raw/", "/thumb/").replace(/\.[^.\/]+$/, ".webp");
+}
+
 function pickPreviewImage(row: DatingCardRow): string | null {
   const visibility = row.photo_visibility === "public" ? "public" : "blur";
   if (visibility === "public") {
@@ -78,7 +88,15 @@ function pickPreviewImage(row: DatingCardRow): string | null {
       : "";
     if (rawPath) {
       const litePath = toLitePath(rawPath);
-      return buildPublicLiteImageUrl("dating-card-lite", litePath) || buildSignedImageUrl("dating-card-photos", rawPath) || null;
+      const thumbPath = toThumbPath(rawPath);
+      return (
+        buildSignedImageUrl("dating-card-lite", thumbPath) ||
+        buildSignedImageUrl("dating-card-lite", litePath) ||
+        buildPublicLiteImageUrl("dating-card-lite", thumbPath) ||
+        buildPublicLiteImageUrl("dating-card-lite", litePath) ||
+        buildSignedImageUrlAllowRaw("dating-card-photos", rawPath) ||
+        null
+      );
     }
   }
 
@@ -87,13 +105,23 @@ function pickPreviewImage(row: DatingCardRow): string | null {
     : "";
   if (blurPath) {
     const blurWebp = toBlurWebpPath(blurPath);
-    return buildPublicLiteImageUrl("dating-card-lite", blurWebp) || buildSignedImageUrl("dating-card-photos", blurPath) || null;
+    return (
+      buildSignedImageUrl("dating-card-photos", blurPath) ||
+      buildSignedImageUrl("dating-card-lite", blurWebp) ||
+      buildPublicLiteImageUrl("dating-card-lite", blurWebp) ||
+      null
+    );
   }
 
   const blurThumb = normalizePhotoPath(row.blur_thumb_path ?? "");
   if (blurThumb) {
     const blurWebp = toBlurWebpPath(blurThumb);
-    return buildPublicLiteImageUrl("dating-card-lite", blurWebp) || buildSignedImageUrl("dating-card-photos", blurThumb) || null;
+    return (
+      buildSignedImageUrl("dating-card-photos", blurThumb) ||
+      buildSignedImageUrl("dating-card-lite", blurWebp) ||
+      buildPublicLiteImageUrl("dating-card-lite", blurWebp) ||
+      null
+    );
   }
 
   return null;
@@ -167,7 +195,7 @@ export async function getSwipeCandidate(
   actorUserId: string,
   sex: "male" | "female"
 ): Promise<SwipeCandidate | null> {
-  const [swipesRes, matchesRes, cardsRes] = await Promise.all([
+  const [swipesRes, matchesRes, cardsRes, blockedUserIds] = await Promise.all([
     adminClient.from("dating_card_swipes").select("target_user_id").eq("actor_user_id", actorUserId).limit(5000),
     adminClient
       .from("dating_card_swipe_matches")
@@ -182,6 +210,7 @@ export async function getSwipeCandidate(
       .eq("sex", sex)
       .order("created_at", { ascending: false })
       .limit(250),
+    getDatingBlockedUserIds(adminClient, actorUserId),
   ]);
 
   if (swipesRes.error) throw swipesRes.error;
@@ -239,6 +268,7 @@ export async function getSwipeCandidate(
     if (!ownerId || ownerId === actorUserId) continue;
     if (seenOwners.has(ownerId)) continue;
     if (excludedUserIds.has(ownerId)) continue;
+    if (blockedUserIds.has(ownerId)) continue;
     if (visibilityByUserId.get(ownerId) === false) continue;
     if (!String(row.instagram_id ?? "").trim()) continue;
     seenOwners.add(ownerId);

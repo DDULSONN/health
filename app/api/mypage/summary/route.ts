@@ -13,14 +13,14 @@ export async function GET() {
 
   let profileRes = await supabase
     .from("profiles")
-    .select("nickname, nickname_changed_count, nickname_change_credits, phone_verified, phone_e164, phone_verified_at, swipe_profile_visible")
+    .select("nickname, nickname_changed_count, nickname_change_credits, phone_verified, phone_verified_at, swipe_profile_visible")
     .eq("user_id", user.id)
     .maybeSingle();
 
   if (profileRes.error && profileRes.error.message?.includes("swipe_profile_visible")) {
     profileRes = await supabase
       .from("profiles")
-      .select("nickname, nickname_changed_count, nickname_change_credits, phone_verified, phone_e164, phone_verified_at")
+      .select("nickname, nickname_changed_count, nickname_change_credits, phone_verified, phone_verified_at")
       .eq("user_id", user.id)
       .maybeSingle();
   }
@@ -62,10 +62,8 @@ export async function GET() {
       nickname_changed_count: Number(profileRes.data?.nickname_changed_count ?? 0),
       nickname_change_credits: Number(profileRes.data?.nickname_change_credits ?? 0),
       phone_verified: profileRes.data?.phone_verified === true,
-      phone_e164: profileRes.data?.phone_e164 ?? null,
       phone_verified_at: profileRes.data?.phone_verified_at ?? null,
       swipe_profile_visible: profileRes.data?.swipe_profile_visible !== false,
-      email: user.email ?? null,
     },
     weekly_win_count: weeklyWinCount,
     bodycheck_posts: posts.map((post) => ({

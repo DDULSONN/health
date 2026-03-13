@@ -1,5 +1,7 @@
-﻿import { createClient, createAdminClient } from "@/lib/supabase/server";
+import type { PostgrestError } from "@supabase/supabase-js";
+import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { getRequestAuthContext } from "@/lib/supabase/request";
 
 function normalizeInstagramId(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -31,11 +33,18 @@ function isMissingColumnError(error: unknown): boolean {
   return code === "42703" || code === "PGRST204" || message.includes("could not find") || message.includes("column");
 }
 
-export async function GET() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+type CardMutationData = {
+  id: string;
+  status: "pending" | "public" | "expired" | "hidden";
+};
+
+type CardMutationResult = {
+  data: CardMutationData | null;
+  error: PostgrestError | null;
+};
+
+export async function GET(req: Request) {
+  const { user } = await getRequestAuthContext(req);
   if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
   const adminClient = createAdminClient();
@@ -56,10 +65,7 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getRequestAuthContext(req);
   if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
   const body = await req.json().catch(() => null);
@@ -292,23 +298,27 @@ export async function POST(req: Request) {
     },
   ];
 
-  let insertRes: any = null;
+  let insertRes: CardMutationResult = { data: null, error: null };
   for (const candidate of insertCandidates) {
-    insertRes = await adminClient.from("dating_cards").insert(candidate).select("id,status").single();
+    const res = await adminClient.from("dating_cards").insert(candidate).select("id,status").single();
+    insertRes = {
+      data: res.data ? (res.data as CardMutationData) : null,
+      error: res.error,
+    };
     if (!insertRes.error) break;
     if (!isMissingColumnError(insertRes.error)) break;
   }
 
   const { data, error } = insertRes;
-  if (error) {
+  if (error || !data) {
     console.error("[POST /api/dating/cards/my] failed", error);
-    if (error.code === "23514") {
+    if (error?.code === "23514") {
       return NextResponse.json({ error: "입력값이 조건에 맞지 않습니다. 입력 항목을 다시 확인해주세요." }, { status: 400 });
     }
-    if (error.code === "23502") {
+    if (error?.code === "23502") {
       return NextResponse.json({ error: "필수 항목 누락으로 카드 생성에 실패했습니다. DB 마이그레이션 상태를 확인해주세요." }, { status: 500 });
     }
-    return NextResponse.json({ error: `카드 생성에 실패했습니다. ${error.message ?? ""}`.trim() }, { status: 500 });
+    return NextResponse.json({ error: `카드 생성에 실패했습니다. ${error?.message ?? ""}`.trim() }, { status: 500 });
   }
 
   return NextResponse.json(
@@ -322,10 +332,7 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getRequestAuthContext(req);
   if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
   const body = await req.json().catch(() => null);
@@ -492,9 +499,9 @@ export async function PATCH(req: Request) {
     },
   ];
 
-  let updateRes: any = null;
+  let updateRes: CardMutationResult = { data: null, error: null };
   for (const candidate of updateCandidates) {
-    updateRes = await adminClient
+    const res = await adminClient
       .from("dating_cards")
       .update(candidate)
       .eq("id", cardId)
@@ -502,6 +509,10 @@ export async function PATCH(req: Request) {
       .eq("status", "pending")
       .select("id,status")
       .maybeSingle();
+    updateRes = {
+      data: res.data ? (res.data as CardMutationData) : null,
+      error: res.error,
+    };
     if (!updateRes.error) break;
     if (!isMissingColumnError(updateRes.error)) break;
   }
@@ -523,10 +534,7 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getRequestAuthContext(req);
   if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
@@ -564,4 +572,3 @@ export async function DELETE(req: Request) {
 
   return NextResponse.json({ id: cardId, message: "대기중 오픈카드가 삭제되었습니다." });
 }
-

@@ -1,7 +1,9 @@
 ﻿import { getActiveMoreViewGrant, normalizeCardSex } from "@/lib/dating-more-view";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
+import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
 function normalizePath(value: unknown): string {
@@ -48,14 +50,9 @@ export async function GET(req: Request) {
   const snapshotSize = 25;
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
-      return NextResponse.json({ error: "濡쒓렇?몄씠 ?꾩슂?⑸땲??" }, { status: 401 });
+    const { user } = await getRequestAuthContext(req);
+    if (!user) {
+      return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
     }
 
     const ip = extractClientIp(req);
@@ -78,13 +75,14 @@ export async function GET(req: Request) {
     const { searchParams } = new URL(req.url);
     const sex = normalizeCardSex(searchParams.get("sex"));
     if (!sex) {
-      return NextResponse.json({ error: "sex 媛믪씠 ?щ컮瑜댁? ?딆뒿?덈떎." }, { status: 400 });
+      return NextResponse.json({ error: "sex 값이 올바르지 않습니다." }, { status: 400 });
     }
 
     const admin = createAdminClient();
+    const blockedUserIds = await getDatingBlockedUserIds(admin, user.id);
     const activeGrant = await getActiveMoreViewGrant(admin, user.id, sex);
     if (!activeGrant) {
-      return NextResponse.json({ error: "?댁긽???붾낫湲곕뒗 ?뱀씤 ??3?쒓컙 ?숈븞留??댁슜 媛?ν빀?덈떎." }, { status: 403 });
+      return NextResponse.json({ error: "이상형 더보기는 승인 후 3시간 동안만 이용 가능합니다." }, { status: 403 });
     }
 
     const pendingCardsRes = await admin
@@ -99,7 +97,7 @@ export async function GET(req: Request) {
 
     if (pendingCardsRes.error) {
       console.error(`[more-view-list] ${requestId} query failed`, pendingCardsRes.error);
-      return NextResponse.json({ error: "?붾낫湲?紐⑸줉??遺덈윭?ㅼ? 紐삵뻽?듬땲??" }, { status: 500 });
+      return NextResponse.json({ error: "더보기 목록을 불러오지 못했습니다." }, { status: 500 });
     }
 
     const pendingRows = Array.isArray(pendingCardsRes.data) ? pendingCardsRes.data : [];
@@ -124,7 +122,8 @@ export async function GET(req: Request) {
 
     const selectedRows = selectedCardIds
       .map((id) => pendingById.get(id))
-      .filter((row): row is NonNullable<typeof row> => Boolean(row));
+      .filter((row): row is NonNullable<typeof row> => Boolean(row))
+      .filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")));
     const ownerIds = [...new Set(selectedRows.map((row) => String(row.owner_user_id ?? "")).filter((id) => id.length > 0))];
     const phoneVerifiedByOwner = new Map<string, boolean>();
     if (ownerIds.length > 0) {
@@ -175,7 +174,8 @@ export async function GET(req: Request) {
     );
   } catch (error) {
     console.error(`[more-view-list] ${requestId} unhandled`, error);
-    return NextResponse.json({ error: "?붾낫湲?紐⑸줉??遺덈윭?ㅼ? 紐삵뻽?듬땲??" }, { status: 500 });
+    return NextResponse.json({ error: "더보기 목록을 불러오지 못했습니다." }, { status: 500 });
   }
 }
+
 

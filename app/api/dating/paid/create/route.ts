@@ -1,6 +1,6 @@
-﻿import { createAdminClient, createClient } from "@/lib/supabase/server";
+﻿import { getRequestAuthContext } from "@/lib/supabase/request";
+import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
-
 type CreateBody = {
   id?: unknown;
   gender?: unknown;
@@ -91,13 +91,9 @@ function parsePayload(body: CreateBody): ParsedPaidPayload {
 
 export async function GET(req: Request) {
   const requestId = crypto.randomUUID();
-  const supabase = await createClient();
-  const {
-    data: { user },
-    error: authError,
-  } = await supabase.auth.getUser();
+  const { user } = await getRequestAuthContext(req);
 
-  if (authError || !user) {
+  if (!user) {
     return json(401, { ok: false, code: "UNAUTHORIZED", requestId, message: "로그인이 필요합니다." });
   }
 
@@ -169,16 +165,7 @@ export async function POST(req: Request) {
   console.log(`[dating-paid-create] ${requestId} start`);
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError) {
-      console.error(`[dating-paid-create] ${requestId} auth error`, authError);
-      return json(401, { ok: false, code: "UNAUTHORIZED", requestId, message: "로그인이 필요합니다." });
-    }
+    const { user } = await getRequestAuthContext(req);
     if (!user) {
       return json(401, { ok: false, code: "UNAUTHORIZED", requestId, message: "로그인이 필요합니다." });
     }
@@ -311,13 +298,8 @@ export async function PATCH(req: Request) {
   console.log(`[dating-paid-update] ${requestId} start`);
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    const { user } = await getRequestAuthContext(req);
+    if (!user) {
       return json(401, { ok: false, code: "UNAUTHORIZED", requestId, message: "로그인이 필요합니다." });
     }
 
@@ -452,3 +434,47 @@ export async function PATCH(req: Request) {
     return json(500, { ok: false, code: "INTERNAL_SERVER_ERROR", requestId, message: "서버 오류가 발생했습니다." });
   }
 }
+
+export async function DELETE(req: Request) {
+  const requestId = crypto.randomUUID();
+
+  try {
+    const { user } = await getRequestAuthContext(req);
+    if (!user) {
+      return json(401, { ok: false, code: "UNAUTHORIZED", requestId, message: "로그인이 필요합니다." });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const id = searchParams.get("id")?.trim() ?? "";
+    if (!id) {
+      return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "id가 필요합니다." });
+    }
+
+    const adminClient = createAdminClient();
+    const deleteRes = await adminClient
+      .from("dating_paid_cards")
+      .delete()
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .eq("status", "pending")
+      .select("id")
+      .maybeSingle();
+
+    if (deleteRes.error) {
+      console.error(`[dating-paid-delete] ${requestId} delete error`, deleteRes.error);
+      return json(500, { ok: false, code: "DELETE_FAILED", requestId, message: "유료 카드 삭제에 실패했습니다." });
+    }
+
+    if (!deleteRes.data) {
+      return json(404, { ok: false, code: "NOT_FOUND", requestId, message: "삭제할 대기중 유료 카드를 찾을 수 없습니다." });
+    }
+
+    return json(200, { ok: true, requestId, paidCardId: deleteRes.data.id });
+  } catch (error) {
+    console.error(`[dating-paid-delete] ${requestId} unhandled`, error);
+    return json(500, { ok: false, code: "INTERNAL_SERVER_ERROR", requestId, message: "서버 오류가 발생했습니다." });
+  }
+}
+
+
+

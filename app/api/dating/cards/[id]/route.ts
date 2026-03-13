@@ -1,9 +1,11 @@
 ﻿import { buildPublicLiteImageUrl, buildSignedImageUrl, buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { hasMoreViewAccess } from "@/lib/dating-more-view";
+import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { hasCityViewAccess } from "@/lib/dating-city-view";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { kvGetString, kvSetString } from "@/lib/edge-kv";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
+import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
 function isMissingColumnError(error: unknown): boolean {
@@ -199,10 +201,7 @@ async function createSignedImageUrls(
 
 export async function GET(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const requestId = crypto.randomUUID();
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getRequestAuthContext(req);
   const ip = extractClientIp(req);
 
   const rateLimit = await checkRouteRateLimit({
@@ -257,6 +256,13 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     return NextResponse.json({ error: "燁삳?諭띄몴?筌≪뼚??????곷뮸??덈뼄." }, { status: 404 });
   }
 
+  if (user?.id) {
+    const blocked = await hasDatingBlockBetween(adminClient, user.id, String(data.owner_user_id ?? ""));
+    if (blocked) {
+      return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
+    }
+  }
+
   const isPublicAvailable = data.status === "public" && !!data.expires_at && new Date(data.expires_at).getTime() > Date.now();
   let canReadPending = false;
   if (!isPublicAvailable && data.status === "pending" && user?.id) {
@@ -296,6 +302,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   return NextResponse.json({
     card: {
       id: data.id,
+      owner_user_id: data.owner_user_id,
       sex: data.sex,
       display_nickname: data.display_nickname,
       is_phone_verified: isPhoneVerified,

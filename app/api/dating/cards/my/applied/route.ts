@@ -1,4 +1,6 @@
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+﻿import { createAdminClient } from "@/lib/supabase/server";
+import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
 type CardRow = {
@@ -6,6 +8,7 @@ type CardRow = {
   owner_user_id: string;
   sex: "male" | "female";
   display_nickname: string | null;
+  instagram_id: string | null;
   status: "pending" | "public" | "expired" | "hidden";
   expires_at: string | null;
   created_at: string;
@@ -16,56 +19,67 @@ type ProfileRow = {
   nickname: string | null;
 };
 
-export async function GET() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+type ApplicationRow = {
+  id: string;
+  card_id: string;
+  applicant_display_nickname: string | null;
+  age: number | null;
+  height_cm: number | null;
+  region: string | null;
+  job: string | null;
+  training_years: number | null;
+  intro_text: string | null;
+  status: string;
+  created_at: string;
+};
+
+export async function GET(req: Request) {
+  const { user } = await getRequestAuthContext(req);
 
   if (!user) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
 
   const adminClient = createAdminClient();
-  let appsRes: any = await adminClient
+  const blockedUserIds = await getDatingBlockedUserIds(adminClient, user.id);
+  const primaryAppsRes = await adminClient
     .from("dating_card_applications")
     .select("id, card_id, applicant_display_nickname, age, height_cm, region, job, training_years, intro_text, status, created_at")
     .eq("applicant_user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(2000);
 
-  if (appsRes.error && appsRes.error.code === "42703") {
-    appsRes = await adminClient
+  let appsError = primaryAppsRes.error;
+  let applications = (primaryAppsRes.data ?? []) as ApplicationRow[];
+
+  if (appsError && appsError.code === "42703") {
+    const fallbackAppsRes = await adminClient
       .from("dating_card_applications")
       .select("id, card_id, age, height_cm, region, job, training_years, intro_text, status, created_at")
       .eq("applicant_user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(2000);
 
-    appsRes = {
-      ...appsRes,
-      data: (appsRes.data ?? []).map((row: any) => ({
-        ...row,
-        applicant_display_nickname: null,
-      })),
-    };
+    appsError = fallbackAppsRes.error;
+    applications = ((fallbackAppsRes.data ?? []) as Omit<ApplicationRow, "applicant_display_nickname">[]).map((row) => ({
+      ...row,
+      applicant_display_nickname: null,
+    }));
   }
 
-  if (appsRes.error) {
-    console.error("[GET /api/dating/cards/my/applied] apps failed", appsRes.error);
-    return NextResponse.json({ error: "내 지원 이력을 불러오지 못했습니다." }, { status: 500 });
+  if (appsError) {
+    console.error("[GET /api/dating/cards/my/applied] apps failed", appsError);
+    return NextResponse.json({ error: "지원 내역을 불러오지 못했습니다." }, { status: 500 });
   }
 
-  const applications = appsRes.data ?? [];
-  const cardIds = [...new Set(applications.map((app: any) => app.card_id).filter(Boolean))];
-
+  const cardIds = [...new Set(applications.map((app) => app.card_id).filter(Boolean))];
   if (cardIds.length === 0) {
     return NextResponse.json({ applications: [] });
   }
 
   const cardsRes = await adminClient
     .from("dating_cards")
-    .select("id, owner_user_id, sex, display_nickname, status, expires_at, created_at")
+    .select("id, owner_user_id, sex, display_nickname, instagram_id, status, expires_at, created_at")
     .in("id", cardIds);
 
   if (cardsRes.error) {
@@ -76,8 +90,8 @@ export async function GET() {
   const cards = (cardsRes.data ?? []) as CardRow[];
   const cardsById = new Map(cards.map((card) => [card.id, card]));
   const ownerIds = [...new Set(cards.map((card) => card.owner_user_id).filter(Boolean))];
+  const ownerNickById = new Map<string, string | null>();
 
-  let ownerNickById = new Map<string, string | null>();
   if (ownerIds.length > 0) {
     const profilesRes = await adminClient.from("profiles").select("user_id, nickname").in("user_id", ownerIds);
     if (!profilesRes.error) {
@@ -87,8 +101,9 @@ export async function GET() {
     }
   }
 
-  const result = applications.map((app: any) => {
+  const result = applications.map((app) => {
     const card = cardsById.get(app.card_id) ?? null;
+    if (card && blockedUserIds.has(card.owner_user_id)) return null;
     return {
       ...app,
       card: card
@@ -99,6 +114,7 @@ export async function GET() {
             status: card.status,
             expires_at: card.expires_at,
             created_at: card.created_at,
+            instagram_id: card.instagram_id,
             owner_user_id: card.owner_user_id,
             owner_nickname: ownerNickById.get(card.owner_user_id) ?? null,
           }
@@ -106,5 +122,7 @@ export async function GET() {
     };
   });
 
-  return NextResponse.json({ applications: result });
+  return NextResponse.json({ applications: result.filter(Boolean) });
 }
+
+

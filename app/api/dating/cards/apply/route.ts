@@ -1,9 +1,12 @@
 import { getKstDayRangeUtc } from "@/lib/dating-open";
 import { hasMoreViewAccess } from "@/lib/dating-more-view";
 import { hasCityViewAccess } from "@/lib/dating-city-view";
+import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { sendDatingEmailNotification } from "@/lib/dating-swipe";
+import { sendExpoPushToUser } from "@/lib/expo-push";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
+import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -203,10 +206,9 @@ export async function POST(req: Request) {
   try {
     console.log(`[apply] ${requestId} L1 start`);
 
-    const supabase = await createClient();
-    const userRes = await supabase.auth.getUser();
-    const authError = toDbErrorShape(userRes.error);
-    userId = userRes.data.user?.id ?? null;
+    const { client: supabase, user } = await getRequestAuthContext(req);
+    const authError = user ? {} : { message: "AUTH_REQUIRED" };
+    userId = user?.id ?? null;
     const ip = extractClientIp(req);
     const rateLimit = await checkRouteRateLimit({
       requestId,
@@ -223,9 +225,9 @@ export async function POST(req: Request) {
     console.log(`[apply] ${requestId} L2 auth.getUser`, {
       hasUser: Boolean(userId),
       userId,
-      hasError: Boolean(userRes.error),
+      hasError: !user,
     });
-    if (userRes.error) {
+    if (!user) {
       logSupabaseError(requestId, "L2 auth.getUser", authError);
     }
 
@@ -332,6 +334,10 @@ export async function POST(req: Request) {
     }
 
     const card = cardRes.data;
+    const blocked = await hasDatingBlockBetween(adminClient, userId, String(card.owner_user_id ?? ""));
+    if (blocked) {
+      return jsonResponse(403, "FORBIDDEN", requestId, "차단한 상대에게는 지원할 수 없습니다.");
+    }
     if (card.owner_user_id === userId) {
       return jsonResponse(403, "FORBIDDEN", requestId, "?????곕츥?嶺뚮?爰????????몃뱥?????????耀붾굝??????????붺몭???????堉?????????源낆┰?????????곸죩.");
     }
@@ -611,6 +617,37 @@ export async function POST(req: Request) {
       userId,
       cardId,
       insertedId: insertRes.data.id,
+    });
+
+    await adminClient
+      .from("notifications")
+      .insert({
+        user_id: card.owner_user_id,
+        actor_id: userId,
+        type: "dating_application_received",
+        post_id: null,
+        comment_id: null,
+        meta_json: {
+          card_id: cardId,
+          application_id: insertRes.data.id,
+        },
+      })
+      .then(({ error }) => {
+        if (error) {
+          console.error(`[apply] ${requestId} L8 notification insert failed`, error);
+        }
+      });
+
+    await sendExpoPushToUser(adminClient, card.owner_user_id, {
+      title: "새 지원 도착",
+      body: `${applicantDisplayNickname}님이 내 오픈카드에 지원했습니다.`,
+      data: {
+        type: "dating_application_received",
+        cardId,
+        applicationId: insertRes.data.id,
+      },
+    }).catch((pushError) => {
+      console.error(`[apply] ${requestId} L8 expo push failed`, pushError);
     });
 
     await sendDatingEmailNotification(

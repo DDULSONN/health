@@ -1,4 +1,4 @@
-import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
+﻿import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import {
   getLatestSwipeCardForUser,
   getSwipeCandidate,
@@ -6,7 +6,9 @@ import {
   sendDatingEmailNotification,
   SWIPE_DAILY_LIMIT,
 } from "@/lib/dating-swipe";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { hasDatingBlockBetween } from "@/lib/dating-blocks";
+import { getRequestAuthContext } from "@/lib/supabase/request";
+import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
@@ -26,10 +28,7 @@ function sanitizeAction(value: unknown): SwipeAction | null {
 }
 
 export async function GET(req: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getRequestAuthContext(req);
 
   if (!user) {
     return NextResponse.json({
@@ -38,7 +37,7 @@ export async function GET(req: Request) {
       remaining: 0,
       limit: SWIPE_DAILY_LIMIT,
       candidate: null,
-      reason: "로그인 후 이용할 수 있습니다.",
+      reason: "로그인이 필요합니다.",
     });
   }
 
@@ -86,7 +85,7 @@ export async function GET(req: Request) {
         remaining,
         limit: SWIPE_DAILY_LIMIT,
         candidate: null,
-        reason: "오늘 사용할 수 있는 빠른매칭 횟수를 모두 사용했습니다.",
+        reason: "오늘 사용할 수 있는 빠른 매칭 횟수를 모두 사용했습니다.",
       });
     }
 
@@ -101,18 +100,15 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     console.error("[GET /api/dating/cards/swipe] failed", error);
-    return NextResponse.json({ error: "빠른매칭 정보를 불러오지 못했습니다." }, { status: 500 });
+    return NextResponse.json({ error: "빠른 매칭 정보를 불러오지 못했습니다." }, { status: 500 });
   }
 }
 
 export async function POST(req: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getRequestAuthContext(req);
 
   if (!user) {
-    return NextResponse.json({ error: "로그인 후 이용할 수 있습니다." }, { status: 401 });
+    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
 
   const ip = extractClientIp(req);
@@ -147,7 +143,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "요청 정보가 올바르지 않습니다." }, { status: 400 });
   }
   if (targetUserId === user.id) {
-    return NextResponse.json({ error: "본인 카드는 빠른매칭할 수 없습니다." }, { status: 400 });
+    return NextResponse.json({ error: "본인 카드는 빠른 매칭할 수 없습니다." }, { status: 400 });
   }
 
   const adminClient = createAdminClient();
@@ -160,7 +156,7 @@ export async function POST(req: Request) {
 
     const used = await getSwipeDailyUsage(adminClient, user.id);
     if (used >= SWIPE_DAILY_LIMIT) {
-      return NextResponse.json({ error: "오늘 사용할 수 있는 빠른매칭 횟수를 모두 사용했습니다." }, { status: 429 });
+      return NextResponse.json({ error: "오늘 사용할 수 있는 빠른 매칭 횟수를 모두 사용했습니다." }, { status: 429 });
     }
 
     const dupRes = await adminClient
@@ -189,6 +185,10 @@ export async function POST(req: Request) {
     if (!targetCard || targetCard.owner_user_id !== targetUserId || targetCard.sex !== sex) {
       return NextResponse.json({ error: "대상 카드를 찾을 수 없습니다." }, { status: 404 });
     }
+    const blocked = await hasDatingBlockBetween(adminClient, user.id, targetUserId);
+    if (blocked) {
+      return NextResponse.json({ error: "차단한 상대에게는 빠른 매칭을 사용할 수 없습니다." }, { status: 403 });
+    }
     if (!String(targetCard.instagram_id ?? "").trim()) {
       return NextResponse.json({ error: "대상 카드에 인스타 정보가 없어 진행할 수 없습니다." }, { status: 400 });
     }
@@ -208,7 +208,7 @@ export async function POST(req: Request) {
 
     if (insertRes.error) {
       console.error("[POST /api/dating/cards/swipe] insert failed", insertRes.error);
-      return NextResponse.json({ error: "빠른매칭 처리 중 저장에 실패했습니다." }, { status: 500 });
+      return NextResponse.json({ error: "빠른 매칭 처리 중 저장에 실패했습니다." }, { status: 500 });
     }
 
     let matchPayload:
@@ -305,6 +305,8 @@ export async function POST(req: Request) {
     });
   } catch (error) {
     console.error("[POST /api/dating/cards/swipe] failed", error);
-    return NextResponse.json({ error: "빠른매칭 처리 중 오류가 발생했습니다." }, { status: 500 });
+    return NextResponse.json({ error: "빠른 매칭 처리 중 오류가 발생했습니다." }, { status: 500 });
   }
 }
+
+

@@ -1,5 +1,6 @@
-import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
 import { kvSetString } from "@/lib/edge-kv";
+import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
 
@@ -148,24 +149,21 @@ async function uploadBytesToBucket(
 }
 
 export async function POST(req: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getRequestAuthContext(req);
 
   if (!user) {
-    return NextResponse.json({ error: "濡쒓렇?몄씠 ?꾩슂?⑸땲??" }, { status: 401 });
+    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
 
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json(
-      { error: "?쒕쾭 ?ㅼ젙 ?ㅻ쪟?낅땲?? 愿由ъ옄?먭쾶 臾몄쓽?댁＜?몄슂. (SUPABASE_SERVICE_ROLE_KEY)" },
+      { error: "서버 설정 오류입니다. 관리자에게 문의해주세요. (SUPABASE_SERVICE_ROLE_KEY)" },
       { status: 500 }
     );
   }
 
   const form = await req.formData().catch(() => null);
-  if (!form) return NextResponse.json({ error: "?섎せ???붿껌?낅땲??" }, { status: 400 });
+  if (!form) return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
 
   const file = form.get("file");
   const kind = String(form.get("kind") ?? "raw");
@@ -173,15 +171,15 @@ export async function POST(req: Request) {
   const index = Number(String(form.get("index") ?? "0"));
 
   if (!(file instanceof File)) {
-    return NextResponse.json({ error: "?뚯씪???꾩슂?⑸땲??" }, { status: 400 });
+    return NextResponse.json({ error: "파일이 필요합니다." }, { status: 400 });
   }
 
   if (!ALLOWED_TYPES.includes(file.type)) {
-    return NextResponse.json({ error: "JPG/PNG/WebP ?뚯씪留??낅줈?쒗븷 ???덉뒿?덈떎." }, { status: 400 });
+    return NextResponse.json({ error: "JPG/PNG/WebP 파일만 업로드할 수 있습니다." }, { status: 400 });
   }
 
   if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: "?뚯씪? 5MB ?댄븯留?媛?ν빀?덈떎." }, { status: 400 });
+    return NextResponse.json({ error: "파일은 5MB 이하만 가능합니다." }, { status: 400 });
   }
 
   if (index < 0 || index > 9) {
@@ -211,7 +209,7 @@ export async function POST(req: Request) {
     if (error) {
       console.error("[POST /api/dating/cards/upload-card] failed", error);
       return NextResponse.json(
-        { error: `移대뱶 ?ъ쭊 ?낅줈?쒖뿉 ?ㅽ뙣?덉뒿?덈떎. ${error.message ?? "?좎떆 ???ㅼ떆 ?쒕룄?댁＜?몄슂."}` },
+        { error: `카드 사진 업로드에 실패했습니다. ${error.message ?? "잠시 후 다시 시도해주세요."}` },
         { status: 500 }
       );
     }
@@ -256,8 +254,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ path }, { status: 201 });
   } catch (error) {
     console.error("[POST /api/dating/cards/upload-card] exception", error);
-    const message = error instanceof Error ? error.message : "?????녿뒗 ?ㅻ쪟";
-    return NextResponse.json({ error: `移대뱶 ?ъ쭊 ?낅줈?쒖뿉 ?ㅽ뙣?덉뒿?덈떎. ${message}` }, { status: 500 });
+    const message = error instanceof Error ? error.message : "알 수 없는 오류";
+    return NextResponse.json({ error: `카드 사진 업로드에 실패했습니다. ${message}` }, { status: 500 });
   }
 }
-

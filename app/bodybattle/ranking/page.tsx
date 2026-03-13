@@ -57,7 +57,7 @@ export default function BodyBattleRankingPage() {
     <main className="mx-auto max-w-3xl px-4 py-6">
       <div className="mb-4 flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-neutral-900">BodyBattle Ranking</h1>
+          <h1 className="text-2xl font-bold text-neutral-900">바디배틀 랭킹</h1>
           <p className="mt-1 text-sm text-neutral-500">{data?.season ? `${data.season.week_id} · ${data.season.theme_label}` : "No active season"}</p>
         </div>
         <Link href="/bodybattle" className="text-sm text-neutral-500 hover:text-neutral-700">

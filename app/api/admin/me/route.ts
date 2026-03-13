@@ -1,12 +1,9 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { getRequestAuthContext } from "@/lib/supabase/request";
 import { isAllowedAdminUser } from "@/lib/admin";
 
-export async function GET() {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+export async function GET(req: Request) {
+  const { user } = await getRequestAuthContext(req);
 
   if (!user) {
     return NextResponse.json({ isAdmin: false });

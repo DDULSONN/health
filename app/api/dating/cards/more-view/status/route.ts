@@ -1,18 +1,14 @@
 import { getMoreViewStatusBySex } from "@/lib/dating-more-view";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { createAdminClient } from "@/lib/supabase/server";
+import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
-export async function GET() {
+export async function GET(req: Request) {
   const requestId = crypto.randomUUID();
 
   try {
-    const supabase = await createClient();
-    const {
-      data: { user },
-      error: authError,
-    } = await supabase.auth.getUser();
-
-    if (authError || !user) {
+    const { user } = await getRequestAuthContext(req);
+    if (!user) {
       return NextResponse.json({
         ok: true,
         requestId,

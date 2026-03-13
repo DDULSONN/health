@@ -1,19 +1,47 @@
-import { createClient, createAdminClient } from "@/lib/supabase/server";
+﻿import { createAdminClient } from "@/lib/supabase/server";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
+import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
 type SignCounters = { signCalls: number; cacheHit: number; cacheMiss: number };
+
+type CardRow = {
+  id: string;
+  sex: "male" | "female";
+  display_nickname: string | null;
+  age: number | null;
+  region: string | null;
+  expires_at: string | null;
+  created_at: string;
+  status: string;
+  applications_last_viewed_at?: string | null;
+};
+
+type ApplicationRow = {
+  id: string;
+  card_id: string;
+  applicant_user_id: string;
+  applicant_display_nickname: string | null;
+  age: number | null;
+  height_cm: number | null;
+  region: string | null;
+  job: string | null;
+  training_years: number | null;
+  intro_text: string | null;
+  status: string;
+  created_at: string;
+  instagram_id: string | null;
+  photo_paths: unknown[];
+};
 
 function normalizeApplyPhotoPath(raw: unknown): string {
   if (typeof raw !== "string") return "";
   const value = raw.trim();
   if (!value) return "";
-  return (
-    extractStorageObjectPathFromBuckets(value, ["dating-apply-photos", "dating-photos"]) ??
-    value
-  );
+  return extractStorageObjectPathFromBuckets(value, ["dating-apply-photos", "dating-photos"]) ?? value;
 }
 
 async function createApplyPhotoSignedUrl(
@@ -55,13 +83,72 @@ async function getPendingQueuePosition(
   return (beforeRes.count ?? 0) + (sameTsRes.count ?? 0);
 }
 
+async function fetchOwnedCards(adminClient: ReturnType<typeof createAdminClient>, userId: string) {
+  let { data, error } = await adminClient
+    .from("dating_cards")
+    .select("id, sex, display_nickname, age, region, expires_at, created_at, status, applications_last_viewed_at")
+    .eq("owner_user_id", userId)
+    .order("created_at", { ascending: false });
+
+  if (error && error.code === "42703") {
+    const fallback = await adminClient
+      .from("dating_cards")
+      .select("id, sex, display_nickname, age, region, expires_at, created_at, status")
+      .eq("owner_user_id", userId)
+      .order("created_at", { ascending: false });
+
+    error = fallback.error;
+    data = (fallback.data ?? []).map((row) => ({
+      ...row,
+      applications_last_viewed_at: null,
+    }));
+  }
+
+  return {
+    data: (data ?? []) as CardRow[],
+    error,
+  };
+}
+
+async function fetchApplications(adminClient: ReturnType<typeof createAdminClient>, cardIds: string[]) {
+  let { data, error } = await adminClient
+    .from("dating_card_applications")
+    .select(
+      "id, card_id, applicant_user_id, applicant_display_nickname, age, height_cm, region, job, training_years, intro_text, status, created_at, instagram_id, photo_paths"
+    )
+    .in("card_id", cardIds)
+    .order("created_at", { ascending: false });
+
+  if (error && error.code === "42703") {
+    const fallback = await adminClient
+      .from("dating_card_applications")
+      .select(
+        "id, card_id, applicant_user_id, age, height_cm, region, job, training_years, intro_text, status, created_at, instagram_id, photo_urls"
+      )
+      .in("card_id", cardIds)
+      .order("created_at", { ascending: false });
+
+    error = fallback.error;
+    data = (fallback.data ?? []).map((row) => ({
+      ...row,
+      applicant_display_nickname: null,
+      photo_paths: Array.isArray(row.photo_urls) ? row.photo_urls : [],
+    }));
+  }
+
+  return {
+    data: (data ?? []) as ApplicationRow[],
+    error,
+  };
+}
+
 export async function GET(req: Request) {
   const requestId = crypto.randomUUID();
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const { user } = await getRequestAuthContext(req);
   const ip = extractClientIp(req);
+  const { searchParams } = new URL(req.url);
+  const requestedCardId = searchParams.get("cardId")?.trim() ?? "";
+  const markViewed = searchParams.get("markViewed") === "1";
 
   const rateLimit = await checkRouteRateLimit({
     requestId,
@@ -85,6 +172,7 @@ export async function GET(req: Request) {
 
   const counters: SignCounters = { signCalls: 0, cacheHit: 0, cacheMiss: 0 };
   const adminClient = createAdminClient();
+  const blockedUserIds = await getDatingBlockedUserIds(adminClient, user.id);
 
   try {
     await syncOpenCardQueue(adminClient);
@@ -92,78 +180,61 @@ export async function GET(req: Request) {
     console.error("[GET /api/dating/cards/my/received] queue sync failed", { requestId, error });
   }
 
-  let { data: cards, error: cardsError } = await adminClient
-    .from("dating_cards")
-    .select("id, sex, display_nickname, age, region, expires_at, created_at, status")
-    .eq("owner_user_id", user.id)
-    .order("created_at", { ascending: false });
-
-  // Compatibility fallback for environments where new columns are not migrated yet.
-  if (cardsError && cardsError.code === "42703") {
-    const fallback = await adminClient
-      .from("dating_cards")
-      .select("id, sex, age, region, created_at, status")
-      .eq("owner_user_id", user.id)
-      .order("created_at", { ascending: false });
-
-    cardsError = fallback.error;
-    cards = (fallback.data ?? []).map((row) => ({
-      ...row,
-      display_nickname: null,
-      expires_at: null,
-    }));
-  }
-
-  if (cardsError) {
+  const cardsRes = await fetchOwnedCards(adminClient, user.id);
+  if (cardsRes.error) {
     console.error("[GET /api/dating/cards/my/received] cards failed", {
       requestId,
-      code: cardsError.code ?? null,
-      message: cardsError.message ?? null,
-      stack: cardsError instanceof Error ? cardsError.stack : undefined,
+      code: cardsRes.error.code ?? null,
+      message: cardsRes.error.message ?? null,
+      stack: cardsRes.error instanceof Error ? cardsRes.error.stack : undefined,
     });
     return NextResponse.json({ error: "내 카드를 불러오지 못했습니다." }, { status: 500 });
   }
 
-  const cardIds = (cards ?? []).map((c) => c.id);
+  let cards = cardsRes.data;
+  if (requestedCardId) {
+    cards = cards.filter((card) => card.id === requestedCardId);
+  }
+
+  const cardIds = cards.map((card) => card.id);
   if (cardIds.length === 0) {
     return NextResponse.json({ cards: [], applications: [] });
   }
 
-  let { data: applications, error: appsError } = await adminClient
-    .from("dating_card_applications")
-    .select("id, card_id, applicant_user_id, applicant_display_nickname, age, height_cm, region, job, training_years, intro_text, status, created_at, instagram_id, photo_paths")
-    .in("card_id", cardIds)
-    .order("created_at", { ascending: false });
+  if (markViewed) {
+    const viewedAt = new Date().toISOString();
+    const markRes = await adminClient
+      .from("dating_cards")
+      .update({ applications_last_viewed_at: viewedAt })
+      .in("id", cardIds)
+      .eq("owner_user_id", user.id);
 
-  // Compatibility fallback for legacy schema (photo_urls / no applicant_display_nickname).
-  if (appsError && appsError.code === "42703") {
-    const fallback = await adminClient
-      .from("dating_card_applications")
-      .select("id, card_id, applicant_user_id, age, height_cm, region, job, training_years, intro_text, status, created_at, instagram_id, photo_urls")
-      .in("card_id", cardIds)
-      .order("created_at", { ascending: false });
-
-    appsError = fallback.error;
-    applications = (fallback.data ?? []).map((row) => ({
-      ...row,
-      applicant_display_nickname: null,
-      photo_paths: row.photo_urls ?? [],
-    }));
+    if (markRes.error && markRes.error.code !== "42703") {
+      console.error("[GET /api/dating/cards/my/received] mark viewed failed", {
+        requestId,
+        code: markRes.error.code ?? null,
+        message: markRes.error.message ?? null,
+      });
+    } else if (!markRes.error) {
+      cards = cards.map((card) => ({ ...card, applications_last_viewed_at: viewedAt }));
+    }
   }
 
-  if (appsError) {
+  const appsRes = await fetchApplications(adminClient, cardIds);
+  if (appsRes.error) {
     console.error("[GET /api/dating/cards/my/received] apps failed", {
       requestId,
-      code: appsError.code ?? null,
-      message: appsError.message ?? null,
-      stack: appsError instanceof Error ? appsError.stack : undefined,
+      code: appsRes.error.code ?? null,
+      message: appsRes.error.message ?? null,
+      stack: appsRes.error instanceof Error ? appsRes.error.stack : undefined,
     });
     return NextResponse.json({ error: "지원자 목록을 불러오지 못했습니다." }, { status: 500 });
   }
 
+  const visibleApps = appsRes.data.filter((app) => !blockedUserIds.has(app.applicant_user_id));
   let rawSignedCount = 0;
   const safeApps = await Promise.all(
-    (applications ?? []).map(async (app) => {
+    visibleApps.map(async (app) => {
       const rawPhotoPaths = Array.isArray(app.photo_paths)
         ? app.photo_paths
             .map((item) => normalizeApplyPhotoPath(item))
@@ -187,23 +258,35 @@ export async function GET(req: Request) {
   const signedTotal = counters.cacheHit + counters.cacheMiss;
   const cacheHitRatePct = signedTotal > 0 ? Math.round((counters.cacheHit / signedTotal) * 1000) / 10 : 0;
   console.log(
-    `[list.metrics] requestId=${requestId} path=/api/dating/cards/my/received cards=${(cards ?? []).length} rawSigned=${rawSignedCount} blurSigned=0 cacheHitRatePct=${cacheHitRatePct} signCalls=${counters.signCalls}`
+    `[list.metrics] requestId=${requestId} path=/api/dating/cards/my/received cards=${cards.length} rawSigned=${rawSignedCount} blurSigned=0 cacheHitRatePct=${cacheHitRatePct} signCalls=${counters.signCalls}`
   );
 
-  const rawCards = Array.isArray(cards) ? cards : [];
+  const applicationsByCard = new Map<string, ApplicationRow[]>();
+  for (const app of visibleApps) {
+    const list = applicationsByCard.get(app.card_id) ?? [];
+    list.push(app);
+    applicationsByCard.set(app.card_id, list);
+  }
+
   const cardsWithQueuePosition = await Promise.all(
-    rawCards.map(async (card) => {
-      if (!card || card.status !== "pending") {
-        return { ...card, queue_position: null };
-      }
-      const queuePosition = await getPendingQueuePosition(
-        adminClient,
-        card.sex as "male" | "female",
-        card.created_at,
-        card.id
-      );
+    cards.map(async (card) => {
+      const applications = applicationsByCard.get(card.id) ?? [];
+      const lastViewedAt = card.applications_last_viewed_at ? Date.parse(card.applications_last_viewed_at) : null;
+      const unreadCount = applications.filter((app) => {
+        const createdAt = Date.parse(app.created_at);
+        if (Number.isNaN(createdAt)) return false;
+        return lastViewedAt == null || createdAt > lastViewedAt;
+      }).length;
+
+      const queuePosition =
+        card.status === "pending"
+          ? await getPendingQueuePosition(adminClient, card.sex, card.created_at, card.id)
+          : null;
+
       return {
         ...card,
+        applicant_count: applications.length,
+        unread_application_count: unreadCount,
         queue_position: queuePosition,
       };
     })
@@ -211,3 +294,5 @@ export async function GET(req: Request) {
 
   return NextResponse.json({ cards: cardsWithQueuePosition, applications: safeApps });
 }
+
+
