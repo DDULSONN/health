@@ -119,22 +119,28 @@ export default function HomeBodyBattleQuickVote() {
         </Link>
       </div>
 
-      {loading ? <p className="text-xs text-neutral-600">대결 카드 불러오는 중...</p> : null}
+      {loading ? <p className="text-xs text-neutral-600">대결 카드를 불러오는 중...</p> : null}
       {error ? <p className="text-xs text-red-600">{error}</p> : null}
 
       {!loading && payload?.season && payload?.matchup ? (
         <>
-          <p className="text-xs text-neutral-700">
-            {payload.season.week_id} · {payload.season.theme_label}
-          </p>
-          <p className="mt-1 text-sm font-semibold text-neutral-900">{payload.matchup.prompt}</p>
+          <div className="mb-2 rounded-xl border border-orange-200 bg-white/80 px-3 py-2">
+            <p className="text-[11px] font-semibold uppercase tracking-[0.14em] text-orange-700">This Week Theme</p>
+            <p className="mt-0.5 text-xs text-neutral-500">{payload.season.week_id}</p>
+            <p className="text-sm font-semibold text-neutral-900">{payload.season.theme_label}</p>
+          </div>
+          <p className="text-sm font-semibold text-neutral-900">{payload.matchup.prompt}</p>
           <div className="mt-3 grid grid-cols-2 gap-2">
             <div className="rounded-lg border border-neutral-200 bg-white p-2">
-              {leftImage ? <Image src={leftImage} alt="" width={360} height={420} className="h-32 w-full rounded object-contain bg-neutral-100" unoptimized /> : null}
+              {leftImage ? (
+                <Image src={leftImage} alt="" width={360} height={420} className="h-32 w-full rounded object-contain bg-neutral-100" unoptimized />
+              ) : null}
               <p className="mt-1 truncate text-xs font-semibold text-neutral-800">{payload.matchup.left.nickname}</p>
             </div>
             <div className="rounded-lg border border-neutral-200 bg-white p-2">
-              {rightImage ? <Image src={rightImage} alt="" width={360} height={420} className="h-32 w-full rounded object-contain bg-neutral-100" unoptimized /> : null}
+              {rightImage ? (
+                <Image src={rightImage} alt="" width={360} height={420} className="h-32 w-full rounded object-contain bg-neutral-100" unoptimized />
+              ) : null}
               <p className="mt-1 truncate text-xs font-semibold text-neutral-800">{payload.matchup.right.nickname}</p>
             </div>
           </div>
@@ -173,7 +179,9 @@ export default function HomeBodyBattleQuickVote() {
       ) : null}
 
       {!loading && !payload?.season ? <p className="text-xs text-neutral-600">현재 진행 중인 시즌이 없습니다.</p> : null}
-      {!loading && payload?.season && !payload?.matchup ? <p className="text-xs text-neutral-600">{payload.message ?? "매칭 대기 중입니다."}</p> : null}
+      {!loading && payload?.season && !payload?.matchup ? (
+        <p className="text-xs text-neutral-600">{payload.message ?? "매칭 대기 중입니다."}</p>
+      ) : null}
     </section>
   );
 }

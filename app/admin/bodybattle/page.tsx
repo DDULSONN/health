@@ -262,12 +262,12 @@ export default function AdminBodyBattlePage() {
   }
 
   async function bulkApprovePending() {
-    const pending = entries.filter((e) => e.moderation_status === "pending");
+    const pending = entries.filter((entry) => entry.moderation_status === "pending");
     if (pending.length === 0) return;
     setBulkApproving(true);
     setError(null);
     try {
-      await Promise.all(pending.map((e) => patchEntry(e.id, { moderation_status: "approved" })));
+      await Promise.all(pending.map((entry) => patchEntry(entry.id, { moderation_status: "approved" })));
       await loadEntries();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -305,8 +305,8 @@ export default function AdminBodyBattlePage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ mode }),
       });
-      const data = await parseJson<{ message?: string }>(res);
-      if (!res.ok) throw new Error(data.message ?? "Failed to run season sync.");
+      const data = await parseJson<{ message?: string; error?: string }>(res);
+      if (!res.ok) throw new Error(data.message ?? data.error ?? "Failed to run season sync.");
       await Promise.all([loadOverview(), loadOpsLogs(), loadSeasonPlanner()]);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -329,6 +329,8 @@ export default function AdminBodyBattlePage() {
       void loadCurrentTab(tab);
     }
   }, [tab, overview, entries.length, anomalies.length, reports.length, logs.length]);
+
+  const pendingCount = entries.filter((entry) => entry.moderation_status === "pending").length;
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-8">
@@ -387,22 +389,22 @@ export default function AdminBodyBattlePage() {
             <input
               value={entryQuery}
               onChange={(e) => setEntryQuery(e.target.value)}
-              placeholder="닉네임/ID/상태 검색"
+              placeholder="닉네임, ID, 상태 검색"
               className="flex-1 rounded-lg border border-neutral-300 px-3 py-2 text-sm"
             />
             <button
               type="button"
-              disabled={bulkApproving || entries.filter((e) => e.moderation_status === "pending").length === 0}
+              disabled={bulkApproving || pendingCount === 0}
               onClick={() => void bulkApprovePending()}
               className="rounded-lg bg-emerald-600 px-3 py-2 text-xs font-semibold text-white disabled:opacity-40"
             >
-              {bulkApproving ? "승인 중..." : `대기 ${entries.filter((e) => e.moderation_status === "pending").length}건 일괄승인`}
+              {bulkApproving ? "승인 중..." : `대기 ${pendingCount}건 일괄 승인`}
             </button>
           </div>
           {filteredEntries.map((entry) => (
             <article key={entry.id} className="rounded-xl border border-neutral-200 bg-white p-3">
               <div className="flex items-start gap-3">
-                {entry.image_urls?.length > 0 && (
+                {entry.image_urls?.length > 0 ? (
                   <div className="flex shrink-0 gap-1">
                     {entry.image_urls.slice(0, 2).map((url) => (
                       <button
@@ -416,7 +418,7 @@ export default function AdminBodyBattlePage() {
                       </button>
                     ))}
                   </div>
-                )}
+                ) : null}
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-semibold text-neutral-900">
                     {entry.nickname} <span className="font-normal text-neutral-500">({entry.gender})</span>
@@ -425,43 +427,65 @@ export default function AdminBodyBattlePage() {
                     {entry.id.slice(0, 8)}... · rating {entry.rating} · {entry.wins}W {entry.losses}L · votes {entry.votes_received}
                   </p>
                   <p className="mt-0.5 text-xs">
-                    <span className={`font-semibold ${entry.moderation_status === "pending" ? "text-amber-600" : entry.moderation_status === "approved" ? "text-emerald-600" : "text-red-600"}`}>
+                    <span
+                      className={`font-semibold ${
+                        entry.moderation_status === "pending"
+                          ? "text-amber-600"
+                          : entry.moderation_status === "approved"
+                            ? "text-emerald-600"
+                            : "text-red-600"
+                      }`}
+                    >
                       {entry.moderation_status}
                     </span>
                     {" · "}
                     <span className={entry.status === "hidden" ? "text-red-500" : "text-neutral-500"}>{entry.status}</span>
-                    {entry.report_count > 0 && <span className="ml-1 text-red-500"> · 신고 {entry.report_count}건</span>}
+                    {entry.report_count > 0 ? <span className="ml-1 text-red-500">· 신고 {entry.report_count}건</span> : null}
                   </p>
-                  {entry.intro_text && (
-                    <p className="mt-1 line-clamp-1 text-xs text-neutral-400">{entry.intro_text}</p>
-                  )}
+                  {entry.intro_text ? <p className="mt-1 line-clamp-1 text-xs text-neutral-400">{entry.intro_text}</p> : null}
                 </div>
               </div>
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"
-                  onClick={() => patchEntry(entry.id, { moderation_status: "approved" }).then(() => loadCurrentTab("entries")).catch((e) => setError(String(e)))}
+                  onClick={() =>
+                    patchEntry(entry.id, { moderation_status: "approved" })
+                      .then(() => loadCurrentTab("entries"))
+                      .catch((e) => setError(String(e)))
+                  }
                   className="rounded bg-emerald-600 px-2 py-1 text-xs text-white"
                 >
                   Approve
                 </button>
                 <button
                   type="button"
-                  onClick={() => patchEntry(entry.id, { moderation_status: "rejected" }).then(() => loadCurrentTab("entries")).catch((e) => setError(String(e)))}
+                  onClick={() =>
+                    patchEntry(entry.id, { moderation_status: "rejected" })
+                      .then(() => loadCurrentTab("entries"))
+                      .catch((e) => setError(String(e)))
+                  }
                   className="rounded bg-red-600 px-2 py-1 text-xs text-white"
                 >
                   Reject
                 </button>
                 <button
                   type="button"
-                  onClick={() => patchEntry(entry.id, { status: "hidden" }).then(() => loadCurrentTab("entries")).catch((e) => setError(String(e)))}
+                  onClick={() =>
+                    patchEntry(entry.id, { status: "hidden" })
+                      .then(() => loadCurrentTab("entries"))
+                      .catch((e) => setError(String(e)))
+                  }
                   className="rounded bg-neutral-800 px-2 py-1 text-xs text-white"
                 >
                   Hide
                 </button>
                 <button
                   type="button"
-                  onClick={() => patchEntry(entry.id, { status: "active", moderation_status: "approved" }).then(() => loadCurrentTab("entries")).catch((e) => setError(String(e)))}
+                  onClick={() =>
+                    patchEntry(entry.id, { status: "active", moderation_status: "approved" })
+                      .then(() => loadCurrentTab("entries"))
+                      .catch((e) => setError(String(e)))
+                  }
                   className="rounded bg-blue-600 px-2 py-1 text-xs text-white"
                 >
                   Restore
@@ -472,13 +496,15 @@ export default function AdminBodyBattlePage() {
         </section>
       ) : null}
 
-      {lightboxUrl && (
-        <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/80"
-          onClick={() => setLightboxUrl(null)}
-        >
+      {lightboxUrl ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80" onClick={() => setLightboxUrl(null)}>
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={lightboxUrl} alt="" className="max-h-[90vh] max-w-[90vw] rounded-xl object-contain" onClick={(e) => e.stopPropagation()} />
+          <img
+            src={lightboxUrl}
+            alt=""
+            className="max-h-[90vh] max-w-[90vw] rounded-xl object-contain"
+            onClick={(e) => e.stopPropagation()}
+          />
           <button
             type="button"
             onClick={() => setLightboxUrl(null)}
@@ -487,32 +513,35 @@ export default function AdminBodyBattlePage() {
             닫기
           </button>
         </div>
-      )}
+      ) : null}
 
       {tab === "anomalies" ? (
         <section className="space-y-3">
-          {anomalies.length === 0 ? <p className="text-sm text-neutral-500">최근 24시간 이상행동 없음</p> : null}
+          {anomalies.length === 0 ? <p className="text-sm text-neutral-500">최근 24시간 이상 징후 없음</p> : null}
           {anomalies.map((item) => (
             <article key={item.actor_key} className="rounded-xl border border-amber-200 bg-amber-50 p-3">
               <p className="text-sm font-semibold text-amber-900">
                 {item.actor_key} · score {item.score}
               </p>
               <p className="mt-1 text-xs text-amber-800">
-                votes {item.votes} · matchups {item.distinct_matchups} · dominant {item.dominant_entry_id?.slice(0, 8) ?? "-"} ({item.dominant_entry_votes}표)
+                votes {item.votes} · matchups {item.distinct_matchups} · dominant {item.dominant_entry_id?.slice(0, 8) ?? "-"} (
+                {item.dominant_entry_votes}표)
               </p>
-              {item.dominant_entry_id && (
+              {item.dominant_entry_id ? (
                 <button
                   type="button"
-                  onClick={() =>
-                    patchEntry(item.dominant_entry_id!, { status: "hidden" })
+                  onClick={() => {
+                    const dominantEntryId = item.dominant_entry_id;
+                    if (!dominantEntryId) return;
+                    patchEntry(dominantEntryId, { status: "hidden" })
                       .then(() => loadCurrentTab("anomalies"))
-                      .catch((e) => setError(String(e)))
-                  }
+                      .catch((e) => setError(String(e)));
+                  }}
                   className="mt-2 rounded bg-neutral-800 px-2 py-1 text-xs text-white"
                 >
                   지배 항목 숨기기
                 </button>
-              )}
+              ) : null}
             </article>
           ))}
 
@@ -615,7 +644,7 @@ export default function AdminBodyBattlePage() {
               {seasonItems.map((season) => (
                 <div key={season.id} className="rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2">
                   <p className="text-xs font-semibold text-neutral-800">
-                    {season.week_id} 쨌 {season.theme_label} ({season.theme_slug}) 쨌 {season.status}
+                    {season.week_id} · {season.theme_label} ({season.theme_slug}) · {season.status}
                   </p>
                   <p className="mt-1 text-[11px] text-neutral-500">
                     {new Date(season.start_at).toLocaleString("ko-KR")} ~ {new Date(season.end_at).toLocaleString("ko-KR")}
@@ -652,6 +681,19 @@ export default function AdminBodyBattlePage() {
               Finalize Due
             </button>
           </div>
+
+          <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3 text-xs text-neutral-600">
+            <p>
+              <strong>Run Sync</strong>: 현재 주차 시즌 생성 확인, 종료된 시즌 마감 처리, 누락된 결과와 명예의 전당 복구까지 한 번에 실행합니다.
+            </p>
+            <p className="mt-1">
+              <strong>Ensure Season</strong>: 이번 주 시즌이 없을 때만 생성하거나 활성 상태를 보장합니다.
+            </p>
+            <p className="mt-1">
+              <strong>Finalize Due</strong>: 종료 시간이 지난 시즌만 마감 처리하고 점수판을 새로고침합니다.
+            </p>
+          </div>
+
           <div className="space-y-2">
             {logs.map((log) => (
               <article key={log.id} className="rounded-xl border border-neutral-200 bg-white p-3">
@@ -671,7 +713,7 @@ export default function AdminBodyBattlePage() {
                   </div>
                 ) : null}
                 <pre className="mt-1 overflow-x-auto rounded bg-neutral-50 p-2 text-[11px] text-neutral-700">
-{JSON.stringify(log.payload, null, 2)}
+                  {JSON.stringify(log.payload, null, 2)}
                 </pre>
               </article>
             ))}

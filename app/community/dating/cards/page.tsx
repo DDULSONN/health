@@ -128,6 +128,7 @@ async function fetchBySex(
 
 export default function OpenCardsPage() {
   const [activeSex, setActiveSex] = useState<"male" | "female">("female");
+  const [guideOpen, setGuideOpen] = useState(false);
   const [males, setMales] = useState<PublicCard[]>([]);
   const [females, setFemales] = useState<PublicCard[]>([]);
   const [maleCursorCreatedAt, setMaleCursorCreatedAt] = useState<string | null>(null);
@@ -447,6 +448,34 @@ export default function OpenCardsPage() {
           오픈카드 작성
         </Link>
       </div>
+
+      <section className="mb-4 rounded-2xl border border-pink-200 bg-pink-50/70 p-4">
+        <button
+          type="button"
+          onClick={() => setGuideOpen((prev) => !prev)}
+          className="flex w-full items-center justify-between gap-3 text-left"
+        >
+          <div>
+            <p className="text-sm font-semibold text-pink-800">💘 오픈카드 소개팅, 이렇게 보면 돼요</p>
+            <p className="mt-1 text-xs text-pink-700">처음 들어와도 헷갈리지 않게, 핵심만 가볍게 정리했어요.</p>
+          </div>
+          <span className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold text-pink-700">
+            {guideOpen ? "설명 접기" : "설명 보기"}
+          </span>
+        </button>
+
+        {guideOpen && (
+          <div className="mt-3 space-y-2 border-t border-pink-200 pt-3 text-sm text-neutral-700">
+            <p>🪪 오픈카드를 만들면 공개 대기열에 들어가고, 공개되면 24시간 동안 보여져요.</p>
+            <p>👀 마음에 드는 사람 카드가 있으면 지원할 수 있고, 내 카드에도 다른 사람이 지원할 수 있어요.</p>
+            <p>🌟 카드가 아직 대기 상태여도 가까운 이상형, 이상형 더보기 같은 기능으로 누군가 내 카드에 지원할 수 있어요.</p>
+            <p>💌 카드 주인이 지원자 중 한 명을 수락하면 연결이 성사되고, 그 카드는 목록에서 내려가요.</p>
+            <p>⚡ 빠른 매칭은 카드 목록과 별도로, 랜덤 후보를 빠르게 넘기면서 라이크하는 기능이에요.</p>
+            <p>🔒 연락처는 바로 공개되지 않고, 연결 흐름 안에서 필요한 정보만 이어져요.</p>
+            <p>📬 그래서 지원이 왔는지 놓치지 않게 마이페이지를 자주 확인해주는 게 좋아요.</p>
+          </div>
+        )}
+      </section>
 
       <div className="mb-4 flex gap-2">
         <button

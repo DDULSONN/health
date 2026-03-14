@@ -47,7 +47,14 @@ export async function POST(request: Request) {
   });
 
   if (status === "error") {
-    return NextResponse.json({ ok: false, ...payload }, { status: 500 });
+    return NextResponse.json(
+      {
+        ok: false,
+        message: typeof payload.error === "string" ? payload.error : "Failed to run season sync.",
+        ...payload,
+      },
+      { status: 500 }
+    );
   }
   return NextResponse.json({ ok: true, ...payload });
 }
