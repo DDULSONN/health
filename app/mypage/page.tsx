@@ -218,6 +218,12 @@ type MyOneOnOneMatch = {
   counterparty_card: MyOneOnOneMatchCard | null;
 };
 
+type MyOneOnOneAutoRecommendationGroup = {
+  source_card_id: string;
+  source_card_status?: "submitted" | "reviewing" | "approved" | "rejected";
+  recommendations: MyOneOnOneMatchCard[];
+};
+
 type AdminOpenCard = {
   id: string;
   owner_user_id: string;
@@ -424,6 +430,7 @@ export default function MyPage() {
   const [myAppliedPaidApplications, setMyAppliedPaidApplications] = useState<MyAppliedPaidApplication[]>([]);
   const [myOneOnOneCards, setMyOneOnOneCards] = useState<MyOneOnOneCard[]>([]);
   const [myOneOnOneMatches, setMyOneOnOneMatches] = useState<MyOneOnOneMatch[]>([]);
+  const [myOneOnOneAutoRecommendations, setMyOneOnOneAutoRecommendations] = useState<MyOneOnOneAutoRecommendationGroup[]>([]);
   const [datingConnections, setDatingConnections] = useState<DatingConnection[]>([]);
   const [adminOpenCards, setAdminOpenCards] = useState<AdminOpenCard[]>([]);
   const [adminOpenCardApplications, setAdminOpenCardApplications] = useState<AdminOpenCardApplication[]>([]);
@@ -441,6 +448,7 @@ export default function MyPage() {
   const [processingMoreViewIds, setProcessingMoreViewIds] = useState<string[]>([]);
   const [processingCityViewIds, setProcessingCityViewIds] = useState<string[]>([]);
   const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
+  const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
   const [openCardWriteEnabled, setOpenCardWriteEnabled] = useState(true);
   const [openCardWriteSaving, setOpenCardWriteSaving] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
@@ -490,6 +498,7 @@ export default function MyPage() {
           paidAppliedRes,
           oneOnOneRes,
           oneOnOneMatchesRes,
+          oneOnOneRecommendationsRes,
           connectionsRes,
           paidConnectionsRes,
           writeSettingRes,
@@ -505,6 +514,7 @@ export default function MyPage() {
           fetch("/api/dating/paid/my/applied", { cache: "no-store" }),
           fetch("/api/dating/1on1/my", { cache: "no-store" }),
           fetch("/api/dating/1on1/matches/my", { cache: "no-store" }),
+          fetch("/api/dating/1on1/recommendations/my", { cache: "no-store" }),
           fetch("/api/dating/cards/my/connections", { cache: "no-store" }),
           fetch("/api/dating/paid/my/connections", { cache: "no-store" }),
           fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
@@ -549,6 +559,10 @@ export default function MyPage() {
           error?: string;
           items?: MyOneOnOneMatch[];
         };
+        const oneOnOneRecommendationsBody = (await oneOnOneRecommendationsRes.json().catch(() => ({}))) as {
+          error?: string;
+          items?: MyOneOnOneAutoRecommendationGroup[];
+        };
         const connectionsBody = (await connectionsRes.json().catch(() => ({}))) as {
           error?: string;
           items?: DatingConnection[];
@@ -586,6 +600,9 @@ export default function MyPage() {
         if (!oneOnOneMatchesRes.ok) {
           console.error("[mypage] 1on1 matches load failed", oneOnOneMatchesBody.error ?? "unknown error");
         }
+        if (!oneOnOneRecommendationsRes.ok) {
+          console.error("[mypage] 1on1 recommendations load failed", oneOnOneRecommendationsBody.error ?? "unknown error");
+        }
         if (!connectionsRes.ok) {
           console.error("[mypage] open connections load failed", connectionsBody.error ?? "unknown error");
         }
@@ -607,6 +624,9 @@ export default function MyPage() {
           setMyAppliedPaidApplications(paidAppliedBody.applications ?? []);
           setMyOneOnOneCards(oneOnOneBody.items ?? []);
           setMyOneOnOneMatches(oneOnOneMatchesRes.ok ? (oneOnOneMatchesBody.items ?? []) : []);
+          setMyOneOnOneAutoRecommendations(
+            oneOnOneRecommendationsRes.ok ? (oneOnOneRecommendationsBody.items ?? []) : []
+          );
           setDatingConnections([
             ...(connectionsRes.ok ? (connectionsBody.items ?? []) : []),
             ...(paidConnectionsRes.ok ? (paidConnectionsBody.items ?? []) : []),
@@ -960,6 +980,18 @@ export default function MyPage() {
     setMyOneOnOneMatches(body.items ?? []);
   };
 
+  const reloadOneOnOneRecommendations = async () => {
+    const res = await fetch("/api/dating/1on1/recommendations/my", { cache: "no-store" });
+    const body = (await res.json().catch(() => ({}))) as {
+      items?: MyOneOnOneAutoRecommendationGroup[];
+      error?: string;
+    };
+    if (!res.ok) {
+      throw new Error(body.error ?? "1:1 자동 추천 후보를 다시 불러오지 못했습니다.");
+    }
+    setMyOneOnOneAutoRecommendations(body.items ?? []);
+  };
+
   const handleOneOnOneMatchAction = async (
     matchId: string,
     action: "select_candidate" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject"
@@ -977,11 +1009,37 @@ export default function MyPage() {
         alert(body.error ?? "1:1 매칭 처리에 실패했습니다.");
         return;
       }
-      await reloadOneOnOneMatches();
+      await Promise.all([reloadOneOnOneMatches(), reloadOneOnOneRecommendations()]);
     } catch (e) {
       alert(e instanceof Error ? e.message : "1:1 매칭 처리에 실패했습니다.");
     } finally {
       setProcessingOneOnOneMatchIds((prev) => prev.filter((id) => id !== matchId));
+    }
+  };
+
+  const handleOneOnOneAutoRecommendationSelect = async (sourceCardId: string, candidateCardId: string) => {
+    const actionKey = `${sourceCardId}:${candidateCardId}`;
+    if (processingOneOnOneAutoKeys.includes(actionKey)) return;
+    setProcessingOneOnOneAutoKeys((prev) => [...prev, actionKey]);
+    try {
+      const res = await fetch("/api/dating/1on1/matches/auto", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          source_card_id: sourceCardId,
+          candidate_card_id: candidateCardId,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) {
+        alert(body.error ?? "자동 추천 후보 선택에 실패했습니다.");
+        return;
+      }
+      await Promise.all([reloadOneOnOneMatches(), reloadOneOnOneRecommendations()]);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "자동 추천 후보 선택에 실패했습니다.");
+    } finally {
+      setProcessingOneOnOneAutoKeys((prev) => prev.filter((key) => key !== actionKey));
     }
   };
 
@@ -1297,6 +1355,10 @@ export default function MyPage() {
       bucket.push(match);
       myOneOnOneMatchesByCardId.set(key, bucket);
     }
+  }
+  const myOneOnOneAutoRecommendationsByCardId = new Map<string, MyOneOnOneMatchCard[]>();
+  for (const group of myOneOnOneAutoRecommendations) {
+    myOneOnOneAutoRecommendationsByCardId.set(group.source_card_id, group.recommendations ?? []);
   }
   const hasActiveOpenCard = myDatingCards.some((card) => card.status === "pending" || card.status === "public");
   const statusRankPublicFirst: Record<AdminOpenCard["status"], number> = {
@@ -1747,6 +1809,7 @@ export default function MyPage() {
           <div className="space-y-3">
             {myOneOnOneCards.map((item) => {
               const relatedMatches = myOneOnOneMatchesByCardId.get(item.id) ?? [];
+              const autoRecommendations = myOneOnOneAutoRecommendationsByCardId.get(item.id) ?? [];
               const incomingCandidates = relatedMatches.filter((match) => match.role === "source" && match.state === "proposed");
               const waitingCandidateResponses = relatedMatches.filter(
                 (match) => match.role === "source" && match.state === "source_selected"
@@ -1811,6 +1874,75 @@ export default function MyPage() {
                           </div>
                         </a>
                       ))}
+                    </div>
+                  )}
+
+                  {["submitted", "reviewing", "approved"].includes(item.status) && (
+                    <div className="mt-3 rounded-xl border border-pink-200 bg-pink-50/50 p-3">
+                      <p className="text-sm font-semibold text-pink-900">자동 추천 후보 10명</p>
+                      <p className="mt-1 text-xs text-pink-700">
+                        내 나이와 지역 기준으로 먼저 추천되는 후보예요. 같은 시군구를 우선 보고, 없으면 같은 시도나 가까운 지역 후보까지 함께 보여줘요.
+                      </p>
+                      <p className="mt-1 text-xs text-pink-700">
+                        이 리스트 외에도 운영자가 따로 후보를 보내드릴 수 있어요. 마음에 드는 후보는 여러 명 선택할 수 있고, 선택된 사람마다 수락 요청이 전달됩니다.
+                      </p>
+                      {autoRecommendations.length === 0 ? (
+                        <div className="mt-3 rounded-lg border border-dashed border-pink-200 bg-white p-3 text-sm text-neutral-500">
+                          지금 바로 보여줄 자동 추천 후보가 없어요. 이미 진행 중인 매칭이 있거나, 조건에 맞는 후보가 새로 잡히면 여기서 보여드릴게요.
+                        </div>
+                      ) : (
+                        <div className="mt-3 space-y-2">
+                          {autoRecommendations.map((card) => {
+                            const actionKey = `${item.id}:${card.id}`;
+                            const processing = processingOneOnOneAutoKeys.includes(actionKey);
+                            return (
+                              <div key={`${item.id}-${card.id}`} className="rounded-lg border border-pink-200 bg-white p-3">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-sm font-medium text-neutral-900">
+                                    {card.name} / {card.age ?? "-"}세 / {card.region}
+                                  </p>
+                                  <span className="inline-flex rounded-full bg-pink-100 px-2 py-0.5 text-[11px] font-medium text-pink-700">
+                                    자동 추천
+                                  </span>
+                                </div>
+                                <p className="mt-1 text-xs text-neutral-600">
+                                  {card.height_cm}cm / {card.job}
+                                </p>
+                                <p className="mt-2 text-xs text-neutral-700 whitespace-pre-wrap break-words">{card.intro_text}</p>
+                                <p className="mt-2 text-xs text-neutral-700">장점: {card.strengths_text}</p>
+                                <p className="mt-1 text-xs text-neutral-700">원하는 점: {card.preferred_partner_text}</p>
+                                {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
+                                  <div className="mt-2 grid grid-cols-2 gap-2">
+                                    {card.photo_signed_urls.map((url, idx) => (
+                                      <a
+                                        key={`${item.id}-${card.id}-${idx}`}
+                                        href={url}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
+                                      >
+                                        <div className="flex h-24 w-full items-center justify-center bg-neutral-50">
+                                          <img src={url} alt={`자동 추천 후보 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
+                                        </div>
+                                      </a>
+                                    ))}
+                                  </div>
+                                )}
+                                <div className="mt-3">
+                                  <button
+                                    type="button"
+                                    disabled={processing}
+                                    onClick={() => void handleOneOnOneAutoRecommendationSelect(item.id, card.id)}
+                                    className="inline-flex h-8 items-center rounded-md bg-pink-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                                  >
+                                    {processing ? "처리 중..." : "이 후보 선택"}
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </div>
                   )}
 

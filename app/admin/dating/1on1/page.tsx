@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import { extractCityFromRegion, extractProvinceFromRegion } from "@/lib/region-city";
+import { compareRegionsByDistance } from "@/lib/region-distance";
 
 type CardItem = {
   id: string;
@@ -154,49 +154,6 @@ const INITIAL_SELECTION_FILTER: SelectionFilter = {
 };
 
 const AUTO_CANDIDATE_LIMIT = 10;
-const ADJACENT_PROVINCES: Record<string, string[]> = {
-  서울: ["인천", "경기"],
-  부산: ["울산", "경남"],
-  대구: ["경북"],
-  인천: ["서울", "경기"],
-  광주: ["전남", "전북"],
-  대전: ["세종", "충남", "충북", "전북"],
-  울산: ["부산", "경남", "경북"],
-  세종: ["대전", "충남", "충북"],
-  경기: ["서울", "인천", "강원", "충북", "충남"],
-  강원: ["경기", "충북", "경북"],
-  충북: ["경기", "강원", "충남", "세종", "대전", "전북", "경북"],
-  충남: ["경기", "충북", "세종", "대전", "전북"],
-  전북: ["충남", "충북", "대전", "광주", "전남", "경북", "경남"],
-  전남: ["광주", "전북", "경남"],
-  경북: ["강원", "충북", "전북", "대구", "울산", "경남"],
-  경남: ["부산", "울산", "전남", "전북", "경북"],
-  제주: [],
-};
-
-function normalizeRegionKey(value: string | null): string {
-  return String(value ?? "")
-    .trim()
-    .replace(/\s+/g, "")
-    .toLowerCase();
-}
-
-function getRegionPriority(sourceRegion: string, candidateRegion: string): number {
-  const sourceKey = normalizeRegionKey(sourceRegion);
-  const candidateKey = normalizeRegionKey(candidateRegion);
-  if (!sourceKey || !candidateKey) return 3;
-  if (sourceKey === candidateKey) return 0;
-
-  const sourceCity = extractCityFromRegion(sourceRegion);
-  const candidateCity = extractCityFromRegion(candidateRegion);
-  if (sourceCity && candidateCity && sourceCity === candidateCity) return 0;
-
-  const sourceProvince = extractProvinceFromRegion(sourceRegion);
-  const candidateProvince = extractProvinceFromRegion(candidateRegion);
-  if (sourceProvince && candidateProvince && sourceProvince === candidateProvince) return 1;
-  if (sourceProvince && candidateProvince && (ADJACENT_PROVINCES[sourceProvince] ?? []).includes(candidateProvince)) return 2;
-  return 3;
-}
 
 function getAutoCandidateRange(card: Pick<CardItem, "sex" | "age">): AutoCandidateRange {
   if (card.age == null || !Number.isFinite(card.age)) {
@@ -233,8 +190,10 @@ function hashCandidateSeed(value: string): number {
 
 function sortCardsBySeed(cards: CardItem[], seed: string, sourceRegion?: string): CardItem[] {
   return [...cards].sort((a, b) => {
-    const priorityGap = sourceRegion ? getRegionPriority(sourceRegion, a.region) - getRegionPriority(sourceRegion, b.region) : 0;
-    if (priorityGap !== 0) return priorityGap;
+    if (sourceRegion) {
+      const distanceGap = compareRegionsByDistance(sourceRegion, a.region, b.region);
+      if (distanceGap !== 0) return distanceGap;
+    }
     const aHash = hashCandidateSeed(`${seed}:${a.id}`);
     const bHash = hashCandidateSeed(`${seed}:${b.id}`);
     if (aHash !== bHash) return aHash - bHash;
