@@ -1,4 +1,4 @@
-import { OPEN_CARD_EXPIRE_HOURS, getOpenCardLimitBySex } from "@/lib/dating-open";
+import { OPEN_CARD_AUTO_REQUEUE_LIMIT, OPEN_CARD_EXPIRE_HOURS, getOpenCardLimitBySex } from "@/lib/dating-open";
 import { createAdminClient } from "@/lib/supabase/server";
 
 type CardSex = "male" | "female";
@@ -143,6 +143,140 @@ async function trimPublicOverflowBySex(
   return overflowIds;
 }
 
+type ExpiringCardRow = {
+  id: string;
+  sex: CardSex;
+  auto_requeue_count?: number | null;
+};
+
+async function fetchExpiringPublicCards(
+  adminClient: ReturnType<typeof createAdminClient>
+) {
+  const { data, error } = await adminClient
+    .from("dating_cards")
+    .select("id, sex, auto_requeue_count")
+    .eq("status", "public")
+    .lte("expires_at", new Date().toISOString());
+
+  if (error && isMissingColumnError(error)) {
+    return { rows: null as ExpiringCardRow[] | null, missingAutoRequeueColumn: true };
+  }
+  if (error) throw error;
+
+  return {
+    rows: (data ?? []) as ExpiringCardRow[],
+    missingAutoRequeueColumn: false,
+  };
+}
+
+async function fetchLegacyExpiredCardIds(adminClient: ReturnType<typeof createAdminClient>) {
+  let { data, error } = await adminClient
+    .from("dating_cards")
+    .select("id")
+    .eq("status", "public")
+    .lte("expires_at", new Date().toISOString());
+
+  if (error && isMissingColumnError(error)) {
+    const legacy = await adminClient
+      .from("dating_cards")
+      .select("id")
+      .eq("status", "public");
+    data = legacy.data;
+    error = legacy.error;
+  }
+
+  if (error) throw error;
+  return (data ?? []).map((row) => row.id);
+}
+
+async function expireCardsWithFallback(
+  adminClient: ReturnType<typeof createAdminClient>,
+  cardIds: string[]
+) {
+  if (cardIds.length === 0) return [];
+
+  let expireRes = await adminClient
+    .from("dating_cards")
+    .update({ status: "expired" })
+    .in("id", cardIds)
+    .eq("status", "public")
+    .select("id,sex");
+
+  if (expireRes.error && isStatusConstraintError(expireRes.error)) {
+    const fallbackRes = await adminClient
+      .from("dating_cards")
+      .update({ status: "hidden" })
+      .in("id", cardIds)
+      .eq("status", "public")
+      .select("id,sex");
+    if (!fallbackRes.error) {
+      expireRes = fallbackRes;
+    } else if (!isMissingColumnError(fallbackRes.error)) {
+      throw fallbackRes.error;
+    }
+  } else if (expireRes.error && !isMissingColumnError(expireRes.error)) {
+    throw expireRes.error;
+  }
+
+  return (expireRes.data ?? []).map((row) => row.id);
+}
+
+async function requeueExpiredCardsOnce(
+  adminClient: ReturnType<typeof createAdminClient>,
+  rows: ExpiringCardRow[]
+) {
+  if (rows.length === 0) {
+    return {
+      expiredIds: [] as string[],
+      requeuedIds: [] as string[],
+    };
+  }
+
+  const cardIds = rows.map((row) => row.id);
+  const acceptedRes = await adminClient
+    .from("dating_card_applications")
+    .select("card_id")
+    .in("card_id", cardIds)
+    .eq("status", "accepted");
+
+  if (acceptedRes.error) throw acceptedRes.error;
+
+  const acceptedCardIds = new Set((acceptedRes.data ?? []).map((row) => row.card_id));
+  const requeueIdSet = new Set(
+    rows
+      .filter((row) => !acceptedCardIds.has(row.id) && Number(row.auto_requeue_count ?? 0) < OPEN_CARD_AUTO_REQUEUE_LIMIT)
+      .map((row) => row.id)
+  );
+  const requeueRows = rows.filter(
+    (row) => requeueIdSet.has(row.id)
+  );
+  const expireRows = rows.filter((row) => !requeueIdSet.has(row.id));
+
+  const requeuedIds: string[] = [];
+  for (const row of requeueRows) {
+    const updateRes = await adminClient
+      .from("dating_cards")
+      .update({
+        status: "pending",
+        published_at: null,
+        expires_at: null,
+        auto_requeue_count: Number(row.auto_requeue_count ?? 0) + 1,
+      })
+      .eq("id", row.id)
+      .eq("status", "public");
+
+    if (updateRes.error) throw updateRes.error;
+    requeuedIds.push(row.id);
+  }
+
+  const expiredIds = await expireCardsWithFallback(
+    adminClient,
+    expireRows.map((row) => row.id)
+  );
+
+  return { expiredIds, requeuedIds };
+}
+
 export async function promotePendingCardsBySex(
   adminClient: ReturnType<typeof createAdminClient>,
   sex: CardSex
@@ -164,31 +298,16 @@ export async function promotePendingCardsBySex(
 export async function syncOpenCardQueue(
   adminClient: ReturnType<typeof createAdminClient>
 ) {
-  const nowIso = new Date().toISOString();
+  let expiredIds: string[] = [];
+  let requeuedIds: string[] = [];
 
-  let expireRes = await adminClient
-    .from("dating_cards")
-    .update({ status: "expired" })
-    .eq("status", "public")
-    .lte("expires_at", nowIso)
-    .select("id,sex");
-
-  if (expireRes.error && isStatusConstraintError(expireRes.error)) {
-    // Some environments still have a legacy status CHECK without 'expired'.
-    // Fallback to 'hidden' so expired slots are still freed for pending promotion.
-    const fallbackRes = await adminClient
-      .from("dating_cards")
-      .update({ status: "hidden" })
-      .eq("status", "public")
-      .lte("expires_at", nowIso)
-      .select("id,sex");
-    if (!fallbackRes.error) {
-      expireRes = fallbackRes;
-    } else if (!isMissingColumnError(fallbackRes.error)) {
-      throw fallbackRes.error;
-    }
-  } else if (expireRes.error && !isMissingColumnError(expireRes.error)) {
-    throw expireRes.error;
+  const expiringCards = await fetchExpiringPublicCards(adminClient);
+  if (expiringCards.missingAutoRequeueColumn) {
+    expiredIds = await expireCardsWithFallback(adminClient, await fetchLegacyExpiredCardIds(adminClient));
+  } else {
+    const syncResult = await requeueExpiredCardsOnce(adminClient, expiringCards.rows ?? []);
+    expiredIds = syncResult.expiredIds;
+    requeuedIds = syncResult.requeuedIds;
   }
 
   const trimmedMaleIds = await trimPublicOverflowBySex(adminClient, "male");
@@ -198,7 +317,8 @@ export async function syncOpenCardQueue(
   const female = await promotePendingCardsBySex(adminClient, "female");
 
   return {
-    expiredIds: (expireRes.data ?? []).map((row) => row.id),
+    expiredIds,
+    requeuedIds,
     trimmed: {
       male: trimmedMaleIds,
       female: trimmedFemaleIds,

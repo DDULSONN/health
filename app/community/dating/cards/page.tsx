@@ -436,8 +436,8 @@ export default function OpenCardsPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">오픈카드</h1>
-          <p className="text-sm text-neutral-500 mt-1">공개 카드는 24시간 동안 노출됩니다.</p>
-          <p className="text-xs text-rose-600 mt-1">현재 24시간 고정 {fixedPaidCount}명 노출중</p>
+          <p className="text-sm text-neutral-500 mt-1">공개 카드는 24시간 동안 노출되며, 수락 없이 종료되면 1회 자동으로 대기열에 다시 들어갈 수 있어요.</p>
+          <p className="text-xs text-rose-600 mt-1">현재 36시간 고정 {fixedPaidCount}명 노출중</p>
           <p className="text-xs text-neutral-500 mt-1">대기열: 남자 {queueStats?.male.pending_count ?? 0}명 / 여자 {queueStats?.female.pending_count ?? 0}명</p>
           <p className="text-xs text-neutral-500 mt-1">누적 매칭 {queueStats?.accepted_matches_count ?? 0}명</p>
         </div>
@@ -471,6 +471,7 @@ export default function OpenCardsPage() {
             <p>💌 카드 주인이 지원자 중 한 명을 수락하면 연결이 성사되고, 그 카드는 목록에서 내려가요.</p>
             <p>⚡ 빠른 매칭은 카드 목록과 별도로, 랜덤 후보를 빠르게 넘기면서 라이크하는 기능이에요.</p>
             <p>🔒 지원서가 수락되면 마이페이지에서 서로 인스타그램 아이디가 자동으로 교환돼요.</p>
+            <p>🔁 공개가 끝날 때까지 지원을 수락하지 않았다면, 카드가 1회 자동으로 대기열에 다시 들어가 한 번 더 노출될 수 있어요.</p>
             <p>🌟 카드가 아직 대기 상태여도 가까운 이상형, 이상형 더보기 같은 기능으로 누군가 내 카드에 지원할 수 있어요.</p>
             <p>📬 그래서 지원이 왔는지 놓치지 않게 마이페이지를 자주 확인해주는 게 좋아요.</p>
           </div>
@@ -687,7 +688,7 @@ function PaidCardRow({ card }: { card: PaidCard }) {
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-center gap-2 text-sm text-neutral-700">
           {isPriority && (
-            <span className="inline-flex rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">🔥24시 고정</span>
+            <span className="inline-flex rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">🔥36시간 고정</span>
           )}
           <span className="font-semibold text-neutral-900">{card.nickname}</span>
           <PhoneVerifiedBadge verified={card.is_phone_verified} />
