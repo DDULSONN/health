@@ -1,6 +1,6 @@
 import Link from "next/link";
+import HomeBodycheckQuickVote from "@/components/HomeBodycheckQuickVote";
 import WeeklyTopBanner from "@/components/WeeklyTopBanner";
-import HomeBodyBattleQuickVote from "@/components/HomeBodyBattleQuickVote";
 
 type Feature = {
   id: string;
@@ -20,7 +20,7 @@ const FEATURES: Feature[] = [
     href: "/1rm",
     title: "1RM 계산기",
     emoji: "🏋️",
-    description: "중량과 반복 횟수로 1RM 추정값을 계산합니다.",
+    description: "중량과 반복 횟수로 1RM 추정값을 계산해요.",
     accent: "bg-emerald-50 border-emerald-200 hover:border-emerald-400",
     main: true,
     cta: "계산 시작",
@@ -30,7 +30,7 @@ const FEATURES: Feature[] = [
     href: "/lifts",
     title: "3대 합계 계산기",
     emoji: "📊",
-    description: "스쿼트, 벤치, 데드 합계를 계산하고 기준 기록을 확인합니다.",
+    description: "스쿼트, 벤치, 데드 3대 합계를 계산하고 기록을 확인해요.",
     accent: "bg-rose-50 border-rose-200 hover:border-rose-400",
     cta: "합계 계산하기",
   },
@@ -39,25 +39,16 @@ const FEATURES: Feature[] = [
     href: "/community/bodycheck",
     title: "사진 몸평 게시판",
     emoji: "📸",
-    description: "사진과 글을 올리고 다른 사람들의 몸평을 받아보세요.",
+    description: "사진을 올리고 다른 유저들의 평가를 받아보세요.",
     accent: "bg-indigo-50 border-indigo-200 hover:border-indigo-400",
     cta: "몸평 보러가기",
-  },
-  {
-    id: "bodybattle",
-    href: "/bodybattle",
-    title: "BodyBattle",
-    emoji: "🔥",
-    description: "운동 사진 A/B 투표",
-    accent: "bg-orange-50 border-orange-200 hover:border-orange-400",
-    cta: "배틀 시작",
   },
   {
     id: "dating",
     href: "/community/dating",
     title: "소개팅",
     emoji: "💘",
-    description: "오픈카드 소개팅",
+    description: "오픈카드 소개팅과 1:1 소개팅을 이용해보세요.",
     accent: "bg-pink-50 border-pink-200 hover:border-pink-400",
     cta: "소개팅 보기",
   },
@@ -66,7 +57,7 @@ const FEATURES: Feature[] = [
     href: "/community",
     title: "커뮤니티",
     emoji: "💬",
-    description: "운동 기록과 후기를 공유하는 공간입니다.",
+    description: "운동 기록과 후기를 함께 나누는 공간이에요.",
     accent: "bg-cyan-50 border-cyan-200 hover:border-cyan-400",
     cta: "커뮤니티 이동",
   },
@@ -75,16 +66,16 @@ const FEATURES: Feature[] = [
     href: "/certify",
     title: "3대 공식 인증",
     emoji: "✅",
-    description: "영상 검증 후 QR 인증서(PDF)를 발급합니다.",
+    description: "영상 검증과 QR 인증이 포함된 인증서를 발급해요.",
     accent: "bg-lime-50 border-lime-200 hover:border-lime-400",
     cta: "인증 요청하기",
   },
   {
     id: "helltest",
     href: "/helltest",
-    title: "헬스 성격 테스트",
+    title: "헬스 성향 테스트",
     emoji: "🧪",
-    description: "20문항으로 알아보는 나의 운동 성향 테스트",
+    description: "20문항으로 알아보는 나의 운동 성향 테스트예요.",
     accent: "bg-amber-50 border-amber-200 hover:border-amber-400",
     cta: "테스트 시작",
   },
@@ -92,8 +83,8 @@ const FEATURES: Feature[] = [
     id: "dating_1on1",
     href: "/dating/1on1",
     title: "1:1 스페셜 소개팅",
-    emoji: "💞",
-    description: "운영자가 직접 매칭해주는 1:1 소개팅 신청",
+    emoji: "💙",
+    description: "운영자가 직접 매칭해주는 1:1 소개팅을 신청해보세요.",
     accent: "bg-blue-50 border-blue-200 hover:border-blue-400",
     cta: "1:1 소개팅 이동",
   },
@@ -103,11 +94,11 @@ export default function HomePage() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-10">
       <WeeklyTopBanner />
-      <HomeBodyBattleQuickVote />
+      <HomeBodycheckQuickVote />
 
       <section className="mb-10 text-center">
-        <h1 className="mb-2 text-3xl font-bold text-neutral-900">짐톡 (GymTools)</h1>
-        <p className="text-base text-neutral-500">운동 계산기, 몸평, 테스트를 한곳에서.</p>
+        <h1 className="mb-2 text-3xl font-bold text-neutral-900">짐숲 (GymTools)</h1>
+        <p className="text-base text-neutral-500">운동 계산기, 몸평, 소개팅 기능을 한곳에서.</p>
       </section>
 
       <section className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -139,7 +130,7 @@ export default function HomePage() {
 
       <section className="mt-10 rounded-2xl border border-neutral-200 bg-neutral-50 p-5">
         <p className="text-sm leading-relaxed text-neutral-700">
-          짐톡(GymTools)은 운동하는 사람을 위한 1RM 계산기, 3대 합계 계산기, 성향 테스트, 몸평 게시판을 제공합니다.
+          짐숲은 운동하는 사람들을 위한 기록, 몸평, 소개팅 기능을 한곳에 모아둔 서비스예요.
         </p>
       </section>
     </main>

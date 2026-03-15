@@ -46,11 +46,11 @@ function WinnerRow({
     <Link href={href} className="block rounded-xl bg-white/90 px-3 py-2 hover:bg-white">
       <p className="text-xs text-neutral-500">{label}</p>
       {item ? (
-        <p className="text-sm font-semibold text-neutral-900 truncate">
+        <p className="truncate text-sm font-semibold text-neutral-900">
           {item.nickname} · {item.score}점
         </p>
       ) : (
-        <p className="text-sm text-neutral-400">아직 없음</p>
+        <p className="text-sm text-neutral-400">아직 집계 전</p>
       )}
     </Link>
   );
@@ -62,6 +62,7 @@ export default function WeeklyTopBanner() {
 
   useEffect(() => {
     let isMounted = true;
+
     (async () => {
       try {
         const res = await fetch("/api/weekly-winners/latest", { cache: "no-store" });
@@ -75,6 +76,7 @@ export default function WeeklyTopBanner() {
         if (isMounted) setLoading(false);
       }
     })();
+
     return () => {
       isMounted = false;
     };
@@ -83,7 +85,7 @@ export default function WeeklyTopBanner() {
   if (loading) {
     return (
       <section className="mb-5 rounded-2xl border border-amber-200 bg-amber-50 p-4">
-        <p className="text-sm text-amber-700">이번주 몸짱 불러오는 중...</p>
+        <p className="text-sm text-amber-700">이번 주 몸평 랭킹을 불러오는 중...</p>
       </section>
     );
   }
@@ -130,20 +132,20 @@ export default function WeeklyTopBanner() {
 
   return (
     <section className="mb-5 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 p-4">
-      <div className="flex items-center justify-between mb-2">
-        <p className="text-lg font-bold text-amber-800">🔥 이번주 몸짱</p>
+      <div className="mb-2 flex items-center justify-between">
+        <p className="text-lg font-bold text-amber-800">🏆 이번 주 몸평 랭킹</p>
         <Link href="/hall-of-fame" className="text-xs text-amber-700 hover:underline">
           명예의 전당
         </Link>
       </div>
 
       {data ? (
-        <p className="text-xs text-neutral-500 mb-3">
-          {collecting ? "이번주 집계중" : "확정 주차"} · {formatKstDateTime(data.week.start_utc)} ~{" "}
+        <p className="mb-3 text-xs text-neutral-500">
+          {collecting ? "이번 주 집계 중" : "확정 주간"} · {formatKstDateTime(data.week.start_utc)} ~{" "}
           {formatKstDateTime(data.week.end_utc)}
         </p>
       ) : (
-        <p className="text-xs text-neutral-500 mb-3">이번주 1위가 아직 없습니다.</p>
+        <p className="mb-3 text-xs text-neutral-500">이번 주 집계 데이터가 아직 없어요.</p>
       )}
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
