@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { extractCityFromRegion, extractProvinceFromRegion } from "@/lib/region-city";
 
 type CardItem = {
   id: string;
@@ -153,6 +154,49 @@ const INITIAL_SELECTION_FILTER: SelectionFilter = {
 };
 
 const AUTO_CANDIDATE_LIMIT = 10;
+const ADJACENT_PROVINCES: Record<string, string[]> = {
+  서울: ["인천", "경기"],
+  부산: ["울산", "경남"],
+  대구: ["경북"],
+  인천: ["서울", "경기"],
+  광주: ["전남", "전북"],
+  대전: ["세종", "충남", "충북", "전북"],
+  울산: ["부산", "경남", "경북"],
+  세종: ["대전", "충남", "충북"],
+  경기: ["서울", "인천", "강원", "충북", "충남"],
+  강원: ["경기", "충북", "경북"],
+  충북: ["경기", "강원", "충남", "세종", "대전", "전북", "경북"],
+  충남: ["경기", "충북", "세종", "대전", "전북"],
+  전북: ["충남", "충북", "대전", "광주", "전남", "경북", "경남"],
+  전남: ["광주", "전북", "경남"],
+  경북: ["강원", "충북", "전북", "대구", "울산", "경남"],
+  경남: ["부산", "울산", "전남", "전북", "경북"],
+  제주: [],
+};
+
+function normalizeRegionKey(value: string | null): string {
+  return String(value ?? "")
+    .trim()
+    .replace(/\s+/g, "")
+    .toLowerCase();
+}
+
+function getRegionPriority(sourceRegion: string, candidateRegion: string): number {
+  const sourceKey = normalizeRegionKey(sourceRegion);
+  const candidateKey = normalizeRegionKey(candidateRegion);
+  if (!sourceKey || !candidateKey) return 3;
+  if (sourceKey === candidateKey) return 0;
+
+  const sourceCity = extractCityFromRegion(sourceRegion);
+  const candidateCity = extractCityFromRegion(candidateRegion);
+  if (sourceCity && candidateCity && sourceCity === candidateCity) return 0;
+
+  const sourceProvince = extractProvinceFromRegion(sourceRegion);
+  const candidateProvince = extractProvinceFromRegion(candidateRegion);
+  if (sourceProvince && candidateProvince && sourceProvince === candidateProvince) return 1;
+  if (sourceProvince && candidateProvince && (ADJACENT_PROVINCES[sourceProvince] ?? []).includes(candidateProvince)) return 2;
+  return 3;
+}
 
 function getAutoCandidateRange(card: Pick<CardItem, "sex" | "age">): AutoCandidateRange {
   if (card.age == null || !Number.isFinite(card.age)) {
@@ -187,8 +231,10 @@ function hashCandidateSeed(value: string): number {
   return hash >>> 0;
 }
 
-function sortCardsBySeed(cards: CardItem[], seed: string): CardItem[] {
+function sortCardsBySeed(cards: CardItem[], seed: string, sourceRegion?: string): CardItem[] {
   return [...cards].sort((a, b) => {
+    const priorityGap = sourceRegion ? getRegionPriority(sourceRegion, a.region) - getRegionPriority(sourceRegion, b.region) : 0;
+    if (priorityGap !== 0) return priorityGap;
     const aHash = hashCandidateSeed(`${seed}:${a.id}`);
     const bHash = hashCandidateSeed(`${seed}:${b.id}`);
     if (aHash !== bHash) return aHash - bHash;
@@ -468,8 +514,12 @@ export default function AdminDatingOneOnOnePage() {
     };
 
     const seed = `${autoCandidateSeed}:${selectedSourceCard.id}`;
-    const preferredCards = sortCardsBySeed(selectableCandidateCards.filter(isPreferred), `${seed}:preferred`);
-    const fallbackCards = sortCardsBySeed(selectableCandidateCards.filter((card) => !isPreferred(card)), `${seed}:fallback`);
+    const preferredCards = sortCardsBySeed(selectableCandidateCards.filter(isPreferred), `${seed}:preferred`, selectedSourceCard.region);
+    const fallbackCards = sortCardsBySeed(
+      selectableCandidateCards.filter((card) => !isPreferred(card)),
+      `${seed}:fallback`,
+      selectedSourceCard.region
+    );
     return [...preferredCards, ...fallbackCards].slice(0, AUTO_CANDIDATE_LIMIT);
   }, [autoCandidateSeed, selectableCandidateCards, selectedSourceCard]);
   const autoRecommendedCandidateIds = useMemo(
@@ -579,7 +629,7 @@ export default function AdminDatingOneOnOnePage() {
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-sky-900">1:1 후보 보내기</h2>
-            <p className="text-xs text-sky-700">기준 카드 나이 기준으로 자동 추천 10명을 먼저 보여주고, 필요하면 아래에서 수동으로 더 골라 보낼 수 있습니다.</p>
+            <p className="text-xs text-sky-700">기준 카드 나이와 지역을 함께 반영해 자동 추천 10명을 먼저 보여주고, 필요하면 아래에서 수동으로 더 골라 보낼 수 있습니다.</p>
           </div>
           <button
             type="button"
@@ -739,6 +789,9 @@ export default function AdminDatingOneOnOnePage() {
                         {autoCandidateRange?.minAge != null && autoCandidateRange?.maxAge != null
                           ? `우선 추천 범위 ${autoCandidateRange.minAge}세 ~ ${autoCandidateRange.maxAge}세 안에서 ${autoRecommendedPreferredCount}명 확인됨`
                           : "나이 조건을 먼저 적용할 수 없어 전체 후보에서 랜덤 추천합니다."}
+                      </p>
+                      <p className="mt-1 text-[11px] text-sky-700">
+                        지역은 같은 시군구를 가장 먼저 보고, 없으면 같은 시도나 인접 시도 후보를 우선 섞어 보여줍니다.
                       </p>
                       <p className="mt-2 text-[11px] text-sky-700">
                         이 추천 리스트 외의 사람도 아래 필터에서 직접 골라 보낼 수 있고, 운영자가 별도로 매칭 연락을 드릴 수도 있습니다.
