@@ -85,6 +85,12 @@ type AdminMatchItem = {
   candidate_card: MatchCard | null;
 };
 
+type AutoCandidateRange = {
+  minAge: number | null;
+  maxAge: number | null;
+  description: string;
+};
+
 function statusBadgeClass(status: StatusValue): string {
   if (status === "submitted") return "bg-neutral-100 text-neutral-700";
   if (status === "reviewing") return "bg-amber-100 text-amber-700";
@@ -146,6 +152,50 @@ const INITIAL_SELECTION_FILTER: SelectionFilter = {
   sort: "created_desc",
 };
 
+const AUTO_CANDIDATE_LIMIT = 10;
+
+function getAutoCandidateRange(card: Pick<CardItem, "sex" | "age">): AutoCandidateRange {
+  if (card.age == null || !Number.isFinite(card.age)) {
+    return {
+      minAge: null,
+      maxAge: null,
+      description: "기준 카드 나이 정보가 없어 전체 후보에서 랜덤 추천으로 보여줍니다.",
+    };
+  }
+
+  if (card.sex === "male") {
+    return {
+      minAge: Math.max(19, card.age - 4),
+      maxAge: card.age + 1,
+      description: `남성 기준 자동 추천: 본인 나이 ${card.age}세에서 -4세 ~ +1세 범위를 먼저 봅니다.`,
+    };
+  }
+
+  return {
+    minAge: Math.max(19, card.age - 1),
+    maxAge: card.age + 4,
+    description: `여성 기준 자동 추천: 본인 나이 ${card.age}세에서 -1세 ~ +4세 범위를 먼저 봅니다.`,
+  };
+}
+
+function hashCandidateSeed(value: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function sortCardsBySeed(cards: CardItem[], seed: string): CardItem[] {
+  return [...cards].sort((a, b) => {
+    const aHash = hashCandidateSeed(`${seed}:${a.id}`);
+    const bHash = hashCandidateSeed(`${seed}:${b.id}`);
+    if (aHash !== bHash) return aHash - bHash;
+    return a.id.localeCompare(b.id);
+  });
+}
+
 function applySelectionFilter(cards: CardItem[], filter: SelectionFilter): CardItem[] {
   const minAgeRaw = filter.minAge.trim();
   const maxAgeRaw = filter.maxAge.trim();
@@ -199,6 +249,7 @@ export default function AdminDatingOneOnOnePage() {
   const [matchItems, setMatchItems] = useState<AdminMatchItem[]>([]);
   const [selectedSourceCardId, setSelectedSourceCardId] = useState("");
   const [selectedCandidateCardIds, setSelectedCandidateCardIds] = useState<string[]>([]);
+  const [autoCandidateSeed, setAutoCandidateSeed] = useState(() => Date.now());
   const [sendingCandidates, setSendingCandidates] = useState(false);
   const [matchStateFilter, setMatchStateFilter] = useState<"" | AdminMatchItem["state"] | "mutual_only">("mutual_only");
 
@@ -339,6 +390,10 @@ export default function AdminDatingOneOnOnePage() {
     };
   }, [router, supabase]);
 
+  useEffect(() => {
+    setAutoCandidateSeed(Date.now());
+  }, [selectedSourceCardId]);
+
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
@@ -383,28 +438,76 @@ export default function AdminDatingOneOnOnePage() {
     }
   };
 
-  const filteredSourceCards = applySelectionFilter(items, sourceFilter);
-  const selectedSourceCard = items.find((item) => item.id === selectedSourceCardId) ?? null;
-  const selectableCandidateCards = selectedSourceCard
-    ? items.filter(
-        (item) =>
-          item.id !== selectedSourceCard.id &&
-          item.user_id !== selectedSourceCard.user_id &&
-          item.sex !== selectedSourceCard.sex
-      )
-    : [];
-  const filteredCandidateCards = applySelectionFilter(selectableCandidateCards, candidateFilter);
-  const visibleMatches =
-    matchStateFilter === "mutual_only"
-      ? matchItems.filter((item) => item.state === "mutual_accepted")
-      : matchStateFilter
-      ? matchItems.filter((item) => item.state === matchStateFilter)
-      : matchItems;
+  const filteredSourceCards = useMemo(() => applySelectionFilter(items, sourceFilter), [items, sourceFilter]);
+  const selectedSourceCard = useMemo(
+    () => items.find((item) => item.id === selectedSourceCardId) ?? null,
+    [items, selectedSourceCardId]
+  );
+  const selectableCandidateCards = useMemo(
+    () =>
+      selectedSourceCard
+        ? items.filter(
+            (item) =>
+              item.id !== selectedSourceCard.id &&
+              item.user_id !== selectedSourceCard.user_id &&
+              item.sex !== selectedSourceCard.sex
+          )
+        : [],
+    [items, selectedSourceCard]
+  );
+  const autoCandidateRange = selectedSourceCard ? getAutoCandidateRange(selectedSourceCard) : null;
+  const autoRecommendedCandidates = useMemo(() => {
+    if (!selectedSourceCard || selectableCandidateCards.length === 0) {
+      return [] as CardItem[];
+    }
+
+    const range = getAutoCandidateRange(selectedSourceCard);
+    const isPreferred = (card: CardItem) => {
+      if (range.minAge == null || range.maxAge == null || card.age == null || !Number.isFinite(card.age)) return false;
+      return card.age >= range.minAge && card.age <= range.maxAge;
+    };
+
+    const seed = `${autoCandidateSeed}:${selectedSourceCard.id}`;
+    const preferredCards = sortCardsBySeed(selectableCandidateCards.filter(isPreferred), `${seed}:preferred`);
+    const fallbackCards = sortCardsBySeed(selectableCandidateCards.filter((card) => !isPreferred(card)), `${seed}:fallback`);
+    return [...preferredCards, ...fallbackCards].slice(0, AUTO_CANDIDATE_LIMIT);
+  }, [autoCandidateSeed, selectableCandidateCards, selectedSourceCard]);
+  const autoRecommendedCandidateIds = useMemo(
+    () => autoRecommendedCandidates.map((card) => card.id),
+    [autoRecommendedCandidates]
+  );
+  const autoRecommendedPreferredCount = useMemo(() => {
+    if (!autoCandidateRange) return 0;
+    return selectableCandidateCards.filter((card) => {
+      if (autoCandidateRange.minAge == null || autoCandidateRange.maxAge == null || card.age == null || !Number.isFinite(card.age)) {
+        return false;
+      }
+      return card.age >= autoCandidateRange.minAge && card.age <= autoCandidateRange.maxAge;
+    }).length;
+  }, [autoCandidateRange, selectableCandidateCards]);
+  const filteredCandidateCards = useMemo(
+    () => applySelectionFilter(selectableCandidateCards, candidateFilter),
+    [candidateFilter, selectableCandidateCards]
+  );
+  const visibleMatches = useMemo(
+    () =>
+      matchStateFilter === "mutual_only"
+        ? matchItems.filter((item) => item.state === "mutual_accepted")
+        : matchStateFilter
+        ? matchItems.filter((item) => item.state === matchStateFilter)
+        : matchItems,
+    [matchItems, matchStateFilter]
+  );
 
   const toggleCandidateSelection = (candidateCardId: string) => {
     setSelectedCandidateCardIds((prev) =>
       prev.includes(candidateCardId) ? prev.filter((id) => id !== candidateCardId) : [...prev, candidateCardId]
     );
+  };
+
+  const handleSelectAutoCandidates = () => {
+    if (autoRecommendedCandidateIds.length === 0) return;
+    setSelectedCandidateCardIds((prev) => [...new Set([...prev, ...autoRecommendedCandidateIds])]);
   };
 
   const handleSendCandidates = async () => {
@@ -476,7 +579,7 @@ export default function AdminDatingOneOnOnePage() {
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-sky-900">1:1 후보 보내기</h2>
-            <p className="text-xs text-sky-700">현재 조회/정렬 결과 전체를 기준으로 한 사람에게 여러 후보를 한 번에 보냅니다.</p>
+            <p className="text-xs text-sky-700">기준 카드 나이 기준으로 자동 추천 10명을 먼저 보여주고, 필요하면 아래에서 수동으로 더 골라 보낼 수 있습니다.</p>
           </div>
           <button
             type="button"
@@ -625,6 +728,87 @@ export default function AdminDatingOneOnOnePage() {
               <p className="mt-3 text-sm text-neutral-500">조건에 맞는 후보 카드가 없습니다.</p>
             ) : (
               <div className="mt-3">
+                <div className="mb-3 rounded-2xl border border-sky-200 bg-sky-50 p-3">
+                  <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                    <div>
+                      <p className="text-sm font-semibold text-sky-900">자동 추천 후보 10명</p>
+                      <p className="mt-1 text-xs text-sky-800">
+                        {autoCandidateRange?.description ?? "기준 카드를 고르면 자동 추천이 표시됩니다."}
+                      </p>
+                      <p className="mt-1 text-[11px] text-sky-700">
+                        {autoCandidateRange?.minAge != null && autoCandidateRange?.maxAge != null
+                          ? `우선 추천 범위 ${autoCandidateRange.minAge}세 ~ ${autoCandidateRange.maxAge}세 안에서 ${autoRecommendedPreferredCount}명 확인됨`
+                          : "나이 조건을 먼저 적용할 수 없어 전체 후보에서 랜덤 추천합니다."}
+                      </p>
+                      <p className="mt-2 text-[11px] text-sky-700">
+                        이 추천 리스트 외의 사람도 아래 필터에서 직접 골라 보낼 수 있고, 운영자가 별도로 매칭 연락을 드릴 수도 있습니다.
+                      </p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setAutoCandidateSeed(Date.now())}
+                        className="h-9 rounded-lg border border-sky-300 bg-white px-3 text-xs font-medium text-sky-800 hover:bg-sky-100"
+                      >
+                        추천 다시 섞기
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleSelectAutoCandidates}
+                        disabled={autoRecommendedCandidateIds.length === 0}
+                        className="h-9 rounded-lg bg-sky-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                      >
+                        추천 10명 선택
+                      </button>
+                    </div>
+                  </div>
+
+                  {autoRecommendedCandidates.length === 0 ? (
+                    <div className="mt-3 rounded-xl border border-dashed border-sky-200 bg-white/80 p-4 text-sm text-sky-800">
+                      자동 추천으로 보여줄 후보가 아직 없습니다.
+                    </div>
+                  ) : (
+                    <div className="mt-3 grid gap-2 md:grid-cols-2">
+                      {autoRecommendedCandidates.map((card) => {
+                        const checked = selectedCandidateCardIds.includes(card.id);
+                        return (
+                          <label
+                            key={`auto-${card.id}`}
+                            className={`cursor-pointer rounded-xl border p-3 ${
+                              checked ? "border-sky-500 bg-white" : "border-sky-100 bg-white/90"
+                            }`}
+                          >
+                            <div className="flex items-start gap-3">
+                              <input
+                                type="checkbox"
+                                checked={checked}
+                                onChange={() => toggleCandidateSelection(card.id)}
+                                className="mt-1"
+                              />
+                              <div className="min-w-0">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="text-sm font-medium text-neutral-900">
+                                    {card.name} / {card.age ?? "-"}세 / {card.region}
+                                  </p>
+                                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${statusBadgeClass(card.status)}`}>
+                                    {statusLabel(card.status)}
+                                  </span>
+                                </div>
+                                <p className="mt-1 text-xs text-neutral-600">
+                                  {card.height_cm}cm / {card.job}
+                                </p>
+                                <p className="mt-2 line-clamp-3 text-xs text-neutral-700 whitespace-pre-wrap break-words">
+                                  원하는 점: {card.preferred_partner_text}
+                                </p>
+                              </div>
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
                 <div className="grid grid-cols-2 gap-2">
                   <input
                     value={candidateFilter.q}
