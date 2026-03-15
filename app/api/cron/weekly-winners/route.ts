@@ -53,6 +53,18 @@ function isAuthorized(request: Request): boolean {
   return auth === `Bearer ${cronSecret}`;
 }
 
+function isMissingRpcError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return (
+    code === "PGRST202" ||
+    code === "42883" ||
+    message.includes("could not find the function") ||
+    message.includes("function public.bodycheck_")
+  );
+}
+
 async function fetchTopByGender(
   supabase: Awaited<ReturnType<typeof createAdminClient>>,
   weekId: string,
@@ -143,6 +155,43 @@ export async function GET(request: Request) {
   const supabase = createAdminClient();
 
   try {
+    if (forcedWeekId) {
+      const rpcRes = await supabase.rpc("bodycheck_sync_weekly_winner", {
+        p_week_id: forcedWeekId,
+        p_min_votes: MIN_VOTES,
+      });
+
+      if (!rpcRes.error) {
+        return NextResponse.json({
+          ok: true,
+          mode: "rpc",
+          forced_week_id: forcedWeekId,
+          result: rpcRes.data ?? null,
+        });
+      }
+      if (!isMissingRpcError(rpcRes.error)) {
+        return NextResponse.json({ error: rpcRes.error.message, target: "bodycheck_sync_weekly_winner" }, { status: 500 });
+      }
+    } else {
+      const rpcRes = await supabase.rpc("bodycheck_backfill_hall_of_fame", {
+        p_latest_closed_week_id: latestClosedWeekId,
+        p_limit: MAX_BACKFILL_WEEKS,
+        p_min_votes: MIN_VOTES,
+      });
+
+      if (!rpcRes.error) {
+        return NextResponse.json({
+          ok: true,
+          mode: "rpc",
+          latest_closed_week_id: latestClosedWeekId,
+          result: rpcRes.data ?? null,
+        });
+      }
+      if (!isMissingRpcError(rpcRes.error)) {
+        return NextResponse.json({ error: rpcRes.error.message, target: "bodycheck_backfill_hall_of_fame" }, { status: 500 });
+      }
+    }
+
     const candidateWeekIds = forcedWeekId ? [forcedWeekId] : await fetchCandidateWeekIds(supabase, latestClosedWeekId);
     const inserted: Array<{ week_id: string; gender: "male" | "female" }> = [];
     const skipped: Array<{ week_id: string; reason: string }> = [];
