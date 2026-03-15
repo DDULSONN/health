@@ -25,6 +25,54 @@ const MATCH_STATES = new Set([
   "mutual_accepted",
 ]);
 
+const MATCH_BATCH_SIZE = 1000;
+
+async function fetchAllAdminMatches(
+  admin: ReturnType<typeof createAdminClient>,
+  {
+    state,
+    sourceCardId,
+    candidateCardId,
+  }: {
+    state: string;
+    sourceCardId: string;
+    candidateCardId: string;
+  }
+) {
+  const rows: DatingOneOnOneMatchRow[] = [];
+  let from = 0;
+
+  while (true) {
+    let query = admin
+      .from("dating_1on1_match_proposals")
+      .select(
+        "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at"
+      )
+      .order("created_at", { ascending: false })
+      .range(from, from + MATCH_BATCH_SIZE - 1);
+
+    if (state && MATCH_STATES.has(state)) {
+      query = query.eq("state", state);
+    }
+    if (sourceCardId) {
+      query = query.eq("source_card_id", sourceCardId);
+    }
+    if (candidateCardId) {
+      query = query.eq("candidate_card_id", candidateCardId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    const batch = (data ?? []) as DatingOneOnOneMatchRow[];
+    rows.push(...batch);
+    if (batch.length < MATCH_BATCH_SIZE) break;
+    from += MATCH_BATCH_SIZE;
+  }
+
+  return rows;
+}
+
 export async function GET(req: Request) {
   const { user } = await getRequestAuthContext(req);
 
@@ -41,31 +89,13 @@ export async function GET(req: Request) {
   const candidateCardId = (searchParams.get("candidate_card_id") ?? "").trim();
 
   const admin = createAdminClient();
-  let query = admin
-    .from("dating_1on1_match_proposals")
-    .select(
-      "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at"
-    )
-    .order("created_at", { ascending: false })
-    .limit(500);
-
-  if (state && MATCH_STATES.has(state)) {
-    query = query.eq("state", state);
-  }
-  if (sourceCardId) {
-    query = query.eq("source_card_id", sourceCardId);
-  }
-  if (candidateCardId) {
-    query = query.eq("candidate_card_id", candidateCardId);
-  }
-
-  const { data, error } = await query;
-  if (error) {
+  let rows: DatingOneOnOneMatchRow[];
+  try {
+    rows = await fetchAllAdminMatches(admin, { state, sourceCardId, candidateCardId });
+  } catch (error) {
     console.error("[GET /api/dating/1on1/matches/admin] failed", error);
     return NextResponse.json({ error: "Failed to load matches." }, { status: 500 });
   }
-
-  const rows = (data ?? []) as DatingOneOnOneMatchRow[];
   const cardMap = await getDatingOneOnOneCardsByIds(
     admin,
     rows.flatMap((row) => [row.source_card_id, row.candidate_card_id])

@@ -66,6 +66,7 @@ type MatchCard = {
 
 type AdminMatchItem = {
   id: string;
+  admin_sent_by_user_id?: string | null;
   state:
     | "proposed"
     | "source_selected"
@@ -303,15 +304,9 @@ export default function AdminDatingOneOnOnePage() {
 
   const load = async () => {
     setError("");
-    const matchQuery =
-      matchStateFilter && matchStateFilter !== "mutual_only"
-        ? `?state=${encodeURIComponent(matchStateFilter)}`
-        : matchStateFilter === "mutual_only"
-        ? "?state=mutual_accepted"
-        : "";
     const [cardsRes, matchesRes] = await Promise.all([
       fetch(`/api/dating/1on1/cards?${buildQuery()}`, { cache: "no-store" }),
-      fetch(`/api/dating/1on1/matches/admin${matchQuery}`, { cache: "no-store" }),
+      fetch("/api/dating/1on1/matches/admin", { cache: "no-store" }),
     ]);
     const body = (await cardsRes.json().catch(() => ({}))) as {
       items?: CardItem[];
@@ -507,6 +502,18 @@ export default function AdminDatingOneOnOnePage() {
         : matchItems,
     [matchItems, matchStateFilter]
   );
+  const matchesBySourceCardId = useMemo(() => {
+    const next = new Map<string, AdminMatchItem[]>();
+    for (const match of matchItems) {
+      const bucket = next.get(match.source_card_id) ?? [];
+      bucket.push(match);
+      next.set(match.source_card_id, bucket);
+    }
+    for (const bucket of next.values()) {
+      bucket.sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+    }
+    return next;
+  }, [matchItems]);
 
   const toggleCandidateSelection = (candidateCardId: string) => {
     setSelectedCandidateCardIds((prev) =>
@@ -926,30 +933,7 @@ export default function AdminDatingOneOnOnePage() {
           </div>
           <select
             value={matchStateFilter}
-            onChange={async (e) => {
-              const nextValue = e.target.value as typeof matchStateFilter;
-              setMatchStateFilter(nextValue);
-              setLoading(true);
-              try {
-                setError("");
-                const matchQuery =
-                  nextValue && nextValue !== "mutual_only"
-                    ? `?state=${encodeURIComponent(nextValue)}`
-                    : nextValue === "mutual_only"
-                    ? "?state=mutual_accepted"
-                    : "";
-                const res = await fetch(`/api/dating/1on1/matches/admin${matchQuery}`, { cache: "no-store" });
-                const body = (await res.json().catch(() => ({}))) as { items?: AdminMatchItem[]; error?: string };
-                if (!res.ok) {
-                  throw new Error(body.error ?? "매칭 목록을 불러오지 못했습니다.");
-                }
-                setMatchItems(body.items ?? []);
-              } catch (err) {
-                setError(err instanceof Error ? err.message : String(err));
-              } finally {
-                setLoading(false);
-              }
-            }}
+            onChange={(e) => setMatchStateFilter(e.target.value as typeof matchStateFilter)}
             className="h-10 rounded-lg border border-emerald-200 bg-white px-2 text-sm text-emerald-900"
           >
             <option value="mutual_only">쌍방 수락 완료만</option>
@@ -1077,6 +1061,11 @@ export default function AdminDatingOneOnOnePage() {
         <div className="space-y-3">
           {items.map((item) => {
             const saving = savingIds.includes(item.id);
+            const relatedSourceMatches = matchesBySourceCardId.get(item.id) ?? [];
+            const selectedCandidateMatches = relatedSourceMatches.filter(
+              (match) => match.state !== "proposed" && match.state !== "source_skipped" && match.state !== "admin_canceled"
+            );
+            const mutualAcceptedCount = relatedSourceMatches.filter((match) => match.state === "mutual_accepted").length;
             return (
               <article key={item.id} className="overflow-hidden rounded-3xl border border-neutral-200 bg-white shadow-sm">
                 <div className="border-b border-neutral-200 bg-gradient-to-r from-neutral-50 to-white px-5 py-4">
@@ -1196,6 +1185,75 @@ export default function AdminDatingOneOnOnePage() {
                         <p className="text-[11px] font-semibold tracking-wide text-amber-800">운영자 전용 연락처</p>
                         <p className="mt-1 text-sm font-semibold text-amber-900">{item.phone}</p>
                       </div>
+                    </section>
+
+                    <section className="rounded-2xl border border-sky-200 bg-sky-50/50 px-4 py-4">
+                      <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                        <div>
+                          <p className="text-[11px] font-semibold tracking-wide text-sky-700">1:1 매칭 선택 현황</p>
+                          <p className="mt-1 text-xs text-sky-800">
+                            이 신청자에게 보낸 후보와, 그중 실제로 선택된 후보를 한 번에 볼 수 있습니다.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap gap-2 text-[11px] font-medium text-sky-800">
+                          <span className="rounded-full bg-white px-2.5 py-1">보낸 후보 {relatedSourceMatches.length}명</span>
+                          <span className="rounded-full bg-white px-2.5 py-1">선택 진행 {selectedCandidateMatches.length}건</span>
+                          <span className="rounded-full bg-white px-2.5 py-1">쌍방 수락 {mutualAcceptedCount}건</span>
+                        </div>
+                      </div>
+
+                      {relatedSourceMatches.length === 0 ? (
+                        <div className="mt-3 rounded-xl border border-dashed border-sky-200 bg-white px-3 py-4 text-sm text-neutral-500">
+                          아직 이 신청자에게 보낸 후보 기록이 없습니다.
+                        </div>
+                      ) : (
+                        <div className="mt-3 space-y-2">
+                          {relatedSourceMatches.map((match) => {
+                            const candidate = match.candidate_card;
+                            const isSelected =
+                              match.state !== "proposed" && match.state !== "source_skipped" && match.state !== "admin_canceled";
+                            const isAutoMatch = !match.admin_sent_by_user_id;
+                            return (
+                              <div key={`${item.id}-${match.id}`} className="rounded-xl border border-sky-200 bg-white p-3">
+                                <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+                                  <div>
+                                    <div className="flex flex-wrap items-center gap-2">
+                                      <p className="text-sm font-semibold text-neutral-900">
+                                        {candidate?.name ?? "-"} / {candidate?.age ?? "-"}세 / {candidate?.region ?? "-"}
+                                      </p>
+                                      <span
+                                        className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${matchStateBadgeClass(match.state)}`}
+                                      >
+                                        {matchStateLabel(match.state)}
+                                      </span>
+                                      <span className="inline-flex rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-700">
+                                        {isAutoMatch ? "자동 추천" : "관리자 발송"}
+                                      </span>
+                                      {isSelected && (
+                                        <span className="inline-flex rounded-full bg-sky-100 px-2 py-0.5 text-[11px] font-medium text-sky-700">
+                                          선택됨
+                                        </span>
+                                      )}
+                                    </div>
+                                    {candidate && (
+                                      <p className="mt-1 text-xs text-neutral-600">
+                                        {sexLabel(candidate.sex)} / {candidate.height_cm}cm / {candidate.job}
+                                      </p>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-neutral-500">
+                                    발송 {new Date(match.created_at).toLocaleString("ko-KR")}
+                                    {match.source_selected_at ? ` / 선택 ${new Date(match.source_selected_at).toLocaleString("ko-KR")}` : ""}
+                                    {match.candidate_responded_at
+                                      ? ` / 응답 ${new Date(match.candidate_responded_at).toLocaleString("ko-KR")}`
+                                      : ""}
+                                  </p>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
                     </section>
                   </div>
                 </div>
