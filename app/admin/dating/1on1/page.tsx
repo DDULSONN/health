@@ -270,6 +270,7 @@ export default function AdminDatingOneOnOnePage() {
   const [candidateFilter, setCandidateFilter] = useState<SelectionFilter>(INITIAL_SELECTION_FILTER);
 
   const [savingIds, setSavingIds] = useState<string[]>([]);
+  const [deletingIds, setDeletingIds] = useState<string[]>([]);
   const [editStatusById, setEditStatusById] = useState<Record<string, StatusValue>>({});
   const [editNoteById, setEditNoteById] = useState<Record<string, string>>({});
   const [editTagsById, setEditTagsById] = useState<Record<string, string>>({});
@@ -435,6 +436,30 @@ export default function AdminDatingOneOnOnePage() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSavingIds((prev) => prev.filter((v) => v !== id));
+    }
+  };
+
+  const handleDelete = async (id: string, name: string) => {
+    if (deletingIds.includes(id)) return;
+    if (!confirm(`${name} 신청 카드를 삭제할까요? 연결된 1:1 후보 기록도 함께 정리됩니다.`)) {
+      return;
+    }
+
+    setDeletingIds((prev) => [...prev, id]);
+    setError("");
+    try {
+      const res = await fetch(`/api/dating/1on1/cards/${id}`, {
+        method: "DELETE",
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        throw new Error(body.error ?? "삭제에 실패했습니다.");
+      }
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setDeletingIds((prev) => prev.filter((value) => value !== id));
     }
   };
 
@@ -1061,6 +1086,7 @@ export default function AdminDatingOneOnOnePage() {
         <div className="space-y-3">
           {items.map((item) => {
             const saving = savingIds.includes(item.id);
+            const deleting = deletingIds.includes(item.id);
             const relatedSourceMatches = matchesBySourceCardId.get(item.id) ?? [];
             const selectedCandidateMatches = relatedSourceMatches.filter(
               (match) => match.state !== "proposed" && match.state !== "source_skipped" && match.state !== "admin_canceled"
@@ -1143,32 +1169,42 @@ export default function AdminDatingOneOnOnePage() {
 
                     <section className="rounded-2xl border border-neutral-200 bg-white px-4 py-4">
                       <div className="grid grid-cols-1 gap-2 md:grid-cols-3">
-                  <select
-                    value={editStatusById[item.id] ?? item.status}
-                    onChange={(e) =>
-                      setEditStatusById((prev) => ({ ...prev, [item.id]: e.target.value as StatusValue }))
-                    }
-                    className="h-10 rounded-lg border border-neutral-300 px-2 text-sm"
-                  >
-                    <option value="submitted">submitted</option>
-                    <option value="reviewing">reviewing</option>
-                    <option value="approved">approved</option>
-                    <option value="rejected">rejected</option>
-                  </select>
-                  <input
-                    value={editTagsById[item.id] ?? ""}
-                    onChange={(e) => setEditTagsById((prev) => ({ ...prev, [item.id]: e.target.value }))}
-                    placeholder="태그 (쉼표로 구분)"
-                    className="h-10 rounded-lg border border-neutral-300 px-2 text-sm"
-                  />
-                  <button
-                    type="button"
-                    disabled={saving}
-                    onClick={() => void handleSave(item.id)}
-                    className="h-10 rounded-lg bg-neutral-900 px-3 text-sm font-medium text-white disabled:opacity-50"
-                  >
-                    {saving ? "저장 중..." : "상태/메모 저장"}
-                  </button>
+                        <select
+                          value={editStatusById[item.id] ?? item.status}
+                          onChange={(e) =>
+                            setEditStatusById((prev) => ({ ...prev, [item.id]: e.target.value as StatusValue }))
+                          }
+                          className="h-10 rounded-lg border border-neutral-300 px-2 text-sm"
+                        >
+                          <option value="submitted">submitted</option>
+                          <option value="reviewing">reviewing</option>
+                          <option value="approved">approved</option>
+                          <option value="rejected">rejected</option>
+                        </select>
+                        <input
+                          value={editTagsById[item.id] ?? ""}
+                          onChange={(e) => setEditTagsById((prev) => ({ ...prev, [item.id]: e.target.value }))}
+                          placeholder="태그 (쉼표로 구분)"
+                          className="h-10 rounded-lg border border-neutral-300 px-2 text-sm"
+                        />
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            disabled={saving || deleting}
+                            onClick={() => void handleSave(item.id)}
+                            className="h-10 flex-1 rounded-lg bg-neutral-900 px-3 text-sm font-medium text-white disabled:opacity-50"
+                          >
+                            {saving ? "저장 중..." : "상태/메모 저장"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={saving || deleting}
+                            onClick={() => void handleDelete(item.id, item.name)}
+                            className="h-10 rounded-lg border border-rose-200 bg-rose-50 px-3 text-sm font-medium text-rose-700 disabled:opacity-50"
+                          >
+                            {deleting ? "삭제 중..." : "신청 삭제"}
+                          </button>
+                        </div>
                       </div>
                       <p className="mt-2 text-[11px] text-neutral-500">
                         상태 전환 규칙: submitted → reviewing/rejected, reviewing → approved/rejected, approved/rejected는 고정

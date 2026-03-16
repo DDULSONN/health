@@ -114,3 +114,49 @@ export async function PATCH(
 
   return NextResponse.json({ ok: true, item: data });
 }
+
+export async function DELETE(
+  _req: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!isAllowedAdminUser(user.id, user.email)) {
+    return NextResponse.json({ error: "Admin only" }, { status: 403 });
+  }
+
+  const { id } = await params;
+  const cardId = id?.trim();
+  if (!cardId) {
+    return NextResponse.json({ error: "Card id is required." }, { status: 400 });
+  }
+
+  const admin = createAdminClient();
+  const existingRes = await admin
+    .from("dating_1on1_cards")
+    .select("id")
+    .eq("id", cardId)
+    .maybeSingle();
+
+  if (existingRes.error) {
+    console.error("[DELETE /api/dating/1on1/cards/[id]] fetch failed", existingRes.error);
+    return NextResponse.json({ error: "Failed to load card." }, { status: 500 });
+  }
+  if (!existingRes.data) {
+    return NextResponse.json({ error: "Card not found." }, { status: 404 });
+  }
+
+  const deleteRes = await admin.from("dating_1on1_cards").delete().eq("id", cardId);
+  if (deleteRes.error) {
+    console.error("[DELETE /api/dating/1on1/cards/[id]] failed", deleteRes.error);
+    return NextResponse.json({ error: "Failed to delete card." }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, deleted: true, id: cardId });
+}
