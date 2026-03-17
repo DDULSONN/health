@@ -1,7 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { BODYCHECK_SCORE_MAP, type BodycheckRating } from "@/lib/community";
-import { getConfirmedUserOrResponse } from "@/lib/auth-confirmed";
+import { getConfirmedActiveUserOrResponse } from "@/lib/auth-active";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
@@ -9,7 +9,7 @@ export async function POST(request: Request, { params }: RouteCtx) {
   const { id: postId } = await params;
   const supabase = await createClient();
 
-  const guard = await getConfirmedUserOrResponse(supabase);
+  const guard = await getConfirmedActiveUserOrResponse(supabase);
   if (guard.response) return guard.response;
   const user = guard.user;
   if (!user) {

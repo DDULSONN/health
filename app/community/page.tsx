@@ -18,6 +18,26 @@ import VerifiedBadge from "@/components/VerifiedBadge";
 
 type CommunityTab = "all" | "free" | "photo_bodycheck";
 type FeedFilter = "all" | "1rm" | "lifts";
+type RankingGender = "male" | "female";
+
+type WeeklyTopItem = {
+  post_id: string;
+  title: string;
+  user_id: string;
+  images: string[];
+  created_at: string;
+  score_sum: number;
+  vote_count: number;
+  score_avg: number;
+  profiles?: { nickname: string } | null;
+};
+
+type WeeklyRankingResponse = {
+  week_id: string;
+  gender: RankingGender;
+  min_votes: number;
+  items: WeeklyTopItem[];
+};
 
 type FeedResponse = {
   posts?: Post[];
@@ -54,6 +74,9 @@ export default function CommunityPage() {
   const [totalPosts, setTotalPosts] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [rankingGender, setRankingGender] = useState<RankingGender>("male");
+  const [ranking, setRanking] = useState<WeeklyRankingResponse | null>(null);
+  const [rankingLoading, setRankingLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const feedCacheRef = useRef(new Map<string, FeedCacheEntry>());
   const feedRequestIdRef = useRef(0);
@@ -140,6 +163,30 @@ export default function CommunityPage() {
     void loadFeed();
   }, [loadFeed]);
 
+  const loadRanking = useCallback(async (gender: RankingGender) => {
+    setRankingLoading(true);
+    try {
+      const res = await fetch(`/api/rankings/weekly-bodycheck?gender=${gender}&top=3`, {
+        cache: "no-store",
+      });
+      if (!res.ok) {
+        setRanking(null);
+        return;
+      }
+      const data = (await res.json()) as WeeklyRankingResponse;
+      setRanking(data);
+    } catch (error) {
+      console.error("Ranking load error:", error);
+      setRanking(null);
+    } finally {
+      setRankingLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    void loadRanking(rankingGender);
+  }, [loadRanking, rankingGender]);
+
   const handleWrite = () => {
     const redirect =
       tab === "photo_bodycheck" ? "/community/write?type=photo_bodycheck" : "/community/write";
@@ -159,6 +206,7 @@ export default function CommunityPage() {
     if (filterType === "lifts") return "3대 합계 피드";
     return "전체 피드";
   }, [filterType, tab]);
+  const topRankingItems = ranking?.items ?? [];
 
   return (
     <main className="mx-auto max-w-3xl px-4 py-6">
@@ -201,72 +249,91 @@ export default function CommunityPage() {
         </div>
       </div>
 
-      <section className="mt-5 overflow-hidden rounded-[28px] border border-neutral-200 bg-[linear-gradient(135deg,#0f9f6e_0%,#0d7c73_45%,#f6fbf9_45%,#f8fbff_100%)] p-5 text-white">
-        <div className="grid gap-4 md:grid-cols-[1.3fr_0.9fr]">
+      <section className="mt-5 rounded-[28px] border border-amber-200 bg-gradient-to-r from-amber-50 via-orange-50 to-white p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100">
-              Main Feed
-            </p>
-            <h2 className="mt-2 text-2xl font-black leading-tight">
-              지금 올라오는 글을
-              <br />
-              한눈에 보기
-            </h2>
-            <p className="mt-3 max-w-md text-sm text-emerald-50/90">
-              자유글, 1RM, 3대 합계, 사진 몸평을 한 피드에서 보고, 관심 있는 주제는 탭으로 바로 골라볼 수 있어요.
-            </p>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  setTab("all");
-                  setFilterType("all");
-                  setPage(1);
-                }}
-                className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-emerald-700"
-              >
-                전체 피드
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTab("free");
-                  setPage(1);
-                }}
-                className="rounded-full border border-white/30 bg-white/10 px-4 py-2 text-sm font-medium text-white"
-              >
-                자유글 모아보기
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setTab("photo_bodycheck");
-                  setPage(1);
-                }}
-                className="rounded-full border border-white/30 bg-white/10 px-4 py-2 text-sm font-medium text-white"
-              >
-                사진 몸평 보기
-              </button>
-            </div>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-amber-700">Bodycheck Ranking</p>
+            <h2 className="mt-1 text-2xl font-black text-neutral-900">이번 주 몸평 랭킹</h2>
+            <p className="mt-2 text-sm text-neutral-600">지금 반응 좋은 몸평 글을 메인에서 바로 확인하세요.</p>
           </div>
-
-          <div className="rounded-[24px] border border-white/20 bg-white/90 p-4 text-neutral-900 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Bodycheck Ranking</p>
-            <h3 className="mt-1 text-lg font-bold">이번 주 몸평 랭킹</h3>
-            <p className="mt-2 text-sm leading-6 text-neutral-600">
-              사진 몸평에서 이번 주 반응 좋은 글과 랭킹을 바로 확인해보세요.
-            </p>
-            <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
-              <p className="text-xs font-semibold text-emerald-700">사진 몸평 전용 피드</p>
-              <p className="mt-1 text-sm text-emerald-900">주간 랭킹, 사진 평가, 몸평 글만 모아서 볼 수 있어요.</p>
-            </div>
-            <Link
-              href="/community/bodycheck"
-              className="mt-4 inline-flex min-h-[42px] items-center rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-700"
+          <div className="grid grid-cols-2 overflow-hidden rounded-2xl border border-amber-200 bg-white">
+            <button
+              type="button"
+              onClick={() => setRankingGender("male")}
+              className={`min-h-[42px] min-w-[72px] px-4 text-sm font-semibold transition ${
+                rankingGender === "male" ? "bg-amber-500 text-white" : "text-amber-800 hover:bg-amber-50"
+              }`}
             >
-              몸평 랭킹 보러가기
-            </Link>
+              남자
+            </button>
+            <button
+              type="button"
+              onClick={() => setRankingGender("female")}
+              className={`min-h-[42px] min-w-[72px] px-4 text-sm font-semibold transition ${
+                rankingGender === "female" ? "bg-amber-500 text-white" : "text-amber-800 hover:bg-amber-50"
+              }`}
+            >
+              여자
+            </button>
           </div>
+        </div>
+
+        {rankingLoading ? (
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-white px-4 py-8 text-center text-sm text-neutral-500">
+            몸평 랭킹 불러오는 중...
+          </div>
+        ) : topRankingItems.length === 0 ? (
+          <div className="mt-4 rounded-2xl border border-amber-200 bg-white px-4 py-8 text-center text-sm text-neutral-500">
+            랭킹 집계중입니다. 최소 {ranking?.min_votes ?? 5}표 이상부터 노출됩니다.
+          </div>
+        ) : (
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            {topRankingItems.map((item, index) => {
+              const previewImage = item.images[0] ?? "";
+
+              return (
+                <Link
+                  key={item.post_id}
+                  href={`/community/${item.post_id}`}
+                  className="overflow-hidden rounded-[22px] border border-amber-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                >
+                  {previewImage ? (
+                    <div className="aspect-[4/5] w-full overflow-hidden bg-amber-100">
+                      <img src={previewImage} alt="" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="flex aspect-[4/5] w-full items-center justify-center bg-amber-50 text-sm text-amber-700">
+                      사진 없음
+                    </div>
+                  )}
+                  <div className="p-4">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-bold text-amber-700">
+                        TOP {index + 1}
+                      </span>
+                      <span className="text-[11px] text-neutral-400">{timeAgo(item.created_at)}</span>
+                    </div>
+                    <p className="mt-3 line-clamp-1 text-sm font-semibold text-neutral-900">
+                      {item.profiles?.nickname ?? "익명"}
+                    </p>
+                    <p className="mt-1 line-clamp-2 text-sm text-neutral-600">{item.title}</p>
+                    <p className="mt-3 text-xs font-medium text-amber-700">
+                      평균 {item.score_avg.toFixed(2)} · 투표 {item.vote_count}표
+                    </p>
+                  </div>
+                </Link>
+              );
+            })}
+          </div>
+        )}
+
+        <div className="mt-4 flex justify-end">
+          <Link
+            href="/community/bodycheck"
+            className="inline-flex min-h-[42px] items-center rounded-xl bg-amber-500 px-4 text-sm font-semibold text-white transition hover:bg-amber-600"
+          >
+            몸평 게시판 전체 보기
+          </Link>
         </div>
       </section>
 
@@ -463,6 +530,12 @@ function PostList({
 
               {post.content && post.type === "free" ? (
                 <p className="mt-1 line-clamp-2 text-xs text-neutral-500">{post.content}</p>
+              ) : null}
+
+              {post.type === "free" && post.reaction_summary ? (
+                <p className="mt-1 text-xs font-medium text-emerald-700">
+                  추천 {post.reaction_summary.up_count} · 비추천 {post.reaction_summary.down_count} · 점수 {post.reaction_summary.score}
+                </p>
               ) : null}
 
               {post.type === "photo_bodycheck" ? (

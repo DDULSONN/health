@@ -31,6 +31,10 @@ const BodyEvalMailbox = dynamic(() => import("@/components/BodyEvalMailbox"), {
   loading: () => <MyPageWidgetSkeleton className="h-56" />,
 });
 
+const AdminCommunityModerationPanel = dynamic(() => import("@/components/AdminCommunityModerationPanel"), {
+  loading: () => <MyPageWidgetSkeleton className="h-80" />,
+});
+
 type MyPageTab = "my_cert" | "request_status" | "admin_review";
 
 type BodycheckPost = {
@@ -317,7 +321,7 @@ type AdminPaidCardApplication = {
 type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
 type AdminApplicationSort = "newest" | "oldest" | "submitted_first" | "accepted_first";
 type AdminDataView = "cards" | "applications";
-type AdminManageTab = "open_cards" | "apply_credits" | "more_view" | "city_view" | "bodybattle";
+type AdminManageTab = "open_cards" | "apply_credits" | "more_view" | "city_view" | "bodybattle" | "community";
 
 type AdminBodyBattleOverview = {
   season: {
@@ -2583,6 +2587,15 @@ export default function MyPage() {
             >
               바디배틀
             </button>
+            <button
+              type="button"
+              onClick={() => setAdminManageTab("community")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "community" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              커뮤니티 신고
+            </button>
           </div>
 
           {adminManageTab === "open_cards" && (
@@ -2795,6 +2808,12 @@ export default function MyPage() {
                 투표 {adminBodyBattleOverview?.counts?.votes_total ?? 0} · 보상수령 {adminBodyBattleOverview?.counts?.rewards_claimed ?? 0}
               </p>
             </div>
+          </div>
+          )}
+
+          {adminManageTab === "community" && (
+          <div className="mb-3">
+            <AdminCommunityModerationPanel />
           </div>
           )}
 

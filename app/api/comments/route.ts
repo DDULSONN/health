@@ -2,7 +2,7 @@
 import { containsProfanity, getRateLimitRemaining } from "@/lib/moderation";
 import { NextResponse } from "next/server";
 import { getKstDateString } from "@/lib/weekly";
-import { getConfirmedUserOrResponse } from "@/lib/auth-confirmed";
+import { getConfirmedActiveUserOrResponse } from "@/lib/auth-active";
 
 const COMMENT_COOLDOWN_MS = 10_000;
 
@@ -35,7 +35,7 @@ async function trackDailyComment(
 
 export async function POST(request: Request) {
   const supabase = await createClient();
-  const guard = await getConfirmedUserOrResponse(supabase);
+  const guard = await getConfirmedActiveUserOrResponse(supabase);
   if (guard.response) return guard.response;
   const user = guard.user;
   if (!user) {

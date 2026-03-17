@@ -55,6 +55,12 @@ export interface Post {
   comment_count?: number;
   bodycheck_summary?: BodycheckSummary;
   my_vote?: { rating: BodycheckRating; score: number } | null;
+  my_reaction?: "up" | "down" | null;
+  reaction_summary?: {
+    up_count: number;
+    down_count: number;
+    score: number;
+  } | null;
 }
 
 export interface Comment {

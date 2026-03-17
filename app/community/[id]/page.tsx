@@ -37,6 +37,7 @@ export default function PostDetailPage() {
   const [posting, setPosting] = useState(false);
   const [deletingCommentId, setDeletingCommentId] = useState<string | null>(null);
   const [voteLoading, setVoteLoading] = useState(false);
+  const [reactionLoading, setReactionLoading] = useState(false);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
   const [reportTarget, setReportTarget] = useState<ReportTarget>(null);
@@ -213,6 +214,47 @@ export default function PostDetailPage() {
       showToast("평가 중 오류가 발생했습니다.");
     } finally {
       setVoteLoading(false);
+    }
+  };
+
+  const handleReaction = async (reaction: "up" | "down") => {
+    if (!post) return;
+    if (!userId) {
+      router.push(`/login?redirect=/community/${id}`);
+      return;
+    }
+
+    setReactionLoading(true);
+    try {
+      const res = await fetch(`/api/posts/${id}/reactions`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reaction }),
+      });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        my_reaction?: "up" | "down" | null;
+        summary?: { up_count: number; down_count: number; score: number };
+      };
+
+      if (!res.ok) {
+        showToast(data.error ?? "반응 처리에 실패했습니다.");
+        return;
+      }
+
+      setPost((prev) =>
+        prev
+          ? {
+              ...prev,
+              my_reaction: data.my_reaction ?? null,
+              reaction_summary: data.summary ?? prev.reaction_summary ?? null,
+            }
+          : prev
+      );
+    } catch {
+      showToast("반응 처리 중 오류가 발생했습니다.");
+    } finally {
+      setReactionLoading(false);
     }
   };
 
@@ -489,6 +531,41 @@ export default function PostDetailPage() {
           <span className="text-xs text-neutral-500">{post.profiles?.nickname ?? "닉네임 없음"}</span>
           <VerifiedBadge total={post.cert_summary?.total} />
         </div>
+
+        {post.type === "free" && (
+          <section className="mt-5 border-t border-neutral-100 pt-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={reactionLoading}
+                onClick={() => void handleReaction("up")}
+                className={`inline-flex min-h-[42px] items-center rounded-full border px-4 text-sm font-medium transition ${
+                  post.my_reaction === "up"
+                    ? "border-emerald-600 bg-emerald-600 text-white"
+                    : "border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                } disabled:opacity-50`}
+              >
+                추천 {post.reaction_summary?.up_count ?? 0}
+              </button>
+              <button
+                type="button"
+                disabled={reactionLoading}
+                onClick={() => void handleReaction("down")}
+                className={`inline-flex min-h-[42px] items-center rounded-full border px-4 text-sm font-medium transition ${
+                  post.my_reaction === "down"
+                    ? "border-rose-600 bg-rose-600 text-white"
+                    : "border-neutral-300 bg-white text-neutral-700 hover:border-neutral-400"
+                } disabled:opacity-50`}
+              >
+                비추천 {post.reaction_summary?.down_count ?? 0}
+              </button>
+              <span className="text-xs font-medium text-neutral-500">
+                점수 {post.reaction_summary?.score ?? 0}
+              </span>
+            </div>
+            {!userId && <p className="mt-2 text-xs text-neutral-500">로그인하면 추천과 비추천을 남길 수 있습니다.</p>}
+          </section>
+        )}
 
         {post.type === "photo_bodycheck" && !isOwner && (
           <div className="mt-3">

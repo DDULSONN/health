@@ -5,7 +5,7 @@ import { NextResponse } from "next/server";
 import { buildSignedImageUrl, extractStorageObjectPath } from "@/lib/images";
 import type { BodycheckGender } from "@/lib/community";
 import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
-import { getConfirmedUserOrResponse } from "@/lib/auth-confirmed";
+import { getConfirmedActiveUserOrResponse } from "@/lib/auth-active";
 
 const POST_COOLDOWN_MS = 30_000;
 const RECORD_FEED_TYPES = ["lifts", "1rm"];
@@ -97,17 +97,32 @@ export async function GET(request: Request) {
 
   const visible = (posts ?? []).filter((p) => !(p as Record<string, unknown>).is_deleted);
   const userIds = [...new Set(visible.map((p) => p.user_id as string))];
+  const freePostIds = visible
+    .filter((post) => post.type === "free")
+    .map((post) => String(post.id));
 
-  const [{ data: profiles }, certSummaryMap] = await Promise.all([
+  const [{ data: profiles }, certSummaryMap, reactionRows] = await Promise.all([
     userIds.length > 0
       ? supabase.from("profiles").select("user_id, nickname, role").in("user_id", userIds)
       : Promise.resolve({ data: [] as { user_id: string; nickname: string; role: string }[] }),
     fetchUserCertSummaryMap(userIds, supabase),
+    freePostIds.length > 0
+      ? supabase.from("post_reactions").select("post_id,reaction").in("post_id", freePostIds).then((res) => res.data ?? [])
+      : Promise.resolve([] as { post_id: string; reaction: "up" | "down" }[]),
   ]);
 
   const profileMap = new Map<string, { nickname: string; role: string }>();
   for (const p of profiles ?? []) {
     profileMap.set(p.user_id, { nickname: p.nickname, role: p.role });
+  }
+
+  const reactionSummaryMap = new Map<string, { up_count: number; down_count: number; score: number }>();
+  for (const reaction of reactionRows) {
+    const current = reactionSummaryMap.get(reaction.post_id) ?? { up_count: 0, down_count: 0, score: 0 };
+    if (reaction.reaction === "up") current.up_count += 1;
+    if (reaction.reaction === "down") current.down_count += 1;
+    current.score = current.up_count - current.down_count;
+    reactionSummaryMap.set(reaction.post_id, current);
   }
 
   const enriched = visible.map((p) => {
@@ -125,6 +140,10 @@ export async function GET(request: Request) {
       thumb_images: thumbImages,
       profiles: profileMap.get(p.user_id as string) ?? null,
       cert_summary: certSummaryMap.get(p.user_id as string) ?? null,
+      reaction_summary:
+        p.type === "free"
+          ? reactionSummaryMap.get(String(p.id)) ?? { up_count: 0, down_count: 0, score: 0 }
+          : null,
     };
   });
   const transformedBodycheckImages = enriched.reduce((acc, post) => {
@@ -153,7 +172,7 @@ export async function POST(request: Request) {
   const requestId = crypto.randomUUID();
   const ip = extractClientIp(request);
   const supabase = await createClient();
-  const guard = await getConfirmedUserOrResponse(supabase);
+  const guard = await getConfirmedActiveUserOrResponse(supabase);
   if (guard.response) return guard.response;
   const user = guard.user;
   if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });

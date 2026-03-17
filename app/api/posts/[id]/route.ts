@@ -5,6 +5,7 @@ import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { buildSignedImageUrl, extractStorageObjectPath } from "@/lib/images";
 import { NextResponse } from "next/server";
 import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
+import { isAllowedAdminUser } from "@/lib/admin";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 const POST_DETAIL_SELECT =
@@ -16,11 +17,7 @@ function toCommunityPublicPath(raw: unknown): string | null {
   return extractStorageObjectPath(raw, "community");
 }
 
-function resolveCommunityImageUrl(
-  _requestId: string,
-  raw: unknown,
-  _counters: { signCalls: number; cacheHit: number; cacheMiss: number }
-): string | null {
+function resolveCommunityImageUrl(raw: unknown): string | null {
   const path = toCommunityPublicPath(raw);
   if (path) return buildSignedImageUrl("community", path);
   if (typeof raw === "string") {
@@ -131,6 +128,8 @@ export async function GET(request: Request, { params }: RouteCtx) {
   }));
 
   let myVote: { rating: BodycheckRating; score: number } | null = null;
+  let myReaction: "up" | "down" | null = null;
+  let reactionSummary: { up_count: number; down_count: number; score: number } | null = null;
   if (post.type === "photo_bodycheck" && user) {
     const { data: vote } = await supabase
       .from("votes")
@@ -146,19 +145,37 @@ export async function GET(request: Request, { params }: RouteCtx) {
       };
     }
   }
+  if (post.type === "free") {
+    const [{ data: reactions }, myReactionRes] = await Promise.all([
+      supabase.from("post_reactions").select("reaction").eq("post_id", id),
+      user
+        ? supabase
+            .from("post_reactions")
+            .select("reaction")
+            .eq("post_id", id)
+            .eq("user_id", user.id)
+            .maybeSingle()
+        : Promise.resolve({ data: null as { reaction: "up" | "down" } | null }),
+    ]);
+
+    const upCount = (reactions ?? []).filter((item) => item.reaction === "up").length;
+    const downCount = (reactions ?? []).filter((item) => item.reaction === "down").length;
+    reactionSummary = {
+      up_count: upCount,
+      down_count: downCount,
+      score: upCount - downCount,
+    };
+    myReaction = myReactionRes.data?.reaction ?? null;
+  }
 
   const voteCount = Number(post.vote_count ?? 0);
   const scoreSum = Number(post.score_sum ?? 0);
   const averageScore = voteCount > 0 ? Number((scoreSum / voteCount).toFixed(2)) : 0;
-  const signCounters = { signCalls: 0, cacheHit: 0, cacheMiss: 0 };
   const normalizedImages = Array.isArray((post as { images?: unknown }).images)
     ? ((post as { images?: unknown[] }).images ?? [])
-        .map((img) => resolveCommunityImageUrl(requestId, img, signCounters))
+        .map((img) => resolveCommunityImageUrl(img))
         .filter((img): img is string => typeof img === "string")
     : [];
-  console.log(
-    `[posts.detail.signedUrl] requestId=${requestId} path=/api/posts/[id] postId=${id} signCalls=${signCounters.signCalls} cacheHit=${signCounters.cacheHit} cacheMiss=${signCounters.cacheMiss}`
-  );
 
   return NextResponse.json({
     post: {
@@ -167,6 +184,8 @@ export async function GET(request: Request, { params }: RouteCtx) {
       profiles: authorProfile ?? null,
       cert_summary: certSummaryMap.get(post.user_id as string) ?? null,
       my_vote: myVote,
+      my_reaction: myReaction,
+      reaction_summary: reactionSummary,
       bodycheck_summary:
         post.type === "photo_bodycheck"
           ? {
@@ -305,7 +324,7 @@ export async function DELETE(_request: Request, { params }: RouteCtx) {
       .eq("user_id", user.id)
       .single();
 
-    if (profile?.role !== "admin") {
+    if (profile?.role !== "admin" && !isAllowedAdminUser(user.id, user.email)) {
       return NextResponse.json({ error: "본인 글만 삭제할 수 있습니다." }, { status: 403 });
     }
   }
