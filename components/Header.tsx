@@ -13,7 +13,6 @@ const HeaderUserMenu = dynamic(() => import("@/components/HeaderUserMenu"), {
 const NAV_ITEMS = [
   { href: "/1rm", label: "1RM 계산기" },
   { href: "/lifts", label: "3대 합계" },
-  { href: "/community/bodycheck", label: "사진 몸평" },
   { href: "/community/dating", label: "소개팅" },
   { href: "/community", label: "커뮤니티" },
   { href: "/certify", label: "3대 인증" },
