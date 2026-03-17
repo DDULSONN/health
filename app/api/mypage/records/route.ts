@@ -2,6 +2,9 @@ import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 /** GET /api/mypage/records — 내 기록 (lifts / 1rm / helltest) */
+const MY_RECORDS_SELECT =
+  "id,user_id,type,title,content,payload_json,images,gender,score_sum,vote_count,great_count,good_count,normal_count,rookie_count,is_hidden,is_deleted,created_at";
+
 export async function GET() {
   const supabase = await createClient();
   const {
@@ -14,7 +17,7 @@ export async function GET() {
 
   const { data, error } = await supabase
     .from("posts")
-    .select("*")
+    .select(MY_RECORDS_SELECT)
     .eq("user_id", user.id)
     .in("type", ["lifts", "1rm", "helltest"])
     .eq("is_hidden", false)

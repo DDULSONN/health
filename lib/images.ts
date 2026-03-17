@@ -1,6 +1,15 @@
 const FORBIDDEN_IMAGE_URL_PATTERN = /(supabase\.co|\/storage\/v1\/|\/render\/image\/)/i;
 const PUBLIC_LITE_URL_VERSION = "20260221-1";
 
+type ImageTransformOptions = {
+  width?: number;
+  quality?: number;
+};
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
 function encodePath(path: string): string {
   return path
     .split("/")
@@ -109,4 +118,30 @@ export function buildSignedImageUrlAllowRaw(bucket: string, objectPath: string):
   const safePath = assertSafeObjectPath(objectPath);
   if (!safeBucket || !safePath) return "";
   return `/i/signed/${encodePath(safeBucket)}/${encodePath(safePath)}`;
+}
+
+export function withImageTransform(raw: string | null | undefined, options?: ImageTransformOptions): string | null {
+  if (!raw) return null;
+  const value = raw.trim();
+  if (!value) return null;
+
+  const width = clamp(Math.round(options?.width ?? 1080), 320, 1600);
+  const quality = clamp(Math.round(options?.quality ?? 72), 45, 85);
+  const isAbsolute = /^https?:\/\//i.test(value);
+
+  try {
+    const url = new URL(value, "http://local");
+    const canAttachTransform =
+      url.pathname.startsWith("/i/signed/") || url.pathname.includes("/storage/v1/render/image/public/");
+
+    if (canAttachTransform) {
+      if (!url.searchParams.has("w")) url.searchParams.set("w", String(width));
+      if (!url.searchParams.has("q")) url.searchParams.set("q", String(quality));
+    }
+
+    if (isAbsolute) return url.toString();
+    return `${url.pathname}${url.search}${url.hash}`;
+  } catch {
+    return value;
+  }
 }

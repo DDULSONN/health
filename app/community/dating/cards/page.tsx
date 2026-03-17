@@ -541,6 +541,7 @@ export default function OpenCardsPage() {
                 <img
                   src={swipeState.candidate.image_url}
                   alt=""
+                  decoding="async"
                   onError={() => setSwipeImgFailed(true)}
                   className={`max-h-full max-w-full object-contain ${
                     swipeState.candidate.photo_visibility === "public" ? "" : "blur-[9px]"
@@ -703,9 +704,21 @@ function PaidCardRow({ card }: { card: PaidCard }) {
       {card.thumbUrl ? (
         <div className="relative mt-3 flex h-44 items-center justify-center overflow-hidden rounded-xl border border-rose-100 bg-white">
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={card.thumbUrl} alt="" className="absolute inset-0 h-full w-full object-cover opacity-30 blur-sm" />
+          <img
+            src={card.thumbUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="absolute inset-0 h-full w-full object-cover opacity-30 blur-sm"
+          />
           {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img src={card.thumbUrl} alt="" className="relative z-10 max-h-full max-w-full h-auto w-auto object-contain object-center" />
+          <img
+            src={card.thumbUrl}
+            alt=""
+            loading="lazy"
+            decoding="async"
+            className="relative z-10 max-h-full max-w-full h-auto w-auto object-contain object-center"
+          />
         </div>
       ) : (
         <div className="mt-3 h-44 rounded-xl border border-rose-100 bg-white" />
@@ -764,6 +777,8 @@ function CardRow({ card }: { card: PublicCard }) {
             <img
               src={card.image_urls[0]}
               alt=""
+              loading="lazy"
+              decoding="async"
               onError={() => setImgFailed(true)}
               className={`absolute inset-0 h-full w-full object-cover opacity-30 ${card.photo_visibility === "public" ? "blur-sm" : "blur-[10px]"}`}
             />
@@ -771,6 +786,8 @@ function CardRow({ card }: { card: PublicCard }) {
             <img
               src={card.image_urls[0]}
               alt=""
+              loading="lazy"
+              decoding="async"
               className={`relative z-10 max-h-full max-w-full h-auto w-auto object-contain object-center ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
             />
           </div>

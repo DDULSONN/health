@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { DATING_PAID_FIXED_BADGE_LABEL, DATING_PAID_FIXED_HOURS, DATING_PAID_FIXED_LABEL, DATING_PAID_FIXED_SHORT_LABEL } from "@/lib/dating-paid";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 
@@ -394,7 +395,7 @@ export default function DatingPaidPage() {
 
       <section className="rounded-2xl border border-neutral-200 bg-white p-4">
         <div className="mb-3 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-neutral-900">🔥24시간 고정 신청</h1>
+          <h1 className="text-xl font-bold text-neutral-900">{DATING_PAID_FIXED_BADGE_LABEL} 신청</h1>
           <button
             type="button"
             onClick={() => setFormOpen((prev) => !prev)}
@@ -403,7 +404,7 @@ export default function DatingPaidPage() {
             신청하기
           </button>
         </div>
-        <p className="text-sm text-neutral-600">대기열 없이 게시 · 지원서 여러 장 수락 가능 · 24시간 글에는 하루 지원권 차감 없이 지원 가능 · 남/녀 오픈카드 최상단에 24시 지원자 노출</p>
+        <p className="text-sm text-neutral-600">대기열 없이 게시 · 지원서 여러 장 수락 가능 · {DATING_PAID_FIXED_HOURS}시간 글에는 하루 지원권 차감 없이 지원 가능 · 남/녀 오픈카드 최상단에 고정 노출</p>
         <p className="mt-2 text-xs text-neutral-500">가격: 10,000원</p>
       </section>
 
@@ -431,7 +432,7 @@ export default function DatingPaidPage() {
                     displayMode === "priority_24h" ? "border-rose-500 bg-rose-500 text-white" : "border-neutral-300 bg-white text-neutral-700"
                   }`}
                 >
-                  24시간 상단고정
+                  {DATING_PAID_FIXED_LABEL}
                 </button>
                 <button
                   type="button"
@@ -444,7 +445,7 @@ export default function DatingPaidPage() {
                 </button>
               </div>
               <p className="mt-2 text-xs text-neutral-500">
-                {displayMode === "priority_24h" ? "24시간 상단고정으로 노출됩니다." : "상단 고정 없이 일반 카드 흐름으로 자연스럽게 노출됩니다."}
+                {displayMode === "priority_24h" ? `${DATING_PAID_FIXED_LABEL}으로 노출됩니다.` : "상단 고정 없이 일반 카드 흐름으로 자연스럽게 노출됩니다."}
               </p>
             </div>
 
@@ -473,7 +474,7 @@ export default function DatingPaidPage() {
                 {previewUrls[0] && (
                   <div className="mt-2 h-36 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={previewUrls[0]} alt="" className="h-full w-full object-contain" />
+                    <img src={previewUrls[0]} alt="" decoding="async" className="h-full w-full object-contain" />
                   </div>
                 )}
               </div>
@@ -483,7 +484,7 @@ export default function DatingPaidPage() {
                 {previewUrls[1] && (
                   <div className="mt-2 h-36 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={previewUrls[1]} alt="" className="h-full w-full object-contain" />
+                    <img src={previewUrls[1]} alt="" decoding="async" className="h-full w-full object-contain" />
                   </div>
                 )}
               </div>
@@ -510,15 +511,15 @@ export default function DatingPaidPage() {
       )}
 
       <section className="mt-5">
-        <h2 className="text-lg font-bold text-neutral-900">확인된 24시간 고정</h2>
+        <h2 className="text-lg font-bold text-neutral-900">확인된 36시간 고정</h2>
         {loading ? (
           <p className="mt-2 text-sm text-neutral-500">불러오는 중...</p>
         ) : fixedItems.length === 0 ? (
           <p className="mt-2 text-sm text-neutral-500">현재 공개 중인 고정 카드가 없습니다.</p>
         ) : (
           <div className="mt-3 space-y-6">
-            <GenderSection title="남자 24시간 고정" items={maleItems} />
-            <GenderSection title="여자 24시간 고정" items={femaleItems} />
+            <GenderSection title="남자 36시간 고정" items={maleItems} />
+            <GenderSection title="여자 36시간 고정" items={femaleItems} />
           </div>
         )}
       </section>
@@ -567,7 +568,7 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
                       item.display_mode === "instant_public" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
                     }`}
                   >
-                    {item.display_mode === "instant_public" ? "새치기" : "24h 상단고정"}
+                    {item.display_mode === "instant_public" ? "새치기" : DATING_PAID_FIXED_SHORT_LABEL}
                   </span>
                 </div>
                 {item.expires_at ? (
@@ -577,9 +578,21 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
               {item.thumbUrl ? (
                 <div className="relative mt-2 flex h-44 items-center justify-center overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50">
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={item.thumbUrl} alt="" className="absolute inset-0 h-full w-full object-cover opacity-30 blur-sm" />
+                  <img
+                    src={item.thumbUrl}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    className="absolute inset-0 h-full w-full object-cover opacity-30 blur-sm"
+                  />
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={item.thumbUrl} alt="" className="relative z-10 max-h-full max-w-full h-auto w-auto object-contain object-center" />
+                  <img
+                    src={item.thumbUrl}
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    className="relative z-10 max-h-full max-w-full h-auto w-auto object-contain object-center"
+                  />
                 </div>
               ) : (
                 <div className="mt-2 h-44 rounded-xl border border-neutral-100 bg-neutral-50" />

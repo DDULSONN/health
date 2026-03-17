@@ -201,7 +201,7 @@ export default function PaidCardApplyPage() {
         뒤로가기
       </Link>
 
-      <h1 className="text-2xl font-bold text-neutral-900 mt-3">24시간 고정 지원하기</h1>
+      <h1 className="text-2xl font-bold text-neutral-900 mt-3">36시간 고정 지원하기</h1>
 
       <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-3">
         <div className="flex items-center justify-between">
@@ -213,7 +213,7 @@ export default function PaidCardApplyPage() {
         {card.image_url && (
           <div className="mt-2 h-40 rounded-lg overflow-hidden bg-neutral-50 border border-neutral-100 flex items-center justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={card.image_url} alt="" className="h-full w-full object-contain" />
+            <img src={card.image_url} alt="" decoding="async" className="h-full w-full object-contain" />
           </div>
         )}
       </div>

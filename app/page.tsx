@@ -1,6 +1,12 @@
+import dynamic from "next/dynamic";
 import Link from "next/link";
-import HomeBodycheckQuickVote from "@/components/HomeBodycheckQuickVote";
-import WeeklyTopBanner from "@/components/WeeklyTopBanner";
+const WeeklyTopBanner = dynamic(() => import("@/components/WeeklyTopBanner"), {
+  loading: () => <HomeSectionSkeleton className="min-h-[152px]" />,
+});
+
+const HomeBodycheckQuickVote = dynamic(() => import("@/components/HomeBodycheckQuickVote"), {
+  loading: () => <HomeSectionSkeleton className="min-h-[420px]" />,
+});
 
 type Feature = {
   id: string;
@@ -134,5 +140,25 @@ export default function HomePage() {
         </p>
       </section>
     </main>
+  );
+}
+
+function HomeSectionSkeleton({ className }: { className?: string }) {
+  return (
+    <section
+      className={`mb-5 overflow-hidden rounded-3xl border border-neutral-200 bg-white/80 p-4 shadow-sm ${className ?? ""}`}
+      aria-hidden
+    >
+      <div className="animate-pulse space-y-3">
+        <div className="h-4 w-32 rounded bg-neutral-200" />
+        <div className="h-7 w-3/4 rounded bg-neutral-200" />
+        <div className="h-4 w-full rounded bg-neutral-100" />
+        <div className="h-4 w-5/6 rounded bg-neutral-100" />
+        <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <div className="h-20 rounded-2xl bg-neutral-100" />
+          <div className="h-20 rounded-2xl bg-neutral-100" />
+        </div>
+      </div>
+    </section>
   );
 }

@@ -10,11 +10,10 @@ import { getConfirmedUserOrResponse } from "@/lib/auth-confirmed";
 const POST_COOLDOWN_MS = 30_000;
 const RECORD_TYPES = ["lifts", "1rm", "helltest"];
 const BODYCHECK_TYPES = ["photo_bodycheck"];
+const POST_LIST_SELECT =
+  "id,user_id,type,title,content,payload_json,images,gender,score_sum,vote_count,great_count,good_count,normal_count,rookie_count,is_hidden,is_deleted,created_at";
 
-async function resolveCommunityImageUrl(
-  _supabase: Awaited<ReturnType<typeof createClient>>,
-  raw: unknown
-): Promise<string | null> {
+function resolveCommunityImageUrl(raw: unknown): string | null {
   const path = toCommunityPublicPath(raw);
   if (path) {
     return buildSignedImageUrl("community", path);
@@ -70,7 +69,7 @@ export async function GET(request: Request) {
 
   let query = supabase
     .from("posts")
-    .select("*", { count: "exact" })
+    .select(POST_LIST_SELECT, { count: "exact" })
     .eq("is_hidden", false)
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
@@ -95,48 +94,35 @@ export async function GET(request: Request) {
   const visible = (posts ?? []).filter((p) => !(p as Record<string, unknown>).is_deleted);
   const userIds = [...new Set(visible.map((p) => p.user_id as string))];
 
-  const profileMap = new Map<string, { nickname: string; role: string }>();
-  if (userIds.length > 0) {
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("user_id, nickname, role")
-      .in("user_id", userIds);
+  const [{ data: profiles }, certSummaryMap] = await Promise.all([
+    userIds.length > 0
+      ? supabase.from("profiles").select("user_id, nickname, role").in("user_id", userIds)
+      : Promise.resolve({ data: [] as { user_id: string; nickname: string; role: string }[] }),
+    fetchUserCertSummaryMap(userIds, supabase),
+  ]);
 
-    for (const p of profiles ?? []) {
-      profileMap.set(p.user_id, { nickname: p.nickname, role: p.role });
-    }
+  const profileMap = new Map<string, { nickname: string; role: string }>();
+  for (const p of profiles ?? []) {
+    profileMap.set(p.user_id, { nickname: p.nickname, role: p.role });
   }
 
-  const enriched = await Promise.all(visible.map(async (p) => {
+  const enriched = visible.map((p) => {
     const originalImages = Array.isArray((p as Record<string, unknown>).images)
-      ? (
-          await Promise.all(
-            ((p as Record<string, unknown>).images as unknown[]).map((img) =>
-              resolveCommunityImageUrl(supabase, img)
-            )
-          )
-        ).filter((img): img is string => typeof img === "string")
+      ? ((p as Record<string, unknown>).images as unknown[])
+          .map((img) => resolveCommunityImageUrl(img))
+          .filter((img): img is string => typeof img === "string")
       : [];
-    const thumbImages = (
-      await Promise.all(
-        extractThumbImages((p as { payload_json?: unknown }).payload_json).map((img) =>
-          resolveCommunityImageUrl(supabase, img)
-        )
-      )
-    ).filter((img): img is string => typeof img === "string");
+    const thumbImages = extractThumbImages((p as { payload_json?: unknown }).payload_json)
+      .map((img) => resolveCommunityImageUrl(img))
+      .filter((img): img is string => typeof img === "string");
     return {
       ...p,
       images: originalImages,
       thumb_images: thumbImages,
       profiles: profileMap.get(p.user_id as string) ?? null,
-      cert_summary: null,
+      cert_summary: certSummaryMap.get(p.user_id as string) ?? null,
     };
-  }));
-
-  const certSummaryMap = await fetchUserCertSummaryMap(userIds, supabase);
-  for (const post of enriched) {
-    post.cert_summary = certSummaryMap.get(post.user_id as string) ?? null;
-  }
+  });
   const transformedBodycheckImages = enriched.reduce((acc, post) => {
     if ((post.type as string) !== "photo_bodycheck") return acc;
     const thumbImages = (post as { thumb_images?: unknown }).thumb_images;

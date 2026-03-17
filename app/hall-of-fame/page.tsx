@@ -119,6 +119,8 @@ function WinnerCard({ label, row }: { label: string; row: HallOfFameRow | null }
         <img
           src={row.image_url}
           alt=""
+          loading="lazy"
+          decoding="async"
           className="mt-2 h-20 w-20 rounded-lg border border-amber-200 object-cover"
         />
       )}

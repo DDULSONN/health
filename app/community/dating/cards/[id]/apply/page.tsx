@@ -26,7 +26,7 @@ type CardDetail = {
 };
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_FILE_SIZE = 8 * 1024 * 1024;
 const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
 
 function normalizeInstagramId(value: string) {
@@ -126,7 +126,7 @@ export default function DatingCardApplyPage() {
         return;
       }
       if (photo.size > MAX_FILE_SIZE) {
-        setError("사진은 장당 5MB 이하만 가능합니다.");
+        setError("사진은 장당 8MB 이하만 가능합니다.");
         return;
       }
     }
@@ -263,6 +263,7 @@ export default function DatingCardApplyPage() {
                 <img
                   src={url}
                   alt=""
+                  decoding="async"
                   className={`h-full w-full object-contain ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
                 />
               </div>

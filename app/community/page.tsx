@@ -326,6 +326,8 @@ function PostList({ posts, loading }: { posts: Post[]; loading: boolean }) {
                 <div className="shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-neutral-100">
                   <img
                     src={previewImage}
+                    loading="lazy"
+                    decoding="async"
                     data-candidates={thumbnailCandidates.join("\n")}
                     data-candidate-index="0"
                     onError={(e) => {

@@ -7,17 +7,20 @@ import { NextResponse } from "next/server";
 import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
 
 type RouteCtx = { params: Promise<{ id: string }> };
+const POST_DETAIL_SELECT =
+  "id,user_id,type,title,content,payload_json,images,gender,score_sum,vote_count,great_count,good_count,normal_count,rookie_count,is_hidden,is_deleted,created_at";
+const COMMENT_SELECT = "id,post_id,user_id,parent_id,content,is_hidden,deleted_at,created_at";
+const DELETE_POST_SELECT = "id,user_id,title,content,payload_json";
 
 function toCommunityPublicPath(raw: unknown): string | null {
   return extractStorageObjectPath(raw, "community");
 }
 
-async function resolveCommunityImageUrl(
-  _supabase: Awaited<ReturnType<typeof createClient>>,
+function resolveCommunityImageUrl(
   _requestId: string,
   raw: unknown,
   _counters: { signCalls: number; cacheHit: number; cacheMiss: number }
-): Promise<string | null> {
+): string | null {
   const path = toCommunityPublicPath(raw);
   if (path) return buildSignedImageUrl("community", path);
   if (typeof raw === "string") {
@@ -56,7 +59,7 @@ export async function GET(request: Request, { params }: RouteCtx) {
 
   const { data: post, error: postErr } = await supabase
     .from("posts")
-    .select("*")
+    .select(POST_DETAIL_SELECT)
     .eq("id", id)
     .single();
 
@@ -68,43 +71,49 @@ export async function GET(request: Request, { params }: RouteCtx) {
     );
   }
 
-  const { data: authorProfile } = await supabase
-    .from("profiles")
-    .select("nickname, role")
-    .eq("user_id", post.user_id)
-    .single();
-
-  const { data: comments } = await supabase
-    .from("comments")
-    .select("*")
-    .eq("post_id", id)
-    .eq("is_hidden", false)
-    .order("created_at", { ascending: true });
+  const [{ data: authorProfile }, { data: comments }] = await Promise.all([
+    supabase.from("profiles").select("nickname, role").eq("user_id", post.user_id).single(),
+    supabase
+      .from("comments")
+      .select(COMMENT_SELECT)
+      .eq("post_id", id)
+      .eq("is_hidden", false)
+      .order("created_at", { ascending: true }),
+  ]);
 
   const commentUserIds = [
     ...new Set((comments ?? []).map((c) => c.user_id as string)),
   ];
+  const [commentProfilesRes, certSummaryMap] = await Promise.all([
+    commentUserIds.length > 0
+      ? supabase
+          .from("profiles")
+          .select("user_id, nickname")
+          .in("user_id", commentUserIds)
+      : Promise.resolve({ data: [] as { user_id: string; nickname: string }[] }),
+    fetchUserCertSummaryMap([post.user_id as string, ...commentUserIds], supabase),
+  ]);
+
   const commentProfileMap = new Map<string, { nickname: string }>();
+  for (const profile of commentProfilesRes.data ?? []) {
+    commentProfileMap.set(profile.user_id, { nickname: profile.nickname });
+  }
 
-  if (commentUserIds.length > 0) {
-    const { data: commentProfiles } = await supabase
-      .from("profiles")
-      .select("user_id, nickname")
-      .in("user_id", commentUserIds);
-
-    for (const p of commentProfiles ?? []) {
-      commentProfileMap.set(p.user_id, { nickname: p.nickname });
-    }
+  const commentsById = new Map((comments ?? []).map((comment) => [comment.id, comment]));
+  const parentCreatedAtMap = new Map<string, string>();
+  for (const comment of comments ?? []) {
+    const parentId = (comment.parent_id as string | null) ?? comment.id;
+    const parentCreatedAt =
+      commentsById.get(parentId)?.created_at ?? comment.created_at;
+    parentCreatedAtMap.set(comment.id, parentCreatedAt);
   }
 
   const sortedComments = [...(comments ?? [])].sort((a, b) => {
     const aParent = (a.parent_id as string | null) ?? a.id;
     const bParent = (b.parent_id as string | null) ?? b.id;
     if (aParent !== bParent) {
-      const aParentCreatedAt =
-        (comments ?? []).find((c) => c.id === aParent)?.created_at ?? a.created_at;
-      const bParentCreatedAt =
-        (comments ?? []).find((c) => c.id === bParent)?.created_at ?? b.created_at;
+      const aParentCreatedAt = parentCreatedAtMap.get(a.id) ?? a.created_at;
+      const bParentCreatedAt = parentCreatedAtMap.get(b.id) ?? b.created_at;
       return (
         new Date(aParentCreatedAt).getTime() - new Date(bParentCreatedAt).getTime()
       );
@@ -114,11 +123,6 @@ export async function GET(request: Request, { params }: RouteCtx) {
     }
     return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
   });
-
-  const certSummaryMap = await fetchUserCertSummaryMap(
-    [post.user_id as string, ...commentUserIds],
-    supabase
-  );
 
   const enrichedComments = sortedComments.map((c) => ({
     ...c,
@@ -148,13 +152,9 @@ export async function GET(request: Request, { params }: RouteCtx) {
   const averageScore = voteCount > 0 ? Number((scoreSum / voteCount).toFixed(2)) : 0;
   const signCounters = { signCalls: 0, cacheHit: 0, cacheMiss: 0 };
   const normalizedImages = Array.isArray((post as { images?: unknown }).images)
-    ? (
-        await Promise.all(
-          ((post as { images?: unknown[] }).images ?? []).map((img) =>
-            resolveCommunityImageUrl(supabase, requestId, img, signCounters)
-          )
-        )
-      ).filter((img): img is string => typeof img === "string")
+    ? ((post as { images?: unknown[] }).images ?? [])
+        .map((img) => resolveCommunityImageUrl(requestId, img, signCounters))
+        .filter((img): img is string => typeof img === "string")
     : [];
   console.log(
     `[posts.detail.signedUrl] requestId=${requestId} path=/api/posts/[id] postId=${id} signCalls=${signCounters.signCalls} cacheHit=${signCounters.cacheHit} cacheMiss=${signCounters.cacheMiss}`
@@ -290,7 +290,7 @@ export async function DELETE(_request: Request, { params }: RouteCtx) {
 
   const { data: post } = await supabase
     .from("posts")
-    .select("*")
+    .select(DELETE_POST_SELECT)
     .eq("id", id)
     .single();
 

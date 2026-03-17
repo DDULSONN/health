@@ -350,6 +350,7 @@ export default function WritePage() {
                   <img
                     src={url}
                     alt={`업로드 ${i + 1}`}
+                    decoding="async"
                     className="w-full h-full object-cover"
                   />
                   <button

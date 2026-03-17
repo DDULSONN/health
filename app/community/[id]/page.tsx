@@ -468,7 +468,12 @@ export default function PostDetailPage() {
                 onClick={() => setLightboxIdx(i)}
                 className="rounded-xl overflow-hidden border border-neutral-100 aspect-square"
               >
-                <img src={url} alt={`이미지 ${i + 1}`} className="w-full h-full object-cover" />
+                <img
+                  src={url}
+                  alt={`이미지 ${i + 1}`}
+                  decoding="async"
+                  className="w-full h-full object-cover"
+                />
               </button>
             ))}
           </div>
@@ -674,6 +679,7 @@ export default function PostDetailPage() {
             <img
               src={postImages[lightboxIdx]}
               alt={`이미지 ${lightboxIdx + 1}`}
+              decoding="async"
               className="max-w-full max-h-[85vh] object-contain rounded-lg"
               onClick={(e) => e.stopPropagation()}
             />

@@ -419,7 +419,12 @@ export default function NewDatingCardPage() {
           {previewUrls[0] && (
             <div className="mt-2 h-40 w-full overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={previewUrls[0]} alt="사진 1 미리보기" className="h-full w-full object-contain" />
+              <img
+                src={previewUrls[0]}
+                alt="사진 1 미리보기"
+                decoding="async"
+                className="h-full w-full object-contain"
+              />
             </div>
           )}
         </Field>
@@ -428,7 +433,12 @@ export default function NewDatingCardPage() {
           {previewUrls[1] && (
             <div className="mt-2 h-40 w-full overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={previewUrls[1]} alt="사진 2 미리보기" className="h-full w-full object-contain" />
+              <img
+                src={previewUrls[1]}
+                alt="사진 2 미리보기"
+                decoding="async"
+                className="h-full w-full object-contain"
+              />
             </div>
           )}
         </Field>

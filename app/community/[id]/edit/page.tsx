@@ -264,6 +264,7 @@ export default function EditPage() {
                   <img
                     src={url}
                     alt={`이미지 ${i + 1}`}
+                    decoding="async"
                     className="w-full h-full object-cover"
                   />
                   <button

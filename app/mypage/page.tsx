@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -7,9 +8,28 @@ import { createClient } from "@/lib/supabase/client";
 import { timeAgo } from "@/lib/community";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
-import MyLiftGrowthChart from "@/components/MyLiftGrowthChart";
-import AdminCertReviewPanel from "@/components/AdminCertReviewPanel";
-import BodyEvalMailbox from "@/components/BodyEvalMailbox";
+function MyPageWidgetSkeleton({ className = "h-40" }: { className?: string }) {
+  return (
+    <div className={`rounded-2xl border border-neutral-200 bg-white p-4 ${className}`}>
+      <div className="animate-pulse space-y-3">
+        <div className="h-4 w-32 rounded bg-neutral-200" />
+        <div className="h-20 rounded-xl bg-neutral-100" />
+      </div>
+    </div>
+  );
+}
+
+const MyLiftGrowthChart = dynamic(() => import("@/components/MyLiftGrowthChart"), {
+  loading: () => <MyPageWidgetSkeleton className="h-[360px]" />,
+});
+
+const AdminCertReviewPanel = dynamic(() => import("@/components/AdminCertReviewPanel"), {
+  loading: () => <MyPageWidgetSkeleton className="h-56" />,
+});
+
+const BodyEvalMailbox = dynamic(() => import("@/components/BodyEvalMailbox"), {
+  loading: () => <MyPageWidgetSkeleton className="h-56" />,
+});
 
 type MyPageTab = "my_cert" | "request_status" | "admin_review";
 
@@ -678,7 +698,7 @@ export default function MyPage() {
               throw new Error(ordersBody.error ?? "지원권 주문 목록을 불러오지 못했습니다.");
             }
             if (!paidAppsRes.ok) {
-              throw new Error(paidAppsBody.error ?? "관리자 24시간 카드 지원 이력을 불러오지 못했습니다.");
+              throw new Error(paidAppsBody.error ?? "관리자 36시간 카드 지원 이력을 불러오지 못했습니다.");
             }
             if (isMounted) {
               setAdminOpenCards(overviewBody.cards ?? []);
@@ -1696,7 +1716,13 @@ export default function MyPage() {
                       {app.photo_signed_urls.map((url, idx) => (
                         <a key={`${app.id}-${idx}`} href={url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-lg border border-neutral-200">
                           {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img src={url} alt={`유료 지원자 사진 ${idx + 1}`} className="h-32 w-full object-cover" />
+                          <img
+                            src={url}
+                            alt={`유료 지원자 사진 ${idx + 1}`}
+                            loading="lazy"
+                            decoding="async"
+                            className="h-32 w-full object-cover"
+                          />
                         </a>
                       ))}
                     </div>
@@ -1870,7 +1896,13 @@ export default function MyPage() {
                           className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
                         >
                           <div className="flex h-32 w-full items-center justify-center bg-neutral-50">
-                            <img src={url} alt={`1:1 신청 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
+                            <img
+                              src={url}
+                              alt={`1:1 신청 사진 ${idx + 1}`}
+                              loading="lazy"
+                              decoding="async"
+                              className="max-h-full max-w-full object-contain"
+                            />
                           </div>
                         </a>
                       ))}
@@ -1922,7 +1954,13 @@ export default function MyPage() {
                                         className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
                                       >
                                         <div className="flex h-24 w-full items-center justify-center bg-neutral-50">
-                                          <img src={url} alt={`자동 추천 후보 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
+                                          <img
+                                            src={url}
+                                            alt={`자동 추천 후보 사진 ${idx + 1}`}
+                                            loading="lazy"
+                                            decoding="async"
+                                            className="max-h-full max-w-full object-contain"
+                                          />
                                         </div>
                                       </a>
                                     ))}
@@ -1984,7 +2022,13 @@ export default function MyPage() {
                                       className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
                                     >
                                       <div className="flex h-24 w-full items-center justify-center bg-neutral-50">
-                                        <img src={url} alt={`후보 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
+                                        <img
+                                          src={url}
+                                          alt={`후보 사진 ${idx + 1}`}
+                                          loading="lazy"
+                                          decoding="async"
+                                          className="max-h-full max-w-full object-contain"
+                                        />
                                       </div>
                                     </a>
                                   ))}
@@ -2047,7 +2091,13 @@ export default function MyPage() {
                                       className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
                                     >
                                       <div className="flex h-24 w-full items-center justify-center bg-neutral-50">
-                                        <img src={url} alt={`선택된 상대 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
+                                        <img
+                                          src={url}
+                                          alt={`선택된 상대 사진 ${idx + 1}`}
+                                          loading="lazy"
+                                          decoding="async"
+                                          className="max-h-full max-w-full object-contain"
+                                        />
                                       </div>
                                     </a>
                                   ))}
@@ -2344,7 +2394,9 @@ export default function MyPage() {
                           {/* eslint-disable-next-line @next/next/no-img-element */}
                           <img
                             src={url}
-                              alt={`지원자 사진 ${idx + 1}`}
+                            alt={`지원자 사진 ${idx + 1}`}
+                            loading="lazy"
+                            decoding="async"
                             className="h-32 w-full object-cover"
                           />
                         </a>
@@ -2750,7 +2802,7 @@ export default function MyPage() {
           <div className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-violet-800">
-                카드 {adminOpenCards.length}건 / 오픈카드 지원 {adminOpenCardApplications.length}건 / 24시간 지원 {adminPaidCardApplications.length}건
+                카드 {adminOpenCards.length}건 / 오픈카드 지원 {adminOpenCardApplications.length}건 / 36시간 지원 {adminPaidCardApplications.length}건
               </h3>
               <div className="flex items-center gap-2">
                 <div className="inline-flex rounded-md border border-violet-200 bg-white p-0.5">
@@ -2901,11 +2953,11 @@ export default function MyPage() {
                 )}
                 {adminPaidCardApplications.length > 0 && (
                   <div className="space-y-2">
-                    <p className="text-xs font-semibold text-rose-700">24시간 카드 지원 이력</p>
+                    <p className="text-xs font-semibold text-rose-700">36시간 카드 지원 이력</p>
                     {sortedAdminPaidCardApplications.map((app) => (
                       <div key={app.id} className="rounded-xl border border-rose-200 bg-rose-50/30 p-3">
                         <p className="text-sm font-semibold text-neutral-900">
-                          지원서 {app.id.slice(0, 8)}... / 24시간 카드 {app.card_id.slice(0, 8)}... / 상태 {app.status}
+                          지원서 {app.id.slice(0, 8)}... / 36시간 카드 {app.card_id.slice(0, 8)}... / 상태 {app.status}
                         </p>
                         <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
                           <span>지원자: {app.applicant_nickname ?? app.applicant_user_id.slice(0, 8)}</span>
@@ -3109,6 +3161,8 @@ export default function MyPage() {
                     <img
                       src={post.images?.[0]}
                       alt=""
+                      loading="lazy"
+                      decoding="async"
                       className="h-16 w-16 shrink-0 rounded-lg border border-neutral-100 object-cover"
                     />
                   )}

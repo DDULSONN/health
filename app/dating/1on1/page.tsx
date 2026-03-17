@@ -470,7 +470,12 @@ function DatingOneOnOnePageContent() {
                   {existingPhotoUrls.map((url, idx) => (
                     <a key={`existing-${idx}`} href={url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-md border border-neutral-200 bg-white">
                       <div className="flex h-24 w-full items-center justify-center bg-neutral-50">
-                        <img src={url} alt={`기존 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
+                        <img
+                          src={url}
+                          alt={`기존 사진 ${idx + 1}`}
+                          decoding="async"
+                          className="max-h-full max-w-full object-contain"
+                        />
                       </div>
                     </a>
                   ))}
@@ -503,7 +508,12 @@ function DatingOneOnOnePageContent() {
                     {card.photo_signed_urls.map((url, idx) => (
                       <a key={`${card.id}-${idx}`} href={url} target="_blank" rel="noreferrer" className="block overflow-hidden rounded-md border border-neutral-200 bg-white">
                         <div className="flex h-32 w-full items-center justify-center bg-neutral-50">
-                          <img src={url} alt={`소개팅 신청 사진 ${idx + 1}`} className="max-h-full max-w-full object-contain" />
+                          <img
+                            src={url}
+                            alt={`소개팅 신청 사진 ${idx + 1}`}
+                            decoding="async"
+                            className="max-h-full max-w-full object-contain"
+                          />
                         </div>
                       </a>
                     ))}

@@ -570,7 +570,12 @@ export default function DatingApplyPage() {
                   >
                     {previews[idx] ? (
                       // eslint-disable-next-line @next/next/no-img-element
-                      <img src={previews[idx]!} alt={`사진 ${idx + 1}`} className="w-full h-full object-cover" />
+                      <img
+                        src={previews[idx]!}
+                        alt={`사진 ${idx + 1}`}
+                        decoding="async"
+                        className="w-full h-full object-cover"
+                      />
                     ) : (
                       <span className="text-neutral-400 text-sm">사진 {idx + 1}</span>
                     )}

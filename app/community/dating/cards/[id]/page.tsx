@@ -89,6 +89,7 @@ export default function OpenCardDetailPage() {
                 <img
                   src={url}
                   alt=""
+                  decoding="async"
                   className={`max-h-full max-w-full h-auto w-auto object-contain object-center ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
                 />
               </div>

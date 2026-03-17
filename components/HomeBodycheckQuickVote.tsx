@@ -3,6 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { withImageTransform } from "@/lib/images";
 
 type BodycheckRating = "great" | "good" | "normal" | "rookie";
 
@@ -99,6 +100,7 @@ export default function HomeBodycheckQuickVote() {
   const current = queue[0] ?? null;
   const remaining = Math.max(queue.length - 1, 0);
   const canVote = payload?.authenticated ?? false;
+  const currentImageUrl = withImageTransform(current?.image_url, { width: 720, quality: 68 });
   const averageScore = useMemo(() => {
     if (!current?.vote_count) return 0;
     return Number((current.score_sum / current.vote_count).toFixed(2));
@@ -142,7 +144,7 @@ export default function HomeBodycheckQuickVote() {
           <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white">
             {current.image_url ? (
               <Image
-                src={current.image_url}
+                src={currentImageUrl ?? current.image_url}
                 alt={current.title}
                 width={520}
                 height={680}
