@@ -1756,7 +1756,7 @@ export default function MyPage() {
       </section>
 
       <section className="mb-5 rounded-2xl border border-rose-200 bg-white p-5">
-        <h2 className="text-lg font-bold text-rose-900 mb-3">내 24고정카드 지원 이력</h2>
+        <h2 className="text-lg font-bold text-rose-900 mb-3">내 36시간 고정카드 지원 이력</h2>
         {myAppliedPaidApplications.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 지원한 내역이 없습니다.</p>
         ) : (

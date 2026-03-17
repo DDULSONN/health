@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 
@@ -96,6 +96,11 @@ type SwipeState = {
   reason: string | null;
 };
 
+type SwipeRequestOptions = {
+  preferCache?: boolean;
+  silent?: boolean;
+};
+
 const PAGE_SIZE = 20;
 
 function maskIdealTypeForPreview(value: string | null): string {
@@ -153,6 +158,7 @@ export default function OpenCardsPage() {
   const [moreViewFemale, setMoreViewFemale] = useState<PublicCard[]>([]);
   const [tick, setTick] = useState(0);
   const [swipeLoading, setSwipeLoading] = useState(true);
+  const [swipeRefreshing, setSwipeRefreshing] = useState(false);
   const [swipeSubmitting, setSwipeSubmitting] = useState(false);
   const [swipeMessage, setSwipeMessage] = useState("");
   const [swipeImgFailed, setSwipeImgFailed] = useState(false);
@@ -164,6 +170,13 @@ export default function OpenCardsPage() {
     candidate: null,
     reason: null,
   });
+  const activeSexRef = useRef<"male" | "female">(activeSex);
+  const swipeCacheRef = useRef<Partial<Record<"male" | "female", SwipeState>>>({});
+  const swipeRequestIdRef = useRef({ male: 0, female: 0 });
+
+  useEffect(() => {
+    activeSexRef.current = activeSex;
+  }, [activeSex]);
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick((v) => v + 1), 60_000);
@@ -323,41 +336,72 @@ export default function OpenCardsPage() {
     }
   }, [femaleHasMore, femaleCursorCreatedAt, femaleCursorId]);
 
-  const loadSwipe = useCallback(async (sex: "male" | "female") => {
-    setSwipeLoading(true);
+  const loadSwipe = useCallback(async (sex: "male" | "female", options?: SwipeRequestOptions) => {
+    const { preferCache = true, silent = false } = options ?? {};
+    const requestId = ++swipeRequestIdRef.current[sex];
+    const cached = preferCache ? swipeCacheRef.current[sex] : undefined;
+    const isActiveTab = activeSexRef.current === sex;
+
+    if (isActiveTab) {
+      if (cached) {
+        setSwipeState(cached);
+        setSwipeImgFailed(false);
+        setSwipeLoading(false);
+        setSwipeRefreshing(true);
+      } else if (!silent) {
+        setSwipeLoading(true);
+        setSwipeRefreshing(false);
+      }
+    }
+
     try {
       const res = await fetch(`/api/dating/cards/swipe?sex=${sex}`, { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as SwipeState & { error?: string };
       if (!res.ok) {
         throw new Error(body.error ?? "스와이프 후보를 불러오지 못했습니다.");
       }
-      setSwipeImgFailed(false);
-      setSwipeState({
+      const nextState = {
         loggedIn: body.loggedIn === true,
         canSwipe: body.canSwipe === true,
         remaining: Math.max(0, Number(body.remaining ?? 0)),
         limit: Math.max(1, Number(body.limit ?? 10)),
         candidate: body.candidate ?? null,
         reason: body.reason ?? null,
-      });
+      };
+      swipeCacheRef.current[sex] = nextState;
+      if (activeSexRef.current === sex && swipeRequestIdRef.current[sex] === requestId) {
+        setSwipeImgFailed(false);
+        setSwipeState(nextState);
+      }
     } catch (error) {
       console.error("swipe load failed", error);
-      setSwipeState({
+      if (cached) return;
+      const fallbackState = {
         loggedIn: false,
         canSwipe: false,
         remaining: 0,
         limit: 10,
         candidate: null,
         reason: error instanceof Error ? error.message : "스와이프 후보를 불러오지 못했습니다.",
-      });
+      };
+      if (activeSexRef.current === sex && swipeRequestIdRef.current[sex] === requestId) {
+        setSwipeState(fallbackState);
+      }
     } finally {
-      setSwipeLoading(false);
+      if (activeSexRef.current === sex && swipeRequestIdRef.current[sex] === requestId) {
+        setSwipeLoading(false);
+        setSwipeRefreshing(false);
+      }
     }
   }, []);
 
   useEffect(() => {
     setSwipeMessage("");
-    void loadSwipe(activeSex);
+    const otherSex = activeSex === "male" ? "female" : "male";
+    void loadSwipe(activeSex, { preferCache: true });
+    if (!swipeCacheRef.current[otherSex]) {
+      void loadSwipe(otherSex, { preferCache: true, silent: true });
+    }
   }, [activeSex, loadSwipe]);
 
   const handleSwipe = useCallback(
@@ -517,6 +561,9 @@ export default function OpenCardsPage() {
             오늘 남은 횟수 {swipeState.remaining}
           </span>
         </div>
+        {swipeRefreshing && !swipeLoading ? (
+          <p className="mt-2 text-xs font-medium text-neutral-500">최신 후보로 조용히 업데이트 중...</p>
+        ) : null}
         {swipeMessage && <p className="mt-3 text-sm font-medium text-emerald-700">{swipeMessage}</p>}
         {swipeLoading ? (
           <p className="mt-4 text-sm text-neutral-500">후보를 불러오는 중...</p>

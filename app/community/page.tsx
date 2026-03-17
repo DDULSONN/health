@@ -1,58 +1,69 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
-  POST_TYPE_LABELS,
   POST_TYPE_COLORS,
   POST_TYPE_ICONS,
-  renderPayloadSummary,
+  POST_TYPE_LABELS,
   getBadgeFromPayload,
-  timeAgo,
   getBodycheckAverage,
+  renderPayloadSummary,
+  timeAgo,
   type Post,
-  type PostType,
 } from "@/lib/community";
 import VerifiedBadge from "@/components/VerifiedBadge";
 
-type Tab = "records" | "photo_bodycheck" | "free" | "ranking";
+type CommunityTab = "all" | "free" | "photo_bodycheck";
+type FeedFilter = "all" | "1rm" | "lifts";
+
+type RankingItem = {
+  id: string;
+  payload_json: Record<string, unknown>;
+  profiles: { nickname: string } | null;
+};
+
 type RankingData = {
-  lifts: {
-    id: string;
-    payload_json: Record<string, unknown>;
-    profiles: { nickname: string } | null;
-  }[];
-  oneRm: {
-    id: string;
-    payload_json: Record<string, unknown>;
-    profiles: { nickname: string } | null;
-  }[];
+  lifts: RankingItem[];
+  oneRm: RankingItem[];
 };
 
-const TAB_LABELS: Record<Tab, string> = {
-  records: "기록 피드",
-  photo_bodycheck: "사진 몸평",
-  free: "자유 게시판",
-  ranking: "랭킹",
+type FeedResponse = {
+  posts?: Post[];
 };
 
-const RECORD_TYPES: (PostType | "all")[] = [
-  "all",
-  "1rm",
-  "lifts",
-  "helltest",
+const PRIMARY_TABS: { value: CommunityTab; label: string; description: string }[] = [
+  { value: "all", label: "전체글", description: "자유글, 기록, 몸평을 한 번에" },
+  { value: "free", label: "자유 게시판", description: "운동 얘기, 정보, 질문" },
+  { value: "photo_bodycheck", label: "사진 몸평", description: "사진 평가와 주간 랭킹" },
+];
+
+const FEED_FILTERS: { value: FeedFilter; label: string }[] = [
+  { value: "all", label: "전체" },
+  { value: "1rm", label: "🏋️ 1RM" },
+  { value: "lifts", label: "🏆 3대 합계" },
 ];
 
 export default function CommunityPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<Tab>("records");
+  const [tab, setTab] = useState<CommunityTab>("all");
+  const [filterType, setFilterType] = useState<FeedFilter>("all");
   const [posts, setPosts] = useState<Post[]>([]);
-  const [filterType, setFilterType] = useState<PostType | "all">("all");
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [rankings, setRankings] = useState<RankingData | null>(null);
+  const [rankingLoading, setRankingLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const feedCacheRef = useRef(new Map<string, Post[]>());
+  const feedRequestIdRef = useRef(0);
+  const hasRenderedPostsRef = useRef(false);
+  const feedKey = useMemo(() => `${tab}:${tab === "all" ? filterType : "all"}`, [filterType, tab]);
+
+  useEffect(() => {
+    hasRenderedPostsRef.current = posts.length > 0;
+  }, [posts.length]);
 
   useEffect(() => {
     createClient()
@@ -63,77 +74,111 @@ export default function CommunityPage() {
   }, []);
 
   const loadFeed = useCallback(async () => {
-    setLoading(true);
-    const params = new URLSearchParams();
-    if (tab === "records") params.set("tab", "records");
-    else if (tab === "photo_bodycheck") params.set("tab", "photo_bodycheck");
-    else params.set("tab", "free");
+    const requestId = ++feedRequestIdRef.current;
+    const cachedPosts = feedCacheRef.current.get(feedKey);
 
-    if (tab === "records" && filterType !== "all") params.set("type", filterType);
-    if (tab === "photo_bodycheck") params.set("type", "photo_bodycheck");
+    if (cachedPosts) {
+      setPosts(cachedPosts);
+      setLoading(false);
+      setIsRefreshing(true);
+    } else {
+      setLoading(true);
+      setIsRefreshing(hasRenderedPostsRef.current);
+    }
+
+    const params = new URLSearchParams();
+    params.set("tab", tab);
+
+    if (tab === "all" && filterType !== "all") {
+      params.set("type", filterType);
+    }
+
+    if (tab === "photo_bodycheck") {
+      params.set("type", "photo_bodycheck");
+    }
 
     try {
-      const res = await fetch(`/api/posts?${params}`, { cache: "no-store" });
-      if (res.ok) {
-        const data = await res.json();
-        setPosts(data.posts);
-      } else {
+      const res = await fetch(`/api/posts?${params.toString()}`, { cache: "no-store" });
+      if (!res.ok) {
         console.error("Feed load failed:", res.status);
+        return;
       }
-    } catch (e) {
-      console.error("Feed load error:", e);
+      const data = (await res.json()) as FeedResponse;
+      const nextPosts = Array.isArray(data.posts) ? data.posts : [];
+      feedCacheRef.current.set(feedKey, nextPosts);
+      if (feedRequestIdRef.current === requestId) {
+        setPosts(nextPosts);
+      }
+    } catch (error) {
+      console.error("Feed load error:", error);
+    } finally {
+      if (feedRequestIdRef.current === requestId) {
+        setLoading(false);
+        setIsRefreshing(false);
+      }
     }
-    setLoading(false);
-  }, [tab, filterType]);
+  }, [feedKey, filterType, tab]);
 
   const loadRankings = useCallback(async () => {
-    setLoading(true);
+    setRankingLoading(true);
     try {
-      const res = await fetch("/api/rankings");
-      if (res.ok) {
-        setRankings(await res.json());
+      const res = await fetch("/api/rankings", { cache: "no-store" });
+      if (!res.ok) {
+        console.error("Rankings load failed:", res.status);
+        setRankings(null);
+        return;
       }
-    } catch (e) {
-      console.error("Rankings load error:", e);
+      setRankings((await res.json()) as RankingData);
+    } catch (error) {
+      console.error("Rankings load error:", error);
+      setRankings(null);
+    } finally {
+      setRankingLoading(false);
     }
-    setLoading(false);
   }, []);
 
   useEffect(() => {
-    queueMicrotask(() => {
-      if (tab === "ranking") {
-        void loadRankings();
-      } else {
-        void loadFeed();
-      }
-    });
-  }, [tab, loadFeed, loadRankings]);
+    void loadFeed();
+  }, [loadFeed]);
+
+  useEffect(() => {
+    void loadRankings();
+  }, [loadRankings]);
 
   const handleWrite = () => {
+    const redirect =
+      tab === "photo_bodycheck" ? "/community/write?type=photo_bodycheck" : "/community/write";
+
     if (!userId) {
-      const redirect =
-        tab === "photo_bodycheck"
-          ? "/community/write?type=photo_bodycheck"
-          : "/community/write";
       router.push(`/login?redirect=${encodeURIComponent(redirect)}`);
       return;
     }
-    if (tab === "photo_bodycheck") {
-      router.push("/community/write?type=photo_bodycheck");
-      return;
-    }
-    router.push("/community/write");
+
+    router.push(redirect);
   };
 
+  const feedHeading = useMemo(() => {
+    if (tab === "free") return "자유 게시판";
+    if (tab === "photo_bodycheck") return "사진 몸평 피드";
+    if (filterType === "1rm") return "1RM 피드";
+    if (filterType === "lifts") return "3대 합계 피드";
+    return "전체 피드";
+  }, [filterType, tab]);
+
   return (
-    <main className="max-w-2xl mx-auto px-4 py-6">
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold text-neutral-900">커뮤니티</h1>
+    <main className="mx-auto max-w-3xl px-4 py-6">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-3xl font-black tracking-tight text-neutral-900">커뮤니티</h1>
+          <p className="mt-2 text-sm text-neutral-500">
+            기록만 따로, 자유글만 따로 흩어지지 않게 메인 피드에서 한 번에 보세요.
+          </p>
+        </div>
         <div className="flex items-center gap-2">
-          {userId && (
+          {userId ? (
             <Link
               href="/mypage"
-              className="min-w-[44px] min-h-[44px] flex items-center justify-center rounded-xl border border-neutral-200 text-neutral-600 hover:bg-neutral-50"
+              className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-2xl border border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"
               title="마이페이지"
             >
               <svg
@@ -150,203 +195,279 @@ export default function CommunityPage() {
                 <circle cx="12" cy="7" r="4" />
               </svg>
             </Link>
-          )}
+          ) : null}
           <button
             type="button"
             onClick={handleWrite}
-            className="px-4 min-h-[44px] rounded-xl bg-emerald-600 text-white text-sm font-medium hover:bg-emerald-700 active:scale-[0.98] transition-all"
+            className="inline-flex min-h-[44px] items-center rounded-2xl bg-emerald-600 px-5 text-sm font-semibold text-white transition hover:bg-emerald-700"
           >
             글쓰기
           </button>
         </div>
       </div>
 
-      <div className="sticky top-14 z-40 bg-white/90 backdrop-blur-md -mx-4 px-4 pb-3 pt-1 border-b border-neutral-100">
-        <div className="grid grid-cols-2 rounded-xl border border-neutral-300 overflow-hidden">
-          {(Object.keys(TAB_LABELS) as Tab[]).map((t) => (
-            <button
-              key={t}
-              type="button"
-              onClick={() => setTab(t)}
-              className={`min-h-[44px] text-sm font-medium transition-colors ${
-                tab === t
-                  ? "bg-emerald-600 text-white"
-                  : "bg-white text-neutral-600 hover:bg-neutral-50"
-              }`}
-            >
-              {TAB_LABELS[t]}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {tab === "records" && (
-        <>
-          <div className="flex flex-wrap gap-2 my-4">
-            {RECORD_TYPES.map((t) => (
-              <button
-                key={t}
-                type="button"
-                onClick={() => setFilterType(t)}
-                className={`px-3 min-h-[36px] rounded-full text-xs font-medium transition-colors ${
-                  filterType === t
-                    ? "bg-emerald-600 text-white"
-                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
-                }`}
-              >
-                {t === "all"
-                  ? "전체"
-                  : `${POST_TYPE_ICONS[t]} ${POST_TYPE_LABELS[t]}`}
-              </button>
-            ))}
-          </div>
-          <PostList posts={posts} loading={loading} />
-        </>
-      )}
-
-      {tab === "photo_bodycheck" && (
-        <div className="mt-4 space-y-3">
-          <Link
-            href="/community/bodycheck"
-            className="block rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm text-indigo-700 font-medium"
-          >
-            이번주 몸짱 랭킹과 사진 몸평 전용 피드는 여기서 확인하세요 →
-          </Link>
-          <PostList posts={posts} loading={loading} />
-        </div>
-      )}
-
-      {tab === "free" && (
-        <div className="mt-4">
-          <PostList posts={posts} loading={loading} />
-        </div>
-      )}
-
-      {tab === "ranking" && (
-        <div className="mt-4">
-          {loading ? (
-            <p className="text-neutral-400 text-center py-10">로딩 중...</p>
-          ) : !rankings ? (
-            <p className="text-neutral-400 text-center py-10">
-              데이터를 불러오지 못했습니다.
+      <section className="mt-5 overflow-hidden rounded-[28px] border border-neutral-200 bg-[linear-gradient(135deg,#0f9f6e_0%,#0d7c73_45%,#f6fbf9_45%,#f8fbff_100%)] p-5 text-white">
+        <div className="grid gap-4 md:grid-cols-[1.3fr_0.9fr]">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-[0.18em] text-emerald-100">
+              Main Feed
             </p>
-          ) : (
-            <div className="space-y-8">
-              <RankingSection
-                title="🏋️ 3대 합계 TOP 10 (7일)"
-                items={rankings.lifts}
-                bgColor="bg-rose-100"
-                textColor="text-rose-700"
+            <h2 className="mt-2 text-2xl font-black leading-tight">
+              전체글 중심으로
+              <br />
+              더 활발하게 보이게
+            </h2>
+            <p className="mt-3 max-w-md text-sm text-emerald-50/90">
+              자유글, 1RM, 3대 합계, 사진 몸평을 메인에서 함께 보여주고 몸평은 별도 피드로도 바로 이동할 수 있게
+              정리했습니다.
+            </p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setTab("all");
+                  setFilterType("all");
+                }}
+                className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-emerald-700"
+              >
+                전체글 보기
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab("free")}
+                className="rounded-full border border-white/30 bg-white/10 px-4 py-2 text-sm font-medium text-white"
+              >
+                자유 게시판
+              </button>
+              <button
+                type="button"
+                onClick={() => setTab("photo_bodycheck")}
+                className="rounded-full border border-white/30 bg-white/10 px-4 py-2 text-sm font-medium text-white"
+              >
+                사진 몸평
+              </button>
+            </div>
+          </div>
+
+          <div className="rounded-[24px] border border-white/20 bg-white/90 p-4 text-neutral-900 shadow-sm">
+            <div className="flex items-center justify-between gap-2">
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
+                  Weekly Ranking
+                </p>
+                <h3 className="mt-1 text-lg font-bold">이번 주 기록 하이라이트</h3>
+              </div>
+              <Link href="/community/bodycheck" className="text-xs font-semibold text-emerald-700">
+                몸평 랭킹 →
+              </Link>
+            </div>
+            <div className="mt-4 space-y-3">
+              <MiniRankingCard
+                title="3대 합계 TOP"
+                item={rankings?.lifts?.[0] ?? null}
+                loading={rankingLoading}
                 valueKey="totalKg"
                 unit="kg"
               />
-              <RankingSection
-                title="💪 1RM TOP 10 (7일)"
-                items={rankings.oneRm}
-                bgColor="bg-emerald-100"
-                textColor="text-emerald-700"
+              <MiniRankingCard
+                title="1RM TOP"
+                item={rankings?.oneRm?.[0] ?? null}
+                loading={rankingLoading}
                 valueKey="oneRmKg"
                 unit="kg"
                 labelKey="lift"
               />
             </div>
-          )}
+          </div>
         </div>
-      )}
+      </section>
+
+      <div className="sticky top-14 z-30 mt-5 border-b border-neutral-200 bg-white/92 pb-4 pt-1 backdrop-blur">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-3">
+          {PRIMARY_TABS.map((item) => (
+            <button
+              key={item.value}
+              type="button"
+              onClick={() => {
+                setTab(item.value);
+                if (item.value !== "all") {
+                  setFilterType("all");
+                }
+              }}
+              className={`rounded-2xl border px-4 py-3 text-left transition ${
+                tab === item.value
+                  ? "border-emerald-600 bg-emerald-600 text-white shadow-sm"
+                  : "border-neutral-200 bg-white text-neutral-700 hover:border-neutral-300 hover:bg-neutral-50"
+              }`}
+            >
+              <p className="text-sm font-semibold">{item.label}</p>
+              <p className={`mt-1 text-xs ${tab === item.value ? "text-emerald-50" : "text-neutral-400"}`}>
+                {item.description}
+              </p>
+            </button>
+          ))}
+        </div>
+
+        {tab === "all" ? (
+          <div className="mt-4 flex flex-wrap gap-2">
+            {FEED_FILTERS.map((item) => (
+              <button
+                key={item.value}
+                type="button"
+                onClick={() => setFilterType(item.value)}
+                className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
+                  filterType === item.value
+                    ? "bg-neutral-900 text-white"
+                    : "bg-neutral-100 text-neutral-600 hover:bg-neutral-200"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+
+      {tab === "photo_bodycheck" ? (
+        <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-indigo-900">사진 몸평 전용 동선</p>
+              <p className="mt-1 text-sm text-indigo-700">
+                사진 몸평은 전용 게시판과 주간 랭킹에서 더 빠르게 볼 수 있어요.
+              </p>
+            </div>
+            <Link
+              href="/community/bodycheck"
+              className="inline-flex min-h-[40px] items-center rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700"
+            >
+              전용 게시판 보기
+            </Link>
+          </div>
+        </div>
+      ) : null}
+
+      <section className="mt-5">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-neutral-900">{feedHeading}</h2>
+            <p className="mt-1 text-xs text-neutral-400">
+              헬창 판독기 글은 메인 커뮤니티 피드에서 제외하고, 기록과 자유글 중심으로 보여줍니다.
+            </p>
+          </div>
+        </div>
+        <PostList posts={posts} loading={loading} isRefreshing={isRefreshing} />
+      </section>
     </main>
   );
 }
 
-function PostList({ posts, loading }: { posts: Post[]; loading: boolean }) {
-  if (loading) return <p className="text-neutral-400 text-center py-10">로딩 중...</p>;
-  if (posts.length === 0) return <p className="text-neutral-400 text-center py-10">아직 글이 없습니다.</p>;
+function PostList({
+  posts,
+  loading,
+  isRefreshing,
+}: {
+  posts: Post[];
+  loading: boolean;
+  isRefreshing: boolean;
+}) {
+  if (loading && posts.length === 0) {
+    return (
+      <div className="rounded-3xl border border-neutral-200 bg-white p-10 text-center text-sm text-neutral-400">
+        글을 불러오는 중입니다.
+      </div>
+    );
+  }
+
+  if (posts.length === 0) {
+    return (
+      <div className="rounded-3xl border border-dashed border-neutral-300 bg-neutral-50 p-10 text-center text-sm text-neutral-500">
+        아직 올라온 글이 없습니다. 첫 글을 남겨서 분위기를 만들어보세요.
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-3">
-      {posts.map((post) => {
+    <div className="overflow-hidden rounded-3xl border border-neutral-200 bg-white">
+      {isRefreshing ? (
+        <div className="border-b border-neutral-100 bg-neutral-50 px-4 py-2 text-right text-[11px] font-medium text-neutral-400">
+          새 글 불러오는 중...
+        </div>
+      ) : null}
+      {posts.map((post, index) => {
         const badge = getBadgeFromPayload(post.type, post.payload_json);
-        const icon = POST_TYPE_ICONS[post.type];
         const thumbnailCandidates = [...(post.thumb_images ?? []), ...(post.images ?? [])].filter(
           (url): url is string => typeof url === "string" && url.length > 0
         );
         const previewImage = thumbnailCandidates[0] ?? "";
-        const hasImages = thumbnailCandidates.length > 0;
-        const avg =
-          post.type === "photo_bodycheck" ? getBodycheckAverage(post) : null;
+        const avg = post.type === "photo_bodycheck" ? getBodycheckAverage(post) : null;
         const voteCount = Number(post.vote_count ?? 0);
 
         return (
           <Link
             key={post.id}
             href={`/community/${post.id}`}
-            className="block rounded-2xl bg-white border border-neutral-200 p-4 hover:border-emerald-300 hover:shadow-sm transition-all active:scale-[0.99]"
+            className={`flex gap-4 px-4 py-4 transition hover:bg-neutral-50 ${
+              index > 0 ? "border-t border-neutral-100" : ""
+            }`}
           >
-            <div className="flex gap-3">
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <span
-                    className={`px-2 py-0.5 rounded-full text-xs font-medium ${POST_TYPE_COLORS[post.type]}`}
-                  >
-                    {icon} {POST_TYPE_LABELS[post.type]}
-                  </span>
-                  <span className="text-xs text-neutral-400">
-                    {timeAgo(post.created_at)}
-                  </span>
-                </div>
-                <h3 className="font-semibold text-neutral-900 text-sm truncate">
-                  {post.title}
-                </h3>
-                {post.payload_json && post.type !== "free" && (
-                  <p className="text-xs text-neutral-500 mt-1 truncate">
-                    {renderPayloadSummary(post.type, post.payload_json)}
-                  </p>
-                )}
-                {post.content && post.type === "free" && (
-                  <p className="text-xs text-neutral-500 mt-1 line-clamp-2">
-                    {post.content}
-                  </p>
-                )}
-                {post.type === "photo_bodycheck" && (
-                  <p className="text-xs text-indigo-700 mt-1">
-                    평균 {avg?.toFixed(2) ?? "0.00"} / 투표 {voteCount}
-                  </p>
-                )}
-                <div className="flex items-center gap-2 mt-2">
-                  <span className="text-xs" title={badge.label}>
-                    {badge.emoji}
-                  </span>
-                  <span className="text-xs text-neutral-500">
-                    {post.profiles?.nickname ?? "알 수 없음"}
-                  </span>
-                  <VerifiedBadge total={post.cert_summary?.total} />
-                </div>
+            <div className="min-w-0 flex-1">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${POST_TYPE_COLORS[post.type]}`}>
+                  {POST_TYPE_ICONS[post.type]} {POST_TYPE_LABELS[post.type]}
+                </span>
+                <span className="text-xs text-neutral-400">{timeAgo(post.created_at)}</span>
               </div>
 
-              {hasImages && (
-                <div className="shrink-0 w-16 h-16 rounded-lg overflow-hidden border border-neutral-100">
-                  <img
-                    src={previewImage}
-                    loading="lazy"
-                    decoding="async"
-                    data-candidates={thumbnailCandidates.join("\n")}
-                    data-candidate-index="0"
-                    onError={(e) => {
-                      const candidates = (e.currentTarget.dataset.candidates ?? "")
-                        .split("\n")
-                        .filter(Boolean);
-                      const currentIdx = Number(e.currentTarget.dataset.candidateIndex ?? "0");
-                      const nextIdx = currentIdx + 1;
-                      if (nextIdx < candidates.length) {
-                        e.currentTarget.dataset.candidateIndex = String(nextIdx);
-                        e.currentTarget.src = candidates[nextIdx] as string;
-                      }
-                    }}
-                    alt=""
-                    className="w-full h-full object-cover"
-                  />
-                </div>
-              )}
+              <h3 className="mt-2 truncate text-sm font-semibold text-neutral-900 sm:text-[15px]">
+                {post.title}
+              </h3>
+
+              {post.payload_json && post.type !== "free" ? (
+                <p className="mt-1 truncate text-xs text-neutral-500">
+                  {renderPayloadSummary(post.type, post.payload_json)}
+                </p>
+              ) : null}
+
+              {post.content && post.type === "free" ? (
+                <p className="mt-1 line-clamp-2 text-xs text-neutral-500">{post.content}</p>
+              ) : null}
+
+              {post.type === "photo_bodycheck" ? (
+                <p className="mt-1 text-xs font-medium text-indigo-700">
+                  평균 {avg?.toFixed(2) ?? "0.00"} · 투표 {voteCount}
+                </p>
+              ) : null}
+
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+                <span title={badge.label}>{badge.emoji}</span>
+                <span>{post.profiles?.nickname ?? "닉네임 없음"}</span>
+                <VerifiedBadge total={post.cert_summary?.total} />
+              </div>
             </div>
+
+            {previewImage ? (
+              <div className="h-16 w-16 shrink-0 overflow-hidden rounded-2xl border border-neutral-100 sm:h-[72px] sm:w-[72px]">
+                <img
+                  src={previewImage}
+                  alt=""
+                  loading="lazy"
+                  decoding="async"
+                  data-candidates={thumbnailCandidates.join("\n")}
+                  data-candidate-index="0"
+                  onError={(event) => {
+                    const candidates = (event.currentTarget.dataset.candidates ?? "").split("\n").filter(Boolean);
+                    const currentIdx = Number(event.currentTarget.dataset.candidateIndex ?? "0");
+                    const nextIdx = currentIdx + 1;
+                    if (nextIdx < candidates.length) {
+                      event.currentTarget.dataset.candidateIndex = String(nextIdx);
+                      event.currentTarget.src = candidates[nextIdx] as string;
+                    }
+                  }}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+            ) : null}
           </Link>
         );
       })}
@@ -354,63 +475,56 @@ function PostList({ posts, loading }: { posts: Post[]; loading: boolean }) {
   );
 }
 
-function RankingSection({
+function MiniRankingCard({
   title,
-  items,
-  bgColor,
-  textColor,
+  item,
+  loading,
   valueKey,
   unit,
   labelKey,
 }: {
   title: string;
-  items: {
-    id: string;
-    payload_json: Record<string, unknown>;
-    profiles: { nickname: string } | null;
-  }[];
-  bgColor: string;
-  textColor: string;
+  item: RankingItem | null;
+  loading: boolean;
   valueKey: string;
   unit: string;
   labelKey?: string;
 }) {
-  const medals = ["🥇", "🥈", "🥉"];
+  if (loading) {
+    return (
+      <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3">
+        <p className="text-xs font-semibold text-neutral-500">{title}</p>
+        <p className="mt-2 text-sm text-neutral-400">불러오는 중...</p>
+      </div>
+    );
+  }
+
+  if (!item) {
+    return (
+      <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3">
+        <p className="text-xs font-semibold text-neutral-500">{title}</p>
+        <p className="mt-2 text-sm text-neutral-400">아직 집계된 기록이 없습니다.</p>
+      </div>
+    );
+  }
+
+  const payload = item.payload_json as Record<string, unknown>;
+  const prefix = labelKey ? `${String(payload[labelKey] ?? "")} ` : "";
+  const value = `${String(payload[valueKey] ?? 0)}${unit}`;
+
   return (
-    <section>
-      <h2 className="text-lg font-bold text-neutral-800 mb-3">{title}</h2>
-      {items.length === 0 ? (
-        <p className="text-sm text-neutral-400">아직 기록이 없습니다.</p>
-      ) : (
-        <div className="space-y-2">
-          {items.map((item, i) => {
-            const pj = item.payload_json as Record<string, unknown>;
-            return (
-              <Link
-                key={item.id}
-                href={`/community/${item.id}`}
-                className="flex items-center gap-3 rounded-xl bg-white border border-neutral-200 p-3 min-h-[52px] hover:border-neutral-300 active:scale-[0.99] transition-all"
-              >
-                <span
-                  className={`w-8 h-8 flex items-center justify-center rounded-full ${bgColor} ${textColor} text-sm font-bold shrink-0`}
-                >
-                  {i < 3 ? medals[i] : i + 1}
-                </span>
-                <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-neutral-900 truncate">
-                    {item.profiles?.nickname ?? "?"}
-                  </p>
-                  <p className="text-xs text-neutral-500">
-                    {labelKey ? `${String(pj[labelKey] ?? "")} ` : ""}
-                    {String(pj[valueKey] ?? 0)}
-                    {unit}
-                  </p>
-                </div>
-              </Link>
-            );
-          })}
-        </div>
-      )}
-    </section>
+    <Link
+      href={`/community/${item.id}`}
+      className="block rounded-2xl border border-neutral-200 bg-neutral-50 p-3 transition hover:border-neutral-300 hover:bg-white"
+    >
+      <p className="text-xs font-semibold text-neutral-500">{title}</p>
+      <p className="mt-2 truncate text-sm font-semibold text-neutral-900">
+        {item.profiles?.nickname ?? "익명"}
+      </p>
+      <p className="mt-1 text-xs text-neutral-500">
+        {prefix}
+        {value}
+      </p>
+    </Link>
   );
 }

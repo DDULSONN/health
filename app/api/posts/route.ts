@@ -8,8 +8,10 @@ import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
 import { getConfirmedUserOrResponse } from "@/lib/auth-confirmed";
 
 const POST_COOLDOWN_MS = 30_000;
-const RECORD_TYPES = ["lifts", "1rm", "helltest"];
+const RECORD_FEED_TYPES = ["lifts", "1rm"];
+const LEGACY_RECORD_TYPES = ["lifts", "1rm", "helltest"];
 const BODYCHECK_TYPES = ["photo_bodycheck"];
+const MAIN_FEED_TYPES = ["free", "lifts", "1rm", "photo_bodycheck"];
 const POST_LIST_SELECT =
   "id,user_id,type,title,content,payload_json,images,gender,score_sum,vote_count,great_count,good_count,normal_count,rookie_count,is_hidden,is_deleted,created_at";
 
@@ -74,8 +76,10 @@ export async function GET(request: Request) {
     .order("created_at", { ascending: false })
     .range(offset, offset + limit - 1);
 
-  if (tab === "records") {
-    query = query.in("type", RECORD_TYPES);
+  if (tab === "all") {
+    query = query.in("type", MAIN_FEED_TYPES);
+  } else if (tab === "records") {
+    query = query.in("type", RECORD_FEED_TYPES);
   } else if (tab === "free") {
     query = query.eq("type", "free");
   } else if (tab === "photo_bodycheck") {
@@ -218,7 +222,7 @@ export async function POST(request: Request) {
     }
   }
 
-  if (RECORD_TYPES.includes(type)) {
+  if (LEGACY_RECORD_TYPES.includes(type)) {
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
@@ -226,7 +230,7 @@ export async function POST(request: Request) {
       .from("posts")
       .select("id", { count: "exact", head: true })
       .eq("user_id", user.id)
-      .in("type", RECORD_TYPES)
+      .in("type", LEGACY_RECORD_TYPES)
       .gte("created_at", today.toISOString());
 
     if ((count ?? 0) >= 1) {
