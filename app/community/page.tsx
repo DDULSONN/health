@@ -19,24 +19,23 @@ import VerifiedBadge from "@/components/VerifiedBadge";
 type CommunityTab = "all" | "free" | "photo_bodycheck";
 type FeedFilter = "all" | "1rm" | "lifts";
 
-type RankingItem = {
-  id: string;
-  payload_json: Record<string, unknown>;
-  profiles: { nickname: string } | null;
-};
-
-type RankingData = {
-  lifts: RankingItem[];
-  oneRm: RankingItem[];
-};
-
 type FeedResponse = {
   posts?: Post[];
+  total?: number;
+  page?: number;
 };
 
+type FeedCacheEntry = {
+  posts: Post[];
+  total: number;
+  page: number;
+};
+
+const POSTS_PER_PAGE = 20;
+
 const PRIMARY_TABS: { value: CommunityTab; label: string; description: string }[] = [
-  { value: "all", label: "전체글", description: "자유글, 기록, 몸평을 한 번에" },
-  { value: "free", label: "자유 게시판", description: "운동 얘기, 정보, 질문" },
+  { value: "all", label: "전체글", description: "지금 올라오는 글 한눈에" },
+  { value: "free", label: "자유 게시판", description: "잡담, 질문, 정보 공유" },
   { value: "photo_bodycheck", label: "사진 몸평", description: "사진 평가와 주간 랭킹" },
 ];
 
@@ -50,20 +49,33 @@ export default function CommunityPage() {
   const router = useRouter();
   const [tab, setTab] = useState<CommunityTab>("all");
   const [filterType, setFilterType] = useState<FeedFilter>("all");
+  const [page, setPage] = useState(1);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [totalPosts, setTotalPosts] = useState(0);
   const [loading, setLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [rankings, setRankings] = useState<RankingData | null>(null);
-  const [rankingLoading, setRankingLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
-  const feedCacheRef = useRef(new Map<string, Post[]>());
+  const feedCacheRef = useRef(new Map<string, FeedCacheEntry>());
   const feedRequestIdRef = useRef(0);
   const hasRenderedPostsRef = useRef(false);
-  const feedKey = useMemo(() => `${tab}:${tab === "all" ? filterType : "all"}`, [filterType, tab]);
+  const feedKey = useMemo(() => `${tab}:${tab === "all" ? filterType : "all"}:${page}`, [filterType, page, tab]);
+  const totalPages = Math.max(1, Math.ceil(totalPosts / POSTS_PER_PAGE));
+  const visiblePagination = useMemo(() => {
+    const start = Math.max(1, page - 2);
+    const end = Math.min(totalPages, start + 4);
+    const adjustedStart = Math.max(1, end - 4);
+    return Array.from({ length: end - adjustedStart + 1 }, (_, index) => adjustedStart + index);
+  }, [page, totalPages]);
 
   useEffect(() => {
     hasRenderedPostsRef.current = posts.length > 0;
   }, [posts.length]);
+
+  useEffect(() => {
+    if (page > totalPages) {
+      setPage(totalPages);
+    }
+  }, [page, totalPages]);
 
   useEffect(() => {
     createClient()
@@ -78,7 +90,8 @@ export default function CommunityPage() {
     const cachedPosts = feedCacheRef.current.get(feedKey);
 
     if (cachedPosts) {
-      setPosts(cachedPosts);
+      setPosts(cachedPosts.posts);
+      setTotalPosts(cachedPosts.total);
       setLoading(false);
       setIsRefreshing(true);
     } else {
@@ -97,6 +110,8 @@ export default function CommunityPage() {
       params.set("type", "photo_bodycheck");
     }
 
+    params.set("page", String(page));
+
     try {
       const res = await fetch(`/api/posts?${params.toString()}`, { cache: "no-store" });
       if (!res.ok) {
@@ -105,9 +120,11 @@ export default function CommunityPage() {
       }
       const data = (await res.json()) as FeedResponse;
       const nextPosts = Array.isArray(data.posts) ? data.posts : [];
-      feedCacheRef.current.set(feedKey, nextPosts);
+      const nextTotal = typeof data.total === "number" ? data.total : 0;
+      feedCacheRef.current.set(feedKey, { posts: nextPosts, total: nextTotal, page });
       if (feedRequestIdRef.current === requestId) {
         setPosts(nextPosts);
+        setTotalPosts(nextTotal);
       }
     } catch (error) {
       console.error("Feed load error:", error);
@@ -117,33 +134,11 @@ export default function CommunityPage() {
         setIsRefreshing(false);
       }
     }
-  }, [feedKey, filterType, tab]);
-
-  const loadRankings = useCallback(async () => {
-    setRankingLoading(true);
-    try {
-      const res = await fetch("/api/rankings", { cache: "no-store" });
-      if (!res.ok) {
-        console.error("Rankings load failed:", res.status);
-        setRankings(null);
-        return;
-      }
-      setRankings((await res.json()) as RankingData);
-    } catch (error) {
-      console.error("Rankings load error:", error);
-      setRankings(null);
-    } finally {
-      setRankingLoading(false);
-    }
-  }, []);
+  }, [feedKey, filterType, page, tab]);
 
   useEffect(() => {
     void loadFeed();
   }, [loadFeed]);
-
-  useEffect(() => {
-    void loadRankings();
-  }, [loadRankings]);
 
   const handleWrite = () => {
     const redirect =
@@ -171,7 +166,7 @@ export default function CommunityPage() {
         <div>
           <h1 className="text-3xl font-black tracking-tight text-neutral-900">커뮤니티</h1>
           <p className="mt-2 text-sm text-neutral-500">
-            기록만 따로, 자유글만 따로 흩어지지 않게 메인 피드에서 한 번에 보세요.
+            운동 기록도 보고, 자유글도 보고, 몸평도 한 곳에서 편하게 둘러보세요.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -213,13 +208,12 @@ export default function CommunityPage() {
               Main Feed
             </p>
             <h2 className="mt-2 text-2xl font-black leading-tight">
-              전체글 중심으로
+              지금 올라오는 글을
               <br />
-              더 활발하게 보이게
+              한눈에 보기
             </h2>
             <p className="mt-3 max-w-md text-sm text-emerald-50/90">
-              자유글, 1RM, 3대 합계, 사진 몸평을 메인에서 함께 보여주고 몸평은 별도 피드로도 바로 이동할 수 있게
-              정리했습니다.
+              자유글, 1RM, 3대 합계, 사진 몸평을 한 피드에서 보고, 관심 있는 주제는 탭으로 바로 골라볼 수 있어요.
             </p>
             <div className="mt-4 flex flex-wrap gap-2">
               <button
@@ -227,57 +221,51 @@ export default function CommunityPage() {
                 onClick={() => {
                   setTab("all");
                   setFilterType("all");
+                  setPage(1);
                 }}
                 className="rounded-full bg-white px-4 py-2 text-sm font-semibold text-emerald-700"
               >
-                전체글 보기
+                전체 피드
               </button>
               <button
                 type="button"
-                onClick={() => setTab("free")}
+                onClick={() => {
+                  setTab("free");
+                  setPage(1);
+                }}
                 className="rounded-full border border-white/30 bg-white/10 px-4 py-2 text-sm font-medium text-white"
               >
-                자유 게시판
+                자유글 모아보기
               </button>
               <button
                 type="button"
-                onClick={() => setTab("photo_bodycheck")}
+                onClick={() => {
+                  setTab("photo_bodycheck");
+                  setPage(1);
+                }}
                 className="rounded-full border border-white/30 bg-white/10 px-4 py-2 text-sm font-medium text-white"
               >
-                사진 몸평
+                사진 몸평 보기
               </button>
             </div>
           </div>
 
           <div className="rounded-[24px] border border-white/20 bg-white/90 p-4 text-neutral-900 shadow-sm">
-            <div className="flex items-center justify-between gap-2">
-              <div>
-                <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">
-                  Weekly Ranking
-                </p>
-                <h3 className="mt-1 text-lg font-bold">이번 주 기록 하이라이트</h3>
-              </div>
-              <Link href="/community/bodycheck" className="text-xs font-semibold text-emerald-700">
-                몸평 랭킹 →
-              </Link>
+            <p className="text-xs font-semibold uppercase tracking-[0.16em] text-emerald-700">Bodycheck Ranking</p>
+            <h3 className="mt-1 text-lg font-bold">이번 주 몸평 랭킹</h3>
+            <p className="mt-2 text-sm leading-6 text-neutral-600">
+              사진 몸평에서 이번 주 반응 좋은 글과 랭킹을 바로 확인해보세요.
+            </p>
+            <div className="mt-4 rounded-2xl border border-emerald-100 bg-emerald-50 px-4 py-3">
+              <p className="text-xs font-semibold text-emerald-700">사진 몸평 전용 피드</p>
+              <p className="mt-1 text-sm text-emerald-900">주간 랭킹, 사진 평가, 몸평 글만 모아서 볼 수 있어요.</p>
             </div>
-            <div className="mt-4 space-y-3">
-              <MiniRankingCard
-                title="3대 합계 TOP"
-                item={rankings?.lifts?.[0] ?? null}
-                loading={rankingLoading}
-                valueKey="totalKg"
-                unit="kg"
-              />
-              <MiniRankingCard
-                title="1RM TOP"
-                item={rankings?.oneRm?.[0] ?? null}
-                loading={rankingLoading}
-                valueKey="oneRmKg"
-                unit="kg"
-                labelKey="lift"
-              />
-            </div>
+            <Link
+              href="/community/bodycheck"
+              className="mt-4 inline-flex min-h-[42px] items-center rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white transition hover:bg-emerald-700"
+            >
+              몸평 랭킹 보러가기
+            </Link>
           </div>
         </div>
       </section>
@@ -293,6 +281,7 @@ export default function CommunityPage() {
                 if (item.value !== "all") {
                   setFilterType("all");
                 }
+                setPage(1);
               }}
               className={`rounded-2xl border px-4 py-3 text-left transition ${
                 tab === item.value
@@ -314,7 +303,10 @@ export default function CommunityPage() {
               <button
                 key={item.value}
                 type="button"
-                onClick={() => setFilterType(item.value)}
+                onClick={() => {
+                  setFilterType(item.value);
+                  setPage(1);
+                }}
                 className={`rounded-full px-4 py-2 text-xs font-semibold transition ${
                   filterType === item.value
                     ? "bg-neutral-900 text-white"
@@ -356,7 +348,47 @@ export default function CommunityPage() {
             </p>
           </div>
         </div>
+        <div className="mb-3 -mt-1 flex justify-end">
+          <p className="text-xs font-medium text-neutral-400">
+            {totalPosts > 0 ? `${page} / ${totalPages} 페이지 · 총 ${totalPosts}개` : "총 0개"}
+          </p>
+        </div>
         <PostList posts={posts} loading={loading} isRefreshing={isRefreshing} />
+        {totalPosts > POSTS_PER_PAGE ? (
+          <nav className="mt-4 flex flex-wrap items-center justify-center gap-2" aria-label="커뮤니티 페이지 이동">
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.max(1, current - 1))}
+              disabled={page === 1}
+              className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-600 transition hover:border-neutral-300 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              이전
+            </button>
+            {visiblePagination.map((pageNumber) => (
+              <button
+                key={pageNumber}
+                type="button"
+                onClick={() => setPage(pageNumber)}
+                aria-current={pageNumber === page ? "page" : undefined}
+                className={`min-w-10 rounded-xl px-3 py-2 text-sm font-semibold transition ${
+                  pageNumber === page
+                    ? "bg-emerald-600 text-white"
+                    : "border border-neutral-200 bg-white text-neutral-600 hover:border-neutral-300 hover:bg-neutral-50"
+                }`}
+              >
+                {pageNumber}
+              </button>
+            ))}
+            <button
+              type="button"
+              onClick={() => setPage((current) => Math.min(totalPages, current + 1))}
+              disabled={page === totalPages}
+              className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-medium text-neutral-600 transition hover:border-neutral-300 hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-40"
+            >
+              다음
+            </button>
+          </nav>
+        ) : null}
       </section>
     </main>
   );
@@ -472,59 +504,5 @@ function PostList({
         );
       })}
     </div>
-  );
-}
-
-function MiniRankingCard({
-  title,
-  item,
-  loading,
-  valueKey,
-  unit,
-  labelKey,
-}: {
-  title: string;
-  item: RankingItem | null;
-  loading: boolean;
-  valueKey: string;
-  unit: string;
-  labelKey?: string;
-}) {
-  if (loading) {
-    return (
-      <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3">
-        <p className="text-xs font-semibold text-neutral-500">{title}</p>
-        <p className="mt-2 text-sm text-neutral-400">불러오는 중...</p>
-      </div>
-    );
-  }
-
-  if (!item) {
-    return (
-      <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-3">
-        <p className="text-xs font-semibold text-neutral-500">{title}</p>
-        <p className="mt-2 text-sm text-neutral-400">아직 집계된 기록이 없습니다.</p>
-      </div>
-    );
-  }
-
-  const payload = item.payload_json as Record<string, unknown>;
-  const prefix = labelKey ? `${String(payload[labelKey] ?? "")} ` : "";
-  const value = `${String(payload[valueKey] ?? 0)}${unit}`;
-
-  return (
-    <Link
-      href={`/community/${item.id}`}
-      className="block rounded-2xl border border-neutral-200 bg-neutral-50 p-3 transition hover:border-neutral-300 hover:bg-white"
-    >
-      <p className="text-xs font-semibold text-neutral-500">{title}</p>
-      <p className="mt-2 truncate text-sm font-semibold text-neutral-900">
-        {item.profiles?.nickname ?? "익명"}
-      </p>
-      <p className="mt-1 text-xs text-neutral-500">
-        {prefix}
-        {value}
-      </p>
-    </Link>
   );
 }
