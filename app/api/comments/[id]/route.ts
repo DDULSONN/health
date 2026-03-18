@@ -1,10 +1,14 @@
 import { isAdminEmail } from "@/lib/admin";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
-export async function DELETE(_request: Request, { params }: RouteCtx) {
+export async function DELETE(request: Request, { params }: RouteCtx) {
+  const originResponse = ensureAllowedMutationOrigin(request);
+  if (originResponse) return originResponse;
+
   const { id } = await params;
   const supabase = await createClient();
   const {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getKstWeekRangeFromWeekId, getPreviousKstWeekId } from "@/lib/weekly";
+import { ensureCronAuthorized } from "@/lib/cron-auth";
 
 const MIN_VOTES = 5;
 const MAX_BACKFILL_WEEKS = 520;
@@ -40,17 +41,6 @@ function normalizeWeeklyTop(raw: unknown): WeeklyTop | null {
         }
       : null,
   };
-}
-
-function isAuthorized(request: Request): boolean {
-  const vercelCronHeader = request.headers.get("x-vercel-cron");
-  if (vercelCronHeader) return true;
-
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return false;
-
-  const auth = request.headers.get("authorization");
-  return auth === `Bearer ${cronSecret}`;
 }
 
 function isMissingRpcError(error: unknown): boolean {
@@ -145,9 +135,8 @@ async function getNickname(
 }
 
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "unauthorized", reason: "missing_valid_cron_auth" }, { status: 401 });
-  }
+  const authResponse = ensureCronAuthorized(request);
+  if (authResponse) return authResponse;
 
   const url = new URL(request.url);
   const forcedWeekId = url.searchParams.get("week_id")?.trim() || null;

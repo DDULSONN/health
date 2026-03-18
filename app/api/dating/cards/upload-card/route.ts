@@ -3,6 +3,7 @@ import { kvSetString } from "@/lib/edge-kv";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 import sharp from "sharp";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
 
@@ -149,6 +150,9 @@ async function uploadBytesToBucket(
 }
 
 export async function POST(req: Request) {
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
+
   const { user } = await getRequestAuthContext(req);
 
   if (!user) {

@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { getConfirmedActiveUserOrResponse } from "@/lib/auth-active";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 type ReportTargetType = "post" | "comment";
 
@@ -9,6 +10,9 @@ function isValidTargetType(value: unknown): value is ReportTargetType {
 }
 
 export async function POST(request: Request) {
+  const originResponse = ensureAllowedMutationOrigin(request);
+  if (originResponse) return originResponse;
+
   const supabase = await createClient();
   const guard = await getConfirmedActiveUserOrResponse(supabase);
   if (guard.response) return guard.response;

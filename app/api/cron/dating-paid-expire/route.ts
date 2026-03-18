@@ -1,16 +1,10 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
-
-function isAuthorized(request: Request): boolean {
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return Boolean(request.headers.get("x-vercel-cron"));
-  return request.headers.get("authorization") === `Bearer ${cronSecret}`;
-}
+import { ensureCronAuthorized } from "@/lib/cron-auth";
 
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 });
-  }
+  const authResponse = ensureCronAuthorized(request);
+  if (authResponse) return authResponse;
 
   const admin = createAdminClient();
   const nowIso = new Date().toISOString();

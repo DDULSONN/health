@@ -2,10 +2,14 @@
 import { createClient } from "@/lib/supabase/server";
 import { BODYCHECK_SCORE_MAP, type BodycheckRating } from "@/lib/community";
 import { getConfirmedActiveUserOrResponse } from "@/lib/auth-active";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 
 export async function POST(request: Request, { params }: RouteCtx) {
+  const originResponse = ensureAllowedMutationOrigin(request);
+  if (originResponse) return originResponse;
+
   const { id: postId } = await params;
   const supabase = await createClient();
 

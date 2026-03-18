@@ -1,22 +1,11 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { runBodyBattleSeasonSync } from "@/lib/bodybattle-season-sync";
 import { NextResponse } from "next/server";
-
-function isAuthorized(request: Request): boolean {
-  const vercelCronHeader = request.headers.get("x-vercel-cron");
-  if (vercelCronHeader) return true;
-
-  const cronSecret = process.env.CRON_SECRET;
-  if (!cronSecret) return false;
-
-  const auth = request.headers.get("authorization");
-  return auth === `Bearer ${cronSecret}`;
-}
+import { ensureCronAuthorized } from "@/lib/cron-auth";
 
 export async function GET(request: Request) {
-  if (!isAuthorized(request)) {
-    return NextResponse.json({ ok: false, message: "unauthorized" }, { status: 401 });
-  }
+  const authResponse = ensureCronAuthorized(request);
+  if (authResponse) return authResponse;
 
   const admin = createAdminClient();
   const syncRes = await runBodyBattleSeasonSync(admin);

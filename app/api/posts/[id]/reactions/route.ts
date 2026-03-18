@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getConfirmedActiveUserOrResponse } from "@/lib/auth-active";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 type RouteCtx = { params: Promise<{ id: string }> };
 type ReactionType = "up" | "down";
@@ -10,6 +11,9 @@ function isReaction(value: unknown): value is ReactionType {
 }
 
 export async function POST(request: Request, { params }: RouteCtx) {
+  const originResponse = ensureAllowedMutationOrigin(request);
+  if (originResponse) return originResponse;
+
   const { id: postId } = await params;
   const supabase = await createClient();
 

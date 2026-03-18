@@ -2,12 +2,16 @@ import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { buildPublicLiteImageUrl } from "@/lib/images";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { NextResponse } from "next/server";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 const MAX_SIZE = 5 * 1024 * 1024; // 5MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 /** POST /api/upload - 이미지 업로드(Supabase Storage) */
 export async function POST(request: Request) {
+  const originResponse = ensureAllowedMutationOrigin(request);
+  if (originResponse) return originResponse;
+
   const requestId = crypto.randomUUID();
   const supabase = await createClient();
   const {

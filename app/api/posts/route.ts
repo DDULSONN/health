@@ -6,6 +6,7 @@ import { buildSignedImageUrl, extractStorageObjectPath } from "@/lib/images";
 import type { BodycheckGender } from "@/lib/community";
 import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
 import { getConfirmedActiveUserOrResponse } from "@/lib/auth-active";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 const POST_COOLDOWN_MS = 30_000;
 const RECORD_FEED_TYPES = ["lifts", "1rm"];
@@ -169,6 +170,9 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
+  const originResponse = ensureAllowedMutationOrigin(request);
+  if (originResponse) return originResponse;
+
   const requestId = crypto.randomUUID();
   const ip = extractClientIp(request);
   const supabase = await createClient();

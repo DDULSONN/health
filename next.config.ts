@@ -34,7 +34,8 @@ const withPWA = withPWAInit({
     },
     {
       // 앱 페이지는 오프라인 진입 가능하도록 최소 캐시, API/관리자/인증 경로는 제외
-      urlPattern: /^https?:\/\/[^/]+\/(?!api\/|admin(?:\/|$)|login(?:\/|$)|mypage(?:\/|$)).*/i,
+      urlPattern:
+        /^https?:\/\/[^/]+\/(?!api\/|admin(?:\/|$)|login(?:\/|$)|mypage(?:\/|$)|community(?:\/|$)|dating(?:\/|$)|certify(?:\/|$)|bodybattle(?:\/|$)|notifications(?:\/|$)).*/i,
       handler: "NetworkFirst",
       options: {
         cacheName: "pages-network-first",
@@ -50,6 +51,17 @@ const withPWA = withPWAInit({
 const nextConfig: NextConfig = {
   turbopack: {
     root: __projectDir,
+  },
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [
+          { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+          { key: "X-Content-Type-Options", value: "nosniff" },
+        ],
+      },
+    ];
   },
   async redirects() {
     return [
