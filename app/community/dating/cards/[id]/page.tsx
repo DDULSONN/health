@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
+import { readOpenCardDetail } from "@/lib/dating-detail-cache";
 
 type CardDetail = {
   id: string;
@@ -28,8 +29,8 @@ type CardDetail = {
 export default function OpenCardDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
-  const [card, setCard] = useState<CardDetail | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [card, setCard] = useState<CardDetail | null>(() => readOpenCardDetail<CardDetail>(id));
+  const [loading, setLoading] = useState(() => !readOpenCardDetail<CardDetail>(id));
 
   useEffect(() => {
     queueMicrotask(async () => {
@@ -52,13 +53,15 @@ export default function OpenCardDetailPage() {
     });
   }, [id, router]);
 
-  if (loading || !card) {
+  if (loading && !card) {
     return (
       <main className="max-w-2xl mx-auto px-4 py-8">
-        <p className="text-neutral-500">불러오는 중...</p>
+        <DetailSkeleton />
       </main>
     );
   }
+
+  if (!card) return null;
 
   return (
     <main className="max-w-2xl mx-auto px-4 py-8">
@@ -142,6 +145,22 @@ export default function OpenCardDetailPage() {
         </div>
       </div>
     </main>
+  );
+}
+
+function DetailSkeleton() {
+  return (
+    <div className="mt-4 animate-pulse rounded-2xl border border-neutral-200 bg-white p-5">
+      <div className="h-5 w-32 rounded bg-neutral-200" />
+      <div className="mt-3 h-52 rounded-xl bg-neutral-100 md:h-56" />
+      <div className="mt-3 flex flex-wrap gap-2">
+        <div className="h-5 w-16 rounded-full bg-neutral-100" />
+        <div className="h-5 w-20 rounded-full bg-neutral-100" />
+        <div className="h-5 w-24 rounded-full bg-neutral-100" />
+      </div>
+      <div className="mt-4 h-20 rounded-xl bg-neutral-50" />
+      <div className="mt-3 h-16 rounded-xl bg-neutral-50" />
+    </div>
   );
 }
 

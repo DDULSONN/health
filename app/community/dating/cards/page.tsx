@@ -1,9 +1,11 @@
 ﻿"use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
+import { cacheOpenCardDetail, cachePaidCardDetail } from "@/lib/dating-detail-cache";
 
 type PublicCard = {
   id: string;
@@ -729,7 +731,31 @@ function Section({
 }
 
 function PaidCardRow({ card }: { card: PaidCard }) {
+  const router = useRouter();
   const isPriority = card.display_mode !== "instant_public";
+  const detailHref = `/dating/paid/${card.id}`;
+  const applyHref = `/dating/paid/${card.id}/apply`;
+  const warmRoute = useCallback(() => {
+    cachePaidCardDetail(card.id, {
+      id: card.id,
+      nickname: card.nickname,
+      is_phone_verified: card.is_phone_verified,
+      gender: card.gender,
+      age: card.age,
+      region: card.region,
+      height_cm: card.height_cm,
+      job: card.job,
+      training_years: card.training_years,
+      strengths_text: card.strengths_text,
+      ideal_text: card.ideal_text,
+      intro_text: null,
+      expires_at: card.expires_at,
+      image_urls: card.thumbUrl ? [card.thumbUrl] : [],
+      photo_visibility: "public",
+    });
+    router.prefetch(detailHref);
+    router.prefetch(applyHref);
+  }, [applyHref, card, detailHref, router]);
 
   return (
     <div className={`rounded-2xl border p-4 ${isPriority ? "border-rose-200 bg-rose-50" : "border-neutral-200 bg-white"}`}>
@@ -783,13 +809,19 @@ function PaidCardRow({ card }: { card: PaidCard }) {
 
       <div className="mt-3 flex flex-wrap gap-2">
         <Link
-          href={`/dating/paid/${card.id}`}
+          href={detailHref}
+          prefetch
+          onMouseEnter={warmRoute}
+          onTouchStart={warmRoute}
           className="inline-flex min-h-[40px] items-center rounded-lg border border-neutral-300 px-4 text-sm text-neutral-700 hover:bg-neutral-50"
         >
           상세보기
         </Link>
         <Link
-          href={`/dating/paid/${card.id}/apply`}
+          href={applyHref}
+          prefetch
+          onMouseEnter={warmRoute}
+          onTouchStart={warmRoute}
           className="inline-flex min-h-[40px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
         >
           지원하기
@@ -800,8 +832,16 @@ function PaidCardRow({ card }: { card: PaidCard }) {
 }
 
 function CardRow({ card }: { card: PublicCard }) {
+  const router = useRouter();
   const ideal = maskIdealTypeForPreview(card.ideal_type);
   const [imgFailed, setImgFailed] = useState(false);
+  const detailHref = `/community/dating/cards/${card.id}`;
+  const applyHref = `/community/dating/cards/${card.id}/apply`;
+  const warmRoute = useCallback(() => {
+    cacheOpenCardDetail(card.id, card);
+    router.prefetch(detailHref);
+    router.prefetch(applyHref);
+  }, [applyHref, card, detailHref, router]);
 
   return (
     <div className="rounded-2xl border border-neutral-200 bg-white p-4">
@@ -862,13 +902,19 @@ function CardRow({ card }: { card: PublicCard }) {
 
       <div className="mt-3 flex flex-wrap gap-2">
         <Link
-          href={`/community/dating/cards/${card.id}`}
+          href={detailHref}
+          prefetch
+          onMouseEnter={warmRoute}
+          onTouchStart={warmRoute}
           className="inline-flex min-h-[40px] items-center rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-700"
         >
           상세보기
         </Link>
         <Link
-          href={`/community/dating/cards/${card.id}/apply`}
+          href={applyHref}
+          prefetch
+          onMouseEnter={warmRoute}
+          onTouchStart={warmRoute}
           className="inline-flex min-h-[40px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
         >
           지원하기

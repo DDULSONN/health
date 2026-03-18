@@ -78,9 +78,11 @@ export default function CommunityPage() {
   const [ranking, setRanking] = useState<WeeklyRankingResponse | null>(null);
   const [rankingLoading, setRankingLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const [tabReady, setTabReady] = useState(false);
   const feedCacheRef = useRef(new Map<string, FeedCacheEntry>());
   const feedRequestIdRef = useRef(0);
   const hasRenderedPostsRef = useRef(false);
+  const searchInitRef = useRef(false);
   const feedKey = useMemo(() => `${tab}:${tab === "all" ? filterType : "all"}:${page}`, [filterType, page, tab]);
   const totalPages = Math.max(1, Math.ceil(totalPosts / POSTS_PER_PAGE));
   const visiblePagination = useMemo(() => {
@@ -99,6 +101,22 @@ export default function CommunityPage() {
       setPage(totalPages);
     }
   }, [page, totalPages]);
+
+  useEffect(() => {
+    if (searchInitRef.current) return;
+
+    const params = typeof window !== "undefined" ? new URLSearchParams(window.location.search) : null;
+    const requestedTab = params?.get("tab");
+    if (requestedTab === "all" || requestedTab === "free" || requestedTab === "photo_bodycheck") {
+      setTab(requestedTab);
+      if (requestedTab !== "all") {
+        setFilterType("all");
+      }
+    }
+
+    searchInitRef.current = true;
+    setTabReady(true);
+  }, []);
 
   useEffect(() => {
     createClient()
@@ -160,8 +178,9 @@ export default function CommunityPage() {
   }, [feedKey, filterType, page, tab]);
 
   useEffect(() => {
+    if (!tabReady) return;
     void loadFeed();
-  }, [loadFeed]);
+  }, [loadFeed, tabReady]);
 
   const loadRanking = useCallback(async (gender: RankingGender) => {
     setRankingLoading(true);
@@ -287,7 +306,7 @@ export default function CommunityPage() {
             랭킹 집계중입니다. 최소 {ranking?.min_votes ?? 5}표 이상부터 노출됩니다.
           </div>
         ) : (
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
+          <div className="-mx-1 mt-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-1 pb-2 md:mx-0 md:grid md:grid-cols-3 md:overflow-visible md:px-0 md:pb-0">
             {topRankingItems.map((item, index) => {
               const previewImage = item.images[0] ?? "";
 
@@ -295,7 +314,7 @@ export default function CommunityPage() {
                 <Link
                   key={item.post_id}
                   href={`/community/${item.post_id}`}
-                  className="overflow-hidden rounded-[22px] border border-amber-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
+                  className="min-w-[240px] snap-start overflow-hidden rounded-[22px] border border-amber-200 bg-white shadow-sm transition hover:-translate-y-0.5 hover:shadow-md md:min-w-0"
                 >
                   {previewImage ? (
                     <div className="aspect-[4/5] w-full overflow-hidden bg-amber-100">
@@ -328,12 +347,17 @@ export default function CommunityPage() {
         )}
 
         <div className="mt-4 flex justify-end">
-          <Link
-            href="/community/bodycheck"
+          <button
+            type="button"
+            onClick={() => {
+              setTab("photo_bodycheck");
+              setFilterType("all");
+              setPage(1);
+            }}
             className="inline-flex min-h-[42px] items-center rounded-xl bg-amber-500 px-4 text-sm font-semibold text-white transition hover:bg-amber-600"
           >
-            몸평 게시판 전체 보기
-          </Link>
+            몸평 글 모아보기
+          </button>
         </div>
       </section>
 
@@ -391,16 +415,16 @@ export default function CommunityPage() {
         <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <p className="text-sm font-semibold text-indigo-900">사진 몸평 전용 동선</p>
+              <p className="text-sm font-semibold text-indigo-900">커뮤니티 몸평 탭</p>
               <p className="mt-1 text-sm text-indigo-700">
-                사진 몸평은 전용 게시판과 주간 랭킹에서 더 빠르게 볼 수 있어요.
+                전용 게시판 없이 이 탭에서 몸평 글과 주간 랭킹을 함께 볼 수 있어요.
               </p>
             </div>
             <Link
-              href="/community/bodycheck"
+              href="/community?tab=photo_bodycheck"
               className="inline-flex min-h-[40px] items-center rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700"
             >
-              전용 게시판 보기
+              몸평 탭 유지중
             </Link>
           </div>
         </div>

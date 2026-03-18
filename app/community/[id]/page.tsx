@@ -422,7 +422,7 @@ export default function PostDetailPage() {
   return (
     <main className="max-w-2xl mx-auto px-4 py-6">
       <Link
-        href={post.type === "photo_bodycheck" ? "/community/bodycheck" : "/community"}
+        href={post.type === "photo_bodycheck" ? "/community?tab=photo_bodycheck" : "/community"}
         className="text-sm text-neutral-500 hover:text-neutral-700 mb-4 inline-flex items-center min-h-[44px]"
       >
         ← 목록으로

@@ -159,7 +159,7 @@ function ResultContent() {
             🤝 1:1 오프라인 소개팅
           </Link>
           <Link
-            href="/community/bodycheck"
+            href="/community?tab=photo_bodycheck"
             className="block rounded-xl bg-indigo-50 px-4 py-3 text-center text-sm font-medium text-indigo-700 transition-colors hover:bg-indigo-100"
           >
             📸 사진 몸평 게시판

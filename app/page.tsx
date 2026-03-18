@@ -94,7 +94,7 @@ export default function HomePage() {
       <HomeBodycheckQuickVote />
 
       <section className="mb-10 text-center">
-        <h1 className="mb-2 text-3xl font-bold text-neutral-900">짐숲 (GymTools)</h1>
+        <h1 className="mb-2 text-3xl font-bold text-neutral-900">짐툴 (GymTools)</h1>
         <p className="text-base text-neutral-500">운동 계산기, 몸평, 소개팅 기능을 한곳에서.</p>
       </section>
 
@@ -127,7 +127,7 @@ export default function HomePage() {
 
       <section className="mt-10 rounded-2xl border border-neutral-200 bg-neutral-50 p-5">
         <p className="text-sm leading-relaxed text-neutral-700">
-          짐숲은 운동하는 사람들을 위한 기록, 몸평, 소개팅 기능을 한곳에 모아둔 서비스예요.
+          짐툴은 운동하는 사람들을 위한 기록, 몸평, 소개팅 기능을 한곳에 모아둔 서비스예요.
         </p>
       </section>
     </main>
