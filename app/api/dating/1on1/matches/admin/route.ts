@@ -5,13 +5,22 @@ import {
   type DatingOneOnOneMatchRow,
   getDatingOneOnOneCardsByIds,
 } from "@/lib/dating-1on1";
-import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
+import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 type AdminCreatePayload = {
   source_card_id?: string;
   candidate_card_ids?: string[];
+};
+
+type AdminCreateResponse = {
+  ok?: boolean;
+  error?: string;
+  requested_count?: number;
+  inserted_count?: number;
+  skipped_count?: number;
+  skipped_candidate_card_ids?: string[];
 };
 
 const MATCH_STATES = new Set([
@@ -212,6 +221,10 @@ export async function POST(req: Request) {
   }
 
   const existingPairIds = new Set((existingPairRes.data ?? []).map((row) => row.candidate_card_id));
+  const skippedCandidateCardIds = candidateRows
+    .map((row) => row.id)
+    .filter((id) => blockedCandidateIds.has(id) || existingPairIds.has(id));
+
   const insertRows = candidateRows
     .filter((row) => !blockedCandidateIds.has(row.id) && !existingPairIds.has(row.id))
     .map((row) => ({
@@ -225,10 +238,14 @@ export async function POST(req: Request) {
     }));
 
   if (insertRows.length === 0) {
-    return NextResponse.json(
-      { error: "No new candidates could be sent. They may already be in progress or already proposed." },
-      { status: 409 }
-    );
+    const response: AdminCreateResponse = {
+      error: "새로 보낼 수 있는 후보가 없습니다. 이미 진행 중이거나, 같은 기준 카드로 이미 보낸 후보일 수 있습니다.",
+      requested_count: candidateCardIds.length,
+      inserted_count: 0,
+      skipped_count: skippedCandidateCardIds.length,
+      skipped_candidate_card_ids: skippedCandidateCardIds,
+    };
+    return NextResponse.json(response, { status: 409 });
   }
 
   const insertRes = await admin.from("dating_1on1_match_proposals").insert(insertRows).select("id");
@@ -237,11 +254,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Failed to send candidates." }, { status: 500 });
   }
 
-  return NextResponse.json({
+  const response: AdminCreateResponse = {
     ok: true,
+    requested_count: candidateCardIds.length,
     inserted_count: insertRes.data?.length ?? insertRows.length,
-    skipped_candidate_card_ids: candidateRows
-      .map((row) => row.id)
-      .filter((id) => blockedCandidateIds.has(id) || existingPairIds.has(id)),
-  });
+    skipped_count: skippedCandidateCardIds.length,
+    skipped_candidate_card_ids: skippedCandidateCardIds,
+  };
+
+  return NextResponse.json(response);
 }

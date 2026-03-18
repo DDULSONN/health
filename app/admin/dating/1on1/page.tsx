@@ -155,6 +155,17 @@ const INITIAL_SELECTION_FILTER: SelectionFilter = {
 };
 
 const AUTO_CANDIDATE_LIMIT = 10;
+const ACTIVE_PAIR_STATES = new Set<AdminMatchItem["state"]>([
+  "proposed",
+  "source_selected",
+  "candidate_accepted",
+  "mutual_accepted",
+]);
+const CANDIDATE_SINGLE_TRACK_STATES = new Set<AdminMatchItem["state"]>([
+  "source_selected",
+  "candidate_accepted",
+  "mutual_accepted",
+]);
 
 function getAutoCandidateRange(card: Pick<CardItem, "sex" | "age">): AutoCandidateRange {
   if (card.age == null || !Number.isFinite(card.age)) {
@@ -468,17 +479,52 @@ export default function AdminDatingOneOnOnePage() {
     () => items.find((item) => item.id === selectedSourceCardId) ?? null,
     [items, selectedSourceCardId]
   );
-  const selectableCandidateCards = useMemo(
+  const candidateBlockedByTrackIds = useMemo(() => {
+    const next = new Set<string>();
+    for (const match of matchItems) {
+      if (CANDIDATE_SINGLE_TRACK_STATES.has(match.state)) {
+        next.add(match.candidate_card_id);
+      }
+    }
+    return next;
+  }, [matchItems]);
+  const candidateBlockedForSourceIds = useMemo(() => {
+    const next = new Set<string>();
+    if (!selectedSourceCardId) return next;
+    for (const match of matchItems) {
+      if (match.source_card_id === selectedSourceCardId && ACTIVE_PAIR_STATES.has(match.state)) {
+        next.add(match.candidate_card_id);
+      }
+    }
+    return next;
+  }, [matchItems, selectedSourceCardId]);
+  const availableCandidateCards = useMemo(
     () =>
       selectedSourceCard
         ? items.filter(
             (item) =>
               item.id !== selectedSourceCard.id &&
               item.user_id !== selectedSourceCard.user_id &&
-              item.sex !== selectedSourceCard.sex
+              item.sex !== selectedSourceCard.sex &&
+              !candidateBlockedByTrackIds.has(item.id) &&
+              !candidateBlockedForSourceIds.has(item.id)
           )
         : [],
-    [items, selectedSourceCard]
+    [candidateBlockedByTrackIds, candidateBlockedForSourceIds, items, selectedSourceCard]
+  );
+  const unavailableCandidateCount = useMemo(() => {
+    if (!selectedSourceCard) return 0;
+    return items.filter(
+      (item) =>
+        item.id !== selectedSourceCard.id &&
+        item.user_id !== selectedSourceCard.user_id &&
+        item.sex !== selectedSourceCard.sex &&
+        (candidateBlockedByTrackIds.has(item.id) || candidateBlockedForSourceIds.has(item.id))
+    ).length;
+  }, [candidateBlockedByTrackIds, candidateBlockedForSourceIds, items, selectedSourceCard]);
+  const selectableCandidateCards = useMemo(
+    () => availableCandidateCards,
+    [availableCandidateCards]
   );
   const autoCandidateRange = selectedSourceCard ? getAutoCandidateRange(selectedSourceCard) : null;
   const autoRecommendedCandidates = useMemo(() => {
@@ -540,6 +586,15 @@ export default function AdminDatingOneOnOnePage() {
     return next;
   }, [matchItems]);
 
+  useEffect(() => {
+    if (selectableCandidateCards.length === 0) {
+      setSelectedCandidateCardIds([]);
+      return;
+    }
+    const availableIds = new Set(selectableCandidateCards.map((card) => card.id));
+    setSelectedCandidateCardIds((prev) => prev.filter((id) => availableIds.has(id)));
+  }, [selectableCandidateCards]);
+
   const toggleCandidateSelection = (candidateCardId: string) => {
     setSelectedCandidateCardIds((prev) =>
       prev.includes(candidateCardId) ? prev.filter((id) => id !== candidateCardId) : [...prev, candidateCardId]
@@ -572,14 +627,34 @@ export default function AdminDatingOneOnOnePage() {
           candidate_card_ids: selectedCandidateCardIds,
         }),
       });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; inserted_count?: number };
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        inserted_count?: number;
+        requested_count?: number;
+        skipped_count?: number;
+      };
       if (!res.ok) {
         throw new Error(body.error ?? "후보 발송에 실패했습니다.");
       }
+      const insertedCount = body.inserted_count ?? 0;
+      const skippedCount = body.skipped_count ?? 0;
+      let successMessage = "";
+      if (insertedCount > 0 && skippedCount > 0) {
+        successMessage = `${insertedCount}명 후보를 보냈습니다. ${skippedCount}명은 이미 진행 중이거나 기존 발송 이력이 있어 자동 제외됐습니다.`;
+      } else if (insertedCount > 0) {
+        successMessage = `${insertedCount}명 후보를 보냈습니다.`;
+      } else if (skippedCount > 0) {
+        successMessage = `새로 보낸 후보는 없고, ${skippedCount}명은 이미 진행 중이거나 기존 발송 이력이 있어 자동 제외됐습니다.`;
+      } else {
+        successMessage = "후보 발송이 완료되었습니다.";
+      }
       setSelectedCandidateCardIds([]);
-      await load();
-      if ((body.inserted_count ?? 0) > 0) {
-        alert(`${body.inserted_count}명 후보를 보냈습니다.`);
+      alert(successMessage);
+      try {
+        await load();
+      } catch (reloadError) {
+        console.error("[admin dating 1on1] reload after send failed", reloadError);
+        setError("후보는 발송됐지만 목록 새로고침에 실패했습니다. 잠시 후 다시 확인해주세요.");
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -620,7 +695,7 @@ export default function AdminDatingOneOnOnePage() {
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-sky-900">1:1 후보 보내기</h2>
-            <p className="text-xs text-sky-700">기준 카드 나이와 지역을 함께 반영해 자동 추천 10명을 먼저 보여주고, 필요하면 아래에서 수동으로 더 골라 보낼 수 있습니다.</p>
+            <p className="text-xs text-sky-700">기준 카드 나이와 지역을 함께 반영해 자동 추천 10명을 먼저 보여주고, 이미 진행 중인 후보나 같은 카드로 보낸 후보는 목록에서 자동 제외합니다.</p>
           </div>
           <button
             type="button"
@@ -904,6 +979,11 @@ export default function AdminDatingOneOnOnePage() {
                 <p className="mb-2 text-xs text-neutral-500">
                   {selectedSourceCard.name} 님에게 보낼 수 있는 반대 성별 후보 {selectableCandidateCards.length}명 중 {filteredCandidateCards.length}명 표시 중
                 </p>
+                {unavailableCandidateCount > 0 && (
+                  <p className="mb-2 text-[11px] text-neutral-500">
+                    이미 진행 중이거나 같은 기준 카드로 보낸 후보 {unavailableCandidateCount}명은 자동 제외됐습니다.
+                  </p>
+                )}
                 {filteredCandidateCards.length === 0 ? (
                   <div className="rounded-xl border border-dashed border-neutral-300 bg-neutral-50 p-4 text-sm text-neutral-500">
                     후보 필터 조건에 맞는 카드가 없습니다.
