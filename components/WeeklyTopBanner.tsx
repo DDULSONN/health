@@ -10,6 +10,7 @@ type WinnerPost = {
   user_id: string;
   score_sum: number;
   vote_count: number;
+  nickname: string | null;
   profiles: { nickname: string | null } | null;
 };
 
@@ -32,6 +33,10 @@ type LatestWeeklyResponse =
         female_post_id: string | null;
       } | null;
     };
+
+function resolveWinnerNickname(item: WinnerPost | null | undefined): string {
+  return item?.nickname?.trim() || item?.profiles?.nickname?.trim() || "익명";
+}
 
 function WinnerRow({
   label,
@@ -95,13 +100,13 @@ export default function WeeklyTopBanner() {
     data?.mode === "confirmed"
       ? data.male
         ? {
-            nickname: data.male.post?.profiles?.nickname ?? "익명",
+            nickname: resolveWinnerNickname(data.male.post),
             score: data.male.score,
           }
         : null
       : data?.male
       ? {
-          nickname: data.male.profiles?.nickname ?? "익명",
+          nickname: resolveWinnerNickname(data.male),
           score: data.male.score_sum ?? 0,
         }
       : null;
@@ -110,25 +115,34 @@ export default function WeeklyTopBanner() {
     data?.mode === "confirmed"
       ? data.female
         ? {
-            nickname: data.female.post?.profiles?.nickname ?? "익명",
+            nickname: resolveWinnerNickname(data.female.post),
             score: data.female.score,
           }
         : null
       : data?.female
       ? {
-          nickname: data.female.profiles?.nickname ?? "익명",
+          nickname: resolveWinnerNickname(data.female),
           score: data.female.score_sum ?? 0,
         }
       : null;
 
   const maleHref =
-    data?.mode === "confirmed" && data?.male?.post_id
-      ? `/community/${data.male.post_id}`
-      : "/hall-of-fame";
+    data?.mode === "confirmed"
+      ? data.male?.post_id
+        ? `/community/${data.male.post_id}`
+        : "/hall-of-fame"
+      : data?.male?.id
+      ? `/community/${data.male.id}`
+      : "/community?tab=photo_bodycheck";
+
   const femaleHref =
-    data?.mode === "confirmed" && data?.female?.post_id
-      ? `/community/${data.female.post_id}`
-      : "/hall-of-fame";
+    data?.mode === "confirmed"
+      ? data.female?.post_id
+        ? `/community/${data.female.post_id}`
+        : "/hall-of-fame"
+      : data?.female?.id
+      ? `/community/${data.female.id}`
+      : "/community?tab=photo_bodycheck";
 
   return (
     <section className="mb-5 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 p-4">

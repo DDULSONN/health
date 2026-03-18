@@ -9,6 +9,7 @@ type WinnerPost = {
   score_sum: number;
   vote_count: number;
   gender: "male" | "female" | null;
+  nickname: string | null;
   profiles: { nickname: string | null } | null;
 };
 
@@ -34,7 +35,19 @@ async function fetchLiveTopByGender(
     .maybeSingle();
 
   if (error) throw error;
-  return data;
+  if (!data) return null;
+
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("user_id, nickname")
+    .eq("user_id", data.user_id)
+    .maybeSingle();
+
+  return {
+    ...data,
+    nickname: profile?.nickname ?? null,
+    profiles: profile ? { nickname: profile.nickname ?? null } : null,
+  } satisfies WinnerPost;
 }
 
 export async function GET() {
@@ -73,6 +86,7 @@ export async function GET() {
     for (const post of posts ?? []) {
       postMap.set(post.id, {
         ...post,
+        nickname: profileMap.get(post.user_id)?.nickname ?? null,
         profiles: profileMap.get(post.user_id)
           ? { nickname: profileMap.get(post.user_id)?.nickname ?? null }
           : null,

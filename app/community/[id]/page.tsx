@@ -152,6 +152,26 @@ export default function PostDetailPage() {
     return { roots, children };
   }, [comments]);
 
+  const bestComment = useMemo(() => {
+    const rankedRoots = commentTree.roots
+      .map((root) => {
+        const replies = commentTree.children.get(root.id) ?? [];
+        const contentLength = (root.content ?? "").trim().length;
+        return {
+          root,
+          replies,
+          score: replies.length * 10 + Math.min(contentLength, 120) / 20,
+        };
+      })
+      .filter((item) => !item.root.deleted_at && (item.replies.length > 0 || (item.root.content ?? "").trim().length >= 40))
+      .sort((left, right) => {
+        if (right.score !== left.score) return right.score - left.score;
+        return new Date(left.root.created_at).getTime() - new Date(right.root.created_at).getTime();
+      });
+
+    return rankedRoots[0] ?? null;
+  }, [commentTree]);
+
   const summary = useMemo(() => {
     if (post?.type !== "photo_bodycheck") return null;
     const voteCount = Number(post.bodycheck_summary?.vote_count ?? post.vote_count ?? 0);
@@ -636,7 +656,29 @@ export default function PostDetailPage() {
       </article>
 
       <section>
-        <h2 className="text-sm font-semibold text-neutral-700 mb-3">댓글 {comments.length}개</h2>
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="text-sm font-semibold text-neutral-700">댓글 {comments.length}개</h2>
+          {userId ? (
+            <Link href="/notifications" className="text-xs font-medium text-emerald-700 hover:underline">
+              내 알림 보기
+            </Link>
+          ) : null}
+        </div>
+
+        {bestComment ? (
+          <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-amber-500 px-2.5 py-1 text-[11px] font-bold text-white">베스트 댓글</span>
+              <span className="text-xs text-amber-800">
+                답글 {bestComment.replies.length}개가 달린 댓글이에요.
+              </span>
+            </div>
+            <p className="mt-3 text-xs font-medium text-neutral-700">
+              {bestComment.root.profiles?.nickname ?? "익명"} · {timeAgo(bestComment.root.created_at)}
+            </p>
+            <p className="mt-1 text-sm text-neutral-800 whitespace-pre-wrap">{bestComment.root.content}</p>
+          </div>
+        ) : null}
 
         {commentTree.roots.length > 0 && (
           <div className="space-y-3 mb-4">
@@ -652,6 +694,7 @@ export default function PostDetailPage() {
                     onDelete={() => handleDeleteComment(root.id)}
                     onReport={() => setReportTarget({ type: "comment", id: root.id })}
                     onReply={() => setReplyFor((prev) => (prev === root.id ? null : root.id))}
+                    highlighted={bestComment?.root.id === root.id}
                     showReplyButton
                   />
 
@@ -691,6 +734,7 @@ export default function PostDetailPage() {
                         deleting={deletingCommentId === reply.id}
                         onDelete={() => handleDeleteComment(reply.id)}
                         onReport={() => setReportTarget({ type: "comment", id: reply.id })}
+                        highlighted={bestComment?.root.id === reply.id}
                       />
                     </div>
                   ))}
@@ -860,6 +904,7 @@ function CommentCard({
   onDelete,
   onReport,
   onReply,
+  highlighted = false,
   showReplyButton = false,
 }: {
   comment: Comment;
@@ -869,6 +914,7 @@ function CommentCard({
   onDelete: () => void;
   onReport: () => void;
   onReply?: () => void;
+  highlighted?: boolean;
   showReplyButton?: boolean;
 }) {
   const isOwner = !!userId && comment.user_id === userId;
@@ -876,11 +922,16 @@ function CommentCard({
   const isDeleted = !!comment.deleted_at;
 
   return (
-    <div className="rounded-xl bg-white border border-neutral-100 p-3">
+    <div className={`rounded-xl bg-white p-3 ${highlighted ? "border border-amber-300 shadow-sm" : "border border-neutral-100"}`}>
       <div className="flex items-center gap-2 mb-1">
         <span className="text-xs font-medium text-neutral-700">{comment.profiles?.nickname ?? "익명"}</span>
         <VerifiedBadge total={comment.cert_summary?.total} className="inline-flex items-center rounded-full bg-emerald-50 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700" />
         <span className="text-xs text-neutral-400">{timeAgo(comment.created_at)}</span>
+        {highlighted ? (
+          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700">
+            베스트
+          </span>
+        ) : null}
         <div className="ml-auto flex items-center gap-2">
           {showReplyButton && !isDeleted && onReply && (
             <button

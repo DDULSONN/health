@@ -13,8 +13,63 @@ const RECORD_FEED_TYPES = ["lifts", "1rm"];
 const LEGACY_RECORD_TYPES = ["lifts", "1rm", "helltest"];
 const BODYCHECK_TYPES = ["photo_bodycheck"];
 const MAIN_FEED_TYPES = ["free", "lifts", "1rm", "photo_bodycheck"];
+const SORT_CANDIDATE_LIMIT = 400;
 const POST_LIST_SELECT =
   "id,user_id,type,title,content,payload_json,images,gender,score_sum,vote_count,great_count,good_count,normal_count,rookie_count,is_hidden,is_deleted,created_at";
+
+type PostSort = "latest" | "popular" | "comments";
+
+type EnrichedPost = {
+  id: string;
+  type: string;
+  created_at: string;
+  vote_count?: number | null;
+  score_sum?: number | null;
+  comment_count?: number;
+  reaction_summary?: {
+    up_count: number;
+    down_count: number;
+    score: number;
+  } | null;
+};
+
+function parseSort(value: string | null): PostSort {
+  if (value === "popular" || value === "comments") return value;
+  return "latest";
+}
+
+function sanitizeSearchQuery(value: string | null): string {
+  return (value ?? "").replace(/[,%]/g, " ").trim().slice(0, 40);
+}
+
+function getPopularScore(post: EnrichedPost): number {
+  const commentScore = Number(post.comment_count ?? 0) * 12;
+  const reactionScore = Number(post.reaction_summary?.score ?? 0) * 20;
+  const upvoteBoost = Number(post.reaction_summary?.up_count ?? 0) * 4;
+  const bodycheckVotes = Number(post.vote_count ?? 0) * 10;
+  const bodycheckScore = Number(post.score_sum ?? 0);
+  return commentScore + reactionScore + upvoteBoost + bodycheckVotes + bodycheckScore;
+}
+
+function sortPosts(posts: EnrichedPost[], sort: PostSort): EnrichedPost[] {
+  const nextPosts = [...posts];
+  nextPosts.sort((left, right) => {
+    if (sort === "comments") {
+      const commentDiff = Number(right.comment_count ?? 0) - Number(left.comment_count ?? 0);
+      if (commentDiff !== 0) return commentDiff;
+      const popularDiff = getPopularScore(right) - getPopularScore(left);
+      if (popularDiff !== 0) return popularDiff;
+    }
+
+    if (sort === "popular") {
+      const popularDiff = getPopularScore(right) - getPopularScore(left);
+      if (popularDiff !== 0) return popularDiff;
+    }
+
+    return new Date(right.created_at).getTime() - new Date(left.created_at).getTime();
+  });
+  return nextPosts;
+}
 
 function resolveCommunityImageUrl(raw: unknown): string | null {
   const path = toCommunityPublicPath(raw);
@@ -48,8 +103,11 @@ export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const type = searchParams.get("type");
   const tab = searchParams.get("tab");
+  const sort = parseSort(searchParams.get("sort"));
+  const q = sanitizeSearchQuery(searchParams.get("q"));
+  const customLimit = Math.max(1, Math.min(50, Number(searchParams.get("limit") ?? 20)));
   const page = Math.max(1, Number(searchParams.get("page") ?? 1));
-  const limit = 20;
+  const limit = customLimit;
   const offset = (page - 1) * limit;
 
   const supabase = await createClient();
@@ -70,12 +128,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." }, { status: 429 });
   }
 
-  let query = supabase
-    .from("posts")
-    .select(POST_LIST_SELECT, { count: "exact" })
-    .eq("is_hidden", false)
-    .order("created_at", { ascending: false })
-    .range(offset, offset + limit - 1);
+  const shouldSortInMemory = sort !== "latest";
+  let query = supabase.from("posts").select(POST_LIST_SELECT, { count: "exact" }).eq("is_hidden", false);
 
   if (tab === "all") {
     query = query.in("type", MAIN_FEED_TYPES);
@@ -87,7 +141,21 @@ export async function GET(request: Request) {
     query = query.in("type", BODYCHECK_TYPES);
   }
 
-  if (type && type !== "all") query = query.eq("type", type);
+  if (type && type !== "all") {
+    query = query.eq("type", type);
+  }
+
+  if (q) {
+    query = query.or(`title.ilike.%${q}%,content.ilike.%${q}%`);
+  }
+
+  query = query.order("created_at", { ascending: false });
+
+  if (!shouldSortInMemory) {
+    query = query.range(offset, offset + limit - 1);
+  } else {
+    query = query.range(0, Math.max(offset + limit - 1, SORT_CANDIDATE_LIMIT - 1));
+  }
 
   const { data: posts, count, error } = await query;
 
@@ -97,12 +165,13 @@ export async function GET(request: Request) {
   }
 
   const visible = (posts ?? []).filter((p) => !(p as Record<string, unknown>).is_deleted);
+  const postIds = visible.map((post) => String(post.id));
   const userIds = [...new Set(visible.map((p) => p.user_id as string))];
   const freePostIds = visible
     .filter((post) => post.type === "free")
     .map((post) => String(post.id));
 
-  const [{ data: profiles }, certSummaryMap, reactionRows] = await Promise.all([
+  const [{ data: profiles }, certSummaryMap, reactionRows, commentRows] = await Promise.all([
     userIds.length > 0
       ? supabase.from("profiles").select("user_id, nickname, role").in("user_id", userIds)
       : Promise.resolve({ data: [] as { user_id: string; nickname: string; role: string }[] }),
@@ -110,6 +179,13 @@ export async function GET(request: Request) {
     freePostIds.length > 0
       ? supabase.from("post_reactions").select("post_id,reaction").in("post_id", freePostIds).then((res) => res.data ?? [])
       : Promise.resolve([] as { post_id: string; reaction: "up" | "down" }[]),
+    postIds.length > 0
+      ? supabase
+          .from("comments")
+          .select("post_id,deleted_at")
+          .in("post_id", postIds)
+          .then((res) => res.data ?? [])
+      : Promise.resolve([] as { post_id: string; deleted_at?: string | null }[]),
   ]);
 
   const profileMap = new Map<string, { nickname: string; role: string }>();
@@ -124,6 +200,12 @@ export async function GET(request: Request) {
     if (reaction.reaction === "down") current.down_count += 1;
     current.score = current.up_count - current.down_count;
     reactionSummaryMap.set(reaction.post_id, current);
+  }
+
+  const commentCountMap = new Map<string, number>();
+  for (const comment of commentRows) {
+    if (comment.deleted_at) continue;
+    commentCountMap.set(comment.post_id, (commentCountMap.get(comment.post_id) ?? 0) + 1);
   }
 
   const enriched = visible.map((p) => {
@@ -141,22 +223,25 @@ export async function GET(request: Request) {
       thumb_images: thumbImages,
       profiles: profileMap.get(p.user_id as string) ?? null,
       cert_summary: certSummaryMap.get(p.user_id as string) ?? null,
+      comment_count: commentCountMap.get(String(p.id)) ?? 0,
       reaction_summary:
         p.type === "free"
           ? reactionSummaryMap.get(String(p.id)) ?? { up_count: 0, down_count: 0, score: 0 }
           : null,
     };
   });
+  const orderedPosts = shouldSortInMemory ? sortPosts(enriched as EnrichedPost[], sort) : enriched;
+  const pagedPosts = shouldSortInMemory ? orderedPosts.slice(offset, offset + limit) : orderedPosts;
   const transformedBodycheckImages = enriched.reduce((acc, post) => {
     if ((post.type as string) !== "photo_bodycheck") return acc;
     const thumbImages = (post as { thumb_images?: unknown }).thumb_images;
     return acc + (Array.isArray(thumbImages) ? thumbImages.length : 0);
   }, 0);
   console.log(
-    `[posts.metrics] requestId=${requestId} path=/api/posts page=${page} totalPosts=${enriched.length} transformedBodycheckImages=${transformedBodycheckImages}`
+    `[posts.metrics] requestId=${requestId} path=/api/posts page=${page} sort=${sort} q=${q || "-"} totalPosts=${pagedPosts.length} transformedBodycheckImages=${transformedBodycheckImages}`
   );
   return NextResponse.json(
-    { posts: enriched, total: count ?? 0, page },
+    { posts: pagedPosts, total: count ?? 0, page },
     {
       headers: {
         "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
