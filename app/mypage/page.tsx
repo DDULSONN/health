@@ -495,7 +495,7 @@ export default function MyPage() {
   const [verifyingPhoneOtp, setVerifyingPhoneOtp] = useState(false);
   const [phoneVerifyError, setPhoneVerifyError] = useState("");
   const [phoneVerifyInfo, setPhoneVerifyInfo] = useState("");
-  const [adminPhoneUserId, setAdminPhoneUserId] = useState("");
+  const [adminPhoneIdentifier, setAdminPhoneIdentifier] = useState("");
   const [adminPhoneNumber, setAdminPhoneNumber] = useState("");
   const [adminPhoneVerifyLoading, setAdminPhoneVerifyLoading] = useState(false);
   const [adminPhoneVerifyError, setAdminPhoneVerifyError] = useState("");
@@ -1242,14 +1242,14 @@ export default function MyPage() {
   };
 
   const handleAdminManualPhoneVerify = async () => {
-    const trimmedUserId = adminPhoneUserId.trim();
+    const trimmedIdentifier = adminPhoneIdentifier.trim();
     const trimmedPhone = adminPhoneNumber.trim();
 
     setAdminPhoneVerifyError("");
     setAdminPhoneVerifyInfo("");
 
-    if (!trimmedUserId) {
-      setAdminPhoneVerifyError("대상 사용자 ID를 입력해주세요.");
+    if (!trimmedIdentifier) {
+      setAdminPhoneVerifyError("닉네임 또는 사용자 ID를 입력해주세요.");
       return;
     }
 
@@ -1264,7 +1264,7 @@ export default function MyPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          userId: trimmedUserId,
+          identifier: trimmedIdentifier,
           phone: trimmedPhone,
         }),
       });
@@ -1280,7 +1280,7 @@ export default function MyPage() {
       }
 
       setAdminPhoneVerifyInfo(
-        `${body.nickname?.trim() || trimmedUserId.slice(0, 8)} 계정을 ${body.phone_e164 ?? trimmedPhone} 번호로 인증 처리했습니다.`
+        `${body.nickname?.trim() || trimmedIdentifier} 계정을 ${body.phone_e164 ?? trimmedPhone} 번호로 인증 처리했습니다.`
       );
     } catch (err) {
       setAdminPhoneVerifyError(err instanceof Error ? err.message : "수동 휴대폰 인증 처리에 실패했습니다.");
@@ -2883,14 +2883,14 @@ export default function MyPage() {
           <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
             <p className="text-xs font-semibold text-violet-800">수동 휴대폰 인증</p>
             <p className="mt-1 text-[11px] text-neutral-500">
-              사용자 ID와 휴대폰 번호를 입력하면 프로필 기준으로 바로 인증 완료 처리됩니다.
+              닉네임 또는 사용자 ID와 휴대폰 번호를 입력하면 프로필 기준으로 바로 인증 완료 처리됩니다.
             </p>
             <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <input
                 type="text"
-                value={adminPhoneUserId}
-                onChange={(e) => setAdminPhoneUserId(e.target.value)}
-                placeholder="대상 사용자 ID"
+                value={adminPhoneIdentifier}
+                onChange={(e) => setAdminPhoneIdentifier(e.target.value)}
+                placeholder="닉네임 또는 사용자 ID"
                 className="h-10 rounded-lg border border-violet-200 px-3 text-sm"
               />
               <input
@@ -2913,7 +2913,7 @@ export default function MyPage() {
               <button
                 type="button"
                 onClick={() => {
-                  setAdminPhoneUserId("");
+                  setAdminPhoneIdentifier("");
                   setAdminPhoneNumber("");
                   setAdminPhoneVerifyError("");
                   setAdminPhoneVerifyInfo("");

@@ -23,38 +23,38 @@ export async function POST(request: Request) {
   if (!auth.ok) return auth.response;
 
   const body = (await request.json().catch(() => ({}))) as {
-    userId?: string;
+    identifier?: string;
     phone?: string;
   };
 
-  const userId = body.userId?.trim() ?? "";
+  const identifier = body.identifier?.trim() ?? "";
   const phoneE164 = normalizeToE164(body.phone ?? "");
 
-  if (!userId || !isUuid(userId)) {
-    return NextResponse.json({ error: "대상 사용자 ID를 정확히 입력해주세요." }, { status: 400 });
+  if (!identifier) {
+    return NextResponse.json({ error: "닉네임 또는 사용자 ID를 입력해주세요." }, { status: 400 });
   }
 
   if (!phoneE164 || !isLikelyValidE164(phoneE164)) {
     return NextResponse.json({ error: "휴대폰 번호를 올바르게 입력해주세요." }, { status: 400 });
   }
 
+  const profileRes = isUuid(identifier)
+    ? await auth.admin.from("profiles").select("user_id,nickname").eq("user_id", identifier).maybeSingle()
+    : await auth.admin.from("profiles").select("user_id,nickname").ilike("nickname", identifier).maybeSingle();
+
+  if (profileRes.error) {
+    return NextResponse.json({ error: profileRes.error.message }, { status: 500 });
+  }
+
+  const profile = profileRes.data;
+  if (!profile) {
+    return NextResponse.json({ error: "해당 닉네임 또는 사용자 계정을 찾지 못했습니다." }, { status: 404 });
+  }
+
+  const userId = profile.user_id;
   const userRes = await auth.admin.auth.admin.getUserById(userId).catch(() => null);
   if (!userRes?.data?.user) {
-    return NextResponse.json({ error: "해당 사용자 계정을 찾지 못했습니다." }, { status: 404 });
-  }
-
-  const { data: profile, error: profileError } = await auth.admin
-    .from("profiles")
-    .select("user_id,nickname")
-    .eq("user_id", userId)
-    .maybeSingle();
-
-  if (profileError) {
-    return NextResponse.json({ error: profileError.message }, { status: 500 });
-  }
-
-  if (!profile) {
-    return NextResponse.json({ error: "대상 사용자 프로필을 찾지 못했습니다." }, { status: 404 });
+    return NextResponse.json({ error: "대상 사용자 계정을 찾지 못했습니다." }, { status: 404 });
   }
 
   const phoneVerifiedAt = new Date().toISOString();
