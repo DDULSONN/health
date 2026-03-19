@@ -2348,7 +2348,7 @@ export default function MyPage() {
         </div>
       </section>
 
-      <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
+      <section id="open-card-received" className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
         <h2 className="text-lg font-bold text-neutral-900 mb-3">내 카드 지원자</h2>
         {receivedApplications.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 받은 지원서가 없습니다.</p>
@@ -2437,7 +2437,7 @@ export default function MyPage() {
         )}
       </section>
 
-      <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
+      <section id="open-card-applied" className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
         <h2 className="text-lg font-bold text-neutral-900 mb-3">내 오픈카드 지원 이력</h2>
         {myAppliedCardApplications.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 지원한 내역이 없습니다.</p>
@@ -2485,7 +2485,7 @@ export default function MyPage() {
         )}
       </section>
 
-      <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
+      <section id="dating-connections" className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
         <h2 className="text-lg font-bold text-neutral-900 mb-3">매칭 인스타 교환</h2>
         {datingConnections.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 수락된 연결이 없습니다.</p>

@@ -1,6 +1,7 @@
 ﻿import { isAdminEmail } from "@/lib/admin";
 import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
 import { sendExpoPushToUser } from "@/lib/expo-push";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
@@ -9,6 +10,9 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
+
   const { id } = await params;
   const { user } = await getRequestAuthContext(req);
 
@@ -47,12 +51,26 @@ export async function PATCH(
   const isApplicant = app.applicant_user_id === user.id;
   const isAdmin = isAdminEmail(user.email);
 
+  if (status === app.status) {
+    return NextResponse.json({
+      ok: true,
+      status,
+      unchanged: true,
+      card_hidden: false,
+    });
+  }
+
   if (status === "canceled") {
     if (!isApplicant && !isAdmin) {
       return NextResponse.json({ error: "취소 권한이 없습니다." }, { status: 403 });
     }
+    if (app.status !== "submitted" && !isAdmin) {
+      return NextResponse.json({ error: "이미 처리된 지원서는 취소할 수 없습니다." }, { status: 409 });
+    }
   } else if (!isOwner && !isAdmin) {
     return NextResponse.json({ error: "처리 권한이 없습니다." }, { status: 403 });
+  } else if (app.status !== "submitted" && !isAdmin) {
+    return NextResponse.json({ error: "이미 처리된 지원서입니다." }, { status: 409 });
   }
 
   const { error: updateError } = await adminClient.from("dating_card_applications").update({ status }).eq("id", id);

@@ -18,13 +18,12 @@ function buildNotificationPresentation(
   actorNickname: string | null
 ): { title: string; body: string; link: string | null } {
   if (item.type === "dating_application_received") {
-    const cardId = typeof item.meta_json?.card_id === "string" ? item.meta_json.card_id : null;
     return {
       title: "새 지원 도착",
       body: actorNickname
         ? `${actorNickname}님이 내 오픈카드에 지원했습니다.`
         : "내 오픈카드에 새로운 지원이 도착했습니다.",
-      link: cardId ? `/(tabs)/me/applications/${cardId}` : null,
+      link: "/mypage#open-card-received",
     };
   }
 
@@ -34,7 +33,7 @@ function buildNotificationPresentation(
       body: actorNickname
         ? `${actorNickname}님이 내 지원을 수락했습니다.`
         : "내 지원이 수락되었습니다.",
-      link: "/(tabs)/apply",
+      link: "/mypage#dating-connections",
     };
   }
 
@@ -42,9 +41,9 @@ function buildNotificationPresentation(
     return {
       title: "지원 결과가 도착했습니다",
       body: actorNickname
-        ? `${actorNickname}님이 내 지원 결과를 확인했습니다.`
+        ? `${actorNickname}님이 내 지원 결과를 보냈습니다.`
         : "내 지원 결과가 도착했습니다.",
-      link: "/(tabs)/apply",
+      link: "/mypage#open-card-applied",
     };
   }
 
