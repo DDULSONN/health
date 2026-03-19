@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import { NextResponse } from "next/server";
+import { publicCachedJson } from "@/lib/http-cache";
 
 /** GET /api/rankings — 최근 7일 랭킹 (프로필 별도 조회) */
 export async function GET() {
@@ -82,8 +82,8 @@ export async function GET() {
     profiles: profileMap.get(item.user_id as string) ?? null,
   });
 
-  return NextResponse.json({
+  return publicCachedJson({
     lifts: liftsSorted.map(addProfile),
     oneRm: oneRmSorted.map(addProfile),
-  });
+  }, { sMaxAge: 300, staleWhileRevalidate: 1800 });
 }

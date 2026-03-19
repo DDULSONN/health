@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { publicCachedJson } from "@/lib/http-cache";
 import { getKstWeekId } from "@/lib/weekly";
 import type { BodycheckGender } from "@/lib/community";
 import { buildSignedImageUrl, extractStorageObjectPath } from "@/lib/images";
@@ -90,7 +91,7 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({
+  return publicCachedJson({
     week_id: weekId,
     min_votes: MIN_VOTES,
     gender,
@@ -108,5 +109,5 @@ export async function GET(request: Request) {
         profiles: post?.user_id ? profileMap.get(post.user_id) ?? null : null,
       };
     }),
-  });
+  }, { sMaxAge: 120, staleWhileRevalidate: 600 });
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { publicCachedJson } from "@/lib/http-cache";
 
 export async function GET(
   _request: Request,
@@ -18,8 +19,8 @@ export async function GET(
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({
+  return publicCachedJson({
     total_wins: data?.length ?? 0,
     latest: data?.[0] ?? null,
-  });
+  }, { sMaxAge: 600, staleWhileRevalidate: 3600 });
 }

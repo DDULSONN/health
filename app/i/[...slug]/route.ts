@@ -8,6 +8,7 @@ const SIGNED_TTL_SEC = 3600;
 const OPTIMIZED_BUCKETS = new Set(["community", "dating-apply-photos"]);
 const DEFAULT_MAX_WIDTH = 1080;
 const DEFAULT_QUALITY = 72;
+const LONG_IMAGE_CACHE_CONTROL = "public, max-age=86400, s-maxage=2592000, stale-while-revalidate=604800";
 
 function pickUpstreamHeaders(src: Headers): Headers {
   const dst = new Headers();
@@ -65,7 +66,7 @@ async function fetchPublicLite(bucket: string, objectPath: string, method: strin
 
   const headers = pickUpstreamHeaders(upstream.headers);
   if (isCacheableImage(upstream.headers)) {
-    headers.set("Cache-Control", "public, max-age=86400, s-maxage=2592000, stale-while-revalidate=604800");
+    headers.set("Cache-Control", LONG_IMAGE_CACHE_CONTROL);
     headers.set("Vary", "Accept");
   } else {
     headers.set("Cache-Control", "no-store");
@@ -138,7 +139,7 @@ async function fetchSigned(bucket: string, objectPath: string, method: string, r
   }
 
   // Signed fetch still benefits from edge/browser caching because this proxy URL is stable.
-  headers.set("Cache-Control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800");
+  headers.set("Cache-Control", LONG_IMAGE_CACHE_CONTROL);
   headers.set("Vary", "Accept");
   headers.delete("set-cookie");
   return new Response(method === "HEAD" ? null : upstream.body, {
@@ -172,7 +173,7 @@ async function optimizeSignedImageResponse(
   }
 
   if (method === "HEAD") {
-    upstreamHeaders.set("Cache-Control", "public, max-age=86400, s-maxage=2592000, stale-while-revalidate=604800");
+    upstreamHeaders.set("Cache-Control", LONG_IMAGE_CACHE_CONTROL);
     upstreamHeaders.set("Vary", "Accept");
     upstreamHeaders.delete("set-cookie");
     return new Response(null, { status: upstream.status, headers: upstreamHeaders });
@@ -203,7 +204,7 @@ async function optimizeSignedImageResponse(
     const headers = new Headers();
     headers.set("Content-Type", "image/webp");
     headers.set("Content-Length", String(output.byteLength));
-    headers.set("Cache-Control", "public, max-age=86400, s-maxage=2592000, stale-while-revalidate=604800");
+    headers.set("Cache-Control", LONG_IMAGE_CACHE_CONTROL);
     headers.set("Vary", "Accept");
     if (upstream.headers.get("etag")) headers.set("ETag", upstream.headers.get("etag")!);
     if (upstream.headers.get("last-modified")) headers.set("Last-Modified", upstream.headers.get("last-modified")!);
@@ -214,7 +215,7 @@ async function optimizeSignedImageResponse(
       objectPathTail: objectPath.split("/").slice(-2).join("/"),
       error: error instanceof Error ? error.message : String(error),
     });
-    upstreamHeaders.set("Cache-Control", "public, max-age=3600, s-maxage=86400, stale-while-revalidate=604800");
+    upstreamHeaders.set("Cache-Control", LONG_IMAGE_CACHE_CONTROL);
     upstreamHeaders.set("Vary", "Accept");
     upstreamHeaders.delete("set-cookie");
     return new Response(upstream.body, { status: upstream.status, headers: upstreamHeaders });

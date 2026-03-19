@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
+import { publicCachedJson } from "@/lib/http-cache";
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
@@ -68,5 +69,5 @@ export async function GET(request: Request) {
     };
   });
 
-  return NextResponse.json({ items });
+  return publicCachedJson({ items }, { sMaxAge: 600, staleWhileRevalidate: 3600 });
 }

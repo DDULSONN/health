@@ -1,4 +1,5 @@
 import { clampBodyBattleTop } from "@/lib/bodybattle";
+import { publicCachedJson } from "@/lib/http-cache";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -19,8 +20,8 @@ export async function GET(request: Request) {
     return NextResponse.json({ ok: false, message: hofRes.error.message }, { status: 500 });
   }
 
-  return NextResponse.json({
+  return publicCachedJson({
     ok: true,
     items: hofRes.data ?? [],
-  });
+  }, { sMaxAge: 600, staleWhileRevalidate: 3600 });
 }

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { publicCachedJson } from "@/lib/http-cache";
 import { getKstWeekRange, getPreviousKstWeekRange } from "@/lib/weekly";
 
 type WinnerPost = {
@@ -103,7 +104,7 @@ export async function GET() {
   );
 
   if (isLatestClosedWeekConfirmed && latestWinner) {
-    return NextResponse.json({
+    return publicCachedJson({
       mode: "confirmed",
       week: {
         start_utc: latestWinner.week_start,
@@ -123,7 +124,7 @@ export async function GET() {
             post: postMap.get(latestWinner.female_post_id) ?? null,
           }
         : null,
-    });
+    }, { sMaxAge: 600, staleWhileRevalidate: 3600 });
   }
 
   try {
@@ -142,7 +143,7 @@ export async function GET() {
       ),
     ]);
 
-    return NextResponse.json({
+    return publicCachedJson({
       mode: "collecting",
       week: {
         start_utc: currentWeek.startUtcIso,
@@ -158,7 +159,7 @@ export async function GET() {
             female_post_id: latestWinner.female_post_id,
           }
         : null,
-    });
+    }, { sMaxAge: 120, staleWhileRevalidate: 600 });
   } catch (liveError) {
     const message = liveError instanceof Error ? liveError.message : String(liveError);
     return NextResponse.json({ error: message }, { status: 500 });
