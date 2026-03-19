@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { DATING_PAID_FIXED_LABEL, DATING_PAID_FIXED_MS } from "@/lib/dating-paid";
 
 type PaidAdminItem = {
   id: string;
@@ -116,7 +117,7 @@ export default function AdminDatingPaidPage() {
                 ...item,
                 status: "approved",
                 paid_at: new Date().toISOString(),
-                expires_at: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+                expires_at: new Date(Date.now() + DATING_PAID_FIXED_MS).toISOString(),
               }
             : item
         )
@@ -321,7 +322,7 @@ export default function AdminDatingPaidPage() {
               <p className="mt-1 break-all text-xs text-neutral-500">user_id: {item.user_id}</p>
               <p className="mt-1 text-xs font-medium text-violet-700">인스타: @{item.instagram_id}</p>
               <p className="mt-1 text-xs text-neutral-600">
-                노출방식: {item.display_mode === "instant_public" ? "즉시공개(비고정)" : "24시간 상단고정"}
+                노출방식: {item.display_mode === "instant_public" ? "즉시공개(비고정)" : DATING_PAID_FIXED_LABEL}
               </p>
 
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-700">

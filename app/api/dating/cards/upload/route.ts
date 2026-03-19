@@ -3,13 +3,17 @@ import { hasMoreViewAccess } from "@/lib/dating-more-view";
 import { hasCityViewAccess } from "@/lib/dating-city-view";
 import { NextResponse } from "next/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_FILE_SIZE = 8 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 export async function POST(req: Request) {
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
+
   const { user } = await getRequestAuthContext(req);
 
   if (!user) {
@@ -32,7 +36,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "JPG/PNG/WebP만 업로드 가능합니다." }, { status: 400 });
   }
   if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: "사진은 5MB 이하만 가능합니다." }, { status: 400 });
+    return NextResponse.json({ error: "사진은 8MB 이하만 가능합니다." }, { status: 400 });
   }
   if (index < 0 || index > 9) {
     return NextResponse.json({ error: "index 값이 올바르지 않습니다." }, { status: 400 });

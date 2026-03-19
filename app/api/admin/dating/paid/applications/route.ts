@@ -88,7 +88,7 @@ export async function GET() {
 
     if (appsRes.error) {
       console.error("[GET /api/admin/dating/paid/applications] apps failed", appsRes.error);
-      return json(500, { error: "24시간 카드 지원 이력을 불러오지 못했습니다.", requestId });
+      return json(500, { error: "36시간 카드 지원 이력을 불러오지 못했습니다.", requestId });
     }
 
     const apps = (appsRes.data ?? []) as PaidApplicationRow[];
@@ -104,7 +104,7 @@ export async function GET() {
 
     if (cardsRes.error) {
       console.error("[GET /api/admin/dating/paid/applications] cards failed", cardsRes.error);
-      return json(500, { error: "24시간 카드 정보를 불러오지 못했습니다.", requestId });
+      return json(500, { error: "36시간 카드 정보를 불러오지 못했습니다.", requestId });
     }
 
     const cards = cardsRes.data ?? [];

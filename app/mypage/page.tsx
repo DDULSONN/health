@@ -321,7 +321,7 @@ type AdminPaidCardApplication = {
 type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
 type AdminApplicationSort = "newest" | "oldest" | "submitted_first" | "accepted_first";
 type AdminDataView = "cards" | "applications";
-type AdminManageTab = "open_cards" | "apply_credits" | "more_view" | "city_view" | "bodybattle" | "community";
+type AdminManageTab = "open_cards" | "apply_credits" | "more_view" | "city_view" | "bodybattle" | "community" | "phone_verify";
 
 type AdminBodyBattleOverview = {
   season: {
@@ -495,6 +495,11 @@ export default function MyPage() {
   const [verifyingPhoneOtp, setVerifyingPhoneOtp] = useState(false);
   const [phoneVerifyError, setPhoneVerifyError] = useState("");
   const [phoneVerifyInfo, setPhoneVerifyInfo] = useState("");
+  const [adminPhoneUserId, setAdminPhoneUserId] = useState("");
+  const [adminPhoneNumber, setAdminPhoneNumber] = useState("");
+  const [adminPhoneVerifyLoading, setAdminPhoneVerifyLoading] = useState(false);
+  const [adminPhoneVerifyError, setAdminPhoneVerifyError] = useState("");
+  const [adminPhoneVerifyInfo, setAdminPhoneVerifyInfo] = useState("");
   const [savingSwipeVisibility, setSavingSwipeVisibility] = useState(false);
 
   useEffect(() => {
@@ -1233,6 +1238,54 @@ export default function MyPage() {
       alert("바디배틀 운영 작업을 실행했습니다.");
     } finally {
       setRunningBodyBattleAdminTask(false);
+    }
+  };
+
+  const handleAdminManualPhoneVerify = async () => {
+    const trimmedUserId = adminPhoneUserId.trim();
+    const trimmedPhone = adminPhoneNumber.trim();
+
+    setAdminPhoneVerifyError("");
+    setAdminPhoneVerifyInfo("");
+
+    if (!trimmedUserId) {
+      setAdminPhoneVerifyError("대상 사용자 ID를 입력해주세요.");
+      return;
+    }
+
+    if (!trimmedPhone) {
+      setAdminPhoneVerifyError("휴대폰 번호를 입력해주세요.");
+      return;
+    }
+
+    setAdminPhoneVerifyLoading(true);
+    try {
+      const res = await fetch("/api/admin/phone-verification", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          userId: trimmedUserId,
+          phone: trimmedPhone,
+        }),
+      });
+
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        nickname?: string | null;
+        phone_e164?: string;
+      };
+
+      if (!res.ok) {
+        throw new Error(body.error || "수동 휴대폰 인증 처리에 실패했습니다.");
+      }
+
+      setAdminPhoneVerifyInfo(
+        `${body.nickname?.trim() || trimmedUserId.slice(0, 8)} 계정을 ${body.phone_e164 ?? trimmedPhone} 번호로 인증 처리했습니다.`
+      );
+    } catch (err) {
+      setAdminPhoneVerifyError(err instanceof Error ? err.message : "수동 휴대폰 인증 처리에 실패했습니다.");
+    } finally {
+      setAdminPhoneVerifyLoading(false);
     }
   };
 
@@ -2596,6 +2649,15 @@ export default function MyPage() {
             >
               커뮤니티 신고
             </button>
+            <button
+              type="button"
+              onClick={() => setAdminManageTab("phone_verify")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "phone_verify" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              전화 인증
+            </button>
           </div>
 
           {adminManageTab === "open_cards" && (
@@ -2814,6 +2876,56 @@ export default function MyPage() {
           {adminManageTab === "community" && (
           <div className="mb-3">
             <AdminCommunityModerationPanel />
+          </div>
+          )}
+
+          {adminManageTab === "phone_verify" && (
+          <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
+            <p className="text-xs font-semibold text-violet-800">수동 휴대폰 인증</p>
+            <p className="mt-1 text-[11px] text-neutral-500">
+              사용자 ID와 휴대폰 번호를 입력하면 프로필 기준으로 바로 인증 완료 처리됩니다.
+            </p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <input
+                type="text"
+                value={adminPhoneUserId}
+                onChange={(e) => setAdminPhoneUserId(e.target.value)}
+                placeholder="대상 사용자 ID"
+                className="h-10 rounded-lg border border-violet-200 px-3 text-sm"
+              />
+              <input
+                type="tel"
+                value={adminPhoneNumber}
+                onChange={(e) => setAdminPhoneNumber(e.target.value)}
+                placeholder="휴대폰 번호 (예: 01012345678)"
+                className="h-10 rounded-lg border border-violet-200 px-3 text-sm"
+              />
+            </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleAdminManualPhoneVerify()}
+                disabled={adminPhoneVerifyLoading}
+                className="h-9 rounded-lg bg-violet-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+              >
+                {adminPhoneVerifyLoading ? "처리 중..." : "인증 완료 처리"}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAdminPhoneUserId("");
+                  setAdminPhoneNumber("");
+                  setAdminPhoneVerifyError("");
+                  setAdminPhoneVerifyInfo("");
+                }}
+                disabled={adminPhoneVerifyLoading}
+                className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 disabled:opacity-50"
+              >
+                초기화
+              </button>
+            </div>
+            {adminPhoneVerifyError && <p className="mt-2 text-xs text-rose-600">{adminPhoneVerifyError}</p>}
+            {adminPhoneVerifyInfo && <p className="mt-2 text-xs text-emerald-700">{adminPhoneVerifyInfo}</p>}
           </div>
           )}
 

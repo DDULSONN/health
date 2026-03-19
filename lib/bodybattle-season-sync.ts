@@ -6,6 +6,16 @@ type SeasonRow = {
   end_at: string;
 };
 
+type ResultRow = {
+  season_id: string;
+  champion_entry_id: string | null;
+};
+
+type HallOfFameRow = {
+  season_id: string;
+  champion_entry_id: string | null;
+};
+
 type SyncOptions = {
   lookbackSeasons?: number;
 };
@@ -61,8 +71,8 @@ export async function runBodyBattleSeasonSync(
 
   const seasonIds = ended.map((season) => season.id);
   const [resultRows, hofRows] = await Promise.all([
-    admin.from("bodybattle_season_results").select("season_id").in("season_id", seasonIds),
-    admin.from("bodybattle_hall_of_fame").select("season_id").in("season_id", seasonIds),
+    admin.from("bodybattle_season_results").select("season_id,champion_entry_id").in("season_id", seasonIds),
+    admin.from("bodybattle_hall_of_fame").select("season_id,champion_entry_id").in("season_id", seasonIds),
   ]);
   if (resultRows.error) {
     return { ok: false, message: `load season_results failed: ${resultRows.error.message}` };
@@ -71,11 +81,24 @@ export async function runBodyBattleSeasonSync(
     return { ok: false, message: `load hall_of_fame failed: ${hofRows.error.message}` };
   }
 
-  const resultSet = new Set((resultRows.data ?? []).map((row) => String(row.season_id)));
-  const hofSet = new Set((hofRows.data ?? []).map((row) => String(row.season_id)));
+  const resultMap = new Map(
+    ((resultRows.data ?? []) as ResultRow[]).map((row) => [String(row.season_id), row.champion_entry_id ?? null])
+  );
+  const hofMap = new Map(
+    ((hofRows.data ?? []) as HallOfFameRow[]).map((row) => [String(row.season_id), row.champion_entry_id ?? null])
+  );
 
   const needsHeal = ended
-    .filter((season) => !resultSet.has(season.id) || !hofSet.has(season.id))
+    .filter((season) => {
+      const resultChampionId = resultMap.get(season.id);
+      const hofChampionId = hofMap.get(season.id);
+      return (
+        !resultMap.has(season.id) ||
+        !hofMap.has(season.id) ||
+        resultChampionId == null ||
+        hofChampionId == null
+      );
+    })
     .sort((a, b) => new Date(a.end_at).getTime() - new Date(b.end_at).getTime());
 
   const healedSeasonIds: string[] = [];
@@ -101,4 +124,3 @@ export async function runBodyBattleSeasonSync(
     },
   };
 }
-

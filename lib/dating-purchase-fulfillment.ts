@@ -1,4 +1,5 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { DATING_PAID_FIXED_MS } from "@/lib/dating-paid";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -424,7 +425,7 @@ type ApprovePaidCardOptions = {
 
 export async function approvePaidCard(admin: AdminClient, options: ApprovePaidCardOptions) {
   const now = new Date();
-  const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000).toISOString();
+  const expiresAt = new Date(now.getTime() + DATING_PAID_FIXED_MS).toISOString();
   const payload: Record<string, unknown> = {
     status: "approved",
     paid_at: now.toISOString(),
