@@ -80,6 +80,8 @@ export async function PATCH(
     return NextResponse.json({ error: "상태 변경에 실패했습니다." }, { status: 500 });
   }
 
+  let cardHidden = false;
+
   if (status === "accepted" && card.status === "public") {
     const nowIso = new Date().toISOString();
 
@@ -96,16 +98,7 @@ export async function PATCH(
       );
     }
 
-    const { error: rejectOthersError } = await adminClient
-      .from("dating_card_applications")
-      .update({ status: "rejected" })
-      .eq("card_id", app.card_id)
-      .eq("status", "submitted")
-      .neq("id", id);
-
-    if (rejectOthersError) {
-      console.error("[PATCH /api/dating/cards/applications/[id]] reject others failed", rejectOthersError);
-    }
+    cardHidden = true;
 
     const sex = card.sex === "female" ? "female" : "male";
     try {
@@ -158,6 +151,7 @@ export async function PATCH(
   return NextResponse.json({
     ok: true,
     status,
-    card_hidden: status === "accepted" && card.status === "public",
+    // Open card leaves the public list after the first acceptance, but existing submitted applications stay actionable.
+    card_hidden: cardHidden,
   });
 }

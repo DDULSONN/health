@@ -941,16 +941,37 @@ export default function MyPage() {
       return;
     }
 
-    setReceivedApplications((prev) =>
-      prev.map((app) =>
-        app.id === applicationId
-          ? {
-              ...app,
-              status: nextStatus,
-            }
-          : app
-      )
-    );
+    const [receivedRes, connectionsRes] = await Promise.all([
+      fetch("/api/dating/cards/my/received", { cache: "no-store" }),
+      fetch("/api/dating/cards/my/connections", { cache: "no-store" }),
+    ]);
+
+    const receivedBody = (await receivedRes.json().catch(() => ({}))) as {
+      cards?: MyDatingCard[];
+      applications?: ReceivedCardApplication[];
+      error?: string;
+    };
+    const connectionsBody = (await connectionsRes.json().catch(() => ({}))) as {
+      items?: DatingConnection[];
+      error?: string;
+    };
+
+    if (receivedRes.ok) {
+      setMyDatingCards(receivedBody.cards ?? []);
+      setReceivedApplications(receivedBody.applications ?? []);
+    } else {
+      setReceivedApplications((prev) =>
+        prev.map((app) => (app.id === applicationId ? { ...app, status: nextStatus } : app))
+      );
+    }
+
+    if (connectionsRes.ok) {
+      const openItems = connectionsBody.items ?? [];
+      setDatingConnections((prev) => {
+        const paidItems = prev.filter((item) => item.source === "paid");
+        return [...openItems, ...paidItems];
+      });
+    }
   };
 
   const handlePaidApplicationStatus = async (
