@@ -4,8 +4,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
-const DeferredAdSenseBootstrap = dynamic(() => import("@/components/AdSenseBootstrap"), {
-});
+
+const DeferredAdSenseBootstrap = dynamic(() => import("@/components/AdSenseBootstrap"), {});
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -23,7 +23,7 @@ export const metadata: Metadata = {
     template: "%s | 짐툴 GymTools",
   },
   description:
-    "짐툴은 1RM 계산기, 3대 합계 계산기, 헬창 판독기와 몸평 커뮤니티를 제공하는 헬스 플랫폼입니다.",
+    "짐툴은 1RM 계산기, 3대 합계 계산기, 몸평 커뮤니티와 소개팅 기능을 제공하는 헬스 플랫폼입니다.",
   applicationName: "짐툴",
   manifest: "/manifest.webmanifest",
   icons: {
@@ -41,7 +41,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: "짐툴 (GymTools) - 헬스 계산기 & 몸평 커뮤니티",
     description:
-      "짐툴은 1RM 계산기, 3대 합계 계산기, 헬창 판독기와 몸평 커뮤니티를 제공하는 헬스 플랫폼입니다.",
+      "짐툴은 1RM 계산기, 3대 합계 계산기, 몸평 커뮤니티와 소개팅 기능을 제공하는 헬스 플랫폼입니다.",
     siteName: "짐툴 GymTools",
     type: "website",
     locale: "ko_KR",
@@ -74,14 +74,9 @@ export default function RootLayout({
         <meta name="theme-color" content="#0f172a" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-        <script
-          type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
-        />
+        <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       </head>
-      <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-dvh`}
-      >
+      <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-dvh`}>
         <DeferredAdSenseBootstrap />
         <Header />
         <div className="flex-1">{children}</div>

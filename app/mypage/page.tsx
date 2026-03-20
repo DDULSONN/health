@@ -321,7 +321,15 @@ type AdminPaidCardApplication = {
 type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
 type AdminApplicationSort = "newest" | "oldest" | "submitted_first" | "accepted_first";
 type AdminDataView = "cards" | "applications";
-type AdminManageTab = "open_cards" | "apply_credits" | "more_view" | "city_view" | "bodybattle" | "community" | "phone_verify";
+type AdminManageTab =
+  | "open_cards"
+  | "apply_credits"
+  | "more_view"
+  | "city_view"
+  | "bodybattle"
+  | "community"
+  | "phone_verify"
+  | "site_ads";
 
 type AdminBodyBattleOverview = {
   season: {
@@ -438,6 +446,15 @@ type ApplyCreditsStatusResponse = {
   creditsRemaining?: number;
 };
 
+type AdInquirySettingsResponse = {
+  enabled?: boolean;
+  title?: string;
+  description?: string;
+  cta?: string;
+  linkUrl?: string;
+  badge?: string;
+};
+
 export default function MyPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -475,6 +492,15 @@ export default function MyPage() {
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
   const [openCardWriteEnabled, setOpenCardWriteEnabled] = useState(true);
   const [openCardWriteSaving, setOpenCardWriteSaving] = useState(false);
+  const [adInquiryEnabled, setAdInquiryEnabled] = useState(true);
+  const [adInquiryTitle, setAdInquiryTitle] = useState("");
+  const [adInquiryDescription, setAdInquiryDescription] = useState("");
+  const [adInquiryCta, setAdInquiryCta] = useState("");
+  const [adInquiryLinkUrl, setAdInquiryLinkUrl] = useState("");
+  const [adInquiryBadge, setAdInquiryBadge] = useState("");
+  const [adInquirySaving, setAdInquirySaving] = useState(false);
+  const [adInquiryError, setAdInquiryError] = useState("");
+  const [adInquiryInfo, setAdInquiryInfo] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState<MyPageTab>("my_cert");
   const [error, setError] = useState("");
@@ -532,6 +558,7 @@ export default function MyPage() {
           paidConnectionsRes,
           writeSettingRes,
           applyCreditsStatusRes,
+          adInquiryRes,
         ] = await Promise.all([
           fetch("/api/mypage/summary", { cache: "no-store" }),
           fetch("/api/cert-requests", { cache: "no-store" }),
@@ -548,6 +575,7 @@ export default function MyPage() {
           fetch("/api/dating/paid/my/connections", { cache: "no-store" }),
           fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
           fetch("/api/dating/apply-credits/status", { cache: "no-store" }),
+          fetch("/api/site/ad-inquiry", { cache: "no-store" }),
         ]);
 
         const summaryBody = (await summaryRes.json().catch(() => ({}))) as SummaryResponse & {
@@ -604,6 +632,7 @@ export default function MyPage() {
           enabled?: boolean;
         };
         const applyCreditsBody = (await applyCreditsStatusRes.json().catch(() => ({}))) as ApplyCreditsStatusResponse;
+        const adInquiryBody = (await adInquiryRes.json().catch(() => ({}))) as AdInquirySettingsResponse;
 
         if (!summaryRes.ok) {
           throw new Error(summaryBody.error ?? "마이페이지 정보를 불러오지 못했습니다.");
@@ -662,6 +691,14 @@ export default function MyPage() {
           ]);
           setOpenCardWriteEnabled(writeSettingBody.enabled !== false);
           setApplyCreditsRemaining(Math.max(0, Number(applyCreditsBody.creditsRemaining ?? 0)));
+          setAdInquiryEnabled(adInquiryBody.enabled !== false);
+          setAdInquiryTitle(adInquiryBody.title ?? "(광고) 문의 주세요");
+          setAdInquiryDescription(
+            adInquiryBody.description ?? "배너, 제휴, 스폰서 문의는 오픈카톡으로 편하게 남겨 주세요."
+          );
+          setAdInquiryCta(adInquiryBody.cta ?? "오픈카톡 문의");
+          setAdInquiryLinkUrl(adInquiryBody.linkUrl ?? "");
+          setAdInquiryBadge(adInquiryBody.badge ?? "AD SLOT");
           setError("");
 
           if (adminFlag) {
@@ -1132,6 +1169,49 @@ export default function MyPage() {
       setOpenCardWriteEnabled(body.enabled !== false);
     } finally {
       setOpenCardWriteSaving(false);
+    }
+  };
+
+  const handleAdminSaveAdInquiry = async () => {
+    setAdInquirySaving(true);
+    setAdInquiryError("");
+    setAdInquiryInfo("");
+    try {
+      const res = await fetch("/api/admin/site/ad-inquiry", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: adInquiryEnabled,
+          title: adInquiryTitle,
+          description: adInquiryDescription,
+          cta: adInquiryCta,
+          linkUrl: adInquiryLinkUrl,
+          badge: adInquiryBadge,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        setting?: AdInquirySettingsResponse;
+      };
+      if (!res.ok || !body.ok || !body.setting) {
+        setAdInquiryError(body.error ?? "광고 문의 설정 저장에 실패했습니다.");
+        return;
+      }
+
+      setAdInquiryEnabled(body.setting.enabled !== false);
+      setAdInquiryTitle(body.setting.title ?? "(광고) 문의 주세요");
+      setAdInquiryDescription(
+        body.setting.description ?? "배너, 제휴, 스폰서 문의는 오픈카톡으로 편하게 남겨 주세요."
+      );
+      setAdInquiryCta(body.setting.cta ?? "오픈카톡 문의");
+      setAdInquiryLinkUrl(body.setting.linkUrl ?? "");
+      setAdInquiryBadge(body.setting.badge ?? "AD SLOT");
+      setAdInquiryInfo("광고 문의 슬롯 설정을 저장했습니다.");
+    } catch (e) {
+      setAdInquiryError(e instanceof Error ? e.message : "광고 문의 설정 저장에 실패했습니다.");
+    } finally {
+      setAdInquirySaving(false);
     }
   };
 
@@ -2679,6 +2759,15 @@ export default function MyPage() {
             >
               전화 인증
             </button>
+            <button
+              type="button"
+              onClick={() => setAdminManageTab("site_ads")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "site_ads" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              광고 문의
+            </button>
           </div>
 
           {adminManageTab === "open_cards" && (
@@ -2947,6 +3036,92 @@ export default function MyPage() {
             </div>
             {adminPhoneVerifyError && <p className="mt-2 text-xs text-rose-600">{adminPhoneVerifyError}</p>}
             {adminPhoneVerifyInfo && <p className="mt-2 text-xs text-emerald-700">{adminPhoneVerifyInfo}</p>}
+          </div>
+          )}
+
+          {adminManageTab === "site_ads" && (
+          <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
+            <p className="text-xs font-semibold text-violet-800">광고 문의 슬롯 설정</p>
+            <p className="mt-1 text-[11px] text-neutral-500">
+              홈 카드와 광고 문의 페이지에서 사용하는 문구와 링크를 여기서 관리합니다.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setAdInquiryEnabled(true)}
+                disabled={adInquirySaving}
+                className={`h-8 rounded-md px-3 text-xs font-medium text-white ${adInquiryEnabled ? "bg-emerald-600" : "bg-neutral-400"}`}
+              >
+                ON
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdInquiryEnabled(false)}
+                disabled={adInquirySaving}
+                className={`h-8 rounded-md px-3 text-xs font-medium text-white ${!adInquiryEnabled ? "bg-rose-600" : "bg-neutral-400"}`}
+              >
+                OFF
+              </button>
+              <span className="text-xs text-neutral-600">현재: {adInquiryEnabled ? "노출 중" : "숨김"}</span>
+            </div>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
+              <input
+                type="text"
+                value={adInquiryBadge}
+                onChange={(e) => setAdInquiryBadge(e.target.value)}
+                placeholder="배지 (예: AD SLOT)"
+                className="h-10 rounded-lg border border-violet-200 px-3 text-sm"
+              />
+              <input
+                type="text"
+                value={adInquiryTitle}
+                onChange={(e) => setAdInquiryTitle(e.target.value)}
+                placeholder="제목"
+                className="h-10 rounded-lg border border-violet-200 px-3 text-sm"
+              />
+              <input
+                type="text"
+                value={adInquiryCta}
+                onChange={(e) => setAdInquiryCta(e.target.value)}
+                placeholder="버튼 문구"
+                className="h-10 rounded-lg border border-violet-200 px-3 text-sm"
+              />
+              <input
+                type="url"
+                value={adInquiryLinkUrl}
+                onChange={(e) => setAdInquiryLinkUrl(e.target.value)}
+                placeholder="링크 URL"
+                className="h-10 rounded-lg border border-violet-200 px-3 text-sm"
+              />
+            </div>
+            <textarea
+              value={adInquiryDescription}
+              onChange={(e) => setAdInquiryDescription(e.target.value)}
+              placeholder="설명 문구"
+              className="mt-2 min-h-[96px] w-full rounded-lg border border-violet-200 px-3 py-2 text-sm"
+            />
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleAdminSaveAdInquiry()}
+                disabled={adInquirySaving}
+                className="h-9 rounded-lg bg-violet-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+              >
+                {adInquirySaving ? "저장 중..." : "설정 저장"}
+              </button>
+              {adInquiryLinkUrl ? (
+                <a
+                  href={adInquiryLinkUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 inline-flex items-center"
+                >
+                  링크 확인
+                </a>
+              ) : null}
+            </div>
+            {adInquiryError && <p className="mt-2 text-xs text-rose-600">{adInquiryError}</p>}
+            {adInquiryInfo && <p className="mt-2 text-xs text-emerald-700">{adInquiryInfo}</p>}
           </div>
           )}
 

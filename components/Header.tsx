@@ -16,7 +16,7 @@ const NAV_ITEMS = [
   { href: "/community/dating", label: "소개팅" },
   { href: "/community", label: "커뮤니티" },
   { href: "/certify", label: "3대 인증" },
-  { href: "/helltest", label: "헬스 테스트" },
+  { href: "/ad-inquiry", label: "광고 문의" },
 ];
 
 export default function Header() {
