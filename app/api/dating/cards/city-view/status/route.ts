@@ -15,11 +15,32 @@ type ActiveCityDetail = {
   expiresAt: string;
 };
 
+type CityViewRequestRow = {
+  city?: string;
+  status?: string | null;
+  access_expires_at?: string | null;
+  reviewed_at?: string | null;
+  created_at?: string | null;
+};
+
 function normalizeIsoDate(value: unknown): string | null {
   if (typeof value !== "string" || !value.trim()) return null;
   const d = new Date(value);
   if (Number.isNaN(d.getTime())) return null;
   return d.toISOString();
+}
+
+function getProvinceFromRow(row: CityViewRequestRow): string {
+  const rawCity = typeof row.city === "string" ? row.city.trim() : "";
+  return extractProvinceFromRegion(rawCity) ?? rawCity;
+}
+
+function getRowSortTime(row: CityViewRequestRow): number {
+  const reviewed = normalizeIsoDate(row.reviewed_at);
+  if (reviewed) return new Date(reviewed).getTime();
+  const created = normalizeIsoDate(row.created_at);
+  if (created) return new Date(created).getTime();
+  return 0;
 }
 
 async function buildProvinceStats(admin: ReturnType<typeof createAdminClient>): Promise<ProvinceStat[]> {
@@ -68,60 +89,58 @@ export async function GET(req: Request) {
     });
   }
 
-  const [approvedRes, pendingRes] = await Promise.all([
-    admin
-      .from("dating_city_view_requests")
-      .select("city,access_expires_at")
-      .eq("user_id", user.id)
-      .eq("status", "approved")
-      .order("reviewed_at", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false })
-      .limit(200),
-    admin
-      .from("dating_city_view_requests")
-      .select("city")
-      .eq("user_id", user.id)
-      .eq("status", "pending")
-      .order("created_at", { ascending: false })
-      .limit(50),
-  ]);
+  const historyRes = await admin
+    .from("dating_city_view_requests")
+    .select("city,status,access_expires_at,reviewed_at,created_at")
+    .eq("user_id", user.id)
+    .order("reviewed_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(500);
 
   const activeCityDetails: ActiveCityDetail[] = [];
-  if (Array.isArray(approvedRes.data)) {
-    const byProvince = new Map<string, string>();
-    for (const row of approvedRes.data as Array<{ city?: string; access_expires_at?: string | null }>) {
-      const province = extractProvinceFromRegion(String(row.city ?? "").trim()) ?? String(row.city ?? "").trim();
-      const expiresAt = normalizeIsoDate(row.access_expires_at);
-      if (!province || !expiresAt) continue;
-      if (new Date(expiresAt).getTime() <= Date.now()) continue;
-      const prev = byProvince.get(province);
-      if (!prev || new Date(expiresAt).getTime() > new Date(prev).getTime()) {
-        byProvince.set(province, expiresAt);
+  const pendingCities: string[] = [];
+
+  if (Array.isArray(historyRes.data)) {
+    const byProvince = new Map<string, CityViewRequestRow[]>();
+    for (const row of historyRes.data as CityViewRequestRow[]) {
+      const province = getProvinceFromRow(row);
+      if (!province) continue;
+      const list = byProvince.get(province) ?? [];
+      list.push(row);
+      byProvince.set(province, list);
+    }
+
+    const order = new Map<string, number>(PROVINCE_ORDER.map((name, idx) => [name, idx]));
+    for (const [province, rows] of byProvince.entries()) {
+      const activeApproved = rows.find((row) => {
+        if (row.status !== "approved") return false;
+        const expiresAt = normalizeIsoDate(row.access_expires_at);
+        if (!expiresAt) return false;
+        return new Date(expiresAt).getTime() > Date.now();
+      });
+
+      if (activeApproved) {
+        activeCityDetails.push({
+          province,
+          expiresAt: normalizeIsoDate(activeApproved.access_expires_at)!,
+        });
+        continue;
+      }
+
+      const latest = [...rows].sort((a, b) => getRowSortTime(b) - getRowSortTime(a))[0];
+      if (latest?.status === "pending") {
+        pendingCities.push(province);
       }
     }
-    const order = new Map<string, number>(PROVINCE_ORDER.map((name, idx) => [name, idx]));
-    activeCityDetails.push(
-      ...[...byProvince.entries()]
-        .map(([province, expiresAt]) => ({ province, expiresAt }))
-        .sort((a, b) => (order.get(a.province) ?? 999) - (order.get(b.province) ?? 999))
-    );
-  }
-  const activeCities = activeCityDetails.map((v) => v.province);
 
-  const pendingCities = Array.isArray(pendingRes.data)
-    ? [
-        ...new Set(
-          pendingRes.data
-            .map((row: { city?: string }) => extractProvinceFromRegion(String(row.city ?? "").trim()) ?? String(row.city ?? "").trim())
-            .filter(Boolean)
-        ),
-      ]
-    : [];
+    activeCityDetails.sort((a, b) => (order.get(a.province) ?? 999) - (order.get(b.province) ?? 999));
+    pendingCities.sort((a, b) => (order.get(a) ?? 999) - (order.get(b) ?? 999));
+  }
 
   return NextResponse.json({
     ok: true,
     loggedIn: true,
-    activeCities,
+    activeCities: activeCityDetails.map((v) => v.province),
     activeCityDetails,
     pendingCities,
     provinceStats,
