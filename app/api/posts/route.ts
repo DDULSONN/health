@@ -14,6 +14,7 @@ const LEGACY_RECORD_TYPES = ["lifts", "1rm", "helltest"];
 const BODYCHECK_TYPES = ["photo_bodycheck"];
 const MAIN_FEED_TYPES = ["free", "lifts", "1rm", "photo_bodycheck"];
 const SORT_CANDIDATE_LIMIT = 400;
+const RECENT_POPULAR_WINDOW_HOURS = 48;
 const POST_LIST_SELECT =
   "id,user_id,type,title,content,payload_json,images,gender,score_sum,vote_count,great_count,good_count,normal_count,rookie_count,is_hidden,is_deleted,created_at";
 
@@ -104,6 +105,7 @@ export async function GET(request: Request) {
   const type = searchParams.get("type");
   const tab = searchParams.get("tab");
   const sort = parseSort(searchParams.get("sort"));
+  const useRecentWindow = searchParams.get("fresh") === "1";
   const q = sanitizeSearchQuery(searchParams.get("q"));
   const customLimit = Math.max(1, Math.min(50, Number(searchParams.get("limit") ?? 20)));
   const page = Math.max(1, Number(searchParams.get("page") ?? 1));
@@ -147,6 +149,11 @@ export async function GET(request: Request) {
 
   if (q) {
     query = query.or(`title.ilike.%${q}%,content.ilike.%${q}%`);
+  }
+
+  if (useRecentWindow && sort === "popular") {
+    const cutoff = new Date(Date.now() - RECENT_POPULAR_WINDOW_HOURS * 60 * 60 * 1000).toISOString();
+    query = query.gte("created_at", cutoff);
   }
 
   query = query.order("created_at", { ascending: false });

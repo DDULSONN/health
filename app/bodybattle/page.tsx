@@ -192,8 +192,10 @@ export default function BodyBattlePage() {
   const [scoreMode, setScoreMode] = useState<"all" | "weekly">("all");
   const [seasonSummary, setSeasonSummary] = useState<SeasonSummary | null>(null);
 
-  async function loadCurrent() {
-    setLoading(true);
+  async function loadCurrent(silent = false) {
+    if (!silent) {
+      setLoading(true);
+    }
     setError(null);
     try {
       const res = await fetch("/api/bodybattle/current", { cache: "no-store" });
@@ -208,12 +210,17 @@ export default function BodyBattlePage() {
       setError("대결 정보를 불러오는 중 네트워크 오류가 발생했습니다.");
       setPayload(null);
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   }
 
-  async function loadApplicants(page = 1, append = false) {
-    setApplicantsLoading(true);
+  async function loadApplicants(page = 1, append = false, silent = false) {
+    const shouldShowLoading = !silent || append || !applicantsData;
+    if (shouldShowLoading) {
+      setApplicantsLoading(true);
+    }
     setApplyError(null);
     try {
       const res = await fetch(`/api/bodybattle/applicants?page=${page}&limit=20`, { cache: "no-store" });
@@ -234,7 +241,9 @@ export default function BodyBattlePage() {
       setApplyError("신청자 목록을 불러오는 중 네트워크 오류가 발생했습니다.");
       if (!append) setApplicantsData(null);
     } finally {
-      setApplicantsLoading(false);
+      if (shouldShowLoading) {
+        setApplicantsLoading(false);
+      }
     }
   }
 
@@ -317,8 +326,8 @@ export default function BodyBattlePage() {
           reward: data.reward,
         });
       }
-      await loadCurrent();
-      if (tab === "apply") await loadApplicants(1, false);
+      await loadCurrent(true);
+      if (tab === "apply") await loadApplicants(1, false, true);
       await Promise.all([loadMyProgress(), loadScoreboard()]);
     } catch {
       setError("투표 중 네트워크 오류가 발생했습니다.");
@@ -387,7 +396,7 @@ export default function BodyBattlePage() {
         return;
       }
       setJoinForm(INITIAL_JOIN_FORM);
-      await loadApplicants(1, false);
+      await loadApplicants(1, false, true);
     } catch {
       setApplyError("신청 중 네트워크 오류가 발생했습니다.");
     } finally {
@@ -454,7 +463,7 @@ export default function BodyBattlePage() {
         return;
       }
       setCommentInputByEntry((prev) => ({ ...prev, [entryId]: "" }));
-      await loadApplicants(1, false);
+      await loadApplicants(1, false, true);
     } catch {
       setApplyError("댓글 등록 중 네트워크 오류가 발생했습니다.");
     } finally {
@@ -471,7 +480,7 @@ export default function BodyBattlePage() {
         setApplyError(data?.message ?? "댓글 삭제에 실패했습니다.");
         return;
       }
-      await loadApplicants(1, false);
+      await loadApplicants(1, false, true);
     } catch {
       setApplyError("댓글 삭제 중 네트워크 오류가 발생했습니다.");
     }
@@ -500,9 +509,9 @@ export default function BodyBattlePage() {
       }
 
       if (source === "applicant") {
-        await loadApplicants(1, false);
+        await loadApplicants(1, false, true);
       } else {
-        await loadCurrent();
+        await loadCurrent(true);
       }
     } catch {
       if (source === "applicant") setApplyError("신고 중 네트워크 오류가 발생했습니다.");

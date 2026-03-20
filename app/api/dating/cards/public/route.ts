@@ -5,12 +5,14 @@ import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { kvGetString, kvSetString } from "@/lib/edge-kv";
 import { createAdminClient } from "@/lib/supabase/server";
+import { shouldRunAtMostEvery } from "@/lib/throttled-task";
 import { NextResponse } from "next/server";
 
 const RAW_COUNT_MAX = 40;
 const LITE_PUBLIC_BUCKET = "dating-card-lite";
 const LITE_PUBLIC_PROBE_TTL_MS = 6 * 60 * 60 * 1000;
 const LITE_PUBLIC_NEGATIVE_PROBE_TTL_MS = 5 * 60 * 1000;
+const OPEN_CARD_SYNC_INTERVAL_SEC = 45;
 
 type LitePublicProbeCacheValue = {
   exists: boolean;
@@ -235,9 +237,11 @@ export async function GET(req: Request) {
   const sex = searchParams.get("sex");
 
   const adminClient = createAdminClient();
-  await syncOpenCardQueue(adminClient).catch((error) => {
-    console.error(`[GET /api/dating/cards/list] requestId=${requestId} queue sync failed`, error);
-  });
+  if (await shouldRunAtMostEvery("dating:open-cards:sync", OPEN_CARD_SYNC_INTERVAL_SEC)) {
+    await syncOpenCardQueue(adminClient).catch((error) => {
+      console.error(`[GET /api/dating/cards/list] requestId=${requestId} queue sync failed`, error);
+    });
+  }
 
   let query = adminClient
     .from("dating_cards")

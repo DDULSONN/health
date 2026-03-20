@@ -249,6 +249,7 @@ export default function CommunityPage() {
     params.set("tab", tab);
     params.set("sort", "popular");
     params.set("limit", "3");
+    params.set("fresh", "1");
 
     if (activeType !== "all") {
       params.set("type", activeType);

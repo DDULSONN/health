@@ -6,8 +6,31 @@ import { createClient } from "@/lib/supabase/client";
 import type { BodycheckGender } from "@/lib/community";
 
 const CATEGORIES = [
-  { value: "free", label: "자유글", desc: "자유로운 대화와 질문" },
-  { value: "photo_bodycheck", label: "사진 몸평", desc: "사진 + 글 + 유저 평가" },
+  { value: "free", label: "자유글", desc: "자유로운 후기, 질문, 정보 공유" },
+  { value: "photo_bodycheck", label: "사진 몸평", desc: "사진과 함께 몸 상태 평가받기" },
+] as const;
+
+const FREE_POST_PROMPTS = [
+  {
+    label: "오늘 운동 기록",
+    title: "오늘 운동 기록 공유해요",
+    content: "오늘 한 운동은 이거예요.\n\n- 운동 부위:\n- 메인 운동:\n- 세트/중량:\n- 오늘 느낀 점:",
+  },
+  {
+    label: "식단 고민",
+    title: "식단 고민 좀 봐주세요",
+    content: "지금 식단을 이렇게 가져가고 있는데 괜찮을까요?\n\n- 현재 목표:\n- 아침:\n- 점심:\n- 저녁:\n- 고민되는 부분:",
+  },
+  {
+    label: "몸평 요청",
+    title: "몸평 부탁드립니다",
+    content: "지금 몸 상태가 어떤지 솔직하게 의견 부탁드려요.\n\n- 운동 경력:\n- 현재 목표:\n- 보완하고 싶은 부위:",
+  },
+  {
+    label: "헬스장 썰",
+    title: "오늘 헬스장에서 있었던 일",
+    content: "오늘 운동하다가 있었던 일이나 느낀 점 적어봐요.\n\n상황:\n느낀 점:\n다른 분들은 어땠는지도 궁금합니다.",
+  },
 ] as const;
 
 const MAX_IMAGES = 3;
@@ -62,8 +85,15 @@ export default function WritePage() {
   }, [isPhotoBodycheck]);
 
   const categoryDescription = useMemo(() => {
-    return CATEGORIES.find((v) => v.value === category)?.desc ?? "";
+    return CATEGORIES.find((item) => item.value === category)?.desc ?? "";
   }, [category]);
+
+  const applyFreePrompt = (prompt: (typeof FREE_POST_PROMPTS)[number]) => {
+    setCategory("free");
+    setTitle(prompt.title);
+    setContent(prompt.content);
+    setError("");
+  };
 
   async function uploadFileToCommunity(file: File) {
     const formData = new FormData();
@@ -166,16 +196,16 @@ export default function WritePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim()) {
-      setError("제목을 입력해주세요.");
+      setError("제목을 입력해 주세요.");
       return;
     }
     if (category === "free" && !content.trim()) {
-      setError("내용을 입력해주세요.");
+      setError("내용을 입력해 주세요.");
       return;
     }
     if (isPhotoBodycheck) {
       if (!gender) {
-        setError("사진 몸평은 성별 선택이 필수입니다.");
+        setError("사진 몸평은 성별 선택이 필요합니다.");
         return;
       }
       if (images.length < 1 || images.length > MAX_IMAGES) {
@@ -197,7 +227,11 @@ export default function WritePage() {
           content: content.trim() || null,
           payload_json:
             isPhotoBodycheck && thumbImages.some((url) => typeof url === "string" && url.length > 0)
-              ? { thumb_images: thumbImages.filter((url) => typeof url === "string" && url.length > 0).slice(0, MAX_IMAGES) }
+              ? {
+                  thumb_images: thumbImages
+                    .filter((url) => typeof url === "string" && url.length > 0)
+                    .slice(0, MAX_IMAGES),
+                }
               : undefined,
           images,
           gender: isPhotoBodycheck ? gender : undefined,
@@ -221,38 +255,34 @@ export default function WritePage() {
 
   if (!authChecked) {
     return (
-      <main className="max-w-md mx-auto px-4 py-10">
-        <p className="text-neutral-400 text-center">로딩 중...</p>
+      <main className="mx-auto max-w-md px-4 py-10">
+        <p className="text-center text-neutral-400">로딩 중...</p>
       </main>
     );
   }
 
   return (
-    <main className="max-w-md mx-auto px-4 py-8">
-      <h1 className="text-2xl font-bold text-neutral-900 mb-2">글쓰기</h1>
-      <p className="text-sm text-neutral-500 mb-5">{categoryDescription}</p>
+    <main className="mx-auto max-w-md px-4 py-8">
+      <h1 className="mb-2 text-2xl font-bold text-neutral-900">글쓰기</h1>
+      <p className="mb-5 text-sm text-neutral-500">{categoryDescription}</p>
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div>
-          <label className="block text-sm font-medium text-neutral-700 mb-2">
-            카테고리
-          </label>
+          <label className="mb-2 block text-sm font-medium text-neutral-700">카테고리</label>
           <div className="grid grid-cols-2 gap-2">
-            {CATEGORIES.map((c) => (
+            {CATEGORIES.map((item) => (
               <button
-                key={c.value}
+                key={item.value}
                 type="button"
-                onClick={() => setCategory(c.value)}
-                className={`p-3 rounded-xl border-2 text-left transition-all min-h-[68px] ${
-                  category === c.value
+                onClick={() => setCategory(item.value)}
+                className={`min-h-[68px] rounded-xl border-2 p-3 text-left transition-all ${
+                  category === item.value
                     ? "border-emerald-500 bg-emerald-50"
                     : "border-neutral-200 bg-white hover:border-neutral-300"
                 }`}
               >
-                <span className="block text-sm font-medium">{c.label}</span>
-                <span className="block text-xs text-neutral-500 mt-0.5">
-                  {c.desc}
-                </span>
+                <span className="block text-sm font-medium">{item.label}</span>
+                <span className="mt-0.5 block text-xs text-neutral-500">{item.desc}</span>
               </button>
             ))}
           </div>
@@ -260,14 +290,12 @@ export default function WritePage() {
 
         {isPhotoBodycheck && (
           <>
-            <div className="rounded-xl bg-indigo-50 border border-indigo-200 p-3 text-xs text-indigo-800">
-              이 글은 평가를 받습니다. 등록 후 유저들이 4단계로 투표합니다.
+            <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">
+              사진 몸평 글은 다른 회원들이 4단계로 평가하게 됩니다.
             </div>
 
             <div>
-              <label className="block text-sm font-medium text-neutral-700 mb-2">
-                성별 (필수)
-              </label>
+              <label className="mb-2 block text-sm font-medium text-neutral-700">성별 (필수)</label>
               <div className="grid grid-cols-2 gap-2">
                 <button
                   type="button"
@@ -296,11 +324,26 @@ export default function WritePage() {
           </>
         )}
 
+        {!isPhotoBodycheck && (
+          <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3">
+            <p className="text-xs font-semibold text-emerald-800">무슨 글을 쓸지 고민되면 아래 예시로 시작해보세요.</p>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {FREE_POST_PROMPTS.map((prompt) => (
+                <button
+                  key={prompt.label}
+                  type="button"
+                  onClick={() => applyFreePrompt(prompt)}
+                  className="rounded-full border border-emerald-200 bg-white px-3 py-2 text-xs font-medium text-emerald-700 transition hover:border-emerald-300 hover:bg-emerald-100"
+                >
+                  {prompt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
         <div>
-          <label
-            htmlFor="title"
-            className="block text-sm font-medium text-neutral-700 mb-1"
-          >
+          <label htmlFor="title" className="mb-1 block text-sm font-medium text-neutral-700">
             제목
           </label>
           <input
@@ -308,56 +351,51 @@ export default function WritePage() {
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
-            placeholder="제목을 입력하세요"
+            placeholder="제목을 입력해 주세요"
             maxLength={100}
-            className="w-full h-12 rounded-xl border border-neutral-300 bg-white px-3 text-neutral-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="h-12 w-full rounded-xl border border-neutral-300 bg-white px-3 text-neutral-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
         </div>
 
         <div>
-          <label
-            htmlFor="content"
-            className="block text-sm font-medium text-neutral-700 mb-1"
-          >
-            한줄소개/본문 (선택)
+          <label htmlFor="content" className="mb-1 block text-sm font-medium text-neutral-700">
+            소개글/본문 {isPhotoBodycheck ? "(선택)" : ""}
           </label>
           <textarea
             id="content"
             value={content}
             onChange={(e) => setContent(e.target.value)}
-            placeholder="간단한 소개나 본문을 입력하세요"
+            placeholder={isPhotoBodycheck ? "간단한 소개나 본문을 입력해 주세요" : "자유롭게 내용을 적어보세요"}
             rows={6}
             maxLength={2000}
-            className="w-full rounded-xl border border-neutral-300 bg-white p-3 text-neutral-900 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            className="w-full resize-none rounded-xl border border-neutral-300 bg-white p-3 text-neutral-900 focus:outline-none focus:ring-2 focus:ring-emerald-500"
           />
-          <p className="text-xs text-neutral-400 mt-1 text-right">
-            {content.length}/2000
-          </p>
+          <p className="mt-1 text-right text-xs text-neutral-400">{content.length}/2000</p>
         </div>
 
         <div>
-          <label className="block text-sm font-medium text-neutral-700 mb-2">
+          <label className="mb-2 block text-sm font-medium text-neutral-700">
             사진 ({images.length}/{MAX_IMAGES}) {isPhotoBodycheck ? "(필수 1~3장)" : "(선택)"}
           </label>
 
           {images.length > 0 && (
-            <div className="grid grid-cols-3 gap-2 mb-2">
-              {images.map((url, i) => (
+            <div className="mb-2 grid grid-cols-3 gap-2">
+              {images.map((url, index) => (
                 <div
                   key={url}
-                  className="relative rounded-xl overflow-hidden border border-neutral-200 aspect-square"
+                  className="relative aspect-square overflow-hidden rounded-xl border border-neutral-200"
                 >
                   <img
                     src={url}
-                    alt={`업로드 ${i + 1}`}
+                    alt={`업로드 ${index + 1}`}
                     decoding="async"
-                    className="w-full h-full object-cover"
+                    className="h-full w-full object-cover"
                   />
                   <button
                     type="button"
-                    onClick={() => removeImage(i)}
-                    className="absolute top-1 right-1 min-w-[26px] min-h-[26px] rounded-full bg-black/70 text-white text-xs flex items-center justify-center"
-                    aria-label="사진 삭제"
+                    onClick={() => removeImage(index)}
+                    className="absolute right-1 top-1 flex min-h-[26px] min-w-[26px] items-center justify-center rounded-full bg-black/70 text-xs text-white"
+                    aria-label="사진 제거"
                   >
                     X
                   </button>
@@ -367,7 +405,7 @@ export default function WritePage() {
           )}
 
           {canUploadMore && (
-            <label className="flex items-center justify-center min-h-[44px] rounded-xl border border-dashed border-neutral-300 bg-neutral-50 text-sm text-neutral-600 cursor-pointer hover:border-emerald-400 hover:bg-emerald-50 transition-colors">
+            <label className="flex min-h-[44px] cursor-pointer items-center justify-center rounded-xl border border-dashed border-neutral-300 bg-neutral-50 text-sm text-neutral-600 transition-colors hover:border-emerald-400 hover:bg-emerald-50">
               {uploading ? "업로드 중..." : "사진 추가"}
               <input
                 type="file"
@@ -382,34 +420,30 @@ export default function WritePage() {
 
           {uploading && (
             <div className="mt-2">
-              <div className="h-2 w-full rounded-full bg-neutral-200 overflow-hidden">
+              <div className="h-2 w-full overflow-hidden rounded-full bg-neutral-200">
                 <div
                   className="h-full bg-emerald-500 transition-all"
                   style={{ width: `${uploadProgress}%` }}
                 />
               </div>
-              <p className="text-xs text-neutral-500 mt-1">{uploadProgress}%</p>
+              <p className="mt-1 text-xs text-neutral-500">{uploadProgress}%</p>
             </div>
           )}
         </div>
 
-        {error && (
-          <p className="text-sm text-red-600 bg-red-50 rounded-xl p-3">
-            {error}
-          </p>
-        )}
+        {error && <p className="rounded-xl bg-red-50 p-3 text-sm text-red-600">{error}</p>}
 
         <button
           type="submit"
           disabled={loading || uploading}
-          className="w-full min-h-[52px] rounded-xl bg-emerald-600 text-white font-medium hover:bg-emerald-700 active:scale-[0.98] transition-all disabled:opacity-50"
+          className="w-full min-h-[52px] rounded-xl bg-emerald-600 font-medium text-white transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50"
         >
           {loading ? "등록 중..." : "등록하기"}
         </button>
       </form>
 
       {toast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 bg-neutral-900 text-white px-5 py-3 rounded-xl text-sm font-medium shadow-lg z-50">
+        <div className="fixed bottom-6 left-1/2 z-50 -translate-x-1/2 rounded-xl bg-neutral-900 px-5 py-3 text-sm font-medium text-white shadow-lg">
           {toast}
         </div>
       )}

@@ -1,12 +1,15 @@
 import { createAdminClient } from "@/lib/supabase/server";
+import { publicCachedJson } from "@/lib/http-cache";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { kvGetString, kvSetString } from "@/lib/edge-kv";
+import { shouldRunAtMostEvery } from "@/lib/throttled-task";
 import { NextResponse } from "next/server";
 
 const LITE_PUBLIC_BUCKET = "dating-card-lite";
 const LITE_PUBLIC_PROBE_TTL_MS = 6 * 60 * 60 * 1000;
 const LITE_PUBLIC_NEGATIVE_PROBE_TTL_MS = 5 * 60 * 1000;
+const PAID_CARD_EXPIRE_SYNC_INTERVAL_SEC = 60;
 
 type LitePublicProbeCacheValue = {
   exists: boolean;
@@ -30,7 +33,7 @@ function toTimeMs(value: unknown): number {
   return 0;
 }
 
-function json(status: number, payload: Record<string, unknown>) {
+function jsonNoStore(status: number, payload: Record<string, unknown>) {
   return NextResponse.json(payload, {
     status,
     headers: {
@@ -40,8 +43,8 @@ function json(status: number, payload: Record<string, unknown>) {
       "CDN-Cache-Control": "no-store",
       "Vercel-CDN-Cache-Control": "no-store",
     },
-  });
-}
+    });
+  }
 
 function toLitePath(rawPath: string): string {
   return rawPath.replace("/raw/", "/lite/").replace(/\.[^.\/]+$/, ".webp");
@@ -135,19 +138,21 @@ export async function GET(req: Request) {
       path: "/api/dating/paid/list",
     });
     if (!rateLimit.allowed) {
-      return json(429, { ok: false, code: "RATE_LIMIT", requestId, message: "Too many requests" });
+      return jsonNoStore(429, { ok: false, code: "RATE_LIMIT", requestId, message: "Too many requests" });
     }
     const counters: SignCounters = { signCalls: 0, cacheHit: 0, cacheMiss: 0, rawSigned: 0, blurSigned: 0 };
     const nowIso = new Date().toISOString();
 
     // Opportunistic expiration so stale approved cards are 내려감 even without cron timing drift.
-    const expireRes = await admin
-      .from("dating_paid_cards")
-      .update({ status: "expired" })
-      .eq("status", "approved")
-      .lte("expires_at", nowIso);
-    if (expireRes.error) {
-      console.error(`[dating-paid-list] ${requestId} expire update error`, expireRes.error);
+    if (await shouldRunAtMostEvery("dating:paid-cards:expire-sync", PAID_CARD_EXPIRE_SYNC_INTERVAL_SEC)) {
+      const expireRes = await admin
+        .from("dating_paid_cards")
+        .update({ status: "expired" })
+        .eq("status", "approved")
+        .lte("expires_at", nowIso);
+      if (expireRes.error) {
+        console.error(`[dating-paid-list] ${requestId} expire update error`, expireRes.error);
+      }
     }
 
     const queryRes = await admin
@@ -183,7 +188,7 @@ export async function GET(req: Request) {
         message: err?.message ?? null,
         stack: rowsError instanceof Error ? rowsError.stack : undefined,
       });
-      return json(500, { ok: false, code: "LIST_FAILED", requestId, message: "목록을 불러오지 못했습니다." });
+      return jsonNoStore(500, { ok: false, code: "LIST_FAILED", requestId, message: "목록을 불러오지 못했습니다." });
     }
 
     const rows = (rowsData ?? []).sort((a, b) => {
@@ -279,12 +284,12 @@ export async function GET(req: Request) {
       `[list.metrics] requestId=${requestId} path=/api/dating/paid/list cards=${items.length} rawSigned=${counters.rawSigned} blurSigned=${counters.blurSigned} cacheHitRatePct=${cacheHitRatePct} signCalls=${counters.signCalls}`
     );
 
-    return json(200, { ok: true, requestId, items });
+    return publicCachedJson({ ok: true, requestId, items }, { sMaxAge: 30, staleWhileRevalidate: 60 });
   } catch (error) {
     console.error(`[dating-paid-list] ${requestId} unhandled`, {
       message: error instanceof Error ? error.message : null,
       stack: error instanceof Error ? error.stack : undefined,
     });
-    return json(500, { ok: false, code: "INTERNAL_SERVER_ERROR", requestId, message: "서버 오류가 발생했습니다." });
+    return jsonNoStore(500, { ok: false, code: "INTERNAL_SERVER_ERROR", requestId, message: "서버 오류가 발생했습니다." });
   }
 }

@@ -1,4 +1,5 @@
-﻿import { createClient } from "@/lib/supabase/server";
+import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
+import { createClient } from "@/lib/supabase/server";
 import { containsProfanity, getRateLimitRemaining } from "@/lib/moderation";
 import { NextResponse } from "next/server";
 import { getKstDateString } from "@/lib/weekly";
@@ -108,7 +109,7 @@ export async function POST(request: Request) {
       content,
       parent_id: parentId,
     })
-    .select("id")
+    .select("id,post_id,user_id,parent_id,content,is_hidden,deleted_at,created_at")
     .single();
 
   if (error) {
@@ -117,5 +118,20 @@ export async function POST(request: Request) {
 
   await trackDailyComment(supabase, user.id);
 
-  return NextResponse.json({ id: data.id }, { status: 201 });
+  const [{ data: profile }, certSummaryMap] = await Promise.all([
+    supabase.from("profiles").select("nickname").eq("user_id", user.id).maybeSingle(),
+    fetchUserCertSummaryMap([user.id], supabase),
+  ]);
+
+  return NextResponse.json(
+    {
+      id: data.id,
+      comment: {
+        ...data,
+        profiles: profile ? { nickname: profile.nickname } : null,
+        cert_summary: certSummaryMap.get(user.id) ?? null,
+      },
+    },
+    { status: 201 }
+  );
 }

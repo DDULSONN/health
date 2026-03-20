@@ -104,6 +104,34 @@ type SwipeRequestOptions = {
 };
 
 const PAGE_SIZE = 20;
+const OPEN_CARDS_CACHE_KEY = "community-dating-open-cards:v1";
+
+type OpenCardsSnapshot = {
+  activeSex: "male" | "female";
+  males: PublicCard[];
+  females: PublicCard[];
+  maleCursorCreatedAt: string | null;
+  maleCursorId: string | null;
+  femaleCursorCreatedAt: string | null;
+  femaleCursorId: string | null;
+  maleHasMore: boolean;
+  femaleHasMore: boolean;
+  queueStats: QueueStats | null;
+  paidItems: PaidCard[];
+  moreViewMale: PublicCard[];
+  moreViewFemale: PublicCard[];
+};
+
+function readOpenCardsSnapshot(): OpenCardsSnapshot | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(OPEN_CARDS_CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as OpenCardsSnapshot;
+  } catch {
+    return null;
+  }
+}
 
 function maskIdealTypeForPreview(value: string | null): string {
   const raw = (value ?? "").trim();
@@ -134,19 +162,20 @@ async function fetchBySex(
 }
 
 export default function OpenCardsPage() {
-  const [activeSex, setActiveSex] = useState<"male" | "female">("female");
+  const initialSnapshot = useMemo(() => readOpenCardsSnapshot(), []);
+  const [activeSex, setActiveSex] = useState<"male" | "female">(initialSnapshot?.activeSex ?? "female");
   const [guideOpen, setGuideOpen] = useState(false);
-  const [males, setMales] = useState<PublicCard[]>([]);
-  const [females, setFemales] = useState<PublicCard[]>([]);
-  const [maleCursorCreatedAt, setMaleCursorCreatedAt] = useState<string | null>(null);
-  const [maleCursorId, setMaleCursorId] = useState<string | null>(null);
-  const [femaleCursorCreatedAt, setFemaleCursorCreatedAt] = useState<string | null>(null);
-  const [femaleCursorId, setFemaleCursorId] = useState<string | null>(null);
-  const [maleHasMore, setMaleHasMore] = useState(true);
-  const [femaleHasMore, setFemaleHasMore] = useState(true);
-  const [loading, setLoading] = useState(true);
-  const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
-  const [paidItems, setPaidItems] = useState<PaidCard[]>([]);
+  const [males, setMales] = useState<PublicCard[]>(initialSnapshot?.males ?? []);
+  const [females, setFemales] = useState<PublicCard[]>(initialSnapshot?.females ?? []);
+  const [maleCursorCreatedAt, setMaleCursorCreatedAt] = useState<string | null>(initialSnapshot?.maleCursorCreatedAt ?? null);
+  const [maleCursorId, setMaleCursorId] = useState<string | null>(initialSnapshot?.maleCursorId ?? null);
+  const [femaleCursorCreatedAt, setFemaleCursorCreatedAt] = useState<string | null>(initialSnapshot?.femaleCursorCreatedAt ?? null);
+  const [femaleCursorId, setFemaleCursorId] = useState<string | null>(initialSnapshot?.femaleCursorId ?? null);
+  const [maleHasMore, setMaleHasMore] = useState(initialSnapshot?.maleHasMore ?? true);
+  const [femaleHasMore, setFemaleHasMore] = useState(initialSnapshot?.femaleHasMore ?? true);
+  const [loading, setLoading] = useState(() => !(initialSnapshot && (initialSnapshot.males.length > 0 || initialSnapshot.females.length > 0)));
+  const [queueStats, setQueueStats] = useState<QueueStats | null>(initialSnapshot?.queueStats ?? null);
+  const [paidItems, setPaidItems] = useState<PaidCard[]>(initialSnapshot?.paidItems ?? []);
   const [, setMoreViewStatus] = useState<{
     loggedIn: boolean;
     male: MoreViewStatus;
@@ -156,8 +185,8 @@ export default function OpenCardsPage() {
     male: "none",
     female: "none",
   });
-  const [moreViewMale, setMoreViewMale] = useState<PublicCard[]>([]);
-  const [moreViewFemale, setMoreViewFemale] = useState<PublicCard[]>([]);
+  const [moreViewMale, setMoreViewMale] = useState<PublicCard[]>(initialSnapshot?.moreViewMale ?? []);
+  const [moreViewFemale, setMoreViewFemale] = useState<PublicCard[]>(initialSnapshot?.moreViewFemale ?? []);
   const [tick, setTick] = useState(0);
   const [swipeLoading, setSwipeLoading] = useState(true);
   const [swipeRefreshing, setSwipeRefreshing] = useState(false);
@@ -185,24 +214,47 @@ export default function OpenCardsPage() {
     return () => window.clearInterval(timer);
   }, []);
 
-  const loadInitial = useCallback(async () => {
-    setLoading(true);
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const snapshot: OpenCardsSnapshot = {
+      activeSex,
+      males,
+      females,
+      maleCursorCreatedAt,
+      maleCursorId,
+      femaleCursorCreatedAt,
+      femaleCursorId,
+      maleHasMore,
+      femaleHasMore,
+      queueStats,
+      paidItems,
+      moreViewMale,
+      moreViewFemale,
+    };
+    window.sessionStorage.setItem(OPEN_CARDS_CACHE_KEY, JSON.stringify(snapshot));
+  }, [
+    activeSex,
+    females,
+    femaleCursorCreatedAt,
+    femaleCursorId,
+    femaleHasMore,
+    males,
+    maleCursorCreatedAt,
+    maleCursorId,
+    maleHasMore,
+    moreViewFemale,
+    moreViewMale,
+    paidItems,
+    queueStats,
+  ]);
+
+  const refreshSecondary = useCallback(async () => {
     try {
-      const [m, f, qsRes, paidRes, mvStatusRes] = await Promise.all([
-        fetchBySex("male", 0, null, null),
-        fetchBySex("female", 0, null, null),
+      const [qsRes, paidRes, mvStatusRes] = await Promise.all([
         fetch("/api/dating/cards/queue-stats", { cache: "no-store" }),
         fetch("/api/dating/paid/list", { cache: "no-store" }),
         fetch("/api/dating/cards/more-view/status", { cache: "no-store" }),
       ]);
-      setMales(m.items ?? []);
-      setFemales(f.items ?? []);
-      setMaleCursorCreatedAt(m.nextCursorCreatedAt ?? null);
-      setMaleCursorId(m.nextCursorId ?? null);
-      setFemaleCursorCreatedAt(f.nextCursorCreatedAt ?? null);
-      setFemaleCursorId(f.nextCursorId ?? null);
-      setMaleHasMore(Boolean(m.hasMore));
-      setFemaleHasMore(Boolean(f.hasMore));
       if (qsRes.ok) {
         const qsBody = (await qsRes.json()) as QueueStats;
         setQueueStats(qsBody);
@@ -253,16 +305,37 @@ export default function OpenCardsPage() {
       }
       await Promise.all(pendingFetches);
     } catch (e) {
-      console.error("open cards load failed", e);
+      console.error("open cards secondary load failed", e);
     }
-    setLoading(false);
   }, []);
+
+  const loadInitial = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setLoading(true);
+    }
+    try {
+      const [m, f] = await Promise.all([fetchBySex("male", 0, null, null), fetchBySex("female", 0, null, null)]);
+      setMales(m.items ?? []);
+      setFemales(f.items ?? []);
+      setMaleCursorCreatedAt(m.nextCursorCreatedAt ?? null);
+      setMaleCursorId(m.nextCursorId ?? null);
+      setFemaleCursorCreatedAt(f.nextCursorCreatedAt ?? null);
+      setFemaleCursorId(f.nextCursorId ?? null);
+      setMaleHasMore(Boolean(m.hasMore));
+      setFemaleHasMore(Boolean(f.hasMore));
+      setLoading(false);
+      void refreshSecondary();
+    } catch (e) {
+      console.error("open cards load failed", e);
+      setLoading(false);
+    }
+  }, [refreshSecondary]);
 
   useEffect(() => {
     queueMicrotask(() => {
-      void loadInitial();
+      void loadInitial({ silent: Boolean(initialSnapshot) });
     });
-  }, [loadInitial]);
+  }, [initialSnapshot, loadInitial]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {

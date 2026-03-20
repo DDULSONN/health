@@ -73,8 +73,10 @@ export default function PostDetailPage() {
     return () => document.removeEventListener("click", close);
   }, [menuOpen]);
 
-  const loadPost = useCallback(async () => {
-    setLoading(true);
+  const loadPost = useCallback(async (options?: { silent?: boolean }) => {
+    if (!options?.silent) {
+      setLoading(true);
+    }
     try {
       const res = await fetch(`/api/posts/${id}`, { cache: "no-store" });
       if (!res.ok) {
@@ -89,7 +91,9 @@ export default function PostDetailPage() {
       setPost(null);
       setComments([]);
     } finally {
-      setLoading(false);
+      if (!options?.silent) {
+        setLoading(false);
+      }
     }
   }, [id]);
 
@@ -296,8 +300,13 @@ export default function PostDetailPage() {
         body: JSON.stringify({ post_id: id, content: trimmed, parent_id: parentId ?? null }),
       });
 
+      const data = (await res.json().catch(() => ({}))) as {
+        id?: string;
+        error?: string;
+        comment?: Comment;
+      };
+
       if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as { error?: string };
         setError(data.error ?? "댓글 작성에 실패했습니다.");
         return;
       }
@@ -308,7 +317,14 @@ export default function PostDetailPage() {
       } else {
         setCommentText("");
       }
-      await loadPost();
+
+      if (data.comment) {
+        setComments((prev) => [...prev, data.comment as Comment]);
+      } else {
+        await loadPost({ silent: true });
+      }
+
+      showToast(parentId ? "답글이 등록되었습니다." : "댓글이 등록되었습니다.");
     } catch {
       setError("네트워크 오류가 발생했습니다.");
     } finally {
@@ -330,7 +346,18 @@ export default function PostDetailPage() {
         showToast(data.error ?? "댓글 삭제에 실패했습니다.");
         return;
       }
-      await loadPost();
+
+      setComments((prev) =>
+        prev.map((comment) =>
+          comment.id === commentId
+            ? {
+                ...comment,
+                content: null,
+                deleted_at: new Date().toISOString(),
+              }
+            : comment
+        )
+      );
       showToast("댓글이 삭제되었습니다.");
     } catch {
       showToast("댓글 삭제 중 오류가 발생했습니다.");
@@ -370,7 +397,7 @@ export default function PostDetailPage() {
     });
     if (res.ok) {
       showToast(post.is_hidden ? "게시글이 공개되었습니다." : "게시글이 숨김 처리되었습니다.");
-      loadPost();
+      void loadPost({ silent: true });
     }
   };
 
@@ -416,7 +443,7 @@ export default function PostDetailPage() {
     setDeleteConfirm(false);
   };
 
-  if (loading) {
+  if (loading && !post) {
     return (
       <main className="max-w-2xl mx-auto px-4 py-10">
         <p className="text-neutral-400 text-center">로딩 중...</p>

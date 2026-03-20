@@ -2,7 +2,10 @@ import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
 import { getOpenCardLimitBySex } from "@/lib/dating-open";
 import { extractCityFromRegion } from "@/lib/region-city";
 import { createAdminClient } from "@/lib/supabase/server";
-import { NextResponse } from "next/server";
+import { publicCachedJson } from "@/lib/http-cache";
+import { shouldRunAtMostEvery } from "@/lib/throttled-task";
+
+const OPEN_CARD_STATS_SYNC_INTERVAL_SEC = 45;
 
 type RegionDistribution = { city: string; count: number };
 
@@ -113,7 +116,9 @@ export async function GET() {
   const requestId = crypto.randomUUID();
 
   try {
-    await syncOpenCardQueue(adminClient);
+    if (await shouldRunAtMostEvery("dating:open-cards:stats-sync", OPEN_CARD_STATS_SYNC_INTERVAL_SEC)) {
+      await syncOpenCardQueue(adminClient);
+    }
   } catch (error) {
     console.error("[GET /api/dating/cards/queue-stats] queue sync failed", {
       requestId,
@@ -147,30 +152,33 @@ export async function GET() {
       safeCount("acceptedMatches", () => countAcceptedMatches(adminClient)),
     ]);
 
-    return NextResponse.json({
-      male: {
-        public_count: malePublic,
-        pending_count: malePending,
-        slot_limit: getOpenCardLimitBySex("male"),
-        pending_regions: malePendingRegions,
+    return publicCachedJson(
+      {
+        male: {
+          public_count: malePublic,
+          pending_count: malePending,
+          slot_limit: getOpenCardLimitBySex("male"),
+          pending_regions: malePendingRegions,
+        },
+        female: {
+          public_count: femalePublic,
+          pending_count: femalePending,
+          slot_limit: getOpenCardLimitBySex("female"),
+          pending_regions: femalePendingRegions,
+        },
+        accepted_matches_count: acceptedMatches,
       },
-      female: {
-        public_count: femalePublic,
-        pending_count: femalePending,
-        slot_limit: getOpenCardLimitBySex("female"),
-        pending_regions: femalePendingRegions,
-      },
-      accepted_matches_count: acceptedMatches,
-    });
+      { sMaxAge: 20, staleWhileRevalidate: 40 }
+    );
   } catch (error) {
     console.error("[GET /api/dating/cards/queue-stats] failed", { requestId, error });
-    return NextResponse.json(
+    return publicCachedJson(
       {
         male: { public_count: 0, pending_count: 0, slot_limit: getOpenCardLimitBySex("male"), pending_regions: [] },
         female: { public_count: 0, pending_count: 0, slot_limit: getOpenCardLimitBySex("female"), pending_regions: [] },
         accepted_matches_count: 0,
       },
-      { status: 200 }
+      { status: 200, sMaxAge: 20, staleWhileRevalidate: 40 }
     );
   }
 }
