@@ -3,7 +3,6 @@ import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/
 
 export type DatingOneOnOneWriteStatus = "approved" | "paused";
 export const DATING_ONE_ON_ONE_ACTIVE_STATUSES = ["submitted", "reviewing", "approved"] as const;
-export const DATING_ONE_ON_ONE_AUTO_EXPIRE_DAYS = 30;
 export const DATING_ONE_ON_ONE_MATCH_SOURCE_PENDING_STATES = ["proposed"] as const;
 export const DATING_ONE_ON_ONE_MATCH_CANDIDATE_PENDING_STATES = ["source_selected"] as const;
 export const DATING_ONE_ON_ONE_MATCH_TERMINAL_STATES = [
@@ -133,10 +132,6 @@ export async function getProfilePhoneVerification(
   };
 }
 
-export function getDatingOneOnOneExpireBeforeIso(now = new Date()): string {
-  return new Date(now.getTime() - DATING_ONE_ON_ONE_AUTO_EXPIRE_DAYS * 24 * 60 * 60 * 1000).toISOString();
-}
-
 export function normalizeDatingOneOnOnePhotoPath(raw: unknown): string {
   if (typeof raw !== "string") return "";
   const trimmed = raw.trim();
@@ -200,31 +195,4 @@ export async function getDatingOneOnOneCardsByIds(
   }
 
   return new Map((data ?? []).map((row) => [row.id, toDatingOneOnOneCardDetail(row as DatingOneOnOneCardRow)]));
-}
-
-export async function expireStaleDatingOneOnOneCards(
-  adminClient: SupabaseClient,
-  userId?: string | null
-): Promise<number> {
-  const nowIso = new Date().toISOString();
-  let query = adminClient
-    .from("dating_1on1_cards")
-    .update({
-      status: "rejected",
-      reviewed_at: nowIso,
-      updated_at: nowIso,
-    })
-    .in("status", [...DATING_ONE_ON_ONE_ACTIVE_STATUSES])
-    .lt("created_at", getDatingOneOnOneExpireBeforeIso())
-    .select("id");
-
-  if (userId) {
-    query = query.eq("user_id", userId);
-  }
-
-  const { data, error } = await query;
-  if (error) {
-    throw error;
-  }
-  return Array.isArray(data) ? data.length : 0;
 }

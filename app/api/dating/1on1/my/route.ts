@@ -1,5 +1,5 @@
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
-import { expireStaleDatingOneOnOneCards, getDatingOneOnOneWriteStatus, getProfilePhoneVerification } from "@/lib/dating-1on1";
+import { getDatingOneOnOneWriteStatus, getProfilePhoneVerification } from "@/lib/dating-1on1";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
@@ -57,9 +57,6 @@ export async function GET(req: Request) {
   }
 
   const admin = createAdminClient();
-  await expireStaleDatingOneOnOneCards(admin, user.id).catch((error) => {
-    console.error("[GET /api/dating/1on1/my] stale expire failed", error);
-  });
   const { data, error } = await admin
     .from("dating_1on1_cards")
     .select(
@@ -112,12 +109,6 @@ export async function PATCH(req: Request) {
   }
 
   const admin = createAdminClient();
-  try {
-    await expireStaleDatingOneOnOneCards(admin, user.id);
-  } catch (error) {
-    console.error("[PATCH /api/dating/1on1/my] stale expire failed", error);
-    return NextResponse.json({ error: "Failed to refresh old request." }, { status: 500 });
-  }
   const writeStatus = await getDatingOneOnOneWriteStatus(admin);
   if (writeStatus !== "approved") {
     return NextResponse.json({ error: "Writing is paused." }, { status: 403 });
@@ -252,4 +243,47 @@ export async function PATCH(req: Request) {
   }
 
   return NextResponse.json({ ok: true, id: cardId });
+}
+
+export async function DELETE(req: Request) {
+  const { user } = await getRequestAuthContext(req);
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(req.url);
+  const cardId = (searchParams.get("id") ?? "").trim();
+  if (!cardId) {
+    return NextResponse.json({ error: "Card id is required." }, { status: 400 });
+  }
+
+  const admin = createAdminClient();
+  const currentRes = await admin
+    .from("dating_1on1_cards")
+    .select("id")
+    .eq("id", cardId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (currentRes.error) {
+    console.error("[DELETE /api/dating/1on1/my] current fetch failed", currentRes.error);
+    return NextResponse.json({ error: "Failed to load current request." }, { status: 500 });
+  }
+  if (!currentRes.data) {
+    return NextResponse.json({ error: "Request not found." }, { status: 404 });
+  }
+
+  const deleteRes = await admin
+    .from("dating_1on1_cards")
+    .delete()
+    .eq("id", cardId)
+    .eq("user_id", user.id);
+
+  if (deleteRes.error) {
+    console.error("[DELETE /api/dating/1on1/my] delete failed", deleteRes.error);
+    return NextResponse.json({ error: "Failed to delete request." }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, id: cardId, deleted: true });
 }

@@ -1,14 +1,3 @@
-begin;
-
-update public.dating_1on1_cards
-set
-  status = 'rejected',
-  reviewed_at = now(),
-  updated_at = now()
-where status in ('submitted', 'reviewing', 'approved')
-  and created_at < (now() - interval '30 days');
-
-commit;
-
-notify pgrst, 'reload schema';
-
+-- Deprecated
+-- 1:1 소개팅 프로필은 자동 만료/자동 삭제하지 않습니다.
+-- 사용자가 직접 프로필을 삭제할 수 있도록 앱 로직이 변경되었습니다.

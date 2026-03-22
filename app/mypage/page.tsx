@@ -507,6 +507,7 @@ export default function MyPage() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deletingAppliedIds, setDeletingAppliedIds] = useState<string[]>([]);
+  const [deletingOneOnOneIds, setDeletingOneOnOneIds] = useState<string[]>([]);
   const [applyCreditsRemaining, setApplyCreditsRemaining] = useState(0);
 
   const [nicknameOpen, setNicknameOpen] = useState(false);
@@ -1227,6 +1228,32 @@ export default function MyPage() {
     }
     setMyDatingCards((prev) => prev.filter((card) => card.id !== cardId));
     alert(body.message ?? "대기중 오픈카드가 삭제되었습니다.");
+  };
+
+  const handleDeleteMyOneOnOneCard = async (cardId: string) => {
+    if (deletingOneOnOneIds.includes(cardId)) return;
+    if (!confirm("1:1 소개팅 프로필을 삭제할까요? 연결된 후보/매칭 기록도 함께 정리될 수 있습니다.")) return;
+
+    setDeletingOneOnOneIds((prev) => [...prev, cardId]);
+    try {
+      const res = await fetch(`/api/dating/1on1/my?id=${encodeURIComponent(cardId)}`, {
+        method: "DELETE",
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        alert(body.error ?? "1:1 소개팅 프로필 삭제에 실패했습니다.");
+        return;
+      }
+
+      setMyOneOnOneCards((prev) => prev.filter((item) => item.id !== cardId));
+      setMyOneOnOneMatches((prev) =>
+        prev.filter((match) => match.source_card_id !== cardId && match.candidate_card_id !== cardId)
+      );
+      setMyOneOnOneAutoRecommendations((prev) => prev.filter((group) => group.source_card_id !== cardId));
+      alert("1:1 소개팅 프로필을 삭제했습니다.");
+    } finally {
+      setDeletingOneOnOneIds((prev) => prev.filter((id) => id !== cardId));
+    }
   };
 
   const handleAdminApproveApplyCreditOrder = async (orderId: string) => {
@@ -2411,6 +2438,14 @@ export default function MyPage() {
                         신청서 수정
                       </Link>
                     )}
+                    <button
+                      type="button"
+                      onClick={() => void handleDeleteMyOneOnOneCard(item.id)}
+                      disabled={deletingOneOnOneIds.includes(item.id)}
+                      className="inline-flex h-8 items-center rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      {deletingOneOnOneIds.includes(item.id) ? "삭제 중..." : "프로필 삭제"}
+                    </button>
                   </div>
                 </div>
               );

@@ -2,7 +2,6 @@ import { isAllowedAdminUser } from "@/lib/admin";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import {
   DATING_ONE_ON_ONE_ACTIVE_STATUSES,
-  expireStaleDatingOneOnOneCards,
   getDatingOneOnOneWriteStatus,
   getProfilePhoneVerification,
 } from "@/lib/dating-1on1";
@@ -126,9 +125,6 @@ export async function GET(req: Request) {
   const sort = (searchParams.get("sort") ?? "created_desc").trim();
 
   const admin = createAdminClient();
-  await expireStaleDatingOneOnOneCards(admin).catch((error) => {
-    console.error("[GET /api/dating/1on1/cards] stale expire failed", error);
-  });
   let data;
   try {
     data = await fetchAllAdminCards(admin);
@@ -226,13 +222,6 @@ export async function POST(req: Request) {
   const phoneState = await getProfilePhoneVerification(admin, user.id);
   if (!phoneState.phoneVerified || !phoneState.phoneE164) {
     return NextResponse.json({ error: "Phone verification is required." }, { status: 403 });
-  }
-
-  try {
-    await expireStaleDatingOneOnOneCards(admin, user.id);
-  } catch (error) {
-    console.error("[POST /api/dating/1on1/cards] stale expire failed", error);
-    return NextResponse.json({ error: "Failed to refresh old requests." }, { status: 500 });
   }
 
   const duplicateRes = await admin
