@@ -27,6 +27,7 @@ type CardRow = {
   workout_frequency: "none" | "1_2" | "3_4" | "5_plus" | null;
   status: "submitted" | "reviewing" | "approved" | "rejected";
   created_at: string;
+  recommendation_refresh_used_at?: string | null;
   photo_paths: unknown;
 };
 
@@ -49,6 +50,13 @@ function hashSeed(value: string): number {
   return hash >>> 0;
 }
 
+function getAgeGap(sourceAge: number | null, candidateAge: number | null): number {
+  if (sourceAge == null || candidateAge == null || !Number.isFinite(sourceAge) || !Number.isFinite(candidateAge)) {
+    return Number.POSITIVE_INFINITY;
+  }
+  return Math.abs(sourceAge - candidateAge);
+}
+
 async function fetchAllActiveCards(admin: ReturnType<typeof createAdminClient>) {
   const rows: CardRow[] = [];
   let from = 0;
@@ -57,7 +65,7 @@ async function fetchAllActiveCards(admin: ReturnType<typeof createAdminClient>) 
     const { data, error } = await admin
       .from("dating_1on1_cards")
       .select(
-        "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,photo_paths"
+        "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,recommendation_refresh_used_at,photo_paths"
       )
       .in("status", [...DATING_ONE_ON_ONE_ACTIVE_STATUSES])
       .order("created_at", { ascending: false })
@@ -153,23 +161,39 @@ export async function GET(req: Request) {
       return candidateCard.age >= sourceAgeRange.minAge && candidateCard.age <= sourceAgeRange.maxAge;
     };
 
-    const sortByPriority = (list: typeof candidates, label: string) =>
-      [...list].sort((a, b) => {
-        const distanceGap = compareRegionsByDistance(sourceCard.region, a.region, b.region);
-        if (distanceGap !== 0) return distanceGap;
-        const aHash = hashSeed(`${sourceCard.id}:${label}:${a.id}`);
-        const bHash = hashSeed(`${sourceCard.id}:${label}:${b.id}`);
-        if (aHash !== bHash) return aHash - bHash;
-        return a.id.localeCompare(b.id);
-      });
+    const sortedCandidates = [...candidates].sort((a, b) => {
+      const distanceGap = compareRegionsByDistance(sourceCard.region, a.region, b.region);
+      if (distanceGap !== 0) return distanceGap;
 
-    const preferred = sortByPriority(candidates.filter(inAgeRange), "preferred");
-    const fallback = sortByPriority(candidates.filter((candidateCard) => !inAgeRange(candidateCard)), "fallback");
-    const recommendations = [...preferred, ...fallback].slice(0, RECOMMENDATION_LIMIT);
+      const aInAgeRange = inAgeRange(a);
+      const bInAgeRange = inAgeRange(b);
+      if (aInAgeRange !== bInAgeRange) {
+        return aInAgeRange ? -1 : 1;
+      }
+
+      const ageGap = getAgeGap(sourceCard.age, a.age) - getAgeGap(sourceCard.age, b.age);
+      if (ageGap !== 0) return ageGap;
+
+      const seedSuffix = sourceCard.recommendation_refresh_used_at ?? "default";
+      const aHash = hashSeed(`${sourceCard.id}:${seedSuffix}:${a.id}`);
+      const bHash = hashSeed(`${sourceCard.id}:${seedSuffix}:${b.id}`);
+      if (aHash !== bHash) return aHash - bHash;
+      return a.id.localeCompare(b.id);
+    });
+
+    const refreshStartIndex =
+      sortedCandidates.length > RECOMMENDATION_LIMIT
+        ? Math.min(Math.floor(sortedCandidates.length / 2), sortedCandidates.length - RECOMMENDATION_LIMIT)
+        : 0;
+    const startIndex = sourceCard.recommendation_refresh_used_at ? refreshStartIndex : 0;
+    const recommendations = sortedCandidates.slice(startIndex, startIndex + RECOMMENDATION_LIMIT);
 
     return {
       source_card_id: sourceCard.id,
       source_card_status: sourceCard.status,
+      refresh_used: Boolean(sourceCard.recommendation_refresh_used_at),
+      refresh_used_at: sourceCard.recommendation_refresh_used_at ?? null,
+      can_refresh: !sourceCard.recommendation_refresh_used_at && sortedCandidates.length > RECOMMENDATION_LIMIT,
       recommendations,
     };
   });

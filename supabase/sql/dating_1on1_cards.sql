@@ -51,7 +51,8 @@ alter table public.dating_1on1_cards
   add column if not exists admin_note text,
   add column if not exists admin_tags text[] not null default '{}'::text[],
   add column if not exists reviewed_by_user_id uuid references auth.users(id) on delete set null,
-  add column if not exists reviewed_at timestamptz;
+  add column if not exists reviewed_at timestamptz,
+  add column if not exists recommendation_refresh_used_at timestamptz;
 
 create index if not exists idx_dating_1on1_cards_created_at
   on public.dating_1on1_cards (created_at desc);

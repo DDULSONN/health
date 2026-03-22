@@ -51,6 +51,7 @@ export type DatingOneOnOneCardDetail = {
   workout_frequency: "none" | "1_2" | "3_4" | "5_plus" | null;
   status: "submitted" | "reviewing" | "approved" | "rejected";
   created_at: string;
+  recommendation_refresh_used_at: string | null;
   photo_signed_urls: string[];
 };
 
@@ -85,6 +86,7 @@ type DatingOneOnOneCardRow = {
   workout_frequency: "none" | "1_2" | "3_4" | "5_plus" | null;
   status: "submitted" | "reviewing" | "approved" | "rejected";
   created_at: string;
+  recommendation_refresh_used_at?: string | null;
   photo_paths: unknown;
 };
 
@@ -168,6 +170,7 @@ export function toDatingOneOnOneCardDetail(row: DatingOneOnOneCardRow): DatingOn
     workout_frequency: row.workout_frequency,
     status: row.status,
     created_at: row.created_at,
+    recommendation_refresh_used_at: row.recommendation_refresh_used_at ?? null,
     photo_signed_urls: photoPaths
       .map((path) => buildSignedImageUrl("dating-1on1-photos", path))
       .filter((url) => url.length > 0),
@@ -186,7 +189,7 @@ export async function getDatingOneOnOneCardsByIds(
   const { data, error } = await adminClient
     .from("dating_1on1_cards")
     .select(
-      "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,photo_paths"
+      "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,recommendation_refresh_used_at,photo_paths"
     )
     .in("id", uniqueIds);
 

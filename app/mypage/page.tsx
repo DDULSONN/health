@@ -245,6 +245,9 @@ type MyOneOnOneMatch = {
 type MyOneOnOneAutoRecommendationGroup = {
   source_card_id: string;
   source_card_status?: "submitted" | "reviewing" | "approved" | "rejected";
+  refresh_used?: boolean;
+  refresh_used_at?: string | null;
+  can_refresh?: boolean;
   recommendations: MyOneOnOneMatchCard[];
 };
 
@@ -490,6 +493,7 @@ export default function MyPage() {
   const [processingCityViewIds, setProcessingCityViewIds] = useState<string[]>([]);
   const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
+  const [refreshingOneOnOneRecommendationIds, setRefreshingOneOnOneRecommendationIds] = useState<string[]>([]);
   const [openCardWriteEnabled, setOpenCardWriteEnabled] = useState(true);
   const [openCardWriteSaving, setOpenCardWriteSaving] = useState(false);
   const [adInquiryEnabled, setAdInquiryEnabled] = useState(true);
@@ -1131,6 +1135,32 @@ export default function MyPage() {
     }
   };
 
+  const handleRefreshOneOnOneRecommendations = async (sourceCardId: string) => {
+    if (refreshingOneOnOneRecommendationIds.includes(sourceCardId)) return;
+    if (!confirm("자동 추천 후보 10명을 새로 불러올까요? 카드당 1회만 가능합니다.")) return;
+
+    setRefreshingOneOnOneRecommendationIds((prev) => [...prev, sourceCardId]);
+    try {
+      const res = await fetch("/api/dating/1on1/recommendations/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_card_id: sourceCardId }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) {
+        alert(body.error ?? "자동 추천 후보를 새로고침하지 못했습니다.");
+        return;
+      }
+
+      await reloadOneOnOneRecommendations();
+      alert("자동 추천 후보 10명을 한 번 새로 섞어드렸습니다.");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "자동 추천 후보를 새로고침하지 못했습니다.");
+    } finally {
+      setRefreshingOneOnOneRecommendationIds((prev) => prev.filter((id) => id !== sourceCardId));
+    }
+  };
+
   const copyToClipboard = async (text: string) => {
     try {
       await navigator.clipboard.writeText(text);
@@ -1561,9 +1591,9 @@ export default function MyPage() {
       myOneOnOneMatchesByCardId.set(key, bucket);
     }
   }
-  const myOneOnOneAutoRecommendationsByCardId = new Map<string, MyOneOnOneMatchCard[]>();
+  const myOneOnOneAutoRecommendationsByCardId = new Map<string, MyOneOnOneAutoRecommendationGroup>();
   for (const group of myOneOnOneAutoRecommendations) {
-    myOneOnOneAutoRecommendationsByCardId.set(group.source_card_id, group.recommendations ?? []);
+    myOneOnOneAutoRecommendationsByCardId.set(group.source_card_id, group);
   }
   const hasActiveOpenCard = myDatingCards.some((card) => card.status === "pending" || card.status === "public");
   const statusRankPublicFirst: Record<AdminOpenCard["status"], number> = {
@@ -2020,7 +2050,11 @@ export default function MyPage() {
           <div className="space-y-3">
             {myOneOnOneCards.map((item) => {
               const relatedMatches = myOneOnOneMatchesByCardId.get(item.id) ?? [];
-              const autoRecommendations = myOneOnOneAutoRecommendationsByCardId.get(item.id) ?? [];
+                const autoRecommendationGroup = myOneOnOneAutoRecommendationsByCardId.get(item.id) ?? null;
+                const autoRecommendations = autoRecommendationGroup?.recommendations ?? [];
+                const canRefreshAutoRecommendations = autoRecommendationGroup?.can_refresh === true;
+                const autoRecommendationRefreshUsed = autoRecommendationGroup?.refresh_used === true;
+                const refreshingAutoRecommendations = refreshingOneOnOneRecommendationIds.includes(item.id);
               const incomingCandidates = relatedMatches.filter((match) => match.role === "source" && match.state === "proposed");
               const waitingCandidateResponses = relatedMatches.filter(
                 (match) => match.role === "source" && match.state === "source_selected"
@@ -2095,15 +2129,30 @@ export default function MyPage() {
                   )}
 
                   {["submitted", "reviewing", "approved"].includes(item.status) && (
-                    <div className="mt-3 rounded-xl border border-pink-200 bg-pink-50/50 p-3">
-                      <p className="text-sm font-semibold text-pink-900">자동 추천 후보 10명</p>
-                      <p className="mt-1 text-xs text-pink-700">
-                        내 나이와 지역 기준으로 먼저 추천되는 후보예요. 같은 시군구를 우선 보고, 없으면 같은 시도나 가까운 지역 후보까지 함께 보여줘요.
-                      </p>
-                      <p className="mt-1 text-xs text-pink-700">
-                        이 리스트 외에도 운영자가 따로 후보를 보내드릴 수 있어요. 마음에 드는 후보는 여러 명 선택할 수 있고, 선택된 사람마다 수락 요청이 전달됩니다.
-                      </p>
-                      {autoRecommendations.length === 0 ? (
+                      <div className="mt-3 rounded-xl border border-pink-200 bg-pink-50/50 p-3">
+                        <div className="flex items-start justify-between gap-3">
+                          <div>
+                            <p className="text-sm font-semibold text-pink-900">자동 추천 후보 10명</p>
+                            <p className="mt-1 text-xs text-pink-700">
+                              내 나이와 지역 기준으로 먼저 추천되는 후보예요. 같은 시군구를 우선 보고, 없으면 같은 시도나 가까운 지역 후보 순으로 보여줘요.
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => void handleRefreshOneOnOneRecommendations(item.id)}
+                            disabled={!canRefreshAutoRecommendations || refreshingAutoRecommendations}
+                            className="inline-flex h-8 shrink-0 items-center rounded-md border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700 disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {refreshingAutoRecommendations ? "새로고침 중..." : autoRecommendationRefreshUsed ? "새로고침 사용 완료" : "추천 새로고침 1회"}
+                          </button>
+                        </div>
+                        <p className="mt-1 text-xs text-pink-700">
+                          이 리스트 외에도 운영자가 따로 후보를 보내드릴 수 있어요. 마음에 드는 후보는 여러 명 선택할 수 있고, 선택된 사람마다 수락 요청이 전달됩니다.
+                        </p>
+                        {autoRecommendationRefreshUsed && (
+                          <p className="mt-1 text-xs text-pink-700">이 카드는 추천 새로고침 1회를 이미 사용했어요.</p>
+                        )}
+                        {autoRecommendations.length === 0 ? (
                         <div className="mt-3 rounded-lg border border-dashed border-pink-200 bg-white p-3 text-sm text-neutral-500">
                           지금 바로 보여줄 자동 추천 후보가 없어요. 이미 진행 중인 매칭이 있거나, 조건에 맞는 후보가 새로 잡히면 여기서 보여드릴게요.
                         </div>
