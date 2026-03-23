@@ -1,5 +1,12 @@
-﻿-- Profiles nickname source-of-truth + auto-create trigger
--- Run once in Supabase SQL Editor.
+-- Repair duplicate profile creation triggers that can break Supabase email signup
+-- with "database error saving new user".
+--
+-- What this does:
+-- 1. Drops the legacy on_auth_user_created trigger/function if they still exist
+-- 2. Recreates the current profile auto-create trigger with a safe early-exit
+--    when a profile row already exists for the new auth user
+
+begin;
 
 create table if not exists public.profiles (
   id uuid primary key default gen_random_uuid(),
@@ -52,6 +59,7 @@ begin
         if exists (select 1 from public.profiles where user_id = new.id) then
           return new;
         end if;
+
         suffix := suffix + 1;
         candidate := left(base_nickname, 10) || lpad(suffix::text, 2, '0');
     end;
@@ -63,20 +71,13 @@ $$;
 
 drop trigger if exists on_auth_user_created on auth.users;
 drop trigger if exists trg_create_profile_for_new_user on auth.users;
+
 create trigger trg_create_profile_for_new_user
 after insert on auth.users
 for each row execute procedure public.create_profile_for_new_user();
 
 drop function if exists public.handle_new_user();
 
-insert into public.profiles (user_id, nickname)
-select
-  u.id,
-  coalesce(
-    nullif(trim(u.raw_user_meta_data ->> 'nickname'), ''),
-    nullif(regexp_replace(split_part(coalesce(u.email, ''), '@', 1), '[^0-9A-Za-z가-힣_]+', '', 'g'), ''),
-    'user_' || left(replace(u.id::text, '-', ''), 8)
-  )
-from auth.users u
-left join public.profiles p on p.user_id = u.id
-where p.user_id is null;
+commit;
+
+notify pgrst, 'reload schema';
