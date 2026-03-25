@@ -4,6 +4,7 @@ import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { kvGetString, kvSetString } from "@/lib/edge-kv";
 import { shouldRunAtMostEvery } from "@/lib/throttled-task";
+import { ensureBlurThumbFromRaw } from "@/lib/dating-blur-thumb";
 import { NextResponse } from "next/server";
 
 const LITE_PUBLIC_BUCKET = "dating-card-lite";
@@ -244,7 +245,10 @@ export async function GET(req: Request) {
           }
           if (thumbUrl) counters.rawSigned += 1;
         } else {
-          const blurThumbPath = normalizeDatingPhotoPath(row.blur_thumb_path);
+          let blurThumbPath = normalizeDatingPhotoPath(row.blur_thumb_path);
+          if (!blurThumbPath && rawPaths.length > 0) {
+            blurThumbPath = (await ensureBlurThumbFromRaw(admin, rawPaths[0])) ?? "";
+          }
           if (blurThumbPath) {
             const blurWebpPath = toBlurWebpPath(blurThumbPath);
             thumbUrl = await getLitePublicUrlIfAvailable(admin, blurWebpPath);

@@ -332,6 +332,7 @@ type AdminManageTab =
   | "bodybattle"
   | "community"
   | "phone_verify"
+  | "account_deletions"
   | "site_ads";
 
 type AdminBodyBattleOverview = {
@@ -385,6 +386,19 @@ type AdminCityViewRequest = {
   created_at: string;
   reviewed_at: string | null;
   note: string | null;
+};
+
+type AdminAccountDeletionAudit = {
+  id: string;
+  auth_user_id: string;
+  nickname: string | null;
+  email_masked: string | null;
+  ip_address: string | null;
+  user_agent: string | null;
+  deletion_mode: "hard" | "soft";
+  initiated_by_role: "self" | "admin";
+  deleted_at: string;
+  retention_until: string;
 };
 
 type MyCertificate = {
@@ -486,6 +500,7 @@ export default function MyPage() {
   const [adminApplyCreditOrders, setAdminApplyCreditOrders] = useState<AdminApplyCreditOrder[]>([]);
   const [adminMoreViewRequests, setAdminMoreViewRequests] = useState<AdminMoreViewRequest[]>([]);
   const [adminCityViewRequests, setAdminCityViewRequests] = useState<AdminCityViewRequest[]>([]);
+  const [adminAccountDeletionAudits, setAdminAccountDeletionAudits] = useState<AdminAccountDeletionAudit[]>([]);
   const [adminCityViewSearch, setAdminCityViewSearch] = useState("");
   const [adminBodyBattleOverview, setAdminBodyBattleOverview] = useState<AdminBodyBattleOverview | null>(null);
   const [runningBodyBattleAdminTask, setRunningBodyBattleAdminTask] = useState(false);
@@ -532,6 +547,10 @@ export default function MyPage() {
   const [adminPhoneVerifyLoading, setAdminPhoneVerifyLoading] = useState(false);
   const [adminPhoneVerifyError, setAdminPhoneVerifyError] = useState("");
   const [adminPhoneVerifyInfo, setAdminPhoneVerifyInfo] = useState("");
+  const [adminDeleteIdentifier, setAdminDeleteIdentifier] = useState("");
+  const [adminDeleteLoading, setAdminDeleteLoading] = useState(false);
+  const [adminDeleteError, setAdminDeleteError] = useState("");
+  const [adminDeleteInfo, setAdminDeleteInfo] = useState("");
   const [savingSwipeVisibility, setSavingSwipeVisibility] = useState(false);
 
   useEffect(() => {
@@ -708,13 +727,22 @@ export default function MyPage() {
           setError("");
 
           if (adminFlag) {
-            const [overviewRes, ordersRes, paidAppsRes, moreViewRes, cityViewRes, bodyBattleOverviewRes] = await Promise.all([
+            const [
+              overviewRes,
+              ordersRes,
+              paidAppsRes,
+              moreViewRes,
+              cityViewRes,
+              bodyBattleOverviewRes,
+              accountDeletionAuditsRes,
+            ] = await Promise.all([
               fetch("/api/dating/cards/admin/overview", { cache: "no-store" }),
               fetch("/api/admin/dating/apply-credits/orders?status=pending", { cache: "no-store" }),
               fetch("/api/admin/dating/paid/applications", { cache: "no-store" }),
               fetch("/api/admin/dating/cards/more-view/requests?status=pending", { cache: "no-store" }),
               fetch("/api/admin/dating/cards/city-view/requests?status=pending", { cache: "no-store" }),
               fetch("/api/admin/bodybattle/overview", { cache: "no-store" }),
+              fetch("/api/admin/account-deletion-audits", { cache: "no-store" }),
             ]);
             const overviewBody = (await overviewRes.json().catch(() => ({}))) as {
               error?: string;
@@ -743,6 +771,10 @@ export default function MyPage() {
               season?: AdminBodyBattleOverview["season"];
               counts?: AdminBodyBattleOverview["counts"];
             };
+            const accountDeletionAuditsBody = (await accountDeletionAuditsRes.json().catch(() => ({}))) as {
+              error?: string;
+              items?: AdminAccountDeletionAudit[];
+            };
             if (!overviewRes.ok) {
               throw new Error(overviewBody.error ?? "관리자 오픈카드 데이터를 불러오지 못했습니다.");
             }
@@ -759,6 +791,9 @@ export default function MyPage() {
               setAdminApplyCreditOrders(ordersBody.items ?? []);
               setAdminMoreViewRequests(moreViewRes.ok ? moreViewBody.items ?? [] : []);
               setAdminCityViewRequests(cityViewRes.ok ? cityViewBody.items ?? [] : []);
+              setAdminAccountDeletionAudits(
+                accountDeletionAuditsRes.ok ? accountDeletionAuditsBody.items ?? [] : []
+              );
               setAdminBodyBattleOverview(
                 bodyBattleOverviewRes.ok && bodyBattleOverviewBody.ok
                   ? { season: bodyBattleOverviewBody.season ?? null, counts: bodyBattleOverviewBody.counts ?? null }
@@ -772,6 +807,7 @@ export default function MyPage() {
             setAdminApplyCreditOrders([]);
             setAdminMoreViewRequests([]);
             setAdminCityViewRequests([]);
+            setAdminAccountDeletionAudits([]);
             setAdminBodyBattleOverview(null);
           }
         }
@@ -956,13 +992,24 @@ export default function MyPage() {
     setDeletingAccount(true);
     try {
       const res = await fetch("/api/mypage/account", { method: "DELETE" });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean };
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        ok?: boolean;
+        message?: string;
+      };
       if (!res.ok || !body.ok) {
         alert(body.error ?? "회원 탈퇴에 실패했습니다.");
         return;
       }
-      await supabase.auth.signOut();
-      router.push("/");
+
+      try {
+        await supabase.auth.signOut();
+      } catch (error) {
+        console.warn("[mypage] sign out after account deletion failed", error);
+      }
+
+      alert(body.message ?? "회원 탈퇴가 처리되었습니다.");
+      router.replace("/");
       router.refresh();
     } finally {
       setDeletingAccount(false);
@@ -1445,6 +1492,63 @@ export default function MyPage() {
       setAdminPhoneVerifyError(err instanceof Error ? err.message : "수동 휴대폰 인증 처리에 실패했습니다.");
     } finally {
       setAdminPhoneVerifyLoading(false);
+    }
+  };
+
+  const handleAdminDeleteAccount = async () => {
+    const trimmedIdentifier = adminDeleteIdentifier.trim();
+
+    setAdminDeleteError("");
+    setAdminDeleteInfo("");
+
+    if (!trimmedIdentifier) {
+      setAdminDeleteError("이메일, 닉네임 또는 사용자 ID를 입력해주세요.");
+      return;
+    }
+
+    if (!confirm(`${trimmedIdentifier} 계정을 관리자 권한으로 탈퇴 처리할까요?`)) {
+      return;
+    }
+
+    if (!confirm("마지막 확인: 관리자 탈퇴 처리는 복구가 어렵습니다.")) {
+      return;
+    }
+
+    setAdminDeleteLoading(true);
+    try {
+      const res = await fetch("/api/admin/account-deletion", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier: trimmedIdentifier }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        user_id?: string;
+        nickname?: string | null;
+        email?: string | null;
+      };
+
+      if (!res.ok || !body.ok) {
+        throw new Error(body.error || "관리자 탈퇴 처리에 실패했습니다.");
+      }
+
+      setAdminDeleteInfo(
+        `${body.nickname?.trim() || body.email?.trim() || trimmedIdentifier} 계정을 탈퇴 처리했습니다.`
+      );
+      setAdminDeleteIdentifier("");
+
+      const auditsRes = await fetch("/api/admin/account-deletion-audits", { cache: "no-store" });
+      const auditsBody = (await auditsRes.json().catch(() => ({}))) as {
+        items?: AdminAccountDeletionAudit[];
+      };
+      if (auditsRes.ok) {
+        setAdminAccountDeletionAudits(auditsBody.items ?? []);
+      }
+    } catch (err) {
+      setAdminDeleteError(err instanceof Error ? err.message : "관리자 탈퇴 처리에 실패했습니다.");
+    } finally {
+      setAdminDeleteLoading(false);
     }
   };
 
@@ -2849,20 +2953,31 @@ export default function MyPage() {
             >
               커뮤니티 신고
             </button>
-            <button
-              type="button"
-              onClick={() => setAdminManageTab("phone_verify")}
-              className={`h-8 rounded-md border px-3 text-xs font-medium ${
-                adminManageTab === "phone_verify" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
-              }`}
-            >
-              전화 인증
-            </button>
-            <button
-              type="button"
-              onClick={() => setAdminManageTab("site_ads")}
-              className={`h-8 rounded-md border px-3 text-xs font-medium ${
-                adminManageTab === "site_ads" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              <button
+                type="button"
+                onClick={() => setAdminManageTab("phone_verify")}
+                className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                  adminManageTab === "phone_verify" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+                }`}
+              >
+                전화 인증
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdminManageTab("account_deletions")}
+                className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                  adminManageTab === "account_deletions"
+                    ? "border-violet-600 bg-violet-600 text-white"
+                    : "border-violet-200 bg-white text-violet-800"
+                }`}
+              >
+                탈퇴 기록
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdminManageTab("site_ads")}
+                className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                  adminManageTab === "site_ads" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
               }`}
             >
               광고 문의
@@ -3151,11 +3266,71 @@ export default function MyPage() {
             </div>
             {adminPhoneVerifyError && <p className="mt-2 text-xs text-rose-600">{adminPhoneVerifyError}</p>}
             {adminPhoneVerifyInfo && <p className="mt-2 text-xs text-emerald-700">{adminPhoneVerifyInfo}</p>}
-          </div>
-          )}
+            </div>
+            )}
 
-          {adminManageTab === "site_ads" && (
-          <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
+            {adminManageTab === "account_deletions" && (
+            <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
+              <p className="text-xs font-semibold text-violet-800">최근 회원 탈퇴 기록 {adminAccountDeletionAudits.length}건</p>
+              <p className="mt-1 text-[11px] text-neutral-500">
+                관리자만 볼 수 있는 최소 감사기록입니다. 최근 100건만 표시되며, 기본 보관 기간은 90일입니다.
+              </p>
+              <div className="mt-3 rounded-lg border border-violet-100 bg-violet-50/40 p-3">
+                <p className="text-xs font-semibold text-violet-800">관리자 수동 탈퇴</p>
+                <p className="mt-1 text-[11px] text-neutral-500">
+                  이메일, 닉네임 또는 사용자 ID로 계정을 찾아 탈퇴 처리합니다.
+                </p>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    type="text"
+                    value={adminDeleteIdentifier}
+                    onChange={(e) => setAdminDeleteIdentifier(e.target.value)}
+                    placeholder="이메일, 닉네임 또는 사용자 ID"
+                    className="h-10 flex-1 rounded-lg border border-violet-200 px-3 text-sm"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleAdminDeleteAccount()}
+                    disabled={adminDeleteLoading}
+                    className="h-10 rounded-lg bg-rose-600 px-4 text-sm font-medium text-white disabled:opacity-50"
+                  >
+                    {adminDeleteLoading ? "처리 중..." : "탈퇴 처리"}
+                  </button>
+                </div>
+                {adminDeleteError && <p className="mt-2 text-xs text-rose-600">{adminDeleteError}</p>}
+                {adminDeleteInfo && <p className="mt-2 text-xs text-emerald-700">{adminDeleteInfo}</p>}
+              </div>
+              {adminAccountDeletionAudits.length === 0 ? (
+                <p className="mt-3 text-xs text-neutral-500">최근 탈퇴 기록이 없습니다.</p>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {adminAccountDeletionAudits.map((item) => (
+                    <div key={item.id} className="rounded-lg border border-violet-100 bg-violet-50/40 px-3 py-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-neutral-900">
+                          {item.nickname?.trim() || "(닉네임 없음)"} · {item.deletion_mode === "soft" ? "소프트 탈퇴" : "하드 탈퇴"}
+                        </p>
+                        <span className="rounded-full bg-white px-2 py-0.5 text-[11px] text-neutral-600">
+                          {new Date(item.deleted_at).toLocaleString("ko-KR")}
+                        </span>
+                      </div>
+                      <div className="mt-2 grid gap-1 text-xs text-neutral-600">
+                        <p>사용자 ID: {item.auth_user_id}</p>
+                        <p>이메일: {item.email_masked ?? "(없음)"}</p>
+                        <p>IP: {item.ip_address ?? "(없음)"}</p>
+                        <p>처리 주체: {item.initiated_by_role === "admin" ? "관리자" : "본인"}</p>
+                        <p>보관 만료: {new Date(item.retention_until).toLocaleString("ko-KR")}</p>
+                        <p className="break-all">기기 정보: {item.user_agent ?? "(없음)"}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+            )}
+
+            {adminManageTab === "site_ads" && (
+            <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
             <p className="text-xs font-semibold text-violet-800">광고 문의 슬롯 설정</p>
             <p className="mt-1 text-[11px] text-neutral-500">
               홈 카드와 광고 문의 페이지에서 사용하는 문구와 링크를 여기서 관리합니다.

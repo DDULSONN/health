@@ -1,5 +1,6 @@
 ﻿import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
+import { ensureBlurThumbFromRaw } from "@/lib/dating-blur-thumb";
 import { NextResponse } from "next/server";
 type CreateBody = {
   id?: unknown;
@@ -196,14 +197,8 @@ export async function POST(req: Request) {
     if (photoPaths.length < 1) {
       return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "사진은 최소 1장 필요합니다." });
     }
-    if (photoVisibility === "blur" && !blurThumbPath) {
-      return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "블러 썸네일 경로가 필요합니다." });
-    }
     if (!photoPaths.every((path) => path.startsWith(`cards/${user.id}/raw/`))) {
       return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "사진 경로가 올바르지 않습니다." });
-    }
-    if (blurThumbPath && !blurThumbPath.startsWith(`cards/${user.id}/blur/`)) {
-      return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "블러 썸네일 경로가 올바르지 않습니다." });
     }
 
     const adminClient = createAdminClient();
@@ -240,6 +235,23 @@ export async function POST(req: Request) {
       is3LiftVerified = Boolean(certRes.data);
     }
 
+    let finalBlurThumbPath = blurThumbPath;
+    if (photoVisibility === "blur") {
+      if (!finalBlurThumbPath || !finalBlurThumbPath.startsWith(`cards/${user.id}/blur/`)) {
+        finalBlurThumbPath = (await ensureBlurThumbFromRaw(adminClient, photoPaths[0])) ?? "";
+      }
+      if (!finalBlurThumbPath) {
+        return json(400, {
+          ok: false,
+          code: "VALIDATION_ERROR",
+          requestId,
+          message: "블러 썸네일 생성에 실패했습니다. 다시 시도해 주세요.",
+        });
+      }
+    } else {
+      finalBlurThumbPath = "";
+    }
+
     const insertPayload = {
       user_id: user.id,
       nickname,
@@ -255,7 +267,7 @@ export async function POST(req: Request) {
       instagram_id: instagramId,
       photo_visibility: photoVisibility,
       display_mode: displayMode,
-      blur_thumb_path: blurThumbPath || null,
+      blur_thumb_path: finalBlurThumbPath || null,
       photo_paths: photoPaths,
       is_3lift_verified: is3LiftVerified,
       status: "pending",
@@ -331,14 +343,8 @@ export async function PATCH(req: Request) {
     if (photoPaths.length < 1) {
       return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "사진은 최소 1장 필요합니다." });
     }
-    if (photoVisibility === "blur" && !blurThumbPath) {
-      return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "블러 썸네일 경로가 필요합니다." });
-    }
     if (!photoPaths.every((path) => path.startsWith(`cards/${user.id}/raw/`))) {
       return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "사진 경로가 올바르지 않습니다." });
-    }
-    if (blurThumbPath && !blurThumbPath.startsWith(`cards/${user.id}/blur/`)) {
-      return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "블러 썸네일 경로가 올바르지 않습니다." });
     }
 
     const adminClient = createAdminClient();
@@ -385,6 +391,23 @@ export async function PATCH(req: Request) {
       is3LiftVerified = Boolean(certRes.data);
     }
 
+    let finalBlurThumbPath = blurThumbPath;
+    if (photoVisibility === "blur") {
+      if (!finalBlurThumbPath || !finalBlurThumbPath.startsWith(`cards/${user.id}/blur/`)) {
+        finalBlurThumbPath = (await ensureBlurThumbFromRaw(adminClient, photoPaths[0])) ?? "";
+      }
+      if (!finalBlurThumbPath) {
+        return json(400, {
+          ok: false,
+          code: "VALIDATION_ERROR",
+          requestId,
+          message: "블러 썸네일 생성에 실패했습니다. 다시 시도해 주세요.",
+        });
+      }
+    } else {
+      finalBlurThumbPath = "";
+    }
+
     const updatePayload = {
       nickname,
       gender,
@@ -399,7 +422,7 @@ export async function PATCH(req: Request) {
       instagram_id: instagramId,
       photo_visibility: photoVisibility,
       display_mode: displayMode,
-      blur_thumb_path: blurThumbPath || null,
+      blur_thumb_path: finalBlurThumbPath || null,
       photo_paths: photoPaths,
       is_3lift_verified: is3LiftVerified,
       status: "pending",

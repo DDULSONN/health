@@ -2,6 +2,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { buildPublicLiteImageUrl, buildSignedImageUrl, buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { kvGetString, kvSetString } from "@/lib/edge-kv";
+import { ensureBlurThumbFromRaw } from "@/lib/dating-blur-thumb";
 import { NextResponse } from "next/server";
 
 function normalizeDatingPhotoPath(raw: unknown): string {
@@ -154,15 +155,22 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       if (url) imageUrls.push(url);
     }
   } else {
-    for (const rawPath of rawPaths) {
-      let url = await getLitePublicUrlIfAvailable(admin, toLitePath(rawPath));
-      if (!url) url = await getLitePublicUrlIfAvailable(admin, toThumbPath(rawPath));
-      if (!url) url = await createSignedUrl(rawPath, true);
-      if (url) imageUrls.push(url);
+    let blurThumbPath = normalizeDatingPhotoPath(data.blur_thumb_path);
+    if (!blurThumbPath && rawPaths.length > 0) {
+      blurThumbPath = (await ensureBlurThumbFromRaw(admin, rawPaths[0])) ?? "";
+    }
+
+    if (blurThumbPath) {
+      const blurWebpPath = toBlurWebpPath(blurThumbPath);
+      let blurUrl = await getLitePublicUrlIfAvailable(admin, blurWebpPath);
+      if (!blurUrl) {
+        blurUrl = await createSignedUrl(blurThumbPath);
+      }
+      if (blurUrl) imageUrls.push(blurUrl);
     }
   }
 
-  if (imageUrls.length === 0) {
+  if (data.photo_visibility === "public" && imageUrls.length === 0) {
     const blurThumbPath = normalizeDatingPhotoPath(data.blur_thumb_path);
     if (blurThumbPath) {
       const blurWebpPath = toBlurWebpPath(blurThumbPath);
@@ -174,7 +182,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     }
   }
 
-  if (imageUrls.length === 0) {
+  if (data.photo_visibility === "public" && imageUrls.length === 0) {
     for (const rawPath of rawPaths) {
       const rawUrl = await createSignedUrl(rawPath, true);
       if (rawUrl) {
