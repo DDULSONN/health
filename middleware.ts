@@ -99,5 +99,15 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|robots.txt|sitemap.xml|api/og|api/share-card).*)"],
+  matcher: [
+    "/mypage/:path*",
+    "/cert/request/:path*",
+    "/admin/:path*",
+    "/certify/:path*",
+    "/dating/:path*",
+    "/community/:path*",
+    "/bodybattle/:path*",
+    "/api/bodybattle/:path*",
+    "/api/admin/bodybattle/:path*",
+  ],
 };

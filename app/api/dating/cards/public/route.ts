@@ -7,6 +7,7 @@ import { kvGetString, kvSetString } from "@/lib/edge-kv";
 import { createAdminClient } from "@/lib/supabase/server";
 import { shouldRunAtMostEvery } from "@/lib/throttled-task";
 import { NextResponse } from "next/server";
+import { createPublicCacheHeaders } from "@/lib/http-cache";
 
 const RAW_COUNT_MAX = 40;
 const LITE_PUBLIC_BUCKET = "dating-card-lite";
@@ -377,6 +378,7 @@ export async function GET(req: Request) {
   );
 
   const lastItem = items.length > 0 ? items[items.length - 1] : null;
+  const isPersonalized = Boolean(user?.id);
   return NextResponse.json(
     {
       items,
@@ -385,13 +387,15 @@ export async function GET(req: Request) {
       nextCursorId: hasMore && lastItem ? lastItem.id : null,
     },
     {
-      headers: {
-        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-        Pragma: "no-cache",
-        Expires: "0",
-        "CDN-Cache-Control": "no-store",
-        "Vercel-CDN-Cache-Control": "no-store",
-      },
+      headers: isPersonalized
+        ? {
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            Pragma: "no-cache",
+            Expires: "0",
+            "CDN-Cache-Control": "no-store",
+            "Vercel-CDN-Cache-Control": "no-store",
+          }
+        : createPublicCacheHeaders({ sMaxAge: 20, staleWhileRevalidate: 40 }),
     }
   );
 }

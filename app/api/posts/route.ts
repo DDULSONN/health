@@ -7,6 +7,7 @@ import type { BodycheckGender } from "@/lib/community";
 import { fetchUserCertSummaryMap } from "@/lib/cert-summary";
 import { getConfirmedActiveUserOrResponse } from "@/lib/auth-active";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
+import { publicCachedJson } from "@/lib/http-cache";
 
 const POST_COOLDOWN_MS = 30_000;
 const RECORD_FEED_TYPES = ["lifts", "1rm"];
@@ -113,14 +114,11 @@ export async function GET(request: Request) {
   const offset = (page - 1) * limit;
 
   const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
   const ip = extractClientIp(request);
   const rateLimit = await checkRouteRateLimit({
     requestId,
     scope: "posts-list",
-    userId: user?.id ?? null,
+    userId: null,
     ip,
     userLimitPerMin: 40,
     ipLimitPerMin: 160,
@@ -247,16 +245,11 @@ export async function GET(request: Request) {
   console.log(
     `[posts.metrics] requestId=${requestId} path=/api/posts page=${page} sort=${sort} q=${q || "-"} totalPosts=${pagedPosts.length} transformedBodycheckImages=${transformedBodycheckImages}`
   );
-  return NextResponse.json(
+  return publicCachedJson(
     { posts: pagedPosts, total: count ?? 0, page },
     {
-      headers: {
-        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-        Pragma: "no-cache",
-        Expires: "0",
-        "CDN-Cache-Control": "no-store",
-        "Vercel-CDN-Cache-Control": "no-store",
-      },
+      sMaxAge: sort === "latest" ? 20 : 45,
+      staleWhileRevalidate: sort === "latest" ? 40 : 90,
     }
   );
 }
