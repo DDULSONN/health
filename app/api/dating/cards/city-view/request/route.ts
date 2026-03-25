@@ -5,6 +5,7 @@ import { NextResponse } from "next/server";
 
 type CityViewRequestRow = {
   id: string;
+  city?: string | null;
   status: "pending" | "approved" | "rejected" | string;
   access_expires_at?: string | null;
   reviewed_at?: string | null;
@@ -26,6 +27,32 @@ function getRowSortTime(row: CityViewRequestRow): number {
   return 0;
 }
 
+function getProvinceFromRow(row: CityViewRequestRow): string {
+  const rawCity = typeof row.city === "string" ? row.city.trim() : "";
+  return extractProvinceFromRegion(rawCity) ?? rawCity;
+}
+
+function hasActiveApprovedRow(rows: CityViewRequestRow[]): boolean {
+  return rows.some((row) => {
+    if (row.status !== "approved" || !row.access_expires_at) return false;
+    const time = new Date(row.access_expires_at).getTime();
+    return Number.isFinite(time) && time > Date.now();
+  });
+}
+
+function hasLivePendingRow(rows: CityViewRequestRow[]): boolean {
+  const latestResolvedTime = rows
+    .filter((row) => row.status && row.status !== "pending")
+    .reduce((max, row) => Math.max(max, getRowSortTime(row)), 0);
+
+  return rows.some((row) => {
+    if (row.status !== "pending") return false;
+    const rowTime = getRowSortTime(row);
+    if (latestResolvedTime <= 0) return rowTime > 0;
+    return rowTime > latestResolvedTime;
+  });
+}
+
 export async function POST(req: Request) {
   const { user } = await getRequestAuthContext(req);
 
@@ -45,26 +72,19 @@ export async function POST(req: Request) {
 
   const historyRes = await admin
     .from("dating_city_view_requests")
-    .select("id,status,access_expires_at,reviewed_at,created_at")
+    .select("id,city,status,access_expires_at,reviewed_at,created_at")
     .eq("user_id", user.id)
-    .eq("city", province)
     .order("reviewed_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
-    .limit(50);
+    .limit(200);
 
   if (Array.isArray(historyRes.data)) {
-    const rows = historyRes.data as CityViewRequestRow[];
-    const activeApproved = rows.find((row) => {
-      if (row.status !== "approved" || !row.access_expires_at) return false;
-      const t = new Date(row.access_expires_at).getTime();
-      return Number.isFinite(t) && t > Date.now();
-    });
-    if (activeApproved) {
+    const rows = (historyRes.data as CityViewRequestRow[]).filter((row) => getProvinceFromRow(row) === province);
+    if (hasActiveApprovedRow(rows)) {
       return NextResponse.json({ ok: true, status: "approved", province });
     }
 
-    const latest = [...rows].sort((a, b) => getRowSortTime(b) - getRowSortTime(a))[0];
-    if (latest?.status === "pending") {
+    if (hasLivePendingRow(rows)) {
       return NextResponse.json({ ok: true, status: "pending", province });
     }
   }

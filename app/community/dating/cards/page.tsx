@@ -120,6 +120,7 @@ type OpenCardsSnapshot = {
   paidItems: PaidCard[];
   moreViewMale: PublicCard[];
   moreViewFemale: PublicCard[];
+  scrollY?: number;
 };
 
 function readOpenCardsSnapshot(): OpenCardsSnapshot | null {
@@ -130,6 +131,15 @@ function readOpenCardsSnapshot(): OpenCardsSnapshot | null {
     return JSON.parse(raw) as OpenCardsSnapshot;
   } catch {
     return null;
+  }
+}
+
+function writeOpenCardsSnapshot(snapshot: OpenCardsSnapshot) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(OPEN_CARDS_CACHE_KEY, JSON.stringify(snapshot));
+  } catch {
+    // ignore cache write errors
   }
 }
 
@@ -215,8 +225,7 @@ export default function OpenCardsPage() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const snapshot: OpenCardsSnapshot = {
+    writeOpenCardsSnapshot({
       activeSex,
       males,
       females,
@@ -230,8 +239,8 @@ export default function OpenCardsPage() {
       paidItems,
       moreViewMale,
       moreViewFemale,
-    };
-    window.sessionStorage.setItem(OPEN_CARDS_CACHE_KEY, JSON.stringify(snapshot));
+      scrollY: typeof window !== "undefined" ? window.scrollY : 0,
+    });
   }, [
     activeSex,
     females,
@@ -242,6 +251,52 @@ export default function OpenCardsPage() {
     maleCursorCreatedAt,
     maleCursorId,
     maleHasMore,
+    moreViewFemale,
+    moreViewMale,
+    paidItems,
+    queueStats,
+  ]);
+
+  useEffect(() => {
+    if (!initialSnapshot) return;
+    const restore = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: initialSnapshot.scrollY ?? 0, behavior: "auto" });
+    });
+    return () => window.cancelAnimationFrame(restore);
+  }, [initialSnapshot]);
+
+  useEffect(() => {
+    const saveSnapshot = () => {
+      writeOpenCardsSnapshot({
+        activeSex,
+        males,
+        females,
+        maleCursorCreatedAt,
+        maleCursorId,
+        femaleCursorCreatedAt,
+        femaleCursorId,
+        maleHasMore,
+        femaleHasMore,
+        queueStats,
+        paidItems,
+        moreViewMale,
+        moreViewFemale,
+        scrollY: window.scrollY,
+      });
+    };
+
+    window.addEventListener("pagehide", saveSnapshot);
+    return () => window.removeEventListener("pagehide", saveSnapshot);
+  }, [
+    activeSex,
+    femaleCursorCreatedAt,
+    femaleCursorId,
+    femaleHasMore,
+    females,
+    maleCursorCreatedAt,
+    maleCursorId,
+    maleHasMore,
+    males,
     moreViewFemale,
     moreViewMale,
     paidItems,
@@ -829,6 +884,14 @@ function PaidCardRow({ card }: { card: PaidCard }) {
     router.prefetch(detailHref);
     router.prefetch(applyHref);
   }, [applyHref, card, detailHref, router]);
+  const rememberScroll = useCallback(() => {
+    const snapshot = readOpenCardsSnapshot();
+    if (!snapshot) return;
+    writeOpenCardsSnapshot({
+      ...snapshot,
+      scrollY: window.scrollY,
+    });
+  }, []);
 
   return (
     <div className={`rounded-2xl border p-4 ${isPriority ? "border-rose-200 bg-rose-50" : "border-neutral-200 bg-white"}`}>
@@ -885,7 +948,9 @@ function PaidCardRow({ card }: { card: PaidCard }) {
           href={detailHref}
           prefetch
           onMouseEnter={warmRoute}
+          onClick={rememberScroll}
           onTouchStart={warmRoute}
+          onTouchEnd={rememberScroll}
           className="inline-flex min-h-[40px] items-center rounded-lg border border-neutral-300 px-4 text-sm text-neutral-700 hover:bg-neutral-50"
         >
           상세보기
@@ -894,7 +959,9 @@ function PaidCardRow({ card }: { card: PaidCard }) {
           href={applyHref}
           prefetch
           onMouseEnter={warmRoute}
+          onClick={rememberScroll}
           onTouchStart={warmRoute}
+          onTouchEnd={rememberScroll}
           className="inline-flex min-h-[40px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
         >
           지원하기
@@ -915,6 +982,14 @@ function CardRow({ card }: { card: PublicCard }) {
     router.prefetch(detailHref);
     router.prefetch(applyHref);
   }, [applyHref, card, detailHref, router]);
+  const rememberScroll = useCallback(() => {
+    const snapshot = readOpenCardsSnapshot();
+    if (!snapshot) return;
+    writeOpenCardsSnapshot({
+      ...snapshot,
+      scrollY: window.scrollY,
+    });
+  }, []);
 
   return (
     <div className="rounded-2xl border border-neutral-200 bg-white p-4">
@@ -978,7 +1053,9 @@ function CardRow({ card }: { card: PublicCard }) {
           href={detailHref}
           prefetch
           onMouseEnter={warmRoute}
+          onClick={rememberScroll}
           onTouchStart={warmRoute}
+          onTouchEnd={rememberScroll}
           className="inline-flex min-h-[40px] items-center rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-700"
         >
           상세보기
@@ -987,7 +1064,9 @@ function CardRow({ card }: { card: PublicCard }) {
           href={applyHref}
           prefetch
           onMouseEnter={warmRoute}
+          onClick={rememberScroll}
           onTouchStart={warmRoute}
+          onTouchEnd={rememberScroll}
           className="inline-flex min-h-[40px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
         >
           지원하기

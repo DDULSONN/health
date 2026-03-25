@@ -486,6 +486,7 @@ export default function MyPage() {
   const [adminApplyCreditOrders, setAdminApplyCreditOrders] = useState<AdminApplyCreditOrder[]>([]);
   const [adminMoreViewRequests, setAdminMoreViewRequests] = useState<AdminMoreViewRequest[]>([]);
   const [adminCityViewRequests, setAdminCityViewRequests] = useState<AdminCityViewRequest[]>([]);
+  const [adminCityViewSearch, setAdminCityViewSearch] = useState("");
   const [adminBodyBattleOverview, setAdminBodyBattleOverview] = useState<AdminBodyBattleOverview | null>(null);
   const [runningBodyBattleAdminTask, setRunningBodyBattleAdminTask] = useState(false);
   const [approvingOrderIds, setApprovingOrderIds] = useState<string[]>([]);
@@ -1595,6 +1596,20 @@ export default function MyPage() {
   for (const group of myOneOnOneAutoRecommendations) {
     myOneOnOneAutoRecommendationsByCardId.set(group.source_card_id, group);
   }
+  const normalizedAdminCityViewSearch = adminCityViewSearch.trim().toLowerCase();
+  const filteredAdminCityViewRequests =
+    normalizedAdminCityViewSearch.length === 0
+      ? adminCityViewRequests
+      : adminCityViewRequests.filter((item) => {
+          const nickname = (item.nickname ?? "").trim().toLowerCase();
+          const city = (item.city ?? "").trim().toLowerCase();
+          const userId = item.user_id.trim().toLowerCase();
+          return (
+            nickname.includes(normalizedAdminCityViewSearch) ||
+            city.includes(normalizedAdminCityViewSearch) ||
+            userId.includes(normalizedAdminCityViewSearch)
+          );
+        });
   const hasActiveOpenCard = myDatingCards.some((card) => card.status === "pending" || card.status === "public");
   const statusRankPublicFirst: Record<AdminOpenCard["status"], number> = {
     public: 0,
@@ -2972,18 +2987,34 @@ export default function MyPage() {
           </div>
           )}
 
-          {adminManageTab === "city_view" && (
-          <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
-            <p className="text-xs font-semibold text-violet-800">
-              내 가까운 이상형 승인 대기 {adminCityViewRequests.length}건
-            </p>
-            {adminCityViewRequests.length === 0 ? (
-              <p className="mt-2 text-xs text-neutral-500">승인 대기 신청이 없습니다.</p>
-            ) : (
-              <div className="mt-2 space-y-2">
-                {adminCityViewRequests.map((item) => {
-                  const processing = processingCityViewIds.includes(item.id);
-                  return (
+            {adminManageTab === "city_view" && (
+            <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
+              <p className="text-xs font-semibold text-violet-800">
+                내 가까운 이상형 승인 대기 {adminCityViewRequests.length}건
+              </p>
+              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <input
+                  type="text"
+                  value={adminCityViewSearch}
+                  onChange={(e) => setAdminCityViewSearch(e.target.value)}
+                  placeholder="닉네임 또는 지역 검색"
+                  className="h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none ring-0 placeholder:text-neutral-400 sm:max-w-xs"
+                />
+                {normalizedAdminCityViewSearch ? (
+                  <p className="text-[11px] text-neutral-500">
+                    검색 결과 {filteredAdminCityViewRequests.length}건
+                  </p>
+                ) : null}
+              </div>
+              {filteredAdminCityViewRequests.length === 0 ? (
+                <p className="mt-2 text-xs text-neutral-500">
+                  {normalizedAdminCityViewSearch ? "검색된 요청이 없습니다." : "승인 대기 신청이 없습니다."}
+                </p>
+              ) : (
+                <div className="mt-2 space-y-2">
+                  {filteredAdminCityViewRequests.map((item) => {
+                    const processing = processingCityViewIds.includes(item.id);
+                    return (
                     <div
                       key={item.id}
                       className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-100 bg-violet-50/40 px-2 py-2"

@@ -43,6 +43,30 @@ function getRowSortTime(row: CityViewRequestRow): number {
   return 0;
 }
 
+function hasActiveApprovedRow(rows: CityViewRequestRow[]): CityViewRequestRow | null {
+  return (
+    rows.find((row) => {
+      if (row.status !== "approved") return false;
+      const expiresAt = normalizeIsoDate(row.access_expires_at);
+      if (!expiresAt) return false;
+      return new Date(expiresAt).getTime() > Date.now();
+    }) ?? null
+  );
+}
+
+function hasLivePendingRow(rows: CityViewRequestRow[]): boolean {
+  const latestResolvedTime = rows
+    .filter((row) => row.status && row.status !== "pending")
+    .reduce((max, row) => Math.max(max, getRowSortTime(row)), 0);
+
+  return rows.some((row) => {
+    if (row.status !== "pending") return false;
+    const rowTime = getRowSortTime(row);
+    if (latestResolvedTime <= 0) return rowTime > 0;
+    return rowTime > latestResolvedTime;
+  });
+}
+
 async function buildProvinceStats(admin: ReturnType<typeof createAdminClient>): Promise<ProvinceStat[]> {
   const pendingRes = await admin
     .from("dating_cards")
@@ -112,12 +136,7 @@ export async function GET(req: Request) {
 
     const order = new Map<string, number>(PROVINCE_ORDER.map((name, idx) => [name, idx]));
     for (const [province, rows] of byProvince.entries()) {
-      const activeApproved = rows.find((row) => {
-        if (row.status !== "approved") return false;
-        const expiresAt = normalizeIsoDate(row.access_expires_at);
-        if (!expiresAt) return false;
-        return new Date(expiresAt).getTime() > Date.now();
-      });
+      const activeApproved = hasActiveApprovedRow(rows);
 
       if (activeApproved) {
         activeCityDetails.push({
@@ -127,8 +146,7 @@ export async function GET(req: Request) {
         continue;
       }
 
-      const latest = [...rows].sort((a, b) => getRowSortTime(b) - getRowSortTime(a))[0];
-      if (latest?.status === "pending") {
+      if (hasLivePendingRow(rows)) {
         pendingCities.push(province);
       }
     }

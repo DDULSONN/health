@@ -33,20 +33,76 @@ type CardItem = {
 };
 
 const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
+const NEARBY_VIEW_CACHE_KEY = "dating-nearby-view:v1";
+
+type NearbyViewSnapshot = {
+  status: CityStatusResponse;
+  selectedProvince: string;
+  activeSex: "male" | "female";
+  items: CardItem[];
+  scrollY: number;
+};
+
+function readNearbyViewSnapshot(): NearbyViewSnapshot | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.sessionStorage.getItem(NEARBY_VIEW_CACHE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as NearbyViewSnapshot;
+  } catch {
+    return null;
+  }
+}
+
+function writeNearbyViewSnapshot(snapshot: NearbyViewSnapshot) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.setItem(NEARBY_VIEW_CACHE_KEY, JSON.stringify(snapshot));
+  } catch {
+    // ignore cache write errors
+  }
+}
 
 export default function NearbyViewPage() {
+  const initialSnapshot = useMemo(() => readNearbyViewSnapshot(), []);
   const [submittingProvince, setSubmittingProvince] = useState("");
-  const [status, setStatus] = useState<CityStatusResponse>({ loggedIn: false, activeCities: [], activeCityDetails: [], pendingCities: [], provinceStats: [] });
-  const [selectedProvince, setSelectedProvince] = useState<string>("");
-  const [activeSex, setActiveSex] = useState<"male" | "female">("male");
-  const [items, setItems] = useState<CardItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [status, setStatus] = useState<CityStatusResponse>(
+    initialSnapshot?.status ?? { loggedIn: false, activeCities: [], activeCityDetails: [], pendingCities: [], provinceStats: [] }
+  );
+  const [selectedProvince, setSelectedProvince] = useState<string>(initialSnapshot?.selectedProvince ?? "");
+  const [activeSex, setActiveSex] = useState<"male" | "female">(initialSnapshot?.activeSex ?? "male");
+  const [items, setItems] = useState<CardItem[]>(initialSnapshot?.items ?? []);
+  const [loading, setLoading] = useState(() => !(initialSnapshot?.items?.length));
   const [tick, setTick] = useState(0);
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick((v) => v + 1), 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!initialSnapshot) return;
+    const restore = window.requestAnimationFrame(() => {
+      window.scrollTo({ top: initialSnapshot.scrollY ?? 0, behavior: "auto" });
+    });
+    return () => window.cancelAnimationFrame(restore);
+  }, [initialSnapshot]);
+
+  useEffect(() => {
+    const saveSnapshot = () => {
+      writeNearbyViewSnapshot({
+        status,
+        selectedProvince,
+        activeSex,
+        items,
+        scrollY: window.scrollY,
+      });
+    };
+
+    saveSnapshot();
+    window.addEventListener("pagehide", saveSnapshot);
+    return () => window.removeEventListener("pagehide", saveSnapshot);
+  }, [activeSex, items, selectedProvince, status]);
 
   const loadStatus = useCallback(async () => {
     const res = await fetch("/api/dating/cards/city-view/status", { cache: "no-store" });
@@ -91,7 +147,9 @@ export default function NearbyViewPage() {
   }, []);
 
   useEffect(() => {
-    void loadStatus();
+    queueMicrotask(() => {
+      void loadStatus();
+    });
   }, [loadStatus]);
 
   useEffect(() => {
@@ -238,7 +296,19 @@ export default function NearbyViewPage() {
                 여자 {femaleItems.length}명
               </button>
             </div>
-            <CardSection title={activeSex === "male" ? `${selectedProvince} 남자 대기카드` : `${selectedProvince} 여자 대기카드`} items={activeSex === "male" ? maleItems : femaleItems} />
+            <CardSection
+              title={activeSex === "male" ? `${selectedProvince} 남자 대기카드` : `${selectedProvince} 여자 대기카드`}
+              items={activeSex === "male" ? maleItems : femaleItems}
+              onNavigateAway={() =>
+                writeNearbyViewSnapshot({
+                  status,
+                  selectedProvince,
+                  activeSex,
+                  items,
+                  scrollY: window.scrollY,
+                })
+              }
+            />
           </div>
         )}
       </section>
@@ -256,7 +326,15 @@ function formatRemaining(expiresAt: string | null): string {
   return `${h}시간 ${m}분`;
 }
 
-function CardSection({ title, items }: { title: string; items: CardItem[] }) {
+function CardSection({
+  title,
+  items,
+  onNavigateAway,
+}: {
+  title: string;
+  items: CardItem[];
+  onNavigateAway: () => void;
+}) {
   return (
     <div>
       <h2 className="mb-2 text-sm font-semibold text-neutral-800">{title}</h2>
@@ -276,10 +354,20 @@ function CardSection({ title, items }: { title: string; items: CardItem[] }) {
               {card.job && <p className="mt-1 text-xs text-neutral-600">직업 {card.job}</p>}
               {card.ideal_type && <p className="mt-1 truncate text-xs text-pink-700">이상형: {card.ideal_type}</p>}
               <div className="mt-2 flex flex-wrap gap-2">
-                <Link href={`/community/dating/cards/${card.id}`} className="inline-flex min-h-[36px] items-center rounded-md border border-neutral-300 px-3 text-xs text-neutral-700">
+                <Link
+                  href={`/community/dating/cards/${card.id}`}
+                  onClick={onNavigateAway}
+                  onTouchStart={onNavigateAway}
+                  className="inline-flex min-h-[36px] items-center rounded-md border border-neutral-300 px-3 text-xs text-neutral-700"
+                >
                   상세보기
                 </Link>
-                <Link href={`/community/dating/cards/${card.id}/apply`} className="inline-flex min-h-[36px] items-center rounded-md bg-pink-500 px-3 text-xs font-medium text-white">
+                <Link
+                  href={`/community/dating/cards/${card.id}/apply`}
+                  onClick={onNavigateAway}
+                  onTouchStart={onNavigateAway}
+                  className="inline-flex min-h-[36px] items-center rounded-md bg-pink-500 px-3 text-xs font-medium text-white"
+                >
                   지원하기
                 </Link>
               </div>
