@@ -18,6 +18,7 @@ type PaidAdminItem = {
   ideal_text: string | null;
   intro_text: string | null;
   instagram_id: string;
+  photo_visibility: "blur" | "public";
   display_mode?: "priority_24h" | "instant_public";
   status: "pending" | "approved" | "rejected" | "expired";
   paid_at: string | null;
@@ -323,6 +324,9 @@ export default function AdminDatingPaidPage() {
               <p className="mt-1 text-xs font-medium text-violet-700">인스타: @{item.instagram_id}</p>
               <p className="mt-1 text-xs text-neutral-600">
                 노출방식: {item.display_mode === "instant_public" ? "즉시공개(비고정)" : DATING_PAID_FIXED_LABEL}
+              </p>
+              <p className="mt-1 text-xs text-neutral-600">
+                블러 미적용: {item.photo_visibility === "public" ? "체크함" : "체크 안함"}
               </p>
 
               <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-700">

@@ -136,6 +136,7 @@ export async function GET(req: Request) {
           ideal_text: row.ideal_text,
           intro_text: row.intro_text,
           instagram_id: row.instagram_id,
+          photo_visibility: row.photo_visibility === "public" ? "public" : "blur",
           display_mode: row.display_mode === "instant_public" ? "instant_public" : "priority_24h",
           status: row.status,
           paid_at: row.paid_at,
