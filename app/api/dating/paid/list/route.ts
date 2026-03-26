@@ -273,6 +273,7 @@ export async function GET(req: Request) {
           strengths_text: row.strengths_text,
           ideal_text: row.ideal_text,
           intro_text: row.intro_text,
+          photo_visibility: row.photo_visibility === "public" ? "public" : "blur",
           thumbUrl,
           expires_at: row.expires_at,
           paid_at: row.paid_at,

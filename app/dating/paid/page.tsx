@@ -24,6 +24,7 @@ type PaidItem = {
   strengths_text: string | null;
   ideal_text: string | null;
   intro_text: string | null;
+  photo_visibility: "blur" | "public";
   thumbUrl: string;
   expires_at: string | null;
   paid_at: string | null;
@@ -591,7 +592,7 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
                     alt=""
                     loading="lazy"
                     decoding="async"
-                    className="relative z-10 max-h-full max-w-full h-auto w-auto object-contain object-center"
+                    className={`relative z-10 max-h-full max-w-full h-auto w-auto object-contain object-center ${item.photo_visibility === "public" ? "" : "blur-[9px]"}`}
                   />
                 </div>
               ) : (

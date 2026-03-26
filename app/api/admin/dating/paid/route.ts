@@ -1,4 +1,5 @@
 import { isAdminEmail } from "@/lib/admin";
+import { ensureBlurThumbFromRaw } from "@/lib/dating-blur-thumb";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -116,10 +117,14 @@ export async function GET(req: Request) {
         let previewUrl = "";
         if (row.photo_visibility === "public" && firstPath) {
           previewUrl = await createSignedUrl(firstPath);
-        } else if (row.blur_thumb_path) {
-          previewUrl = await createSignedUrl(row.blur_thumb_path);
-        } else if (firstPath) {
-          previewUrl = await createSignedUrl(firstPath);
+        } else {
+          let blurThumbPath = typeof row.blur_thumb_path === "string" ? row.blur_thumb_path : "";
+          if (!blurThumbPath && firstPath) {
+            blurThumbPath = (await ensureBlurThumbFromRaw(admin, firstPath)) ?? "";
+          }
+          if (blurThumbPath) {
+            previewUrl = await createSignedUrl(blurThumbPath);
+          }
         }
 
         return {

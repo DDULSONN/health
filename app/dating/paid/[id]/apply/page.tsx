@@ -19,7 +19,7 @@ type PaidCardDetail = {
   ideal_text: string | null;
   intro_text: string | null;
   expires_at: string;
-  image_url: string;
+  image_urls: string[];
   photo_visibility: "blur" | "public";
 };
 
@@ -210,10 +210,15 @@ export default function PaidCardApplyPage() {
             ⏳ {formatRemainingToKorean(card.expires_at)}
           </span>
         </div>
-        {card.image_url && (
+        {Array.isArray(card.image_urls) && card.image_urls[0] && (
           <div className="mt-2 h-40 rounded-lg overflow-hidden bg-neutral-50 border border-neutral-100 flex items-center justify-center">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={card.image_url} alt="" decoding="async" className="h-full w-full object-contain" />
+            <img
+              src={card.image_urls[0]}
+              alt=""
+              decoding="async"
+              className={`h-full w-full object-contain ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
+            />
           </div>
         )}
       </div>
