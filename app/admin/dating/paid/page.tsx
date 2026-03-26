@@ -176,6 +176,26 @@ export default function AdminDatingPaidPage() {
     }
   };
 
+  const handleRepairBlur = async (paidCardId: string) => {
+    setActingId(paidCardId);
+    try {
+      const res = await fetch("/api/admin/dating/paid/repair-blur", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ paidCardId }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { message?: string };
+      if (!res.ok) {
+        alert(body.message ?? "블러 복구에 실패했습니다.");
+        return;
+      }
+      await load();
+      alert(body.message ?? "블러 복구가 완료되었습니다.");
+    } finally {
+      setActingId("");
+    }
+  };
+
   const handleCopyId = async (id: string) => {
     try {
       await navigator.clipboard.writeText(id);
@@ -355,6 +375,14 @@ export default function AdminDatingPaidPage() {
               </div>
 
               <div className="mt-3 flex gap-2">
+                <button
+                  type="button"
+                  disabled={actingId === item.id}
+                  onClick={() => void handleRepairBlur(item.id)}
+                  className="h-8 rounded-md bg-sky-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                >
+                  블러 복구
+                </button>
                 <button
                   type="button"
                   disabled={actingId === item.id}
