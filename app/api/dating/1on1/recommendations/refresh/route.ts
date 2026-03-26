@@ -8,6 +8,8 @@ type RefreshRecommendationPayload = {
   source_card_id?: string;
 };
 
+const RECOMMENDATION_REFRESH_COOLDOWN_MS = 48 * 60 * 60 * 1000;
+
 export async function POST(req: Request) {
   const originError = ensureAllowedMutationOrigin(req);
   if (originError) return originError;
@@ -43,8 +45,22 @@ export async function POST(req: Request) {
   if (!DATING_ONE_ON_ONE_ACTIVE_STATUSES.includes(cardRes.data.status)) {
     return NextResponse.json({ error: "Source card is no longer active." }, { status: 409 });
   }
-  if (cardRes.data.recommendation_refresh_used_at) {
-    return NextResponse.json({ error: "추천 새로고침은 카드당 1회만 가능합니다." }, { status: 409 });
+
+  const lastRefreshAt = cardRes.data.recommendation_refresh_used_at;
+  if (lastRefreshAt) {
+    const lastRefreshMs = Date.parse(lastRefreshAt);
+    if (Number.isFinite(lastRefreshMs)) {
+      const nextRefreshMs = lastRefreshMs + RECOMMENDATION_REFRESH_COOLDOWN_MS;
+      if (nextRefreshMs > Date.now()) {
+        return NextResponse.json(
+          {
+            error: "추천 새로고침은 2일에 한 번만 가능합니다.",
+            next_refresh_at: new Date(nextRefreshMs).toISOString(),
+          },
+          { status: 409 }
+        );
+      }
+    }
   }
 
   const nowIso = new Date().toISOString();
@@ -56,7 +72,6 @@ export async function POST(req: Request) {
     })
     .eq("id", sourceCardId)
     .eq("user_id", user.id)
-    .is("recommendation_refresh_used_at", null)
     .select("id,recommendation_refresh_used_at")
     .maybeSingle();
 
@@ -65,7 +80,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Failed to refresh recommendations." }, { status: 500 });
   }
   if (!updateRes.data) {
-    return NextResponse.json({ error: "추천 새로고침은 카드당 1회만 가능합니다." }, { status: 409 });
+    return NextResponse.json({ error: "추천 새로고침 처리에 실패했습니다. 잠시 후 다시 시도해 주세요." }, { status: 409 });
   }
 
   return NextResponse.json({

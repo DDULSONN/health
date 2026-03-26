@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 
 const RECOMMENDATION_LIMIT = 10;
 const CARD_BATCH_SIZE = 1000;
+const RECOMMENDATION_REFRESH_COOLDOWN_MS = 48 * 60 * 60 * 1000;
 
 type CardRow = {
   id: string;
@@ -55,6 +56,32 @@ function getAgeGap(sourceAge: number | null, candidateAge: number | null): numbe
     return Number.POSITIVE_INFINITY;
   }
   return Math.abs(sourceAge - candidateAge);
+}
+
+function getRefreshAvailability(refreshUsedAt?: string | null) {
+  if (!refreshUsedAt) {
+    return {
+      refreshUsed: false,
+      canRefreshNow: true,
+      nextRefreshAt: null as string | null,
+    };
+  }
+
+  const refreshMs = Date.parse(refreshUsedAt);
+  if (!Number.isFinite(refreshMs)) {
+    return {
+      refreshUsed: false,
+      canRefreshNow: true,
+      nextRefreshAt: null as string | null,
+    };
+  }
+
+  const nextRefreshMs = refreshMs + RECOMMENDATION_REFRESH_COOLDOWN_MS;
+  return {
+    refreshUsed: true,
+    canRefreshNow: nextRefreshMs <= Date.now(),
+    nextRefreshAt: new Date(nextRefreshMs).toISOString(),
+  };
 }
 
 async function fetchAllActiveCards(admin: ReturnType<typeof createAdminClient>) {
@@ -187,13 +214,15 @@ export async function GET(req: Request) {
         : 0;
     const startIndex = sourceCard.recommendation_refresh_used_at ? refreshStartIndex : 0;
     const recommendations = sortedCandidates.slice(startIndex, startIndex + RECOMMENDATION_LIMIT);
+    const refreshAvailability = getRefreshAvailability(sourceCard.recommendation_refresh_used_at);
 
     return {
       source_card_id: sourceCard.id,
       source_card_status: sourceCard.status,
-      refresh_used: Boolean(sourceCard.recommendation_refresh_used_at),
+      refresh_used: refreshAvailability.refreshUsed,
       refresh_used_at: sourceCard.recommendation_refresh_used_at ?? null,
-      can_refresh: !sourceCard.recommendation_refresh_used_at && sortedCandidates.length > RECOMMENDATION_LIMIT,
+      next_refresh_at: refreshAvailability.nextRefreshAt,
+      can_refresh: refreshAvailability.canRefreshNow && sortedCandidates.length > RECOMMENDATION_LIMIT,
       recommendations,
     };
   });
