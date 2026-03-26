@@ -119,6 +119,7 @@ async function toBlurWebpBytes(file: File): Promise<Buffer> {
   return sharp(input)
     .rotate()
     .resize({ width: BLUR_WIDTH, withoutEnlargement: true })
+    .blur(10)
     .webp({ quality: BLUR_QUALITY })
     .toBuffer();
 }

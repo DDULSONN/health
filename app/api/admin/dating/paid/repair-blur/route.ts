@@ -56,10 +56,7 @@ export async function POST(req: Request) {
     });
   }
 
-  let blurThumbPath = normalizeDatingPhotoPath(cardRes.data.blur_thumb_path);
-  if (!blurThumbPath) {
-    blurThumbPath = (await ensureBlurThumbFromRaw(admin, rawPaths[0])) ?? "";
-  }
+  const blurThumbPath = (await ensureBlurThumbFromRaw(admin, rawPaths[0])) ?? "";
 
   if (!blurThumbPath) {
     return json(500, {
