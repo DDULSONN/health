@@ -1410,6 +1410,34 @@ export default function MyPage() {
     }
   };
 
+  const handleAdminRepairCityViewPending = async (requestId: string) => {
+    if (processingCityViewIds.includes(requestId)) return;
+    if (!confirm("이 유저의 해당 지역 승인대기 요청을 강제로 정리할까요? 다시 신청할 수 있게 pending을 풀어줍니다.")) {
+      return;
+    }
+
+    setProcessingCityViewIds((prev) => [...prev, requestId]);
+    try {
+      const res = await fetch(`/api/admin/dating/cards/city-view/requests/${requestId}/repair`, {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+      if (!res.ok || !body.ok) {
+        alert(body.message ?? "승인대기 정리에 실패했습니다.");
+        return;
+      }
+
+      const reloadRes = await fetch("/api/admin/dating/cards/city-view/requests?status=pending", { cache: "no-store" });
+      const reloadBody = (await reloadRes.json().catch(() => ({}))) as { items?: AdminCityViewRequest[] };
+      if (reloadRes.ok) {
+        setAdminCityViewRequests(reloadBody.items ?? []);
+      }
+      alert(body.message ?? "승인대기 요청을 정리했습니다.");
+    } finally {
+      setProcessingCityViewIds((prev) => prev.filter((id) => id !== requestId));
+    }
+  };
+
   const handleAdminRunBodyBattleOps = async () => {
     if (runningBodyBattleAdminTask) return;
     setRunningBodyBattleAdminTask(true);
@@ -3155,6 +3183,14 @@ export default function MyPage() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={processing}
+                          onClick={() => void handleAdminRepairCityViewPending(item.id)}
+                          className="h-8 rounded-md border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-800 disabled:opacity-50"
+                        >
+                          막힘 해제
+                        </button>
                         <button
                           type="button"
                           disabled={processing}
