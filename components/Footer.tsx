@@ -31,6 +31,7 @@ export default function Footer() {
         <p className="text-xs text-neutral-300">
           &copy; {new Date().getFullYear()} GymTools. All rights reserved.
         </p>
+        <p className="text-[11px] text-neutral-300">상호명: 알파핏</p>
       </div>
     </footer>
   );
