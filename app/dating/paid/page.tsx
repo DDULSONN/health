@@ -125,19 +125,21 @@ export default function DatingPaidPage() {
   const [existingBlurThumbPath, setExistingBlurThumbPath] = useState("");
   const [tick, setTick] = useState(0);
 
+  const loadItems = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch("/api/dating/paid/list", { cache: "no-store" });
+      const body = (await res.json().catch(() => ({}))) as { items?: PaidItem[] };
+      setItems(Array.isArray(body.items) ? body.items : []);
+    } catch {
+      setItems([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    queueMicrotask(async () => {
-      setLoading(true);
-      try {
-        const res = await fetch("/api/dating/paid/list", { cache: "no-store" });
-        const body = (await res.json().catch(() => ({}))) as { items?: PaidItem[] };
-        setItems(Array.isArray(body.items) ? body.items : []);
-      } catch {
-        setItems([]);
-      } finally {
-        setLoading(false);
-      }
-    });
+    queueMicrotask(loadItems);
   }, []);
 
   useEffect(() => {
@@ -364,6 +366,13 @@ export default function DatingPaidPage() {
       setIdealText("");
       setInstagramId("");
       setDisplayMode("priority_24h");
+      setExistingRawPaths([]);
+      setExistingBlurThumbPath("");
+      setFormOpen(false);
+      await loadItems();
+      if (typeof window !== "undefined") {
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "네트워크 오류가 발생했습니다.");
     } finally {
@@ -408,6 +417,32 @@ export default function DatingPaidPage() {
         <p className="text-sm text-neutral-600">대기열 없이 게시 · 지원서 여러 장 수락 가능 · {DATING_PAID_FIXED_HOURS}시간 글에는 하루 지원권 차감 없이 지원 가능 · 남/녀 오픈카드 최상단에 고정 노출</p>
         <p className="mt-2 text-xs text-neutral-500">가격: 10,000원</p>
       </section>
+
+      {successId && (
+        <section className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+          <p className="font-semibold">신청이 접수되었습니다.</p>
+          <p className="mt-1">신청ID: {successId}</p>
+          <p className="mt-1">결제는 스윙카톡에서 진행됩니다. 스윙카톡으로 &quot;닉네임 + 신청ID&quot;를 보내주세요.</p>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setSuccessId("");
+                setFormOpen(true);
+                if (typeof window !== "undefined") {
+                  document.getElementById("paid-create-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+                }
+              }}
+              className="rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-emerald-700"
+            >
+              다시 작성하기
+            </button>
+            <a href={openKakaoUrl} target="_blank" rel="noreferrer" className="inline-block rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-emerald-700">
+              스윙카톡 이동
+            </a>
+          </div>
+        </section>
+      )}
 
       {formOpen && (
         <section id="paid-create-form" className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
@@ -498,7 +533,7 @@ export default function DatingPaidPage() {
             </button>
           </form>
 
-          {successId && (
+          {false && successId && (
             <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
               <p className="font-semibold">신청이 접수되었습니다.</p>
               <p className="mt-1">신청ID: {successId}</p>

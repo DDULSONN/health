@@ -147,6 +147,39 @@ type DatingConnection = {
   } | null;
 };
 
+type SwipeStatusCard = {
+  id: string;
+  sex: "male" | "female" | null;
+  display_nickname: string;
+  age: number | null;
+  region: string | null;
+  height_cm: number | null;
+  job: string | null;
+  training_years: number | null;
+  ideal_type: string | null;
+  strengths_text: string | null;
+};
+
+type SwipeStatusItem = {
+  swipe_id: string;
+  created_at: string;
+  other_user_id: string;
+  matched?: boolean;
+  matched_at?: string | null;
+  card: SwipeStatusCard | null;
+};
+
+type SwipeStatusResponse = {
+  summary?: {
+    outgoing_pending: number;
+    incoming_pending: number;
+    mutual_matches: number;
+  };
+  outgoing_likes?: SwipeStatusItem[];
+  incoming_likes?: SwipeStatusItem[];
+  error?: string;
+};
+
 type MyPaidCard = {
   id: string;
   nickname: string;
@@ -580,6 +613,9 @@ export default function MyPage() {
   const [myOneOnOneMatches, setMyOneOnOneMatches] = useState<MyOneOnOneMatch[]>([]);
   const [myOneOnOneAutoRecommendations, setMyOneOnOneAutoRecommendations] = useState<MyOneOnOneAutoRecommendationGroup[]>([]);
   const [datingConnections, setDatingConnections] = useState<DatingConnection[]>([]);
+  const [swipeStatusSummary, setSwipeStatusSummary] = useState<SwipeStatusResponse["summary"] | null>(null);
+  const [myOutgoingSwipeLikes, setMyOutgoingSwipeLikes] = useState<SwipeStatusItem[]>([]);
+  const [myIncomingSwipeLikes, setMyIncomingSwipeLikes] = useState<SwipeStatusItem[]>([]);
   const [adminOpenCards, setAdminOpenCards] = useState<AdminOpenCard[]>([]);
   const [adminOpenCardApplications, setAdminOpenCardApplications] = useState<AdminOpenCardApplication[]>([]);
   const [adminPaidCardApplications, setAdminPaidCardApplications] = useState<AdminPaidCardApplication[]>([]);
@@ -603,6 +639,7 @@ export default function MyPage() {
   const [processingCityViewIds, setProcessingCityViewIds] = useState<string[]>([]);
   const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
+  const [processingSwipeLikeBackIds, setProcessingSwipeLikeBackIds] = useState<string[]>([]);
   const [refreshingOneOnOneRecommendationIds, setRefreshingOneOnOneRecommendationIds] = useState<string[]>([]);
   const [openCardWriteEnabled, setOpenCardWriteEnabled] = useState(true);
   const [openCardWriteSaving, setOpenCardWriteSaving] = useState(false);
@@ -673,6 +710,7 @@ export default function MyPage() {
           oneOnOneRes,
           oneOnOneMatchesRes,
           oneOnOneRecommendationsRes,
+          swipeStatusRes,
           connectionsRes,
           paidConnectionsRes,
           writeSettingRes,
@@ -690,6 +728,7 @@ export default function MyPage() {
           fetch("/api/dating/1on1/my", { cache: "no-store" }),
           fetch("/api/dating/1on1/matches/my", { cache: "no-store" }),
           fetch("/api/dating/1on1/recommendations/my", { cache: "no-store" }),
+          fetch("/api/dating/cards/my/swipe-status", { cache: "no-store" }),
           fetch("/api/dating/cards/my/connections", { cache: "no-store" }),
           fetch("/api/dating/paid/my/connections", { cache: "no-store" }),
           fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
@@ -739,6 +778,7 @@ export default function MyPage() {
           error?: string;
           items?: MyOneOnOneAutoRecommendationGroup[];
         };
+        const swipeStatusBody = (await swipeStatusRes.json().catch(() => ({}))) as SwipeStatusResponse;
         const connectionsBody = (await connectionsRes.json().catch(() => ({}))) as {
           error?: string;
           items?: DatingConnection[];
@@ -780,6 +820,9 @@ export default function MyPage() {
         if (!oneOnOneRecommendationsRes.ok) {
           console.error("[mypage] 1on1 recommendations load failed", oneOnOneRecommendationsBody.error ?? "unknown error");
         }
+        if (!swipeStatusRes.ok) {
+          console.error("[mypage] swipe status load failed", swipeStatusBody.error ?? "unknown error");
+        }
         if (!connectionsRes.ok) {
           console.error("[mypage] open connections load failed", connectionsBody.error ?? "unknown error");
         }
@@ -804,6 +847,9 @@ export default function MyPage() {
           setMyOneOnOneAutoRecommendations(
             oneOnOneRecommendationsRes.ok ? (oneOnOneRecommendationsBody.items ?? []) : []
           );
+          setSwipeStatusSummary(swipeStatusRes.ok ? (swipeStatusBody.summary ?? null) : null);
+          setMyOutgoingSwipeLikes(swipeStatusRes.ok ? (swipeStatusBody.outgoing_likes ?? []) : []);
+          setMyIncomingSwipeLikes(swipeStatusRes.ok ? (swipeStatusBody.incoming_likes ?? []) : []);
           setDatingConnections([
             ...(connectionsRes.ok ? (connectionsBody.items ?? []) : []),
             ...(paidConnectionsRes.ok ? (paidConnectionsBody.items ?? []) : []),
@@ -1235,6 +1281,76 @@ export default function MyPage() {
       throw new Error(body.error ?? "1:1 자동 추천 후보를 다시 불러오지 못했습니다.");
     }
     setMyOneOnOneAutoRecommendations(body.items ?? []);
+  };
+
+  const reloadSwipeStatus = async () => {
+    const res = await fetch("/api/dating/cards/my/swipe-status", { cache: "no-store" });
+    const body = (await res.json().catch(() => ({}))) as SwipeStatusResponse;
+    if (!res.ok) {
+      throw new Error(body.error ?? "빠른매칭 상태를 다시 불러오지 못했습니다.");
+    }
+    setSwipeStatusSummary(body.summary ?? null);
+    setMyOutgoingSwipeLikes(body.outgoing_likes ?? []);
+    setMyIncomingSwipeLikes(body.incoming_likes ?? []);
+  };
+
+  const reloadOpenDatingConnections = async () => {
+    const [openRes, paidRes] = await Promise.all([
+      fetch("/api/dating/cards/my/connections", { cache: "no-store" }),
+      fetch("/api/dating/paid/my/connections", { cache: "no-store" }),
+    ]);
+    const openBody = (await openRes.json().catch(() => ({}))) as { items?: DatingConnection[]; error?: string };
+    const paidBody = (await paidRes.json().catch(() => ({}))) as { items?: DatingConnection[]; error?: string };
+    if (!openRes.ok) {
+      throw new Error(openBody.error ?? "오픈카드 매칭 정보를 다시 불러오지 못했습니다.");
+    }
+    if (!paidRes.ok) {
+      throw new Error(paidBody.error ?? "유료카드 매칭 정보를 다시 불러오지 못했습니다.");
+    }
+    setDatingConnections([...(openBody.items ?? []), ...(paidBody.items ?? [])]);
+  };
+
+  const handleSwipeLikeBack = async (item: SwipeStatusItem) => {
+    if (processingSwipeLikeBackIds.includes(item.swipe_id)) return;
+    if (!item.card?.id || !item.card.sex) {
+      alert("상대 카드 정보를 찾지 못했습니다.");
+      return;
+    }
+    setProcessingSwipeLikeBackIds((prev) => [...prev, item.swipe_id]);
+    try {
+      const res = await fetch("/api/dating/cards/swipe", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sex: item.card.sex,
+          action: "like",
+          target_user_id: item.other_user_id,
+          target_card_id: item.card.id,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        match?: { other_nickname?: string; other_instagram_id?: string | null };
+      };
+      if (!res.ok) {
+        alert(body.error ?? "맞라이크 처리에 실패했습니다.");
+        return;
+      }
+      await Promise.all([reloadSwipeStatus(), reloadOpenDatingConnections()]);
+      if (body.match) {
+        alert(
+          `${body.match.other_nickname ?? item.card.display_nickname}님과 쌍방 라이크가 되었습니다.${
+            body.match.other_instagram_id ? `\n상대 인스타: @${body.match.other_instagram_id}` : ""
+          }`
+        );
+      } else {
+        alert("라이크를 보냈습니다. 상대가 아직 확인 중일 수 있어요.");
+      }
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "맞라이크 처리에 실패했습니다.");
+    } finally {
+      setProcessingSwipeLikeBackIds((prev) => prev.filter((id) => id !== item.swipe_id));
+    }
   };
 
   const handleOneOnOneMatchAction = async (
@@ -2114,6 +2230,114 @@ export default function MyPage() {
             >
               숨기기
             </button>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-pink-200 bg-pink-50/60 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-pink-900">빠른매칭 진행 상황</p>
+              <p className="mt-1 text-xs text-pink-700">
+                라이크를 보내고 끝이 아니라, 누가 나를 좋아했는지와 쌍방 매칭 여부를 여기서 바로 확인할 수 있어요.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 text-xs font-medium">
+              <span className="rounded-full bg-white px-3 py-1 text-neutral-700">
+                보낸 라이크 {swipeStatusSummary?.outgoing_pending ?? 0}
+              </span>
+              <span className="rounded-full bg-white px-3 py-1 text-pink-700">
+                받은 라이크 {swipeStatusSummary?.incoming_pending ?? 0}
+              </span>
+              <span className="rounded-full bg-white px-3 py-1 text-emerald-700">
+                쌍방 매칭 {swipeStatusSummary?.mutual_matches ?? 0}
+              </span>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <div className="rounded-xl border border-neutral-200 bg-white p-3">
+              <p className="text-sm font-semibold text-neutral-900">내가 보낸 라이크</p>
+              {myOutgoingSwipeLikes.length === 0 ? (
+                <p className="mt-2 text-xs text-neutral-500">아직 보낸 라이크가 없습니다.</p>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {myOutgoingSwipeLikes.slice(0, 6).map((item) => (
+                    <div key={item.swipe_id} className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-sm font-medium text-neutral-900">{item.card?.display_nickname ?? "익명"}</p>
+                        <span
+                          className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                            item.matched ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                          }`}
+                        >
+                          {item.matched ? "쌍방 매칭" : "응답 대기"}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-neutral-600">
+                        {item.card?.age != null ? `${item.card.age}세 / ` : ""}
+                        {item.card?.region ?? "지역 미기재"}
+                        {item.card?.job ? ` / ${item.card.job}` : ""}
+                      </p>
+                      {item.card?.strengths_text && (
+                        <p className="mt-1 text-xs text-neutral-700 line-clamp-2">{item.card.strengths_text}</p>
+                      )}
+                      <p className="mt-2 text-[11px] text-neutral-500">
+                        {item.matched && item.matched_at
+                          ? `매칭 완료: ${new Date(item.matched_at).toLocaleString("ko-KR")}`
+                          : `보낸 시각: ${new Date(item.created_at).toLocaleString("ko-KR")}`}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-xl border border-pink-200 bg-white p-3">
+              <p className="text-sm font-semibold text-pink-900">나를 라이크한 사람</p>
+              {myIncomingSwipeLikes.length === 0 ? (
+                <p className="mt-2 text-xs text-neutral-500">지금 확인 가능한 받은 라이크가 없습니다.</p>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {myIncomingSwipeLikes.slice(0, 6).map((item) => {
+                    const processing = processingSwipeLikeBackIds.includes(item.swipe_id);
+                    return (
+                      <div key={item.swipe_id} className="rounded-lg border border-pink-200 bg-pink-50/40 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium text-neutral-900">{item.card?.display_nickname ?? "익명"}</p>
+                          <span className="inline-flex rounded-full bg-pink-100 px-2 py-0.5 text-[11px] font-medium text-pink-700">
+                            나를 라이크함
+                          </span>
+                        </div>
+                        <p className="mt-1 text-xs text-neutral-600">
+                          {item.card?.age != null ? `${item.card.age}세 / ` : ""}
+                          {item.card?.region ?? "지역 미기재"}
+                          {item.card?.job ? ` / ${item.card.job}` : ""}
+                        </p>
+                        {item.card?.strengths_text && (
+                          <p className="mt-1 text-xs text-neutral-700 line-clamp-2">{item.card.strengths_text}</p>
+                        )}
+                        <p className="mt-2 text-[11px] text-neutral-500">
+                          받은 시각: {new Date(item.created_at).toLocaleString("ko-KR")}
+                        </p>
+                        <div className="mt-3 flex flex-wrap gap-2">
+                          <button
+                            type="button"
+                            disabled={processing || !item.card?.id || !item.card.sex}
+                            onClick={() => void handleSwipeLikeBack(item)}
+                            className="h-8 rounded-md bg-pink-500 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {processing ? "처리 중..." : "바로 라이크"}
+                          </button>
+                          <span className="inline-flex items-center text-[11px] text-neutral-500">
+                            지금 맞라이크하면 바로 쌍방 매칭이 될 수 있어요.
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
