@@ -11,6 +11,38 @@ function isMissingColumnError(error: unknown): boolean {
   return code === "42703" || code === "PGRST204" || message.includes("could not find") || message.includes("column");
 }
 
+function normalizeInstagramId(value: unknown): string {
+  if (typeof value !== "string") return "";
+  return value.trim().replace(/^@+/, "").replace(/\s+/g, "");
+}
+
+function validInstagramId(value: string) {
+  return /^[A-Za-z0-9._]{1,30}$/.test(value);
+}
+
+function toInt(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return Math.round(value);
+  if (typeof value === "string") {
+    const num = Number(value);
+    if (Number.isFinite(num)) return Math.round(num);
+  }
+  return null;
+}
+
+function toNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string" && value.trim()) {
+    const num = Number(value);
+    if (Number.isFinite(num)) return num;
+  }
+  return null;
+}
+
+function toText(value: unknown, max: number) {
+  if (typeof value !== "string") return "";
+  return value.trim().slice(0, max);
+}
+
 export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
@@ -26,15 +58,22 @@ export async function PATCH(
   }
 
   const body = await req.json().catch(() => null);
-  const status = (body as { status?: string } | null)?.status;
-  if (status !== "pending" && status !== "public" && status !== "hidden" && status !== "expired") {
+  const rawStatus = (body as { status?: string } | null)?.status;
+  const status =
+    rawStatus === "pending" || rawStatus === "public" || rawStatus === "hidden" || rawStatus === "expired"
+      ? rawStatus
+      : undefined;
+
+  if (rawStatus != null && !status) {
     return NextResponse.json({ error: "?덉슜?섏? ?딆? ?곹깭媛믪엯?덈떎." }, { status: 400 });
   }
 
   const adminClient = createAdminClient();
   const { data: card, error: cardError } = await adminClient
     .from("dating_cards")
-    .select("id, sex, status")
+    .select(
+      "id, sex, status, display_nickname, age, region, height_cm, job, training_years, strengths_text, ideal_type, instagram_id, total_3lift, percent_all"
+    )
     .eq("id", id)
     .single();
 
@@ -42,11 +81,93 @@ export async function PATCH(
     return NextResponse.json({ error: "移대뱶瑜?李얠쓣 ???놁뒿?덈떎." }, { status: 404 });
   }
 
+  const displayNickname = toText((body as { display_nickname?: unknown } | null)?.display_nickname, 20);
+  const age = toInt((body as { age?: unknown } | null)?.age);
+  const region = toText((body as { region?: unknown } | null)?.region, 30);
+  const heightCm = toInt((body as { height_cm?: unknown } | null)?.height_cm);
+  const job = toText((body as { job?: unknown } | null)?.job, 50);
+  const trainingYears = toInt((body as { training_years?: unknown } | null)?.training_years);
+  const strengthsText = toText((body as { strengths_text?: unknown } | null)?.strengths_text, 150);
+  const idealType = toText((body as { ideal_type?: unknown } | null)?.ideal_type, 1000);
+  const instagramId = normalizeInstagramId((body as { instagram_id?: unknown } | null)?.instagram_id);
+  const total3Lift = toInt((body as { total_3lift?: unknown } | null)?.total_3lift);
+  const percentAll = toNumber((body as { percent_all?: unknown } | null)?.percent_all);
+
+  const contentUpdateRequested =
+    body != null &&
+    [
+      "display_nickname",
+      "age",
+      "region",
+      "height_cm",
+      "job",
+      "training_years",
+      "strengths_text",
+      "ideal_type",
+      "instagram_id",
+      "total_3lift",
+      "percent_all",
+    ].some((key) => Object.prototype.hasOwnProperty.call(body, key));
+
+  if (!status && !contentUpdateRequested) {
+    return NextResponse.json({ error: "?섏젙??而⑤샽?댁? ?놁뒿?덈떎." }, { status: 400 });
+  }
+
+  if (contentUpdateRequested) {
+    if (!displayNickname) {
+      return NextResponse.json({ error: "?쒖떆???됰꽕?꾩쓣 ?낅젰?댁＜?몄슂." }, { status: 400 });
+    }
+    if (age != null && (age < 19 || age > 99)) {
+      return NextResponse.json({ error: "?섏씠瑜??뺤씤?댁＜?몄슂." }, { status: 400 });
+    }
+    if (heightCm != null && (heightCm < 120 || heightCm > 230)) {
+      return NextResponse.json({ error: "?ㅻ?瑜??뺤씤?댁＜?몄슂." }, { status: 400 });
+    }
+    if (trainingYears != null && (trainingYears < 0 || trainingYears > 50)) {
+      return NextResponse.json({ error: "?대룞寃쎈젰???뺤씤?댁＜?몄슂." }, { status: 400 });
+    }
+    if (!instagramId || !validInstagramId(instagramId)) {
+      return NextResponse.json(
+        { error: "?몄뒪?洹몃옩 ?꾩씠???뺤떇???щ컮瑜댁? ?딆뒿?덈떎. (@ ?쒖쇅, ?곷Ц/?レ옄/._, 理쒕? 30??" },
+        { status: 400 }
+      );
+    }
+  }
+
   const updatePayload: {
-    status: "pending" | "public" | "hidden" | "expired";
+    status?: "pending" | "public" | "hidden" | "expired";
+    display_nickname?: string | null;
+    age?: number | null;
+    region?: string | null;
+    height_cm?: number | null;
+    job?: string | null;
+    training_years?: number | null;
+    strengths_text?: string | null;
+    ideal_type?: string | null;
+    instagram_id?: string | null;
+    total_3lift?: number | null;
+    percent_all?: number | null;
     published_at?: string | null;
     expires_at?: string | null;
-  } = { status };
+  } = {};
+
+  if (contentUpdateRequested) {
+    updatePayload.display_nickname = displayNickname;
+    updatePayload.age = age;
+    updatePayload.region = region || null;
+    updatePayload.height_cm = heightCm;
+    updatePayload.job = job || null;
+    updatePayload.training_years = trainingYears;
+    updatePayload.strengths_text = strengthsText || null;
+    updatePayload.ideal_type = idealType || null;
+    updatePayload.instagram_id = instagramId;
+    updatePayload.total_3lift = total3Lift;
+    updatePayload.percent_all = percentAll;
+  }
+
+  if (status) {
+    updatePayload.status = status;
+  }
 
   if (status === "public") {
     const slotLimit = getOpenCardLimitBySex(card.sex === "female" ? "female" : "male");
@@ -94,7 +215,10 @@ export async function PATCH(
   let updateRes = await adminClient.from("dating_cards").update(updatePayload).eq("id", id);
   if (updateRes.error && isMissingColumnError(updateRes.error)) {
     // Legacy fallback when published_at / expires_at columns are absent.
-    updateRes = await adminClient.from("dating_cards").update({ status }).eq("id", id);
+    const legacyPayload = status ? { ...updatePayload, status } : updatePayload;
+    delete legacyPayload.published_at;
+    delete legacyPayload.expires_at;
+    updateRes = await adminClient.from("dating_cards").update(legacyPayload).eq("id", id);
   }
 
   if (updateRes.error) {
@@ -102,7 +226,7 @@ export async function PATCH(
     return NextResponse.json({ error: "?곹깭 蹂寃쎌뿉 ?ㅽ뙣?덉뒿?덈떎." }, { status: 500 });
   }
 
-  if ((card.status === "public" && status !== "public") || status === "hidden" || status === "expired") {
+  if (status && ((card.status === "public" && status !== "public") || status === "hidden" || status === "expired")) {
     const sex = card.sex === "female" ? "female" : "male";
     try {
       await promotePendingCardsBySex(adminClient, sex);
@@ -111,7 +235,15 @@ export async function PATCH(
     }
   }
 
-  return NextResponse.json({ ok: true, status });
+  const { data: updatedCard } = await adminClient
+    .from("dating_cards")
+    .select(
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, strengths_text, ideal_type, instagram_id, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, status, published_at, expires_at, created_at"
+    )
+    .eq("id", id)
+    .maybeSingle();
+
+  return NextResponse.json({ ok: true, status: status ?? card.status, item: updatedCard ?? null });
 }
 
 export async function DELETE(

@@ -263,6 +263,7 @@ type AdminOpenCard = {
   height_cm: number | null;
   job: string | null;
   training_years: number | null;
+  strengths_text: string | null;
   ideal_type: string | null;
   instagram_id: string | null;
   total_3lift: number | null;
@@ -274,6 +275,20 @@ type AdminOpenCard = {
   published_at: string | null;
   expires_at: string | null;
   created_at: string;
+};
+
+type AdminOpenCardEditDraft = {
+  display_nickname: string;
+  age: string;
+  region: string;
+  height_cm: string;
+  job: string;
+  training_years: string;
+  strengths_text: string;
+  ideal_type: string;
+  instagram_id: string;
+  total_3lift: string;
+  percent_all: string;
 };
 
 type AdminOpenCardApplication = {
@@ -326,6 +341,7 @@ type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
 type AdminApplicationSort = "newest" | "oldest" | "submitted_first" | "accepted_first";
 type AdminDataView = "cards" | "applications";
 type AdminManageTab =
+  | "dating_stats"
   | "open_cards"
   | "apply_credits"
   | "more_view"
@@ -387,6 +403,79 @@ type AdminCityViewRequest = {
   created_at: string;
   reviewed_at: string | null;
   note: string | null;
+};
+
+type AdminDatingStats = {
+  open_cards: {
+    total: number;
+    pending: number;
+    public: number;
+    hidden: number;
+    expired: number;
+    male: number;
+    female: number;
+    applications: {
+      total: number;
+      submitted: number;
+      accepted: number;
+      rejected: number;
+      canceled: number;
+    };
+    top_regions: Array<{ region: string; count: number }>;
+  };
+  paid_cards: {
+    total: number;
+    pending: number;
+    approved: number;
+    rejected: number;
+    expired: number;
+    blur: number;
+    public: number;
+    applications: {
+      total: number;
+      submitted: number;
+      accepted: number;
+      rejected: number;
+      canceled: number;
+    };
+  };
+  one_on_one: {
+    cards: {
+      total: number;
+      submitted: number;
+      reviewing: number;
+      approved: number;
+      rejected: number;
+      male: number;
+      female: number;
+      top_regions: Array<{ region: string; count: number }>;
+    };
+    matches: {
+      total: number;
+      proposed: number;
+      source_selected: number;
+      candidate_accepted: number;
+      mutual_accepted: number;
+      candidate_rejected: number;
+      source_declined: number;
+      source_skipped: number;
+      admin_canceled: number;
+    };
+  };
+  boosts: {
+    more_view: {
+      pending: number;
+      approved: number;
+      rejected: number;
+      active: number;
+    };
+    city_view: {
+      pending: number;
+      approved: number;
+      rejected: number;
+      active: number;
+    };
+  };
 };
 
 type AdminAccountDeletionAudit = {
@@ -494,6 +583,9 @@ export default function MyPage() {
   const [adminOpenCards, setAdminOpenCards] = useState<AdminOpenCard[]>([]);
   const [adminOpenCardApplications, setAdminOpenCardApplications] = useState<AdminOpenCardApplication[]>([]);
   const [adminPaidCardApplications, setAdminPaidCardApplications] = useState<AdminPaidCardApplication[]>([]);
+  const [editingAdminOpenCardId, setEditingAdminOpenCardId] = useState<string | null>(null);
+  const [adminOpenCardDraft, setAdminOpenCardDraft] = useState<AdminOpenCardEditDraft | null>(null);
+  const [savingAdminOpenCard, setSavingAdminOpenCard] = useState(false);
   const [adminCardSort, setAdminCardSort] = useState<AdminCardSort>("public_first");
   const [adminApplicationSort, setAdminApplicationSort] = useState<AdminApplicationSort>("newest");
   const [adminDataView, setAdminDataView] = useState<AdminDataView>("cards");
@@ -501,6 +593,7 @@ export default function MyPage() {
   const [adminApplyCreditOrders, setAdminApplyCreditOrders] = useState<AdminApplyCreditOrder[]>([]);
   const [adminMoreViewRequests, setAdminMoreViewRequests] = useState<AdminMoreViewRequest[]>([]);
   const [adminCityViewRequests, setAdminCityViewRequests] = useState<AdminCityViewRequest[]>([]);
+  const [adminDatingStats, setAdminDatingStats] = useState<AdminDatingStats | null>(null);
   const [adminAccountDeletionAudits, setAdminAccountDeletionAudits] = useState<AdminAccountDeletionAudit[]>([]);
   const [adminCityViewSearch, setAdminCityViewSearch] = useState("");
   const [adminBodyBattleOverview, setAdminBodyBattleOverview] = useState<AdminBodyBattleOverview | null>(null);
@@ -729,6 +822,7 @@ export default function MyPage() {
 
           if (adminFlag) {
             const [
+              datingStatsRes,
               overviewRes,
               ordersRes,
               paidAppsRes,
@@ -737,6 +831,7 @@ export default function MyPage() {
               bodyBattleOverviewRes,
               accountDeletionAuditsRes,
             ] = await Promise.all([
+              fetch("/api/admin/dating/stats", { cache: "no-store" }),
               fetch("/api/dating/cards/admin/overview", { cache: "no-store" }),
               fetch("/api/admin/dating/apply-credits/orders?status=pending", { cache: "no-store" }),
               fetch("/api/admin/dating/paid/applications", { cache: "no-store" }),
@@ -749,6 +844,10 @@ export default function MyPage() {
               error?: string;
               cards?: AdminOpenCard[];
               applications?: AdminOpenCardApplication[];
+            };
+            const datingStatsBody = (await datingStatsRes.json().catch(() => ({}))) as {
+              error?: string;
+              stats?: AdminDatingStats;
             };
             const ordersBody = (await ordersRes.json().catch(() => ({}))) as {
               error?: string;
@@ -779,6 +878,9 @@ export default function MyPage() {
             if (!overviewRes.ok) {
               throw new Error(overviewBody.error ?? "관리자 오픈카드 데이터를 불러오지 못했습니다.");
             }
+            if (!datingStatsRes.ok) {
+              throw new Error(datingStatsBody.error ?? "소개팅 통계를 불러오지 못했습니다.");
+            }
             if (!ordersRes.ok) {
               throw new Error(ordersBody.error ?? "지원권 주문 목록을 불러오지 못했습니다.");
             }
@@ -786,6 +888,7 @@ export default function MyPage() {
               throw new Error(paidAppsBody.error ?? "관리자 36시간 카드 지원 이력을 불러오지 못했습니다.");
             }
             if (isMounted) {
+              setAdminDatingStats(datingStatsBody.stats ?? null);
               setAdminOpenCards(overviewBody.cards ?? []);
               setAdminOpenCardApplications(overviewBody.applications ?? []);
               setAdminPaidCardApplications(paidAppsBody.items ?? []);
@@ -802,6 +905,7 @@ export default function MyPage() {
               );
             }
           } else {
+            setAdminDatingStats(null);
             setAdminOpenCards([]);
             setAdminOpenCardApplications([]);
             setAdminPaidCardApplications([]);
@@ -1219,6 +1323,64 @@ export default function MyPage() {
     }
   };
 
+  const openAdminOpenCardEditor = (card: AdminOpenCard) => {
+    setEditingAdminOpenCardId(card.id);
+    setAdminOpenCardDraft({
+      display_nickname: card.display_nickname ?? "",
+      age: card.age != null ? String(card.age) : "",
+      region: card.region ?? "",
+      height_cm: card.height_cm != null ? String(card.height_cm) : "",
+      job: card.job ?? "",
+      training_years: card.training_years != null ? String(card.training_years) : "",
+      strengths_text: card.strengths_text ?? "",
+      ideal_type: card.ideal_type ?? "",
+      instagram_id: card.instagram_id ?? "",
+      total_3lift: card.total_3lift != null ? String(card.total_3lift) : "",
+      percent_all: card.percent_all != null ? String(card.percent_all) : "",
+    });
+  };
+
+  const closeAdminOpenCardEditor = () => {
+    if (savingAdminOpenCard) return;
+    setEditingAdminOpenCardId(null);
+    setAdminOpenCardDraft(null);
+  };
+
+  const handleAdminSaveOpenCard = async (cardId: string) => {
+    if (!adminOpenCardDraft) return;
+    setSavingAdminOpenCard(true);
+    try {
+      const res = await fetch(`/api/admin/dating/cards/${cardId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(adminOpenCardDraft),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        item?: Partial<AdminOpenCard> | null;
+      };
+      if (!res.ok) {
+        alert(body.error ?? "카드 수정에 실패했습니다.");
+        return;
+      }
+      setAdminOpenCards((prev) =>
+        prev.map((card) =>
+          card.id === cardId
+            ? {
+                ...card,
+                ...(body.item ?? {}),
+              }
+            : card
+        )
+      );
+      setEditingAdminOpenCardId(null);
+      setAdminOpenCardDraft(null);
+      alert("카드 내용을 수정했습니다.");
+    } finally {
+      setSavingAdminOpenCard(false);
+    }
+  };
+
   const handleAdminDeleteOpenCard = async (cardId: string) => {
     if (!confirm("해당 오픈카드를 삭제할까요?")) return;
     const res = await fetch(`/api/admin/dating/cards/${cardId}`, {
@@ -1231,6 +1393,10 @@ export default function MyPage() {
     }
     setAdminOpenCards((prev) => prev.filter((card) => card.id !== cardId));
     setAdminOpenCardApplications((prev) => prev.filter((app) => app.card_id !== cardId));
+    if (editingAdminOpenCardId === cardId) {
+      setEditingAdminOpenCardId(null);
+      setAdminOpenCardDraft(null);
+    }
   };
 
   const handleAdminToggleOpenCardWrite = async (enabled: boolean) => {
@@ -2941,6 +3107,15 @@ export default function MyPage() {
           <div className="mb-3 flex flex-wrap gap-2">
             <button
               type="button"
+              onClick={() => setAdminManageTab("dating_stats")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "dating_stats" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              소개팅 통계
+            </button>
+            <button
+              type="button"
               onClick={() => setAdminManageTab("open_cards")}
               className={`h-8 rounded-md border px-3 text-xs font-medium ${
                 adminManageTab === "open_cards" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
@@ -3023,6 +3198,131 @@ export default function MyPage() {
               광고 문의
             </button>
           </div>
+
+          {adminManageTab === "dating_stats" && adminDatingStats && (
+          <div className="mb-3 space-y-3">
+            <div className="grid gap-3 lg:grid-cols-3">
+              <div className="rounded-xl border border-violet-200 bg-white p-4">
+                <p className="text-xs font-semibold text-violet-800">오픈카드</p>
+                <p className="mt-2 text-2xl font-bold text-neutral-900">{adminDatingStats.open_cards.total}</p>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-neutral-600">
+                  <p>공개 {adminDatingStats.open_cards.public}</p>
+                  <p>대기 {adminDatingStats.open_cards.pending}</p>
+                  <p>숨김 {adminDatingStats.open_cards.hidden}</p>
+                  <p>만료 {adminDatingStats.open_cards.expired}</p>
+                  <p>남성 {adminDatingStats.open_cards.male}</p>
+                  <p>여성 {adminDatingStats.open_cards.female}</p>
+                </div>
+                <div className="mt-3 rounded-lg border border-violet-100 bg-violet-50/40 p-2 text-xs text-neutral-700">
+                  <p className="font-medium text-violet-800">지원서</p>
+                  <p className="mt-1">전체 {adminDatingStats.open_cards.applications.total} · 대기 {adminDatingStats.open_cards.applications.submitted}</p>
+                  <p className="mt-1">수락 {adminDatingStats.open_cards.applications.accepted} · 거절 {adminDatingStats.open_cards.applications.rejected} · 취소 {adminDatingStats.open_cards.applications.canceled}</p>
+                </div>
+                <div className="mt-3">
+                  <p className="text-xs font-medium text-neutral-700">공개 카드 상위 지역</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {adminDatingStats.open_cards.top_regions.length === 0 ? (
+                      <span className="text-xs text-neutral-500">집계 없음</span>
+                    ) : (
+                      adminDatingStats.open_cards.top_regions.map((item) => (
+                        <span key={`open-region-${item.region}`} className="rounded-full bg-violet-50 px-2 py-1 text-[11px] text-violet-800">
+                          {item.region} {item.count}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-rose-200 bg-white p-4">
+                <p className="text-xs font-semibold text-rose-800">36시간 유료카드</p>
+                <p className="mt-2 text-2xl font-bold text-neutral-900">{adminDatingStats.paid_cards.total}</p>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-neutral-600">
+                  <p>승인 {adminDatingStats.paid_cards.approved}</p>
+                  <p>대기 {adminDatingStats.paid_cards.pending}</p>
+                  <p>거절 {adminDatingStats.paid_cards.rejected}</p>
+                  <p>만료 {adminDatingStats.paid_cards.expired}</p>
+                  <p>블러 {adminDatingStats.paid_cards.blur}</p>
+                  <p>공개 {adminDatingStats.paid_cards.public}</p>
+                </div>
+                <div className="mt-3 rounded-lg border border-rose-100 bg-rose-50/40 p-2 text-xs text-neutral-700">
+                  <p className="font-medium text-rose-800">지원서</p>
+                  <p className="mt-1">전체 {adminDatingStats.paid_cards.applications.total} · 대기 {adminDatingStats.paid_cards.applications.submitted}</p>
+                  <p className="mt-1">수락 {adminDatingStats.paid_cards.applications.accepted} · 거절 {adminDatingStats.paid_cards.applications.rejected} · 취소 {adminDatingStats.paid_cards.applications.canceled}</p>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-sky-200 bg-white p-4">
+                <p className="text-xs font-semibold text-sky-800">1:1 소개팅</p>
+                <p className="mt-2 text-2xl font-bold text-neutral-900">{adminDatingStats.one_on_one.cards.total}</p>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-neutral-600">
+                  <p>제출 {adminDatingStats.one_on_one.cards.submitted}</p>
+                  <p>검토중 {adminDatingStats.one_on_one.cards.reviewing}</p>
+                  <p>승인 {adminDatingStats.one_on_one.cards.approved}</p>
+                  <p>거절 {adminDatingStats.one_on_one.cards.rejected}</p>
+                  <p>남성 {adminDatingStats.one_on_one.cards.male}</p>
+                  <p>여성 {adminDatingStats.one_on_one.cards.female}</p>
+                </div>
+                <div className="mt-3 rounded-lg border border-sky-100 bg-sky-50/40 p-2 text-xs text-neutral-700">
+                  <p className="font-medium text-sky-800">매칭 상태</p>
+                  <p className="mt-1">전체 {adminDatingStats.one_on_one.matches.total} · 제안중 {adminDatingStats.one_on_one.matches.proposed}</p>
+                  <p className="mt-1">선택대기 {adminDatingStats.one_on_one.matches.source_selected} · 후보수락 {adminDatingStats.one_on_one.matches.candidate_accepted}</p>
+                  <p className="mt-1">상호수락 {adminDatingStats.one_on_one.matches.mutual_accepted} · 운영취소 {adminDatingStats.one_on_one.matches.admin_canceled}</p>
+                </div>
+                <div className="mt-3">
+                  <p className="text-xs font-medium text-neutral-700">승인 카드 상위 지역</p>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {adminDatingStats.one_on_one.cards.top_regions.length === 0 ? (
+                      <span className="text-xs text-neutral-500">집계 없음</span>
+                    ) : (
+                      adminDatingStats.one_on_one.cards.top_regions.map((item) => (
+                        <span key={`oneonone-region-${item.region}`} className="rounded-full bg-sky-50 px-2 py-1 text-[11px] text-sky-800">
+                          {item.region} {item.count}
+                        </span>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-3 lg:grid-cols-2">
+              <div className="rounded-xl border border-violet-200 bg-white p-4">
+                <p className="text-sm font-semibold text-violet-900">추가 노출/열람권 현황</p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <div className="rounded-lg border border-violet-100 bg-violet-50/40 p-3 text-xs text-neutral-700">
+                    <p className="font-medium text-violet-800">이상형 더보기</p>
+                    <p className="mt-2">활성 {adminDatingStats.boosts.more_view.active}</p>
+                    <p className="mt-1">대기 {adminDatingStats.boosts.more_view.pending}</p>
+                    <p className="mt-1">승인 {adminDatingStats.boosts.more_view.approved}</p>
+                    <p className="mt-1">거절 {adminDatingStats.boosts.more_view.rejected}</p>
+                  </div>
+                  <div className="rounded-lg border border-violet-100 bg-violet-50/40 p-3 text-xs text-neutral-700">
+                    <p className="font-medium text-violet-800">가까운 이상형</p>
+                    <p className="mt-2">활성 {adminDatingStats.boosts.city_view.active}</p>
+                    <p className="mt-1">대기 {adminDatingStats.boosts.city_view.pending}</p>
+                    <p className="mt-1">승인 {adminDatingStats.boosts.city_view.approved}</p>
+                    <p className="mt-1">거절 {adminDatingStats.boosts.city_view.rejected}</p>
+                  </div>
+                </div>
+              </div>
+
+              <div className="rounded-xl border border-violet-200 bg-white p-4">
+                <p className="text-sm font-semibold text-violet-900">1:1 매칭 흐름 상세</p>
+                <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-neutral-700">
+                  <div className="rounded-lg border border-violet-100 bg-violet-50/40 p-3">제안중 {adminDatingStats.one_on_one.matches.proposed}</div>
+                  <div className="rounded-lg border border-violet-100 bg-violet-50/40 p-3">선택대기 {adminDatingStats.one_on_one.matches.source_selected}</div>
+                  <div className="rounded-lg border border-violet-100 bg-violet-50/40 p-3">후보수락 {adminDatingStats.one_on_one.matches.candidate_accepted}</div>
+                  <div className="rounded-lg border border-violet-100 bg-violet-50/40 p-3">상호수락 {adminDatingStats.one_on_one.matches.mutual_accepted}</div>
+                  <div className="rounded-lg border border-violet-100 bg-violet-50/40 p-3">후보거절 {adminDatingStats.one_on_one.matches.candidate_rejected}</div>
+                  <div className="rounded-lg border border-violet-100 bg-violet-50/40 p-3">최종거절 {adminDatingStats.one_on_one.matches.source_declined}</div>
+                  <div className="rounded-lg border border-violet-100 bg-violet-50/40 p-3">건너뜀 {adminDatingStats.one_on_one.matches.source_skipped}</div>
+                  <div className="rounded-lg border border-violet-100 bg-violet-50/40 p-3">운영취소 {adminDatingStats.one_on_one.matches.admin_canceled}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          )}
 
           {adminManageTab === "open_cards" && (
           <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
@@ -3547,6 +3847,11 @@ export default function MyPage() {
                           이상형: {card.ideal_type}
                         </p>
                       )}
+                      {card.strengths_text && (
+                        <p className="mt-1 text-xs text-neutral-700 whitespace-pre-wrap break-words">
+                          한줄 소개: {card.strengths_text}
+                        </p>
+                      )}
                       {card.published_at && (
                         <p className="mt-1 text-xs text-emerald-700">
                           공개 시작: {new Date(card.published_at).toLocaleString("ko-KR")}
@@ -3565,7 +3870,16 @@ export default function MyPage() {
                       <p className="mt-1 text-xs text-neutral-500 break-all">
                         사진 경로: {Array.isArray(card.photo_paths) ? card.photo_paths.join(", ") : "-"}
                       </p>
-                      <div className="mt-2">
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            editingAdminOpenCardId === card.id ? closeAdminOpenCardEditor() : openAdminOpenCardEditor(card)
+                          }
+                          className="h-8 rounded-md border border-violet-200 bg-violet-50 px-3 text-xs font-medium text-violet-800"
+                        >
+                          {editingAdminOpenCardId === card.id ? "수정 닫기" : "내용 수정"}
+                        </button>
                         <button
                           type="button"
                           onClick={() => void handleAdminDeleteOpenCard(card.id)}
@@ -3574,6 +3888,164 @@ export default function MyPage() {
                           삭제
                         </button>
                       </div>
+                      {editingAdminOpenCardId === card.id && adminOpenCardDraft ? (
+                        <div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/70 p-3">
+                          <p className="text-xs font-semibold text-violet-800">관리자 카드 수정</p>
+                          <div className="mt-3 grid gap-3 md:grid-cols-2">
+                            <label className="text-xs text-neutral-700">
+                              닉네임
+                              <input
+                                value={adminOpenCardDraft.display_nickname}
+                                onChange={(e) =>
+                                  setAdminOpenCardDraft((prev) =>
+                                    prev ? { ...prev, display_nickname: e.target.value } : prev
+                                  )
+                                }
+                                className="mt-1 h-9 w-full rounded-md border border-violet-200 bg-white px-3 text-sm text-neutral-900"
+                              />
+                            </label>
+                            <label className="text-xs text-neutral-700">
+                              인스타 ID
+                              <input
+                                value={adminOpenCardDraft.instagram_id}
+                                onChange={(e) =>
+                                  setAdminOpenCardDraft((prev) =>
+                                    prev ? { ...prev, instagram_id: e.target.value } : prev
+                                  )
+                                }
+                                className="mt-1 h-9 w-full rounded-md border border-violet-200 bg-white px-3 text-sm text-neutral-900"
+                              />
+                            </label>
+                            <label className="text-xs text-neutral-700">
+                              나이
+                              <input
+                                value={adminOpenCardDraft.age}
+                                onChange={(e) =>
+                                  setAdminOpenCardDraft((prev) => (prev ? { ...prev, age: e.target.value } : prev))
+                                }
+                                inputMode="numeric"
+                                className="mt-1 h-9 w-full rounded-md border border-violet-200 bg-white px-3 text-sm text-neutral-900"
+                              />
+                            </label>
+                            <label className="text-xs text-neutral-700">
+                              키(cm)
+                              <input
+                                value={adminOpenCardDraft.height_cm}
+                                onChange={(e) =>
+                                  setAdminOpenCardDraft((prev) =>
+                                    prev ? { ...prev, height_cm: e.target.value } : prev
+                                  )
+                                }
+                                inputMode="numeric"
+                                className="mt-1 h-9 w-full rounded-md border border-violet-200 bg-white px-3 text-sm text-neutral-900"
+                              />
+                            </label>
+                            <label className="text-xs text-neutral-700">
+                              지역
+                              <input
+                                value={adminOpenCardDraft.region}
+                                onChange={(e) =>
+                                  setAdminOpenCardDraft((prev) => (prev ? { ...prev, region: e.target.value } : prev))
+                                }
+                                className="mt-1 h-9 w-full rounded-md border border-violet-200 bg-white px-3 text-sm text-neutral-900"
+                              />
+                            </label>
+                            <label className="text-xs text-neutral-700">
+                              직업
+                              <input
+                                value={adminOpenCardDraft.job}
+                                onChange={(e) =>
+                                  setAdminOpenCardDraft((prev) => (prev ? { ...prev, job: e.target.value } : prev))
+                                }
+                                className="mt-1 h-9 w-full rounded-md border border-violet-200 bg-white px-3 text-sm text-neutral-900"
+                              />
+                            </label>
+                            <label className="text-xs text-neutral-700">
+                              운동 경력(년)
+                              <input
+                                value={adminOpenCardDraft.training_years}
+                                onChange={(e) =>
+                                  setAdminOpenCardDraft((prev) =>
+                                    prev ? { ...prev, training_years: e.target.value } : prev
+                                  )
+                                }
+                                inputMode="numeric"
+                                className="mt-1 h-9 w-full rounded-md border border-violet-200 bg-white px-3 text-sm text-neutral-900"
+                              />
+                            </label>
+                            <label className="text-xs text-neutral-700">
+                              3대 중량
+                              <input
+                                value={adminOpenCardDraft.total_3lift}
+                                onChange={(e) =>
+                                  setAdminOpenCardDraft((prev) =>
+                                    prev ? { ...prev, total_3lift: e.target.value } : prev
+                                  )
+                                }
+                                inputMode="numeric"
+                                className="mt-1 h-9 w-full rounded-md border border-violet-200 bg-white px-3 text-sm text-neutral-900"
+                              />
+                            </label>
+                            <label className="text-xs text-neutral-700">
+                              상위 퍼센트
+                              <input
+                                value={adminOpenCardDraft.percent_all}
+                                onChange={(e) =>
+                                  setAdminOpenCardDraft((prev) =>
+                                    prev ? { ...prev, percent_all: e.target.value } : prev
+                                  )
+                                }
+                                inputMode="decimal"
+                                className="mt-1 h-9 w-full rounded-md border border-violet-200 bg-white px-3 text-sm text-neutral-900"
+                              />
+                            </label>
+                          </div>
+                          <label className="mt-3 block text-xs text-neutral-700">
+                            한줄 소개
+                            <textarea
+                              value={adminOpenCardDraft.strengths_text}
+                              onChange={(e) =>
+                                setAdminOpenCardDraft((prev) =>
+                                  prev ? { ...prev, strengths_text: e.target.value } : prev
+                                )
+                              }
+                              rows={3}
+                              className="mt-1 w-full rounded-md border border-violet-200 bg-white px-3 py-2 text-sm text-neutral-900"
+                            />
+                          </label>
+                          <label className="mt-3 block text-xs text-neutral-700">
+                            이상형
+                            <textarea
+                              value={adminOpenCardDraft.ideal_type}
+                              onChange={(e) =>
+                                setAdminOpenCardDraft((prev) =>
+                                  prev ? { ...prev, ideal_type: e.target.value } : prev
+                                )
+                              }
+                              rows={4}
+                              className="mt-1 w-full rounded-md border border-violet-200 bg-white px-3 py-2 text-sm text-neutral-900"
+                            />
+                          </label>
+                          <div className="mt-3 flex flex-wrap gap-2">
+                            <button
+                              type="button"
+                              onClick={() => void handleAdminSaveOpenCard(card.id)}
+                              disabled={savingAdminOpenCard}
+                              className="h-9 rounded-md bg-violet-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                            >
+                              {savingAdminOpenCard ? "저장 중..." : "수정 저장"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={closeAdminOpenCardEditor}
+                              disabled={savingAdminOpenCard}
+                              className="h-9 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 disabled:opacity-50"
+                            >
+                              취소
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
                     </div>
                   ))}
                 </div>
