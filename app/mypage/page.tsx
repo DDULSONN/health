@@ -2762,12 +2762,50 @@ export default function MyPage() {
                           if (!card) return null;
                           return (
                             <div key={match.id} className="rounded-lg border border-emerald-200 bg-white p-3">
-                              <p className="text-sm font-medium text-neutral-900">
-                                {card.name} / {card.age ?? "-"}세 / {card.region}
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-medium text-neutral-900">
+                                  {card.name} / {card.age ?? "-"}세 / {card.region}
+                                </p>
+                                <span
+                                  className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                    oneOnOneMatchStateColor[match.state]
+                                  }`}
+                                >
+                                  {oneOnOneMatchStateText[match.state]}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-xs text-neutral-600">
+                                {card.height_cm}cm / {card.job} / {new Date(match.updated_at).toLocaleString("ko-KR")}
                               </p>
                               <p className="mt-1 text-xs text-emerald-700">
                                 양쪽 수락이 완료되었습니다. 관리자 페이지에서 최종 정리됩니다.
                               </p>
+                              <p className="mt-2 text-xs text-neutral-700 whitespace-pre-wrap break-words">{card.intro_text}</p>
+                              <p className="mt-2 text-xs text-neutral-700">장점: {card.strengths_text}</p>
+                              <p className="mt-1 text-xs text-neutral-700">원하는 점: {card.preferred_partner_text}</p>
+                              {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
+                                <div className="mt-2 grid grid-cols-2 gap-2">
+                                  {card.photo_signed_urls.map((url, idx) => (
+                                    <a
+                                      key={`${match.id}-mutual-${idx}`}
+                                      href={url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
+                                    >
+                                      <div className="flex h-24 w-full items-center justify-center bg-neutral-50">
+                                        <img
+                                          src={url}
+                                          alt={`쌍방 수락 완료 상대 사진 ${idx + 1}`}
+                                          loading="lazy"
+                                          decoding="async"
+                                          className="max-h-full max-w-full object-contain"
+                                        />
+                                      </div>
+                                    </a>
+                                  ))}
+                                </div>
+                              )}
                             </div>
                           );
                         })}
