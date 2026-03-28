@@ -1353,6 +1353,11 @@ export default function MyPage() {
     }
   };
 
+  const handleDatingExport = (kind: string) => {
+    if (typeof window === "undefined") return;
+    window.open(`/api/admin/dating/export?kind=${encodeURIComponent(kind)}`, "_blank", "noopener,noreferrer");
+  };
+
   const handleOneOnOneMatchAction = async (
     matchId: string,
     action: "select_candidate" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject"
@@ -3463,6 +3468,66 @@ export default function MyPage() {
 
           {adminManageTab === "dating_stats" && adminDatingStats && (
           <div className="mb-3 space-y-3">
+            <div className="rounded-xl border border-violet-200 bg-white p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-violet-900">소개팅 데이터 내보내기</p>
+                  <p className="mt-1 text-xs text-neutral-600">CSV로 내려받으면 엑셀에서 바로 열 수 있습니다.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => handleDatingExport("open_cards")}
+                    className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 hover:bg-violet-50"
+                  >
+                    오픈카드 CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDatingExport("paid_cards")}
+                    className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 hover:bg-violet-50"
+                  >
+                    유료카드 CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDatingExport("ideal_preferences")}
+                    className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 hover:bg-violet-50"
+                  >
+                    이상형 분석 CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDatingExport("one_on_one_cards")}
+                    className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 hover:bg-violet-50"
+                  >
+                    1:1 카드 CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDatingExport("one_on_one_matches")}
+                    className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 hover:bg-violet-50"
+                  >
+                    1:1 매칭 CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDatingExport("more_view_requests")}
+                    className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 hover:bg-violet-50"
+                  >
+                    이상형 더보기 CSV
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleDatingExport("city_view_requests")}
+                    className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 hover:bg-violet-50"
+                  >
+                    가까운 이상형 CSV
+                  </button>
+                </div>
+              </div>
+            </div>
+
             <div className="grid gap-3 lg:grid-cols-3">
               <div className="rounded-xl border border-violet-200 bg-white p-4">
                 <p className="text-xs font-semibold text-violet-800">오픈카드</p>
