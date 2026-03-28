@@ -375,6 +375,7 @@ type AdminApplicationSort = "newest" | "oldest" | "submitted_first" | "accepted_
 type AdminDataView = "cards" | "applications";
 type AdminManageTab =
   | "dating_stats"
+  | "dating_insights"
   | "open_cards"
   | "apply_credits"
   | "more_view"
@@ -511,6 +512,74 @@ type AdminDatingStats = {
   };
 };
 
+type DatingInsightSignalKey =
+  | "kindness"
+  | "conversation"
+  | "fitness"
+  | "clean_lifestyle"
+  | "stability"
+  | "height_body"
+  | "appearance"
+  | "habits";
+
+type AdminDatingInsights = {
+  generated_at: string;
+  totals: {
+    total: number;
+    female: number;
+    male: number;
+    by_source: {
+      open_card: number;
+      paid_card: number;
+      one_on_one: number;
+    };
+  };
+  female_preference: {
+    response_count: number;
+    top_signals: Array<{
+      key: DatingInsightSignalKey;
+      count: number;
+      share_pct: number;
+    }>;
+    top_tokens: Array<{
+      token: string;
+      count: number;
+      share_pct: number;
+    }>;
+  };
+  male_preference: {
+    response_count: number;
+    top_signals: Array<{
+      key: DatingInsightSignalKey;
+      count: number;
+      share_pct: number;
+    }>;
+    top_tokens: Array<{
+      token: string;
+      count: number;
+      share_pct: number;
+    }>;
+  };
+  contrast: Array<{
+    key: DatingInsightSignalKey;
+    female_share_pct: number;
+    male_share_pct: number;
+    gap_pct: number;
+    common_share_pct: number;
+  }>;
+};
+
+const DATING_INSIGHT_SIGNAL_LABELS: Record<DatingInsightSignalKey, string> = {
+  kindness: "다정함/배려",
+  conversation: "대화/티키타카",
+  fitness: "운동/자기관리",
+  clean_lifestyle: "비흡연/깔끔함",
+  stability: "성실/안정감",
+  height_body: "키/체격",
+  appearance: "외모/인상",
+  habits: "생활습관/루틴",
+};
+
 type AdminAccountDeletionAudit = {
   id: string;
   auth_user_id: string;
@@ -630,6 +699,7 @@ export default function MyPage() {
   const [adminMoreViewRequests, setAdminMoreViewRequests] = useState<AdminMoreViewRequest[]>([]);
   const [adminCityViewRequests, setAdminCityViewRequests] = useState<AdminCityViewRequest[]>([]);
   const [adminDatingStats, setAdminDatingStats] = useState<AdminDatingStats | null>(null);
+  const [adminDatingInsights, setAdminDatingInsights] = useState<AdminDatingInsights | null>(null);
   const [adminAccountDeletionAudits, setAdminAccountDeletionAudits] = useState<AdminAccountDeletionAudit[]>([]);
   const [adminCityViewSearch, setAdminCityViewSearch] = useState("");
   const [adminBodyBattleOverview, setAdminBodyBattleOverview] = useState<AdminBodyBattleOverview | null>(null);
@@ -869,6 +939,7 @@ export default function MyPage() {
           if (adminFlag) {
             const [
               datingStatsRes,
+              datingInsightsRes,
               overviewRes,
               ordersRes,
               paidAppsRes,
@@ -878,6 +949,7 @@ export default function MyPage() {
               accountDeletionAuditsRes,
             ] = await Promise.all([
               fetch("/api/admin/dating/stats", { cache: "no-store" }),
+              fetch("/api/admin/dating/insights", { cache: "no-store" }),
               fetch("/api/dating/cards/admin/overview", { cache: "no-store" }),
               fetch("/api/admin/dating/apply-credits/orders?status=pending", { cache: "no-store" }),
               fetch("/api/admin/dating/paid/applications", { cache: "no-store" }),
@@ -895,6 +967,9 @@ export default function MyPage() {
               error?: string;
               stats?: AdminDatingStats;
             };
+            const datingInsightsBody = (await datingInsightsRes.json().catch(() => ({}))) as
+              | (AdminDatingInsights & { error?: string })
+              | { error?: string };
             const ordersBody = (await ordersRes.json().catch(() => ({}))) as {
               error?: string;
               items?: AdminApplyCreditOrder[];
@@ -927,6 +1002,9 @@ export default function MyPage() {
             if (!datingStatsRes.ok) {
               throw new Error(datingStatsBody.error ?? "소개팅 통계를 불러오지 못했습니다.");
             }
+            if (!datingInsightsRes.ok) {
+              throw new Error(datingInsightsBody.error ?? "이상형 인사이트를 불러오지 못했습니다.");
+            }
             if (!ordersRes.ok) {
               throw new Error(ordersBody.error ?? "지원권 주문 목록을 불러오지 못했습니다.");
             }
@@ -935,6 +1013,11 @@ export default function MyPage() {
             }
             if (isMounted) {
               setAdminDatingStats(datingStatsBody.stats ?? null);
+              setAdminDatingInsights(
+                "totals" in datingInsightsBody && "female_preference" in datingInsightsBody
+                  ? datingInsightsBody
+                  : null
+              );
               setAdminOpenCards(overviewBody.cards ?? []);
               setAdminOpenCardApplications(overviewBody.applications ?? []);
               setAdminPaidCardApplications(paidAppsBody.items ?? []);
@@ -952,6 +1035,7 @@ export default function MyPage() {
             }
           } else {
             setAdminDatingStats(null);
+            setAdminDatingInsights(null);
             setAdminOpenCards([]);
             setAdminOpenCardApplications([]);
             setAdminPaidCardApplications([]);
@@ -1357,6 +1441,12 @@ export default function MyPage() {
     if (typeof window === "undefined") return;
     window.open(`/api/admin/dating/export?kind=${encodeURIComponent(kind)}`, "_blank", "noopener,noreferrer");
   };
+
+  const topSignalLabels = (signals: Array<{ key: DatingInsightSignalKey }>, limit = 3) =>
+    signals
+      .slice(0, limit)
+      .map((item) => DATING_INSIGHT_SIGNAL_LABELS[item.key])
+      .join(", ");
 
   const handleOneOnOneMatchAction = async (
     matchId: string,
@@ -3383,6 +3473,17 @@ export default function MyPage() {
             </button>
             <button
               type="button"
+              onClick={() => setAdminManageTab("dating_insights")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "dating_insights"
+                  ? "border-violet-600 bg-violet-600 text-white"
+                  : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              이상형 인사이트
+            </button>
+            <button
+              type="button"
               onClick={() => setAdminManageTab("open_cards")}
               className={`h-8 rounded-md border px-3 text-xs font-medium ${
                 adminManageTab === "open_cards" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
@@ -3649,6 +3750,212 @@ export default function MyPage() {
               </div>
             </div>
           </div>
+          )}
+
+          {adminManageTab === "dating_insights" && adminDatingInsights && (
+            <div className="mb-3 space-y-4">
+              <div className="rounded-xl border border-violet-200 bg-white p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-semibold text-violet-900">인스타 캡처용 이상형 인사이트</p>
+                    <p className="mt-1 text-xs text-neutral-600">
+                      4개 카드만 따로 캡처하면 바로 게시물 슬라이드로 쓰기 좋게 정리했습니다.
+                    </p>
+                  </div>
+                  <p className="text-xs text-neutral-500">
+                    기준 시각 {new Date(adminDatingInsights.generated_at).toLocaleString("ko-KR")}
+                  </p>
+                </div>
+              </div>
+
+              <section className="overflow-hidden rounded-[28px] border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-rose-50 p-6 shadow-sm">
+                <div className="flex items-start justify-between gap-4">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-700">Slide 1</p>
+                    <h3 className="mt-2 text-2xl font-black text-neutral-900">짐툴 소개팅 이상형 데이터 총정리</h3>
+                    <p className="mt-2 text-sm text-neutral-600">
+                      오픈카드, 유료카드, 1:1 소개팅에 적힌 이상형 문구를 합쳐 남녀 선호 포인트를 비교했습니다.
+                    </p>
+                  </div>
+                  <div className="rounded-full bg-white/80 px-4 py-2 text-right shadow-sm">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-700">responses</p>
+                    <p className="text-2xl font-black text-neutral-900">
+                      {adminDatingInsights.totals.total.toLocaleString("ko-KR")}
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-6 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-2xl bg-white/90 p-4 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">여성 응답</p>
+                    <p className="mt-2 text-3xl font-black text-neutral-900">
+                      {adminDatingInsights.totals.female.toLocaleString("ko-KR")}
+                    </p>
+                    <p className="mt-2 text-sm text-neutral-600">
+                      핵심 키워드: {topSignalLabels(adminDatingInsights.female_preference.top_signals)}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-white/90 p-4 shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-neutral-500">남성 응답</p>
+                    <p className="mt-2 text-3xl font-black text-neutral-900">
+                      {adminDatingInsights.totals.male.toLocaleString("ko-KR")}
+                    </p>
+                    <p className="mt-2 text-sm text-neutral-600">
+                      핵심 키워드: {topSignalLabels(adminDatingInsights.male_preference.top_signals)}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl bg-neutral-900 p-4 text-white shadow-sm">
+                    <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white/70">데이터 비중</p>
+                    <div className="mt-3 space-y-2 text-sm">
+                      <p>오픈카드 {adminDatingInsights.totals.by_source.open_card.toLocaleString("ko-KR")}</p>
+                      <p>유료카드 {adminDatingInsights.totals.by_source.paid_card.toLocaleString("ko-KR")}</p>
+                      <p>1:1 소개팅 {adminDatingInsights.totals.by_source.one_on_one.toLocaleString("ko-KR")}</p>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="overflow-hidden rounded-[28px] border border-rose-200 bg-gradient-to-br from-rose-50 via-white to-pink-50 p-6 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-rose-700">Slide 2</p>
+                <h3 className="mt-2 text-2xl font-black text-neutral-900">여성은 어떤 사람을 선호했을까</h3>
+                <p className="mt-2 text-sm text-neutral-600">
+                  여성 응답 {adminDatingInsights.female_preference.response_count.toLocaleString("ko-KR")}건 기준입니다.
+                </p>
+
+                <div className="mt-6 grid gap-4 lg:grid-cols-[1.3fr_0.9fr]">
+                  <div className="rounded-2xl bg-white/90 p-4 shadow-sm">
+                    <p className="text-sm font-semibold text-rose-900">가장 많이 나온 선호 포인트</p>
+                    <div className="mt-4 space-y-3">
+                      {adminDatingInsights.female_preference.top_signals.slice(0, 5).map((signal, index) => (
+                        <div key={`female-signal-${signal.key}`} className="rounded-2xl border border-rose-100 bg-rose-50/60 p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-neutral-900">
+                              {index + 1}. {DATING_INSIGHT_SIGNAL_LABELS[signal.key]}
+                            </p>
+                            <p className="text-sm font-bold text-rose-700">{signal.share_pct}%</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl bg-neutral-900 p-4 text-white shadow-sm">
+                    <p className="text-sm font-semibold text-white">자주 함께 적은 표현</p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {adminDatingInsights.female_preference.top_tokens.slice(0, 10).map((token) => (
+                        <span
+                          key={`female-token-${token.token}`}
+                          className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-medium text-white"
+                        >
+                          {token.token}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mt-6 rounded-2xl bg-white/10 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/70">한줄 요약</p>
+                      <p className="mt-2 text-base font-semibold leading-7 text-white">
+                        여성은 {topSignalLabels(adminDatingInsights.female_preference.top_signals)} 성향을 특히 자주 언급했습니다.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="overflow-hidden rounded-[28px] border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-cyan-50 p-6 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-sky-700">Slide 3</p>
+                <h3 className="mt-2 text-2xl font-black text-neutral-900">남성은 어떤 사람을 선호했을까</h3>
+                <p className="mt-2 text-sm text-neutral-600">
+                  남성 응답 {adminDatingInsights.male_preference.response_count.toLocaleString("ko-KR")}건 기준입니다.
+                </p>
+
+                <div className="mt-6 grid gap-4 lg:grid-cols-[1.3fr_0.9fr]">
+                  <div className="rounded-2xl bg-white/90 p-4 shadow-sm">
+                    <p className="text-sm font-semibold text-sky-900">가장 많이 나온 선호 포인트</p>
+                    <div className="mt-4 space-y-3">
+                      {adminDatingInsights.male_preference.top_signals.slice(0, 5).map((signal, index) => (
+                        <div key={`male-signal-${signal.key}`} className="rounded-2xl border border-sky-100 bg-sky-50/60 p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-neutral-900">
+                              {index + 1}. {DATING_INSIGHT_SIGNAL_LABELS[signal.key]}
+                            </p>
+                            <p className="text-sm font-bold text-sky-700">{signal.share_pct}%</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-2xl bg-neutral-900 p-4 text-white shadow-sm">
+                    <p className="text-sm font-semibold text-white">자주 함께 적은 표현</p>
+                    <div className="mt-4 flex flex-wrap gap-2">
+                      {adminDatingInsights.male_preference.top_tokens.slice(0, 10).map((token) => (
+                        <span
+                          key={`male-token-${token.token}`}
+                          className="rounded-full bg-white/10 px-3 py-1.5 text-sm font-medium text-white"
+                        >
+                          {token.token}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mt-6 rounded-2xl bg-white/10 p-4">
+                      <p className="text-xs font-semibold uppercase tracking-[0.16em] text-white/70">한줄 요약</p>
+                      <p className="mt-2 text-base font-semibold leading-7 text-white">
+                        남성은 {topSignalLabels(adminDatingInsights.male_preference.top_signals)} 성향을 특히 자주 언급했습니다.
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              </section>
+
+              <section className="overflow-hidden rounded-[28px] border border-violet-200 bg-gradient-to-br from-violet-50 via-white to-fuchsia-50 p-6 shadow-sm">
+                <p className="text-xs font-semibold uppercase tracking-[0.24em] text-violet-700">Slide 4</p>
+                <h3 className="mt-2 text-2xl font-black text-neutral-900">남녀 공통점과 차이점</h3>
+                <p className="mt-2 text-sm text-neutral-600">
+                  같은 요소를 좋아하는 지점과, 성별별로 더 많이 언급한 요소를 함께 봤습니다.
+                </p>
+
+                <div className="mt-6 grid gap-4 lg:grid-cols-2">
+                  <div className="rounded-2xl bg-white/90 p-4 shadow-sm">
+                    <p className="text-sm font-semibold text-violet-900">공통으로 많이 언급한 요소</p>
+                    <div className="mt-4 space-y-3">
+                      {adminDatingInsights.contrast
+                        .slice()
+                        .sort((a, b) => b.common_share_pct - a.common_share_pct)
+                        .slice(0, 4)
+                        .map((item) => (
+                          <div key={`common-${item.key}`} className="rounded-2xl border border-violet-100 bg-violet-50/60 p-3">
+                            <p className="text-sm font-semibold text-neutral-900">
+                              {DATING_INSIGHT_SIGNAL_LABELS[item.key]}
+                            </p>
+                            <p className="mt-1 text-xs text-neutral-600">
+                              여성 {item.female_share_pct}% · 남성 {item.male_share_pct}%
+                            </p>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl bg-neutral-900 p-4 text-white shadow-sm">
+                    <p className="text-sm font-semibold text-white">차이가 큰 포인트</p>
+                    <div className="mt-4 space-y-3">
+                      {adminDatingInsights.contrast.slice(0, 4).map((item) => (
+                        <div key={`gap-${item.key}`} className="rounded-2xl bg-white/10 p-3">
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-sm font-semibold text-white">
+                              {DATING_INSIGHT_SIGNAL_LABELS[item.key]}
+                            </p>
+                            <p className="text-xs font-bold text-white/80">
+                              격차 {Math.abs(item.gap_pct).toFixed(1)}%p
+                            </p>
+                          </div>
+                          <p className="mt-1 text-xs text-white/70">
+                            {item.gap_pct >= 0 ? "여성 응답에서 더 자주 언급" : "남성 응답에서 더 자주 언급"}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
           )}
 
           {adminManageTab === "open_cards" && (
