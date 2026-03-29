@@ -208,7 +208,17 @@ export default function SignupPage() {
 
           <p className="text-xs text-neutral-500 mt-1">닉네임은 2~12자, 한글/영문/숫자/_만 사용할 수 있습니다.</p>
           <p className="text-xs text-neutral-500">비밀번호는 8자 이상이어야 합니다.</p>
-          <p className="text-xs text-neutral-400">가입 시 이용약관 및 개인정보처리방침에 동의한 것으로 간주됩니다.</p>
+          <p className="text-xs text-neutral-400">
+            가입 시{" "}
+            <Link href="/terms" className="underline underline-offset-2">
+              이용약관
+            </Link>
+            {" "}및{" "}
+            <Link href="/privacy" className="underline underline-offset-2">
+              개인정보처리방침
+            </Link>
+            에 동의한 것으로 간주됩니다.
+          </p>
 
           <button
             type="button"

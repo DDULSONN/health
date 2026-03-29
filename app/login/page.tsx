@@ -413,7 +413,17 @@ function LoginContent() {
         처음 오셨나요? <Link href="/signup" className="text-emerald-700 underline">이메일로 회원가입</Link>
       </div>
 
-      <p className="text-xs text-neutral-400 mt-4 text-center">로그인하면 서비스 이용약관 및 개인정보처리방침에 동의한 것으로 간주됩니다.</p>
+      <p className="mt-4 text-center text-xs text-neutral-400">
+        로그인하면{" "}
+        <Link href="/terms" className="underline underline-offset-2">
+          서비스 이용약관
+        </Link>
+        {" "}및{" "}
+        <Link href="/privacy" className="underline underline-offset-2">
+          개인정보처리방침
+        </Link>
+        에 동의한 것으로 간주됩니다.
+      </p>
     </main>
   );
 }
