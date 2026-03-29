@@ -706,6 +706,10 @@ export default function MyPage() {
   const [adminDatingInsights, setAdminDatingInsights] = useState<AdminDatingInsights | null>(null);
   const [adminAccountDeletionAudits, setAdminAccountDeletionAudits] = useState<AdminAccountDeletionAudit[]>([]);
   const [adminCityViewSearch, setAdminCityViewSearch] = useState("");
+  const [adminCityViewUnblockIdentifier, setAdminCityViewUnblockIdentifier] = useState("");
+  const [adminCityViewUnblockLoading, setAdminCityViewUnblockLoading] = useState(false);
+  const [adminCityViewUnblockInfo, setAdminCityViewUnblockInfo] = useState("");
+  const [adminCityViewUnblockError, setAdminCityViewUnblockError] = useState("");
   const [adminBodyBattleOverview, setAdminBodyBattleOverview] = useState<AdminBodyBattleOverview | null>(null);
   const [runningBodyBattleAdminTask, setRunningBodyBattleAdminTask] = useState(false);
   const [approvingOrderIds, setApprovingOrderIds] = useState<string[]>([]);
@@ -1829,6 +1833,49 @@ export default function MyPage() {
       alert(body.message ?? "승인대기 요청을 정리했습니다.");
     } finally {
       setProcessingCityViewIds((prev) => prev.filter((id) => id !== requestId));
+    }
+  };
+
+  const handleAdminUnblockAllCityViewPending = async () => {
+    const identifier = adminCityViewUnblockIdentifier.trim();
+    setAdminCityViewUnblockError("");
+    setAdminCityViewUnblockInfo("");
+
+    if (!identifier) {
+      setAdminCityViewUnblockError("닉네임 또는 사용자 ID를 입력해주세요.");
+      return;
+    }
+
+    if (!confirm("이 사용자의 가까운 이상형 승인대기를 전체 해제할까요? 현재 pending만 정리되고, 이미 승인된 접근권은 유지됩니다.")) {
+      return;
+    }
+
+    setAdminCityViewUnblockLoading(true);
+    try {
+      const res = await fetch("/api/admin/dating/cards/city-view/unblock", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ identifier }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+      };
+
+      if (!res.ok || !body.ok) {
+        setAdminCityViewUnblockError(body.message ?? "전체 막힘 해제에 실패했습니다.");
+        return;
+      }
+
+      const reloadRes = await fetch("/api/admin/dating/cards/city-view/requests?status=pending", { cache: "no-store" });
+      const reloadBody = (await reloadRes.json().catch(() => ({}))) as { items?: AdminCityViewRequest[] };
+      if (reloadRes.ok) {
+        setAdminCityViewRequests(reloadBody.items ?? []);
+      }
+      setAdminCityViewUnblockInfo(body.message ?? "전체 막힘을 해제했습니다.");
+      setAdminCityViewUnblockIdentifier("");
+    } finally {
+      setAdminCityViewUnblockLoading(false);
     }
   };
 
@@ -4148,6 +4195,35 @@ export default function MyPage() {
               <p className="text-xs font-semibold text-violet-800">
                 내 가까운 이상형 승인 대기 {adminCityViewRequests.length}건
               </p>
+              <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
+                <p className="text-xs font-semibold text-amber-900">닉네임으로 전체 막힘 해제</p>
+                <p className="mt-1 text-[11px] text-amber-800">
+                  해당 사용자의 가까운 이상형 `pending`을 전부 정리합니다. 이미 승인된 접근권은 건드리지 않습니다.
+                </p>
+                <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    type="text"
+                    value={adminCityViewUnblockIdentifier}
+                    onChange={(e) => setAdminCityViewUnblockIdentifier(e.target.value)}
+                    placeholder="닉네임 또는 사용자 ID"
+                    className="h-9 w-full rounded-lg border border-amber-200 bg-white px-3 text-xs text-neutral-900 outline-none ring-0 placeholder:text-neutral-400"
+                  />
+                  <button
+                    type="button"
+                    disabled={adminCityViewUnblockLoading}
+                    onClick={() => void handleAdminUnblockAllCityViewPending()}
+                    className="h-9 shrink-0 rounded-lg bg-amber-500 px-3 text-xs font-medium text-white disabled:opacity-50"
+                  >
+                    {adminCityViewUnblockLoading ? "정리 중..." : "전체 막힘 해제"}
+                  </button>
+                </div>
+                {adminCityViewUnblockError ? (
+                  <p className="mt-2 text-[11px] text-rose-600">{adminCityViewUnblockError}</p>
+                ) : null}
+                {adminCityViewUnblockInfo ? (
+                  <p className="mt-2 text-[11px] text-emerald-700">{adminCityViewUnblockInfo}</p>
+                ) : null}
+              </div>
               <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <input
                   type="text"

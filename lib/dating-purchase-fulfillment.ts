@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { DATING_PAID_FIXED_MS } from "@/lib/dating-paid";
+import { extractProvinceFromRegion } from "@/lib/region-city";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -274,13 +275,14 @@ type ApproveCityViewRequestOptions = {
 export async function approveCityViewRequest(admin: AdminClient, options: ApproveCityViewRequestOptions) {
   const accessHours = options.accessHours ?? 3;
   const bonusCredits = options.bonusCredits ?? 1;
+  const reviewedAt = new Date().toISOString();
   const accessExpiresAt = new Date(Date.now() + accessHours * 60 * 60 * 1000).toISOString();
   const updateRes = await admin
     .from("dating_city_view_requests")
     .update({
       status: "approved",
       note: options.note ?? null,
-      reviewed_at: new Date().toISOString(),
+      reviewed_at: reviewedAt,
       reviewed_by_user_id: options.reviewedByUserId,
       access_expires_at: accessExpiresAt,
     })
@@ -296,6 +298,43 @@ export async function approveCityViewRequest(admin: AdminClient, options: Approv
     return null;
   }
 
+  const province = normalizeCityProvince(updateRes.data.city);
+  if (province) {
+    const pendingRes = await admin
+      .from("dating_city_view_requests")
+      .select("id,city")
+      .eq("user_id", updateRes.data.user_id)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(200);
+
+    if (pendingRes.error) {
+      throw pendingRes.error;
+    }
+
+    const staleIds = (pendingRes.data ?? [])
+      .filter((row) => row.id !== updateRes.data?.id)
+      .filter((row) => normalizeCityProvince(row.city) === province)
+      .map((row) => row.id);
+
+    if (staleIds.length > 0) {
+      const cleanupRes = await admin
+        .from("dating_city_view_requests")
+        .update({
+          status: "rejected",
+          note: options.note ?? "stale pending cleanup",
+          reviewed_at: reviewedAt,
+          reviewed_by_user_id: options.reviewedByUserId,
+          access_expires_at: null,
+        })
+        .in("id", staleIds);
+
+      if (cleanupRes.error) {
+        throw cleanupRes.error;
+      }
+    }
+  }
+
   const creditGrant = bonusCredits > 0 ? await grantApplyCredits(admin, updateRes.data.user_id, bonusCredits) : null;
   return {
     ...updateRes.data,
@@ -309,13 +348,19 @@ type RejectCityViewRequestOptions = {
   note?: string | null;
 };
 
+function normalizeCityProvince(city: string | null | undefined) {
+  const raw = typeof city === "string" ? city.trim() : "";
+  return extractProvinceFromRegion(raw) ?? raw;
+}
+
 export async function rejectCityViewRequest(admin: AdminClient, options: RejectCityViewRequestOptions) {
+  const reviewedAt = new Date().toISOString();
   const updateRes = await admin
     .from("dating_city_view_requests")
     .update({
       status: "rejected",
       note: options.note ?? null,
-      reviewed_at: new Date().toISOString(),
+      reviewed_at: reviewedAt,
       reviewed_by_user_id: options.reviewedByUserId,
       access_expires_at: null,
     })
@@ -327,7 +372,48 @@ export async function rejectCityViewRequest(admin: AdminClient, options: RejectC
   if (updateRes.error) {
     throw updateRes.error;
   }
-  return updateRes.data ?? null;
+  if (!updateRes.data) {
+    return null;
+  }
+
+  const province = normalizeCityProvince(updateRes.data.city);
+  if (province) {
+    const pendingRes = await admin
+      .from("dating_city_view_requests")
+      .select("id,city")
+      .eq("user_id", updateRes.data.user_id)
+      .eq("status", "pending")
+      .order("created_at", { ascending: false })
+      .limit(200);
+
+    if (pendingRes.error) {
+      throw pendingRes.error;
+    }
+
+    const staleIds = (pendingRes.data ?? [])
+      .filter((row) => row.id !== updateRes.data?.id)
+      .filter((row) => normalizeCityProvince(row.city) === province)
+      .map((row) => row.id);
+
+    if (staleIds.length > 0) {
+      const cleanupRes = await admin
+        .from("dating_city_view_requests")
+        .update({
+          status: "rejected",
+          note: options.note ?? "stale pending cleanup",
+          reviewed_at: reviewedAt,
+          reviewed_by_user_id: options.reviewedByUserId,
+          access_expires_at: null,
+        })
+        .in("id", staleIds);
+
+      if (cleanupRes.error) {
+        throw cleanupRes.error;
+      }
+    }
+  }
+
+  return updateRes.data;
 }
 
 type GrantCityViewAccessOptions = {
