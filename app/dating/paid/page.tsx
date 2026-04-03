@@ -392,7 +392,10 @@ export default function DatingPaidPage() {
         <Link href="/community/dating/cards" className="rounded-full border border-neutral-300 px-3 py-1.5 text-sm text-neutral-700 hover:bg-neutral-50">
           오픈카드
         </Link>
-        <span className="rounded-full border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700">대기 없이 등록</span>
+        <span className="inline-flex min-h-[44px] items-center gap-2 rounded-full border border-rose-300 bg-gradient-to-r from-rose-50 to-orange-50 px-3.5 py-1.5 text-sm font-semibold text-rose-700 shadow-sm ring-2 ring-rose-100">
+          <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-bold text-white">추천</span>
+          <span>대기 없이 등록</span>
+        </span>
         <a
           href={openKakaoUrl}
           target="_blank"
@@ -403,7 +406,7 @@ export default function DatingPaidPage() {
         </a>
       </div>
 
-      <section className="rounded-2xl border border-neutral-200 bg-white p-4">
+      <section className="rounded-2xl border border-rose-200 bg-gradient-to-br from-white via-rose-50/70 to-orange-50/70 p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <h1 className="text-xl font-bold text-neutral-900">{DATING_PAID_FIXED_BADGE_LABEL} 신청</h1>
           <button
@@ -415,6 +418,10 @@ export default function DatingPaidPage() {
           </button>
         </div>
         <p className="text-sm text-neutral-600">대기열 없이 게시 · 지원서 여러 장 수락 가능 · {DATING_PAID_FIXED_HOURS}시간 글에는 하루 지원권 차감 없이 지원 가능 · 남/녀 오픈카드 최상단에 고정 노출</p>
+        <p className="mt-2 inline-flex items-center gap-2 rounded-full border border-rose-200 bg-white/90 px-3 py-1 text-xs font-medium text-rose-700">
+          <span className="inline-block h-2 w-2 rounded-full bg-rose-500" />
+          기다리지 않고 바로 눈에 띄게 올리는 빠른 등록 옵션
+        </p>
         <p className="mt-2 text-xs text-neutral-500">가격: 10,000원</p>
       </section>
 

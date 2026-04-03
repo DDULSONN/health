@@ -593,8 +593,13 @@ export default function OpenCardsPage() {
     <main className="max-w-3xl mx-auto px-4 py-6">
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-neutral-300 bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white">오픈카드</span>
-        <Link href="/dating/paid" className="rounded-full border border-rose-300 bg-rose-50 px-3 py-1.5 text-sm font-semibold text-rose-700 hover:bg-rose-100">
-          대기 없이 등록
+        <Link
+          href="/dating/paid"
+          className="group inline-flex min-h-[44px] items-center gap-2 rounded-full border border-rose-300 bg-gradient-to-r from-rose-50 to-orange-50 px-3.5 py-1.5 text-sm font-semibold text-rose-700 shadow-sm ring-2 ring-rose-100 transition-all hover:-translate-y-0.5 hover:border-rose-400 hover:shadow-md"
+        >
+          <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-bold text-white">추천</span>
+          <span>대기 없이 등록</span>
+          <span className="text-[11px] font-medium text-rose-500 transition-colors group-hover:text-rose-600">36시간 고정</span>
         </Link>
         <Link href="/dating/more-view" className="rounded-full border border-pink-300 bg-pink-50 px-3 py-1.5 text-sm font-semibold text-pink-700 hover:bg-pink-100">
           이상형 더보기
@@ -611,6 +616,10 @@ export default function OpenCardsPage() {
         <div>
           <h1 className="text-2xl font-bold text-neutral-900">오픈카드</h1>
           <p className="text-sm text-neutral-500 mt-1">공개 카드는 24시간 동안 노출되며, 수락 없이 종료되면 1회 자동으로 대기열에 다시 들어갈 수 있어요.</p>
+          <p className="mt-2 inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-xs font-medium text-rose-700">
+            <span className="inline-block h-2 w-2 rounded-full bg-rose-500" />
+            더 빨리 올리고 싶다면 대기 없이 등록을 이용해 보세요.
+          </p>
           <p className="text-xs text-rose-600 mt-1">현재 36시간 고정 {fixedPaidCount}명 노출중</p>
           <p className="text-xs text-neutral-500 mt-1">대기열: 남자 {queueStats?.male.pending_count ?? 0}명 / 여자 {queueStats?.female.pending_count ?? 0}명</p>
           <p className="text-xs text-neutral-500 mt-1">누적 매칭 {queueStats?.accepted_matches_count ?? 0}명</p>
