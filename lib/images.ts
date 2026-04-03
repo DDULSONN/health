@@ -1,5 +1,6 @@
 const FORBIDDEN_IMAGE_URL_PATTERN = /(supabase\.co|\/storage\/v1\/|\/render\/image\/)/i;
 const PUBLIC_LITE_URL_VERSION = "20260221-1";
+const DIRECT_PUBLIC_LITE_BUCKETS = new Set(["dating-card-lite"]);
 
 type ImageTransformOptions = {
   width?: number;
@@ -97,6 +98,12 @@ export function buildPublicLiteImageUrl(bucket: string, objectPath: string): str
   const safeBucket = assertSafeObjectPath(bucket);
   const safePath = assertSafeObjectPath(objectPath);
   if (!safeBucket || !safePath) return "";
+  if (DIRECT_PUBLIC_LITE_BUCKETS.has(safeBucket)) {
+    const supabaseUrl = (process.env.NEXT_PUBLIC_SUPABASE_URL ?? "").trim().replace(/\/+$/, "");
+    if (supabaseUrl) {
+      return `${supabaseUrl}/storage/v1/object/public/${encodePath(safeBucket)}/${encodePath(safePath)}?v=${PUBLIC_LITE_URL_VERSION}`;
+    }
+  }
   return `/i/public-lite/${encodePath(safeBucket)}/${encodePath(safePath)}?v=${PUBLIC_LITE_URL_VERSION}`;
 }
 
