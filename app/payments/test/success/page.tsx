@@ -17,7 +17,13 @@ type ConfirmResponse = {
   message?: string;
 };
 
-function TestPaymentSuccessContent() {
+function formatProductType(productType?: string) {
+  if (productType === "apply_credits") return "지원권 3장 구매";
+  if (productType === "paid_card") return "유료카드 등록 결제";
+  return "-";
+}
+
+function PaymentSuccessContent() {
   const searchParams = useSearchParams();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -29,7 +35,7 @@ function TestPaymentSuccessContent() {
     const amount = searchParams.get("amount") ?? "";
 
     if (!paymentKey || !orderId || !amount) {
-      setError("결제 확인 파라미터가 부족합니다.");
+      setError("결제 확인 정보가 올바르지 않습니다.");
       setLoading(false);
       return;
     }
@@ -63,16 +69,16 @@ function TestPaymentSuccessContent() {
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-bold text-neutral-900">테스트 결제 결과</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">결제 완료</h1>
 
-        {loading ? <p className="mt-4 text-sm text-neutral-500">결제 승인 확인 중...</p> : null}
+        {loading ? <p className="mt-4 text-sm text-neutral-500">결제 승인 상태를 확인하고 있습니다.</p> : null}
         {error ? <p className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p> : null}
 
         {!loading && !error && result && (
           <div className="mt-4 space-y-3">
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
               <p className="text-sm font-semibold text-emerald-800">
-                {result.alreadyConfirmed ? "이미 승인 처리된 테스트 결제입니다." : "테스트 결제가 정상 승인되었습니다."}
+                {result.alreadyConfirmed ? "이미 승인 처리된 결제입니다." : "결제가 정상 승인되었습니다."}
               </p>
               <p className="mt-1 text-sm text-emerald-900">주문번호: {result.orderId ?? "-"}</p>
               <p className="mt-1 text-sm text-emerald-900">결제키: {result.paymentKey ?? "-"}</p>
@@ -81,7 +87,7 @@ function TestPaymentSuccessContent() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
                 <p className="text-xs font-medium text-neutral-500">상품</p>
-                <p className="mt-1 font-semibold text-neutral-900">{result.productType ?? "-"}</p>
+                <p className="mt-1 font-semibold text-neutral-900">{formatProductType(result.productType)}</p>
               </div>
               <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
                 <p className="text-xs font-medium text-neutral-500">결제금액</p>
@@ -97,7 +103,7 @@ function TestPaymentSuccessContent() {
                 <p className="text-xs font-medium text-neutral-500">지원권 지급 결과</p>
                 <p className="mt-1 font-semibold text-neutral-900">
                   {typeof result.addedCredits === "number" && result.addedCredits > 0
-                    ? `+${result.addedCredits}장 / 잔여 ${result.creditsAfter ?? 0}장`
+                    ? `+${result.addedCredits}장 / 보유 ${result.creditsAfter ?? 0}장`
                     : "해당 없음"}
                 </p>
               </div>
@@ -110,7 +116,7 @@ function TestPaymentSuccessContent() {
             href="/payments/test"
             className="inline-flex min-h-[44px] items-center rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700"
           >
-            테스트 결제로 돌아가기
+            결제 센터로 돌아가기
           </Link>
           <Link
             href="/mypage"
@@ -130,13 +136,13 @@ export default function TestPaymentSuccessPage() {
       fallback={
         <main className="mx-auto max-w-2xl px-4 py-8">
           <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm">
-            <h1 className="text-2xl font-bold text-neutral-900">테스트 결제 결과</h1>
-            <p className="mt-4 text-sm text-neutral-500">결제 승인 확인 중...</p>
+            <h1 className="text-2xl font-bold text-neutral-900">결제 완료</h1>
+            <p className="mt-4 text-sm text-neutral-500">결제 승인 상태를 확인하고 있습니다.</p>
           </section>
         </main>
       }
     >
-      <TestPaymentSuccessContent />
+      <PaymentSuccessContent />
     </Suspense>
   );
 }

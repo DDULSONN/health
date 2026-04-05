@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
-import { confirmTossTestPayment, isTossTestConfigured } from "@/lib/toss-payments";
+import { confirmTossTestPayment, getMissingTossTestConfigKeys, isTossTestConfigured } from "@/lib/toss-payments";
 import { isAllowedTestPaymentEmail } from "@/lib/test-payment";
 
 type ConfirmBody = {
@@ -32,10 +32,16 @@ export async function POST(req: Request) {
       return json(401, { ok: false, code: "UNAUTHORIZED", requestId, message: "로그인이 필요합니다." });
     }
     if (!isAllowedTestPaymentEmail(user.email)) {
-      return json(403, { ok: false, code: "FORBIDDEN", requestId, message: "테스트 계정만 사용할 수 있습니다." });
+      return json(403, { ok: false, code: "FORBIDDEN", requestId, message: "지정된 결제 계정만 사용할 수 있습니다." });
     }
     if (!isTossTestConfigured()) {
-      return json(503, { ok: false, code: "TOSS_NOT_CONFIGURED", requestId, message: "토스 테스트 키가 설정되지 않았습니다." });
+      const missingKeys = getMissingTossTestConfigKeys();
+      return json(503, {
+        ok: false,
+        code: "TOSS_NOT_CONFIGURED",
+        requestId,
+        message: missingKeys.length > 0 ? `누락된 결제 서버 키: ${missingKeys.join(", ")}` : "결제 서버 키가 설정되지 않았습니다.",
+      });
     }
 
     const body = ((await req.json().catch(() => null)) ?? {}) as ConfirmBody;
@@ -56,7 +62,7 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (orderRes.error || !orderRes.data) {
-      return json(404, { ok: false, code: "ORDER_NOT_FOUND", requestId, message: "테스트 결제 주문을 찾을 수 없습니다." });
+      return json(404, { ok: false, code: "ORDER_NOT_FOUND", requestId, message: "결제 주문을 찾을 수 없습니다." });
     }
     if (orderRes.data.amount !== amount) {
       return json(400, { ok: false, code: "AMOUNT_MISMATCH", requestId, message: "결제 금액이 주문 정보와 다릅니다." });

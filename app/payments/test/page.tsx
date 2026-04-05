@@ -34,34 +34,34 @@ export default async function TestPaymentPage({
     .maybeSingle();
 
   const params = await searchParams;
-  const nickname = profileRes.data?.nickname?.trim() || params.nickname?.trim() || "테스트계정";
+  const nickname = profileRes.data?.nickname?.trim() || params.nickname?.trim() || "결제계정";
   const email = user.email ?? "-";
 
   return (
     <main className="mx-auto max-w-4xl px-4 py-8">
       <div className="mb-4 flex flex-wrap items-center gap-2">
-        <span className="rounded-full border border-amber-300 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-700">
-          TEST PAYMENT
+        <span className="rounded-full border border-emerald-300 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
+          PAYMENT CENTER
         </span>
         <span className="rounded-full border border-neutral-200 bg-white px-3 py-1 text-xs text-neutral-600">
-          토스 테스트 계정 전용
+          결제 전용 계정
         </span>
       </div>
 
       <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-bold text-neutral-900">토스 테스트 결제</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">결제 센터</h1>
         <p className="mt-3 text-sm leading-6 text-neutral-600">
-          이 페이지는 테스트 계정 전용 결제 화면입니다.
+          지원권 구매와 유료 등록 결제를 진행할 수 있는 전용 화면입니다.
           <br />
-          기존 오픈카톡 결제 흐름은 그대로 두고, 토스 테스트 결제만 별도로 검증합니다.
+          기존 오픈카톡 결제 흐름은 그대로 유지되며, 현재는 이 계정에서만 결제 흐름을 확인할 수 있습니다.
         </p>
 
         <div className="mt-6 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
-          <p className="text-sm font-semibold text-neutral-900">테스트 목적</p>
+          <p className="text-sm font-semibold text-neutral-900">결제 안내</p>
           <ul className="mt-3 space-y-2 text-sm leading-6 text-neutral-700">
-            <li>지원권 결제 성공 후 자동 지급 확인</li>
-            <li>유료카드 금액 결제 성공 및 successUrl/confirm 흐름 확인</li>
-            <li>실운영 오픈카톡 결제와 분리된 테스트 검증</li>
+            <li>지원권 구매 시 결제 완료 후 자동 지급 여부를 확인합니다.</li>
+            <li>유료카드 등록 결제 시 결제 승인과 결과 페이지 흐름을 확인합니다.</li>
+            <li>결제 완료 후 성공 페이지에서 주문번호와 승인 결과를 바로 확인할 수 있습니다.</li>
           </ul>
         </div>
 
@@ -69,11 +69,11 @@ export default async function TestPaymentPage({
 
         <div className="mt-6 grid gap-3 md:grid-cols-2">
           <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
-            <p className="text-sm font-semibold text-neutral-900">테스트 결제 안내</p>
+            <p className="text-sm font-semibold text-neutral-900">상품 및 문의</p>
             <ul className="mt-2 space-y-1 text-xs leading-5 text-neutral-600">
-              <li>이 페이지는 테스트 계정 전용입니다.</li>
-              <li>토스 테스트 결제 흐름 확인용이며 실제 운영 결제와는 분리되어 있습니다.</li>
-              <li>기존 오픈카톡 결제 방식은 그대로 유지됩니다.</li>
+              <li>지원권 3장 구매</li>
+              <li>오픈카드 유료 등록 결제</li>
+              <li>문의: gymtools.kr@gmail.com / 010-8693-0657</li>
             </ul>
           </div>
           <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">

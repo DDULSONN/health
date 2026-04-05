@@ -2363,14 +2363,14 @@ export default function MyPage() {
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-amber-900">테스트 결제</p>
-                <p className="mt-1 text-xs text-amber-800">테스트 계정 전용 결제 안내 페이지입니다.</p>
+                <p className="text-sm font-semibold text-amber-900">결제 센터</p>
+                <p className="mt-1 text-xs text-amber-800">지원권과 유료 등록 결제를 진행할 수 있는 전용 페이지입니다.</p>
               </div>
               <Link
                 href={`/payments/test?nickname=${encodeURIComponent(summary?.profile.nickname ?? "")}`}
                 className="inline-flex min-h-[40px] items-center rounded-lg border border-amber-300 bg-white px-3 text-sm font-medium text-amber-800 hover:bg-amber-100"
               >
-                테스트 결제 보기
+                결제 센터 열기
               </Link>
             </div>
           </div>

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
-import { createTossTestPayment, isTossTestConfigured } from "@/lib/toss-payments";
+import { createTossTestPayment, getMissingTossTestConfigKeys, isTossTestConfigured } from "@/lib/toss-payments";
 import { isAllowedTestPaymentEmail } from "@/lib/test-payment";
 
 type CreateBody = {
@@ -11,11 +11,11 @@ type CreateBody = {
 const PRODUCT_CONFIG = {
   apply_credits: {
     amount: 5000,
-    orderName: "지원권 3장 테스트 결제",
+    orderName: "지원권 3장 구매",
   },
   paid_card: {
     amount: 10000,
-    orderName: "유료카드 등록 테스트 결제",
+    orderName: "유료카드 등록 결제",
   },
 } as const;
 
@@ -36,10 +36,16 @@ export async function POST(req: Request) {
       return json(401, { ok: false, code: "UNAUTHORIZED", requestId, message: "로그인이 필요합니다." });
     }
     if (!isAllowedTestPaymentEmail(user.email)) {
-      return json(403, { ok: false, code: "FORBIDDEN", requestId, message: "테스트 계정만 사용할 수 있습니다." });
+      return json(403, { ok: false, code: "FORBIDDEN", requestId, message: "지정된 결제 계정만 사용할 수 있습니다." });
     }
     if (!isTossTestConfigured()) {
-      return json(503, { ok: false, code: "TOSS_NOT_CONFIGURED", requestId, message: "토스 테스트 키가 설정되지 않았습니다." });
+      const missingKeys = getMissingTossTestConfigKeys();
+      return json(503, {
+        ok: false,
+        code: "TOSS_NOT_CONFIGURED",
+        requestId,
+        message: missingKeys.length > 0 ? `누락된 결제 서버 키: ${missingKeys.join(", ")}` : "결제 서버 키가 설정되지 않았습니다.",
+      });
     }
 
     const body = ((await req.json().catch(() => null)) ?? {}) as CreateBody;
@@ -90,7 +96,7 @@ export async function POST(req: Request) {
 
     if (saveOrderRes.error || !saveOrderRes.data?.id) {
       console.error("[toss-test-create] toss order insert failed", saveOrderRes.error);
-      return json(500, { ok: false, code: "CREATE_ORDER_FAILED", requestId, message: "테스트 결제 주문 저장에 실패했습니다." });
+      return json(500, { ok: false, code: "CREATE_ORDER_FAILED", requestId, message: "결제 주문 저장에 실패했습니다." });
     }
 
     const baseUrl = getBaseUrl(req);

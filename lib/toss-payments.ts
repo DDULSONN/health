@@ -13,7 +13,17 @@ export function getTossTestClientKey() {
 }
 
 export function isTossTestConfigured() {
-  return getTossTestClientKey().length > 0 && getSecretKey().length > 0;
+  return getSecretKey().length > 0;
+}
+
+export function getMissingTossTestConfigKeys() {
+  const missingKeys: string[] = [];
+
+  if (!getSecretKey()) {
+    missingKeys.push("TOSS_TEST_SECRET_KEY");
+  }
+
+  return missingKeys;
 }
 
 async function tossFetch<T>(path: string, init: RequestInit & { idempotencyKey?: string }) {
