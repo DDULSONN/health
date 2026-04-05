@@ -26,7 +26,7 @@ type CardDetail = {
 };
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const MAX_FILE_SIZE = 8 * 1024 * 1024;
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
 
 function normalizeInstagramId(value: string) {
