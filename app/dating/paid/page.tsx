@@ -425,6 +425,29 @@ export default function DatingPaidPage() {
         <p className="mt-2 text-xs text-neutral-500">가격: 10,000원</p>
       </section>
 
+      <section className="mt-4 rounded-2xl border border-neutral-200 bg-white p-4">
+        <h2 className="text-sm font-semibold text-neutral-900">상품 및 결제 안내</h2>
+        <div className="mt-3 grid gap-3 text-sm text-neutral-700 md:grid-cols-2">
+          <div className="rounded-xl bg-neutral-50 p-3">
+            <p className="font-medium text-neutral-900">기본 정보</p>
+            <ul className="mt-2 space-y-1 text-xs leading-5 text-neutral-600">
+              <li>상품명: 오픈카드 대기 없이 등록</li>
+              <li>금액: 10,000원</li>
+              <li>진행 방식: 신청 접수 후 결제 확인, 이후 카드 등록 또는 노출 처리</li>
+              <li>문의: gymtools.kr@gmail.com / 010-8693-0657</li>
+            </ul>
+          </div>
+          <div className="rounded-xl bg-neutral-50 p-3">
+            <p className="font-medium text-neutral-900">환불 기준</p>
+            <ul className="mt-2 space-y-1 text-xs leading-5 text-neutral-600">
+              <li>서비스 제공 전에는 운영 확인 후 환불 검토가 가능합니다.</li>
+              <li>카드 등록, 승인, 노출이 시작된 뒤에는 환불이 제한될 수 있습니다.</li>
+              <li>상세 기준은 하단 환불/취소 규정을 따릅니다.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+
       {successId && (
         <section className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
           <p className="font-semibold">신청이 접수되었습니다.</p>

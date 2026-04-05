@@ -58,6 +58,7 @@ export async function GET() {
 
   return NextResponse.json({
     profile: {
+      email: user.email ?? null,
       nickname: profileRes.data?.nickname ?? null,
       nickname_changed_count: Number(profileRes.data?.nickname_changed_count ?? 0),
       nickname_change_credits: Number(profileRes.data?.nickname_change_credits ?? 0),

@@ -114,6 +114,26 @@ export default function MoreViewPage() {
         <p className="mt-2 text-xs text-pink-700">가격 5,000원</p>
         <p className="mt-1 text-sm text-pink-800">신청 후 오픈카톡으로 닉네임과 신청ID를 보내주시면 승인 처리됩니다.</p>
 
+        <div className="mt-4 grid gap-3 md:grid-cols-2">
+          <div className="rounded-xl border border-pink-200 bg-white/80 p-3">
+            <p className="text-sm font-semibold text-pink-900">상품 안내</p>
+            <ul className="mt-2 space-y-1 text-xs leading-5 text-pink-800">
+              <li>상품명: 이상형 더보기</li>
+              <li>금액: 5,000원</li>
+              <li>제공 내용: 3시간 이용, 랜덤 25명 1회 고정 노출</li>
+              <li>추가 혜택: 승인 시 지원권 1장 지급</li>
+            </ul>
+          </div>
+          <div className="rounded-xl border border-pink-200 bg-white/80 p-3">
+            <p className="text-sm font-semibold text-pink-900">환불 및 문의</p>
+            <ul className="mt-2 space-y-1 text-xs leading-5 text-pink-800">
+              <li>이용 시작 전에는 운영 확인 후 환불 검토가 가능합니다.</li>
+              <li>승인 또는 열람 권한 부여 후에는 환불이 제한될 수 있습니다.</li>
+              <li>문의: gymtools.kr@gmail.com / 010-8693-0657</li>
+            </ul>
+          </div>
+        </div>
+
         <div className="mt-4 flex flex-wrap gap-2">
           <button
             type="button"
