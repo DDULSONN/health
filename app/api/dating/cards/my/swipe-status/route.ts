@@ -1,8 +1,8 @@
+import { NextResponse } from "next/server";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { pickPreviewImage } from "@/lib/dating-swipe";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
-import { NextResponse } from "next/server";
 
 type SwipeRow = {
   id: string;
@@ -60,6 +60,52 @@ function isMissingRelationError(error: unknown): boolean {
   );
 }
 
+function isMissingColumnError(error: unknown, columnName: string): boolean {
+  if (!error || typeof error !== "object") return false;
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return message.includes("column") && message.includes(columnName.toLowerCase());
+}
+
+async function loadCardsWithFallback(admin: ReturnType<typeof createAdminClient>, cardIds: string[]) {
+  if (cardIds.length === 0) {
+    return { data: [] as CardRow[], error: null as unknown };
+  }
+
+  const withIntroRes = await admin
+    .from("dating_cards")
+    .select(
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, intro_text, photo_visibility, photo_paths, blur_paths, blur_thumb_path"
+    )
+    .in("id", cardIds);
+
+  if (!withIntroRes.error) {
+    return { data: (withIntroRes.data ?? []) as CardRow[], error: null as unknown };
+  }
+
+  if (!isMissingColumnError(withIntroRes.error, "intro_text")) {
+    return { data: [] as CardRow[], error: withIntroRes.error };
+  }
+
+  const fallbackRes = await admin
+    .from("dating_cards")
+    .select(
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, photo_paths, blur_paths, blur_thumb_path"
+    )
+    .in("id", cardIds);
+
+  if (fallbackRes.error) {
+    return { data: [] as CardRow[], error: fallbackRes.error };
+  }
+
+  return {
+    data: ((fallbackRes.data ?? []) as Omit<CardRow, "intro_text">[]).map((card) => ({
+      ...card,
+      intro_text: null,
+    })),
+    error: null as unknown,
+  };
+}
+
 export async function GET(req: Request) {
   const { user } = await getRequestAuthContext(req);
 
@@ -95,7 +141,7 @@ export async function GET(req: Request) {
       outgoingError: outgoingRes.error,
       incomingError: incomingRes.error,
     });
-    return NextResponse.json({ error: "빠른매칭 상태를 불러오지 못했습니다." }, { status: 500 });
+    return NextResponse.json({ error: "빠른매칭을 불러올 수 없습니다." }, { status: 500 });
   }
 
   let swipeMatches: SwipeMatchRow[] = [];
@@ -104,7 +150,7 @@ export async function GET(req: Request) {
       console.warn("[GET /api/dating/cards/my/swipe-status] swipe matches table missing, skipping");
     } else {
       console.error("[GET /api/dating/cards/my/swipe-status] matches failed", matchesRes.error);
-      return NextResponse.json({ error: "빠른매칭 상태를 불러오지 못했습니다." }, { status: 500 });
+      return NextResponse.json({ error: "빠른매칭을 불러올 수 없습니다." }, { status: 500 });
     }
   } else {
     swipeMatches = (matchesRes.data ?? []) as SwipeMatchRow[];
@@ -130,22 +176,13 @@ export async function GET(req: Request) {
     ]),
   ];
 
-  const cardsRes =
-    cardIds.length > 0
-      ? await admin
-          .from("dating_cards")
-          .select(
-            "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, intro_text, photo_visibility, photo_paths, blur_paths, blur_thumb_path"
-          )
-          .in("id", cardIds)
-      : { data: [], error: null };
-
+  const cardsRes = await loadCardsWithFallback(admin, cardIds);
   if (cardsRes.error) {
     console.error("[GET /api/dating/cards/my/swipe-status] cards failed", cardsRes.error);
-    return NextResponse.json({ error: "빠른매칭 상태를 불러오지 못했습니다." }, { status: 500 });
+    return NextResponse.json({ error: "빠른매칭을 불러올 수 없습니다." }, { status: 500 });
   }
 
-  const cardsById = new Map(((cardsRes.data ?? []) as CardRow[]).map((card) => [card.id, card]));
+  const cardsById = new Map(cardsRes.data.map((card) => [card.id, card]));
   const profileIds = [
     ...new Set([
       ...outgoingLikes.map((row) => row.target_user_id),
@@ -160,7 +197,7 @@ export async function GET(req: Request) {
 
   if (profilesRes.error) {
     console.error("[GET /api/dating/cards/my/swipe-status] profiles failed", profilesRes.error);
-    return NextResponse.json({ error: "빠른매칭 상태를 불러오지 못했습니다." }, { status: 500 });
+    return NextResponse.json({ error: "빠른매칭을 불러올 수 없습니다." }, { status: 500 });
   }
 
   const profileMap = new Map(((profilesRes.data ?? []) as ProfileRow[]).map((row) => [row.user_id, row.nickname]));
