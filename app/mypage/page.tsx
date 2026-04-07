@@ -160,6 +160,8 @@ type SwipeStatusCard = {
   training_years: number | null;
   ideal_type: string | null;
   strengths_text: string | null;
+  intro_text: string | null;
+  image_url?: string | null;
 };
 
 type SwipeStatusItem = {
@@ -2490,29 +2492,44 @@ export default function MyPage() {
                     <div className="mt-3 space-y-2">
                       {myOutgoingSwipeLikes.slice(0, 6).map((item) => (
                         <div key={item.swipe_id} className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
-                          <div className="flex items-center justify-between gap-2">
-                            <p className="text-sm font-medium text-neutral-900">{item.card?.display_nickname ?? "익명"}</p>
-                            <span
-                              className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                                item.matched ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
-                              }`}
-                            >
-                              {item.matched ? "쌍방 매칭" : "응답 대기"}
-                            </span>
+                          <div className="flex gap-3">
+                            <div className="h-24 w-20 shrink-0 overflow-hidden rounded-xl border border-neutral-200 bg-white">
+                              {item.card?.image_url ? (
+                                // eslint-disable-next-line @next/next/no-img-element
+                                <img src={item.card.image_url} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
+                              ) : (
+                                <div className="flex h-full items-center justify-center text-[11px] text-neutral-400">사진 없음</div>
+                              )}
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-sm font-medium text-neutral-900">{item.card?.display_nickname ?? "익명"}</p>
+                                <span
+                                  className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                    item.matched ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                                  }`}
+                                >
+                                  {item.matched ? "쌍방 매칭" : "응답 대기"}
+                                </span>
+                              </div>
+                              <p className="mt-1 text-xs text-neutral-600">
+                                {item.card?.age != null ? `${item.card.age}세 / ` : ""}
+                                {item.card?.region ?? "지역 미기재"}
+                                {item.card?.job ? ` / ${item.card.job}` : ""}
+                              </p>
+                              {item.card?.strengths_text && (
+                                <p className="mt-1 text-xs text-emerald-700 whitespace-pre-wrap break-words">강점: {item.card.strengths_text}</p>
+                              )}
+                              {item.card?.intro_text && (
+                                <p className="mt-1 text-xs text-neutral-700 whitespace-pre-wrap break-words">자기소개: {item.card.intro_text}</p>
+                              )}
+                              <p className="mt-2 text-[11px] text-neutral-500">
+                                {item.matched && item.matched_at
+                                  ? `매칭 완료: ${new Date(item.matched_at).toLocaleString("ko-KR")}`
+                                  : `보낸 시각: ${new Date(item.created_at).toLocaleString("ko-KR")}`}
+                              </p>
+                            </div>
                           </div>
-                          <p className="mt-1 text-xs text-neutral-600">
-                            {item.card?.age != null ? `${item.card.age}세 / ` : ""}
-                            {item.card?.region ?? "지역 미기재"}
-                            {item.card?.job ? ` / ${item.card.job}` : ""}
-                          </p>
-                          {item.card?.strengths_text && (
-                            <p className="mt-1 text-xs text-neutral-700 line-clamp-2">{item.card.strengths_text}</p>
-                          )}
-                          <p className="mt-2 text-[11px] text-neutral-500">
-                            {item.matched && item.matched_at
-                              ? `매칭 완료: ${new Date(item.matched_at).toLocaleString("ko-KR")}`
-                              : `보낸 시각: ${new Date(item.created_at).toLocaleString("ko-KR")}`}
-                          </p>
                         </div>
                       ))}
                     </div>
@@ -2529,35 +2546,50 @@ export default function MyPage() {
                         const processing = processingSwipeLikeBackIds.includes(item.swipe_id);
                         return (
                           <div key={item.swipe_id} className="rounded-lg border border-pink-200 bg-pink-50/40 p-3">
-                            <div className="flex items-center justify-between gap-2">
-                              <p className="text-sm font-medium text-neutral-900">{item.card?.display_nickname ?? "익명"}</p>
-                              <span className="inline-flex rounded-full bg-pink-100 px-2 py-0.5 text-[11px] font-medium text-pink-700">
-                                나를 라이크함
-                              </span>
-                            </div>
-                            <p className="mt-1 text-xs text-neutral-600">
-                              {item.card?.age != null ? `${item.card.age}세 / ` : ""}
-                              {item.card?.region ?? "지역 미기재"}
-                              {item.card?.job ? ` / ${item.card.job}` : ""}
-                            </p>
-                            {item.card?.strengths_text && (
-                              <p className="mt-1 text-xs text-neutral-700 line-clamp-2">{item.card.strengths_text}</p>
-                            )}
-                            <p className="mt-2 text-[11px] text-neutral-500">
-                              받은 시각: {new Date(item.created_at).toLocaleString("ko-KR")}
-                            </p>
-                            <div className="mt-3 flex flex-wrap gap-2">
-                              <button
-                                type="button"
-                                disabled={processing || !item.card?.id || !item.card.sex}
-                                onClick={() => void handleSwipeLikeBack(item)}
-                                className="h-8 rounded-md bg-pink-500 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                              >
-                                {processing ? "처리 중..." : "바로 라이크"}
-                              </button>
-                              <span className="inline-flex items-center text-[11px] text-neutral-500">
-                                지금 맞라이크하면 바로 쌍방 매칭이 될 수 있어요.
-                              </span>
+                            <div className="flex gap-3">
+                              <div className="h-24 w-20 shrink-0 overflow-hidden rounded-xl border border-pink-200 bg-white">
+                                {item.card?.image_url ? (
+                                  // eslint-disable-next-line @next/next/no-img-element
+                                  <img src={item.card.image_url} alt="" className="h-full w-full object-cover" loading="lazy" decoding="async" />
+                                ) : (
+                                  <div className="flex h-full items-center justify-center text-[11px] text-neutral-400">사진 없음</div>
+                                )}
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center justify-between gap-2">
+                                  <p className="text-sm font-medium text-neutral-900">{item.card?.display_nickname ?? "익명"}</p>
+                                  <span className="inline-flex rounded-full bg-pink-100 px-2 py-0.5 text-[11px] font-medium text-pink-700">
+                                    나를 라이크함
+                                  </span>
+                                </div>
+                                <p className="mt-1 text-xs text-neutral-600">
+                                  {item.card?.age != null ? `${item.card.age}세 / ` : ""}
+                                  {item.card?.region ?? "지역 미기재"}
+                                  {item.card?.job ? ` / ${item.card.job}` : ""}
+                                </p>
+                                {item.card?.strengths_text && (
+                                  <p className="mt-1 text-xs text-emerald-700 whitespace-pre-wrap break-words">강점: {item.card.strengths_text}</p>
+                                )}
+                                {item.card?.intro_text && (
+                                  <p className="mt-1 text-xs text-neutral-700 whitespace-pre-wrap break-words">자기소개: {item.card.intro_text}</p>
+                                )}
+                                <p className="mt-2 text-[11px] text-neutral-500">
+                                  받은 시각: {new Date(item.created_at).toLocaleString("ko-KR")}
+                                </p>
+                                <div className="mt-3 flex flex-wrap gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={processing || !item.card?.id || !item.card.sex}
+                                    onClick={() => void handleSwipeLikeBack(item)}
+                                    className="h-8 rounded-md bg-pink-500 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                                  >
+                                    {processing ? "처리 중..." : "바로 라이크"}
+                                  </button>
+                                  <span className="inline-flex items-center text-[11px] text-neutral-500">
+                                    지금 맞라이크하면 바로 쌍방 매칭이 될 수 있어요.
+                                  </span>
+                                </div>
+                              </div>
                             </div>
                           </div>
                         );

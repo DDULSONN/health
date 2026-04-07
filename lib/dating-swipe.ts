@@ -80,7 +80,9 @@ function toThumbPath(rawPath: string): string {
   return rawPath.replace("/raw/", "/thumb/").replace(/\.[^.\/]+$/, ".webp");
 }
 
-function pickPreviewImage(row: DatingCardRow): string | null {
+type SwipePreviewRow = Pick<DatingCardRow, "photo_visibility" | "photo_paths" | "blur_paths" | "blur_thumb_path">;
+
+export function pickPreviewImage(row: SwipePreviewRow): string | null {
   const visibility = row.photo_visibility === "public" ? "public" : "blur";
   if (visibility === "public") {
     const rawPath = Array.isArray(row.photo_paths)

@@ -1,4 +1,5 @@
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import { pickPreviewImage } from "@/lib/dating-swipe";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -34,6 +35,11 @@ type CardRow = {
   training_years: number | null;
   ideal_type: string | null;
   strengths_text: string | null;
+  intro_text: string | null;
+  photo_visibility?: "blur" | "public" | null;
+  photo_paths?: string[] | null;
+  blur_paths?: string[] | null;
+  blur_thumb_path?: string | null;
 };
 
 type ProfileRow = {
@@ -128,7 +134,9 @@ export async function GET(req: Request) {
     cardIds.length > 0
       ? await admin
           .from("dating_cards")
-          .select("id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text")
+          .select(
+            "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, intro_text, photo_visibility, photo_paths, blur_paths, blur_thumb_path"
+          )
           .in("id", cardIds)
       : { data: [], error: null };
 
@@ -185,6 +193,8 @@ export async function GET(req: Request) {
               training_years: card.training_years ?? null,
               ideal_type: card.ideal_type ?? null,
               strengths_text: card.strengths_text ?? null,
+              intro_text: card.intro_text ?? null,
+              image_url: pickPreviewImage(card),
             }
           : null,
       };
@@ -208,6 +218,8 @@ export async function GET(req: Request) {
               training_years: card.training_years ?? null,
               ideal_type: card.ideal_type ?? null,
               strengths_text: card.strengths_text ?? null,
+              intro_text: card.intro_text ?? null,
+              image_url: pickPreviewImage(card),
             }
           : null,
       };
