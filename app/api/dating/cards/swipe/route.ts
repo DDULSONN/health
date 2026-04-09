@@ -154,23 +154,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "오픈카드를 한 번 이상 등록한 사용자만 이용할 수 있습니다." }, { status: 403 });
     }
 
-    const used = await getSwipeDailyUsage(adminClient, user.id);
-    if (used >= SWIPE_DAILY_LIMIT) {
-      return NextResponse.json({ error: "오늘 사용할 수 있는 빠른 매칭 횟수를 모두 사용했습니다." }, { status: 429 });
-    }
-
     const dupRes = await adminClient
       .from("dating_card_swipes")
-      .select("id")
+      .select("id, action")
       .eq("actor_user_id", user.id)
       .eq("target_user_id", targetUserId)
       .eq("target_sex", sex)
       .maybeSingle();
     if (dupRes.error) {
       throw dupRes.error;
-    }
-    if (dupRes.data?.id) {
-      return NextResponse.json({ error: "이미 처리한 상대입니다." }, { status: 409 });
     }
 
     const targetRes = await adminClient
@@ -193,22 +185,52 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "대상 카드에 인스타 정보가 없어 진행할 수 없습니다." }, { status: 400 });
     }
 
-    const insertRes = await adminClient
-      .from("dating_card_swipes")
-      .insert({
-        actor_user_id: user.id,
-        actor_card_id: myCard.id,
-        target_user_id: targetUserId,
-        target_card_id: targetCardId,
-        target_sex: sex,
-        action,
-      })
-      .select("id")
-      .single();
+    const existingSwipe = dupRes.data;
+    const isPassToLikeRetry = existingSwipe?.action === "pass" && action === "like";
+    if (existingSwipe?.id && !isPassToLikeRetry) {
+      return NextResponse.json({ error: "이미 처리한 상대입니다." }, { status: 409 });
+    }
 
-    if (insertRes.error) {
-      console.error("[POST /api/dating/cards/swipe] insert failed", insertRes.error);
-      return NextResponse.json({ error: "빠른 매칭 처리 중 저장에 실패했습니다." }, { status: 500 });
+    const used = await getSwipeDailyUsage(adminClient, user.id);
+    if (!existingSwipe?.id && used >= SWIPE_DAILY_LIMIT) {
+      return NextResponse.json({ error: "오늘 사용할 수 있는 빠른 매칭 횟수를 모두 사용했습니다." }, { status: 429 });
+    }
+
+    if (existingSwipe?.id && isPassToLikeRetry) {
+      const updateRes = await adminClient
+        .from("dating_card_swipes")
+        .update({
+          actor_card_id: myCard.id,
+          target_card_id: targetCardId,
+          target_sex: sex,
+          action: "like",
+        })
+        .eq("id", existingSwipe.id)
+        .select("id")
+        .single();
+
+      if (updateRes.error) {
+        console.error("[POST /api/dating/cards/swipe] update failed", updateRes.error);
+        return NextResponse.json({ error: "빠른 매칭 처리 중 저장에 실패했습니다." }, { status: 500 });
+      }
+    } else {
+      const insertRes = await adminClient
+        .from("dating_card_swipes")
+        .insert({
+          actor_user_id: user.id,
+          actor_card_id: myCard.id,
+          target_user_id: targetUserId,
+          target_card_id: targetCardId,
+          target_sex: sex,
+          action,
+        })
+        .select("id")
+        .single();
+
+      if (insertRes.error) {
+        console.error("[POST /api/dating/cards/swipe] insert failed", insertRes.error);
+        return NextResponse.json({ error: "빠른 매칭 처리 중 저장에 실패했습니다." }, { status: 500 });
+      }
     }
 
     let matchPayload:
@@ -300,7 +322,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      remaining: Math.max(0, SWIPE_DAILY_LIMIT - (used + 1)),
+      remaining: Math.max(0, SWIPE_DAILY_LIMIT - (used + (existingSwipe?.id ? 0 : 1))),
       match: matchPayload,
     });
   } catch (error) {

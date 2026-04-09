@@ -796,6 +796,8 @@ export default function MyPage() {
   const [supportItems, setSupportItems] = useState<SupportInquiry[]>([]);
   const [supportLoading, setSupportLoading] = useState(false);
   const [supportSubmitting, setSupportSubmitting] = useState(false);
+  const [supportPanelOpen, setSupportPanelOpen] = useState(false);
+  const [supportLoaded, setSupportLoaded] = useState(false);
   const [supportCategory, setSupportCategory] = useState<SupportInquiry["category"]>("dating");
   const [supportSubject, setSupportSubject] = useState("");
   const [supportMessage, setSupportMessage] = useState("");
@@ -1111,11 +1113,12 @@ export default function MyPage() {
   }, [isAdmin, activeTab]);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || !supportPanelOpen || supportLoaded) return;
     let cancelled = false;
 
     queueMicrotask(async () => {
       setSupportLoading(true);
+      setSupportError("");
       try {
         const res = await fetch("/api/mypage/support", { cache: "no-store" });
         const body = (await res.json().catch(() => ({}))) as { items?: SupportInquiry[]; error?: string };
@@ -1124,6 +1127,7 @@ export default function MyPage() {
         }
         if (!cancelled) {
           setSupportItems(Array.isArray(body.items) ? body.items : []);
+          setSupportLoaded(true);
         }
       } catch (e) {
         if (!cancelled) {
@@ -1139,7 +1143,7 @@ export default function MyPage() {
     return () => {
       cancelled = true;
     };
-  }, [loading]);
+  }, [loading, supportLoaded, supportPanelOpen]);
 
   useEffect(() => {
     if (!supportContactEmail && summary?.profile.email) {
@@ -1197,6 +1201,8 @@ export default function MyPage() {
       }
 
       setSupportItems((prev) => [body.item as SupportInquiry, ...prev]);
+      setSupportLoaded(true);
+      setSupportPanelOpen(true);
       setSupportSubject("");
       setSupportMessage("");
       setSupportInfo("문의가 접수되었습니다. 운영자가 확인 후 답변드릴게요.");
@@ -2804,115 +2810,130 @@ export default function MyPage() {
             <p className="mt-1 text-sm text-sky-800">
               결제, 소개팅, 신고/악용, 계정 문제를 마이페이지에서 바로 접수할 수 있습니다.
             </p>
-            <p className="mt-1 text-xs text-sky-700">
-              민원 및 운영 문의는 접수 순서대로 확인하며, 답변은 아래 문의 이력에 남습니다.
-            </p>
+            {!supportPanelOpen && (
+              <p className="mt-1 text-xs text-sky-700">
+                필요할 때만 펼쳐서 문의를 남기고 답변 이력을 확인할 수 있습니다.
+              </p>
+            )}
           </div>
-          <Link
-            href="/dating-policy"
-            className="rounded-lg border border-sky-300 bg-white px-3 py-2 text-xs font-medium text-sky-800 hover:bg-sky-100"
-          >
-            소개팅 운영정책 보기
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/dating-policy"
+              className="rounded-lg border border-sky-300 bg-white px-3 py-2 text-xs font-medium text-sky-800 hover:bg-sky-100"
+            >
+              소개팅 운영정책 보기
+            </Link>
+            <button
+              type="button"
+              onClick={() => setSupportPanelOpen((prev) => !prev)}
+              className="rounded-lg border border-sky-300 bg-white px-3 py-2 text-xs font-medium text-sky-800 hover:bg-sky-100"
+            >
+              {supportPanelOpen ? "문의 접기" : "문의 펼치기"}
+            </button>
+          </div>
         </div>
 
-        <div className="mt-4 grid gap-3 md:grid-cols-2">
-          <select
-            value={supportCategory}
-            onChange={(e) => setSupportCategory(e.target.value as SupportInquiry["category"])}
-            className="h-11 rounded-xl border border-sky-200 bg-white px-3 text-sm text-neutral-800"
-          >
-            {Object.entries(SUPPORT_CATEGORY_LABELS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </select>
-          <input
-            value={supportSubject}
-            onChange={(e) => setSupportSubject(e.target.value)}
-            maxLength={120}
-            placeholder="문의 제목"
-            className="h-11 rounded-xl border border-sky-200 bg-white px-3 text-sm text-neutral-800"
-          />
-          <input
-            value={supportContactEmail}
-            onChange={(e) => setSupportContactEmail(e.target.value)}
-            maxLength={200}
-            placeholder="답변받을 이메일"
-            className="h-11 rounded-xl border border-sky-200 bg-white px-3 text-sm text-neutral-800"
-          />
-          <input
-            value={supportContactPhone}
-            onChange={(e) => setSupportContactPhone(e.target.value)}
-            maxLength={30}
-            placeholder="연락처 (선택)"
-            className="h-11 rounded-xl border border-sky-200 bg-white px-3 text-sm text-neutral-800"
-          />
-        </div>
+        {supportPanelOpen && (
+          <>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <select
+                value={supportCategory}
+                onChange={(e) => setSupportCategory(e.target.value as SupportInquiry["category"])}
+                className="h-11 rounded-xl border border-sky-200 bg-white px-3 text-sm text-neutral-800"
+              >
+                {Object.entries(SUPPORT_CATEGORY_LABELS).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+              <input
+                value={supportSubject}
+                onChange={(e) => setSupportSubject(e.target.value)}
+                maxLength={120}
+                placeholder="문의 제목"
+                className="h-11 rounded-xl border border-sky-200 bg-white px-3 text-sm text-neutral-800"
+              />
+              <input
+                value={supportContactEmail}
+                onChange={(e) => setSupportContactEmail(e.target.value)}
+                maxLength={200}
+                placeholder="답변받을 이메일"
+                className="h-11 rounded-xl border border-sky-200 bg-white px-3 text-sm text-neutral-800"
+              />
+              <input
+                value={supportContactPhone}
+                onChange={(e) => setSupportContactPhone(e.target.value)}
+                maxLength={30}
+                placeholder="연락처 (선택)"
+                className="h-11 rounded-xl border border-sky-200 bg-white px-3 text-sm text-neutral-800"
+              />
+            </div>
 
-        <textarea
-          value={supportMessage}
-          onChange={(e) => setSupportMessage(e.target.value)}
-          rows={5}
-          maxLength={4000}
-          placeholder="문의 내용을 자세히 적어주세요. 결제/서비스 이용 시각, 상품명, 닉네임, 문제가 발생한 화면 등을 적으면 더 빨리 확인할 수 있습니다."
-          className="mt-3 w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-neutral-800"
-        />
+            <textarea
+              value={supportMessage}
+              onChange={(e) => setSupportMessage(e.target.value)}
+              rows={5}
+              maxLength={4000}
+              placeholder="문의 내용을 자세히 적어주세요. 결제/서비스 이용 시각, 상품명, 닉네임, 문제가 발생한 화면 등을 적으면 더 빨리 확인할 수 있습니다."
+              className="mt-3 w-full rounded-xl border border-sky-200 bg-white px-3 py-2 text-sm text-neutral-800"
+            />
 
-        {supportError && <p className="mt-3 text-sm text-red-600">{supportError}</p>}
-        {supportInfo && <p className="mt-3 text-sm text-emerald-700">{supportInfo}</p>}
+            {supportError && <p className="mt-3 text-sm text-red-600">{supportError}</p>}
+            {supportInfo && <p className="mt-3 text-sm text-emerald-700">{supportInfo}</p>}
 
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void handleSubmitSupportInquiry()}
-            disabled={supportSubmitting}
-            className="min-h-[44px] rounded-xl bg-sky-600 px-4 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-60"
-          >
-            {supportSubmitting ? "접수 중..." : "문의 접수하기"}
-          </button>
-          <span className="text-xs text-sky-800">긴급 문의: gymtools.kr@gmail.com / 010-8693-0657</span>
-        </div>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleSubmitSupportInquiry()}
+                disabled={supportSubmitting}
+                className="min-h-[44px] rounded-xl bg-sky-600 px-4 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-60"
+              >
+                {supportSubmitting ? "접수 중..." : "문의 접수하기"}
+              </button>
+              <span className="text-xs text-sky-800">긴급 문의: gymtools.kr@gmail.com / 010-8693-0657</span>
+            </div>
 
-        <div className="mt-5">
-          <p className="text-sm font-semibold text-sky-900">내 문의 이력</p>
-          {supportLoading ? (
-            <p className="mt-2 text-sm text-neutral-500">불러오는 중...</p>
-          ) : supportItems.length === 0 ? (
-            <p className="mt-2 rounded-xl border border-sky-200 bg-white p-4 text-sm text-neutral-500">
-              아직 접수한 문의가 없습니다.
-            </p>
-          ) : (
-            <div className="mt-3 space-y-3">
-              {supportItems.map((item) => (
-                <div key={item.id} className="rounded-xl border border-sky-200 bg-white p-4">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-sm font-semibold text-neutral-900">{item.subject}</p>
-                    <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-medium text-sky-800">
-                      {SUPPORT_STATUS_LABELS[item.status]}
-                    </span>
-                  </div>
-                  <p className="mt-1 text-xs text-neutral-500">
-                    {SUPPORT_CATEGORY_LABELS[item.category]} / {new Date(item.created_at).toLocaleString("ko-KR")}
-                  </p>
-                  <p className="mt-3 whitespace-pre-wrap break-words text-sm text-neutral-700">{item.message}</p>
-                  {item.admin_reply && (
-                    <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
-                      <p className="text-xs font-semibold text-emerald-800">운영자 답변</p>
-                      <p className="mt-1 whitespace-pre-wrap break-words text-sm text-emerald-900">{item.admin_reply}</p>
-                      {item.answered_at && (
-                        <p className="mt-2 text-[11px] text-emerald-700">
-                          답변 시각: {new Date(item.answered_at).toLocaleString("ko-KR")}
-                        </p>
+            <div className="mt-5">
+              <p className="text-sm font-semibold text-sky-900">내 문의 이력</p>
+              {supportLoading ? (
+                <p className="mt-2 text-sm text-neutral-500">불러오는 중...</p>
+              ) : supportItems.length === 0 ? (
+                <p className="mt-2 rounded-xl border border-sky-200 bg-white p-4 text-sm text-neutral-500">
+                  아직 접수한 문의가 없습니다.
+                </p>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {supportItems.map((item) => (
+                    <div key={item.id} className="rounded-xl border border-sky-200 bg-white p-4">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <p className="text-sm font-semibold text-neutral-900">{item.subject}</p>
+                        <span className="rounded-full bg-sky-100 px-3 py-1 text-xs font-medium text-sky-800">
+                          {SUPPORT_STATUS_LABELS[item.status]}
+                        </span>
+                      </div>
+                      <p className="mt-1 text-xs text-neutral-500">
+                        {SUPPORT_CATEGORY_LABELS[item.category]} / {new Date(item.created_at).toLocaleString("ko-KR")}
+                      </p>
+                      <p className="mt-3 whitespace-pre-wrap break-words text-sm text-neutral-700">{item.message}</p>
+                      {item.admin_reply && (
+                        <div className="mt-3 rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                          <p className="text-xs font-semibold text-emerald-800">운영자 답변</p>
+                          <p className="mt-1 whitespace-pre-wrap break-words text-sm text-emerald-900">{item.admin_reply}</p>
+                          {item.answered_at && (
+                            <p className="mt-2 text-[11px] text-emerald-700">
+                              답변 시각: {new Date(item.answered_at).toLocaleString("ko-KR")}
+                            </p>
+                          )}
+                        </div>
                       )}
                     </div>
-                  )}
+                  ))}
                 </div>
-              ))}
+              )}
             </div>
-          )}
-        </div>
+          </>
+        )}
       </section>
 
       <section className="mb-5 rounded-2xl border border-rose-200 bg-rose-50/30 p-5">
