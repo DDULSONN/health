@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import DatingAdultNotice from "@/components/DatingAdultNotice";
 
 type WriteStatusResponse = {
   loggedIn: boolean;
@@ -366,6 +367,8 @@ function DatingOneOnOnePageContent() {
           카드 본문에는 상대에게 전달할 정보만 담기며, 전화번호는 운영자 확인용으로만 별도 보관됩니다.
         </p>
       </section>
+
+      <DatingAdultNotice />
 
       <section className="mt-4 rounded-2xl border border-neutral-200 bg-white p-5">
         <h2 className="text-lg font-semibold text-neutral-900">주의사항 및 동의</h2>

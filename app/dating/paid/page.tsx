@@ -6,6 +6,7 @@ import { createClient } from "@/lib/supabase/client";
 import { DATING_PAID_FIXED_BADGE_LABEL, DATING_PAID_FIXED_HOURS, DATING_PAID_FIXED_LABEL, DATING_PAID_FIXED_SHORT_LABEL } from "@/lib/dating-paid";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
+import DatingAdultNotice from "@/components/DatingAdultNotice";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -447,6 +448,8 @@ export default function DatingPaidPage() {
           </div>
         </div>
       </section>
+
+      <DatingAdultNotice />
 
       {successId && (
         <section className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">

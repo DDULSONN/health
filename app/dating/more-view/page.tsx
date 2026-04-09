@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
+import DatingAdultNotice from "@/components/DatingAdultNotice";
 
 type MoreViewStatus = "none" | "pending" | "approved" | "rejected";
 type MoreViewStatusResponse = {
@@ -185,6 +186,8 @@ export default function MoreViewPage() {
           {creditOrderId && <p className="mt-2 text-xs text-amber-900">요청 완료: {creditOrderId} (오픈카톡으로 닉네임 + 신청ID 전송)</p>}
         </div>
       </section>
+
+      <DatingAdultNotice />
     </main>
   );
 }

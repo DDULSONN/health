@@ -23,7 +23,7 @@ export default function Footer() {
           </p>
         </div>
 
-        <div className="mt-3 flex justify-center gap-3 text-[11px] text-neutral-500">
+        <div className="mt-3 flex flex-wrap justify-center gap-3 text-[11px] text-neutral-500">
           <Link href="/terms" className="transition-colors hover:text-neutral-700">
             이용약관
           </Link>
@@ -35,13 +35,17 @@ export default function Footer() {
           <Link href="/refund" className="transition-colors hover:text-neutral-700">
             환불/취소 규정
           </Link>
+          <span>|</span>
+          <Link href="/dating-policy" className="transition-colors hover:text-neutral-700">
+            소개팅 운영정책
+          </Link>
         </div>
 
         <details className="mx-auto mt-4 max-w-2xl rounded-md border border-neutral-200 bg-white px-3 py-2 text-left text-xs text-neutral-500">
           <summary className="cursor-pointer text-neutral-700">상품 및 환불 안내 요약</summary>
           <div className="mt-2 space-y-1 leading-5">
             <p>유료 상품은 각 상품 안내 페이지에 기재된 노출 방식, 제공 시점, 이용 시간 기준으로 제공됩니다.</p>
-            <p>서비스 제공 전에는 문의 확인 후 환불 검토가 가능할 수 있으나, 노출 또는 이용이 시작된 뒤에는 환불이 제한될 수 있습니다.</p>
+            <p>서비스 제공 전에 문의 확인 후 환불 검토가 가능할 수 있으나, 노출 또는 이용이 시작된 이후에는 환불이 제한될 수 있습니다.</p>
             <p>결제 및 환불 문의: gymtools.kr@gmail.com / 010-8693-0657</p>
           </div>
         </details>

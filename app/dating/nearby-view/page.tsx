@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
+import DatingAdultNotice from "@/components/DatingAdultNotice";
 
 type ProvinceStat = {
   province: string;
@@ -220,6 +221,8 @@ export default function NearbyViewPage() {
         <p className="mt-1 text-[11px] text-sky-700">구매 안내: 승인 전에는 카드 열람이 불가하며, 승인 후 3시간 동안만 이용 가능합니다.</p>
         {!status.loggedIn && <p className="mt-2 text-xs text-neutral-500">로그인 후 신청 가능합니다.</p>}
       </section>
+
+      <DatingAdultNotice />
 
       <section className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
         <h2 className="mb-3 text-sm font-semibold text-neutral-800">도/광역시별 대기 인원</h2>
