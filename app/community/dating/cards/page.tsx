@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import DatingAdultNotice from "@/components/DatingAdultNotice";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 import { cacheOpenCardDetail, cachePaidCardDetail } from "@/lib/dating-detail-cache";
@@ -591,6 +592,7 @@ export default function OpenCardsPage() {
   const activeCurrentCount = activeSex === "male" ? (queueStats?.male.public_count ?? males.length) : (queueStats?.female.public_count ?? females.length);
   return (
     <main className="max-w-3xl mx-auto px-4 py-6">
+      <DatingAdultNotice />
       <div className="mb-4 flex flex-wrap items-center gap-2">
         <span className="rounded-full border border-neutral-300 bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white">오픈카드</span>
         <Link

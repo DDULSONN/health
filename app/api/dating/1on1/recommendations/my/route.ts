@@ -3,7 +3,7 @@ import {
   DATING_ONE_ON_ONE_MATCH_CANDIDATE_SINGLE_TRACK_STATES,
   toDatingOneOnOneCardDetail,
 } from "@/lib/dating-1on1";
-import { compareRegionsByDistance } from "@/lib/region-distance";
+import { getRegionDistanceMeta } from "@/lib/region-distance";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
@@ -56,6 +56,95 @@ function getAgeGap(sourceAge: number | null, candidateAge: number | null): numbe
     return Number.POSITIVE_INFINITY;
   }
   return Math.abs(sourceAge - candidateAge);
+}
+
+function getDistanceRank(sourceRegion: string | null, candidateRegion: string | null) {
+  const meta = getRegionDistanceMeta(sourceRegion, candidateRegion);
+
+  return {
+    sameRegionRank: meta.sameRegion ? 0 : 1,
+    sameProvinceRank: meta.sameProvince ? 0 : 1,
+    distanceRank: meta.distanceKm ?? Number.POSITIVE_INFINITY,
+  };
+}
+
+function sortCandidatesForSource(
+  sourceCard: ReturnType<typeof toDatingOneOnOneCardDetail>,
+  candidates: ReturnType<typeof toDatingOneOnOneCardDetail>[],
+  seedSuffix: string
+) {
+  const sourceAgeRange = getAgeRange(sourceCard);
+  const inAgeRange = (candidateCard: (typeof candidates)[number]) => {
+    if (
+      sourceAgeRange.minAge == null ||
+      sourceAgeRange.maxAge == null ||
+      candidateCard.age == null ||
+      !Number.isFinite(candidateCard.age)
+    ) {
+      return false;
+    }
+    return candidateCard.age >= sourceAgeRange.minAge && candidateCard.age <= sourceAgeRange.maxAge;
+  };
+
+  return [...candidates].sort((a, b) => {
+    const aDistanceRank = getDistanceRank(sourceCard.region, a.region);
+    const bDistanceRank = getDistanceRank(sourceCard.region, b.region);
+    if (aDistanceRank.sameRegionRank !== bDistanceRank.sameRegionRank) {
+      return aDistanceRank.sameRegionRank - bDistanceRank.sameRegionRank;
+    }
+    if (aDistanceRank.sameProvinceRank !== bDistanceRank.sameProvinceRank) {
+      return aDistanceRank.sameProvinceRank - bDistanceRank.sameProvinceRank;
+    }
+    if (aDistanceRank.distanceRank !== bDistanceRank.distanceRank) {
+      return aDistanceRank.distanceRank - bDistanceRank.distanceRank;
+    }
+
+    const aInAgeRange = inAgeRange(a);
+    const bInAgeRange = inAgeRange(b);
+    if (aInAgeRange !== bInAgeRange) {
+      return aInAgeRange ? -1 : 1;
+    }
+
+    const aAgeGap = getAgeGap(sourceCard.age, a.age);
+    const bAgeGap = getAgeGap(sourceCard.age, b.age);
+    if (aAgeGap !== bAgeGap) {
+      return aAgeGap - bAgeGap;
+    }
+
+    const aHash = hashSeed(`${sourceCard.id}:${seedSuffix}:${a.id}`);
+    const bHash = hashSeed(`${sourceCard.id}:${seedSuffix}:${b.id}`);
+    if (aHash !== bHash) return aHash - bHash;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+function takeRecommendations(
+  sortedCandidates: ReturnType<typeof toDatingOneOnOneCardDetail>[],
+  limit: number,
+  preferredExcludeIds: Set<string> | null = null
+) {
+  if (!preferredExcludeIds || preferredExcludeIds.size === 0) {
+    return sortedCandidates.slice(0, limit);
+  }
+
+  const picked: ReturnType<typeof toDatingOneOnOneCardDetail>[] = [];
+  for (const candidate of sortedCandidates) {
+    if (preferredExcludeIds.has(candidate.id)) continue;
+    picked.push(candidate);
+    if (picked.length >= limit) {
+      return picked;
+    }
+  }
+
+  for (const candidate of sortedCandidates) {
+    if (picked.some((pickedCandidate) => pickedCandidate.id === candidate.id)) continue;
+    picked.push(candidate);
+    if (picked.length >= limit) {
+      return picked;
+    }
+  }
+
+  return picked;
 }
 
 function getRefreshAvailability(refreshUsedAt?: string | null) {
@@ -166,7 +255,6 @@ export async function GET(req: Request) {
   const blockedCandidateIds = new Set((blockedCandidateRes.data ?? []).map((row) => row.candidate_card_id));
 
   const items = mySourceCards.map((sourceCard) => {
-    const sourceAgeRange = getAgeRange(sourceCard);
     const excludedIds = existingPairMap.get(sourceCard.id) ?? new Set<string>();
     const candidates = normalizedCards.filter((candidateCard) => {
       if (candidateCard.id === sourceCard.id) return false;
@@ -181,39 +269,15 @@ export async function GET(req: Request) {
       );
     });
 
-    const inAgeRange = (candidateCard: (typeof candidates)[number]) => {
-      if (sourceAgeRange.minAge == null || sourceAgeRange.maxAge == null || candidateCard.age == null || !Number.isFinite(candidateCard.age)) {
-        return false;
-      }
-      return candidateCard.age >= sourceAgeRange.minAge && candidateCard.age <= sourceAgeRange.maxAge;
-    };
-
-    const sortedCandidates = [...candidates].sort((a, b) => {
-      const distanceGap = compareRegionsByDistance(sourceCard.region, a.region, b.region);
-      if (distanceGap !== 0) return distanceGap;
-
-      const aInAgeRange = inAgeRange(a);
-      const bInAgeRange = inAgeRange(b);
-      if (aInAgeRange !== bInAgeRange) {
-        return aInAgeRange ? -1 : 1;
-      }
-
-      const ageGap = getAgeGap(sourceCard.age, a.age) - getAgeGap(sourceCard.age, b.age);
-      if (ageGap !== 0) return ageGap;
-
-      const seedSuffix = sourceCard.recommendation_refresh_used_at ?? "default";
-      const aHash = hashSeed(`${sourceCard.id}:${seedSuffix}:${a.id}`);
-      const bHash = hashSeed(`${sourceCard.id}:${seedSuffix}:${b.id}`);
-      if (aHash !== bHash) return aHash - bHash;
-      return a.id.localeCompare(b.id);
-    });
-
-    const refreshStartIndex =
-      sortedCandidates.length > RECOMMENDATION_LIMIT
-        ? Math.min(Math.floor(sortedCandidates.length / 2), sortedCandidates.length - RECOMMENDATION_LIMIT)
-        : 0;
-    const startIndex = sourceCard.recommendation_refresh_used_at ? refreshStartIndex : 0;
-    const recommendations = sortedCandidates.slice(startIndex, startIndex + RECOMMENDATION_LIMIT);
+    const defaultSortedCandidates = sortCandidatesForSource(sourceCard, candidates, "default");
+    const defaultRecommendations = takeRecommendations(defaultSortedCandidates, RECOMMENDATION_LIMIT);
+    const recommendations = sourceCard.recommendation_refresh_used_at
+      ? takeRecommendations(
+          sortCandidatesForSource(sourceCard, candidates, sourceCard.recommendation_refresh_used_at),
+          RECOMMENDATION_LIMIT,
+          new Set(defaultRecommendations.map((candidate) => candidate.id))
+        )
+      : defaultRecommendations;
     const refreshAvailability = getRefreshAvailability(sourceCard.recommendation_refresh_used_at);
 
     return {
@@ -222,7 +286,7 @@ export async function GET(req: Request) {
       refresh_used: refreshAvailability.refreshUsed,
       refresh_used_at: sourceCard.recommendation_refresh_used_at ?? null,
       next_refresh_at: refreshAvailability.nextRefreshAt,
-      can_refresh: refreshAvailability.canRefreshNow && sortedCandidates.length > RECOMMENDATION_LIMIT,
+      can_refresh: refreshAvailability.canRefreshNow && candidates.length > RECOMMENDATION_LIMIT,
       recommendations,
     };
   });
