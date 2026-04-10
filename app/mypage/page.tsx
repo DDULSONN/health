@@ -2746,11 +2746,11 @@ export default function MyPage() {
               <div>
                 <p className="text-sm font-semibold text-amber-900">라이크 구매</p>
                 <p className="mt-1 text-xs text-amber-800">
-                  기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 7}회입니다. 구매 승인 시 30일 동안 하루{" "}
+                  기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 7}회입니다. 구매 승인 시 15일 동안 하루{" "}
                   {swipeSubscriptionStatus?.premiumLimit ?? 15}회까지 사용할 수 있습니다.
                 </p>
                 <p className="mt-1 text-[11px] text-neutral-600">
-                  10,000원 / 30일 / 승인 후 바로 반영
+                  10,000원 / 15일 / 승인 후 바로 반영
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">

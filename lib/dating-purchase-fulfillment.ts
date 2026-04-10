@@ -532,7 +532,7 @@ export async function approveSwipeSubscriptionRequest(
   }
 
   const reviewedAt = new Date();
-  const durationDays = Math.max(1, Number(pendingRes.data.duration_days ?? 30));
+  const durationDays = Math.max(1, Number(pendingRes.data.duration_days ?? 15));
   const expiresAt = new Date(reviewedAt.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString();
 
   const updateRes = await admin

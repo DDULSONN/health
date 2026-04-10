@@ -6,7 +6,7 @@ create table if not exists public.dating_swipe_subscription_requests (
   status text not null default 'pending' check (status in ('pending', 'approved', 'rejected', 'expired')),
   amount int not null default 10000 check (amount = 10000),
   daily_limit int not null default 15 check (daily_limit between 1 and 100),
-  duration_days int not null default 30 check (duration_days between 1 and 365),
+  duration_days int not null default 15 check (duration_days between 1 and 365),
   note text null,
   requested_at timestamptz not null default now(),
   approved_at timestamptz null,
