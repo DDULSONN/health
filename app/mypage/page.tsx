@@ -836,6 +836,7 @@ export default function MyPage() {
   const [swipeSubscriptionSubmitting, setSwipeSubscriptionSubmitting] = useState(false);
   const [swipeSubscriptionError, setSwipeSubscriptionError] = useState("");
   const [swipeSubscriptionInfo, setSwipeSubscriptionInfo] = useState("");
+  const [swipeSubscriptionPanelOpen, setSwipeSubscriptionPanelOpen] = useState(false);
   const [supportItems, setSupportItems] = useState<SupportInquiry[]>([]);
   const [supportLoading, setSupportLoading] = useState(false);
   const [supportSubmitting, setSupportSubmitting] = useState(false);
@@ -1659,6 +1660,7 @@ export default function MyPage() {
         pendingSubscription: body.pendingSubscription ?? null,
       });
       setSwipeSubscriptionInfo(body.message ?? "구매 신청이 접수되었습니다.");
+      setSwipeSubscriptionPanelOpen(true);
     } catch (error) {
       setSwipeSubscriptionError(
         error instanceof Error ? error.message : "빠른매칭 라이크 구매 신청에 실패했습니다."
@@ -2746,61 +2748,84 @@ export default function MyPage() {
               <div>
                 <p className="text-sm font-semibold text-amber-900">라이크 구매</p>
                 <p className="mt-1 text-xs text-amber-800">
-                  기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 7}회입니다. 구매 승인 시 15일 동안 하루{" "}
-                  {swipeSubscriptionStatus?.premiumLimit ?? 15}회까지 사용할 수 있습니다.
-                </p>
-                <p className="mt-1 text-[11px] text-neutral-600">
-                  10,000원 / 15일 / 승인 후 바로 반영
+                  현재 하루 {swipeSubscriptionStatus?.dailyLimit ?? 7}회
+                  {swipeSubscriptionStatus?.status === "active"
+                    ? ` · 이용 중`
+                    : swipeSubscriptionStatus?.status === "pending"
+                      ? ` · 승인 대기`
+                      : ` · 기본 ${swipeSubscriptionStatus?.baseLimit ?? 7}회`}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800">
-                  현재 하루 {swipeSubscriptionStatus?.dailyLimit ?? 7}회
+                  10,000원 / 15일 / 하루 {swipeSubscriptionStatus?.premiumLimit ?? 15}회
                 </span>
-                <a
-                  href={OPEN_KAKAO_URL}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex h-8 items-center rounded-md border border-amber-200 bg-white px-3 text-xs font-medium text-amber-800"
-                >
-                  오픈카톡
-                </a>
                 <button
                   type="button"
-                  disabled={
-                    swipeSubscriptionSubmitting ||
-                    swipeSubscriptionLoading ||
-                    swipeSubscriptionStatus?.status === "pending" ||
-                    swipeSubscriptionStatus?.status === "active"
-                  }
-                  onClick={() => void handleRequestSwipeSubscription()}
-                  className="h-8 rounded-md bg-amber-500 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={() => setSwipeSubscriptionPanelOpen((prev) => !prev)}
+                  className="h-8 rounded-md border border-amber-200 bg-white px-3 text-xs font-medium text-amber-800"
                 >
-                  {swipeSubscriptionSubmitting ? "신청 중..." : "라이크 구매 신청"}
+                  {swipeSubscriptionPanelOpen ? "라이크 구매 접기" : "라이크 구매 보기"}
                 </button>
               </div>
             </div>
             {swipeSubscriptionStatus?.status === "active" && swipeSubscriptionStatus.activeSubscription?.expiresAt ? (
               <p className="mt-2 text-[11px] text-emerald-700">
                 이용 중: {new Date(swipeSubscriptionStatus.activeSubscription.expiresAt).toLocaleString("ko-KR")}까지
-                하루 {swipeSubscriptionStatus.premiumLimit}회
               </p>
             ) : null}
             {swipeSubscriptionStatus?.status === "pending" && swipeSubscriptionStatus.pendingSubscription?.id ? (
               <p className="mt-2 text-[11px] text-amber-700">
-                승인 대기 중: 신청ID {swipeSubscriptionStatus.pendingSubscription.id}
-                {swipeSubscriptionStatus.pendingSubscription.requestedAt
-                  ? ` / ${new Date(swipeSubscriptionStatus.pendingSubscription.requestedAt).toLocaleString("ko-KR")}`
-                  : ""}
-                {" / "}오픈카톡으로 닉네임 + 신청ID를 보내주세요.
+                승인 대기: 신청ID {swipeSubscriptionStatus.pendingSubscription.id}
               </p>
             ) : null}
-            {swipeSubscriptionError ? (
-              <p className="mt-2 text-[11px] text-rose-600">{swipeSubscriptionError}</p>
-            ) : null}
-            {swipeSubscriptionInfo ? (
-              <p className="mt-2 text-[11px] text-emerald-700">{swipeSubscriptionInfo}</p>
-            ) : null}
+
+            {swipeSubscriptionPanelOpen && (
+              <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50/40 p-3">
+                <p className="text-xs text-amber-800">
+                  기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 7}회입니다. 구매 승인 시 15일 동안 하루{" "}
+                  {swipeSubscriptionStatus?.premiumLimit ?? 15}회까지 사용할 수 있습니다.
+                </p>
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <a
+                    href={OPEN_KAKAO_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex h-8 items-center rounded-md border border-amber-200 bg-white px-3 text-xs font-medium text-amber-800"
+                  >
+                    오픈카톡
+                  </a>
+                  <button
+                    type="button"
+                    disabled={
+                      swipeSubscriptionSubmitting ||
+                      swipeSubscriptionLoading ||
+                      swipeSubscriptionStatus?.status === "pending" ||
+                      swipeSubscriptionStatus?.status === "active"
+                    }
+                    onClick={() => void handleRequestSwipeSubscription()}
+                    className="h-8 rounded-md bg-amber-500 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {swipeSubscriptionSubmitting ? "신청 중..." : "라이크 구매 신청"}
+                  </button>
+                </div>
+                {swipeSubscriptionStatus?.status === "pending" && swipeSubscriptionStatus.pendingSubscription?.id ? (
+                  <p className="mt-2 text-[11px] text-amber-700">
+                    승인 대기 중: 신청ID {swipeSubscriptionStatus.pendingSubscription.id}
+                    {swipeSubscriptionStatus.pendingSubscription.requestedAt
+                      ? ` / ${new Date(swipeSubscriptionStatus.pendingSubscription.requestedAt).toLocaleString("ko-KR")}`
+                      : ""}
+                    {" / "}오픈카톡으로 닉네임 + 신청ID를 보내주세요.
+                  </p>
+                ) : null}
+                {swipeSubscriptionError ? (
+                  <p className="mt-2 text-[11px] text-rose-600">{swipeSubscriptionError}</p>
+                ) : null}
+                {swipeSubscriptionInfo ? (
+                  <p className="mt-2 text-[11px] text-emerald-700">{swipeSubscriptionInfo}</p>
+                ) : null}
+              </div>
+            )}
           </div>
 
           {swipeStatusPanelOpen && (
