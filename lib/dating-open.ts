@@ -1,13 +1,27 @@
 export const OPEN_CARD_LIMIT_MALE = 20;
 export const OPEN_CARD_LIMIT_FEMALE = 20;
+export const OPEN_CARD_SATURDAY_LIMIT_MALE = 30;
+export const OPEN_CARD_SATURDAY_LIMIT_FEMALE = 30;
 export const OPEN_CARD_EXPIRE_HOURS = 24;
 export const OPEN_CARD_AUTO_REQUEUE_LIMIT = 1;
 
-export function getOpenCardLimitBySex(sex: "male" | "female"): number {
-  return sex === "female" ? OPEN_CARD_LIMIT_FEMALE : OPEN_CARD_LIMIT_MALE;
+const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+
+function getKstDate(now = new Date()) {
+  return new Date(now.getTime() + KST_OFFSET_MS);
 }
 
-const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
+export function isKstSaturday(now = new Date()) {
+  return getKstDate(now).getUTCDay() === 6;
+}
+
+export function getOpenCardLimitBySex(sex: "male" | "female", now = new Date()): number {
+  const isSaturday = isKstSaturday(now);
+  if (sex === "female") {
+    return isSaturday ? OPEN_CARD_SATURDAY_LIMIT_FEMALE : OPEN_CARD_LIMIT_FEMALE;
+  }
+  return isSaturday ? OPEN_CARD_SATURDAY_LIMIT_MALE : OPEN_CARD_LIMIT_MALE;
+}
 
 export function getKstDayRangeUtc(now = new Date()): { startUtcIso: string; endUtcIso: string } {
   const kstNowMs = now.getTime() + KST_OFFSET_MS;

@@ -8,7 +8,11 @@ import { getKstDayRangeUtc } from "@/lib/dating-open";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { createAdminClient } from "@/lib/supabase/server";
 
-export const SWIPE_DAILY_LIMIT = 5;
+export const SWIPE_BASE_DAILY_LIMIT = 7;
+export const SWIPE_PREMIUM_DAILY_LIMIT = 15;
+export const SWIPE_PREMIUM_PRICE_KRW = 10000;
+export const SWIPE_PREMIUM_DURATION_DAYS = 30;
+export const SWIPE_DAILY_LIMIT = SWIPE_BASE_DAILY_LIMIT;
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -40,6 +44,47 @@ type ProfileSwipeVisibilityRow = {
   user_id: string;
   swipe_profile_visible: boolean | null;
 };
+
+type SwipeSubscriptionRow = {
+  id: string;
+  status: "pending" | "approved" | "rejected" | "expired";
+  amount: number | null;
+  daily_limit: number | null;
+  duration_days: number | null;
+  requested_at: string | null;
+  approved_at: string | null;
+  expires_at: string | null;
+};
+
+export type SwipeLimitInfo = {
+  limit: number;
+  baseLimit: number;
+  premiumLimit: number;
+  premiumPriceKrw: number;
+  premiumDurationDays: number;
+  activeSubscription: {
+    id: string;
+    approvedAt: string | null;
+    expiresAt: string | null;
+  } | null;
+  pendingSubscription: {
+    id: string;
+    requestedAt: string | null;
+  } | null;
+};
+
+function isMissingRelationError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return (
+    code === "42P01" ||
+    code === "PGRST205" ||
+    message.includes("does not exist") ||
+    message.includes("relation") ||
+    message.includes("could not find the table")
+  );
+}
 
 export type SwipeCandidate = {
   user_id: string;
@@ -161,6 +206,95 @@ export async function getSwipeDailyUsage(adminClient: AdminClient, actorUserId: 
     throw res.error;
   }
   return Math.max(0, Number(res.count ?? 0));
+}
+
+export async function getSwipeLimitInfo(
+  adminClient: AdminClient,
+  userId: string,
+  now = new Date()
+): Promise<SwipeLimitInfo> {
+  const fallback: SwipeLimitInfo = {
+    limit: SWIPE_BASE_DAILY_LIMIT,
+    baseLimit: SWIPE_BASE_DAILY_LIMIT,
+    premiumLimit: SWIPE_PREMIUM_DAILY_LIMIT,
+    premiumPriceKrw: SWIPE_PREMIUM_PRICE_KRW,
+    premiumDurationDays: SWIPE_PREMIUM_DURATION_DAYS,
+    activeSubscription: null,
+    pendingSubscription: null,
+  };
+
+  const res = await adminClient
+    .from("dating_swipe_subscription_requests")
+    .select("id,status,amount,daily_limit,duration_days,requested_at,approved_at,expires_at")
+    .eq("user_id", userId)
+    .in("status", ["pending", "approved"])
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (res.error) {
+    if (isMissingRelationError(res.error)) {
+      return fallback;
+    }
+    throw res.error;
+  }
+
+  const rows = (res.data ?? []) as SwipeSubscriptionRow[];
+  const nowMs = now.getTime();
+  const staleApprovedIds = rows
+    .filter((row) => row.status === "approved" && row.expires_at)
+    .filter((row) => {
+      const expiresAt = new Date(String(row.expires_at)).getTime();
+      return Number.isFinite(expiresAt) && expiresAt <= nowMs;
+    })
+    .map((row) => row.id);
+
+  if (staleApprovedIds.length > 0) {
+    const expireRes = await adminClient
+      .from("dating_swipe_subscription_requests")
+      .update({
+        status: "expired",
+        reviewed_at: now.toISOString(),
+        updated_at: now.toISOString(),
+      })
+      .in("id", staleApprovedIds);
+
+    if (expireRes.error && !isMissingRelationError(expireRes.error)) {
+      console.error("[dating-swipe] expire stale subscriptions failed", expireRes.error);
+    }
+  }
+
+  const activeSubscription =
+    rows.find((row) => {
+      if (row.status !== "approved" || !row.expires_at) return false;
+      const expiresAt = new Date(String(row.expires_at)).getTime();
+      return Number.isFinite(expiresAt) && expiresAt > nowMs;
+    }) ?? null;
+
+  const pendingSubscription = rows.find((row) => row.status === "pending") ?? null;
+
+  return {
+    limit:
+      activeSubscription && Number.isFinite(Number(activeSubscription.daily_limit))
+        ? Math.max(SWIPE_BASE_DAILY_LIMIT, Number(activeSubscription.daily_limit))
+        : SWIPE_BASE_DAILY_LIMIT,
+    baseLimit: SWIPE_BASE_DAILY_LIMIT,
+    premiumLimit: SWIPE_PREMIUM_DAILY_LIMIT,
+    premiumPriceKrw: SWIPE_PREMIUM_PRICE_KRW,
+    premiumDurationDays: SWIPE_PREMIUM_DURATION_DAYS,
+    activeSubscription: activeSubscription
+      ? {
+          id: activeSubscription.id,
+          approvedAt: activeSubscription.approved_at ?? null,
+          expiresAt: activeSubscription.expires_at ?? null,
+        }
+      : null,
+    pendingSubscription: pendingSubscription
+      ? {
+          id: pendingSubscription.id,
+          requestedAt: pendingSubscription.requested_at ?? null,
+        }
+      : null,
+  };
 }
 
 export async function getLatestSwipeCardForUser(

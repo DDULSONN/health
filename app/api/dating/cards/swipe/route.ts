@@ -3,8 +3,8 @@ import {
   getLatestSwipeCardForUser,
   getSwipeCandidate,
   getSwipeDailyUsage,
+  getSwipeLimitInfo,
   sendDatingEmailNotification,
-  SWIPE_DAILY_LIMIT,
 } from "@/lib/dating-swipe";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -35,7 +35,7 @@ export async function GET(req: Request) {
       loggedIn: false,
       canSwipe: false,
       remaining: 0,
-      limit: SWIPE_DAILY_LIMIT,
+      limit: 7,
       candidate: null,
       reason: "로그인이 필요합니다.",
     });
@@ -64,26 +64,28 @@ export async function GET(req: Request) {
   const adminClient = createAdminClient();
 
   try {
+    const limitInfo = await getSwipeLimitInfo(adminClient, user.id);
+    const dailyLimit = limitInfo.limit;
     const myCard = await getLatestSwipeCardForUser(adminClient, user.id);
     if (!myCard) {
       return NextResponse.json({
         loggedIn: true,
         canSwipe: false,
         remaining: 0,
-        limit: SWIPE_DAILY_LIMIT,
+        limit: dailyLimit,
         candidate: null,
         reason: "오픈카드를 한 번 이상 등록한 사용자만 이용할 수 있습니다.",
       });
     }
 
     const used = await getSwipeDailyUsage(adminClient, user.id);
-    const remaining = Math.max(0, SWIPE_DAILY_LIMIT - used);
+    const remaining = Math.max(0, dailyLimit - used);
     if (remaining <= 0) {
       return NextResponse.json({
         loggedIn: true,
         canSwipe: false,
         remaining,
-        limit: SWIPE_DAILY_LIMIT,
+        limit: dailyLimit,
         candidate: null,
         reason: "오늘 사용할 수 있는 빠른 매칭 횟수를 모두 사용했습니다.",
       });
@@ -94,7 +96,7 @@ export async function GET(req: Request) {
       loggedIn: true,
       canSwipe: true,
       remaining,
-      limit: SWIPE_DAILY_LIMIT,
+      limit: dailyLimit,
       candidate,
       reason: candidate ? null : "현재 보여줄 후보가 없습니다.",
     });
@@ -149,6 +151,8 @@ export async function POST(req: Request) {
   const adminClient = createAdminClient();
 
   try {
+    const limitInfo = await getSwipeLimitInfo(adminClient, user.id);
+    const dailyLimit = limitInfo.limit;
     const myCard = await getLatestSwipeCardForUser(adminClient, user.id);
     if (!myCard) {
       return NextResponse.json({ error: "오픈카드를 한 번 이상 등록한 사용자만 이용할 수 있습니다." }, { status: 403 });
@@ -192,7 +196,7 @@ export async function POST(req: Request) {
     }
 
     const used = await getSwipeDailyUsage(adminClient, user.id);
-    if (!existingSwipe?.id && used >= SWIPE_DAILY_LIMIT) {
+    if (!existingSwipe?.id && used >= dailyLimit) {
       return NextResponse.json({ error: "오늘 사용할 수 있는 빠른 매칭 횟수를 모두 사용했습니다." }, { status: 429 });
     }
 
@@ -322,7 +326,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       ok: true,
-      remaining: Math.max(0, SWIPE_DAILY_LIMIT - (used + (existingSwipe?.id ? 0 : 1))),
+      remaining: Math.max(0, dailyLimit - (used + (existingSwipe?.id ? 0 : 1))),
+      limit: dailyLimit,
       match: matchPayload,
     });
   } catch (error) {

@@ -504,6 +504,90 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
   };
 }
 
+type ApproveSwipeSubscriptionRequestOptions = {
+  requestId: string;
+  reviewedByUserId: string | null;
+  note?: string | null;
+};
+
+export async function approveSwipeSubscriptionRequest(
+  admin: AdminClient,
+  options: ApproveSwipeSubscriptionRequestOptions
+) {
+  const pendingRes = await admin
+    .from("dating_swipe_subscription_requests")
+    .select("id,user_id,daily_limit,duration_days,amount,status")
+    .eq("id", options.requestId)
+    .eq("status", "pending")
+    .maybeSingle();
+
+  if (pendingRes.error && isMissingColumnError(pendingRes.error)) {
+    throw pendingRes.error;
+  }
+  if (pendingRes.error) {
+    throw pendingRes.error;
+  }
+  if (!pendingRes.data) {
+    return null;
+  }
+
+  const reviewedAt = new Date();
+  const durationDays = Math.max(1, Number(pendingRes.data.duration_days ?? 30));
+  const expiresAt = new Date(reviewedAt.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const updateRes = await admin
+    .from("dating_swipe_subscription_requests")
+    .update({
+      status: "approved",
+      approved_at: reviewedAt.toISOString(),
+      expires_at: expiresAt,
+      reviewed_at: reviewedAt.toISOString(),
+      reviewed_by_user_id: options.reviewedByUserId,
+      note: options.note ?? null,
+      updated_at: reviewedAt.toISOString(),
+    })
+    .eq("id", options.requestId)
+    .eq("status", "pending")
+    .select("id,user_id,status,amount,daily_limit,duration_days,approved_at,expires_at")
+    .maybeSingle();
+
+  if (updateRes.error) {
+    throw updateRes.error;
+  }
+  return updateRes.data ?? null;
+}
+
+type RejectSwipeSubscriptionRequestOptions = {
+  requestId: string;
+  reviewedByUserId: string | null;
+  note?: string | null;
+};
+
+export async function rejectSwipeSubscriptionRequest(
+  admin: AdminClient,
+  options: RejectSwipeSubscriptionRequestOptions
+) {
+  const reviewedAt = new Date().toISOString();
+  const updateRes = await admin
+    .from("dating_swipe_subscription_requests")
+    .update({
+      status: "rejected",
+      reviewed_at: reviewedAt,
+      reviewed_by_user_id: options.reviewedByUserId,
+      note: options.note ?? null,
+      updated_at: reviewedAt,
+    })
+    .eq("id", options.requestId)
+    .eq("status", "pending")
+    .select("id,user_id,status,amount,daily_limit,duration_days")
+    .maybeSingle();
+
+  if (updateRes.error) {
+    throw updateRes.error;
+  }
+  return updateRes.data ?? null;
+}
+
 type ApprovePaidCardOptions = {
   paidCardId: string;
   displayMode?: "priority_24h" | "instant_public";

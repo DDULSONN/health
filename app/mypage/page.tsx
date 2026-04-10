@@ -36,6 +36,8 @@ const AdminCommunityModerationPanel = dynamic(() => import("@/components/AdminCo
   loading: () => <MyPageWidgetSkeleton className="h-80" />,
 });
 
+const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
+
 type MyPageTab = "my_cert" | "request_status" | "admin_review";
 
 type BodycheckPost = {
@@ -195,6 +197,26 @@ type SwipeStatusResponse = {
   outgoing_likes?: SwipeStatusItem[];
   incoming_likes?: SwipeStatusItem[];
   error?: string;
+};
+
+type SwipeSubscriptionStatus = {
+  status: "none" | "pending" | "active";
+  dailyLimit: number;
+  baseLimit: number;
+  premiumLimit: number;
+  priceKrw: number;
+  durationDays: number;
+  activeSubscription?: {
+    id: string;
+    approvedAt: string | null;
+    expiresAt: string | null;
+  } | null;
+  pendingSubscription?: {
+    id: string;
+    requestedAt: string | null;
+  } | null;
+  error?: string;
+  message?: string;
 };
 
 const SUPPORT_CATEGORY_LABELS: Record<SupportInquiry["category"], string> = {
@@ -410,6 +432,7 @@ type AdminManageTab =
   | "dating_insights"
   | "open_cards"
   | "apply_credits"
+  | "swipe_subscriptions"
   | "more_view"
   | "city_view"
   | "bodybattle"
@@ -449,6 +472,19 @@ type AdminApplyCreditOrder = {
   created_at: string;
   processed_at: string | null;
   memo: string | null;
+};
+type AdminSwipeSubscriptionRequest = {
+  id: string;
+  user_id: string;
+  nickname: string | null;
+  status: "pending" | "approved" | "rejected" | "expired";
+  amount: number;
+  daily_limit: number;
+  duration_days: number;
+  requested_at: string;
+  approved_at: string | null;
+  expires_at: string | null;
+  note: string | null;
 };
 type AdminMoreViewRequest = {
   id: string;
@@ -732,6 +768,7 @@ export default function MyPage() {
   const [adminDataView, setAdminDataView] = useState<AdminDataView>("cards");
   const [adminManageTab, setAdminManageTab] = useState<AdminManageTab>("open_cards");
   const [adminApplyCreditOrders, setAdminApplyCreditOrders] = useState<AdminApplyCreditOrder[]>([]);
+  const [adminSwipeSubscriptionRequests, setAdminSwipeSubscriptionRequests] = useState<AdminSwipeSubscriptionRequest[]>([]);
   const [adminMoreViewRequests, setAdminMoreViewRequests] = useState<AdminMoreViewRequest[]>([]);
   const [adminCityViewRequests, setAdminCityViewRequests] = useState<AdminCityViewRequest[]>([]);
   const [adminDatingStats, setAdminDatingStats] = useState<AdminDatingStats | null>(null);
@@ -746,6 +783,7 @@ export default function MyPage() {
   const [runningBodyBattleAdminTask, setRunningBodyBattleAdminTask] = useState(false);
   const [approvingOrderIds, setApprovingOrderIds] = useState<string[]>([]);
   const [processingMoreViewIds, setProcessingMoreViewIds] = useState<string[]>([]);
+  const [processingSwipeSubscriptionIds, setProcessingSwipeSubscriptionIds] = useState<string[]>([]);
   const [processingCityViewIds, setProcessingCityViewIds] = useState<string[]>([]);
   const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
@@ -793,6 +831,11 @@ export default function MyPage() {
   const [adminDeleteError, setAdminDeleteError] = useState("");
   const [adminDeleteInfo, setAdminDeleteInfo] = useState("");
   const [savingSwipeVisibility, setSavingSwipeVisibility] = useState(false);
+  const [swipeSubscriptionStatus, setSwipeSubscriptionStatus] = useState<SwipeSubscriptionStatus | null>(null);
+  const [swipeSubscriptionLoading, setSwipeSubscriptionLoading] = useState(false);
+  const [swipeSubscriptionSubmitting, setSwipeSubscriptionSubmitting] = useState(false);
+  const [swipeSubscriptionError, setSwipeSubscriptionError] = useState("");
+  const [swipeSubscriptionInfo, setSwipeSubscriptionInfo] = useState("");
   const [supportItems, setSupportItems] = useState<SupportInquiry[]>([]);
   const [supportLoading, setSupportLoading] = useState(false);
   const [supportSubmitting, setSupportSubmitting] = useState(false);
@@ -1087,6 +1130,7 @@ export default function MyPage() {
             setAdminOpenCardApplications([]);
             setAdminPaidCardApplications([]);
             setAdminApplyCreditOrders([]);
+            setAdminSwipeSubscriptionRequests([]);
             setAdminMoreViewRequests([]);
             setAdminCityViewRequests([]);
             setAdminAccountDeletionAudits([]);
@@ -1111,6 +1155,68 @@ export default function MyPage() {
       setActiveTab("my_cert");
     }
   }, [isAdmin, activeTab]);
+
+  useEffect(() => {
+    if (loading) return;
+
+    queueMicrotask(async () => {
+      try {
+        setSwipeSubscriptionLoading(true);
+        const res = await fetch("/api/dating/cards/swipe/subscription", { cache: "no-store" });
+        const body = (await res.json().catch(() => ({}))) as SwipeSubscriptionStatus;
+        if (!res.ok) {
+          throw new Error(body.error ?? "빠른매칭 라이크 구매 상태를 불러오지 못했습니다.");
+        }
+        setSwipeSubscriptionStatus(body);
+        setSwipeSubscriptionError("");
+      } catch (error) {
+        setSwipeSubscriptionStatus({
+          status: "none",
+          dailyLimit: 7,
+          baseLimit: 7,
+          premiumLimit: 15,
+          priceKrw: 10000,
+          durationDays: 30,
+        });
+        setSwipeSubscriptionError(
+          error instanceof Error ? error.message : "빠른매칭 라이크 구매 상태를 불러오지 못했습니다."
+        );
+      } finally {
+        setSwipeSubscriptionLoading(false);
+      }
+    });
+  }, [loading]);
+
+  useEffect(() => {
+    if (loading || !isAdmin) return;
+    let cancelled = false;
+
+    queueMicrotask(async () => {
+      try {
+        const res = await fetch("/api/admin/dating/cards/swipe-subscriptions?status=pending", { cache: "no-store" });
+        const body = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          items?: AdminSwipeSubscriptionRequest[];
+          message?: string;
+        };
+        if (!res.ok || body.ok === false) {
+          throw new Error(body.message ?? "빠른매칭 구독 승인 목록을 불러오지 못했습니다.");
+        }
+        if (!cancelled) {
+          setAdminSwipeSubscriptionRequests(body.items ?? []);
+        }
+      } catch (error) {
+        console.error("[mypage] swipe subscription admin load failed", error);
+        if (!cancelled) {
+          setAdminSwipeSubscriptionRequests([]);
+        }
+      }
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, isAdmin]);
 
   useEffect(() => {
     if (loading || !supportPanelOpen || supportLoaded) return;
@@ -1527,6 +1633,41 @@ export default function MyPage() {
     }
   };
 
+  const handleRequestSwipeSubscription = async () => {
+    if (swipeSubscriptionSubmitting) return;
+    setSwipeSubscriptionSubmitting(true);
+    setSwipeSubscriptionError("");
+    setSwipeSubscriptionInfo("");
+    try {
+      const res = await fetch("/api/dating/cards/swipe/subscription", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const body = (await res.json().catch(() => ({}))) as SwipeSubscriptionStatus & { ok?: boolean; message?: string };
+      if (!res.ok || body.ok === false) {
+        throw new Error(body.message ?? body.error ?? "빠른매칭 라이크 구매 신청에 실패했습니다.");
+      }
+      setSwipeSubscriptionStatus({
+        status:
+          body.status === "active" || body.status === "pending" || body.status === "none" ? body.status : "none",
+        dailyLimit: Math.max(1, Number(body.dailyLimit ?? 7)),
+        baseLimit: Math.max(1, Number(body.baseLimit ?? 7)),
+        premiumLimit: Math.max(1, Number(body.premiumLimit ?? 15)),
+        priceKrw: Math.max(0, Number(body.priceKrw ?? 10000)),
+        durationDays: Math.max(1, Number(body.durationDays ?? 30)),
+        activeSubscription: body.activeSubscription ?? null,
+        pendingSubscription: body.pendingSubscription ?? null,
+      });
+      setSwipeSubscriptionInfo(body.message ?? "구매 신청이 접수되었습니다.");
+    } catch (error) {
+      setSwipeSubscriptionError(
+        error instanceof Error ? error.message : "빠른매칭 라이크 구매 신청에 실패했습니다."
+      );
+    } finally {
+      setSwipeSubscriptionSubmitting(false);
+    }
+  };
+
   const reloadOpenDatingConnections = async () => {
     const [openRes, paidRes] = await Promise.all([
       fetch("/api/dating/cards/my/connections", { cache: "no-store" }),
@@ -1887,6 +2028,29 @@ export default function MyPage() {
       setAdminApplyCreditOrders((prev) => prev.filter((item) => item.id !== orderId));
     } finally {
       setApprovingOrderIds((prev) => prev.filter((id) => id !== orderId));
+    }
+  };
+
+  const handleAdminProcessSwipeSubscription = async (
+    requestId: string,
+    status: "approved" | "rejected"
+  ) => {
+    if (processingSwipeSubscriptionIds.includes(requestId)) return;
+    setProcessingSwipeSubscriptionIds((prev) => [...prev, requestId]);
+    try {
+      const res = await fetch(`/api/admin/dating/cards/swipe-subscriptions/${requestId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+      if (!res.ok || body.ok === false) {
+        alert(body.message ?? "빠른매칭 라이크 구매 신청 처리에 실패했습니다.");
+        return;
+      }
+      setAdminSwipeSubscriptionRequests((prev) => prev.filter((item) => item.id !== requestId));
+    } finally {
+      setProcessingSwipeSubscriptionIds((prev) => prev.filter((id) => id !== requestId));
     }
   };
 
@@ -2538,10 +2702,10 @@ export default function MyPage() {
           </div>
         </div>
 
-        <div className="mt-4 rounded-xl border border-pink-200 bg-pink-50/60 p-4">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <p className="text-sm font-semibold text-pink-900">빠른매칭 진행 상황</p>
+          <div className="mt-4 rounded-xl border border-pink-200 bg-pink-50/60 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-pink-900">빠른매칭 진행 상황</p>
               <p className="mt-1 text-xs text-pink-700">
                 마이페이지가 너무 길어지지 않게 접어두고, 필요할 때만 펼쳐서 확인할 수 있게 바꿨습니다.
               </p>
@@ -2575,6 +2739,68 @@ export default function MyPage() {
                       : "빠른매칭 불러오기"}
               </button>
             </div>
+          </div>
+
+          <div className="mt-3 rounded-xl border border-amber-200 bg-white p-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-amber-900">라이크 구매</p>
+                <p className="mt-1 text-xs text-amber-800">
+                  기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 7}회입니다. 구매 승인 시 30일 동안 하루{" "}
+                  {swipeSubscriptionStatus?.premiumLimit ?? 15}회까지 사용할 수 있습니다.
+                </p>
+                <p className="mt-1 text-[11px] text-neutral-600">
+                  10,000원 / 30일 / 승인 후 바로 반영
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800">
+                  현재 하루 {swipeSubscriptionStatus?.dailyLimit ?? 7}회
+                </span>
+                <a
+                  href={OPEN_KAKAO_URL}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex h-8 items-center rounded-md border border-amber-200 bg-white px-3 text-xs font-medium text-amber-800"
+                >
+                  오픈카톡
+                </a>
+                <button
+                  type="button"
+                  disabled={
+                    swipeSubscriptionSubmitting ||
+                    swipeSubscriptionLoading ||
+                    swipeSubscriptionStatus?.status === "pending" ||
+                    swipeSubscriptionStatus?.status === "active"
+                  }
+                  onClick={() => void handleRequestSwipeSubscription()}
+                  className="h-8 rounded-md bg-amber-500 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {swipeSubscriptionSubmitting ? "신청 중..." : "라이크 구매 신청"}
+                </button>
+              </div>
+            </div>
+            {swipeSubscriptionStatus?.status === "active" && swipeSubscriptionStatus.activeSubscription?.expiresAt ? (
+              <p className="mt-2 text-[11px] text-emerald-700">
+                이용 중: {new Date(swipeSubscriptionStatus.activeSubscription.expiresAt).toLocaleString("ko-KR")}까지
+                하루 {swipeSubscriptionStatus.premiumLimit}회
+              </p>
+            ) : null}
+            {swipeSubscriptionStatus?.status === "pending" && swipeSubscriptionStatus.pendingSubscription?.id ? (
+              <p className="mt-2 text-[11px] text-amber-700">
+                승인 대기 중: 신청ID {swipeSubscriptionStatus.pendingSubscription.id}
+                {swipeSubscriptionStatus.pendingSubscription.requestedAt
+                  ? ` / ${new Date(swipeSubscriptionStatus.pendingSubscription.requestedAt).toLocaleString("ko-KR")}`
+                  : ""}
+                {" / "}오픈카톡으로 닉네임 + 신청ID를 보내주세요.
+              </p>
+            ) : null}
+            {swipeSubscriptionError ? (
+              <p className="mt-2 text-[11px] text-rose-600">{swipeSubscriptionError}</p>
+            ) : null}
+            {swipeSubscriptionInfo ? (
+              <p className="mt-2 text-[11px] text-emerald-700">{swipeSubscriptionInfo}</p>
+            ) : null}
           </div>
 
           {swipeStatusPanelOpen && (
@@ -3920,20 +4146,31 @@ export default function MyPage() {
             >
               오픈카드
             </button>
-            <button
-              type="button"
-              onClick={() => setAdminManageTab("apply_credits")}
-              className={`h-8 rounded-md border px-3 text-xs font-medium ${
-                adminManageTab === "apply_credits" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
-              }`}
-            >
-              지원권 주문
-            </button>
-            <button
-              type="button"
-              onClick={() => setAdminManageTab("more_view")}
-              className={`h-8 rounded-md border px-3 text-xs font-medium ${
-                adminManageTab === "more_view" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              <button
+                type="button"
+                onClick={() => setAdminManageTab("apply_credits")}
+                className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                  adminManageTab === "apply_credits" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+                }`}
+              >
+                지원권 주문
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdminManageTab("swipe_subscriptions")}
+                className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                  adminManageTab === "swipe_subscriptions"
+                    ? "border-violet-600 bg-violet-600 text-white"
+                    : "border-violet-200 bg-white text-violet-800"
+                }`}
+              >
+                빠른매칭 구독
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdminManageTab("more_view")}
+                className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                  adminManageTab === "more_view" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
               }`}
             >
               이상형 더보기
@@ -4447,6 +4684,57 @@ export default function MyPage() {
                       >
                         {approving ? "처리 중..." : "승인"}
                       </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+          )}
+
+          {adminManageTab === "swipe_subscriptions" && (
+          <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
+            <p className="text-xs font-semibold text-violet-800">
+              빠른매칭 라이크 구매 승인 대기 {adminSwipeSubscriptionRequests.length}건
+            </p>
+            {adminSwipeSubscriptionRequests.length === 0 ? (
+              <p className="mt-2 text-xs text-neutral-500">승인 대기 신청이 없습니다.</p>
+            ) : (
+              <div className="mt-2 space-y-2">
+                {adminSwipeSubscriptionRequests.map((item) => {
+                  const processing = processingSwipeSubscriptionIds.includes(item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-violet-100 bg-violet-50/40 px-2 py-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="text-xs font-medium text-neutral-900">
+                          {item.nickname ?? item.user_id.slice(0, 8)} / 하루 {item.daily_limit}회 / {item.duration_days}일 /{" "}
+                          {item.amount.toLocaleString("ko-KR")}원
+                        </p>
+                        <p className="text-[11px] text-neutral-500 break-all">
+                          신청ID {item.id} / {new Date(item.requested_at).toLocaleString("ko-KR")}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          disabled={processing}
+                          onClick={() => void handleAdminProcessSwipeSubscription(item.id, "approved")}
+                          className="h-8 rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                        >
+                          승인
+                        </button>
+                        <button
+                          type="button"
+                          disabled={processing}
+                          onClick={() => void handleAdminProcessSwipeSubscription(item.id, "rejected")}
+                          className="h-8 rounded-md bg-rose-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                        >
+                          거절
+                        </button>
+                      </div>
                     </div>
                   );
                 })}

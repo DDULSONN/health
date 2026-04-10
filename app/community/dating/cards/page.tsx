@@ -208,7 +208,7 @@ export default function OpenCardsPage() {
     loggedIn: false,
     canSwipe: false,
     remaining: 0,
-    limit: 10,
+    limit: 7,
     candidate: null,
     reason: null,
   });
@@ -491,14 +491,14 @@ export default function OpenCardsPage() {
       if (!res.ok) {
         throw new Error(body.error ?? "스와이프 후보를 불러오지 못했습니다.");
       }
-      const nextState = {
-        loggedIn: body.loggedIn === true,
-        canSwipe: body.canSwipe === true,
-        remaining: Math.max(0, Number(body.remaining ?? 0)),
-        limit: Math.max(1, Number(body.limit ?? 10)),
-        candidate: body.candidate ?? null,
-        reason: body.reason ?? null,
-      };
+        const nextState = {
+          loggedIn: body.loggedIn === true,
+          canSwipe: body.canSwipe === true,
+          remaining: Math.max(0, Number(body.remaining ?? 0)),
+          limit: Math.max(1, Number(body.limit ?? 7)),
+          candidate: body.candidate ?? null,
+          reason: body.reason ?? null,
+        };
       swipeCacheRef.current[sex] = nextState;
       if (activeSexRef.current === sex && swipeRequestIdRef.current[sex] === requestId) {
         setSwipeImgFailed(false);
@@ -507,14 +507,14 @@ export default function OpenCardsPage() {
     } catch (error) {
       console.error("swipe load failed", error);
       if (cached) return;
-      const fallbackState = {
-        loggedIn: false,
-        canSwipe: false,
-        remaining: 0,
-        limit: 10,
-        candidate: null,
-        reason: error instanceof Error ? error.message : "스와이프 후보를 불러오지 못했습니다.",
-      };
+        const fallbackState = {
+          loggedIn: false,
+          canSwipe: false,
+          remaining: 0,
+          limit: 7,
+          candidate: null,
+          reason: error instanceof Error ? error.message : "스와이프 후보를 불러오지 못했습니다.",
+        };
       if (activeSexRef.current === sex && swipeRequestIdRef.current[sex] === requestId) {
         setSwipeState(fallbackState);
       }
