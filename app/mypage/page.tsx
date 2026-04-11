@@ -428,6 +428,7 @@ type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
 type AdminApplicationSort = "newest" | "oldest" | "submitted_first" | "accepted_first";
 type AdminDataView = "cards" | "applications";
 type AdminManageTab =
+  | "site_dashboard"
   | "dating_stats"
   | "dating_insights"
   | "open_cards"
@@ -577,6 +578,70 @@ type AdminDatingStats = {
       rejected: number;
       active: number;
     };
+  };
+};
+
+type AdminSiteDashboardFeatureKey =
+  | "new_users"
+  | "open_card_created"
+  | "open_card_applied"
+  | "paid_card_created"
+  | "paid_card_applied"
+  | "one_on_one_created"
+  | "more_view_requested"
+  | "city_view_requested"
+  | "swipe_likes"
+  | "swipe_matches"
+  | "apply_credit_orders"
+  | "support_inquiries"
+  | "cert_requests"
+  | "bodybattle_entries"
+  | "bodybattle_votes";
+
+type AdminSiteDashboard = {
+  generatedAt: string;
+  note: string;
+  featureLabels: Record<AdminSiteDashboardFeatureKey, string>;
+  today: Record<AdminSiteDashboardFeatureKey, number>;
+  todayTopFeatures: Array<{
+    key: AdminSiteDashboardFeatureKey;
+    label: string;
+    count: number;
+  }>;
+  recent7d: Array<{
+    dateKey: string;
+    label: string;
+    counts: Record<AdminSiteDashboardFeatureKey, number>;
+  }>;
+  current: {
+    totalUsers: number;
+    adminUsers: number;
+    phoneVerifiedUsers: number;
+    swipeVisibleUsers: number;
+    publicOpenCards: number;
+    pendingOpenCards: number;
+    totalOpenCardApplications: number;
+    publicPaidCards: number;
+    totalPaidCardApplications: number;
+    approvedOneOnOneCards: number;
+    pendingOneOnOneCards: number;
+    activeMoreView: number;
+    activeCityView: number;
+    openSupport: number;
+    totalSupportInquiries: number;
+    answeredSupportTotal: number;
+    pendingCertRequests: number;
+    approvedCertRequests: number;
+    pendingApplyCreditOrders: number;
+    approvedApplyCreditOrders: number;
+    pendingSwipeSubscriptions: number;
+    activeSwipeSubscriptions: number;
+    totalSwipeMatches: number;
+    todayAnsweredSupport: number;
+  };
+  averages: {
+    openCardApplicationsPerPublicCard: number;
+    paidCardApplicationsPerApprovedCard: number;
   };
 };
 
@@ -776,6 +841,9 @@ export default function MyPage() {
   const [adminMoreViewSearch, setAdminMoreViewSearch] = useState("");
   const [adminDatingStats, setAdminDatingStats] = useState<AdminDatingStats | null>(null);
   const [adminDatingInsights, setAdminDatingInsights] = useState<AdminDatingInsights | null>(null);
+  const [adminSiteDashboard, setAdminSiteDashboard] = useState<AdminSiteDashboard | null>(null);
+  const [adminSiteDashboardLoading, setAdminSiteDashboardLoading] = useState(false);
+  const [adminSiteDashboardError, setAdminSiteDashboardError] = useState("");
   const [adminAccountDeletionAudits, setAdminAccountDeletionAudits] = useState<AdminAccountDeletionAudit[]>([]);
   const [adminCityViewSearch, setAdminCityViewSearch] = useState("");
   const [adminCityViewUnblockIdentifier, setAdminCityViewUnblockIdentifier] = useState("");
@@ -929,6 +997,39 @@ export default function MyPage() {
         } finally {
           if (showLoading) {
             setAdminQueueRefreshing(false);
+          }
+        }
+      },
+    [isAdmin]
+  );
+
+  const refreshAdminSiteDashboard = useMemo(
+    () =>
+      async (showLoading = true) => {
+        if (!isAdmin) return;
+
+        if (showLoading) {
+          setAdminSiteDashboardLoading(true);
+        }
+        setAdminSiteDashboardError("");
+
+        try {
+          const res = await fetch("/api/admin/site-dashboard", { cache: "no-store" });
+          const body = (await res.json().catch(() => ({}))) as {
+            ok?: boolean;
+            error?: string;
+          } & Partial<AdminSiteDashboard>;
+
+          if (!res.ok || body.ok === false) {
+            throw new Error(body.error ?? "운영 현황을 불러오지 못했습니다.");
+          }
+
+          setAdminSiteDashboard(body as AdminSiteDashboard);
+        } catch (error) {
+          setAdminSiteDashboardError(error instanceof Error ? error.message : "운영 현황을 불러오지 못했습니다.");
+        } finally {
+          if (showLoading) {
+            setAdminSiteDashboardLoading(false);
           }
         }
       },
@@ -1319,6 +1420,13 @@ export default function MyPage() {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
   }, [loading, isAdmin, refreshAdminQueueData]);
+
+  useEffect(() => {
+    if (loading || !isAdmin || adminManageTab !== "site_dashboard") return;
+    queueMicrotask(async () => {
+      await refreshAdminSiteDashboard(true);
+    });
+  }, [loading, isAdmin, adminManageTab, refreshAdminSiteDashboard]);
 
   useEffect(() => {
     if (loading || !supportPanelOpen || supportLoaded) return;
@@ -4302,6 +4410,15 @@ export default function MyPage() {
           <div className="mb-3 flex flex-wrap gap-2">
             <button
               type="button"
+              onClick={() => setAdminManageTab("site_dashboard")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "site_dashboard" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              운영 현황
+            </button>
+            <button
+              type="button"
               onClick={() => setAdminManageTab("dating_stats")}
               className={`h-8 rounded-md border px-3 text-xs font-medium ${
                 adminManageTab === "dating_stats" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
@@ -4415,6 +4532,282 @@ export default function MyPage() {
               광고 문의
             </button>
           </div>
+
+          {adminManageTab === "site_dashboard" && (
+          <div className="mb-3 space-y-4">
+            <div className="flex flex-wrap items-start justify-between gap-3 rounded-2xl border border-violet-200 bg-white p-4">
+              <div>
+                <p className="text-sm font-semibold text-violet-900">사이트 운영 현황</p>
+                <p className="mt-1 text-xs text-neutral-500">
+                  {adminSiteDashboard?.generatedAt
+                    ? `기준 시각 ${new Date(adminSiteDashboard.generatedAt).toLocaleString("ko-KR")}`
+                    : "오늘과 최근 7일 기준으로 핵심 지표를 정리합니다."}
+                </p>
+                {adminSiteDashboard?.note ? (
+                  <p className="mt-2 text-[11px] text-violet-700">{adminSiteDashboard.note}</p>
+                ) : null}
+              </div>
+              <button
+                type="button"
+                disabled={adminSiteDashboardLoading}
+                onClick={() => void refreshAdminSiteDashboard(true)}
+                className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {adminSiteDashboardLoading ? "불러오는 중..." : "운영 현황 새로고침"}
+              </button>
+            </div>
+
+            {adminSiteDashboardError ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                {adminSiteDashboardError}
+              </div>
+            ) : null}
+
+            {adminSiteDashboardLoading && !adminSiteDashboard ? (
+              <div className="rounded-2xl border border-violet-200 bg-white p-6 text-sm text-neutral-500">
+                운영 현황을 불러오는 중입니다.
+              </div>
+            ) : null}
+
+            {adminSiteDashboard ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    { label: "전체 가입자", value: adminSiteDashboard.current.totalUsers },
+                    { label: "관리자 계정", value: adminSiteDashboard.current.adminUsers },
+                    { label: "휴대폰 인증 완료", value: adminSiteDashboard.current.phoneVerifiedUsers },
+                    { label: "빠른매칭 노출 ON", value: adminSiteDashboard.current.swipeVisibleUsers },
+                  ].map((item) => (
+                    <div key={`site-dashboard-members-${item.label}`} className="rounded-2xl border border-violet-200 bg-white p-4">
+                      <p className="text-xs font-medium text-neutral-500">{item.label}</p>
+                      <p className="mt-2 text-2xl font-black text-neutral-900">{item.value.toLocaleString("ko-KR")}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                  {[
+                    { key: "new_users", label: "오늘 신규 가입" },
+                    { key: "open_card_created", label: "오늘 오픈카드 등록" },
+                    { key: "open_card_applied", label: "오늘 오픈카드 지원" },
+                    { key: "one_on_one_created", label: "오늘 1:1 신청" },
+                    { key: "support_inquiries", label: "오늘 1:1 문의" },
+                    { key: "swipe_likes", label: "오늘 빠른매칭 라이크" },
+                  ].map((item) => (
+                    <div key={`site-dashboard-today-${item.key}`} className="rounded-2xl border border-violet-200 bg-white p-4">
+                      <p className="text-xs font-medium text-neutral-500">{item.label}</p>
+                      <p className="mt-2 text-2xl font-black text-neutral-900">
+                        {adminSiteDashboard.today[item.key as AdminSiteDashboardFeatureKey].toLocaleString("ko-KR")}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-2">
+                  <div className="rounded-2xl border border-violet-200 bg-white p-4">
+                    <p className="text-sm font-semibold text-violet-900">오늘 많이 쓰인 기능</p>
+                    <div className="mt-3 space-y-2">
+                      {adminSiteDashboard.todayTopFeatures.map((item, index) => (
+                        <div
+                          key={`site-dashboard-top-${item.key}`}
+                          className="flex items-center justify-between rounded-xl border border-violet-100 bg-violet-50/50 px-3 py-2"
+                        >
+                          <p className="text-sm text-neutral-800">
+                            {index + 1}. {item.label}
+                          </p>
+                          <p className="text-sm font-bold text-violet-700">{item.count.toLocaleString("ko-KR")}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                    <div className="rounded-2xl border border-violet-200 bg-white p-4">
+                      <p className="text-sm font-semibold text-violet-900">현재 운영 상태</p>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {[
+                          { label: "공개중 오픈카드", value: adminSiteDashboard.current.publicOpenCards },
+                          { label: "대기중 오픈카드", value: adminSiteDashboard.current.pendingOpenCards },
+                          { label: "누적 오픈카드 지원", value: adminSiteDashboard.current.totalOpenCardApplications },
+                          { label: "공개중 유료카드", value: adminSiteDashboard.current.publicPaidCards },
+                          { label: "누적 유료카드 지원", value: adminSiteDashboard.current.totalPaidCardApplications },
+                          { label: "승인된 1:1 카드", value: adminSiteDashboard.current.approvedOneOnOneCards },
+                          { label: "대기중 1:1 신청", value: adminSiteDashboard.current.pendingOneOnOneCards },
+                          { label: "활성 이상형 더보기", value: adminSiteDashboard.current.activeMoreView },
+                        { label: "활성 가까운 이상형", value: adminSiteDashboard.current.activeCityView },
+                        { label: "미답변 문의", value: adminSiteDashboard.current.openSupport },
+                        { label: "대기중 인증", value: adminSiteDashboard.current.pendingCertRequests },
+                        { label: "누적 빠른매칭 매치", value: adminSiteDashboard.current.totalSwipeMatches },
+                        { label: "오늘 답변한 문의", value: adminSiteDashboard.current.todayAnsweredSupport },
+                      ].map((item) => (
+                        <div key={`site-dashboard-current-${item.label}`} className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2">
+                          <p className="text-[11px] text-neutral-500">{item.label}</p>
+                          <p className="mt-1 text-lg font-bold text-neutral-900">{item.value.toLocaleString("ko-KR")}</p>
+                        </div>
+                      ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-violet-200 bg-white p-4">
+                      <p className="text-sm font-semibold text-violet-900">승인/결제 운영</p>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {[
+                          { label: "지원권 주문 대기", value: adminSiteDashboard.current.pendingApplyCreditOrders },
+                          { label: "지원권 주문 완료", value: adminSiteDashboard.current.approvedApplyCreditOrders },
+                          { label: "라이크 구매 대기", value: adminSiteDashboard.current.pendingSwipeSubscriptions },
+                          { label: "라이크 이용 활성", value: adminSiteDashboard.current.activeSwipeSubscriptions },
+                          { label: "인증 대기", value: adminSiteDashboard.current.pendingCertRequests },
+                          { label: "인증 승인 완료", value: adminSiteDashboard.current.approvedCertRequests },
+                        ].map((item) => (
+                          <div key={`site-dashboard-ops-${item.label}`} className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2">
+                            <p className="text-[11px] text-neutral-500">{item.label}</p>
+                            <p className="mt-1 text-lg font-bold text-neutral-900">{item.value.toLocaleString("ko-KR")}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="rounded-2xl border border-violet-200 bg-white p-4">
+                      <p className="text-sm font-semibold text-violet-900">문의/응대 상태</p>
+                      <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                        {[
+                          { label: "누적 문의", value: adminSiteDashboard.current.totalSupportInquiries },
+                          { label: "답변 완료 누적", value: adminSiteDashboard.current.answeredSupportTotal },
+                          { label: "미답변 문의", value: adminSiteDashboard.current.openSupport },
+                          { label: "오늘 답변 완료", value: adminSiteDashboard.current.todayAnsweredSupport },
+                        ].map((item) => (
+                          <div key={`site-dashboard-support-${item.label}`} className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2">
+                            <p className="text-[11px] text-neutral-500">{item.label}</p>
+                            <p className="mt-1 text-lg font-bold text-neutral-900">{item.value.toLocaleString("ko-KR")}</p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="grid gap-3 lg:grid-cols-2">
+                    <div className="rounded-2xl border border-violet-200 bg-white p-4">
+                      <p className="text-sm font-semibold text-violet-900">카드당 평균 지원 수</p>
+                      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                        <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
+                          <p className="text-[11px] text-neutral-500">공개중 오픈카드 1장당 평균 지원</p>
+                          <p className="mt-1 text-2xl font-black text-neutral-900">
+                            {adminSiteDashboard.averages.openCardApplicationsPerPublicCard.toLocaleString("ko-KR", {
+                              minimumFractionDigits: 1,
+                              maximumFractionDigits: 2,
+                            })}
+                            <span className="ml-1 text-sm font-semibold text-neutral-500">건</span>
+                          </p>
+                          <p className="mt-1 text-[11px] text-neutral-500">
+                            현재 공개중 카드 {adminSiteDashboard.current.publicOpenCards.toLocaleString("ko-KR")}장 기준
+                          </p>
+                        </div>
+                        <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
+                          <p className="text-[11px] text-neutral-500">공개중 유료카드 1장당 평균 지원</p>
+                          <p className="mt-1 text-2xl font-black text-neutral-900">
+                            {adminSiteDashboard.averages.paidCardApplicationsPerApprovedCard.toLocaleString("ko-KR", {
+                              minimumFractionDigits: 1,
+                              maximumFractionDigits: 2,
+                            })}
+                            <span className="ml-1 text-sm font-semibold text-neutral-500">건</span>
+                          </p>
+                          <p className="mt-1 text-[11px] text-neutral-500">
+                            현재 공개중 유료카드 {adminSiteDashboard.current.publicPaidCards.toLocaleString("ko-KR")}장 기준
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-violet-200 bg-white p-4">
+                    <p className="text-sm font-semibold text-violet-900">최근 7일 합계 요약</p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+                      {[
+                        {
+                          label: "최근 7일 신규 가입",
+                          value: adminSiteDashboard.recent7d.reduce((sum, day) => sum + day.counts.new_users, 0),
+                        },
+                        {
+                          label: "최근 7일 오픈카드 등록",
+                          value: adminSiteDashboard.recent7d.reduce((sum, day) => sum + day.counts.open_card_created, 0),
+                        },
+                        {
+                          label: "최근 7일 오픈카드 지원",
+                          value: adminSiteDashboard.recent7d.reduce((sum, day) => sum + day.counts.open_card_applied, 0),
+                        },
+                        {
+                          label: "최근 7일 1:1 신청",
+                          value: adminSiteDashboard.recent7d.reduce((sum, day) => sum + day.counts.one_on_one_created, 0),
+                        },
+                        {
+                          label: "최근 7일 문의",
+                          value: adminSiteDashboard.recent7d.reduce((sum, day) => sum + day.counts.support_inquiries, 0),
+                        },
+                        {
+                          label: "최근 7일 더보기 신청",
+                          value: adminSiteDashboard.recent7d.reduce((sum, day) => sum + day.counts.more_view_requested, 0),
+                        },
+                        {
+                          label: "최근 7일 가까운 이상형 신청",
+                          value: adminSiteDashboard.recent7d.reduce((sum, day) => sum + day.counts.city_view_requested, 0),
+                        },
+                        {
+                          label: "최근 7일 라이크",
+                          value: adminSiteDashboard.recent7d.reduce((sum, day) => sum + day.counts.swipe_likes, 0),
+                        },
+                      ].map((item) => (
+                        <div key={`site-dashboard-week-${item.label}`} className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2">
+                          <p className="text-[11px] text-neutral-500">{item.label}</p>
+                          <p className="mt-1 text-lg font-bold text-neutral-900">{item.value.toLocaleString("ko-KR")}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                <div className="rounded-2xl border border-violet-200 bg-white p-4">
+                  <p className="text-sm font-semibold text-violet-900">최근 7일 기능 이용 추이</p>
+                  <div className="mt-3 overflow-x-auto">
+                    <table className="min-w-full border-separate border-spacing-0 text-xs">
+                      <thead>
+                        <tr>
+                          <th className="sticky left-0 z-10 border-b border-violet-100 bg-white px-3 py-2 text-left font-semibold text-neutral-700">
+                            기능
+                          </th>
+                          {adminSiteDashboard.recent7d.map((day) => (
+                            <th
+                              key={`site-dashboard-head-${day.dateKey}`}
+                              className="border-b border-violet-100 bg-white px-3 py-2 text-right font-semibold text-neutral-700"
+                            >
+                              {day.label}
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.entries(adminSiteDashboard.featureLabels).map(([key, label]) => (
+                          <tr key={`site-dashboard-row-${key}`}>
+                            <td className="sticky left-0 border-b border-neutral-100 bg-white px-3 py-2 font-medium text-neutral-800">
+                              {label}
+                            </td>
+                            {adminSiteDashboard.recent7d.map((day) => (
+                              <td
+                                key={`site-dashboard-cell-${key}-${day.dateKey}`}
+                                className="border-b border-neutral-100 px-3 py-2 text-right text-neutral-600"
+                              >
+                                {day.counts[key as AdminSiteDashboardFeatureKey].toLocaleString("ko-KR")}
+                              </td>
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            ) : null}
+          </div>
+          )}
 
           {adminManageTab === "dating_stats" && adminDatingStats && (
           <div className="mb-3 space-y-3">
