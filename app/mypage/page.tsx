@@ -780,6 +780,7 @@ export default function MyPage() {
   const [adminCityViewUnblockInfo, setAdminCityViewUnblockInfo] = useState("");
   const [adminCityViewUnblockError, setAdminCityViewUnblockError] = useState("");
   const [adminBodyBattleOverview, setAdminBodyBattleOverview] = useState<AdminBodyBattleOverview | null>(null);
+  const [adminQueueRefreshing, setAdminQueueRefreshing] = useState(false);
   const [runningBodyBattleAdminTask, setRunningBodyBattleAdminTask] = useState(false);
   const [approvingOrderIds, setApprovingOrderIds] = useState<string[]>([]);
   const [processingMoreViewIds, setProcessingMoreViewIds] = useState<string[]>([]);
@@ -849,6 +850,87 @@ export default function MyPage() {
   const [supportContactPhone, setSupportContactPhone] = useState("");
   const [supportError, setSupportError] = useState("");
   const [supportInfo, setSupportInfo] = useState("");
+
+  const refreshAdminQueueData = useMemo(
+    () =>
+      async (showLoading = false, force = false) => {
+        if (!force && !isAdmin) return;
+
+        if (showLoading) {
+          setAdminQueueRefreshing(true);
+        }
+
+        try {
+          const [overviewRes, ordersRes, paidAppsRes, moreViewRes, cityViewRes, swipeRes] = await Promise.all([
+            fetch("/api/dating/cards/admin/overview", { cache: "no-store" }),
+            fetch("/api/admin/dating/apply-credits/orders?status=pending", { cache: "no-store" }),
+            fetch("/api/admin/dating/paid/applications", { cache: "no-store" }),
+            fetch("/api/admin/dating/cards/more-view/requests?status=pending", { cache: "no-store" }),
+            fetch("/api/admin/dating/cards/city-view/requests?status=pending", { cache: "no-store" }),
+            fetch("/api/admin/dating/cards/swipe-subscriptions?status=pending", { cache: "no-store" }),
+          ]);
+
+          const [overviewBody, ordersBody, paidAppsBody, moreViewBody, cityViewBody, swipeBody] = await Promise.all([
+            overviewRes.json().catch(() => ({})),
+            ordersRes.json().catch(() => ({})),
+            paidAppsRes.json().catch(() => ({})),
+            moreViewRes.json().catch(() => ({})),
+            cityViewRes.json().catch(() => ({})),
+            swipeRes.json().catch(() => ({})),
+          ]);
+
+          if (overviewRes.ok) {
+            const body = overviewBody as { cards?: AdminOpenCard[]; applications?: AdminOpenCardApplication[] };
+            setAdminOpenCards(body.cards ?? []);
+            setAdminOpenCardApplications(body.applications ?? []);
+          } else {
+            console.error("[mypage] admin overview refresh failed", overviewBody);
+          }
+
+          if (ordersRes.ok) {
+            const body = ordersBody as { items?: AdminApplyCreditOrder[] };
+            setAdminApplyCreditOrders(body.items ?? []);
+          } else {
+            console.error("[mypage] apply credit orders refresh failed", ordersBody);
+          }
+
+          if (paidAppsRes.ok) {
+            const body = paidAppsBody as { items?: AdminPaidCardApplication[] };
+            setAdminPaidCardApplications(body.items ?? []);
+          } else {
+            console.error("[mypage] paid applications refresh failed", paidAppsBody);
+          }
+
+          if (moreViewRes.ok) {
+            const body = moreViewBody as { items?: AdminMoreViewRequest[] };
+            setAdminMoreViewRequests(body.items ?? []);
+          } else {
+            console.error("[mypage] more view requests refresh failed", moreViewBody);
+          }
+
+          if (cityViewRes.ok) {
+            const body = cityViewBody as { items?: AdminCityViewRequest[] };
+            setAdminCityViewRequests(body.items ?? []);
+          } else {
+            console.error("[mypage] city view requests refresh failed", cityViewBody);
+          }
+
+          if (swipeRes.ok) {
+            const body = swipeBody as { items?: AdminSwipeSubscriptionRequest[] };
+            setAdminSwipeSubscriptionRequests(body.items ?? []);
+          } else {
+            console.error("[mypage] swipe subscription requests refresh failed", swipeBody);
+          }
+        } catch (error) {
+          console.error("[mypage] admin queue refresh failed", error);
+        } finally {
+          if (showLoading) {
+            setAdminQueueRefreshing(false);
+          }
+        }
+      },
+    [isAdmin]
+  );
 
   useEffect(() => {
     let isMounted = true;
@@ -1088,31 +1170,31 @@ export default function MyPage() {
               items?: AdminAccountDeletionAudit[];
             };
             if (!overviewRes.ok) {
-              throw new Error(overviewBody.error ?? "관리자 오픈카드 데이터를 불러오지 못했습니다.");
+              console.error("[mypage] admin overview load failed", overviewBody);
             }
             if (!datingStatsRes.ok) {
-              throw new Error(datingStatsBody.error ?? "소개팅 통계를 불러오지 못했습니다.");
+              console.error("[mypage] admin dating stats load failed", datingStatsBody);
             }
             if (!datingInsightsRes.ok) {
-              throw new Error(datingInsightsBody.error ?? "이상형 인사이트를 불러오지 못했습니다.");
+              console.error("[mypage] admin dating insights load failed", datingInsightsBody);
             }
             if (!ordersRes.ok) {
-              throw new Error(ordersBody.error ?? "지원권 주문 목록을 불러오지 못했습니다.");
+              console.error("[mypage] admin apply credits load failed", ordersBody);
             }
             if (!paidAppsRes.ok) {
-              throw new Error(paidAppsBody.error ?? "관리자 36시간 카드 지원 이력을 불러오지 못했습니다.");
+              console.error("[mypage] admin paid applications load failed", paidAppsBody);
             }
             if (isMounted) {
-              setAdminDatingStats(datingStatsBody.stats ?? null);
+              setAdminDatingStats(datingStatsRes.ok ? datingStatsBody.stats ?? null : null);
               setAdminDatingInsights(
-                "totals" in datingInsightsBody && "female_preference" in datingInsightsBody
+                datingInsightsRes.ok && "totals" in datingInsightsBody && "female_preference" in datingInsightsBody
                   ? datingInsightsBody
                   : null
               );
-              setAdminOpenCards(overviewBody.cards ?? []);
-              setAdminOpenCardApplications(overviewBody.applications ?? []);
-              setAdminPaidCardApplications(paidAppsBody.items ?? []);
-              setAdminApplyCreditOrders(ordersBody.items ?? []);
+              setAdminOpenCards(overviewRes.ok ? overviewBody.cards ?? [] : []);
+              setAdminOpenCardApplications(overviewRes.ok ? overviewBody.applications ?? [] : []);
+              setAdminPaidCardApplications(paidAppsRes.ok ? paidAppsBody.items ?? [] : []);
+              setAdminApplyCreditOrders(ordersRes.ok ? ordersBody.items ?? [] : []);
               setAdminMoreViewRequests(moreViewRes.ok ? moreViewBody.items ?? [] : []);
               setAdminCityViewRequests(cityViewRes.ok ? cityViewBody.items ?? [] : []);
               setAdminAccountDeletionAudits(
@@ -1190,34 +1272,50 @@ export default function MyPage() {
 
   useEffect(() => {
     if (loading || !isAdmin) return;
-    let cancelled = false;
 
     queueMicrotask(async () => {
       try {
-        const res = await fetch("/api/admin/dating/cards/swipe-subscriptions?status=pending", { cache: "no-store" });
-        const body = (await res.json().catch(() => ({}))) as {
-          ok?: boolean;
-          items?: AdminSwipeSubscriptionRequest[];
-          message?: string;
-        };
-        if (!res.ok || body.ok === false) {
-          throw new Error(body.message ?? "빠른매칭 구독 승인 목록을 불러오지 못했습니다.");
-        }
-        if (!cancelled) {
-          setAdminSwipeSubscriptionRequests(body.items ?? []);
-        }
+        await refreshAdminQueueData(false);
       } catch (error) {
-        console.error("[mypage] swipe subscription admin load failed", error);
-        if (!cancelled) {
-          setAdminSwipeSubscriptionRequests([]);
-        }
+        console.error("[mypage] admin queue initial refresh failed", error);
       }
     });
 
+    const intervalId = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      void refreshAdminQueueData(false);
+    }, 15000);
+
     return () => {
-      cancelled = true;
+      window.clearInterval(intervalId);
     };
-  }, [loading, isAdmin]);
+  }, [loading, isAdmin, refreshAdminQueueData]);
+
+  useEffect(() => {
+    if (!isAdmin || activeTab !== "admin_review") return;
+
+    queueMicrotask(async () => {
+      try {
+        if (document.visibilityState !== "visible") return;
+        await refreshAdminQueueData(false);
+      } catch (error) {
+        console.error("[mypage] admin queue tab refresh failed", error);
+      }
+    });
+  }, [activeTab, isAdmin, refreshAdminQueueData]);
+
+  useEffect(() => {
+    if (loading || !isAdmin) return;
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      void refreshAdminQueueData(false);
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+  }, [loading, isAdmin, refreshAdminQueueData]);
 
   useEffect(() => {
     if (loading || !supportPanelOpen || supportLoaded) return;
@@ -2746,32 +2844,32 @@ export default function MyPage() {
           <div className="mt-3 rounded-xl border border-amber-200 bg-white p-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-amber-900">라이크 구매</p>
+                <p className="text-sm font-semibold text-amber-900">라이크 늘리기</p>
                 <p className="mt-1 text-xs text-amber-800">
-                  현재 하루 {swipeSubscriptionStatus?.dailyLimit ?? 7}회
+                  지금 하루 {swipeSubscriptionStatus?.dailyLimit ?? 7}회 사용 가능
                   {swipeSubscriptionStatus?.status === "active"
-                    ? ` · 이용 중`
+                    ? ` · 추가 이용 중`
                     : swipeSubscriptionStatus?.status === "pending"
                       ? ` · 승인 대기`
-                      : ` · 기본 ${swipeSubscriptionStatus?.baseLimit ?? 7}회`}
+                      : ` · 기본 제공 ${swipeSubscriptionStatus?.baseLimit ?? 7}회`}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800">
-                  10,000원 / 15일 / 하루 {swipeSubscriptionStatus?.premiumLimit ?? 15}회
+                  1만원 · 15일 · 하루 {swipeSubscriptionStatus?.premiumLimit ?? 15}회
                 </span>
                 <button
                   type="button"
                   onClick={() => setSwipeSubscriptionPanelOpen((prev) => !prev)}
                   className="h-8 rounded-md border border-amber-200 bg-white px-3 text-xs font-medium text-amber-800"
                 >
-                  {swipeSubscriptionPanelOpen ? "라이크 구매 접기" : "라이크 구매 보기"}
+                  {swipeSubscriptionPanelOpen ? "접기" : "자세히 보기"}
                 </button>
               </div>
             </div>
             {swipeSubscriptionStatus?.status === "active" && swipeSubscriptionStatus.activeSubscription?.expiresAt ? (
               <p className="mt-2 text-[11px] text-emerald-700">
-                이용 중: {new Date(swipeSubscriptionStatus.activeSubscription.expiresAt).toLocaleString("ko-KR")}까지
+                추가 이용 중: {new Date(swipeSubscriptionStatus.activeSubscription.expiresAt).toLocaleString("ko-KR")}까지
               </p>
             ) : null}
             {swipeSubscriptionStatus?.status === "pending" && swipeSubscriptionStatus.pendingSubscription?.id ? (
@@ -2783,8 +2881,11 @@ export default function MyPage() {
             {swipeSubscriptionPanelOpen && (
               <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50/40 p-3">
                 <p className="text-xs text-amber-800">
-                  기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 7}회입니다. 구매 승인 시 15일 동안 하루{" "}
-                  {swipeSubscriptionStatus?.premiumLimit ?? 15}회까지 사용할 수 있습니다.
+                  기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 7}회예요. 추가 이용을 신청하면 15일 동안 하루{" "}
+                  {swipeSubscriptionStatus?.premiumLimit ?? 15}회까지 사용할 수 있어요.
+                </p>
+                <p className="mt-2 text-[11px] text-amber-700">
+                  신청 후 오픈카톡으로 닉네임과 신청ID를 보내주시면 확인 뒤 적용됩니다.
                 </p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <a
@@ -2793,7 +2894,7 @@ export default function MyPage() {
                     rel="noreferrer"
                     className="inline-flex h-8 items-center rounded-md border border-amber-200 bg-white px-3 text-xs font-medium text-amber-800"
                   >
-                    오픈카톡
+                    오픈카톡 문의
                   </a>
                   <button
                     type="button"
@@ -2806,7 +2907,7 @@ export default function MyPage() {
                     onClick={() => void handleRequestSwipeSubscription()}
                     className="h-8 rounded-md bg-amber-500 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {swipeSubscriptionSubmitting ? "신청 중..." : "라이크 구매 신청"}
+                    {swipeSubscriptionSubmitting ? "신청 중..." : "추가 이용 신청"}
                   </button>
                 </div>
                 {swipeSubscriptionStatus?.status === "pending" && swipeSubscriptionStatus.pendingSubscription?.id ? (
@@ -2815,7 +2916,7 @@ export default function MyPage() {
                     {swipeSubscriptionStatus.pendingSubscription.requestedAt
                       ? ` / ${new Date(swipeSubscriptionStatus.pendingSubscription.requestedAt).toLocaleString("ko-KR")}`
                       : ""}
-                    {" / "}오픈카톡으로 닉네임 + 신청ID를 보내주세요.
+                    {" / "}오픈카톡으로 닉네임과 신청ID를 보내주세요.
                   </p>
                 ) : null}
                 {swipeSubscriptionError ? (
@@ -4139,7 +4240,17 @@ export default function MyPage() {
 
       {isAdmin && (
         <section className="mb-5 rounded-2xl border border-violet-200 bg-violet-50/40 p-5">
-          <h2 className="text-lg font-bold text-violet-900 mb-3">오픈카드 전체 내용 (관리자)</h2>
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="text-lg font-bold text-violet-900">오픈카드 전체 내용 (관리자)</h2>
+            <button
+              type="button"
+              disabled={adminQueueRefreshing}
+              onClick={() => void refreshAdminQueueData(true)}
+              className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {adminQueueRefreshing ? "새로고침 중..." : "신청목록 새로고침"}
+            </button>
+          </div>
 
           <div className="mb-3 flex flex-wrap gap-2">
             <button
