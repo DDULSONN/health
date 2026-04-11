@@ -771,6 +771,9 @@ export default function MyPage() {
   const [adminSwipeSubscriptionRequests, setAdminSwipeSubscriptionRequests] = useState<AdminSwipeSubscriptionRequest[]>([]);
   const [adminMoreViewRequests, setAdminMoreViewRequests] = useState<AdminMoreViewRequest[]>([]);
   const [adminCityViewRequests, setAdminCityViewRequests] = useState<AdminCityViewRequest[]>([]);
+  const [adminApplyCreditSearch, setAdminApplyCreditSearch] = useState("");
+  const [adminSwipeSubscriptionSearch, setAdminSwipeSubscriptionSearch] = useState("");
+  const [adminMoreViewSearch, setAdminMoreViewSearch] = useState("");
   const [adminDatingStats, setAdminDatingStats] = useState<AdminDatingStats | null>(null);
   const [adminDatingInsights, setAdminDatingInsights] = useState<AdminDatingInsights | null>(null);
   const [adminAccountDeletionAudits, setAdminAccountDeletionAudits] = useState<AdminAccountDeletionAudit[]>([]);
@@ -2563,6 +2566,50 @@ export default function MyPage() {
   for (const group of myOneOnOneAutoRecommendations) {
     myOneOnOneAutoRecommendationsByCardId.set(group.source_card_id, group);
   }
+  const normalizedAdminApplyCreditSearch = adminApplyCreditSearch.trim().toLowerCase();
+  const filteredAdminApplyCreditOrders =
+    normalizedAdminApplyCreditSearch.length === 0
+      ? adminApplyCreditOrders
+      : adminApplyCreditOrders.filter((item) => {
+          const nickname = (item.nickname ?? "").trim().toLowerCase();
+          const userId = item.user_id.trim().toLowerCase();
+          const orderId = item.id.trim().toLowerCase();
+          return (
+            nickname.includes(normalizedAdminApplyCreditSearch) ||
+            userId.includes(normalizedAdminApplyCreditSearch) ||
+            orderId.includes(normalizedAdminApplyCreditSearch)
+          );
+        });
+  const normalizedAdminSwipeSubscriptionSearch = adminSwipeSubscriptionSearch.trim().toLowerCase();
+  const filteredAdminSwipeSubscriptionRequests =
+    normalizedAdminSwipeSubscriptionSearch.length === 0
+      ? adminSwipeSubscriptionRequests
+      : adminSwipeSubscriptionRequests.filter((item) => {
+          const nickname = (item.nickname ?? "").trim().toLowerCase();
+          const userId = item.user_id.trim().toLowerCase();
+          const requestId = item.id.trim().toLowerCase();
+          return (
+            nickname.includes(normalizedAdminSwipeSubscriptionSearch) ||
+            userId.includes(normalizedAdminSwipeSubscriptionSearch) ||
+            requestId.includes(normalizedAdminSwipeSubscriptionSearch)
+          );
+        });
+  const normalizedAdminMoreViewSearch = adminMoreViewSearch.trim().toLowerCase();
+  const filteredAdminMoreViewRequests =
+    normalizedAdminMoreViewSearch.length === 0
+      ? adminMoreViewRequests
+      : adminMoreViewRequests.filter((item) => {
+          const nickname = (item.nickname ?? "").trim().toLowerCase();
+          const userId = item.user_id.trim().toLowerCase();
+          const requestId = item.id.trim().toLowerCase();
+          const sexLabel = item.sex === "male" ? "남자 더보기" : "여자 더보기";
+          return (
+            nickname.includes(normalizedAdminMoreViewSearch) ||
+            userId.includes(normalizedAdminMoreViewSearch) ||
+            requestId.includes(normalizedAdminMoreViewSearch) ||
+            sexLabel.includes(normalizedAdminMoreViewSearch)
+          );
+        });
   const normalizedAdminCityViewSearch = adminCityViewSearch.trim().toLowerCase();
   const filteredAdminCityViewRequests =
     normalizedAdminCityViewSearch.length === 0
@@ -4792,11 +4839,25 @@ export default function MyPage() {
             <p className="text-xs font-semibold text-violet-800">
               지원권 주문 승인 대기 {adminApplyCreditOrders.length}건
             </p>
-            {adminApplyCreditOrders.length === 0 ? (
-              <p className="mt-2 text-xs text-neutral-500">승인 대기 주문이 없습니다.</p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <input
+                type="text"
+                value={adminApplyCreditSearch}
+                onChange={(e) => setAdminApplyCreditSearch(e.target.value)}
+                placeholder="닉네임 또는 주문ID 검색"
+                className="h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none ring-0 placeholder:text-neutral-400 sm:max-w-xs"
+              />
+              {normalizedAdminApplyCreditSearch ? (
+                <p className="text-[11px] text-neutral-500">검색 결과 {filteredAdminApplyCreditOrders.length}건</p>
+              ) : null}
+            </div>
+            {filteredAdminApplyCreditOrders.length === 0 ? (
+              <p className="mt-2 text-xs text-neutral-500">
+                {normalizedAdminApplyCreditSearch ? "검색된 주문이 없습니다." : "승인 대기 주문이 없습니다."}
+              </p>
             ) : (
               <div className="mt-2 space-y-2">
-                {adminApplyCreditOrders.map((order) => {
+                {filteredAdminApplyCreditOrders.map((order) => {
                   const approving = approvingOrderIds.includes(order.id);
                   return (
                     <div
@@ -4833,11 +4894,25 @@ export default function MyPage() {
             <p className="text-xs font-semibold text-violet-800">
               빠른매칭 라이크 구매 승인 대기 {adminSwipeSubscriptionRequests.length}건
             </p>
-            {adminSwipeSubscriptionRequests.length === 0 ? (
-              <p className="mt-2 text-xs text-neutral-500">승인 대기 신청이 없습니다.</p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <input
+                type="text"
+                value={adminSwipeSubscriptionSearch}
+                onChange={(e) => setAdminSwipeSubscriptionSearch(e.target.value)}
+                placeholder="닉네임 또는 신청ID 검색"
+                className="h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none ring-0 placeholder:text-neutral-400 sm:max-w-xs"
+              />
+              {normalizedAdminSwipeSubscriptionSearch ? (
+                <p className="text-[11px] text-neutral-500">검색 결과 {filteredAdminSwipeSubscriptionRequests.length}건</p>
+              ) : null}
+            </div>
+            {filteredAdminSwipeSubscriptionRequests.length === 0 ? (
+              <p className="mt-2 text-xs text-neutral-500">
+                {normalizedAdminSwipeSubscriptionSearch ? "검색된 신청이 없습니다." : "승인 대기 신청이 없습니다."}
+              </p>
             ) : (
               <div className="mt-2 space-y-2">
-                {adminSwipeSubscriptionRequests.map((item) => {
+                {filteredAdminSwipeSubscriptionRequests.map((item) => {
                   const processing = processingSwipeSubscriptionIds.includes(item.id);
                   return (
                     <div
@@ -4884,11 +4959,25 @@ export default function MyPage() {
             <p className="text-xs font-semibold text-violet-800">
               이상형 더보기 승인 대기 {adminMoreViewRequests.length}건
             </p>
-            {adminMoreViewRequests.length === 0 ? (
-              <p className="mt-2 text-xs text-neutral-500">승인 대기 신청이 없습니다.</p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <input
+                type="text"
+                value={adminMoreViewSearch}
+                onChange={(e) => setAdminMoreViewSearch(e.target.value)}
+                placeholder="닉네임 또는 신청ID 검색"
+                className="h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none ring-0 placeholder:text-neutral-400 sm:max-w-xs"
+              />
+              {normalizedAdminMoreViewSearch ? (
+                <p className="text-[11px] text-neutral-500">검색 결과 {filteredAdminMoreViewRequests.length}건</p>
+              ) : null}
+            </div>
+            {filteredAdminMoreViewRequests.length === 0 ? (
+              <p className="mt-2 text-xs text-neutral-500">
+                {normalizedAdminMoreViewSearch ? "검색된 신청이 없습니다." : "승인 대기 신청이 없습니다."}
+              </p>
             ) : (
               <div className="mt-2 space-y-2">
-                {adminMoreViewRequests.map((item) => {
+                {filteredAdminMoreViewRequests.map((item) => {
                   const processing = processingMoreViewIds.includes(item.id);
                   return (
                     <div
