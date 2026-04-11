@@ -73,7 +73,7 @@ export async function GET(req: Request) {
     const status = (searchParams.get("status") ?? "pending").trim();
 
     const admin = createAdminClient();
-    let rowsRes = await fetchAllRows((from, to) => {
+    let rowsRes = await fetchAllRows(async (from, to) => {
       let query = admin
         .from("dating_more_view_requests")
         .select("id,user_id,sex,status,note,created_at,reviewed_at,reviewed_by_user_id,access_expires_at")
@@ -84,11 +84,15 @@ export async function GET(req: Request) {
         query = query.eq("status", status);
       }
 
-      return query as Promise<MoreViewListQueryResult>;
+      const result = await query;
+      return {
+        data: (result.data ?? null) as Array<Record<string, unknown>> | null,
+        error: (result.error ?? null) as { code?: string; message?: string } | null,
+      };
     });
 
     if (rowsRes.error && isMissingColumnError(rowsRes.error)) {
-      rowsRes = await fetchAllRows((from, to) => {
+      rowsRes = await fetchAllRows(async (from, to) => {
         let legacyQuery = admin
           .from("dating_more_view_requests")
           .select("id,user_id,sex,status,note,created_at,reviewed_at,reviewed_by_user_id")
@@ -97,7 +101,11 @@ export async function GET(req: Request) {
         if (status === "pending" || status === "approved" || status === "rejected") {
           legacyQuery = legacyQuery.eq("status", status);
         }
-        return legacyQuery as Promise<MoreViewListQueryResult>;
+        const result = await legacyQuery;
+        return {
+          data: (result.data ?? null) as Array<Record<string, unknown>> | null,
+          error: (result.error ?? null) as { code?: string; message?: string } | null,
+        };
       });
     }
     if (rowsRes.error) {
