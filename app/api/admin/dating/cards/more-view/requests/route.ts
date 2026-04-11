@@ -2,6 +2,8 @@ import { isAdminEmail } from "@/lib/admin";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
+const PAGE_SIZE = 1000;
+
 function parseAdminUserIds() {
   return (process.env.ADMIN_USER_IDS ?? "")
     .split(",")
@@ -28,6 +30,28 @@ type MoreViewListQueryResult = {
   error: { code?: string; message?: string } | null;
 };
 
+async function fetchAllRows(
+  fetchPage: (from: number, to: number) => Promise<MoreViewListQueryResult>
+): Promise<MoreViewListQueryResult> {
+  const all: Array<Record<string, unknown>> = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + PAGE_SIZE - 1;
+    const page = await fetchPage(from, to);
+    if (page.error) {
+      return page;
+    }
+
+    const rows = Array.isArray(page.data) ? page.data : [];
+    all.push(...rows);
+    if (rows.length < PAGE_SIZE) break;
+    from += PAGE_SIZE;
+  }
+
+  return { data: all, error: null };
+}
+
 export async function GET(req: Request) {
   const requestId = crypto.randomUUID();
 
@@ -49,27 +73,32 @@ export async function GET(req: Request) {
     const status = (searchParams.get("status") ?? "pending").trim();
 
     const admin = createAdminClient();
-    let query = admin
-      .from("dating_more_view_requests")
-      .select("id,user_id,sex,status,note,created_at,reviewed_at,reviewed_by_user_id,access_expires_at")
-      .order("created_at", { ascending: false })
-      .limit(200);
-
-    if (status === "pending" || status === "approved" || status === "rejected") {
-      query = query.eq("status", status);
-    }
-
-    let rowsRes = (await query) as MoreViewListQueryResult;
-    if (rowsRes.error && isMissingColumnError(rowsRes.error)) {
-      let legacyQuery = admin
+    let rowsRes = await fetchAllRows((from, to) => {
+      let query = admin
         .from("dating_more_view_requests")
-        .select("id,user_id,sex,status,note,created_at,reviewed_at,reviewed_by_user_id")
+        .select("id,user_id,sex,status,note,created_at,reviewed_at,reviewed_by_user_id,access_expires_at")
         .order("created_at", { ascending: false })
-        .limit(200);
+        .range(from, to);
+
       if (status === "pending" || status === "approved" || status === "rejected") {
-        legacyQuery = legacyQuery.eq("status", status);
+        query = query.eq("status", status);
       }
-      rowsRes = (await legacyQuery) as MoreViewListQueryResult;
+
+      return query as Promise<MoreViewListQueryResult>;
+    });
+
+    if (rowsRes.error && isMissingColumnError(rowsRes.error)) {
+      rowsRes = await fetchAllRows((from, to) => {
+        let legacyQuery = admin
+          .from("dating_more_view_requests")
+          .select("id,user_id,sex,status,note,created_at,reviewed_at,reviewed_by_user_id")
+          .order("created_at", { ascending: false })
+          .range(from, to);
+        if (status === "pending" || status === "approved" || status === "rejected") {
+          legacyQuery = legacyQuery.eq("status", status);
+        }
+        return legacyQuery as Promise<MoreViewListQueryResult>;
+      });
     }
     if (rowsRes.error) {
       console.error(`[admin-more-view-list] ${requestId} query failed`, rowsRes.error);
