@@ -1359,11 +1359,11 @@ export default function MyPage() {
       } catch (error) {
         setSwipeSubscriptionStatus({
           status: "none",
-          dailyLimit: 7,
-          baseLimit: 7,
+          dailyLimit: 5,
+          baseLimit: 5,
           premiumLimit: 15,
           priceKrw: 10000,
-          durationDays: 30,
+          durationDays: 15,
         });
         setSwipeSubscriptionError(
           error instanceof Error ? error.message : "빠른매칭 라이크 구매 상태를 불러오지 못했습니다."
@@ -1860,11 +1860,11 @@ export default function MyPage() {
       setSwipeSubscriptionStatus({
         status:
           body.status === "active" || body.status === "pending" || body.status === "none" ? body.status : "none",
-        dailyLimit: Math.max(1, Number(body.dailyLimit ?? 7)),
-        baseLimit: Math.max(1, Number(body.baseLimit ?? 7)),
+        dailyLimit: Math.max(1, Number(body.dailyLimit ?? 5)),
+        baseLimit: Math.max(1, Number(body.baseLimit ?? 5)),
         premiumLimit: Math.max(1, Number(body.premiumLimit ?? 15)),
         priceKrw: Math.max(0, Number(body.priceKrw ?? 10000)),
-        durationDays: Math.max(1, Number(body.durationDays ?? 30)),
+        durationDays: Math.max(1, Number(body.durationDays ?? 15)),
         activeSubscription: body.activeSubscription ?? null,
         pendingSubscription: body.pendingSubscription ?? null,
       });
@@ -3001,12 +3001,12 @@ export default function MyPage() {
               <div>
                 <p className="text-sm font-semibold text-amber-900">라이크 늘리기</p>
                 <p className="mt-1 text-xs text-amber-800">
-                  지금 하루 {swipeSubscriptionStatus?.dailyLimit ?? 7}회 사용 가능
+                  지금 하루 {swipeSubscriptionStatus?.dailyLimit ?? 5}회 사용 가능
                   {swipeSubscriptionStatus?.status === "active"
                     ? ` · 추가 이용 중`
                     : swipeSubscriptionStatus?.status === "pending"
                       ? ` · 승인 대기`
-                      : ` · 기본 제공 ${swipeSubscriptionStatus?.baseLimit ?? 7}회`}
+                      : ` · 기본 제공 ${swipeSubscriptionStatus?.baseLimit ?? 5}회`}
                 </p>
               </div>
               <div className="flex flex-wrap items-center gap-2">
@@ -3036,7 +3036,7 @@ export default function MyPage() {
             {swipeSubscriptionPanelOpen && (
               <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50/40 p-3">
                 <p className="text-xs text-amber-800">
-                  기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 7}회예요. 추가 이용을 신청하면 15일 동안 하루{" "}
+                  기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 5}회예요. 추가 이용을 신청하면 15일 동안 하루{" "}
                   {swipeSubscriptionStatus?.premiumLimit ?? 15}회까지 사용할 수 있어요.
                 </p>
                 <p className="mt-2 text-[11px] text-amber-700">

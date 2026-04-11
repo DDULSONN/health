@@ -8,7 +8,7 @@ import { getKstDayRangeUtc } from "@/lib/dating-open";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { createAdminClient } from "@/lib/supabase/server";
 
-export const SWIPE_BASE_DAILY_LIMIT = 7;
+export const SWIPE_BASE_DAILY_LIMIT = 5;
 export const SWIPE_PREMIUM_DAILY_LIMIT = 15;
 export const SWIPE_PREMIUM_PRICE_KRW = 10000;
 export const SWIPE_PREMIUM_DURATION_DAYS = 15;
