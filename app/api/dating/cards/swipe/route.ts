@@ -4,6 +4,7 @@ import {
   getSwipeCandidate,
   getSwipeDailyUsage,
   getSwipeLimitInfo,
+  SWIPE_LIKE_EXPIRY_HOURS,
   sendDatingEmailNotification,
 } from "@/lib/dating-swipe";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
@@ -17,6 +18,19 @@ type SwipeAction = "like" | "pass";
 
 function getPairKey(a: string, b: string): string {
   return [a, b].sort().join(":");
+}
+
+function isMissingRelationError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return (
+    code === "42P01" ||
+    code === "PGRST205" ||
+    message.includes("does not exist") ||
+    message.includes("relation") ||
+    message.includes("could not find the table")
+  );
 }
 
 function sanitizeSex(value: string | null): "male" | "female" | null {
@@ -158,9 +172,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "오픈카드를 한 번 이상 등록한 사용자만 이용할 수 있습니다." }, { status: 403 });
     }
 
+    const pairKey = getPairKey(user.id, targetUserId);
+    const pairMatchRes = await adminClient
+      .from("dating_card_swipe_matches")
+      .select("id")
+      .eq("pair_key", pairKey)
+      .maybeSingle();
+    if (pairMatchRes.error && !isMissingRelationError(pairMatchRes.error)) {
+      throw pairMatchRes.error;
+    }
+    const pairMatched = !pairMatchRes.error && Boolean(pairMatchRes.data);
+    const expiryCutoffMs = Date.now() - SWIPE_LIKE_EXPIRY_HOURS * 60 * 60 * 1000;
+
     const dupRes = await adminClient
       .from("dating_card_swipes")
-      .select("id, action")
+      .select("id, action, created_at")
       .eq("actor_user_id", user.id)
       .eq("target_user_id", targetUserId)
       .eq("target_sex", sex)
@@ -189,7 +215,21 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "대상 카드에 인스타 정보가 없어 진행할 수 없습니다." }, { status: 400 });
     }
 
-    const existingSwipe = dupRes.data;
+    let existingSwipe = dupRes.data;
+    if (existingSwipe?.action === "like") {
+      const createdAtMs = new Date(String(existingSwipe.created_at ?? "")).getTime();
+      if (Number.isFinite(createdAtMs) && createdAtMs <= expiryCutoffMs && !pairMatched) {
+        const staleDeleteRes = await adminClient
+          .from("dating_card_swipes")
+          .delete()
+          .eq("id", existingSwipe.id)
+          .eq("actor_user_id", user.id);
+        if (staleDeleteRes.error) {
+          throw staleDeleteRes.error;
+        }
+        existingSwipe = null;
+      }
+    }
     const isPassToLikeRetry = existingSwipe?.action === "pass" && action === "like";
     if (existingSwipe?.id && !isPassToLikeRetry) {
       return NextResponse.json({ error: "이미 처리한 상대입니다." }, { status: 409 });
@@ -248,7 +288,7 @@ export async function POST(req: Request) {
     if (action === "like") {
       const reverseLikeRes = await adminClient
         .from("dating_card_swipes")
-        .select("id, actor_card_id")
+        .select("id, actor_card_id, created_at")
         .eq("actor_user_id", targetUserId)
         .eq("target_user_id", user.id)
         .eq("action", "like")
@@ -272,8 +312,23 @@ export async function POST(req: Request) {
         });
       }
 
-      if (reverseLikeRes.data?.id) {
-        const pairKey = getPairKey(user.id, targetUserId);
+      let reverseLike = reverseLikeRes.data;
+      if (reverseLike?.id && !pairMatched) {
+        const reverseCreatedAtMs = new Date(String(reverseLike.created_at ?? "")).getTime();
+        if (Number.isFinite(reverseCreatedAtMs) && reverseCreatedAtMs <= expiryCutoffMs) {
+          const deleteReverseRes = await adminClient
+            .from("dating_card_swipes")
+            .delete()
+            .eq("id", reverseLike.id)
+            .eq("actor_user_id", targetUserId);
+          if (deleteReverseRes.error) {
+            throw deleteReverseRes.error;
+          }
+          reverseLike = null;
+        }
+      }
+
+      if (reverseLike?.id) {
         const [userAId, userBId] = user.id < targetUserId ? [user.id, targetUserId] : [targetUserId, user.id];
         const userACardId = userAId === user.id ? myCard.id : targetCardId;
         const userBCardId = userBId === user.id ? myCard.id : targetCardId;

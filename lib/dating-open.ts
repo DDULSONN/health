@@ -1,7 +1,7 @@
-export const OPEN_CARD_LIMIT_MALE = 20;
-export const OPEN_CARD_LIMIT_FEMALE = 20;
+export const OPEN_CARD_LIMIT_MALE = 30;
+export const OPEN_CARD_LIMIT_FEMALE = 40;
 export const OPEN_CARD_SATURDAY_LIMIT_MALE = 30;
-export const OPEN_CARD_SATURDAY_LIMIT_FEMALE = 30;
+export const OPEN_CARD_SATURDAY_LIMIT_FEMALE = 40;
 export const OPEN_CARD_EXPIRE_HOURS = 24;
 export const OPEN_CARD_AUTO_REQUEUE_LIMIT = 1;
 

@@ -64,8 +64,8 @@ export async function PATCH(
     if (!isApplicant && !isAdmin) {
       return NextResponse.json({ error: "취소 권한이 없습니다." }, { status: 403 });
     }
-    if (app.status !== "submitted" && !isAdmin) {
-      return NextResponse.json({ error: "이미 처리된 지원서는 취소할 수 없습니다." }, { status: 409 });
+    if (app.status === "canceled" && !isAdmin) {
+      return NextResponse.json({ error: "이미 취소된 지원서입니다." }, { status: 409 });
     }
   } else if (!isOwner && !isAdmin) {
     return NextResponse.json({ error: "처리 권한이 없습니다." }, { status: 403 });

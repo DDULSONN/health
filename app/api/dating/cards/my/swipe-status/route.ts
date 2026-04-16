@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
-import { pickPreviewImage } from "@/lib/dating-swipe";
+import { getSwipeLikeExpiresAtIso, pickPreviewImage, SWIPE_LIKE_EXPIRY_HOURS } from "@/lib/dating-swipe";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 
@@ -22,6 +22,10 @@ type SwipeMatchRow = {
   user_b_card_id: string;
   created_at: string;
 };
+
+function getPairKey(a: string, b: string): string {
+  return [a, b].sort().join(":");
+}
 
 type CardRow = {
   id: string;
@@ -156,8 +160,35 @@ export async function GET(req: Request) {
     swipeMatches = (matchesRes.data ?? []) as SwipeMatchRow[];
   }
 
-  const outgoingLikes = ((outgoingRes.data ?? []) as SwipeRow[]).filter((row) => !blockedUserIds.has(row.target_user_id));
-  const incomingLikesRaw = ((incomingRes.data ?? []) as SwipeRow[]).filter((row) => !blockedUserIds.has(row.actor_user_id));
+  const rawOutgoingLikes = (outgoingRes.data ?? []) as SwipeRow[];
+  const rawIncomingLikes = (incomingRes.data ?? []) as SwipeRow[];
+  const nowMs = Date.now();
+  const expiryCutoffMs = nowMs - SWIPE_LIKE_EXPIRY_HOURS * 60 * 60 * 1000;
+  const matchedPairKeys = new Set(swipeMatches.map((row) => getPairKey(row.user_a_id, row.user_b_id)));
+  const expiredLikeIds = new Set(
+    [...rawOutgoingLikes, ...rawIncomingLikes]
+      .filter((row) => {
+        if (row.action !== "like") return false;
+        const createdAtMs = new Date(row.created_at).getTime();
+        if (!Number.isFinite(createdAtMs) || createdAtMs > expiryCutoffMs) return false;
+        return !matchedPairKeys.has(getPairKey(row.actor_user_id, row.target_user_id));
+      })
+      .map((row) => row.id)
+  );
+
+  if (expiredLikeIds.size > 0) {
+    const { error: cleanupError } = await admin.from("dating_card_swipes").delete().in("id", [...expiredLikeIds]);
+    if (cleanupError) {
+      console.error("[GET /api/dating/cards/my/swipe-status] cleanup failed", cleanupError);
+    }
+  }
+
+  const outgoingLikes = rawOutgoingLikes.filter(
+    (row) => !expiredLikeIds.has(row.id) && !blockedUserIds.has(row.target_user_id)
+  );
+  const incomingLikesRaw = rawIncomingLikes.filter(
+    (row) => !expiredLikeIds.has(row.id) && !blockedUserIds.has(row.actor_user_id)
+  );
 
   const matchedUserIds = new Set<string>();
   const pairCreatedAt = new Map<string, string>();
@@ -218,6 +249,7 @@ export async function GET(req: Request) {
         other_user_id: row.target_user_id,
         matched: Boolean(matchedAt),
         matched_at: matchedAt,
+        expires_at: matchedAt ? null : getSwipeLikeExpiresAtIso(row.created_at),
         card: card
           ? {
               id: card.id,
@@ -243,6 +275,7 @@ export async function GET(req: Request) {
         swipe_id: row.id,
         created_at: row.created_at,
         other_user_id: row.actor_user_id,
+        expires_at: getSwipeLikeExpiresAtIso(row.created_at),
         card: card
           ? {
               id: card.id,

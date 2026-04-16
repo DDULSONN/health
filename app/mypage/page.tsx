@@ -185,6 +185,7 @@ type SwipeStatusItem = {
   other_user_id: string;
   matched?: boolean;
   matched_at?: string | null;
+  expires_at?: string | null;
   card: SwipeStatusCard | null;
 };
 
@@ -860,6 +861,10 @@ export default function MyPage() {
   const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
   const [processingSwipeLikeBackIds, setProcessingSwipeLikeBackIds] = useState<string[]>([]);
+  const [deletingSwipeLikeIds, setDeletingSwipeLikeIds] = useState<string[]>([]);
+  const [cancelingAppliedIds, setCancelingAppliedIds] = useState<string[]>([]);
+  const [showAllOutgoingSwipeLikes, setShowAllOutgoingSwipeLikes] = useState(false);
+  const [showAllIncomingSwipeLikes, setShowAllIncomingSwipeLikes] = useState(false);
   const [refreshingOneOnOneRecommendationIds, setRefreshingOneOnOneRecommendationIds] = useState<string[]>([]);
   const [openCardWriteEnabled, setOpenCardWriteEnabled] = useState(true);
   const [openCardWriteSaving, setOpenCardWriteSaving] = useState(false);
@@ -1648,7 +1653,7 @@ export default function MyPage() {
 
   const handleDeleteMyAppliedCardApplication = async (applicationId: string) => {
     if (deletingAppliedIds.includes(applicationId)) return;
-    if (!confirm("내가 보낸 지원서를 삭제할까요?")) return;
+    if (!confirm("내가 보낸 지원 기록을 삭제할까요?")) return;
 
     setDeletingAppliedIds((prev) => [...prev, applicationId]);
     try {
@@ -1661,8 +1666,58 @@ export default function MyPage() {
         return;
       }
       setMyAppliedCardApplications((prev) => prev.filter((app) => app.id !== applicationId));
+      await reloadOpenDatingConnections();
     } finally {
       setDeletingAppliedIds((prev) => prev.filter((id) => id !== applicationId));
+    }
+  };
+
+  const handleCancelMyAppliedCardApplication = async (applicationId: string) => {
+    if (cancelingAppliedIds.includes(applicationId)) return;
+    if (!confirm("이 지원을 취소할까요? 수락된 상태였다면 인스타 교환 목록에서도 빠집니다.")) return;
+
+    setCancelingAppliedIds((prev) => [...prev, applicationId]);
+    try {
+      const res = await fetch(`/api/dating/cards/applications/${applicationId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "canceled" }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean; status?: string };
+      if (!res.ok || !body.ok) {
+        alert(body.error ?? "지원 취소에 실패했습니다.");
+        return;
+      }
+      setMyAppliedCardApplications((prev) =>
+        prev.map((app) => (app.id === applicationId ? { ...app, status: "canceled" } : app))
+      );
+      await reloadOpenDatingConnections();
+    } finally {
+      setCancelingAppliedIds((prev) => prev.filter((id) => id !== applicationId));
+    }
+  };
+
+  const handleDeleteOutgoingSwipeLike = async (item: SwipeStatusItem) => {
+    if (deletingSwipeLikeIds.includes(item.swipe_id)) return;
+    const confirmMessage = item.matched
+      ? "이 라이크를 취소할까요? 쌍방 매칭과 인스타 교환 목록에서도 함께 빠집니다."
+      : "이 라이크를 취소할까요?";
+    if (!confirm(confirmMessage)) return;
+
+    setDeletingSwipeLikeIds((prev) => [...prev, item.swipe_id]);
+    try {
+      const res = await fetch(`/api/dating/cards/my/swipes/${item.swipe_id}`, {
+        method: "DELETE",
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean; message?: string };
+      if (!res.ok || !body.ok) {
+        alert(body.error ?? "라이크 취소에 실패했습니다.");
+        return;
+      }
+      await Promise.all([reloadSwipeStatus(), reloadOpenDatingConnections()]);
+      alert(body.message ?? "라이크를 취소했습니다.");
+    } finally {
+      setDeletingSwipeLikeIds((prev) => prev.filter((id) => id !== item.swipe_id));
     }
   };
 
@@ -1825,6 +1880,8 @@ export default function MyPage() {
       setSwipeStatusSummary(body.summary ?? null);
       setMyOutgoingSwipeLikes(body.outgoing_likes ?? []);
       setMyIncomingSwipeLikes(body.incoming_likes ?? []);
+      setShowAllOutgoingSwipeLikes(false);
+      setShowAllIncomingSwipeLikes(false);
       setSwipeStatusLoaded(true);
     } finally {
       setSwipeStatusLoading(false);
@@ -3121,7 +3178,9 @@ export default function MyPage() {
                     <p className="mt-2 text-xs text-neutral-500">아직 보낸 라이크가 없습니다.</p>
                   ) : (
                     <div className="mt-3 space-y-2">
-                      {myOutgoingSwipeLikes.slice(0, 6).map((item) => (
+                      {(showAllOutgoingSwipeLikes ? myOutgoingSwipeLikes : myOutgoingSwipeLikes.slice(0, 6)).map((item) => {
+                        const deleting = deletingSwipeLikeIds.includes(item.swipe_id);
+                        return (
                         <div key={item.swipe_id} className="rounded-lg border border-neutral-200 bg-neutral-50 p-3">
                           <div className="flex gap-3">
                             <div className="h-24 w-20 shrink-0 overflow-hidden rounded-xl border border-neutral-200 bg-white">
@@ -3159,11 +3218,35 @@ export default function MyPage() {
                                   ? `매칭 완료: ${new Date(item.matched_at).toLocaleString("ko-KR")}`
                                   : `보낸 시각: ${new Date(item.created_at).toLocaleString("ko-KR")}`}
                               </p>
+                              <div className="mt-3 flex flex-wrap gap-2">
+                                <button
+                                  type="button"
+                                  disabled={deleting}
+                                  onClick={() => void handleDeleteOutgoingSwipeLike(item)}
+                                  className="h-8 rounded-md border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60"
+                                >
+                                  {deleting ? "처리 중..." : item.matched ? "매칭 취소" : "라이크 취소"}
+                                </button>
+                                {item.matched ? (
+                                  <span className="inline-flex items-center text-[11px] text-neutral-500">
+                                    취소하면 인스타 교환 목록에서도 바로 빠집니다.
+                                  </span>
+                                ) : null}
+                              </div>
                             </div>
                           </div>
                         </div>
-                      ))}
+                      )})}
                     </div>
+                  )}
+                  {myOutgoingSwipeLikes.length > 6 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllOutgoingSwipeLikes((prev) => !prev)}
+                      className="mt-3 h-8 rounded-md border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50"
+                    >
+                      {showAllOutgoingSwipeLikes ? "보낸 라이크 접기" : `보낸 라이크 ${myOutgoingSwipeLikes.length}개 전체 보기`}
+                    </button>
                   )}
                 </div>
               ) : (
@@ -3173,7 +3256,7 @@ export default function MyPage() {
                     <p className="mt-2 text-xs text-neutral-500">지금 확인 가능한 받은 라이크가 없습니다.</p>
                   ) : (
                     <div className="mt-3 space-y-2">
-                      {myIncomingSwipeLikes.slice(0, 6).map((item) => {
+                      {(showAllIncomingSwipeLikes ? myIncomingSwipeLikes : myIncomingSwipeLikes.slice(0, 6)).map((item) => {
                         const processing = processingSwipeLikeBackIds.includes(item.swipe_id);
                         return (
                           <div key={item.swipe_id} className="rounded-lg border border-pink-200 bg-pink-50/40 p-3">
@@ -3207,6 +3290,16 @@ export default function MyPage() {
                                 <p className="mt-2 text-[11px] text-neutral-500">
                                   받은 시각: {new Date(item.created_at).toLocaleString("ko-KR")}
                                 </p>
+                                {item.expires_at ? (
+                                  <>
+                                    <p className="mt-1 text-[11px] font-medium text-amber-700">
+                                      남은 시간: {formatRemainingToKorean(item.expires_at)}
+                                    </p>
+                                    <p className="mt-1 text-[11px] text-amber-700">
+                                      30시간 안에 응답이 없으면 자동 정리: {new Date(item.expires_at).toLocaleString("ko-KR")}
+                                    </p>
+                                  </>
+                                ) : null}
                                 <div className="mt-3 flex flex-wrap gap-2">
                                   <button
                                     type="button"
@@ -3226,6 +3319,15 @@ export default function MyPage() {
                         );
                       })}
                     </div>
+                  )}
+                  {myIncomingSwipeLikes.length > 6 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowAllIncomingSwipeLikes((prev) => !prev)}
+                      className="mt-3 h-8 rounded-md border border-pink-200 bg-white px-3 text-xs font-medium text-pink-800 hover:bg-pink-50"
+                    >
+                      {showAllIncomingSwipeLikes ? "받은 라이크 접기" : `받은 라이크 ${myIncomingSwipeLikes.length}개 전체 보기`}
+                    </button>
                   )}
                 </div>
               )}
@@ -4322,9 +4424,17 @@ export default function MyPage() {
                   <p className="mt-2 text-sm text-neutral-700 whitespace-pre-wrap break-words">{app.intro_text}</p>
                 )}
                 <div className="mt-3">
-                  {app.status === "accepted" ? (
-                    <p className="text-xs text-neutral-500">수락된 지원서는 삭제할 수 없습니다.</p>
-                  ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {(app.status === "submitted" || app.status === "accepted") && (
+                      <button
+                        type="button"
+                        disabled={cancelingAppliedIds.includes(app.id)}
+                        onClick={() => void handleCancelMyAppliedCardApplication(app.id)}
+                        className="h-8 rounded-md border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                      >
+                        {cancelingAppliedIds.includes(app.id) ? "취소 중..." : "지원 취소"}
+                      </button>
+                    )}
                     <button
                       type="button"
                       disabled={deletingAppliedIds.includes(app.id)}
@@ -4333,6 +4443,9 @@ export default function MyPage() {
                     >
                       {deletingAppliedIds.includes(app.id) ? "삭제 중..." : "지원서 삭제"}
                     </button>
+                  </div>
+                  {app.status === "accepted" && (
+                    <p className="mt-2 text-xs text-neutral-500">수락 후 인스타가 공개된 상태여도 취소하거나 삭제할 수 있습니다.</p>
                   )}
                 </div>
               </div>

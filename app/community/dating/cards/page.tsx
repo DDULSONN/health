@@ -825,13 +825,13 @@ function Section({
       ) : (
         <>
           {pinnedPaidItems.length > 0 && (
-            <div className="mb-3 grid grid-cols-1 gap-3">
+            <div className="mb-3 grid grid-cols-2 gap-3">
               {pinnedPaidItems.map((card) => (
                 <PaidCardRow key={card.id} card={card} />
               ))}
             </div>
           )}
-          <div className="grid grid-cols-1 gap-3">
+          <div className="grid grid-cols-2 gap-3">
             {items.map((card) => (
               <CardRow key={card.id} card={card} />
             ))}
@@ -842,7 +842,7 @@ function Section({
           {moreViewItems.length > 0 && (
             <div className="mt-3 rounded-xl border border-dashed border-pink-300 bg-pink-50/60 p-2">
               <p className="mb-2 px-1 text-xs font-semibold text-pink-700">이상형 더보기 (추가 25명)</p>
-              <div className="grid grid-cols-1 gap-3">
+              <div className="grid grid-cols-2 gap-3">
                 {moreViewItems.map((card) => (
                   <CardRow key={`more-${card.id}`} card={card} />
                 ))}
@@ -900,9 +900,11 @@ function PaidCardRow({ card }: { card: PaidCard }) {
   }, []);
 
   return (
-    <div className={`rounded-2xl border p-4 ${isPriority ? "border-rose-200 bg-rose-50" : "border-neutral-200 bg-white"}`}>
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm text-neutral-700">
+    <div
+      className={`flex h-full flex-col rounded-2xl border p-3 ${isPriority ? "border-rose-200 bg-rose-50" : "border-neutral-200 bg-white"}`}
+    >
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-700 sm:text-sm">
           {isPriority && (
             <span className="inline-flex rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">🔥36시간 고정</span>
           )}
@@ -912,12 +914,16 @@ function PaidCardRow({ card }: { card: PaidCard }) {
           {card.region && <span>{card.region}</span>}
         </div>
         {card.expires_at && (
-          <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">잔여 {formatRemainingToKorean(card.expires_at)}</span>
+          <div>
+            <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+              잔여 {formatRemainingToKorean(card.expires_at)}
+            </span>
+          </div>
         )}
       </div>
 
       {card.thumbUrl ? (
-        <div className="relative mt-3 flex h-44 items-center justify-center overflow-hidden rounded-xl border border-rose-100 bg-white">
+        <div className="relative mt-3 flex h-32 items-center justify-center overflow-hidden rounded-xl border border-rose-100 bg-white sm:h-40">
           {/* eslint-disable-next-line @next/next/no-img-element */}
           <img
             src={card.thumbUrl}
@@ -936,20 +942,20 @@ function PaidCardRow({ card }: { card: PaidCard }) {
           />
         </div>
       ) : (
-        <div className="mt-3 h-44 rounded-xl border border-rose-100 bg-white" />
+        <div className="mt-3 h-32 rounded-xl border border-rose-100 bg-white sm:h-40" />
       )}
 
-      <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
+      <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-neutral-600 sm:text-xs">
         {card.height_cm != null && <span>키 {card.height_cm}cm</span>}
         {card.job && <span>직업 {card.job}</span>}
         {card.training_years != null && <span>운동 {card.training_years}년</span>}
         {card.is_3lift_verified && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">3대인증 완료</span>}
       </div>
 
-      {card.ideal_text && <p className="mt-2 text-xs text-pink-700 truncate">이상형: {card.ideal_text}</p>}
-      {card.strengths_text && <p className="mt-1 text-xs text-emerald-700 truncate">내 장점: {card.strengths_text}</p>}
+      {card.ideal_text && <p className="mt-2 line-clamp-2 text-[11px] text-pink-700 sm:text-xs">이상형: {card.ideal_text}</p>}
+      {card.strengths_text && <p className="mt-1 line-clamp-2 text-[11px] text-emerald-700 sm:text-xs">내 장점: {card.strengths_text}</p>}
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-auto grid gap-2 pt-3">
         <Link
           href={detailHref}
           prefetch
@@ -957,7 +963,7 @@ function PaidCardRow({ card }: { card: PaidCard }) {
           onClick={rememberScroll}
           onTouchStart={warmRoute}
           onTouchEnd={rememberScroll}
-          className="inline-flex min-h-[40px] items-center rounded-lg border border-neutral-300 px-4 text-sm text-neutral-700 hover:bg-neutral-50"
+          className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg border border-neutral-300 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50 sm:text-sm"
         >
           상세보기
         </Link>
@@ -968,7 +974,7 @@ function PaidCardRow({ card }: { card: PaidCard }) {
           onClick={rememberScroll}
           onTouchStart={warmRoute}
           onTouchEnd={rememberScroll}
-          className="inline-flex min-h-[40px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
+          className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg bg-pink-500 px-3 text-xs font-medium text-white hover:bg-pink-600 sm:text-sm"
         >
           지원하기
         </Link>
@@ -998,20 +1004,22 @@ function CardRow({ card }: { card: PublicCard }) {
   }, []);
 
   return (
-    <div className="rounded-2xl border border-neutral-200 bg-white p-4">
-      <div className="flex items-start justify-between gap-3">
-        <div className="flex items-center gap-2 text-sm text-neutral-700">
+    <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-3">
+      <div className="flex flex-col gap-2">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-700 sm:text-sm">
           <span className="font-semibold text-neutral-900">{card.display_nickname}</span>
           <PhoneVerifiedBadge verified={card.is_phone_verified} />
           {card.age != null && <span>{card.age}세</span>}
           {card.region && <span>{card.region}</span>}
         </div>
-        <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-          {card.expires_at ? `잔여 ${formatRemainingToKorean(card.expires_at)}` : "대기열"}
-        </span>
+        <div>
+          <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+            {card.expires_at ? `잔여 ${formatRemainingToKorean(card.expires_at)}` : "대기열"}
+          </span>
+        </div>
       </div>
 
-      <div className="mt-3 h-36 w-full overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50 md:h-44">
+      <div className="mt-3 h-32 w-full overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50 sm:h-36 md:h-40">
         {card.image_urls.length > 0 && !imgFailed ? (
           <div className="relative flex h-full w-full items-center justify-center bg-neutral-50">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -1039,7 +1047,7 @@ function CardRow({ card }: { card: PublicCard }) {
         )}
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
+      <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-neutral-600 sm:text-xs">
         {card.height_cm != null && <span>키 {card.height_cm}cm</span>}
         {card.job && <span>직업 {card.job}</span>}
         {card.training_years != null && <span>운동 {card.training_years}년</span>}
@@ -1051,10 +1059,10 @@ function CardRow({ card }: { card: PublicCard }) {
         )}
       </div>
 
-      {ideal && <p className="mt-2 line-clamp-2 text-xs text-pink-700">이상형: {ideal}</p>}
-      {card.strengths_text && <p className="mt-1 line-clamp-2 text-xs text-emerald-700">내 장점: {card.strengths_text}</p>}
+      {ideal && <p className="mt-2 line-clamp-2 text-[11px] text-pink-700 sm:text-xs">이상형: {ideal}</p>}
+      {card.strengths_text && <p className="mt-1 line-clamp-2 text-[11px] text-emerald-700 sm:text-xs">내 장점: {card.strengths_text}</p>}
 
-      <div className="mt-3 flex flex-wrap gap-2">
+      <div className="mt-auto grid gap-2 pt-3">
         <Link
           href={detailHref}
           prefetch
@@ -1062,7 +1070,7 @@ function CardRow({ card }: { card: PublicCard }) {
           onClick={rememberScroll}
           onTouchStart={warmRoute}
           onTouchEnd={rememberScroll}
-          className="inline-flex min-h-[40px] items-center rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white hover:bg-neutral-700"
+          className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg bg-neutral-900 px-3 text-xs font-medium text-white hover:bg-neutral-700 sm:text-sm"
         >
           상세보기
         </Link>
@@ -1073,7 +1081,7 @@ function CardRow({ card }: { card: PublicCard }) {
           onClick={rememberScroll}
           onTouchStart={warmRoute}
           onTouchEnd={rememberScroll}
-          className="inline-flex min-h-[40px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
+          className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg bg-pink-500 px-3 text-xs font-medium text-white hover:bg-pink-600 sm:text-sm"
         >
           지원하기
         </Link>

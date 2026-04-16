@@ -1,10 +1,14 @@
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
+
   const supabase = await createClient();
   const {
     data: { user },
@@ -35,10 +39,6 @@ export async function DELETE(
 
   if (!target) {
     return NextResponse.json({ error: "Application not found." }, { status: 404 });
-  }
-
-  if (target.status === "accepted") {
-    return NextResponse.json({ error: "Accepted applications cannot be deleted." }, { status: 400 });
   }
 
   const { error: deleteError } = await admin
