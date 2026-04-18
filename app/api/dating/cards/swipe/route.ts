@@ -4,9 +4,11 @@ import {
   getSwipeCandidate,
   getSwipeDailyUsage,
   getSwipeLimitInfo,
+  isSwipeLikeExpiryEligible,
   SWIPE_LIKE_EXPIRY_HOURS,
   sendDatingEmailNotification,
 } from "@/lib/dating-swipe";
+import { recordDatingMatchEvent } from "@/lib/dating-match-metrics";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -218,7 +220,12 @@ export async function POST(req: Request) {
     let existingSwipe = dupRes.data;
     if (existingSwipe?.action === "like") {
       const createdAtMs = new Date(String(existingSwipe.created_at ?? "")).getTime();
-      if (Number.isFinite(createdAtMs) && createdAtMs <= expiryCutoffMs && !pairMatched) {
+      if (
+        isSwipeLikeExpiryEligible(String(existingSwipe.created_at ?? "")) &&
+        Number.isFinite(createdAtMs) &&
+        createdAtMs <= expiryCutoffMs &&
+        !pairMatched
+      ) {
         const staleDeleteRes = await adminClient
           .from("dating_card_swipes")
           .delete()
@@ -315,7 +322,11 @@ export async function POST(req: Request) {
       let reverseLike = reverseLikeRes.data;
       if (reverseLike?.id && !pairMatched) {
         const reverseCreatedAtMs = new Date(String(reverseLike.created_at ?? "")).getTime();
-        if (Number.isFinite(reverseCreatedAtMs) && reverseCreatedAtMs <= expiryCutoffMs) {
+        if (
+          isSwipeLikeExpiryEligible(String(reverseLike.created_at ?? "")) &&
+          Number.isFinite(reverseCreatedAtMs) &&
+          reverseCreatedAtMs <= expiryCutoffMs
+        ) {
           const deleteReverseRes = await adminClient
             .from("dating_card_swipes")
             .delete()
@@ -353,6 +364,21 @@ export async function POST(req: Request) {
           .single();
         if (matchInsertRes.error) {
           throw matchInsertRes.error;
+        }
+
+        try {
+          await recordDatingMatchEvent(adminClient, {
+            kind: "swipe",
+            sourceKey: pairKey,
+            createdAt: new Date().toISOString(),
+            metaJson: {
+              pair_key: pairKey,
+              user_a_id: userAId,
+              user_b_id: userBId,
+            },
+          });
+        } catch (metricError) {
+          console.error("[POST /api/dating/cards/swipe] match metric failed", metricError);
         }
 
         const otherInstagramId = String(targetCard.instagram_id ?? "").trim();

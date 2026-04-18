@@ -14,12 +14,20 @@ export const SWIPE_PREMIUM_PRICE_KRW = 10000;
 export const SWIPE_PREMIUM_DURATION_DAYS = 15;
 export const SWIPE_DAILY_LIMIT = SWIPE_BASE_DAILY_LIMIT;
 export const SWIPE_LIKE_EXPIRY_HOURS = 30;
+export const SWIPE_LIKE_EXPIRY_ROLLOUT_AT_ISO = "2026-04-16T13:14:34.410Z";
 
 export function getSwipeLikeExpiryCutoffIso(now = new Date()) {
   return new Date(now.getTime() - SWIPE_LIKE_EXPIRY_HOURS * 60 * 60 * 1000).toISOString();
 }
 
+export function isSwipeLikeExpiryEligible(createdAtIso: string) {
+  const createdAtMs = new Date(createdAtIso).getTime();
+  const rolloutAtMs = new Date(SWIPE_LIKE_EXPIRY_ROLLOUT_AT_ISO).getTime();
+  return Number.isFinite(createdAtMs) && Number.isFinite(rolloutAtMs) && createdAtMs >= rolloutAtMs;
+}
+
 export function getSwipeLikeExpiresAtIso(createdAtIso: string) {
+  if (!isSwipeLikeExpiryEligible(createdAtIso)) return null;
   const createdAtMs = new Date(createdAtIso).getTime();
   if (!Number.isFinite(createdAtMs)) return null;
   return new Date(createdAtMs + SWIPE_LIKE_EXPIRY_HOURS * 60 * 60 * 1000).toISOString();

@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
-import { getSwipeLikeExpiresAtIso, pickPreviewImage, SWIPE_LIKE_EXPIRY_HOURS } from "@/lib/dating-swipe";
+import {
+  getSwipeLikeExpiresAtIso,
+  isSwipeLikeExpiryEligible,
+  pickPreviewImage,
+  SWIPE_LIKE_EXPIRY_HOURS,
+} from "@/lib/dating-swipe";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 
@@ -169,6 +174,7 @@ export async function GET(req: Request) {
     [...rawOutgoingLikes, ...rawIncomingLikes]
       .filter((row) => {
         if (row.action !== "like") return false;
+        if (!isSwipeLikeExpiryEligible(row.created_at)) return false;
         const createdAtMs = new Date(row.created_at).getTime();
         if (!Number.isFinite(createdAtMs) || createdAtMs > expiryCutoffMs) return false;
         return !matchedPairKeys.has(getPairKey(row.actor_user_id, row.target_user_id));

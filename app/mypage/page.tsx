@@ -637,7 +637,9 @@ type AdminSiteDashboard = {
     approvedApplyCreditOrders: number;
     pendingSwipeSubscriptions: number;
     activeSwipeSubscriptions: number;
+    totalOpenCardMatches: number;
     totalSwipeMatches: number;
+    totalDatingMatches: number;
     todayAnsweredSupport: number;
   };
   averages: {
@@ -4746,12 +4748,14 @@ export default function MyPage() {
                           { label: "승인된 1:1 카드", value: adminSiteDashboard.current.approvedOneOnOneCards },
                           { label: "대기중 1:1 신청", value: adminSiteDashboard.current.pendingOneOnOneCards },
                           { label: "활성 이상형 더보기", value: adminSiteDashboard.current.activeMoreView },
-                        { label: "활성 가까운 이상형", value: adminSiteDashboard.current.activeCityView },
-                        { label: "미답변 문의", value: adminSiteDashboard.current.openSupport },
-                        { label: "대기중 인증", value: adminSiteDashboard.current.pendingCertRequests },
-                        { label: "누적 빠른매칭 매치", value: adminSiteDashboard.current.totalSwipeMatches },
-                        { label: "오늘 답변한 문의", value: adminSiteDashboard.current.todayAnsweredSupport },
-                      ].map((item) => (
+                          { label: "활성 가까운 이상형", value: adminSiteDashboard.current.activeCityView },
+                          { label: "미답변 문의", value: adminSiteDashboard.current.openSupport },
+                          { label: "대기중 인증", value: adminSiteDashboard.current.pendingCertRequests },
+                          { label: "누적 오픈카드 매칭", value: adminSiteDashboard.current.totalOpenCardMatches },
+                          { label: "누적 빠른매칭 매치", value: adminSiteDashboard.current.totalSwipeMatches },
+                          { label: "전체 누적 매칭", value: adminSiteDashboard.current.totalDatingMatches },
+                          { label: "오늘 답변한 문의", value: adminSiteDashboard.current.todayAnsweredSupport },
+                        ].map((item) => (
                         <div key={`site-dashboard-current-${item.label}`} className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2">
                           <p className="text-[11px] text-neutral-500">{item.label}</p>
                           <p className="mt-1 text-lg font-bold text-neutral-900">{item.value.toLocaleString("ko-KR")}</p>

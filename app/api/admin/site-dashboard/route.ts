@@ -1,4 +1,9 @@
 import { requireAdminRoute } from "@/lib/admin-route";
+import {
+  countCumulativeOpenCardMatches,
+  countCumulativeSwipeMatches,
+  fetchRecentSwipeMatchTimestampRows,
+} from "@/lib/dating-match-metrics";
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
@@ -185,7 +190,10 @@ export async function GET() {
       FEATURE_CONFIG.map(async (feature) => ({
         key: feature.key,
         label: feature.label,
-        rows: await fetchRecentTimestampRows(admin, feature.table, weekStartIso, feature.timestampColumn),
+        rows:
+          feature.key === "swipe_matches"
+            ? await fetchRecentSwipeMatchTimestampRows(admin, weekStartIso)
+            : await fetchRecentTimestampRows(admin, feature.table, weekStartIso, feature.timestampColumn),
       }))
     );
 
@@ -263,6 +271,7 @@ export async function GET() {
       approvedApplyCreditOrders,
       pendingSwipeSubscriptions,
       activeSwipeSubscriptions,
+      totalOpenCardMatches,
       totalSwipeMatches,
       todayAnsweredSupport,
     ] = await Promise.all([
@@ -292,7 +301,8 @@ export async function GET() {
       fetchExactCountSafe(admin.from("apply_credit_orders").select("id", { count: "exact", head: true }).eq("status", "approved")),
       fetchExactCountSafe(admin.from("dating_swipe_subscription_requests").select("id", { count: "exact", head: true }).eq("status", "pending")),
       fetchExactCountSafe(admin.from("dating_swipe_subscription_requests").select("id", { count: "exact", head: true }).eq("status", "approved").gt("expires_at", nowIso)),
-      fetchExactCountSafe(admin.from("dating_card_swipe_matches").select("id", { count: "exact", head: true })),
+      countCumulativeOpenCardMatches(admin),
+      countCumulativeSwipeMatches(admin),
       fetchExactCountSafe(
         admin
           .from("support_inquiries")
@@ -334,7 +344,9 @@ export async function GET() {
         approvedApplyCreditOrders,
         pendingSwipeSubscriptions,
         activeSwipeSubscriptions,
+        totalOpenCardMatches,
         totalSwipeMatches,
+        totalDatingMatches: totalOpenCardMatches + totalSwipeMatches,
         todayAnsweredSupport,
       },
       averages: {

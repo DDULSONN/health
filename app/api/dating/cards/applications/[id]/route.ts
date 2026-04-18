@@ -1,6 +1,7 @@
 ﻿import { isAdminEmail } from "@/lib/admin";
 import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
 import { sendExpoPushToUser } from "@/lib/expo-push";
+import { recordDatingMatchEvent } from "@/lib/dating-match-metrics";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -105,6 +106,22 @@ export async function PATCH(
       await promotePendingCardsBySex(adminClient, sex);
     } catch (promoteError) {
       console.error("[PATCH /api/dating/cards/applications/[id]] promote pending failed", promoteError);
+    }
+  }
+
+  if (status === "accepted") {
+    try {
+      await recordDatingMatchEvent(adminClient, {
+        kind: "open_card",
+        sourceKey: app.id,
+        metaJson: {
+          application_id: app.id,
+          card_id: app.card_id,
+          applicant_user_id: app.applicant_user_id,
+        },
+      });
+    } catch (metricError) {
+      console.error("[PATCH /api/dating/cards/applications/[id]] match metric failed", metricError);
     }
   }
 
