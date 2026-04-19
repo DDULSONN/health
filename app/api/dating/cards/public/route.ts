@@ -10,6 +10,7 @@ import { NextResponse } from "next/server";
 import { createPublicCacheHeaders } from "@/lib/http-cache";
 
 const RAW_COUNT_MAX = 40;
+const PREVIEW_LIMIT_FOR_GUEST = 6;
 const LITE_PUBLIC_BUCKET = "dating-card-lite";
 const LITE_PUBLIC_PROBE_TTL_MS = 6 * 60 * 60 * 1000;
 const LITE_PUBLIC_NEGATIVE_PROBE_TTL_MS = 5 * 60 * 1000;
@@ -232,7 +233,9 @@ export async function GET(req: Request) {
   };
 
   const { searchParams } = new URL(req.url);
-  const limit = Math.min(parseIntSafe(searchParams.get("limit"), 20), 50);
+  const requestedLimit = Math.min(parseIntSafe(searchParams.get("limit"), 20), 50);
+  const isGuestPreview = !user?.id;
+  const limit = isGuestPreview ? Math.min(requestedLimit, PREVIEW_LIMIT_FOR_GUEST) : requestedLimit;
   const cursorCreatedAt = parseCursorTs(searchParams.get("cursorCreatedAt"));
   const cursorId = parseCursorId(searchParams.get("cursorId"));
   const sex = searchParams.get("sex");
@@ -333,7 +336,7 @@ export async function GET(req: Request) {
 
   const items = await Promise.all(
     pageRows.map(async (row) => {
-      const photoVisibility = row.photo_visibility === "public" ? "public" : "blur";
+      const photoVisibility = isGuestPreview ? "blur" : row.photo_visibility === "public" ? "public" : "blur";
       const imageUrls = await createSignedImageUrls(
         adminClient,
         row.photo_paths,
@@ -352,8 +355,8 @@ export async function GET(req: Request) {
         height_cm: row.height_cm,
         job: row.job,
         training_years: row.training_years,
-        ideal_type: row.ideal_type,
-        strengths_text: row.strengths_text,
+        ideal_type: isGuestPreview ? null : row.ideal_type,
+        strengths_text: isGuestPreview ? null : row.strengths_text,
         photo_visibility: photoVisibility,
         total_3lift: row.total_3lift,
         percent_all: row.percent_all,
@@ -385,6 +388,7 @@ export async function GET(req: Request) {
       hasMore,
       nextCursorCreatedAt: hasMore && lastItem ? lastItem.created_at : null,
       nextCursorId: hasMore && lastItem ? lastItem.id : null,
+      previewOnly: isGuestPreview,
     },
     {
       headers: isPersonalized

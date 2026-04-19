@@ -204,6 +204,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const { user } = await getRequestAuthContext(req);
   const ip = extractClientIp(req);
 
+  if (!user) {
+    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  }
+
   const rateLimit = await checkRouteRateLimit({
     requestId,
     scope: "dating-cards-signed-urls",

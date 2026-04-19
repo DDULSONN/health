@@ -5,8 +5,14 @@ import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
 import { formatRemainingToKorean } from "@/lib/dating-open";
+import {
+  SWIPE_PREMIUM_DAILY_LIMIT,
+  SWIPE_PREMIUM_DURATION_DAYS,
+  SWIPE_PREMIUM_PRICE_KRW,
+} from "@/lib/dating-swipe";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 import { cacheOpenCardDetail, cachePaidCardDetail } from "@/lib/dating-detail-cache";
+import { createClient } from "@/lib/supabase/client";
 
 type PublicCard = {
   id: string;
@@ -106,6 +112,7 @@ type SwipeRequestOptions = {
 
 const PAGE_SIZE = 20;
 const OPEN_CARDS_CACHE_KEY = "community-dating-open-cards:v1";
+const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
 
 type OpenCardsSnapshot = {
   activeSex: "male" | "female";
@@ -123,6 +130,10 @@ type OpenCardsSnapshot = {
   moreViewFemale: PublicCard[];
   scrollY?: number;
 };
+
+function buildLoginRedirect(path: string) {
+  return `/login?redirect=${encodeURIComponent(path)}`;
+}
 
 function readOpenCardsSnapshot(): OpenCardsSnapshot | null {
   if (typeof window === "undefined") return null;
@@ -173,6 +184,7 @@ async function fetchBySex(
 }
 
 export default function OpenCardsPage() {
+  const supabase = useMemo(() => createClient(), []);
   const initialSnapshot = useMemo(() => readOpenCardsSnapshot(), []);
   const [activeSex, setActiveSex] = useState<"male" | "female">(initialSnapshot?.activeSex ?? "female");
   const [guideOpen, setGuideOpen] = useState(false);
@@ -215,6 +227,7 @@ export default function OpenCardsPage() {
   const activeSexRef = useRef<"male" | "female">(activeSex);
   const swipeCacheRef = useRef<Partial<Record<"male" | "female", SwipeState>>>({});
   const swipeRequestIdRef = useRef({ male: 0, female: 0 });
+  const [viewerLoggedIn, setViewerLoggedIn] = useState(false);
 
   useEffect(() => {
     activeSexRef.current = activeSex;
@@ -224,6 +237,15 @@ export default function OpenCardsPage() {
     const timer = window.setInterval(() => setTick((v) => v + 1), 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    queueMicrotask(async () => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      setViewerLoggedIn(Boolean(user));
+    });
+  }, [supabase]);
 
   useEffect(() => {
     writeOpenCardsSnapshot({
@@ -538,6 +560,10 @@ export default function OpenCardsPage() {
   const handleSwipe = useCallback(
     async (action: "like" | "pass") => {
       if (!swipeState.candidate || swipeSubmitting) return;
+      if (!swipeState.canSwipe) {
+        setSwipeMessage("라이크나 넘기기를 하려면 먼저 오픈카드를 등록해 주세요.");
+        return;
+      }
       setSwipeSubmitting(true);
       setSwipeMessage("");
       try {
@@ -574,7 +600,7 @@ export default function OpenCardsPage() {
         setSwipeSubmitting(false);
       }
     },
-    [activeSex, loadSwipe, swipeState.candidate, swipeSubmitting]
+    [activeSex, loadSwipe, swipeState.canSwipe, swipeState.candidate, swipeSubmitting]
   );
 
   const nowLabel = useMemo(() => tick, [tick]);
@@ -593,108 +619,169 @@ export default function OpenCardsPage() {
   return (
     <main className="max-w-3xl mx-auto px-4 py-6">
       <DatingAdultNotice />
-      <div className="mb-4 flex flex-wrap items-center gap-2">
-        <span className="rounded-full border border-neutral-300 bg-neutral-900 px-3 py-1.5 text-sm font-semibold text-white">오픈카드</span>
-        <Link
-          href="/dating/paid"
-          className="group inline-flex min-h-[44px] items-center gap-2 rounded-full border border-rose-300 bg-gradient-to-r from-rose-50 to-orange-50 px-3.5 py-1.5 text-sm font-semibold text-rose-700 shadow-sm ring-2 ring-rose-100 transition-all hover:-translate-y-0.5 hover:border-rose-400 hover:shadow-md"
-        >
-          <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-bold text-white">추천</span>
-          <span>대기 없이 등록</span>
-        </Link>
-        <Link href="/dating/more-view" className="rounded-full border border-pink-300 bg-pink-50 px-3 py-1.5 text-sm font-semibold text-pink-700 hover:bg-pink-100">
-          이상형 더보기
-        </Link>
-        <Link
-          href="/dating/nearby-view"
-          className="rounded-full border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-semibold text-sky-700 hover:bg-sky-100"
-        >
-          내 가까운 이상형
-        </Link>
-      </div>
+      <section className="mb-5 overflow-hidden rounded-[28px] border border-rose-100 bg-[linear-gradient(180deg,_#fffdfd_0%,_#fff7f9_100%)] p-4 shadow-[0_12px_32px_rgba(15,23,42,0.04)] md:p-5">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-rose-600 px-3 py-1 text-xs font-semibold text-white">오픈카드</span>
+              <span className="rounded-full border border-rose-100 bg-white px-3 py-1 text-xs font-medium text-rose-700">
+                24시간 공개 · 미연결 시 1회 재대기
+              </span>
+            </div>
 
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold text-neutral-900">오픈카드</h1>
-          <p className="text-sm text-neutral-500 mt-1">공개 카드는 24시간 동안 노출되며, 수락 없이 종료되면 1회 자동으로 대기열에 다시 들어갈 수 있어요.</p>
-          <p className="text-xs text-rose-600 mt-1">현재 36시간 고정 {fixedPaidCount}명 노출중</p>
-          <p className="text-xs text-neutral-500 mt-1">대기열: 남자 {queueStats?.male.pending_count ?? 0}명 / 여자 {queueStats?.female.pending_count ?? 0}명</p>
-          <p className="text-xs text-neutral-500 mt-1">누적 매칭 {queueStats?.accepted_matches_count ?? 0}명</p>
+            <h1 className="mt-3 text-3xl font-black tracking-tight text-neutral-900">오픈카드</h1>
+            <p className="mt-2 text-sm leading-6 text-neutral-600">둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.</p>
+
+            <div className="mt-4 grid gap-2 md:grid-cols-[1.4fr_0.9fr]">
+              <div className="rounded-2xl border border-rose-100 bg-white p-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-400">고정 노출</p>
+                    <p className="mt-1 text-lg font-bold text-rose-600">{fixedPaidCount}명</p>
+                    <p className="mt-1 text-xs text-neutral-500">상단 우선 공개</p>
+                  </div>
+                  <div className="border-l border-rose-100 pl-3">
+                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-400">공개중</p>
+                    <p className="mt-1 text-sm font-bold text-neutral-900">
+                      남 {queueStats?.male.public_count ?? males.length} · 여 {queueStats?.female.public_count ?? females.length}
+                    </p>
+                    <p className="mt-1 text-xs text-neutral-500">현재 목록 노출</p>
+                    <p className="mt-2 text-xs font-medium text-neutral-600">
+                      대기 남 {queueStats?.male.pending_count ?? 0} · 여 {queueStats?.female.pending_count ?? 0}
+                    </p>
+                  </div>
+                </div>
+              </div>
+              <div className="rounded-2xl border border-rose-100 bg-white p-3">
+                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-400">누적 매칭</p>
+                <p className="mt-1 text-lg font-bold text-neutral-900">{queueStats?.accepted_matches_count ?? 0}명</p>
+                <p className="mt-1 text-xs text-neutral-500">현재까지 연결</p>
+              </div>
+            </div>
+          </div>
+
+          <div className="flex w-full shrink-0 flex-col gap-2 lg:w-[230px]">
+            <Link
+              href="/dating/card/new"
+              className="inline-flex min-h-[48px] items-center justify-center rounded-2xl bg-rose-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-rose-700"
+            >
+              오픈카드 작성
+            </Link>
+            <Link
+              href="/dating/paid"
+              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-white px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50"
+            >
+              <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-bold text-white">추천</span>
+              대기 없이 등록
+            </Link>
+          </div>
         </div>
-        <Link
-          href="/dating/card/new"
-          className="inline-flex min-h-[40px] items-center rounded-lg border border-pink-200 bg-pink-50 px-3 text-sm font-medium text-pink-700 hover:bg-pink-100"
-        >
-          오픈카드 작성
-        </Link>
-      </div>
 
-      <section className="mb-4 rounded-2xl border border-pink-200 bg-pink-50/70 p-4">
+        <div className="mt-4 grid gap-3 border-t border-rose-100 pt-4 md:grid-cols-[1fr_auto] md:items-center">
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setActiveSex("female")}
+              className={`inline-flex min-h-[42px] items-center rounded-full border px-4 text-sm font-semibold transition ${
+                activeSex === "female"
+                  ? "border-rose-500 bg-rose-500 text-white shadow-sm"
+                  : "border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50"
+              }`}
+            >
+              여자 카드 보기
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveSex("male")}
+              className={`inline-flex min-h-[42px] items-center rounded-full border px-4 text-sm font-semibold transition ${
+                activeSex === "male"
+                  ? "border-sky-500 bg-sky-500 text-white shadow-sm"
+                  : "border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50"
+              }`}
+            >
+              남자 카드 보기
+            </button>
+          </div>
+
+          <div className="flex flex-wrap gap-2 md:justify-end">
+            <Link
+              href="/dating/more-view"
+              className="inline-flex min-h-[40px] items-center rounded-full border border-rose-200 bg-white px-4 text-sm font-medium text-rose-700 hover:bg-rose-50"
+            >
+              이상형 더보기
+            </Link>
+            <Link
+              href="/dating/nearby-view"
+              className="inline-flex min-h-[40px] items-center rounded-full border border-sky-200 bg-white px-4 text-sm font-medium text-sky-700 hover:bg-sky-50"
+            >
+              내 가까운 이상형
+            </Link>
+          </div>
+        </div>
+      </section>
+
+      <section className="mb-4 rounded-2xl border border-neutral-200 bg-white p-4">
         <button
           type="button"
           onClick={() => setGuideOpen((prev) => !prev)}
           className="flex w-full items-center justify-between gap-3 text-left"
         >
           <div>
-            <p className="text-sm font-semibold text-pink-800">💘 오픈카드 소개팅, 이렇게 보면 돼요</p>
-            <p className="mt-1 text-xs text-pink-700">처음 들어와도 헷갈리지 않게, 핵심만 가볍게 정리했어요.</p>
+            <p className="text-sm font-semibold text-neutral-900">이용 흐름 한 번에 보기</p>
+            <p className="mt-1 text-xs text-neutral-500">등록, 지원, 수락, 재대기만 짧게 정리했어요.</p>
           </div>
-          <span className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold text-pink-700">
+          <span className="inline-flex rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-700">
             {guideOpen ? "설명 접기" : "설명 보기"}
           </span>
         </button>
 
         {guideOpen && (
-          <div className="mt-3 space-y-2 border-t border-pink-200 pt-3 text-sm text-neutral-700">
-            <p>🪪 오픈카드를 만들면 공개 대기열에 들어가고, 공개되면 24시간 동안 보여져요.</p>
-            <p>👀 마음에 드는 사람 카드가 있으면 지원할 수 있고, 내 카드에도 다른 사람이 지원할 수 있어요.</p>
-            <p>💌 카드 주인이 지원자 중 한 명을 수락하면 연결이 성사되고, 그 카드는 목록에서 내려가요.</p>
-            <p>⚡ 빠른 매칭은 카드 목록과 별도로, 랜덤 후보를 빠르게 넘기면서 라이크하는 기능이에요.</p>
-            <p>🔒 지원서가 수락되면 마이페이지에서 서로 인스타그램 아이디가 자동으로 교환돼요.</p>
-            <p>🔁 공개가 끝날 때까지 지원을 수락하지 않았다면, 카드가 1회 자동으로 대기열에 다시 들어가 한 번 더 노출될 수 있어요.</p>
-            <p>🌟 카드가 아직 대기 상태여도 가까운 이상형, 이상형 더보기 같은 기능으로 누군가 내 카드에 지원할 수 있어요.</p>
-            <p>📬 그래서 지원이 왔는지 놓치지 않게 마이페이지를 자주 확인해주는 게 좋아요.</p>
+          <div className="mt-3 grid gap-2 border-t border-neutral-200 pt-3 text-sm text-neutral-700 sm:grid-cols-3">
+            <div className="rounded-2xl bg-neutral-50 px-3 py-3">
+              <p className="font-semibold text-neutral-900">1. 카드 공개</p>
+              <p className="mt-1 text-xs leading-5 text-neutral-600">오픈카드를 만들면 대기열에 들어가고, 공개되면 24시간 동안 보여져요.</p>
+            </div>
+            <div className="rounded-2xl bg-neutral-50 px-3 py-3">
+              <p className="font-semibold text-neutral-900">2. 지원과 수락</p>
+              <p className="mt-1 text-xs leading-5 text-neutral-600">마음에 드는 카드에 지원하고, 카드 주인이 수락하면 연결이 성사돼요.</p>
+            </div>
+            <div className="rounded-2xl bg-neutral-50 px-3 py-3">
+              <p className="font-semibold text-neutral-900">3. 종료 후 처리</p>
+              <p className="mt-1 text-xs leading-5 text-neutral-600">연결이 없으면 1회 다시 대기열로 들어가고, 수락되면 마이페이지에서 인스타가 공개돼요.</p>
+            </div>
           </div>
         )}
       </section>
 
-      <div className="mb-4 flex gap-2">
-        <button
-          type="button"
-          onClick={() => setActiveSex("male")}
-          className={`inline-flex min-h-[40px] items-center rounded-full border px-4 text-sm font-semibold ${
-            activeSex === "male"
-              ? "border-sky-500 bg-sky-500 text-white"
-              : "border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50"
-          }`}
-        >
-          남자 카드
-        </button>
-        <button
-          type="button"
-          onClick={() => setActiveSex("female")}
-          className={`inline-flex min-h-[40px] items-center rounded-full border px-4 text-sm font-semibold ${
-            activeSex === "female"
-              ? "border-pink-500 bg-pink-500 text-white"
-              : "border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50"
-          }`}
-        >
-          여자 카드
-        </button>
-      </div>
+      {!viewerLoggedIn ? (
+        <section className="mb-4 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-neutral-900">지금은 미리보기만 열려 있어요</p>
+              <p className="mt-1 text-xs text-neutral-600">목록은 일부만 볼 수 있고, 상세보기와 지원하기는 로그인 후 이용할 수 있어요.</p>
+            </div>
+            <Link
+              href={buildLoginRedirect(`/community/dating/cards?sex=${activeSex}`)}
+              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white hover:bg-neutral-700"
+            >
+              로그인하고 계속 보기
+            </Link>
+          </div>
+        </section>
+      ) : null}
 
       <section className="mb-6 rounded-2xl border border-amber-200 bg-amber-50/80 p-4">
         <div className="flex items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold text-neutral-900">빠른 매칭</h2>
             <p className="mt-1 text-xs text-neutral-600">
-              오픈카드 이력 중 랜덤으로 하루 최대 {swipeState.limit}명을 빠르게 확인할 수 있습니다.
+              랜덤 후보를 하루 최대 {swipeState.limit}명까지 빠르게 확인할 수 있습니다.
               <br />
-              서로 라이크하면 자동 매칭되며, 다음 후보가 바로 표시됩니다.
+              라이크와 넘기기는 오픈카드 등록 후 이용할 수 있습니다.
             </p>
           </div>
           <span className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold text-amber-700">
-            오늘 남은 횟수 {swipeState.remaining}
+            {!swipeState.loggedIn ? "로그인 후 이용" : swipeState.canSwipe ? `오늘 남은 ${swipeState.remaining}회` : "오픈카드 등록 후 이용"}
           </span>
         </div>
         {swipeRefreshing && !swipeLoading ? (
@@ -704,7 +791,37 @@ export default function OpenCardsPage() {
         {swipeLoading ? (
           <p className="mt-4 text-sm text-neutral-500">후보를 불러오는 중...</p>
         ) : !swipeState.candidate ? (
-          <p className="mt-4 text-sm text-neutral-600">{swipeState.reason ?? "현재 보여줄 후보가 없습니다."}</p>
+          <>
+            <p className="mt-4 text-sm text-neutral-600">{swipeState.reason ?? "현재 보여줄 후보가 없습니다."}</p>
+            {swipeState.loggedIn && swipeState.remaining <= 0 ? (
+              <div className="mt-3 rounded-2xl border border-amber-200 bg-white p-4">
+                <p className="text-sm font-semibold text-amber-900">오늘 라이크를 모두 사용했어요.</p>
+                <p className="mt-1 text-xs leading-6 text-amber-800">
+                  추가 이용은 {SWIPE_PREMIUM_PRICE_KRW.toLocaleString("ko-KR")}원 · {SWIPE_PREMIUM_DURATION_DAYS}일 · 하루{" "}
+                  {SWIPE_PREMIUM_DAILY_LIMIT}회 기준으로 신청할 수 있어요.
+                </p>
+                <p className="mt-2 text-[11px] text-amber-700">
+                  마이페이지에서 신청 후 오픈카톡으로 닉네임과 신청ID를 보내주시면 확인 뒤 적용됩니다.
+                </p>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link
+                    href="/mypage"
+                    className="inline-flex min-h-[40px] items-center rounded-xl bg-amber-500 px-4 text-xs font-medium text-white hover:bg-amber-600"
+                  >
+                    추가 이용 신청
+                  </Link>
+                  <a
+                    href={OPEN_KAKAO_URL}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex min-h-[40px] items-center rounded-xl border border-amber-200 bg-white px-4 text-xs font-medium text-amber-800 hover:bg-amber-50"
+                  >
+                    오픈카톡 문의
+                  </a>
+                </div>
+              </div>
+            ) : null}
+          </>
         ) : (
           <div className="mt-4 rounded-2xl border border-white/80 bg-white p-4">
             <div className="flex items-start justify-between gap-3">
@@ -788,6 +905,7 @@ export default function OpenCardsPage() {
           moreViewItems={activeMoreViewItems}
           hasMore={activeHasMore}
           onMore={activeSex === "male" ? loadMoreMale : loadMoreFemale}
+          viewerLoggedIn={viewerLoggedIn}
         />
       )}
     </main>
@@ -802,6 +920,7 @@ function Section({
   moreViewItems,
   hasMore,
   onMore,
+  viewerLoggedIn,
 }: {
   title: string;
   currentCount: number;
@@ -810,6 +929,7 @@ function Section({
   moreViewItems: PublicCard[];
   hasMore: boolean;
   onMore: () => void;
+  viewerLoggedIn: boolean;
 }) {
   const pinnedPaidItems = paidItems.filter((card) => card.display_mode !== "instant_public");
   const instantPaidItems = paidItems.filter((card) => card.display_mode === "instant_public");
@@ -827,16 +947,16 @@ function Section({
           {pinnedPaidItems.length > 0 && (
             <div className="mb-3 grid grid-cols-2 gap-3">
               {pinnedPaidItems.map((card) => (
-                <PaidCardRow key={card.id} card={card} />
+                <PaidCardRow key={card.id} card={card} viewerLoggedIn={viewerLoggedIn} />
               ))}
             </div>
           )}
           <div className="grid grid-cols-2 gap-3">
             {items.map((card) => (
-              <CardRow key={card.id} card={card} />
+              <CardRow key={card.id} card={card} viewerLoggedIn={viewerLoggedIn} />
             ))}
             {instantPaidItems.map((card) => (
-              <PaidCardRow key={`paid-${card.id}`} card={card} />
+              <PaidCardRow key={`paid-${card.id}`} card={card} viewerLoggedIn={viewerLoggedIn} />
             ))}
           </div>
           {moreViewItems.length > 0 && (
@@ -844,12 +964,12 @@ function Section({
               <p className="mb-2 px-1 text-xs font-semibold text-pink-700">이상형 더보기 (추가 25명)</p>
               <div className="grid grid-cols-2 gap-3">
                 {moreViewItems.map((card) => (
-                  <CardRow key={`more-${card.id}`} card={card} />
+                  <CardRow key={`more-${card.id}`} card={card} viewerLoggedIn={viewerLoggedIn} />
                 ))}
               </div>
             </div>
           )}
-          {hasMore && (
+          {hasMore && viewerLoggedIn && (
             <button
               type="button"
               onClick={onMore}
@@ -864,11 +984,11 @@ function Section({
   );
 }
 
-function PaidCardRow({ card }: { card: PaidCard }) {
+function PaidCardRow({ card, viewerLoggedIn }: { card: PaidCard; viewerLoggedIn: boolean }) {
   const router = useRouter();
   const isPriority = card.display_mode !== "instant_public";
-  const detailHref = `/dating/paid/${card.id}`;
-  const applyHref = `/dating/paid/${card.id}/apply`;
+  const detailHref = viewerLoggedIn ? `/dating/paid/${card.id}` : buildLoginRedirect(`/dating/paid/${card.id}`);
+  const applyHref = viewerLoggedIn ? `/dating/paid/${card.id}/apply` : buildLoginRedirect(`/dating/paid/${card.id}/apply`);
   const warmRoute = useCallback(() => {
     cachePaidCardDetail(card.id, {
       id: card.id,
@@ -965,7 +1085,7 @@ function PaidCardRow({ card }: { card: PaidCard }) {
           onTouchEnd={rememberScroll}
           className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg border border-neutral-300 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50 sm:text-sm"
         >
-          상세보기
+          {viewerLoggedIn ? "상세보기" : "로그인 후 보기"}
         </Link>
         <Link
           href={applyHref}
@@ -976,19 +1096,19 @@ function PaidCardRow({ card }: { card: PaidCard }) {
           onTouchEnd={rememberScroll}
           className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg bg-pink-500 px-3 text-xs font-medium text-white hover:bg-pink-600 sm:text-sm"
         >
-          지원하기
+          {viewerLoggedIn ? "지원하기" : "로그인 후 지원"}
         </Link>
       </div>
     </div>
   );
 }
 
-function CardRow({ card }: { card: PublicCard }) {
+function CardRow({ card, viewerLoggedIn }: { card: PublicCard; viewerLoggedIn: boolean }) {
   const router = useRouter();
   const ideal = maskIdealTypeForPreview(card.ideal_type);
   const [imgFailed, setImgFailed] = useState(false);
-  const detailHref = `/community/dating/cards/${card.id}`;
-  const applyHref = `/community/dating/cards/${card.id}/apply`;
+  const detailHref = viewerLoggedIn ? `/community/dating/cards/${card.id}` : buildLoginRedirect(`/community/dating/cards/${card.id}`);
+  const applyHref = viewerLoggedIn ? `/community/dating/cards/${card.id}/apply` : buildLoginRedirect(`/community/dating/cards/${card.id}/apply`);
   const warmRoute = useCallback(() => {
     cacheOpenCardDetail(card.id, card);
     router.prefetch(detailHref);
@@ -1072,7 +1192,7 @@ function CardRow({ card }: { card: PublicCard }) {
           onTouchEnd={rememberScroll}
           className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg bg-neutral-900 px-3 text-xs font-medium text-white hover:bg-neutral-700 sm:text-sm"
         >
-          상세보기
+          {viewerLoggedIn ? "상세보기" : "로그인 후 보기"}
         </Link>
         <Link
           href={applyHref}
@@ -1083,7 +1203,7 @@ function CardRow({ card }: { card: PublicCard }) {
           onTouchEnd={rememberScroll}
           className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg bg-pink-500 px-3 text-xs font-medium text-white hover:bg-pink-600 sm:text-sm"
         >
-          지원하기
+          {viewerLoggedIn ? "지원하기" : "로그인 후 지원"}
         </Link>
       </div>
     </div>

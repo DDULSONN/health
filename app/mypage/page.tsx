@@ -2792,6 +2792,8 @@ export default function MyPage() {
           );
         });
   const hasActiveOpenCard = myDatingCards.some((card) => card.status === "pending" || card.status === "public");
+  const swipeMatchConnections = datingConnections.filter((item) => item.role === "swipe_match");
+  const visibleSwipeMatchCount = swipeMatchConnections.length;
   const statusRankPublicFirst: Record<AdminOpenCard["status"], number> = {
     public: 0,
     pending: 1,
@@ -3034,7 +3036,7 @@ export default function MyPage() {
                     받은 라이크 {swipeStatusSummary?.incoming_pending ?? 0}
                   </span>
                   <span className="rounded-full bg-white px-3 py-1 text-emerald-700">
-                    쌍방 매칭 {swipeStatusSummary?.mutual_matches ?? 0}
+                    쌍방 매칭 {visibleSwipeMatchCount}
                   </span>
                 </div>
               )}
@@ -3169,8 +3171,44 @@ export default function MyPage() {
                   보낸 라이크 {swipeStatusSummary?.outgoing_pending ?? 0}
                 </button>
                 <span className="inline-flex h-8 items-center rounded-full bg-emerald-100 px-3 text-xs font-medium text-emerald-700">
-                  쌍방 매칭 {swipeStatusSummary?.mutual_matches ?? 0}
+                  쌍방 매칭 {visibleSwipeMatchCount}
                 </span>
+              </div>
+
+              <div className="rounded-xl border border-emerald-200 bg-white p-3">
+                <p className="text-sm font-semibold text-emerald-900">쌍방 매칭된 사람</p>
+                {swipeMatchConnections.length === 0 ? (
+                  <p className="mt-2 text-xs text-neutral-500">지금 표시할 쌍방 매칭 상대가 없습니다.</p>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {swipeMatchConnections.map((item) => (
+                      <div key={item.application_id} className="rounded-lg border border-emerald-200 bg-emerald-50/40 p-3">
+                        <div className="flex items-center justify-between gap-2">
+                          <p className="text-sm font-medium text-neutral-900">{item.other_nickname}</p>
+                          <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                            자동 매칭
+                          </span>
+                        </div>
+                        <p className="mt-1 text-[11px] text-neutral-500">
+                          매칭일 {new Date(item.created_at).toLocaleString("ko-KR")}
+                        </p>
+                        {item.other_instagram_id ? (
+                          <p className="mt-2 text-sm font-medium text-emerald-700">상대 인스타: @{item.other_instagram_id}</p>
+                        ) : (
+                          <p className="mt-2 text-xs text-neutral-500">상대 인스타 정보는 연결 목록에서 다시 확인할 수 있어요.</p>
+                        )}
+                        {item.matched_card ? (
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
+                            <span>{item.matched_card.sex === "male" ? "남자" : item.matched_card.sex === "female" ? "여자" : "성별 미기재"}</span>
+                            {item.matched_card.age != null && <span>{item.matched_card.age}세</span>}
+                            {item.matched_card.region && <span>{item.matched_card.region}</span>}
+                            {item.matched_card.job && <span>{item.matched_card.job}</span>}
+                          </div>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               {swipeStatusView === "outgoing" ? (
@@ -3367,7 +3405,7 @@ export default function MyPage() {
                 href="/admin/dating/cards"
                 className="flex min-h-[44px] items-center rounded-xl border border-violet-200 bg-violet-50 px-4 text-sm font-medium text-violet-700 hover:bg-violet-100"
               >
-                카드 모더레이션
+                카드/신고 관리
               </Link>
               <Link
                 href="/admin/dating/paid"

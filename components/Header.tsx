@@ -11,35 +11,37 @@ const HeaderUserMenu = dynamic(() => import("@/components/HeaderUserMenu"), {
 });
 
 const NAV_ITEMS = [
-  { href: "/1rm", label: "1RM 계산기" },
-  { href: "/lifts", label: "3대 합계" },
-  { href: "/community/dating", label: "소개팅" },
+  { href: "/community/dating/cards", label: "홈" },
+  { href: "/dating/1on1", label: "1:1 소개팅" },
   { href: "/community", label: "커뮤니티" },
-  { href: "/certify", label: "3대 인증" },
+  { href: "/lifts", label: "도구" },
 ];
+
+function isActive(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
 
 export default function Header() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
 
   return (
-    <header className="sticky top-0 z-50 border-b border-neutral-200 bg-white/85 backdrop-blur-md">
-      <div className="mx-auto flex h-14 max-w-5xl items-center justify-between px-4">
-        <Link href="/" className="text-lg font-bold text-emerald-600 hover:text-emerald-700">
-          짐툴
+    <header className="sticky top-0 z-50 border-b border-rose-100 bg-white/95 backdrop-blur-sm">
+      <div className="mx-auto flex h-14 max-w-6xl items-center justify-between px-4 md:px-6">
+        <Link href="/community/dating/cards" className="inline-flex items-center gap-2 text-[17px] font-black tracking-tight text-neutral-900 hover:text-neutral-700">
+          <span className="inline-block h-2.5 w-2.5 rounded-full bg-pink-500" aria-hidden />
+          <span>GymTools</span>
         </Link>
 
-        <nav className="hidden items-center gap-1 md:flex">
+        <nav className="hidden items-center gap-1.5 md:flex">
           {NAV_ITEMS.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const active = isActive(pathname, item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`rounded-lg px-3 py-1.5 text-sm font-medium ${
-                  active
-                    ? "bg-emerald-100 text-emerald-700"
-                    : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
+                className={`rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+                  active ? "bg-rose-50 text-rose-700 ring-1 ring-rose-200" : "text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900"
                 }`}
               >
                 {item.label}
@@ -66,17 +68,17 @@ export default function Header() {
         </button>
       </div>
 
-      {mobileOpen && (
+      {mobileOpen ? (
         <nav className="border-t border-neutral-100 bg-white px-4 pb-3 pt-2 md:hidden">
           {NAV_ITEMS.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(`${item.href}/`);
+            const active = isActive(pathname, item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
                 onClick={() => setMobileOpen(false)}
-                className={`block rounded-lg px-3 py-2.5 text-sm font-medium ${
-                  active ? "bg-emerald-50 text-emerald-700" : "text-neutral-600 hover:bg-neutral-50"
+                className={`block rounded-xl px-3 py-2.5 text-sm font-medium ${
+                  active ? "bg-rose-50 text-rose-700" : "text-neutral-600 hover:bg-neutral-50"
                 }`}
               >
                 {item.label}
@@ -86,7 +88,7 @@ export default function Header() {
 
           <HeaderUserMenu pathname={pathname} mobile onNavigate={() => setMobileOpen(false)} />
         </nav>
-      )}
+      ) : null}
     </header>
   );
 }
