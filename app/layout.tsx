@@ -4,6 +4,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
+import MobileBottomTabBar from "@/components/MobileBottomTabBar";
 
 const DeferredAdSenseBootstrap = dynamic(() => import("@/components/AdSenseBootstrap"), {});
 
@@ -79,7 +80,8 @@ export default function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-dvh`}>
         <DeferredAdSenseBootstrap />
         <Header />
-        <div className="flex-1">{children}</div>
+        <div className="flex-1 pb-20 md:pb-0">{children}</div>
+        <MobileBottomTabBar />
         <Footer />
       </body>
     </html>
