@@ -668,7 +668,7 @@ export default function OpenCardsPage() {
               오픈카드 작성
             </Link>
             <Link
-              href="/dating/paid"
+              href="/dating/paid?apply=1"
               className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-white px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50"
             >
               <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-bold text-white">추천</span>
