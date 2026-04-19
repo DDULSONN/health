@@ -74,7 +74,7 @@ const SORT_OPTIONS: { value: FeedSort; label: string }[] = [
 
 export default function CommunityPage() {
   const router = useRouter();
-  const [tab, setTab] = useState<CommunityTab>("all");
+  const [tab, setTab] = useState<CommunityTab>("photo_bodycheck");
   const [filterType, setFilterType] = useState<FeedFilter>("all");
   const [sort, setSort] = useState<FeedSort>("latest");
   const [searchInput, setSearchInput] = useState("");
