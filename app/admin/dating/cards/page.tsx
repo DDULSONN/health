@@ -33,10 +33,24 @@ type AdminReport = {
   reason: string;
   status: "open" | "resolved" | "dismissed";
   created_at: string;
+  card_owner_user_id: string | null;
+  card_display_nickname: string | null;
+  card_status: string | null;
+  reporter_nickname: string | null;
+  owner_nickname: string | null;
+  owner_is_banned: boolean;
+  owner_banned_reason: string | null;
 };
 
 type AdminCardSort = "newest" | "oldest" | "pending_first";
 type AdminCardFilter = "all" | "public" | "pending" | "hidden" | "expired";
+
+function formatDate(value: string | null) {
+  if (!value) return "-";
+  const time = new Date(value).getTime();
+  if (!Number.isFinite(time)) return "-";
+  return new Date(value).toLocaleString("ko-KR");
+}
 
 export default function AdminDatingCardsPage() {
   const [cards, setCards] = useState<AdminCard[]>([]);
@@ -56,10 +70,19 @@ export default function AdminDatingCardsPage() {
         fetch("/api/admin/dating/cards?limit=2000", { cache: "no-store" }),
         fetch("/api/admin/dating/reports", { cache: "no-store" }),
       ]);
-      const cardsBody = (await cardsRes.json().catch(() => ({}))) as { items?: AdminCard[]; error?: string };
-      const reportsBody = (await reportsRes.json().catch(() => ({}))) as { items?: AdminReport[]; error?: string };
+
+      const cardsBody = (await cardsRes.json().catch(() => ({}))) as {
+        items?: AdminCard[];
+        error?: string;
+      };
+      const reportsBody = (await reportsRes.json().catch(() => ({}))) as {
+        items?: AdminReport[];
+        error?: string;
+      };
+
       if (!cardsRes.ok) throw new Error(cardsBody.error ?? "카드 목록을 불러오지 못했습니다.");
       if (!reportsRes.ok) throw new Error(reportsBody.error ?? "신고 목록을 불러오지 못했습니다.");
+
       setCards(cardsBody.items ?? []);
       setReports(reportsBody.items ?? []);
     } catch (e) {
@@ -83,6 +106,7 @@ export default function AdminDatingCardsPage() {
       hidden: 2,
       expired: 3,
     };
+
     return [...base].sort((a, b) => {
       if (cardSort === "newest") {
         return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
@@ -96,12 +120,28 @@ export default function AdminDatingCardsPage() {
     });
   }, [cards, cardFilter, cardSort]);
 
+  const sortedReports = useMemo(() => {
+    const rank: Record<AdminReport["status"], number> = {
+      open: 0,
+      resolved: 1,
+      dismissed: 2,
+    };
+    return [...reports].sort((a, b) => {
+      const statusGap = rank[a.status] - rank[b.status];
+      if (statusGap !== 0) return statusGap;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [reports]);
+
   useEffect(() => {
     const visibleIds = new Set(visibleCards.map((card) => card.id));
     setSelectedCardIds((prev) => prev.filter((id) => visibleIds.has(id)));
   }, [visibleCards]);
 
-  const allVisibleSelected = visibleCards.length > 0 && visibleCards.every((card) => selectedCardIds.includes(card.id));
+  const allVisibleSelected =
+    visibleCards.length > 0 && visibleCards.every((card) => selectedCardIds.includes(card.id));
+
+  const openReportCount = reports.filter((report) => report.status === "open").length;
 
   const toggleCardSelection = (id: string, checked: boolean) => {
     setSelectedCardIds((prev) => {
@@ -109,7 +149,7 @@ export default function AdminDatingCardsPage() {
         if (prev.includes(id)) return prev;
         return [...prev, id];
       }
-      return prev.filter((v) => v !== id);
+      return prev.filter((value) => value !== id);
     });
   };
 
@@ -168,7 +208,7 @@ export default function AdminDatingCardsPage() {
     }
 
     if (failed.length > 0) {
-      alert(`${failed.length}개 삭제 실패. 다시 시도해주세요.`);
+      alert(`${failed.length}건 삭제에 실패했습니다. 다시 시도해주세요.`);
     }
   };
 
@@ -202,23 +242,78 @@ export default function AdminDatingCardsPage() {
     setReports((prev) => prev.map((report) => (report.id === id ? { ...report, status } : report)));
   };
 
+  const banReportedUser = async (reportId: string) => {
+    const report = reports.find((item) => item.id === reportId) ?? null;
+    if (!report) return;
+    if (!report.card_owner_user_id) {
+      alert("신고된 카드의 계정을 찾지 못했습니다.");
+      return;
+    }
+
+    const ownerLabel = report.owner_nickname || report.card_display_nickname || report.card_owner_user_id;
+    if (!confirm(`${ownerLabel} 계정을 밴하고 공개/대기 카드도 함께 숨길까요?`)) return;
+
+    const res = await fetch(`/api/admin/dating/reports/${reportId}/ban`, { method: "POST" });
+    const body = (await res.json().catch(() => ({}))) as {
+      error?: string;
+      banned_reason?: string;
+    };
+    if (!res.ok) {
+      alert(body.error ?? "계정 밴 처리에 실패했습니다.");
+      return;
+    }
+
+    setReports((prev) =>
+      prev.map((item) =>
+        item.card_owner_user_id === report.card_owner_user_id
+          ? {
+              ...item,
+              owner_is_banned: true,
+              owner_banned_reason: body.banned_reason ?? item.owner_banned_reason,
+              status: item.status === "open" ? "resolved" : item.status,
+            }
+          : item
+      )
+    );
+
+    setCards((prev) =>
+      prev.map((card) =>
+        card.owner_user_id === report.card_owner_user_id && (card.status === "public" || card.status === "pending")
+          ? { ...card, status: "hidden", expires_at: new Date().toISOString() }
+          : card
+      )
+    );
+
+    alert("신고 계정 밴 및 카드 비노출 처리를 완료했습니다.");
+  };
+
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
-      <div className="mb-4 flex items-center justify-between gap-2">
-        <h1 className="text-2xl font-bold text-neutral-900">오픈카드 모더레이션</h1>
-        <div className="flex items-center gap-2">
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h1 className="text-2xl font-bold text-neutral-900">오픈카드 관리자</h1>
+          <p className="mt-1 text-sm text-neutral-500">카드 검수, 신고 처리, 계정 제재를 한 번에 관리합니다.</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/admin/dating/more-view"
             className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-xs text-neutral-700 hover:bg-neutral-50"
           >
-            이상형 더보기 신청
+            이상형 더보기 요청
           </Link>
           <Link
             href="/admin/dating/paid"
             className="rounded-md border border-violet-300 bg-violet-50 px-3 py-2 text-xs font-medium text-violet-700 hover:bg-violet-100"
           >
-            유료 신청 관리
+            유료 등록 관리
           </Link>
+          <button
+            type="button"
+            onClick={() => void load()}
+            className="rounded-md border border-neutral-300 bg-white px-3 py-2 text-xs text-neutral-700 hover:bg-neutral-50"
+          >
+            새로고침
+          </button>
         </div>
       </div>
 
@@ -230,7 +325,7 @@ export default function AdminDatingCardsPage() {
         <>
           <section className="mb-8">
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
-              <h2 className="text-lg font-semibold text-neutral-900">카드 전체 내용</h2>
+              <h2 className="text-lg font-semibold text-neutral-900">카드 전체 관리</h2>
               <div className="flex flex-wrap items-center gap-2">
                 <select
                   value={cardFilter}
@@ -238,7 +333,7 @@ export default function AdminDatingCardsPage() {
                   className="h-8 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-800"
                 >
                   <option value="public">공개중만</option>
-                  <option value="pending">대기만</option>
+                  <option value="pending">대기중만</option>
                   <option value="all">전체</option>
                   <option value="hidden">숨김만</option>
                   <option value="expired">만료만</option>
@@ -286,57 +381,71 @@ export default function AdminDatingCardsPage() {
                         onChange={(e) => toggleCardSelection(card.id, e.target.checked)}
                         className="mt-1"
                       />
-                      <p className="text-sm font-semibold text-neutral-900">
-                        {card.display_nickname || "(닉네임 없음)"} / {card.sex === "male" ? "남자" : "여자"} / 상태: {card.status}
-                      </p>
+                      <div>
+                        <p className="text-sm font-semibold text-neutral-900">
+                          {card.display_nickname || "(닉네임 없음)"} / {card.sex === "male" ? "남성" : "여성"} / 상태: {card.status}
+                        </p>
+                        <p className="mt-1 break-all text-xs text-neutral-700">card_id: {card.id}</p>
+                        <p className="mt-1 break-all text-xs text-neutral-700">owner_user_id: {card.owner_user_id}</p>
+                      </div>
                     </div>
-                    <span className="text-xs text-neutral-500">{new Date(card.created_at).toLocaleString("ko-KR")}</span>
+                    <span className="text-xs text-neutral-500">{formatDate(card.created_at)}</span>
                   </div>
 
-                  <p className="mt-1 break-all text-xs text-neutral-700">card_id: {card.id}</p>
-                  <p className="mt-1 break-all text-xs text-neutral-700">owner_user_id: {card.owner_user_id}</p>
-                  {card.instagram_id && <p className="mt-1 text-xs text-violet-700">owner instagram: @{card.instagram_id}</p>}
+                  {card.instagram_id ? <p className="mt-2 text-xs text-violet-700">owner instagram: @{card.instagram_id}</p> : null}
 
                   <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-700">
-                    {card.age != null && <span>나이 {card.age}</span>}
-                    {card.height_cm != null && <span>키 {card.height_cm}cm</span>}
-                    {card.region && <span>지역 {card.region}</span>}
-                    {card.job && <span>직업 {card.job}</span>}
-                    {card.training_years != null && <span>운동 {card.training_years}년</span>}
-                    {card.total_3lift != null && <span>3대 {card.total_3lift}kg</span>}
-                    {card.percent_all != null && <span>상위 {card.percent_all}%</span>}
+                    {card.age != null ? <span>나이 {card.age}</span> : null}
+                    {card.height_cm != null ? <span>키 {card.height_cm}cm</span> : null}
+                    {card.region ? <span>지역 {card.region}</span> : null}
+                    {card.job ? <span>직업 {card.job}</span> : null}
+                    {card.training_years != null ? <span>운동 {card.training_years}년</span> : null}
+                    {card.total_3lift != null ? <span>3대 {card.total_3lift}kg</span> : null}
+                    {card.percent_all != null ? <span>상위 {card.percent_all}%</span> : null}
                     <span>3대인증 {card.is_3lift_verified ? "Y" : "N"}</span>
                   </div>
 
-                  {card.ideal_type && (
+                  {card.ideal_type ? (
                     <p className="mt-2 whitespace-pre-wrap break-words text-xs text-neutral-700">이상형: {card.ideal_type}</p>
-                  )}
+                  ) : null}
 
-                  {card.blur_thumb_path && (
+                  {card.blur_thumb_path ? (
                     <p className="mt-1 break-all text-xs text-neutral-500">blur_thumb_path: {card.blur_thumb_path}</p>
-                  )}
+                  ) : null}
                   <p className="mt-1 break-all text-xs text-neutral-500">
                     photo_paths: {Array.isArray(card.photo_paths) ? card.photo_paths.join(", ") : "-"}
                   </p>
 
-                  {card.published_at && (
-                    <p className="mt-1 text-xs text-emerald-700">공개 시작: {new Date(card.published_at).toLocaleString("ko-KR")}</p>
-                  )}
-                  {card.expires_at && (
-                    <p className="mt-1 text-xs text-amber-700">만료 예정: {new Date(card.expires_at).toLocaleString("ko-KR")}</p>
-                  )}
+                  {card.published_at ? (
+                    <p className="mt-1 text-xs text-emerald-700">공개 시작: {formatDate(card.published_at)}</p>
+                  ) : null}
+                  {card.expires_at ? (
+                    <p className="mt-1 text-xs text-amber-700">만료 예정: {formatDate(card.expires_at)}</p>
+                  ) : null}
 
                   <div className="mt-2 flex flex-wrap gap-2">
-                    <button onClick={() => void updateCardStatus(card.id, "public")} className="h-8 rounded-md bg-emerald-600 px-3 text-xs text-white">
+                    <button
+                      onClick={() => void updateCardStatus(card.id, "public")}
+                      className="h-8 rounded-md bg-emerald-600 px-3 text-xs text-white"
+                    >
                       공개
                     </button>
-                    <button onClick={() => void updateCardStatus(card.id, "hidden")} className="h-8 rounded-md bg-neutral-800 px-3 text-xs text-white">
+                    <button
+                      onClick={() => void updateCardStatus(card.id, "hidden")}
+                      className="h-8 rounded-md bg-neutral-800 px-3 text-xs text-white"
+                    >
                       숨김
                     </button>
-                    <button onClick={() => void updateCardStatus(card.id, "pending")} className="h-8 rounded-md bg-amber-600 px-3 text-xs text-white">
+                    <button
+                      onClick={() => void updateCardStatus(card.id, "pending")}
+                      className="h-8 rounded-md bg-amber-600 px-3 text-xs text-white"
+                    >
                       대기
                     </button>
-                    <button onClick={() => void updateCardStatus(card.id, "expired")} className="h-8 rounded-md bg-zinc-600 px-3 text-xs text-white">
+                    <button
+                      onClick={() => void updateCardStatus(card.id, "expired")}
+                      className="h-8 rounded-md bg-zinc-600 px-3 text-xs text-white"
+                    >
                       만료
                     </button>
                     <button onClick={() => void deleteCard(card.id)} className="h-8 rounded-md bg-rose-700 px-3 text-xs text-white">
@@ -345,33 +454,81 @@ export default function AdminDatingCardsPage() {
                   </div>
                 </div>
               ))}
-              {visibleCards.length === 0 && <p className="text-sm text-neutral-500">해당 조건의 카드가 없습니다.</p>}
+
+              {visibleCards.length === 0 ? <p className="text-sm text-neutral-500">해당 조건의 카드가 없습니다.</p> : null}
             </div>
           </section>
 
           <section>
-            <h2 className="mb-3 text-lg font-semibold text-neutral-900">신고</h2>
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <h2 className="text-lg font-semibold text-neutral-900">신고 카드</h2>
+                <p className="mt-1 text-xs text-neutral-500">신고 사유 확인 후 바로 상태 변경 또는 계정 밴 처리할 수 있습니다.</p>
+              </div>
+              <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700">open {openReportCount}건</span>
+            </div>
+
             <div className="space-y-3">
-              {reports.map((report) => (
+              {sortedReports.map((report) => (
                 <div key={report.id} className="rounded-xl border border-neutral-200 bg-white p-3">
-                  <p className="text-sm font-medium text-neutral-900">카드: {report.card_id}</p>
-                  <p className="mt-1 whitespace-pre-wrap text-sm text-neutral-700">{report.reason}</p>
-                  <p className="mt-1 text-xs text-neutral-500">{new Date(report.created_at).toLocaleString("ko-KR")}</p>
-                  <div className="mt-2 flex gap-2">
-                    <button onClick={() => void updateReportStatus(report.id, "resolved")} className="h-8 rounded-md bg-emerald-600 px-3 text-xs text-white">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium text-neutral-900">카드: {report.card_display_nickname || report.card_id}</p>
+                      <p className="mt-1 break-all text-xs text-neutral-500">card_id: {report.card_id}</p>
+                    </div>
+                    <span className="inline-flex rounded-full bg-neutral-100 px-2 py-1 text-xs text-neutral-700">상태: {report.status}</span>
+                  </div>
+
+                  <div className="mt-3 grid gap-2 rounded-lg border border-neutral-100 bg-neutral-50 p-3 text-xs text-neutral-700 sm:grid-cols-2">
+                    <div>
+                      <p className="font-medium text-neutral-900">신고자</p>
+                      <p className="mt-1">{report.reporter_nickname || "(닉네임 없음)"}</p>
+                      <p className="mt-1 break-all text-neutral-500">{report.reporter_user_id}</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-neutral-900">카드 주인</p>
+                      <p className="mt-1">{report.owner_nickname || report.card_display_nickname || "(닉네임 없음)"}</p>
+                      <p className="mt-1 break-all text-neutral-500">{report.card_owner_user_id || "-"}</p>
+                      <p className="mt-1">카드 상태: {report.card_status || "-"} / 밴 여부: {report.owner_is_banned ? "Y" : "N"}</p>
+                      {report.owner_banned_reason ? (
+                        <p className="mt-1 whitespace-pre-wrap break-words text-rose-700">밴 사유: {report.owner_banned_reason}</p>
+                      ) : null}
+                    </div>
+                  </div>
+
+                  <p className="mt-3 whitespace-pre-wrap text-sm text-neutral-700">{report.reason}</p>
+                  <p className="mt-1 text-xs text-neutral-500">{formatDate(report.created_at)}</p>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => void updateReportStatus(report.id, "resolved")}
+                      className="h-8 rounded-md bg-emerald-600 px-3 text-xs text-white"
+                    >
                       해결
                     </button>
-                    <button onClick={() => void updateReportStatus(report.id, "dismissed")} className="h-8 rounded-md bg-neutral-800 px-3 text-xs text-white">
+                    <button
+                      onClick={() => void updateReportStatus(report.id, "dismissed")}
+                      className="h-8 rounded-md bg-neutral-800 px-3 text-xs text-white"
+                    >
                       기각
                     </button>
-                    <button onClick={() => void updateReportStatus(report.id, "open")} className="h-8 rounded-md bg-amber-600 px-3 text-xs text-white">
-                      재오픈
+                    <button
+                      onClick={() => void updateReportStatus(report.id, "open")}
+                      className="h-8 rounded-md bg-amber-600 px-3 text-xs text-white"
+                    >
+                      다시 열기
                     </button>
-                    <span className="inline-flex items-center text-xs text-neutral-600">현재: {report.status}</span>
+                    <button
+                      onClick={() => void banReportedUser(report.id)}
+                      className="h-8 rounded-md bg-rose-700 px-3 text-xs text-white"
+                    >
+                      계정 밴
+                    </button>
                   </div>
                 </div>
               ))}
-              {reports.length === 0 && <p className="text-sm text-neutral-500">신고가 없습니다.</p>}
+
+              {sortedReports.length === 0 ? <p className="text-sm text-neutral-500">접수된 신고가 없습니다.</p> : null}
             </div>
           </section>
         </>
