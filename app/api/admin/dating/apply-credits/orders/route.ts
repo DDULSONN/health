@@ -26,6 +26,17 @@ type ProfileRow = {
   nickname: string | null;
 };
 
+type ApplyCreditOrderRow = {
+  id: string;
+  user_id: string;
+  pack_size: number;
+  amount: number;
+  status: string;
+  created_at: string;
+  processed_at: string | null;
+  memo: string | null;
+};
+
 export async function GET(req: Request) {
   const requestId = crypto.randomUUID();
 
@@ -37,36 +48,74 @@ export async function GET(req: Request) {
     } = await supabase.auth.getUser();
 
     if (authError || !user) {
-      return json(401, { ok: false, code: "UNAUTHORIZED", requestId, message: "로그인이 필요합니다." });
+      return json(401, {
+        ok: false,
+        code: "UNAUTHORIZED",
+        requestId,
+        message: "로그인이 필요합니다.",
+      });
     }
+
     if (!isAllowedAdmin(user.id, user.email)) {
-      return json(403, { ok: false, code: "FORBIDDEN", requestId, message: "권한이 없습니다." });
+      return json(403, {
+        ok: false,
+        code: "FORBIDDEN",
+        requestId,
+        message: "권한이 없습니다.",
+      });
     }
 
     const { searchParams } = new URL(req.url);
     const status = (searchParams.get("status") ?? "pending").trim();
-    const limit = Math.max(1, Math.min(200, Number(searchParams.get("limit") ?? 50)));
+    const requestedLimit = Number(searchParams.get("limit") ?? "");
+    const limit =
+      Number.isFinite(requestedLimit) && requestedLimit > 0 ? Math.min(2000, requestedLimit) : null;
 
     const admin = createAdminClient();
-    let query = admin
-      .from("apply_credit_orders")
-      .select("id,user_id,pack_size,amount,status,created_at,processed_at,memo")
-      .order("created_at", { ascending: false })
-      .limit(limit);
+    const orders: ApplyCreditOrderRow[] = [];
+    const batchSize = 500;
 
-    if (status === "pending" || status === "approved" || status === "rejected") {
-      query = query.eq("status", status);
+    for (let offset = 0; ; offset += batchSize) {
+      let query = admin
+        .from("apply_credit_orders")
+        .select("id,user_id,pack_size,amount,status,created_at,processed_at,memo")
+        .order("created_at", { ascending: false })
+        .range(offset, offset + batchSize - 1);
+
+      if (status === "pending" || status === "approved" || status === "rejected") {
+        query = query.eq("status", status);
+      }
+
+      const ordersRes = await query;
+      if (ordersRes.error) {
+        console.error(`[admin-apply-credits-orders] ${requestId} orders query error`, ordersRes.error);
+        return json(500, {
+          ok: false,
+          code: "LIST_FAILED",
+          requestId,
+          message: "주문 목록을 불러오지 못했습니다.",
+        });
+      }
+
+      const batch = (ordersRes.data ?? []) as ApplyCreditOrderRow[];
+      if (batch.length === 0) {
+        break;
+      }
+
+      orders.push(...batch);
+
+      if (limit !== null && orders.length >= limit) {
+        orders.length = limit;
+        break;
+      }
+
+      if (batch.length < batchSize) {
+        break;
+      }
     }
 
-    const ordersRes = await query;
-    if (ordersRes.error) {
-      console.error(`[admin-apply-credits-orders] ${requestId} orders query error`, ordersRes.error);
-      return json(500, { ok: false, code: "LIST_FAILED", requestId, message: "주문 목록을 불러오지 못했습니다." });
-    }
-
-    const orders = ordersRes.data ?? [];
     const userIds = [...new Set(orders.map((row) => row.user_id).filter(Boolean))];
-    let profileMap = new Map<string, string | null>();
+    const profileMap = new Map<string, string | null>();
 
     if (userIds.length > 0) {
       const profilesRes = await admin.from("profiles").select("user_id,nickname").in("user_id", userIds);
@@ -89,6 +138,11 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     console.error(`[admin-apply-credits-orders] ${requestId} unhandled`, error);
-    return json(500, { ok: false, code: "INTERNAL_SERVER_ERROR", requestId, message: "서버 오류가 발생했습니다." });
+    return json(500, {
+      ok: false,
+      code: "INTERNAL_SERVER_ERROR",
+      requestId,
+      message: "서버 오류가 발생했습니다.",
+    });
   }
 }

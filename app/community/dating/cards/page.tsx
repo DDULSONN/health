@@ -135,6 +135,63 @@ function buildLoginRedirect(path: string) {
   return `/login?redirect=${encodeURIComponent(path)}`;
 }
 
+type CardVisualTheme = {
+  shell: string;
+  halo: string;
+  badge: string;
+  chip: string;
+  symbol: string;
+  overlay: string;
+};
+
+const CARD_VISUAL_THEMES: CardVisualTheme[] = [
+  {
+    shell: "from-rose-100 via-rose-200 to-stone-500",
+    halo: "bg-rose-200/60",
+    badge: "bg-white/20 text-white backdrop-blur",
+    chip: "border-white/30 bg-white/18 text-white",
+    symbol: "text-rose-800/35",
+    overlay: "from-transparent via-rose-200/8 to-black/35",
+  },
+  {
+    shell: "from-sky-100 via-indigo-100 to-slate-500",
+    halo: "bg-sky-200/55",
+    badge: "bg-white/20 text-white backdrop-blur",
+    chip: "border-white/30 bg-white/18 text-white",
+    symbol: "text-sky-900/30",
+    overlay: "from-transparent via-sky-200/8 to-black/35",
+  },
+  {
+    shell: "from-emerald-100 via-teal-100 to-stone-500",
+    halo: "bg-emerald-200/55",
+    badge: "bg-white/20 text-white backdrop-blur",
+    chip: "border-white/30 bg-white/18 text-white",
+    symbol: "text-emerald-900/30",
+    overlay: "from-transparent via-emerald-200/8 to-black/35",
+  },
+  {
+    shell: "from-violet-100 via-fuchsia-100 to-slate-500",
+    halo: "bg-violet-200/55",
+    badge: "bg-white/20 text-white backdrop-blur",
+    chip: "border-white/30 bg-white/18 text-white",
+    symbol: "text-violet-900/30",
+    overlay: "from-transparent via-violet-200/8 to-black/35",
+  },
+  {
+    shell: "from-amber-100 via-orange-100 to-stone-500",
+    halo: "bg-amber-200/55",
+    badge: "bg-white/20 text-white backdrop-blur",
+    chip: "border-white/30 bg-white/18 text-white",
+    symbol: "text-amber-900/30",
+    overlay: "from-transparent via-amber-200/8 to-black/35",
+  },
+];
+
+function getCardVisualTheme(seed: string) {
+  const hash = [...seed].reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return CARD_VISUAL_THEMES[hash % CARD_VISUAL_THEMES.length];
+}
+
 function readOpenCardsSnapshot(): OpenCardsSnapshot | null {
   if (typeof window === "undefined") return null;
   try {
@@ -616,153 +673,123 @@ export default function OpenCardsPage() {
   const activeMoreViewItems = activeSex === "male" ? moreViewMale : moreViewFemale;
   const activeHasMore = activeSex === "male" ? maleHasMore : femaleHasMore;
   const activeCurrentCount = activeSex === "male" ? (queueStats?.male.public_count ?? males.length) : (queueStats?.female.public_count ?? females.length);
+  const swipeTheme = getCardVisualTheme(swipeState.candidate?.card_id ?? activeSex);
   return (
-    <main className="max-w-3xl mx-auto px-4 py-6">
+    <main className="mx-auto max-w-5xl px-4 py-5 md:px-6 md:py-8">
       <DatingAdultNotice />
-      <section className="mb-5 overflow-hidden rounded-[28px] border border-rose-100 bg-[linear-gradient(180deg,_#fffdfd_0%,_#fff7f9_100%)] p-4 shadow-[0_12px_32px_rgba(15,23,42,0.04)] md:p-5">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-rose-600 px-3 py-1 text-xs font-semibold text-white">오픈카드</span>
-              <span className="rounded-full border border-rose-100 bg-white px-3 py-1 text-xs font-medium text-rose-700">
-                24시간 공개 · 미연결 시 1회 재대기
-              </span>
-            </div>
+      <section className="mb-5 rounded-[30px] border border-black/5 bg-white p-4 shadow-[0_14px_40px_rgba(15,23,42,0.06)] md:p-6">
+        <div className="flex flex-col gap-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-bold text-white">오픈카드</span>
+            <span className="text-sm font-medium text-neutral-400">24시간 공개 · 미연결 시 1회 재대기</span>
+          </div>
 
-            <h1 className="mt-3 text-3xl font-black tracking-tight text-neutral-900">오픈카드</h1>
-            <p className="mt-2 text-sm leading-6 text-neutral-600">둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.</p>
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div className="min-w-0 flex-1">
+              <h1 className="text-[38px] font-black tracking-tight text-neutral-950 md:text-[46px]">오픈카드</h1>
+              <p className="mt-3 max-w-xl text-[15px] leading-7 text-neutral-500 md:text-base">
+                둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.
+              </p>
 
-            <div className="mt-4 grid gap-2 md:grid-cols-[1.4fr_0.9fr]">
-              <div className="rounded-2xl border border-rose-100 bg-white p-3">
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-400">고정 노출</p>
-                    <p className="mt-1 text-lg font-bold text-rose-600">{fixedPaidCount}명</p>
-                    <p className="mt-1 text-xs text-neutral-500">상단 우선 공개</p>
-                  </div>
-                  <div className="border-l border-rose-100 pl-3">
-                    <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-400">공개중</p>
-                    <p className="mt-1 text-sm font-bold text-neutral-900">
-                      남 {queueStats?.male.public_count ?? males.length} · 여 {queueStats?.female.public_count ?? females.length}
-                    </p>
-                    <p className="mt-1 text-xs text-neutral-500">현재 목록 노출</p>
-                    <p className="mt-2 text-xs font-medium text-neutral-600">
-                      대기 남 {queueStats?.male.pending_count ?? 0} · 여 {queueStats?.female.pending_count ?? 0}
-                    </p>
-                  </div>
+              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+                <div className="rounded-[24px] bg-neutral-50 p-4">
+                  <p className="text-sm font-semibold text-neutral-400">고정 노출</p>
+                  <p className="mt-3 text-[18px] font-black text-rose-600 md:text-[20px]">{fixedPaidCount}명</p>
+                  <p className="mt-1 text-sm text-neutral-400">상단 우선 공개</p>
+                </div>
+                <div className="rounded-[24px] bg-neutral-50 p-4">
+                  <p className="text-sm font-semibold text-neutral-400">현재 공개중</p>
+                  <p className="mt-3 text-[18px] font-black text-rose-600 md:text-[20px]">
+                    남 {queueStats?.male.public_count ?? males.length} · 여 {queueStats?.female.public_count ?? females.length}
+                  </p>
+                  <p className="mt-1 text-sm text-neutral-400">
+                    대기 남 {queueStats?.male.pending_count ?? 0} · 여 {queueStats?.female.pending_count ?? 0}
+                  </p>
+                </div>
+                <div className="rounded-[24px] bg-neutral-50 p-4 sm:col-span-2">
+                  <p className="text-sm font-semibold text-neutral-400">누적 매칭</p>
+                  <p className="mt-3 text-[18px] font-black text-rose-600 md:text-[20px]">
+                    {(queueStats?.accepted_matches_count ?? 0).toLocaleString("ko-KR")}명
+                  </p>
+                  <p className="mt-1 text-sm text-neutral-400">현재까지 연결</p>
                 </div>
               </div>
-              <div className="rounded-2xl border border-rose-100 bg-white p-3">
-                <p className="text-[11px] font-semibold uppercase tracking-[0.12em] text-neutral-400">누적 매칭</p>
-                <p className="mt-1 text-lg font-bold text-neutral-900">{queueStats?.accepted_matches_count ?? 0}명</p>
-                <p className="mt-1 text-xs text-neutral-500">현재까지 연결</p>
+            </div>
+
+            <div className="w-full lg:w-[270px]">
+              <div className="grid gap-3">
+                <Link
+                  href="/dating/card/new"
+                  className="inline-flex min-h-[62px] items-center justify-center rounded-[22px] bg-rose-600 px-5 text-lg font-bold text-white shadow-[0_14px_26px_rgba(225,29,72,0.22)] hover:bg-rose-700"
+                >
+                  오픈카드 작성
+                </Link>
+                <Link
+                  href="/dating/paid?apply=1"
+                  className="inline-flex min-h-[58px] items-center justify-center gap-2 rounded-[22px] border border-neutral-200 bg-white px-5 text-base font-bold text-neutral-800 hover:bg-neutral-50"
+                >
+                  <span className="rounded-lg bg-rose-600 px-2 py-1 text-[11px] font-bold text-white">추천</span>
+                  대기 없이 등록
+                </Link>
               </div>
             </div>
           </div>
 
-          <div className="flex w-full shrink-0 flex-col gap-2 lg:w-[230px]">
-            <Link
-              href="/dating/card/new"
-              className="inline-flex min-h-[48px] items-center justify-center rounded-2xl bg-rose-600 px-4 text-sm font-semibold text-white shadow-sm hover:bg-rose-700"
-            >
-              오픈카드 작성
-            </Link>
-            <Link
-              href="/dating/paid?apply=1"
-              className="inline-flex min-h-[44px] items-center justify-center gap-2 rounded-2xl border border-rose-200 bg-white px-4 text-sm font-semibold text-rose-700 hover:bg-rose-50"
-            >
-              <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[10px] font-bold text-white">추천</span>
-              대기 없이 등록
-            </Link>
+          <div className="border-t border-neutral-100 pt-1">
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={() => setActiveSex("female")}
+                className={`inline-flex min-h-[52px] items-center rounded-full px-6 text-lg font-bold transition ${
+                  activeSex === "female"
+                    ? "bg-rose-600 text-white shadow-[0_12px_24px_rgba(225,29,72,0.18)]"
+                    : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                }`}
+              >
+                여자 카드 보기
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveSex("male")}
+                className={`inline-flex min-h-[52px] items-center rounded-full px-6 text-lg font-bold transition ${
+                  activeSex === "male"
+                    ? "bg-slate-900 text-white shadow-[0_12px_24px_rgba(15,23,42,0.14)]"
+                    : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
+                }`}
+              >
+                남자 카드 보기
+              </button>
+            </div>
+
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className="inline-flex min-h-[42px] items-center rounded-full bg-neutral-950 px-4 text-sm font-bold text-white">전체</span>
+              <Link
+                href="/dating/more-view"
+                className="inline-flex min-h-[42px] items-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
+              >
+                이상형 더보기
+              </Link>
+              <Link
+                href="/dating/nearby-view"
+                className="inline-flex min-h-[42px] items-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
+              >
+                내 가까운 이상형
+              </Link>
+            </div>
           </div>
         </div>
-
-        <div className="mt-4 grid gap-3 border-t border-rose-100 pt-4 md:grid-cols-[1fr_auto] md:items-center">
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setActiveSex("female")}
-              className={`inline-flex min-h-[42px] items-center rounded-full border px-4 text-sm font-semibold transition ${
-                activeSex === "female"
-                  ? "border-rose-500 bg-rose-500 text-white shadow-sm"
-                  : "border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50"
-              }`}
-            >
-              여자 카드 보기
-            </button>
-            <button
-              type="button"
-              onClick={() => setActiveSex("male")}
-              className={`inline-flex min-h-[42px] items-center rounded-full border px-4 text-sm font-semibold transition ${
-                activeSex === "male"
-                  ? "border-sky-500 bg-sky-500 text-white shadow-sm"
-                  : "border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-50"
-              }`}
-            >
-              남자 카드 보기
-            </button>
-          </div>
-
-          <div className="flex flex-wrap gap-2 md:justify-end">
-            <Link
-              href="/dating/more-view"
-              className="inline-flex min-h-[40px] items-center rounded-full border border-rose-200 bg-white px-4 text-sm font-medium text-rose-700 hover:bg-rose-50"
-            >
-              이상형 더보기
-            </Link>
-            <Link
-              href="/dating/nearby-view"
-              className="inline-flex min-h-[40px] items-center rounded-full border border-sky-200 bg-white px-4 text-sm font-medium text-sky-700 hover:bg-sky-50"
-            >
-              내 가까운 이상형
-            </Link>
-          </div>
-        </div>
-      </section>
-
-      <section className="mb-4 rounded-2xl border border-neutral-200 bg-white p-4">
-        <button
-          type="button"
-          onClick={() => setGuideOpen((prev) => !prev)}
-          className="flex w-full items-center justify-between gap-3 text-left"
-        >
-          <div>
-            <p className="text-sm font-semibold text-neutral-900">이용 흐름 한 번에 보기</p>
-            <p className="mt-1 text-xs text-neutral-500">등록, 지원, 수락, 재대기만 짧게 정리했어요.</p>
-          </div>
-          <span className="inline-flex rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-700">
-            {guideOpen ? "설명 접기" : "설명 보기"}
-          </span>
-        </button>
-
-        {guideOpen && (
-          <div className="mt-3 grid gap-2 border-t border-neutral-200 pt-3 text-sm text-neutral-700 sm:grid-cols-3">
-            <div className="rounded-2xl bg-neutral-50 px-3 py-3">
-              <p className="font-semibold text-neutral-900">1. 카드 공개</p>
-              <p className="mt-1 text-xs leading-5 text-neutral-600">오픈카드를 만들면 대기열에 들어가고, 공개되면 24시간 동안 보여져요.</p>
-            </div>
-            <div className="rounded-2xl bg-neutral-50 px-3 py-3">
-              <p className="font-semibold text-neutral-900">2. 지원과 수락</p>
-              <p className="mt-1 text-xs leading-5 text-neutral-600">마음에 드는 카드에 지원하고, 카드 주인이 수락하면 연결이 성사돼요.</p>
-            </div>
-            <div className="rounded-2xl bg-neutral-50 px-3 py-3">
-              <p className="font-semibold text-neutral-900">3. 종료 후 처리</p>
-              <p className="mt-1 text-xs leading-5 text-neutral-600">연결이 없으면 1회 다시 대기열로 들어가고, 수락되면 마이페이지에서 인스타가 공개돼요.</p>
-            </div>
-          </div>
-        )}
       </section>
 
       {!viewerLoggedIn ? (
-        <section className="mb-4 rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+        <section className="mb-4 rounded-[26px] border border-black/5 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <p className="text-sm font-semibold text-neutral-900">지금은 미리보기만 열려 있어요</p>
-              <p className="mt-1 text-xs text-neutral-600">목록은 일부만 볼 수 있고, 상세보기와 지원하기는 로그인 후 이용할 수 있어요.</p>
+              <p className="text-sm font-bold text-neutral-900">지금은 미리보기만 열려 있어요</p>
+              <p className="mt-1 text-sm leading-6 text-neutral-500">목록 일부만 볼 수 있고, 상세보기와 지원하기는 로그인 후 이용할 수 있어요.</p>
             </div>
             <Link
               href={buildLoginRedirect(`/community/dating/cards?sex=${activeSex}`)}
-              className="inline-flex min-h-[42px] items-center justify-center rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white hover:bg-neutral-700"
+              className="inline-flex min-h-[48px] items-center justify-center rounded-2xl bg-neutral-950 px-5 text-sm font-bold text-white hover:bg-neutral-800"
             >
               로그인하고 계속 보기
             </Link>
@@ -770,43 +797,41 @@ export default function OpenCardsPage() {
         </section>
       ) : null}
 
-      <section className="mb-6 rounded-2xl border border-amber-200 bg-amber-50/80 p-4">
-        <div className="flex items-center justify-between gap-3">
+      <section className="mb-5 rounded-[30px] border border-black/5 bg-white p-4 shadow-[0_14px_40px_rgba(15,23,42,0.05)] md:p-6">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
-            <h2 className="text-lg font-bold text-neutral-900">빠른 매칭</h2>
-            <p className="mt-1 text-xs text-neutral-600">
-              랜덤 후보를 하루 최대 {swipeState.limit}명까지 빠르게 확인할 수 있습니다.
-              <br />
-              라이크와 넘기기는 오픈카드 등록 후 이용할 수 있습니다.
+            <h2 className="text-[30px] font-black tracking-tight text-neutral-950">빠른 매칭</h2>
+            <p className="mt-2 max-w-lg text-[15px] leading-7 text-neutral-500">
+              랜덤 후보를 하루 최대 {swipeState.limit}명까지 빠르게 확인할 수 있어요.
             </p>
           </div>
-          <span className="inline-flex rounded-full bg-white px-3 py-1 text-xs font-semibold text-amber-700">
-            {!swipeState.loggedIn ? "로그인 후 이용" : swipeState.canSwipe ? `오늘 남은 ${swipeState.remaining}회` : "오픈카드 등록 후 이용"}
-          </span>
+          <div className="shrink-0 rounded-[22px] bg-rose-50 px-4 py-3 text-right">
+            <p className="text-sm font-semibold text-rose-400">오늘 남은</p>
+            <p className="mt-1 text-[20px] font-black text-rose-600">
+              {!swipeState.loggedIn ? "로그인" : swipeState.canSwipe ? `${swipeState.remaining}회` : "등록 필요"}
+            </p>
+          </div>
         </div>
-        {swipeRefreshing && !swipeLoading ? (
-          <p className="mt-2 text-xs font-medium text-neutral-500">최신 후보로 조용히 업데이트 중...</p>
-        ) : null}
-        {swipeMessage && <p className="mt-3 text-sm font-medium text-emerald-700">{swipeMessage}</p>}
+
+        {swipeRefreshing && !swipeLoading ? <p className="mt-3 text-xs font-medium text-neutral-400">최신 후보로 업데이트 중...</p> : null}
+        {swipeMessage ? <p className="mt-3 text-sm font-semibold text-emerald-700">{swipeMessage}</p> : null}
+
         {swipeLoading ? (
-          <p className="mt-4 text-sm text-neutral-500">후보를 불러오는 중...</p>
+          <p className="mt-5 text-sm text-neutral-500">후보를 불러오는 중...</p>
         ) : !swipeState.candidate ? (
           <>
-            <p className="mt-4 text-sm text-neutral-600">{swipeState.reason ?? "현재 보여줄 후보가 없습니다."}</p>
+            <p className="mt-5 text-sm text-neutral-500">{swipeState.reason ?? "현재 보여줄 후보가 없습니다."}</p>
             {swipeState.loggedIn && swipeState.remaining <= 0 ? (
-              <div className="mt-3 rounded-2xl border border-amber-200 bg-white p-4">
-                <p className="text-sm font-semibold text-amber-900">오늘 라이크를 모두 사용했어요.</p>
-                <p className="mt-1 text-xs leading-6 text-amber-800">
+              <div className="mt-4 rounded-[24px] border border-amber-200 bg-amber-50/70 p-4">
+                <p className="text-sm font-bold text-amber-900">오늘 라이크를 모두 사용했어요.</p>
+                <p className="mt-1 text-sm leading-6 text-amber-800">
                   추가 이용은 {SWIPE_PREMIUM_PRICE_KRW.toLocaleString("ko-KR")}원 · {SWIPE_PREMIUM_DURATION_DAYS}일 · 하루{" "}
-                  {SWIPE_PREMIUM_DAILY_LIMIT}회 기준으로 신청할 수 있어요.
-                </p>
-                <p className="mt-2 text-[11px] text-amber-700">
-                  마이페이지에서 신청 후 오픈카톡으로 닉네임과 신청ID를 보내주시면 확인 뒤 적용됩니다.
+                  {SWIPE_PREMIUM_DAILY_LIMIT}회 기준이에요.
                 </p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Link
                     href="/mypage"
-                    className="inline-flex min-h-[40px] items-center rounded-xl bg-amber-500 px-4 text-xs font-medium text-white hover:bg-amber-600"
+                    className="inline-flex min-h-[42px] items-center rounded-2xl bg-amber-500 px-4 text-sm font-bold text-white hover:bg-amber-600"
                   >
                     추가 이용 신청
                   </Link>
@@ -814,7 +839,7 @@ export default function OpenCardsPage() {
                     href={OPEN_KAKAO_URL}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex min-h-[40px] items-center rounded-xl border border-amber-200 bg-white px-4 text-xs font-medium text-amber-800 hover:bg-amber-50"
+                    className="inline-flex min-h-[42px] items-center rounded-2xl border border-amber-200 bg-white px-4 text-sm font-bold text-amber-800 hover:bg-amber-50"
                   >
                     오픈카톡 문의
                   </a>
@@ -823,72 +848,135 @@ export default function OpenCardsPage() {
             ) : null}
           </>
         ) : (
-          <div className="mt-4 rounded-2xl border border-white/80 bg-white p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div className="flex items-center gap-2 text-sm text-neutral-700">
-                <span className="font-semibold text-neutral-900">{swipeState.candidate.display_nickname}</span>
-                {swipeState.candidate.age != null && <span>{swipeState.candidate.age}세</span>}
-                {swipeState.candidate.region && <span>{swipeState.candidate.region}</span>}
-              </div>
-              <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700">
-                {swipeState.candidate.source_status === "public" ? "공개중" : "지난 카드"}
-              </span>
-            </div>
+          <div className="mt-5 overflow-hidden rounded-[30px] border border-black/5 bg-white">
+            <div className={`relative overflow-hidden bg-gradient-to-br ${swipeTheme.shell} p-4 pb-5 min-h-[330px]`}>
+              <div className={`absolute inset-0 bg-gradient-to-b ${swipeTheme.overlay}`} aria-hidden />
+              <div className="absolute -left-10 bottom-[-36px] h-40 w-40 rounded-full bg-white/10" aria-hidden />
+              <div className="absolute -right-10 top-[-28px] h-40 w-40 rounded-full bg-white/10" aria-hidden />
 
-            <div className="mt-3 flex h-56 w-full items-center justify-center overflow-hidden rounded-xl border border-amber-100 bg-neutral-50">
-              {swipeState.candidate.image_url && !swipeImgFailed ? (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img
-                  src={swipeState.candidate.image_url}
-                  alt=""
-                  decoding="async"
-                  onError={() => setSwipeImgFailed(true)}
-                  className={`max-h-full max-w-full object-contain ${
-                    swipeState.candidate.photo_visibility === "public" ? "" : "blur-[9px]"
-                  }`}
-                />
-              ) : (
-                <span className="text-sm text-neutral-400">사진 없음</span>
-              )}
-            </div>
-
-            <div className="mt-3 flex flex-wrap gap-2 text-xs text-neutral-600">
-              {swipeState.candidate.height_cm != null && <span>키 {swipeState.candidate.height_cm}cm</span>}
-              {swipeState.candidate.job && <span>직업 {swipeState.candidate.job}</span>}
-              {swipeState.candidate.training_years != null && <span>운동 {swipeState.candidate.training_years}년</span>}
-              {swipeState.candidate.is_3lift_verified && (
-                <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700">3대인증 완료</span>
-              )}
-              {swipeState.candidate.sex === "male" && swipeState.candidate.total_3lift != null && (
-                <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">
-                  3대 {swipeState.candidate.total_3lift}kg
+              <div className="relative z-10 flex items-start justify-between gap-3">
+                <span className={`inline-flex rounded-full px-3 py-1 text-sm font-semibold ${swipeTheme.badge}`}>
+                  {swipeState.candidate.source_status === "public" ? "공개중" : "지난 카드"}
                 </span>
-              )}
-            </div>
-            {swipeState.candidate.ideal_type && (
-              <p className="mt-2 line-clamp-2 text-xs text-pink-700">이상형: {maskIdealTypeForPreview(swipeState.candidate.ideal_type)}</p>
-            )}
-            {swipeState.candidate.strengths_text && (
-              <p className="mt-1 line-clamp-2 text-xs text-emerald-700">내 장점: {swipeState.candidate.strengths_text}</p>
-            )}
+                <span className="inline-flex rounded-full bg-black/35 px-3 py-1 text-sm font-bold text-white">빠른 확인</span>
+              </div>
 
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                onClick={() => void handleSwipe("pass")}
-                disabled={swipeSubmitting}
-                className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-xl border border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                넘기기
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleSwipe("like")}
-                disabled={swipeSubmitting}
-                className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-xl bg-pink-500 px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                라이크
-              </button>
+              <div className="relative z-10 mt-6 flex h-[210px] items-center justify-center overflow-hidden rounded-[28px]">
+                {swipeState.candidate.image_url && !swipeImgFailed ? (
+                  <>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={swipeState.candidate.image_url}
+                      alt=""
+                      decoding="async"
+                      onError={() => setSwipeImgFailed(true)}
+                      className={`absolute inset-0 h-full w-full object-cover ${
+                        swipeState.candidate.photo_visibility === "public" ? "opacity-34 blur-sm" : "opacity-44 blur-[10px]"
+                      }`}
+                    />
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={swipeState.candidate.image_url}
+                      alt=""
+                      decoding="async"
+                      className={`relative z-10 h-full w-full object-contain px-2 ${
+                        swipeState.candidate.photo_visibility === "public" ? "" : "blur-[9px]"
+                      }`}
+                    />
+                  </>
+                ) : null}
+              </div>
+
+              <div className="relative z-10 mt-5">
+                <div className="flex items-end gap-2 text-white">
+                  <span className="text-[22px] font-black tracking-tight">{swipeState.candidate.display_nickname}</span>
+                  {swipeState.candidate.age != null ? <span className="pb-0.5 text-[16px] font-semibold text-white/90">{swipeState.candidate.age}세</span> : null}
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {swipeState.candidate.region ? (
+                    <span className={`inline-flex rounded-full border px-3 py-1 text-sm font-semibold ${swipeTheme.chip}`}>{swipeState.candidate.region}</span>
+                  ) : null}
+                  {swipeState.candidate.height_cm != null ? (
+                    <span className={`inline-flex rounded-full border px-3 py-1 text-sm font-semibold ${swipeTheme.chip}`}>키 {swipeState.candidate.height_cm}cm</span>
+                  ) : null}
+                  {swipeState.candidate.job ? (
+                    <span className={`inline-flex rounded-full border px-3 py-1 text-sm font-semibold ${swipeTheme.chip}`}>{swipeState.candidate.job}</span>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <div className="space-y-3 p-4 md:p-5">
+              {swipeState.candidate.ideal_type ? (
+                <p className="text-[16px] leading-7 text-neutral-700">{maskIdealTypeForPreview(swipeState.candidate.ideal_type)}</p>
+              ) : null}
+              {swipeState.candidate.strengths_text ? <p className="text-sm leading-6 text-neutral-500">{swipeState.candidate.strengths_text}</p> : null}
+
+              <div className="flex flex-wrap gap-2">
+                {swipeState.candidate.training_years != null ? (
+                  <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-500">운동 {swipeState.candidate.training_years}년</span>
+                ) : null}
+                {swipeState.candidate.is_3lift_verified ? (
+                  <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">3대 인증 완료</span>
+                ) : null}
+                {swipeState.candidate.sex === "male" && swipeState.candidate.total_3lift != null ? (
+                  <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700">
+                    3대 {swipeState.candidate.total_3lift}kg
+                  </span>
+                ) : null}
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-1">
+                <button
+                  type="button"
+                  onClick={() => void handleSwipe("pass")}
+                  disabled={swipeSubmitting}
+                  className="inline-flex min-h-[54px] items-center justify-center rounded-[18px] border border-neutral-200 bg-white px-4 text-lg font-bold text-neutral-500 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  넘기기
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleSwipe("like")}
+                  disabled={swipeSubmitting}
+                  className="inline-flex min-h-[54px] items-center justify-center rounded-[18px] bg-rose-600 px-4 text-lg font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  라이크
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </section>
+
+      <section className="mb-5 rounded-[26px] border border-black/5 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+        <button
+          type="button"
+          onClick={() => setGuideOpen((prev) => !prev)}
+          className="flex w-full items-center justify-between gap-3 text-left"
+        >
+          <div>
+            <p className="text-xl font-black tracking-tight text-neutral-950">이용 흐름 한 번에 보기</p>
+            <p className="mt-1 text-sm text-neutral-500">등록, 지원, 수락, 재대기만 쉽게 정리했어요.</p>
+          </div>
+          <span className="inline-flex min-h-[42px] items-center rounded-full border border-neutral-200 px-4 text-sm font-bold text-neutral-600">
+            {guideOpen ? "설명 접기" : "설명 보기"}
+          </span>
+        </button>
+
+        {guideOpen && (
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-[22px] bg-neutral-50 p-4">
+              <p className="text-sm font-black text-neutral-900">1. 카드 공개</p>
+              <p className="mt-2 text-sm leading-6 text-neutral-500">오픈카드를 만들면 대기열에 들어가고, 공개되면 24시간 동안 보여져요.</p>
+            </div>
+            <div className="rounded-[22px] bg-neutral-50 p-4">
+              <p className="text-sm font-black text-neutral-900">2. 지원과 수락</p>
+              <p className="mt-2 text-sm leading-6 text-neutral-500">마음에 드는 카드에 지원하고, 카드 주인이 수락하면 연결이 성사돼요.</p>
+            </div>
+            <div className="rounded-[22px] bg-neutral-50 p-4">
+              <p className="text-sm font-black text-neutral-900">3. 종료 후 처리</p>
+              <p className="mt-2 text-sm leading-6 text-neutral-500">연결이 없으면 1회 다시 대기열로 들어가고, 수락되면 마이페이지에서 인스타가 공개돼요.</p>
             </div>
           </div>
         )}
@@ -937,11 +1025,15 @@ function Section({
 
   return (
     <section>
-      <h2 className="text-lg font-bold text-neutral-800 mb-3">
-        {title} <span className="text-sm font-medium text-neutral-500">({currentCount}명 공개중)</span>
-      </h2>
+      <div className="mb-4 flex items-end justify-between gap-3">
+        <h2 className="text-[28px] font-black tracking-tight text-neutral-950">
+          {title} <span className="text-lg font-semibold text-neutral-400">{currentCount}명 공개중</span>
+        </h2>
+      </div>
       {!hasAnyItems ? (
-        <p className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-500">현재 공개중인 카드가 없습니다.</p>
+        <p className="rounded-[26px] border border-black/5 bg-white p-5 text-sm text-neutral-500 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+          현재 공개중인 카드가 없습니다.
+        </p>
       ) : (
         <>
           {pinnedPaidItems.length > 0 && (
@@ -960,8 +1052,8 @@ function Section({
             ))}
           </div>
           {moreViewItems.length > 0 && (
-            <div className="mt-3 rounded-xl border border-dashed border-pink-300 bg-pink-50/60 p-2">
-              <p className="mb-2 px-1 text-xs font-semibold text-pink-700">이상형 더보기 (추가 25명)</p>
+            <div className="mt-4 rounded-[28px] border border-dashed border-rose-200 bg-rose-50/60 p-3">
+              <p className="mb-3 px-1 text-sm font-bold text-rose-700">이상형 더보기</p>
               <div className="grid grid-cols-2 gap-3">
                 {moreViewItems.map((card) => (
                   <CardRow key={`more-${card.id}`} card={card} viewerLoggedIn={viewerLoggedIn} />
@@ -973,7 +1065,7 @@ function Section({
             <button
               type="button"
               onClick={onMore}
-              className="mt-3 w-full min-h-[44px] rounded-xl border border-neutral-300 bg-white text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+              className="mt-4 w-full min-h-[52px] rounded-[20px] border border-neutral-200 bg-white text-sm font-bold text-neutral-700 shadow-[0_8px_20px_rgba(15,23,42,0.03)] hover:bg-neutral-50"
             >
               더보기
             </button>
@@ -987,6 +1079,7 @@ function Section({
 function PaidCardRow({ card, viewerLoggedIn }: { card: PaidCard; viewerLoggedIn: boolean }) {
   const router = useRouter();
   const isPriority = card.display_mode !== "instant_public";
+  const theme = getCardVisualTheme(card.id);
   const detailHref = viewerLoggedIn ? `/dating/paid/${card.id}` : buildLoginRedirect(`/dating/paid/${card.id}`);
   const applyHref = viewerLoggedIn ? `/dating/paid/${card.id}/apply` : buildLoginRedirect(`/dating/paid/${card.id}/apply`);
   const warmRoute = useCallback(() => {
@@ -1020,84 +1113,84 @@ function PaidCardRow({ card, viewerLoggedIn }: { card: PaidCard; viewerLoggedIn:
   }, []);
 
   return (
-    <div
-      className={`flex h-full flex-col rounded-2xl border p-3 ${isPriority ? "border-rose-200 bg-rose-50" : "border-neutral-200 bg-white"}`}
-    >
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-700 sm:text-sm">
-          {isPriority && (
-            <span className="inline-flex rounded-full bg-rose-500 px-2 py-0.5 text-xs font-semibold text-white">🔥36시간 고정</span>
-          )}
-          <span className="font-semibold text-neutral-900">{card.nickname}</span>
-          <PhoneVerifiedBadge verified={card.is_phone_verified} />
-          {card.age != null && <span>{card.age}세</span>}
-          {card.region && <span>{card.region}</span>}
-        </div>
-        {card.expires_at && (
-          <div>
-            <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-              잔여 {formatRemainingToKorean(card.expires_at)}
+    <div className="flex h-full flex-col overflow-hidden rounded-[28px] border border-black/5 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+      <div className={`relative min-h-[220px] overflow-hidden bg-gradient-to-br ${theme.shell} p-3`}>
+        <div className={`absolute inset-0 bg-gradient-to-b ${theme.overlay}`} aria-hidden />
+        <div className="absolute -left-10 bottom-[-30px] h-36 w-36 rounded-full bg-white/10" aria-hidden />
+        <div className="absolute -right-10 top-[-24px] h-32 w-32 rounded-full bg-white/10" aria-hidden />
+        {card.thumbUrl ? (
+          <>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={card.thumbUrl} alt="" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-cover opacity-28 blur-sm" />
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img src={card.thumbUrl} alt="" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-contain px-2 py-2" />
+          </>
+        ) : null}
+
+        <div className="relative z-10 flex items-start justify-between gap-3">
+          <span className={`inline-flex rounded-full px-3 py-1 text-sm font-semibold ${theme.badge}`}>
+            {isPriority ? "추천 등록" : "바로 공개"}
+          </span>
+          {card.expires_at ? (
+            <span className="inline-flex rounded-full bg-black/35 px-3 py-1 text-sm font-bold text-white">
+              {isPriority ? `잔여 ${formatRemainingToKorean(card.expires_at)}` : "바로 공개중"}
             </span>
-          </div>
-        )}
-      </div>
-
-      {card.thumbUrl ? (
-        <div className="relative mt-3 flex h-32 items-center justify-center overflow-hidden rounded-xl border border-rose-100 bg-white sm:h-40">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={card.thumbUrl}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            className="absolute inset-0 h-full w-full object-cover opacity-30 blur-sm"
-          />
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src={card.thumbUrl}
-            alt=""
-            loading="lazy"
-            decoding="async"
-            className="relative z-10 max-h-full max-w-full h-auto w-auto object-contain object-center"
-          />
+          ) : null}
         </div>
-      ) : (
-        <div className="mt-3 h-32 rounded-xl border border-rose-100 bg-white sm:h-40" />
-      )}
 
-      <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-neutral-600 sm:text-xs">
-        {card.height_cm != null && <span>키 {card.height_cm}cm</span>}
-        {card.job && <span>직업 {card.job}</span>}
-        {card.training_years != null && <span>운동 {card.training_years}년</span>}
-        {card.is_3lift_verified && <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">3대인증 완료</span>}
+        <div className="relative z-10 mt-4">
+          <div className="flex items-end gap-2 text-white">
+            <span className="text-[20px] font-black tracking-tight">{card.nickname}</span>
+            {card.age != null ? <span className="pb-0.5 text-base font-semibold text-white/90">{card.age}</span> : null}
+          </div>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {card.region ? <span className={`inline-flex rounded-full border px-3 py-1 text-sm font-semibold ${theme.chip}`}>{card.region}</span> : null}
+            {card.height_cm != null ? (
+              <span className={`inline-flex rounded-full border px-3 py-1 text-sm font-semibold ${theme.chip}`}>키 {card.height_cm}cm</span>
+            ) : null}
+            {card.job ? <span className={`inline-flex rounded-full border px-3 py-1 text-sm font-semibold ${theme.chip}`}>{card.job}</span> : null}
+          </div>
+        </div>
       </div>
 
-      {card.ideal_text && <p className="mt-2 line-clamp-2 text-[11px] text-pink-700 sm:text-xs">이상형: {card.ideal_text}</p>}
-      {card.strengths_text && <p className="mt-1 line-clamp-2 text-[11px] text-emerald-700 sm:text-xs">내 장점: {card.strengths_text}</p>}
+      <div className="flex flex-1 flex-col p-4">
+        <div className="flex flex-wrap gap-2">
+          <PhoneVerifiedBadge verified={card.is_phone_verified} />
+          {card.training_years != null ? (
+            <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-500">운동 {card.training_years}년</span>
+          ) : null}
+          {card.is_3lift_verified ? (
+            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">3대 인증 완료</span>
+          ) : null}
+        </div>
 
-      <div className="mt-auto grid gap-2 pt-3">
-        <Link
-          href={detailHref}
-          prefetch
-          onMouseEnter={warmRoute}
-          onClick={rememberScroll}
-          onTouchStart={warmRoute}
-          onTouchEnd={rememberScroll}
-          className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg border border-neutral-300 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50 sm:text-sm"
-        >
-          {viewerLoggedIn ? "상세보기" : "로그인 후 보기"}
-        </Link>
-        <Link
-          href={applyHref}
-          prefetch
-          onMouseEnter={warmRoute}
-          onClick={rememberScroll}
-          onTouchStart={warmRoute}
-          onTouchEnd={rememberScroll}
-          className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg bg-pink-500 px-3 text-xs font-medium text-white hover:bg-pink-600 sm:text-sm"
-        >
-          {viewerLoggedIn ? "지원하기" : "로그인 후 지원"}
-        </Link>
+        {card.strengths_text ? <p className="mt-3 line-clamp-2 text-[15px] leading-7 text-neutral-700">{card.strengths_text}</p> : null}
+        {card.ideal_text ? <p className="mt-2 line-clamp-2 text-sm leading-6 text-neutral-500">{card.ideal_text}</p> : null}
+
+        <div className="mt-auto grid gap-2 pt-4">
+          <Link
+            href={detailHref}
+            prefetch
+            onMouseEnter={warmRoute}
+            onClick={rememberScroll}
+            onTouchStart={warmRoute}
+            onTouchEnd={rememberScroll}
+            className="inline-flex min-h-[46px] w-full items-center justify-center rounded-[18px] border border-neutral-200 px-3 text-sm font-bold text-neutral-700 hover:bg-neutral-50"
+          >
+            {viewerLoggedIn ? "상세보기" : "로그인 후 보기"}
+          </Link>
+          <Link
+            href={applyHref}
+            prefetch
+            onMouseEnter={warmRoute}
+            onClick={rememberScroll}
+            onTouchStart={warmRoute}
+            onTouchEnd={rememberScroll}
+            className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] bg-rose-600 px-3 text-sm font-bold text-white hover:bg-rose-700"
+          >
+            {viewerLoggedIn ? "지원하기" : "로그인 후 지원"}
+          </Link>
+        </div>
       </div>
     </div>
   );
@@ -1107,6 +1200,7 @@ function CardRow({ card, viewerLoggedIn }: { card: PublicCard; viewerLoggedIn: b
   const router = useRouter();
   const ideal = maskIdealTypeForPreview(card.ideal_type);
   const [imgFailed, setImgFailed] = useState(false);
+  const theme = getCardVisualTheme(card.id);
   const detailHref = viewerLoggedIn ? `/community/dating/cards/${card.id}` : buildLoginRedirect(`/community/dating/cards/${card.id}`);
   const applyHref = viewerLoggedIn ? `/community/dating/cards/${card.id}/apply` : buildLoginRedirect(`/community/dating/cards/${card.id}/apply`);
   const warmRoute = useCallback(() => {
@@ -1124,24 +1218,14 @@ function CardRow({ card, viewerLoggedIn }: { card: PublicCard; viewerLoggedIn: b
   }, []);
 
   return (
-    <div className="flex h-full flex-col rounded-2xl border border-neutral-200 bg-white p-3">
-      <div className="flex flex-col gap-2">
-        <div className="flex flex-wrap items-center gap-2 text-xs text-neutral-700 sm:text-sm">
-          <span className="font-semibold text-neutral-900">{card.display_nickname}</span>
-          <PhoneVerifiedBadge verified={card.is_phone_verified} />
-          {card.age != null && <span>{card.age}세</span>}
-          {card.region && <span>{card.region}</span>}
-        </div>
-        <div>
-          <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-            {card.expires_at ? `잔여 ${formatRemainingToKorean(card.expires_at)}` : "대기열"}
-          </span>
-        </div>
-      </div>
+    <div className="flex h-full flex-col overflow-hidden rounded-[28px] border border-black/5 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+      <div className={`relative min-h-[220px] overflow-hidden bg-gradient-to-br ${theme.shell} p-3`}>
+        <div className={`absolute inset-0 bg-gradient-to-b ${theme.overlay}`} aria-hidden />
+        <div className="absolute -left-10 bottom-[-30px] h-36 w-36 rounded-full bg-white/10" aria-hidden />
+        <div className="absolute -right-10 top-[-24px] h-32 w-32 rounded-full bg-white/10" aria-hidden />
 
-      <div className="mt-3 h-32 w-full overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50 sm:h-36 md:h-40">
         {card.image_urls.length > 0 && !imgFailed ? (
-          <div className="relative flex h-full w-full items-center justify-center bg-neutral-50">
+          <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={card.image_urls[0]}
@@ -1149,7 +1233,9 @@ function CardRow({ card, viewerLoggedIn }: { card: PublicCard; viewerLoggedIn: b
               loading="lazy"
               decoding="async"
               onError={() => setImgFailed(true)}
-              className={`absolute inset-0 h-full w-full object-cover opacity-30 ${card.photo_visibility === "public" ? "blur-sm" : "blur-[10px]"}`}
+              className={`absolute inset-0 h-full w-full object-cover ${
+                card.photo_visibility === "public" ? "opacity-28 blur-sm" : "opacity-40 blur-[10px]"
+              }`}
             />
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
@@ -1157,54 +1243,73 @@ function CardRow({ card, viewerLoggedIn }: { card: PublicCard; viewerLoggedIn: b
               alt=""
               loading="lazy"
               decoding="async"
-              className={`relative z-10 max-h-full max-w-full h-auto w-auto object-contain object-center ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
+              className={`absolute inset-0 h-full w-full object-contain px-2 py-2 ${card.photo_visibility === "public" ? "" : "blur-[9px]"}`}
             />
+          </>
+        ) : null}
+
+        <div className="relative z-10 flex items-start justify-between gap-3">
+          <span className="inline-flex rounded-full bg-black/35 px-3 py-1 text-sm font-bold text-white">
+            {card.expires_at ? `잔여 ${formatRemainingToKorean(card.expires_at)}` : "대기열"}
+          </span>
+          {card.is_3lift_verified ? (
+            <span className={`inline-flex rounded-full px-3 py-1 text-sm font-semibold ${theme.badge}`}>3대 인증</span>
+          ) : null}
+        </div>
+
+        <div className="relative z-10 mt-4">
+          <div className="flex items-end gap-2 text-white">
+            <span className="text-[20px] font-black tracking-tight">{card.display_nickname}</span>
+            {card.age != null ? <span className="pb-0.5 text-base font-semibold text-white/90">{card.age}</span> : null}
           </div>
-        ) : (
-          <div className="flex h-full w-full items-center justify-center">
-            <span className="text-sm text-neutral-400">사진 없음</span>
+          <div className="mt-2 flex flex-wrap gap-2">
+            {card.region ? <span className={`inline-flex rounded-full border px-3 py-1 text-sm font-semibold ${theme.chip}`}>{card.region}</span> : null}
+            {card.job ? <span className={`inline-flex rounded-full border px-3 py-1 text-sm font-semibold ${theme.chip}`}>{card.job}</span> : null}
+            {card.height_cm != null ? (
+              <span className={`inline-flex rounded-full border px-3 py-1 text-sm font-semibold ${theme.chip}`}>키 {card.height_cm}cm</span>
+            ) : null}
           </div>
-        )}
+        </div>
       </div>
 
-      <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-neutral-600 sm:text-xs">
-        {card.height_cm != null && <span>키 {card.height_cm}cm</span>}
-        {card.job && <span>직업 {card.job}</span>}
-        {card.training_years != null && <span>운동 {card.training_years}년</span>}
-        {card.is_3lift_verified && (
-          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-700">3대인증 완료</span>
-        )}
-        {card.sex === "male" && card.total_3lift != null && (
-          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-rose-100 text-rose-700">3대 {card.total_3lift}kg</span>
-        )}
-      </div>
+      <div className="flex flex-1 flex-col p-4">
+        <div className="flex flex-wrap gap-2">
+          <PhoneVerifiedBadge verified={card.is_phone_verified} />
+          {card.training_years != null ? (
+            <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-500">운동 {card.training_years}년</span>
+          ) : null}
+          {card.sex === "male" && card.total_3lift != null ? (
+            <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700">3대 {card.total_3lift}kg</span>
+          ) : null}
+        </div>
 
-      {ideal && <p className="mt-2 line-clamp-2 text-[11px] text-pink-700 sm:text-xs">이상형: {ideal}</p>}
-      {card.strengths_text && <p className="mt-1 line-clamp-2 text-[11px] text-emerald-700 sm:text-xs">내 장점: {card.strengths_text}</p>}
+        {card.strengths_text ? <p className="mt-3 line-clamp-2 text-[15px] leading-7 text-neutral-700">{card.strengths_text}</p> : null}
+        {ideal ? <p className="mt-2 line-clamp-2 text-sm leading-6 text-neutral-500">{ideal}</p> : null}
 
-      <div className="mt-auto grid gap-2 pt-3">
-        <Link
-          href={detailHref}
-          prefetch
-          onMouseEnter={warmRoute}
-          onClick={rememberScroll}
-          onTouchStart={warmRoute}
-          onTouchEnd={rememberScroll}
-          className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg bg-neutral-900 px-3 text-xs font-medium text-white hover:bg-neutral-700 sm:text-sm"
-        >
-          {viewerLoggedIn ? "상세보기" : "로그인 후 보기"}
-        </Link>
-        <Link
-          href={applyHref}
-          prefetch
-          onMouseEnter={warmRoute}
-          onClick={rememberScroll}
-          onTouchStart={warmRoute}
-          onTouchEnd={rememberScroll}
-          className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg bg-pink-500 px-3 text-xs font-medium text-white hover:bg-pink-600 sm:text-sm"
-        >
-          {viewerLoggedIn ? "지원하기" : "로그인 후 지원"}
-        </Link>
+        <div className="mt-auto grid gap-2 pt-4">
+          <Link
+            href={detailHref}
+            prefetch
+            onMouseEnter={warmRoute}
+            onClick={rememberScroll}
+            onTouchStart={warmRoute}
+            onTouchEnd={rememberScroll}
+            className="inline-flex min-h-[46px] w-full items-center justify-center rounded-[18px] border border-neutral-200 bg-white px-3 text-sm font-bold text-neutral-700 hover:bg-neutral-50"
+          >
+            {viewerLoggedIn ? "상세보기" : "로그인 후 보기"}
+          </Link>
+          <Link
+            href={applyHref}
+            prefetch
+            onMouseEnter={warmRoute}
+            onClick={rememberScroll}
+            onTouchStart={warmRoute}
+            onTouchEnd={rememberScroll}
+            className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] bg-rose-600 px-3 text-sm font-bold text-white hover:bg-rose-700"
+          >
+            {viewerLoggedIn ? "지원하기" : "로그인 후 지원"}
+          </Link>
+        </div>
       </div>
     </div>
   );

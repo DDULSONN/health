@@ -53,7 +53,7 @@ export async function GET(req: Request) {
       remaining: 0,
       limit: 7,
       candidate: null,
-      reason: "로그인이 필요합니다.",
+      reason: "로그인하면 빠른매칭 후보와 오늘 남은 횟수를 바로 확인할 수 있습니다.",
     });
   }
 
@@ -84,13 +84,16 @@ export async function GET(req: Request) {
     const dailyLimit = limitInfo.limit;
     const myCard = await getLatestSwipeCardForUser(adminClient, user.id);
     if (!myCard) {
+      const candidate = await getSwipeCandidate(adminClient, user.id, sex);
       return NextResponse.json({
         loggedIn: true,
         canSwipe: false,
-        remaining: 0,
+        remaining: dailyLimit,
         limit: dailyLimit,
-        candidate: null,
-        reason: "오픈카드를 한 번 이상 등록한 사용자만 이용할 수 있습니다.",
+        candidate,
+        reason: candidate
+          ? "후보는 미리 볼 수 있어요. 라이크나 넘기기는 오픈카드 등록 후 이용 가능합니다."
+          : "후보는 미리 볼 수 있어요. 라이크나 넘기기는 오픈카드 등록 후 이용 가능합니다.",
       });
     }
 
@@ -171,7 +174,7 @@ export async function POST(req: Request) {
     const dailyLimit = limitInfo.limit;
     const myCard = await getLatestSwipeCardForUser(adminClient, user.id);
     if (!myCard) {
-      return NextResponse.json({ error: "오픈카드를 한 번 이상 등록한 사용자만 이용할 수 있습니다." }, { status: 403 });
+      return NextResponse.json({ error: "라이크나 넘기기를 하려면 먼저 오픈카드를 등록해 주세요." }, { status: 403 });
     }
 
     const pairKey = getPairKey(user.id, targetUserId);
