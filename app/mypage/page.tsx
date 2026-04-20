@@ -840,6 +840,8 @@ export default function MyPage() {
   const [adminMoreViewRequests, setAdminMoreViewRequests] = useState<AdminMoreViewRequest[]>([]);
   const [adminCityViewRequests, setAdminCityViewRequests] = useState<AdminCityViewRequest[]>([]);
   const [adminApplyCreditSearch, setAdminApplyCreditSearch] = useState("");
+  const [adminApplyCreditGrantNickname, setAdminApplyCreditGrantNickname] = useState("");
+  const [adminApplyCreditGrantLoading, setAdminApplyCreditGrantLoading] = useState(false);
   const [adminSwipeSubscriptionSearch, setAdminSwipeSubscriptionSearch] = useState("");
   const [adminMoreViewSearch, setAdminMoreViewSearch] = useState("");
   const [adminDatingStats, setAdminDatingStats] = useState<AdminDatingStats | null>(null);
@@ -2298,6 +2300,42 @@ export default function MyPage() {
       setAdminApplyCreditOrders((prev) => prev.filter((item) => item.id !== orderId));
     } finally {
       setApprovingOrderIds((prev) => prev.filter((id) => id !== orderId));
+    }
+  };
+
+  const handleAdminGrantApplyCredits = async () => {
+    const nickname = adminApplyCreditGrantNickname.trim();
+    if (!nickname || adminApplyCreditGrantLoading) return;
+    if (!confirm(`${nickname} 닉네임에게 지원권 3장을 바로 지급할까요?`)) return;
+
+    setAdminApplyCreditGrantLoading(true);
+    try {
+      const res = await fetch("/api/admin/dating/apply-credits/grant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nickname, credits: 3 }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        addedCredits?: number;
+        creditsAfter?: number;
+        orderId?: string;
+      };
+
+      if (!res.ok || !body.ok) {
+        alert(body.message ?? "지원권 직접 지급에 실패했습니다.");
+        return;
+      }
+
+      setAdminApplyCreditGrantNickname("");
+      alert(
+        `${nickname} 님에게 지원권 ${Number(body.addedCredits ?? 0)}장을 지급했습니다. 현재 잔여 ${Number(
+          body.creditsAfter ?? 0
+        )}장`
+      );
+    } finally {
+      setAdminApplyCreditGrantLoading(false);
     }
   };
 
@@ -5387,6 +5425,27 @@ export default function MyPage() {
             <p className="text-xs font-semibold text-violet-800">
               지원권 주문 승인 대기 {adminApplyCreditOrders.length}건
             </p>
+            <div className="mt-3 rounded-lg border border-violet-100 bg-violet-50/40 p-3">
+              <p className="text-xs font-semibold text-violet-900">닉네임으로 지원권 3장 직접 지급</p>
+              <p className="mt-1 text-[11px] text-violet-700">주문 없이 바로 3장을 지급하고, 이력은 0원 승인 기록으로 남깁니다.</p>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                <input
+                  type="text"
+                  value={adminApplyCreditGrantNickname}
+                  onChange={(e) => setAdminApplyCreditGrantNickname(e.target.value)}
+                  placeholder="지급할 닉네임 입력"
+                  className="h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none ring-0 placeholder:text-neutral-400 sm:max-w-xs"
+                />
+                <button
+                  type="button"
+                  disabled={adminApplyCreditGrantLoading || !adminApplyCreditGrantNickname.trim()}
+                  onClick={() => void handleAdminGrantApplyCredits()}
+                  className="h-9 rounded-lg bg-violet-600 px-3 text-xs font-semibold text-white disabled:opacity-50"
+                >
+                  {adminApplyCreditGrantLoading ? "지급 중..." : "3장 지급"}
+                </button>
+              </div>
+            </div>
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <input
                 type="text"
