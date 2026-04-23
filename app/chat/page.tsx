@@ -623,7 +623,7 @@ export default function ChatPage() {
       {error ? <p className="mb-4 rounded-2xl bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
 
       {!loading ? (
-        <div className="grid gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
+        <div className="grid items-start gap-4 lg:grid-cols-[340px_minmax(0,1fr)]">
           <aside className="space-y-4">
             <section className="rounded-[24px] border border-black/5 bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
               <div className="flex items-center justify-between gap-2">
@@ -757,14 +757,14 @@ export default function ChatPage() {
             </section>
           </aside>
 
-          <section className="rounded-[24px] border border-black/5 bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+          <section className="flex min-h-[520px] max-h-[72svh] flex-col rounded-[24px] border border-black/5 bg-white p-4 shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
             {!selected ? (
-              <div className="flex min-h-[420px] items-center justify-center rounded-[20px] bg-neutral-50 text-sm text-neutral-500">
+              <div className="flex h-full min-h-0 items-center justify-center rounded-[20px] bg-neutral-50 text-sm text-neutral-500">
                 채팅방이나 연결을 선택해 주세요.
               </div>
             ) : (
-              <div className="flex min-h-[420px] flex-col">
-                <div className="flex items-start justify-between gap-3 border-b border-neutral-100 pb-3">
+              <div className="flex h-full min-h-0 flex-col">
+                <div className="shrink-0 flex items-start justify-between gap-3 border-b border-neutral-100 pb-3">
                   <div>
                     <p className="text-lg font-black text-neutral-950">{selectedTitle}</p>
                     <p className="mt-1 text-xs text-neutral-500">
@@ -785,7 +785,7 @@ export default function ChatPage() {
                   ) : null}
                 </div>
 
-                <div className="flex-1 space-y-3 overflow-y-auto py-4">
+                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-4">
                   {selected.kind === "available" ? (
                     <div className="rounded-[20px] bg-neutral-50 px-4 py-5 text-sm text-neutral-600">
                       아직 시작된 채팅은 없습니다. 아래에서 첫 메시지를 보내면 채팅방이 바로 열립니다.
@@ -819,7 +819,7 @@ export default function ChatPage() {
                   )}
                 </div>
 
-                <div className="border-t border-neutral-100 pt-3">
+                <div className="shrink-0 border-t border-neutral-100 pt-3">
                   {isClosedThread ? (
                     <div className="mb-3 rounded-[18px] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-500">
                       이 채팅방은 종료되어 더 이상 메시지를 보낼 수 없습니다.
