@@ -51,6 +51,7 @@ type ThreadDetail = {
     content: string;
     is_read: boolean;
     created_at: string;
+    optimistic?: boolean;
   }>;
 };
 
@@ -446,6 +447,51 @@ export default function ChatPage() {
     const content = compose.trim();
     if (!content || sending || !selected) return;
 
+    const previousCompose = compose;
+    const baseCreatedAt = new Date().toISOString();
+    const optimisticMessageId = `local-${Date.now()}`;
+    let usedOptimisticAppend = false;
+
+    if (selected.kind === "thread" && threadDetail?.thread.id === selected.threadId) {
+      const receiverId =
+        threadDetail.thread.user_a_id === threadDetail.thread.current_user_id
+          ? threadDetail.thread.user_b_id
+          : threadDetail.thread.user_a_id;
+      const optimisticMessage: ChatMessage = {
+        id: optimisticMessageId,
+        thread_id: selected.threadId,
+        sender_id: threadDetail.thread.current_user_id,
+        receiver_id: receiverId,
+        content,
+        is_read: true,
+        created_at: baseCreatedAt,
+        optimistic: true,
+      };
+
+      usedOptimisticAppend = true;
+      setCompose("");
+      setThreadDetail((prev) =>
+        prev && prev.thread.id === selected.threadId
+          ? {
+              ...prev,
+              messages: [...prev.messages, optimisticMessage],
+            }
+          : prev
+      );
+      setInbox((prev) => {
+        const current = prev.find((item) => item.thread_id === selected.threadId);
+        if (!current) return prev;
+        const updated: InboxItem = {
+          ...current,
+          last_message: content,
+          last_message_at: baseCreatedAt,
+          unread_count: 0,
+        };
+        const rest = prev.filter((item) => item.thread_id !== selected.threadId);
+        return [updated, ...rest];
+      });
+    }
+
     setSending(true);
     try {
       const payload =
@@ -471,9 +517,11 @@ export default function ChatPage() {
       }
 
       const nextThreadId = body.thread_id ?? (selected.kind === "thread" ? selected.threadId : "");
-      const createdAt = body.created_at ?? new Date().toISOString();
+      const createdAt = body.created_at ?? baseCreatedAt;
 
-      setCompose("");
+      if (!usedOptimisticAppend) {
+        setCompose("");
+      }
 
       setInbox((prev) => {
         const nextItem: InboxItem | null =
@@ -510,24 +558,56 @@ export default function ChatPage() {
         return [nextItem, ...rest];
       });
 
-      if (selected.kind === "thread" && threadDetail?.thread.id === selected.threadId) {
-        const receiverId =
-          threadDetail.thread.user_a_id === threadDetail.thread.current_user_id
-            ? threadDetail.thread.user_b_id
-            : threadDetail.thread.user_a_id;
-        const optimisticMessage: ChatMessage = {
-          id: body.message_id ?? `local-${Date.now()}`,
-          thread_id: selected.threadId,
-          sender_id: threadDetail.thread.current_user_id,
-          receiver_id: receiverId,
-          content,
-          is_read: true,
-          created_at: createdAt,
-        };
+      if (selected.kind === "thread") {
+        setThreadDetail((prev) => {
+          if (!prev || prev.thread.id !== selected.threadId) return prev;
 
-        setThreadDetail({
-          ...threadDetail,
-          messages: [...threadDetail.messages, optimisticMessage],
+          if (usedOptimisticAppend) {
+            const confirmedId = body.message_id ?? optimisticMessageId;
+            const alreadyHasConfirmed = prev.messages.some(
+              (message) => message.id === confirmedId && message.id !== optimisticMessageId
+            );
+
+            if (alreadyHasConfirmed) {
+              return {
+                ...prev,
+                messages: prev.messages.filter((message) => message.id !== optimisticMessageId),
+              };
+            }
+
+            return {
+              ...prev,
+              messages: prev.messages.map((message) =>
+                message.id === optimisticMessageId
+                  ? {
+                      ...message,
+                      id: confirmedId,
+                      created_at: createdAt,
+                      optimistic: false,
+                    }
+                  : message
+              ),
+            };
+          }
+
+          const receiverId =
+            prev.thread.user_a_id === prev.thread.current_user_id
+              ? prev.thread.user_b_id
+              : prev.thread.user_a_id;
+          const confirmedMessage: ChatMessage = {
+            id: body.message_id ?? optimisticMessageId,
+            thread_id: selected.threadId,
+            sender_id: prev.thread.current_user_id,
+            receiver_id: receiverId,
+            content,
+            is_read: true,
+            created_at: createdAt,
+          };
+
+          return {
+            ...prev,
+            messages: [...prev.messages, confirmedMessage],
+          };
         });
       } else if (selected.kind === "available") {
         setAvailable((prev) =>
@@ -541,6 +621,17 @@ export default function ChatPage() {
       }
     } catch (e) {
       alert(e instanceof Error ? e.message : "메시지 전송에 실패했습니다.");
+      if (usedOptimisticAppend && selected.kind === "thread") {
+        setThreadDetail((prev) =>
+          prev && prev.thread.id === selected.threadId
+            ? {
+                ...prev,
+                messages: prev.messages.filter((message) => message.id !== optimisticMessageId),
+              }
+            : prev
+        );
+        setCompose(previousCompose);
+      }
     } finally {
       setSending(false);
     }
@@ -804,9 +895,9 @@ export default function ChatPage() {
                       return (
                         <div key={message.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                           <div
-                            className={`max-w-[80%] rounded-[20px] px-4 py-3 text-sm leading-6 ${
+                            className={`max-w-[80%] rounded-[20px] px-4 py-3 text-sm leading-6 transition-opacity ${
                               mine ? "bg-rose-600 text-white" : "bg-neutral-100 text-neutral-800"
-                            }`}
+                            } ${message.optimistic ? "opacity-70" : "opacity-100"}`}
                           >
                             <p className="whitespace-pre-wrap break-words">{message.content}</p>
                             <p className={`mt-1 text-[11px] ${mine ? "text-white/75" : "text-neutral-400"}`}>
@@ -840,7 +931,7 @@ export default function ChatPage() {
                       onClick={() => void handleSend()}
                       className="min-w-[92px] rounded-[18px] bg-rose-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                     >
-                      {sending ? "전송 중..." : "보내기"}
+                      보내기
                     </button>
                   </div>
                   {selected.kind === "thread" ? (
