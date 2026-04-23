@@ -473,51 +473,64 @@ export default function OpenCardsPage() {
   }, [initialSnapshot, loadInitial]);
 
   useEffect(() => {
-    const timer = window.setInterval(() => {
-      void (async () => {
-        try {
-          const [mvStatusRes, qsRes] = await Promise.all([
-            fetch("/api/dating/cards/more-view/status", { cache: "no-store" }),
-            fetch("/api/dating/cards/queue-stats", { cache: "no-store" }),
-          ]);
-          if (qsRes.ok) {
-            const qsBody = (await qsRes.json()) as QueueStats;
-            setQueueStats(qsBody);
-          }
-          if (!mvStatusRes.ok) return;
-          const mvStatusBody = (await mvStatusRes.json()) as MoreViewStatusResponse;
-          const nextStatus = {
-            loggedIn: mvStatusBody.loggedIn === true,
-            male: mvStatusBody.male ?? "none",
-            female: mvStatusBody.female ?? "none",
-          };
-          setMoreViewStatus(nextStatus);
+    const pollSecondaryStatus = async () => {
+      if (document.visibilityState !== "visible") return;
 
-          if (nextStatus.male === "approved") {
-            const maleRes = await fetch("/api/dating/cards/more-view/list?sex=male", { cache: "no-store" });
-            if (maleRes.ok) {
-              const body = (await maleRes.json()) as { items?: PublicCard[] };
-              setMoreViewMale(Array.isArray(body.items) ? body.items : []);
-            }
-          } else {
-            setMoreViewMale([]);
-          }
-          if (nextStatus.female === "approved") {
-            const femaleRes = await fetch("/api/dating/cards/more-view/list?sex=female", { cache: "no-store" });
-            if (femaleRes.ok) {
-              const body = (await femaleRes.json()) as { items?: PublicCard[] };
-              setMoreViewFemale(Array.isArray(body.items) ? body.items : []);
-            }
-          } else {
-            setMoreViewFemale([]);
-          }
-        } catch {
-          // keep current UI state on polling error
+      try {
+        const [mvStatusRes, qsRes] = await Promise.all([
+          fetch("/api/dating/cards/more-view/status", { cache: "no-store" }),
+          fetch("/api/dating/cards/queue-stats", { cache: "no-store" }),
+        ]);
+        if (qsRes.ok) {
+          const qsBody = (await qsRes.json()) as QueueStats;
+          setQueueStats(qsBody);
         }
-      })();
-    }, 15000);
+        if (!mvStatusRes.ok) return;
+        const mvStatusBody = (await mvStatusRes.json()) as MoreViewStatusResponse;
+        const nextStatus = {
+          loggedIn: mvStatusBody.loggedIn === true,
+          male: mvStatusBody.male ?? "none",
+          female: mvStatusBody.female ?? "none",
+        };
+        setMoreViewStatus(nextStatus);
 
-    return () => window.clearInterval(timer);
+        if (nextStatus.male === "approved") {
+          const maleRes = await fetch("/api/dating/cards/more-view/list?sex=male", { cache: "no-store" });
+          if (maleRes.ok) {
+            const body = (await maleRes.json()) as { items?: PublicCard[] };
+            setMoreViewMale(Array.isArray(body.items) ? body.items : []);
+          }
+        } else {
+          setMoreViewMale([]);
+        }
+        if (nextStatus.female === "approved") {
+          const femaleRes = await fetch("/api/dating/cards/more-view/list?sex=female", { cache: "no-store" });
+          if (femaleRes.ok) {
+            const body = (await femaleRes.json()) as { items?: PublicCard[] };
+            setMoreViewFemale(Array.isArray(body.items) ? body.items : []);
+          }
+        } else {
+          setMoreViewFemale([]);
+        }
+      } catch {
+        // keep current UI state on polling error
+      }
+    };
+
+    const timer = window.setInterval(() => {
+      void pollSecondaryStatus();
+    }, 60000);
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== "visible") return;
+      void pollSecondaryStatus();
+    };
+
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
   }, []);
 
   const loadMoreMale = useCallback(async () => {

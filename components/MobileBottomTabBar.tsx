@@ -73,25 +73,24 @@ export default function MobileBottomTabBar() {
 
   const loadChatBadge = useCallback(async () => {
     try {
-      const [inboxRes, availableRes] = await Promise.all([
-        fetch("/api/dating/chat/inbox", { cache: "no-store" }),
-        fetch("/api/dating/chat/available", { cache: "no-store" }),
-      ]);
+      const res = await fetch("/api/dating/chat/badge", { cache: "no-store" });
 
-      if (inboxRes.status === 401 || availableRes.status === 401) {
+      if (res.status === 401) {
         setChatBadge({ unreadCount: 0, availableCount: 0 });
         return;
       }
 
-      const inboxBody = (await inboxRes.json().catch(() => ({}))) as { unreadCount?: number };
-      const availableBody = (await availableRes.json().catch(() => ({}))) as {
-        items?: Array<{ thread_id?: string | null }>;
+      if (!res.ok) {
+        throw new Error("chat badge load failed");
+      }
+
+      const body = (await res.json().catch(() => ({}))) as {
+        unreadCount?: number;
+        availableCount?: number;
       };
 
-      const unreadCount = Math.max(0, Number(inboxBody.unreadCount ?? 0));
-      const availableCount = Array.isArray(availableBody.items)
-        ? availableBody.items.filter((item) => !item.thread_id).length
-        : 0;
+      const unreadCount = Math.max(0, Number(body.unreadCount ?? 0));
+      const availableCount = Math.max(0, Number(body.availableCount ?? 0));
 
       setChatBadge({ unreadCount, availableCount });
     } catch {
@@ -109,6 +108,7 @@ export default function MobileBottomTabBar() {
 
   useEffect(() => {
     const onFocus = () => {
+      if (document.visibilityState !== "visible") return;
       void loadChatBadge();
     };
 

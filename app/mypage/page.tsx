@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { timeAgo } from "@/lib/community";
@@ -1076,6 +1076,33 @@ export default function MyPage() {
     [isAdmin]
   );
 
+  const reloadSwipeSubscriptionStatus = useCallback(async () => {
+    setSwipeSubscriptionLoading(true);
+    try {
+      const res = await fetch("/api/dating/cards/swipe/subscription", { cache: "no-store" });
+      const body = (await res.json().catch(() => ({}))) as SwipeSubscriptionStatus;
+      if (!res.ok) {
+        throw new Error(body.error ?? "빠른매칭 라이크 구매 상태를 불러오지 못했습니다.");
+      }
+      setSwipeSubscriptionStatus(body);
+      setSwipeSubscriptionError("");
+    } catch (error) {
+      setSwipeSubscriptionStatus({
+        status: "none",
+        dailyLimit: 5,
+        baseLimit: 5,
+        premiumLimit: 15,
+        priceKrw: 10000,
+        durationDays: 15,
+      });
+      setSwipeSubscriptionError(
+        error instanceof Error ? error.message : "빠른매칭 라이크 구매 상태를 불러오지 못했습니다."
+      );
+    } finally {
+      setSwipeSubscriptionLoading(false);
+    }
+  }, []);
+
   useEffect(() => {
     let isMounted = true;
 
@@ -1375,35 +1402,12 @@ export default function MyPage() {
   }, [adminManageTab, adminOpenCardsLoaded, adminOpenCardsLoading, isAdmin, refreshAdminOpenCardData]);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || activeTab !== "request_status" || swipeSubscriptionStatus || swipeSubscriptionLoading) return;
 
     queueMicrotask(async () => {
-      try {
-        setSwipeSubscriptionLoading(true);
-        const res = await fetch("/api/dating/cards/swipe/subscription", { cache: "no-store" });
-        const body = (await res.json().catch(() => ({}))) as SwipeSubscriptionStatus;
-        if (!res.ok) {
-          throw new Error(body.error ?? "빠른매칭 라이크 구매 상태를 불러오지 못했습니다.");
-        }
-        setSwipeSubscriptionStatus(body);
-        setSwipeSubscriptionError("");
-      } catch (error) {
-        setSwipeSubscriptionStatus({
-          status: "none",
-          dailyLimit: 5,
-          baseLimit: 5,
-          premiumLimit: 15,
-          priceKrw: 10000,
-          durationDays: 15,
-        });
-        setSwipeSubscriptionError(
-          error instanceof Error ? error.message : "빠른매칭 라이크 구매 상태를 불러오지 못했습니다."
-        );
-      } finally {
-        setSwipeSubscriptionLoading(false);
-      }
+      await reloadSwipeSubscriptionStatus();
     });
-  }, [loading]);
+  }, [loading, activeTab, swipeSubscriptionStatus, swipeSubscriptionLoading, reloadSwipeSubscriptionStatus]);
 
   useEffect(() => {
     if (loading || !isAdmin) return;
