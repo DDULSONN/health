@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { DATING_CHAT_REPORT_REASONS } from "@/lib/dating-chat-report-reasons";
+import { createClient } from "@/lib/supabase/client";
 
 type ChatSourceKind = "open" | "paid" | "swipe";
 
@@ -92,8 +93,10 @@ function avatarTone(seed: string) {
 }
 
 export default function ChatPage() {
+  const supabase = useMemo(() => createClient(), []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [inbox, setInbox] = useState<InboxItem[]>([]);
   const [available, setAvailable] = useState<AvailableItem[]>([]);
   const [selected, setSelected] = useState<SelectedState>(null);
@@ -228,6 +231,19 @@ export default function ChatPage() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+
+    void supabase.auth.getUser().then(({ data }) => {
+      if (!active) return;
+      setCurrentUserId(data.user?.id ?? null);
+    });
+
+    return () => {
+      active = false;
+    };
+  }, [supabase]);
+
+  useEffect(() => {
     void loadInboxAndAvailable({ withLoading: true });
   }, [loadInboxAndAvailable]);
 
@@ -266,48 +282,149 @@ export default function ChatPage() {
   useEffect(() => {
     if (!selected || selected.kind !== "thread") return;
 
-    let inFlight = false;
+    const threadId = selected.threadId;
+    const channel = supabase
+      .channel(`dating-chat-thread:${threadId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "dating_chat_messages",
+          filter: `thread_id=eq.${threadId}`,
+        },
+        async (payload) => {
+          const newMessage = payload.new as ChatMessage;
 
-    const tick = async () => {
-      if (document.visibilityState !== "visible" || inFlight || sending || leaving) return;
-      inFlight = true;
-      try {
-        await syncThreadSilently(selected.threadId);
-      } catch {
-        // Keep chat quiet during background refreshes.
-      } finally {
-        inFlight = false;
-      }
+          setThreadDetail((prev) => {
+            if (!prev || prev.thread.id !== threadId) return prev;
+            if (prev.messages.some((message) => message.id === newMessage.id)) return prev;
+            return {
+              ...prev,
+              messages: [...prev.messages, newMessage],
+            };
+          });
+
+          setInbox((prev) => {
+            const current = prev.find((item) => item.thread_id === threadId);
+            if (!current) return prev;
+            const shouldCountUnread = !!currentUserId && newMessage.receiver_id === currentUserId;
+            const updated: InboxItem = {
+              ...current,
+              last_message: newMessage.content,
+              last_message_at: newMessage.created_at,
+              unread_count: shouldCountUnread ? current.unread_count + 1 : current.unread_count,
+            };
+            const rest = prev.filter((item) => item.thread_id !== threadId);
+            return [updated, ...rest];
+          });
+
+          if (currentUserId && newMessage.receiver_id === currentUserId && document.visibilityState === "visible") {
+            await fetch("/api/dating/chat/read", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ thread_id: threadId }),
+            });
+            setInbox((prev) =>
+              prev.map((item) => (item.thread_id === threadId ? { ...item, unread_count: 0 } : item))
+            );
+          }
+        }
+      )
+      .on(
+        "postgres_changes",
+        {
+          event: "UPDATE",
+          schema: "public",
+          table: "dating_chat_threads",
+          filter: `id=eq.${threadId}`,
+        },
+        (payload) => {
+          const nextThread = payload.new as { status?: "open" | "closed" };
+          const nextStatus = nextThread.status;
+          if (!nextStatus) return;
+          setThreadDetail((prev) => {
+            if (!prev || prev.thread.id !== threadId) return prev;
+            return {
+              ...prev,
+              thread: {
+                ...prev.thread,
+                status: nextStatus,
+              },
+            };
+          });
+          setInbox((prev) =>
+            prev.map((item) => (item.thread_id === threadId ? { ...item, status: nextStatus } : item))
+          );
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
     };
-
-    const interval = window.setInterval(() => {
-      void tick();
-    }, 2500);
-
-    return () => window.clearInterval(interval);
-  }, [selected, sending, leaving, syncThreadSilently]);
+  }, [selected, supabase, currentUserId]);
 
   useEffect(() => {
-    let inFlight = false;
+    if (!currentUserId) return;
 
-    const tick = async () => {
-      if (document.visibilityState !== "visible" || inFlight) return;
-      inFlight = true;
-      try {
-        await loadInboxAndAvailable();
-      } catch {
-        // Keep chat quiet during background refreshes.
-      } finally {
-        inFlight = false;
+    const channel = supabase
+      .channel(`dating-chat-incoming:${currentUserId}`)
+      .on(
+        "postgres_changes",
+        {
+          event: "INSERT",
+          schema: "public",
+          table: "dating_chat_messages",
+          filter: `receiver_id=eq.${currentUserId}`,
+        },
+        async (payload) => {
+          const newMessage = payload.new as ChatMessage;
+
+          setInbox((prev) => {
+            const current = prev.find((item) => item.thread_id === newMessage.thread_id);
+            if (!current) return prev;
+            const isOpenThread = selected?.kind === "thread" && selected.threadId === newMessage.thread_id;
+            const updated: InboxItem = {
+              ...current,
+              last_message: newMessage.content,
+              last_message_at: newMessage.created_at,
+              unread_count: isOpenThread && document.visibilityState === "visible" ? 0 : current.unread_count + 1,
+            };
+            const rest = prev.filter((item) => item.thread_id !== newMessage.thread_id);
+            return [updated, ...rest];
+          });
+
+          if (selected?.kind === "thread" && selected.threadId === newMessage.thread_id && document.visibilityState === "visible") {
+            await syncThreadSilently(newMessage.thread_id);
+          } else {
+            await loadInboxAndAvailable();
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [currentUserId, supabase, selected, syncThreadSilently, loadInboxAndAvailable]);
+
+  useEffect(() => {
+    const onFocus = () => {
+      if (document.visibilityState !== "visible") return;
+      void loadInboxAndAvailable();
+      if (selected?.kind === "thread") {
+        void syncThreadSilently(selected.threadId);
       }
     };
 
-    const interval = window.setInterval(() => {
-      void tick();
-    }, 7000);
-
-    return () => window.clearInterval(interval);
-  }, [loadInboxAndAvailable]);
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onFocus);
+    return () => {
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onFocus);
+    };
+  }, [loadInboxAndAvailable, selected, syncThreadSilently]);
 
   const availableWithoutThread = useMemo(() => {
     const existing = new Set(inbox.map((item) => `${item.source_kind}:${item.source_id}`));
