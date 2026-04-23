@@ -30,7 +30,7 @@ export async function POST(req: Request) {
   const admin = createAdminClient();
   const threadRes = await admin
     .from("dating_chat_threads")
-    .select("id,user_a_id,user_b_id")
+    .select("id,user_a_id,user_b_id,status")
     .eq("id", threadId)
     .maybeSingle();
 
@@ -59,8 +59,8 @@ export async function POST(req: Request) {
   const now = new Date().toISOString();
   const updatePayload =
     thread.user_a_id === user.id
-      ? { user_a_hidden_at: now, updated_at: now }
-      : { user_b_hidden_at: now, updated_at: now };
+      ? { user_a_hidden_at: now, status: "closed", updated_at: now }
+      : { user_b_hidden_at: now, status: "closed", updated_at: now };
 
   const updateRes = await admin.from("dating_chat_threads").update(updatePayload).eq("id", thread.id);
 

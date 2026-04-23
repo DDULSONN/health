@@ -9,6 +9,7 @@ type ThreadRow = {
   source_id: string;
   user_a_id: string;
   user_b_id: string;
+  status: "open" | "closed";
   user_a_hidden_at: string | null;
   user_b_hidden_at: string | null;
 };
@@ -42,11 +43,21 @@ export async function GET(req: Request) {
     }
 
     const threads = (threadsRes.data ?? []) as ThreadRow[];
-    const threadMap = new Map(threads.map((row) => [`${row.source_kind}:${row.source_id}`, String(row.id)]));
+    const threadMap = new Map(
+      threads
+        .filter((row) => row.status === "open")
+        .map((row) => [`${row.source_kind}:${row.source_id}`, String(row.id)])
+    );
     const hiddenKeySet = new Set(
       threads
-        .filter((row) =>
-          row.user_a_id === user.id ? !!row.user_a_hidden_at : row.user_b_id === user.id ? !!row.user_b_hidden_at : false
+        .filter(
+          (row) =>
+            row.status === "closed" ||
+            (row.user_a_id === user.id
+              ? !!row.user_a_hidden_at
+              : row.user_b_id === user.id
+                ? !!row.user_b_hidden_at
+                : false)
         )
         .map((row) => `${row.source_kind}:${row.source_id}`)
     );

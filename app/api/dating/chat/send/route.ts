@@ -104,7 +104,7 @@ export async function POST(req: Request) {
 
     const threadRes = await admin
       .from("dating_chat_threads")
-      .select("id,user_a_id,user_b_id,status")
+      .select("id,user_a_id,user_b_id,status,user_a_hidden_at,user_b_hidden_at")
       .eq("id", resolvedThreadId)
       .maybeSingle();
 
@@ -120,7 +120,10 @@ export async function POST(req: Request) {
       );
     }
 
-    if (thread.status === "closed") {
+    const hiddenForUser =
+      thread.user_a_id === user.id ? !!thread.user_a_hidden_at : !!thread.user_b_hidden_at;
+
+    if (hiddenForUser || thread.status === "closed") {
       return NextResponse.json(
         { ok: false, code: "THREAD_CLOSED", message: "종료된 채팅방입니다." },
         { status: 400 }
@@ -148,8 +151,6 @@ export async function POST(req: Request) {
       .update({
         last_message_at: messageRes.data.created_at,
         last_message_preview: content.slice(0, 120),
-        user_a_hidden_at: null,
-        user_b_hidden_at: null,
         updated_at: messageRes.data.created_at,
       })
       .eq("id", thread.id);

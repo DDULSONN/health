@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { DATING_CHAT_REPORT_REASONS } from "@/lib/dating-chat-report-reasons";
 
 type ChatSourceKind = "open" | "paid" | "swipe";
@@ -109,69 +109,127 @@ export default function ChatPage() {
   );
   const [reportDetails, setReportDetails] = useState("");
 
-  const load = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const [inboxRes, availableRes] = await Promise.all([
-        fetch("/api/dating/chat/inbox", { cache: "no-store" }),
-        fetch("/api/dating/chat/available", { cache: "no-store" }),
-      ]);
-
-      const inboxBody = (await inboxRes.json().catch(() => ({}))) as { items?: InboxItem[]; message?: string };
-      const availableBody = (await availableRes.json().catch(() => ({}))) as {
-        items?: AvailableItem[];
-        message?: string;
-      };
-
-      if (!inboxRes.ok) {
-        throw new Error(inboxBody.message ?? "채팅 목록을 불러오지 못했습니다.");
+  const loadInboxAndAvailable = useCallback(
+    async (options?: { withLoading?: boolean }) => {
+      const withLoading = options?.withLoading ?? false;
+      if (withLoading) {
+        setLoading(true);
+        setError("");
       }
-      if (!availableRes.ok) {
-        throw new Error(availableBody.message ?? "채팅 가능한 연결을 불러오지 못했습니다.");
+      try {
+        const [inboxRes, availableRes] = await Promise.all([
+          fetch("/api/dating/chat/inbox", { cache: "no-store" }),
+          fetch("/api/dating/chat/available", { cache: "no-store" }),
+        ]);
+
+        const inboxBody = (await inboxRes.json().catch(() => ({}))) as { items?: InboxItem[]; message?: string };
+        const availableBody = (await availableRes.json().catch(() => ({}))) as {
+          items?: AvailableItem[];
+          message?: string;
+        };
+
+        if (!inboxRes.ok) {
+          throw new Error(inboxBody.message ?? "채팅 목록을 불러오지 못했습니다.");
+        }
+        if (!availableRes.ok) {
+          throw new Error(availableBody.message ?? "채팅 가능한 연결을 불러오지 못했습니다.");
+        }
+
+        const inboxItems = inboxBody.items ?? [];
+        const availableItems = availableBody.items ?? [];
+
+        setInbox(inboxItems);
+        setAvailable(availableItems);
+        setSelected((prev) => {
+          if (prev?.kind === "thread") {
+            return inboxItems.some((item) => item.thread_id === prev.threadId) ? prev : null;
+          }
+          if (prev?.kind === "available") {
+            return availableItems.some(
+              (item) => item.sourceKind === prev.sourceKind && item.sourceId === prev.sourceId
+            )
+              ? prev
+              : null;
+          }
+          if (inboxItems.length > 0) {
+            return { kind: "thread", threadId: inboxItems[0].thread_id };
+          }
+          if (availableItems.length > 0) {
+            return {
+              kind: "available",
+              sourceKind: availableItems[0].sourceKind,
+              sourceId: availableItems[0].sourceId,
+              peerNickname: availableItems[0].peerNickname,
+              title: availableItems[0].title,
+              threadId: availableItems[0].thread_id ?? null,
+            };
+          }
+          return null;
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "채팅을 불러오지 못했습니다.");
+      } finally {
+        if (withLoading) {
+          setLoading(false);
+        }
       }
+    },
+    []
+  );
 
-      const inboxItems = inboxBody.items ?? [];
-      const availableItems = availableBody.items ?? [];
+  const syncThreadSilently = useCallback(async (threadId: string) => {
+    const res = await fetch(`/api/dating/chat/thread?thread_id=${encodeURIComponent(threadId)}`, {
+      cache: "no-store",
+    });
+    const body = (await res.json().catch(() => ({}))) as ThreadDetail & { message?: string };
 
-      setInbox(inboxItems);
-      setAvailable(availableItems);
-      setSelected((prev) => {
-        if (prev?.kind === "thread") {
-          return inboxItems.some((item) => item.thread_id === prev.threadId) ? prev : null;
-        }
-        if (prev?.kind === "available") {
-          return availableItems.some(
-            (item) => item.sourceKind === prev.sourceKind && item.sourceId === prev.sourceId
-          )
-            ? prev
-            : null;
-        }
-        if (inboxItems.length > 0) {
-          return { kind: "thread", threadId: inboxItems[0].thread_id };
-        }
-        if (availableItems.length > 0) {
-          return {
-            kind: "available",
-            sourceKind: availableItems[0].sourceKind,
-            sourceId: availableItems[0].sourceId,
-            peerNickname: availableItems[0].peerNickname,
-            title: availableItems[0].title,
-            threadId: availableItems[0].thread_id ?? null,
-          };
-        }
-        return null;
-      });
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "채팅을 불러오지 못했습니다.");
-    } finally {
-      setLoading(false);
+    if (!res.ok) {
+      throw new Error(body.message ?? "채팅 내용을 불러오지 못했습니다.");
     }
-  };
+
+    const latestMessage = body.messages[body.messages.length - 1] ?? null;
+
+    setThreadDetail((prev) => {
+      if (!prev || prev.thread.id !== threadId) return body;
+      const prevLastId = prev.messages[prev.messages.length - 1]?.id ?? "";
+      const nextLastId = body.messages[body.messages.length - 1]?.id ?? "";
+      const prevCount = prev.messages.length;
+      const nextCount = body.messages.length;
+      if (prevLastId === nextLastId && prevCount === nextCount) {
+        return prev;
+      }
+      return body;
+    });
+
+    if (latestMessage) {
+      setInbox((prev) => {
+        const current = prev.find((item) => item.thread_id === threadId);
+        if (!current) return prev;
+        const updated: InboxItem = {
+          ...current,
+          last_message: latestMessage.content,
+          last_message_at: latestMessage.created_at,
+          unread_count: 0,
+        };
+        const rest = prev.filter((item) => item.thread_id !== threadId);
+        return [updated, ...rest];
+      });
+    }
+
+    await fetch("/api/dating/chat/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: threadId }),
+    });
+
+    setInbox((prev) =>
+      prev.map((item) => (item.thread_id === threadId ? { ...item, unread_count: 0 } : item))
+    );
+  }, []);
 
   useEffect(() => {
-    void load();
-  }, []);
+    void loadInboxAndAvailable({ withLoading: true });
+  }, [loadInboxAndAvailable]);
 
   useEffect(() => {
     if (!selected || selected.kind !== "thread") {
@@ -185,25 +243,8 @@ export default function ChatPage() {
     const run = async () => {
       setThreadLoading(true);
       try {
-        const res = await fetch(`/api/dating/chat/thread?thread_id=${encodeURIComponent(selected.threadId)}`, {
-          cache: "no-store",
-        });
-        const body = (await res.json().catch(() => ({}))) as ThreadDetail & { message?: string };
-
-        if (!res.ok) {
-          throw new Error(body.message ?? "채팅 내용을 불러오지 못했습니다.");
-        }
-
         if (!cancelled) {
-          setThreadDetail(body);
-          await fetch("/api/dating/chat/read", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ thread_id: selected.threadId }),
-          });
-          setInbox((prev) =>
-            prev.map((item) => (item.thread_id === selected.threadId ? { ...item, unread_count: 0 } : item))
-          );
+          await syncThreadSilently(selected.threadId);
         }
       } catch (e) {
         if (!cancelled) {
@@ -220,7 +261,53 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [selected]);
+  }, [selected, syncThreadSilently]);
+
+  useEffect(() => {
+    if (!selected || selected.kind !== "thread") return;
+
+    let inFlight = false;
+
+    const tick = async () => {
+      if (document.visibilityState !== "visible" || inFlight || sending || leaving) return;
+      inFlight = true;
+      try {
+        await syncThreadSilently(selected.threadId);
+      } catch {
+        // Keep chat quiet during background refreshes.
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      void tick();
+    }, 2500);
+
+    return () => window.clearInterval(interval);
+  }, [selected, sending, leaving, syncThreadSilently]);
+
+  useEffect(() => {
+    let inFlight = false;
+
+    const tick = async () => {
+      if (document.visibilityState !== "visible" || inFlight) return;
+      inFlight = true;
+      try {
+        await loadInboxAndAvailable();
+      } catch {
+        // Keep chat quiet during background refreshes.
+      } finally {
+        inFlight = false;
+      }
+    };
+
+    const interval = window.setInterval(() => {
+      void tick();
+    }, 7000);
+
+    return () => window.clearInterval(interval);
+  }, [loadInboxAndAvailable]);
 
   const availableWithoutThread = useMemo(() => {
     const existing = new Set(inbox.map((item) => `${item.source_kind}:${item.source_id}`));
@@ -235,6 +322,8 @@ export default function ChatPage() {
     const thread = inbox.find((item) => item.thread_id === selected.threadId);
     return thread ? thread.peer_nickname : "채팅";
   }, [selected, inbox]);
+
+  const isClosedThread = selected?.kind === "thread" && threadDetail?.thread.status === "closed";
 
   const handleSend = async () => {
     const content = compose.trim();
@@ -359,7 +448,7 @@ export default function ChatPage() {
 
       setThreadDetail(null);
       setSelected(null);
-      await load();
+      await loadInboxAndAvailable({ withLoading: true });
     } catch (e) {
       alert(e instanceof Error ? e.message : "채팅 나가기에 실패했습니다.");
     } finally {
@@ -424,7 +513,7 @@ export default function ChatPage() {
                 <h2 className="text-sm font-bold text-neutral-900">채팅방</h2>
                 <button
                   type="button"
-                  onClick={() => void load()}
+                  onClick={() => void loadInboxAndAvailable({ withLoading: true })}
                   className="rounded-full border border-neutral-200 px-3 py-1 text-xs font-semibold text-neutral-600 hover:bg-neutral-50"
                 >
                   새로고침
@@ -561,7 +650,9 @@ export default function ChatPage() {
                 <div className="flex items-start justify-between gap-3 border-b border-neutral-100 pb-3">
                   <div>
                     <p className="text-lg font-black text-neutral-950">{selectedTitle}</p>
-                    <p className="mt-1 text-xs text-neutral-500">편하게 대화를 이어가 보세요</p>
+                    <p className="mt-1 text-xs text-neutral-500">
+                      {isClosedThread ? "상대 또는 내가 채팅을 종료했어요" : "편하게 대화를 이어가 보세요"}
+                    </p>
                   </div>
                   {selected.kind === "thread" ? (
                     <div className="flex flex-wrap items-center justify-end gap-2">
@@ -612,17 +703,23 @@ export default function ChatPage() {
                 </div>
 
                 <div className="border-t border-neutral-100 pt-3">
+                  {isClosedThread ? (
+                    <div className="mb-3 rounded-[18px] border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-500">
+                      이 채팅방은 종료되어 더 이상 메시지를 보낼 수 없습니다.
+                    </div>
+                  ) : null}
                   <div className="flex gap-2">
                     <textarea
                       value={compose}
                       onChange={(e) => setCompose(e.target.value)}
                       rows={2}
                       placeholder="메시지를 입력해 주세요"
+                      disabled={!!isClosedThread}
                       className="min-h-[56px] flex-1 resize-none rounded-[18px] border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
                     />
                     <button
                       type="button"
-                      disabled={sending || !compose.trim()}
+                      disabled={sending || !compose.trim() || !!isClosedThread}
                       onClick={() => void handleSend()}
                       className="min-w-[92px] rounded-[18px] bg-rose-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                     >
