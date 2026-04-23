@@ -256,9 +256,12 @@ export default function ChatPage() {
     }
 
     let cancelled = false;
+    const shouldShowLoading = threadDetail?.thread.id !== selected.threadId;
 
     const run = async () => {
-      setThreadLoading(true);
+      if (shouldShowLoading) {
+        setThreadLoading(true);
+      }
       try {
         if (!cancelled) {
           await syncThreadSilently(selected.threadId);
@@ -268,7 +271,7 @@ export default function ChatPage() {
           setError(e instanceof Error ? e.message : "채팅 내용을 불러오지 못했습니다.");
         }
       } finally {
-        if (!cancelled) {
+        if (!cancelled && shouldShowLoading) {
           setThreadLoading(false);
         }
       }
@@ -278,7 +281,7 @@ export default function ChatPage() {
     return () => {
       cancelled = true;
     };
-  }, [selected, syncThreadSilently]);
+  }, [selected, syncThreadSilently, threadDetail?.thread.id]);
 
   useEffect(() => {
     if (!selected || selected.kind !== "thread") return;
@@ -616,7 +619,10 @@ export default function ChatPage() {
         setThreadDetail(null);
       }
 
-      if (nextThreadId) {
+      if (
+        nextThreadId &&
+        (selected.kind !== "thread" || selected.threadId !== nextThreadId)
+      ) {
         setSelected({ kind: "thread", threadId: nextThreadId });
       }
     } catch (e) {
