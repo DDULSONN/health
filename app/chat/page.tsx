@@ -53,6 +53,8 @@ type ThreadDetail = {
   }>;
 };
 
+type ChatMessage = ThreadDetail["messages"][number];
+
 type SelectedState =
   | { kind: "thread"; threadId: string }
   | {
@@ -77,10 +79,16 @@ function formatDateTime(value: string | null | undefined) {
   });
 }
 
-function sourceLabel(kind: ChatSourceKind) {
-  if (kind === "open") return "오픈카드";
-  if (kind === "paid") return "유료카드";
-  return "빠른매칭";
+function avatarTone(seed: string) {
+  const tones = [
+    "border-violet-200 bg-violet-50 text-violet-500",
+    "border-rose-200 bg-rose-50 text-rose-500",
+    "border-sky-200 bg-sky-50 text-sky-500",
+    "border-emerald-200 bg-emerald-50 text-emerald-500",
+    "border-amber-200 bg-amber-50 text-amber-500",
+  ];
+  const sum = seed.split("").reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  return tones[sum % tones.length];
 }
 
 export default function ChatPage() {
@@ -95,6 +103,7 @@ export default function ChatPage() {
   const [sending, setSending] = useState(false);
   const [leaving, setLeaving] = useState(false);
   const [reporting, setReporting] = useState(false);
+  const [reportPanelOpen, setReportPanelOpen] = useState(false);
   const [reportReason, setReportReason] = useState<(typeof DATING_CHAT_REPORT_REASONS)[number]>(
     DATING_CHAT_REPORT_REASONS[0]
   );
@@ -167,6 +176,7 @@ export default function ChatPage() {
   useEffect(() => {
     if (!selected || selected.kind !== "thread") {
       setThreadDetail(null);
+      setReportPanelOpen(false);
       return;
     }
 
@@ -220,10 +230,10 @@ export default function ChatPage() {
   const selectedTitle = useMemo(() => {
     if (!selected) return "";
     if (selected.kind === "available") {
-      return `${selected.peerNickname} · ${selected.title}`;
+      return selected.peerNickname;
     }
     const thread = inbox.find((item) => item.thread_id === selected.threadId);
-    return thread ? `${thread.peer_nickname} · ${sourceLabel(thread.source_kind)}` : "채팅";
+    return thread ? thread.peer_nickname : "채팅";
   }, [selected, inbox]);
 
   const handleSend = async () => {
@@ -242,16 +252,86 @@ export default function ChatPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; thread_id?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        thread_id?: string;
+        message_id?: string;
+        created_at?: string;
+      };
 
       if (!res.ok || !body.ok) {
         throw new Error(body.message ?? "메시지 전송에 실패했습니다.");
       }
 
+      const nextThreadId = body.thread_id ?? (selected.kind === "thread" ? selected.threadId : "");
+      const createdAt = body.created_at ?? new Date().toISOString();
+
       setCompose("");
-      await load();
-      if (body.thread_id) {
-        setSelected({ kind: "thread", threadId: body.thread_id });
+
+      setInbox((prev) => {
+        const nextItem: InboxItem | null =
+          selected.kind === "thread"
+            ? (() => {
+                const current = prev.find((item) => item.thread_id === selected.threadId);
+                if (!current) return null;
+                return {
+                  ...current,
+                  last_message: content,
+                  last_message_at: createdAt,
+                  unread_count: 0,
+                };
+              })()
+            : {
+                thread_id: nextThreadId,
+                source_kind: selected.sourceKind,
+                source_id: selected.sourceId,
+                peer_user_id:
+                  available.find(
+                    (item) => item.sourceKind === selected.sourceKind && item.sourceId === selected.sourceId
+                  )?.peerUserId ?? "",
+                peer_nickname: selected.peerNickname,
+                status: "open",
+                unread_count: 0,
+                last_message: content,
+                last_message_at: createdAt,
+                created_at: createdAt,
+              };
+
+        if (!nextItem) return prev;
+
+        const rest = prev.filter((item) => item.thread_id !== nextItem.thread_id);
+        return [nextItem, ...rest];
+      });
+
+      if (selected.kind === "thread" && threadDetail?.thread.id === selected.threadId) {
+        const receiverId =
+          threadDetail.thread.user_a_id === threadDetail.thread.current_user_id
+            ? threadDetail.thread.user_b_id
+            : threadDetail.thread.user_a_id;
+        const optimisticMessage: ChatMessage = {
+          id: body.message_id ?? `local-${Date.now()}`,
+          thread_id: selected.threadId,
+          sender_id: threadDetail.thread.current_user_id,
+          receiver_id: receiverId,
+          content,
+          is_read: true,
+          created_at: createdAt,
+        };
+
+        setThreadDetail({
+          ...threadDetail,
+          messages: [...threadDetail.messages, optimisticMessage],
+        });
+      } else if (selected.kind === "available") {
+        setAvailable((prev) =>
+          prev.filter((item) => !(item.sourceKind === selected.sourceKind && item.sourceId === selected.sourceId))
+        );
+        setThreadDetail(null);
+      }
+
+      if (nextThreadId) {
+        setSelected({ kind: "thread", threadId: nextThreadId });
       }
     } catch (e) {
       alert(e instanceof Error ? e.message : "메시지 전송에 실패했습니다.");
@@ -309,6 +389,7 @@ export default function ChatPage() {
       }
 
       setReportDetails("");
+      setReportPanelOpen(false);
       alert("채팅 신고가 접수되었습니다. 운영진이 확인할게요.");
     } catch (e) {
       alert(e instanceof Error ? e.message : "채팅 신고에 실패했습니다.");
@@ -318,13 +399,19 @@ export default function ChatPage() {
   };
 
   return (
-    <main className="mx-auto max-w-6xl px-4 py-5 md:px-6 md:py-8">
-      <section className="mb-5 rounded-[28px] border border-black/5 bg-white p-5 shadow-[0_14px_40px_rgba(15,23,42,0.06)]">
-        <h1 className="text-2xl font-black tracking-tight text-neutral-950 md:text-3xl">채팅</h1>
-        <p className="mt-2 text-sm leading-6 text-neutral-500">
-          오픈카드, 유료카드, 빠른매칭에서 연결된 상대와 가볍게 대화를 이어갈 수 있어요.
-        </p>
-      </section>
+    <main className="min-h-screen bg-[linear-gradient(180deg,#fffefe_0%,#faf7ff_100%)]">
+      <div className="mx-auto max-w-6xl px-4 py-5 md:px-6 md:py-8">
+        <section className="mb-5 rounded-[28px] border border-rose-100 bg-[linear-gradient(135deg,#f54f7a_0%,#ff8ca6_100%)] px-5 py-4 text-white shadow-[0_18px_36px_rgba(244,63,94,0.18)]">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-black tracking-tight md:text-3xl">채팅</h1>
+              <p className="mt-1 text-sm text-white/85">매칭된 상대와 편하게 대화해요</p>
+            </div>
+            <div className="rounded-full bg-white/18 px-3 py-1 text-xs font-semibold text-white/90">
+              새 연결 알림
+            </div>
+          </div>
+        </section>
 
       {loading ? <p className="text-sm text-neutral-500">채팅을 불러오는 중...</p> : null}
       {error ? <p className="mb-4 rounded-2xl bg-rose-50 p-3 text-sm text-rose-700">{error}</p> : null}
@@ -351,28 +438,44 @@ export default function ChatPage() {
                 ) : (
                   inbox.map((item) => {
                     const active = selected?.kind === "thread" && selected.threadId === item.thread_id;
+                    const initial = item.peer_nickname.trim().charAt(0) || "?";
                     return (
                       <button
                         key={item.thread_id}
                         type="button"
                         onClick={() => setSelected({ kind: "thread", threadId: item.thread_id })}
-                        className={`w-full rounded-[20px] border px-3 py-3 text-left transition ${
-                          active ? "border-rose-200 bg-rose-50" : "border-neutral-200 bg-white hover:bg-neutral-50"
+                        className={`w-full rounded-[22px] border px-3 py-3 text-left transition ${
+                          active ? "border-rose-200 bg-rose-50/80" : "border-neutral-200 bg-white hover:bg-neutral-50"
                         }`}
                       >
-                        <div className="flex items-center justify-between gap-3">
-                          <p className="text-sm font-bold text-neutral-900">{item.peer_nickname}</p>
-                          {item.unread_count > 0 ? (
-                            <span className="rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-bold text-white">
-                              {item.unread_count}
-                            </span>
-                          ) : null}
+                        <div className="flex items-center gap-3">
+                          <div className="relative shrink-0">
+                            <div
+                              className={`flex h-12 w-12 items-center justify-center rounded-full border text-lg font-black ${avatarTone(
+                                item.peer_nickname
+                              )}`}
+                            >
+                              {initial}
+                            </div>
+                            <span className="absolute bottom-0 right-0 h-3 w-3 rounded-full border-2 border-white bg-emerald-400" />
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-start justify-between gap-3">
+                              <p className="truncate text-base font-black text-neutral-900">{item.peer_nickname}</p>
+                              <div className="flex shrink-0 items-center gap-2">
+                                <span className="text-[11px] text-neutral-400">{formatDateTime(item.last_message_at)}</span>
+                                {item.unread_count > 0 ? (
+                                  <span className="inline-flex h-6 min-w-[24px] items-center justify-center rounded-full bg-rose-500 px-2 text-[11px] font-bold text-white">
+                                    {item.unread_count}
+                                  </span>
+                                ) : null}
+                              </div>
+                            </div>
+                            <p className="mt-1 line-clamp-1 text-sm text-neutral-500">
+                              {item.last_message || "대화를 시작해 보세요"}
+                            </p>
+                          </div>
                         </div>
-                        <p className="mt-1 text-xs font-medium text-neutral-500">{sourceLabel(item.source_kind)}</p>
-                        <p className="mt-2 line-clamp-1 text-sm text-neutral-600">
-                          {item.last_message || "대화를 시작해 보세요"}
-                        </p>
-                        <p className="mt-2 text-[11px] text-neutral-400">{formatDateTime(item.last_message_at)}</p>
                       </button>
                     );
                   })
@@ -384,15 +487,27 @@ export default function ChatPage() {
               <h2 className="text-sm font-bold text-neutral-900">채팅 가능한 연결</h2>
               <div className="mt-3 space-y-2">
                 {availableWithoutThread.length === 0 ? (
-                  <p className="rounded-2xl bg-neutral-50 px-3 py-4 text-sm text-neutral-500">
-                    새로 시작할 수 있는 연결이 아직 없습니다.
-                  </p>
+                  <div className="rounded-[22px] border border-neutral-200 bg-neutral-50 px-4 py-8 text-center">
+                    <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-violet-50 text-violet-300">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" className="h-6 w-6">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M8 10a3 3 0 1 0 0-6 3 3 0 0 0 0 6Zm8 0a3 3 0 1 0 0-6 3 3 0 0 0 0 6ZM3 20a5 5 0 0 1 10 0M11 20a5 5 0 0 1 10 0" />
+                      </svg>
+                    </div>
+                    <p className="mt-4 text-sm text-neutral-400">새로 시작할 수 있는 연결이 아직 없어요</p>
+                    <Link
+                      href="/community/dating/cards"
+                      className="mt-4 inline-flex h-11 items-center justify-center rounded-full border border-rose-200 bg-white px-5 text-sm font-semibold text-rose-500"
+                    >
+                      매칭 찾기
+                    </Link>
+                  </div>
                 ) : (
                   availableWithoutThread.map((item) => {
                     const active =
                       selected?.kind === "available" &&
                       selected.sourceId === item.sourceId &&
                       selected.sourceKind === item.sourceKind;
+                    const initial = item.peerNickname.trim().charAt(0) || "?";
 
                     return (
                       <button
@@ -408,13 +523,26 @@ export default function ChatPage() {
                             threadId: item.thread_id ?? null,
                           })
                         }
-                        className={`w-full rounded-[20px] border px-3 py-3 text-left transition ${
+                        className={`w-full rounded-[22px] border px-3 py-3 text-left transition ${
                           active ? "border-sky-200 bg-sky-50" : "border-neutral-200 bg-white hover:bg-neutral-50"
                         }`}
                       >
-                        <p className="text-sm font-bold text-neutral-900">{item.peerNickname}</p>
-                        <p className="mt-1 text-xs font-medium text-neutral-500">{item.title}</p>
-                        <p className="mt-2 text-[11px] text-neutral-400">{formatDateTime(item.createdAt)}</p>
+                        <div className="flex items-center gap-3">
+                          <div
+                            className={`flex h-11 w-11 shrink-0 items-center justify-center rounded-full border text-lg font-black ${avatarTone(
+                              item.peerNickname
+                            )}`}
+                          >
+                            {initial}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="truncate text-sm font-bold text-neutral-900">{item.peerNickname}</p>
+                              <span className="text-[11px] text-neutral-400">{formatDateTime(item.createdAt)}</span>
+                            </div>
+                            <p className="mt-1 line-clamp-1 text-sm text-neutral-500">{item.title}</p>
+                          </div>
+                        </div>
                       </button>
                     );
                   })
@@ -433,20 +561,10 @@ export default function ChatPage() {
                 <div className="flex items-start justify-between gap-3 border-b border-neutral-100 pb-3">
                   <div>
                     <p className="text-lg font-black text-neutral-950">{selectedTitle}</p>
-                    <p className="mt-1 text-xs text-neutral-500">
-                      첫 메시지를 직접 보내야 대화가 시작되는 구조입니다.
-                    </p>
+                    <p className="mt-1 text-xs text-neutral-500">편하게 대화를 이어가 보세요</p>
                   </div>
                   {selected.kind === "thread" ? (
                     <div className="flex flex-wrap items-center justify-end gap-2">
-                      <button
-                        type="button"
-                        onClick={() => void handleReport()}
-                        disabled={reporting}
-                        className="rounded-full border border-rose-200 bg-rose-50 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 disabled:opacity-50"
-                      >
-                        {reporting ? "신고 중..." : "신고"}
-                      </button>
                       <button
                         type="button"
                         onClick={() => void handleLeave()}
@@ -458,34 +576,6 @@ export default function ChatPage() {
                     </div>
                   ) : null}
                 </div>
-
-                {selected.kind === "thread" ? (
-                  <div className="mt-3 rounded-[18px] border border-rose-100 bg-rose-50/60 p-3">
-                    <div className="grid gap-2 sm:grid-cols-[180px_minmax(0,1fr)]">
-                      <select
-                        value={reportReason}
-                        onChange={(e) => setReportReason(e.target.value as (typeof DATING_CHAT_REPORT_REASONS)[number])}
-                        className="h-10 rounded-xl border border-rose-100 bg-white px-3 text-sm text-neutral-900"
-                      >
-                        {DATING_CHAT_REPORT_REASONS.map((reason) => (
-                          <option key={reason} value={reason}>
-                            {reason}
-                          </option>
-                        ))}
-                      </select>
-                      <input
-                        value={reportDetails}
-                        onChange={(e) => setReportDetails(e.target.value)}
-                        maxLength={300}
-                        placeholder="추가 설명이 있으면 적어 주세요 (선택)"
-                        className="h-10 rounded-xl border border-rose-100 bg-white px-3 text-sm text-neutral-900 placeholder:text-neutral-400"
-                      />
-                    </div>
-                    <p className="mt-2 text-[11px] leading-5 text-neutral-500">
-                      신고 시 최근 대화 일부가 함께 저장되어 운영진이 admin 페이지에서 바로 확인할 수 있습니다.
-                    </p>
-                  </div>
-                ) : null}
 
                 <div className="flex-1 space-y-3 overflow-y-auto py-4">
                   {selected.kind === "available" ? (
@@ -539,6 +629,57 @@ export default function ChatPage() {
                       {sending ? "전송 중..." : "보내기"}
                     </button>
                   </div>
+                  {selected.kind === "thread" ? (
+                    <div className="mt-3 rounded-[18px] border border-neutral-200 bg-neutral-50 px-3 py-2.5">
+                      <button
+                        type="button"
+                        onClick={() => setReportPanelOpen((prev) => !prev)}
+                        className="flex w-full items-center justify-between text-left"
+                      >
+                        <span className="text-xs font-semibold text-neutral-600">문제가 있으면 신고하기</span>
+                        <span className="text-[11px] text-neutral-400">{reportPanelOpen ? "접기" : "열기"}</span>
+                      </button>
+                      {reportPanelOpen ? (
+                        <div className="mt-3 space-y-2 border-t border-neutral-200 pt-3">
+                          <div className="grid gap-2 sm:grid-cols-[180px_minmax(0,1fr)]">
+                            <select
+                              value={reportReason}
+                              onChange={(e) =>
+                                setReportReason(e.target.value as (typeof DATING_CHAT_REPORT_REASONS)[number])
+                              }
+                              className="h-10 rounded-xl border border-neutral-200 bg-white px-3 text-sm text-neutral-900"
+                            >
+                              {DATING_CHAT_REPORT_REASONS.map((reason) => (
+                                <option key={reason} value={reason}>
+                                  {reason}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              value={reportDetails}
+                              onChange={(e) => setReportDetails(e.target.value)}
+                              maxLength={300}
+                              placeholder="추가 설명이 있으면 적어 주세요 (선택)"
+                              className="h-10 rounded-xl border border-neutral-200 bg-white px-3 text-sm text-neutral-900 placeholder:text-neutral-400"
+                            />
+                          </div>
+                          <div className="flex items-center justify-between gap-3">
+                            <p className="text-[11px] leading-5 text-neutral-500">
+                              신고 시 최근 대화 일부가 함께 저장되어 운영진이 확인합니다.
+                            </p>
+                            <button
+                              type="button"
+                              onClick={() => void handleReport()}
+                              disabled={reporting}
+                              className="shrink-0 rounded-full border border-rose-200 bg-white px-3 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                            >
+                              {reporting ? "신고 중..." : "신고 접수"}
+                            </button>
+                          </div>
+                        </div>
+                      ) : null}
+                    </div>
+                  ) : null}
                 </div>
               </div>
             )}
@@ -555,6 +696,7 @@ export default function ChatPage() {
           에서 연결이 생기면 여기서 바로 대화를 시작할 수 있어요.
         </section>
       ) : null}
+      </div>
     </main>
   );
 }
