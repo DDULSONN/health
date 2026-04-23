@@ -42,6 +42,37 @@ type AdminReport = {
   owner_banned_reason: string | null;
 };
 
+type AdminChatReport = {
+  id: string;
+  thread_id: string;
+  source_kind: "open" | "paid" | "swipe";
+  source_id: string;
+  reporter_user_id: string;
+  reporter_nickname: string | null;
+  reported_user_id: string;
+  reported_nickname: string | null;
+  reported_is_banned: boolean;
+  reported_banned_reason: string | null;
+  reason: string;
+  details: string | null;
+  status: "open" | "resolved" | "dismissed";
+  created_at: string;
+  reviewed_at: string | null;
+  reviewer_nickname: string | null;
+  thread_status: "open" | "closed" | "deleted";
+  conversation_excerpt:
+    | Array<{
+        id?: string;
+        sender_id?: string;
+        sender_nickname?: string;
+        receiver_id?: string;
+        receiver_nickname?: string;
+        content?: string;
+        created_at?: string;
+      }>
+    | null;
+};
+
 type AdminCardSort = "newest" | "oldest" | "pending_first";
 type AdminCardFilter = "all" | "public" | "pending" | "hidden" | "expired";
 
@@ -55,6 +86,7 @@ function formatDate(value: string | null) {
 export default function AdminDatingCardsPage() {
   const [cards, setCards] = useState<AdminCard[]>([]);
   const [reports, setReports] = useState<AdminReport[]>([]);
+  const [chatReports, setChatReports] = useState<AdminChatReport[]>([]);
   const [cardSort, setCardSort] = useState<AdminCardSort>("newest");
   const [cardFilter, setCardFilter] = useState<AdminCardFilter>("public");
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
@@ -66,9 +98,10 @@ export default function AdminDatingCardsPage() {
     setLoading(true);
     setError("");
     try {
-      const [cardsRes, reportsRes] = await Promise.all([
+      const [cardsRes, reportsRes, chatReportsRes] = await Promise.all([
         fetch("/api/admin/dating/cards?limit=2000", { cache: "no-store" }),
         fetch("/api/admin/dating/reports", { cache: "no-store" }),
+        fetch("/api/admin/dating/chat-reports", { cache: "no-store" }),
       ]);
 
       const cardsBody = (await cardsRes.json().catch(() => ({}))) as {
@@ -79,12 +112,18 @@ export default function AdminDatingCardsPage() {
         items?: AdminReport[];
         error?: string;
       };
+      const chatReportsBody = (await chatReportsRes.json().catch(() => ({}))) as {
+        items?: AdminChatReport[];
+        error?: string;
+      };
 
       if (!cardsRes.ok) throw new Error(cardsBody.error ?? "카드 목록을 불러오지 못했습니다.");
       if (!reportsRes.ok) throw new Error(reportsBody.error ?? "신고 목록을 불러오지 못했습니다.");
+      if (!chatReportsRes.ok) throw new Error(chatReportsBody.error ?? "채팅 신고 목록을 불러오지 못했습니다.");
 
       setCards(cardsBody.items ?? []);
       setReports(reportsBody.items ?? []);
+      setChatReports(chatReportsBody.items ?? []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "알 수 없는 오류가 발생했습니다.");
     } finally {
@@ -133,6 +172,19 @@ export default function AdminDatingCardsPage() {
     });
   }, [reports]);
 
+  const sortedChatReports = useMemo(() => {
+    const rank: Record<AdminChatReport["status"], number> = {
+      open: 0,
+      resolved: 1,
+      dismissed: 2,
+    };
+    return [...chatReports].sort((a, b) => {
+      const statusGap = rank[a.status] - rank[b.status];
+      if (statusGap !== 0) return statusGap;
+      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+    });
+  }, [chatReports]);
+
   useEffect(() => {
     const visibleIds = new Set(visibleCards.map((card) => card.id));
     setSelectedCardIds((prev) => prev.filter((id) => visibleIds.has(id)));
@@ -142,6 +194,7 @@ export default function AdminDatingCardsPage() {
     visibleCards.length > 0 && visibleCards.every((card) => selectedCardIds.includes(card.id));
 
   const openReportCount = reports.filter((report) => report.status === "open").length;
+  const openChatReportCount = chatReports.filter((report) => report.status === "open").length;
 
   const toggleCardSelection = (id: string, checked: boolean) => {
     setSelectedCardIds((prev) => {
@@ -240,6 +293,24 @@ export default function AdminDatingCardsPage() {
       return;
     }
     setReports((prev) => prev.map((report) => (report.id === id ? { ...report, status } : report)));
+  };
+
+  const updateChatReportStatus = async (id: string, status: AdminChatReport["status"]) => {
+    const res = await fetch(`/api/admin/dating/chat-reports/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    if (!res.ok) {
+      alert(body.error ?? "채팅 신고 상태 변경에 실패했습니다.");
+      return;
+    }
+    setChatReports((prev) =>
+      prev.map((report) =>
+        report.id === id ? { ...report, status, reviewed_at: new Date().toISOString() } : report
+      )
+    );
   };
 
   const banReportedUser = async (reportId: string) => {
@@ -529,6 +600,119 @@ export default function AdminDatingCardsPage() {
               ))}
 
               {sortedReports.length === 0 ? <p className="text-sm text-neutral-500">접수된 신고가 없습니다.</p> : null}
+            </div>
+          </section>
+
+          <section className="mt-8">
+            <div className="mb-3 flex items-center justify-between gap-2">
+              <div>
+                <h2 className="text-lg font-semibold text-neutral-900">채팅 신고</h2>
+                <p className="mt-1 text-xs text-neutral-500">신고 시점의 최근 대화 스냅샷을 함께 보고 처리할 수 있습니다.</p>
+              </div>
+              <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700">
+                open {openChatReportCount}건
+              </span>
+            </div>
+
+            <div className="space-y-3">
+              {sortedChatReports.map((report) => (
+                <div key={report.id} className="rounded-xl border border-neutral-200 bg-white p-3">
+                  <div className="flex flex-wrap items-start justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-medium text-neutral-900">
+                        {report.reported_nickname || "(닉네임 없음)"} · {report.source_kind}
+                      </p>
+                      <p className="mt-1 break-all text-xs text-neutral-500">thread_id: {report.thread_id}</p>
+                    </div>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex rounded-full bg-neutral-100 px-2 py-1 text-xs text-neutral-700">
+                        상태: {report.status}
+                      </span>
+                      <span className="inline-flex rounded-full bg-neutral-100 px-2 py-1 text-xs text-neutral-700">
+                        thread: {report.thread_status}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 grid gap-2 rounded-lg border border-neutral-100 bg-neutral-50 p-3 text-xs text-neutral-700 sm:grid-cols-2">
+                    <div>
+                      <p className="font-medium text-neutral-900">신고자</p>
+                      <p className="mt-1">{report.reporter_nickname || "(닉네임 없음)"}</p>
+                      <p className="mt-1 break-all text-neutral-500">{report.reporter_user_id}</p>
+                    </div>
+                    <div>
+                      <p className="font-medium text-neutral-900">신고 대상</p>
+                      <p className="mt-1">{report.reported_nickname || "(닉네임 없음)"}</p>
+                      <p className="mt-1 break-all text-neutral-500">{report.reported_user_id}</p>
+                      <p className="mt-1">
+                        밴 여부: {report.reported_is_banned ? "Y" : "N"}
+                        {report.reported_banned_reason ? ` · ${report.reported_banned_reason}` : ""}
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 rounded-lg border border-rose-100 bg-rose-50/60 p-3">
+                    <p className="text-xs font-medium text-neutral-900">신고 사유</p>
+                    <p className="mt-1 text-sm text-neutral-800">{report.reason}</p>
+                    {report.details ? (
+                      <>
+                        <p className="mt-3 text-xs font-medium text-neutral-900">추가 설명</p>
+                        <p className="mt-1 whitespace-pre-wrap break-words text-sm text-neutral-700">{report.details}</p>
+                      </>
+                    ) : null}
+                    <p className="mt-2 text-[11px] text-neutral-500">{formatDate(report.created_at)}</p>
+                  </div>
+
+                  <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                    <div className="mb-2 flex items-center justify-between gap-2">
+                      <p className="text-xs font-medium text-neutral-900">신고 당시 최근 대화</p>
+                      <p className="text-[11px] text-neutral-500">
+                        {Array.isArray(report.conversation_excerpt) ? report.conversation_excerpt.length : 0}개 메시지
+                      </p>
+                    </div>
+                    <div className="space-y-2">
+                      {Array.isArray(report.conversation_excerpt) && report.conversation_excerpt.length > 0 ? (
+                        report.conversation_excerpt.map((message, index) => (
+                          <div key={message.id ?? `${report.id}-${index}`} className="rounded-lg bg-white px-3 py-2">
+                            <p className="text-[11px] font-medium text-neutral-500">
+                              {message.sender_nickname || "익명"} → {message.receiver_nickname || "익명"} ·{" "}
+                              {formatDate(message.created_at ?? null)}
+                            </p>
+                            <p className="mt-1 whitespace-pre-wrap break-words text-sm text-neutral-800">
+                              {message.content || "(내용 없음)"}
+                            </p>
+                          </div>
+                        ))
+                      ) : (
+                        <p className="text-sm text-neutral-500">저장된 대화 스냅샷이 없습니다.</p>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      onClick={() => void updateChatReportStatus(report.id, "resolved")}
+                      className="h-8 rounded-md bg-emerald-600 px-3 text-xs text-white"
+                    >
+                      해결
+                    </button>
+                    <button
+                      onClick={() => void updateChatReportStatus(report.id, "dismissed")}
+                      className="h-8 rounded-md bg-neutral-800 px-3 text-xs text-white"
+                    >
+                      기각
+                    </button>
+                    <button
+                      onClick={() => void updateChatReportStatus(report.id, "open")}
+                      className="h-8 rounded-md bg-amber-600 px-3 text-xs text-white"
+                    >
+                      다시 열기
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {sortedChatReports.length === 0 ? <p className="text-sm text-neutral-500">접수된 채팅 신고가 없습니다.</p> : null}
             </div>
           </section>
         </>

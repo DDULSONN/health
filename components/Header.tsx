@@ -12,6 +12,7 @@ const HeaderUserMenu = dynamic(() => import("@/components/HeaderUserMenu"), {
 
 const NAV_ITEMS = [
   { href: "/community/dating/cards", label: "홈" },
+  { href: "/chat", label: "채팅" },
   { href: "/dating/1on1", label: "1:1" },
   { href: "/community", label: "커뮤니티" },
   { href: "/lifts", label: "도구" },

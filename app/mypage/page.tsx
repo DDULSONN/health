@@ -828,13 +828,15 @@ export default function MyPage() {
   const [adminOpenCards, setAdminOpenCards] = useState<AdminOpenCard[]>([]);
   const [adminOpenCardApplications, setAdminOpenCardApplications] = useState<AdminOpenCardApplication[]>([]);
   const [adminPaidCardApplications, setAdminPaidCardApplications] = useState<AdminPaidCardApplication[]>([]);
+  const [adminOpenCardsLoaded, setAdminOpenCardsLoaded] = useState(false);
+  const [adminOpenCardsLoading, setAdminOpenCardsLoading] = useState(false);
   const [editingAdminOpenCardId, setEditingAdminOpenCardId] = useState<string | null>(null);
   const [adminOpenCardDraft, setAdminOpenCardDraft] = useState<AdminOpenCardEditDraft | null>(null);
   const [savingAdminOpenCard, setSavingAdminOpenCard] = useState(false);
   const [adminCardSort, setAdminCardSort] = useState<AdminCardSort>("public_first");
   const [adminApplicationSort, setAdminApplicationSort] = useState<AdminApplicationSort>("newest");
   const [adminDataView, setAdminDataView] = useState<AdminDataView>("cards");
-  const [adminManageTab, setAdminManageTab] = useState<AdminManageTab>("open_cards");
+  const [adminManageTab, setAdminManageTab] = useState<AdminManageTab>("site_dashboard");
   const [adminApplyCreditOrders, setAdminApplyCreditOrders] = useState<AdminApplyCreditOrder[]>([]);
   const [adminSwipeSubscriptionRequests, setAdminSwipeSubscriptionRequests] = useState<AdminSwipeSubscriptionRequest[]>([]);
   const [adminMoreViewRequests, setAdminMoreViewRequests] = useState<AdminMoreViewRequest[]>([]);
@@ -866,6 +868,7 @@ export default function MyPage() {
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
   const [processingSwipeLikeBackIds, setProcessingSwipeLikeBackIds] = useState<string[]>([]);
   const [deletingSwipeLikeIds, setDeletingSwipeLikeIds] = useState<string[]>([]);
+  const [deletingConnectionIds, setDeletingConnectionIds] = useState<string[]>([]);
   const [cancelingAppliedIds, setCancelingAppliedIds] = useState<string[]>([]);
   const [showAllOutgoingSwipeLikes, setShowAllOutgoingSwipeLikes] = useState(false);
   const [showAllIncomingSwipeLikes, setShowAllIncomingSwipeLikes] = useState(false);
@@ -941,44 +944,25 @@ export default function MyPage() {
         }
 
         try {
-          const [overviewRes, ordersRes, paidAppsRes, moreViewRes, cityViewRes, swipeRes] = await Promise.all([
-            fetch("/api/dating/cards/admin/overview", { cache: "no-store" }),
+          const [ordersRes, moreViewRes, cityViewRes, swipeRes] = await Promise.all([
             fetch("/api/admin/dating/apply-credits/orders?status=pending", { cache: "no-store" }),
-            fetch("/api/admin/dating/paid/applications", { cache: "no-store" }),
             fetch("/api/admin/dating/cards/more-view/requests?status=pending", { cache: "no-store" }),
             fetch("/api/admin/dating/cards/city-view/requests?status=pending", { cache: "no-store" }),
             fetch("/api/admin/dating/cards/swipe-subscriptions?status=pending", { cache: "no-store" }),
           ]);
 
-          const [overviewBody, ordersBody, paidAppsBody, moreViewBody, cityViewBody, swipeBody] = await Promise.all([
-            overviewRes.json().catch(() => ({})),
+          const [ordersBody, moreViewBody, cityViewBody, swipeBody] = await Promise.all([
             ordersRes.json().catch(() => ({})),
-            paidAppsRes.json().catch(() => ({})),
             moreViewRes.json().catch(() => ({})),
             cityViewRes.json().catch(() => ({})),
             swipeRes.json().catch(() => ({})),
           ]);
-
-          if (overviewRes.ok) {
-            const body = overviewBody as { cards?: AdminOpenCard[]; applications?: AdminOpenCardApplication[] };
-            setAdminOpenCards(body.cards ?? []);
-            setAdminOpenCardApplications(body.applications ?? []);
-          } else {
-            console.error("[mypage] admin overview refresh failed", overviewBody);
-          }
 
           if (ordersRes.ok) {
             const body = ordersBody as { items?: AdminApplyCreditOrder[] };
             setAdminApplyCreditOrders(body.items ?? []);
           } else {
             console.error("[mypage] apply credit orders refresh failed", ordersBody);
-          }
-
-          if (paidAppsRes.ok) {
-            const body = paidAppsBody as { items?: AdminPaidCardApplication[] };
-            setAdminPaidCardApplications(body.items ?? []);
-          } else {
-            console.error("[mypage] paid applications refresh failed", paidAppsBody);
           }
 
           if (moreViewRes.ok) {
@@ -1006,6 +990,53 @@ export default function MyPage() {
         } finally {
           if (showLoading) {
             setAdminQueueRefreshing(false);
+          }
+        }
+      },
+    [isAdmin]
+  );
+
+  const refreshAdminOpenCardData = useMemo(
+    () =>
+      async (showLoading = true) => {
+        if (!isAdmin) return;
+
+        if (showLoading) {
+          setAdminOpenCardsLoading(true);
+        }
+
+        try {
+          const [overviewRes, paidAppsRes] = await Promise.all([
+            fetch("/api/dating/cards/admin/overview", { cache: "no-store" }),
+            fetch("/api/admin/dating/paid/applications", { cache: "no-store" }),
+          ]);
+
+          const [overviewBody, paidAppsBody] = await Promise.all([
+            overviewRes.json().catch(() => ({})),
+            paidAppsRes.json().catch(() => ({})),
+          ]);
+
+          if (overviewRes.ok) {
+            const body = overviewBody as { cards?: AdminOpenCard[]; applications?: AdminOpenCardApplication[] };
+            setAdminOpenCards(body.cards ?? []);
+            setAdminOpenCardApplications(body.applications ?? []);
+          } else {
+            console.error("[mypage] admin overview refresh failed", overviewBody);
+          }
+
+          if (paidAppsRes.ok) {
+            const body = paidAppsBody as { items?: AdminPaidCardApplication[] };
+            setAdminPaidCardApplications(body.items ?? []);
+          } else {
+            console.error("[mypage] paid applications refresh failed", paidAppsBody);
+          }
+
+          setAdminOpenCardsLoaded(true);
+        } catch (error) {
+          console.error("[mypage] admin open card data refresh failed", error);
+        } finally {
+          if (showLoading) {
+            setAdminOpenCardsLoading(false);
           }
         }
       },
@@ -1226,9 +1257,7 @@ export default function MyPage() {
             const [
               datingStatsRes,
               datingInsightsRes,
-              overviewRes,
               ordersRes,
-              paidAppsRes,
               moreViewRes,
               cityViewRes,
               bodyBattleOverviewRes,
@@ -1236,19 +1265,12 @@ export default function MyPage() {
             ] = await Promise.all([
               fetch("/api/admin/dating/stats", { cache: "no-store" }),
               fetch("/api/admin/dating/insights", { cache: "no-store" }),
-              fetch("/api/dating/cards/admin/overview", { cache: "no-store" }),
               fetch("/api/admin/dating/apply-credits/orders?status=pending", { cache: "no-store" }),
-              fetch("/api/admin/dating/paid/applications", { cache: "no-store" }),
               fetch("/api/admin/dating/cards/more-view/requests?status=pending", { cache: "no-store" }),
               fetch("/api/admin/dating/cards/city-view/requests?status=pending", { cache: "no-store" }),
               fetch("/api/admin/bodybattle/overview", { cache: "no-store" }),
               fetch("/api/admin/account-deletion-audits", { cache: "no-store" }),
             ]);
-            const overviewBody = (await overviewRes.json().catch(() => ({}))) as {
-              error?: string;
-              cards?: AdminOpenCard[];
-              applications?: AdminOpenCardApplication[];
-            };
             const datingStatsBody = (await datingStatsRes.json().catch(() => ({}))) as {
               error?: string;
               stats?: AdminDatingStats;
@@ -1259,10 +1281,6 @@ export default function MyPage() {
             const ordersBody = (await ordersRes.json().catch(() => ({}))) as {
               error?: string;
               items?: AdminApplyCreditOrder[];
-            };
-            const paidAppsBody = (await paidAppsRes.json().catch(() => ({}))) as {
-              error?: string;
-              items?: AdminPaidCardApplication[];
             };
             const moreViewBody = (await moreViewRes.json().catch(() => ({}))) as {
               error?: string;
@@ -1282,9 +1300,6 @@ export default function MyPage() {
               error?: string;
               items?: AdminAccountDeletionAudit[];
             };
-            if (!overviewRes.ok) {
-              console.error("[mypage] admin overview load failed", overviewBody);
-            }
             if (!datingStatsRes.ok) {
               console.error("[mypage] admin dating stats load failed", datingStatsBody);
             }
@@ -1294,9 +1309,6 @@ export default function MyPage() {
             if (!ordersRes.ok) {
               console.error("[mypage] admin apply credits load failed", ordersBody);
             }
-            if (!paidAppsRes.ok) {
-              console.error("[mypage] admin paid applications load failed", paidAppsBody);
-            }
             if (isMounted) {
               setAdminDatingStats(datingStatsRes.ok ? datingStatsBody.stats ?? null : null);
               setAdminDatingInsights(
@@ -1304,9 +1316,10 @@ export default function MyPage() {
                   ? datingInsightsBody
                   : null
               );
-              setAdminOpenCards(overviewRes.ok ? overviewBody.cards ?? [] : []);
-              setAdminOpenCardApplications(overviewRes.ok ? overviewBody.applications ?? [] : []);
-              setAdminPaidCardApplications(paidAppsRes.ok ? paidAppsBody.items ?? [] : []);
+              setAdminOpenCards([]);
+              setAdminOpenCardApplications([]);
+              setAdminPaidCardApplications([]);
+              setAdminOpenCardsLoaded(false);
               setAdminApplyCreditOrders(ordersRes.ok ? ordersBody.items ?? [] : []);
               setAdminMoreViewRequests(moreViewRes.ok ? moreViewBody.items ?? [] : []);
               setAdminCityViewRequests(cityViewRes.ok ? cityViewBody.items ?? [] : []);
@@ -1325,6 +1338,7 @@ export default function MyPage() {
             setAdminOpenCards([]);
             setAdminOpenCardApplications([]);
             setAdminPaidCardApplications([]);
+            setAdminOpenCardsLoaded(false);
             setAdminApplyCreditOrders([]);
             setAdminSwipeSubscriptionRequests([]);
             setAdminMoreViewRequests([]);
@@ -1351,6 +1365,14 @@ export default function MyPage() {
       setActiveTab("my_cert");
     }
   }, [isAdmin, activeTab]);
+
+  useEffect(() => {
+    if (!isAdmin || adminManageTab !== "open_cards" || adminOpenCardsLoaded || adminOpenCardsLoading) {
+      return;
+    }
+
+    void refreshAdminOpenCardData(true);
+  }, [adminManageTab, adminOpenCardsLoaded, adminOpenCardsLoading, isAdmin, refreshAdminOpenCardData]);
 
   useEffect(() => {
     if (loading) return;
@@ -1954,6 +1976,108 @@ export default function MyPage() {
       throw new Error(paidBody.error ?? "유료카드 매칭 정보를 다시 불러오지 못했습니다.");
     }
     setDatingConnections([...(openBody.items ?? []), ...(paidBody.items ?? [])]);
+  };
+
+  const reloadOpenAppliedApplications = async () => {
+    const [receivedRes, appliedRes] = await Promise.all([
+      fetch("/api/dating/cards/my/received", { cache: "no-store" }),
+      fetch("/api/dating/cards/my/applied", { cache: "no-store" }),
+    ]);
+
+    const receivedBody = (await receivedRes.json().catch(() => ({}))) as {
+      cards?: MyDatingCard[];
+      applications?: ReceivedCardApplication[];
+      error?: string;
+    };
+    const appliedBody = (await appliedRes.json().catch(() => ({}))) as {
+      applications?: MyAppliedCardApplication[];
+      error?: string;
+    };
+
+    if (receivedRes.ok) {
+      setMyDatingCards(receivedBody.cards ?? []);
+      setReceivedApplications(receivedBody.applications ?? []);
+    }
+    if (appliedRes.ok) {
+      setMyAppliedCardApplications(appliedBody.applications ?? []);
+    }
+  };
+
+  const reloadPaidAppliedApplications = async () => {
+    const [receivedRes, appliedRes] = await Promise.all([
+      fetch("/api/dating/paid/my/received", { cache: "no-store" }),
+      fetch("/api/dating/paid/my/applied", { cache: "no-store" }),
+    ]);
+
+    const receivedBody = (await receivedRes.json().catch(() => ({}))) as {
+      cards?: MyPaidCard[];
+      applications?: ReceivedPaidApplication[];
+      error?: string;
+    };
+    const appliedBody = (await appliedRes.json().catch(() => ({}))) as {
+      applications?: MyAppliedPaidApplication[];
+      error?: string;
+    };
+
+    if (receivedRes.ok) {
+      setMyPaidCards(receivedBody.cards ?? []);
+      setReceivedPaidApplications(receivedBody.applications ?? []);
+    }
+    if (appliedRes.ok) {
+      setMyAppliedPaidApplications(appliedBody.applications ?? []);
+    }
+  };
+
+  const handleDeleteDatingConnection = async (item: DatingConnection) => {
+    const deletingKey = `${item.source ?? "open"}:${item.application_id}`;
+    if (deletingConnectionIds.includes(deletingKey)) return;
+
+    const confirmMessage =
+      item.source === "swipe"
+        ? "이 자동 매칭을 삭제할까요? 인스타 교환 목록과 빠른매칭 매칭 상태에서 함께 빠집니다."
+        : "이 연결을 삭제할까요? 인스타 교환 목록에서 바로 빠집니다.";
+    if (!confirm(confirmMessage)) return;
+
+    setDeletingConnectionIds((prev) => [...prev, deletingKey]);
+    try {
+      let res: Response;
+
+      if (item.source === "swipe") {
+        res = await fetch(`/api/dating/cards/my/swipe-matches/${item.application_id}`, {
+          method: "DELETE",
+        });
+      } else if (item.source === "paid") {
+        res = await fetch(`/api/dating/paid/applications/${item.application_id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "canceled" }),
+        });
+      } else {
+        res = await fetch(`/api/dating/cards/applications/${item.application_id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "canceled" }),
+        });
+      }
+
+      const body = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean; message?: string };
+      if (!res.ok || body.ok === false) {
+        alert(body.error ?? body.message ?? "연결 삭제에 실패했습니다.");
+        return;
+      }
+
+      if (item.source === "swipe") {
+        await Promise.all([reloadSwipeStatus(), reloadOpenDatingConnections()]);
+      } else if (item.source === "paid") {
+        await Promise.all([reloadPaidAppliedApplications(), reloadOpenDatingConnections()]);
+      } else {
+        await Promise.all([reloadOpenAppliedApplications(), reloadOpenDatingConnections()]);
+      }
+
+      alert(body.message ?? "연결을 삭제했습니다.");
+    } finally {
+      setDeletingConnectionIds((prev) => prev.filter((id) => id !== deletingKey));
+    }
   };
 
   const handleSwipeLikeBack = async (item: SwipeStatusItem) => {
@@ -4539,7 +4663,7 @@ export default function MyPage() {
         ) : (
           <div className="space-y-3">
             {datingConnections.map((item) => (
-              <div key={item.application_id} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+              <div key={`${item.source ?? "open"}:${item.application_id}`} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
                 <p className="text-sm font-medium text-neutral-900">{item.other_nickname}</p>
                 <p className="text-xs text-neutral-500 mt-1">
                   연결일 {new Date(item.created_at).toLocaleDateString("ko-KR")}
@@ -4576,6 +4700,18 @@ export default function MyPage() {
                     )}
                   </div>
                 )}
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    disabled={deletingConnectionIds.includes(`${item.source ?? "open"}:${item.application_id}`)}
+                    onClick={() => void handleDeleteDatingConnection(item)}
+                    className="h-8 rounded-md border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60"
+                  >
+                    {deletingConnectionIds.includes(`${item.source ?? "open"}:${item.application_id}`)
+                      ? "삭제 중..."
+                      : "연결 삭제"}
+                  </button>
+                </div>
               </div>
             ))}
           </div>
@@ -4590,11 +4726,21 @@ export default function MyPage() {
             <h2 className="text-lg font-bold text-violet-900">오픈카드 전체 내용 (관리자)</h2>
             <button
               type="button"
-              disabled={adminQueueRefreshing}
-              onClick={() => void refreshAdminQueueData(true)}
+              disabled={adminManageTab === "open_cards" ? adminOpenCardsLoading : adminQueueRefreshing}
+              onClick={() =>
+                void (adminManageTab === "open_cards"
+                  ? refreshAdminOpenCardData(true)
+                  : refreshAdminQueueData(true))
+              }
               className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {adminQueueRefreshing ? "새로고침 중..." : "신청목록 새로고침"}
+              {adminManageTab === "open_cards"
+                ? adminOpenCardsLoading
+                  ? "불러오는 중..."
+                  : "오픈카드 새로고침"
+                : adminQueueRefreshing
+                  ? "새로고침 중..."
+                  : "신청목록 새로고침"}
             </button>
           </div>
 
@@ -5977,6 +6123,11 @@ export default function MyPage() {
 
           {adminManageTab === "open_cards" && (
           <div className="space-y-3">
+            {!adminOpenCardsLoaded ? (
+              <div className="rounded-xl border border-violet-200 bg-white p-4 text-sm text-neutral-600">
+                오픈카드 탭을 열 때만 전체 카드와 지원 내역을 불러오도록 바꿨습니다. 잠시만 기다려 주세요.
+              </div>
+            ) : null}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-violet-800">
                 카드 {adminOpenCards.length}건 / 오픈카드 지원 {adminOpenCardApplications.length}건 / 36시간 지원 {adminPaidCardApplications.length}건

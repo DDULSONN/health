@@ -62,8 +62,11 @@ export async function PATCH(
   }
 
   if (status === "canceled") {
-    if (!isApplicant && !isAdmin) {
+    if (!isApplicant && !isOwner && !isAdmin) {
       return NextResponse.json({ error: "취소 권한이 없습니다." }, { status: 403 });
+    }
+    if (isOwner && app.status !== "accepted" && !isAdmin) {
+      return NextResponse.json({ error: "수락된 연결만 삭제할 수 있습니다." }, { status: 409 });
     }
     if (app.status === "canceled" && !isAdmin) {
       return NextResponse.json({ error: "이미 취소된 지원서입니다." }, { status: 409 });
@@ -79,6 +82,19 @@ export async function PATCH(
   if (updateError) {
     console.error("[PATCH /api/dating/cards/applications/[id]] failed", updateError);
     return NextResponse.json({ error: "상태 변경에 실패했습니다." }, { status: 500 });
+  }
+
+  if (status === "canceled") {
+    const { error: deleteThreadError } = await adminClient
+      .from("dating_chat_threads")
+      .delete()
+      .eq("source_kind", "open")
+      .eq("source_id", id);
+
+    if (deleteThreadError) {
+      console.error("[PATCH /api/dating/cards/applications/[id]] delete thread failed", deleteThreadError);
+      return NextResponse.json({ error: "연결은 삭제됐지만 채팅 정리에 실패했습니다." }, { status: 500 });
+    }
   }
 
   let cardHidden = false;

@@ -48,8 +48,11 @@ export async function PATCH(
   const isAdmin = isAdminEmail(user.email);
 
   if (status === "canceled") {
-    if (!isApplicant && !isAdmin) {
+    if (!isApplicant && !isOwner && !isAdmin) {
       return NextResponse.json({ error: "취소 권한이 없습니다." }, { status: 403 });
+    }
+    if (isOwner && app.status !== "accepted" && !isAdmin) {
+      return NextResponse.json({ error: "수락된 연결만 삭제할 수 있습니다." }, { status: 409 });
     }
   } else if (!isOwner && !isAdmin) {
     return NextResponse.json({ error: "처리 권한이 없습니다." }, { status: 403 });
@@ -65,6 +68,19 @@ export async function PATCH(
     return NextResponse.json({ error: "상태 변경에 실패했습니다." }, { status: 500 });
   }
 
-  // Note: paid card stays public even when accepted (multi-accept allowed).
+  if (status === "canceled") {
+    const { error: deleteThreadError } = await admin
+      .from("dating_chat_threads")
+      .delete()
+      .eq("source_kind", "paid")
+      .eq("source_id", id);
+
+    if (deleteThreadError) {
+      console.error("[PATCH /api/dating/paid/applications/[id]] delete thread failed", deleteThreadError);
+      return NextResponse.json({ error: "연결은 삭제됐지만 채팅 정리에 실패했습니다." }, { status: 500 });
+    }
+  }
+
+  // Paid card stays public even when accepted because multiple accepts are allowed.
   return NextResponse.json({ ok: true, status });
 }
