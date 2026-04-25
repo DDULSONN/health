@@ -357,37 +357,54 @@ function DatingOneOnOnePageContent() {
         <h1 className="text-2xl font-bold text-neutral-900">
           {isEditMode ? "1:1 오프라인 소개팅 신청서 수정" : "1:1 오프라인 소개팅"}
         </h1>
-        <p className="mt-2 text-sm text-neutral-700">운영자가 직접 매칭하는 오프라인 소개팅 서비스입니다.</p>
-        <p className="text-sm text-neutral-700">신청은 무료이며, 매칭 성사 시에만 매칭비 20,000원이 발생합니다.</p>
-        <p className="text-sm text-neutral-700">신청 내용은 외부에 공개되지 않습니다.</p>
+        <p className="mt-2 text-sm text-neutral-700">운영자가 매칭을 관리하고, 서로 수락되면 번호 교환이 진행되는 1:1 소개팅입니다.</p>
+        <p className="text-sm text-neutral-700">신청은 무료이며, 번호 교환 단계에서만 매칭비 20,000원이 발생합니다.</p>
+        <p className="text-sm text-neutral-700">신청 내용은 외부 공개 없이 매칭 진행에만 사용됩니다.</p>
         <p className="mt-2 text-sm font-medium text-emerald-700">
           지금까지 {Number(status?.totalApplications ?? 0).toLocaleString("ko-KR")}명이 1:1 소개팅을 신청했습니다.
         </p>
         <p className="mt-2 text-xs text-neutral-500">
-          카드 본문에는 상대에게 전달할 정보만 담기며, 전화번호는 운영자 확인용으로만 별도 보관됩니다.
+          카드 내용에는 소개에 필요한 정보만 담기고, 전화번호는 승인 전까지 상대에게 공개되지 않습니다.
         </p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
+            <p className="text-[11px] font-semibold tracking-wide text-neutral-500">1단계</p>
+            <p className="mt-1 text-sm font-semibold text-neutral-900">신청은 무료</p>
+            <p className="mt-1 text-xs leading-5 text-neutral-600">프로필을 작성하면 운영자가 후보를 연결합니다.</p>
+          </div>
+          <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
+            <p className="text-[11px] font-semibold tracking-wide text-neutral-500">2단계</p>
+            <p className="mt-1 text-sm font-semibold text-neutral-900">서로 수락</p>
+            <p className="mt-1 text-xs leading-5 text-neutral-600">쌍방 수락이 되면 지원자에게 번호 교환 안내가 열립니다.</p>
+          </div>
+          <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-3">
+            <p className="text-[11px] font-semibold tracking-wide text-emerald-700">3단계</p>
+            <p className="mt-1 text-sm font-semibold text-emerald-900">번호 교환</p>
+            <p className="mt-1 text-xs leading-5 text-emerald-800">매칭비 20,000원 확인 후 양쪽 번호가 공개됩니다.</p>
+          </div>
+        </div>
       </section>
 
       <DatingAdultNotice />
 
       <section className="mt-4 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h2 className="text-lg font-semibold text-neutral-900">주의사항 및 동의</h2>
+        <h2 className="text-lg font-semibold text-neutral-900">이용 전 확인</h2>
         <div className="mt-3 space-y-2 text-sm text-neutral-700">
           <label className="flex items-start gap-2">
             <input type="checkbox" checked={consentFakeInfo} onChange={(e) => setConsentFakeInfo(e.target.checked)} className="mt-1" />
-            허위 정보 작성 시 서비스 이용이 제한될 수 있음에 동의합니다.
+            허위 정보 작성 시 이용이 제한될 수 있음을 확인했습니다.
           </label>
           <label className="flex items-start gap-2">
             <input type="checkbox" checked={consentNoShow} onChange={(e) => setConsentNoShow(e.target.checked)} className="mt-1" />
-            노쇼 및 무단 취소 시 향후 이용이 제한될 수 있음에 동의합니다.
+            노쇼나 무단 취소 시 재이용이 제한될 수 있음을 확인했습니다.
           </label>
           <label className="flex items-start gap-2">
             <input type="checkbox" checked={consentFee} onChange={(e) => setConsentFee(e.target.checked)} className="mt-1" />
-            매칭 성사 시 매칭비가 발생함을 이해했습니다.
+            번호 교환 진행 시 매칭비가 발생함을 확인했습니다.
           </label>
           <label className="flex items-start gap-2">
             <input type="checkbox" checked={consentPrivacy} onChange={(e) => setConsentPrivacy(e.target.checked)} className="mt-1" />
-            개인정보는 매칭 목적에 한해 사용됨에 동의합니다.
+            개인정보가 매칭 진행 목적에 한해 사용됨을 확인했습니다.
           </label>
         </div>
       </section>
@@ -399,9 +416,9 @@ function DatingOneOnOnePageContent() {
         <details className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2">
           <summary className="cursor-pointer text-sm font-medium text-neutral-800">1:1 진행 방식 간단히 보기</summary>
           <div className="mt-2 space-y-1 text-xs leading-5 text-neutral-600">
-            <p>1. 신청서를 올리면 운영자가 상대 후보를 연결합니다.</p>
-            <p>2. 서로 수락하면 지원자에게 번호 교환 안내가 뜹니다.</p>
-            <p>3. 관리자 승인 후 양쪽 마이페이지에 번호가 공개됩니다.</p>
+            <p>1. 신청서를 올리면 운영자가 후보 연결을 진행합니다.</p>
+            <p>2. 서로 수락되면 지원한 사람에게 번호 교환 안내가 뜹니다.</p>
+            <p>3. 매칭비 확인 후 관리자 승인으로 양쪽 번호가 공개됩니다.</p>
           </div>
         </details>
         {!isEditMode && !status.phoneVerified && (
