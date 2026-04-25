@@ -102,6 +102,20 @@ type AdminMatchItem = {
   candidate_card: MatchCard | null;
 };
 
+type OneOnOneNoticePreview = {
+  recipient_count: number;
+  legacy_mutual_user_count: number;
+  new_mutual_user_count: number;
+  subject: string;
+  preview_lines: string[];
+};
+
+type OneOnOneNoticeSendResult = {
+  requested: number;
+  sent: number;
+  failed: number;
+};
+
 type AutoCandidateRange = {
   minAge: number | null;
   maxAge: number | null;
@@ -317,6 +331,10 @@ export default function AdminDatingOneOnOnePage() {
   const [editStatusById, setEditStatusById] = useState<Record<string, StatusValue>>({});
   const [editNoteById, setEditNoteById] = useState<Record<string, string>>({});
   const [editTagsById, setEditTagsById] = useState<Record<string, string>>({});
+  const [noticePreview, setNoticePreview] = useState<OneOnOneNoticePreview | null>(null);
+  const [noticeLoading, setNoticeLoading] = useState(false);
+  const [noticeSending, setNoticeSending] = useState(false);
+  const [noticeSendResult, setNoticeSendResult] = useState<OneOnOneNoticeSendResult | null>(null);
 
   const buildQuery = () => {
     const qs = new URLSearchParams();
@@ -401,6 +419,20 @@ export default function AdminDatingOneOnOnePage() {
     }
   };
 
+  const loadNoticePreview = async () => {
+    setNoticeLoading(true);
+    try {
+      const res = await fetch("/api/admin/dating/1on1/notice", { cache: "no-store" });
+      const body = (await res.json().catch(() => ({}))) as OneOnOneNoticePreview & { error?: string };
+      if (!res.ok) {
+        throw new Error(body.error ?? "안내 메일 미리보기를 불러오지 못했습니다.");
+      }
+      setNoticePreview(body);
+    } finally {
+      setNoticeLoading(false);
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -420,7 +452,7 @@ export default function AdminDatingOneOnOnePage() {
           return;
         }
 
-        await load();
+        await Promise.all([load(), loadNoticePreview()]);
       } catch (e) {
         if (!mounted) return;
         setError(e instanceof Error ? e.message : String(e));
@@ -447,6 +479,45 @@ export default function AdminDatingOneOnOnePage() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleSendPolicyNotice = async () => {
+    if (noticeSending) return;
+
+    const targetCount = noticePreview?.recipient_count ?? 0;
+    if (!targetCount) {
+      alert("발송 대상이 없습니다.");
+      return;
+    }
+
+    if (!confirm(`1:1 신청자 ${targetCount}명에게 방식 변경 안내 메일을 발송할까요?`)) {
+      return;
+    }
+
+    setNoticeSending(true);
+    setNoticeSendResult(null);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/dating/1on1/notice", {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => ({}))) as
+        | (OneOnOneNoticeSendResult & { ok?: boolean; error?: string })
+        | { error?: string };
+      if (!res.ok) {
+        throw new Error(body.error ?? "안내 메일 발송에 실패했습니다.");
+      }
+      setNoticeSendResult({
+        requested: "requested" in body ? body.requested : 0,
+        sent: "sent" in body ? body.sent : 0,
+        failed: "failed" in body ? body.failed : 0,
+      });
+      await loadNoticePreview();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setNoticeSending(false);
     }
   };
 
@@ -728,6 +799,71 @@ export default function AdminDatingOneOnOnePage() {
           마이페이지
         </Link>
       </div>
+
+      <section className="mb-4 rounded-2xl border border-fuchsia-200 bg-fuchsia-50/40 p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-fuchsia-900">방식 변경 안내 메일</h2>
+            <p className="text-xs text-fuchsia-800">
+              현재 1:1 소개팅 신청자에게 번호 교환 방식 변경 내용을 한 번에 안내합니다.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => void loadNoticePreview()}
+              disabled={noticeLoading}
+              className="h-9 rounded-lg border border-fuchsia-200 bg-white px-3 text-sm font-medium text-fuchsia-900 disabled:opacity-60"
+            >
+              {noticeLoading ? "미리보기 불러오는 중..." : "미리보기 새로고침"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void handleSendPolicyNotice()}
+              disabled={noticeSending || noticeLoading || !noticePreview?.recipient_count}
+              className="h-9 rounded-lg bg-fuchsia-600 px-3 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {noticeSending ? "발송 중..." : "안내 메일 발송"}
+            </button>
+          </div>
+        </div>
+
+        {noticePreview ? (
+          <>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-fuchsia-100 bg-white px-3 py-3">
+                <p className="text-xs text-neutral-500">전체 발송 대상</p>
+                <p className="mt-1 text-2xl font-bold text-neutral-900">{noticePreview.recipient_count}명</p>
+              </div>
+              <div className="rounded-xl border border-fuchsia-100 bg-white px-3 py-3">
+                <p className="text-xs text-neutral-500">기존 쌍방 수락 포함</p>
+                <p className="mt-1 text-2xl font-bold text-neutral-900">{noticePreview.legacy_mutual_user_count}명</p>
+              </div>
+              <div className="rounded-xl border border-fuchsia-100 bg-white px-3 py-3">
+                <p className="text-xs text-neutral-500">신규 쌍방 수락 포함</p>
+                <p className="mt-1 text-2xl font-bold text-neutral-900">{noticePreview.new_mutual_user_count}명</p>
+              </div>
+            </div>
+
+            <div className="mt-3 rounded-xl border border-fuchsia-100 bg-white p-3">
+              <p className="text-xs font-semibold text-neutral-900">제목</p>
+              <p className="mt-1 text-sm text-neutral-700">{noticePreview.subject}</p>
+              <p className="mt-3 text-xs font-semibold text-neutral-900">본문 미리보기</p>
+              <div className="mt-1 space-y-1 text-xs leading-5 text-neutral-600">
+                {noticePreview.preview_lines.map((line, index) => (
+                  <p key={`${index}-${line}`}>{line || "\u00A0"}</p>
+                ))}
+              </div>
+            </div>
+          </>
+        ) : null}
+
+        {noticeSendResult ? (
+          <p className="mt-3 text-sm text-fuchsia-900">
+            발송 완료: 요청 {noticeSendResult.requested}명 / 성공 {noticeSendResult.sent}명 / 실패 {noticeSendResult.failed}명
+          </p>
+        ) : null}
+      </section>
 
       <section className="mb-4 rounded-2xl border border-neutral-200 bg-white p-4">
         <p className="text-xs text-neutral-500">전체 현황</p>

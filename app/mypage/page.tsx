@@ -448,6 +448,7 @@ type AdminManageTab =
   | "dating_stats"
   | "dating_insights"
   | "open_cards"
+  | "one_on_one_contact"
   | "apply_credits"
   | "swipe_subscriptions"
   | "more_view"
@@ -522,6 +523,32 @@ type AdminCityViewRequest = {
   created_at: string;
   reviewed_at: string | null;
   note: string | null;
+};
+type AdminOneOnOneContactExchangeRequest = {
+  id: string;
+  state: "mutual_accepted";
+  contact_exchange_status: "payment_pending_admin";
+  contact_exchange_requested_at: string | null;
+  contact_exchange_paid_at: string | null;
+  source_phone_share_consented_at: string | null;
+  candidate_phone_share_consented_at: string | null;
+  created_at: string;
+  source_card: {
+    id: string;
+    name: string;
+    sex: "male" | "female";
+    age: number | null;
+    region: string;
+    phone?: string | null;
+  } | null;
+  candidate_card: {
+    id: string;
+    name: string;
+    sex: "male" | "female";
+    age: number | null;
+    region: string;
+    phone?: string | null;
+  } | null;
 };
 
 type AdminDatingStats = {
@@ -845,6 +872,9 @@ export default function MyPage() {
   const [adminPaidCardApplications, setAdminPaidCardApplications] = useState<AdminPaidCardApplication[]>([]);
   const [adminOpenCardsLoaded, setAdminOpenCardsLoaded] = useState(false);
   const [adminOpenCardsLoading, setAdminOpenCardsLoading] = useState(false);
+  const [adminOneOnOneContactRequests, setAdminOneOnOneContactRequests] = useState<AdminOneOnOneContactExchangeRequest[]>([]);
+  const [adminOneOnOneContactLoaded, setAdminOneOnOneContactLoaded] = useState(false);
+  const [adminOneOnOneContactLoading, setAdminOneOnOneContactLoading] = useState(false);
   const [editingAdminOpenCardId, setEditingAdminOpenCardId] = useState<string | null>(null);
   const [adminOpenCardDraft, setAdminOpenCardDraft] = useState<AdminOpenCardEditDraft | null>(null);
   const [savingAdminOpenCard, setSavingAdminOpenCard] = useState(false);
@@ -1053,6 +1083,38 @@ export default function MyPage() {
         } finally {
           if (showLoading) {
             setAdminOpenCardsLoading(false);
+          }
+        }
+      },
+    [isAdmin]
+  );
+
+  const refreshAdminOneOnOneContactData = useMemo(
+    () =>
+      async (showLoading = true) => {
+        if (!isAdmin) return;
+
+        if (showLoading) {
+          setAdminOneOnOneContactLoading(true);
+        }
+
+        try {
+          const res = await fetch("/api/admin/dating/1on1/contact-exchange-queue", { cache: "no-store" });
+          const body = (await res.json().catch(() => ({}))) as {
+            items?: AdminOneOnOneContactExchangeRequest[];
+          };
+
+          if (res.ok) {
+            setAdminOneOnOneContactRequests(body.items ?? []);
+            setAdminOneOnOneContactLoaded(true);
+          } else {
+            console.error("[mypage] admin 1on1 contact queue refresh failed", body);
+          }
+        } catch (error) {
+          console.error("[mypage] admin 1on1 contact queue refresh failed", error);
+        } finally {
+          if (showLoading) {
+            setAdminOneOnOneContactLoading(false);
           }
         }
       },
@@ -1363,6 +1425,8 @@ export default function MyPage() {
               setAdminOpenCardApplications([]);
               setAdminPaidCardApplications([]);
               setAdminOpenCardsLoaded(false);
+              setAdminOneOnOneContactRequests([]);
+              setAdminOneOnOneContactLoaded(false);
               setAdminApplyCreditOrders(ordersRes.ok ? ordersBody.items ?? [] : []);
               setAdminMoreViewRequests(moreViewRes.ok ? moreViewBody.items ?? [] : []);
               setAdminCityViewRequests(cityViewRes.ok ? cityViewBody.items ?? [] : []);
@@ -1382,6 +1446,8 @@ export default function MyPage() {
             setAdminOpenCardApplications([]);
             setAdminPaidCardApplications([]);
             setAdminOpenCardsLoaded(false);
+            setAdminOneOnOneContactRequests([]);
+            setAdminOneOnOneContactLoaded(false);
             setAdminApplyCreditOrders([]);
             setAdminSwipeSubscriptionRequests([]);
             setAdminMoreViewRequests([]);
@@ -1416,6 +1482,20 @@ export default function MyPage() {
 
     void refreshAdminOpenCardData(true);
   }, [adminManageTab, adminOpenCardsLoaded, adminOpenCardsLoading, isAdmin, refreshAdminOpenCardData]);
+
+  useEffect(() => {
+    if (!isAdmin || adminManageTab !== "one_on_one_contact" || adminOneOnOneContactLoaded || adminOneOnOneContactLoading) {
+      return;
+    }
+
+    void refreshAdminOneOnOneContactData(true);
+  }, [
+    adminManageTab,
+    adminOneOnOneContactLoaded,
+    adminOneOnOneContactLoading,
+    isAdmin,
+    refreshAdminOneOnOneContactData,
+  ]);
 
   useEffect(() => {
     if (loading || activeTab !== "request_status" || swipeSubscriptionStatus || swipeSubscriptionLoading) return;
@@ -2579,6 +2659,30 @@ export default function MyPage() {
       setAdminCityViewRequests((prev) => prev.filter((item) => item.id !== requestId));
     } finally {
       setProcessingCityViewIds((prev) => prev.filter((id) => id !== requestId));
+    }
+  };
+
+  const handleAdminProcessOneOnOneContactExchange = async (
+    matchId: string,
+    action: "approve" | "reset"
+  ) => {
+    if (processingOneOnOneContactExchangeIds.includes(matchId)) return;
+    setProcessingOneOnOneContactExchangeIds((prev) => [...prev, matchId]);
+    try {
+      const res = await fetch(`/api/admin/dating/1on1/matches/${matchId}/contact-exchange`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) {
+        alert(body.error ?? "1:1 번호 공개 처리에 실패했습니다.");
+        return;
+      }
+
+      setAdminOneOnOneContactRequests((prev) => prev.filter((item) => item.id !== matchId));
+    } finally {
+      setProcessingOneOnOneContactExchangeIds((prev) => prev.filter((id) => id !== matchId));
     }
   };
 
@@ -4995,11 +5099,19 @@ export default function MyPage() {
             <h2 className="text-lg font-bold text-violet-900">오픈카드 전체 내용 (관리자)</h2>
             <button
               type="button"
-              disabled={adminManageTab === "open_cards" ? adminOpenCardsLoading : adminQueueRefreshing}
+              disabled={
+                adminManageTab === "open_cards"
+                  ? adminOpenCardsLoading
+                  : adminManageTab === "one_on_one_contact"
+                    ? adminOneOnOneContactLoading
+                    : adminQueueRefreshing
+              }
               onClick={() =>
                 void (adminManageTab === "open_cards"
                   ? refreshAdminOpenCardData(true)
-                  : refreshAdminQueueData(true))
+                  : adminManageTab === "one_on_one_contact"
+                    ? refreshAdminOneOnOneContactData(true)
+                    : refreshAdminQueueData(true))
               }
               className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 disabled:cursor-not-allowed disabled:opacity-60"
             >
@@ -5007,6 +5119,10 @@ export default function MyPage() {
                 ? adminOpenCardsLoading
                   ? "불러오는 중..."
                   : "오픈카드 새로고침"
+                : adminManageTab === "one_on_one_contact"
+                  ? adminOneOnOneContactLoading
+                    ? "불러오는 중..."
+                    : "번호 공개 새로고침"
                 : adminQueueRefreshing
                   ? "새로고침 중..."
                   : "신청목록 새로고침"}
@@ -5051,6 +5167,17 @@ export default function MyPage() {
               }`}
             >
               오픈카드
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdminManageTab("one_on_one_contact")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "one_on_one_contact"
+                  ? "border-violet-600 bg-violet-600 text-white"
+                  : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              1:1 번호 공개
             </button>
               <button
                 type="button"
@@ -5832,6 +5959,81 @@ export default function MyPage() {
                 현재: {openCardWriteEnabled ? "작성 가능" : "작성 중단"}
               </span>
             </div>
+          </div>
+          )}
+
+          {adminManageTab === "one_on_one_contact" && (
+          <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
+            <p className="text-xs font-semibold text-violet-800">
+              1:1 번호 공개 승인 대기 {adminOneOnOneContactRequests.length}건
+            </p>
+            <p className="mt-1 text-[11px] text-neutral-500">
+              입금 확인 요청까지 끝난 1:1 쌍방 매칭만 따로 모았습니다. 여기서 바로 승인하면 양쪽 번호가 공개됩니다.
+            </p>
+            {adminOneOnOneContactLoading ? (
+              <p className="mt-3 text-xs text-neutral-500">불러오는 중...</p>
+            ) : adminOneOnOneContactRequests.length === 0 ? (
+              <p className="mt-3 text-xs text-neutral-500">현재 승인 대기 중인 번호 공개 요청이 없습니다.</p>
+            ) : (
+              <div className="mt-3 space-y-2">
+                {adminOneOnOneContactRequests.map((item) => {
+                  const processing = processingOneOnOneContactExchangeIds.includes(item.id);
+                  return (
+                    <div
+                      key={item.id}
+                      className="rounded-lg border border-violet-100 bg-violet-50/40 px-3 py-3"
+                    >
+                      <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="text-sm font-semibold text-neutral-900">
+                            지원자 {item.source_card?.name ?? "-"} → 상대 {item.candidate_card?.name ?? "-"}
+                          </p>
+                          <p className="mt-1 text-[11px] text-neutral-500 break-all">
+                            매칭ID {item.id} / 요청 {item.contact_exchange_requested_at ? new Date(item.contact_exchange_requested_at).toLocaleString("ko-KR") : "-"}
+                            {item.contact_exchange_paid_at ? ` / 입금확인요청 ${new Date(item.contact_exchange_paid_at).toLocaleString("ko-KR")}` : ""}
+                          </p>
+                          <div className="mt-2 flex flex-wrap gap-2 text-[11px] text-neutral-600">
+                            {item.source_card ? (
+                              <span>
+                                지원자 카드: {item.source_card.sex === "male" ? "남" : "여"} / {item.source_card.age ?? "-"}세 / {item.source_card.region}
+                              </span>
+                            ) : null}
+                            {item.candidate_card ? (
+                              <span>
+                                상대 카드: {item.candidate_card.sex === "male" ? "남" : "여"} / {item.candidate_card.age ?? "-"}세 / {item.candidate_card.region}
+                              </span>
+                            ) : null}
+                          </div>
+                          {(item.source_phone_share_consented_at || item.candidate_phone_share_consented_at) ? (
+                            <p className="mt-2 text-[11px] text-neutral-500">
+                              지원자 동의 {item.source_phone_share_consented_at ? new Date(item.source_phone_share_consented_at).toLocaleString("ko-KR") : "-"} / 상대 동의 {item.candidate_phone_share_consented_at ? new Date(item.candidate_phone_share_consented_at).toLocaleString("ko-KR") : "-"}
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            disabled={processing}
+                            onClick={() => void handleAdminProcessOneOnOneContactExchange(item.id, "approve")}
+                            className="h-8 rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                          >
+                            {processing ? "처리 중..." : "번호 공개 승인"}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={processing}
+                            onClick={() => void handleAdminProcessOneOnOneContactExchange(item.id, "reset")}
+                            className="h-8 rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 disabled:opacity-50"
+                          >
+                            대기 유지
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
           )}
 
