@@ -103,6 +103,7 @@ type AdminMatchItem = {
 };
 
 type OneOnOneNoticePreview = {
+  scope: NoticeScope;
   recipient_count: number;
   legacy_mutual_user_count: number;
   new_mutual_user_count: number;
@@ -110,11 +111,21 @@ type OneOnOneNoticePreview = {
   preview_lines: string[];
 };
 
+type NoticeScope = "all_applicants" | "mutual_only" | "legacy_mutual" | "new_mutual";
+
 type OneOnOneNoticeSendResult = {
+  scope?: NoticeScope;
   requested: number;
   sent: number;
   failed: number;
 };
+
+function noticeScopeLabel(scope: NoticeScope): string {
+  if (scope === "all_applicants") return "전체 신청자";
+  if (scope === "legacy_mutual") return "기존 쌍방 수락만";
+  if (scope === "new_mutual") return "신규 쌍방 수락만";
+  return "쌍방 수락만";
+}
 
 type AutoCandidateRange = {
   minAge: number | null;
@@ -335,6 +346,7 @@ export default function AdminDatingOneOnOnePage() {
   const [noticeLoading, setNoticeLoading] = useState(false);
   const [noticeSending, setNoticeSending] = useState(false);
   const [noticeSendResult, setNoticeSendResult] = useState<OneOnOneNoticeSendResult | null>(null);
+  const [noticeScope, setNoticeScope] = useState<NoticeScope>("mutual_only");
 
   const buildQuery = () => {
     const qs = new URLSearchParams();
@@ -422,7 +434,8 @@ export default function AdminDatingOneOnOnePage() {
   const loadNoticePreview = async () => {
     setNoticeLoading(true);
     try {
-      const res = await fetch("/api/admin/dating/1on1/notice", { cache: "no-store" });
+      const query = new URLSearchParams({ scope: noticeScope }).toString();
+      const res = await fetch(`/api/admin/dating/1on1/notice?${query}`, { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as OneOnOneNoticePreview & { error?: string };
       if (!res.ok) {
         throw new Error(body.error ?? "안내 메일 미리보기를 불러오지 못했습니다.");
@@ -467,6 +480,11 @@ export default function AdminDatingOneOnOnePage() {
   }, [router, supabase]);
 
   useEffect(() => {
+    if (loading) return;
+    void loadNoticePreview();
+  }, [noticeScope]);
+
+  useEffect(() => {
     setAutoCandidateSeed(Date.now());
   }, [selectedSourceCardId]);
 
@@ -491,7 +509,7 @@ export default function AdminDatingOneOnOnePage() {
       return;
     }
 
-    if (!confirm(`1:1 신청자 ${targetCount}명에게 방식 변경 안내 메일을 발송할까요?`)) {
+    if (!confirm(`${noticeScopeLabel(noticeScope)} ${targetCount}명에게 방식 변경 안내 메일을 발송할까요?`)) {
       return;
     }
 
@@ -501,6 +519,8 @@ export default function AdminDatingOneOnOnePage() {
     try {
       const res = await fetch("/api/admin/dating/1on1/notice", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ scope: noticeScope }),
       });
       const body = (await res.json().catch(() => ({}))) as
         | (OneOnOneNoticeSendResult & { ok?: boolean; error?: string })
@@ -509,6 +529,7 @@ export default function AdminDatingOneOnOnePage() {
         throw new Error(body.error ?? "안내 메일 발송에 실패했습니다.");
       }
       setNoticeSendResult({
+        scope: "scope" in body ? body.scope : noticeScope,
         requested: "requested" in body ? body.requested : 0,
         sent: "sent" in body ? body.sent : 0,
         failed: "failed" in body ? body.failed : 0,
@@ -805,10 +826,20 @@ export default function AdminDatingOneOnOnePage() {
           <div>
             <h2 className="text-lg font-semibold text-fuchsia-900">방식 변경 안내 메일</h2>
             <p className="text-xs text-fuchsia-800">
-              현재 1:1 소개팅 신청자에게 번호 교환 방식 변경 내용을 한 번에 안내합니다.
+              지금은 쌍방 수락된 사람들에게만 따로 안내할 수 있게 좁혀뒀습니다.
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
+            <select
+              value={noticeScope}
+              onChange={(e) => setNoticeScope(e.target.value as NoticeScope)}
+              className="h-9 rounded-lg border border-fuchsia-200 bg-white px-3 text-sm text-fuchsia-900"
+            >
+              <option value="mutual_only">쌍방 수락만</option>
+              <option value="legacy_mutual">기존 쌍방 수락만</option>
+              <option value="new_mutual">신규 쌍방 수락만</option>
+              <option value="all_applicants">전체 신청자</option>
+            </select>
             <button
               type="button"
               onClick={() => void loadNoticePreview()}
@@ -832,7 +863,7 @@ export default function AdminDatingOneOnOnePage() {
           <>
             <div className="mt-3 grid gap-3 md:grid-cols-3">
               <div className="rounded-xl border border-fuchsia-100 bg-white px-3 py-3">
-                <p className="text-xs text-neutral-500">전체 발송 대상</p>
+                <p className="text-xs text-neutral-500">{noticeScopeLabel(noticePreview.scope)} 대상</p>
                 <p className="mt-1 text-2xl font-bold text-neutral-900">{noticePreview.recipient_count}명</p>
               </div>
               <div className="rounded-xl border border-fuchsia-100 bg-white px-3 py-3">
@@ -846,6 +877,9 @@ export default function AdminDatingOneOnOnePage() {
             </div>
 
             <div className="mt-3 rounded-xl border border-fuchsia-100 bg-white p-3">
+              <p className="text-xs text-fuchsia-700">
+                현재 선택: {noticeScopeLabel(noticePreview.scope)}
+              </p>
               <p className="text-xs font-semibold text-neutral-900">제목</p>
               <p className="mt-1 text-sm text-neutral-700">{noticePreview.subject}</p>
               <p className="mt-3 text-xs font-semibold text-neutral-900">본문 미리보기</p>
@@ -860,7 +894,7 @@ export default function AdminDatingOneOnOnePage() {
 
         {noticeSendResult ? (
           <p className="mt-3 text-sm text-fuchsia-900">
-            발송 완료: 요청 {noticeSendResult.requested}명 / 성공 {noticeSendResult.sent}명 / 실패 {noticeSendResult.failed}명
+            발송 완료: {noticeScopeLabel(noticeSendResult.scope ?? noticeScope)} 요청 {noticeSendResult.requested}명 / 성공 {noticeSendResult.sent}명 / 실패 {noticeSendResult.failed}명
           </p>
         ) : null}
       </section>

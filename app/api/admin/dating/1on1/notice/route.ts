@@ -14,12 +14,17 @@ const MATCH_BATCH_SIZE = 1000;
 const SEND_CONCURRENCY = 8;
 
 type NoticePreviewResponse = {
+  scope: NoticeScope;
   recipient_count: number;
   legacy_mutual_user_count: number;
   new_mutual_user_count: number;
   subject: string;
   preview_lines: string[];
 };
+
+type NoticeScope = "all_applicants" | "mutual_only" | "legacy_mutual" | "new_mutual";
+
+const DEFAULT_NOTICE_SCOPE: NoticeScope = "mutual_only";
 
 function getNoticeSubject() {
   return "[GymTools] 1:1 소개팅 번호 교환 안내가 정리되었습니다";
@@ -101,7 +106,45 @@ async function fetchMutualAcceptedMatches(admin: ReturnType<typeof createAdminCl
   return rows;
 }
 
-async function buildNoticePreview(admin: ReturnType<typeof createAdminClient>): Promise<NoticePreviewResponse> {
+function parseNoticeScope(value: string | null | undefined): NoticeScope {
+  if (value === "all_applicants" || value === "mutual_only" || value === "legacy_mutual" || value === "new_mutual") {
+    return value;
+  }
+  return DEFAULT_NOTICE_SCOPE;
+}
+
+function getScopedRecipientUserIds(
+  scope: NoticeScope,
+  applicantUserIds: string[],
+  matches: DatingOneOnOneMatchRow[]
+) {
+  if (scope === "all_applicants") {
+    return applicantUserIds;
+  }
+
+  const legacyUsers = new Set<string>();
+  const newUsers = new Set<string>();
+
+  for (const match of matches) {
+    const targetSet = isDatingOneOnOneLegacyPhoneShareMatch(match) ? legacyUsers : newUsers;
+    if (match.source_user_id) targetSet.add(match.source_user_id);
+    if (match.candidate_user_id) targetSet.add(match.candidate_user_id);
+  }
+
+  if (scope === "legacy_mutual") {
+    return [...legacyUsers];
+  }
+  if (scope === "new_mutual") {
+    return [...newUsers];
+  }
+
+  return [...new Set([...legacyUsers, ...newUsers])];
+}
+
+async function buildNoticePreview(
+  admin: ReturnType<typeof createAdminClient>,
+  scope: NoticeScope
+): Promise<NoticePreviewResponse> {
   const [applicantUserIds, matches] = await Promise.all([
     fetchApplicantUserIds(admin),
     fetchMutualAcceptedMatches(admin),
@@ -116,8 +159,11 @@ async function buildNoticePreview(admin: ReturnType<typeof createAdminClient>): 
     if (match.candidate_user_id) targetSet.add(match.candidate_user_id);
   }
 
+  const scopedUserIds = getScopedRecipientUserIds(scope, applicantUserIds, matches);
+
   return {
-    recipient_count: applicantUserIds.length,
+    scope,
+    recipient_count: scopedUserIds.length,
     legacy_mutual_user_count: legacyUsers.size,
     new_mutual_user_count: newUsers.size,
     subject: getNoticeSubject(),
@@ -148,12 +194,13 @@ async function sendInBatches(userIds: string[], admin: ReturnType<typeof createA
   return { sent, failed };
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   const auth = await requireAdminRoute();
   if (!auth.ok) return auth.response;
 
   try {
-    const preview = await buildNoticePreview(auth.admin);
+    const scope = parseNoticeScope(new URL(request.url).searchParams.get("scope"));
+    const preview = await buildNoticePreview(auth.admin, scope);
     return NextResponse.json(preview);
   } catch (error) {
     console.error("[GET /api/admin/dating/1on1/notice] failed", error);
@@ -161,16 +208,29 @@ export async function GET() {
   }
 }
 
-export async function POST() {
+export async function POST(request: Request) {
   const auth = await requireAdminRoute();
   if (!auth.ok) return auth.response;
 
   try {
-    const userIds = await fetchApplicantUserIds(auth.admin);
+    let body: { scope?: NoticeScope } | null = null;
+    try {
+      body = (await request.json()) as { scope?: NoticeScope };
+    } catch {
+      body = null;
+    }
+
+    const requestScope = parseNoticeScope(body?.scope);
+    const [applicantUserIds, matches] = await Promise.all([
+      fetchApplicantUserIds(auth.admin),
+      fetchMutualAcceptedMatches(auth.admin),
+    ]);
+    const userIds = getScopedRecipientUserIds(requestScope, applicantUserIds, matches);
     const { sent, failed } = await sendInBatches(userIds, auth.admin);
 
     return NextResponse.json({
       ok: true,
+      scope: requestScope,
       requested: userIds.length,
       sent,
       failed,
