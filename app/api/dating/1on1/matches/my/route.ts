@@ -1,5 +1,8 @@
 import type { DatingOneOnOneMatchRow } from "@/lib/dating-1on1";
-import { getDatingOneOnOneCardPhonesByIds, getDatingOneOnOneCardsByIds } from "@/lib/dating-1on1";
+import {
+  getDatingOneOnOneCardPhonesByIds,
+  getDatingOneOnOneCardsByIds,
+} from "@/lib/dating-1on1";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
@@ -14,7 +17,7 @@ async function fetchAllMyMatches(admin: ReturnType<typeof createAdminClient>, us
     const { data, error } = await admin
       .from("dating_1on1_match_proposals")
       .select(
-        "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,contact_exchange_status,contact_exchange_requested_at,contact_exchange_paid_at,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_approved_by_user_id,contact_exchange_note,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at"
+        "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,contact_exchange_status,contact_exchange_requested_at,contact_exchange_paid_at,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_approved_by_user_id,contact_exchange_note,source_phone_share_consented_at,candidate_phone_share_consented_at,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at"
       )
       .or(`source_user_id.eq.${userId},candidate_user_id.eq.${userId}`)
       .order("created_at", { ascending: false })

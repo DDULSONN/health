@@ -41,6 +41,8 @@ export type DatingOneOnOneContactExchangeStatus =
   | "approved"
   | "canceled";
 
+export const DATING_ONE_ON_ONE_CONTACT_EXCHANGE_POLICY_START_AT = "2026-04-25T00:00:00+09:00";
+
 export type DatingOneOnOneCardDetail = {
   id: string;
   user_id: string;
@@ -76,6 +78,8 @@ export type DatingOneOnOneMatchRow = {
   contact_exchange_approved_at: string | null;
   contact_exchange_approved_by_user_id: string | null;
   contact_exchange_note: string | null;
+  source_phone_share_consented_at: string | null;
+  candidate_phone_share_consented_at: string | null;
   admin_sent_by_user_id: string | null;
   source_selected_at: string | null;
   candidate_responded_at: string | null;
@@ -83,6 +87,30 @@ export type DatingOneOnOneMatchRow = {
   created_at: string;
   updated_at: string;
 };
+
+function getDatingOneOnOneContactExchangePolicyBasis(row: Pick<
+  DatingOneOnOneMatchRow,
+  "source_final_responded_at" | "created_at"
+>): number {
+  const source = row.source_final_responded_at ?? row.created_at;
+  const time = Date.parse(source);
+  return Number.isFinite(time) ? time : 0;
+}
+
+export function isDatingOneOnOneLegacyPhoneShareMatch(
+  row: Pick<
+    DatingOneOnOneMatchRow,
+    "state" | "source_final_responded_at" | "created_at"
+  >
+): boolean {
+  if (row.state !== "mutual_accepted") {
+    return false;
+  }
+  return (
+    getDatingOneOnOneContactExchangePolicyBasis(row) <
+    Date.parse(DATING_ONE_ON_ONE_CONTACT_EXCHANGE_POLICY_START_AT)
+  );
+}
 
 type DatingOneOnOneCardRow = {
   id: string;

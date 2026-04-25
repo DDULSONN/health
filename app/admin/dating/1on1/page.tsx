@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import { isDatingOneOnOneLegacyPhoneShareMatch } from "@/lib/dating-1on1";
 import { createClient } from "@/lib/supabase/client";
 import { compareRegionsByDistance } from "@/lib/region-distance";
 
@@ -88,6 +89,8 @@ type AdminMatchItem = {
   contact_exchange_approved_at: string | null;
   contact_exchange_approved_by_user_id: string | null;
   contact_exchange_note: string | null;
+  source_phone_share_consented_at: string | null;
+  candidate_phone_share_consented_at: string | null;
   source_card_id: string;
   candidate_card_id: string;
   source_selected_at: string | null;
@@ -162,7 +165,7 @@ function contactExchangeLabel(status: AdminMatchItem["contact_exchange_status"])
   if (status === "payment_pending_admin") return "입금 확인 중";
   if (status === "approved") return "번호 교환 완료";
   if (status === "canceled") return "번호 교환 종료";
-  return "번호 교환 전";
+  return "번호 공개 전";
 }
 
 function contactExchangeBadgeClass(status: AdminMatchItem["contact_exchange_status"]): string {
@@ -1147,14 +1150,25 @@ export default function AdminDatingOneOnOnePage() {
                 </p>
                 {match.state === "mutual_accepted" && (
                   <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50/40 p-3">
-                    <p className="text-xs text-neutral-700">
-                      지원자 결제 흐름: 쌍방 수락 → 지원자 입금 안내 → 관리자 승인 → 양쪽 번호 공개
-                    </p>
+                    {isDatingOneOnOneLegacyPhoneShareMatch(match) ? (
+                      <p className="text-xs text-neutral-700">
+                        기존 매칭 흐름: 양쪽이 번호 공개에 동의하면 번호가 자동으로 공개됩니다.
+                      </p>
+                    ) : (
+                      <p className="text-xs text-neutral-700">
+                        지원자 결제 흐름: 쌍방 수락 → 지원자 입금 안내 → 관리자 승인 → 양쪽 번호 공개
+                      </p>
+                    )}
                     <p className="mt-1 text-[11px] text-neutral-500">
                       지원자 {match.source_card?.name ?? "-"} / 요청 {match.contact_exchange_requested_at ? new Date(match.contact_exchange_requested_at).toLocaleString("ko-KR") : "-"}
                       {match.contact_exchange_paid_at ? ` / 입금확인요청 ${new Date(match.contact_exchange_paid_at).toLocaleString("ko-KR")}` : ""}
                       {match.contact_exchange_approved_at ? ` / 승인 ${new Date(match.contact_exchange_approved_at).toLocaleString("ko-KR")}` : ""}
                     </p>
+                    {isDatingOneOnOneLegacyPhoneShareMatch(match) ? (
+                      <p className="mt-1 text-[11px] text-neutral-500">
+                        기준카드 동의 {match.source_phone_share_consented_at ? new Date(match.source_phone_share_consented_at).toLocaleString("ko-KR") : "-"} / 후보카드 동의 {match.candidate_phone_share_consented_at ? new Date(match.candidate_phone_share_consented_at).toLocaleString("ko-KR") : "-"}
+                      </p>
+                    ) : null}
                     <div className="mt-2 flex flex-wrap gap-2">
                       {match.contact_exchange_status === "payment_pending_admin" ? (
                         <button

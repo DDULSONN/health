@@ -1,4 +1,7 @@
-import type { DatingOneOnOneMatchRow } from "@/lib/dating-1on1";
+import {
+  isDatingOneOnOneLegacyPhoneShareMatch,
+  type DatingOneOnOneMatchRow,
+} from "@/lib/dating-1on1";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
@@ -28,7 +31,7 @@ async function getMatchRow(admin: ReturnType<typeof createAdminClient>, matchId:
   const res = await admin
     .from("dating_1on1_match_proposals")
     .select(
-      "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,contact_exchange_status,contact_exchange_requested_at,contact_exchange_paid_at,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_approved_by_user_id,contact_exchange_note,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at"
+      "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,contact_exchange_status,contact_exchange_requested_at,contact_exchange_paid_at,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_approved_by_user_id,contact_exchange_note,source_phone_share_consented_at,candidate_phone_share_consented_at,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at"
     )
     .eq("id", matchId)
     .maybeSingle();
@@ -203,17 +206,25 @@ export async function POST(
       return NextResponse.json({ error: "Final accept is only available after the candidate accepts." }, { status: 409 });
     }
 
+    const isLegacyMatch = isDatingOneOnOneLegacyPhoneShareMatch({
+      state: "mutual_accepted",
+      source_final_responded_at: nowIso,
+      created_at: row.created_at,
+    });
+
     const updateRes = await admin
       .from("dating_1on1_match_proposals")
       .update({
         state: "mutual_accepted",
-        contact_exchange_status: "awaiting_applicant_payment",
-        contact_exchange_requested_at: nowIso,
+        contact_exchange_status: isLegacyMatch ? "none" : "awaiting_applicant_payment",
+        contact_exchange_requested_at: isLegacyMatch ? null : nowIso,
         contact_exchange_paid_at: null,
         contact_exchange_paid_by_user_id: null,
         contact_exchange_approved_at: null,
         contact_exchange_approved_by_user_id: null,
         contact_exchange_note: null,
+        source_phone_share_consented_at: null,
+        candidate_phone_share_consented_at: null,
         source_final_responded_at: nowIso,
         updated_at: nowIso,
       })

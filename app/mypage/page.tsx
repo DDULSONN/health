@@ -329,6 +329,8 @@ type MyOneOnOneMatch = {
   contact_exchange_approved_at: string | null;
   contact_exchange_approved_by_user_id: string | null;
   contact_exchange_note: string | null;
+  source_phone_share_consented_at: string | null;
+  candidate_phone_share_consented_at: string | null;
   action_required: boolean;
   source_card_id: string;
   candidate_card_id: string;
@@ -2179,18 +2181,27 @@ export default function MyPage() {
 
   const handleRequestOneOnOneContactExchange = async (matchId: string) => {
     if (processingOneOnOneContactExchangeIds.includes(matchId)) return;
+    const targetMatch = myOneOnOneMatches.find((match) => match.id === matchId) ?? null;
     setProcessingOneOnOneContactExchangeIds((prev) => [...prev, matchId]);
     try {
       const res = await fetch(`/api/dating/1on1/matches/${matchId}/contact-exchange`, {
         method: "POST",
       });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; mode?: string };
       if (!res.ok || !body.ok) {
         alert(body.error ?? "번호 교환 요청 처리에 실패했습니다.");
         return;
       }
       await reloadOneOnOneMatches();
-      alert("입금 확인 요청을 보냈습니다. 관리자 승인 후 번호가 공개됩니다.");
+      if (targetMatch && isLegacyOneOnOneContactFlow(targetMatch)) {
+        if (targetMatch.role === "candidate") {
+          alert("번호 공개 동의를 저장했습니다. 이제 상대가 진행할 수 있습니다.");
+        } else {
+          alert("번호 공개 동의를 저장했습니다. 양쪽 동의가 완료되어 번호가 자동으로 공개됩니다.");
+        }
+      } else {
+        alert("입금 확인 요청을 보냈습니다. 관리자 승인 후 번호가 공개됩니다.");
+      }
     } catch (e) {
       alert(e instanceof Error ? e.message : "번호 교환 요청 처리에 실패했습니다.");
     } finally {
@@ -2909,7 +2920,7 @@ export default function MyPage() {
     mutual_accepted: "bg-emerald-100 text-emerald-700",
   };
   const oneOnOneContactExchangeText: Record<MyOneOnOneMatch["contact_exchange_status"], string> = {
-    none: "번호 교환 전",
+    none: "번호 공개 전",
     awaiting_applicant_payment: "번호 교환 대기",
     payment_pending_admin: "입금 확인 중",
     approved: "번호 교환 완료",
@@ -2921,6 +2932,31 @@ export default function MyPage() {
     payment_pending_admin: "bg-violet-100 text-violet-700",
     approved: "bg-emerald-100 text-emerald-700",
     canceled: "bg-neutral-200 text-neutral-700",
+  };
+  const oneOnOnePhoneSharePolicyStartMs = Date.parse("2026-04-25T00:00:00+09:00");
+  const getOneOnOnePolicyBasisMs = (match: Pick<MyOneOnOneMatch, "source_final_responded_at" | "created_at">) => {
+    const value = match.source_final_responded_at ?? match.created_at;
+    const parsed = Date.parse(value);
+    return Number.isFinite(parsed) ? parsed : 0;
+  };
+  const isLegacyOneOnOneContactFlow = (match: Pick<MyOneOnOneMatch, "state" | "source_final_responded_at" | "created_at">) =>
+    match.state === "mutual_accepted" && getOneOnOnePolicyBasisMs(match) < oneOnOnePhoneSharePolicyStartMs;
+  const getOneOnOneConsentState = (match: MyOneOnOneMatch) => {
+    const isApplicant = match.role === "source";
+    return {
+      selfConsented: Boolean(isApplicant ? match.source_phone_share_consented_at : match.candidate_phone_share_consented_at),
+      otherConsented: Boolean(isApplicant ? match.candidate_phone_share_consented_at : match.source_phone_share_consented_at),
+    };
+  };
+  const getOneOnOneContactExchangeBadgeText = (match: MyOneOnOneMatch) => {
+    if (!isLegacyOneOnOneContactFlow(match) || match.contact_exchange_status !== "none") {
+      return oneOnOneContactExchangeText[match.contact_exchange_status];
+    }
+    const { selfConsented, otherConsented } = getOneOnOneConsentState(match);
+    if (selfConsented && otherConsented) return "번호 공개 확인 중";
+    if (selfConsented) return "내 동의 완료";
+    if (otherConsented) return "상대 동의 완료";
+    return "번호 공개 동의";
   };
   const cardAppStatusText: Record<string, string> = {
     submitted: "대기",
@@ -4380,6 +4416,8 @@ export default function MyPage() {
                           if (!card) return null;
                           const contactProcessing = processingOneOnOneContactExchangeIds.includes(match.id);
                           const isApplicant = match.role === "source";
+                          const isLegacyContactFlow = isLegacyOneOnOneContactFlow(match);
+                          const { selfConsented, otherConsented } = getOneOnOneConsentState(match);
                           return (
                             <div key={match.id} className="rounded-lg border border-emerald-200 bg-white p-3">
                               <div className="flex items-center justify-between gap-2">
@@ -4399,7 +4437,7 @@ export default function MyPage() {
                                       oneOnOneContactExchangeColor[match.contact_exchange_status]
                                     }`}
                                   >
-                                    {oneOnOneContactExchangeText[match.contact_exchange_status]}
+                                    {getOneOnOneContactExchangeBadgeText(match)}
                                   </span>
                                 </div>
                               </div>
@@ -4407,6 +4445,53 @@ export default function MyPage() {
                                 {card.height_cm}cm / {card.job} / {new Date(match.updated_at).toLocaleString("ko-KR")}
                               </p>
                               <div className="mt-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
+                                {isLegacyContactFlow && match.contact_exchange_status === "none" ? (
+                                  <>
+                                    <p className="text-xs font-semibold text-neutral-900">기존 매칭 번호 공개 동의</p>
+                                    <p className="mt-1 text-xs text-neutral-700">
+                                      기존 쌍방 매칭은 지원 받은 사람이 먼저 동의하고, 이후 지원한 사람이 동의하면 번호가 자동으로 공개됩니다.
+                                    </p>
+                                    <p className="mt-2 text-[11px] text-neutral-500">
+                                      {selfConsented ? "내 동의 완료" : "내 동의 필요"} · {otherConsented ? "상대 동의 완료" : "상대 동의 대기"}
+                                    </p>
+                                    {!selfConsented && match.role === "candidate" ? (
+                                      <div className="mt-2 flex flex-wrap gap-2">
+                                        <button
+                                          type="button"
+                                          disabled={contactProcessing}
+                                          onClick={() => void handleRequestOneOnOneContactExchange(match.id)}
+                                          className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                                        >
+                                          {contactProcessing ? "동의 저장 중..." : "번호 공개 동의"}
+                                        </button>
+                                      </div>
+                                    ) : null}
+                                    {!selfConsented && match.role === "source" ? (
+                                      <p className="mt-2 text-xs text-neutral-700">
+                                        상대가 먼저 번호 공개 동의를 하면 그다음에 진행할 수 있습니다.
+                                      </p>
+                                    ) : null}
+                                    {selfConsented && !otherConsented ? (
+                                      <p className="mt-2 text-xs text-neutral-700">
+                                        {match.role === "candidate"
+                                          ? "이제 상대가 동의하면 번호가 자동으로 공개됩니다."
+                                          : "상대 동의가 완료되면 번호 공개 동의 버튼이 열립니다."}
+                                      </p>
+                                    ) : null}
+                                    {!selfConsented && otherConsented && match.role === "source" ? (
+                                      <div className="mt-2 flex flex-wrap gap-2">
+                                        <button
+                                          type="button"
+                                          disabled={contactProcessing}
+                                          onClick={() => void handleRequestOneOnOneContactExchange(match.id)}
+                                          className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                                        >
+                                          {contactProcessing ? "동의 저장 중..." : "번호 공개 동의"}
+                                        </button>
+                                      </div>
+                                    ) : null}
+                                  </>
+                                ) : null}
                                 {match.contact_exchange_status === "awaiting_applicant_payment" && isApplicant ? (
                                   <>
                                     <p className="text-xs font-semibold text-neutral-900">번호 교환 대기</p>
