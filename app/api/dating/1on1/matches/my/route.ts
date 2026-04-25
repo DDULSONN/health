@@ -1,5 +1,5 @@
 import type { DatingOneOnOneMatchRow } from "@/lib/dating-1on1";
-import { getDatingOneOnOneCardsByIds } from "@/lib/dating-1on1";
+import { getDatingOneOnOneCardPhonesByIds, getDatingOneOnOneCardsByIds } from "@/lib/dating-1on1";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
@@ -14,7 +14,7 @@ async function fetchAllMyMatches(admin: ReturnType<typeof createAdminClient>, us
     const { data, error } = await admin
       .from("dating_1on1_match_proposals")
       .select(
-        "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at"
+        "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,contact_exchange_status,contact_exchange_requested_at,contact_exchange_paid_at,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_approved_by_user_id,contact_exchange_note,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at"
       )
       .or(`source_user_id.eq.${userId},candidate_user_id.eq.${userId}`)
       .order("created_at", { ascending: false })
@@ -61,16 +61,31 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Failed to load card details." }, { status: 500 });
   }
 
+  const phoneMap = await getDatingOneOnOneCardPhonesByIds(
+    admin,
+    rows.flatMap((row) => [row.source_card_id, row.candidate_card_id])
+  ).catch((phoneError) => {
+    console.error("[GET /api/dating/1on1/matches/my] phones failed", phoneError);
+    return null;
+  });
+
+  if (!phoneMap) {
+    return NextResponse.json({ error: "Failed to load phone details." }, { status: 500 });
+  }
+
   return NextResponse.json({
     items: rows.map((row) => {
       const role = row.source_user_id === user.id ? "source" : "candidate";
       const counterpartyCardId = role === "source" ? row.candidate_card_id : row.source_card_id;
+      const counterpartyPhone =
+        row.contact_exchange_status === "approved" ? (phoneMap.get(counterpartyCardId) ?? null) : null;
       return {
         ...row,
         role,
         source_card: cardMap.get(row.source_card_id) ?? null,
         candidate_card: cardMap.get(row.candidate_card_id) ?? null,
         counterparty_card: cardMap.get(counterpartyCardId) ?? null,
+        counterparty_phone: counterpartyPhone,
         action_required:
           (role === "source" && (row.state === "proposed" || row.state === "candidate_accepted")) ||
           (role === "candidate" && row.state === "source_selected"),

@@ -34,6 +34,13 @@ export type DatingOneOnOneMatchState =
   | "admin_canceled"
   | "mutual_accepted";
 
+export type DatingOneOnOneContactExchangeStatus =
+  | "none"
+  | "awaiting_applicant_payment"
+  | "payment_pending_admin"
+  | "approved"
+  | "canceled";
+
 export type DatingOneOnOneCardDetail = {
   id: string;
   user_id: string;
@@ -62,6 +69,13 @@ export type DatingOneOnOneMatchRow = {
   candidate_card_id: string;
   candidate_user_id: string;
   state: DatingOneOnOneMatchState;
+  contact_exchange_status: DatingOneOnOneContactExchangeStatus;
+  contact_exchange_requested_at: string | null;
+  contact_exchange_paid_at: string | null;
+  contact_exchange_paid_by_user_id: string | null;
+  contact_exchange_approved_at: string | null;
+  contact_exchange_approved_by_user_id: string | null;
+  contact_exchange_note: string | null;
   admin_sent_by_user_id: string | null;
   source_selected_at: string | null;
   candidate_responded_at: string | null;
@@ -88,6 +102,11 @@ type DatingOneOnOneCardRow = {
   created_at: string;
   recommendation_refresh_used_at?: string | null;
   photo_paths: unknown;
+};
+
+type DatingOneOnOneCardPhoneRow = {
+  id: string;
+  phone: string | null;
 };
 
 type SiteSettingRow = {
@@ -198,4 +217,25 @@ export async function getDatingOneOnOneCardsByIds(
   }
 
   return new Map((data ?? []).map((row) => [row.id, toDatingOneOnOneCardDetail(row as DatingOneOnOneCardRow)]));
+}
+
+export async function getDatingOneOnOneCardPhonesByIds(
+  adminClient: SupabaseClient,
+  ids: string[]
+): Promise<Map<string, string | null>> {
+  const uniqueIds = [...new Set(ids.map((id) => id.trim()).filter((id) => id.length > 0))];
+  if (uniqueIds.length === 0) {
+    return new Map();
+  }
+
+  const { data, error } = await adminClient
+    .from("dating_1on1_cards")
+    .select("id,phone")
+    .in("id", uniqueIds);
+
+  if (error) {
+    throw error;
+  }
+
+  return new Map((data ?? []).map((row) => [row.id, (row as DatingOneOnOneCardPhoneRow).phone ?? null]));
 }

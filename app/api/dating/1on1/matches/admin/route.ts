@@ -55,7 +55,7 @@ async function fetchAllAdminMatches(
     let query = admin
       .from("dating_1on1_match_proposals")
       .select(
-        "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at"
+        "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,contact_exchange_status,contact_exchange_requested_at,contact_exchange_paid_at,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_approved_by_user_id,contact_exchange_note,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at"
       )
       .order("created_at", { ascending: false })
       .range(from, from + MATCH_BATCH_SIZE - 1);

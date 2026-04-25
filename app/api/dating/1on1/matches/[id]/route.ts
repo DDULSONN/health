@@ -8,7 +8,8 @@ type MatchAction =
   | "candidate_accept"
   | "candidate_reject"
   | "source_accept"
-  | "source_reject";
+  | "source_reject"
+  | "cancel_mutual";
 
 type ActionPayload = {
   action?: MatchAction;
@@ -20,13 +21,14 @@ const ACTIONS = new Set<MatchAction>([
   "candidate_reject",
   "source_accept",
   "source_reject",
+  "cancel_mutual",
 ]);
 
 async function getMatchRow(admin: ReturnType<typeof createAdminClient>, matchId: string) {
   const res = await admin
     .from("dating_1on1_match_proposals")
     .select(
-      "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at"
+      "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,contact_exchange_status,contact_exchange_requested_at,contact_exchange_paid_at,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_approved_by_user_id,contact_exchange_note,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at"
     )
     .eq("id", matchId)
     .maybeSingle();
@@ -113,7 +115,7 @@ export async function POST(
     const updateRes = await admin
       .from("dating_1on1_match_proposals")
       .update({
-        state: "mutual_accepted",
+        state: "candidate_accepted",
         candidate_responded_at: nowIso,
         updated_at: nowIso,
       })
@@ -128,6 +130,39 @@ export async function POST(
     }
     if (!updateRes.data) {
       return NextResponse.json({ error: "This request was already handled." }, { status: 409 });
+    }
+  }
+
+  if (body.action === "cancel_mutual") {
+    const isParticipant = row.source_user_id === user.id || row.candidate_user_id === user.id;
+    if (!isParticipant) {
+      return NextResponse.json({ error: "Only matched participants can cancel this match." }, { status: 403 });
+    }
+    if (row.state !== "mutual_accepted") {
+      return NextResponse.json({ error: "Only mutual matches can be canceled." }, { status: 409 });
+    }
+    if (row.contact_exchange_status === "approved") {
+      return NextResponse.json({ error: "Phone exchange is already approved. Please contact admin if you need more help." }, { status: 409 });
+    }
+
+    const updateRes = await admin
+      .from("dating_1on1_match_proposals")
+      .update({
+        state: "admin_canceled",
+        contact_exchange_status: "canceled",
+        updated_at: nowIso,
+      })
+      .eq("id", matchId)
+      .eq("state", "mutual_accepted")
+      .select("id")
+      .maybeSingle();
+
+    if (updateRes.error) {
+      console.error("[POST /api/dating/1on1/matches/[id]] cancel mutual failed", updateRes.error);
+      return NextResponse.json({ error: "Failed to cancel this match." }, { status: 500 });
+    }
+    if (!updateRes.data) {
+      return NextResponse.json({ error: "This match was already handled." }, { status: 409 });
     }
   }
 
@@ -172,6 +207,13 @@ export async function POST(
       .from("dating_1on1_match_proposals")
       .update({
         state: "mutual_accepted",
+        contact_exchange_status: "awaiting_applicant_payment",
+        contact_exchange_requested_at: nowIso,
+        contact_exchange_paid_at: null,
+        contact_exchange_paid_by_user_id: null,
+        contact_exchange_approved_at: null,
+        contact_exchange_approved_by_user_id: null,
+        contact_exchange_note: null,
         source_final_responded_at: nowIso,
         updated_at: nowIso,
       })

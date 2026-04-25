@@ -76,6 +76,18 @@ type AdminMatchItem = {
     | "source_declined"
     | "admin_canceled"
     | "mutual_accepted";
+  contact_exchange_status:
+    | "none"
+    | "awaiting_applicant_payment"
+    | "payment_pending_admin"
+    | "approved"
+    | "canceled";
+  contact_exchange_requested_at: string | null;
+  contact_exchange_paid_at: string | null;
+  contact_exchange_paid_by_user_id: string | null;
+  contact_exchange_approved_at: string | null;
+  contact_exchange_approved_by_user_id: string | null;
+  contact_exchange_note: string | null;
   source_card_id: string;
   candidate_card_id: string;
   source_selected_at: string | null;
@@ -132,7 +144,7 @@ function matchStateLabel(state: AdminMatchItem["state"]): string {
   if (state === "candidate_accepted") return "최종 수락 대기";
   if (state === "candidate_rejected") return "후보 거절";
   if (state === "source_declined") return "최종 거절";
-  if (state === "admin_canceled") return "관리자 종료";
+  if (state === "admin_canceled") return "매칭 취소";
   return "쌍방 수락 완료";
 }
 
@@ -143,6 +155,22 @@ function matchStateBadgeClass(state: AdminMatchItem["state"]): string {
   if (state === "mutual_accepted") return "bg-emerald-100 text-emerald-700";
   if (state === "candidate_rejected" || state === "source_declined") return "bg-rose-100 text-rose-700";
   return "bg-neutral-100 text-neutral-700";
+}
+
+function contactExchangeLabel(status: AdminMatchItem["contact_exchange_status"]): string {
+  if (status === "awaiting_applicant_payment") return "번호 교환 대기";
+  if (status === "payment_pending_admin") return "입금 확인 중";
+  if (status === "approved") return "번호 교환 완료";
+  if (status === "canceled") return "번호 교환 종료";
+  return "번호 교환 전";
+}
+
+function contactExchangeBadgeClass(status: AdminMatchItem["contact_exchange_status"]): string {
+  if (status === "awaiting_applicant_payment") return "bg-amber-100 text-amber-700";
+  if (status === "payment_pending_admin") return "bg-violet-100 text-violet-700";
+  if (status === "approved") return "bg-emerald-100 text-emerald-700";
+  if (status === "canceled") return "bg-neutral-200 text-neutral-700";
+  return "bg-neutral-100 text-neutral-600";
 }
 
 const INITIAL_SELECTION_FILTER: SelectionFilter = {
@@ -268,6 +296,7 @@ export default function AdminDatingOneOnOnePage() {
   const [selectedCandidateCardIds, setSelectedCandidateCardIds] = useState<string[]>([]);
   const [autoCandidateSeed, setAutoCandidateSeed] = useState(() => Date.now());
   const [sendingCandidates, setSendingCandidates] = useState(false);
+  const [processingContactExchangeIds, setProcessingContactExchangeIds] = useState<string[]>([]);
   const [matchStateFilter, setMatchStateFilter] = useState<"" | AdminMatchItem["state"] | "mutual_only">("mutual_only");
 
   const [sex, setSex] = useState<"" | "male" | "female">("");
@@ -660,6 +689,31 @@ export default function AdminDatingOneOnOnePage() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSendingCandidates(false);
+    }
+  };
+
+  const handleContactExchangeAction = async (
+    matchId: string,
+    action: "approve" | "reset"
+  ) => {
+    if (processingContactExchangeIds.includes(matchId)) return;
+    setProcessingContactExchangeIds((prev) => [...prev, matchId]);
+    setError("");
+    try {
+      const res = await fetch(`/api/admin/dating/1on1/matches/${matchId}/contact-exchange`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) {
+        throw new Error(body.error ?? "번호 교환 상태 변경에 실패했습니다.");
+      }
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "번호 교환 상태 변경에 실패했습니다.");
+    } finally {
+      setProcessingContactExchangeIds((prev) => prev.filter((id) => id !== matchId));
     }
   };
 
@@ -1064,9 +1118,14 @@ export default function AdminDatingOneOnOnePage() {
                   <p className="text-sm font-medium text-neutral-900">
                     {match.source_card?.name ?? "-"} → {match.candidate_card?.name ?? "-"}
                   </p>
-                  <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${matchStateBadgeClass(match.state)}`}>
-                    {matchStateLabel(match.state)}
-                  </span>
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${matchStateBadgeClass(match.state)}`}>
+                      {matchStateLabel(match.state)}
+                    </span>
+                    <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${contactExchangeBadgeClass(match.contact_exchange_status)}`}>
+                      {contactExchangeLabel(match.contact_exchange_status)}
+                    </span>
+                  </div>
                 </div>
                 <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
                   {match.source_card && (
@@ -1086,6 +1145,40 @@ export default function AdminDatingOneOnOnePage() {
                   {match.candidate_responded_at ? ` / 후보응답 ${new Date(match.candidate_responded_at).toLocaleString("ko-KR")}` : ""}
                   {match.source_final_responded_at ? ` / 최종응답 ${new Date(match.source_final_responded_at).toLocaleString("ko-KR")}` : ""}
                 </p>
+                {match.state === "mutual_accepted" && (
+                  <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50/40 p-3">
+                    <p className="text-xs text-neutral-700">
+                      지원자 결제 흐름: 쌍방 수락 → 지원자 입금 안내 → 관리자 승인 → 양쪽 번호 공개
+                    </p>
+                    <p className="mt-1 text-[11px] text-neutral-500">
+                      지원자 {match.source_card?.name ?? "-"} / 요청 {match.contact_exchange_requested_at ? new Date(match.contact_exchange_requested_at).toLocaleString("ko-KR") : "-"}
+                      {match.contact_exchange_paid_at ? ` / 입금확인요청 ${new Date(match.contact_exchange_paid_at).toLocaleString("ko-KR")}` : ""}
+                      {match.contact_exchange_approved_at ? ` / 승인 ${new Date(match.contact_exchange_approved_at).toLocaleString("ko-KR")}` : ""}
+                    </p>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      {match.contact_exchange_status === "payment_pending_admin" ? (
+                        <button
+                          type="button"
+                          disabled={processingContactExchangeIds.includes(match.id)}
+                          onClick={() => void handleContactExchangeAction(match.id, "approve")}
+                          className="h-8 rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                        >
+                          {processingContactExchangeIds.includes(match.id) ? "승인 중..." : "번호 교환 승인"}
+                        </button>
+                      ) : null}
+                      {match.contact_exchange_status === "payment_pending_admin" || match.contact_exchange_status === "awaiting_applicant_payment" ? (
+                        <button
+                          type="button"
+                          disabled={processingContactExchangeIds.includes(match.id)}
+                          onClick={() => void handleContactExchangeAction(match.id, "reset")}
+                          className="h-8 rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 disabled:opacity-50"
+                        >
+                          대기 상태로 유지
+                        </button>
+                      ) : null}
+                    </div>
+                  </div>
+                )}
               </div>
             ))
           )}

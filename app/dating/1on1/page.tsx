@@ -396,6 +396,14 @@ function DatingOneOnOnePageContent() {
         <h2 className="text-lg font-semibold text-neutral-900">{isEditMode ? "신청서 수정" : "신청 작성"}</h2>
         <p className="mt-1 text-xs text-neutral-500">로그인 + 휴대폰 인증 + 작성 권한 승인 상태에서만 신청이 가능합니다.</p>
         <p className="mt-1 text-xs text-neutral-500">접수중 상태일 때만 본인 신청서를 수정할 수 있습니다.</p>
+        <details className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2">
+          <summary className="cursor-pointer text-sm font-medium text-neutral-800">1:1 진행 방식 간단히 보기</summary>
+          <div className="mt-2 space-y-1 text-xs leading-5 text-neutral-600">
+            <p>1. 신청서를 올리면 운영자가 상대 후보를 연결합니다.</p>
+            <p>2. 서로 수락하면 지원자에게 번호 교환 안내가 뜹니다.</p>
+            <p>3. 관리자 승인 후 양쪽 마이페이지에 번호가 공개됩니다.</p>
+          </div>
+        </details>
         {!isEditMode && !status.phoneVerified && (
           <p className="mt-2 text-xs font-medium text-amber-700">휴대폰 인증이 완료된 계정만 신청할 수 있습니다.</p>
         )}

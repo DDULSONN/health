@@ -317,6 +317,18 @@ type MyOneOnOneMatch = {
     | "source_declined"
     | "admin_canceled"
     | "mutual_accepted";
+  contact_exchange_status:
+    | "none"
+    | "awaiting_applicant_payment"
+    | "payment_pending_admin"
+    | "approved"
+    | "canceled";
+  contact_exchange_requested_at: string | null;
+  contact_exchange_paid_at: string | null;
+  contact_exchange_paid_by_user_id: string | null;
+  contact_exchange_approved_at: string | null;
+  contact_exchange_approved_by_user_id: string | null;
+  contact_exchange_note: string | null;
   action_required: boolean;
   source_card_id: string;
   candidate_card_id: string;
@@ -328,6 +340,7 @@ type MyOneOnOneMatch = {
   source_card: MyOneOnOneMatchCard | null;
   candidate_card: MyOneOnOneMatchCard | null;
   counterparty_card: MyOneOnOneMatchCard | null;
+  counterparty_phone: string | null;
 };
 
 type MyOneOnOneAutoRecommendationGroup = {
@@ -865,6 +878,7 @@ export default function MyPage() {
   const [processingSwipeSubscriptionIds, setProcessingSwipeSubscriptionIds] = useState<string[]>([]);
   const [processingCityViewIds, setProcessingCityViewIds] = useState<string[]>([]);
   const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
+  const [processingOneOnOneContactExchangeIds, setProcessingOneOnOneContactExchangeIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
   const [processingSwipeLikeBackIds, setProcessingSwipeLikeBackIds] = useState<string[]>([]);
   const [deletingSwipeLikeIds, setDeletingSwipeLikeIds] = useState<string[]>([]);
@@ -2140,7 +2154,7 @@ export default function MyPage() {
 
   const handleOneOnOneMatchAction = async (
     matchId: string,
-    action: "select_candidate" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject"
+    action: "select_candidate" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
   ) => {
     if (processingOneOnOneMatchIds.includes(matchId)) return;
     setProcessingOneOnOneMatchIds((prev) => [...prev, matchId]);
@@ -2160,6 +2174,27 @@ export default function MyPage() {
       alert(e instanceof Error ? e.message : "1:1 매칭 처리에 실패했습니다.");
     } finally {
       setProcessingOneOnOneMatchIds((prev) => prev.filter((id) => id !== matchId));
+    }
+  };
+
+  const handleRequestOneOnOneContactExchange = async (matchId: string) => {
+    if (processingOneOnOneContactExchangeIds.includes(matchId)) return;
+    setProcessingOneOnOneContactExchangeIds((prev) => [...prev, matchId]);
+    try {
+      const res = await fetch(`/api/dating/1on1/matches/${matchId}/contact-exchange`, {
+        method: "POST",
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) {
+        alert(body.error ?? "번호 교환 요청 처리에 실패했습니다.");
+        return;
+      }
+      await reloadOneOnOneMatches();
+      alert("입금 확인 요청을 보냈습니다. 관리자 승인 후 번호가 공개됩니다.");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "번호 교환 요청 처리에 실패했습니다.");
+    } finally {
+      setProcessingOneOnOneContactExchangeIds((prev) => prev.filter((id) => id !== matchId));
     }
   };
 
@@ -2860,7 +2895,7 @@ export default function MyPage() {
     candidate_accepted: "최종 수락 대기",
     candidate_rejected: "상대 거절",
     source_declined: "최종 거절",
-    admin_canceled: "관리자 종료",
+    admin_canceled: "매칭 취소",
     mutual_accepted: "쌍방 수락 완료",
   };
   const oneOnOneMatchStateColor: Record<MyOneOnOneMatch["state"], string> = {
@@ -2872,6 +2907,20 @@ export default function MyPage() {
     source_declined: "bg-red-100 text-red-700",
     admin_canceled: "bg-neutral-200 text-neutral-700",
     mutual_accepted: "bg-emerald-100 text-emerald-700",
+  };
+  const oneOnOneContactExchangeText: Record<MyOneOnOneMatch["contact_exchange_status"], string> = {
+    none: "번호 교환 전",
+    awaiting_applicant_payment: "번호 교환 대기",
+    payment_pending_admin: "입금 확인 중",
+    approved: "번호 교환 완료",
+    canceled: "번호 교환 종료",
+  };
+  const oneOnOneContactExchangeColor: Record<MyOneOnOneMatch["contact_exchange_status"], string> = {
+    none: "bg-neutral-100 text-neutral-600",
+    awaiting_applicant_payment: "bg-amber-100 text-amber-700",
+    payment_pending_admin: "bg-violet-100 text-violet-700",
+    approved: "bg-emerald-100 text-emerald-700",
+    canceled: "bg-neutral-200 text-neutral-700",
   };
   const cardAppStatusText: Record<string, string> = {
     submitted: "대기",
@@ -4267,7 +4316,7 @@ export default function MyPage() {
                                   {oneOnOneMatchStateText[match.state]}
                                 </span>
                               </div>
-                              <p className="mt-1 text-xs text-neutral-600">상대가 수락하면 바로 최종 매칭 완료로 처리됩니다.</p>
+                              <p className="mt-1 text-xs text-neutral-600">상대가 수락하면 내 최종 수락 단계로 넘어갑니다.</p>
                             </div>
                           );
                         })}
@@ -4323,26 +4372,102 @@ export default function MyPage() {
                         {mutualAcceptedMatches.map((match) => {
                           const card = match.counterparty_card;
                           if (!card) return null;
+                          const contactProcessing = processingOneOnOneContactExchangeIds.includes(match.id);
+                          const isApplicant = match.role === "source";
                           return (
                             <div key={match.id} className="rounded-lg border border-emerald-200 bg-white p-3">
                               <div className="flex items-center justify-between gap-2">
                                 <p className="text-sm font-medium text-neutral-900">
                                   {card.name} / {card.age ?? "-"}세 / {card.region}
                                 </p>
-                                <span
-                                  className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                                    oneOnOneMatchStateColor[match.state]
-                                  }`}
-                                >
-                                  {oneOnOneMatchStateText[match.state]}
-                                </span>
+                                <div className="flex flex-wrap items-center justify-end gap-1">
+                                  <span
+                                    className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                      oneOnOneMatchStateColor[match.state]
+                                    }`}
+                                  >
+                                    {oneOnOneMatchStateText[match.state]}
+                                  </span>
+                                  <span
+                                    className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
+                                      oneOnOneContactExchangeColor[match.contact_exchange_status]
+                                    }`}
+                                  >
+                                    {oneOnOneContactExchangeText[match.contact_exchange_status]}
+                                  </span>
+                                </div>
                               </div>
                               <p className="mt-1 text-xs text-neutral-600">
                                 {card.height_cm}cm / {card.job} / {new Date(match.updated_at).toLocaleString("ko-KR")}
                               </p>
-                              <p className="mt-1 text-xs text-emerald-700">
-                                양쪽 수락이 완료되었습니다. 관리자 페이지에서 최종 정리됩니다.
-                              </p>
+                              <div className="mt-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
+                                {match.contact_exchange_status === "awaiting_applicant_payment" && isApplicant ? (
+                                  <>
+                                    <p className="text-xs font-semibold text-neutral-900">번호 교환 대기</p>
+                                    <p className="mt-1 text-xs text-neutral-700">
+                                      번호 교환을 원하면 아래 오픈카톡으로 문의해 주세요. 닉네임과 매칭 ID를 보내주시면 확인 후 연결을 열어드립니다.
+                                    </p>
+                                    <p className="mt-2 text-[11px] text-neutral-500">매칭 ID {match.id}</p>
+                                    <div className="mt-2 flex flex-wrap gap-2">
+                                      <a
+                                        href={OPEN_KAKAO_URL}
+                                        target="_blank"
+                                        rel="noreferrer"
+                                        className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                                      >
+                                        오픈카톡 문의
+                                      </a>
+                                      <button
+                                        type="button"
+                                        disabled={contactProcessing}
+                                        onClick={() => void handleRequestOneOnOneContactExchange(match.id)}
+                                        className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                                      >
+                                        {contactProcessing ? "요청 중..." : "입금 확인 요청"}
+                                      </button>
+                                    </div>
+                                  </>
+                                ) : null}
+                                {match.contact_exchange_status === "awaiting_applicant_payment" && !isApplicant ? (
+                                  <>
+                                    <p className="text-xs font-semibold text-neutral-900">번호 교환 대기</p>
+                                    <p className="mt-1 text-xs text-neutral-700">
+                                      상대가 연결 오픈을 요청하면 관리자 확인 후 번호가 공개됩니다.
+                                    </p>
+                                  </>
+                                ) : null}
+                                {match.contact_exchange_status === "payment_pending_admin" ? (
+                                  <>
+                                    <p className="text-xs font-semibold text-neutral-900">입금 확인 중</p>
+                                    <p className="mt-1 text-xs text-neutral-700">
+                                      관리자 확인 후 양쪽 번호가 자동으로 공개됩니다. 잠시만 기다려 주세요.
+                                    </p>
+                                  </>
+                                ) : null}
+                                {match.contact_exchange_status === "approved" ? (
+                                  <>
+                                    <p className="text-xs font-semibold text-neutral-900">번호 교환 완료</p>
+                                    <p className="mt-1 text-sm font-semibold text-emerald-700">
+                                      {match.counterparty_phone ?? "번호 정보를 불러오는 중입니다."}
+                                    </p>
+                                    <p className="mt-1 text-[11px] text-neutral-500">
+                                      외부 공유, 무단 저장, 불쾌한 연락은 제재 대상입니다.
+                                    </p>
+                                  </>
+                                ) : null}
+                              </div>
+                              {match.contact_exchange_status !== "approved" && (
+                                <div className="mt-2 flex justify-end">
+                                  <button
+                                    type="button"
+                                    disabled={processingOneOnOneMatchIds.includes(match.id)}
+                                    onClick={() => void handleOneOnOneMatchAction(match.id, "cancel_mutual")}
+                                    className="inline-flex h-8 items-center rounded-md border border-rose-300 bg-white px-3 text-xs font-medium text-rose-700 disabled:opacity-50"
+                                  >
+                                    {processingOneOnOneMatchIds.includes(match.id) ? "취소 중..." : "매칭 취소"}
+                                  </button>
+                                </div>
+                              )}
                               <p className="mt-2 text-xs text-neutral-700 whitespace-pre-wrap break-words">{card.intro_text}</p>
                               <p className="mt-2 text-xs text-neutral-700">장점: {card.strengths_text}</p>
                               <p className="mt-1 text-xs text-neutral-700">원하는 점: {card.preferred_partner_text}</p>
@@ -5280,7 +5405,7 @@ export default function MyPage() {
                   <p className="font-medium text-sky-800">매칭 상태</p>
                   <p className="mt-1">전체 {adminDatingStats.one_on_one.matches.total} · 제안중 {adminDatingStats.one_on_one.matches.proposed}</p>
                   <p className="mt-1">선택대기 {adminDatingStats.one_on_one.matches.source_selected} · 후보수락 {adminDatingStats.one_on_one.matches.candidate_accepted}</p>
-                  <p className="mt-1">상호수락 {adminDatingStats.one_on_one.matches.mutual_accepted} · 운영취소 {adminDatingStats.one_on_one.matches.admin_canceled}</p>
+                  <p className="mt-1">상호수락 {adminDatingStats.one_on_one.matches.mutual_accepted} · 취소 {adminDatingStats.one_on_one.matches.admin_canceled}</p>
                 </div>
                 <div className="mt-3">
                   <p className="text-xs font-medium text-neutral-700">승인 카드 상위 지역</p>
