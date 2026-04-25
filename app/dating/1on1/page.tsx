@@ -359,12 +359,12 @@ function DatingOneOnOnePageContent() {
         </h1>
         <p className="mt-2 text-sm text-neutral-700">운영자가 매칭을 관리하고, 서로 수락되면 번호 교환이 진행되는 1:1 소개팅입니다.</p>
         <p className="text-sm text-neutral-700">신청은 무료이며, 번호 교환 단계에서만 매칭비 20,000원이 발생합니다.</p>
-        <p className="text-sm text-neutral-700">신청 내용은 외부 공개 없이 매칭 진행에만 사용됩니다.</p>
+        <p className="text-sm text-neutral-700">신청 내용은 외부 공개 없이 매칭 진행에만 사용되며, 쌍방 수락 후 승인되면 양쪽 번호가 공개될 수 있습니다.</p>
         <p className="mt-2 text-sm font-medium text-emerald-700">
           지금까지 {Number(status?.totalApplications ?? 0).toLocaleString("ko-KR")}명이 1:1 소개팅을 신청했습니다.
         </p>
         <p className="mt-2 text-xs text-neutral-500">
-          카드 내용에는 소개에 필요한 정보만 담기고, 전화번호는 승인 전까지 상대에게 공개되지 않습니다.
+          카드 내용에는 소개에 필요한 정보만 담기고, 전화번호는 쌍방 수락 후 관리자 승인 전까지 상대에게 공개되지 않습니다.
         </p>
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
           <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
@@ -380,7 +380,7 @@ function DatingOneOnOnePageContent() {
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-3">
             <p className="text-[11px] font-semibold tracking-wide text-emerald-700">3단계</p>
             <p className="mt-1 text-sm font-semibold text-emerald-900">번호 교환</p>
-            <p className="mt-1 text-xs leading-5 text-emerald-800">매칭비 20,000원 확인 후 양쪽 번호가 공개됩니다.</p>
+            <p className="mt-1 text-xs leading-5 text-emerald-800">매칭비 20,000원 확인 후 양쪽 번호가 공개될 수 있습니다.</p>
           </div>
         </div>
       </section>
@@ -400,7 +400,7 @@ function DatingOneOnOnePageContent() {
           </label>
           <label className="flex items-start gap-2">
             <input type="checkbox" checked={consentFee} onChange={(e) => setConsentFee(e.target.checked)} className="mt-1" />
-            번호 교환 진행 시 매칭비가 발생함을 확인했습니다.
+            번호 교환 진행 시 매칭비가 발생하고, 쌍방 수락 후 승인되면 전화번호가 공개될 수 있음을 확인했습니다.
           </label>
           <label className="flex items-start gap-2">
             <input type="checkbox" checked={consentPrivacy} onChange={(e) => setConsentPrivacy(e.target.checked)} className="mt-1" />

@@ -3970,6 +3970,12 @@ export default function MyPage() {
 
       <section className="mb-5 rounded-2xl border border-sky-200 bg-sky-50/30 p-5">
         <h2 className="text-lg font-bold text-sky-900 mb-3">내 1:1 소개팅 신청 내역</h2>
+        <div className="mb-3 rounded-xl border border-sky-200 bg-white/80 px-3 py-3">
+          <p className="text-xs font-semibold text-sky-900">1:1 이용 안내</p>
+          <p className="mt-1 text-[11px] leading-5 text-neutral-600">
+            쌍방 수락 후 번호 교환이 승인되면 상대 연락처가 공개될 수 있습니다. 공개된 번호의 외부 공유, 무단 저장, 불쾌한 연락은 제재 대상입니다.
+          </p>
+        </div>
         {myOneOnOneCards.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 신청한 내역이 없습니다.</p>
         ) : (
