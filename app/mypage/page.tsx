@@ -2195,9 +2195,9 @@ export default function MyPage() {
       await reloadOneOnOneMatches();
       if (targetMatch && isLegacyOneOnOneContactFlow(targetMatch)) {
         if (targetMatch.role === "candidate") {
-          alert("번호 공개 동의를 저장했습니다. 이제 상대가 진행할 수 있습니다.");
+          alert("번호 공개 동의를 저장했습니다. 이제 상대가 입금 확인 요청을 진행할 수 있습니다.");
         } else {
-          alert("번호 공개 동의를 저장했습니다. 양쪽 동의가 완료되어 번호가 자동으로 공개됩니다.");
+          alert("입금 확인 요청을 보냈습니다. 관리자 승인 후 번호가 공개됩니다.");
         }
       } else {
         alert("입금 확인 요청을 보냈습니다. 관리자 승인 후 번호가 공개됩니다.");
@@ -2950,11 +2950,17 @@ export default function MyPage() {
   };
   const getOneOnOneContactExchangeBadgeText = (match: MyOneOnOneMatch) => {
     if (!isLegacyOneOnOneContactFlow(match) || match.contact_exchange_status !== "none") {
+      if (
+        isLegacyOneOnOneContactFlow(match) &&
+        match.contact_exchange_status === "awaiting_applicant_payment"
+      ) {
+        return "입금 요청 대기";
+      }
       return oneOnOneContactExchangeText[match.contact_exchange_status];
     }
     const { selfConsented, otherConsented } = getOneOnOneConsentState(match);
-    if (selfConsented && otherConsented) return "번호 공개 확인 중";
     if (selfConsented) return "내 동의 완료";
+    if (match.role === "source") return "상대 동의 대기";
     if (otherConsented) return "상대 동의 완료";
     return "번호 공개 동의";
   };
@@ -4449,7 +4455,7 @@ export default function MyPage() {
                                   <>
                                     <p className="text-xs font-semibold text-neutral-900">기존 매칭 번호 공개 동의</p>
                                     <p className="mt-1 text-xs text-neutral-700">
-                                      기존 쌍방 매칭은 지원 받은 사람이 먼저 동의하고, 이후 지원한 사람이 동의하면 번호가 자동으로 공개됩니다.
+                                      기존 쌍방 매칭은 지원 받은 사람이 먼저 번호 공개에 동의하고, 이후 지원한 사람이 입금 확인 요청을 하면 관리자 승인 후 번호가 공개됩니다.
                                     </p>
                                     <p className="mt-2 text-[11px] text-neutral-500">
                                       {selfConsented ? "내 동의 완료" : "내 동의 필요"} · {otherConsented ? "상대 동의 완료" : "상대 동의 대기"}
@@ -4468,31 +4474,74 @@ export default function MyPage() {
                                     ) : null}
                                     {!selfConsented && match.role === "source" ? (
                                       <p className="mt-2 text-xs text-neutral-700">
-                                        상대가 먼저 번호 공개 동의를 하면 그다음에 진행할 수 있습니다.
+                                        상대가 먼저 번호 공개 동의를 하면, 그다음에 입금 확인 요청을 진행할 수 있습니다.
                                       </p>
                                     ) : null}
                                     {selfConsented && !otherConsented ? (
                                       <p className="mt-2 text-xs text-neutral-700">
                                         {match.role === "candidate"
-                                          ? "이제 상대가 동의하면 번호가 자동으로 공개됩니다."
-                                          : "상대 동의가 완료되면 번호 공개 동의 버튼이 열립니다."}
+                                          ? "이제 상대가 입금 확인 요청을 진행하면 관리자 승인 후 번호가 공개됩니다."
+                                          : "상대 동의가 완료되면 입금 확인 요청 버튼이 열립니다."}
                                       </p>
                                     ) : null}
                                     {!selfConsented && otherConsented && match.role === "source" ? (
                                       <div className="mt-2 flex flex-wrap gap-2">
+                                        <a
+                                          href={OPEN_KAKAO_URL}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                                        >
+                                          오픈카톡 문의
+                                        </a>
                                         <button
                                           type="button"
                                           disabled={contactProcessing}
                                           onClick={() => void handleRequestOneOnOneContactExchange(match.id)}
                                           className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                                         >
-                                          {contactProcessing ? "동의 저장 중..." : "번호 공개 동의"}
+                                          {contactProcessing ? "요청 중..." : "입금 확인 요청"}
                                         </button>
                                       </div>
                                     ) : null}
                                   </>
                                 ) : null}
-                                {match.contact_exchange_status === "awaiting_applicant_payment" && isApplicant ? (
+                                {isLegacyContactFlow && match.contact_exchange_status === "awaiting_applicant_payment" ? (
+                                  <>
+                                    <p className="text-xs font-semibold text-neutral-900">입금 확인 대기</p>
+                                    {isApplicant ? (
+                                      <>
+                                        <p className="mt-1 text-xs text-neutral-700">
+                                          상대가 번호 공개에 동의했습니다. 오픈카톡으로 문의한 뒤 입금 확인 요청을 보내 주세요.
+                                        </p>
+                                        <p className="mt-2 text-[11px] text-neutral-500">매칭 ID {match.id}</p>
+                                        <div className="mt-2 flex flex-wrap gap-2">
+                                          <a
+                                            href={OPEN_KAKAO_URL}
+                                            target="_blank"
+                                            rel="noreferrer"
+                                            className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                                          >
+                                            오픈카톡 문의
+                                          </a>
+                                          <button
+                                            type="button"
+                                            disabled={contactProcessing}
+                                            onClick={() => void handleRequestOneOnOneContactExchange(match.id)}
+                                            className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                                          >
+                                            {contactProcessing ? "요청 중..." : "입금 확인 요청"}
+                                          </button>
+                                        </div>
+                                      </>
+                                    ) : (
+                                      <p className="mt-1 text-xs text-neutral-700">
+                                        번호 공개 동의가 저장되었습니다. 상대가 입금 확인 요청을 하면 관리자 승인 후 번호가 공개됩니다.
+                                      </p>
+                                    )}
+                                  </>
+                                ) : null}
+                                {match.contact_exchange_status === "awaiting_applicant_payment" && isApplicant && !isLegacyContactFlow ? (
                                   <>
                                     <p className="text-xs font-semibold text-neutral-900">번호 교환 대기</p>
                                     <p className="mt-1 text-xs text-neutral-700">
@@ -4519,7 +4568,7 @@ export default function MyPage() {
                                     </div>
                                   </>
                                 ) : null}
-                                {match.contact_exchange_status === "awaiting_applicant_payment" && !isApplicant ? (
+                                {match.contact_exchange_status === "awaiting_applicant_payment" && !isApplicant && !isLegacyContactFlow ? (
                                   <>
                                     <p className="text-xs font-semibold text-neutral-900">번호 교환 대기</p>
                                     <p className="mt-1 text-xs text-neutral-700">

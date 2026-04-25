@@ -1152,7 +1152,7 @@ export default function AdminDatingOneOnOnePage() {
                   <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50/40 p-3">
                     {isDatingOneOnOneLegacyPhoneShareMatch(match) ? (
                       <p className="text-xs text-neutral-700">
-                        기존 매칭 흐름: 양쪽이 번호 공개에 동의하면 번호가 자동으로 공개됩니다.
+                        기존 매칭 흐름: 지원 받은 사람 선동의 → 지원한 사람 입금 확인 요청 → 관리자 승인 → 양쪽 번호 공개
                       </p>
                     ) : (
                       <p className="text-xs text-neutral-700">
