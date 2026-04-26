@@ -703,6 +703,10 @@ export default function OpenCardsPage() {
               <p className="mt-3 max-w-xl text-[15px] leading-7 text-neutral-500 md:text-base">
                 둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.
               </p>
+              <div className="mt-4 inline-flex flex-wrap items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2">
+                <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white">혜택</span>
+                <p className="text-sm font-semibold text-emerald-900">오픈카드 등록하면 매주 원하는 지역 1곳 무료 오픈</p>
+              </div>
 
               <div className="mt-5 grid gap-3 sm:grid-cols-2">
                 <div className="rounded-[24px] bg-neutral-50 p-4">

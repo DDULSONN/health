@@ -19,6 +19,13 @@ type CityStatusResponse = {
   activeCityDetails?: Array<{ province: string; expiresAt: string }>;
   pendingCities?: string[];
   provinceStats?: ProvinceStat[];
+  weeklyBenefit?: {
+    eligible: boolean;
+    canClaim: boolean;
+    weekId: string;
+    claimedProvince: string | null;
+    claimedAt: string | null;
+  };
 };
 
 type CardItem = {
@@ -68,7 +75,14 @@ export default function NearbyViewPage() {
   const initialSnapshot = useMemo(() => readNearbyViewSnapshot(), []);
   const [submittingProvince, setSubmittingProvince] = useState("");
   const [status, setStatus] = useState<CityStatusResponse>(
-    initialSnapshot?.status ?? { loggedIn: false, activeCities: [], activeCityDetails: [], pendingCities: [], provinceStats: [] }
+    initialSnapshot?.status ?? {
+      loggedIn: false,
+      activeCities: [],
+      activeCityDetails: [],
+      pendingCities: [],
+      provinceStats: [],
+      weeklyBenefit: { eligible: false, canClaim: false, weekId: "", claimedProvince: null, claimedAt: null },
+    }
   );
   const [selectedProvince, setSelectedProvince] = useState<string>(initialSnapshot?.selectedProvince ?? "");
   const [activeSex, setActiveSex] = useState<"male" | "female">(initialSnapshot?.activeSex ?? "male");
@@ -108,7 +122,14 @@ export default function NearbyViewPage() {
   const loadStatus = useCallback(async () => {
     const res = await fetch("/api/dating/cards/city-view/status", { cache: "no-store" });
     if (!res.ok) {
-      setStatus({ loggedIn: false, activeCities: [], activeCityDetails: [], pendingCities: [], provinceStats: [] });
+      setStatus({
+        loggedIn: false,
+        activeCities: [],
+        activeCityDetails: [],
+        pendingCities: [],
+        provinceStats: [],
+        weeklyBenefit: { eligible: false, canClaim: false, weekId: "", claimedProvince: null, claimedAt: null },
+      });
       return;
     }
     const body = (await res.json().catch(() => ({}))) as CityStatusResponse;
@@ -124,6 +145,7 @@ export default function NearbyViewPage() {
       activeCityDetails,
       pendingCities: pending,
       provinceStats,
+      weeklyBenefit: body.weeklyBenefit ?? { eligible: false, canClaim: false, weekId: "", claimedProvince: null, claimedAt: null },
     });
 
     if (!selectedProvince && active.length > 0) {
@@ -159,19 +181,22 @@ export default function NearbyViewPage() {
   }, [selectedProvince, loadList]);
 
   const handleRequestProvince = useCallback(
-    async (province: string) => {
+    async (province: string, useWeeklyBenefit = false) => {
       if (!province || !status.loggedIn || submittingProvince) return;
       setSubmittingProvince(province);
       try {
         const res = await fetch("/api/dating/cards/city-view/request", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ province }),
+          body: JSON.stringify({ province, useWeeklyBenefit }),
         });
         const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; province?: string; status?: "pending" | "approved" | "rejected" };
         if (!res.ok || !body.ok) {
           alert(body.message ?? "신청에 실패했습니다.");
           return;
+        }
+        if (body.message) {
+          alert(body.message);
         }
         await loadStatus();
         if (body.province && body.status === "approved") {
@@ -204,6 +229,10 @@ export default function NearbyViewPage() {
       <section className="rounded-2xl border border-sky-200 bg-sky-50 p-5">
         <h1 className="text-lg font-bold text-sky-900">내 가까운 이상형</h1>
         <p className="mt-2 text-sm text-sky-800">도/광역시별 대기 인원을 확인하고 신청하면, 승인 후 3시간 동안 해당 지역 대기 카드를 볼 수 있습니다.</p>
+        <div className="mt-3 inline-flex flex-wrap items-center gap-2 rounded-full border border-emerald-200 bg-white px-4 py-2">
+          <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white">혜택</span>
+          <p className="text-sm font-semibold text-emerald-900">오픈카드 등록하면 매주 원하는 지역 1곳 무료 오픈</p>
+        </div>
         <p className="mt-1 text-xs text-sky-900">가격: 지역당 5,000원</p>
         <p className="mt-1 text-xs text-sky-900">승인 시 지원권 1장 추가 지급</p>
         <p className="mt-1 text-xs text-sky-800">3시간 만료 후 같은 지역 재신청 가능</p>
@@ -223,6 +252,22 @@ export default function NearbyViewPage() {
       </section>
 
       <DatingAdultNotice />
+
+      <section className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+        <p className="text-sm font-semibold text-emerald-900">오픈카드 유지 혜택</p>
+        <p className="mt-1 text-sm text-emerald-800">오픈카드를 공개중이거나 대기중으로 유지하면, 매주 가까운 이상형 지역 1곳을 무료로 열람할 수 있어요.</p>
+        {status.weeklyBenefit?.eligible ? (
+          status.weeklyBenefit.canClaim ? (
+            <p className="mt-2 text-xs font-medium text-emerald-900">이번 주 무료 열람 1회가 남아 있어요. 원하는 지역에서 `주간 무료 열람`을 누르면 바로 3시간 열립니다.</p>
+          ) : (
+            <p className="mt-2 text-xs font-medium text-emerald-900">
+              이번 주 무료 열람은 {status.weeklyBenefit.claimedProvince ?? "-"}에서 사용했어요.
+            </p>
+          )
+        ) : (
+          <p className="mt-2 text-xs text-emerald-800">이 혜택은 오픈카드를 공개중이거나 대기중으로 유지하는 회원에게만 제공됩니다.</p>
+        )}
+      </section>
 
       <section className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
         <h2 className="mb-3 text-sm font-semibold text-neutral-800">도/광역시별 대기 인원</h2>
@@ -256,14 +301,26 @@ export default function NearbyViewPage() {
                   ) : isPending ? (
                     <span className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-700">승인대기</span>
                   ) : (
-                    <button
-                      type="button"
-                      onClick={() => void handleRequestProvince(stat.province)}
-                      disabled={!status.loggedIn || Boolean(submittingProvince)}
-                      className="h-8 rounded-md bg-sky-600 px-3 text-xs font-medium text-white hover:bg-sky-700 disabled:opacity-50"
-                    >
-                      {submittingProvince === stat.province ? "신청 중..." : "신청"}
-                    </button>
+                    <div className="flex items-center gap-2">
+                      {status.weeklyBenefit?.eligible && status.weeklyBenefit.canClaim ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleRequestProvince(stat.province, true)}
+                          disabled={!status.loggedIn || Boolean(submittingProvince)}
+                          className="h-8 rounded-md border border-emerald-300 bg-emerald-50 px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                        >
+                          {submittingProvince === stat.province ? "처리 중..." : "주간 무료 열람"}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void handleRequestProvince(stat.province)}
+                        disabled={!status.loggedIn || Boolean(submittingProvince)}
+                        className="h-8 rounded-md bg-sky-600 px-3 text-xs font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+                      >
+                        {submittingProvince === stat.province ? "신청 중..." : "유료 신청"}
+                      </button>
+                    </div>
                   )}
                 </div>
               </div>

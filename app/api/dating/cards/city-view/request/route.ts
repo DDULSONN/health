@@ -1,4 +1,5 @@
 ﻿import { extractProvinceFromRegion } from "@/lib/region-city";
+import { claimCityViewWeeklyBenefit } from "@/lib/dating-city-view-weekly";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -60,15 +61,39 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: "로그인이 필요합니다." }, { status: 401 });
   }
 
-  const body = (await req.json().catch(() => null)) as { city?: unknown; province?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as { city?: unknown; province?: unknown; useWeeklyBenefit?: unknown } | null;
   const provinceRaw = typeof body?.province === "string" ? body.province.trim() : typeof body?.city === "string" ? body.city.trim() : "";
   const province = extractProvinceFromRegion(provinceRaw) ?? provinceRaw;
+  const useWeeklyBenefit = body?.useWeeklyBenefit === true;
 
   if (!province || province.length < 2 || province.length > 20) {
     return NextResponse.json({ ok: false, message: "도/광역시명을 확인해주세요." }, { status: 400 });
   }
 
   const admin = createAdminClient();
+
+  if (useWeeklyBenefit) {
+    try {
+      const granted = await claimCityViewWeeklyBenefit(admin, {
+        userId: user.id,
+        province,
+      });
+
+      return NextResponse.json({
+        ok: true,
+        status: "approved",
+        province: granted.province,
+        message: "오픈카드 유지 혜택으로 이번 주 무료 열람이 바로 열렸습니다.",
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "주간 무료 열람 처리에 실패했습니다.";
+      const statusCode =
+        message.includes("이미 사용") || message.includes("오픈카드를 유지") || message.includes("도/광역시명을 확인")
+          ? 400
+          : 500;
+      return NextResponse.json({ ok: false, message }, { status: statusCode });
+    }
+  }
 
   const historyRes = await admin
     .from("dating_city_view_requests")

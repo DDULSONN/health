@@ -1,4 +1,5 @@
 ﻿import { extractProvinceFromRegion, PROVINCE_ORDER } from "@/lib/region-city";
+import { getCityViewWeeklyBenefitStatus } from "@/lib/dating-city-view-weekly";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -13,6 +14,14 @@ type ProvinceStat = {
 type ActiveCityDetail = {
   province: string;
   expiresAt: string;
+};
+
+type WeeklyBenefitStatus = {
+  eligible: boolean;
+  canClaim: boolean;
+  weekId: string;
+  claimedProvince: string | null;
+  claimedAt: string | null;
 };
 
 type CityViewRequestRow = {
@@ -110,6 +119,13 @@ export async function GET(req: Request) {
       activeCityDetails: [],
       pendingCities: [],
       provinceStats,
+      weeklyBenefit: {
+        eligible: false,
+        canClaim: false,
+        weekId: "",
+        claimedProvince: null,
+        claimedAt: null,
+      } satisfies WeeklyBenefitStatus,
     });
   }
 
@@ -123,6 +139,7 @@ export async function GET(req: Request) {
 
   const activeCityDetails: ActiveCityDetail[] = [];
   const pendingCities: string[] = [];
+  const weeklyBenefit = await getCityViewWeeklyBenefitStatus(admin, user.id);
 
   if (Array.isArray(historyRes.data)) {
     const byProvince = new Map<string, CityViewRequestRow[]>();
@@ -162,5 +179,6 @@ export async function GET(req: Request) {
     activeCityDetails,
     pendingCities,
     provinceStats,
+    weeklyBenefit,
   });
 }
