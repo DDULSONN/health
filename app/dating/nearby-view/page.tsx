@@ -299,7 +299,19 @@ export default function NearbyViewPage() {
                       </span>
                     </>
                   ) : isPending ? (
-                    <span className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-700">승인대기</span>
+                    <div className="flex items-center gap-2">
+                      {status.weeklyBenefit?.eligible && status.weeklyBenefit.canClaim ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleRequestProvince(stat.province, true)}
+                          disabled={!status.loggedIn || Boolean(submittingProvince)}
+                          className="h-8 rounded-md border border-emerald-300 bg-emerald-50 px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                        >
+                          {submittingProvince === stat.province ? "처리 중..." : "주간 무료 열람"}
+                        </button>
+                      ) : null}
+                      <span className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-700">승인대기</span>
+                    </div>
                   ) : (
                     <div className="flex items-center gap-2">
                       {status.weeklyBenefit?.eligible && status.weeklyBenefit.canClaim ? (
