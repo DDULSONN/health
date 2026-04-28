@@ -836,6 +836,12 @@ export default function OpenCardsPage() {
             <div className="mt-3 flex flex-wrap gap-2">
               <span className="inline-flex min-h-[42px] items-center rounded-full bg-neutral-950 px-4 text-sm font-bold text-white">전체</span>
               <Link
+                href="/dating/apply-credits"
+                className="inline-flex min-h-[42px] items-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
+              >
+                지원권 구매
+              </Link>
+              <Link
                 href="/dating/more-view"
                 className="inline-flex min-h-[42px] items-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
               >
