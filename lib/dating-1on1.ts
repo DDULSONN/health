@@ -21,7 +21,6 @@ export const DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES = [
 export const DATING_ONE_ON_ONE_MATCH_CANDIDATE_SINGLE_TRACK_STATES = [
   "source_selected",
   "candidate_accepted",
-  "mutual_accepted",
 ] as const;
 
 export type DatingOneOnOneMatchState =

@@ -220,7 +220,6 @@ const ACTIVE_PAIR_STATES = new Set<AdminMatchItem["state"]>([
 const CANDIDATE_SINGLE_TRACK_STATES = new Set<AdminMatchItem["state"]>([
   "source_selected",
   "candidate_accepted",
-  "mutual_accepted",
 ]);
 
 function getAutoCandidateRange(card: Pick<CardItem, "sex" | "age">): AutoCandidateRange {
