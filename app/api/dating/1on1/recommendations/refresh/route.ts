@@ -1,14 +1,14 @@
 import { DATING_ONE_ON_ONE_ACTIVE_STATUSES } from "@/lib/dating-1on1";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
-import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
+import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 type RefreshRecommendationPayload = {
   source_card_id?: string;
 };
 
-const RECOMMENDATION_REFRESH_COOLDOWN_MS = 48 * 60 * 60 * 1000;
+const RECOMMENDATION_REFRESH_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 export async function POST(req: Request) {
   const originError = ensureAllowedMutationOrigin(req);
@@ -54,7 +54,7 @@ export async function POST(req: Request) {
       if (nextRefreshMs > Date.now()) {
         return NextResponse.json(
           {
-            error: "추천 새로고침은 2일에 한 번만 가능합니다.",
+            error: "후보 새로고침은 1일에 1번만 가능합니다.",
             next_refresh_at: new Date(nextRefreshMs).toISOString(),
           },
           { status: 409 }
@@ -80,7 +80,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Failed to refresh recommendations." }, { status: 500 });
   }
   if (!updateRes.data) {
-    return NextResponse.json({ error: "추천 새로고침 처리에 실패했습니다. 잠시 후 다시 시도해 주세요." }, { status: 409 });
+    return NextResponse.json(
+      { error: "후보 새로고침 처리에 실패했습니다. 잠시 후 다시 시도해 주세요." },
+      { status: 409 }
+    );
   }
 
   return NextResponse.json({

@@ -10,7 +10,7 @@ import { NextResponse } from "next/server";
 
 const RECOMMENDATION_LIMIT = 10;
 const CARD_BATCH_SIZE = 1000;
-const RECOMMENDATION_REFRESH_COOLDOWN_MS = 48 * 60 * 60 * 1000;
+const RECOMMENDATION_REFRESH_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
 type CardRow = {
   id: string;
@@ -64,6 +64,8 @@ function getDistanceRank(sourceRegion: string | null, candidateRegion: string | 
   return {
     sameRegionRank: meta.sameRegion ? 0 : 1,
     sameProvinceRank: meta.sameProvince ? 0 : 1,
+    distanceBandRank:
+      meta.distanceKm == null ? 4 : meta.distanceKm <= 15 ? 0 : meta.distanceKm <= 40 ? 1 : meta.distanceKm <= 90 ? 2 : 3,
     distanceRank: meta.distanceKm ?? Number.POSITIVE_INFINITY,
   };
 }
@@ -95,9 +97,6 @@ function sortCandidatesForSource(
     if (aDistanceRank.sameProvinceRank !== bDistanceRank.sameProvinceRank) {
       return aDistanceRank.sameProvinceRank - bDistanceRank.sameProvinceRank;
     }
-    if (aDistanceRank.distanceRank !== bDistanceRank.distanceRank) {
-      return aDistanceRank.distanceRank - bDistanceRank.distanceRank;
-    }
 
     const aInAgeRange = inAgeRange(a);
     const bInAgeRange = inAgeRange(b);
@@ -111,6 +110,13 @@ function sortCandidatesForSource(
       return aAgeGap - bAgeGap;
     }
 
+    if (aDistanceRank.distanceBandRank !== bDistanceRank.distanceBandRank) {
+      return aDistanceRank.distanceBandRank - bDistanceRank.distanceBandRank;
+    }
+    if (aDistanceRank.distanceRank !== bDistanceRank.distanceRank) {
+      return aDistanceRank.distanceRank - bDistanceRank.distanceRank;
+    }
+
     const aHash = hashSeed(`${sourceCard.id}:${seedSuffix}:${a.id}`);
     const bHash = hashSeed(`${sourceCard.id}:${seedSuffix}:${b.id}`);
     if (aHash !== bHash) return aHash - bHash;
@@ -118,17 +124,31 @@ function sortCandidatesForSource(
   });
 }
 
+function rotateCandidates<T>(items: T[], offset: number) {
+  if (items.length <= 1) return items;
+  const normalizedOffset = offset % items.length;
+  if (normalizedOffset <= 0) return items;
+  return [...items.slice(normalizedOffset), ...items.slice(0, normalizedOffset)];
+}
+
 function takeRecommendations(
   sortedCandidates: ReturnType<typeof toDatingOneOnOneCardDetail>[],
   limit: number,
-  preferredExcludeIds: Set<string> | null = null
+  preferredExcludeIds: Set<string> | null = null,
+  rotationSeed: string | null = null
 ) {
   if (!preferredExcludeIds || preferredExcludeIds.size === 0) {
     return sortedCandidates.slice(0, limit);
   }
 
+  const preferredPool = sortedCandidates.filter((candidate) => !preferredExcludeIds.has(candidate.id));
+  const rotatedPreferredPool =
+    rotationSeed && preferredPool.length > limit
+      ? rotateCandidates(preferredPool, hashSeed(rotationSeed) % preferredPool.length)
+      : preferredPool;
+
   const picked: ReturnType<typeof toDatingOneOnOneCardDetail>[] = [];
-  for (const candidate of sortedCandidates) {
+  for (const candidate of rotatedPreferredPool) {
     if (preferredExcludeIds.has(candidate.id)) continue;
     picked.push(candidate);
     if (picked.length >= limit) {
@@ -275,7 +295,8 @@ export async function GET(req: Request) {
       ? takeRecommendations(
           sortCandidatesForSource(sourceCard, candidates, sourceCard.recommendation_refresh_used_at),
           RECOMMENDATION_LIMIT,
-          new Set(defaultRecommendations.map((candidate) => candidate.id))
+          new Set(defaultRecommendations.map((candidate) => candidate.id)),
+          `${sourceCard.id}:${sourceCard.recommendation_refresh_used_at}:refresh`
         )
       : defaultRecommendations;
     const refreshAvailability = getRefreshAvailability(sourceCard.recommendation_refresh_used_at);
