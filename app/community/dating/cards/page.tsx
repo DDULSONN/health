@@ -48,6 +48,8 @@ type QueueStats = {
     pending_regions?: Array<{ city: string; count: number }>;
   };
   accepted_matches_count?: number;
+  one_on_one_applicants_count?: number;
+  one_on_one_matches_count?: number;
 };
 type MoreViewStatus = "none" | "pending" | "approved" | "rejected";
 type MoreViewStatusResponse = {
@@ -242,20 +244,21 @@ async function fetchBySex(
 
 export default function OpenCardsPage() {
   const supabase = useMemo(() => createClient(), []);
-  const initialSnapshot = useMemo(() => readOpenCardsSnapshot(), []);
-  const [activeSex, setActiveSex] = useState<"male" | "female">(initialSnapshot?.activeSex ?? "female");
+  const [restoredSnapshot, setRestoredSnapshot] = useState<OpenCardsSnapshot | null>(null);
+  const [snapshotReady, setSnapshotReady] = useState(false);
+  const [activeSex, setActiveSex] = useState<"male" | "female">("female");
   const [guideOpen, setGuideOpen] = useState(false);
-  const [males, setMales] = useState<PublicCard[]>(initialSnapshot?.males ?? []);
-  const [females, setFemales] = useState<PublicCard[]>(initialSnapshot?.females ?? []);
-  const [maleCursorCreatedAt, setMaleCursorCreatedAt] = useState<string | null>(initialSnapshot?.maleCursorCreatedAt ?? null);
-  const [maleCursorId, setMaleCursorId] = useState<string | null>(initialSnapshot?.maleCursorId ?? null);
-  const [femaleCursorCreatedAt, setFemaleCursorCreatedAt] = useState<string | null>(initialSnapshot?.femaleCursorCreatedAt ?? null);
-  const [femaleCursorId, setFemaleCursorId] = useState<string | null>(initialSnapshot?.femaleCursorId ?? null);
-  const [maleHasMore, setMaleHasMore] = useState(initialSnapshot?.maleHasMore ?? true);
-  const [femaleHasMore, setFemaleHasMore] = useState(initialSnapshot?.femaleHasMore ?? true);
-  const [loading, setLoading] = useState(() => !(initialSnapshot && (initialSnapshot.males.length > 0 || initialSnapshot.females.length > 0)));
-  const [queueStats, setQueueStats] = useState<QueueStats | null>(initialSnapshot?.queueStats ?? null);
-  const [paidItems, setPaidItems] = useState<PaidCard[]>(initialSnapshot?.paidItems ?? []);
+  const [males, setMales] = useState<PublicCard[]>([]);
+  const [females, setFemales] = useState<PublicCard[]>([]);
+  const [maleCursorCreatedAt, setMaleCursorCreatedAt] = useState<string | null>(null);
+  const [maleCursorId, setMaleCursorId] = useState<string | null>(null);
+  const [femaleCursorCreatedAt, setFemaleCursorCreatedAt] = useState<string | null>(null);
+  const [femaleCursorId, setFemaleCursorId] = useState<string | null>(null);
+  const [maleHasMore, setMaleHasMore] = useState(true);
+  const [femaleHasMore, setFemaleHasMore] = useState(true);
+  const [loading, setLoading] = useState(true);
+  const [queueStats, setQueueStats] = useState<QueueStats | null>(null);
+  const [paidItems, setPaidItems] = useState<PaidCard[]>([]);
   const [, setMoreViewStatus] = useState<{
     loggedIn: boolean;
     male: MoreViewStatus;
@@ -265,8 +268,8 @@ export default function OpenCardsPage() {
     male: "none",
     female: "none",
   });
-  const [moreViewMale, setMoreViewMale] = useState<PublicCard[]>(initialSnapshot?.moreViewMale ?? []);
-  const [moreViewFemale, setMoreViewFemale] = useState<PublicCard[]>(initialSnapshot?.moreViewFemale ?? []);
+  const [moreViewMale, setMoreViewMale] = useState<PublicCard[]>([]);
+  const [moreViewFemale, setMoreViewFemale] = useState<PublicCard[]>([]);
   const [tick, setTick] = useState(0);
   const [swipeLoading, setSwipeLoading] = useState(true);
   const [swipeRefreshing, setSwipeRefreshing] = useState(false);
@@ -289,6 +292,30 @@ export default function OpenCardsPage() {
   useEffect(() => {
     activeSexRef.current = activeSex;
   }, [activeSex]);
+
+  useEffect(() => {
+    const snapshot = readOpenCardsSnapshot();
+    if (snapshot) {
+      setRestoredSnapshot(snapshot);
+      setActiveSex(snapshot.activeSex);
+      setMales(snapshot.males);
+      setFemales(snapshot.females);
+      setMaleCursorCreatedAt(snapshot.maleCursorCreatedAt);
+      setMaleCursorId(snapshot.maleCursorId);
+      setFemaleCursorCreatedAt(snapshot.femaleCursorCreatedAt);
+      setFemaleCursorId(snapshot.femaleCursorId);
+      setMaleHasMore(snapshot.maleHasMore);
+      setFemaleHasMore(snapshot.femaleHasMore);
+      setQueueStats(snapshot.queueStats);
+      setPaidItems(snapshot.paidItems);
+      setMoreViewMale(snapshot.moreViewMale);
+      setMoreViewFemale(snapshot.moreViewFemale);
+      if (snapshot.males.length > 0 || snapshot.females.length > 0) {
+        setLoading(false);
+      }
+    }
+    setSnapshotReady(true);
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick((v) => v + 1), 60_000);
@@ -338,12 +365,12 @@ export default function OpenCardsPage() {
   ]);
 
   useEffect(() => {
-    if (!initialSnapshot) return;
+    if (!restoredSnapshot) return;
     const restore = window.requestAnimationFrame(() => {
-      window.scrollTo({ top: initialSnapshot.scrollY ?? 0, behavior: "auto" });
+      window.scrollTo({ top: restoredSnapshot.scrollY ?? 0, behavior: "auto" });
     });
     return () => window.cancelAnimationFrame(restore);
-  }, [initialSnapshot]);
+  }, [restoredSnapshot]);
 
   useEffect(() => {
     const saveSnapshot = () => {
@@ -467,10 +494,11 @@ export default function OpenCardsPage() {
   }, [refreshSecondary]);
 
   useEffect(() => {
+    if (!snapshotReady) return;
     queueMicrotask(() => {
-      void loadInitial({ silent: Boolean(initialSnapshot) });
+      void loadInitial({ silent: Boolean(restoredSnapshot) });
     });
-  }, [initialSnapshot, loadInitial]);
+  }, [snapshotReady, restoredSnapshot, loadInitial]);
 
   useEffect(() => {
     const pollSecondaryStatus = async () => {
@@ -708,7 +736,7 @@ export default function OpenCardsPage() {
                 <p className="text-sm font-semibold text-emerald-900">오픈카드 등록하면 매주 원하는 지역 1곳 무료 오픈</p>
               </div>
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-2">
+              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-[24px] bg-neutral-50 p-4">
                   <p className="text-sm font-semibold text-neutral-400">고정 노출</p>
                   <p className="mt-3 text-[18px] font-black text-rose-600 md:text-[20px]">{fixedPaidCount}명</p>
@@ -723,13 +751,40 @@ export default function OpenCardsPage() {
                     대기 남 {queueStats?.male.pending_count ?? 0} · 여 {queueStats?.female.pending_count ?? 0}
                   </p>
                 </div>
-                <div className="rounded-[24px] bg-neutral-50 p-4 sm:col-span-2">
+                <div className="rounded-[24px] bg-neutral-50 p-4 sm:col-span-2 lg:col-span-2">
                   <p className="text-sm font-semibold text-neutral-400">누적 매칭</p>
                   <p className="mt-3 text-[18px] font-black text-rose-600 md:text-[20px]">
                     {(queueStats?.accepted_matches_count ?? 0).toLocaleString("ko-KR")}명
                   </p>
                   <p className="mt-1 text-sm text-neutral-400">현재까지 연결</p>
                 </div>
+                <div className="rounded-[24px] bg-neutral-50 p-4">
+                  <p className="text-sm font-semibold text-neutral-400">1:1 신청</p>
+                  <p className="mt-3 text-[18px] font-black text-neutral-900 md:text-[20px]">
+                    {Number(queueStats?.one_on_one_applicants_count ?? 0).toLocaleString("ko-KR")}명
+                  </p>
+                  <p className="mt-1 text-sm text-neutral-400">누적 신청자</p>
+                </div>
+                <div className="rounded-[24px] bg-neutral-50 p-4">
+                  <p className="text-sm font-semibold text-neutral-400">1:1 매칭</p>
+                  <p className="mt-3 text-[18px] font-black text-neutral-900 md:text-[20px]">
+                    {Number(queueStats?.one_on_one_matches_count ?? 0).toLocaleString("ko-KR")}건
+                  </p>
+                  <p className="mt-1 text-sm text-neutral-400">서로 수락 완료</p>
+                </div>
+              </div>
+
+              <div className="mt-3 flex flex-col gap-3 rounded-[24px] bg-neutral-50 p-4 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-[15px] font-black tracking-tight text-neutral-900">후보를 보고 지원하는 1:1 소개팅도 함께 이용할 수 있어요.</p>
+                  <p className="mt-1 text-sm text-neutral-500">마음에 드는 후보에 지원하고, 서로 수락되면 번호 교환이 진행됩니다.</p>
+                </div>
+                <Link
+                  href="/dating/1on1"
+                  className="inline-flex min-h-[40px] shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-700 hover:bg-neutral-100"
+                >
+                  1:1 후보 보기
+                </Link>
               </div>
             </div>
 

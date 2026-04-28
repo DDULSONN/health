@@ -1,4 +1,5 @@
 import { isAllowedAdminUser } from "@/lib/admin";
+import { recordOneOnOneMetricEvent } from "@/lib/dating-1on1-metrics";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import {
   DATING_ONE_ON_ONE_ACTIVE_STATUSES,
@@ -346,6 +347,15 @@ export async function POST(req: Request) {
   if (error || !data) {
     console.error("[POST /api/dating/1on1/cards] failed", error);
     return NextResponse.json({ error: "Failed to create card." }, { status: 500 });
+  }
+  try {
+    await recordOneOnOneMetricEvent(admin, {
+      eventKind: "application_created",
+      cardId: data.id,
+      userId: user.id,
+    });
+  } catch (metricError) {
+    console.error("[POST /api/dating/1on1/cards] metric event failed", metricError);
   }
 
   return NextResponse.json({ id: data.id }, { status: 201 });

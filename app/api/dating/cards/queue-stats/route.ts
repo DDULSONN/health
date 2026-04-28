@@ -1,4 +1,5 @@
 import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
+import { countCumulativeOneOnOneApplicants, countCumulativeOneOnOneMatches } from "@/lib/dating-1on1-metrics";
 import { countCumulativeTotalDatingMatches } from "@/lib/dating-match-metrics";
 import { getOpenCardLimitBySex } from "@/lib/dating-open";
 import { extractCityFromRegion } from "@/lib/region-city";
@@ -82,6 +83,14 @@ async function countAcceptedMatches(adminClient: ReturnType<typeof createAdminCl
   return countCumulativeTotalDatingMatches(adminClient);
 }
 
+async function countOneOnOneApplicants(adminClient: ReturnType<typeof createAdminClient>) {
+  return countCumulativeOneOnOneApplicants(adminClient);
+}
+
+async function countOneOnOneMatches(adminClient: ReturnType<typeof createAdminClient>) {
+  return countCumulativeOneOnOneMatches(adminClient);
+}
+
 export async function GET() {
   const adminClient = createAdminClient();
   const requestId = crypto.randomUUID();
@@ -107,7 +116,7 @@ export async function GET() {
   };
 
   try {
-    const [malePublic, femalePublic, malePending, femalePending, malePendingRegions, femalePendingRegions, acceptedMatches] = await Promise.all([
+    const [malePublic, femalePublic, malePending, femalePending, malePendingRegions, femalePendingRegions, acceptedMatches, oneOnOneApplicants, oneOnOneMatches] = await Promise.all([
       safeCount("malePublic", () => countPublic(adminClient, "male")),
       safeCount("femalePublic", () => countPublic(adminClient, "female")),
       safeCount("malePending", () => countPending(adminClient, "male")),
@@ -121,6 +130,8 @@ export async function GET() {
         return [];
       }),
       safeCount("acceptedMatches", () => countAcceptedMatches(adminClient)),
+      safeCount("oneOnOneApplicants", () => countOneOnOneApplicants(adminClient)),
+      safeCount("oneOnOneMatches", () => countOneOnOneMatches(adminClient)),
     ]);
 
     return publicCachedJson(
@@ -138,6 +149,8 @@ export async function GET() {
           pending_regions: femalePendingRegions,
         },
         accepted_matches_count: acceptedMatches,
+        one_on_one_applicants_count: oneOnOneApplicants,
+        one_on_one_matches_count: oneOnOneMatches,
       },
       { sMaxAge: 20, staleWhileRevalidate: 40 }
     );
@@ -148,6 +161,8 @@ export async function GET() {
         male: { public_count: 0, pending_count: 0, slot_limit: getOpenCardLimitBySex("male"), pending_regions: [] },
         female: { public_count: 0, pending_count: 0, slot_limit: getOpenCardLimitBySex("female"), pending_regions: [] },
         accepted_matches_count: 0,
+        one_on_one_applicants_count: 0,
+        one_on_one_matches_count: 0,
       },
       { status: 200, sMaxAge: 20, staleWhileRevalidate: 40 }
     );

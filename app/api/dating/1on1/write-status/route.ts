@@ -1,4 +1,5 @@
 import { isAllowedAdminUser } from "@/lib/admin";
+import { countCumulativeOneOnOneApplicants } from "@/lib/dating-1on1-metrics";
 import { getDatingOneOnOneWriteStatus, getProfilePhoneVerification } from "@/lib/dating-1on1";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -24,8 +25,11 @@ export async function GET(req: Request) {
   const phoneState = await getProfilePhoneVerification(admin, user.id);
   const phoneVerified = phoneState.phoneVerified;
   const writeStatus = await getDatingOneOnOneWriteStatus(admin);
-  const [countRes, activeRes] = await Promise.all([
-    admin.from("dating_1on1_cards").select("id", { count: "exact", head: true }),
+  const [totalApplications, activeRes] = await Promise.all([
+    countCumulativeOneOnOneApplicants(admin).catch((error) => {
+      console.error("[GET /api/dating/1on1/write-status] cumulative count failed", error);
+      return 0;
+    }),
     admin
       .from("dating_1on1_cards")
       .select("status")
@@ -38,7 +42,6 @@ export async function GET(req: Request) {
 
   const activeRequestStatus = typeof activeRes.data?.status === "string" ? activeRes.data.status : null;
   const canWrite = phoneVerified && writeStatus === "approved" && !activeRequestStatus;
-  const totalApplications = countRes.error ? 0 : Math.max(0, Number(countRes.count ?? 0));
 
   return NextResponse.json({
     loggedIn: true,

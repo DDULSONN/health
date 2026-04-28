@@ -2,6 +2,7 @@ import {
   isDatingOneOnOneLegacyPhoneShareMatch,
   type DatingOneOnOneMatchRow,
 } from "@/lib/dating-1on1";
+import { recordOneOnOneMetricEvent } from "@/lib/dating-1on1-metrics";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
@@ -133,6 +134,17 @@ export async function POST(
     }
     if (!updateRes.data) {
       return NextResponse.json({ error: "This request was already handled." }, { status: 409 });
+    }
+    try {
+      await recordOneOnOneMetricEvent(admin, {
+        eventKind: "mutual_match_created",
+        matchId,
+        sourceCardId: row.source_card_id,
+        sourceUserId: row.source_user_id,
+        occurredAt: nowIso,
+      });
+    } catch (metricError) {
+      console.error("[POST /api/dating/1on1/matches/[id]] mutual metric event failed", metricError);
     }
   }
 

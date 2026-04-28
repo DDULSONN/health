@@ -2317,7 +2317,7 @@ export default function MyPage() {
 
   const handleRefreshOneOnOneRecommendations = async (sourceCardId: string) => {
     if (refreshingOneOnOneRecommendationIds.includes(sourceCardId)) return;
-    if (!confirm("자동 추천 후보 10명을 새로 불러올까요? 2일에 한 번 새로고침할 수 있습니다.")) return;
+    if (!confirm("자동 추천 후보 10명을 새로 불러올까요? 1일에 한 번 새로고침할 수 있습니다.")) return;
 
     setRefreshingOneOnOneRecommendationIds((prev) => [...prev, sourceCardId]);
     try {
@@ -2333,7 +2333,7 @@ export default function MyPage() {
       }
 
       await reloadOneOnOneRecommendations();
-      alert("자동 추천 후보 10명을 새로 섞어드렸습니다. 다음 새로고침은 2일 뒤에 가능합니다.");
+      alert("자동 추천 후보 10명을 새로 섞어드렸습니다. 다음 새로고침은 1일 뒤에 가능합니다.");
     } catch (e) {
       alert(e instanceof Error ? e.message : "자동 추천 후보를 새로고침하지 못했습니다.");
     } finally {
@@ -4226,7 +4226,7 @@ export default function MyPage() {
                               ? "새로고침 중..."
                               : canRefreshAutoRecommendations
                                 ? "추천 새로고침"
-                                : "2일 쿨다운"}
+                                : "1일 쿨다운"}
                           </button>
                         </div>
                         <p className="mt-1 text-xs text-pink-700">
