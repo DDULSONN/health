@@ -3229,7 +3229,7 @@ export default function MyPage() {
   });
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-8">
+    <main className="mx-auto max-w-2xl px-4 pt-8 pb-28 md:pb-8">
       <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
         <h1 className="text-2xl font-bold text-neutral-900">마이페이지</h1>
         <p className="mt-1 text-sm text-neutral-600">{nickname}</p>
@@ -4686,6 +4686,21 @@ export default function MyPage() {
                                     <p className="mt-1 text-xs text-neutral-700">
                                       관리자 확인 후 양쪽 번호가 자동으로 공개됩니다. 잠시만 기다려 주세요.
                                     </p>
+                                    {isApplicant ? (
+                                      <div className="mt-2 flex flex-wrap gap-2">
+                                        <a
+                                          href={OPEN_KAKAO_URL}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                                        >
+                                          오픈카톡 문의
+                                        </a>
+                                        <p className="inline-flex items-center text-[11px] text-neutral-500">
+                                          닉네임과 매칭 ID를 보내주시면 확인이 더 빨라집니다.
+                                        </p>
+                                      </div>
+                                    ) : null}
                                   </>
                                 ) : null}
                                 {match.contact_exchange_status === "approved" ? (

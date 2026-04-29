@@ -747,9 +747,7 @@ export default function OpenCardsPage() {
                   <p className="mt-3 text-[18px] font-black text-rose-600 md:text-[20px]">
                     남 {queueStats?.male.public_count ?? males.length} · 여 {queueStats?.female.public_count ?? females.length}
                   </p>
-                  <p className="mt-1 text-sm text-neutral-400">
-                    대기 남 {queueStats?.male.pending_count ?? 0} · 여 {queueStats?.female.pending_count ?? 0}
-                  </p>
+                  <p className="mt-1 text-sm text-neutral-400">대기열은 오픈카드 등록 후 마이페이지에서 확인</p>
                 </div>
                 <div className="rounded-[24px] bg-neutral-50 p-4 sm:col-span-2 lg:col-span-2">
                   <p className="text-sm font-semibold text-neutral-400">누적 매칭</p>
