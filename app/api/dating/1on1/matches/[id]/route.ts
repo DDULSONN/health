@@ -1,8 +1,14 @@
 import {
+  getDatingOneOnOneCardsByIds,
   isDatingOneOnOneLegacyPhoneShareMatch,
   type DatingOneOnOneMatchRow,
 } from "@/lib/dating-1on1";
+import {
+  buildOneOnOneAcceptedNotification,
+  buildOneOnOneSelectionReceivedNotification,
+} from "@/lib/dating-email-templates";
 import { recordOneOnOneMetricEvent } from "@/lib/dating-1on1-metrics";
+import { sendDatingEmailNotification } from "@/lib/dating-swipe";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
@@ -41,6 +47,23 @@ async function getMatchRow(admin: ReturnType<typeof createAdminClient>, matchId:
     throw res.error;
   }
   return (res.data ?? null) as DatingOneOnOneMatchRow | null;
+}
+
+async function sendOneOnOneReminderEmail(
+  admin: ReturnType<typeof createAdminClient>,
+  targetUserId: string,
+  buildNotification: () => { emailSubject: string; emailText: string }
+) {
+  const notification = buildNotification();
+  await sendDatingEmailNotification(
+    admin,
+    targetUserId,
+    notification.emailSubject,
+    notification.emailText
+  ).catch((error) => {
+    console.error("[POST /api/dating/1on1/matches/[id]] reminder email failed", error);
+    return false;
+  });
 }
 
 export async function POST(
@@ -106,6 +129,21 @@ export async function POST(
     if (!updateRes.data) {
       return NextResponse.json({ error: "Candidate was already handled." }, { status: 409 });
     }
+
+    try {
+      const cards = await getDatingOneOnOneCardsByIds(admin, [row.source_card_id, row.candidate_card_id]);
+      const sourceCard = cards.get(row.source_card_id);
+      const candidateCard = cards.get(row.candidate_card_id);
+
+      await sendOneOnOneReminderEmail(admin, row.candidate_user_id, () =>
+        buildOneOnOneSelectionReceivedNotification(
+          sourceCard?.name ?? "상대",
+          candidateCard?.name ?? "내 카드"
+        )
+      );
+    } catch (emailError) {
+      console.error("[POST /api/dating/1on1/matches/[id]] select reminder failed", emailError);
+    }
   }
 
   if (body.action === "candidate_accept") {
@@ -155,6 +193,17 @@ export async function POST(
       });
     } catch (metricError) {
       console.error("[POST /api/dating/1on1/matches/[id]] mutual metric event failed", metricError);
+    }
+
+    try {
+      const cards = await getDatingOneOnOneCardsByIds(admin, [row.source_card_id, row.candidate_card_id]);
+      const candidateCard = cards.get(row.candidate_card_id);
+
+      await sendOneOnOneReminderEmail(admin, row.source_user_id, () =>
+        buildOneOnOneAcceptedNotification(candidateCard?.name ?? "상대")
+      );
+    } catch (emailError) {
+      console.error("[POST /api/dating/1on1/matches/[id]] accept reminder failed", emailError);
     }
   }
 

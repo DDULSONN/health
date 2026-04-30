@@ -81,6 +81,21 @@ function formatDateTime(value: string | null | undefined) {
   });
 }
 
+async function fetchJsonWithTimeout<T>(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 8000) {
+  const controller = new AbortController();
+  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    const response = await fetch(input, {
+      ...init,
+      signal: controller.signal,
+    });
+    const body = (await response.json().catch(() => ({}))) as T;
+    return { response, body };
+  } finally {
+    window.clearTimeout(timer);
+  }
+}
+
 function avatarTone(seed: string) {
   const tones = [
     "border-violet-200 bg-violet-50 text-violet-500",
@@ -113,6 +128,14 @@ export default function ChatPage() {
   );
   const [reportDetails, setReportDetails] = useState("");
 
+  const markThreadReadSilently = useCallback((threadId: string) => {
+    void fetch("/api/dating/chat/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ thread_id: threadId }),
+    }).catch(() => null);
+  }, []);
+
   const loadInboxAndAvailable = useCallback(
     async (options?: { withLoading?: boolean }) => {
       const withLoading = options?.withLoading ?? false;
@@ -121,16 +144,17 @@ export default function ChatPage() {
         setError("");
       }
       try {
-        const [inboxRes, availableRes] = await Promise.all([
-          fetch("/api/dating/chat/inbox", { cache: "no-store" }),
-          fetch("/api/dating/chat/available", { cache: "no-store" }),
+        const [
+          { response: inboxRes, body: inboxBody },
+          { response: availableRes, body: availableBody },
+        ] = await Promise.all([
+          fetchJsonWithTimeout<{ items?: InboxItem[]; message?: string }>("/api/dating/chat/inbox", {
+            cache: "no-store",
+          }),
+          fetchJsonWithTimeout<{ items?: AvailableItem[]; message?: string }>("/api/dating/chat/available", {
+            cache: "no-store",
+          }),
         ]);
-
-        const inboxBody = (await inboxRes.json().catch(() => ({}))) as { items?: InboxItem[]; message?: string };
-        const availableBody = (await availableRes.json().catch(() => ({}))) as {
-          items?: AvailableItem[];
-          message?: string;
-        };
 
         if (!inboxRes.ok) {
           throw new Error(inboxBody.message ?? "채팅 목록을 불러오지 못했습니다.");
@@ -182,12 +206,28 @@ export default function ChatPage() {
   );
 
   const syncThreadSilently = useCallback(async (threadId: string) => {
-    const res = await fetch(`/api/dating/chat/thread?thread_id=${encodeURIComponent(threadId)}`, {
-      cache: "no-store",
-    });
-    const body = (await res.json().catch(() => ({}))) as ThreadDetail & { message?: string };
+    let result: { response: Response; body: ThreadDetail & { message?: string } };
+    try {
+      result = await fetchJsonWithTimeout<ThreadDetail & { message?: string }>(
+        `/api/dating/chat/thread?thread_id=${encodeURIComponent(threadId)}`,
+        { cache: "no-store" }
+      );
+    } catch (error) {
+      if (error instanceof DOMException && error.name === "AbortError") {
+        throw new Error("채팅 내용을 불러오는 중 시간이 초과되었습니다. 다시 시도해 주세요.");
+      }
+      throw error;
+    }
+
+    const { response: res, body } = result;
 
     if (!res.ok) {
+      if (res.status === 404) {
+        setThreadDetail((prev) => (prev?.thread.id === threadId ? null : prev));
+        setSelected((prev) => (prev?.kind === "thread" && prev.threadId === threadId ? null : prev));
+        void loadInboxAndAvailable();
+        return;
+      }
       throw new Error(body.message ?? "채팅 내용을 불러오지 못했습니다.");
     }
 
@@ -220,16 +260,12 @@ export default function ChatPage() {
       });
     }
 
-    await fetch("/api/dating/chat/read", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ thread_id: threadId }),
-    });
+    markThreadReadSilently(threadId);
 
     setInbox((prev) =>
       prev.map((item) => (item.thread_id === threadId ? { ...item, unread_count: 0 } : item))
     );
-  }, []);
+  }, [loadInboxAndAvailable, markThreadReadSilently]);
 
   useEffect(() => {
     let active = true;
@@ -324,11 +360,7 @@ export default function ChatPage() {
           });
 
           if (currentUserId && newMessage.receiver_id === currentUserId && document.visibilityState === "visible") {
-            await fetch("/api/dating/chat/read", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ thread_id: threadId }),
-            });
+            markThreadReadSilently(threadId);
             setInbox((prev) =>
               prev.map((item) => (item.thread_id === threadId ? { ...item, unread_count: 0 } : item))
             );
@@ -367,7 +399,7 @@ export default function ChatPage() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [selected, supabase, currentUserId]);
+  }, [selected, supabase, currentUserId, markThreadReadSilently]);
 
   useEffect(() => {
     if (!currentUserId) return;
@@ -400,9 +432,9 @@ export default function ChatPage() {
           });
 
           if (selected?.kind === "thread" && selected.threadId === newMessage.thread_id && document.visibilityState === "visible") {
-            await syncThreadSilently(newMessage.thread_id);
+            void syncThreadSilently(newMessage.thread_id);
           } else {
-            await loadInboxAndAvailable();
+            void loadInboxAndAvailable();
           }
         }
       )

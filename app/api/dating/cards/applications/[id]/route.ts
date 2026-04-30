@@ -1,7 +1,9 @@
 ﻿import { isAdminEmail } from "@/lib/admin";
 import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
+import { buildDatingApplicationAcceptedNotification } from "@/lib/dating-email-templates";
 import { sendExpoPushToUser } from "@/lib/expo-push";
 import { recordDatingMatchEvent } from "@/lib/dating-match-metrics";
+import { sendDatingEmailNotification } from "@/lib/dating-swipe";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -179,6 +181,22 @@ export async function PATCH(
     }).catch((pushError) => {
       console.error("[PATCH /api/dating/cards/applications/[id]] expo push failed", pushError);
     });
+
+    if (status === "accepted") {
+      const acceptedNotification = buildDatingApplicationAcceptedNotification(
+        card.display_nickname ?? "오픈카드"
+      );
+
+      await sendDatingEmailNotification(
+        adminClient,
+        app.applicant_user_id,
+        acceptedNotification.emailSubject,
+        acceptedNotification.emailText
+      ).catch((emailError) => {
+        console.error("[PATCH /api/dating/cards/applications/[id]] accepted email failed", emailError);
+        return false;
+      });
+    }
   }
 
   return NextResponse.json({
