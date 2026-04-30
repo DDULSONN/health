@@ -376,12 +376,12 @@ function DatingOneOnOnePageContent() {
           <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
             <p className="text-[11px] font-semibold tracking-wide text-neutral-500">2단계</p>
             <p className="mt-1 text-sm font-semibold text-neutral-900">서로 수락</p>
-            <p className="mt-1 text-xs leading-5 text-neutral-600">쌍방 수락이 되면 지원자에게 번호 교환 안내가 열립니다.</p>
+            <p className="mt-1 text-xs leading-5 text-neutral-600">쌍방 수락이 되면 번호 교환 요청을 진행할 수 있습니다.</p>
           </div>
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-3">
             <p className="text-[11px] font-semibold tracking-wide text-emerald-700">3단계</p>
             <p className="mt-1 text-sm font-semibold text-emerald-900">번호 교환</p>
-            <p className="mt-1 text-xs leading-5 text-emerald-800">매칭비 20,000원 확인 후 양쪽 번호가 공개될 수 있습니다.</p>
+            <p className="mt-1 text-xs leading-5 text-emerald-800">입금 확인 후 승인되면 상대 연락처를 확인할 수 있습니다.</p>
           </div>
         </div>
       </section>
@@ -410,7 +410,7 @@ function DatingOneOnOnePageContent() {
           </div>
           <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
             <p className="text-xs font-semibold text-neutral-500">번호 교환</p>
-            <p className="mt-1 text-sm text-neutral-800">쌍방 수락 후 입금 확인 요청과 번호 공개 상태를 확인할 수 있어요.</p>
+            <p className="mt-1 text-sm text-neutral-800">쌍방 수락 후 번호 교환 요청과 진행 상태를 확인할 수 있어요.</p>
           </div>
         </div>
       </section>
@@ -447,8 +447,8 @@ function DatingOneOnOnePageContent() {
           <summary className="cursor-pointer text-sm font-medium text-neutral-800">1:1 진행 방식 간단히 보기</summary>
           <div className="mt-2 space-y-1 text-xs leading-5 text-neutral-600">
             <p>1. 신청서를 올리면 운영자가 후보 연결을 진행합니다.</p>
-            <p>2. 서로 수락되면 지원한 사람에게 번호 교환 안내가 뜹니다.</p>
-            <p>3. 매칭비 확인 후 관리자 승인으로 양쪽 번호가 공개됩니다.</p>
+            <p>2. 서로 수락되면 번호 교환 요청 후 오픈카톡으로 문의합니다.</p>
+            <p>3. 확인이 완료되면 승인 후 양쪽 번호가 공개됩니다.</p>
           </div>
         </details>
         {!isEditMode && !status.phoneVerified && (

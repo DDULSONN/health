@@ -1,5 +1,4 @@
 import {
-  isDatingOneOnOneLegacyPhoneShareMatch,
   type DatingOneOnOneMatchRow,
 } from "@/lib/dating-1on1";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -57,116 +56,29 @@ export async function POST(
     return NextResponse.json({ error: "Phone exchange is already approved." }, { status: 409 });
   }
 
-  const isLegacyMatch = isDatingOneOnOneLegacyPhoneShareMatch(row);
   const nowIso = new Date().toISOString();
-
-  if (isLegacyMatch) {
-    const isSource = row.source_user_id === user.id;
-    const isCandidate = row.candidate_user_id === user.id;
-    if (!isSource && !isCandidate) {
-      return NextResponse.json({ error: "Only matched users can consent to phone sharing." }, { status: 403 });
-    }
-    if (isCandidate) {
-      if (row.candidate_phone_share_consented_at) {
-        return NextResponse.json({ error: "Phone sharing consent is already saved." }, { status: 409 });
-      }
-
-      const consentRes = await admin
-        .from("dating_1on1_match_proposals")
-        .update({
-          candidate_phone_share_consented_at: nowIso,
-          contact_exchange_status: row.contact_exchange_status === "none" ? "awaiting_applicant_payment" : row.contact_exchange_status,
-          updated_at: nowIso,
-        })
-        .eq("id", matchId)
-        .eq("state", "mutual_accepted")
-        .select("id")
-        .maybeSingle();
-
-      if (consentRes.error) {
-        console.error("[POST /api/dating/1on1/matches/[id]/contact-exchange] legacy candidate consent failed", consentRes.error);
-        return NextResponse.json({ error: "Failed to save phone sharing consent." }, { status: 500 });
-      }
-      if (!consentRes.data) {
-        return NextResponse.json({ error: "This match was already handled." }, { status: 409 });
-      }
-
-      try {
-        row = await getMatchRow(admin, matchId);
-      } catch (error) {
-        console.error("[POST /api/dating/1on1/matches/[id]/contact-exchange] legacy candidate consent reload failed", error);
-        return NextResponse.json({ error: "Consent saved, but reload failed." }, { status: 500 });
-      }
-
-      return NextResponse.json({ ok: true, item: row, mode: "legacy_candidate_consent" });
-    }
-
-    if (!row.candidate_phone_share_consented_at) {
-      return NextResponse.json(
-        { error: "The other person needs to agree to phone sharing first." },
-        { status: 409 }
-      );
-    }
-    if (row.contact_exchange_status === "payment_pending_admin") {
-      return NextResponse.json({ error: "Payment confirmation is already pending admin review." }, { status: 409 });
-    }
-
-    const updateRes = await admin
-      .from("dating_1on1_match_proposals")
-      .update({
-        source_phone_share_consented_at: row.source_phone_share_consented_at ?? nowIso,
-        contact_exchange_status: "payment_pending_admin",
-        contact_exchange_requested_at: nowIso,
-        contact_exchange_paid_at: nowIso,
-        contact_exchange_paid_by_user_id: user.id,
-        updated_at: nowIso,
-      })
-      .eq("id", matchId)
-      .eq("source_user_id", user.id)
-      .eq("state", "mutual_accepted")
-      .in("contact_exchange_status", ["none", "awaiting_applicant_payment"])
-      .select("id")
-      .maybeSingle();
-
-    if (updateRes.error) {
-      console.error("[POST /api/dating/1on1/matches/[id]/contact-exchange] legacy applicant payment request failed", updateRes.error);
-      return NextResponse.json({ error: "Failed to request phone exchange approval." }, { status: 500 });
-    }
-    if (!updateRes.data) {
-      return NextResponse.json({ error: "This phone exchange request was already handled." }, { status: 409 });
-    }
-
-    try {
-      row = await getMatchRow(admin, matchId);
-    } catch (error) {
-      console.error("[POST /api/dating/1on1/matches/[id]/contact-exchange] legacy applicant reload failed", error);
-      return NextResponse.json({ error: "Request saved, but reload failed." }, { status: 500 });
-    }
-
-    return NextResponse.json({ ok: true, item: row, mode: "legacy_applicant_payment_request" });
-  }
-
-  if (row.source_user_id !== user.id) {
-    return NextResponse.json({ error: "Only the applicant can request phone exchange approval." }, { status: 403 });
-  }
   if (row.contact_exchange_status === "payment_pending_admin") {
     return NextResponse.json({ error: "Payment confirmation is already pending admin review." }, { status: 409 });
   }
-  if (row.contact_exchange_status !== "awaiting_applicant_payment") {
+  const isParticipant = row.source_user_id === user.id || row.candidate_user_id === user.id;
+  if (!isParticipant) {
+    return NextResponse.json({ error: "Only matched users can request phone exchange approval." }, { status: 403 });
+  }
+  if (!["none", "awaiting_applicant_payment"].includes(row.contact_exchange_status)) {
     return NextResponse.json({ error: "Phone exchange cannot be requested right now." }, { status: 409 });
   }
   const updateRes = await admin
     .from("dating_1on1_match_proposals")
     .update({
       contact_exchange_status: "payment_pending_admin",
+      contact_exchange_requested_at: row.contact_exchange_requested_at ?? nowIso,
       contact_exchange_paid_at: nowIso,
       contact_exchange_paid_by_user_id: user.id,
       updated_at: nowIso,
     })
     .eq("id", matchId)
-    .eq("source_user_id", user.id)
     .eq("state", "mutual_accepted")
-    .eq("contact_exchange_status", "awaiting_applicant_payment")
+    .in("contact_exchange_status", ["none", "awaiting_applicant_payment"])
     .select("id")
     .maybeSingle();
 
