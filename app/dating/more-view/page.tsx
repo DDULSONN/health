@@ -16,7 +16,49 @@ type AdminStatusResponse = {
   isAdmin?: boolean;
 };
 
+type MoreViewCard = {
+  id: string;
+  display_nickname: string | null;
+  is_phone_verified?: boolean;
+  age: number | null;
+  region: string | null;
+  height_cm: number | null;
+  job: string | null;
+  training_years: number | null;
+  ideal_type: string | null;
+  strengths_text: string | null;
+  image_urls: string[];
+};
+
 const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
+
+function MoreViewCardTile({ card }: { card: MoreViewCard }) {
+  const imageUrl = card.image_urls[0] ?? null;
+  return (
+    <div className="overflow-hidden rounded-2xl border border-black/5 bg-white shadow-[0_10px_24px_rgba(15,23,42,0.05)]">
+      <div className="aspect-[4/5] bg-neutral-100">
+        {imageUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full items-center justify-center text-sm text-neutral-400">사진 없음</div>
+        )}
+      </div>
+      <div className="p-4">
+        <div className="flex items-end gap-2">
+          <p className="text-lg font-black text-neutral-900">{card.display_nickname ?? "오픈카드"}</p>
+          {card.age != null ? <span className="text-sm font-semibold text-neutral-500">{card.age}세</span> : null}
+        </div>
+        <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold text-neutral-500">
+          {card.region ? <span className="rounded-full bg-neutral-100 px-3 py-1">{card.region}</span> : null}
+          {card.height_cm != null ? <span className="rounded-full bg-neutral-100 px-3 py-1">{card.height_cm}cm</span> : null}
+          {card.job ? <span className="rounded-full bg-neutral-100 px-3 py-1">{card.job}</span> : null}
+        </div>
+        {card.ideal_type ? <p className="mt-3 line-clamp-2 text-sm leading-6 text-neutral-600">{card.ideal_type}</p> : null}
+      </div>
+    </div>
+  );
+}
 
 export default function MoreViewPage() {
   const [status, setStatus] = useState<{ loggedIn: boolean; male: MoreViewStatus; female: MoreViewStatus }>({
@@ -27,21 +69,43 @@ export default function MoreViewPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [adminChecked, setAdminChecked] = useState(false);
   const [submitting, setSubmitting] = useState<null | "male" | "female">(null);
+  const [maleItems, setMaleItems] = useState<MoreViewCard[]>([]);
+  const [femaleItems, setFemaleItems] = useState<MoreViewCard[]>([]);
+
+  const loadApprovedList = useCallback(async (sex: "male" | "female") => {
+    const res = await fetch(`/api/dating/cards/more-view/list?sex=${sex}`, { cache: "no-store" });
+    if (!res.ok) return [];
+    const body = (await res.json().catch(() => ({}))) as { items?: MoreViewCard[] };
+    return Array.isArray(body.items) ? body.items : [];
+  }, []);
 
   const loadStatus = useCallback(async () => {
     try {
       const res = await fetch("/api/dating/cards/more-view/status", { cache: "no-store" });
       if (!res.ok) return;
       const body = (await res.json()) as MoreViewStatusResponse;
-      setStatus({
+      const nextStatus = {
         loggedIn: body.loggedIn === true,
         male: body.male ?? "none",
         female: body.female ?? "none",
-      });
+      };
+      setStatus(nextStatus);
+
+      if (nextStatus.male === "approved") {
+        setMaleItems(await loadApprovedList("male"));
+      } else {
+        setMaleItems([]);
+      }
+
+      if (nextStatus.female === "approved") {
+        setFemaleItems(await loadApprovedList("female"));
+      } else {
+        setFemaleItems([]);
+      }
     } catch {
       // ignore
     }
-  }, []);
+  }, [loadApprovedList]);
 
   const loadAdminStatus = useCallback(async () => {
     try {
@@ -76,7 +140,7 @@ export default function MoreViewPage() {
         };
 
         if (!res.ok) {
-          alert(body.message ?? "신청에 실패했습니다.");
+          alert(body.message ?? "요청에 실패했습니다.");
           return;
         }
 
@@ -96,7 +160,7 @@ export default function MoreViewPage() {
   );
 
   return (
-    <main className="mx-auto max-w-2xl px-4 py-6">
+    <main className="mx-auto max-w-5xl px-4 py-6">
       <div className="mb-4 flex items-center gap-2">
         <Link href="/community/dating/cards" className="rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
           오픈카드
@@ -109,9 +173,9 @@ export default function MoreViewPage() {
 
       <section className="rounded-2xl border border-pink-200 bg-pink-50 p-5">
         <h1 className="text-lg font-bold text-pink-900">이상형 더보기</h1>
-        <p className="mt-2 text-sm font-semibold text-pink-900">더 많은 대기열 프로필을 먼저 확인하고, 빠르게 지원 기회를 얻을 수 있어요.</p>
-        <p className="mt-2 text-sm text-pink-800">이용이 열리면 3시간 동안만 이용 가능하며, 대기열 랜덤 25명이 1회 고정으로 노출됩니다.</p>
-        <p className="mt-1 text-sm text-pink-800">이용 완료 시 지원권 1장이 함께 지급됩니다.</p>
+        <p className="mt-2 text-sm font-semibold text-pink-900">대기열 프로필을 먼저 확인하고, 마음에 들면 더 빠르게 지원할 수 있어요.</p>
+        <p className="mt-2 text-sm text-pink-800">이용이 열리면 3시간 동안만 이용 가능하고, 대기열 후보 25명이 1회 고정으로 노출됩니다.</p>
+        <p className="mt-1 text-sm text-pink-800">이용 완료 시 지원권 1장이 추가 지급됩니다.</p>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <div className="rounded-xl border border-pink-200 bg-white/80 p-3">
@@ -119,15 +183,15 @@ export default function MoreViewPage() {
             <ul className="mt-2 space-y-1 text-xs leading-5 text-pink-800">
               <li>상품명: 이상형 더보기</li>
               <li>금액: 5,000원</li>
-              <li>제공 내용: 3시간 이용, 랜덤 25명 1회 고정 노출</li>
-              <li>추가 혜택: 이용 완료 시 지원권 1장 지급</li>
+              <li>3시간 동안 대기열 25명 고정 노출</li>
+              <li>이용 완료 시 지원권 1장 지급</li>
             </ul>
           </div>
           <div className="rounded-xl border border-pink-200 bg-white/80 p-3">
             <p className="text-sm font-semibold text-pink-900">환불 및 문의</p>
             <ul className="mt-2 space-y-1 text-xs leading-5 text-pink-800">
               <li>이용 시작 전에는 운영 확인 후 환불 검토가 가능합니다.</li>
-              <li>결제 승인 및 열람 권한 부여 후에는 환불이 제한될 수 있습니다.</li>
+              <li>결제 확인 및 권한 부여 이후에는 환불이 제한될 수 있습니다.</li>
               <li>문의: gymtools.kr@gmail.com / 010-8693-0657</li>
             </ul>
           </div>
@@ -157,9 +221,9 @@ export default function MoreViewPage() {
               rel="noreferrer"
               className="inline-flex min-h-[40px] items-center rounded-lg border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700"
             >
-              오픈카톡 링크
+              오픈카톡 문의
             </a>
-            {!status.loggedIn && <span className="inline-flex items-center text-xs text-neutral-500">로그인 후 이용 가능</span>}
+            {!status.loggedIn ? <span className="inline-flex items-center text-xs text-neutral-500">로그인 후 이용 가능</span> : null}
           </div>
         ) : (
           <div className="mt-4 rounded-xl border border-dashed border-pink-200 bg-white/80 p-4">
@@ -172,8 +236,8 @@ export default function MoreViewPage() {
         )}
 
         <div className="mt-4 rounded-lg border border-neutral-200 bg-white/80 p-3">
-          <p className="text-xs font-semibold text-neutral-900">지원권 구매는 별도 탭으로 분리됐어요.</p>
-          <p className="mt-1 text-xs text-neutral-600">오픈카드 지원권 구매가 필요하면 아래 버튼으로 이동해 주세요.</p>
+          <p className="text-xs font-semibold text-neutral-900">지원권 구매는 별도 탭으로 분리되어 있어요.</p>
+          <p className="mt-1 text-xs text-neutral-600">오픈카드 지원권이 필요하면 아래 버튼으로 이동해 주세요.</p>
           <div className="mt-3">
             <Link
               href="/dating/apply-credits"
@@ -184,6 +248,34 @@ export default function MoreViewPage() {
           </div>
         </div>
       </section>
+
+      {maleItems.length > 0 ? (
+        <section className="mt-5">
+          <div className="mb-3 flex items-end justify-between">
+            <h2 className="text-xl font-black tracking-tight text-neutral-950">남자 카드 더보기</h2>
+            <span className="text-sm text-neutral-400">{maleItems.length}명</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            {maleItems.map((card) => (
+              <MoreViewCardTile key={`male-${card.id}`} card={card} />
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {femaleItems.length > 0 ? (
+        <section className="mt-5">
+          <div className="mb-3 flex items-end justify-between">
+            <h2 className="text-xl font-black tracking-tight text-neutral-950">여자 카드 더보기</h2>
+            <span className="text-sm text-neutral-400">{femaleItems.length}명</span>
+          </div>
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+            {femaleItems.map((card) => (
+              <MoreViewCardTile key={`female-${card.id}`} card={card} />
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <DatingAdultNotice />
     </main>

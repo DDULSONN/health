@@ -711,7 +711,6 @@ export default function OpenCardsPage() {
   );
   const activeOpenItems = activeSex === "male" ? males : females;
   const activePaidItems = activeSex === "male" ? malePaidItems : femalePaidItems;
-  const activeMoreViewItems = activeSex === "male" ? moreViewMale : moreViewFemale;
   const activeHasMore = activeSex === "male" ? maleHasMore : femaleHasMore;
   const activeCurrentCount = activeSex === "male" ? (queueStats?.male.public_count ?? males.length) : (queueStats?.female.public_count ?? females.length);
   const swipeTheme = getCardVisualTheme(swipeState.candidate?.card_id ?? activeSex);
@@ -1066,7 +1065,6 @@ export default function OpenCardsPage() {
           currentCount={activeCurrentCount}
           paidItems={activePaidItems}
           items={activeOpenItems}
-          moreViewItems={activeMoreViewItems}
           hasMore={activeHasMore}
           onMore={activeSex === "male" ? loadMoreMale : loadMoreFemale}
           viewerLoggedIn={viewerLoggedIn}
@@ -1081,7 +1079,6 @@ function Section({
   currentCount,
   paidItems,
   items,
-  moreViewItems,
   hasMore,
   onMore,
   viewerLoggedIn,
@@ -1090,14 +1087,13 @@ function Section({
   currentCount: number;
   paidItems: PaidCard[];
   items: PublicCard[];
-  moreViewItems: PublicCard[];
   hasMore: boolean;
   onMore: () => void;
   viewerLoggedIn: boolean;
 }) {
   const pinnedPaidItems = paidItems.filter((card) => card.display_mode !== "instant_public");
   const instantPaidItems = paidItems.filter((card) => card.display_mode === "instant_public");
-  const hasAnyItems = pinnedPaidItems.length > 0 || items.length > 0 || instantPaidItems.length > 0 || moreViewItems.length > 0;
+  const hasAnyItems = pinnedPaidItems.length > 0 || items.length > 0 || instantPaidItems.length > 0;
 
   return (
     <section>
@@ -1127,16 +1123,6 @@ function Section({
               <PaidCardRow key={`paid-${card.id}`} card={card} viewerLoggedIn={viewerLoggedIn} />
             ))}
           </div>
-          {moreViewItems.length > 0 && (
-            <div className="mt-4 rounded-[28px] border border-dashed border-rose-200 bg-rose-50/60 p-3">
-              <p className="mb-3 px-1 text-sm font-bold text-rose-700">이상형 더보기</p>
-              <div className="grid grid-cols-2 gap-3">
-                {moreViewItems.map((card) => (
-                  <CardRow key={`more-${card.id}`} card={card} viewerLoggedIn={viewerLoggedIn} />
-                ))}
-              </div>
-            </div>
-          )}
           {hasMore && viewerLoggedIn && (
             <button
               type="button"

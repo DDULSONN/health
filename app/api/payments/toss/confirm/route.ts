@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
+import { getActiveMoreViewGrant, normalizeCardSex } from "@/lib/dating-more-view";
 import { grantMoreViewAccess } from "@/lib/dating-purchase-fulfillment";
-import { normalizeCardSex } from "@/lib/dating-more-view";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { confirmTossPayment, getMissingTossConfigKeys, isTossConfigured } from "@/lib/toss-payments";
@@ -9,6 +9,17 @@ type ConfirmBody = {
   paymentKey?: unknown;
   orderId?: unknown;
   amount?: unknown;
+};
+
+type TossOrderRow = {
+  id: string;
+  user_id: string;
+  product_type: "apply_credits" | "paid_card" | "more_view";
+  product_ref_id: string | null;
+  product_meta: Record<string, unknown> | null;
+  toss_order_id: string;
+  amount: number;
+  status: "ready" | "paid" | "failed" | "canceled";
 };
 
 function json(status: number, payload: Record<string, unknown>) {
@@ -22,6 +33,95 @@ function toAmount(value: unknown) {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
+}
+
+async function ensureApplyCreditsFulfilled(
+  admin: ReturnType<typeof createAdminClient>,
+  order: TossOrderRow,
+  actingUserId: string
+) {
+  if (!order.product_ref_id) {
+    return { addedCredits: 0, creditsAfter: 0 };
+  }
+
+  const applyOrderRes = await admin
+    .from("apply_credit_orders")
+    .select("status")
+    .eq("id", order.product_ref_id)
+    .maybeSingle();
+
+  if (applyOrderRes.error) {
+    throw applyOrderRes.error;
+  }
+
+  if (applyOrderRes.data?.status === "approved") {
+    const creditRes = await admin
+      .from("user_apply_credits")
+      .select("credits")
+      .eq("user_id", order.user_id)
+      .maybeSingle();
+
+    return {
+      addedCredits: 0,
+      creditsAfter: Number(creditRes.data?.credits ?? 0),
+    };
+  }
+
+  const rpcRes = await admin.rpc("approve_apply_credit_order", {
+    p_order_id: order.product_ref_id,
+    p_admin_user_id: actingUserId,
+  });
+
+  if (rpcRes.error) {
+    throw rpcRes.error;
+  }
+
+  const row = Array.isArray(rpcRes.data) ? rpcRes.data[0] : null;
+  return {
+    addedCredits: Number(row?.added_credits ?? 0),
+    creditsAfter: Number(row?.credits_after ?? 0),
+  };
+}
+
+async function ensureMoreViewFulfilled(
+  admin: ReturnType<typeof createAdminClient>,
+  order: TossOrderRow
+) {
+  const sex = normalizeCardSex((order.product_meta as { sex?: unknown } | null)?.sex);
+  if (!sex) {
+    throw new Error("MORE_VIEW_METADATA_MISSING");
+  }
+
+  const activeGrant = await getActiveMoreViewGrant(admin, order.user_id, sex);
+  if (activeGrant) {
+    return { sex, alreadyGranted: true };
+  }
+
+  await grantMoreViewAccess(admin, {
+    userId: order.user_id,
+    sex,
+    accessHours: 3,
+    note: `toss payment ${order.toss_order_id}`,
+    bonusCredits: 1,
+  });
+
+  return { sex, alreadyGranted: false };
+}
+
+async function ensureOrderFulfilled(
+  admin: ReturnType<typeof createAdminClient>,
+  order: TossOrderRow,
+  actingUserId: string
+) {
+  if (order.product_type === "apply_credits") {
+    return ensureApplyCreditsFulfilled(admin, order, actingUserId);
+  }
+
+  if (order.product_type === "more_view") {
+    await ensureMoreViewFulfilled(admin, order);
+  }
+
+  return { addedCredits: 0, creditsAfter: 0 };
 }
 
 export async function POST(req: Request) {
@@ -72,17 +172,22 @@ export async function POST(req: Request) {
       return json(404, { ok: false, code: "ORDER_NOT_FOUND", requestId, message: "결제 주문을 찾을 수 없습니다." });
     }
 
-    if (orderRes.data.amount !== amount) {
+    const order = orderRes.data as TossOrderRow;
+
+    if (order.amount !== amount) {
       return json(400, { ok: false, code: "AMOUNT_MISMATCH", requestId, message: "결제 금액이 주문 정보와 다릅니다." });
     }
 
-    if (orderRes.data.status === "paid") {
+    if (order.status === "paid") {
+      const fulfillment = await ensureOrderFulfilled(admin, order, user.id);
       return json(200, {
         ok: true,
         requestId,
         alreadyConfirmed: true,
-        productType: orderRes.data.product_type,
+        productType: order.product_type,
         orderId,
+        addedCredits: fulfillment.addedCredits,
+        creditsAfter: fulfillment.creditsAfter,
       });
     }
 
@@ -97,7 +202,7 @@ export async function POST(req: Request) {
         raw_response: payment,
         updated_at: new Date().toISOString(),
       })
-      .eq("id", orderRes.data.id)
+      .eq("id", order.id)
       .select("id")
       .single();
 
@@ -106,61 +211,29 @@ export async function POST(req: Request) {
       return json(500, { ok: false, code: "ORDER_UPDATE_FAILED", requestId, message: "결제 결과 저장에 실패했습니다." });
     }
 
-    let addedCredits = 0;
-    let creditsAfter = 0;
-
-    if (orderRes.data.product_type === "apply_credits" && orderRes.data.product_ref_id) {
-      const rpcRes = await admin.rpc("approve_apply_credit_order", {
-        p_order_id: orderRes.data.product_ref_id,
-        p_admin_user_id: user.id,
-      });
-
-      if (rpcRes.error) {
-        console.error("[toss-confirm] approve credit rpc failed", rpcRes.error);
-        return json(500, {
-          ok: false,
-          code: "APPLY_CREDIT_APPROVE_FAILED",
-          requestId,
-          message: "지원권 자동 지급에 실패했습니다.",
-        });
-      }
-
-      const row = Array.isArray(rpcRes.data) ? rpcRes.data[0] : null;
-      addedCredits = Number(row?.added_credits ?? 0);
-      creditsAfter = Number(row?.credits_after ?? 0);
-    } else if (orderRes.data.product_type === "more_view") {
-      const sex = normalizeCardSex((orderRes.data.product_meta as { sex?: unknown } | null)?.sex);
-      if (!sex) {
-        return json(500, {
-          ok: false,
-          code: "MORE_VIEW_METADATA_MISSING",
-          requestId,
-          message: "이상형 더보기 결제 정보가 올바르지 않습니다.",
-        });
-      }
-
-      await grantMoreViewAccess(admin, {
-        userId: user.id,
-        sex,
-        accessHours: 3,
-        note: `toss payment ${orderId}`,
-        bonusCredits: 1,
-      });
-    }
+    const fulfillment = await ensureOrderFulfilled(admin, order, user.id);
 
     return json(200, {
       ok: true,
       requestId,
       orderId,
       paymentKey,
-      productType: orderRes.data.product_type,
+      productType: order.product_type,
       amount,
       method: payment.method ?? null,
-      addedCredits,
-      creditsAfter,
+      addedCredits: fulfillment.addedCredits,
+      creditsAfter: fulfillment.creditsAfter,
     });
   } catch (error) {
     console.error("[toss-confirm] unhandled", error);
+    if (error instanceof Error && error.message === "MORE_VIEW_METADATA_MISSING") {
+      return json(500, {
+        ok: false,
+        code: "MORE_VIEW_METADATA_MISSING",
+        requestId,
+        message: "이상형 더보기 결제 정보가 올바르지 않습니다.",
+      });
+    }
     return json(500, { ok: false, code: "INTERNAL_SERVER_ERROR", requestId, message: "서버 오류가 발생했습니다." });
   }
 }
