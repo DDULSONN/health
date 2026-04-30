@@ -663,6 +663,8 @@ type AdminSiteDashboard = {
     swipeVisibleUsers: number;
     publicOpenCards: number;
     pendingOpenCards: number;
+    pendingOpenCardsMale: number;
+    pendingOpenCardsFemale: number;
     totalOpenCardApplications: number;
     publicPaidCards: number;
     totalPaidCardApplications: number;
@@ -2998,7 +3000,7 @@ export default function MyPage() {
     proposed: "후보 도착",
     source_selected: "상대 응답 대기",
     source_skipped: "다른 후보 선택",
-    candidate_accepted: "최종 수락 대기",
+    candidate_accepted: "쌍방 수락 완료",
     candidate_rejected: "상대 거절",
     source_declined: "최종 거절",
     admin_canceled: "매칭 취소",
@@ -4104,13 +4106,13 @@ export default function MyPage() {
               const waitingCandidateResponses = relatedMatches.filter(
                 (match) => match.role === "source" && match.state === "source_selected"
               );
-              const finalAcceptRequests = relatedMatches.filter(
-                (match) => match.role === "source" && match.state === "candidate_accepted"
-              );
+              const finalAcceptRequests: MyOneOnOneMatch[] = [];
               const candidateDecisionRequests = relatedMatches.filter(
                 (match) => match.role === "candidate" && match.state === "source_selected"
               );
-              const mutualAcceptedMatches = relatedMatches.filter((match) => match.state === "mutual_accepted");
+              const mutualAcceptedMatches = relatedMatches.filter((match) =>
+                match.state === "mutual_accepted" || match.state === "candidate_accepted"
+              );
               const closedMatches = relatedMatches.filter((match) =>
                 ["source_skipped", "candidate_rejected", "source_declined", "admin_canceled"].includes(match.state)
               );
@@ -4434,7 +4436,7 @@ export default function MyPage() {
                                   {oneOnOneMatchStateText[match.state]}
                                 </span>
                               </div>
-                              <p className="mt-1 text-xs text-neutral-600">상대가 수락하면 내 최종 수락 단계로 넘어갑니다.</p>
+                              <p className="mt-1 text-xs text-neutral-600">상대가 수락하면 바로 번호 교환 요청 단계로 넘어갑니다.</p>
                             </div>
                           );
                         })}
@@ -5177,7 +5179,10 @@ export default function MyPage() {
                   <p className="mt-2 text-3xl font-black text-amber-600">
                     {adminSiteDashboard.current.pendingOpenCards.toLocaleString("ko-KR")}명
                   </p>
-                  <p className="mt-1 text-xs text-neutral-500">관리자 검토/공개 대기 포함</p>
+                  <p className="mt-1 text-xs text-neutral-500">
+                    남 {adminSiteDashboard.current.pendingOpenCardsMale.toLocaleString("ko-KR")} · 여{" "}
+                    {adminSiteDashboard.current.pendingOpenCardsFemale.toLocaleString("ko-KR")}
+                  </p>
                 </div>
                 <div className="rounded-2xl border border-violet-200 bg-white p-4">
                   <p className="text-xs font-medium text-neutral-500">공개중 오픈카드</p>
@@ -5264,6 +5269,8 @@ export default function MyPage() {
                         {[
                           { label: "공개중 오픈카드", value: adminSiteDashboard.current.publicOpenCards },
                           { label: "대기중 오픈카드", value: adminSiteDashboard.current.pendingOpenCards },
+                          { label: "대기 남성 카드", value: adminSiteDashboard.current.pendingOpenCardsMale },
+                          { label: "대기 여성 카드", value: adminSiteDashboard.current.pendingOpenCardsFemale },
                           { label: "누적 오픈카드 지원", value: adminSiteDashboard.current.totalOpenCardApplications },
                           { label: "공개중 유료카드", value: adminSiteDashboard.current.publicPaidCards },
                           { label: "누적 유료카드 지원", value: adminSiteDashboard.current.totalPaidCardApplications },

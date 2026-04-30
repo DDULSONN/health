@@ -119,8 +119,18 @@ export async function POST(
     const updateRes = await admin
       .from("dating_1on1_match_proposals")
       .update({
-        state: "candidate_accepted",
+        state: "mutual_accepted",
+        contact_exchange_status: "awaiting_applicant_payment",
+        contact_exchange_requested_at: null,
+        contact_exchange_paid_at: null,
+        contact_exchange_paid_by_user_id: null,
+        contact_exchange_approved_at: null,
+        contact_exchange_approved_by_user_id: null,
+        contact_exchange_note: null,
+        source_phone_share_consented_at: null,
+        candidate_phone_share_consented_at: null,
         candidate_responded_at: nowIso,
+        source_final_responded_at: nowIso,
         updated_at: nowIso,
       })
       .eq("id", matchId)
@@ -153,8 +163,8 @@ export async function POST(
     if (!isParticipant) {
       return NextResponse.json({ error: "Only matched participants can cancel this match." }, { status: 403 });
     }
-    if (row.state !== "mutual_accepted") {
-      return NextResponse.json({ error: "Only mutual matches can be canceled." }, { status: 409 });
+    if (!["mutual_accepted", "candidate_accepted"].includes(row.state)) {
+      return NextResponse.json({ error: "Only accepted matches can be canceled." }, { status: 409 });
     }
     if (row.contact_exchange_status === "approved") {
       return NextResponse.json({ error: "Phone exchange is already approved. Please contact admin if you need more help." }, { status: 409 });
@@ -168,7 +178,7 @@ export async function POST(
         updated_at: nowIso,
       })
       .eq("id", matchId)
-      .eq("state", "mutual_accepted")
+      .in("state", ["mutual_accepted", "candidate_accepted"])
       .select("id")
       .maybeSingle();
 

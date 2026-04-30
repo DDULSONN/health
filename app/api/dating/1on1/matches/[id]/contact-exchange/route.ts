@@ -49,8 +49,8 @@ export async function POST(
   if (!row) {
     return NextResponse.json({ error: "Match not found." }, { status: 404 });
   }
-  if (row.state !== "mutual_accepted") {
-    return NextResponse.json({ error: "Phone exchange is only available after mutual acceptance." }, { status: 409 });
+  if (!["mutual_accepted", "candidate_accepted"].includes(row.state)) {
+    return NextResponse.json({ error: "Phone exchange is only available after both sides accept." }, { status: 409 });
   }
   if (row.contact_exchange_status === "approved") {
     return NextResponse.json({ error: "Phone exchange is already approved." }, { status: 409 });
@@ -70,14 +70,16 @@ export async function POST(
   const updateRes = await admin
     .from("dating_1on1_match_proposals")
     .update({
+      state: row.state === "candidate_accepted" ? "mutual_accepted" : row.state,
       contact_exchange_status: "payment_pending_admin",
       contact_exchange_requested_at: row.contact_exchange_requested_at ?? nowIso,
       contact_exchange_paid_at: nowIso,
       contact_exchange_paid_by_user_id: user.id,
+      source_final_responded_at: row.source_final_responded_at ?? nowIso,
       updated_at: nowIso,
     })
     .eq("id", matchId)
-    .eq("state", "mutual_accepted")
+    .in("state", ["mutual_accepted", "candidate_accepted"])
     .in("contact_exchange_status", ["none", "awaiting_applicant_payment"])
     .select("id")
     .maybeSingle();

@@ -90,7 +90,7 @@ export async function GET(req: Request) {
         counterparty_card: cardMap.get(counterpartyCardId) ?? null,
         counterparty_phone: counterpartyPhone,
         action_required:
-          (role === "source" && (row.state === "proposed" || row.state === "candidate_accepted")) ||
+          (role === "source" && row.state === "proposed") ||
           (role === "candidate" && row.state === "source_selected"),
       };
     }),
