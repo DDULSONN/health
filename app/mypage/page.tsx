@@ -8,7 +8,6 @@ import { createClient } from "@/lib/supabase/client";
 import { timeAgo } from "@/lib/community";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
-import { isAllowedTestPaymentEmail } from "@/lib/test-payment";
 function MyPageWidgetSkeleton({ className = "h-40" }: { className?: string }) {
   return (
     <div className={`rounded-2xl border border-neutral-200 bg-white p-4 ${className}`}>
@@ -2972,7 +2971,6 @@ export default function MyPage() {
   const weeklyWinCount = summary?.weekly_win_count ?? 0;
   const changedCount = summary?.profile.nickname_changed_count ?? 0;
   const credits = summary?.profile.nickname_change_credits ?? 0;
-  const canAccessTestPayment = isAllowedTestPaymentEmail(summary?.profile.email);
   const phoneVerified = summary?.profile.phone_verified === true;
   const phoneVerifiedAt = summary?.profile.phone_verified_at ?? null;
   const swipeProfileVisible = summary?.profile.swipe_profile_visible !== false;
@@ -3293,23 +3291,6 @@ export default function MyPage() {
             </div>
           )}
         </div>
-
-        {canAccessTestPayment && (
-          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
-            <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-semibold text-amber-900">결제 센터</p>
-                <p className="mt-1 text-xs text-amber-800">지원권과 유료 등록 결제를 진행할 수 있는 전용 페이지입니다.</p>
-              </div>
-              <Link
-                href={`/payments/test?nickname=${encodeURIComponent(summary?.profile.nickname ?? "")}`}
-                className="inline-flex min-h-[40px] items-center rounded-lg border border-amber-300 bg-white px-3 text-sm font-medium text-amber-800 hover:bg-amber-100"
-              >
-                결제 센터 열기
-              </Link>
-            </div>
-          </div>
-        )}
 
         <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
           <div className="flex items-start justify-between gap-3">

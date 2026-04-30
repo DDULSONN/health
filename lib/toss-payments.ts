@@ -5,22 +5,22 @@ function getBasicAuth(secretKey: string) {
 }
 
 function getSecretKey() {
-  return process.env.TOSS_TEST_SECRET_KEY ?? "";
+  return process.env.TOSS_SECRET_KEY ?? process.env.TOSS_TEST_SECRET_KEY ?? "";
 }
 
-export function getTossTestClientKey() {
-  return process.env.NEXT_PUBLIC_TOSS_TEST_CLIENT_KEY ?? "";
+export function getTossClientKey() {
+  return process.env.NEXT_PUBLIC_TOSS_CLIENT_KEY ?? process.env.NEXT_PUBLIC_TOSS_TEST_CLIENT_KEY ?? "";
 }
 
-export function isTossTestConfigured() {
+export function isTossConfigured() {
   return getSecretKey().length > 0;
 }
 
-export function getMissingTossTestConfigKeys() {
+export function getMissingTossConfigKeys() {
   const missingKeys: string[] = [];
 
   if (!getSecretKey()) {
-    missingKeys.push("TOSS_TEST_SECRET_KEY");
+    missingKeys.push("TOSS_SECRET_KEY");
   }
 
   return missingKeys;
@@ -29,7 +29,7 @@ export function getMissingTossTestConfigKeys() {
 async function tossFetch<T>(path: string, init: RequestInit & { idempotencyKey?: string }) {
   const secretKey = getSecretKey();
   if (!secretKey) {
-    throw new Error("TOSS_TEST_SECRET_KEY is not configured");
+    throw new Error("TOSS_SECRET_KEY is not configured");
   }
 
   const headers = new Headers(init.headers);
@@ -82,7 +82,7 @@ export type TossConfirmPaymentResponse = {
   approvedAt?: string;
 };
 
-export async function createTossTestPayment(params: TossCreatePaymentParams) {
+export async function createTossPayment(params: TossCreatePaymentParams) {
   return tossFetch<TossCreatePaymentResponse>("/v1/payments", {
     method: "POST",
     body: JSON.stringify(params),
@@ -90,7 +90,7 @@ export async function createTossTestPayment(params: TossCreatePaymentParams) {
   });
 }
 
-export async function confirmTossTestPayment(input: {
+export async function confirmTossPayment(input: {
   paymentKey: string;
   orderId: string;
   amount: number;
@@ -101,3 +101,9 @@ export async function confirmTossTestPayment(input: {
     idempotencyKey: crypto.randomUUID(),
   });
 }
+
+export const getTossTestClientKey = getTossClientKey;
+export const isTossTestConfigured = isTossConfigured;
+export const getMissingTossTestConfigKeys = getMissingTossConfigKeys;
+export const createTossTestPayment = createTossPayment;
+export const confirmTossTestPayment = confirmTossPayment;

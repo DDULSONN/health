@@ -3,8 +3,9 @@ begin;
 create table if not exists public.toss_test_payment_orders (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references auth.users(id) on delete cascade,
-  product_type text not null check (product_type in ('apply_credits', 'paid_card')),
+  product_type text not null check (product_type in ('apply_credits', 'paid_card', 'more_view')),
   product_ref_id uuid null,
+  product_meta jsonb not null default '{}'::jsonb,
   toss_order_id text not null unique,
   order_name text not null,
   amount int not null check (amount > 0),
