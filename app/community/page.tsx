@@ -5,6 +5,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import {
+  BODYCHECK_SCORE_MAP,
   POST_TYPE_COLORS,
   POST_TYPE_ICONS,
   POST_TYPE_LABELS,
@@ -12,8 +13,10 @@ import {
   getBodycheckAverage,
   renderPayloadSummary,
   timeAgo,
+  type BodycheckRating,
   type Post,
 } from "@/lib/community";
+import CommunityBodycheckHub from "@/components/CommunityBodycheckHub";
 import VerifiedBadge from "@/components/VerifiedBadge";
 
 type CommunityTab = "all" | "free" | "photo_bodycheck";
@@ -86,10 +89,8 @@ export default function CommunityPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [popularPosts, setPopularPosts] = useState<Post[]>([]);
   const [popularLoading, setPopularLoading] = useState(true);
-  const [rankingGender, setRankingGender] = useState<RankingGender>("male");
-  const [ranking, setRanking] = useState<WeeklyRankingResponse | null>(null);
-  const [rankingLoading, setRankingLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const [quickVotePostId, setQuickVotePostId] = useState<string | null>(null);
   const [tabReady, setTabReady] = useState(false);
   const feedCacheRef = useRef(new Map<string, FeedCacheEntry>());
   const feedRequestIdRef = useRef(0);
@@ -113,8 +114,14 @@ export default function CommunityPage() {
     const adjustedStart = Math.max(1, end - 4);
     return Array.from({ length: end - adjustedStart + 1 }, (_, index) => adjustedStart + index);
   }, [page, totalPages]);
-  const topRankingItems = ranking?.items ?? [];
   const showPopularSection = searchQuery.length === 0;
+  const rankingGender: RankingGender = "male";
+  const ranking: WeeklyRankingResponse | null = null;
+  const rankingLoading = false;
+  const topRankingItems: WeeklyTopItem[] = [];
+  const setRankingGender = (_gender: RankingGender) => {
+    void _gender;
+  };
 
   useEffect(() => {
     hasRenderedPostsRef.current = posts.length > 0;
@@ -276,30 +283,6 @@ export default function CommunityPage() {
     void loadPopularPosts();
   }, [loadPopularPosts, tabReady]);
 
-  const loadRanking = useCallback(async (gender: RankingGender) => {
-    setRankingLoading(true);
-    try {
-      const res = await fetch(`/api/rankings/weekly-bodycheck?gender=${gender}&top=3`, {
-        cache: "no-store",
-      });
-      if (!res.ok) {
-        setRanking(null);
-        return;
-      }
-      const data = (await res.json()) as WeeklyRankingResponse;
-      setRanking(data);
-    } catch (error) {
-      console.error("Ranking load error:", error);
-      setRanking(null);
-    } finally {
-      setRankingLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void loadRanking(rankingGender);
-  }, [loadRanking, rankingGender]);
-
   const handleWrite = () => {
     const redirect =
       tab === "photo_bodycheck" ? "/community/write?type=photo_bodycheck" : "/community/write";
@@ -311,6 +294,85 @@ export default function CommunityPage() {
 
     router.push(redirect);
   };
+
+  const handleQuickBodycheckVote = useCallback(
+    async (postId: string, rating: BodycheckRating) => {
+      if (!userId) {
+        router.push(`/login?redirect=${encodeURIComponent("/community?tab=photo_bodycheck")}`);
+        return;
+      }
+
+      if (quickVotePostId) return;
+      setQuickVotePostId(postId);
+
+      try {
+        const res = await fetch(`/api/posts/${postId}/vote`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rating }),
+        });
+        const data = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+          summary?: {
+            score_sum: number;
+            vote_count: number;
+            great_count: number;
+            good_count: number;
+            normal_count: number;
+            rookie_count: number;
+            average_score: number;
+          };
+        };
+
+        if (!res.ok || !data.ok) {
+          alert(data.error ?? "투표 처리에 실패했습니다.");
+          return;
+        }
+
+        const applyVote = (post: Post): Post => {
+          if (post.id !== postId) return post;
+          return {
+            ...post,
+            my_vote: { rating, score: BODYCHECK_SCORE_MAP[rating] },
+            score_sum: data.summary?.score_sum ?? post.score_sum,
+            vote_count: data.summary?.vote_count ?? post.vote_count,
+            great_count: data.summary?.great_count ?? post.great_count,
+            good_count: data.summary?.good_count ?? post.good_count,
+            normal_count: data.summary?.normal_count ?? post.normal_count,
+            rookie_count: data.summary?.rookie_count ?? post.rookie_count,
+            bodycheck_summary: data.summary
+              ? {
+                  score_sum: data.summary.score_sum,
+                  vote_count: data.summary.vote_count,
+                  great_count: data.summary.great_count,
+                  good_count: data.summary.good_count,
+                  normal_count: data.summary.normal_count,
+                  rookie_count: data.summary.rookie_count,
+                  average_score: data.summary.average_score,
+                }
+              : post.bodycheck_summary,
+          };
+        };
+
+        setPosts((prev) => prev.map(applyVote));
+        setPopularPosts((prev) => prev.map(applyVote));
+        const cached = feedCacheRef.current.get(feedKey);
+        if (cached) {
+          feedCacheRef.current.set(feedKey, {
+            ...cached,
+            posts: cached.posts.map(applyVote),
+          });
+        }
+      } catch {
+        alert("투표 중 네트워크 오류가 발생했습니다.");
+      } finally {
+        setQuickVotePostId(null);
+      }
+    },
+    [feedKey, quickVotePostId, router, userId]
+  );
+  void handleQuickBodycheckVote;
 
   const feedHeading = useMemo(() => {
     if (searchQuery) return `"${searchQuery}" 검색 결과`;
@@ -362,6 +424,9 @@ export default function CommunityPage() {
         </div>
       </div>
 
+      <CommunityBodycheckHub />
+
+      {false ? (
       <section className="mt-5 rounded-[28px] border border-amber-200 bg-gradient-to-r from-amber-50 via-orange-50 to-white p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -454,6 +519,7 @@ export default function CommunityPage() {
           </button>
         </div>
       </section>
+      ) : null}
 
       <div className="sticky top-14 z-30 mt-4 border-b border-neutral-200 bg-white/92 pb-3 pt-1 backdrop-blur">
         <div className="-mx-4 flex snap-x gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0">
@@ -558,7 +624,7 @@ export default function CommunityPage() {
         </section>
       ) : null}
 
-      {tab === "photo_bodycheck" ? (
+      {false && tab === "photo_bodycheck" ? (
         <div className="mt-5 rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -596,7 +662,11 @@ export default function CommunityPage() {
             {totalPosts > 0 ? `${page} / ${totalPages} 페이지 · 총 ${totalPosts}개` : "총 0개"}
           </p>
         </div>
-        <PostList posts={posts} loading={loading} isRefreshing={isRefreshing} />
+        <PostList
+          posts={posts}
+          loading={loading}
+          isRefreshing={isRefreshing}
+        />
         {totalPosts > POSTS_PER_PAGE ? (
           <nav className="mt-4 flex flex-wrap items-center justify-center gap-2" aria-label="커뮤니티 페이지 이동">
             <button
