@@ -621,7 +621,8 @@ export async function POST(req: Request) {
       failUrl: failUrl.toString(),
       customerEmail: user.email ?? undefined,
       customerName: "GymTools User",
-      ...(productType === "more_view" ||
+      ...(productType === "apply_credits" ||
+      productType === "more_view" ||
       productType === "city_view" ||
       productType === "one_on_one_contact_exchange" ||
       productType === "swipe_premium_30d"

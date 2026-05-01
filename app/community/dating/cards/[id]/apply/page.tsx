@@ -51,7 +51,6 @@ export default function DatingCardApplyPage() {
   const [errorCode, setErrorCode] = useState<string>("");
   const [profileEditUrl, setProfileEditUrl] = useState<string | null>(null);
   const [creditRequesting, setCreditRequesting] = useState(false);
-  const [creditOrderId, setCreditOrderId] = useState<string>("");
 
   const [age, setAge] = useState("");
   const [heightCm, setHeightCm] = useState("");
@@ -103,11 +102,10 @@ export default function DatingCardApplyPage() {
     setError("");
     setErrorCode("");
     setProfileEditUrl(null);
-    setCreditOrderId("");
 
     const normalizedInstagramId = normalizeInstagramId(instagramId);
     if (!validInstagramId(normalizedInstagramId)) {
-      setError("인스타 아이디 형식을 확인해주세요. (@ 없이 최대 30자)");
+      setError("인스타 아이디 형식을 확인해 주세요. @ 없이 최대 30자까지 입력할 수 있어요.");
       return;
     }
     if (!consent) {
@@ -122,11 +120,11 @@ export default function DatingCardApplyPage() {
     for (const photo of photos) {
       if (!photo) continue;
       if (!ALLOWED_TYPES.includes(photo.type)) {
-        setError("사진은 JPG/PNG/WebP만 가능합니다.");
+        setError("사진은 JPG, PNG, WebP만 올릴 수 있어요.");
         return;
       }
       if (photo.size > MAX_FILE_SIZE) {
-        setError("사진은 장당 8MB 이하만 가능합니다.");
+        setError("사진은 장당 10MB 이하만 업로드할 수 있어요.");
         return;
       }
     }
@@ -143,7 +141,7 @@ export default function DatingCardApplyPage() {
         const uploadRes = await fetch("/api/dating/cards/upload", { method: "POST", body: fd });
         const uploadBody = (await uploadRes.json().catch(() => ({}))) as { path?: string; error?: string };
         if (!uploadRes.ok || !uploadBody.path) {
-          setError(uploadBody.error ?? "사진 업로드 실패");
+          setError(uploadBody.error ?? "사진 업로드에 실패했습니다.");
           setSubmitting(false);
           return;
         }
@@ -183,10 +181,10 @@ export default function DatingCardApplyPage() {
           setProfileEditUrl(body.profile_edit_url);
         }
         const mappedByCode: Record<string, string> = {
-          NICKNAME_REQUIRED: "닉네임 설정 후 이용 가능합니다.",
-          DAILY_APPLY_LIMIT: "하루 2회 지원 가능, 내일 다시",
-          DUPLICATE_APPLICATION: "이미 해당 카드에 지원하셨어요.",
-          FORBIDDEN: "권한이 없어 지원할 수 없습니다.",
+          NICKNAME_REQUIRED: "닉네임 설정 후 이용할 수 있습니다.",
+          DAILY_APPLY_LIMIT: "하루 기본 지원 수를 모두 사용했어요.",
+          DUPLICATE_APPLICATION: "이미 이 카드에 지원했어요.",
+          FORBIDDEN: "이 카드에는 지원할 수 없습니다.",
         };
         const message =
           (body.code && mappedByCode[body.code]) ??
@@ -210,21 +208,28 @@ export default function DatingCardApplyPage() {
 
   const handleRequestApplyCredits = async () => {
     setCreditRequesting(true);
-    setCreditOrderId("");
     try {
-      const res = await fetch("/api/dating/apply-credits/request", { method: "POST" });
+      const res = await fetch("/api/payments/toss/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productType: "apply_credits" }),
+      });
       const body = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
-        orderId?: string;
         message?: string;
+        checkoutUrl?: string;
       };
-      if (!res.ok || !body.ok || !body.orderId) {
-        setError(body.message ?? "지원권 신청 생성에 실패했습니다.");
+      if (!res.ok) {
+        setError(body.message ?? "결제 요청에 실패했습니다.");
         return;
       }
-      setCreditOrderId(body.orderId);
+      if (!body.checkoutUrl) {
+        setError(body.message ?? "결제창을 불러오지 못했습니다.");
+        return;
+      }
+      window.location.href = body.checkoutUrl;
     } catch {
-      setError("지원권 신청 중 네트워크 오류가 발생했습니다.");
+      setError("결제 요청 처리 중 오류가 발생했습니다.");
     } finally {
       setCreditRequesting(false);
     }
@@ -244,7 +249,7 @@ export default function DatingCardApplyPage() {
         뒤로가기
       </Link>
 
-      <h1 className="text-2xl font-bold text-neutral-900 mt-3">오픈카드 지원하기</h1>
+      <h1 className="mt-3 text-2xl font-bold text-neutral-900">오픈카드 지원하기</h1>
 
       <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-3">
         <div className="flex items-center gap-2">
@@ -289,7 +294,7 @@ export default function DatingCardApplyPage() {
           <input className="input" required maxLength={50} value={job} onChange={(e) => setJob(e.target.value)} />
         </Field>
 
-        <Field label="운동경력(년)" required>
+        <Field label="운동 경력(년)" required>
           <input className="input" type="number" min={0} max={50} required value={trainingYears} onChange={(e) => setTrainingYears(e.target.value)} />
         </Field>
 
@@ -311,7 +316,7 @@ export default function DatingCardApplyPage() {
 
         <label className="flex items-start gap-2 text-sm text-neutral-700">
           <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-1" />
-          <span>지원 정보(인스타/사진 포함) 제출 및 매칭 진행에 동의합니다.</span>
+          <span>지원 정보와 사진 제출, 매칭 진행에 동의합니다.</span>
         </label>
 
         {error && (
@@ -324,7 +329,9 @@ export default function DatingCardApplyPage() {
             )}
             {errorCode === "DAILY_APPLY_LIMIT" && (
               <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                <p className="text-xs text-amber-800">지원권 3장(5,000원) 구매 신청 후 오픈카톡으로 문의해 주세요.</p>
+                <p className="text-xs text-amber-800">
+                  지원권 3장 5,000원이며, 현재는 카카오페이 간편결제로만 결제 가능해요. 그 밖의 결제 문의는 오픈카톡으로 부탁드려요.
+                </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -332,7 +339,7 @@ export default function DatingCardApplyPage() {
                     disabled={creditRequesting}
                     className="inline-flex min-h-[36px] items-center rounded-md bg-amber-500 px-3 text-xs font-medium text-white disabled:opacity-50"
                   >
-                    {creditRequesting ? "신청 중..." : "지원권 구매 신청"}
+                    {creditRequesting ? "결제창 준비 중..." : "카카오페이로 결제"}
                   </button>
                   <a
                     href={OPEN_KAKAO_URL}
@@ -340,14 +347,9 @@ export default function DatingCardApplyPage() {
                     rel="noreferrer"
                     className="inline-flex min-h-[36px] items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-800"
                   >
-                    오픈카톡 이동
+                    오픈카톡 문의
                   </a>
                 </div>
-                {creditOrderId && (
-                  <p className="mt-2 text-xs text-amber-900">
-                    신청 완료: {creditOrderId} (오픈카톡으로 닉네임 + 신청ID 전송)
-                  </p>
-                )}
               </div>
             )}
           </div>
