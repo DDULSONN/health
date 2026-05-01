@@ -256,12 +256,12 @@ export async function POST(req: Request) {
         });
       }
 
-      const productRef = `${user.id}:${province}`;
       const duplicateOrderRes = await admin
         .from("toss_test_payment_orders")
         .select("id,status,created_at")
         .eq("product_type", "city_view")
-        .eq("product_ref_id", productRef)
+        .eq("user_id", user.id)
+        .contains("product_meta", { province })
         .in("status", ["ready", "paid"])
         .order("created_at", { ascending: false })
         .limit(5);
@@ -301,7 +301,7 @@ export async function POST(req: Request) {
         });
       }
 
-      productRefId = productRef;
+      productRefId = user.id;
       productMeta = { province };
     }
 
