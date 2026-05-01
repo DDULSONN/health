@@ -13,41 +13,42 @@ const APPLICANT_BATCH_SIZE = 1000;
 const MATCH_BATCH_SIZE = 1000;
 const SEND_CONCURRENCY = 8;
 
+type NoticeScope = "all_applicants" | "mutual_only" | "legacy_mutual" | "new_mutual";
+
 type NoticePreviewResponse = {
   scope: NoticeScope;
   recipient_count: number;
   legacy_mutual_user_count: number;
   new_mutual_user_count: number;
   subject: string;
+  body: string;
   preview_lines: string[];
 };
 
-type NoticeScope = "all_applicants" | "mutual_only" | "legacy_mutual" | "new_mutual";
-
 const DEFAULT_NOTICE_SCOPE: NoticeScope = "mutual_only";
 
-function getNoticeSubject() {
-  return "[GymTools] 1:1 소개팅 번호 교환 안내가 정리되었습니다";
+function getDefaultNoticeSubject() {
+  return "[GymTools] 1:1 소개팅 진행 방식 안내";
 }
 
-function buildNoticeText() {
+function buildDefaultNoticeBody() {
   const openKakaoUrl = process.env.NEXT_PUBLIC_OPENKAKAO_URL?.trim() || DEFAULT_OPENKAKAO_URL;
 
   return [
     "안녕하세요. GymTools 1:1 소개팅 이용 안내입니다.",
     "",
-    "1:1 소개팅의 번호 교환 흐름이 아래처럼 정리되었습니다.",
+    "1:1 소개팅 번호 교환 진행 방식이 아래처럼 정리되었습니다.",
     "",
     "1. 새로 쌍방 수락된 매칭",
-    "- 지원한 분에게만 결제/입금 확인 안내가 표시됩니다.",
-    "- 입금 확인 요청 후 관리자 승인 시 양쪽 번호가 공개됩니다.",
+    "- 서로 수락되면 마이페이지에서 번호 교환 요청을 진행할 수 있습니다.",
+    "- 요청 후 안내에 따라 확인이 완료되면 번호 교환이 진행됩니다.",
     "",
-    "2. 이미 쌍방 수락된 기존 매칭",
-    "- 지원 받은 분이 먼저 번호 공개에 동의해야 합니다.",
-    "- 이후 지원한 분이 입금 확인 요청을 보내면 관리자 승인 후 양쪽 번호가 공개됩니다.",
+    "2. 기존에 이미 쌍방 수락된 매칭",
+    "- 현재도 마이페이지에서 번호 교환 요청을 진행할 수 있습니다.",
+    "- 요청 후 안내에 따라 확인이 완료되면 번호 교환이 진행됩니다.",
     "",
     "현재 진행 상태는 마이페이지 > 1:1 소개팅 내역에서 확인하실 수 있습니다.",
-    `문의가 필요하시면 오픈카톡으로 닉네임과 내용을 보내주세요: ${openKakaoUrl}`,
+    `문의가 필요하시면 오픈카톡으로 닉네임과 내용을 보내주세요. ${openKakaoUrl}`,
     "",
     "감사합니다.",
   ].join("\n");
@@ -160,29 +161,32 @@ async function buildNoticePreview(
   }
 
   const scopedUserIds = getScopedRecipientUserIds(scope, applicantUserIds, matches);
+  const body = buildDefaultNoticeBody();
 
   return {
     scope,
     recipient_count: scopedUserIds.length,
     legacy_mutual_user_count: legacyUsers.size,
     new_mutual_user_count: newUsers.size,
-    subject: getNoticeSubject(),
-    preview_lines: buildNoticeText().split("\n"),
+    subject: getDefaultNoticeSubject(),
+    body,
+    preview_lines: body.split("\n"),
   };
 }
 
-async function sendInBatches(userIds: string[], admin: ReturnType<typeof createAdminClient>) {
-  const subject = getNoticeSubject();
-  const text = buildNoticeText();
+async function sendInBatches(
+  userIds: string[],
+  admin: ReturnType<typeof createAdminClient>,
+  subject: string,
+  text: string
+) {
   let sent = 0;
   let failed = 0;
 
   for (let start = 0; start < userIds.length; start += SEND_CONCURRENCY) {
     const batch = userIds.slice(start, start + SEND_CONCURRENCY);
     const results = await Promise.all(
-      batch.map((userId) =>
-        sendDatingEmailNotification(admin, userId, subject, text).catch(() => false)
-      )
+      batch.map((userId) => sendDatingEmailNotification(admin, userId, subject, text).catch(() => false))
     );
 
     for (const ok of results) {
@@ -213,20 +217,30 @@ export async function POST(request: Request) {
   if (!auth.ok) return auth.response;
 
   try {
-    let body: { scope?: NoticeScope } | null = null;
+    let body: { scope?: NoticeScope; subject?: string; body?: string } | null = null;
     try {
-      body = (await request.json()) as { scope?: NoticeScope };
+      body = (await request.json()) as { scope?: NoticeScope; subject?: string; body?: string };
     } catch {
       body = null;
     }
 
     const requestScope = parseNoticeScope(body?.scope);
+    const subject = String(body?.subject ?? "").trim();
+    const text = String(body?.body ?? "").trim();
+
+    if (!subject) {
+      return NextResponse.json({ error: "메일 제목을 입력해주세요." }, { status: 400 });
+    }
+    if (!text) {
+      return NextResponse.json({ error: "메일 본문을 입력해주세요." }, { status: 400 });
+    }
+
     const [applicantUserIds, matches] = await Promise.all([
       fetchApplicantUserIds(auth.admin),
       fetchMutualAcceptedMatches(auth.admin),
     ]);
     const userIds = getScopedRecipientUserIds(requestScope, applicantUserIds, matches);
-    const { sent, failed } = await sendInBatches(userIds, auth.admin);
+    const { sent, failed } = await sendInBatches(userIds, auth.admin, subject, text);
 
     return NextResponse.json({
       ok: true,

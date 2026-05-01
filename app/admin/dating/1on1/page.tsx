@@ -108,6 +108,7 @@ type OneOnOneNoticePreview = {
   legacy_mutual_user_count: number;
   new_mutual_user_count: number;
   subject: string;
+  body: string;
   preview_lines: string[];
 };
 
@@ -324,7 +325,9 @@ export default function AdminDatingOneOnOnePage() {
   const [autoCandidateSeed, setAutoCandidateSeed] = useState(() => Date.now());
   const [sendingCandidates, setSendingCandidates] = useState(false);
   const [processingContactExchangeIds, setProcessingContactExchangeIds] = useState<string[]>([]);
-  const [matchStateFilter, setMatchStateFilter] = useState<"" | AdminMatchItem["state"] | "mutual_only">("mutual_only");
+  const [matchStateFilter, setMatchStateFilter] = useState<
+    "" | AdminMatchItem["state"] | "mutual_only" | "mutual_pending_exchange"
+  >("mutual_only");
 
   const [sex, setSex] = useState<"" | "male" | "female">("");
   const [region, setRegion] = useState("");
@@ -346,6 +349,8 @@ export default function AdminDatingOneOnOnePage() {
   const [noticeSending, setNoticeSending] = useState(false);
   const [noticeSendResult, setNoticeSendResult] = useState<OneOnOneNoticeSendResult | null>(null);
   const [noticeScope, setNoticeScope] = useState<NoticeScope>("mutual_only");
+  const [noticeSubject, setNoticeSubject] = useState("");
+  const [noticeBody, setNoticeBody] = useState("");
 
   const buildQuery = () => {
     const qs = new URLSearchParams();
@@ -440,6 +445,8 @@ export default function AdminDatingOneOnOnePage() {
         throw new Error(body.error ?? "안내 메일 미리보기를 불러오지 못했습니다.");
       }
       setNoticePreview(body);
+      setNoticeSubject(body.subject ?? "");
+      setNoticeBody(body.body ?? "");
     } finally {
       setNoticeLoading(false);
     }
@@ -508,6 +515,17 @@ export default function AdminDatingOneOnOnePage() {
       return;
     }
 
+    const trimmedSubject = noticeSubject.trim();
+    const trimmedBody = noticeBody.trim();
+    if (!trimmedSubject) {
+      alert("메일 제목을 입력해주세요.");
+      return;
+    }
+    if (!trimmedBody) {
+      alert("메일 본문을 입력해주세요.");
+      return;
+    }
+
     if (!confirm(`${noticeScopeLabel(noticeScope)} ${targetCount}명에게 방식 변경 안내 메일을 발송할까요?`)) {
       return;
     }
@@ -519,7 +537,11 @@ export default function AdminDatingOneOnOnePage() {
       const res = await fetch("/api/admin/dating/1on1/notice", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ scope: noticeScope }),
+        body: JSON.stringify({
+          scope: noticeScope,
+          subject: trimmedSubject,
+          body: trimmedBody,
+        }),
       });
       const body = (await res.json().catch(() => ({}))) as
         | (OneOnOneNoticeSendResult & { ok?: boolean; error?: string })
@@ -691,6 +713,13 @@ export default function AdminDatingOneOnOnePage() {
     () =>
       matchStateFilter === "mutual_only"
         ? matchItems.filter((item) => item.state === "mutual_accepted")
+        : matchStateFilter === "mutual_pending_exchange"
+        ? matchItems.filter(
+            (item) =>
+              item.state === "mutual_accepted" &&
+              item.contact_exchange_status !== "approved" &&
+              item.contact_exchange_status !== "canceled"
+          )
         : matchStateFilter
         ? matchItems.filter((item) => item.state === matchStateFilter)
         : matchItems,
@@ -879,11 +908,24 @@ export default function AdminDatingOneOnOnePage() {
               <p className="text-xs text-fuchsia-700">
                 현재 선택: {noticeScopeLabel(noticePreview.scope)}
               </p>
-              <p className="text-xs font-semibold text-neutral-900">제목</p>
-              <p className="mt-1 text-sm text-neutral-700">{noticePreview.subject}</p>
+              <label className="mt-3 block text-xs font-semibold text-neutral-900">제목</label>
+              <input
+                value={noticeSubject}
+                onChange={(e) => setNoticeSubject(e.target.value)}
+                placeholder="메일 제목을 입력하세요"
+                className="mt-1 h-10 w-full rounded-lg border border-fuchsia-100 px-3 text-sm text-neutral-800 outline-none ring-0 placeholder:text-neutral-400 focus:border-fuchsia-300"
+              />
+              <label className="mt-3 block text-xs font-semibold text-neutral-900">본문</label>
+              <textarea
+                value={noticeBody}
+                onChange={(e) => setNoticeBody(e.target.value)}
+                placeholder="메일 본문을 입력하세요"
+                rows={10}
+                className="mt-1 w-full rounded-lg border border-fuchsia-100 px-3 py-2 text-sm leading-6 text-neutral-800 outline-none ring-0 placeholder:text-neutral-400 focus:border-fuchsia-300"
+              />
               <p className="mt-3 text-xs font-semibold text-neutral-900">본문 미리보기</p>
               <div className="mt-1 space-y-1 text-xs leading-5 text-neutral-600">
-                {noticePreview.preview_lines.map((line, index) => (
+                {noticeBody.split("\n").map((line, index) => (
                   <p key={`${index}-${line}`}>{line || "\u00A0"}</p>
                 ))}
               </div>
@@ -1260,7 +1302,7 @@ export default function AdminDatingOneOnOnePage() {
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-emerald-900">매칭 진행 현황</h2>
-            <p className="text-xs text-emerald-700">쌍방 수락 완료만 바로 보이도록 기본 필터를 걸어두었습니다.</p>
+            <p className="text-xs text-emerald-700">쌍방 수락 완료를 기본으로 보고, 아직 번호 교환 전인 매칭만 따로 추려볼 수 있습니다.</p>
           </div>
           <select
             value={matchStateFilter}
@@ -1268,6 +1310,7 @@ export default function AdminDatingOneOnOnePage() {
             className="h-10 rounded-lg border border-emerald-200 bg-white px-2 text-sm text-emerald-900"
           >
             <option value="mutual_only">쌍방 수락 완료만</option>
+            <option value="mutual_pending_exchange">쌍방 수락 + 번호 교환 전</option>
             <option value="">전체</option>
             <option value="proposed">후보 발송</option>
             <option value="source_selected">상대 응답 대기</option>
