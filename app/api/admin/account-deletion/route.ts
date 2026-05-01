@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getRequestIp, performAccountDeletion } from "@/lib/account-deletion";
+import { getAccountDeletionConfigError, getRequestIp, performAccountDeletion } from "@/lib/account-deletion";
 import { requireAdminRoute } from "@/lib/admin-route";
 
 function isUuid(value: string): boolean {
@@ -68,13 +68,19 @@ export async function POST(request: Request) {
   const auth = await requireAdminRoute();
   if (!auth.ok) return auth.response;
 
+  const configError = getAccountDeletionConfigError();
+  if (configError) {
+    console.error("[POST /api/admin/account-deletion] missing config", configError.debugMessage);
+    return NextResponse.json({ error: configError.userMessage }, { status: 500 });
+  }
+
   const body = (await request.json().catch(() => ({}))) as {
     identifier?: string;
   };
 
   const identifier = body.identifier?.trim() ?? "";
   if (!identifier) {
-    return NextResponse.json({ error: "이메일, 닉네임 또는 사용자 ID를 입력해주세요." }, { status: 400 });
+    return NextResponse.json({ error: "이메일, 닉네임 또는 사용자 ID를 입력해 주세요." }, { status: 400 });
   }
 
   const target = await resolveTargetUser(auth.admin, identifier);

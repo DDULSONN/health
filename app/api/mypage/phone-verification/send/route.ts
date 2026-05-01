@@ -31,12 +31,12 @@ function mapAuthErrorToUserMessage(message: string): string {
     return "이미 다른 계정에 등록된 번호입니다.";
   }
   if (lower.includes("invalid") && lower.includes("phone")) {
-    return "전화번호 형식이 올바르지 않습니다.";
+    return "휴대폰번호 형식이 올바르지 않습니다.";
   }
   if ((lower.includes("sms") || lower.includes("otp")) && (lower.includes("rate") || lower.includes("too many"))) {
-    return "문자 발송이 지연 중입니다. 잠시 후 다시 시도해주세요.";
+    return "문자 발송이 잠시 지연 중입니다. 잠시 후 다시 시도해 주세요.";
   }
-  return "인증번호 발송에 실패했습니다. 잠시 후 다시 시도해주세요.";
+  return "인증번호 발송에 실패했습니다. 잠시 후 다시 시도해 주세요.";
 }
 
 async function enforceOtpWindowLimit(key: string, windowSec: number, limit: number) {
@@ -72,7 +72,7 @@ export async function POST(req: Request) {
     });
     if (!routeLimit.allowed) {
       return NextResponse.json(
-        { error: `요청이 너무 많습니다. ${routeLimit.retryAfterSec}초 후 다시 시도해주세요.`, retryAfterSec: routeLimit.retryAfterSec },
+        { error: `요청이 너무 많습니다. ${routeLimit.retryAfterSec}초 후 다시 시도해 주세요.`, retryAfterSec: routeLimit.retryAfterSec },
         { status: 429, headers: { "Retry-After": String(routeLimit.retryAfterSec) } }
       );
     }
@@ -80,7 +80,7 @@ export async function POST(req: Request) {
     const body = (await req.json().catch(() => ({}))) as { phone?: string };
     const phoneE164 = normalizeToE164(body.phone ?? "");
     if (!phoneE164 || !isLikelyValidE164(phoneE164)) {
-      return NextResponse.json({ error: "휴대폰 번호를 올바르게 입력해주세요." }, { status: 400 });
+      return NextResponse.json({ error: "휴대폰번호를 올바르게 입력해 주세요." }, { status: 400 });
     }
 
     const windowRules = [
@@ -98,7 +98,7 @@ export async function POST(req: Request) {
         `[phone-otp-send] blocked requestId=${requestId} user=${user.id} ipHash=${hashForLog(ip)} phoneHash=${hashForLog(phoneE164)} rule=${rule.label} count=${blocked.count}/${rule.limit} provider=${blocked.provider}`
       );
       return NextResponse.json(
-        { error: `인증번호 재발송이 너무 잦습니다. ${blocked.retryAfterSec}초 후 다시 시도해주세요.`, retryAfterSec: blocked.retryAfterSec },
+        { error: `인증번호 재발송이 너무 잦습니다. ${blocked.retryAfterSec}초 후 다시 시도해 주세요.`, retryAfterSec: blocked.retryAfterSec },
         { status: 429, headers: { "Retry-After": String(blocked.retryAfterSec) } }
       );
     }
@@ -119,6 +119,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: true, pendingPhone: phoneE164 });
   } catch (error) {
     console.error("[POST /api/mypage/phone-verification/send] failed", { requestId, error });
-    return NextResponse.json({ error: "인증번호 발송 중 오류가 발생했습니다. 잠시 후 다시 시도해주세요." }, { status: 500 });
+    return NextResponse.json({ error: "인증번호 발송 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });
   }
 }

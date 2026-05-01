@@ -7,9 +7,11 @@ type InitiatedByRole = "self" | "admin";
 export function maskEmail(email: string | null | undefined) {
   const value = (email ?? "").trim();
   if (!value.includes("@")) return null;
+
   const [localPart, domain] = value.split("@");
   if (!localPart || !domain) return null;
   if (localPart.length <= 2) return `${localPart[0] ?? "*"}*@${domain}`;
+
   return `${localPart.slice(0, 2)}***@${domain}`;
 }
 
@@ -35,6 +37,25 @@ export function getRequestIp(req: Request) {
     req.headers.get("x-vercel-forwarded-for") ??
     null
   );
+}
+
+export function getAccountDeletionConfigError() {
+  const missing: string[] = [];
+
+  if (!process.env.NEXT_PUBLIC_SUPABASE_URL) {
+    missing.push("NEXT_PUBLIC_SUPABASE_URL");
+  }
+
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    missing.push("SUPABASE_SERVICE_ROLE_KEY");
+  }
+
+  if (missing.length === 0) return null;
+
+  return {
+    userMessage: "서버 설정이 아직 완료되지 않았습니다. 관리자에게 문의해 주세요.",
+    debugMessage: `Missing environment variable(s): ${missing.join(", ")}`,
+  };
 }
 
 async function insertDeletionAudit(
@@ -95,7 +116,10 @@ export async function performAccountDeletion(params: {
     nickname = typeof profileRes.data?.nickname === "string" ? profileRes.data.nickname : null;
   }
 
-  await admin.from("profiles").update({ push_token: null }).eq("user_id", userId);
+  const pushTokenReset = await admin.from("profiles").update({ push_token: null }).eq("user_id", userId);
+  if (pushTokenReset.error) {
+    console.warn("[account deletion] push token cleanup failed", pushTokenReset.error);
+  }
 
   const hardDelete = await admin.auth.admin.deleteUser(userId);
   if (!hardDelete.error) {
@@ -115,23 +139,23 @@ export async function performAccountDeletion(params: {
 
   console.error("[account deletion] hard delete failed", hardDelete.error);
 
-  const profileDelete = await admin.from("profiles").delete().eq("user_id", userId);
-  if (profileDelete.error) {
-    console.warn("[account deletion] profile cleanup failed", profileDelete.error);
-  }
-
   const softDelete = await admin.auth.admin.deleteUser(userId, true);
   if (softDelete.error) {
     console.error("[account deletion] soft delete failed", softDelete.error);
     return {
       ok: false as const,
-      error:
-        "회원 탈퇴 처리에 실패했습니다. 잠시 후 다시 시도해 주세요. 문제가 계속되면 문의 부탁드립니다.",
+      error: "회원 탈퇴 처리에 실패했습니다. 잠시 후 다시 시도해 주세요. 문제가 계속되면 문의 부탁드립니다.",
       debug:
         hardDelete.error.message === softDelete.error.message
           ? hardDelete.error.message
           : `${hardDelete.error.message} / ${softDelete.error.message}`,
     };
+  }
+
+  // Remove the public profile only after the auth account has been safely disabled.
+  const profileDelete = await admin.from("profiles").delete().eq("user_id", userId);
+  if (profileDelete.error) {
+    console.warn("[account deletion] profile cleanup failed after soft delete", profileDelete.error);
   }
 
   await insertDeletionAudit(admin, {

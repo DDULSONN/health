@@ -26,6 +26,7 @@ type CardDetail = {
 };
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const HEIC_TYPES = ["image/heic", "image/heif"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
 
@@ -109,7 +110,7 @@ export default function DatingCardApplyPage() {
       return;
     }
     if (!consent) {
-      setError("동의가 필요합니다.");
+      setError("개인정보 및 사진 제공 동의가 필요합니다.");
       return;
     }
     if (!photos[0] || !photos[1]) {
@@ -119,12 +120,16 @@ export default function DatingCardApplyPage() {
 
     for (const photo of photos) {
       if (!photo) continue;
+      if (HEIC_TYPES.includes(photo.type)) {
+        setError("HEIC 사진은 아직 지원하지 않아요. JPG, PNG, WebP 형식으로 다시 업로드해 주세요.");
+        return;
+      }
       if (!ALLOWED_TYPES.includes(photo.type)) {
-        setError("사진은 JPG, PNG, WebP만 올릴 수 있어요.");
+        setError("사진은 JPG, PNG, WebP 형식만 업로드할 수 있어요.");
         return;
       }
       if (photo.size > MAX_FILE_SIZE) {
-        setError("사진은 장당 10MB 이하만 업로드할 수 있어요.");
+        setError("사진은 한 장당 10MB 이하만 업로드할 수 있어요.");
         return;
       }
     }
@@ -182,7 +187,7 @@ export default function DatingCardApplyPage() {
         }
         const mappedByCode: Record<string, string> = {
           NICKNAME_REQUIRED: "닉네임 설정 후 이용할 수 있습니다.",
-          DAILY_APPLY_LIMIT: "하루 기본 지원 수를 모두 사용했어요.",
+          DAILY_APPLY_LIMIT: "오늘 기본 지원 가능 횟수를 모두 사용했어요.",
           DUPLICATE_APPLICATION: "이미 이 카드에 지원했어요.",
           FORBIDDEN: "이 카드에는 지원할 수 없습니다.",
         };
@@ -237,14 +242,14 @@ export default function DatingCardApplyPage() {
 
   if (loading || !card) {
     return (
-      <main className="max-w-lg mx-auto px-4 py-8">
+      <main className="mx-auto max-w-lg px-4 py-8">
         <p className="text-sm text-neutral-500">불러오는 중...</p>
       </main>
     );
   }
 
   return (
-    <main className="max-w-lg mx-auto px-4 py-8">
+    <main className="mx-auto max-w-lg px-4 py-8">
       <Link href="/community/dating/cards" className="text-sm text-neutral-500 hover:text-neutral-700">
         뒤로가기
       </Link>
@@ -258,12 +263,12 @@ export default function DatingCardApplyPage() {
         </div>
         {card.image_urls.length > 0 && (
           <div
-            className={`mt-2 rounded-lg overflow-hidden bg-neutral-50 border border-neutral-100 ${
-              card.image_urls.length >= 2 ? "grid grid-cols-2 gap-1 h-40" : "h-40 flex items-center justify-center"
+            className={`mt-2 overflow-hidden rounded-lg border border-neutral-100 bg-neutral-50 ${
+              card.image_urls.length >= 2 ? "grid h-40 grid-cols-2 gap-1" : "flex h-40 items-center justify-center"
             }`}
           >
             {card.image_urls.map((url, idx) => (
-              <div key={`${card.id}-${idx}`} className="h-full w-full flex items-center justify-center bg-neutral-50">
+              <div key={`${card.id}-${idx}`} className="flex h-full w-full items-center justify-center bg-neutral-50">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={url}
@@ -277,7 +282,7 @@ export default function DatingCardApplyPage() {
         )}
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4 mt-6">
+      <form onSubmit={handleSubmit} className="mt-6 space-y-4">
         <Field label="나이" required>
           <input className="input" type="number" min={19} max={99} required value={age} onChange={(e) => setAge(e.target.value)} />
         </Field>
@@ -303,7 +308,14 @@ export default function DatingCardApplyPage() {
         </Field>
 
         <Field label="자기소개" required>
-          <textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" required maxLength={1000} rows={4} value={introText} onChange={(e) => setIntroText(e.target.value)} />
+          <textarea
+            className="w-full rounded-xl border border-neutral-300 px-3 py-2"
+            required
+            maxLength={1000}
+            rows={4}
+            value={introText}
+            onChange={(e) => setIntroText(e.target.value)}
+          />
         </Field>
 
         <Field label="지원 사진 1" required>
@@ -314,9 +326,11 @@ export default function DatingCardApplyPage() {
           <input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e) => handlePhotoChange(1, e.target.files?.[0] ?? null)} />
         </Field>
 
+        <p className="text-xs text-neutral-500">사진은 JPG, PNG, WebP 형식만 가능하며, 한 장당 10MB 이하로 업로드해 주세요.</p>
+
         <label className="flex items-start gap-2 text-sm text-neutral-700">
           <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-1" />
-          <span>지원 정보와 사진 제출, 매칭 진행에 동의합니다.</span>
+          <span>지원 정보와 사진이 매칭 진행에 사용되는 것에 동의합니다.</span>
         </label>
 
         {error && (
@@ -355,7 +369,11 @@ export default function DatingCardApplyPage() {
           </div>
         )}
 
-        <button type="submit" disabled={submitting} className="w-full min-h-[46px] rounded-xl bg-pink-500 text-white text-sm font-medium hover:bg-pink-600 disabled:opacity-50">
+        <button
+          type="submit"
+          disabled={submitting}
+          className="w-full min-h-[46px] rounded-xl bg-pink-500 text-sm font-medium text-white hover:bg-pink-600 disabled:opacity-50"
+        >
           {submitting ? "지원 중..." : "지원하기"}
         </button>
       </form>
@@ -377,11 +395,10 @@ export default function DatingCardApplyPage() {
 function Field({ label, required = false, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
     <div>
-      <label className="block text-sm font-medium text-neutral-700 mb-1">
+      <label className="mb-1 block text-sm font-medium text-neutral-700">
         {label} {required ? "*" : ""}
       </label>
       {children}
     </div>
   );
 }
-

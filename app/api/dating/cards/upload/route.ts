@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const HEIC_TYPES = ["image/heic", "image/heif"];
 
 export async function POST(req: Request) {
   const originResponse = ensureAllowedMutationOrigin(req);
@@ -29,17 +30,24 @@ export async function POST(req: Request) {
   const cardId = String(form.get("cardId") ?? "");
   const index = Number(String(form.get("index") ?? "0"));
   if (!(file instanceof File) || !cardId) {
-    return NextResponse.json({ error: "file/cardId가 필요합니다." }, { status: 400 });
+    return NextResponse.json({ error: "사진 파일과 카드 정보가 필요합니다." }, { status: 400 });
+  }
+
+  if (HEIC_TYPES.includes(file.type)) {
+    return NextResponse.json(
+      { error: "HEIC 사진은 아직 지원하지 않아요. JPG, PNG, WebP 형식으로 다시 업로드해 주세요." },
+      { status: 400 }
+    );
   }
 
   if (!ALLOWED_TYPES.includes(file.type)) {
-    return NextResponse.json({ error: "JPG/PNG/WebP만 업로드 가능합니다." }, { status: 400 });
+    return NextResponse.json({ error: "사진은 JPG, PNG, WebP 형식만 업로드할 수 있어요." }, { status: 400 });
   }
   if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: "사진은 8MB 이하만 가능합니다." }, { status: 400 });
+    return NextResponse.json({ error: "사진은 10MB 이하만 업로드할 수 있어요." }, { status: 400 });
   }
   if (index < 0 || index > 9) {
-    return NextResponse.json({ error: "index 값이 올바르지 않습니다." }, { status: 400 });
+    return NextResponse.json({ error: "사진 순서 정보가 올바르지 않습니다." }, { status: 400 });
   }
 
   const adminClient = createAdminClient();
@@ -50,10 +58,10 @@ export async function POST(req: Request) {
     .single();
 
   if (cardError || !card) {
-    return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
+    return NextResponse.json({ error: "지원할 오픈카드를 찾지 못했습니다." }, { status: 404 });
   }
   if (card.owner_user_id === user.id) {
-    return NextResponse.json({ error: "본인 카드에는 지원할 수 없습니다." }, { status: 400 });
+    return NextResponse.json({ error: "본인 오픈카드에는 지원할 수 없습니다." }, { status: 400 });
   }
 
   let allowedByMoreView = false;
@@ -64,10 +72,10 @@ export async function POST(req: Request) {
   }
 
   if (card.status !== "public" && !allowedByMoreView && !allowedByCityView) {
-    return NextResponse.json({ error: "지원 가능한 카드가 아닙니다." }, { status: 400 });
+    return NextResponse.json({ error: "지금은 지원할 수 없는 오픈카드입니다." }, { status: 400 });
   }
   if (card.status === "public" && (!card.expires_at || new Date(card.expires_at).getTime() <= Date.now())) {
-    return NextResponse.json({ error: "카드가 만료되었습니다." }, { status: 410 });
+    return NextResponse.json({ error: "이 오픈카드는 이미 마감되었습니다." }, { status: 410 });
   }
 
   const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
@@ -81,7 +89,12 @@ export async function POST(req: Request) {
 
   if (uploadError) {
     console.error("[POST /api/dating/cards/upload] failed", uploadError);
-    return NextResponse.json({ error: "사진 업로드에 실패했습니다." }, { status: 500 });
+    return NextResponse.json(
+      {
+        error: `사진 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요.${uploadError.message ? ` (${uploadError.message})` : ""}`,
+      },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({ path }, { status: 201 });

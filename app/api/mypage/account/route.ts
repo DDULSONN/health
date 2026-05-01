@@ -1,4 +1,4 @@
-import { getRequestIp, performAccountDeletion } from "@/lib/account-deletion";
+import { getAccountDeletionConfigError, getRequestIp, performAccountDeletion } from "@/lib/account-deletion";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -7,6 +7,12 @@ export async function DELETE(req: Request) {
   const { user } = await getRequestAuthContext(req);
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  const configError = getAccountDeletionConfigError();
+  if (configError) {
+    console.error("[DELETE /api/mypage/account] missing config", configError.debugMessage);
+    return NextResponse.json({ error: configError.userMessage }, { status: 500 });
   }
 
   const admin = createAdminClient();

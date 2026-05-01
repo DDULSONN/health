@@ -1036,6 +1036,8 @@ export default function MyPage() {
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deletingAppliedIds, setDeletingAppliedIds] = useState<string[]>([]);
   const [deletingOneOnOneIds, setDeletingOneOnOneIds] = useState<string[]>([]);
+  const [deletingOpenCardIds, setDeletingOpenCardIds] = useState<string[]>([]);
+  const [deletingPaidCardIds, setDeletingPaidCardIds] = useState<string[]>([]);
   const [applyCreditsRemaining, setApplyCreditsRemaining] = useState(0);
 
   const [nicknameOpen, setNicknameOpen] = useState(false);
@@ -2686,17 +2688,53 @@ export default function MyPage() {
   };
 
   const handleDeleteMyOpenCard = async (cardId: string) => {
-    if (!confirm("대기중 오픈카드를 삭제할까요?")) return;
-    const res = await fetch(`/api/dating/cards/my?id=${encodeURIComponent(cardId)}`, {
-      method: "DELETE",
-    });
-    const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
-    if (!res.ok) {
-      alert(body.error ?? "오픈카드 삭제에 실패했습니다.");
-      return;
+    if (deletingOpenCardIds.includes(cardId)) return;
+    if (!confirm("이 오픈카드를 삭제할까요? 지원 기록과 연결 정보도 함께 정리될 수 있습니다.")) return;
+
+    setDeletingOpenCardIds((prev) => [...prev, cardId]);
+    try {
+      const res = await fetch(`/api/dating/cards/my/${encodeURIComponent(cardId)}`, {
+        method: "DELETE",
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+      if (!res.ok) {
+        alert(body.error ?? "오픈카드 삭제에 실패했습니다.");
+        return;
+      }
+      setMyDatingCards((prev) => prev.filter((card) => card.id !== cardId));
+      await Promise.all([
+        reloadOpenAppliedApplications(),
+        reloadOpenDatingConnections(),
+        reloadSwipeStatus().catch(() => undefined),
+      ]);
+      alert(body.message ?? "오픈카드를 삭제했습니다.");
+    } finally {
+      setDeletingOpenCardIds((prev) => prev.filter((id) => id !== cardId));
     }
-    setMyDatingCards((prev) => prev.filter((card) => card.id !== cardId));
-    alert(body.message ?? "대기중 오픈카드가 삭제되었습니다.");
+  };
+
+  const handleDeleteMyPaidCard = async (cardId: string) => {
+    if (deletingPaidCardIds.includes(cardId)) return;
+    if (!confirm("이 유료카드를 삭제할까요? 지원 기록과 연결 정보도 함께 정리될 수 있습니다.")) return;
+
+    setDeletingPaidCardIds((prev) => [...prev, cardId]);
+    try {
+      const res = await fetch(`/api/dating/paid/my/${encodeURIComponent(cardId)}`, {
+        method: "DELETE",
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+      if (!res.ok) {
+        alert(body.error ?? "유료카드 삭제에 실패했습니다.");
+        return;
+      }
+
+      setMyPaidCards((prev) => prev.filter((card) => card.id !== cardId));
+      setReceivedPaidApplications((prev) => prev.filter((app) => app.card_id !== cardId));
+      await Promise.all([reloadPaidAppliedApplications(), reloadOpenDatingConnections()]);
+      alert(body.message ?? "유료카드를 삭제했습니다.");
+    } finally {
+      setDeletingPaidCardIds((prev) => prev.filter((id) => id !== cardId));
+    }
   };
 
   const handleDeleteMyOneOnOneCard = async (cardId: string) => {
@@ -3434,7 +3472,7 @@ export default function MyPage() {
   const showAdminSection = pageSectionTab === "admin" && isAdmin;
 
   return (
-    <main className="mx-auto max-w-2xl px-4 pt-8 pb-28 md:pb-8">
+    <main className="mx-auto max-w-2xl px-4 pt-8 pb-[calc(120px+env(safe-area-inset-bottom))] md:pb-10">
       <section className="mb-4 rounded-2xl border border-neutral-200 bg-[#f6f4f1] p-2">
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
           {([
@@ -3466,7 +3504,7 @@ export default function MyPage() {
         <p className="mt-1 text-sm text-neutral-600">{nickname}</p>
 
         <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
-          <div className="flex items-center justify-between gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-semibold text-neutral-800">닉네임</p>
               <p className="mt-1 text-xs text-neutral-600">
@@ -3486,7 +3524,7 @@ export default function MyPage() {
                 setNewNickname("");
               }}
               disabled={!canChangeNickname}
-              className="min-h-[40px] rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-[44px] self-start rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
             >
               닉네임 변경
             </button>
@@ -4346,16 +4384,24 @@ export default function MyPage() {
                 <p className="mt-1 text-xs text-neutral-500">
                   생성일 {new Date(card.created_at).toLocaleDateString("ko-KR")}
                 </p>
-                {card.status === "pending" && (
-                  <div className="mt-2">
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {card.status === "pending" ? (
                     <Link
                       href={`/dating/paid?editId=${card.id}`}
                       className="inline-flex h-8 items-center rounded-md border border-rose-300 bg-white px-3 text-xs font-medium text-rose-700 hover:bg-rose-50"
                     >
                       내용 수정
                     </Link>
-                  </div>
-                )}
+                  ) : null}
+                  <button
+                    type="button"
+                    disabled={deletingPaidCardIds.includes(card.id)}
+                    onClick={() => void handleDeleteMyPaidCard(card.id)}
+                    className="inline-flex h-8 items-center rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    {deletingPaidCardIds.includes(card.id) ? "삭제 중..." : "삭제"}
+                  </button>
+                </div>
               </div>
             ))}
             {receivedPaidApplications.map((app) => {
@@ -5103,29 +5149,35 @@ export default function MyPage() {
                     공개 종료까지 남은 시간 {formatRemainingToKorean(card.expires_at)}
                   </p>
                 )}
-                {card.status === "pending" && (
-                  <div className="mt-1 flex items-center justify-between gap-2">
-                    <p className="text-sm text-neutral-600">
-                      대기열에 등록되어 있습니다.
-                      {typeof card.queue_position === "number" && card.queue_position > 0 ? ` (현재 ${card.queue_position}번째)` : ""}
-                    </p>
-                    <div className="flex items-center gap-2">
+                <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
+                  <p className="text-sm text-neutral-600">
+                    {card.status === "pending"
+                      ? `대기열에 등록되어 있습니다.${typeof card.queue_position === "number" && card.queue_position > 0 ? ` (현재 ${card.queue_position}번째)` : ""}`
+                      : card.status === "public"
+                        ? "현재 공개중인 오픈카드입니다."
+                        : card.status === "expired"
+                          ? "공개 기간이 끝난 오픈카드입니다."
+                          : "숨김 처리된 오픈카드입니다."}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    {card.status === "pending" ? (
                       <Link
                         href={`/dating/card/new?editId=${card.id}`}
                         className="inline-flex h-8 items-center rounded-md border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700 hover:bg-pink-50"
                       >
                         내용 수정
                       </Link>
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteMyOpenCard(card.id)}
-                        className="inline-flex h-8 items-center rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-700 hover:bg-red-50"
-                      >
-                        삭제
-                      </button>
-                    </div>
+                    ) : null}
+                    <button
+                      type="button"
+                      disabled={deletingOpenCardIds.includes(card.id)}
+                      onClick={() => void handleDeleteMyOpenCard(card.id)}
+                      className="inline-flex h-8 items-center rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                    >
+                      {deletingOpenCardIds.includes(card.id) ? "삭제 중..." : "삭제"}
+                    </button>
                   </div>
-                )}
+                </div>
               </div>
             ))}
           </div>
@@ -7618,7 +7670,7 @@ export default function MyPage() {
       )}
 
       {nicknameOpen && (
-        <div className="fixed inset-0 z-50 flex items-end bg-black/40 p-4 sm:items-center sm:justify-center">
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-[max(16px,env(safe-area-inset-bottom))]">
           <div className="w-full max-w-sm rounded-2xl bg-white p-4">
             <h3 className="text-base font-semibold text-neutral-900">닉네임 변경</h3>
             <p className="mt-1 text-xs text-neutral-600">2~12자, 한글/영문/숫자/_ 만 사용 가능합니다.</p>

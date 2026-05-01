@@ -212,6 +212,19 @@ export async function POST(req: Request) {
     if (!targetCard || targetCard.owner_user_id !== targetUserId || targetCard.sex !== sex) {
       return NextResponse.json({ error: "대상 카드를 찾을 수 없습니다." }, { status: 404 });
     }
+
+    const targetProfileRes = await adminClient
+      .from("profiles")
+      .select("swipe_profile_visible")
+      .eq("user_id", targetUserId)
+      .maybeSingle();
+    if (targetProfileRes.error && !targetProfileRes.error.message?.includes("swipe_profile_visible")) {
+      throw targetProfileRes.error;
+    }
+    if (targetProfileRes.data?.swipe_profile_visible === false) {
+      return NextResponse.json({ error: "상대가 빠른매칭 숨김 상태라 더 이상 진행할 수 없습니다." }, { status: 410 });
+    }
+
     const blocked = await hasDatingBlockBetween(adminClient, user.id, targetUserId);
     if (blocked) {
       return NextResponse.json({ error: "차단한 상대에게는 빠른 매칭을 사용할 수 없습니다." }, { status: 403 });
