@@ -267,6 +267,7 @@ function formatPaymentProductLabel(order: MyPaymentCenterOrder) {
     return sex === "female" ? "이상형 더보기 · 여자 카드" : sex === "male" ? "이상형 더보기 · 남자 카드" : "이상형 더보기";
   }
   if (order.product_type === "one_on_one_contact_exchange") return "1:1 번호 즉시 교환";
+  if (order.product_type === "swipe_premium_30d") return "빠른매칭 플러스";
   return order.order_name ?? order.product_type;
 }
 
@@ -279,11 +280,15 @@ function formatPaymentStatusLabel(status: MyPaymentCenterOrder["status"]) {
 }
 
 function formatPaymentResultLabel(order: MyPaymentCenterOrder) {
-  if (order.status !== "paid") return "결제 확인 중";
+  if (order.status === "failed") return "결제 실패";
+  if (order.status === "canceled") return "결제 취소";
+  if (order.status === "ready") return "결제 대기";
+  if (order.status !== "paid") return "상태 확인 필요";
   if (order.product_type === "apply_credits") return "지원권 지급 완료";
   if (order.product_type === "paid_card") return "유료 등록 결제 확인 완료";
   if (order.product_type === "more_view") return "이상형 더보기 권한 반영 완료";
   if (order.product_type === "one_on_one_contact_exchange") return "상대 연락처 공개 완료";
+  if (order.product_type === "swipe_premium_30d") return "빠른매칭 플러스 적용 완료";
   return "결제 완료";
 }
 
@@ -2218,31 +2223,28 @@ export default function MyPage() {
     setSwipeSubscriptionError("");
     setSwipeSubscriptionInfo("");
     try {
-      const res = await fetch("/api/dating/cards/swipe/subscription", {
+      const res = await fetch("/api/payments/toss/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productType: "swipe_premium_30d",
+        }),
       });
-      const body = (await res.json().catch(() => ({}))) as SwipeSubscriptionStatus & { ok?: boolean; message?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        message?: string;
+        checkoutUrl?: string;
+      };
       if (!res.ok || body.ok === false) {
-        throw new Error(body.message ?? body.error ?? "빠른매칭 라이크 구매 신청에 실패했습니다.");
+        throw new Error(body.message ?? body.error ?? "빠른매칭 플러스 결제를 시작하지 못했습니다.");
       }
-      setSwipeSubscriptionStatus({
-        status:
-          body.status === "active" || body.status === "pending" || body.status === "none" ? body.status : "none",
-        dailyLimit: Math.max(1, Number(body.dailyLimit ?? 5)),
-        baseLimit: Math.max(1, Number(body.baseLimit ?? 5)),
-        premiumLimit: Math.max(1, Number(body.premiumLimit ?? 15)),
-        priceKrw: Math.max(0, Number(body.priceKrw ?? 10000)),
-        durationDays: Math.max(1, Number(body.durationDays ?? 15)),
-        activeSubscription: body.activeSubscription ?? null,
-        pendingSubscription: body.pendingSubscription ?? null,
-      });
-      setSwipeSubscriptionInfo(body.message ?? "구매 신청이 접수되었습니다.");
-      setSwipeSubscriptionPanelOpen(true);
+      if (!body.checkoutUrl) {
+        throw new Error("결제창을 열지 못했습니다.");
+      }
+      window.location.href = body.checkoutUrl;
     } catch (error) {
-      setSwipeSubscriptionError(
-        error instanceof Error ? error.message : "빠른매칭 라이크 구매 신청에 실패했습니다."
-      );
+      setSwipeSubscriptionError(error instanceof Error ? error.message : "빠른매칭 플러스 결제를 시작하지 못했습니다.");
     } finally {
       setSwipeSubscriptionSubmitting(false);
     }
@@ -3624,13 +3626,13 @@ export default function MyPage() {
           <div className="mt-3 rounded-xl border border-amber-200 bg-white p-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-amber-900">라이크 늘리기</p>
+                <p className="text-sm font-semibold text-amber-900">빠른매칭 플러스</p>
                 <p className="mt-1 text-xs text-amber-800">
                   지금 하루 {swipeSubscriptionStatus?.dailyLimit ?? 5}회 사용 가능
                   {swipeSubscriptionStatus?.status === "active"
                     ? ` · 추가 이용 중`
                     : swipeSubscriptionStatus?.status === "pending"
-                      ? ` · 승인 대기`
+                      ? ` · 기존 요청 있음`
                       : ` · 기본 제공 ${swipeSubscriptionStatus?.baseLimit ?? 5}회`}
                 </p>
               </div>
@@ -3648,15 +3650,15 @@ export default function MyPage() {
               </div>
             </div>
             {swipeSubscriptionStatus?.status === "active" && swipeSubscriptionStatus.activeSubscription?.expiresAt ? (
-              <p className="mt-2 text-[11px] text-emerald-700">
-                추가 이용 중: {new Date(swipeSubscriptionStatus.activeSubscription.expiresAt).toLocaleString("ko-KR")}까지
-              </p>
-            ) : null}
-            {swipeSubscriptionStatus?.status === "pending" && swipeSubscriptionStatus.pendingSubscription?.id ? (
-              <p className="mt-2 text-[11px] text-amber-700">
-                승인 대기: 신청ID {swipeSubscriptionStatus.pendingSubscription.id}
-              </p>
-            ) : null}
+                <p className="mt-2 text-[11px] text-emerald-700">
+                  추가 이용 중: {new Date(swipeSubscriptionStatus.activeSubscription.expiresAt).toLocaleString("ko-KR")}까지
+                </p>
+              ) : null}
+              {swipeSubscriptionStatus?.status === "pending" && swipeSubscriptionStatus.pendingSubscription?.id ? (
+                <p className="mt-2 text-[11px] text-amber-700">
+                기존 요청 있음: 신청ID {swipeSubscriptionStatus.pendingSubscription.id}
+                </p>
+              ) : null}
 
             {swipeSubscriptionPanelOpen && (
               <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50/40 p-3">
@@ -3664,9 +3666,8 @@ export default function MyPage() {
                   기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 5}회예요. 추가 이용을 신청하면 15일 동안 하루{" "}
                   {swipeSubscriptionStatus?.premiumLimit ?? 15}회까지 사용할 수 있어요.
                 </p>
-                <p className="mt-2 text-[11px] text-amber-700">
-                  신청 후 오픈카톡으로 닉네임과 신청ID를 보내주시면 확인 뒤 적용됩니다.
-                </p>
+                <p className="mt-2 text-[11px] text-amber-700">현재는 카카오페이 간편결제로만 결제할 수 있어요.</p>
+                <p className="mt-1 text-[11px] text-amber-700">그 밖의 문의는 오픈카톡으로 부탁드려요.</p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <a
                     href={OPEN_KAKAO_URL}
@@ -3681,22 +3682,20 @@ export default function MyPage() {
                     disabled={
                       swipeSubscriptionSubmitting ||
                       swipeSubscriptionLoading ||
-                      swipeSubscriptionStatus?.status === "pending" ||
                       swipeSubscriptionStatus?.status === "active"
                     }
                     onClick={() => void handleRequestSwipeSubscription()}
                     className="h-8 rounded-md bg-amber-500 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {swipeSubscriptionSubmitting ? "신청 중..." : "추가 이용 신청"}
+                    {swipeSubscriptionSubmitting ? "이동 중..." : "카카오페이로 시작"}
                   </button>
                 </div>
                 {swipeSubscriptionStatus?.status === "pending" && swipeSubscriptionStatus.pendingSubscription?.id ? (
                   <p className="mt-2 text-[11px] text-amber-700">
-                    승인 대기 중: 신청ID {swipeSubscriptionStatus.pendingSubscription.id}
+                    기존 요청이 있어도 결제가 완료되면 바로 적용됩니다. 신청ID {swipeSubscriptionStatus.pendingSubscription.id}
                     {swipeSubscriptionStatus.pendingSubscription.requestedAt
                       ? ` / ${new Date(swipeSubscriptionStatus.pendingSubscription.requestedAt).toLocaleString("ko-KR")}`
                       : ""}
-                    {" / "}오픈카톡으로 닉네임과 신청ID를 보내주세요.
                   </p>
                 ) : null}
                 {swipeSubscriptionError ? (
@@ -5981,6 +5980,8 @@ export default function MyPage() {
                                     ? "이상형 더보기"
                                     : order.product_type === "one_on_one_contact_exchange"
                                       ? "1:1 번호교환"
+                                      : order.product_type === "swipe_premium_30d"
+                                        ? "빠른매칭 플러스"
                                     : order.product_type}
                               {" / "}
                               {order.amount.toLocaleString("ko-KR")}원

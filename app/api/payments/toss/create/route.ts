@@ -1,11 +1,23 @@
 import { NextResponse } from "next/server";
 import { isAllowedAdminUser } from "@/lib/admin";
 import { normalizeCardSex } from "@/lib/dating-more-view";
+import {
+  SWIPE_PREMIUM_DAILY_LIMIT,
+  SWIPE_PREMIUM_DURATION_DAYS,
+  SWIPE_PREMIUM_PRICE_KRW,
+  getLatestSwipeCardForUser,
+  getSwipeLimitInfo,
+} from "@/lib/dating-swipe";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { createTossPayment, getMissingTossConfigKeys, isTossConfigured } from "@/lib/toss-payments";
 
-type ProductType = "apply_credits" | "paid_card" | "more_view" | "one_on_one_contact_exchange";
+type ProductType =
+  | "apply_credits"
+  | "paid_card"
+  | "more_view"
+  | "one_on_one_contact_exchange"
+  | "swipe_premium_30d";
 
 type CreateBody = {
   productType?: unknown;
@@ -38,6 +50,10 @@ const PRODUCT_CONFIG: Record<ProductType, { amount: number; orderName: string }>
     amount: 20000,
     orderName: "1:1 번호 교환",
   },
+  swipe_premium_30d: {
+    amount: SWIPE_PREMIUM_PRICE_KRW,
+    orderName: "鍮좊Ⅸ留ㅼ묶 ?뵆?쒖뒪",
+  },
 };
 
 function json(status: number, payload: Record<string, unknown>) {
@@ -53,7 +69,8 @@ function parseProductType(raw: unknown): ProductType | "" {
     raw === "apply_credits" ||
     raw === "paid_card" ||
     raw === "more_view" ||
-    raw === "one_on_one_contact_exchange"
+    raw === "one_on_one_contact_exchange" ||
+    raw === "swipe_premium_30d"
   ) {
     return raw;
   }
@@ -302,6 +319,79 @@ export async function POST(req: Request) {
       productMeta = { matchId };
     }
 
+    if (productType === "swipe_premium_30d") {
+      const myCard = await getLatestSwipeCardForUser(admin, user.id);
+      if (!myCard) {
+        return json(403, {
+          ok: false,
+          code: "SWIPE_CARD_REQUIRED",
+          requestId,
+          message: "?ㅽ뵂移대뱶瑜??깅줉???ъ슜?먮쭔 鍮좊Ⅸ留ㅼ묶 ?뵆?쒖뒪瑜??댁슜?????덉뒿?덈떎.",
+        });
+      }
+
+      const limitInfo = await getSwipeLimitInfo(admin, user.id);
+      if (limitInfo.activeSubscription) {
+        return json(409, {
+          ok: false,
+          code: "ALREADY_ACTIVE",
+          requestId,
+          message: "?대? 鍮좊Ⅸ留ㅼ묶 ?뵆?쒖뒪瑜??댁슜 以묒엯?덈떎.",
+        });
+      }
+
+      const duplicateOrderRes = await admin
+        .from("toss_test_payment_orders")
+        .select("id,status,created_at")
+        .eq("product_type", "swipe_premium_30d")
+        .eq("user_id", user.id)
+        .in("status", ["ready", "paid"])
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      if (duplicateOrderRes.error) {
+        console.error("[toss-create] swipe premium duplicate order lookup failed", duplicateOrderRes.error);
+        return json(500, {
+          ok: false,
+          code: "ORDER_LOOKUP_FAILED",
+          requestId,
+          message: "湲곗〈 寃곗젣 ?곹깭瑜??뺤씤?섏? 紐삵뻽?듬땲??",
+        });
+      }
+
+      const duplicateOrders = duplicateOrderRes.data ?? [];
+      if (duplicateOrders.some((row) => row.status === "paid")) {
+        return json(409, {
+          ok: false,
+          code: "ALREADY_PAID",
+          requestId,
+          message: "?대? 鍮좊Ⅸ留ㅼ묶 ?뵆?쒖뒪 寃곗젣媛 ?꾨즺?? ?댁슜 以묒엯?덈떎.",
+        });
+      }
+
+      const hasFreshReadyOrder = duplicateOrders.some((row) => {
+        if (row.status !== "ready") return false;
+        const createdAtMs = new Date(row.created_at).getTime();
+        return Number.isFinite(createdAtMs) && Date.now() - createdAtMs < 15 * 60 * 1000;
+      });
+
+      if (hasFreshReadyOrder) {
+        return json(409, {
+          ok: false,
+          code: "PAYMENT_IN_PROGRESS",
+          requestId,
+          message: "?대? 鍮좊Ⅸ留ㅼ묶 ?뵆?쒖뒪 寃곗젣媛 吏꾪뻾 以묒엯?덈떎. ?좎떆 ???ㅼ떆 ?뺤씤??二쇱꽭??",
+        });
+      }
+
+      productRefId = user.id;
+      productMeta = {
+        source: "quick_match",
+        dailyLimit: limitInfo.premiumLimit ?? SWIPE_PREMIUM_DAILY_LIMIT,
+        durationDays: limitInfo.premiumDurationDays ?? SWIPE_PREMIUM_DURATION_DAYS,
+      };
+    }
+
     const tossOrderId = crypto.randomUUID().replace(/-/g, "");
     const orderName =
       productType === "more_view"
@@ -334,16 +424,20 @@ export async function POST(req: Request) {
     }
 
     const baseUrl = getBaseUrl(req);
+    const successUrl = new URL("/payments/success", baseUrl);
+    successUrl.searchParams.set("productType", productType);
+    const failUrl = new URL("/payments/fail", baseUrl);
+    failUrl.searchParams.set("productType", productType);
     const payment = await createTossPayment({
       method: "CARD",
       amount: config.amount,
       orderId: tossOrderId,
       orderName,
-      successUrl: `${baseUrl}/payments/success`,
-      failUrl: `${baseUrl}/payments/fail`,
+      successUrl: successUrl.toString(),
+      failUrl: failUrl.toString(),
       customerEmail: user.email ?? undefined,
       customerName: "GymTools User",
-      ...(productType === "more_view" || productType === "one_on_one_contact_exchange"
+      ...(productType === "more_view" || productType === "one_on_one_contact_exchange" || productType === "swipe_premium_30d"
         ? {
             flowMode: "DIRECT" as const,
             easyPay: "KAKAOPAY" as const,

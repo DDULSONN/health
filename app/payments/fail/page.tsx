@@ -4,11 +4,26 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
+function getPrimaryAction(productType?: string | null) {
+  if (productType === "swipe_premium_30d") {
+    return { href: "/community/dating/cards", label: "빠른매칭으로 돌아가기" };
+  }
+  if (productType === "more_view") {
+    return { href: "/dating/more-view", label: "이상형 더보기로 돌아가기" };
+  }
+  if (productType === "one_on_one_contact_exchange") {
+    return { href: "/mypage", label: "마이페이지로 돌아가기" };
+  }
+  return { href: "/mypage", label: "마이페이지로 돌아가기" };
+}
+
 function PaymentFailContent() {
   const searchParams = useSearchParams();
   const code = searchParams.get("code") ?? "-";
   const message = searchParams.get("message") ?? "결제가 취소되었거나 정상적으로 완료되지 않았습니다.";
   const orderId = searchParams.get("orderId") ?? "-";
+  const productType = searchParams.get("productType");
+  const primaryAction = getPrimaryAction(productType);
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
@@ -22,16 +37,16 @@ function PaymentFailContent() {
 
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
-            href="/mypage"
+            href={primaryAction.href}
             className="inline-flex min-h-[44px] items-center rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white hover:bg-neutral-800"
           >
-            마이페이지로 돌아가기
+            {primaryAction.label}
           </Link>
           <Link
-            href="/dating/1on1"
+            href={productType === "one_on_one_contact_exchange" ? "/dating/1on1" : "/mypage"}
             className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
           >
-            1:1 소개팅 보기
+            {productType === "one_on_one_contact_exchange" ? "1:1 소개팅 보기" : "마이페이지"}
           </Link>
         </div>
       </section>

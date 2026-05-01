@@ -29,7 +29,7 @@ type ProfileRow = {
 type TossOrderRow = {
   id: string;
   user_id: string;
-  product_type: "apply_credits" | "paid_card" | "more_view" | string;
+  product_type: "apply_credits" | "paid_card" | "more_view" | "one_on_one_contact_exchange" | "swipe_premium_30d" | string;
   product_meta: Record<string, unknown> | null;
   toss_order_id: string;
   order_name: string | null;
@@ -82,7 +82,7 @@ export async function GET() {
       admin.from("apply_credit_orders").select("id", { count: "exact", head: true }).eq("status", "pending"),
       admin.from("dating_paid_cards").select("id", { count: "exact", head: true }).eq("status", "pending"),
       admin.from("dating_more_view_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
-      admin.from("dating_swipe_subscriptions").select("id", { count: "exact", head: true }).eq("status", "pending"),
+      admin.from("dating_swipe_subscription_requests").select("id", { count: "exact", head: true }).eq("status", "pending"),
       admin
         .from("dating_1on1_match_proposals")
         .select("id", { count: "exact", head: true })

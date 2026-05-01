@@ -22,7 +22,18 @@ function formatProductType(productType?: string) {
   if (productType === "paid_card") return "대기 없이 등록";
   if (productType === "more_view") return "이상형 더보기";
   if (productType === "one_on_one_contact_exchange") return "1:1 번호 즉시 교환";
+  if (productType === "swipe_premium_30d") return "빠른매칭 플러스";
   return "-";
+}
+
+function getPrimaryAction(productType?: string) {
+  if (productType === "one_on_one_contact_exchange") {
+    return { href: "/mypage", label: "마이페이지로 돌아가기" };
+  }
+  if (productType === "swipe_premium_30d") {
+    return { href: "/community/dating/cards", label: "빠른매칭으로 돌아가기" };
+  }
+  return { href: "/dating/more-view", label: "이상형 더보기로 돌아가기" };
 }
 
 function PaymentSuccessContent() {
@@ -57,7 +68,7 @@ function PaymentSuccessContent() {
         }
         if (!cancelled) setResult(body);
       } catch {
-        if (!cancelled) setError("결제 확인 중 네트워크 오류가 발생했습니다.");
+        if (!cancelled) setError("결제 확인 중 서버 오류가 발생했습니다.");
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -68,9 +79,7 @@ function PaymentSuccessContent() {
     };
   }, [searchParams]);
 
-  const primaryHref = result?.productType === "one_on_one_contact_exchange" ? "/mypage" : "/dating/more-view";
-  const primaryLabel =
-    result?.productType === "one_on_one_contact_exchange" ? "마이페이지로 돌아가기" : "이상형 더보기로 돌아가기";
+  const primaryAction = getPrimaryAction(result?.productType);
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
@@ -84,7 +93,7 @@ function PaymentSuccessContent() {
           <div className="mt-4 space-y-3">
             <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
               <p className="text-sm font-semibold text-emerald-800">
-                {result.alreadyConfirmed ? "이미 처리된 결제입니다." : "결제가 정상적으로 승인됐습니다."}
+                {result.alreadyConfirmed ? "이미 처리된 결제예요." : "결제가 정상적으로 확인됐어요."}
               </p>
               <p className="mt-1 text-sm text-emerald-900">주문번호: {result.orderId ?? "-"}</p>
               <p className="mt-1 text-sm text-emerald-900">결제 키: {result.paymentKey ?? "-"}</p>
@@ -102,7 +111,7 @@ function PaymentSuccessContent() {
                 </p>
               </div>
               <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
-                <p className="text-xs font-medium text-neutral-500">결제수단</p>
+                <p className="text-xs font-medium text-neutral-500">결제 수단</p>
                 <p className="mt-1 font-semibold text-neutral-900">{result.method ?? "-"}</p>
               </div>
               <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
@@ -112,7 +121,9 @@ function PaymentSuccessContent() {
                     ? `+${result.addedCredits}장 / 보유 ${result.creditsAfter ?? 0}장`
                     : result.productType === "one_on_one_contact_exchange"
                       ? "상대 연락처 즉시 공개"
-                      : "해당 없음"}
+                      : result.productType === "swipe_premium_30d"
+                        ? "빠른매칭 플러스 적용 완료"
+                        : "결제 반영 완료"}
                 </p>
               </div>
             </div>
@@ -121,10 +132,10 @@ function PaymentSuccessContent() {
 
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
-            href={primaryHref}
+            href={primaryAction.href}
             className="inline-flex min-h-[44px] items-center rounded-xl bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700"
           >
-            {primaryLabel}
+            {primaryAction.label}
           </Link>
           <Link
             href="/mypage"

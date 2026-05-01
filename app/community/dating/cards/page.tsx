@@ -107,6 +107,26 @@ type SwipeState = {
   reason: string | null;
 };
 
+type SwipeSubscriptionStatus = {
+  status: "none" | "pending" | "active";
+  dailyLimit: number;
+  baseLimit: number;
+  premiumLimit: number;
+  priceKrw: number;
+  durationDays: number;
+  activeSubscription?: {
+    id: string;
+    approvedAt: string | null;
+    expiresAt: string | null;
+  } | null;
+  pendingSubscription?: {
+    id: string;
+    requestedAt: string | null;
+  } | null;
+  error?: string;
+  message?: string;
+};
+
 type SwipeRequestOptions = {
   preferCache?: boolean;
   silent?: boolean;
@@ -288,6 +308,9 @@ export default function OpenCardsPage() {
   const swipeCacheRef = useRef<Partial<Record<"male" | "female", SwipeState>>>({});
   const swipeRequestIdRef = useRef({ male: 0, female: 0 });
   const [viewerLoggedIn, setViewerLoggedIn] = useState(false);
+  const [swipeSubscriptionStatus, setSwipeSubscriptionStatus] = useState<SwipeSubscriptionStatus | null>(null);
+  const [swipeSubscriptionLoading, setSwipeSubscriptionLoading] = useState(false);
+  const [swipeSubscriptionSubmitting, setSwipeSubscriptionSubmitting] = useState(false);
 
   useEffect(() => {
     activeSexRef.current = activeSex;
@@ -330,6 +353,46 @@ export default function OpenCardsPage() {
       setViewerLoggedIn(Boolean(user));
     });
   }, [supabase]);
+
+  useEffect(() => {
+    if (!viewerLoggedIn) {
+      setSwipeSubscriptionStatus(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadSwipeSubscriptionStatus = async () => {
+      setSwipeSubscriptionLoading(true);
+      try {
+        const res = await fetch("/api/dating/cards/swipe/subscription", { cache: "no-store" });
+        const body = (await res.json().catch(() => ({}))) as SwipeSubscriptionStatus & { ok?: boolean; message?: string };
+        if (!res.ok) {
+          throw new Error(body.message ?? body.error ?? "빠른매칭 플러스 상태를 불러오지 못했습니다.");
+        }
+        if (cancelled) return;
+        setSwipeSubscriptionStatus({
+          status:
+            body.status === "active" || body.status === "pending" || body.status === "none" ? body.status : "none",
+          dailyLimit: Math.max(1, Number(body.dailyLimit ?? 5)),
+          baseLimit: Math.max(1, Number(body.baseLimit ?? 5)),
+          premiumLimit: Math.max(1, Number(body.premiumLimit ?? 15)),
+          priceKrw: Math.max(0, Number(body.priceKrw ?? 10000)),
+          durationDays: Math.max(1, Number(body.durationDays ?? 15)),
+          activeSubscription: body.activeSubscription ?? null,
+          pendingSubscription: body.pendingSubscription ?? null,
+        });
+      } catch (error) {
+        console.error("swipe subscription status load failed", error);
+      } finally {
+        if (!cancelled) setSwipeSubscriptionLoading(false);
+      }
+    };
+
+    void loadSwipeSubscriptionStatus();
+    return () => {
+      cancelled = true;
+    };
+  }, [viewerLoggedIn]);
 
   useEffect(() => {
     writeOpenCardsSnapshot({
@@ -701,6 +764,38 @@ export default function OpenCardsPage() {
     [activeSex, loadSwipe, swipeState.canSwipe, swipeState.candidate, swipeSubmitting]
   );
 
+  const handleSwipePremiumCheckout = useCallback(async () => {
+    if (swipeSubscriptionSubmitting) return;
+    setSwipeSubscriptionSubmitting(true);
+    setSwipeMessage("");
+    try {
+      const res = await fetch("/api/payments/toss/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productType: "swipe_premium_30d",
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        message?: string;
+        checkoutUrl?: string;
+      };
+      if (!res.ok || !body.ok) {
+        throw new Error(body.message ?? body.error ?? "빠른매칭 플러스 결제를 시작하지 못했습니다.");
+      }
+      if (!body.checkoutUrl) {
+        throw new Error("결제창을 열지 못했습니다.");
+      }
+      window.location.href = body.checkoutUrl;
+    } catch (error) {
+      setSwipeMessage(error instanceof Error ? error.message : "빠른매칭 플러스 결제를 시작하지 못했습니다.");
+    } finally {
+      setSwipeSubscriptionSubmitting(false);
+    }
+  }, [swipeSubscriptionSubmitting]);
+
   const nowLabel = useMemo(() => tick, [tick]);
   void nowLabel;
   const malePaidItems = useMemo(() => paidItems.filter((item) => item.gender === "M"), [paidItems]);
@@ -879,6 +974,21 @@ export default function OpenCardsPage() {
             <p className="mt-2 max-w-lg text-[15px] leading-7 text-neutral-500">
               랜덤 후보를 하루 최대 {swipeState.limit}명까지 빠르게 확인할 수 있어요.
             </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                disabled={!viewerLoggedIn || swipeSubscriptionSubmitting || swipeSubscriptionStatus?.status === "active"}
+                onClick={() => void handleSwipePremiumCheckout()}
+                className="inline-flex min-h-[38px] items-center rounded-full border border-amber-200 bg-amber-50 px-4 text-xs font-bold text-amber-900 disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {swipeSubscriptionStatus?.status === "active"
+                  ? "빠른매칭 플러스 이용 중"
+                  : swipeSubscriptionSubmitting
+                    ? "이동 중..."
+                    : "빠른매칭 플러스"}
+              </button>
+              <p className="text-[11px] text-neutral-400">현재 카카오페이 간편결제로만 결제 가능</p>
+            </div>
           </div>
           <div className="shrink-0 rounded-[22px] bg-rose-50 px-4 py-3 text-right">
             <p className="text-sm font-semibold text-rose-400">오늘 남은</p>
@@ -903,13 +1013,16 @@ export default function OpenCardsPage() {
                   추가 이용은 {SWIPE_PREMIUM_PRICE_KRW.toLocaleString("ko-KR")}원 · {SWIPE_PREMIUM_DURATION_DAYS}일 · 하루{" "}
                   {SWIPE_PREMIUM_DAILY_LIMIT}회 기준이에요.
                 </p>
+                <p className="mt-2 text-[11px] text-amber-800">현재 카카오페이 간편결제로만 결제 가능해요. 그 밖의 문의는 오픈카톡으로 부탁드려요.</p>
                 <div className="mt-3 flex flex-wrap gap-2">
-                  <Link
-                    href="/mypage"
-                    className="inline-flex min-h-[42px] items-center rounded-2xl bg-amber-500 px-4 text-sm font-bold text-white hover:bg-amber-600"
+                  <button
+                    type="button"
+                    disabled={swipeSubscriptionSubmitting || swipeSubscriptionStatus?.status === "active" || swipeSubscriptionLoading}
+                    onClick={() => void handleSwipePremiumCheckout()}
+                    className="inline-flex min-h-[42px] items-center rounded-2xl bg-amber-500 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-amber-600"
                   >
-                    추가 이용 신청
-                  </Link>
+                    {swipeSubscriptionSubmitting ? "이동 중..." : "카카오페이로 시작"}
+                  </button>
                   <a
                     href={OPEN_KAKAO_URL}
                     target="_blank"

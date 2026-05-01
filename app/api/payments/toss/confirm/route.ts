@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { getActiveMoreViewGrant, normalizeCardSex } from "@/lib/dating-more-view";
 import { grantMoreViewAccess } from "@/lib/dating-purchase-fulfillment";
+import {
+  SWIPE_PREMIUM_DAILY_LIMIT,
+  SWIPE_PREMIUM_DURATION_DAYS,
+  SWIPE_PREMIUM_PRICE_KRW,
+  getSwipeLimitInfo,
+} from "@/lib/dating-swipe";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { confirmTossPayment, getMissingTossConfigKeys, isTossConfigured } from "@/lib/toss-payments";
@@ -14,7 +20,7 @@ type ConfirmBody = {
 type TossOrderRow = {
   id: string;
   user_id: string;
-  product_type: "apply_credits" | "paid_card" | "more_view" | "one_on_one_contact_exchange";
+  product_type: "apply_credits" | "paid_card" | "more_view" | "one_on_one_contact_exchange" | "swipe_premium_30d";
   product_ref_id: string | null;
   product_meta: Record<string, unknown> | null;
   toss_order_id: string;
@@ -197,6 +203,80 @@ async function ensureOneOnOneExchangeFulfilled(
   return { matchId, alreadyApproved: false };
 }
 
+async function ensureSwipePremiumFulfilled(
+  admin: ReturnType<typeof createAdminClient>,
+  order: TossOrderRow
+) {
+  const limitInfo = await getSwipeLimitInfo(admin, order.user_id);
+  if (limitInfo.activeSubscription) {
+    return { alreadyActive: true };
+  }
+
+  const now = new Date();
+  const nowIso = now.toISOString();
+  const durationDays =
+    typeof order.product_meta?.durationDays === "number" && Number.isFinite(order.product_meta.durationDays)
+      ? Math.max(1, Number(order.product_meta.durationDays))
+      : SWIPE_PREMIUM_DURATION_DAYS;
+  const dailyLimit =
+    typeof order.product_meta?.dailyLimit === "number" && Number.isFinite(order.product_meta.dailyLimit)
+      ? Math.max(SWIPE_PREMIUM_DAILY_LIMIT, Number(order.product_meta.dailyLimit))
+      : SWIPE_PREMIUM_DAILY_LIMIT;
+  const expiresAtIso = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString();
+
+  if (limitInfo.pendingSubscription?.id) {
+    const approveRes = await admin
+      .from("dating_swipe_subscription_requests")
+      .update({
+        status: "approved",
+        amount: SWIPE_PREMIUM_PRICE_KRW,
+        daily_limit: dailyLimit,
+        duration_days: durationDays,
+        note: `toss payment ${order.toss_order_id} | auto-approved`,
+        approved_at: nowIso,
+        expires_at: expiresAtIso,
+        reviewed_at: nowIso,
+        reviewed_by_user_id: null,
+        updated_at: nowIso,
+      })
+      .eq("id", limitInfo.pendingSubscription.id)
+      .eq("user_id", order.user_id)
+      .eq("status", "pending")
+      .select("id")
+      .maybeSingle();
+
+    if (approveRes.error) {
+      throw approveRes.error;
+    }
+
+    if (approveRes.data) {
+      return { alreadyActive: false };
+    }
+  }
+
+  const insertRes = await admin.from("dating_swipe_subscription_requests").insert({
+    user_id: order.user_id,
+    status: "approved",
+    amount: SWIPE_PREMIUM_PRICE_KRW,
+    daily_limit: dailyLimit,
+    duration_days: durationDays,
+    note: `toss payment ${order.toss_order_id} | auto-approved`,
+    requested_at: nowIso,
+    approved_at: nowIso,
+    expires_at: expiresAtIso,
+    reviewed_at: nowIso,
+    reviewed_by_user_id: null,
+    created_at: nowIso,
+    updated_at: nowIso,
+  });
+
+  if (insertRes.error) {
+    throw insertRes.error;
+  }
+
+  return { alreadyActive: false };
+}
+
 async function ensureOrderFulfilled(
   admin: ReturnType<typeof createAdminClient>,
   order: TossOrderRow,
@@ -212,6 +292,10 @@ async function ensureOrderFulfilled(
 
   if (order.product_type === "one_on_one_contact_exchange") {
     await ensureOneOnOneExchangeFulfilled(admin, order);
+  }
+
+  if (order.product_type === "swipe_premium_30d") {
+    await ensureSwipePremiumFulfilled(admin, order);
   }
 
   return { addedCredits: 0, creditsAfter: 0 };
