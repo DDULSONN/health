@@ -3236,7 +3236,11 @@ export default function MyPage() {
   const getOneOnOneContactExchangeBadgeText = (match: MyOneOnOneMatch) => {
     if (
       match.state === "mutual_accepted" &&
-      (match.contact_exchange_status === "none" || match.contact_exchange_status === "awaiting_applicant_payment")
+      (
+        match.contact_exchange_status === "none" ||
+        match.contact_exchange_status === "awaiting_applicant_payment" ||
+        match.contact_exchange_status === "payment_pending_admin"
+      )
     ) {
       return "카카오페이 가능";
     }
@@ -4496,7 +4500,7 @@ export default function MyPage() {
         <div className="mb-3 rounded-xl border border-sky-200 bg-white/80 px-3 py-3">
           <p className="text-xs font-semibold text-sky-900">1:1 이용 안내</p>
           <p className="mt-1 text-[11px] leading-5 text-neutral-600">
-            쌍방 수락 후 카카오페이 결제가 완료되면 상대 연락처가 바로 공개됩니다. 공개된 번호의 외부 공유, 무단 저장, 불쾌한 연락은 제재 대상입니다.
+            쌍방 수락 후 기존 매칭을 포함해 결제가 완료되면 상대 연락처가 바로 공개됩니다. 공개된 번호의 외부 공유, 무단 저장, 불쾌한 연락은 제재 대상입니다.
           </p>
         </div>
         {myOneOnOneCards.length === 0 ? (
@@ -4930,13 +4934,14 @@ export default function MyPage() {
                               </p>
                               <div className="mt-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
                                 {(match.contact_exchange_status === "none" ||
-                                  match.contact_exchange_status === "awaiting_applicant_payment") ? (
+                                  match.contact_exchange_status === "awaiting_applicant_payment" ||
+                                  match.contact_exchange_status === "payment_pending_admin") ? (
                                   <>
                                     <p className="text-xs font-semibold text-neutral-900">번호 즉시 교환</p>
                                     <p className="mt-1 text-xs text-neutral-700">
-                                      현재는 카카오페이 간편결제로만 즉시 번호 교환이 가능해요. 먼저 결제를 완료한 쪽 기준으로 상대 연락처가 바로 공개됩니다.
+                                      기존 쌍방 매칭도 지금 결제하면 상대 연락처가 바로 교환됩니다.
                                     </p>
-                                    <p className="mt-2 text-[11px] text-neutral-500">그 밖의 결제 문의는 신청 후 오픈카톡으로 부탁드려요. 매칭 ID {match.id}</p>
+                                    <p className="mt-2 text-[11px] text-neutral-500">그 밖의 결제 문의는 오픈카톡으로 부탁드려요. 매칭 ID {match.id}</p>
                                     <div className="mt-2 flex flex-wrap gap-2">
                                       <a
                                         href={OPEN_KAKAO_URL}
@@ -4954,27 +4959,6 @@ export default function MyPage() {
                                       >
                                         {contactProcessing ? "결제 준비 중..." : "즉시 번호교환 결제"}
                                       </button>
-                                    </div>
-                                  </>
-                                ) : null}
-                                {match.contact_exchange_status === "payment_pending_admin" ? (
-                                  <>
-                                    <p className="text-xs font-semibold text-neutral-900">번호 교환 처리 중</p>
-                                    <p className="mt-1 text-xs text-neutral-700">
-                                      결제 확인이 마무리되는 대로 번호 교환이 진행됩니다. 잠시만 기다려 주세요.
-                                    </p>
-                                    <div className="mt-2 flex flex-wrap gap-2">
-                                      <a
-                                        href={OPEN_KAKAO_URL}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 hover:bg-amber-50"
-                                      >
-                                        오픈카톡 문의
-                                      </a>
-                                      <p className="inline-flex items-center text-[11px] text-neutral-500">
-                                        카카오페이 외 결제 문의나 확인이 필요하면 닉네임과 매칭 ID를 함께 보내 주세요.
-                                      </p>
                                     </div>
                                   </>
                                 ) : null}

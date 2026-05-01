@@ -974,27 +974,49 @@ export default function OpenCardsPage() {
             <p className="mt-2 max-w-lg text-[15px] leading-7 text-neutral-500">
               랜덤 후보를 하루 최대 {swipeState.limit}명까지 빠르게 확인할 수 있어요.
             </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <button
-                type="button"
-                disabled={!viewerLoggedIn || swipeSubscriptionSubmitting || swipeSubscriptionStatus?.status === "active"}
-                onClick={() => void handleSwipePremiumCheckout()}
-                className="inline-flex min-h-[38px] items-center rounded-full border border-amber-200 bg-amber-50 px-4 text-xs font-bold text-amber-900 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {swipeSubscriptionStatus?.status === "active"
-                  ? "빠른매칭 플러스 이용 중"
-                  : swipeSubscriptionSubmitting
-                    ? "이동 중..."
-                    : "빠른매칭 플러스"}
-              </button>
-              <p className="text-[11px] text-neutral-400">현재 카카오페이 간편결제로만 결제 가능</p>
-            </div>
           </div>
           <div className="shrink-0 rounded-[22px] bg-rose-50 px-4 py-3 text-right">
             <p className="text-sm font-semibold text-rose-400">오늘 남은</p>
             <p className="mt-1 text-[20px] font-black text-rose-600">
               {!swipeState.loggedIn ? "로그인" : swipeState.canSwipe ? `${swipeState.remaining}회` : "등록 필요"}
             </p>
+          </div>
+        </div>
+
+        <div className="mt-4 rounded-[24px] border border-amber-200 bg-amber-50/70 p-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <p className="text-sm font-bold text-amber-900">빠른매칭 플러스</p>
+              <p className="mt-1 text-sm leading-6 text-amber-800">
+                기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 5}회예요. 플러스를 시작하면 {SWIPE_PREMIUM_DURATION_DAYS}일 동안 하루{" "}
+                {swipeSubscriptionStatus?.premiumLimit ?? SWIPE_PREMIUM_DAILY_LIMIT}회까지 더 넉넉하게 확인할 수 있어요.
+              </p>
+              <p className="mt-2 text-[11px] text-amber-800">
+                현재는 카카오페이 간편결제로만 결제 가능해요. 그 밖의 결제 문의는 오픈카톡으로 부탁드려요.
+              </p>
+            </div>
+            <div className="flex shrink-0 flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={!viewerLoggedIn || swipeSubscriptionSubmitting || swipeSubscriptionStatus?.status === "active"}
+                onClick={() => void handleSwipePremiumCheckout()}
+                className="inline-flex min-h-[42px] items-center rounded-2xl bg-amber-500 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-amber-600"
+              >
+                {swipeSubscriptionStatus?.status === "active"
+                  ? "빠른매칭 플러스 이용 중"
+                  : swipeSubscriptionSubmitting
+                    ? "이동 중..."
+                    : "카카오페이로 시작"}
+              </button>
+              <a
+                href={OPEN_KAKAO_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex min-h-[42px] items-center rounded-2xl border border-amber-200 bg-white px-4 text-sm font-bold text-amber-800 hover:bg-amber-50"
+              >
+                오픈카톡 문의
+              </a>
+            </div>
           </div>
         </div>
 

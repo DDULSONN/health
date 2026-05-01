@@ -358,10 +358,10 @@ function DatingOneOnOnePageContent() {
     <main className="mx-auto max-w-3xl px-4 py-8">
       <section className="rounded-2xl border border-neutral-200 bg-white p-5">
         <h1 className="text-2xl font-bold text-neutral-900">
-          {isEditMode ? "1:1 오프라인 소개팅 신청서 수정" : "1:1 오프라인 소개팅"}
+          {isEditMode ? "1:1 소개팅 신청서 수정" : "1:1 소개팅"}
         </h1>
         <p className="mt-2 text-sm text-neutral-700">신청은 무료이고, 서로 수락되면 번호 교환이 진행됩니다.</p>
-        <p className="text-sm text-neutral-700">번호 교환 단계에서만 매칭비 20,000원이 발생하며, 현재는 카카오페이 간편결제로만 가능합니다.</p>
+        <p className="text-sm text-neutral-700">번호 교환 단계에서만 매칭비 20,000원이 발생하며, 확인 후 상대 연락처가 공개됩니다.</p>
         <p className="mt-2 text-sm font-medium text-emerald-700">
           지금까지 {Number(status?.totalApplications ?? 0).toLocaleString("ko-KR")}명이 1:1 소개팅을 신청했습니다.
         </p>
@@ -377,16 +377,16 @@ function DatingOneOnOnePageContent() {
           <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
             <p className="text-[11px] font-semibold tracking-wide text-neutral-500">2단계</p>
             <p className="mt-1 text-sm font-semibold text-neutral-900">서로 수락</p>
-            <p className="mt-1 text-xs leading-5 text-neutral-600">쌍방 수락이 되면 카카오페이로 바로 번호 교환을 진행할 수 있습니다.</p>
+            <p className="mt-1 text-xs leading-5 text-neutral-600">서로 수락되면 마이페이지에서 번호 교환을 진행할 수 있습니다.</p>
           </div>
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-3">
             <p className="text-[11px] font-semibold tracking-wide text-emerald-700">3단계</p>
             <p className="mt-1 text-sm font-semibold text-emerald-900">번호 교환</p>
-            <p className="mt-1 text-xs leading-5 text-emerald-800">카카오페이 결제가 완료되면 상대 연락처를 바로 확인할 수 있습니다.</p>
+            <p className="mt-1 text-xs leading-5 text-emerald-800">번호 교환이 확인되면 상대 연락처를 확인할 수 있습니다.</p>
           </div>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-neutral-600">
-          <span>그 밖의 결제 문의는 신청 후 오픈카톡으로 남겨주세요.</span>
+          <span>신청 후 진행 문의는 오픈카톡으로 남겨주세요.</span>
           <a
             href={OPEN_KAKAO_URL}
             target="_blank"
@@ -430,7 +430,7 @@ function DatingOneOnOnePageContent() {
           </label>
           <label className="flex items-start gap-2">
             <input type="checkbox" checked={consentFee} onChange={(e) => setConsentFee(e.target.checked)} className="mt-1" />
-            번호 교환 진행 시 매칭비가 발생하고, 쌍방 수락 후 카카오페이 결제가 완료되면 전화번호가 공개될 수 있음을 확인했습니다.
+            번호 교환 진행 시 매칭비가 발생하고, 확인 후 전화번호가 공개될 수 있음을 확인했습니다.
           </label>
           <label className="flex items-start gap-2">
             <input type="checkbox" checked={consentPrivacy} onChange={(e) => setConsentPrivacy(e.target.checked)} className="mt-1" />
@@ -448,7 +448,7 @@ function DatingOneOnOnePageContent() {
           <div className="mt-2 space-y-1 text-xs leading-5 text-neutral-600">
             <p>1. 신청서를 올리면 운영자가 후보 연결을 진행합니다.</p>
             <p>2. 서로 수락되면 마이페이지에서 번호 교환을 진행합니다.</p>
-            <p>3. 현재는 카카오페이 간편결제로만 가능하며, 그 밖의 결제 문의는 오픈카톡으로 남겨주세요.</p>
+            <p>3. 번호 교환이 확인되면 상대 연락처를 확인할 수 있습니다.</p>
           </div>
         </details>
         {!isEditMode && !status.phoneVerified && (
