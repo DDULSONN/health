@@ -4934,9 +4934,9 @@ export default function MyPage() {
                                   <>
                                     <p className="text-xs font-semibold text-neutral-900">번호 즉시 교환</p>
                                     <p className="mt-1 text-xs text-neutral-700">
-                                      현재는 카카오페이 간편결제로만 바로 번호를 교환할 수 있어요. 먼저 결제를 완료한 쪽 기준으로 상대 연락처가 즉시 공개됩니다.
+                                      현재는 카카오페이 간편결제로만 즉시 번호 교환이 가능해요. 먼저 결제를 완료한 쪽 기준으로 상대 연락처가 바로 공개됩니다.
                                     </p>
-                                    <p className="mt-2 text-[11px] text-neutral-500">그 밖의 문의는 오픈카톡으로 부탁드려요. 매칭 ID {match.id}</p>
+                                    <p className="mt-2 text-[11px] text-neutral-500">그 밖의 결제 문의는 신청 후 오픈카톡으로 부탁드려요. 매칭 ID {match.id}</p>
                                     <div className="mt-2 flex flex-wrap gap-2">
                                       <a
                                         href={OPEN_KAKAO_URL}
@@ -4952,7 +4952,7 @@ export default function MyPage() {
                                         onClick={() => void handleRequestOneOnOneContactExchange(match.id)}
                                         className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                                       >
-                                        {contactProcessing ? "결제 준비 중..." : "카카오페이로 번호 교환"}
+                                        {contactProcessing ? "결제 준비 중..." : "즉시 번호교환 결제"}
                                       </button>
                                     </div>
                                   </>

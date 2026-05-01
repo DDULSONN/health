@@ -387,7 +387,7 @@ function DatingOneOnOnePageContent() {
           </div>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-neutral-600">
-          <span>그 밖의 문의는 오픈카톡으로 남겨주시면 빠르게 확인해드려요.</span>
+          <span>현재는 카카오페이 간편결제로만 번호 교환 결제가 가능해요. 그 밖의 결제 문의는 신청 후 오픈카톡으로 남겨주세요.</span>
           <a
             href={OPEN_KAKAO_URL}
             target="_blank"
@@ -403,14 +403,22 @@ function DatingOneOnOnePageContent() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-neutral-900">후보 확인과 진행은 마이페이지에서</h2>
-            <p className="mt-1 text-sm text-neutral-600">후보 확인, 수락/거절, 카카오페이 번호 교환은 마이페이지에서 한 번에 진행할 수 있어요.</p>
+            <p className="mt-1 text-sm text-neutral-600">후보 확인, 수락/거절, 즉시 번호교환 결제까지 마이페이지에서 한 번에 진행할 수 있어요.</p>
           </div>
-          <Link
-            href="/mypage"
-            className="inline-flex h-11 items-center justify-center rounded-lg border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 hover:bg-neutral-50"
-          >
-            마이페이지에서 확인
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/mypage"
+              className="inline-flex h-11 items-center justify-center rounded-lg border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 hover:bg-neutral-50"
+            >
+              신청/매칭 확인
+            </Link>
+            <Link
+              href="/mypage"
+              className="inline-flex h-11 items-center justify-center rounded-lg bg-emerald-600 px-4 text-sm font-semibold text-white hover:bg-emerald-700"
+            >
+              즉시 번호교환 보기
+            </Link>
+          </div>
         </div>
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
           <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
@@ -423,7 +431,7 @@ function DatingOneOnOnePageContent() {
           </div>
           <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
             <p className="text-xs font-semibold text-neutral-500">번호 교환</p>
-            <p className="mt-1 text-sm text-neutral-800">쌍방 수락 후 카카오페이 번호 교환과 진행 상태를 확인할 수 있어요.</p>
+            <p className="mt-1 text-sm text-neutral-800">쌍방 수락 후 즉시 번호교환 결제와 진행 상태를 확인할 수 있어요.</p>
           </div>
         </div>
       </section>
@@ -460,9 +468,9 @@ function DatingOneOnOnePageContent() {
           <summary className="cursor-pointer text-sm font-medium text-neutral-800">1:1 진행 방식 간단히 보기</summary>
           <div className="mt-2 space-y-1 text-xs leading-5 text-neutral-600">
             <p>1. 신청서를 올리면 운영자가 후보 연결을 진행합니다.</p>
-            <p>2. 서로 수락되면 마이페이지에서 번호 교환 결제를 진행합니다.</p>
+            <p>2. 서로 수락되면 마이페이지에서 즉시 번호교환 결제를 진행합니다.</p>
             <p>3. 현재는 카카오페이 간편결제로만 가능하며, 결제가 완료되면 양쪽 번호가 공개됩니다.</p>
-            <p>4. 그 밖의 문의는 오픈카톡으로 남겨주시면 빠르게 확인해드려요.</p>
+            <p>4. 그 밖의 결제 문의는 신청 후 오픈카톡으로 남겨주시면 빠르게 확인해드려요.</p>
           </div>
         </details>
         {!isEditMode && !status.phoneVerified && (
