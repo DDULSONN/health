@@ -56,7 +56,7 @@ export async function GET(req: Request) {
   const admin = createAdminClient();
   const { data: cards, error: cardsError } = await admin
     .from("dating_paid_cards")
-    .select("id,nickname,gender,age,region,expires_at,created_at,status")
+    .select("id,nickname,gender,age,region,display_mode,paid_at,expires_at,created_at,status")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 

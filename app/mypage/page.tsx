@@ -303,6 +303,7 @@ type MyPaidCard = {
   gender: "M" | "F";
   age: number | null;
   region: string | null;
+  display_mode?: "priority_24h" | "instant_public" | null;
   status: "pending" | "approved" | "rejected" | "expired";
   paid_at: string | null;
   expires_at: string | null;
@@ -4384,7 +4385,17 @@ export default function MyPage() {
                 <p className="mt-1 text-xs text-neutral-500">
                   생성일 {new Date(card.created_at).toLocaleDateString("ko-KR")}
                 </p>
+                {card.status === "approved" && card.expires_at && (
+                  <p className="mt-1 text-sm font-medium text-amber-700">
+                    노출 종료까지 남은 시간 {formatRemainingToKorean(card.expires_at)}
+                  </p>
+                )}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {card.status === "approved" ? (
+                    <span className="inline-flex rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-semibold text-rose-700">
+                      {card.display_mode === "instant_public" ? "즉시공개" : "36시간 상단고정"}
+                    </span>
+                  ) : null}
                   {card.status === "pending" ? (
                     <Link
                       href={`/dating/paid?editId=${card.id}`}
