@@ -14,7 +14,7 @@ type ConfirmBody = {
 type TossOrderRow = {
   id: string;
   user_id: string;
-  product_type: "apply_credits" | "paid_card" | "more_view";
+  product_type: "apply_credits" | "paid_card" | "more_view" | "one_on_one_contact_exchange";
   product_ref_id: string | null;
   product_meta: Record<string, unknown> | null;
   toss_order_id: string;
@@ -108,6 +108,95 @@ async function ensureMoreViewFulfilled(
   return { sex, alreadyGranted: false };
 }
 
+async function ensureOneOnOneExchangeFulfilled(
+  admin: ReturnType<typeof createAdminClient>,
+  order: TossOrderRow
+) {
+  const matchId =
+    (typeof order.product_meta?.matchId === "string" ? order.product_meta.matchId.trim() : "") ||
+    order.product_ref_id?.trim() ||
+    "";
+
+  if (!matchId) {
+    throw new Error("ONE_ON_ONE_MATCH_ID_MISSING");
+  }
+
+  const matchRes = await admin
+    .from("dating_1on1_match_proposals")
+    .select("id,source_user_id,candidate_user_id,state,contact_exchange_status")
+    .eq("id", matchId)
+    .maybeSingle();
+
+  if (matchRes.error) {
+    throw matchRes.error;
+  }
+  if (!matchRes.data) {
+    throw new Error("ONE_ON_ONE_MATCH_ID_MISSING");
+  }
+
+  const match = matchRes.data as {
+    id: string;
+    source_user_id: string;
+    candidate_user_id: string;
+    state: "candidate_accepted" | "mutual_accepted" | string;
+    contact_exchange_status: "none" | "awaiting_applicant_payment" | "payment_pending_admin" | "approved" | "canceled" | string;
+  };
+
+  const isParticipant = match.source_user_id === order.user_id || match.candidate_user_id === order.user_id;
+  if (!isParticipant) {
+    throw new Error("ONE_ON_ONE_FORBIDDEN");
+  }
+  if (!["mutual_accepted", "candidate_accepted"].includes(match.state)) {
+    throw new Error("ONE_ON_ONE_NOT_READY");
+  }
+  if (match.contact_exchange_status === "approved") {
+    return { matchId, alreadyApproved: true };
+  }
+  if (match.contact_exchange_status === "canceled") {
+    throw new Error("ONE_ON_ONE_CANCELED");
+  }
+
+  const nowIso = new Date().toISOString();
+  const approveRes = await admin
+    .from("dating_1on1_match_proposals")
+    .update({
+      state: match.state === "candidate_accepted" ? "mutual_accepted" : match.state,
+      contact_exchange_status: "approved",
+      contact_exchange_requested_at: nowIso,
+      contact_exchange_paid_at: nowIso,
+      contact_exchange_paid_by_user_id: order.user_id,
+      contact_exchange_approved_at: nowIso,
+      contact_exchange_approved_by_user_id: null,
+      contact_exchange_note: `toss payment ${order.toss_order_id} | auto-approved`,
+      updated_at: nowIso,
+    })
+    .eq("id", matchId)
+    .in("state", ["mutual_accepted", "candidate_accepted"])
+    .in("contact_exchange_status", ["none", "awaiting_applicant_payment", "payment_pending_admin"])
+    .select("id")
+    .maybeSingle();
+
+  if (approveRes.error) {
+    throw approveRes.error;
+  }
+  if (!approveRes.data) {
+    const approvedAgain = await admin
+      .from("dating_1on1_match_proposals")
+      .select("contact_exchange_status")
+      .eq("id", matchId)
+      .maybeSingle();
+    if (approvedAgain.error) {
+      throw approvedAgain.error;
+    }
+    if (approvedAgain.data?.contact_exchange_status === "approved") {
+      return { matchId, alreadyApproved: true };
+    }
+    throw new Error("ONE_ON_ONE_APPROVE_FAILED");
+  }
+
+  return { matchId, alreadyApproved: false };
+}
+
 async function ensureOrderFulfilled(
   admin: ReturnType<typeof createAdminClient>,
   order: TossOrderRow,
@@ -121,6 +210,10 @@ async function ensureOrderFulfilled(
     await ensureMoreViewFulfilled(admin, order);
   }
 
+  if (order.product_type === "one_on_one_contact_exchange") {
+    await ensureOneOnOneExchangeFulfilled(admin, order);
+  }
+
   return { addedCredits: 0, creditsAfter: 0 };
 }
 
@@ -130,7 +223,12 @@ export async function POST(req: Request) {
   try {
     const { user } = await getRequestAuthContext(req);
     if (!user) {
-      return json(401, { ok: false, code: "UNAUTHORIZED", requestId, message: "로그인이 필요합니다." });
+      return json(401, {
+        ok: false,
+        code: "UNAUTHORIZED",
+        requestId,
+        message: "로그인이 필요합니다.",
+      });
     }
 
     if (!isTossConfigured()) {
@@ -141,7 +239,7 @@ export async function POST(req: Request) {
         requestId,
         message:
           missingKeys.length > 0
-            ? `토스 결제 설정 누락: ${missingKeys.join(", ")}`
+            ? `토스 결제 설정이 비어 있습니다: ${missingKeys.join(", ")}`
             : "결제 설정이 아직 완료되지 않았습니다.",
       });
     }
@@ -169,13 +267,23 @@ export async function POST(req: Request) {
       .maybeSingle();
 
     if (orderRes.error || !orderRes.data) {
-      return json(404, { ok: false, code: "ORDER_NOT_FOUND", requestId, message: "결제 주문을 찾을 수 없습니다." });
+      return json(404, {
+        ok: false,
+        code: "ORDER_NOT_FOUND",
+        requestId,
+        message: "결제 주문을 찾을 수 없습니다.",
+      });
     }
 
     const order = orderRes.data as TossOrderRow;
 
     if (order.amount !== amount) {
-      return json(400, { ok: false, code: "AMOUNT_MISMATCH", requestId, message: "결제 금액이 주문 정보와 다릅니다." });
+      return json(400, {
+        ok: false,
+        code: "AMOUNT_MISMATCH",
+        requestId,
+        message: "결제 금액이 주문 정보와 다릅니다.",
+      });
     }
 
     if (order.status === "paid") {
@@ -208,7 +316,12 @@ export async function POST(req: Request) {
 
     if (updateRes.error) {
       console.error("[toss-confirm] update failed", updateRes.error);
-      return json(500, { ok: false, code: "ORDER_UPDATE_FAILED", requestId, message: "결제 결과 저장에 실패했습니다." });
+      return json(500, {
+        ok: false,
+        code: "ORDER_UPDATE_FAILED",
+        requestId,
+        message: "결제 결과 저장에 실패했습니다.",
+      });
     }
 
     const fulfillment = await ensureOrderFulfilled(admin, order, user.id);
@@ -234,6 +347,43 @@ export async function POST(req: Request) {
         message: "이상형 더보기 결제 정보가 올바르지 않습니다.",
       });
     }
-    return json(500, { ok: false, code: "INTERNAL_SERVER_ERROR", requestId, message: "서버 오류가 발생했습니다." });
+    if (error instanceof Error && error.message === "ONE_ON_ONE_MATCH_ID_MISSING") {
+      return json(500, {
+        ok: false,
+        code: "ONE_ON_ONE_MATCH_ID_MISSING",
+        requestId,
+        message: "1:1 번호 교환 결제 대상이 올바르지 않습니다.",
+      });
+    }
+    if (error instanceof Error && error.message === "ONE_ON_ONE_FORBIDDEN") {
+      return json(403, {
+        ok: false,
+        code: "ONE_ON_ONE_FORBIDDEN",
+        requestId,
+        message: "쌍방 수락된 당사자만 번호 교환 결제를 진행할 수 있습니다.",
+      });
+    }
+    if (error instanceof Error && error.message === "ONE_ON_ONE_NOT_READY") {
+      return json(409, {
+        ok: false,
+        code: "ONE_ON_ONE_NOT_READY",
+        requestId,
+        message: "쌍방 수락이 완료된 매칭만 번호 교환 결제를 진행할 수 있습니다.",
+      });
+    }
+    if (error instanceof Error && error.message === "ONE_ON_ONE_CANCELED") {
+      return json(409, {
+        ok: false,
+        code: "ONE_ON_ONE_CANCELED",
+        requestId,
+        message: "취소된 매칭은 번호 교환 결제를 진행할 수 없습니다.",
+      });
+    }
+    return json(500, {
+      ok: false,
+      code: "INTERNAL_SERVER_ERROR",
+      requestId,
+      message: "서버 오류가 발생했습니다.",
+    });
   }
 }

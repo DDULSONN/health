@@ -41,6 +41,8 @@ const SMOKING_OPTIONS = [
   { value: "smoker", label: "흡연" },
 ] as const;
 
+const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
+
 const WORKOUT_OPTIONS = [
   { value: "", label: "선택 안함" },
   { value: "none", label: "안함" },
@@ -360,7 +362,7 @@ function DatingOneOnOnePageContent() {
         </h1>
         <p className="mt-2 text-sm text-neutral-700">운영자가 매칭을 관리하고, 서로 수락되면 번호 교환이 진행되는 1:1 소개팅입니다.</p>
         <p className="text-sm text-neutral-700">신청은 무료이며, 번호 교환 단계에서만 매칭비 20,000원이 발생합니다.</p>
-        <p className="text-sm text-neutral-700">신청 내용은 외부 공개 없이 매칭 진행에만 사용되며, 쌍방 수락 후 승인되면 양쪽 번호가 공개될 수 있습니다.</p>
+        <p className="text-sm text-neutral-700">신청 내용은 외부 공개 없이 매칭 진행에만 사용되며, 쌍방 수락 후 카카오페이 결제가 완료되면 양쪽 번호가 공개될 수 있습니다.</p>
         <p className="mt-2 text-sm font-medium text-emerald-700">
           지금까지 {Number(status?.totalApplications ?? 0).toLocaleString("ko-KR")}명이 1:1 소개팅을 신청했습니다.
         </p>
@@ -376,13 +378,24 @@ function DatingOneOnOnePageContent() {
           <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
             <p className="text-[11px] font-semibold tracking-wide text-neutral-500">2단계</p>
             <p className="mt-1 text-sm font-semibold text-neutral-900">서로 수락</p>
-            <p className="mt-1 text-xs leading-5 text-neutral-600">쌍방 수락이 되면 번호 교환 요청을 진행할 수 있습니다.</p>
+            <p className="mt-1 text-xs leading-5 text-neutral-600">쌍방 수락이 되면 카카오페이로 바로 번호 교환을 진행할 수 있습니다.</p>
           </div>
           <div className="rounded-xl border border-emerald-200 bg-emerald-50/60 px-3 py-3">
             <p className="text-[11px] font-semibold tracking-wide text-emerald-700">3단계</p>
             <p className="mt-1 text-sm font-semibold text-emerald-900">번호 교환</p>
-            <p className="mt-1 text-xs leading-5 text-emerald-800">입금 확인 후 승인되면 상대 연락처를 확인할 수 있습니다.</p>
+            <p className="mt-1 text-xs leading-5 text-emerald-800">카카오페이 결제가 완료되면 상대 연락처를 바로 확인할 수 있습니다.</p>
           </div>
+        </div>
+        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-neutral-600">
+          <span>그 밖의 문의는 오픈카톡으로 남겨주시면 빠르게 확인해드려요.</span>
+          <a
+            href={OPEN_KAKAO_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="inline-flex h-8 items-center rounded-full border border-neutral-300 bg-white px-3 font-medium text-neutral-800 hover:bg-neutral-50"
+          >
+            오픈카톡 문의
+          </a>
         </div>
       </section>
 
@@ -390,7 +403,7 @@ function DatingOneOnOnePageContent() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-neutral-900">후보 확인과 진행은 마이페이지에서</h2>
-            <p className="mt-1 text-sm text-neutral-600">후보 확인, 수락/거절, 번호 교환 요청은 마이페이지에서 한 번에 진행할 수 있어요.</p>
+            <p className="mt-1 text-sm text-neutral-600">후보 확인, 수락/거절, 카카오페이 번호 교환은 마이페이지에서 한 번에 진행할 수 있어요.</p>
           </div>
           <Link
             href="/mypage"
@@ -410,7 +423,7 @@ function DatingOneOnOnePageContent() {
           </div>
           <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
             <p className="text-xs font-semibold text-neutral-500">번호 교환</p>
-            <p className="mt-1 text-sm text-neutral-800">쌍방 수락 후 번호 교환 요청과 진행 상태를 확인할 수 있어요.</p>
+            <p className="mt-1 text-sm text-neutral-800">쌍방 수락 후 카카오페이 번호 교환과 진행 상태를 확인할 수 있어요.</p>
           </div>
         </div>
       </section>
@@ -430,7 +443,7 @@ function DatingOneOnOnePageContent() {
           </label>
           <label className="flex items-start gap-2">
             <input type="checkbox" checked={consentFee} onChange={(e) => setConsentFee(e.target.checked)} className="mt-1" />
-            번호 교환 진행 시 매칭비가 발생하고, 쌍방 수락 후 승인되면 전화번호가 공개될 수 있음을 확인했습니다.
+            번호 교환 진행 시 매칭비가 발생하고, 쌍방 수락 후 카카오페이 결제가 완료되면 전화번호가 공개될 수 있음을 확인했습니다.
           </label>
           <label className="flex items-start gap-2">
             <input type="checkbox" checked={consentPrivacy} onChange={(e) => setConsentPrivacy(e.target.checked)} className="mt-1" />
@@ -447,8 +460,9 @@ function DatingOneOnOnePageContent() {
           <summary className="cursor-pointer text-sm font-medium text-neutral-800">1:1 진행 방식 간단히 보기</summary>
           <div className="mt-2 space-y-1 text-xs leading-5 text-neutral-600">
             <p>1. 신청서를 올리면 운영자가 후보 연결을 진행합니다.</p>
-            <p>2. 서로 수락되면 번호 교환 요청 후 오픈카톡으로 문의합니다.</p>
-            <p>3. 확인이 완료되면 승인 후 양쪽 번호가 공개됩니다.</p>
+            <p>2. 서로 수락되면 마이페이지에서 번호 교환 결제를 진행합니다.</p>
+            <p>3. 현재는 카카오페이 간편결제로만 가능하며, 결제가 완료되면 양쪽 번호가 공개됩니다.</p>
+            <p>4. 그 밖의 문의는 오픈카톡으로 남겨주시면 빠르게 확인해드려요.</p>
           </div>
         </details>
         {!isEditMode && !status.phoneVerified && (

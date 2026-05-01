@@ -22,16 +22,16 @@ function PaymentFailContent() {
 
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
-            href="/dating/more-view"
+            href="/mypage"
             className="inline-flex min-h-[44px] items-center rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white hover:bg-neutral-800"
           >
-            이상형 더보기로 돌아가기
+            마이페이지로 돌아가기
           </Link>
           <Link
-            href="/mypage"
+            href="/dating/1on1"
             className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
           >
-            마이페이지
+            1:1 소개팅 보기
           </Link>
         </div>
       </section>

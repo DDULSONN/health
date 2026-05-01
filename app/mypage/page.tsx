@@ -38,6 +38,7 @@ const AdminCommunityModerationPanel = dynamic(() => import("@/components/AdminCo
 const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
 
 type MyPageTab = "my_cert" | "request_status" | "admin_review";
+type MyPageSectionTab = "profile" | "matching" | "payment" | "admin";
 
 type BodycheckPost = {
   id: string;
@@ -265,6 +266,7 @@ function formatPaymentProductLabel(order: MyPaymentCenterOrder) {
     const sex = order.product_meta?.sex;
     return sex === "female" ? "이상형 더보기 · 여자 카드" : sex === "male" ? "이상형 더보기 · 남자 카드" : "이상형 더보기";
   }
+  if (order.product_type === "one_on_one_contact_exchange") return "1:1 번호 즉시 교환";
   return order.order_name ?? order.product_type;
 }
 
@@ -281,6 +283,7 @@ function formatPaymentResultLabel(order: MyPaymentCenterOrder) {
   if (order.product_type === "apply_credits") return "지원권 지급 완료";
   if (order.product_type === "paid_card") return "유료 등록 결제 확인 완료";
   if (order.product_type === "more_view") return "이상형 더보기 권한 반영 완료";
+  if (order.product_type === "one_on_one_contact_exchange") return "상대 연락처 공개 완료";
   return "결제 완료";
 }
 
@@ -1017,6 +1020,7 @@ export default function MyPage() {
   const [adInquiryInfo, setAdInquiryInfo] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState<MyPageTab>("my_cert");
+  const [pageSectionTab, setPageSectionTab] = useState<MyPageSectionTab>("profile");
   const [error, setError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
@@ -1637,6 +1641,12 @@ export default function MyPage() {
       setActiveTab("my_cert");
     }
   }, [isAdmin, activeTab]);
+
+  useEffect(() => {
+    if (!isAdmin && pageSectionTab === "admin") {
+      setPageSectionTab("profile");
+    }
+  }, [isAdmin, pageSectionTab]);
 
   useEffect(() => {
     if (!isAdmin || adminManageTab !== "open_cards" || adminOpenCardsLoaded || adminOpenCardsLoading) {
@@ -2439,18 +2449,31 @@ export default function MyPage() {
     if (processingOneOnOneContactExchangeIds.includes(matchId)) return;
     setProcessingOneOnOneContactExchangeIds((prev) => [...prev, matchId]);
     try {
-      const res = await fetch(`/api/dating/1on1/matches/${matchId}/contact-exchange`, {
+      const res = await fetch("/api/payments/toss/create", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productType: "one_on_one_contact_exchange",
+          matchId,
+        }),
       });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; mode?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        message?: string;
+        checkoutUrl?: string;
+      };
       if (!res.ok || !body.ok) {
-        alert(body.error ?? "번호 교환 요청 처리에 실패했습니다.");
+        alert(body.message ?? body.error ?? "번호 교환 결제를 시작하지 못했습니다.");
         return;
       }
-      await reloadOneOnOneMatches();
-      alert("번호 교환 요청을 보냈습니다. 확인 후 번호 교환이 진행됩니다.");
+      if (!body.checkoutUrl) {
+        alert("결제창을 열지 못했습니다.");
+        return;
+      }
+      window.location.href = body.checkoutUrl;
     } catch (e) {
-      alert(e instanceof Error ? e.message : "번호 교환 요청 처리에 실패했습니다.");
+      alert(e instanceof Error ? e.message : "번호 교환 결제를 시작하지 못했습니다.");
     } finally {
       setProcessingOneOnOneContactExchangeIds((prev) => prev.filter((id) => id !== matchId));
     }
@@ -3191,7 +3214,7 @@ export default function MyPage() {
   };
   const oneOnOneContactExchangeText: Record<MyOneOnOneMatch["contact_exchange_status"], string> = {
     none: "번호 공개 전",
-    awaiting_applicant_payment: "번호 교환 대기",
+    awaiting_applicant_payment: "즉시 교환 가능",
     payment_pending_admin: "번호 교환 확인 중",
     approved: "번호 교환 완료",
     canceled: "번호 교환 종료",
@@ -3204,8 +3227,11 @@ export default function MyPage() {
     canceled: "bg-neutral-200 text-neutral-700",
   };
   const getOneOnOneContactExchangeBadgeText = (match: MyOneOnOneMatch) => {
-    if (match.state === "mutual_accepted" && match.contact_exchange_status === "none") {
-      return "입금 요청 가능";
+    if (
+      match.state === "mutual_accepted" &&
+      (match.contact_exchange_status === "none" || match.contact_exchange_status === "awaiting_applicant_payment")
+    ) {
+      return "카카오페이 가능";
     }
     return oneOnOneContactExchangeText[match.contact_exchange_status];
   };
@@ -3391,8 +3417,39 @@ export default function MyPage() {
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 
+  const showProfileSection = pageSectionTab === "profile";
+  const showMatchingSection = pageSectionTab === "matching";
+  const showPaymentSection = pageSectionTab === "payment";
+  const showAdminSection = pageSectionTab === "admin" && isAdmin;
+
   return (
     <main className="mx-auto max-w-2xl px-4 pt-8 pb-28 md:pb-8">
+      <section className="mb-4 rounded-2xl border border-neutral-200 bg-[#f6f4f1] p-2">
+        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+          {([
+            { key: "profile", label: "프로필" },
+            { key: "matching", label: "매칭" },
+            { key: "payment", label: "결제" },
+            ...(isAdmin ? [{ key: "admin", label: "관리" }] : []),
+          ] as Array<{ key: MyPageSectionTab; label: string }>).map((tab) => {
+            const active = pageSectionTab === tab.key;
+            return (
+              <button
+                key={`mypage-section-${tab.key}`}
+                type="button"
+                onClick={() => setPageSectionTab(tab.key)}
+                className={`min-h-[44px] rounded-xl text-sm font-semibold transition ${
+                  active ? "bg-white text-neutral-900 shadow-sm ring-1 ring-neutral-200" : "bg-transparent text-neutral-400"
+                }`}
+              >
+                {tab.label}
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      {showProfileSection && (
       <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
         <h1 className="text-2xl font-bold text-neutral-900">마이페이지</h1>
         <p className="mt-1 text-sm text-neutral-600">{nickname}</p>
@@ -3958,7 +4015,10 @@ export default function MyPage() {
           </button>
         </div>
       </section>
+      )}
 
+      {showPaymentSection && (
+      <>
       <section className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50/30 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -3968,7 +4028,7 @@ export default function MyPage() {
             </p>
             {!paymentCenterOpen && (
               <p className="mt-1 text-xs text-emerald-700">
-                결제 내역, 매출전표, 지원권 잔여 수량, 이상형 더보기 상태를 여기서 확인할 수 있어요.
+                결제 내역, 매출전표, 지원권 잔여 수량, 이상형 더보기 상태, 1:1 번호 교환 결제까지 여기서 확인할 수 있어요.
               </p>
             )}
           </div>
@@ -4122,7 +4182,6 @@ export default function MyPage() {
           </>
         )}
       </section>
-
       <section className="mb-5 rounded-2xl border border-sky-200 bg-sky-50/40 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -4255,7 +4314,11 @@ export default function MyPage() {
           </>
         )}
       </section>
+      </>
+      )}
 
+      {showMatchingSection && (
+      <>
       <section className="mb-5 rounded-2xl border border-rose-200 bg-rose-50/30 p-5">
         <h2 className="text-lg font-bold text-rose-900 mb-3">내 유료카드 지원자</h2>
         {myPaidCards.length === 0 ? (
@@ -4429,7 +4492,7 @@ export default function MyPage() {
         <div className="mb-3 rounded-xl border border-sky-200 bg-white/80 px-3 py-3">
           <p className="text-xs font-semibold text-sky-900">1:1 이용 안내</p>
           <p className="mt-1 text-[11px] leading-5 text-neutral-600">
-            쌍방 수락 후 번호 교환이 승인되면 상대 연락처가 공개될 수 있습니다. 공개된 번호의 외부 공유, 무단 저장, 불쾌한 연락은 제재 대상입니다.
+            쌍방 수락 후 카카오페이 결제가 완료되면 상대 연락처가 바로 공개됩니다. 공개된 번호의 외부 공유, 무단 저장, 불쾌한 연락은 제재 대상입니다.
           </p>
         </div>
         {myOneOnOneCards.length === 0 ? (
@@ -4778,7 +4841,7 @@ export default function MyPage() {
                                   {oneOnOneMatchStateText[match.state]}
                                 </span>
                               </div>
-                              <p className="mt-1 text-xs text-neutral-600">상대가 수락하면 바로 번호 교환 요청 단계로 넘어갑니다.</p>
+                              <p className="mt-1 text-xs text-neutral-600">상대가 수락하면 바로 카카오페이 번호 교환 단계로 넘어갑니다.</p>
                             </div>
                           );
                         })}
@@ -4865,11 +4928,11 @@ export default function MyPage() {
                                 {(match.contact_exchange_status === "none" ||
                                   match.contact_exchange_status === "awaiting_applicant_payment") ? (
                                   <>
-                                    <p className="text-xs font-semibold text-neutral-900">번호 교환 대기</p>
+                                    <p className="text-xs font-semibold text-neutral-900">번호 즉시 교환</p>
                                     <p className="mt-1 text-xs text-neutral-700">
-                                      번호 교환을 원하면 요청 후 오픈카톡으로 문의해 주세요. 확인이 완료되면 상대 연락처가 공개됩니다.
+                                      현재는 카카오페이 간편결제로만 바로 번호를 교환할 수 있어요. 먼저 결제를 완료한 쪽 기준으로 상대 연락처가 즉시 공개됩니다.
                                     </p>
-                                    <p className="mt-2 text-[11px] text-neutral-500">매칭 ID {match.id}</p>
+                                    <p className="mt-2 text-[11px] text-neutral-500">그 밖의 문의는 오픈카톡으로 부탁드려요. 매칭 ID {match.id}</p>
                                     <div className="mt-2 flex flex-wrap gap-2">
                                       <a
                                         href={OPEN_KAKAO_URL}
@@ -4885,16 +4948,16 @@ export default function MyPage() {
                                         onClick={() => void handleRequestOneOnOneContactExchange(match.id)}
                                         className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                                       >
-                                        {contactProcessing ? "요청 중..." : "번호 교환 요청"}
+                                        {contactProcessing ? "결제 준비 중..." : "카카오페이로 번호 교환"}
                                       </button>
                                     </div>
                                   </>
                                 ) : null}
                                 {match.contact_exchange_status === "payment_pending_admin" ? (
                                   <>
-                                    <p className="text-xs font-semibold text-neutral-900">번호 교환 확인 중</p>
+                                    <p className="text-xs font-semibold text-neutral-900">번호 교환 처리 중</p>
                                     <p className="mt-1 text-xs text-neutral-700">
-                                      요청 내용이 확인되면 승인 후 번호 교환이 진행됩니다. 잠시만 기다려 주세요.
+                                      결제 확인이 마무리되는 대로 번호 교환이 진행됩니다. 잠시만 기다려 주세요.
                                     </p>
                                     <div className="mt-2 flex flex-wrap gap-2">
                                       <a
@@ -4906,7 +4969,7 @@ export default function MyPage() {
                                         오픈카톡 문의
                                       </a>
                                       <p className="inline-flex items-center text-[11px] text-neutral-500">
-                                        닉네임과 매칭 ID를 보내주시면 확인이 더 빨라집니다.
+                                        카카오페이 외 결제 문의나 확인이 필요하면 닉네임과 매칭 ID를 함께 보내 주세요.
                                       </p>
                                     </div>
                                   </>
@@ -5313,10 +5376,12 @@ export default function MyPage() {
           </div>
         )}
       </section>
+      </>
+      )}
 
-      <BodyEvalMailbox />
+      {showProfileSection && <BodyEvalMailbox />}
 
-      {isAdmin && (
+      {showAdminSection && (
         <section className="mb-5 rounded-2xl border border-violet-200 bg-violet-50/40 p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-bold text-violet-900">오픈카드 전체 내용 (관리자)</h2>
@@ -5914,6 +5979,8 @@ export default function MyPage() {
                                   ? "유료카드"
                                   : order.product_type === "more_view"
                                     ? "이상형 더보기"
+                                    : order.product_type === "one_on_one_contact_exchange"
+                                      ? "1:1 번호교환"
                                     : order.product_type}
                               {" / "}
                               {order.amount.toLocaleString("ko-KR")}원
@@ -6364,7 +6431,7 @@ export default function MyPage() {
               1:1 번호 공개 승인 대기 {adminOneOnOneContactRequests.length}건
             </p>
             <p className="mt-1 text-[11px] text-neutral-500">
-              번호 교환 요청이 들어온 1:1 쌍방 매칭만 따로 모았습니다. 여기서 바로 승인하면 양쪽 번호가 공개됩니다.
+              직접 승인 대기 중인 1:1 번호 교환 건만 따로 모았습니다. 여기서 승인하면 양쪽 번호가 공개됩니다.
             </p>
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <input
@@ -7375,6 +7442,8 @@ export default function MyPage() {
         </section>
       )}
 
+      {showProfileSection && (
+      <>
       <div className="mb-5">
         <MyLiftGrowthChart />
       </div>
@@ -7553,6 +7622,8 @@ export default function MyPage() {
           </div>
         )}
       </section>
+      </>
+      )}
 
       {nicknameOpen && (
         <div className="fixed inset-0 z-50 flex items-end bg-black/40 p-4 sm:items-center sm:justify-center">

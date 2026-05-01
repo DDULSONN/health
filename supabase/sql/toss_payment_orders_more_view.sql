@@ -5,7 +5,7 @@ alter table public.toss_test_payment_orders
 
 alter table public.toss_test_payment_orders
   add constraint toss_test_payment_orders_product_type_check
-  check (product_type in ('apply_credits', 'paid_card', 'more_view'));
+  check (product_type in ('apply_credits', 'paid_card', 'more_view', 'one_on_one_contact_exchange'));
 
 alter table public.toss_test_payment_orders
   add column if not exists product_meta jsonb not null default '{}'::jsonb;
