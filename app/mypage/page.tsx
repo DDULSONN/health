@@ -219,6 +219,30 @@ type SwipeSubscriptionStatus = {
   message?: string;
 };
 
+type MyPaymentCenterOrder = {
+  id: string;
+  product_type: "apply_credits" | "paid_card" | "more_view" | string;
+  product_meta: Record<string, unknown> | null;
+  toss_order_id: string;
+  order_name: string | null;
+  amount: number;
+  status: "ready" | "paid" | "failed" | "canceled" | string;
+  approved_at: string | null;
+  created_at: string;
+  method: string | null;
+  receiptUrl: string | null;
+};
+
+type MyPaymentCenterData = {
+  summary: {
+    creditsRemaining: number;
+    baseRemaining: number;
+    moreViewMale: "none" | "pending" | "approved" | "rejected";
+    moreViewFemale: "none" | "pending" | "approved" | "rejected";
+  };
+  orders: MyPaymentCenterOrder[];
+};
+
 const SUPPORT_CATEGORY_LABELS: Record<SupportInquiry["category"], string> = {
   payment: "결제/환불",
   dating: "소개팅 기능",
@@ -233,6 +257,32 @@ const SUPPORT_STATUS_LABELS: Record<SupportInquiry["status"], string> = {
   answered: "답변 완료",
   closed: "종결",
 };
+
+function formatPaymentProductLabel(order: MyPaymentCenterOrder) {
+  if (order.product_type === "apply_credits") return "오픈카드 지원권";
+  if (order.product_type === "paid_card") return "대기 없이 등록";
+  if (order.product_type === "more_view") {
+    const sex = order.product_meta?.sex;
+    return sex === "female" ? "이상형 더보기 · 여자 카드" : sex === "male" ? "이상형 더보기 · 남자 카드" : "이상형 더보기";
+  }
+  return order.order_name ?? order.product_type;
+}
+
+function formatPaymentStatusLabel(status: MyPaymentCenterOrder["status"]) {
+  if (status === "paid") return "결제 완료";
+  if (status === "failed") return "결제 실패";
+  if (status === "canceled") return "결제 취소";
+  if (status === "ready") return "결제 생성";
+  return status;
+}
+
+function formatPaymentResultLabel(order: MyPaymentCenterOrder) {
+  if (order.status !== "paid") return "결제 확인 중";
+  if (order.product_type === "apply_credits") return "지원권 지급 완료";
+  if (order.product_type === "paid_card") return "유료 등록 결제 확인 완료";
+  if (order.product_type === "more_view") return "이상형 더보기 권한 반영 완료";
+  return "결제 완료";
+}
 
 type MyPaidCard = {
   id: string;
@@ -444,6 +494,7 @@ type AdminApplicationSort = "newest" | "oldest" | "submitted_first" | "accepted_
 type AdminDataView = "cards" | "applications";
 type AdminManageTab =
   | "site_dashboard"
+  | "payment_center"
   | "dating_stats"
   | "dating_insights"
   | "open_cards"
@@ -621,6 +672,35 @@ type AdminDatingStats = {
       active: number;
     };
   };
+};
+
+type AdminPaymentCenterOrder = {
+  id: string;
+  user_id: string;
+  nickname: string | null;
+  product_type: "apply_credits" | "paid_card" | "more_view" | string;
+  product_meta: Record<string, unknown> | null;
+  toss_order_id: string;
+  order_name: string | null;
+  amount: number;
+  status: string;
+  payment_key: string | null;
+  approved_at: string | null;
+  created_at: string;
+  method: string | null;
+};
+
+type AdminPaymentCenterOverview = {
+  summary: {
+    applyCreditsPending: number;
+    paidCardsPending: number;
+    moreViewPending: number;
+    swipeSubscriptionsPending: number;
+    oneOnOneContactPending: number;
+    recentPaidCount: number;
+    recentReadyCount: number;
+  };
+  orders: AdminPaymentCenterOrder[];
 };
 
 type AdminSiteDashboardFeatureKey =
@@ -876,6 +956,7 @@ export default function MyPage() {
   const [adminOneOnOneContactRequests, setAdminOneOnOneContactRequests] = useState<AdminOneOnOneContactExchangeRequest[]>([]);
   const [adminOneOnOneContactLoaded, setAdminOneOnOneContactLoaded] = useState(false);
   const [adminOneOnOneContactLoading, setAdminOneOnOneContactLoading] = useState(false);
+  const [adminOneOnOneContactSearch, setAdminOneOnOneContactSearch] = useState("");
   const [editingAdminOpenCardId, setEditingAdminOpenCardId] = useState<string | null>(null);
   const [adminOpenCardDraft, setAdminOpenCardDraft] = useState<AdminOpenCardEditDraft | null>(null);
   const [savingAdminOpenCard, setSavingAdminOpenCard] = useState(false);
@@ -897,6 +978,9 @@ export default function MyPage() {
   const [adminSiteDashboard, setAdminSiteDashboard] = useState<AdminSiteDashboard | null>(null);
   const [adminSiteDashboardLoading, setAdminSiteDashboardLoading] = useState(false);
   const [adminSiteDashboardError, setAdminSiteDashboardError] = useState("");
+  const [adminPaymentCenter, setAdminPaymentCenter] = useState<AdminPaymentCenterOverview | null>(null);
+  const [adminPaymentCenterLoading, setAdminPaymentCenterLoading] = useState(false);
+  const [adminPaymentCenterError, setAdminPaymentCenterError] = useState("");
   const [adminAccountDeletionAudits, setAdminAccountDeletionAudits] = useState<AdminAccountDeletionAudit[]>([]);
   const [adminCityViewSearch, setAdminCityViewSearch] = useState("");
   const [adminCityViewUnblockIdentifier, setAdminCityViewUnblockIdentifier] = useState("");
@@ -980,6 +1064,11 @@ export default function MyPage() {
   const [supportContactPhone, setSupportContactPhone] = useState("");
   const [supportError, setSupportError] = useState("");
   const [supportInfo, setSupportInfo] = useState("");
+  const [paymentCenterOpen, setPaymentCenterOpen] = useState(false);
+  const [paymentCenterLoaded, setPaymentCenterLoaded] = useState(false);
+  const [paymentCenterLoading, setPaymentCenterLoading] = useState(false);
+  const [paymentCenterError, setPaymentCenterError] = useState("");
+  const [paymentCenterData, setPaymentCenterData] = useState<MyPaymentCenterData | null>(null);
 
   const refreshAdminQueueData = useMemo(
     () =>
@@ -1037,6 +1126,77 @@ export default function MyPage() {
         } finally {
           if (showLoading) {
             setAdminQueueRefreshing(false);
+          }
+        }
+      },
+    [isAdmin]
+  );
+
+  const loadPaymentCenter = useCallback(async (force = false) => {
+    if (!force && (paymentCenterLoading || paymentCenterLoaded)) return;
+
+    setPaymentCenterLoading(true);
+    setPaymentCenterError("");
+
+    try {
+      const res = await fetch("/api/mypage/payments", { cache: "no-store" });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        summary?: MyPaymentCenterData["summary"];
+        orders?: MyPaymentCenterOrder[];
+        message?: string;
+      };
+
+      if (!res.ok || !body.ok || !body.summary) {
+        throw new Error(body.message ?? "결제센터를 불러오지 못했습니다.");
+      }
+
+      setPaymentCenterData({
+        summary: body.summary,
+        orders: body.orders ?? [],
+      });
+      setPaymentCenterLoaded(true);
+    } catch (error) {
+      console.error("[mypage] payment center load failed", error);
+      setPaymentCenterError(error instanceof Error ? error.message : "결제센터를 불러오지 못했습니다.");
+    } finally {
+      setPaymentCenterLoading(false);
+    }
+  }, [paymentCenterLoaded, paymentCenterLoading]);
+
+  const refreshAdminPaymentCenter = useMemo(
+    () =>
+      async (showLoading = true) => {
+        if (!isAdmin) return;
+
+        if (showLoading) {
+          setAdminPaymentCenterLoading(true);
+        }
+        setAdminPaymentCenterError("");
+
+        try {
+          const res = await fetch("/api/admin/payments/overview", { cache: "no-store" });
+          const body = (await res.json().catch(() => ({}))) as {
+            ok?: boolean;
+            summary?: AdminPaymentCenterOverview["summary"];
+            orders?: AdminPaymentCenterOrder[];
+            message?: string;
+          };
+
+          if (!res.ok || !body.ok || !body.summary) {
+            throw new Error(body.message ?? "결제센터를 불러오지 못했습니다.");
+          }
+
+          setAdminPaymentCenter({
+            summary: body.summary,
+            orders: body.orders ?? [],
+          });
+        } catch (error) {
+          console.error("[mypage] admin payment center refresh failed", error);
+          setAdminPaymentCenterError(error instanceof Error ? error.message : "결제센터를 불러오지 못했습니다.");
+        } finally {
+          if (showLoading) {
+            setAdminPaymentCenterLoading(false);
           }
         }
       },
@@ -1426,6 +1586,7 @@ export default function MyPage() {
               setAdminOpenCardApplications([]);
               setAdminPaidCardApplications([]);
               setAdminOpenCardsLoaded(false);
+              setAdminPaymentCenter(null);
               setAdminOneOnOneContactRequests([]);
               setAdminOneOnOneContactLoaded(false);
               setAdminApplyCreditOrders(ordersRes.ok ? ordersBody.items ?? [] : []);
@@ -1447,6 +1608,7 @@ export default function MyPage() {
             setAdminOpenCardApplications([]);
             setAdminPaidCardApplications([]);
             setAdminOpenCardsLoaded(false);
+            setAdminPaymentCenter(null);
             setAdminOneOnOneContactRequests([]);
             setAdminOneOnOneContactLoaded(false);
             setAdminApplyCreditOrders([]);
@@ -1499,12 +1661,25 @@ export default function MyPage() {
   ]);
 
   useEffect(() => {
+    if (!isAdmin || adminManageTab !== "payment_center" || adminPaymentCenter || adminPaymentCenterLoading) {
+      return;
+    }
+
+    void refreshAdminPaymentCenter(true);
+  }, [adminManageTab, adminPaymentCenter, adminPaymentCenterLoading, isAdmin, refreshAdminPaymentCenter]);
+
+  useEffect(() => {
     if (loading || activeTab !== "request_status" || swipeSubscriptionStatus || swipeSubscriptionLoading) return;
 
     queueMicrotask(async () => {
       await reloadSwipeSubscriptionStatus();
     });
   }, [loading, activeTab, swipeSubscriptionStatus, swipeSubscriptionLoading, reloadSwipeSubscriptionStatus]);
+
+  useEffect(() => {
+    if (!paymentCenterOpen || paymentCenterLoaded || paymentCenterLoading) return;
+    void loadPaymentCenter(false);
+  }, [paymentCenterLoaded, paymentCenterLoading, paymentCenterOpen, loadPaymentCenter]);
 
   useEffect(() => {
     if (loading || !isAdmin) return;
@@ -3118,6 +3293,28 @@ export default function MyPage() {
             userId.includes(normalizedAdminCityViewSearch)
           );
         });
+  const normalizedAdminOneOnOneContactSearch = adminOneOnOneContactSearch.trim().toLowerCase();
+  const filteredAdminOneOnOneContactRequests =
+    normalizedAdminOneOnOneContactSearch.length === 0
+      ? adminOneOnOneContactRequests
+      : adminOneOnOneContactRequests.filter((item) => {
+          const sourceName = (item.source_card?.name ?? "").trim().toLowerCase();
+          const candidateName = (item.candidate_card?.name ?? "").trim().toLowerCase();
+          const sourceRegion = (item.source_card?.region ?? "").trim().toLowerCase();
+          const candidateRegion = (item.candidate_card?.region ?? "").trim().toLowerCase();
+          const sourcePhone = (item.source_card?.phone ?? "").trim().toLowerCase();
+          const candidatePhone = (item.candidate_card?.phone ?? "").trim().toLowerCase();
+          const matchId = item.id.trim().toLowerCase();
+          return (
+            sourceName.includes(normalizedAdminOneOnOneContactSearch) ||
+            candidateName.includes(normalizedAdminOneOnOneContactSearch) ||
+            sourceRegion.includes(normalizedAdminOneOnOneContactSearch) ||
+            candidateRegion.includes(normalizedAdminOneOnOneContactSearch) ||
+            sourcePhone.includes(normalizedAdminOneOnOneContactSearch) ||
+            candidatePhone.includes(normalizedAdminOneOnOneContactSearch) ||
+            matchId.includes(normalizedAdminOneOnOneContactSearch)
+          );
+        });
   const hasActiveOpenCard = myDatingCards.some((card) => card.status === "pending" || card.status === "public");
   const swipeMatchConnections = datingConnections.filter((item) => item.role === "swipe_match");
   const visibleSwipeMatchCount = swipeMatchConnections.length;
@@ -3760,6 +3957,170 @@ export default function MyPage() {
             {deletingAccount ? "탈퇴 처리 중..." : "회원 탈퇴"}
           </button>
         </div>
+      </section>
+
+      <section className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50/30 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-emerald-900">결제센터</h2>
+            <p className="mt-1 text-sm text-emerald-800">
+              결제한 상품 상태와 현재 적용 중인 혜택을 한 곳에서 확인할 수 있어요.
+            </p>
+            {!paymentCenterOpen && (
+              <p className="mt-1 text-xs text-emerald-700">
+                결제 내역, 매출전표, 지원권 잔여 수량, 이상형 더보기 상태를 여기서 확인할 수 있어요.
+              </p>
+            )}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/refund"
+              className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+            >
+              환불 안내
+            </Link>
+            <button
+              type="button"
+              onClick={() => setPaymentCenterOpen((prev) => !prev)}
+              className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+            >
+              {paymentCenterOpen ? "결제센터 접기" : "결제센터 펼치기"}
+            </button>
+          </div>
+        </div>
+
+        {paymentCenterOpen && (
+          <>
+            {paymentCenterError ? (
+              <p className="mt-3 rounded-xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">{paymentCenterError}</p>
+            ) : null}
+
+            {paymentCenterLoading && !paymentCenterData ? (
+              <p className="mt-3 rounded-xl border border-emerald-200 bg-white p-4 text-sm text-neutral-500">결제센터를 불러오는 중입니다.</p>
+            ) : null}
+
+            {paymentCenterData ? (
+              <>
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  <div className="rounded-xl border border-emerald-200 bg-white p-4">
+                    <p className="text-xs text-neutral-500">남은 지원권</p>
+                    <p className="mt-2 text-2xl font-black text-neutral-900">{paymentCenterData.summary.creditsRemaining.toLocaleString("ko-KR")}장</p>
+                    <p className="mt-1 text-[11px] text-neutral-500">오늘 기본 지원 가능 {paymentCenterData.summary.baseRemaining}회</p>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200 bg-white p-4">
+                    <p className="text-xs text-neutral-500">남자 더보기 상태</p>
+                    <p className="mt-2 text-lg font-bold text-neutral-900">
+                      {paymentCenterData.summary.moreViewMale === "approved"
+                        ? "이용 가능"
+                        : paymentCenterData.summary.moreViewMale === "pending"
+                          ? "승인 대기"
+                          : paymentCenterData.summary.moreViewMale === "rejected"
+                            ? "거절됨"
+                            : "이용 없음"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200 bg-white p-4">
+                    <p className="text-xs text-neutral-500">여자 더보기 상태</p>
+                    <p className="mt-2 text-lg font-bold text-neutral-900">
+                      {paymentCenterData.summary.moreViewFemale === "approved"
+                        ? "이용 가능"
+                        : paymentCenterData.summary.moreViewFemale === "pending"
+                          ? "승인 대기"
+                          : paymentCenterData.summary.moreViewFemale === "rejected"
+                            ? "거절됨"
+                            : "이용 없음"}
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-emerald-200 bg-white p-4">
+                    <p className="text-xs text-neutral-500">최근 주문</p>
+                    <p className="mt-2 text-2xl font-black text-neutral-900">{paymentCenterData.orders.length.toLocaleString("ko-KR")}건</p>
+                    <p className="mt-1 text-[11px] text-neutral-500">최근 20건 기준</p>
+                  </div>
+                </div>
+
+                <div className="mt-4 rounded-xl border border-emerald-200 bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-semibold text-emerald-900">내 결제 내역</p>
+                      <p className="mt-1 text-xs text-neutral-500">
+                        토스 문서 기준으로 결제 성공 후에는 주문번호, 금액, 상태를 확인할 수 있어야 하고, 카드 결제는 매출전표도 조회할 수 있어요.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void loadPaymentCenter(true)}
+                      disabled={paymentCenterLoading}
+                      className="h-8 rounded-md border border-emerald-300 bg-white px-3 text-xs font-medium text-emerald-800 disabled:opacity-50"
+                    >
+                      {paymentCenterLoading ? "새로고침 중..." : "결제 내역 새로고침"}
+                    </button>
+                  </div>
+
+                  {paymentCenterData.orders.length === 0 ? (
+                    <p className="mt-3 rounded-xl border border-dashed border-emerald-200 bg-emerald-50/40 p-4 text-sm text-neutral-500">
+                      아직 결제한 내역이 없습니다.
+                    </p>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      {paymentCenterData.orders.map((order) => (
+                        <article key={order.id} className="rounded-xl border border-emerald-100 bg-emerald-50/30 p-4">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-neutral-900">{formatPaymentProductLabel(order)}</p>
+                              <p className="mt-1 text-[11px] text-neutral-500">주문번호 {order.toss_order_id}</p>
+                            </div>
+                            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-emerald-800">
+                              {formatPaymentStatusLabel(order.status)}
+                            </span>
+                          </div>
+
+                          <div className="mt-3 grid gap-3 text-sm text-neutral-700 md:grid-cols-3">
+                            <div>
+                              <p className="text-xs text-neutral-500">결제 금액</p>
+                              <p className="mt-1 font-semibold text-neutral-900">{order.amount.toLocaleString("ko-KR")}원</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-neutral-500">결제 시각</p>
+                              <p className="mt-1">{new Date(order.created_at).toLocaleString("ko-KR")}</p>
+                            </div>
+                            <div>
+                              <p className="text-xs text-neutral-500">처리 결과</p>
+                              <p className="mt-1 font-semibold text-neutral-900">{formatPaymentResultLabel(order)}</p>
+                            </div>
+                          </div>
+
+                          <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+                            {order.method ? <span>수단 {order.method}</span> : null}
+                            {order.approved_at ? <span>승인 {new Date(order.approved_at).toLocaleString("ko-KR")}</span> : null}
+                            {order.receiptUrl ? (
+                              <a
+                                href={order.receiptUrl}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="rounded-full border border-emerald-300 bg-white px-2.5 py-1 font-medium text-emerald-800 hover:bg-emerald-100"
+                              >
+                                매출전표 보기
+                              </a>
+                            ) : null}
+                          </div>
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="mt-4 rounded-xl border border-emerald-200 bg-white p-4">
+                  <p className="text-sm font-semibold text-emerald-900">결제 안내</p>
+                  <ul className="mt-3 space-y-2 text-sm leading-6 text-neutral-700">
+                    <li>결제 완료 후 적용까지 잠시 시간이 걸릴 수 있으며, 승인이 필요한 상품은 운영 확인 후 반영됩니다.</li>
+                    <li>카드 결제는 매출전표 링크가 있는 경우 바로 확인할 수 있고, 필요하면 카드사 앱이나 토스 상점관리자 기준 내역으로도 조회할 수 있습니다.</li>
+                    <li>문제가 있으면 아래 문의 접수 또는 오픈카톡으로 주문번호와 닉네임을 함께 알려주시면 더 빨리 확인할 수 있어요.</li>
+                  </ul>
+                </div>
+              </>
+            ) : null}
+          </>
+        )}
       </section>
 
       <section className="mb-5 rounded-2xl border border-sky-200 bg-sky-50/40 p-5">
@@ -4962,6 +5323,9 @@ export default function MyPage() {
             <button
               type="button"
               disabled={
+                adminManageTab === "payment_center"
+                  ? adminPaymentCenterLoading
+                  : 
                 adminManageTab === "open_cards"
                   ? adminOpenCardsLoading
                   : adminManageTab === "one_on_one_contact"
@@ -4969,7 +5333,9 @@ export default function MyPage() {
                     : adminQueueRefreshing
               }
               onClick={() =>
-                void (adminManageTab === "open_cards"
+                void (adminManageTab === "payment_center"
+                  ? refreshAdminPaymentCenter(true)
+                  : adminManageTab === "open_cards"
                   ? refreshAdminOpenCardData(true)
                   : adminManageTab === "one_on_one_contact"
                     ? refreshAdminOneOnOneContactData(true)
@@ -4981,6 +5347,10 @@ export default function MyPage() {
                 ? adminOpenCardsLoading
                   ? "불러오는 중..."
                   : "오픈카드 새로고침"
+                : adminManageTab === "payment_center"
+                  ? adminPaymentCenterLoading
+                    ? "불러오는 중..."
+                    : "결제센터 새로고침"
                 : adminManageTab === "one_on_one_contact"
                   ? adminOneOnOneContactLoading
                     ? "불러오는 중..."
@@ -5000,6 +5370,15 @@ export default function MyPage() {
               }`}
             >
               운영 현황
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdminManageTab("payment_center")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "payment_center" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              결제센터
             </button>
             <button
               type="button"
@@ -5436,6 +5815,131 @@ export default function MyPage() {
           </div>
           )}
 
+          {adminManageTab === "payment_center" && (
+          <div className="mb-3 space-y-4">
+            <div className="rounded-2xl border border-violet-200 bg-white p-4">
+              <p className="text-sm font-semibold text-violet-900">결제센터</p>
+              <p className="mt-1 text-xs text-neutral-600">
+                상품은 각 기능 화면에서 직접 결제하고, 여기서는 승인 대기와 최근 결제 상태만 모아봅니다.
+              </p>
+            </div>
+
+            {adminPaymentCenterError ? (
+              <div className="rounded-2xl border border-rose-200 bg-rose-50 p-4 text-sm text-rose-700">
+                {adminPaymentCenterError}
+              </div>
+            ) : null}
+
+            {adminPaymentCenterLoading && !adminPaymentCenter ? (
+              <div className="rounded-2xl border border-violet-200 bg-white p-6 text-sm text-neutral-500">
+                결제센터를 불러오는 중입니다.
+              </div>
+            ) : null}
+
+            {adminPaymentCenter ? (
+              <>
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                  {[
+                    { label: "지원권 주문 대기", value: adminPaymentCenter.summary.applyCreditsPending },
+                    { label: "유료카드 승인 대기", value: adminPaymentCenter.summary.paidCardsPending },
+                    { label: "이상형 더보기 대기", value: adminPaymentCenter.summary.moreViewPending },
+                    { label: "빠른매칭 구독 대기", value: adminPaymentCenter.summary.swipeSubscriptionsPending },
+                    { label: "1:1 번호교환 대기", value: adminPaymentCenter.summary.oneOnOneContactPending },
+                    { label: "최근 결제 완료", value: adminPaymentCenter.summary.recentPaidCount },
+                    { label: "최근 결제 생성", value: adminPaymentCenter.summary.recentReadyCount },
+                  ].map((item) => (
+                    <div key={`payment-center-summary-${item.label}`} className="rounded-2xl border border-violet-200 bg-white p-4">
+                      <p className="text-xs font-medium text-neutral-500">{item.label}</p>
+                      <p className="mt-2 text-2xl font-black text-neutral-900">{item.value.toLocaleString("ko-KR")}</p>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-[1.1fr_0.9fr]">
+                  <div className="rounded-2xl border border-violet-200 bg-white p-4">
+                    <p className="text-sm font-semibold text-violet-900">바로 가기</p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {[
+                        { label: "지원권 주문 보기", tab: "apply_credits" as const, count: adminPaymentCenter.summary.applyCreditsPending },
+                        { label: "유료카드 승인 보기", tab: "open_cards" as const, count: adminPaymentCenter.summary.paidCardsPending },
+                        { label: "이상형 더보기 보기", tab: "more_view" as const, count: adminPaymentCenter.summary.moreViewPending },
+                        { label: "빠른매칭 구독 보기", tab: "swipe_subscriptions" as const, count: adminPaymentCenter.summary.swipeSubscriptionsPending },
+                        { label: "1:1 번호교환 보기", tab: "one_on_one_contact" as const, count: adminPaymentCenter.summary.oneOnOneContactPending },
+                      ].map((item) => (
+                        <button
+                          key={`payment-center-link-${item.label}`}
+                          type="button"
+                          onClick={() => setAdminManageTab(item.tab)}
+                          className="flex items-center justify-between rounded-xl border border-violet-100 bg-violet-50/50 px-3 py-3 text-left"
+                        >
+                          <span className="text-sm font-medium text-neutral-800">{item.label}</span>
+                          <span className="rounded-full bg-white px-2 py-1 text-xs font-semibold text-violet-700">
+                            {item.count.toLocaleString("ko-KR")}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-violet-200 bg-white p-4">
+                    <p className="text-sm font-semibold text-violet-900">운영 메모</p>
+                    <div className="mt-3 space-y-2 text-xs text-neutral-600">
+                      <p>토스 결제는 최근 주문 상태를 먼저 보고, 필요한 승인 처리는 각 상세 탭에서 이어서 진행하면 됩니다.</p>
+                      <p>유저용 결제센터보다 관리자용 결제 상태 확인 허브를 우선 두는 편이 운영 동선이 더 깔끔합니다.</p>
+                      <p>결제 완료 후 혜택 지급이 어긋난 건은 주문 상태와 실제 승인 탭 상태를 함께 보는 방식으로 점검하면 됩니다.</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-violet-200 bg-white p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <p className="text-sm font-semibold text-violet-900">최근 토스 주문</p>
+                    <p className="text-[11px] text-neutral-500">최근 30건 기준</p>
+                  </div>
+                  {adminPaymentCenter.orders.length === 0 ? (
+                    <p className="mt-3 text-sm text-neutral-500">최근 주문이 없습니다.</p>
+                  ) : (
+                    <div className="mt-3 space-y-2">
+                      {adminPaymentCenter.orders.map((order) => (
+                        <div
+                          key={order.id}
+                          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-violet-100 bg-violet-50/30 px-3 py-3"
+                        >
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-neutral-900">
+                              {order.nickname ?? order.user_id.slice(0, 8)} /{" "}
+                              {order.product_type === "apply_credits"
+                                ? "지원권"
+                                : order.product_type === "paid_card"
+                                  ? "유료카드"
+                                  : order.product_type === "more_view"
+                                    ? "이상형 더보기"
+                                    : order.product_type}
+                              {" / "}
+                              {order.amount.toLocaleString("ko-KR")}원
+                            </p>
+                            <p className="mt-1 text-[11px] text-neutral-500 break-all">
+                              주문번호 {order.toss_order_id} · 상태 {order.status}
+                              {order.method ? ` · 수단 ${order.method}` : ""}
+                            </p>
+                            <p className="mt-1 text-[11px] text-neutral-500">
+                              생성 {new Date(order.created_at).toLocaleString("ko-KR")}
+                              {order.approved_at ? ` · 승인 ${new Date(order.approved_at).toLocaleString("ko-KR")}` : ""}
+                            </p>
+                          </div>
+                          <div className="shrink-0 rounded-full bg-white px-3 py-1 text-xs font-semibold text-violet-700">
+                            {order.status === "paid" ? "결제 완료" : order.status === "ready" ? "결제 생성" : order.status}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : null}
+          </div>
+          )}
+
           {adminManageTab === "dating_stats" && adminDatingStats && (
           <div className="mb-3 space-y-3">
             <div className="rounded-xl border border-violet-200 bg-white p-4">
@@ -5862,13 +6366,27 @@ export default function MyPage() {
             <p className="mt-1 text-[11px] text-neutral-500">
               번호 교환 요청이 들어온 1:1 쌍방 매칭만 따로 모았습니다. 여기서 바로 승인하면 양쪽 번호가 공개됩니다.
             </p>
+            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <input
+                type="text"
+                value={adminOneOnOneContactSearch}
+                onChange={(e) => setAdminOneOnOneContactSearch(e.target.value)}
+                placeholder="지원자/상대 닉네임, 지역, 번호, 매칭ID 검색"
+                className="h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none ring-0 placeholder:text-neutral-400 sm:max-w-sm"
+              />
+              {normalizedAdminOneOnOneContactSearch ? (
+                <p className="text-[11px] text-neutral-500">검색 결과 {filteredAdminOneOnOneContactRequests.length}건</p>
+              ) : null}
+            </div>
             {adminOneOnOneContactLoading ? (
               <p className="mt-3 text-xs text-neutral-500">불러오는 중...</p>
-            ) : adminOneOnOneContactRequests.length === 0 ? (
-              <p className="mt-3 text-xs text-neutral-500">현재 승인 대기 중인 번호 공개 요청이 없습니다.</p>
+            ) : filteredAdminOneOnOneContactRequests.length === 0 ? (
+              <p className="mt-3 text-xs text-neutral-500">
+                {normalizedAdminOneOnOneContactSearch ? "검색된 번호 공개 요청이 없습니다." : "현재 승인 대기 중인 번호 공개 요청이 없습니다."}
+              </p>
             ) : (
               <div className="mt-3 space-y-2">
-                {adminOneOnOneContactRequests.map((item) => {
+                {filteredAdminOneOnOneContactRequests.map((item) => {
                   const processing = processingOneOnOneContactExchangeIds.includes(item.id);
                   return (
                     <div
