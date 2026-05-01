@@ -293,6 +293,7 @@ export default function WritePage() {
             <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">
               사진 몸평 글은 다른 회원들이 4단계로 평가하게 됩니다.
             </div>
+            <p className="px-1 text-[11px] text-neutral-400">인스타그램 릴스에 등장할 수 있습니다.</p>
 
             <div>
               <label className="mb-2 block text-sm font-medium text-neutral-700">성별 (필수)</label>

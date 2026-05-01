@@ -49,6 +49,20 @@ function MoreViewCardTile({ card }: { card: MoreViewCard }) {
           {card.job ? <span className="rounded-full bg-neutral-100 px-3 py-1">{card.job}</span> : null}
         </div>
         {card.ideal_type ? <p className="mt-3 line-clamp-2 text-sm leading-6 text-neutral-600">{card.ideal_type}</p> : null}
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Link
+            href={`/community/dating/cards/${card.id}`}
+            className="inline-flex min-h-[36px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+          >
+            상세보기
+          </Link>
+          <Link
+            href={`/community/dating/cards/${card.id}/apply`}
+            className="inline-flex min-h-[36px] items-center rounded-xl bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-700"
+          >
+            지원하기
+          </Link>
+        </div>
       </div>
     </div>
   );
