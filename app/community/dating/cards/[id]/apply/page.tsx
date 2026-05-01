@@ -1,10 +1,11 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { createClient } from "@/lib/supabase/client";
+import { useParams, useRouter } from "next/navigation";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
+
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
+import { createClient } from "@/lib/supabase/client";
 
 type CardDetail = {
   id: string;
@@ -25,6 +26,19 @@ type CardDetail = {
   expires_at: string | null;
 };
 
+type LatestApplicationPrefill = {
+  id: string;
+  age: number | null;
+  height_cm: number | null;
+  region: string;
+  job: string;
+  training_years: number | null;
+  intro_text: string;
+  instagram_id: string;
+  photo_paths: string[];
+  created_at: string;
+};
+
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const HEIC_TYPES = ["image/heic", "image/heif"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
@@ -40,6 +54,10 @@ function validInstagramId(value: string) {
   return true;
 }
 
+function formatDateTime(value: string) {
+  return new Date(value).toLocaleString("ko-KR");
+}
+
 export default function DatingCardApplyPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -49,9 +67,12 @@ export default function DatingCardApplyPage() {
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
-  const [errorCode, setErrorCode] = useState<string>("");
+  const [errorCode, setErrorCode] = useState("");
   const [profileEditUrl, setProfileEditUrl] = useState<string | null>(null);
   const [creditRequesting, setCreditRequesting] = useState(false);
+  const [lastApplication, setLastApplication] = useState<LatestApplicationPrefill | null>(null);
+  const [reuseLastPhotos, setReuseLastPhotos] = useState(false);
+  const [prefillNotice, setPrefillNotice] = useState("");
 
   const [age, setAge] = useState("");
   const [heightCm, setHeightCm] = useState("");
@@ -63,39 +84,89 @@ export default function DatingCardApplyPage() {
   const [consent, setConsent] = useState(false);
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
 
+  const fillFromLatestApplication = (item: LatestApplicationPrefill) => {
+    setAge(item.age ? String(item.age) : "");
+    setHeightCm(item.height_cm ? String(item.height_cm) : "");
+    setRegion(item.region ?? "");
+    setJob(item.job ?? "");
+    setTrainingYears(item.training_years ? String(item.training_years) : "");
+    setIntroText(item.intro_text ?? "");
+    setInstagramId(normalizeInstagramId(item.instagram_id ?? ""));
+    setConsent(true);
+    setPhotos([null, null]);
+    setReuseLastPhotos(item.photo_paths.length === 2);
+    setPrefillNotice(`마지막 지원 내용(${formatDateTime(item.created_at)})을 불러왔어요.`);
+  };
+
   useEffect(() => {
-    queueMicrotask(async () => {
+    let active = true;
+
+    const load = async () => {
       const {
         data: { user },
       } = await supabase.auth.getUser();
+
       if (!user) {
         router.replace(`/login?redirect=/community/dating/cards/${id}/apply`);
         return;
       }
 
       try {
-        const res = await fetch(`/api/dating/cards/${id}`);
-        if (!res.ok) {
+        const [cardRes, latestRes] = await Promise.all([
+          fetch(`/api/dating/cards/${id}`, { cache: "no-store" }),
+          fetch("/api/dating/cards/my/applied/latest", { cache: "no-store" }),
+        ]);
+
+        if (!cardRes.ok) {
           router.replace("/community/dating/cards");
           return;
         }
-        const data = (await res.json()) as { card?: CardDetail };
-        if (!data.card) {
+
+        const cardBody = (await cardRes.json()) as { card?: CardDetail };
+        if (!cardBody.card) {
           router.replace("/community/dating/cards");
           return;
         }
-        setCard(data.card);
+
+        if (!active) return;
+        setCard(cardBody.card);
+
+        if (latestRes.ok) {
+          const latestBody = (await latestRes.json()) as { item?: LatestApplicationPrefill | null };
+          if (active && latestBody.item) {
+            setLastApplication(latestBody.item);
+            fillFromLatestApplication(latestBody.item);
+          }
+        }
       } catch {
         router.replace("/community/dating/cards");
+        return;
       }
-      setLoading(false);
-    });
+
+      if (active) {
+        setLoading(false);
+      }
+    };
+
+    void load();
+
+    return () => {
+      active = false;
+    };
   }, [id, router, supabase]);
 
   const handlePhotoChange = (index: number, file: File | null) => {
     const next = [...photos];
     next[index] = file;
     setPhotos(next);
+    if (file) {
+      setReuseLastPhotos(false);
+    }
+  };
+
+  const handleUseLatestAgain = () => {
+    if (!lastApplication) return;
+    fillFromLatestApplication(lastApplication);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -113,7 +184,16 @@ export default function DatingCardApplyPage() {
       setError("개인정보 및 사진 제공 동의가 필요합니다.");
       return;
     }
-    if (!photos[0] || !photos[1]) {
+
+    const hasNewPhotos = photos.some(Boolean);
+    const canReuseSavedPhotos = reuseLastPhotos && (lastApplication?.photo_paths.length ?? 0) === 2;
+
+    if (hasNewPhotos) {
+      if (!photos[0] || !photos[1]) {
+        setError("새 사진으로 바꾸려면 지원 사진 2장을 모두 올려 주세요.");
+        return;
+      }
+    } else if (!canReuseSavedPhotos) {
       setError("지원 사진 2장이 필요합니다.");
       return;
     }
@@ -137,20 +217,25 @@ export default function DatingCardApplyPage() {
     setSubmitting(true);
 
     try {
-      const uploadedPaths: string[] = [];
-      for (let i = 0; i < photos.length; i++) {
-        const fd = new FormData();
-        fd.append("file", photos[i]!);
-        fd.append("cardId", id);
-        fd.append("index", String(i));
-        const uploadRes = await fetch("/api/dating/cards/upload", { method: "POST", body: fd });
-        const uploadBody = (await uploadRes.json().catch(() => ({}))) as { path?: string; error?: string };
-        if (!uploadRes.ok || !uploadBody.path) {
-          setError(uploadBody.error ?? "사진 업로드에 실패했습니다.");
-          setSubmitting(false);
-          return;
+      let uploadedPaths: string[] = [];
+
+      if (hasNewPhotos) {
+        for (let i = 0; i < photos.length; i += 1) {
+          const fd = new FormData();
+          fd.append("file", photos[i]!);
+          fd.append("cardId", id);
+          fd.append("index", String(i));
+          const uploadRes = await fetch("/api/dating/cards/upload", { method: "POST", body: fd });
+          const uploadBody = (await uploadRes.json().catch(() => ({}))) as { path?: string; error?: string };
+          if (!uploadRes.ok || !uploadBody.path) {
+            setError(uploadBody.error ?? "사진 업로드에 실패했습니다.");
+            setSubmitting(false);
+            return;
+          }
+          uploadedPaths.push(uploadBody.path);
         }
-        uploadedPaths.push(uploadBody.path);
+      } else {
+        uploadedPaths = lastApplication?.photo_paths ?? [];
       }
 
       const payload = {
@@ -180,6 +265,7 @@ export default function DatingCardApplyPage() {
         requestId?: string;
         profile_edit_url?: string;
       };
+
       if (!res.ok) {
         setErrorCode(body.code ?? "");
         if (body.profile_edit_url) {
@@ -197,12 +283,12 @@ export default function DatingCardApplyPage() {
           body.message ??
           body.details ??
           "지원 처리 중 오류가 발생했습니다.";
-        setError(body.requestId ? `${message} (요청ID: ${body.requestId})` : message);
+        setError(body.requestId ? `${message} (요청 ID: ${body.requestId})` : message);
         setSubmitting(false);
         return;
       }
 
-      alert("지원이 완료되었습니다.");
+      alert("지원이 완료됐습니다.");
       router.push("/mypage");
     } catch {
       setError("네트워크 오류가 발생했습니다.");
@@ -283,6 +369,45 @@ export default function DatingCardApplyPage() {
       </div>
 
       <form onSubmit={handleSubmit} className="mt-6 space-y-4">
+        {lastApplication ? (
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <p className="text-sm font-semibold text-emerald-900">마지막 지원 내용을 불러왔어요</p>
+                <p className="mt-1 text-xs text-emerald-800">{prefillNotice || `${formatDateTime(lastApplication.created_at)} 기준 내용입니다.`}</p>
+              </div>
+              <button
+                type="button"
+                onClick={handleUseLatestAgain}
+                className="inline-flex min-h-[36px] items-center rounded-md border border-emerald-300 bg-white px-3 text-xs font-medium text-emerald-700"
+              >
+                다시 불러오기
+              </button>
+            </div>
+
+            <div className="mt-3 rounded-xl border border-emerald-200 bg-white/80 p-3">
+              <p className="text-xs font-medium text-neutral-700">지원 사진</p>
+              <p className="mt-1 text-xs text-neutral-600">
+                {reuseLastPhotos
+                  ? "이전 지원 사진 2장을 그대로 사용할게요. 새 사진으로 바꾸고 싶으면 아래에서 다시 업로드해 주세요."
+                  : "새 사진을 올리면 이전 지원 사진 대신 새 사진으로 제출돼요."}
+              </p>
+              {!reuseLastPhotos && (lastApplication.photo_paths.length === 2) ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReuseLastPhotos(true);
+                    setPhotos([null, null]);
+                  }}
+                  className="mt-2 inline-flex min-h-[36px] items-center rounded-md border border-emerald-300 bg-white px-3 text-xs font-medium text-emerald-700"
+                >
+                  이전 사진 다시 사용
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
         <Field label="나이" required>
           <input className="input" type="number" min={19} max={99} required value={age} onChange={(e) => setAge(e.target.value)} />
         </Field>
@@ -318,15 +443,15 @@ export default function DatingCardApplyPage() {
           />
         </Field>
 
-        <Field label="지원 사진 1" required>
-          <input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e) => handlePhotoChange(0, e.target.files?.[0] ?? null)} />
+        <Field label="지원 사진 1" required={!reuseLastPhotos}>
+          <input type="file" accept="image/jpeg,image/png,image/webp" required={!reuseLastPhotos} onChange={(e) => handlePhotoChange(0, e.target.files?.[0] ?? null)} />
         </Field>
 
-        <Field label="지원 사진 2" required>
-          <input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e) => handlePhotoChange(1, e.target.files?.[0] ?? null)} />
+        <Field label="지원 사진 2" required={!reuseLastPhotos}>
+          <input type="file" accept="image/jpeg,image/png,image/webp" required={!reuseLastPhotos} onChange={(e) => handlePhotoChange(1, e.target.files?.[0] ?? null)} />
         </Field>
 
-        <p className="text-xs text-neutral-500">사진은 JPG, PNG, WebP 형식만 가능하며, 한 장당 10MB 이하로 업로드해 주세요.</p>
+        <p className="text-xs text-neutral-500">사진은 JPG, PNG, WebP 형식만 가능하며 한 장당 10MB 이하로 업로드해 주세요.</p>
 
         <label className="flex items-start gap-2 text-sm text-neutral-700">
           <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-1" />
@@ -344,7 +469,7 @@ export default function DatingCardApplyPage() {
             {errorCode === "DAILY_APPLY_LIMIT" && (
               <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
                 <p className="text-xs text-amber-800">
-                  지원권 3장 5,000원이며, 현재는 카카오페이 간편결제로만 결제 가능해요. 그 밖의 결제 문의는 오픈카톡으로 부탁드려요.
+                  지원권 3장 5,000원이며 현재는 카카오페이 간편결제로만 결제 가능해요. 그 밖의 결제 문의는 오픈카톡으로 부탁드려요.
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button
