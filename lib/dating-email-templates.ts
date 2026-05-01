@@ -10,18 +10,22 @@ function safeNickname(value: string | null | undefined, fallback: string) {
   return trimmed || fallback;
 }
 
-export function buildDatingApplicationReceivedNotification(applicantDisplayNickname: string): PushAndEmailNotification {
+export function buildDatingApplicationReceivedNotification(
+  applicantDisplayNickname: string
+): PushAndEmailNotification {
   const nickname = safeNickname(applicantDisplayNickname, "회원");
 
   return {
     pushTitle: "새 지원이 도착했어요",
     pushBody: `${nickname}님이 오픈카드에 지원했어요.`,
     emailSubject: "오픈카드에 새 지원이 도착했어요",
-    emailText: `${nickname}님이 오픈카드에 지원했어요.\n마이페이지에서 지원 내용을 확인해 주세요.`,
+    emailText: `${nickname}님이 오픈카드에 지원했어요.\n마이페이지에서 지원 내역을 확인해 주세요.`,
   };
 }
 
-export function buildDatingApplicationAcceptedNotification(cardDisplayNickname: string): PushAndEmailNotification {
+export function buildDatingApplicationAcceptedNotification(
+  cardDisplayNickname: string
+): PushAndEmailNotification {
   const nickname = safeNickname(cardDisplayNickname, "오픈카드");
 
   return {
@@ -52,7 +56,7 @@ export function buildOneOnOneAcceptedNotification(counterpartyName: string): Pus
 
   return {
     pushTitle: "1:1 소개팅 요청이 수락됐어요",
-    pushBody: `${name}님과 번호 교환 요청 단계로 이어졌어요.`,
+    pushBody: `${name}님과 번호 교환 단계로 이어졌어요.`,
     emailSubject: "1:1 소개팅 요청이 수락됐어요",
     emailText: `${name}님이 1:1 소개팅 요청을 수락했어요.\n마이페이지에서 번호 교환 요청과 다음 안내를 확인해 주세요.`,
   };
