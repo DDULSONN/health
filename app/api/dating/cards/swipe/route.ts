@@ -309,12 +309,13 @@ export async function POST(req: Request) {
         throw reverseLikeRes.error;
       }
 
-      const targetNickname = String(targetCard.display_nickname ?? "Someone").trim() || "Someone";
+      const targetNickname = String(targetCard.display_nickname ?? "회원").trim() || "회원";
+      const myNickname = String(myCard.display_nickname ?? "회원").trim() || "회원";
       const sentLikeEmail = await sendDatingEmailNotification(
         adminClient,
         targetUserId,
-        "New like on your open card",
-        `${myCard.display_nickname ?? "Someone"} liked your open card.\nCheck the site for details.`
+        "빠른매칭에서 회원님에게 좋아요가 도착했어요",
+        `${myNickname}님이 빠른매칭에서 회원님에게 좋아요를 눌렀어요.\n마이페이지에서 자세한 내용을 확인해 주세요.`
       );
       if (!sentLikeEmail) {
         console.info("[POST /api/dating/cards/swipe] like email skipped", {
@@ -395,14 +396,14 @@ export async function POST(req: Request) {
           sendDatingEmailNotification(
             adminClient,
             user.id,
-            "New auto match on open cards",
-            `You and ${targetNickname} liked each other.\nOther Instagram: @${otherInstagramId}`
+            "빠른매칭 쌍방 매칭이 성사됐어요",
+            `${targetNickname}님도 회원님에게 좋아요를 눌러 쌍방 매칭이 됐어요.\n상대 인스타그램: @${otherInstagramId}`
           ),
           sendDatingEmailNotification(
             adminClient,
             targetUserId,
-            "New auto match on open cards",
-            `You and ${myCard.display_nickname ?? "Someone"} liked each other.\nCheck the site mypage for Instagram details.`
+            "빠른매칭 쌍방 매칭이 성사됐어요",
+            `${myNickname}님과 빠른매칭 쌍방 매칭이 됐어요.\n사이트 마이페이지에서 상대 인스타그램 정보를 확인해 주세요.`
           ),
         ]);
       }
