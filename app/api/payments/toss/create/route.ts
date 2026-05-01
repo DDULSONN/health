@@ -91,6 +91,23 @@ function parseProductType(raw: unknown): ProductType | "" {
   return "";
 }
 
+async function cancelReadyOrders(admin: ReturnType<typeof createAdminClient>, orderIds: string[]) {
+  if (orderIds.length === 0) return;
+
+  const res = await admin
+    .from("toss_test_payment_orders")
+    .update({
+      status: "canceled",
+      updated_at: new Date().toISOString(),
+    })
+    .in("id", orderIds)
+    .eq("status", "ready");
+
+  if (res.error) {
+    throw res.error;
+  }
+}
+
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
 
@@ -168,6 +185,29 @@ export async function POST(req: Request) {
       }
 
       productRefId = applyOrderRes.data.id;
+
+      const readyOrderRes = await admin
+        .from("toss_test_payment_orders")
+        .select("id")
+        .eq("product_type", "apply_credits")
+        .eq("user_id", user.id)
+        .eq("status", "ready")
+        .limit(20);
+
+      if (readyOrderRes.error) {
+        console.error("[toss-create] apply credit ready order lookup failed", readyOrderRes.error);
+        return json(500, {
+          ok: false,
+          code: "ORDER_LOOKUP_FAILED",
+          requestId,
+          message: "기존 결제 진행 상태를 확인하지 못했습니다.",
+        });
+      }
+
+      await cancelReadyOrders(
+        admin,
+        (readyOrderRes.data ?? []).map((row) => row.id)
+      );
     }
 
     if (productType === "more_view") {
@@ -208,6 +248,41 @@ export async function POST(req: Request) {
           });
         }
       }
+
+      const duplicateOrderRes = await admin
+        .from("toss_test_payment_orders")
+        .select("id,status,created_at")
+        .eq("product_type", "more_view")
+        .eq("user_id", user.id)
+        .contains("product_meta", { sex })
+        .in("status", ["ready", "paid"])
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      if (duplicateOrderRes.error) {
+        console.error("[toss-create] more view duplicate order lookup failed", duplicateOrderRes.error);
+        return json(500, {
+          ok: false,
+          code: "ORDER_LOOKUP_FAILED",
+          requestId,
+          message: "기존 결제 진행 상태를 확인하지 못했습니다.",
+        });
+      }
+
+      const duplicateOrders = duplicateOrderRes.data ?? [];
+      if (duplicateOrders.some((row) => row.status === "paid")) {
+        return json(409, {
+          ok: false,
+          code: "ALREADY_PAID",
+          requestId,
+          message: "이미 결제가 완료된 이상형 더보기입니다. 결제 탭이나 성공 화면을 다시 확인해 주세요.",
+        });
+      }
+
+      await cancelReadyOrders(
+        admin,
+        duplicateOrders.filter((row) => row.status === "ready").map((row) => row.id)
+      );
     }
 
     if (productType === "city_view") {
@@ -285,20 +360,8 @@ export async function POST(req: Request) {
         });
       }
 
-      const hasFreshReadyOrder = duplicateOrders.some((row) => {
-        if (row.status !== "ready") return false;
-        const createdAtMs = new Date(row.created_at).getTime();
-        return Number.isFinite(createdAtMs) && Date.now() - createdAtMs < 15 * 60 * 1000;
-      });
-
-      if (hasFreshReadyOrder) {
-        return json(409, {
-          ok: false,
-          code: "PAYMENT_IN_PROGRESS",
-          requestId,
-          message: "이미 진행 중인 결제가 있습니다. 잠시 후 다시 확인해 주세요.",
-        });
-      }
+      const readyOrderIds = duplicateOrders.filter((row) => row.status === "ready").map((row) => row.id);
+      await cancelReadyOrders(admin, readyOrderIds);
 
       productRefId = user.id;
       productMeta = { province };
@@ -408,20 +471,8 @@ export async function POST(req: Request) {
         });
       }
 
-      const hasFreshReadyOrder = duplicateOrders.some((row) => {
-        if (row.status !== "ready") return false;
-        const createdAtMs = new Date(row.created_at).getTime();
-        return Number.isFinite(createdAtMs) && Date.now() - createdAtMs < 15 * 60 * 1000;
-      });
-
-      if (hasFreshReadyOrder) {
-        return json(409, {
-          ok: false,
-          code: "PAYMENT_IN_PROGRESS",
-          requestId,
-          message: "상대가 이미 결제를 진행 중일 수 있어요. 잠시 후 다시 확인해 주세요.",
-        });
-      }
+      const readyOrderIds = duplicateOrders.filter((row) => row.status === "ready").map((row) => row.id);
+      await cancelReadyOrders(admin, readyOrderIds);
 
       productRefId = matchId;
       productMeta = { matchId };
@@ -477,20 +528,8 @@ export async function POST(req: Request) {
         });
       }
 
-      const hasFreshReadyOrder = duplicateOrders.some((row) => {
-        if (row.status !== "ready") return false;
-        const createdAtMs = new Date(row.created_at).getTime();
-        return Number.isFinite(createdAtMs) && Date.now() - createdAtMs < 15 * 60 * 1000;
-      });
-
-      if (hasFreshReadyOrder) {
-        return json(409, {
-          ok: false,
-          code: "PAYMENT_IN_PROGRESS",
-          requestId,
-          message: "이미 빠른매칭 플러스 결제가 진행 중입니다. 잠시 후 다시 확인해 주세요.",
-        });
-      }
+      const readyOrderIds = duplicateOrders.filter((row) => row.status === "ready").map((row) => row.id);
+      await cancelReadyOrders(admin, readyOrderIds);
 
       productRefId = user.id;
       productMeta = {
@@ -498,6 +537,31 @@ export async function POST(req: Request) {
         dailyLimit: limitInfo.premiumLimit ?? SWIPE_PREMIUM_DAILY_LIMIT,
         durationDays: limitInfo.premiumDurationDays ?? SWIPE_PREMIUM_DURATION_DAYS,
       };
+    }
+
+    if (productType === "paid_card") {
+      const readyOrderRes = await admin
+        .from("toss_test_payment_orders")
+        .select("id")
+        .eq("product_type", "paid_card")
+        .eq("user_id", user.id)
+        .eq("status", "ready")
+        .limit(20);
+
+      if (readyOrderRes.error) {
+        console.error("[toss-create] paid card ready order lookup failed", readyOrderRes.error);
+        return json(500, {
+          ok: false,
+          code: "ORDER_LOOKUP_FAILED",
+          requestId,
+          message: "기존 결제 진행 상태를 확인하지 못했습니다.",
+        });
+      }
+
+      await cancelReadyOrders(
+        admin,
+        (readyOrderRes.data ?? []).map((row) => row.id)
+      );
     }
 
     const tossOrderId = crypto.randomUUID().replace(/-/g, "");
@@ -596,3 +660,4 @@ export async function POST(req: Request) {
     });
   }
 }
+
