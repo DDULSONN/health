@@ -11,6 +11,9 @@ function getPrimaryAction(productType?: string | null) {
   if (productType === "more_view") {
     return { href: "/dating/more-view", label: "이상형 더보기로 돌아가기" };
   }
+  if (productType === "city_view") {
+    return { href: "/dating/nearby-view", label: "가까운 이상형 보기로 돌아가기" };
+  }
   if (productType === "one_on_one_contact_exchange") {
     return { href: "/mypage", label: "마이페이지로 돌아가기" };
   }
@@ -20,7 +23,7 @@ function getPrimaryAction(productType?: string | null) {
 function PaymentFailContent() {
   const searchParams = useSearchParams();
   const code = searchParams.get("code") ?? "-";
-  const message = searchParams.get("message") ?? "결제가 취소되었거나 정상적으로 완료되지 않았습니다.";
+  const message = searchParams.get("message") ?? "결제가 취소됐거나 정상적으로 완료되지 않았습니다.";
   const orderId = searchParams.get("orderId") ?? "-";
   const productType = searchParams.get("productType");
   const primaryAction = getPrimaryAction(productType);
@@ -31,9 +34,11 @@ function PaymentFailContent() {
         <h1 className="text-2xl font-bold text-neutral-900">결제가 진행되지 않았어요</h1>
         <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <p className="font-semibold">코드: {code}</p>
-          <p className="mt-1">메시지: {message}</p>
+          <p className="mt-1 break-words">메시지: {message}</p>
           <p className="mt-1">주문번호: {orderId}</p>
         </div>
+
+        <p className="mt-4 text-sm text-neutral-500">카카오페이로 다시 시도해 보시고, 같은 문제가 이어지면 오픈카톡으로 문의해 주세요.</p>
 
         <div className="mt-6 flex flex-wrap gap-3">
           <Link

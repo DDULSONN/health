@@ -29,7 +29,7 @@ type ProfileRow = {
 type TossOrderRow = {
   id: string;
   user_id: string;
-  product_type: "apply_credits" | "paid_card" | "more_view" | "one_on_one_contact_exchange" | "swipe_premium_30d" | string;
+  product_type: "apply_credits" | "paid_card" | "more_view" | "city_view" | "one_on_one_contact_exchange" | "swipe_premium_30d" | string;
   product_meta: Record<string, unknown> | null;
   toss_order_id: string;
   order_name: string | null;

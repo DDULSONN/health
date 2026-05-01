@@ -18,9 +18,10 @@ type ConfirmResponse = {
 };
 
 function formatProductType(productType?: string) {
-  if (productType === "apply_credits") return "오픈카드 지원권 3장";
+  if (productType === "apply_credits") return "오픈카드 지원권";
   if (productType === "paid_card") return "대기 없이 등록";
   if (productType === "more_view") return "이상형 더보기";
+  if (productType === "city_view") return "가까운 이상형 보기";
   if (productType === "one_on_one_contact_exchange") return "1:1 번호 즉시 교환";
   if (productType === "swipe_premium_30d") return "빠른매칭 플러스";
   return "-";
@@ -32,6 +33,9 @@ function getPrimaryAction(productType?: string) {
   }
   if (productType === "swipe_premium_30d") {
     return { href: "/community/dating/cards", label: "빠른매칭으로 돌아가기" };
+  }
+  if (productType === "city_view") {
+    return { href: "/dating/nearby-view", label: "가까운 이상형 보기로 돌아가기" };
   }
   return { href: "/dating/more-view", label: "이상형 더보기로 돌아가기" };
 }
@@ -86,7 +90,7 @@ function PaymentSuccessContent() {
       <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm">
         <h1 className="text-2xl font-bold text-neutral-900">결제가 완료됐어요</h1>
 
-        {loading ? <p className="mt-4 text-sm text-neutral-500">결제 확인 상태를 확인하고 있어요.</p> : null}
+        {loading ? <p className="mt-4 text-sm text-neutral-500">결제 상태를 확인하고 있어요.</p> : null}
         {error ? <p className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">{error}</p> : null}
 
         {!loading && !error && result ? (
@@ -118,12 +122,14 @@ function PaymentSuccessContent() {
                 <p className="text-xs font-medium text-neutral-500">적용 결과</p>
                 <p className="mt-1 font-semibold text-neutral-900">
                   {typeof result.addedCredits === "number" && result.addedCredits > 0
-                    ? `+${result.addedCredits}장 / 보유 ${result.creditsAfter ?? 0}장`
+                    ? `지원권 +${result.addedCredits}장 / 현재 ${result.creditsAfter ?? 0}장`
                     : result.productType === "one_on_one_contact_exchange"
                       ? "상대 연락처 즉시 공개"
                       : result.productType === "swipe_premium_30d"
                         ? "빠른매칭 플러스 적용 완료"
-                        : "결제 반영 완료"}
+                        : result.productType === "city_view"
+                          ? "가까운 이상형 보기 권한 반영 완료"
+                          : "결제 반영 완료"}
                 </p>
               </div>
             </div>
@@ -156,7 +162,7 @@ export default function PaymentSuccessPage() {
         <main className="mx-auto max-w-2xl px-4 py-8">
           <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm">
             <h1 className="text-2xl font-bold text-neutral-900">결제가 완료됐어요</h1>
-            <p className="mt-4 text-sm text-neutral-500">결제 확인 상태를 확인하고 있어요.</p>
+            <p className="mt-4 text-sm text-neutral-500">결제 상태를 확인하고 있어요.</p>
           </section>
         </main>
       }

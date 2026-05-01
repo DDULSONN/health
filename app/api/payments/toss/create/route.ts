@@ -16,12 +16,14 @@ type ProductType =
   | "apply_credits"
   | "paid_card"
   | "more_view"
+  | "city_view"
   | "one_on_one_contact_exchange"
   | "swipe_premium_30d";
 
 type CreateBody = {
   productType?: unknown;
   sex?: unknown;
+  province?: unknown;
   matchId?: unknown;
 };
 
@@ -46,6 +48,10 @@ const PRODUCT_CONFIG: Record<ProductType, { amount: number; orderName: string }>
     amount: 5000,
     orderName: "이상형 더보기",
   },
+  city_view: {
+    amount: 5000,
+    orderName: "가까운 이상형 보기",
+  },
   one_on_one_contact_exchange: {
     amount: 20000,
     orderName: "1:1 번호 교환",
@@ -69,6 +75,7 @@ function parseProductType(raw: unknown): ProductType | "" {
     raw === "apply_credits" ||
     raw === "paid_card" ||
     raw === "more_view" ||
+    raw === "city_view" ||
     raw === "one_on_one_contact_exchange" ||
     raw === "swipe_premium_30d"
   ) {
@@ -194,6 +201,100 @@ export async function POST(req: Request) {
           });
         }
       }
+    }
+
+    if (productType === "city_view") {
+      const province = typeof body.province === "string" ? body.province.trim() : "";
+      if (!province) {
+        return json(400, {
+          ok: false,
+          code: "VALIDATION_ERROR",
+          requestId,
+          message: "도/광역시 정보가 필요합니다.",
+        });
+      }
+
+      const activeRes = await admin
+        .from("dating_city_view_requests")
+        .select("id,access_expires_at")
+        .eq("user_id", user.id)
+        .eq("city", province)
+        .eq("status", "approved")
+        .order("reviewed_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      if (activeRes.error) {
+        console.error("[toss-create] city view active lookup failed", activeRes.error);
+        return json(500, {
+          ok: false,
+          code: "CITY_VIEW_LOOKUP_FAILED",
+          requestId,
+          message: "가까운 이상형 이용 상태를 확인하지 못했습니다.",
+        });
+      }
+
+      const hasActiveGrant = (activeRes.data ?? []).some((row) => {
+        const expiresAt = row.access_expires_at ? new Date(row.access_expires_at).getTime() : Number.NaN;
+        return Number.isFinite(expiresAt) && expiresAt > Date.now();
+      });
+
+      if (hasActiveGrant) {
+        return json(409, {
+          ok: false,
+          code: "ALREADY_APPROVED",
+          requestId,
+          message: "이미 이용 가능한 가까운 이상형 권한이 있습니다.",
+        });
+      }
+
+      const productRef = `${user.id}:${province}`;
+      const duplicateOrderRes = await admin
+        .from("toss_test_payment_orders")
+        .select("id,status,created_at")
+        .eq("product_type", "city_view")
+        .eq("product_ref_id", productRef)
+        .in("status", ["ready", "paid"])
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      if (duplicateOrderRes.error) {
+        console.error("[toss-create] city view duplicate order lookup failed", duplicateOrderRes.error);
+        return json(500, {
+          ok: false,
+          code: "ORDER_LOOKUP_FAILED",
+          requestId,
+          message: "기존 결제 진행 상태를 확인하지 못했습니다.",
+        });
+      }
+
+      const duplicateOrders = duplicateOrderRes.data ?? [];
+      if (duplicateOrders.some((row) => row.status === "paid")) {
+        return json(409, {
+          ok: false,
+          code: "ALREADY_PAID",
+          requestId,
+          message: "이미 결제가 완료된 지역입니다. 탭을 새로고침해 주세요.",
+        });
+      }
+
+      const hasFreshReadyOrder = duplicateOrders.some((row) => {
+        if (row.status !== "ready") return false;
+        const createdAtMs = new Date(row.created_at).getTime();
+        return Number.isFinite(createdAtMs) && Date.now() - createdAtMs < 15 * 60 * 1000;
+      });
+
+      if (hasFreshReadyOrder) {
+        return json(409, {
+          ok: false,
+          code: "PAYMENT_IN_PROGRESS",
+          requestId,
+          message: "이미 진행 중인 결제가 있습니다. 잠시 후 다시 확인해 주세요.",
+        });
+      }
+
+      productRefId = productRef;
+      productMeta = { province };
     }
 
     if (productType === "one_on_one_contact_exchange") {
@@ -396,7 +497,9 @@ export async function POST(req: Request) {
     const orderName =
       productType === "more_view"
         ? `${config.orderName} (${productMeta.sex === "female" ? "여자 카드" : "남자 카드"})`
-        : config.orderName;
+        : productType === "city_view"
+          ? `${config.orderName} (${String(productMeta.province ?? "-")})`
+          : config.orderName;
 
     const saveOrderRes = await admin
       .from("toss_test_payment_orders")
@@ -437,7 +540,7 @@ export async function POST(req: Request) {
       failUrl: failUrl.toString(),
       customerEmail: user.email ?? undefined,
       customerName: "GymTools User",
-      ...(productType === "more_view" || productType === "one_on_one_contact_exchange" || productType === "swipe_premium_30d"
+      ...(productType === "more_view" || productType === "city_view" || productType === "one_on_one_contact_exchange" || productType === "swipe_premium_30d"
         ? {
             flowMode: "DIRECT" as const,
             easyPay: "KAKAOPAY" as const,

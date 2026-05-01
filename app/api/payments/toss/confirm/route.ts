@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getActiveMoreViewGrant, normalizeCardSex } from "@/lib/dating-more-view";
-import { grantMoreViewAccess } from "@/lib/dating-purchase-fulfillment";
+import { approveCityViewRequest, grantCityViewAccess, grantMoreViewAccess } from "@/lib/dating-purchase-fulfillment";
 import {
   SWIPE_PREMIUM_DAILY_LIMIT,
   SWIPE_PREMIUM_DURATION_DAYS,
@@ -20,7 +20,7 @@ type ConfirmBody = {
 type TossOrderRow = {
   id: string;
   user_id: string;
-  product_type: "apply_credits" | "paid_card" | "more_view" | "one_on_one_contact_exchange" | "swipe_premium_30d";
+  product_type: "apply_credits" | "paid_card" | "more_view" | "city_view" | "one_on_one_contact_exchange" | "swipe_premium_30d";
   product_ref_id: string | null;
   product_meta: Record<string, unknown> | null;
   toss_order_id: string;
@@ -112,6 +112,80 @@ async function ensureMoreViewFulfilled(
   });
 
   return { sex, alreadyGranted: false };
+}
+
+async function ensureCityViewFulfilled(
+  admin: ReturnType<typeof createAdminClient>,
+  order: TossOrderRow
+) {
+  const province =
+    (typeof order.product_meta?.province === "string" ? order.product_meta.province.trim() : "") ||
+    (typeof order.product_ref_id === "string" && order.product_ref_id.includes(":")
+      ? order.product_ref_id.split(":").slice(1).join(":").trim()
+      : "");
+
+  if (!province) {
+    throw new Error("CITY_VIEW_PROVINCE_MISSING");
+  }
+
+  const activeRes = await admin
+    .from("dating_city_view_requests")
+    .select("id,access_expires_at")
+    .eq("user_id", order.user_id)
+    .eq("city", province)
+    .eq("status", "approved")
+    .order("reviewed_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(10);
+
+  if (activeRes.error) {
+    throw activeRes.error;
+  }
+
+  const hasActiveGrant = (activeRes.data ?? []).some((row) => {
+    const expiresAt = row.access_expires_at ? new Date(row.access_expires_at).getTime() : Number.NaN;
+    return Number.isFinite(expiresAt) && expiresAt > Date.now();
+  });
+
+  if (hasActiveGrant) {
+    return { province, alreadyGranted: true };
+  }
+
+  const pendingRes = await admin
+    .from("dating_city_view_requests")
+    .select("id")
+    .eq("user_id", order.user_id)
+    .eq("city", province)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (pendingRes.error) {
+    throw pendingRes.error;
+  }
+
+  if (pendingRes.data?.id) {
+    await approveCityViewRequest(admin, {
+      requestId: pendingRes.data.id,
+      reviewedByUserId: null,
+      note: `toss payment ${order.toss_order_id} | auto-approved`,
+      accessHours: 3,
+      bonusCredits: 1,
+    });
+
+    return { province, alreadyGranted: false };
+  }
+
+  await grantCityViewAccess(admin, {
+    userId: order.user_id,
+    city: province,
+    accessHours: 3,
+    note: `toss payment ${order.toss_order_id} | auto-approved`,
+    bonusCredits: 1,
+  });
+
+  return { province, alreadyGranted: false };
 }
 
 async function ensureOneOnOneExchangeFulfilled(
@@ -290,6 +364,10 @@ async function ensureOrderFulfilled(
     await ensureMoreViewFulfilled(admin, order);
   }
 
+  if (order.product_type === "city_view") {
+    await ensureCityViewFulfilled(admin, order);
+  }
+
   if (order.product_type === "one_on_one_contact_exchange") {
     await ensureOneOnOneExchangeFulfilled(admin, order);
   }
@@ -429,6 +507,14 @@ export async function POST(req: Request) {
         code: "MORE_VIEW_METADATA_MISSING",
         requestId,
         message: "이상형 더보기 결제 정보가 올바르지 않습니다.",
+      });
+    }
+    if (error instanceof Error && error.message === "CITY_VIEW_PROVINCE_MISSING") {
+      return json(500, {
+        ok: false,
+        code: "CITY_VIEW_PROVINCE_MISSING",
+        requestId,
+        message: "가까운 이상형 결제 지역 정보가 올바르지 않습니다.",
       });
     }
     if (error instanceof Error && error.message === "ONE_ON_ONE_MATCH_ID_MISSING") {

@@ -1,9 +1,9 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
-import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
+import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 
 type ProvinceStat = {
   province: string;
@@ -67,13 +67,14 @@ function writeNearbyViewSnapshot(snapshot: NearbyViewSnapshot) {
   try {
     window.sessionStorage.setItem(NEARBY_VIEW_CACHE_KEY, JSON.stringify(snapshot));
   } catch {
-    // ignore cache write errors
+    // ignore
   }
 }
 
 export default function NearbyViewPage() {
   const initialSnapshot = useMemo(() => readNearbyViewSnapshot(), []);
   const [submittingProvince, setSubmittingProvince] = useState("");
+  const [checkoutProvince, setCheckoutProvince] = useState("");
   const [status, setStatus] = useState<CityStatusResponse>(
     initialSnapshot?.status ?? {
       loggedIn: false,
@@ -132,6 +133,7 @@ export default function NearbyViewPage() {
       });
       return;
     }
+
     const body = (await res.json().catch(() => ({}))) as CityStatusResponse;
     const active = Array.isArray(body.activeCities) ? body.activeCities : [];
     const activeCityDetails = Array.isArray(body.activeCityDetails) ? body.activeCityDetails : [];
@@ -180,24 +182,22 @@ export default function NearbyViewPage() {
     void loadList(selectedProvince);
   }, [selectedProvince, loadList]);
 
-  const handleRequestProvince = useCallback(
-    async (province: string, useWeeklyBenefit = false) => {
+  const claimWeeklyBenefit = useCallback(
+    async (province: string) => {
       if (!province || !status.loggedIn || submittingProvince) return;
       setSubmittingProvince(province);
       try {
         const res = await fetch("/api/dating/cards/city-view/request", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ province, useWeeklyBenefit }),
+          body: JSON.stringify({ province, useWeeklyBenefit: true }),
         });
-        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; province?: string; status?: "pending" | "approved" | "rejected" };
+        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; province?: string; status?: "approved" | "pending" };
         if (!res.ok || !body.ok) {
-          alert(body.message ?? "신청에 실패했습니다.");
+          alert(body.message ?? "주간 무료 열람 처리에 실패했습니다.");
           return;
         }
-        if (body.message) {
-          alert(body.message);
-        }
+        if (body.message) alert(body.message);
         await loadStatus();
         if (body.province && body.status === "approved") {
           setSelectedProvince(body.province);
@@ -209,6 +209,38 @@ export default function NearbyViewPage() {
     [loadStatus, status.loggedIn, submittingProvince]
   );
 
+  const requestCheckout = useCallback(
+    async (province: string) => {
+      if (!province || !status.loggedIn || checkoutProvince) return;
+      setCheckoutProvince(province);
+      try {
+        const res = await fetch("/api/payments/toss/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ productType: "city_view", province }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; checkoutUrl?: string };
+
+        if (!res.ok) {
+          alert(body.message ?? "결제 요청에 실패했습니다.");
+          return;
+        }
+
+        if (!body.checkoutUrl) {
+          alert(body.message ?? "결제창을 불러오지 못했습니다.");
+          return;
+        }
+
+        window.location.href = body.checkoutUrl;
+      } catch {
+        alert("결제 요청 처리 중 오류가 발생했습니다.");
+      } finally {
+        setCheckoutProvince("");
+      }
+    },
+    [checkoutProvince, status.loggedIn]
+  );
+
   const maleItems = useMemo(() => items.filter((i) => i.sex === "male"), [items]);
   const femaleItems = useMemo(() => items.filter((i) => i.sex === "female"), [items]);
   const selectedExpiresAt = useMemo(
@@ -218,121 +250,108 @@ export default function NearbyViewPage() {
   void tick;
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-6">
+    <main className="mx-auto max-w-5xl px-4 py-6">
       <div className="mb-4 flex items-center gap-2">
         <Link href="/community/dating/cards" className="rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
           오픈카드
         </Link>
-        <span className="rounded-full border border-sky-300 bg-sky-50 px-3 py-1.5 text-sm font-semibold text-sky-700">내 가까운 이상형</span>
+        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1.5 text-sm font-semibold text-emerald-700">가까운 이상형 보기</span>
       </div>
 
-      <section className="rounded-2xl border border-sky-200 bg-sky-50 p-5">
-        <h1 className="text-lg font-bold text-sky-900">내 가까운 이상형</h1>
-        <p className="mt-2 text-sm text-sky-800">도/광역시별 대기 인원을 확인하고 신청하면, 승인 후 3시간 동안 해당 지역 대기 카드를 볼 수 있습니다.</p>
-        <div className="mt-3 inline-flex flex-wrap items-center gap-2 rounded-full border border-emerald-200 bg-white px-4 py-2">
-          <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white">혜택</span>
-          <p className="text-sm font-semibold text-emerald-900">오픈카드 등록하면 매주 원하는 지역 1곳 무료 오픈</p>
+      <section className="rounded-[28px] border border-neutral-200 bg-white p-5 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="max-w-2xl">
+            <h1 className="text-[28px] font-black tracking-tight text-neutral-950">가까운 이상형 보기</h1>
+            <p className="mt-2 text-sm text-neutral-600">지역별 대기 인원을 먼저 보고, 원하는 지역만 열어서 바로 살펴볼 수 있어요.</p>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">지역당 5,000원</span>
+              <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">3시간 이용</span>
+              <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">지원권 1장 추가</span>
+            </div>
+            <p className="mt-3 text-xs text-neutral-500">현재는 카카오페이 간편결제로만 결제 가능해요. 그 밖의 결제 문의는 오픈카톡으로 부탁드려요.</p>
+          </div>
+
+          <div className="w-full rounded-[24px] border border-neutral-200 bg-neutral-50 p-4 lg:max-w-sm">
+            <p className="text-sm font-semibold text-neutral-800">오픈카드 유지 혜택</p>
+            <p className="mt-1 text-sm text-neutral-600">오픈카드를 공개중이거나 대기중으로 유지하면, 매주 지역 1곳을 무료로 열어볼 수 있어요.</p>
+            {status.weeklyBenefit?.eligible ? (
+              status.weeklyBenefit.canClaim ? (
+                <p className="mt-2 text-xs font-medium text-emerald-700">이번 주 무료 열람 1회가 남아 있어요.</p>
+              ) : (
+                <p className="mt-2 text-xs font-medium text-neutral-600">
+                  이번 주 무료 열람은 {status.weeklyBenefit.claimedProvince ?? "-"}에서 사용했어요.
+                </p>
+              )
+            ) : (
+              <p className="mt-2 text-xs text-neutral-500">이 혜택은 오픈카드를 유지 중인 회원에게만 제공됩니다.</p>
+            )}
+            <a
+              href={OPEN_KAKAO_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="mt-4 inline-flex min-h-[40px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
+            >
+              오픈카톡 문의
+            </a>
+          </div>
         </div>
-        <p className="mt-1 text-xs text-sky-900">가격: 지역당 5,000원</p>
-        <p className="mt-1 text-xs text-sky-900">승인 시 지원권 1장 추가 지급</p>
-        <p className="mt-1 text-xs text-sky-800">3시간 만료 후 같은 지역 재신청 가능</p>
-        <div className="mt-3 flex flex-wrap items-center gap-2">
-          <a
-            href={OPEN_KAKAO_URL}
-            target="_blank"
-            rel="noreferrer"
-            className="inline-flex min-h-[34px] items-center rounded-md border border-sky-300 bg-white px-3 text-xs font-medium text-sky-700 hover:bg-sky-100"
-          >
-            오픈카톡 문의/구매
-          </a>
-          <span className="text-xs text-sky-800">입금 후 닉네임 + 신청 지역 전달하면 승인 처리됩니다.</span>
-        </div>
-        <p className="mt-1 text-[11px] text-sky-700">구매 안내: 승인 전에는 카드 열람이 불가하며, 승인 후 3시간 동안만 이용 가능합니다.</p>
-        {!status.loggedIn && <p className="mt-2 text-xs text-neutral-500">로그인 후 신청 가능합니다.</p>}
       </section>
 
       <DatingAdultNotice />
 
-      <section className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
-        <p className="text-sm font-semibold text-emerald-900">오픈카드 유지 혜택</p>
-        <p className="mt-1 text-sm text-emerald-800">오픈카드를 공개중이거나 대기중으로 유지하면, 매주 가까운 이상형 지역 1곳을 무료로 열람할 수 있어요.</p>
-        {status.weeklyBenefit?.eligible ? (
-          status.weeklyBenefit.canClaim ? (
-            <p className="mt-2 text-xs font-medium text-emerald-900">이번 주 무료 열람 1회가 남아 있어요. 원하는 지역에서 `주간 무료 열람`을 누르면 바로 3시간 열립니다.</p>
-          ) : (
-            <p className="mt-2 text-xs font-medium text-emerald-900">
-              이번 주 무료 열람은 {status.weeklyBenefit.claimedProvince ?? "-"}에서 사용했어요.
-            </p>
-          )
-        ) : (
-          <p className="mt-2 text-xs text-emerald-800">이 혜택은 오픈카드를 공개중이거나 대기중으로 유지하는 회원에게만 제공됩니다.</p>
-        )}
-      </section>
-
-      <section className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
+      <section className="mt-5 rounded-[28px] border border-neutral-200 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
         <h2 className="mb-3 text-sm font-semibold text-neutral-800">도/광역시별 대기 인원</h2>
         <div className="space-y-2">
-          {(status.provinceStats ?? []).length === 0 && <p className="text-xs text-neutral-500">대기 카드가 없습니다.</p>}
+          {(status.provinceStats ?? []).length === 0 ? <p className="text-xs text-neutral-500">대기 카드가 없습니다.</p> : null}
           {(status.provinceStats ?? []).map((stat) => {
             const isActive = (status.activeCities ?? []).includes(stat.province);
             const isPending = (status.pendingCities ?? []).includes(stat.province);
+
             return (
-              <div key={stat.province} className="flex items-center justify-between rounded-lg border border-neutral-200 px-3 py-2">
+              <div key={stat.province} className="flex flex-col gap-3 rounded-[20px] border border-neutral-200 bg-neutral-50 px-4 py-3 md:flex-row md:items-center md:justify-between">
                 <div>
-                  <p className="text-sm font-medium text-neutral-900">{stat.province}</p>
-                  <p className="text-xs text-neutral-600">
-                    총 {stat.total}명 (남 {stat.male} / 여 {stat.female})
+                  <p className="text-sm font-semibold text-neutral-900">{stat.province}</p>
+                  <p className="mt-1 text-xs text-neutral-500">
+                    총 {stat.total}명 · 남 {stat.male} · 여 {stat.female}
                   </p>
                 </div>
-                <div className="flex items-center gap-2">
+
+                <div className="flex flex-wrap items-center gap-2">
                   {isActive ? (
                     <>
                       <button
                         type="button"
                         onClick={() => setSelectedProvince(stat.province)}
-                        className={`h-8 rounded-md px-3 text-xs font-medium ${selectedProvince === stat.province ? "bg-sky-700 text-white" : "bg-sky-600 text-white hover:bg-sky-700"}`}
+                        className={`inline-flex min-h-[36px] items-center rounded-xl px-3 text-xs font-semibold ${
+                          selectedProvince === stat.province ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100"
+                        }`}
                       >
-                        보기
+                        바로 보기
                       </button>
-                      <span className="text-xs text-sky-700">
-                        {formatRemaining((status.activeCityDetails ?? []).find((v) => v.province === stat.province)?.expiresAt ?? null)}
-                      </span>
+                      <span className="text-xs font-medium text-emerald-700">{formatRemaining((status.activeCityDetails ?? []).find((v) => v.province === stat.province)?.expiresAt ?? null)}</span>
                     </>
-                  ) : isPending ? (
-                    <div className="flex items-center gap-2">
-                      {status.weeklyBenefit?.eligible && status.weeklyBenefit.canClaim ? (
-                        <button
-                          type="button"
-                          onClick={() => void handleRequestProvince(stat.province, true)}
-                          disabled={!status.loggedIn || Boolean(submittingProvince)}
-                          className="h-8 rounded-md border border-emerald-300 bg-emerald-50 px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
-                        >
-                          {submittingProvince === stat.province ? "처리 중..." : "주간 무료 열람"}
-                        </button>
-                      ) : null}
-                      <span className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-700">승인대기</span>
-                    </div>
                   ) : (
-                    <div className="flex items-center gap-2">
+                    <>
                       {status.weeklyBenefit?.eligible && status.weeklyBenefit.canClaim ? (
                         <button
                           type="button"
-                          onClick={() => void handleRequestProvince(stat.province, true)}
+                          onClick={() => void claimWeeklyBenefit(stat.province)}
                           disabled={!status.loggedIn || Boolean(submittingProvince)}
-                          className="h-8 rounded-md border border-emerald-300 bg-emerald-50 px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-100 disabled:opacity-50"
+                          className="inline-flex min-h-[36px] items-center rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                         >
                           {submittingProvince === stat.province ? "처리 중..." : "주간 무료 열람"}
                         </button>
                       ) : null}
                       <button
                         type="button"
-                        onClick={() => void handleRequestProvince(stat.province)}
-                        disabled={!status.loggedIn || Boolean(submittingProvince)}
-                        className="h-8 rounded-md bg-sky-600 px-3 text-xs font-medium text-white hover:bg-sky-700 disabled:opacity-50"
+                        onClick={() => void requestCheckout(stat.province)}
+                        disabled={!status.loggedIn || Boolean(checkoutProvince)}
+                        className="inline-flex min-h-[36px] items-center rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {submittingProvince === stat.province ? "신청 중..." : "유료 신청"}
+                        {checkoutProvince === stat.province ? "결제창 준비 중..." : "카카오페이로 결제"}
                       </button>
-                    </div>
+                      {isPending ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-700">기존 신청 대기</span> : null}
+                    </>
                   )}
                 </div>
               </div>
@@ -341,35 +360,35 @@ export default function NearbyViewPage() {
         </div>
       </section>
 
-      <section className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
+      <section className="mt-5 rounded-[28px] border border-neutral-200 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
         {!selectedProvince ? (
-          <p className="text-sm text-neutral-500">승인된 지역이 없습니다.</p>
+          <p className="text-sm text-neutral-500">결제 또는 무료 열람으로 열린 지역이 아직 없어요.</p>
         ) : loading ? (
-          <p className="text-sm text-neutral-500">불러오는 중...</p>
+          <p className="text-sm text-neutral-500">카드를 불러오는 중...</p>
         ) : (
           <div className="space-y-5">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-neutral-800">{selectedProvince} 대기카드</h2>
-              <span className="text-xs text-sky-700">남은 시간 {formatRemaining(selectedExpiresAt)}</span>
+              <h2 className="text-sm font-semibold text-neutral-800">{selectedProvince} 대기 카드</h2>
+              <span className="text-xs font-medium text-emerald-700">남은 시간 {formatRemaining(selectedExpiresAt)}</span>
             </div>
             <div className="flex gap-2">
               <button
                 type="button"
                 onClick={() => setActiveSex("male")}
-                className={`h-8 rounded-md px-3 text-xs font-medium ${activeSex === "male" ? "bg-sky-700 text-white" : "border border-sky-300 bg-sky-50 text-sky-700"}`}
+                className={`inline-flex min-h-[36px] items-center rounded-xl px-3 text-xs font-semibold ${activeSex === "male" ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100"}`}
               >
                 남자 {maleItems.length}명
               </button>
               <button
                 type="button"
                 onClick={() => setActiveSex("female")}
-                className={`h-8 rounded-md px-3 text-xs font-medium ${activeSex === "female" ? "bg-pink-600 text-white" : "border border-pink-300 bg-pink-50 text-pink-700"}`}
+                className={`inline-flex min-h-[36px] items-center rounded-xl px-3 text-xs font-semibold ${activeSex === "female" ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100"}`}
               >
                 여자 {femaleItems.length}명
               </button>
             </div>
             <CardSection
-              title={activeSex === "male" ? `${selectedProvince} 남자 대기카드` : `${selectedProvince} 여자 대기카드`}
+              title={activeSex === "male" ? `${selectedProvince} 남자 대기 카드` : `${selectedProvince} 여자 대기 카드`}
               items={activeSex === "male" ? maleItems : femaleItems}
               onNavigateAway={() =>
                 writeNearbyViewSnapshot({
@@ -411,26 +430,28 @@ function CardSection({
     <div>
       <h2 className="mb-2 text-sm font-semibold text-neutral-800">{title}</h2>
       {items.length === 0 ? (
-        <p className="text-xs text-neutral-500">대기중 카드가 없습니다.</p>
+        <p className="text-xs text-neutral-500">현재 열린 카드가 없습니다.</p>
       ) : (
         <div className="grid grid-cols-1 gap-2">
           {items.map((card) => (
-            <div key={card.id} className="rounded-xl border border-neutral-200 p-3">
+            <div key={card.id} className="rounded-[20px] border border-neutral-200 bg-neutral-50 p-3">
               <div className="flex items-center justify-between gap-2">
-                <p className="text-sm font-medium text-neutral-900">
+                <p className="text-sm font-semibold text-neutral-900">
                   {card.display_nickname} {card.age != null ? `${card.age}세` : ""}
                 </p>
-                <PhoneVerifiedBadge verified={card.is_phone_verified} />
-                <span className="text-xs text-neutral-500">{card.region ?? "-"}</span>
+                <div className="flex items-center gap-2">
+                  <PhoneVerifiedBadge verified={card.is_phone_verified} />
+                  <span className="text-xs text-neutral-500">{card.region ?? "-"}</span>
+                </div>
               </div>
-              {card.job && <p className="mt-1 text-xs text-neutral-600">직업 {card.job}</p>}
-              {card.ideal_type && <p className="mt-1 truncate text-xs text-pink-700">이상형: {card.ideal_type}</p>}
-              <div className="mt-2 flex flex-wrap gap-2">
+              {card.job ? <p className="mt-1 text-xs text-neutral-600">직업 {card.job}</p> : null}
+              {card.ideal_type ? <p className="mt-1 truncate text-xs text-emerald-700">이상형: {card.ideal_type}</p> : null}
+              <div className="mt-3 flex flex-wrap gap-2">
                 <Link
                   href={`/community/dating/cards/${card.id}`}
                   onClick={onNavigateAway}
                   onTouchStart={onNavigateAway}
-                  className="inline-flex min-h-[36px] items-center rounded-md border border-neutral-300 px-3 text-xs text-neutral-700"
+                  className="inline-flex min-h-[36px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
                 >
                   상세보기
                 </Link>
@@ -438,7 +459,7 @@ function CardSection({
                   href={`/community/dating/cards/${card.id}/apply`}
                   onClick={onNavigateAway}
                   onTouchStart={onNavigateAway}
-                  className="inline-flex min-h-[36px] items-center rounded-md bg-pink-500 px-3 text-xs font-medium text-white"
+                  className="inline-flex min-h-[36px] items-center rounded-xl bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-700"
                 >
                   지원하기
                 </Link>

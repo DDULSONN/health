@@ -266,6 +266,10 @@ function formatPaymentProductLabel(order: MyPaymentCenterOrder) {
     const sex = order.product_meta?.sex;
     return sex === "female" ? "이상형 더보기 · 여자 카드" : sex === "male" ? "이상형 더보기 · 남자 카드" : "이상형 더보기";
   }
+  if (order.product_type === "city_view") {
+    const province = typeof order.product_meta?.province === "string" ? order.product_meta.province : null;
+    return province ? `가까운 이상형 보기 · ${province}` : "가까운 이상형 보기";
+  }
   if (order.product_type === "one_on_one_contact_exchange") return "1:1 번호 즉시 교환";
   if (order.product_type === "swipe_premium_30d") return "빠른매칭 플러스";
   return order.order_name ?? order.product_type;
@@ -287,6 +291,7 @@ function formatPaymentResultLabel(order: MyPaymentCenterOrder) {
   if (order.product_type === "apply_credits") return "지원권 지급 완료";
   if (order.product_type === "paid_card") return "유료 등록 결제 확인 완료";
   if (order.product_type === "more_view") return "이상형 더보기 권한 반영 완료";
+  if (order.product_type === "city_view") return "가까운 이상형 보기 권한 반영 완료";
   if (order.product_type === "one_on_one_contact_exchange") return "상대 연락처 공개 완료";
   if (order.product_type === "swipe_premium_30d") return "빠른매칭 플러스 적용 완료";
   return "결제 완료";
@@ -5978,6 +5983,8 @@ export default function MyPage() {
                                   ? "유료카드"
                                   : order.product_type === "more_view"
                                     ? "이상형 더보기"
+                                    : order.product_type === "city_view"
+                                      ? "가까운 이상형"
                                     : order.product_type === "one_on_one_contact_exchange"
                                       ? "1:1 번호교환"
                                       : order.product_type === "swipe_premium_30d"
