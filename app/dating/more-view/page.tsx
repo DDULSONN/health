@@ -210,9 +210,7 @@ export default function MoreViewPage() {
                 <div>
                   <p className="text-base font-black text-neutral-950">{section.title}</p>
                   <p className="mt-1 text-xs text-neutral-500">
-                    {section.status === "approved"
-                      ? "현재 이용 중인 카드가 열려 있어요."
-                      : "결제 후 해당 성별 카드가 바로 열립니다."}
+                    {section.status === "approved" ? "현재 이용 중인 카드가 열려 있어요." : "결제 후 해당 성별 카드가 바로 열립니다."}
                   </p>
                 </div>
                 <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-neutral-600">
@@ -242,7 +240,7 @@ export default function MoreViewPage() {
       {maleItems.length > 0 ? (
         <section className="mt-6">
           <div className="mb-3 flex items-end justify-between">
-            <h2 className="text-xl font-black tracking-tight text-neutral-950">남자 카드 더보기</h2>
+            <h2 className="text-xl font-black tracking-tight text-neutral-950">남자 카드 둘러보기</h2>
             <span className="text-sm text-neutral-400">{maleItems.length}명</span>
           </div>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
@@ -256,7 +254,7 @@ export default function MoreViewPage() {
       {femaleItems.length > 0 ? (
         <section className="mt-6">
           <div className="mb-3 flex items-end justify-between">
-            <h2 className="text-xl font-black tracking-tight text-neutral-950">여자 카드 더보기</h2>
+            <h2 className="text-xl font-black tracking-tight text-neutral-950">여자 카드 둘러보기</h2>
             <span className="text-sm text-neutral-400">{femaleItems.length}명</span>
           </div>
           <div className="grid grid-cols-2 gap-3 md:grid-cols-4">

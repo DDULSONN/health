@@ -31,7 +31,15 @@ type OneOnOneMatchRow = {
   id: string;
   source_user_id: string;
   candidate_user_id: string;
-  state: "proposed" | "source_selected" | "candidate_accepted" | "mutual_accepted" | "source_skipped" | "candidate_rejected" | "source_declined" | "admin_canceled";
+  state:
+    | "proposed"
+    | "source_selected"
+    | "candidate_accepted"
+    | "mutual_accepted"
+    | "source_skipped"
+    | "candidate_rejected"
+    | "source_declined"
+    | "admin_canceled";
   contact_exchange_status: "none" | "awaiting_applicant_payment" | "payment_pending_admin" | "approved" | "canceled";
 };
 
@@ -58,7 +66,7 @@ const PRODUCT_CONFIG: Record<ProductType, { amount: number; orderName: string }>
   },
   swipe_premium_30d: {
     amount: SWIPE_PREMIUM_PRICE_KRW,
-    orderName: "鍮좊Ⅸ留ㅼ묶 ?뵆?쒖뒪",
+    orderName: "빠른매칭 플러스",
   },
 };
 
@@ -210,7 +218,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "VALIDATION_ERROR",
           requestId,
-          message: "도/광역시 정보가 필요합니다.",
+          message: "지역 정보가 필요합니다.",
         });
       }
 
@@ -427,7 +435,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "SWIPE_CARD_REQUIRED",
           requestId,
-          message: "?ㅽ뵂移대뱶瑜??깅줉???ъ슜?먮쭔 鍮좊Ⅸ留ㅼ묶 ?뵆?쒖뒪瑜??댁슜?????덉뒿?덈떎.",
+          message: "빠른매칭 카드를 등록한 사용자만 빠른매칭 플러스를 이용할 수 있습니다.",
         });
       }
 
@@ -437,7 +445,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "ALREADY_ACTIVE",
           requestId,
-          message: "?대? 鍮좊Ⅸ留ㅼ묶 ?뵆?쒖뒪瑜??댁슜 以묒엯?덈떎.",
+          message: "이미 빠른매칭 플러스를 이용 중입니다.",
         });
       }
 
@@ -456,7 +464,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "ORDER_LOOKUP_FAILED",
           requestId,
-          message: "湲곗〈 寃곗젣 ?곹깭瑜??뺤씤?섏? 紐삵뻽?듬땲??",
+          message: "기존 결제 진행 상태를 확인하지 못했습니다.",
         });
       }
 
@@ -466,7 +474,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "ALREADY_PAID",
           requestId,
-          message: "?대? 鍮좊Ⅸ留ㅼ묶 ?뵆?쒖뒪 寃곗젣媛 ?꾨즺?? ?댁슜 以묒엯?덈떎.",
+          message: "이미 빠른매칭 플러스 결제가 완료되어 이용 중입니다.",
         });
       }
 
@@ -481,7 +489,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "PAYMENT_IN_PROGRESS",
           requestId,
-          message: "?대? 鍮좊Ⅸ留ㅼ묶 ?뵆?쒖뒪 寃곗젣媛 吏꾪뻾 以묒엯?덈떎. ?좎떆 ???ㅼ떆 ?뺤씤??二쇱꽭??",
+          message: "이미 빠른매칭 플러스 결제가 진행 중입니다. 잠시 후 다시 확인해 주세요.",
         });
       }
 
@@ -531,6 +539,7 @@ export async function POST(req: Request) {
     successUrl.searchParams.set("productType", productType);
     const failUrl = new URL("/payments/fail", baseUrl);
     failUrl.searchParams.set("productType", productType);
+
     const payment = await createTossPayment({
       method: "CARD",
       amount: config.amount,
@@ -540,7 +549,10 @@ export async function POST(req: Request) {
       failUrl: failUrl.toString(),
       customerEmail: user.email ?? undefined,
       customerName: "GymTools User",
-      ...(productType === "more_view" || productType === "city_view" || productType === "one_on_one_contact_exchange" || productType === "swipe_premium_30d"
+      ...(productType === "more_view" ||
+      productType === "city_view" ||
+      productType === "one_on_one_contact_exchange" ||
+      productType === "swipe_premium_30d"
         ? {
             flowMode: "DIRECT" as const,
             easyPay: "KAKAOPAY" as const,

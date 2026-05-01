@@ -262,7 +262,7 @@ export default function NearbyViewPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-2xl">
             <h1 className="text-[28px] font-black tracking-tight text-neutral-950">가까운 이상형 보기</h1>
-            <p className="mt-2 text-sm text-neutral-600">지역별 대기 인원을 먼저 보고, 원하는 지역만 열어서 바로 살펴볼 수 있어요.</p>
+            <p className="mt-2 text-sm text-neutral-600">지역별 대기 인원을 먼저 보고, 원하는 지역만 열어 바로 살펴볼 수 있어요.</p>
             <div className="mt-4 flex flex-wrap gap-2">
               <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">지역당 5,000원</span>
               <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">3시간 이용</span>
@@ -273,14 +273,12 @@ export default function NearbyViewPage() {
 
           <div className="w-full rounded-[24px] border border-neutral-200 bg-neutral-50 p-4 lg:max-w-sm">
             <p className="text-sm font-semibold text-neutral-800">오픈카드 유지 혜택</p>
-            <p className="mt-1 text-sm text-neutral-600">오픈카드를 공개중이거나 대기중으로 유지하면, 매주 지역 1곳을 무료로 열어볼 수 있어요.</p>
+            <p className="mt-1 text-sm text-neutral-600">오픈카드를 공개 중이거나 대기 중으로 유지하면, 매주 지역 1곳을 무료로 열어볼 수 있어요.</p>
             {status.weeklyBenefit?.eligible ? (
               status.weeklyBenefit.canClaim ? (
                 <p className="mt-2 text-xs font-medium text-emerald-700">이번 주 무료 열람 1회가 남아 있어요.</p>
               ) : (
-                <p className="mt-2 text-xs font-medium text-neutral-600">
-                  이번 주 무료 열람은 {status.weeklyBenefit.claimedProvince ?? "-"}에서 사용했어요.
-                </p>
+                <p className="mt-2 text-xs font-medium text-neutral-600">이번 주 무료 열람은 {status.weeklyBenefit.claimedProvince ?? "-"}에서 사용했어요.</p>
               )
             ) : (
               <p className="mt-2 text-xs text-neutral-500">이 혜택은 오픈카드를 유지 중인 회원에게만 제공됩니다.</p>
@@ -300,7 +298,7 @@ export default function NearbyViewPage() {
       <DatingAdultNotice />
 
       <section className="mt-5 rounded-[28px] border border-neutral-200 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
-        <h2 className="mb-3 text-sm font-semibold text-neutral-800">도/광역시별 대기 인원</h2>
+        <h2 className="mb-3 text-sm font-semibold text-neutral-800">지역별 대기 인원</h2>
         <div className="space-y-2">
           {(status.provinceStats ?? []).length === 0 ? <p className="text-xs text-neutral-500">대기 카드가 없습니다.</p> : null}
           {(status.provinceStats ?? []).map((stat) => {
@@ -328,7 +326,7 @@ export default function NearbyViewPage() {
                       >
                         바로 보기
                       </button>
-                      <span className="text-xs font-medium text-emerald-700">{formatRemaining((status.activeCityDetails ?? []).find((v) => v.province === stat.province)?.expiresAt ?? null)}</span>
+                      <span className="text-xs font-medium text-emerald-700">{formatRemaining(selectedExpiresAtFor(status.activeCityDetails ?? [], stat.province))}</span>
                     </>
                   ) : (
                     <>
@@ -350,7 +348,7 @@ export default function NearbyViewPage() {
                       >
                         {checkoutProvince === stat.province ? "결제창 준비 중..." : "카카오페이로 결제"}
                       </button>
-                      {isPending ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-700">기존 신청 대기</span> : null}
+                      {isPending ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-700">기존 요청 대기</span> : null}
                     </>
                   )}
                 </div>
@@ -362,7 +360,7 @@ export default function NearbyViewPage() {
 
       <section className="mt-5 rounded-[28px] border border-neutral-200 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
         {!selectedProvince ? (
-          <p className="text-sm text-neutral-500">결제 또는 무료 열람으로 열린 지역이 아직 없어요.</p>
+          <p className="text-sm text-neutral-500">결제나 무료 열람으로 열린 지역이 아직 없어요.</p>
         ) : loading ? (
           <p className="text-sm text-neutral-500">카드를 불러오는 중...</p>
         ) : (
@@ -375,14 +373,18 @@ export default function NearbyViewPage() {
               <button
                 type="button"
                 onClick={() => setActiveSex("male")}
-                className={`inline-flex min-h-[36px] items-center rounded-xl px-3 text-xs font-semibold ${activeSex === "male" ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100"}`}
+                className={`inline-flex min-h-[36px] items-center rounded-xl px-3 text-xs font-semibold ${
+                  activeSex === "male" ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100"
+                }`}
               >
                 남자 {maleItems.length}명
               </button>
               <button
                 type="button"
                 onClick={() => setActiveSex("female")}
-                className={`inline-flex min-h-[36px] items-center rounded-xl px-3 text-xs font-semibold ${activeSex === "female" ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100"}`}
+                className={`inline-flex min-h-[36px] items-center rounded-xl px-3 text-xs font-semibold ${
+                  activeSex === "female" ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100"
+                }`}
               >
                 여자 {femaleItems.length}명
               </button>
@@ -405,6 +407,10 @@ export default function NearbyViewPage() {
       </section>
     </main>
   );
+}
+
+function selectedExpiresAtFor(details: Array<{ province: string; expiresAt: string }>, province: string): string | null {
+  return details.find((v) => v.province === province)?.expiresAt ?? null;
 }
 
 function formatRemaining(expiresAt: string | null): string {
@@ -445,7 +451,7 @@ function CardSection({
                 </div>
               </div>
               {card.job ? <p className="mt-1 text-xs text-neutral-600">직업 {card.job}</p> : null}
-              {card.ideal_type ? <p className="mt-1 truncate text-xs text-emerald-700">이상형: {card.ideal_type}</p> : null}
+              {card.ideal_type ? <p className="mt-1 truncate text-xs text-emerald-700">이상형 {card.ideal_type}</p> : null}
               <div className="mt-3 flex flex-wrap gap-2">
                 <Link
                   href={`/community/dating/cards/${card.id}`}
