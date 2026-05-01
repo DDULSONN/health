@@ -72,6 +72,7 @@ export async function POST(
     action === "approve"
       ? {
           contact_exchange_status: "approved",
+          contact_exchange_requested_at: row.contact_exchange_requested_at ?? nowIso,
           contact_exchange_approved_at: nowIso,
           contact_exchange_approved_by_user_id: user.id,
           updated_at: nowIso,
@@ -85,8 +86,11 @@ export async function POST(
           updated_at: nowIso,
         };
 
-  if (action === "approve" && row.contact_exchange_status !== "payment_pending_admin") {
-    return NextResponse.json({ error: "Only payment-pending matches can be approved." }, { status: 409 });
+  if (
+    action === "approve" &&
+    (row.contact_exchange_status === "approved" || row.contact_exchange_status === "canceled")
+  ) {
+    return NextResponse.json({ error: "This exchange cannot be approved in its current state." }, { status: 409 });
   }
   if (action === "reset" && row.contact_exchange_status === "approved") {
     return NextResponse.json({ error: "Approved exchanges should not be reset here." }, { status: 409 });

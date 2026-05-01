@@ -1368,7 +1368,7 @@ export default function AdminDatingOneOnOnePage() {
                       </p>
                     ) : (
                       <p className="text-xs text-neutral-700">
-                        지원자 결제 흐름: 쌍방 수락 → 지원자 입금 안내 → 관리자 승인 → 양쪽 번호 공개
+                        쌍방 수락 후에는 결제 요청이 오거나, 관리자 승인으로 바로 번호 교환을 진행할 수 있습니다.
                       </p>
                     )}
                     <p className="mt-1 text-[11px] text-neutral-500">
@@ -1382,14 +1382,14 @@ export default function AdminDatingOneOnOnePage() {
                       </p>
                     ) : null}
                     <div className="mt-2 flex flex-wrap gap-2">
-                      {match.contact_exchange_status === "payment_pending_admin" ? (
+                      {match.contact_exchange_status !== "approved" && match.contact_exchange_status !== "canceled" ? (
                         <button
                           type="button"
                           disabled={processingContactExchangeIds.includes(match.id)}
                           onClick={() => void handleContactExchangeAction(match.id, "approve")}
                           className="h-8 rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                         >
-                          {processingContactExchangeIds.includes(match.id) ? "승인 중..." : "번호 교환 승인"}
+                          {processingContactExchangeIds.includes(match.id) ? "승인 중..." : "번호 교환 바로 승인"}
                         </button>
                       ) : null}
                       {match.contact_exchange_status === "payment_pending_admin" || match.contact_exchange_status === "awaiting_applicant_payment" ? (
