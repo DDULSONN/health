@@ -311,6 +311,7 @@ export default function OpenCardsPage() {
   const [swipeSubscriptionStatus, setSwipeSubscriptionStatus] = useState<SwipeSubscriptionStatus | null>(null);
   const [swipeSubscriptionLoading, setSwipeSubscriptionLoading] = useState(false);
   const [swipeSubscriptionSubmitting, setSwipeSubscriptionSubmitting] = useState(false);
+  const [swipePremiumGuideOpen, setSwipePremiumGuideOpen] = useState(false);
 
   useEffect(() => {
     activeSexRef.current = activeSex;
@@ -983,41 +984,19 @@ export default function OpenCardsPage() {
           </div>
         </div>
 
-        <div className="mt-4 rounded-[24px] border border-amber-200 bg-amber-50/70 p-4">
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-            <div>
-              <p className="text-sm font-bold text-amber-900">빠른매칭 플러스</p>
-              <p className="mt-1 text-sm leading-6 text-amber-800">
-                기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 5}회예요. 플러스를 시작하면 {SWIPE_PREMIUM_DURATION_DAYS}일 동안 하루{" "}
-                {swipeSubscriptionStatus?.premiumLimit ?? SWIPE_PREMIUM_DAILY_LIMIT}회까지 더 넉넉하게 확인할 수 있어요.
-              </p>
-              <p className="mt-2 text-[11px] text-amber-800">
-                현재는 카카오페이 간편결제로만 결제 가능해요. 그 밖의 결제 문의는 오픈카톡으로 부탁드려요.
-              </p>
-            </div>
-            <div className="flex shrink-0 flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={!viewerLoggedIn || swipeSubscriptionSubmitting || swipeSubscriptionStatus?.status === "active"}
-                onClick={() => void handleSwipePremiumCheckout()}
-                className="inline-flex min-h-[42px] items-center rounded-2xl bg-amber-500 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-amber-600"
-              >
-                {swipeSubscriptionStatus?.status === "active"
-                  ? "빠른매칭 플러스 이용 중"
-                  : swipeSubscriptionSubmitting
-                    ? "이동 중..."
-                    : "카카오페이로 시작"}
-              </button>
-              <a
-                href={OPEN_KAKAO_URL}
-                target="_blank"
-                rel="noreferrer"
-                className="inline-flex min-h-[42px] items-center rounded-2xl border border-amber-200 bg-white px-4 text-sm font-bold text-amber-800 hover:bg-amber-50"
-              >
-                오픈카톡 문의
-              </a>
-            </div>
-          </div>
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setSwipePremiumGuideOpen(true)}
+            className="inline-flex min-h-[42px] items-center rounded-full border border-amber-300 bg-amber-50 px-4 text-sm font-bold text-amber-900 hover:bg-amber-100"
+          >
+            빠른매칭 플러스
+          </button>
+          <p className="text-xs text-neutral-500">
+            {swipeSubscriptionStatus?.status === "active"
+              ? "현재 빠른매칭 플러스를 이용 중이에요."
+              : `기본 ${swipeSubscriptionStatus?.baseLimit ?? 5}회 · 플러스 ${swipeSubscriptionStatus?.premiumLimit ?? SWIPE_PREMIUM_DAILY_LIMIT}회`}
+          </p>
         </div>
 
         {swipeRefreshing && !swipeLoading ? <p className="mt-3 text-xs font-medium text-neutral-400">최신 후보로 업데이트 중...</p> : null}
@@ -1039,20 +1018,11 @@ export default function OpenCardsPage() {
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
                     type="button"
-                    disabled={swipeSubscriptionSubmitting || swipeSubscriptionStatus?.status === "active" || swipeSubscriptionLoading}
-                    onClick={() => void handleSwipePremiumCheckout()}
-                    className="inline-flex min-h-[42px] items-center rounded-2xl bg-amber-500 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-amber-600"
+                    onClick={() => setSwipePremiumGuideOpen(true)}
+                    className="inline-flex min-h-[42px] items-center rounded-2xl bg-amber-500 px-4 text-sm font-bold text-white hover:bg-amber-600"
                   >
-                    {swipeSubscriptionSubmitting ? "이동 중..." : "카카오페이로 시작"}
+                    빠른매칭 플러스 보기
                   </button>
-                  <a
-                    href={OPEN_KAKAO_URL}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex min-h-[42px] items-center rounded-2xl border border-amber-200 bg-white px-4 text-sm font-bold text-amber-800 hover:bg-amber-50"
-                  >
-                    오픈카톡 문의
-                  </a>
                 </div>
               </div>
             ) : null}
@@ -1158,6 +1128,60 @@ export default function OpenCardsPage() {
           </div>
         )}
       </section>
+
+      {swipePremiumGuideOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4" role="dialog" aria-modal="true">
+          <div className="w-full max-w-md rounded-[28px] bg-white p-5 shadow-[0_24px_80px_rgba(15,23,42,0.24)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-lg font-black text-neutral-950">빠른매칭 플러스</p>
+                <p className="mt-1 text-sm leading-6 text-neutral-600">
+                  기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 5}회예요. 플러스를 시작하면 {SWIPE_PREMIUM_DURATION_DAYS}일 동안 하루{" "}
+                  {swipeSubscriptionStatus?.premiumLimit ?? SWIPE_PREMIUM_DAILY_LIMIT}회까지 더 넉넉하게 확인할 수 있어요.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSwipePremiumGuideOpen(false)}
+                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-neutral-200 text-lg text-neutral-500 hover:bg-neutral-50"
+                aria-label="빠른매칭 플러스 안내 닫기"
+              >
+                ×
+              </button>
+            </div>
+            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+              <p className="text-sm font-semibold text-amber-900">
+                {SWIPE_PREMIUM_PRICE_KRW.toLocaleString("ko-KR")}원 · {SWIPE_PREMIUM_DURATION_DAYS}일 이용
+              </p>
+              <p className="mt-1 text-xs leading-5 text-amber-900/80">
+                현재는 카카오페이 간편결제로만 결제 가능해요. 그 밖의 결제 문의는 오픈카톡으로 부탁드려요.
+              </p>
+            </div>
+            <div className="mt-4 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={!viewerLoggedIn || swipeSubscriptionSubmitting || swipeSubscriptionStatus?.status === "active" || swipeSubscriptionLoading}
+                onClick={() => void handleSwipePremiumCheckout()}
+                className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-2xl bg-amber-500 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-amber-600"
+              >
+                {swipeSubscriptionStatus?.status === "active"
+                  ? "빠른매칭 플러스 이용 중"
+                  : swipeSubscriptionSubmitting
+                    ? "이동 중..."
+                    : "카카오페이로 시작"}
+              </button>
+              <a
+                href={OPEN_KAKAO_URL}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-2xl border border-amber-200 bg-white px-4 text-sm font-bold text-amber-800 hover:bg-amber-50"
+              >
+                오픈카톡 문의
+              </a>
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <section className="mb-5 rounded-[26px] border border-black/5 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
         <button
