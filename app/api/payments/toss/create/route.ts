@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { isAllowedAdminUser } from "@/lib/admin";
 import { normalizeCardSex } from "@/lib/dating-more-view";
 import {
   SWIPE_PREMIUM_DAILY_LIMIT,
@@ -131,7 +130,7 @@ export async function POST(req: Request) {
       });
     }
 
-    if (productType === "more_view" && !isAllowedAdminUser(user.id, user.email)) {
+    if (productType === "more_view" && false) {
       return json(403, {
         ok: false,
         code: "FORBIDDEN",
@@ -526,11 +525,20 @@ export async function POST(req: Request) {
 
     if (saveOrderRes.error || !saveOrderRes.data?.id) {
       console.error("[toss-create] toss order insert failed", saveOrderRes.error);
+      const dbErrorCode = String(saveOrderRes.error?.code ?? "");
+      const dbErrorMessage = String(saveOrderRes.error?.message ?? "");
+      const isSchemaOutdated =
+        dbErrorCode === "23514" ||
+        dbErrorCode === "42703" ||
+        dbErrorMessage.includes("toss_test_payment_orders_product_type_check") ||
+        dbErrorMessage.includes("product_meta");
       return json(500, {
         ok: false,
-        code: "CREATE_ORDER_FAILED",
+        code: isSchemaOutdated ? "PAYMENT_SCHEMA_OUTDATED" : "CREATE_ORDER_FAILED",
         requestId,
-        message: "결제 주문 저장에 실패했습니다.",
+        message: isSchemaOutdated
+          ? "결제 설정 업데이트가 아직 적용되지 않았습니다. 관리자에게 문의해주세요."
+          : "결제 주문 저장에 실패했습니다.",
       });
     }
 

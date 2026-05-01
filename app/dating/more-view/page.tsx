@@ -12,10 +12,6 @@ type MoreViewStatusResponse = {
   female?: MoreViewStatus;
 };
 
-type AdminStatusResponse = {
-  isAdmin?: boolean;
-};
-
 type MoreViewCard = {
   id: string;
   display_nickname: string | null;
@@ -64,8 +60,8 @@ export default function MoreViewPage() {
     male: "none",
     female: "none",
   });
-  const [isAdmin, setIsAdmin] = useState(false);
-  const [adminChecked, setAdminChecked] = useState(false);
+  const isAdmin = true;
+  const adminChecked = true;
   const [submitting, setSubmitting] = useState<null | "male" | "female">(null);
   const [maleItems, setMaleItems] = useState<MoreViewCard[]>([]);
   const [femaleItems, setFemaleItems] = useState<MoreViewCard[]>([]);
@@ -105,25 +101,13 @@ export default function MoreViewPage() {
     }
   }, [loadApprovedList]);
 
-  const loadAdminStatus = useCallback(async () => {
-    try {
-      const res = await fetch("/api/admin/me", { cache: "no-store" });
-      const body = (await res.json().catch(() => ({}))) as AdminStatusResponse;
-      setIsAdmin(body.isAdmin === true);
-    } catch {
-      setIsAdmin(false);
-    } finally {
-      setAdminChecked(true);
-    }
-  }, []);
-
   useEffect(() => {
-    void Promise.all([loadStatus(), loadAdminStatus()]);
-  }, [loadAdminStatus, loadStatus]);
+    void loadStatus();
+  }, [loadStatus]);
 
   const requestCheckout = useCallback(
     async (sex: "male" | "female") => {
-      if (submitting || !isAdmin) return;
+      if (submitting) return;
       setSubmitting(sex);
       try {
         const res = await fetch("/api/payments/toss/create", {
@@ -154,7 +138,7 @@ export default function MoreViewPage() {
         setSubmitting(null);
       }
     },
-    [isAdmin, submitting]
+    [submitting]
   );
 
   return (
@@ -222,7 +206,7 @@ export default function MoreViewPage() {
                 <button
                   type="button"
                   onClick={() => void requestCheckout(section.sex)}
-                  disabled={!status.loggedIn || !isAdmin || section.status === "approved" || submitting === section.sex}
+                  disabled={!status.loggedIn || section.status === "approved" || submitting === section.sex}
                   className="inline-flex min-h-[42px] items-center rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {section.status === "approved" ? "이용 중" : submitting === section.sex ? "결제창 준비 중..." : "카카오페이로 결제"}
