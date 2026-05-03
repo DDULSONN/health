@@ -298,6 +298,12 @@ function formatPaymentResultLabel(order: MyPaymentCenterOrder) {
   return "결제 완료";
 }
 
+function adminOpenCardOutreachScopeLabel(scope: AdminOpenCardOutreachScope) {
+  if (scope === "no_card") return "오픈카드 없는 회원";
+  if (scope === "expired_stale") return "오래전 만료된 회원";
+  return "둘 다 포함";
+}
+
 type MyPaidCard = {
   id: string;
   nickname: string;
@@ -620,6 +626,35 @@ type AdminOneOnOneContactExchangeRequest = {
     region: string;
     phone?: string | null;
   } | null;
+};
+
+type AdminOpenCardOutreachScope = "no_card" | "expired_stale" | "combined";
+
+type AdminOpenCardOutreachRecipient = {
+  user_id: string;
+  nickname: string | null;
+  email: string | null;
+  reason: "no_card" | "expired_stale";
+  expired_days: number | null;
+};
+
+type AdminOpenCardOutreachPreview = {
+  scope: AdminOpenCardOutreachScope;
+  stale_days: number;
+  recipient_count: number;
+  no_card_count: number;
+  expired_stale_count: number;
+  subject: string;
+  body: string;
+  sample_recipients: AdminOpenCardOutreachRecipient[];
+};
+
+type AdminOpenCardOutreachSendResult = {
+  scope?: AdminOpenCardOutreachScope;
+  stale_days?: number;
+  requested: number;
+  sent: number;
+  failed: number;
 };
 
 type AdminDatingStats = {
@@ -978,6 +1013,14 @@ export default function MyPage() {
   const [adminOneOnOneContactLoaded, setAdminOneOnOneContactLoaded] = useState(false);
   const [adminOneOnOneContactLoading, setAdminOneOnOneContactLoading] = useState(false);
   const [adminOneOnOneContactSearch, setAdminOneOnOneContactSearch] = useState("");
+  const [adminOpenCardOutreachScope, setAdminOpenCardOutreachScope] = useState<AdminOpenCardOutreachScope>("combined");
+  const [adminOpenCardOutreachStaleDays, setAdminOpenCardOutreachStaleDays] = useState("30");
+  const [adminOpenCardOutreachPreview, setAdminOpenCardOutreachPreview] = useState<AdminOpenCardOutreachPreview | null>(null);
+  const [adminOpenCardOutreachLoading, setAdminOpenCardOutreachLoading] = useState(false);
+  const [adminOpenCardOutreachSending, setAdminOpenCardOutreachSending] = useState(false);
+  const [adminOpenCardOutreachSubject, setAdminOpenCardOutreachSubject] = useState("");
+  const [adminOpenCardOutreachBody, setAdminOpenCardOutreachBody] = useState("");
+  const [adminOpenCardOutreachResult, setAdminOpenCardOutreachResult] = useState<AdminOpenCardOutreachSendResult | null>(null);
   const [editingAdminOpenCardId, setEditingAdminOpenCardId] = useState<string | null>(null);
   const [adminOpenCardDraft, setAdminOpenCardDraft] = useState<AdminOpenCardEditDraft | null>(null);
   const [savingAdminOpenCard, setSavingAdminOpenCard] = useState(false);
@@ -1280,6 +1323,106 @@ export default function MyPage() {
       },
     [isAdmin]
   );
+
+  const loadAdminOpenCardOutreachPreview = useCallback(async () => {
+    if (!isAdmin) return;
+
+    setAdminOpenCardOutreachLoading(true);
+    try {
+      const query = new URLSearchParams({
+        scope: adminOpenCardOutreachScope,
+        staleDays: adminOpenCardOutreachStaleDays.trim() || "30",
+      }).toString();
+      const res = await fetch(`/api/admin/dating/cards/outreach?${query}`, { cache: "no-store" });
+      const body = (await res.json().catch(() => ({}))) as AdminOpenCardOutreachPreview & { error?: string };
+      if (!res.ok) {
+        throw new Error(body.error ?? "오픈카드 안내 메일 미리보기를 불러오지 못했습니다.");
+      }
+      setAdminOpenCardOutreachPreview(body);
+      setAdminOpenCardOutreachSubject(body.subject ?? "");
+      setAdminOpenCardOutreachBody(body.body ?? "");
+    } catch (error) {
+      console.error("[mypage] admin open card outreach preview failed", error);
+      setError(error instanceof Error ? error.message : "오픈카드 안내 메일 미리보기를 불러오지 못했습니다.");
+    } finally {
+      setAdminOpenCardOutreachLoading(false);
+    }
+  }, [adminOpenCardOutreachScope, adminOpenCardOutreachStaleDays, isAdmin]);
+
+  const handleAdminSendOpenCardOutreach = useCallback(async () => {
+    if (adminOpenCardOutreachSending) return;
+
+    const targetCount = adminOpenCardOutreachPreview?.recipient_count ?? 0;
+    if (!targetCount) {
+      alert("발송 대상이 없습니다.");
+      return;
+    }
+
+    const subject = adminOpenCardOutreachSubject.trim();
+    const body = adminOpenCardOutreachBody.trim();
+    if (!subject) {
+      alert("메일 제목을 입력해주세요.");
+      return;
+    }
+    if (!body) {
+      alert("메일 본문을 입력해주세요.");
+      return;
+    }
+
+    if (
+      !confirm(
+        `${adminOpenCardOutreachScopeLabel(adminOpenCardOutreachScope)} ${targetCount}명에게 오픈카드 등록 안내 메일을 발송할까요?`
+      )
+    ) {
+      return;
+    }
+
+    setAdminOpenCardOutreachSending(true);
+    setAdminOpenCardOutreachResult(null);
+    setError("");
+    try {
+      const staleDays = Number(adminOpenCardOutreachStaleDays.trim() || "30");
+      const res = await fetch("/api/admin/dating/cards/outreach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: adminOpenCardOutreachScope,
+          staleDays,
+          subject,
+          body,
+        }),
+      });
+      const responseBody = (await res.json().catch(() => ({}))) as
+        | (AdminOpenCardOutreachSendResult & { ok?: boolean; error?: string })
+        | { error?: string };
+
+      if (!res.ok) {
+        throw new Error(responseBody.error ?? "오픈카드 안내 메일 발송에 실패했습니다.");
+      }
+
+      setAdminOpenCardOutreachResult({
+        scope: "scope" in responseBody ? responseBody.scope : adminOpenCardOutreachScope,
+        stale_days: "stale_days" in responseBody ? responseBody.stale_days : staleDays,
+        requested: "requested" in responseBody ? responseBody.requested : 0,
+        sent: "sent" in responseBody ? responseBody.sent : 0,
+        failed: "failed" in responseBody ? responseBody.failed : 0,
+      });
+      await loadAdminOpenCardOutreachPreview();
+    } catch (error) {
+      console.error("[mypage] admin open card outreach send failed", error);
+      setError(error instanceof Error ? error.message : "오픈카드 안내 메일 발송에 실패했습니다.");
+    } finally {
+      setAdminOpenCardOutreachSending(false);
+    }
+  }, [
+    adminOpenCardOutreachBody,
+    adminOpenCardOutreachPreview?.recipient_count,
+    adminOpenCardOutreachScope,
+    adminOpenCardOutreachSending,
+    adminOpenCardOutreachStaleDays,
+    adminOpenCardOutreachSubject,
+    loadAdminOpenCardOutreachPreview,
+  ]);
 
   const refreshAdminOneOnOneContactData = useMemo(
     () =>
@@ -1682,6 +1825,14 @@ export default function MyPage() {
 
     void refreshAdminOpenCardData(true);
   }, [adminManageTab, adminOpenCardsLoaded, adminOpenCardsLoading, isAdmin, refreshAdminOpenCardData]);
+
+  useEffect(() => {
+    if (!isAdmin || adminManageTab !== "open_cards") {
+      return;
+    }
+
+    void loadAdminOpenCardOutreachPreview();
+  }, [adminManageTab, adminOpenCardOutreachScope, adminOpenCardOutreachStaleDays, isAdmin, loadAdminOpenCardOutreachPreview]);
 
   useEffect(() => {
     if (!isAdmin || adminManageTab !== "one_on_one_contact" || adminOneOnOneContactLoaded || adminOneOnOneContactLoading) {
@@ -6568,6 +6719,134 @@ export default function MyPage() {
                 현재: {openCardWriteEnabled ? "작성 가능" : "작성 중단"}
               </span>
             </div>
+          </div>
+          )}
+
+          {adminManageTab === "open_cards" && (
+          <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-xs font-semibold text-violet-800">오픈카드 등록 유도 메일</p>
+                <p className="mt-1 text-[11px] text-neutral-500">
+                  현재 오픈카드가 없거나, 마지막 카드가 만료된 지 좀 지난 회원만 골라서 보낼 수 있게 좁혀뒀습니다.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <select
+                  value={adminOpenCardOutreachScope}
+                  onChange={(e) => setAdminOpenCardOutreachScope(e.target.value as AdminOpenCardOutreachScope)}
+                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs text-violet-900"
+                >
+                  <option value="combined">둘 다 포함</option>
+                  <option value="no_card">오픈카드 없는 회원</option>
+                  <option value="expired_stale">오래전 만료된 회원</option>
+                </select>
+                <div className="flex items-center gap-2 rounded-lg border border-violet-200 bg-white px-3">
+                  <span className="text-[11px] text-neutral-500">만료 후</span>
+                  <input
+                    type="number"
+                    min={7}
+                    max={180}
+                    value={adminOpenCardOutreachStaleDays}
+                    onChange={(e) => setAdminOpenCardOutreachStaleDays(e.target.value)}
+                    className="h-9 w-14 bg-transparent text-center text-xs text-neutral-900 outline-none"
+                  />
+                  <span className="text-[11px] text-neutral-500">일</span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void loadAdminOpenCardOutreachPreview()}
+                  disabled={adminOpenCardOutreachLoading}
+                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs font-medium text-violet-900 disabled:opacity-60"
+                >
+                  {adminOpenCardOutreachLoading ? "미리보기 불러오는 중..." : "미리보기 새로고침"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleAdminSendOpenCardOutreach()}
+                  disabled={adminOpenCardOutreachSending || adminOpenCardOutreachLoading || !adminOpenCardOutreachPreview?.recipient_count}
+                  className="h-9 rounded-lg bg-violet-600 px-3 text-xs font-semibold text-white disabled:opacity-60"
+                >
+                  {adminOpenCardOutreachSending ? "발송 중..." : "안내 메일 발송"}
+                </button>
+              </div>
+            </div>
+
+            {adminOpenCardOutreachPreview ? (
+              <>
+                <div className="mt-3 grid gap-3 md:grid-cols-3">
+                  <div className="rounded-xl border border-violet-100 bg-violet-50/40 px-3 py-3">
+                    <p className="text-[11px] text-neutral-500">현재 발송 대상</p>
+                    <p className="mt-1 text-2xl font-bold text-neutral-900">
+                      {adminOpenCardOutreachPreview.recipient_count.toLocaleString("ko-KR")}명
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-violet-100 bg-white px-3 py-3">
+                    <p className="text-[11px] text-neutral-500">오픈카드 없는 회원</p>
+                    <p className="mt-1 text-2xl font-bold text-neutral-900">
+                      {adminOpenCardOutreachPreview.no_card_count.toLocaleString("ko-KR")}명
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-violet-100 bg-white px-3 py-3">
+                    <p className="text-[11px] text-neutral-500">
+                      만료 후 {adminOpenCardOutreachPreview.stale_days}일 지난 회원
+                    </p>
+                    <p className="mt-1 text-2xl font-bold text-neutral-900">
+                      {adminOpenCardOutreachPreview.expired_stale_count.toLocaleString("ko-KR")}명
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded-xl border border-violet-100 bg-white p-3">
+                  <p className="text-xs text-violet-700">
+                    현재 선택: {adminOpenCardOutreachScopeLabel(adminOpenCardOutreachPreview.scope)}
+                  </p>
+                  <label className="mt-3 block text-xs font-semibold text-neutral-900">제목</label>
+                  <input
+                    value={adminOpenCardOutreachSubject}
+                    onChange={(e) => setAdminOpenCardOutreachSubject(e.target.value)}
+                    placeholder="메일 제목을 입력하세요"
+                    className="mt-1 h-10 w-full rounded-lg border border-violet-100 px-3 text-sm text-neutral-800 outline-none placeholder:text-neutral-400 focus:border-violet-300"
+                  />
+                  <label className="mt-3 block text-xs font-semibold text-neutral-900">본문</label>
+                  <textarea
+                    value={adminOpenCardOutreachBody}
+                    onChange={(e) => setAdminOpenCardOutreachBody(e.target.value)}
+                    placeholder="메일 본문을 입력하세요"
+                    rows={9}
+                    className="mt-1 w-full rounded-lg border border-violet-100 px-3 py-2 text-sm leading-6 text-neutral-800 outline-none placeholder:text-neutral-400 focus:border-violet-300"
+                  />
+                </div>
+
+                <div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/30 p-3">
+                  <p className="text-xs font-semibold text-violet-800">발송 샘플</p>
+                  {adminOpenCardOutreachPreview.sample_recipients.length === 0 ? (
+                    <p className="mt-2 text-xs text-neutral-500">현재 조건에 맞는 샘플 회원이 없습니다.</p>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      {adminOpenCardOutreachPreview.sample_recipients.map((item) => (
+                        <div key={`${item.user_id}:${item.reason}`} className="rounded-lg border border-violet-100 bg-white px-3 py-2">
+                          <p className="text-xs font-medium text-neutral-900">
+                            {item.nickname ?? "(닉네임 없음)"} / {item.email ?? item.user_id.slice(0, 8)}
+                          </p>
+                          <p className="mt-1 text-[11px] text-neutral-500">
+                            {item.reason === "no_card"
+                              ? "사유: 오픈카드 없음"
+                              : `사유: 만료 후 ${item.expired_days ?? adminOpenCardOutreachPreview.stale_days}일 경과`}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : null}
+
+            {adminOpenCardOutreachResult ? (
+              <p className="mt-3 text-sm text-violet-900">
+                발송 완료: {adminOpenCardOutreachScopeLabel(adminOpenCardOutreachResult.scope ?? adminOpenCardOutreachScope)} 요청 {adminOpenCardOutreachResult.requested}명 / 성공 {adminOpenCardOutreachResult.sent}명 / 실패 {adminOpenCardOutreachResult.failed}명
+              </p>
+            ) : null}
           </div>
           )}
 

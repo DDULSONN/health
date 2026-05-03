@@ -469,15 +469,15 @@ export default function SiteGuideBubble() {
           <button
             type="button"
             onClick={() => setCollapsed(false)}
-            className="mb-1 mr-8 inline-flex items-center rounded-full border border-amber-200 bg-white/95 px-3 py-1.5 text-[11px] font-semibold text-neutral-700 shadow-sm hover:bg-amber-50"
+            className="mb-1 mr-6 inline-flex items-center rounded-full border border-amber-200 bg-white/95 px-3 py-1.5 text-[11px] font-semibold text-neutral-700 shadow-sm hover:bg-amber-50"
             aria-label="짐냥이 펼치기"
           >
             짐냥이 열기
           </button>
         )}
 
-        <div className={`relative z-10 shrink-0 transition-transform duration-300 ${collapsed ? "translate-y-0" : "-translate-y-1"}`}>
-          <div className="relative h-[190px] w-[170px]">
+        <div className={`relative z-10 shrink-0 transition-all duration-300 ${collapsed ? "translate-y-0 scale-[0.72] origin-top-right" : "-translate-y-1 scale-100"}`}>
+          <div className={`relative transition-all duration-300 ${collapsed ? "h-[132px] w-[118px]" : "h-[190px] w-[170px]"}`}>
             <div className="absolute inset-x-6 bottom-1 h-5 rounded-full bg-black/10 blur-md" />
             <div className="absolute inset-0 overflow-hidden rounded-[32px]">
               <Image src="/mascot/jimnyang-guide-v2.png" alt="짐냥이" fill className="object-cover object-center" sizes="170px" priority={false} />
