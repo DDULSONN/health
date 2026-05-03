@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { timeAgo } from "@/lib/community";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
+import { PROVINCE_ORDER } from "@/lib/region-city";
 function MyPageWidgetSkeleton({ className = "h-40" }: { className?: string }) {
   return (
     <div className={`rounded-2xl border border-neutral-200 bg-white p-4 ${className}`}>
@@ -588,6 +589,12 @@ type AdminCityViewRequest = {
   reviewed_at: string | null;
   note: string | null;
 };
+type AdminCityViewGrantCandidate = {
+  userId: string;
+  nickname: string | null;
+  email: string | null;
+  activeCities: string[];
+};
 type AdminOneOnOneContactExchangeRequest = {
   id: string;
   state: "mutual_accepted";
@@ -997,6 +1004,13 @@ export default function MyPage() {
   const [adminPaymentCenterError, setAdminPaymentCenterError] = useState("");
   const [adminAccountDeletionAudits, setAdminAccountDeletionAudits] = useState<AdminAccountDeletionAudit[]>([]);
   const [adminCityViewSearch, setAdminCityViewSearch] = useState("");
+  const [adminCityViewGrantQuery, setAdminCityViewGrantQuery] = useState("");
+  const [adminCityViewGrantProvince, setAdminCityViewGrantProvince] = useState<string>(PROVINCE_ORDER[0] ?? "서울");
+  const [adminCityViewGrantCandidates, setAdminCityViewGrantCandidates] = useState<AdminCityViewGrantCandidate[]>([]);
+  const [adminCityViewGrantLoading, setAdminCityViewGrantLoading] = useState(false);
+  const [adminCityViewGrantingUserId, setAdminCityViewGrantingUserId] = useState<string | null>(null);
+  const [adminCityViewGrantError, setAdminCityViewGrantError] = useState("");
+  const [adminCityViewGrantInfo, setAdminCityViewGrantInfo] = useState("");
   const [adminCityViewUnblockIdentifier, setAdminCityViewUnblockIdentifier] = useState("");
   const [adminCityViewUnblockLoading, setAdminCityViewUnblockLoading] = useState(false);
   const [adminCityViewUnblockInfo, setAdminCityViewUnblockInfo] = useState("");
@@ -2990,6 +3004,83 @@ export default function MyPage() {
       setAdminCityViewUnblockIdentifier("");
     } finally {
       setAdminCityViewUnblockLoading(false);
+    }
+  };
+
+  const handleAdminSearchCityViewGrantCandidates = async () => {
+    const query = adminCityViewGrantQuery.trim();
+    setAdminCityViewGrantError("");
+    setAdminCityViewGrantInfo("");
+
+    if (query.length < 2) {
+      setAdminCityViewGrantError("닉네임이나 이메일을 2글자 이상 입력해주세요.");
+      setAdminCityViewGrantCandidates([]);
+      return;
+    }
+
+    setAdminCityViewGrantLoading(true);
+    try {
+      const res = await fetch(`/api/admin/dating/cards/city-view/grant?query=${encodeURIComponent(query)}`, {
+        cache: "no-store",
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        items?: AdminCityViewGrantCandidate[];
+      };
+
+      if (!res.ok || !body.ok) {
+        setAdminCityViewGrantError(body.message ?? "유저 검색에 실패했습니다.");
+        setAdminCityViewGrantCandidates([]);
+        return;
+      }
+
+      setAdminCityViewGrantCandidates(body.items ?? []);
+      if ((body.items ?? []).length === 0) {
+        setAdminCityViewGrantInfo("검색된 유저가 없습니다.");
+      }
+    } finally {
+      setAdminCityViewGrantLoading(false);
+    }
+  };
+
+  const handleAdminGrantCityViewToUser = async (userId: string) => {
+    if (!adminCityViewGrantProvince || adminCityViewGrantingUserId) return;
+
+    setAdminCityViewGrantError("");
+    setAdminCityViewGrantInfo("");
+    setAdminCityViewGrantingUserId(userId);
+    try {
+      const res = await fetch("/api/admin/dating/cards/city-view/grant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, province: adminCityViewGrantProvince }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+      };
+
+      if (!res.ok || !body.ok) {
+        setAdminCityViewGrantError(body.message ?? "가까운 이상형 권한 지급에 실패했습니다.");
+        return;
+      }
+
+      setAdminCityViewGrantInfo(body.message ?? "가까운 이상형을 바로 열어줬습니다.");
+      setAdminCityViewGrantCandidates((prev) =>
+        prev.map((item) =>
+          item.userId !== userId
+            ? item
+            : {
+                ...item,
+                activeCities: item.activeCities.includes(adminCityViewGrantProvince)
+                  ? item.activeCities
+                  : [...item.activeCities, adminCityViewGrantProvince].sort((a, b) => a.localeCompare(b, "ko")),
+              }
+        )
+      );
+    } finally {
+      setAdminCityViewGrantingUserId(null);
     }
   };
 
@@ -6779,6 +6870,89 @@ export default function MyPage() {
               <p className="text-xs font-semibold text-violet-800">
                 내 가까운 이상형 승인 대기 {adminCityViewRequests.length}건
               </p>
+              <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/60 p-3">
+                <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <p className="text-xs font-semibold text-violet-900">유저에게 가까운 이상형 직접 열어주기</p>
+                    <p className="mt-1 text-[11px] text-violet-800">
+                      닉네임이나 이메일로 유저를 찾은 뒤, 원하는 지역을 바로 열어줄 수 있어요.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] font-medium text-violet-800" htmlFor="admin-city-view-grant-province">
+                      열어줄 지역
+                    </label>
+                    <select
+                      id="admin-city-view-grant-province"
+                      value={adminCityViewGrantProvince}
+                      onChange={(e) => setAdminCityViewGrantProvince(e.target.value)}
+                      className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none"
+                    >
+                      {PROVINCE_ORDER.map((province) => (
+                        <option key={province} value={province}>
+                          {province}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                  <input
+                    type="text"
+                    value={adminCityViewGrantQuery}
+                    onChange={(e) => setAdminCityViewGrantQuery(e.target.value)}
+                    placeholder="닉네임 또는 이메일"
+                    className="h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none ring-0 placeholder:text-neutral-400"
+                  />
+                  <button
+                    type="button"
+                    disabled={adminCityViewGrantLoading}
+                    onClick={() => void handleAdminSearchCityViewGrantCandidates()}
+                    className="h-9 shrink-0 rounded-lg bg-violet-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                  >
+                    {adminCityViewGrantLoading ? "검색 중..." : "유저 찾기"}
+                  </button>
+                </div>
+                {adminCityViewGrantError ? (
+                  <p className="mt-2 text-[11px] text-rose-600">{adminCityViewGrantError}</p>
+                ) : null}
+                {adminCityViewGrantInfo ? (
+                  <p className="mt-2 text-[11px] text-emerald-700">{adminCityViewGrantInfo}</p>
+                ) : null}
+                {adminCityViewGrantCandidates.length > 0 ? (
+                  <div className="mt-3 space-y-2">
+                    {adminCityViewGrantCandidates.map((item) => {
+                      const isGranting = adminCityViewGrantingUserId === item.userId;
+                      return (
+                        <div
+                          key={item.userId}
+                          className="flex flex-col gap-2 rounded-lg border border-violet-100 bg-white px-3 py-3 sm:flex-row sm:items-center sm:justify-between"
+                        >
+                          <div className="min-w-0">
+                            <p className="truncate text-xs font-medium text-neutral-900">
+                              {item.nickname?.trim() || "닉네임 없음"}
+                            </p>
+                            <p className="truncate text-[11px] text-neutral-500">
+                              {item.email?.trim() || "이메일 없음"}
+                            </p>
+                            <p className="mt-1 text-[11px] text-violet-700">
+                              현재 열람중: {item.activeCities.length > 0 ? item.activeCities.join(", ") : "없음"}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={isGranting}
+                            onClick={() => void handleAdminGrantCityViewToUser(item.userId)}
+                            className="h-9 shrink-0 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                          >
+                            {isGranting ? "지급 중..." : `${adminCityViewGrantProvince} 열어주기`}
+                          </button>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : null}
+              </div>
               <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50/60 p-3">
                 <p className="text-xs font-semibold text-amber-900">닉네임으로 전체 막힘 해제</p>
                 <p className="mt-1 text-[11px] text-amber-800">
