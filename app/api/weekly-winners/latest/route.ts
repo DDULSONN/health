@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { publicCachedJson } from "@/lib/http-cache";
 import { getKstWeekRange, getPreviousKstWeekRange } from "@/lib/weekly";
+import { compareBodycheckRankRows } from "@/lib/bodycheck-ranking";
 
 type WinnerPost = {
   id: string;
@@ -28,24 +29,20 @@ async function fetchLiveTopByGender(
     .eq("is_deleted", false)
     .eq("gender", gender)
     .gte("created_at", startUtcIso)
-    .lt("created_at", endUtcIso)
-    .order("score_sum", { ascending: false })
-    .order("vote_count", { ascending: false })
-    .order("created_at", { ascending: true })
-    .limit(1)
-    .maybeSingle();
+    .lt("created_at", endUtcIso);
 
   if (error) throw error;
-  if (!data) return null;
+  const top = ((data ?? []) as WinnerPost[]).sort(compareBodycheckRankRows)[0];
+  if (!top) return null;
 
   const { data: profile } = await supabase
     .from("profiles")
     .select("user_id, nickname")
-    .eq("user_id", data.user_id)
+    .eq("user_id", top.user_id)
     .maybeSingle();
 
   return {
-    ...data,
+    ...top,
     nickname: profile?.nickname ?? null,
     profiles: profile ? { nickname: profile.nickname ?? null } : null,
   } satisfies WinnerPost;

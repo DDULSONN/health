@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 import { getKstWeekRange } from "@/lib/weekly";
+import { compareBodycheckRankRows } from "@/lib/bodycheck-ranking";
 
 type RankRow = {
   id: string;
@@ -13,9 +14,7 @@ type RankRow = {
 };
 
 function sortRows(a: RankRow, b: RankRow) {
-  if (a.score_sum !== b.score_sum) return b.score_sum - a.score_sum;
-  if (a.vote_count !== b.vote_count) return b.vote_count - a.vote_count;
-  return a.created_at.localeCompare(b.created_at);
+  return compareBodycheckRankRows(a, b);
 }
 
 export async function GET() {

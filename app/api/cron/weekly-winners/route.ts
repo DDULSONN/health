@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getKstWeekRangeFromWeekId, getPreviousKstWeekId } from "@/lib/weekly";
 import { ensureCronAuthorized } from "@/lib/cron-auth";
+import { compareBodycheckRankRows } from "@/lib/bodycheck-ranking";
 
 const MIN_VOTES = 5;
 const MAX_BACKFILL_WEEKS = 520;
@@ -67,29 +68,45 @@ async function fetchTopByGender(
     .eq("gender", gender);
 
   const rankedQuery = baseQuery
-    .gte("vote_count", MIN_VOTES)
-    .order("score_sum", { ascending: false })
-    .order("score_avg", { ascending: false })
-    .order("vote_count", { ascending: false })
-    .order("updated_at", { ascending: true })
-    .limit(1);
+    .gte("vote_count", MIN_VOTES);
 
-  const { data, error } = await rankedQuery.maybeSingle();
+  const { data, error } = await rankedQuery;
   if (error) throw error;
-  const normalizedTop = normalizeWeeklyTop(data);
+  const normalizedTop = ((data ?? []).map((row) => normalizeWeeklyTop(row)).filter(Boolean) as WeeklyTop[]).sort((a, b) =>
+    compareBodycheckRankRows(
+      {
+        score_sum: a.score_sum,
+        score_avg: a.score_avg,
+        vote_count: a.vote_count,
+      },
+      {
+        score_sum: b.score_sum,
+        score_avg: b.score_avg,
+        vote_count: b.vote_count,
+      }
+    )
+  )[0] ?? null;
   if (normalizedTop?.post_id) return normalizedTop;
 
   // Fallback: if no one reached MIN_VOTES, still pin weekly 1st among existing votes.
-  const fallbackQuery = baseQuery
-    .order("score_sum", { ascending: false })
-    .order("score_avg", { ascending: false })
-    .order("vote_count", { ascending: false })
-    .order("updated_at", { ascending: true })
-    .limit(1);
+  const fallbackQuery = baseQuery;
 
-  const { data: fallbackData, error: fallbackError } = await fallbackQuery.maybeSingle();
+  const { data: fallbackData, error: fallbackError } = await fallbackQuery;
   if (fallbackError) throw fallbackError;
-  const normalizedFallback = normalizeWeeklyTop(fallbackData);
+  const normalizedFallback = ((fallbackData ?? []).map((row) => normalizeWeeklyTop(row)).filter(Boolean) as WeeklyTop[]).sort((a, b) =>
+    compareBodycheckRankRows(
+      {
+        score_sum: a.score_sum,
+        score_avg: a.score_avg,
+        vote_count: a.vote_count,
+      },
+      {
+        score_sum: b.score_sum,
+        score_avg: b.score_avg,
+        vote_count: b.vote_count,
+      }
+    )
+  )[0] ?? null;
   return normalizedFallback?.post_id ? normalizedFallback : null;
 }
 

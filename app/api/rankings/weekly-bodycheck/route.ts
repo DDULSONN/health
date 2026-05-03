@@ -4,6 +4,7 @@ import { publicCachedJson } from "@/lib/http-cache";
 import { getKstWeekId } from "@/lib/weekly";
 import type { BodycheckGender } from "@/lib/community";
 import { buildSignedImageUrl, extractStorageObjectPath } from "@/lib/images";
+import { compareBodycheckRankRows, getBodycheckRankingScore } from "@/lib/bodycheck-ranking";
 
 const MIN_VOTES = 5;
 
@@ -64,19 +65,29 @@ export async function GET(request: Request) {
     .select("post_id, score_sum, vote_count, score_avg, posts!inner(id, title, user_id, images, created_at)")
     .eq("week_id", weekId)
     .eq("gender", gender)
-    .gte("vote_count", MIN_VOTES)
-    .order("score_sum", { ascending: false })
-    .order("score_avg", { ascending: false })
-    .order("vote_count", { ascending: false })
-    .order("updated_at", { ascending: true })
-    .limit(top);
+    .gte("vote_count", MIN_VOTES);
 
   if (error) {
     console.error("[GET /api/rankings/weekly-bodycheck]", error.message);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const rows = (data ?? []) as WeeklyRow[];
+  const rows = ((data ?? []) as WeeklyRow[]).sort((a, b) =>
+    compareBodycheckRankRows(
+      {
+        score_sum: a.score_sum,
+        score_avg: a.score_avg,
+        vote_count: a.vote_count,
+        created_at: getPost(a)?.created_at ?? null,
+      },
+      {
+        score_sum: b.score_sum,
+        score_avg: b.score_avg,
+        vote_count: b.vote_count,
+        created_at: getPost(b)?.created_at ?? null,
+      }
+    )
+  );
   const userIds = [...new Set(rows.map((row) => getPost(row)?.user_id).filter(Boolean) as string[])];
   const profileMap = new Map<string, { nickname: string }>();
 
@@ -95,7 +106,7 @@ export async function GET(request: Request) {
     week_id: weekId,
     min_votes: MIN_VOTES,
     gender,
-    items: rows.map((row) => {
+    items: rows.slice(0, top).map((row) => {
       const post = getPost(row);
       return {
         post_id: row.post_id,
@@ -106,6 +117,7 @@ export async function GET(request: Request) {
         score_sum: Number(row.score_sum ?? 0),
         vote_count: Number(row.vote_count ?? 0),
         score_avg: Number(Number(row.score_avg ?? 0).toFixed(2)),
+        ranking_score: Number(getBodycheckRankingScore(row).toFixed(4)),
         profiles: post?.user_id ? profileMap.get(post.user_id) ?? null : null,
       };
     }),
