@@ -5,6 +5,7 @@ import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import MobileBottomTabBar from "@/components/MobileBottomTabBar";
+import SiteGuideBubble from "@/components/SiteGuideBubble";
 
 const DeferredAdSenseBootstrap = dynamic(() => import("@/components/AdSenseBootstrap"), {});
 
@@ -80,6 +81,7 @@ export default function RootLayout({
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-dvh`}>
         <DeferredAdSenseBootstrap />
         <Header />
+        <SiteGuideBubble />
         <div className="flex-1 pb-20 md:pb-0">{children}</div>
         <MobileBottomTabBar />
         <Footer />
