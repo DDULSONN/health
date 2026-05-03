@@ -7,6 +7,7 @@ import { DATING_PAID_FIXED_BADGE_LABEL, DATING_PAID_FIXED_HOURS, DATING_PAID_FIX
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
+import PaidPolicyNotice from "@/components/PaidPolicyNotice";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
@@ -104,6 +105,7 @@ export default function DatingPaidPage() {
   const [items, setItems] = useState<PaidItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [submitMode, setSubmitMode] = useState<"kakaopay" | "manual">("kakaopay");
   const [error, setError] = useState("");
   const [successId, setSuccessId] = useState("");
   const [formOpen, setFormOpen] = useState(false);
@@ -370,6 +372,55 @@ export default function DatingPaidPage() {
         return;
       }
 
+      if (submitMode === "manual") {
+        setSuccessId(createBody.paidCardId);
+        setPhotos([null, null]);
+        setAge("");
+        setRegion("");
+        setHeightCm("");
+        setJob("");
+        setTrainingYears("");
+        setStrengthsText("");
+        setIdealText("");
+        setInstagramId("");
+        setDisplayMode("priority_24h");
+        setExistingRawPaths([]);
+        setExistingBlurThumbPath("");
+        setFormOpen(false);
+        await loadItems();
+        if (typeof globalThis !== "undefined" && typeof globalThis.scrollTo === "function") {
+          globalThis.scrollTo({ top: 0, behavior: "smooth" });
+        }
+        return;
+      }
+
+      const tossCreateRes = await fetch("/api/payments/toss/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productType: "paid_card",
+          paidCardId: createBody.paidCardId,
+        }),
+      });
+      const tossCreateBody = (await tossCreateRes.json().catch(() => ({}))) as {
+        ok?: boolean;
+        checkoutUrl?: string;
+        message?: string;
+      };
+      if (!tossCreateRes.ok || !tossCreateBody.ok || !tossCreateBody.checkoutUrl) {
+        await fetch(`/api/dating/paid/create?id=${encodeURIComponent(createBody.paidCardId)}`, {
+          method: "DELETE",
+        }).catch(() => null);
+        setError(tossCreateBody.message ?? "결제창을 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        setSubmitting(false);
+        return;
+      }
+
+      if (typeof window !== "undefined") {
+        window.location.href = tossCreateBody.checkoutUrl;
+        return;
+      }
+
       setSuccessId(createBody.paidCardId);
       setPhotos([null, null]);
       setAge("");
@@ -385,8 +436,8 @@ export default function DatingPaidPage() {
       setExistingBlurThumbPath("");
       setFormOpen(false);
       await loadItems();
-      if (typeof window !== "undefined") {
-        window.scrollTo({ top: 0, behavior: "smooth" });
+      if (typeof globalThis !== "undefined" && typeof globalThis.scrollTo === "function") {
+        globalThis.scrollTo({ top: 0, behavior: "smooth" });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "네트워크 오류가 발생했습니다.");
@@ -556,12 +607,23 @@ export default function DatingPaidPage() {
 
             {error && <p className="text-sm text-red-600">{error}</p>}
 
-            <button type="submit" disabled={submitting || editLoading} className="h-11 rounded-xl bg-rose-500 px-4 text-sm font-medium text-white hover:bg-rose-600 disabled:opacity-50">
+            <button type="submit" onClick={() => setSubmitMode("kakaopay")} disabled={submitting || editLoading} className="h-11 rounded-xl bg-rose-500 px-4 text-sm font-medium text-white hover:bg-rose-600 disabled:opacity-50">
               {submitting ? "신청 중..." : isEditMode ? "유료 신청 수정" : "유료 신청 등록"}
             </button>
+            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+              <span>카카오페이가 어려우면 수동 신청 후 오픈카톡으로 이어갈 수 있어요.</span>
+              <button
+                type="submit"
+                onClick={() => setSubmitMode("manual")}
+                disabled={submitting || editLoading}
+                className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+              >
+                {submitting && submitMode === "manual" ? "신청 접수 중.." : "수동 신청"}
+              </button>
+            </div>
           </form>
 
-          {false && successId && (
+          {successId && (
             <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
               <p className="font-semibold">신청이 접수되었습니다.</p>
               <p className="mt-1">신청ID: {successId}</p>
@@ -611,6 +673,8 @@ export default function DatingPaidPage() {
           </div>
         )}
       </section>
+
+      <PaidPolicyNotice />
 
       <style jsx>{`
         .input {

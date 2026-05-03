@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
+import PaidPolicyNotice from "@/components/PaidPolicyNotice";
 
 type ApplyCreditsStatusResponse = {
   ok?: boolean;
@@ -170,6 +171,7 @@ export default function ApplyCreditsPage() {
       </section>
 
       <DatingAdultNotice />
+      <PaidPolicyNotice />
     </main>
   );
 }

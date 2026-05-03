@@ -1,6 +1,12 @@
 import { NextResponse } from "next/server";
 import { getActiveMoreViewGrant, normalizeCardSex } from "@/lib/dating-more-view";
-import { approveCityViewRequest, grantCityViewAccess, grantMoreViewAccess } from "@/lib/dating-purchase-fulfillment";
+import {
+  approvePaidCard,
+  approveCityViewRequest,
+  approveMoreViewRequest,
+  grantCityViewAccess,
+  grantMoreViewAccess,
+} from "@/lib/dating-purchase-fulfillment";
 import {
   SWIPE_PREMIUM_DAILY_LIMIT,
   SWIPE_PREMIUM_DURATION_DAYS,
@@ -101,6 +107,32 @@ async function ensureMoreViewFulfilled(
   const activeGrant = await getActiveMoreViewGrant(admin, order.user_id, sex);
   if (activeGrant) {
     return { sex, alreadyGranted: true };
+  }
+
+  const pendingRes = await admin
+    .from("dating_more_view_requests")
+    .select("id")
+    .eq("user_id", order.user_id)
+    .eq("sex", sex)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (pendingRes.error) {
+    throw pendingRes.error;
+  }
+
+  if (pendingRes.data?.id) {
+    await approveMoreViewRequest(admin, {
+      requestId: pendingRes.data.id,
+      reviewedByUserId: null,
+      note: `toss payment ${order.toss_order_id} | auto-approved`,
+      accessHours: 3,
+      bonusCredits: 1,
+    });
+
+    return { sex, alreadyGranted: false };
   }
 
   await grantMoreViewAccess(admin, {
@@ -351,6 +383,62 @@ async function ensureSwipePremiumFulfilled(
   return { alreadyActive: false };
 }
 
+async function ensurePaidCardFulfilled(
+  admin: ReturnType<typeof createAdminClient>,
+  order: TossOrderRow
+) {
+  const paidCardId = order.product_ref_id?.trim() ?? "";
+  if (!paidCardId) {
+    throw new Error("PAID_CARD_ID_MISSING");
+  }
+
+  const paidCardRes = await admin
+    .from("dating_paid_cards")
+    .select("id,user_id,status,display_mode")
+    .eq("id", paidCardId)
+    .maybeSingle();
+
+  if (paidCardRes.error) {
+    throw paidCardRes.error;
+  }
+  if (!paidCardRes.data) {
+    throw new Error("PAID_CARD_NOT_FOUND");
+  }
+  if (paidCardRes.data.user_id !== order.user_id) {
+    throw new Error("PAID_CARD_FORBIDDEN");
+  }
+  if (paidCardRes.data.status === "approved") {
+    return { alreadyApproved: true };
+  }
+  if (paidCardRes.data.status !== "pending") {
+    throw new Error("PAID_CARD_NOT_PENDING");
+  }
+
+  const approveRes = await approvePaidCard(admin, {
+    paidCardId,
+    displayMode: paidCardRes.data.display_mode === "instant_public" ? "instant_public" : "priority_24h",
+  });
+
+  if (approveRes) {
+    return { alreadyApproved: false };
+  }
+
+  const approvedAgain = await admin
+    .from("dating_paid_cards")
+    .select("status")
+    .eq("id", paidCardId)
+    .maybeSingle();
+
+  if (approvedAgain.error) {
+    throw approvedAgain.error;
+  }
+  if (approvedAgain.data?.status === "approved") {
+    return { alreadyApproved: true };
+  }
+
+  throw new Error("PAID_CARD_APPROVE_FAILED");
+}
+
 async function ensureOrderFulfilled(
   admin: ReturnType<typeof createAdminClient>,
   order: TossOrderRow,
@@ -366,6 +454,10 @@ async function ensureOrderFulfilled(
 
   if (order.product_type === "city_view") {
     await ensureCityViewFulfilled(admin, order);
+  }
+
+  if (order.product_type === "paid_card") {
+    await ensurePaidCardFulfilled(admin, order);
   }
 
   if (order.product_type === "one_on_one_contact_exchange") {

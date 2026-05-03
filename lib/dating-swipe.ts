@@ -490,7 +490,13 @@ export async function sendDatingEmailToAddress(
     return false;
   }
 
-  const htmlBody = text
+  const normalizedSubject = sanitizeOutgoingEmailCopy(subject, "GymTools 알림이 도착했어요");
+  const normalizedText = sanitizeOutgoingEmailCopy(
+    text,
+    "새 알림이 도착했어요.\n사이트 마이페이지에서 자세한 내용을 확인해 주세요."
+  );
+
+  const htmlBody = normalizedText
     .split("\n")
     .map((line) => line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"))
     .join("<br />");
@@ -518,11 +524,48 @@ export async function sendDatingEmailToAddress(
     body: JSON.stringify({
       from,
       to: [recipient],
-      subject,
-      text,
+      subject: normalizedSubject,
+      text: normalizedText,
       html,
     }),
   }).catch(() => null);
 
   return Boolean(res?.ok);
+}
+
+const MOJIBAKE_MARKERS = [
+  "??륁",
+  "??뜚",
+  "?꾨",
+  "紐꾨",
+  "類ㅼ",
+  "寃곗",
+  "留덉씠",
+  "?ㅽ뵂",
+  "?꾩갑",
+  "?섎씫",
+  "踰덊샇",
+  "援먰솚",
+  "筌",
+  "癰",
+  "獄",
+  "嶺",
+];
+
+function looksLikeBrokenKoreanCopy(value: string) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return false;
+  return MOJIBAKE_MARKERS.some((marker) => trimmed.includes(marker));
+}
+
+function sanitizeOutgoingEmailCopy(value: string, fallback: string) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return fallback;
+  if (looksLikeBrokenKoreanCopy(trimmed)) {
+    console.error("[dating-email] suspicious mojibake detected, using fallback copy", {
+      sample: trimmed.slice(0, 80),
+    });
+    return fallback;
+  }
+  return trimmed;
 }

@@ -28,6 +28,9 @@ function formatProductType(productType?: string) {
 }
 
 function getPrimaryAction(productType?: string) {
+  if (productType === "paid_card") {
+    return { href: "/dating/paid", label: "대기 없이 등록으로 돌아가기" };
+  }
   if (productType === "one_on_one_contact_exchange") {
     return { href: "/mypage", label: "마이페이지로 돌아가기" };
   }
@@ -123,6 +126,8 @@ function PaymentSuccessContent() {
                 <p className="mt-1 font-semibold text-neutral-900">
                   {typeof result.addedCredits === "number" && result.addedCredits > 0
                     ? `지원권 +${result.addedCredits}장 / 현재 ${result.creditsAfter ?? 0}장`
+                    : result.productType === "paid_card"
+                      ? "대기 없이 등록 결제가 반영됐어요"
                     : result.productType === "one_on_one_contact_exchange"
                       ? "상대 연락처 즉시 공개"
                       : result.productType === "swipe_premium_30d"

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
+import PaidPolicyNotice from "@/components/PaidPolicyNotice";
 
 type MoreViewStatus = "none" | "pending" | "approved" | "rejected";
 type MoreViewStatusResponse = {
@@ -262,6 +263,8 @@ export default function MoreViewPage() {
           </div>
         </section>
       ) : null}
+
+      <PaidPolicyNotice />
     </main>
   );
 }

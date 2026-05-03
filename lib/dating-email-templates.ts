@@ -16,7 +16,7 @@ export function buildDatingApplicationReceivedNotification(
   const nickname = safeNickname(applicantDisplayNickname, "회원");
 
   return {
-    pushTitle: "새 지원이 도착했어요",
+    pushTitle: "오픈카드에 새 지원이 도착했어요",
     pushBody: `${nickname}님이 오픈카드에 지원했어요.`,
     emailSubject: "오픈카드에 새 지원이 도착했어요",
     emailText: `${nickname}님이 오픈카드에 지원했어요.\n마이페이지에서 지원 내역을 확인해 주세요.`,
@@ -29,7 +29,7 @@ export function buildDatingApplicationAcceptedNotification(
   const nickname = safeNickname(cardDisplayNickname, "오픈카드");
 
   return {
-    pushTitle: "지원이 수락됐어요",
+    pushTitle: "오픈카드 지원이 수락됐어요",
     pushBody: `${nickname} 지원이 수락됐어요.`,
     emailSubject: "오픈카드 지원이 수락됐어요",
     emailText: `${nickname} 지원이 수락됐어요.\n마이페이지에서 연결 상태와 다음 안내를 확인해 주세요.`,

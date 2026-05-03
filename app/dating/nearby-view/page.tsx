@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
+import PaidPolicyNotice from "@/components/PaidPolicyNotice";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 
 type ProvinceStat = {
@@ -405,6 +406,8 @@ export default function NearbyViewPage() {
           </div>
         )}
       </section>
+
+      <PaidPolicyNotice />
     </main>
   );
 }

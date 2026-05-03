@@ -5,6 +5,9 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
 function getPrimaryAction(productType?: string | null) {
+  if (productType === "paid_card") {
+    return { href: "/dating/paid", label: "대기 없이 등록으로 돌아가기" };
+  }
   if (productType === "swipe_premium_30d") {
     return { href: "/community/dating/cards", label: "빠른매칭으로 돌아가기" };
   }

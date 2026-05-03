@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { normalizeCardSex } from "@/lib/dating-more-view";
 import {
   SWIPE_PREMIUM_DAILY_LIMIT,
@@ -24,6 +24,7 @@ type CreateBody = {
   sex?: unknown;
   province?: unknown;
   matchId?: unknown;
+  paidCardId?: unknown;
 };
 
 type OneOnOneMatchRow = {
@@ -45,11 +46,11 @@ type OneOnOneMatchRow = {
 const PRODUCT_CONFIG: Record<ProductType, { amount: number; orderName: string }> = {
   apply_credits: {
     amount: 5000,
-    orderName: "오픈카드 지원권 3장",
+    orderName: "지원권 5장",
   },
   paid_card: {
     amount: 10000,
-    orderName: "대기 없이 등록",
+    orderName: "즉시 공개",
   },
   more_view: {
     amount: 5000,
@@ -57,7 +58,7 @@ const PRODUCT_CONFIG: Record<ProductType, { amount: number; orderName: string }>
   },
   city_view: {
     amount: 5000,
-    orderName: "가까운 이상형 보기",
+    orderName: "가까운 이상형",
   },
   one_on_one_contact_exchange: {
     amount: 20000,
@@ -118,7 +119,7 @@ export async function POST(req: Request) {
         ok: false,
         code: "UNAUTHORIZED",
         requestId,
-        message: "로그인이 필요합니다.",
+        message: "濡쒓렇?몄씠 ?꾩슂?⑸땲??",
       });
     }
 
@@ -130,8 +131,8 @@ export async function POST(req: Request) {
         requestId,
         message:
           missingKeys.length > 0
-            ? `토스 결제 설정이 비어 있습니다: ${missingKeys.join(", ")}`
-            : "결제 설정이 아직 완료되지 않았습니다.",
+            ? `?좎뒪 寃곗젣 ?ㅼ젙??鍮꾩뼱 ?덉뒿?덈떎: ${missingKeys.join(", ")}`
+            : "寃곗젣 ?ㅼ젙???꾩쭅 ?꾨즺?섏? ?딆븯?듬땲??",
       });
     }
 
@@ -143,7 +144,7 @@ export async function POST(req: Request) {
         ok: false,
         code: "VALIDATION_ERROR",
         requestId,
-        message: "productType이 필요합니다.",
+        message: "productType???꾩슂?⑸땲??",
       });
     }
 
@@ -152,7 +153,7 @@ export async function POST(req: Request) {
         ok: false,
         code: "FORBIDDEN",
         requestId,
-        message: "현재는 운영 테스트 계정에서만 이용할 수 있습니다.",
+        message: "?꾩옱???댁쁺 ?뚯뒪??怨꾩젙?먯꽌留??댁슜?????덉뒿?덈떎.",
       });
     }
 
@@ -180,7 +181,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "CREATE_ORDER_FAILED",
           requestId,
-          message: "지원권 주문을 생성하지 못했습니다.",
+          message: "吏?먭텒 二쇰Ц???앹꽦?섏? 紐삵뻽?듬땲??",
         });
       }
 
@@ -200,7 +201,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "ORDER_LOOKUP_FAILED",
           requestId,
-          message: "기존 결제 진행 상태를 확인하지 못했습니다.",
+          message: "湲곗〈 寃곗젣 吏꾪뻾 ?곹깭瑜??뺤씤?섏? 紐삵뻽?듬땲??",
         });
       }
 
@@ -217,7 +218,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "VALIDATION_ERROR",
           requestId,
-          message: "성별 값이 올바르지 않습니다.",
+          message: "?깅퀎 媛믪씠 ?щ컮瑜댁? ?딆뒿?덈떎.",
         });
       }
 
@@ -233,7 +234,17 @@ export async function POST(req: Request) {
         .order("created_at", { ascending: false })
         .limit(10);
 
-      if (!activeRes.error && Array.isArray(activeRes.data)) {
+      if (activeRes.error) {
+        console.error("[toss-create] more view active lookup failed", activeRes.error);
+        return json(500, {
+          ok: false,
+          code: "MORE_VIEW_LOOKUP_FAILED",
+          requestId,
+          message: "?댁긽???붾낫湲??댁슜 ?곹깭瑜??뺤씤?섏? 紐삵뻽?듬땲??",
+        });
+      }
+
+      if (Array.isArray(activeRes.data)) {
         const hasActiveGrant = activeRes.data.some((row) => {
           const expiresAt = row.access_expires_at ? new Date(row.access_expires_at).getTime() : Number.NaN;
           return Number.isFinite(expiresAt) && expiresAt > Date.now();
@@ -244,7 +255,7 @@ export async function POST(req: Request) {
             ok: false,
             code: "ALREADY_APPROVED",
             requestId,
-            message: "이미 이용 가능한 이상형 더보기 권한이 있습니다.",
+            message: "?대? ?댁슜 媛?ν븳 ?댁긽???붾낫湲?沅뚰븳???덉뒿?덈떎.",
           });
         }
       }
@@ -265,7 +276,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "ORDER_LOOKUP_FAILED",
           requestId,
-          message: "기존 결제 진행 상태를 확인하지 못했습니다.",
+          message: "湲곗〈 寃곗젣 吏꾪뻾 ?곹깭瑜??뺤씤?섏? 紐삵뻽?듬땲??",
         });
       }
 
@@ -275,7 +286,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "ALREADY_PAID",
           requestId,
-          message: "이미 결제가 완료된 이상형 더보기입니다. 결제 탭이나 성공 화면을 다시 확인해 주세요.",
+          message: "?대? 寃곗젣媛 ?꾨즺???댁긽???붾낫湲곗엯?덈떎. 寃곗젣 ??씠???깃났 ?붾㈃???ㅼ떆 ?뺤씤??二쇱꽭??",
         });
       }
 
@@ -292,7 +303,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "VALIDATION_ERROR",
           requestId,
-          message: "지역 정보가 필요합니다.",
+          message: "吏???뺣낫媛 ?꾩슂?⑸땲??",
         });
       }
 
@@ -312,7 +323,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "CITY_VIEW_LOOKUP_FAILED",
           requestId,
-          message: "가까운 이상형 이용 상태를 확인하지 못했습니다.",
+          message: "媛源뚯슫 ?댁긽???댁슜 ?곹깭瑜??뺤씤?섏? 紐삵뻽?듬땲??",
         });
       }
 
@@ -326,7 +337,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "ALREADY_APPROVED",
           requestId,
-          message: "이미 이용 가능한 가까운 이상형 권한이 있습니다.",
+          message: "?대? ?댁슜 媛?ν븳 媛源뚯슫 ?댁긽??沅뚰븳???덉뒿?덈떎.",
         });
       }
 
@@ -346,7 +357,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "ORDER_LOOKUP_FAILED",
           requestId,
-          message: "기존 결제 진행 상태를 확인하지 못했습니다.",
+          message: "湲곗〈 寃곗젣 吏꾪뻾 ?곹깭瑜??뺤씤?섏? 紐삵뻽?듬땲??",
         });
       }
 
@@ -356,7 +367,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "ALREADY_PAID",
           requestId,
-          message: "이미 결제가 완료된 지역입니다. 탭을 새로고침해 주세요.",
+          message: "?대? 寃곗젣媛 ?꾨즺??吏??엯?덈떎. ??쓣 ?덈줈怨좎묠??二쇱꽭??",
         });
       }
 
@@ -374,7 +385,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "VALIDATION_ERROR",
           requestId,
-          message: "matchId가 필요합니다.",
+          message: "matchId媛 ?꾩슂?⑸땲??",
         });
       }
 
@@ -390,7 +401,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "MATCH_LOOKUP_FAILED",
           requestId,
-          message: "1:1 매칭 정보를 불러오지 못했습니다.",
+          message: "1:1 留ㅼ묶 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??",
         });
       }
 
@@ -400,7 +411,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "MATCH_NOT_FOUND",
           requestId,
-          message: "1:1 매칭을 찾지 못했습니다.",
+          message: "1:1 留ㅼ묶??李얠? 紐삵뻽?듬땲??",
         });
       }
 
@@ -456,7 +467,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "ORDER_LOOKUP_FAILED",
           requestId,
-          message: "기존 결제 진행 상태를 확인하지 못했습니다.",
+          message: "湲곗〈 寃곗젣 吏꾪뻾 ?곹깭瑜??뺤씤?섏? 紐삵뻽?듬땲??",
         });
       }
 
@@ -467,7 +478,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "ALREADY_PAID",
           requestId,
-          message: "이미 결제가 완료된 번호 교환입니다. 마이페이지를 새로고침해 주세요.",
+          message: "?대? 寃곗젣媛 ?꾨즺??踰덊샇 援먰솚?낅땲?? 留덉씠?섏씠吏瑜??덈줈怨좎묠??二쇱꽭??",
         });
       }
 
@@ -485,7 +496,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "SWIPE_CARD_REQUIRED",
           requestId,
-          message: "빠른매칭 카드를 등록한 사용자만 빠른매칭 플러스를 이용할 수 있습니다.",
+          message: "鍮좊Ⅸ留ㅼ묶 移대뱶瑜??깅줉???ъ슜?먮쭔 鍮좊Ⅸ留ㅼ묶 ?뚮윭?ㅻ? ?댁슜?????덉뒿?덈떎.",
         });
       }
 
@@ -495,7 +506,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "ALREADY_ACTIVE",
           requestId,
-          message: "이미 빠른매칭 플러스를 이용 중입니다.",
+          message: "?대? 鍮좊Ⅸ留ㅼ묶 ?뚮윭?ㅻ? ?댁슜 以묒엯?덈떎.",
         });
       }
 
@@ -514,7 +525,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "ORDER_LOOKUP_FAILED",
           requestId,
-          message: "기존 결제 진행 상태를 확인하지 못했습니다.",
+          message: "湲곗〈 寃곗젣 吏꾪뻾 ?곹깭瑜??뺤씤?섏? 紐삵뻽?듬땲??",
         });
       }
 
@@ -524,7 +535,7 @@ export async function POST(req: Request) {
           ok: false,
           code: "ALREADY_PAID",
           requestId,
-          message: "이미 빠른매칭 플러스 결제가 완료되어 이용 중입니다.",
+          message: "?대? 鍮좊Ⅸ留ㅼ묶 ?뚮윭??寃곗젣媛 ?꾨즺?섏뼱 ?댁슜 以묒엯?덈떎.",
         });
       }
 
@@ -540,11 +551,65 @@ export async function POST(req: Request) {
     }
 
     if (productType === "paid_card") {
+      const paidCardId = typeof body.paidCardId === "string" ? body.paidCardId.trim() : "";
+      if (!paidCardId) {
+        return json(400, {
+          ok: false,
+          code: "VALIDATION_ERROR",
+          requestId,
+          message: "paidCardId가 필요합니다.",
+        });
+      }
+
+      const paidCardRes = await admin
+        .from("dating_paid_cards")
+        .select("id,user_id,status,display_mode")
+        .eq("id", paidCardId)
+        .eq("user_id", user.id)
+        .maybeSingle();
+
+      if (paidCardRes.error) {
+        console.error("[toss-create] paid card lookup failed", paidCardRes.error);
+        return json(500, {
+          ok: false,
+          code: "PAID_CARD_LOOKUP_FAILED",
+          requestId,
+          message: "대기 없이 등록 신청 정보를 확인하지 못했습니다.",
+        });
+      }
+
+      if (!paidCardRes.data) {
+        return json(404, {
+          ok: false,
+          code: "PAID_CARD_NOT_FOUND",
+          requestId,
+          message: "결제할 대기 없이 등록 신청을 찾지 못했습니다.",
+        });
+      }
+
+      if (paidCardRes.data.status === "approved") {
+        return json(409, {
+          ok: false,
+          code: "ALREADY_APPROVED",
+          requestId,
+          message: "이미 결제가 반영된 대기 없이 등록입니다.",
+        });
+      }
+
+      if (paidCardRes.data.status !== "pending") {
+        return json(409, {
+          ok: false,
+          code: "PAID_CARD_NOT_PENDING",
+          requestId,
+          message: "대기중 신청만 결제를 진행할 수 있습니다.",
+        });
+      }
+
       const readyOrderRes = await admin
         .from("toss_test_payment_orders")
         .select("id")
         .eq("product_type", "paid_card")
-        .eq("user_id", user.id)
+        .eq("product_ref_id", paidCardId)
         .eq("status", "ready")
         .limit(20);
 
@@ -558,16 +623,17 @@ export async function POST(req: Request) {
         });
       }
 
-      await cancelReadyOrders(
-        admin,
-        (readyOrderRes.data ?? []).map((row) => row.id)
-      );
+      await cancelReadyOrders(admin, (readyOrderRes.data ?? []).map((row) => row.id));
+      productRefId = paidCardId;
+      productMeta = {
+        displayMode: paidCardRes.data.display_mode === "instant_public" ? "instant_public" : "priority_24h",
+      };
     }
 
     const tossOrderId = crypto.randomUUID().replace(/-/g, "");
     const orderName =
       productType === "more_view"
-        ? `${config.orderName} (${productMeta.sex === "female" ? "여자 카드" : "남자 카드"})`
+        ? `${config.orderName} (${productMeta.sex === "female" ? "?ъ옄 移대뱶" : "?⑥옄 移대뱶"})`
         : productType === "city_view"
           ? `${config.orderName} (${String(productMeta.province ?? "-")})`
           : config.orderName;
@@ -601,8 +667,8 @@ export async function POST(req: Request) {
         code: isSchemaOutdated ? "PAYMENT_SCHEMA_OUTDATED" : "CREATE_ORDER_FAILED",
         requestId,
         message: isSchemaOutdated
-          ? "결제 설정 업데이트가 아직 적용되지 않았습니다. 관리자에게 문의해주세요."
-          : "결제 주문 저장에 실패했습니다.",
+          ? "寃곗젣 ?ㅼ젙 ?낅뜲?댄듃媛 ?꾩쭅 ?곸슜?섏? ?딆븯?듬땲?? 愿由ъ옄?먭쾶 臾몄쓽?댁＜?몄슂."
+          : "寃곗젣 二쇰Ц ??μ뿉 ?ㅽ뙣?덉뒿?덈떎.",
       });
     }
 
@@ -622,6 +688,7 @@ export async function POST(req: Request) {
       customerEmail: user.email ?? undefined,
       customerName: "GymTools User",
       ...(productType === "apply_credits" ||
+      productType === "paid_card" ||
       productType === "more_view" ||
       productType === "city_view" ||
       productType === "one_on_one_contact_exchange" ||
@@ -639,7 +706,7 @@ export async function POST(req: Request) {
         ok: false,
         code: "CHECKOUT_URL_MISSING",
         requestId,
-        message: "결제창 URL을 만들지 못했습니다.",
+        message: "寃곗젣李?URL??留뚮뱾吏 紐삵뻽?듬땲??",
       });
     }
 
@@ -657,8 +724,9 @@ export async function POST(req: Request) {
       ok: false,
       code: "INTERNAL_SERVER_ERROR",
       requestId,
-      message: "서버 오류가 발생했습니다.",
+      message: "?쒕쾭 ?ㅻ쪟媛 諛쒖깮?덉뒿?덈떎.",
     });
   }
 }
+
 
