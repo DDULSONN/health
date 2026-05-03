@@ -31,7 +31,6 @@ type DatingCardLite = {
   owner_user_id: string | null;
   status: string | null;
   expires_at: string | null;
-  updated_at?: string | null;
   created_at: string | null;
 };
 
@@ -211,7 +210,7 @@ async function fetchAllDatingCards(admin: AdminClient) {
   while (true) {
     const res = await admin
       .from("dating_cards")
-      .select("owner_user_id,status,expires_at,updated_at,created_at")
+      .select("owner_user_id,status,expires_at,created_at")
       .order("created_at", { ascending: false })
       .range(from, from + CARD_BATCH_SIZE - 1);
 
@@ -229,7 +228,7 @@ async function fetchAllDatingCards(admin: AdminClient) {
 }
 
 function getRowSortTime(row: DatingCardLite) {
-  const source = row.updated_at ?? row.created_at ?? row.expires_at ?? "";
+  const source = row.created_at ?? row.expires_at ?? "";
   const time = new Date(source).getTime();
   return Number.isFinite(time) ? time : 0;
 }

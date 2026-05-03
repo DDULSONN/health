@@ -1140,6 +1140,7 @@ export default function MyPage() {
   const [loggingOut, setLoggingOut] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [deletingAppliedIds, setDeletingAppliedIds] = useState<string[]>([]);
+  const [deletingPaidAppliedIds, setDeletingPaidAppliedIds] = useState<string[]>([]);
   const [deletingOneOnOneIds, setDeletingOneOnOneIds] = useState<string[]>([]);
   const [deletingOpenCardIds, setDeletingOpenCardIds] = useState<string[]>([]);
   const [deletingPaidCardIds, setDeletingPaidCardIds] = useState<string[]>([]);
@@ -2227,11 +2228,32 @@ export default function MyPage() {
       await reloadOpenDatingConnections();
     } finally {
       setDeletingAppliedIds((prev) => prev.filter((id) => id !== applicationId));
-    }
-  };
+      }
+    };
 
-  const handleCancelMyAppliedCardApplication = async (applicationId: string) => {
-    if (cancelingAppliedIds.includes(applicationId)) return;
+    const handleDeleteMyAppliedPaidApplication = async (applicationId: string) => {
+      if (deletingPaidAppliedIds.includes(applicationId)) return;
+      if (!confirm("내가 보낸 36시간 고정카드 지원 기록을 삭제할까요?")) return;
+
+      setDeletingPaidAppliedIds((prev) => [...prev, applicationId]);
+      try {
+        const res = await fetch(`/api/dating/paid/my/applied/${applicationId}`, {
+          method: "DELETE",
+        });
+        const body = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean };
+        if (!res.ok || !body.ok) {
+          alert(body.error ?? "지원서 삭제에 실패했습니다.");
+          return;
+        }
+        setMyAppliedPaidApplications((prev) => prev.filter((app) => app.id !== applicationId));
+        await reloadOpenDatingConnections();
+      } finally {
+        setDeletingPaidAppliedIds((prev) => prev.filter((id) => id !== applicationId));
+      }
+    };
+
+    const handleCancelMyAppliedCardApplication = async (applicationId: string) => {
+      if (cancelingAppliedIds.includes(applicationId)) return;
     if (!confirm("이 지원을 취소할까요? 수락된 상태였다면 인스타 교환 목록에서도 빠집니다.")) return;
 
     setCancelingAppliedIds((prev) => [...prev, applicationId]);
@@ -4895,6 +4917,21 @@ export default function MyPage() {
                 {app.intro_text && (
                   <p className="mt-2 text-sm text-neutral-700 whitespace-pre-wrap break-words">{app.intro_text}</p>
                 )}
+                <div className="mt-3">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={deletingPaidAppliedIds.includes(app.id)}
+                      onClick={() => void handleDeleteMyAppliedPaidApplication(app.id)}
+                      className="h-8 rounded-md border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60"
+                    >
+                      {deletingPaidAppliedIds.includes(app.id) ? "삭제 중..." : "지원서 삭제"}
+                    </button>
+                  </div>
+                  {app.status === "accepted" && (
+                    <p className="mt-2 text-xs text-neutral-500">수락된 상태여도 삭제하면 내 지원 이력과 연결 목록에서 함께 빠집니다.</p>
+                  )}
+                </div>
               </div>
             ))}
           </div>
