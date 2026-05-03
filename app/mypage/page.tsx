@@ -329,6 +329,22 @@ function adminOpenCardOutreachSortLabel(sort: AdminOpenCardOutreachSort) {
   return "우선순위 추천";
 }
 
+function adminOneOnOneOutreachScopeLabel(scope: AdminOneOnOneOutreachScope) {
+  if (scope === "no_card") return "1:1 카드 없는 회원";
+  if (scope === "pending_review") return "1:1 카드 심사중 회원";
+  if (scope === "approved_no_match") return "1:1 승인 후 아직 매칭 없는 회원";
+  if (scope === "mutual_no_exchange") return "쌍방매칭 후 번호교환 전 회원";
+  return "둘 다 포함";
+}
+
+function adminOneOnOneOutreachSortLabel(sort: AdminOneOnOneOutreachSort) {
+  if (sort === "recent_login") return "최근 접속 순";
+  if (sort === "nickname") return "닉네임 순";
+  if (sort === "recent_mail") return "최근 메일 발송 순";
+  if (sort === "activity_recent") return "최근 1:1 활동 순";
+  return "우선순위 추천";
+}
+
 type MyPaidCard = {
   id: string;
   nickname: string;
@@ -699,6 +715,54 @@ type AdminOpenCardOutreachSendResult = {
   recent_login_days?: number | null;
   recent_mail_filter?: AdminOpenCardOutreachRecentMailFilter;
   sort?: AdminOpenCardOutreachSort;
+  requested: number;
+  sent: number;
+  failed: number;
+  failure_summary?: string[];
+};
+
+type AdminOneOnOneOutreachScope =
+  | "combined"
+  | "no_card"
+  | "pending_review"
+  | "approved_no_match"
+  | "mutual_no_exchange";
+type AdminOneOnOneOutreachSort = "priority" | "recent_login" | "nickname" | "recent_mail" | "activity_recent";
+
+type AdminOneOnOneOutreachRecipient = {
+  user_id: string;
+  nickname: string | null;
+  email: string | null;
+  reason: Exclude<AdminOneOnOneOutreachScope, "combined">;
+  phone_verified: boolean;
+  last_sign_in_at: string | null;
+  recent_success_mail_sent_at: string | null;
+  activity_at: string | null;
+};
+
+type AdminOneOnOneOutreachPreview = {
+  scope: AdminOneOnOneOutreachScope;
+  phone_verified_filter: AdminOpenCardOutreachPhoneFilter;
+  recent_login_days: number | null;
+  recent_mail_filter: AdminOpenCardOutreachRecentMailFilter;
+  sort: AdminOneOnOneOutreachSort;
+  recipient_count: number;
+  no_card_count: number;
+  pending_review_count: number;
+  approved_no_match_count: number;
+  mutual_no_exchange_count: number;
+  recent_success_24h_count: number;
+  subject: string;
+  body: string;
+  sample_recipients: AdminOneOnOneOutreachRecipient[];
+};
+
+type AdminOneOnOneOutreachSendResult = {
+  scope?: AdminOneOnOneOutreachScope;
+  phone_verified_filter?: AdminOpenCardOutreachPhoneFilter;
+  recent_login_days?: number | null;
+  recent_mail_filter?: AdminOpenCardOutreachRecentMailFilter;
+  sort?: AdminOneOnOneOutreachSort;
   requested: number;
   sent: number;
   failed: number;
@@ -1076,6 +1140,20 @@ export default function MyPage() {
   const [adminOpenCardOutreachSubject, setAdminOpenCardOutreachSubject] = useState("");
   const [adminOpenCardOutreachBody, setAdminOpenCardOutreachBody] = useState("");
   const [adminOpenCardOutreachResult, setAdminOpenCardOutreachResult] = useState<AdminOpenCardOutreachSendResult | null>(null);
+  const [adminOneOnOneOutreachScope, setAdminOneOnOneOutreachScope] = useState<AdminOneOnOneOutreachScope>("combined");
+  const [adminOneOnOneOutreachPhoneFilter, setAdminOneOnOneOutreachPhoneFilter] =
+    useState<AdminOpenCardOutreachPhoneFilter>("all");
+  const [adminOneOnOneOutreachRecentLoginDays, setAdminOneOnOneOutreachRecentLoginDays] = useState("30");
+  const [adminOneOnOneOutreachRecentMailFilter, setAdminOneOnOneOutreachRecentMailFilter] =
+    useState<AdminOpenCardOutreachRecentMailFilter>("not_sent_24h");
+  const [adminOneOnOneOutreachSort, setAdminOneOnOneOutreachSort] =
+    useState<AdminOneOnOneOutreachSort>("priority");
+  const [adminOneOnOneOutreachPreview, setAdminOneOnOneOutreachPreview] = useState<AdminOneOnOneOutreachPreview | null>(null);
+  const [adminOneOnOneOutreachLoading, setAdminOneOnOneOutreachLoading] = useState(false);
+  const [adminOneOnOneOutreachSending, setAdminOneOnOneOutreachSending] = useState(false);
+  const [adminOneOnOneOutreachSubject, setAdminOneOnOneOutreachSubject] = useState("");
+  const [adminOneOnOneOutreachBody, setAdminOneOnOneOutreachBody] = useState("");
+  const [adminOneOnOneOutreachResult, setAdminOneOnOneOutreachResult] = useState<AdminOneOnOneOutreachSendResult | null>(null);
   const [editingAdminOpenCardId, setEditingAdminOpenCardId] = useState<string | null>(null);
   const [adminOpenCardDraft, setAdminOpenCardDraft] = useState<AdminOpenCardEditDraft | null>(null);
   const [savingAdminOpenCard, setSavingAdminOpenCard] = useState(false);
@@ -1513,6 +1591,128 @@ export default function MyPage() {
     adminOpenCardOutreachStaleDays,
     adminOpenCardOutreachSubject,
     loadAdminOpenCardOutreachPreview,
+  ]);
+
+  const loadAdminOneOnOneOutreachPreview = useCallback(async () => {
+    if (!isAdmin) return;
+
+    setAdminOneOnOneOutreachLoading(true);
+    try {
+      const query = new URLSearchParams({
+        scope: adminOneOnOneOutreachScope,
+        phoneVerified: adminOneOnOneOutreachPhoneFilter,
+        recentLoginDays: adminOneOnOneOutreachRecentLoginDays.trim() || "all",
+        recentMail: adminOneOnOneOutreachRecentMailFilter,
+        sort: adminOneOnOneOutreachSort,
+      }).toString();
+      const res = await fetch(`/api/admin/dating/1on1/outreach?${query}`, { cache: "no-store" });
+      const body = (await res.json().catch(() => ({}))) as AdminOneOnOneOutreachPreview & { error?: string };
+      if (!res.ok) {
+        throw new Error(body.error ?? "1:1 소개팅 메일 미리보기를 불러오지 못했습니다.");
+      }
+      setAdminOneOnOneOutreachPreview(body);
+      setAdminOneOnOneOutreachSubject(body.subject ?? "");
+      setAdminOneOnOneOutreachBody(body.body ?? "");
+    } catch (error) {
+      console.error("[mypage] admin 1on1 outreach preview failed", error);
+      setError(error instanceof Error ? error.message : "1:1 소개팅 메일 미리보기를 불러오지 못했습니다.");
+    } finally {
+      setAdminOneOnOneOutreachLoading(false);
+    }
+  }, [
+    adminOneOnOneOutreachPhoneFilter,
+    adminOneOnOneOutreachRecentLoginDays,
+    adminOneOnOneOutreachRecentMailFilter,
+    adminOneOnOneOutreachScope,
+    adminOneOnOneOutreachSort,
+    isAdmin,
+  ]);
+
+  const handleAdminSendOneOnOneOutreach = useCallback(async () => {
+    if (adminOneOnOneOutreachSending) return;
+
+    const targetCount = adminOneOnOneOutreachPreview?.recipient_count ?? 0;
+    if (!targetCount) {
+      alert("발송 대상이 없습니다.");
+      return;
+    }
+
+    const subject = adminOneOnOneOutreachSubject.trim();
+    const body = adminOneOnOneOutreachBody.trim();
+    if (!subject) {
+      alert("메일 제목을 입력해주세요.");
+      return;
+    }
+    if (!body) {
+      alert("메일 본문을 입력해주세요.");
+      return;
+    }
+
+    if (
+      !confirm(
+        `${adminOneOnOneOutreachScopeLabel(adminOneOnOneOutreachScope)} ${targetCount}명에게 1:1 소개팅 안내 메일을 발송할까요?`
+      )
+    ) {
+      return;
+    }
+
+    setAdminOneOnOneOutreachSending(true);
+    setAdminOneOnOneOutreachResult(null);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/dating/1on1/outreach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          scope: adminOneOnOneOutreachScope,
+          phoneVerified: adminOneOnOneOutreachPhoneFilter,
+          recentLoginDays: adminOneOnOneOutreachRecentLoginDays.trim() || "all",
+          recentMail: adminOneOnOneOutreachRecentMailFilter,
+          sort: adminOneOnOneOutreachSort,
+          subject,
+          body,
+        }),
+      });
+      const responseBody = (await res.json().catch(() => ({}))) as
+        | (AdminOneOnOneOutreachSendResult & { ok?: boolean; error?: string })
+        | { error?: string };
+
+      if (!res.ok) {
+        throw new Error(responseBody.error ?? "1:1 소개팅 메일 발송에 실패했습니다.");
+      }
+
+      setAdminOneOnOneOutreachResult({
+        scope: "scope" in responseBody ? responseBody.scope : adminOneOnOneOutreachScope,
+        phone_verified_filter:
+          "phone_verified_filter" in responseBody ? responseBody.phone_verified_filter : adminOneOnOneOutreachPhoneFilter,
+        recent_login_days:
+          "recent_login_days" in responseBody ? responseBody.recent_login_days : Number(adminOneOnOneOutreachRecentLoginDays) || null,
+        recent_mail_filter:
+          "recent_mail_filter" in responseBody ? responseBody.recent_mail_filter : adminOneOnOneOutreachRecentMailFilter,
+        sort: "sort" in responseBody ? responseBody.sort : adminOneOnOneOutreachSort,
+        requested: "requested" in responseBody ? responseBody.requested : 0,
+        sent: "sent" in responseBody ? responseBody.sent : 0,
+        failed: "failed" in responseBody ? responseBody.failed : 0,
+        failure_summary: "failure_summary" in responseBody ? responseBody.failure_summary ?? [] : [],
+      });
+      await loadAdminOneOnOneOutreachPreview();
+    } catch (error) {
+      console.error("[mypage] admin 1on1 outreach send failed", error);
+      setError(error instanceof Error ? error.message : "1:1 소개팅 메일 발송에 실패했습니다.");
+    } finally {
+      setAdminOneOnOneOutreachSending(false);
+    }
+  }, [
+    adminOneOnOneOutreachBody,
+    adminOneOnOneOutreachPhoneFilter,
+    adminOneOnOneOutreachPreview?.recipient_count,
+    adminOneOnOneOutreachRecentLoginDays,
+    adminOneOnOneOutreachRecentMailFilter,
+    adminOneOnOneOutreachScope,
+    adminOneOnOneOutreachSending,
+    adminOneOnOneOutreachSort,
+    adminOneOnOneOutreachSubject,
+    loadAdminOneOnOneOutreachPreview,
   ]);
 
   const refreshAdminOneOnOneContactData = useMemo(
@@ -7145,6 +7345,207 @@ export default function MyPage() {
                     <p className="font-semibold">주요 실패 사유</p>
                     <div className="mt-1 space-y-1">
                       {adminOpenCardOutreachResult.failure_summary.map((item) => (
+                        <p key={item}>{item}</p>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+          )}
+
+          {adminManageTab === "mail_center" && (
+          <div className="mb-3 rounded-xl border border-sky-200 bg-white p-3">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-xs font-semibold text-sky-800">1:1 소개팅 안내 메일</p>
+                <p className="mt-1 text-[11px] text-neutral-500">
+                  1:1 카드가 아직 없거나, 심사 중이거나, 승인됐지만 아직 매칭이 없거나, 쌍방매칭 후 번호교환 전인 회원만 골라서 보낼 수 있어요.
+                </p>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
+                <select
+                  value={adminOneOnOneOutreachScope}
+                  onChange={(e) => setAdminOneOnOneOutreachScope(e.target.value as AdminOneOnOneOutreachScope)}
+                  className="h-9 rounded-lg border border-sky-200 bg-white px-3 text-xs text-sky-900"
+                >
+                  <option value="combined">둘 다 포함</option>
+                  <option value="no_card">1:1 카드 없는 회원</option>
+                  <option value="pending_review">1:1 카드 심사중 회원</option>
+                  <option value="approved_no_match">1:1 승인 후 아직 매칭 없는 회원</option>
+                  <option value="mutual_no_exchange">쌍방매칭 후 번호교환 전 회원</option>
+                </select>
+                <select
+                  value={adminOneOnOneOutreachPhoneFilter}
+                  onChange={(e) => setAdminOneOnOneOutreachPhoneFilter(e.target.value as AdminOpenCardOutreachPhoneFilter)}
+                  className="h-9 rounded-lg border border-sky-200 bg-white px-3 text-xs text-sky-900"
+                >
+                  <option value="all">휴대폰 인증 전체</option>
+                  <option value="verified">휴대폰 인증 완료만</option>
+                  <option value="unverified">휴대폰 미인증만</option>
+                </select>
+                <select
+                  value={adminOneOnOneOutreachRecentLoginDays}
+                  onChange={(e) => setAdminOneOnOneOutreachRecentLoginDays(e.target.value)}
+                  className="h-9 rounded-lg border border-sky-200 bg-white px-3 text-xs text-sky-900"
+                >
+                  <option value="all">최근 접속 전체</option>
+                  <option value="7">최근 7일 내 접속</option>
+                  <option value="30">최근 30일 내 접속</option>
+                  <option value="90">최근 90일 내 접속</option>
+                </select>
+                <select
+                  value={adminOneOnOneOutreachRecentMailFilter}
+                  onChange={(e) =>
+                    setAdminOneOnOneOutreachRecentMailFilter(e.target.value as AdminOpenCardOutreachRecentMailFilter)
+                  }
+                  className="h-9 rounded-lg border border-sky-200 bg-white px-3 text-xs text-sky-900"
+                >
+                  <option value="not_sent_24h">최근 24시간 미발송만</option>
+                  <option value="all">최근 24시간 발송 전체</option>
+                  <option value="sent_24h">최근 24시간 발송 성공자만</option>
+                </select>
+                <select
+                  value={adminOneOnOneOutreachSort}
+                  onChange={(e) => setAdminOneOnOneOutreachSort(e.target.value as AdminOneOnOneOutreachSort)}
+                  className="h-9 rounded-lg border border-sky-200 bg-white px-3 text-xs text-sky-900"
+                >
+                  <option value="priority">우선순위 추천</option>
+                  <option value="activity_recent">최근 1:1 활동 순</option>
+                  <option value="recent_login">최근 접속 순</option>
+                  <option value="nickname">닉네임 순</option>
+                  <option value="recent_mail">최근 메일 발송 순</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => void loadAdminOneOnOneOutreachPreview()}
+                  disabled={adminOneOnOneOutreachLoading}
+                  className="h-9 rounded-lg border border-sky-200 bg-white px-3 text-xs font-medium text-sky-900 disabled:opacity-60"
+                >
+                  {adminOneOnOneOutreachLoading ? "미리보기 불러오는 중..." : "미리보기 새로고침"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleAdminSendOneOnOneOutreach()}
+                  disabled={adminOneOnOneOutreachSending || adminOneOnOneOutreachLoading || !adminOneOnOneOutreachPreview?.recipient_count}
+                  className="h-9 rounded-lg bg-sky-600 px-3 text-xs font-semibold text-white disabled:opacity-60"
+                >
+                  {adminOneOnOneOutreachSending ? "발송 중..." : "1:1 메일 발송"}
+                </button>
+              </div>
+            </div>
+
+            {adminOneOnOneOutreachPreview ? (
+              <>
+                <div className="mt-3 grid gap-3 md:grid-cols-5">
+                  <div className="rounded-xl border border-sky-100 bg-sky-50/40 px-3 py-3">
+                    <p className="text-[11px] text-neutral-500">현재 발송 대상</p>
+                    <p className="mt-1 text-2xl font-bold text-neutral-900">
+                      {adminOneOnOneOutreachPreview.recipient_count.toLocaleString("ko-KR")}명
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-sky-100 bg-white px-3 py-3">
+                    <p className="text-[11px] text-neutral-500">1:1 카드 없는 회원</p>
+                    <p className="mt-1 text-2xl font-bold text-neutral-900">
+                      {adminOneOnOneOutreachPreview.no_card_count.toLocaleString("ko-KR")}명
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-sky-100 bg-white px-3 py-3">
+                    <p className="text-[11px] text-neutral-500">1:1 카드 심사중 회원</p>
+                    <p className="mt-1 text-2xl font-bold text-neutral-900">
+                      {adminOneOnOneOutreachPreview.pending_review_count.toLocaleString("ko-KR")}명
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-sky-100 bg-white px-3 py-3">
+                    <p className="text-[11px] text-neutral-500">승인 후 아직 매칭 없음</p>
+                    <p className="mt-1 text-2xl font-bold text-neutral-900">
+                      {adminOneOnOneOutreachPreview.approved_no_match_count.toLocaleString("ko-KR")}명
+                    </p>
+                  </div>
+                  <div className="rounded-xl border border-sky-100 bg-white px-3 py-3">
+                    <p className="text-[11px] text-neutral-500">쌍방매칭 후 번호교환 전</p>
+                    <p className="mt-1 text-2xl font-bold text-neutral-900">
+                      {adminOneOnOneOutreachPreview.mutual_no_exchange_count.toLocaleString("ko-KR")}명
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-3 rounded-xl border border-sky-100 bg-white p-3">
+                  <div className="flex flex-wrap gap-2 text-xs text-sky-700">
+                    <span>현재 선택: {adminOneOnOneOutreachScopeLabel(adminOneOnOneOutreachPreview.scope)}</span>
+                    <span>· {adminOpenCardOutreachPhoneLabel(adminOneOnOneOutreachPreview.phone_verified_filter)}</span>
+                    <span>· {adminOpenCardOutreachRecentLoginLabel(adminOneOnOneOutreachPreview.recent_login_days)}</span>
+                    <span>· {adminOpenCardOutreachRecentMailLabel(adminOneOnOneOutreachPreview.recent_mail_filter)}</span>
+                    <span>· {adminOneOnOneOutreachSortLabel(adminOneOnOneOutreachPreview.sort)}</span>
+                  </div>
+                  <p className="mt-2 text-[11px] text-neutral-500">
+                    최근 24시간 발송 성공: {adminOneOnOneOutreachPreview.recent_success_24h_count.toLocaleString("ko-KR")}명
+                  </p>
+                  <label className="mt-3 block text-xs font-semibold text-neutral-900">제목</label>
+                  <input
+                    value={adminOneOnOneOutreachSubject}
+                    onChange={(e) => setAdminOneOnOneOutreachSubject(e.target.value)}
+                    placeholder="메일 제목을 입력하세요"
+                    className="mt-1 h-10 w-full rounded-lg border border-sky-100 px-3 text-sm text-neutral-800 outline-none placeholder:text-neutral-400 focus:border-sky-300"
+                  />
+                  <label className="mt-3 block text-xs font-semibold text-neutral-900">본문</label>
+                  <textarea
+                    value={adminOneOnOneOutreachBody}
+                    onChange={(e) => setAdminOneOnOneOutreachBody(e.target.value)}
+                    placeholder="메일 본문을 입력하세요"
+                    rows={9}
+                    className="mt-1 w-full rounded-lg border border-sky-100 px-3 py-2 text-sm leading-6 text-neutral-800 outline-none placeholder:text-neutral-400 focus:border-sky-300"
+                  />
+                </div>
+
+                <div className="mt-3 rounded-xl border border-sky-100 bg-sky-50/30 p-3">
+                  <p className="text-xs font-semibold text-sky-800">발송 샘플</p>
+                  {adminOneOnOneOutreachPreview.sample_recipients.length === 0 ? (
+                    <p className="mt-2 text-xs text-neutral-500">현재 조건에 맞는 샘플 회원이 없습니다.</p>
+                  ) : (
+                    <div className="mt-2 space-y-2">
+                      {adminOneOnOneOutreachPreview.sample_recipients.map((item) => (
+                        <div key={`${item.user_id}:${item.reason}`} className="rounded-lg border border-sky-100 bg-white px-3 py-2">
+                          <p className="text-xs font-medium text-neutral-900">
+                            {item.nickname ?? "(닉네임 없음)"} / {item.email ?? item.user_id.slice(0, 8)}
+                          </p>
+                          <p className="mt-1 text-[11px] text-neutral-500">
+                            {item.reason === "no_card" && "사유: 1:1 카드 없음"}
+                            {item.reason === "pending_review" && "사유: 1:1 카드 심사중"}
+                            {item.reason === "approved_no_match" && "사유: 1:1 승인 후 아직 매칭 없음"}
+                            {item.reason === "mutual_no_exchange" && "사유: 쌍방매칭 후 번호교환 전"}
+                          </p>
+                          <p className="mt-1 text-[11px] text-neutral-500">
+                            휴대폰 {item.phone_verified ? "인증 완료" : "미인증"} · 최근 접속{" "}
+                            {item.last_sign_in_at ? new Date(item.last_sign_in_at).toLocaleDateString("ko-KR") : "없음"}
+                          </p>
+                          <p className="mt-1 text-[11px] text-neutral-500">
+                            최근 24시간 발송 성공{" "}
+                            {item.recent_success_mail_sent_at
+                              ? new Date(item.recent_success_mail_sent_at).toLocaleString("ko-KR")
+                              : "없음"}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : null}
+
+            {adminOneOnOneOutreachResult ? (
+              <div className="mt-3 space-y-2">
+                <p className="text-sm text-sky-900">
+                  발송 완료: {adminOneOnOneOutreachScopeLabel(adminOneOnOneOutreachResult.scope ?? adminOneOnOneOutreachScope)} 요청{" "}
+                  {adminOneOnOneOutreachResult.requested}명 / 성공 {adminOneOnOneOutreachResult.sent}명 / 실패{" "}
+                  {adminOneOnOneOutreachResult.failed}명
+                </p>
+                {adminOneOnOneOutreachResult.failure_summary?.length ? (
+                  <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                    <p className="font-semibold">주요 실패 사유</p>
+                    <div className="mt-1 space-y-1">
+                      {adminOneOnOneOutreachResult.failure_summary.map((item) => (
                         <p key={item}>{item}</p>
                       ))}
                     </div>
