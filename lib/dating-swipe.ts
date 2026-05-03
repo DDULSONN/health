@@ -478,16 +478,32 @@ export async function sendDatingEmailNotification(
   return sendDatingEmailToAddress(to, subject, text);
 }
 
+export type DatingEmailSendResult = {
+  ok: boolean;
+  status?: number;
+  error?: string;
+  retryable?: boolean;
+};
+
 export async function sendDatingEmailToAddress(
   to: string,
   subject: string,
   text: string
 ): Promise<boolean> {
+  const result = await sendDatingEmailToAddressDetailed(to, subject, text);
+  return result.ok;
+}
+
+export async function sendDatingEmailToAddressDetailed(
+  to: string,
+  subject: string,
+  text: string
+): Promise<DatingEmailSendResult> {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const from = process.env.NOTIFY_FROM_EMAIL?.trim();
   const recipient = String(to ?? "").trim();
   if (!apiKey || !from || !recipient) {
-    return false;
+    return { ok: false, error: "EMAIL_CONFIG_MISSING", retryable: false };
   }
 
   const normalizedSubject = sanitizeOutgoingEmailCopy(subject, "GymTools 알림이 도착했어요");
@@ -515,22 +531,60 @@ export async function sendDatingEmailToAddress(
     "</html>",
   ].join("");
 
-  const res = await fetch("https://api.resend.com/emails", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      from,
-      to: [recipient],
-      subject: normalizedSubject,
-      text: normalizedText,
-      html,
-    }),
-  }).catch(() => null);
+  const payload = {
+    from,
+    to: [recipient],
+    subject: normalizedSubject,
+    text: normalizedText,
+    html,
+  };
 
-  return Boolean(res?.ok);
+  const maxAttempts = 3;
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    let res: Response | null = null;
+    try {
+      res = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(payload),
+      });
+    } catch {
+      if (attempt < maxAttempts) {
+        await delay(350 * attempt);
+        continue;
+      }
+      return { ok: false, error: "NETWORK_ERROR", retryable: true };
+    }
+
+    if (res.ok) {
+      return { ok: true, status: res.status };
+    }
+
+    const errorText = (await res.text().catch(() => "")).trim();
+    const retryable = res.status === 408 || res.status === 409 || res.status === 425 || res.status === 429 || res.status >= 500;
+
+    if (retryable && attempt < maxAttempts) {
+      await delay(500 * attempt);
+      continue;
+    }
+
+    return {
+      ok: false,
+      status: res.status,
+      error: errorText || `RESEND_${res.status}`,
+      retryable,
+    };
+  }
+
+  return { ok: false, error: "UNKNOWN_SEND_FAILURE", retryable: false };
+}
+
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
 const MOJIBAKE_MARKERS = [

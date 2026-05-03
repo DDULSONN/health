@@ -1,18 +1,22 @@
 import { NextResponse } from "next/server";
 import { requireAdminRoute } from "@/lib/admin-route";
-import { sendDatingEmailToAddress } from "@/lib/dating-swipe";
+import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
 import { createAdminClient } from "@/lib/supabase/server";
 
 const USER_PAGE_SIZE = 200;
 const CARD_BATCH_SIZE = 1000;
 const PROFILE_BATCH_SIZE = 500;
-const SEND_CONCURRENCY = 8;
+const SEND_CONCURRENCY = 2;
+const SEND_BATCH_PAUSE_MS = 400;
 const DEFAULT_STALE_DAYS = 30;
+const RECENT_SUCCESS_HOURS = 24;
+const MAIL_LOG_TABLE = "admin_open_card_outreach_mail_logs";
 
 type OutreachScope = "no_card" | "expired_stale" | "combined";
 type RecipientReason = "no_card" | "expired_stale";
 type PhoneVerifiedFilter = "all" | "verified" | "unverified";
-type SortMode = "priority" | "expired_oldest" | "recent_login" | "nickname";
+type RecentMailFilter = "all" | "not_sent_24h" | "sent_24h";
+type SortMode = "priority" | "expired_oldest" | "recent_login" | "nickname" | "recent_mail";
 
 type AuthUserLite = {
   id: string;
@@ -34,6 +38,11 @@ type DatingCardLite = {
   created_at: string | null;
 };
 
+type OutreachMailLogLite = {
+  user_id: string | null;
+  sent_at: string | null;
+};
+
 type OutreachRecipientPreview = {
   user_id: string;
   nickname: string | null;
@@ -42,6 +51,7 @@ type OutreachRecipientPreview = {
   expired_days: number | null;
   phone_verified: boolean;
   last_sign_in_at: string | null;
+  recent_success_mail_sent_at: string | null;
 };
 
 type OutreachPreviewResponse = {
@@ -49,10 +59,12 @@ type OutreachPreviewResponse = {
   stale_days: number;
   phone_verified_filter: PhoneVerifiedFilter;
   recent_login_days: number | null;
+  recent_mail_filter: RecentMailFilter;
   sort: SortMode;
   recipient_count: number;
   no_card_count: number;
   expired_stale_count: number;
+  recent_success_24h_count: number;
   subject: string;
   body: string;
   sample_recipients: OutreachRecipientPreview[];
@@ -63,12 +75,27 @@ type OutreachPostPayload = {
   staleDays?: number | string | null;
   phoneVerified?: PhoneVerifiedFilter;
   recentLoginDays?: number | string | null;
+  recentMail?: RecentMailFilter;
   sort?: SortMode;
   subject?: string;
   body?: string;
 };
 
 type AdminClient = ReturnType<typeof createAdminClient>;
+
+type MailLogInsertRow = {
+  campaign_key: string;
+  user_id: string;
+  email: string | null;
+  subject: string;
+  success: boolean;
+  provider: string;
+  provider_status: number | null;
+  provider_error: string | null;
+  sent_at: string;
+  admin_user_id: string;
+  meta: Record<string, unknown>;
+};
 
 function parseScope(value: string | null | undefined): OutreachScope {
   if (value === "no_card" || value === "expired_stale" || value === "combined") return value;
@@ -94,8 +121,19 @@ function parseRecentLoginDays(value: string | null | undefined): number | null {
   return Math.min(180, Math.max(1, Math.round(parsed)));
 }
 
+function parseRecentMailFilter(value: string | null | undefined): RecentMailFilter {
+  if (value === "all" || value === "not_sent_24h" || value === "sent_24h") return value;
+  return "not_sent_24h";
+}
+
 function parseSort(value: string | null | undefined): SortMode {
-  if (value === "expired_oldest" || value === "recent_login" || value === "nickname" || value === "priority") {
+  if (
+    value === "expired_oldest" ||
+    value === "recent_login" ||
+    value === "nickname" ||
+    value === "recent_mail" ||
+    value === "priority"
+  ) {
     return value;
   }
   return "priority";
@@ -107,37 +145,26 @@ function buildDefaultSubject(scope: OutreachScope) {
   return "[GymTools] 오픈카드로 자연스럽게 연결을 다시 시작해보세요";
 }
 
-function buildDefaultBody(scope: OutreachScope, staleDays: number) {
-  const lines = ["안녕하세요, GymTools입니다.", ""];
-
-  if (scope === "no_card") {
-    lines.push("아직 오픈카드를 등록하지 않으신 회원님께 안내드려요.");
-  } else if (scope === "expired_stale") {
-    lines.push(`오픈카드가 만료된 지 ${staleDays}일 이상 지나, 다시 시작해보시라고 안내드려요.`);
-  } else {
-    lines.push(`현재 오픈카드가 없거나 마지막 카드가 만료된 지 ${staleDays}일 이상 지난 회원님께 안내드려요.`);
-  }
-
-  lines.push(
+function buildDefaultBody() {
+  return [
+    "안녕하세요, GymTools입니다.",
     "",
     "오픈카드를 등록하면",
-    "- 내 카드를 보고 먼저 관심이나 지원이 들어올 수 있고",
-    "- 직접 빠른매칭, 1:1 소개팅, 이상형 더보기로 연결을 이어가기도 쉬워져요",
+    "내 카드를 보고 먼저 관심이나 지원이 들어올 수 있고,",
+    "직접 빠른매칭이나 1:1 소개팅으로도 이어갈 수 있어요.",
     "",
-    "오픈카드를 등록·유지하면 매주 원하는 지역 1곳을 무료로 열어볼 수 있어서",
-    "가까운 이상형부터 자연스럽게 둘러보기에도 좋아요.",
+    "운동이라는 공통 관심사로 시작할 수 있어서",
+    "조금 더 자연스럽게 연결되기 좋습니다.",
     "",
-    "등록은 가볍게 시작할 수 있고, 필요하면 나중에 수정하거나 숨길 수도 있어요.",
+    "오픈카드를 등록·유지하면",
+    "매주 원하는 지역 1곳을 무료로 열어볼 수 있어",
+    "가까운 이상형부터 둘러보기에도 편해요.",
+    "",
     "부담 없이 다시 시작해보세요.",
     "",
     "오픈카드 등록하러 가기",
     "https://helchang.com/community/dating/cards/new",
-    "",
-    "감사합니다.",
-    "GymTools 드림"
-  );
-
-  return lines.join("\n");
+  ].join("\n");
 }
 
 function getErrorMessage(error: unknown, fallback: string) {
@@ -146,6 +173,13 @@ function getErrorMessage(error: unknown, fallback: string) {
     if (maybeMessage) return maybeMessage;
   }
   return fallback;
+}
+
+function isMissingTableError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? String(error.code ?? "").trim() : "";
+  const message = "message" in error ? String(error.message ?? "").trim() : "";
+  return code === "42P01" || message.includes(MAIL_LOG_TABLE);
 }
 
 async function fetchAllAuthUsers(admin: AdminClient) {
@@ -232,6 +266,44 @@ async function fetchAllDatingCards(admin: AdminClient) {
   return rows;
 }
 
+async function fetchRecentSuccessfulMailMap(admin: AdminClient, userIds: string[]) {
+  const sentAtByUserId = new Map<string, string>();
+  if (!userIds.length) return sentAtByUserId;
+
+  const cutoff = new Date(Date.now() - RECENT_SUCCESS_HOURS * 60 * 60 * 1000).toISOString();
+
+  for (let start = 0; start < userIds.length; start += PROFILE_BATCH_SIZE) {
+    const chunk = userIds.slice(start, start + PROFILE_BATCH_SIZE);
+    const res = await admin
+      .from(MAIL_LOG_TABLE)
+      .select("user_id,sent_at")
+      .eq("campaign_key", "open_card_outreach")
+      .eq("success", true)
+      .gte("sent_at", cutoff)
+      .in("user_id", chunk)
+      .order("sent_at", { ascending: false });
+
+    if (res.error) {
+      if (isMissingTableError(res.error)) {
+        console.warn(`[outreach] mail log table missing: ${MAIL_LOG_TABLE}`);
+        return new Map<string, string>();
+      }
+      throw new Error(`메일 발송 로그를 불러오지 못했습니다. ${res.error.message}`);
+    }
+
+    for (const row of (res.data ?? []) as OutreachMailLogLite[]) {
+      const userId = String(row.user_id ?? "").trim();
+      const sentAt = String(row.sent_at ?? "").trim();
+      if (!userId || !sentAt) continue;
+      if (!sentAtByUserId.has(userId)) {
+        sentAtByUserId.set(userId, sentAt);
+      }
+    }
+  }
+
+  return sentAtByUserId;
+}
+
 function getRowSortTime(row: DatingCardLite) {
   const source = row.created_at ?? row.expires_at ?? "";
   const time = new Date(source).getTime();
@@ -253,6 +325,14 @@ function matchesPhoneFilter(phoneVerified: boolean, filter: PhoneVerifiedFilter)
 
 function sortRecipients(recipients: OutreachRecipientPreview[], sort: SortMode) {
   recipients.sort((a, b) => {
+    if (sort === "recent_mail") {
+      const aTime = new Date(a.recent_success_mail_sent_at ?? "").getTime();
+      const bTime = new Date(b.recent_success_mail_sent_at ?? "").getTime();
+      if ((Number.isFinite(bTime) ? bTime : 0) !== (Number.isFinite(aTime) ? aTime : 0)) {
+        return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+      }
+    }
+
     if (sort === "expired_oldest") {
       if ((b.expired_days ?? 0) !== (a.expired_days ?? 0)) return (b.expired_days ?? 0) - (a.expired_days ?? 0);
     }
@@ -260,20 +340,26 @@ function sortRecipients(recipients: OutreachRecipientPreview[], sort: SortMode) 
     if (sort === "recent_login") {
       const aTime = new Date(a.last_sign_in_at ?? "").getTime();
       const bTime = new Date(b.last_sign_in_at ?? "").getTime();
-      return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+      if ((Number.isFinite(bTime) ? bTime : 0) !== (Number.isFinite(aTime) ? aTime : 0)) {
+        return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+      }
     }
 
     if (sort === "nickname") {
       return (a.nickname ?? a.email ?? "").localeCompare(b.nickname ?? b.email ?? "", "ko");
     }
 
+    const aRecentMail = a.recent_success_mail_sent_at ? 1 : 0;
+    const bRecentMail = b.recent_success_mail_sent_at ? 1 : 0;
+    if (aRecentMail !== bRecentMail) return aRecentMail - bRecentMail;
+
     if (a.reason !== b.reason) return a.reason === "expired_stale" ? -1 : 1;
     if ((b.expired_days ?? 0) !== (a.expired_days ?? 0)) return (b.expired_days ?? 0) - (a.expired_days ?? 0);
 
-    const aTime = new Date(a.last_sign_in_at ?? "").getTime();
-    const bTime = new Date(b.last_sign_in_at ?? "").getTime();
-    if ((Number.isFinite(bTime) ? bTime : 0) !== (Number.isFinite(aTime) ? aTime : 0)) {
-      return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+    const aLoginTime = new Date(a.last_sign_in_at ?? "").getTime();
+    const bLoginTime = new Date(b.last_sign_in_at ?? "").getTime();
+    if ((Number.isFinite(bLoginTime) ? bLoginTime : 0) !== (Number.isFinite(aLoginTime) ? aLoginTime : 0)) {
+      return (Number.isFinite(bLoginTime) ? bLoginTime : 0) - (Number.isFinite(aLoginTime) ? aLoginTime : 0);
     }
 
     return (a.nickname ?? a.email ?? "").localeCompare(b.nickname ?? b.email ?? "", "ko");
@@ -288,9 +374,23 @@ function buildRecipients(input: {
   staleDays: number;
   phoneVerifiedFilter: PhoneVerifiedFilter;
   recentLoginDays: number | null;
+  recentMailFilter: RecentMailFilter;
+  recentSuccessMailByUserId: Map<string, string>;
   sort: SortMode;
 }) {
-  const { users, profileByUserId, cards, scope, staleDays, phoneVerifiedFilter, recentLoginDays, sort } = input;
+  const {
+    users,
+    profileByUserId,
+    cards,
+    scope,
+    staleDays,
+    phoneVerifiedFilter,
+    recentLoginDays,
+    recentMailFilter,
+    recentSuccessMailByUserId,
+    sort,
+  } = input;
+
   const now = Date.now();
   const staleCutoffMs = now - staleDays * 24 * 60 * 60 * 1000;
   const cardsByUserId = new Map<string, DatingCardLite[]>();
@@ -315,6 +415,10 @@ function buildRecipients(input: {
     if (!matchesPhoneFilter(phoneVerified, phoneVerifiedFilter)) continue;
     if (!isRecentLogin(user.last_sign_in_at, recentLoginDays)) continue;
 
+    const recentSuccessMailSentAt = recentSuccessMailByUserId.get(user.id) ?? null;
+    if (recentMailFilter === "not_sent_24h" && recentSuccessMailSentAt) continue;
+    if (recentMailFilter === "sent_24h" && !recentSuccessMailSentAt) continue;
+
     const userCards = cardsByUserId.get(user.id) ?? [];
 
     if (userCards.length === 0) {
@@ -328,6 +432,7 @@ function buildRecipients(input: {
           expired_days: null,
           phone_verified: phoneVerified,
           last_sign_in_at: user.last_sign_in_at,
+          recent_success_mail_sent_at: recentSuccessMailSentAt,
         });
       }
       continue;
@@ -355,13 +460,15 @@ function buildRecipients(input: {
         expired_days: expiredDays,
         phone_verified: phoneVerified,
         last_sign_in_at: user.last_sign_in_at,
+        recent_success_mail_sent_at: recentSuccessMailSentAt,
       });
     }
   }
 
   sortRecipients(recipients, sort);
+  const recentSuccess24hCount = recipients.filter((item) => item.recent_success_mail_sent_at).length;
 
-  return { recipients, noCardCount, expiredStaleCount };
+  return { recipients, noCardCount, expiredStaleCount, recentSuccess24hCount };
 }
 
 async function buildPreview(
@@ -370,15 +477,18 @@ async function buildPreview(
   staleDays: number,
   phoneVerifiedFilter: PhoneVerifiedFilter,
   recentLoginDays: number | null,
+  recentMailFilter: RecentMailFilter,
   sort: SortMode
 ): Promise<OutreachPreviewResponse> {
   const users = await fetchAllAuthUsers(admin);
-  const [profileByUserId, cards] = await Promise.all([
-    fetchProfilesByUserIds(admin, users.map((user) => user.id)),
+  const userIds = users.map((user) => user.id);
+  const [profileByUserId, cards, recentSuccessMailByUserId] = await Promise.all([
+    fetchProfilesByUserIds(admin, userIds),
     fetchAllDatingCards(admin),
+    fetchRecentSuccessfulMailMap(admin, userIds),
   ]);
 
-  const { recipients, noCardCount, expiredStaleCount } = buildRecipients({
+  const { recipients, noCardCount, expiredStaleCount, recentSuccess24hCount } = buildRecipients({
     users,
     profileByUserId,
     cards,
@@ -386,6 +496,8 @@ async function buildPreview(
     staleDays,
     phoneVerifiedFilter,
     recentLoginDays,
+    recentMailFilter,
+    recentSuccessMailByUserId,
     sort,
   });
 
@@ -394,37 +506,148 @@ async function buildPreview(
     stale_days: staleDays,
     phone_verified_filter: phoneVerifiedFilter,
     recent_login_days: recentLoginDays,
+    recent_mail_filter: recentMailFilter,
     sort,
     recipient_count: recipients.length,
     no_card_count: noCardCount,
     expired_stale_count: expiredStaleCount,
+    recent_success_24h_count: recentSuccess24hCount,
     subject: buildDefaultSubject(scope),
-    body: buildDefaultBody(scope, staleDays),
+    body: buildDefaultBody(),
     sample_recipients: recipients.slice(0, 20),
   };
 }
 
-async function sendInBatches(recipients: OutreachRecipientPreview[], subject: string, body: string) {
+async function insertOutreachLogs(admin: AdminClient, rows: MailLogInsertRow[]) {
+  if (!rows.length) return;
+
+  const res = await admin.from(MAIL_LOG_TABLE).insert(rows);
+  if (res.error) {
+    if (isMissingTableError(res.error)) {
+      console.warn(`[outreach] skipped mail log insert because table is missing: ${MAIL_LOG_TABLE}`);
+      return;
+    }
+    console.error("[outreach] failed to insert mail logs", res.error);
+  }
+}
+
+async function sendInBatchesSafely(input: {
+  admin: AdminClient;
+  adminUserId: string;
+  recipients: OutreachRecipientPreview[];
+  subject: string;
+  body: string;
+  scope: OutreachScope;
+  staleDays: number;
+  phoneVerifiedFilter: PhoneVerifiedFilter;
+  recentLoginDays: number | null;
+  recentMailFilter: RecentMailFilter;
+  sort: SortMode;
+}) {
+  const {
+    admin,
+    adminUserId,
+    recipients,
+    subject,
+    body,
+    scope,
+    staleDays,
+    phoneVerifiedFilter,
+    recentLoginDays,
+    recentMailFilter,
+    sort,
+  } = input;
+
   let sent = 0;
   let failed = 0;
   let firstFailure: string | null = null;
+  const failureBuckets = new Map<string, number>();
 
   for (let start = 0; start < recipients.length; start += SEND_CONCURRENCY) {
     const batch = recipients.slice(start, start + SEND_CONCURRENCY);
     const results = await Promise.all(
       batch.map(async (item) => {
+        const sentAt = new Date().toISOString();
+        const meta = {
+          scope,
+          stale_days: staleDays,
+          phone_verified_filter: phoneVerifiedFilter,
+          recent_login_days: recentLoginDays,
+          recent_mail_filter: recentMailFilter,
+          sort,
+          reason: item.reason,
+          expired_days: item.expired_days,
+        };
+
         if (!item.email) {
-          return { ok: false, error: `이메일이 없는 회원: ${item.nickname ?? item.user_id}` };
+          const error = `발송 실패: ${item.nickname ?? item.user_id} / EMAIL_MISSING`;
+          return {
+            ok: false as const,
+            error,
+            logRow: {
+              campaign_key: "open_card_outreach",
+              user_id: item.user_id,
+              email: null,
+              subject,
+              success: false,
+              provider: "resend",
+              provider_status: null,
+              provider_error: "EMAIL_MISSING",
+              sent_at: sentAt,
+              admin_user_id: adminUserId,
+              meta,
+            } satisfies MailLogInsertRow,
+          };
         }
 
-        const ok = await sendDatingEmailToAddress(item.email, subject, body).catch(() => false);
-        return ok
-          ? { ok: true as const, error: null }
+        const result = await sendDatingEmailToAddressDetailed(item.email, subject, body).catch(() => ({
+          ok: false,
+          status: undefined,
+          error: "UNHANDLED_SEND_ERROR",
+          retryable: false,
+        }));
+
+        return result.ok
+          ? {
+              ok: true as const,
+              error: null,
+              logRow: {
+                campaign_key: "open_card_outreach",
+                user_id: item.user_id,
+                email: item.email,
+                subject,
+                success: true,
+                provider: "resend",
+                provider_status: result.status ?? 200,
+                provider_error: null,
+                sent_at: sentAt,
+                admin_user_id: adminUserId,
+                meta,
+              } satisfies MailLogInsertRow,
+            }
           : {
               ok: false as const,
-              error: `발송 실패: ${item.nickname ?? item.email} (${item.email})`,
+              error: `발송 실패: ${item.nickname ?? item.email} (${item.email}) / ${result.status ?? "-"} / ${result.error ?? "UNKNOWN"}`,
+              logRow: {
+                campaign_key: "open_card_outreach",
+                user_id: item.user_id,
+                email: item.email,
+                subject,
+                success: false,
+                provider: "resend",
+                provider_status: result.status ?? null,
+                provider_error: result.error ?? "UNKNOWN",
+                sent_at: sentAt,
+                admin_user_id: adminUserId,
+                meta,
+              } satisfies MailLogInsertRow,
             };
       })
+    );
+
+    await insertOutreachLogs(
+      admin,
+      results.map((result) => result.logRow)
     );
 
     for (const result of results) {
@@ -437,10 +660,23 @@ async function sendInBatches(recipients: OutreachRecipientPreview[], subject: st
       if (!firstFailure && result.error) {
         firstFailure = result.error;
       }
+      if (result.error) {
+        const bucketKey = result.error.split(" / ").slice(1).join(" / ") || result.error;
+        failureBuckets.set(bucketKey, (failureBuckets.get(bucketKey) ?? 0) + 1);
+      }
+    }
+
+    if (start + SEND_CONCURRENCY < recipients.length) {
+      await new Promise((resolve) => setTimeout(resolve, SEND_BATCH_PAUSE_MS));
     }
   }
 
-  return { sent, failed, firstFailure };
+  const failureSummary = Array.from(failureBuckets.entries())
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5)
+    .map(([reason, count]) => `${count}건 · ${reason}`);
+
+  return { sent, failed, firstFailure, failureSummary };
 }
 
 export async function GET(request: Request) {
@@ -453,9 +689,18 @@ export async function GET(request: Request) {
     const staleDays = parseStaleDays(params.get("staleDays"));
     const phoneVerifiedFilter = parsePhoneVerifiedFilter(params.get("phoneVerified"));
     const recentLoginDays = parseRecentLoginDays(params.get("recentLoginDays"));
+    const recentMailFilter = parseRecentMailFilter(params.get("recentMail"));
     const sort = parseSort(params.get("sort"));
 
-    const preview = await buildPreview(auth.admin, scope, staleDays, phoneVerifiedFilter, recentLoginDays, sort);
+    const preview = await buildPreview(
+      auth.admin,
+      scope,
+      staleDays,
+      phoneVerifiedFilter,
+      recentLoginDays,
+      recentMailFilter,
+      sort
+    );
     return NextResponse.json(preview);
   } catch (error) {
     console.error("[GET /api/admin/dating/cards/outreach] failed", error);
@@ -483,6 +728,7 @@ export async function POST(request: Request) {
     const staleDays = parseStaleDays(String(payload?.staleDays ?? ""));
     const phoneVerifiedFilter = parsePhoneVerifiedFilter(payload?.phoneVerified);
     const recentLoginDays = parseRecentLoginDays(String(payload?.recentLoginDays ?? ""));
+    const recentMailFilter = parseRecentMailFilter(payload?.recentMail);
     const sort = parseSort(payload?.sort);
     const subject = String(payload?.subject ?? "").trim();
     const body = String(payload?.body ?? "").trim();
@@ -496,9 +742,11 @@ export async function POST(request: Request) {
     }
 
     const users = await fetchAllAuthUsers(auth.admin);
-    const [profileByUserId, cards] = await Promise.all([
-      fetchProfilesByUserIds(auth.admin, users.map((user) => user.id)),
+    const userIds = users.map((user) => user.id);
+    const [profileByUserId, cards, recentSuccessMailByUserId] = await Promise.all([
+      fetchProfilesByUserIds(auth.admin, userIds),
       fetchAllDatingCards(auth.admin),
+      fetchRecentSuccessfulMailMap(auth.admin, userIds),
     ]);
 
     const { recipients } = buildRecipients({
@@ -509,10 +757,24 @@ export async function POST(request: Request) {
       staleDays,
       phoneVerifiedFilter,
       recentLoginDays,
+      recentMailFilter,
+      recentSuccessMailByUserId,
       sort,
     });
 
-    const { sent, failed, firstFailure } = await sendInBatches(recipients, subject, body);
+    const { sent, failed, firstFailure, failureSummary } = await sendInBatchesSafely({
+      admin: auth.admin,
+      adminUserId: auth.user.id,
+      recipients,
+      subject,
+      body,
+      scope,
+      staleDays,
+      phoneVerifiedFilter,
+      recentLoginDays,
+      recentMailFilter,
+      sort,
+    });
 
     if (sent === 0 && recipients.length > 0) {
       const detail = firstFailure ? ` (${firstFailure})` : "";
@@ -528,10 +790,12 @@ export async function POST(request: Request) {
       stale_days: staleDays,
       phone_verified_filter: phoneVerifiedFilter,
       recent_login_days: recentLoginDays,
+      recent_mail_filter: recentMailFilter,
       sort,
       requested: recipients.length,
       sent,
       failed,
+      failure_summary: failureSummary,
     });
   } catch (error) {
     console.error("[POST /api/admin/dating/cards/outreach] failed", error);
