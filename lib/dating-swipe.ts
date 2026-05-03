@@ -421,7 +421,6 @@ export async function getSwipeCandidate(
   for (const row of (cardsRes.data ?? []) as DatingCardRow[]) {
     const ownerId = String(row.owner_user_id ?? "").trim();
     if (!ownerId || ownerId === actorUserId) continue;
-    if (row.status === "hidden" || row.status === "pending") continue;
     if (seenOwners.has(ownerId)) continue;
     if (excludedUserIds.has(ownerId)) continue;
     if (blockedUserIds.has(ownerId)) continue;
