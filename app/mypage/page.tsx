@@ -304,6 +304,24 @@ function adminOpenCardOutreachScopeLabel(scope: AdminOpenCardOutreachScope) {
   return "둘 다 포함";
 }
 
+function adminOpenCardOutreachPhoneLabel(filter: AdminOpenCardOutreachPhoneFilter) {
+  if (filter === "verified") return "휴대폰 인증 완료만";
+  if (filter === "unverified") return "휴대폰 미인증만";
+  return "휴대폰 인증 전체";
+}
+
+function adminOpenCardOutreachRecentLoginLabel(days: number | null) {
+  if (!days) return "최근 접속 전체";
+  return `최근 ${days}일 내 접속`;
+}
+
+function adminOpenCardOutreachSortLabel(sort: AdminOpenCardOutreachSort) {
+  if (sort === "expired_oldest") return "만료 오래된 순";
+  if (sort === "recent_login") return "최근 접속 순";
+  if (sort === "nickname") return "닉네임 순";
+  return "우선순위 추천";
+}
+
 type MyPaidCard = {
   id: string;
   nickname: string;
@@ -519,6 +537,7 @@ type AdminManageTab =
   | "dating_stats"
   | "dating_insights"
   | "open_cards"
+  | "mail_center"
   | "one_on_one_contact"
   | "apply_credits"
   | "swipe_subscriptions"
@@ -585,6 +604,12 @@ type AdminMoreViewRequest = {
   reviewed_at: string | null;
   note: string | null;
 };
+type AdminMoreViewGrantCandidate = {
+  userId: string;
+  nickname: string | null;
+  email: string | null;
+  activeSexes: Array<"male" | "female">;
+};
 type AdminCityViewRequest = {
   id: string;
   user_id: string;
@@ -629,6 +654,8 @@ type AdminOneOnOneContactExchangeRequest = {
 };
 
 type AdminOpenCardOutreachScope = "no_card" | "expired_stale" | "combined";
+type AdminOpenCardOutreachPhoneFilter = "all" | "verified" | "unverified";
+type AdminOpenCardOutreachSort = "priority" | "expired_oldest" | "recent_login" | "nickname";
 
 type AdminOpenCardOutreachRecipient = {
   user_id: string;
@@ -636,11 +663,16 @@ type AdminOpenCardOutreachRecipient = {
   email: string | null;
   reason: "no_card" | "expired_stale";
   expired_days: number | null;
+  phone_verified: boolean;
+  last_sign_in_at: string | null;
 };
 
 type AdminOpenCardOutreachPreview = {
   scope: AdminOpenCardOutreachScope;
   stale_days: number;
+  phone_verified_filter: AdminOpenCardOutreachPhoneFilter;
+  recent_login_days: number | null;
+  sort: AdminOpenCardOutreachSort;
   recipient_count: number;
   no_card_count: number;
   expired_stale_count: number;
@@ -652,6 +684,9 @@ type AdminOpenCardOutreachPreview = {
 type AdminOpenCardOutreachSendResult = {
   scope?: AdminOpenCardOutreachScope;
   stale_days?: number;
+  phone_verified_filter?: AdminOpenCardOutreachPhoneFilter;
+  recent_login_days?: number | null;
+  sort?: AdminOpenCardOutreachSort;
   requested: number;
   sent: number;
   failed: number;
@@ -1015,6 +1050,11 @@ export default function MyPage() {
   const [adminOneOnOneContactSearch, setAdminOneOnOneContactSearch] = useState("");
   const [adminOpenCardOutreachScope, setAdminOpenCardOutreachScope] = useState<AdminOpenCardOutreachScope>("combined");
   const [adminOpenCardOutreachStaleDays, setAdminOpenCardOutreachStaleDays] = useState("30");
+  const [adminOpenCardOutreachPhoneFilter, setAdminOpenCardOutreachPhoneFilter] =
+    useState<AdminOpenCardOutreachPhoneFilter>("all");
+  const [adminOpenCardOutreachRecentLoginDays, setAdminOpenCardOutreachRecentLoginDays] = useState("30");
+  const [adminOpenCardOutreachSort, setAdminOpenCardOutreachSort] =
+    useState<AdminOpenCardOutreachSort>("priority");
   const [adminOpenCardOutreachPreview, setAdminOpenCardOutreachPreview] = useState<AdminOpenCardOutreachPreview | null>(null);
   const [adminOpenCardOutreachLoading, setAdminOpenCardOutreachLoading] = useState(false);
   const [adminOpenCardOutreachSending, setAdminOpenCardOutreachSending] = useState(false);
@@ -1047,6 +1087,13 @@ export default function MyPage() {
   const [adminPaymentCenterError, setAdminPaymentCenterError] = useState("");
   const [adminAccountDeletionAudits, setAdminAccountDeletionAudits] = useState<AdminAccountDeletionAudit[]>([]);
   const [adminCityViewSearch, setAdminCityViewSearch] = useState("");
+  const [adminMoreViewGrantQuery, setAdminMoreViewGrantQuery] = useState("");
+  const [adminMoreViewGrantSex, setAdminMoreViewGrantSex] = useState<"male" | "female">("male");
+  const [adminMoreViewGrantCandidates, setAdminMoreViewGrantCandidates] = useState<AdminMoreViewGrantCandidate[]>([]);
+  const [adminMoreViewGrantLoading, setAdminMoreViewGrantLoading] = useState(false);
+  const [adminMoreViewGrantingUserId, setAdminMoreViewGrantingUserId] = useState<string | null>(null);
+  const [adminMoreViewGrantError, setAdminMoreViewGrantError] = useState("");
+  const [adminMoreViewGrantInfo, setAdminMoreViewGrantInfo] = useState("");
   const [adminCityViewGrantQuery, setAdminCityViewGrantQuery] = useState("");
   const [adminCityViewGrantProvince, setAdminCityViewGrantProvince] = useState<string>(PROVINCE_ORDER[0] ?? "서울");
   const [adminCityViewGrantCandidates, setAdminCityViewGrantCandidates] = useState<AdminCityViewGrantCandidate[]>([]);
@@ -1332,6 +1379,9 @@ export default function MyPage() {
       const query = new URLSearchParams({
         scope: adminOpenCardOutreachScope,
         staleDays: adminOpenCardOutreachStaleDays.trim() || "30",
+        phoneVerified: adminOpenCardOutreachPhoneFilter,
+        recentLoginDays: adminOpenCardOutreachRecentLoginDays.trim() || "all",
+        sort: adminOpenCardOutreachSort,
       }).toString();
       const res = await fetch(`/api/admin/dating/cards/outreach?${query}`, { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as AdminOpenCardOutreachPreview & { error?: string };
@@ -1347,7 +1397,14 @@ export default function MyPage() {
     } finally {
       setAdminOpenCardOutreachLoading(false);
     }
-  }, [adminOpenCardOutreachScope, adminOpenCardOutreachStaleDays, isAdmin]);
+  }, [
+    adminOpenCardOutreachPhoneFilter,
+    adminOpenCardOutreachRecentLoginDays,
+    adminOpenCardOutreachScope,
+    adminOpenCardOutreachSort,
+    adminOpenCardOutreachStaleDays,
+    isAdmin,
+  ]);
 
   const handleAdminSendOpenCardOutreach = useCallback(async () => {
     if (adminOpenCardOutreachSending) return;
@@ -1388,6 +1445,9 @@ export default function MyPage() {
         body: JSON.stringify({
           scope: adminOpenCardOutreachScope,
           staleDays,
+          phoneVerified: adminOpenCardOutreachPhoneFilter,
+          recentLoginDays: adminOpenCardOutreachRecentLoginDays.trim() || "all",
+          sort: adminOpenCardOutreachSort,
           subject,
           body,
         }),
@@ -1403,6 +1463,11 @@ export default function MyPage() {
       setAdminOpenCardOutreachResult({
         scope: "scope" in responseBody ? responseBody.scope : adminOpenCardOutreachScope,
         stale_days: "stale_days" in responseBody ? responseBody.stale_days : staleDays,
+        phone_verified_filter:
+          "phone_verified_filter" in responseBody ? responseBody.phone_verified_filter : adminOpenCardOutreachPhoneFilter,
+        recent_login_days:
+          "recent_login_days" in responseBody ? responseBody.recent_login_days : Number(adminOpenCardOutreachRecentLoginDays) || null,
+        sort: "sort" in responseBody ? responseBody.sort : adminOpenCardOutreachSort,
         requested: "requested" in responseBody ? responseBody.requested : 0,
         sent: "sent" in responseBody ? responseBody.sent : 0,
         failed: "failed" in responseBody ? responseBody.failed : 0,
@@ -1416,9 +1481,12 @@ export default function MyPage() {
     }
   }, [
     adminOpenCardOutreachBody,
+    adminOpenCardOutreachPhoneFilter,
     adminOpenCardOutreachPreview?.recipient_count,
+    adminOpenCardOutreachRecentLoginDays,
     adminOpenCardOutreachScope,
     adminOpenCardOutreachSending,
+    adminOpenCardOutreachSort,
     adminOpenCardOutreachStaleDays,
     adminOpenCardOutreachSubject,
     loadAdminOpenCardOutreachPreview,
@@ -1827,12 +1895,12 @@ export default function MyPage() {
   }, [adminManageTab, adminOpenCardsLoaded, adminOpenCardsLoading, isAdmin, refreshAdminOpenCardData]);
 
   useEffect(() => {
-    if (!isAdmin || adminManageTab !== "open_cards") {
+    if (!isAdmin || adminManageTab !== "mail_center") {
       return;
     }
 
     void loadAdminOpenCardOutreachPreview();
-  }, [adminManageTab, adminOpenCardOutreachScope, adminOpenCardOutreachStaleDays, isAdmin, loadAdminOpenCardOutreachPreview]);
+  }, [adminManageTab, isAdmin, loadAdminOpenCardOutreachPreview]);
 
   useEffect(() => {
     if (!isAdmin || adminManageTab !== "one_on_one_contact" || adminOneOnOneContactLoaded || adminOneOnOneContactLoading) {
@@ -3037,6 +3105,83 @@ export default function MyPage() {
       setAdminMoreViewRequests((prev) => prev.filter((item) => item.id !== requestId));
     } finally {
       setProcessingMoreViewIds((prev) => prev.filter((id) => id !== requestId));
+    }
+  };
+
+  const handleAdminSearchMoreViewGrantCandidates = async () => {
+    const query = adminMoreViewGrantQuery.trim();
+    setAdminMoreViewGrantError("");
+    setAdminMoreViewGrantInfo("");
+
+    if (query.length < 2) {
+      setAdminMoreViewGrantError("닉네임이나 이메일을 2글자 이상 입력해주세요.");
+      setAdminMoreViewGrantCandidates([]);
+      return;
+    }
+
+    setAdminMoreViewGrantLoading(true);
+    try {
+      const res = await fetch(`/api/admin/dating/cards/more-view/grant?query=${encodeURIComponent(query)}`, {
+        cache: "no-store",
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        items?: AdminMoreViewGrantCandidate[];
+      };
+
+      if (!res.ok || !body.ok) {
+        setAdminMoreViewGrantError(body.message ?? "유저 검색에 실패했습니다.");
+        setAdminMoreViewGrantCandidates([]);
+        return;
+      }
+
+      setAdminMoreViewGrantCandidates(body.items ?? []);
+      if ((body.items ?? []).length === 0) {
+        setAdminMoreViewGrantInfo("검색된 유저가 없습니다.");
+      }
+    } finally {
+      setAdminMoreViewGrantLoading(false);
+    }
+  };
+
+  const handleAdminGrantMoreViewToUser = async (userId: string) => {
+    if (!adminMoreViewGrantSex || adminMoreViewGrantingUserId) return;
+
+    setAdminMoreViewGrantError("");
+    setAdminMoreViewGrantInfo("");
+    setAdminMoreViewGrantingUserId(userId);
+    try {
+      const res = await fetch("/api/admin/dating/cards/more-view/grant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, sex: adminMoreViewGrantSex }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+      };
+
+      if (!res.ok || !body.ok) {
+        setAdminMoreViewGrantError(body.message ?? "이상형 더보기 권한 지급에 실패했습니다.");
+        return;
+      }
+
+      setAdminMoreViewGrantInfo(body.message ?? "이상형 더보기를 바로 열어줬습니다.");
+      setAdminMoreViewGrantCandidates((prev) =>
+        prev.map((item) =>
+          item.userId !== userId
+            ? item
+            : {
+                ...item,
+                activeSexes: item.activeSexes.includes(adminMoreViewGrantSex)
+                  ? item.activeSexes
+                  : [...item.activeSexes, adminMoreViewGrantSex].sort(),
+              }
+        )
+      );
+    } finally {
+      setAdminMoreViewGrantingUserId(null);
     }
   };
 
@@ -5677,13 +5822,24 @@ export default function MyPage() {
       {showAdminSection && (
         <section className="mb-5 rounded-2xl border border-violet-200 bg-violet-50/40 p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <h2 className="text-lg font-bold text-violet-900">오픈카드 전체 내용 (관리자)</h2>
+            <h2 className="text-lg font-bold text-violet-900">
+              {adminManageTab === "mail_center"
+                ? "회원 메일 발송 (관리자)"
+                : adminManageTab === "one_on_one_contact"
+                  ? "1:1 번호 공개 관리 (관리자)"
+                  : adminManageTab === "payment_center"
+                    ? "결제 운영 (관리자)"
+                    : "오픈카드 전체 내용 (관리자)"}
+            </h2>
             <button
               type="button"
               disabled={
                 adminManageTab === "payment_center"
                   ? adminPaymentCenterLoading
-                  : 
+                  :
+                adminManageTab === "mail_center"
+                  ? adminOpenCardOutreachLoading
+                  :
                 adminManageTab === "open_cards"
                   ? adminOpenCardsLoading
                   : adminManageTab === "one_on_one_contact"
@@ -5693,6 +5849,8 @@ export default function MyPage() {
               onClick={() =>
                 void (adminManageTab === "payment_center"
                   ? refreshAdminPaymentCenter(true)
+                  : adminManageTab === "mail_center"
+                  ? loadAdminOpenCardOutreachPreview()
                   : adminManageTab === "open_cards"
                   ? refreshAdminOpenCardData(true)
                   : adminManageTab === "one_on_one_contact"
@@ -5713,6 +5871,10 @@ export default function MyPage() {
                   ? adminOneOnOneContactLoading
                     ? "불러오는 중..."
                     : "번호 공개 새로고침"
+                : adminManageTab === "mail_center"
+                  ? adminOpenCardOutreachLoading
+                    ? "불러오는 중..."
+                    : "메일 대상 새로고침"
                 : adminQueueRefreshing
                   ? "새로고침 중..."
                   : "신청목록 새로고침"}
@@ -5766,6 +5928,15 @@ export default function MyPage() {
               }`}
             >
               오픈카드
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdminManageTab("mail_center")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "mail_center" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              메일
             </button>
             <button
               type="button"
@@ -6722,16 +6893,16 @@ export default function MyPage() {
           </div>
           )}
 
-          {adminManageTab === "open_cards" && (
+          {adminManageTab === "mail_center" && (
           <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
             <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
               <div>
                 <p className="text-xs font-semibold text-violet-800">오픈카드 등록 유도 메일</p>
                 <p className="mt-1 text-[11px] text-neutral-500">
-                  현재 오픈카드가 없거나, 마지막 카드가 만료된 지 좀 지난 회원만 골라서 보낼 수 있게 좁혀뒀습니다.
+                  오픈카드가 없거나 마지막 카드가 오래전에 만료된 회원을 골라서, 인증 여부나 최근 접속 기준까지 더해 메일 대상을 좁혀볼 수 있어요.
                 </p>
               </div>
-              <div className="flex flex-wrap gap-2">
+              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-5">
                 <select
                   value={adminOpenCardOutreachScope}
                   onChange={(e) => setAdminOpenCardOutreachScope(e.target.value as AdminOpenCardOutreachScope)}
@@ -6740,6 +6911,35 @@ export default function MyPage() {
                   <option value="combined">둘 다 포함</option>
                   <option value="no_card">오픈카드 없는 회원</option>
                   <option value="expired_stale">오래전 만료된 회원</option>
+                </select>
+                <select
+                  value={adminOpenCardOutreachPhoneFilter}
+                  onChange={(e) => setAdminOpenCardOutreachPhoneFilter(e.target.value as AdminOpenCardOutreachPhoneFilter)}
+                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs text-violet-900"
+                >
+                  <option value="all">휴대폰 인증 전체</option>
+                  <option value="verified">휴대폰 인증 완료만</option>
+                  <option value="unverified">휴대폰 미인증만</option>
+                </select>
+                <select
+                  value={adminOpenCardOutreachRecentLoginDays}
+                  onChange={(e) => setAdminOpenCardOutreachRecentLoginDays(e.target.value)}
+                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs text-violet-900"
+                >
+                  <option value="all">최근 접속 전체</option>
+                  <option value="7">최근 7일 내 접속</option>
+                  <option value="30">최근 30일 내 접속</option>
+                  <option value="90">최근 90일 내 접속</option>
+                </select>
+                <select
+                  value={adminOpenCardOutreachSort}
+                  onChange={(e) => setAdminOpenCardOutreachSort(e.target.value as AdminOpenCardOutreachSort)}
+                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs text-violet-900"
+                >
+                  <option value="priority">우선순위 추천</option>
+                  <option value="expired_oldest">만료 오래된 순</option>
+                  <option value="recent_login">최근 접속 순</option>
+                  <option value="nickname">닉네임 순</option>
                 </select>
                 <div className="flex items-center gap-2 rounded-lg border border-violet-200 bg-white px-3">
                   <span className="text-[11px] text-neutral-500">만료 후</span>
@@ -6798,9 +6998,12 @@ export default function MyPage() {
                 </div>
 
                 <div className="mt-3 rounded-xl border border-violet-100 bg-white p-3">
-                  <p className="text-xs text-violet-700">
-                    현재 선택: {adminOpenCardOutreachScopeLabel(adminOpenCardOutreachPreview.scope)}
-                  </p>
+                  <div className="flex flex-wrap gap-2 text-xs text-violet-700">
+                    <span>현재 선택: {adminOpenCardOutreachScopeLabel(adminOpenCardOutreachPreview.scope)}</span>
+                    <span>· {adminOpenCardOutreachPhoneLabel(adminOpenCardOutreachPreview.phone_verified_filter)}</span>
+                    <span>· {adminOpenCardOutreachRecentLoginLabel(adminOpenCardOutreachPreview.recent_login_days)}</span>
+                    <span>· {adminOpenCardOutreachSortLabel(adminOpenCardOutreachPreview.sort)}</span>
+                  </div>
                   <label className="mt-3 block text-xs font-semibold text-neutral-900">제목</label>
                   <input
                     value={adminOpenCardOutreachSubject}
@@ -6833,6 +7036,10 @@ export default function MyPage() {
                             {item.reason === "no_card"
                               ? "사유: 오픈카드 없음"
                               : `사유: 만료 후 ${item.expired_days ?? adminOpenCardOutreachPreview.stale_days}일 경과`}
+                          </p>
+                          <p className="mt-1 text-[11px] text-neutral-500">
+                            휴대폰 {item.phone_verified ? "인증 완료" : "미인증"} · 최근 접속{" "}
+                            {item.last_sign_in_at ? new Date(item.last_sign_in_at).toLocaleDateString("ko-KR") : "없음"}
                           </p>
                         </div>
                       ))}
@@ -7085,6 +7292,88 @@ export default function MyPage() {
             <p className="text-xs font-semibold text-violet-800">
               이상형 더보기 승인 대기 {adminMoreViewRequests.length}건
             </p>
+            <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/60 p-3">
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <p className="text-xs font-semibold text-violet-900">유저에게 이상형 더보기 직접 열어주기</p>
+                  <p className="mt-1 text-[11px] text-violet-800">
+                    닉네임이나 이메일로 유저를 찾은 뒤, 남자/여자 카드 더보기를 바로 열어줄 수 있어요.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className="text-[11px] font-medium text-violet-800" htmlFor="admin-more-view-grant-sex">
+                    열어줄 더보기
+                  </label>
+                  <select
+                    id="admin-more-view-grant-sex"
+                    value={adminMoreViewGrantSex}
+                    onChange={(e) => setAdminMoreViewGrantSex(e.target.value as "male" | "female")}
+                    className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none ring-0"
+                  >
+                    <option value="male">남자 카드 더보기</option>
+                    <option value="female">여자 카드 더보기</option>
+                  </select>
+                </div>
+              </div>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                <input
+                  type="text"
+                  value={adminMoreViewGrantQuery}
+                  onChange={(e) => setAdminMoreViewGrantQuery(e.target.value)}
+                  placeholder="닉네임 또는 이메일로 검색"
+                  className="h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none ring-0 placeholder:text-neutral-400 sm:max-w-xs"
+                />
+                <button
+                  type="button"
+                  disabled={adminMoreViewGrantLoading}
+                  onClick={() => void handleAdminSearchMoreViewGrantCandidates()}
+                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs font-medium text-violet-900 disabled:opacity-60"
+                >
+                  {adminMoreViewGrantLoading ? "검색 중..." : "유저 찾기"}
+                </button>
+              </div>
+              {adminMoreViewGrantError ? (
+                <p className="mt-2 text-[11px] text-rose-600">{adminMoreViewGrantError}</p>
+              ) : null}
+              {adminMoreViewGrantInfo ? (
+                <p className="mt-2 text-[11px] text-emerald-700">{adminMoreViewGrantInfo}</p>
+              ) : null}
+              {adminMoreViewGrantCandidates.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {adminMoreViewGrantCandidates.map((item) => {
+                    const isGranting = adminMoreViewGrantingUserId === item.userId;
+                    return (
+                      <div
+                        key={item.userId}
+                        className="flex flex-col gap-2 rounded-lg border border-violet-100 bg-white px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-neutral-900">
+                            {item.nickname ?? "(닉네임 없음)"} / {item.email ?? item.userId.slice(0, 8)}
+                          </p>
+                          <p className="mt-1 text-[11px] text-neutral-500">
+                            현재 열림:{" "}
+                            {item.activeSexes.length === 0
+                              ? "없음"
+                              : item.activeSexes.map((sex) => (sex === "female" ? "여자 카드 더보기" : "남자 카드 더보기")).join(", ")}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={isGranting}
+                          onClick={() => void handleAdminGrantMoreViewToUser(item.userId)}
+                          className="h-8 rounded-md bg-violet-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                        >
+                          {isGranting
+                            ? "지급 중..."
+                            : `${adminMoreViewGrantSex === "female" ? "여자 카드 더보기" : "남자 카드 더보기"} 열어주기`}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <input
                 type="text"
