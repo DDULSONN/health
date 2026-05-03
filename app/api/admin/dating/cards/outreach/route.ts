@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { requireAdminRoute } from "@/lib/admin-route";
-import { sendDatingEmailNotification } from "@/lib/dating-swipe";
+import { sendDatingEmailToAddress } from "@/lib/dating-swipe";
 import { createAdminClient } from "@/lib/supabase/server";
 
 const USER_PAGE_SIZE = 200;
@@ -103,8 +103,8 @@ function parseSort(value: string | null | undefined): SortMode {
 
 function buildDefaultSubject(scope: OutreachScope) {
   if (scope === "no_card") return "[GymTools] 오픈카드 등록하고 연결을 시작해보세요";
-  if (scope === "expired_stale") return "[GymTools] 오픈카드를 다시 열어볼까요?";
-  return "[GymTools] 오픈카드로 연결을 다시 시작해보세요";
+  if (scope === "expired_stale") return "[GymTools] 오픈카드를 다시 열어보실까요?";
+  return "[GymTools] 오픈카드로 자연스럽게 연결을 다시 시작해보세요";
 }
 
 function buildDefaultBody(scope: OutreachScope, staleDays: number) {
@@ -113,23 +113,28 @@ function buildDefaultBody(scope: OutreachScope, staleDays: number) {
   if (scope === "no_card") {
     lines.push("아직 오픈카드를 등록하지 않으신 회원님께 안내드려요.");
   } else if (scope === "expired_stale") {
-    lines.push(`오픈카드가 만료된 지 ${staleDays}일 이상 지나 다시 시작해보시라고 안내드려요.`);
+    lines.push(`오픈카드가 만료된 지 ${staleDays}일 이상 지나, 다시 시작해보시라고 안내드려요.`);
   } else {
-    lines.push(
-      `현재 오픈카드가 없거나 마지막 카드가 만료된 지 ${staleDays}일 이상 지난 회원님께 다시 시작해보시라고 안내드려요.`
-    );
+    lines.push(`현재 오픈카드가 없거나 마지막 카드가 만료된 지 ${staleDays}일 이상 지난 회원님께 안내드려요.`);
   }
 
   lines.push(
     "",
-    "오픈카드를 등록해두면",
-    "- 내 카드를 보고 먼저 지원이 들어올 수 있고",
-    "- 직접 빠른매칭, 1:1 소개팅, 이상형 더보기로 연결을 이어갈 수 있어요.",
+    "오픈카드를 등록하면",
+    "- 내 카드를 보고 먼저 관심이나 지원이 들어올 수 있고",
+    "- 직접 빠른매칭, 1:1 소개팅, 이상형 더보기로 연결을 이어가기도 쉬워져요",
     "",
-    "등록은 가볍게 시작하고, 필요할 때 수정하거나 다시 숨길 수도 있습니다.",
+    "오픈카드를 등록·유지하면 매주 원하는 지역 1곳을 무료로 열어볼 수 있어서",
+    "가까운 이상형부터 자연스럽게 둘러보기에도 좋아요.",
+    "",
+    "등록은 가볍게 시작할 수 있고, 필요하면 나중에 수정하거나 숨길 수도 있어요.",
     "부담 없이 다시 시작해보세요.",
     "",
-    "감사합니다."
+    "오픈카드 등록하러 가기",
+    "https://helchang.com/community/dating/cards/new",
+    "",
+    "감사합니다.",
+    "GymTools 드림"
   );
 
   return lines.join("\n");
@@ -150,7 +155,7 @@ async function fetchAllAuthUsers(admin: AdminClient) {
   while (true) {
     const res = await admin.auth.admin.listUsers({ page, perPage: USER_PAGE_SIZE });
     if (res.error) {
-      throw new Error(`회원 목록을 불러오지 못했습니다: ${res.error.message}`);
+      throw new Error(`회원 목록을 불러오지 못했습니다. ${res.error.message}`);
     }
 
     const batch = res.data?.users ?? [];
@@ -185,7 +190,7 @@ async function fetchProfilesByUserIds(admin: AdminClient, userIds: string[]) {
       .in("user_id", chunk);
 
     if (res.error) {
-      throw new Error(`프로필 정보를 불러오지 못했습니다: ${res.error.message}`);
+      throw new Error(`프로필 정보를 불러오지 못했습니다. ${res.error.message}`);
     }
 
     for (const row of (res.data ?? []) as ProfileLite[]) {
@@ -215,7 +220,7 @@ async function fetchAllDatingCards(admin: AdminClient) {
       .range(from, from + CARD_BATCH_SIZE - 1);
 
     if (res.error) {
-      throw new Error(`오픈카드 목록을 불러오지 못했습니다: ${res.error.message}`);
+      throw new Error(`오픈카드 목록을 불러오지 못했습니다. ${res.error.message}`);
     }
 
     const batch = (res.data ?? []) as DatingCardLite[];
@@ -399,28 +404,43 @@ async function buildPreview(
   };
 }
 
-async function sendInBatches(
-  admin: AdminClient,
-  recipients: OutreachRecipientPreview[],
-  subject: string,
-  body: string
-) {
+async function sendInBatches(recipients: OutreachRecipientPreview[], subject: string, body: string) {
   let sent = 0;
   let failed = 0;
+  let firstFailure: string | null = null;
 
   for (let start = 0; start < recipients.length; start += SEND_CONCURRENCY) {
     const batch = recipients.slice(start, start + SEND_CONCURRENCY);
     const results = await Promise.all(
-      batch.map((item) => sendDatingEmailNotification(admin, item.user_id, subject, body).catch(() => false))
+      batch.map(async (item) => {
+        if (!item.email) {
+          return { ok: false, error: `이메일이 없는 회원: ${item.nickname ?? item.user_id}` };
+        }
+
+        const ok = await sendDatingEmailToAddress(item.email, subject, body).catch(() => false);
+        return ok
+          ? { ok: true as const, error: null }
+          : {
+              ok: false as const,
+              error: `발송 실패: ${item.nickname ?? item.email} (${item.email})`,
+            };
+      })
     );
 
-    for (const ok of results) {
-      if (ok) sent += 1;
-      else failed += 1;
+    for (const result of results) {
+      if (result.ok) {
+        sent += 1;
+        continue;
+      }
+
+      failed += 1;
+      if (!firstFailure && result.error) {
+        firstFailure = result.error;
+      }
     }
   }
 
-  return { sent, failed };
+  return { sent, failed, firstFailure };
 }
 
 export async function GET(request: Request) {
@@ -435,15 +455,7 @@ export async function GET(request: Request) {
     const recentLoginDays = parseRecentLoginDays(params.get("recentLoginDays"));
     const sort = parseSort(params.get("sort"));
 
-    const preview = await buildPreview(
-      auth.admin,
-      scope,
-      staleDays,
-      phoneVerifiedFilter,
-      recentLoginDays,
-      sort
-    );
-
+    const preview = await buildPreview(auth.admin, scope, staleDays, phoneVerifiedFilter, recentLoginDays, sort);
     return NextResponse.json(preview);
   } catch (error) {
     console.error("[GET /api/admin/dating/cards/outreach] failed", error);
@@ -500,7 +512,15 @@ export async function POST(request: Request) {
       sort,
     });
 
-    const { sent, failed } = await sendInBatches(auth.admin, recipients, subject, body);
+    const { sent, failed, firstFailure } = await sendInBatches(recipients, subject, body);
+
+    if (sent === 0 && recipients.length > 0) {
+      const detail = firstFailure ? ` (${firstFailure})` : "";
+      return NextResponse.json(
+        { error: `오픈카드 안내 메일 발송에 실패했습니다.${detail}` },
+        { status: 500 }
+      );
+    }
 
     return NextResponse.json({
       ok: true,

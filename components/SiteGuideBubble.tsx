@@ -66,17 +66,24 @@ function buildSuggestions(input: {
     return [
       {
         id: "guest-open-card",
-        title: "처음 오셨다면 오픈카드부터 보는 걸 추천할게요",
-        body: "짐냥이가 보기엔 여기서 시작하는 게 제일 편해요. 먼저 둘러보면서 감을 잡아도 좋아요.",
+        title: "처음 오셨다면 오픈카드부터 열어보세요",
+        body: "짐냥이가 보기엔 여기서 시작하는 게 제일 편해요. 먼저 둘러보면 전체 흐름이 금방 잡혀요.",
         href: "/community/dating/cards",
         cta: "오픈카드 보기",
       },
       {
         id: "guest-browse",
         title: "가볍게 둘러보다가 마음에 들면 시작해도 늦지 않아요",
-        body: "빠른매칭, 1:1, 이상형 더보기까지 어떤 식으로 이어지는지 먼저 보면 훨씬 쉬워져요.",
+        body: "빠른매칭, 1:1 소개팅, 이상형 더보기까지 어떤 느낌인지 먼저 보고 감을 잡아보세요.",
         href: "/community/dating/cards",
         cta: "먼저 둘러보기",
+      },
+      {
+        id: "guest-bodycheck",
+        title: "커뮤니티 몸평 설문도 한 번 참여해보세요",
+        body: "운동하는 사람들 분위기를 가볍게 느끼고 싶다면 몸평 피드부터 보는 것도 꽤 재밌어요.",
+        href: "/community/bodycheck",
+        cta: "몸평 보러가기",
       },
     ] satisfies GuideSuggestion[];
   }
@@ -87,17 +94,24 @@ function buildSuggestions(input: {
     suggestions.push(
       {
         id: "open-card-first",
-        title: "오픈카드부터 열어두면 시작이 쉬워져요",
-        body: "카드를 먼저 만들어두면 지원을 받기도 좋고, 직접 지원할 때도 훨씬 자연스러워져요.",
+        title: "오픈카드부터 열어두면 시작이 훨씬 쉬워져요",
+        body: "카드를 먼저 만들어두면 먼저 지원을 받을 수도 있고, 직접 둘러보며 연결을 시작하기도 편해져요.",
         href: "/community/dating/cards/new",
         cta: "오픈카드 작성",
       },
       {
         id: "open-card-benefit",
         title: "처음 시작은 오픈카드가 제일 무난해요",
-        body: "짐냥이는 여기부터 추천할게요. 이후에 빠른매칭이나 1:1 소개팅도 이어보기 쉬워져요.",
+        body: "오픈카드를 등록·유지하면 매주 원하는 지역 1곳을 무료로 열어볼 수 있어서 가까운 이상형 보기에도 좋아요.",
         href: "/community/dating/cards/new",
         cta: "지금 등록하기",
+      },
+      {
+        id: "open-card-romance",
+        title: "운동이라는 공통점으로 시작하면 대화가 더 자연스러워요",
+        body: "가볍게 연결을 열어두고 싶다면 오픈카드가 가장 부담 없는 시작점이 될 수 있어요.",
+        href: "/community/dating/cards/new",
+        cta: "가볍게 시작하기",
       }
     );
   }
@@ -107,16 +121,16 @@ function buildSuggestions(input: {
       {
         id: "pending-card",
         title: "오픈카드가 준비 중이에요",
-        body: "공개 전까지 조금만 기다려주세요. 그 사이 빠른매칭이나 1:1 소개팅을 먼저 둘러봐도 좋아요.",
+        body: "공개 전까지 조금만 기다려주세요. 그 사이 빠른매칭이나 1:1 소개팅을 같이 둘러보면 더 감이 빨리 와요.",
         href: "/community/dating/cards",
         cta: "빠른매칭 보기",
       },
       {
         id: "pending-mypage",
-        title: "현재 상태는 마이페이지에서 가장 빨리 보여요",
-        body: "대기 중인 카드와 들어온 반응을 한 번에 볼 수 있어서, 헷갈릴 때는 여기부터 확인하면 편해요.",
+        title: "지금 상태는 마이페이지에서 가장 빨리 보여요",
+        body: "대기 중인 카드와 들어온 반응은 마이페이지에서 한 번에 볼 수 있어요. 흐름 정리할 때 제일 편해요.",
         href: "/mypage",
-        cta: "마이페이지 열기",
+        cta: "마이페이지 가기",
       }
     );
   }
@@ -126,7 +140,7 @@ function buildSuggestions(input: {
       {
         id: "public-card-status",
         title: "지금 카드가 공개 중이에요",
-        body: "들어온 지원이 있는지 마이페이지에서 먼저 확인해보세요. 기다리기만 하기보다 직접 둘러보는 것도 좋아요.",
+        body: "들어온 지원이 있는지 먼저 확인해보세요. 기다리기만 하지 말고 직접 둘러보는 것도 꽤 좋아요.",
         href: "/mypage",
         cta: "지원 확인하기",
       },
@@ -140,30 +154,37 @@ function buildSuggestions(input: {
       {
         id: "public-card-more-view",
         title: "더 넓게 보고 싶다면 이상형 더보기도 괜찮아요",
-        body: "지금 보이는 카드가 조금 아쉽다면 더 넓게 살펴보면서 마음에 드는 사람을 찾기 쉬워져요.",
+        body: "지금 보이는 카드가 조금 아쉽다면 더 넓게 둘러보면서 마음에 드는 사람을 찾기 쉬워져요.",
         href: "/dating/more-view",
         cta: "이상형 더보기",
       },
       {
         id: "public-card-nearby",
-        title: "가까운 지역부터 보는 흐름도 생각보다 잘 맞아요",
-        body: "생활권이 비슷하면 실제 연결까지 이어질 가능성도 높아져요. 가까운 이상형 보기도 한 번 열어보세요.",
+        title: "가까운 지역부터 보면 실제 연결까지 이어지기 더 편해요",
+        body: "생활권이 비슷한 사람부터 보는 게 의외로 잘 맞을 때가 많아요. 가까운 이상형도 함께 열어보세요.",
         href: "/dating/nearby-view",
         cta: "가까운 이상형 보기",
       },
       {
         id: "public-card-paid",
-        title: "카드를 더 강하게 띄우고 싶다면 유료 카드도 있어요",
-        body: "상단 고정이나 즉시 공개처럼 노출을 조금 더 확실하게 가져가고 싶을 때 쓰기 좋아요.",
+        title: "노출을 더 강하게 올리고 싶다면 유료 카드도 있어요",
+        body: "대기 없이 등록하거나 상단 고정으로 올리면 일반 카드보다 눈에 띄기 쉬워요.",
         href: "/dating/paid",
         cta: "유료 카드 보기",
       },
       {
         id: "public-card-credits",
-        title: "지원을 더 많이 하고 싶다면 지원권도 챙겨둘 수 있어요",
-        body: "하루 기본 지원 외에 더 보고 싶을 때 준비해두면 꽤 편해요.",
+        title: "마음에 드는 사람에게 더 자주 지원하고 싶다면 지원권도 챙겨보세요",
+        body: "기본 지원 횟수 외에 조금 더 적극적으로 보고 싶을 때 꽤 유용해요.",
         href: "/dating/apply-credits",
         cta: "지원권 보기",
+      },
+      {
+        id: "public-card-bodycheck",
+        title: "커뮤니티 몸평 설문도 가끔 들러보세요",
+        body: "운동하는 사람들 분위기를 익히고 싶거나 가볍게 참여하고 싶다면 몸평 피드가 생각보다 재밌어요.",
+        href: "/community/bodycheck",
+        cta: "몸평 보러가기",
       }
     );
   }
@@ -171,28 +192,37 @@ function buildSuggestions(input: {
   if (hasPublicOpenCard && !swipeVisible) {
     suggestions.push({
       id: "swipe-hidden",
-      title: "빠른매칭 숨김이 켜져 있어요",
-      body: "노출을 다시 켜면 더 많은 연결 기회를 받을 수 있어요. 지금 상태를 한 번만 확인해볼까요?",
+      title: "빠른매칭 노출이 꺼져 있어요",
+      body: "노출을 다시 켜면 더 많은 연결 기회를 받을 수 있어요. 지금 상태는 마이페이지에서 바로 바꿀 수 있어요.",
       href: "/mypage",
       cta: "노출 설정 보기",
     });
   }
 
   if (hasPublicOpenCard && swipeVisible) {
-    suggestions.push({
-      id: "swipe-plus",
-      title: "오늘 더 넉넉하게 보고 싶다면 빠른매칭 플러스도 있어요",
-      body: "기본보다 더 많이 보고 싶을 때 잠깐 열어두기 좋아요. 필요할 때만 써도 충분해요.",
-      href: "/community/dating/cards",
-      cta: "플러스 보기",
-    });
+    suggestions.push(
+      {
+        id: "swipe-plus",
+        title: "오늘 더 넉넉하게 보고 싶다면 빠른매칭 플러스도 있어요",
+        body: "기본보다 더 많이 보고 싶을 때 선택지만 넓혀주는 느낌이라, 필요한 날에만 열어도 충분해요.",
+        href: "/community/dating/cards",
+        cta: "플러스 보기",
+      },
+      {
+        id: "swipe-bodycheck",
+        title: "빠른매칭만 보지 말고 몸평 설문도 한 번 참여해보세요",
+        body: "분위기 환기용으로 가볍게 보기 좋고, 커뮤니티 쪽 온도도 같이 느껴볼 수 있어요.",
+        href: "/community/bodycheck",
+        cta: "설문 참여하기",
+      }
+    );
   }
 
   if (!phoneVerified) {
     suggestions.push({
       id: "phone-verify",
-      title: "휴대폰 인증을 먼저 해두면 편해요",
-      body: "1:1 소개팅이나 일부 연결 기능은 인증 후에 더 자연스럽게 이어져요. 미리 해두면 덜 번거로워요.",
+      title: "휴대폰 인증은 미리 해두면 편해요",
+      body: "1:1 소개팅이나 다른 연결 기능을 쓸 때 훨씬 자연스럽게 이어져요. 필요할 때 급하게 하지 않아도 돼요.",
       href: "/mypage",
       cta: "인증하러 가기",
     });
@@ -203,14 +233,14 @@ function buildSuggestions(input: {
       {
         id: "try-1on1",
         title: "조금 더 진지하게 보고 싶다면 1:1 소개팅도 잘 맞아요",
-        body: "후보를 보고 신청한 뒤 서로 수락되면 연결이 이어져요. 오픈카드와 다른 흐름이라 같이 쓰는 분들이 많아요.",
+        body: "후보를 보고 신청한 뒤 서로 수락되면 연결이 이어져요. 오픈카드와는 다른 흐름이라 같이 쓰는 분들도 많아요.",
         href: "/dating/1on1",
         cta: "1:1 소개팅 보기",
       },
       {
         id: "try-1on1-flow",
-        title: "차분하게 결정하고 싶을 때는 1:1이 편해요",
-        body: "후보를 보고 판단하는 쪽이 좋다면 이 흐름이 더 잘 맞을 수 있어요.",
+        title: "차분하게 보고 결정하고 싶을 땐 1:1이 편해요",
+        body: "후보를 보고 판단하는 쪽이 더 맞다면 이 방식이 마음에 들 수 있어요.",
         href: "/dating/1on1",
         cta: "후보 흐름 보기",
       }
@@ -222,34 +252,50 @@ function buildSuggestions(input: {
       {
         id: "1on1-active",
         title: "진행 중인 1:1 소개팅이 있어요",
-        body: "후보 확인, 수락, 번호 교환 상태는 마이페이지에서 가장 빨리 볼 수 있어요.",
+        body: "후보 확인, 수락, 번호 교환 상태는 마이페이지에서 가장 빨리 확인할 수 있어요.",
         href: "/mypage",
         cta: "진행 상황 보기",
       },
       {
         id: "1on1-payment",
-        title: "좋은 분위기라면 즉시 번호 교환도 이어볼 수 있어요",
-        body: "쌍방 매칭이 됐다면 필요한 순간에 바로 교환 흐름으로 넘어갈 수 있어요.",
+        title: "좋은 분위기라면 즉시 번호 교환으로 이어질 수도 있어요",
+        body: "쌍방 매칭이 되면 필요한 순간 바로 교환 흐름으로 넘어갈 수 있어요.",
         href: "/mypage",
         cta: "번호 교환 확인",
       }
     );
   }
 
-  if (pathname.startsWith("/community/dating/cards")) {
+  if (pathname.startsWith("/community/bodycheck")) {
+    suggestions.unshift({
+      id: "route-bodycheck",
+      title: "몸평 피드는 가볍게 참여하기 좋은 커뮤니티예요",
+      body: "사진 보고 바로 투표하거나, 마음에 들면 직접 글도 올려보세요. 분위기 파악용으로도 좋아요.",
+      href: "/community/bodycheck/write",
+      cta: "몸평글 쓰기",
+    });
+  } else if (pathname.startsWith("/community/write")) {
+    suggestions.unshift({
+      id: "route-community-write",
+      title: "몸평글을 올리면 더 많은 반응을 받을 수 있어요",
+      body: "가볍게 참여해도 좋고, 몸평 설문에 꾸준히 보이는 사람은 커뮤니티에서 존재감이 생겨요.",
+      href: "/community/bodycheck",
+      cta: "몸평 피드 보기",
+    });
+  } else if (pathname.startsWith("/community/dating/cards")) {
     suggestions.unshift(
       hasAnyOpenCard
         ? {
             id: "route-cards-live",
             title: "여기는 카드 둘러보기와 빠른매칭을 같이 보기 좋은 곳이에요",
-            body: "내 카드 관리나 지원 확인은 마이페이지에서, 새 연결 찾기는 여기서 이어보면 편해요.",
+            body: "내 카드 관리나 지원 확인은 마이페이지에서, 새 연결 찾기는 여기서 이어보면 흐름이 편해요.",
             href: "/mypage",
             cta: "내 상태 확인",
           }
         : {
             id: "route-cards-start",
             title: "여기서 오픈카드부터 시작하면 가장 편해요",
-            body: "카드를 먼저 열어두면 다른 기능을 이어붙이기 쉬워져요. 짐냥이는 이 선택을 먼저 추천할게요.",
+            body: "카드를 먼저 열어두면 다른 기능도 이어붙이기 쉬워요. 짐냥이는 이 순서를 제일 추천할게요.",
             href: "/community/dating/cards/new",
             cta: "카드 만들기",
           }
@@ -259,7 +305,7 @@ function buildSuggestions(input: {
       hasOneOnOneActive
         ? {
             id: "route-1on1-active",
-            title: "1:1 진행 상태는 마이페이지에서 보는 게 더 빨라요",
+            title: "1:1 진행 상태는 마이페이지에서 보는 게 제일 빨라요",
             body: "여기서는 흐름을 보고, 실제 수락이나 번호 교환 상태는 마이페이지에서 확인하면 편해요.",
             href: "/mypage",
             cta: "마이페이지로 가기",
@@ -267,7 +313,7 @@ function buildSuggestions(input: {
         : {
             id: "route-1on1-intro",
             title: "1:1은 후보를 보고 천천히 결정하는 방식이에요",
-            body: "서로 수락되면 연결이 이어져요. 흐름만 익혀도 훨씬 덜 복잡하게 느껴질 거예요.",
+            body: "서로 수락되면 연결이 이어져요. 생각보다 복잡하지 않아서 천천히 보기 좋아요.",
             href: "/dating/1on1",
             cta: "안내 더 보기",
           }
@@ -278,21 +324,21 @@ function buildSuggestions(input: {
       title: "이상형 더보기는 선택지를 넓히고 싶을 때 좋아요",
       body: "더 넓게 보고, 마음에 들면 상세보기나 지원으로 바로 이어가면 돼요.",
       href: "/dating/more-view",
-      cta: "카드 계속 보기",
+      cta: "계속 둘러보기",
     });
   } else if (pathname.startsWith("/dating/nearby-view")) {
     suggestions.unshift({
       id: "route-nearby-view",
-      title: "가까운 지역부터 보는 흐름도 꽤 잘 맞아요",
-      body: "생활권이 비슷하면 실제 연결까지 이어질 가능성도 높아져요. 차근차근 보기 좋아요.",
+      title: "가까운 이상형 보기는 실제 연결까지 생각할 때 좋아요",
+      body: "생활권이 비슷한 사람부터 보면 대화도 조금 더 자연스럽게 이어질 때가 많아요.",
       href: "/dating/nearby-view",
-      cta: "지역 더 보기",
+      cta: "지역별로 보기",
     });
   } else if (pathname.startsWith("/dating/paid")) {
     suggestions.unshift({
       id: "route-paid",
-      title: "유료 카드는 더 강하게 노출하고 싶을 때 쓰기 좋아요",
-      body: "상단 고정이나 즉시 공개처럼 노출 속도와 위치를 조금 더 확실하게 가져갈 수 있어요.",
+      title: "유료 카드는 노출을 더 강하게 올리고 싶을 때 쓰면 돼요",
+      body: "상단 고정이나 대기 없이 등록처럼 눈에 띄는 방식이 필요할 때 꽤 확실해요.",
       href: "/dating/paid",
       cta: "유료 카드 보기",
     });
@@ -306,7 +352,7 @@ function buildSuggestions(input: {
     });
   }
 
-  return suggestions.slice(0, 12);
+  return suggestions.slice(0, 16);
 }
 
 export default function SiteGuideBubble() {
@@ -323,9 +369,7 @@ export default function SiteGuideBubble() {
   useEffect(() => {
     try {
       const saved = window.localStorage.getItem(COLLAPSE_STORAGE_KEY);
-      if (saved === "1") {
-        setCollapsed(true);
-      }
+      if (saved === "1") setCollapsed(true);
     } catch {}
   }, []);
 
@@ -370,9 +414,7 @@ export default function SiteGuideBubble() {
         setOpenCards(Array.isArray((cardsBody as OpenCardsResponse).items) ? ((cardsBody as OpenCardsResponse).items ?? []) : []);
         setOneOnOne((oneOnOneBody ?? {}) as OneOnOneStatusResponse);
       } finally {
-        if (!cancelled) {
-          setLoading(false);
-        }
+        if (!cancelled) setLoading(false);
       }
     }
 
@@ -414,9 +456,7 @@ export default function SiteGuideBubble() {
   }
 
   const activeSuggestion = suggestions[index] ?? null;
-  if (!activeSuggestion && !loading) {
-    return null;
-  }
+  if (!activeSuggestion && !loading) return null;
 
   return (
     <div
@@ -442,19 +482,19 @@ export default function SiteGuideBubble() {
 
             <p className="mt-2 text-[12px] leading-5 text-neutral-700">
               {loading
-                ? "오픈카드, 빠른매칭, 1:1 소개팅 중에서 지금 가장 잘 맞는 다음 행동을 골라드릴게요."
+                ? "오픈카드, 빠른매칭, 1:1 소개팅, 커뮤니티 중에서 지금 가장 잘 맞는 다음 행동을 골라드릴게요."
                 : activeSuggestion?.body}
             </p>
 
             <div className="mt-3 flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5">
-                {suggestions.slice(0, 12).map((item, tipIndex) => (
+                {suggestions.slice(0, 16).map((item, tipIndex) => (
                   <button
                     key={item.id}
                     type="button"
                     onClick={() => setIndex(tipIndex)}
                     className={`h-2 rounded-full transition ${tipIndex === index ? "w-5 bg-emerald-500" : "w-2 bg-neutral-200"}`}
-                    aria-label={`${tipIndex + 1}번째 안내 보기`}
+                    aria-label={`${tipIndex + 1}번 안내 보기`}
                   />
                 ))}
               </div>
@@ -489,7 +529,14 @@ export default function SiteGuideBubble() {
           <div className={`relative transition-all duration-300 ${collapsed ? "h-[132px] w-[118px]" : "h-[190px] w-[170px]"}`}>
             <div className="absolute inset-x-6 bottom-1 h-5 rounded-full bg-black/10 blur-md" />
             <div className="absolute inset-0 overflow-hidden rounded-[32px]">
-              <Image src="/mascot/jimnyang-guide-v2.png" alt="짐냥이" fill className="object-cover object-center" sizes="170px" priority={false} />
+              <Image
+                src="/mascot/jimnyang-guide-v2.png"
+                alt="짐냥이"
+                fill
+                className="object-cover object-center"
+                sizes="170px"
+                priority={false}
+              />
             </div>
           </div>
         </div>

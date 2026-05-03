@@ -421,6 +421,7 @@ export async function getSwipeCandidate(
   for (const row of (cardsRes.data ?? []) as DatingCardRow[]) {
     const ownerId = String(row.owner_user_id ?? "").trim();
     if (!ownerId || ownerId === actorUserId) continue;
+    if (row.status === "hidden" || row.status === "pending") continue;
     if (seenOwners.has(ownerId)) continue;
     if (excludedUserIds.has(ownerId)) continue;
     if (blockedUserIds.has(ownerId)) continue;
@@ -470,22 +471,43 @@ export async function sendDatingEmailNotification(
   subject: string,
   text: string
 ): Promise<boolean> {
-  const apiKey = process.env.RESEND_API_KEY?.trim();
-  const from = process.env.NOTIFY_FROM_EMAIL?.trim();
-  if (!apiKey || !from) {
-    return false;
-  }
-
   const userRes = await adminClient.auth.admin.getUserById(userId).catch(() => null);
   const to = userRes?.data?.user?.email?.trim();
-  if (!to) {
+  if (!to) return false;
+
+  return sendDatingEmailToAddress(to, subject, text);
+}
+
+export async function sendDatingEmailToAddress(
+  to: string,
+  subject: string,
+  text: string
+): Promise<boolean> {
+  const apiKey = process.env.RESEND_API_KEY?.trim();
+  const from = process.env.NOTIFY_FROM_EMAIL?.trim();
+  const recipient = String(to ?? "").trim();
+  if (!apiKey || !from || !recipient) {
     return false;
   }
 
-  const html = text
+  const htmlBody = text
     .split("\n")
     .map((line) => line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"))
     .join("<br />");
+
+  const html = [
+    "<!doctype html>",
+    '<html lang="ko">',
+    "<head>",
+    '<meta charset="utf-8" />',
+    '<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />',
+    '<meta name="viewport" content="width=device-width, initial-scale=1" />',
+    "</head>",
+    '<body style="margin:0;padding:24px;background:#fff;color:#111827;font:16px/1.7 -apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;">',
+    htmlBody,
+    "</body>",
+    "</html>",
+  ].join("");
 
   const res = await fetch("https://api.resend.com/emails", {
     method: "POST",
@@ -495,7 +517,7 @@ export async function sendDatingEmailNotification(
     },
     body: JSON.stringify({
       from,
-      to: [to],
+      to: [recipient],
       subject,
       text,
       html,

@@ -18,7 +18,7 @@ export async function requireAdminRoute() {
   if (!isAllowedAdminUser(user.id, user.email)) {
     return {
       ok: false as const,
-      response: NextResponse.json({ error: "접근 권한이 없습니다." }, { status: 403 }),
+      response: NextResponse.json({ error: "관리자 권한이 없습니다." }, { status: 403 }),
     };
   }
 
