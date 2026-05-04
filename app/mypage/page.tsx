@@ -318,6 +318,7 @@ function adminOpenCardOutreachRecentLoginLabel(days: number | null) {
 function adminOpenCardOutreachRecentMailLabel(filter: AdminOpenCardOutreachRecentMailFilter) {
   if (filter === "not_sent_24h") return "최근 24시간 미발송만";
   if (filter === "sent_24h") return "최근 24시간 발송 성공자만";
+  if (filter === "never_sent_success") return "성공 발송 이력 없는 회원만";
   return "최근 24시간 발송 전체";
 }
 
@@ -326,6 +327,7 @@ function adminOpenCardOutreachSortLabel(sort: AdminOpenCardOutreachSort) {
   if (sort === "recent_login") return "최근 접속 순";
   if (sort === "nickname") return "닉네임 순";
   if (sort === "recent_mail") return "최근 메일 발송 순";
+  if (sort === "signup_oldest") return "가입 오래된 순";
   return "우선순위 추천";
 }
 
@@ -678,8 +680,8 @@ type AdminOneOnOneContactExchangeRequest = {
 
 type AdminOpenCardOutreachScope = "no_card" | "expired_stale" | "combined";
 type AdminOpenCardOutreachPhoneFilter = "all" | "verified" | "unverified";
-type AdminOpenCardOutreachRecentMailFilter = "all" | "not_sent_24h" | "sent_24h";
-type AdminOpenCardOutreachSort = "priority" | "expired_oldest" | "recent_login" | "nickname" | "recent_mail";
+type AdminOpenCardOutreachRecentMailFilter = "all" | "not_sent_24h" | "sent_24h" | "never_sent_success";
+type AdminOpenCardOutreachSort = "priority" | "expired_oldest" | "recent_login" | "nickname" | "recent_mail" | "signup_oldest";
 
 type AdminOpenCardOutreachRecipient = {
   user_id: string;
@@ -688,8 +690,10 @@ type AdminOpenCardOutreachRecipient = {
   reason: "no_card" | "expired_stale";
   expired_days: number | null;
   phone_verified: boolean;
+  created_at: string | null;
   last_sign_in_at: string | null;
   recent_success_mail_sent_at: string | null;
+  successful_mail_sent_at: string | null;
 };
 
 type AdminOpenCardOutreachPreview = {
@@ -699,10 +703,13 @@ type AdminOpenCardOutreachPreview = {
   recent_login_days: number | null;
   recent_mail_filter: AdminOpenCardOutreachRecentMailFilter;
   sort: AdminOpenCardOutreachSort;
+  batch_limit: number;
+  total_candidate_count: number;
   recipient_count: number;
   no_card_count: number;
   expired_stale_count: number;
   recent_success_24h_count: number;
+  successful_mail_count: number;
   subject: string;
   body: string;
   sample_recipients: AdminOpenCardOutreachRecipient[];
@@ -715,6 +722,7 @@ type AdminOpenCardOutreachSendResult = {
   recent_login_days?: number | null;
   recent_mail_filter?: AdminOpenCardOutreachRecentMailFilter;
   sort?: AdminOpenCardOutreachSort;
+  batch_limit?: number;
   requested: number;
   sent: number;
   failed: number;
@@ -1131,9 +1139,10 @@ export default function MyPage() {
     useState<AdminOpenCardOutreachPhoneFilter>("all");
   const [adminOpenCardOutreachRecentLoginDays, setAdminOpenCardOutreachRecentLoginDays] = useState("30");
   const [adminOpenCardOutreachRecentMailFilter, setAdminOpenCardOutreachRecentMailFilter] =
-    useState<AdminOpenCardOutreachRecentMailFilter>("not_sent_24h");
+    useState<AdminOpenCardOutreachRecentMailFilter>("never_sent_success");
   const [adminOpenCardOutreachSort, setAdminOpenCardOutreachSort] =
-    useState<AdminOpenCardOutreachSort>("priority");
+    useState<AdminOpenCardOutreachSort>("signup_oldest");
+  const [adminOpenCardOutreachBatchLimit, setAdminOpenCardOutreachBatchLimit] = useState("3000");
   const [adminOpenCardOutreachPreview, setAdminOpenCardOutreachPreview] = useState<AdminOpenCardOutreachPreview | null>(null);
   const [adminOpenCardOutreachLoading, setAdminOpenCardOutreachLoading] = useState(false);
   const [adminOpenCardOutreachSending, setAdminOpenCardOutreachSending] = useState(false);
@@ -1477,6 +1486,7 @@ export default function MyPage() {
         recentLoginDays: adminOpenCardOutreachRecentLoginDays.trim() || "all",
         recentMail: adminOpenCardOutreachRecentMailFilter,
         sort: adminOpenCardOutreachSort,
+        batchLimit: adminOpenCardOutreachBatchLimit.trim() || "3000",
       }).toString();
       const res = await fetch(`/api/admin/dating/cards/outreach?${query}`, { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as AdminOpenCardOutreachPreview & { error?: string };
@@ -1499,6 +1509,7 @@ export default function MyPage() {
     adminOpenCardOutreachScope,
     adminOpenCardOutreachSort,
     adminOpenCardOutreachStaleDays,
+    adminOpenCardOutreachBatchLimit,
     isAdmin,
   ]);
 
@@ -1535,6 +1546,7 @@ export default function MyPage() {
     setError("");
     try {
       const staleDays = Number(adminOpenCardOutreachStaleDays.trim() || "30");
+      const batchLimit = Number(adminOpenCardOutreachBatchLimit.trim() || "3000");
       const res = await fetch("/api/admin/dating/cards/outreach", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1545,6 +1557,7 @@ export default function MyPage() {
           recentLoginDays: adminOpenCardOutreachRecentLoginDays.trim() || "all",
           recentMail: adminOpenCardOutreachRecentMailFilter,
           sort: adminOpenCardOutreachSort,
+          batchLimit,
           subject,
           body,
         }),
@@ -1567,6 +1580,7 @@ export default function MyPage() {
         recent_mail_filter:
           "recent_mail_filter" in responseBody ? responseBody.recent_mail_filter : adminOpenCardOutreachRecentMailFilter,
         sort: "sort" in responseBody ? responseBody.sort : adminOpenCardOutreachSort,
+        batch_limit: "batch_limit" in responseBody ? responseBody.batch_limit : batchLimit,
         requested: "requested" in responseBody ? responseBody.requested : 0,
         sent: "sent" in responseBody ? responseBody.sent : 0,
         failed: "failed" in responseBody ? responseBody.failed : 0,
@@ -1589,6 +1603,7 @@ export default function MyPage() {
     adminOpenCardOutreachSending,
     adminOpenCardOutreachSort,
     adminOpenCardOutreachStaleDays,
+    adminOpenCardOutreachBatchLimit,
     adminOpenCardOutreachSubject,
     loadAdminOpenCardOutreachPreview,
   ]);
@@ -7197,6 +7212,7 @@ export default function MyPage() {
                   }
                   className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs text-violet-900"
                 >
+                  <option value="never_sent_success">성공 발송 이력 없는 회원만</option>
                   <option value="not_sent_24h">최근 24시간 미발송만</option>
                   <option value="all">최근 24시간 발송 전체</option>
                   <option value="sent_24h">최근 24시간 발송 성공자만</option>
@@ -7206,12 +7222,25 @@ export default function MyPage() {
                   onChange={(e) => setAdminOpenCardOutreachSort(e.target.value as AdminOpenCardOutreachSort)}
                   className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs text-violet-900"
                 >
+                  <option value="signup_oldest">가입 오래된 순</option>
                   <option value="priority">우선순위 추천</option>
                   <option value="expired_oldest">만료 오래된 순</option>
                   <option value="recent_login">최근 접속 순</option>
                   <option value="nickname">닉네임 순</option>
                   <option value="recent_mail">최근 메일 발송 순</option>
                 </select>
+                <div className="flex items-center gap-2 rounded-lg border border-violet-200 bg-white px-3">
+                  <span className="text-[11px] text-neutral-500">배치</span>
+                  <input
+                    type="number"
+                    min={100}
+                    max={10000}
+                    value={adminOpenCardOutreachBatchLimit}
+                    onChange={(e) => setAdminOpenCardOutreachBatchLimit(e.target.value)}
+                    className="h-9 w-16 bg-transparent text-center text-xs text-neutral-900 outline-none"
+                  />
+                  <span className="text-[11px] text-neutral-500">명</span>
+                </div>
                 <div className="flex items-center gap-2 rounded-lg border border-violet-200 bg-white px-3">
                   <span className="text-[11px] text-neutral-500">만료 후</span>
                   <input
@@ -7245,14 +7274,17 @@ export default function MyPage() {
 
             {adminOpenCardOutreachPreview ? (
               <>
-                <div className="mt-3 grid gap-3 md:grid-cols-4">
+                <div className="mt-3 grid gap-3 md:grid-cols-5">
                   <div className="rounded-xl border border-violet-100 bg-violet-50/40 px-3 py-3">
-                    <p className="text-[11px] text-neutral-500">현재 발송 대상</p>
+                    <p className="text-[11px] text-neutral-500">현재 발송 묶음</p>
                     <p className="mt-1 text-2xl font-bold text-neutral-900">
                       {adminOpenCardOutreachPreview.recipient_count.toLocaleString("ko-KR")}명
                     </p>
+                    <p className="mt-1 text-[11px] text-neutral-500">
+                      전체 후보 {adminOpenCardOutreachPreview.total_candidate_count.toLocaleString("ko-KR")}명 중
+                    </p>
                   </div>
-                  <div className="rounded-xl border border-violet-100 bg-white px-3 py-3">
+                  <div className="rounded-xl border border-violet-100 bg-violet-50/40 px-3 py-3">
                     <p className="text-[11px] text-neutral-500">오픈카드 없는 회원</p>
                     <p className="mt-1 text-2xl font-bold text-neutral-900">
                       {adminOpenCardOutreachPreview.no_card_count.toLocaleString("ko-KR")}명
@@ -7272,6 +7304,12 @@ export default function MyPage() {
                       {adminOpenCardOutreachPreview.recent_success_24h_count.toLocaleString("ko-KR")}명
                     </p>
                   </div>
+                  <div className="rounded-xl border border-violet-100 bg-white px-3 py-3">
+                    <p className="text-[11px] text-neutral-500">누적 성공 발송 이력</p>
+                    <p className="mt-1 text-2xl font-bold text-neutral-900">
+                      {adminOpenCardOutreachPreview.successful_mail_count.toLocaleString("ko-KR")}명
+                    </p>
+                  </div>
                 </div>
 
                 <div className="mt-3 rounded-xl border border-violet-100 bg-white p-3">
@@ -7281,6 +7319,7 @@ export default function MyPage() {
                     <span>· {adminOpenCardOutreachRecentLoginLabel(adminOpenCardOutreachPreview.recent_login_days)}</span>
                     <span>· {adminOpenCardOutreachRecentMailLabel(adminOpenCardOutreachPreview.recent_mail_filter)}</span>
                     <span>· {adminOpenCardOutreachSortLabel(adminOpenCardOutreachPreview.sort)}</span>
+                    <span>· {adminOpenCardOutreachPreview.batch_limit.toLocaleString("ko-KR")}명씩 발송</span>
                   </div>
                   <label className="mt-3 block text-xs font-semibold text-neutral-900">제목</label>
                   <input
@@ -7316,13 +7355,20 @@ export default function MyPage() {
                               : `사유: 만료 후 ${item.expired_days ?? adminOpenCardOutreachPreview.stale_days}일 경과`}
                           </p>
                           <p className="mt-1 text-[11px] text-neutral-500">
-                            휴대폰 {item.phone_verified ? "인증 완료" : "미인증"} · 최근 접속{" "}
+                            가입일 {item.created_at ? new Date(item.created_at).toLocaleDateString("ko-KR") : "없음"} ·
+                            {" "}휴대폰 {item.phone_verified ? "인증 완료" : "미인증"} · 최근 접속{" "}
                             {item.last_sign_in_at ? new Date(item.last_sign_in_at).toLocaleDateString("ko-KR") : "없음"}
                           </p>
                           <p className="mt-1 text-[11px] text-neutral-500">
                             최근 24시간 발송 성공{" "}
                             {item.recent_success_mail_sent_at
                               ? new Date(item.recent_success_mail_sent_at).toLocaleString("ko-KR")
+                              : "없음"}
+                          </p>
+                          <p className="mt-1 text-[11px] text-neutral-500">
+                            누적 성공 발송 이력{" "}
+                            {item.successful_mail_sent_at
+                              ? new Date(item.successful_mail_sent_at).toLocaleString("ko-KR")
                               : "없음"}
                           </p>
                         </div>

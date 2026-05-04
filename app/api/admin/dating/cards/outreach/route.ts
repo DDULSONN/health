@@ -15,12 +15,13 @@ const MAIL_LOG_TABLE = "admin_open_card_outreach_mail_logs";
 type OutreachScope = "no_card" | "expired_stale" | "combined";
 type RecipientReason = "no_card" | "expired_stale";
 type PhoneVerifiedFilter = "all" | "verified" | "unverified";
-type RecentMailFilter = "all" | "not_sent_24h" | "sent_24h";
-type SortMode = "priority" | "expired_oldest" | "recent_login" | "nickname" | "recent_mail";
+type RecentMailFilter = "all" | "not_sent_24h" | "sent_24h" | "never_sent_success";
+type SortMode = "priority" | "expired_oldest" | "recent_login" | "nickname" | "recent_mail" | "signup_oldest";
 
 type AuthUserLite = {
   id: string;
   email: string | null;
+  created_at: string | null;
   last_sign_in_at: string | null;
 };
 
@@ -50,8 +51,10 @@ type OutreachRecipientPreview = {
   reason: RecipientReason;
   expired_days: number | null;
   phone_verified: boolean;
+  created_at: string | null;
   last_sign_in_at: string | null;
   recent_success_mail_sent_at: string | null;
+  successful_mail_sent_at: string | null;
 };
 
 type OutreachPreviewResponse = {
@@ -61,10 +64,13 @@ type OutreachPreviewResponse = {
   recent_login_days: number | null;
   recent_mail_filter: RecentMailFilter;
   sort: SortMode;
+  batch_limit: number;
+  total_candidate_count: number;
   recipient_count: number;
   no_card_count: number;
   expired_stale_count: number;
   recent_success_24h_count: number;
+  successful_mail_count: number;
   subject: string;
   body: string;
   sample_recipients: OutreachRecipientPreview[];
@@ -77,6 +83,7 @@ type OutreachPostPayload = {
   recentLoginDays?: number | string | null;
   recentMail?: RecentMailFilter;
   sort?: SortMode;
+  batchLimit?: number | string | null;
   subject?: string;
   body?: string;
 };
@@ -122,7 +129,7 @@ function parseRecentLoginDays(value: string | null | undefined): number | null {
 }
 
 function parseRecentMailFilter(value: string | null | undefined): RecentMailFilter {
-  if (value === "all" || value === "not_sent_24h" || value === "sent_24h") return value;
+  if (value === "all" || value === "not_sent_24h" || value === "sent_24h" || value === "never_sent_success") return value;
   return "not_sent_24h";
 }
 
@@ -132,11 +139,18 @@ function parseSort(value: string | null | undefined): SortMode {
     value === "recent_login" ||
     value === "nickname" ||
     value === "recent_mail" ||
+    value === "signup_oldest" ||
     value === "priority"
   ) {
     return value;
   }
   return "priority";
+}
+
+function parseBatchLimit(value: string | null | undefined): number {
+  const parsed = Number(String(value ?? "").trim());
+  if (!Number.isFinite(parsed)) return 3000;
+  return Math.min(10000, Math.max(100, Math.round(parsed)));
 }
 
 function buildDefaultSubject(scope: OutreachScope) {
@@ -201,6 +215,7 @@ async function fetchAllAuthUsers(admin: AdminClient) {
       users.push({
         id,
         email,
+        created_at: user.created_at ?? null,
         last_sign_in_at: user.last_sign_in_at ?? null,
       });
     }
@@ -304,6 +319,41 @@ async function fetchRecentSuccessfulMailMap(admin: AdminClient, userIds: string[
   return sentAtByUserId;
 }
 
+async function fetchLatestSuccessfulMailMap(admin: AdminClient, userIds: string[]) {
+  const sentAtByUserId = new Map<string, string>();
+  if (!userIds.length) return sentAtByUserId;
+
+  for (let start = 0; start < userIds.length; start += PROFILE_BATCH_SIZE) {
+    const chunk = userIds.slice(start, start + PROFILE_BATCH_SIZE);
+    const res = await admin
+      .from(MAIL_LOG_TABLE)
+      .select("user_id,sent_at")
+      .eq("campaign_key", "open_card_outreach")
+      .eq("success", true)
+      .in("user_id", chunk)
+      .order("sent_at", { ascending: false });
+
+    if (res.error) {
+      if (isMissingTableError(res.error)) {
+        console.warn(`[outreach] mail log table missing: ${MAIL_LOG_TABLE}`);
+        return new Map<string, string>();
+      }
+      throw new Error(`메일 발송 로그를 불러오지 못했습니다. ${res.error.message}`);
+    }
+
+    for (const row of (res.data ?? []) as OutreachMailLogLite[]) {
+      const userId = String(row.user_id ?? "").trim();
+      const sentAt = String(row.sent_at ?? "").trim();
+      if (!userId || !sentAt) continue;
+      if (!sentAtByUserId.has(userId)) {
+        sentAtByUserId.set(userId, sentAt);
+      }
+    }
+  }
+
+  return sentAtByUserId;
+}
+
 function getRowSortTime(row: DatingCardLite) {
   const source = row.created_at ?? row.expires_at ?? "";
   const time = new Date(source).getTime();
@@ -325,6 +375,14 @@ function matchesPhoneFilter(phoneVerified: boolean, filter: PhoneVerifiedFilter)
 
 function sortRecipients(recipients: OutreachRecipientPreview[], sort: SortMode) {
   recipients.sort((a, b) => {
+    if (sort === "signup_oldest") {
+      const aTime = new Date(a.created_at ?? "").getTime();
+      const bTime = new Date(b.created_at ?? "").getTime();
+      if ((Number.isFinite(aTime) ? aTime : 0) !== (Number.isFinite(bTime) ? bTime : 0)) {
+        return (Number.isFinite(aTime) ? aTime : 0) - (Number.isFinite(bTime) ? bTime : 0);
+      }
+    }
+
     if (sort === "recent_mail") {
       const aTime = new Date(a.recent_success_mail_sent_at ?? "").getTime();
       const bTime = new Date(b.recent_success_mail_sent_at ?? "").getTime();
@@ -376,7 +434,9 @@ function buildRecipients(input: {
   recentLoginDays: number | null;
   recentMailFilter: RecentMailFilter;
   recentSuccessMailByUserId: Map<string, string>;
+  successfulMailByUserId: Map<string, string>;
   sort: SortMode;
+  batchLimit: number;
 }) {
   const {
     users,
@@ -388,7 +448,9 @@ function buildRecipients(input: {
     recentLoginDays,
     recentMailFilter,
     recentSuccessMailByUserId,
+    successfulMailByUserId,
     sort,
+    batchLimit,
   } = input;
 
   const now = Date.now();
@@ -416,8 +478,10 @@ function buildRecipients(input: {
     if (!isRecentLogin(user.last_sign_in_at, recentLoginDays)) continue;
 
     const recentSuccessMailSentAt = recentSuccessMailByUserId.get(user.id) ?? null;
+    const successfulMailSentAt = successfulMailByUserId.get(user.id) ?? null;
     if (recentMailFilter === "not_sent_24h" && recentSuccessMailSentAt) continue;
     if (recentMailFilter === "sent_24h" && !recentSuccessMailSentAt) continue;
+    if (recentMailFilter === "never_sent_success" && successfulMailSentAt) continue;
 
     const userCards = cardsByUserId.get(user.id) ?? [];
 
@@ -431,8 +495,10 @@ function buildRecipients(input: {
           reason: "no_card",
           expired_days: null,
           phone_verified: phoneVerified,
+          created_at: user.created_at,
           last_sign_in_at: user.last_sign_in_at,
           recent_success_mail_sent_at: recentSuccessMailSentAt,
+          successful_mail_sent_at: successfulMailSentAt,
         });
       }
       continue;
@@ -459,16 +525,28 @@ function buildRecipients(input: {
         reason: "expired_stale",
         expired_days: expiredDays,
         phone_verified: phoneVerified,
+        created_at: user.created_at,
         last_sign_in_at: user.last_sign_in_at,
         recent_success_mail_sent_at: recentSuccessMailSentAt,
+        successful_mail_sent_at: successfulMailSentAt,
       });
     }
   }
 
   sortRecipients(recipients, sort);
+  const totalCandidateCount = recipients.length;
+  const limitedRecipients = recipients.slice(0, batchLimit);
   const recentSuccess24hCount = recipients.filter((item) => item.recent_success_mail_sent_at).length;
+  const successfulMailCount = recipients.filter((item) => item.successful_mail_sent_at).length;
 
-  return { recipients, noCardCount, expiredStaleCount, recentSuccess24hCount };
+  return {
+    recipients: limitedRecipients,
+    totalCandidateCount,
+    noCardCount,
+    expiredStaleCount,
+    recentSuccess24hCount,
+    successfulMailCount,
+  };
 }
 
 async function buildPreview(
@@ -478,17 +556,19 @@ async function buildPreview(
   phoneVerifiedFilter: PhoneVerifiedFilter,
   recentLoginDays: number | null,
   recentMailFilter: RecentMailFilter,
-  sort: SortMode
+  sort: SortMode,
+  batchLimit: number
 ): Promise<OutreachPreviewResponse> {
   const users = await fetchAllAuthUsers(admin);
   const userIds = users.map((user) => user.id);
-  const [profileByUserId, cards, recentSuccessMailByUserId] = await Promise.all([
+  const [profileByUserId, cards, recentSuccessMailByUserId, successfulMailByUserId] = await Promise.all([
     fetchProfilesByUserIds(admin, userIds),
     fetchAllDatingCards(admin),
     fetchRecentSuccessfulMailMap(admin, userIds),
+    fetchLatestSuccessfulMailMap(admin, userIds),
   ]);
 
-  const { recipients, noCardCount, expiredStaleCount, recentSuccess24hCount } = buildRecipients({
+  const { recipients, totalCandidateCount, noCardCount, expiredStaleCount, recentSuccess24hCount, successfulMailCount } = buildRecipients({
     users,
     profileByUserId,
     cards,
@@ -498,7 +578,9 @@ async function buildPreview(
     recentLoginDays,
     recentMailFilter,
     recentSuccessMailByUserId,
+    successfulMailByUserId,
     sort,
+    batchLimit,
   });
 
   return {
@@ -508,10 +590,13 @@ async function buildPreview(
     recent_login_days: recentLoginDays,
     recent_mail_filter: recentMailFilter,
     sort,
+    batch_limit: batchLimit,
+    total_candidate_count: totalCandidateCount,
     recipient_count: recipients.length,
     no_card_count: noCardCount,
     expired_stale_count: expiredStaleCount,
     recent_success_24h_count: recentSuccess24hCount,
+    successful_mail_count: successfulMailCount,
     subject: buildDefaultSubject(scope),
     body: buildDefaultBody(),
     sample_recipients: recipients.slice(0, 20),
@@ -543,6 +628,7 @@ async function sendInBatchesSafely(input: {
   recentLoginDays: number | null;
   recentMailFilter: RecentMailFilter;
   sort: SortMode;
+  batchLimit: number;
 }) {
   const {
     admin,
@@ -556,6 +642,7 @@ async function sendInBatchesSafely(input: {
     recentLoginDays,
     recentMailFilter,
     sort,
+    batchLimit,
   } = input;
 
   let sent = 0;
@@ -575,6 +662,7 @@ async function sendInBatchesSafely(input: {
           recent_login_days: recentLoginDays,
           recent_mail_filter: recentMailFilter,
           sort,
+          batch_limit: batchLimit,
           reason: item.reason,
           expired_days: item.expired_days,
         };
@@ -691,6 +779,7 @@ export async function GET(request: Request) {
     const recentLoginDays = parseRecentLoginDays(params.get("recentLoginDays"));
     const recentMailFilter = parseRecentMailFilter(params.get("recentMail"));
     const sort = parseSort(params.get("sort"));
+    const batchLimit = parseBatchLimit(params.get("batchLimit"));
 
     const preview = await buildPreview(
       auth.admin,
@@ -699,7 +788,8 @@ export async function GET(request: Request) {
       phoneVerifiedFilter,
       recentLoginDays,
       recentMailFilter,
-      sort
+      sort,
+      batchLimit
     );
     return NextResponse.json(preview);
   } catch (error) {
@@ -730,6 +820,7 @@ export async function POST(request: Request) {
     const recentLoginDays = parseRecentLoginDays(String(payload?.recentLoginDays ?? ""));
     const recentMailFilter = parseRecentMailFilter(payload?.recentMail);
     const sort = parseSort(payload?.sort);
+    const batchLimit = parseBatchLimit(String(payload?.batchLimit ?? ""));
     const subject = String(payload?.subject ?? "").trim();
     const body = String(payload?.body ?? "").trim();
 
@@ -743,10 +834,11 @@ export async function POST(request: Request) {
 
     const users = await fetchAllAuthUsers(auth.admin);
     const userIds = users.map((user) => user.id);
-    const [profileByUserId, cards, recentSuccessMailByUserId] = await Promise.all([
+    const [profileByUserId, cards, recentSuccessMailByUserId, successfulMailByUserId] = await Promise.all([
       fetchProfilesByUserIds(auth.admin, userIds),
       fetchAllDatingCards(auth.admin),
       fetchRecentSuccessfulMailMap(auth.admin, userIds),
+      fetchLatestSuccessfulMailMap(auth.admin, userIds),
     ]);
 
     const { recipients } = buildRecipients({
@@ -759,7 +851,9 @@ export async function POST(request: Request) {
       recentLoginDays,
       recentMailFilter,
       recentSuccessMailByUserId,
+      successfulMailByUserId,
       sort,
+      batchLimit,
     });
 
     const { sent, failed, firstFailure, failureSummary } = await sendInBatchesSafely({
@@ -774,6 +868,7 @@ export async function POST(request: Request) {
       recentLoginDays,
       recentMailFilter,
       sort,
+      batchLimit,
     });
 
     if (sent === 0 && recipients.length > 0) {
@@ -792,6 +887,7 @@ export async function POST(request: Request) {
       recent_login_days: recentLoginDays,
       recent_mail_filter: recentMailFilter,
       sort,
+      batch_limit: batchLimit,
       requested: recipients.length,
       sent,
       failed,
