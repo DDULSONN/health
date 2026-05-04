@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { normalizeCardSex } from "@/lib/dating-more-view";
+import { approveMoreViewRequest, grantMoreViewAccess } from "@/lib/dating-purchase-fulfillment";
 import {
   SWIPE_PREMIUM_DAILY_LIMIT,
   SWIPE_PREMIUM_DURATION_DAYS,
@@ -107,6 +108,46 @@ async function cancelReadyOrders(admin: ReturnType<typeof createAdminClient>, or
   if (res.error) {
     throw res.error;
   }
+}
+
+async function recoverMoreViewAccess(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  sex: "male" | "female",
+  tossOrderId: string
+) {
+  const pendingRes = await admin
+    .from("dating_more_view_requests")
+    .select("id")
+    .eq("user_id", userId)
+    .eq("sex", sex)
+    .eq("status", "pending")
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (pendingRes.error) {
+    throw pendingRes.error;
+  }
+
+  if (pendingRes.data?.id) {
+    await approveMoreViewRequest(admin, {
+      requestId: pendingRes.data.id,
+      reviewedByUserId: null,
+      note: `toss payment ${tossOrderId} | auto-recovered`,
+      accessHours: 3,
+      bonusCredits: 1,
+    });
+    return;
+  }
+
+  await grantMoreViewAccess(admin, {
+    userId,
+    sex,
+    accessHours: 3,
+    note: `toss payment ${tossOrderId} | auto-recovered`,
+    bonusCredits: 1,
+  });
 }
 
 export async function POST(req: Request) {
@@ -281,12 +322,26 @@ export async function POST(req: Request) {
       }
 
       const duplicateOrders = duplicateOrderRes.data ?? [];
-      if (duplicateOrders.some((row) => row.status === "paid")) {
-        return json(409, {
-          ok: false,
-          code: "ALREADY_PAID",
+      const latestPaidOrder = duplicateOrders.find((row) => row.status === "paid");
+      if (latestPaidOrder) {
+        try {
+          await recoverMoreViewAccess(admin, user.id, sex, latestPaidOrder.id);
+        } catch (recoveryError) {
+          console.error("[toss-create] more view recovery failed", recoveryError);
+          return json(409, {
+            ok: false,
+            code: "ALREADY_PAID",
+            requestId,
+            message: "이미 결제가 완료된 이상형 더보기입니다. 결제 내역 복구를 다시 시도해주세요.",
+          });
+        }
+
+        return json(200, {
+          ok: true,
+          recovered: true,
+          code: "ALREADY_PAID_RECOVERED",
           requestId,
-          message: "이미 결제가 완료된 이상형 더보기입니다. 결제 내역이 정상 반영되면 다시 확인해주세요.",
+          message: "이전 결제를 확인해 이상형 더보기 권한을 바로 복구했습니다.",
         });
       }
 

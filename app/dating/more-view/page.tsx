@@ -134,10 +134,17 @@ export default function MoreViewPage() {
           ok?: boolean;
           message?: string;
           checkoutUrl?: string;
+          recovered?: boolean;
         };
 
         if (!res.ok) {
           alert(body.message ?? "결제 요청에 실패했습니다.");
+          return;
+        }
+
+        if (body.recovered) {
+          await loadStatus();
+          alert(body.message ?? "이전 결제 내역을 확인해 권한을 복구했습니다.");
           return;
         }
 
@@ -153,7 +160,7 @@ export default function MoreViewPage() {
         setSubmitting(null);
       }
     },
-    [submitting]
+    [loadStatus, submitting]
   );
 
   return (
