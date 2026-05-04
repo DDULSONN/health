@@ -12,12 +12,15 @@ create table if not exists public.account_deletion_audits (
   initiated_by_user_id uuid null references auth.users(id) on delete set null,
   initiated_by_role text not null default 'self' check (initiated_by_role in ('self', 'admin')),
   deleted_at timestamptz not null default now(),
-  retention_until timestamptz not null default (now() + interval '90 days')
+  retention_until timestamptz not null default (now() + interval '30 days')
 );
 
 alter table public.account_deletion_audits
   add column if not exists initiated_by_user_id uuid null references auth.users(id) on delete set null,
   add column if not exists initiated_by_role text not null default 'self';
+
+alter table public.account_deletion_audits
+  alter column retention_until set default (now() + interval '30 days');
 
 do $$
 begin

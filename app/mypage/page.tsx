@@ -561,6 +561,7 @@ type AdminManageTab =
   | "payment_center"
   | "dating_stats"
   | "dating_insights"
+  | "user_activity"
   | "open_cards"
   | "mail_center"
   | "one_on_one_contact"
@@ -573,6 +574,46 @@ type AdminManageTab =
   | "phone_verify"
   | "account_deletions"
   | "site_ads";
+
+type AdminUserActivityItem = {
+  id: string;
+  kind: string;
+  label: string;
+  at: string | null;
+  meta?: Record<string, unknown>;
+};
+
+type AdminUserActivityResult = {
+  query: string;
+  user: {
+    id: string;
+    email: string | null;
+    created_at: string | null;
+    last_sign_in_at: string | null;
+    phone: string | null;
+    phone_confirmed_at: string | null;
+    profile: {
+      nickname?: string | null;
+      role?: string | null;
+      phone_verified?: boolean | null;
+      phone_e164?: string | null;
+      phone_verified_at?: string | null;
+      swipe_profile_visible?: boolean | null;
+    } | null;
+  } | null;
+  deleted_audits: Array<{
+    id: string;
+    auth_user_id: string;
+    nickname: string | null;
+    email_masked: string | null;
+    deletion_mode: string;
+    initiated_by_role: string;
+    deleted_at: string;
+    retention_until: string;
+  }>;
+  counts: Record<string, number>;
+  activities: AdminUserActivityItem[];
+};
 
 type AdminBodyBattleOverview = {
   season: {
@@ -1272,6 +1313,10 @@ export default function MyPage() {
   const [adminPhoneVerifyLoading, setAdminPhoneVerifyLoading] = useState(false);
   const [adminPhoneVerifyError, setAdminPhoneVerifyError] = useState("");
   const [adminPhoneVerifyInfo, setAdminPhoneVerifyInfo] = useState("");
+  const [adminUserActivityQuery, setAdminUserActivityQuery] = useState("");
+  const [adminUserActivityLoading, setAdminUserActivityLoading] = useState(false);
+  const [adminUserActivityError, setAdminUserActivityError] = useState("");
+  const [adminUserActivityResult, setAdminUserActivityResult] = useState<AdminUserActivityResult | null>(null);
   const [adminDeleteIdentifier, setAdminDeleteIdentifier] = useState("");
   const [adminDeleteLoading, setAdminDeleteLoading] = useState(false);
   const [adminDeleteError, setAdminDeleteError] = useState("");
@@ -3757,6 +3802,35 @@ export default function MyPage() {
       setAdminPhoneVerifyError(err instanceof Error ? err.message : "수동 휴대폰 인증 처리에 실패했습니다.");
     } finally {
       setAdminPhoneVerifyLoading(false);
+    }
+  };
+
+  const handleAdminLoadUserActivity = async () => {
+    const query = adminUserActivityQuery.trim();
+    setAdminUserActivityError("");
+
+    if (query.length < 2) {
+      setAdminUserActivityError("닉네임, 이메일 또는 사용자 ID를 2글자 이상 입력해주세요.");
+      return;
+    }
+
+    setAdminUserActivityLoading(true);
+    try {
+      const res = await fetch(`/api/admin/users/activity?query=${encodeURIComponent(query)}`, { cache: "no-store" });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+      } & AdminUserActivityResult;
+
+      if (!res.ok || !body.ok) {
+        throw new Error(body.message || "회원 기록을 불러오지 못했습니다.");
+      }
+
+      setAdminUserActivityResult(body);
+    } catch (err) {
+      setAdminUserActivityError(err instanceof Error ? err.message : "회원 기록을 불러오지 못했습니다.");
+    } finally {
+      setAdminUserActivityLoading(false);
     }
   };
 
@@ -6266,6 +6340,15 @@ export default function MyPage() {
             </button>
             <button
               type="button"
+              onClick={() => setAdminManageTab("user_activity")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "user_activity" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              회원 기록
+            </button>
+            <button
+              type="button"
               onClick={() => setAdminManageTab("one_on_one_contact")}
               className={`h-8 rounded-md border px-3 text-xs font-medium ${
                 adminManageTab === "one_on_one_contact"
@@ -7795,6 +7878,109 @@ export default function MyPage() {
               </div>
             ) : null}
           </div>
+          )}
+
+          {adminManageTab === "user_activity" && (
+            <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                <label className="block flex-1 text-xs font-semibold text-violet-900">
+                  회원 검색
+                  <input
+                    type="text"
+                    value={adminUserActivityQuery}
+                    onChange={(e) => setAdminUserActivityQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void handleAdminLoadUserActivity();
+                      }
+                    }}
+                    placeholder="닉네임, 이메일, 사용자 ID"
+                    className="mt-1 h-10 w-full rounded-lg border border-violet-200 bg-white px-3 text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
+                  />
+                </label>
+                <button
+                  type="button"
+                  onClick={() => void handleAdminLoadUserActivity()}
+                  disabled={adminUserActivityLoading}
+                  className="h-10 rounded-lg bg-violet-600 px-4 text-sm font-semibold text-white disabled:opacity-60"
+                >
+                  {adminUserActivityLoading ? "조회 중..." : "기록 조회"}
+                </button>
+              </div>
+              <p className="mt-2 text-[11px] text-neutral-500">
+                커뮤니티, 몸평, 오픈카드, 1:1, 결제, 문의, 휴대폰 인증 기록을 한 번에 확인합니다. 탈퇴 기록은 보관 기간 내에서만 조회됩니다.
+              </p>
+              {adminUserActivityError ? <p className="mt-2 text-xs text-red-600">{adminUserActivityError}</p> : null}
+
+              {adminUserActivityResult ? (
+                <div className="mt-4 space-y-3">
+                  <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-3">
+                    <p className="text-xs font-semibold text-violet-900">회원 기본 정보</p>
+                    {adminUserActivityResult.user ? (
+                      <div className="mt-2 grid gap-2 text-xs text-neutral-700 sm:grid-cols-2">
+                        <p>닉네임: {adminUserActivityResult.user.profile?.nickname ?? "-"}</p>
+                        <p>이메일: {adminUserActivityResult.user.email ?? "-"}</p>
+                        <p>사용자 ID: {adminUserActivityResult.user.id}</p>
+                        <p>역할: {adminUserActivityResult.user.profile?.role ?? "user"}</p>
+                        <p>가입일: {adminUserActivityResult.user.created_at ? new Date(adminUserActivityResult.user.created_at).toLocaleString("ko-KR") : "-"}</p>
+                        <p>최근 로그인: {adminUserActivityResult.user.last_sign_in_at ? new Date(adminUserActivityResult.user.last_sign_in_at).toLocaleString("ko-KR") : "-"}</p>
+                        <p>휴대폰 인증: {adminUserActivityResult.user.profile?.phone_verified ? "완료" : "미완료"}</p>
+                        <p>빠른매칭 노출: {adminUserActivityResult.user.profile?.swipe_profile_visible === false ? "숨김" : "노출"}</p>
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-xs text-neutral-500">현재 활성 회원을 찾지 못했습니다.</p>
+                    )}
+                  </div>
+
+                  {adminUserActivityResult.deleted_audits.length > 0 ? (
+                    <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                      <p className="text-xs font-semibold text-amber-900">탈퇴 보관 기록</p>
+                      <div className="mt-2 space-y-2">
+                        {adminUserActivityResult.deleted_audits.map((item) => (
+                          <div key={item.id} className="rounded-lg bg-white px-3 py-2 text-xs text-amber-900">
+                            <p className="font-semibold">{item.nickname ?? item.email_masked ?? item.auth_user_id}</p>
+                            <p className="mt-1">
+                              탈퇴 {new Date(item.deleted_at).toLocaleString("ko-KR")} · 보관 만료{" "}
+                              {new Date(item.retention_until).toLocaleString("ko-KR")} · {item.deletion_mode}/{item.initiated_by_role}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+
+                  <div className="grid gap-2 sm:grid-cols-4">
+                    {Object.entries(adminUserActivityResult.counts).map(([key, value]) => (
+                      <div key={key} className="rounded-xl border border-neutral-100 bg-neutral-50 px-3 py-2">
+                        <p className="text-[11px] text-neutral-500">{key}</p>
+                        <p className="mt-1 text-lg font-black text-neutral-900">{Number(value ?? 0).toLocaleString("ko-KR")}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  <div className="rounded-xl border border-neutral-200 bg-white p-3">
+                    <p className="text-xs font-semibold text-neutral-900">최근 활동</p>
+                    {adminUserActivityResult.activities.length === 0 ? (
+                      <p className="mt-2 text-xs text-neutral-500">표시할 활동이 없습니다.</p>
+                    ) : (
+                      <div className="mt-2 max-h-[520px] space-y-2 overflow-auto pr-1">
+                        {adminUserActivityResult.activities.map((item) => (
+                          <details key={`${item.kind}:${item.id}`} className="rounded-lg border border-neutral-100 bg-neutral-50 px-3 py-2">
+                            <summary className="cursor-pointer text-xs font-semibold text-neutral-800">
+                              [{item.label}] {item.at ? new Date(item.at).toLocaleString("ko-KR") : "시간 없음"}
+                            </summary>
+                            <pre className="mt-2 whitespace-pre-wrap break-words rounded-md bg-white p-2 text-[11px] leading-5 text-neutral-600">
+                              {JSON.stringify(item.meta ?? {}, null, 2)}
+                            </pre>
+                          </details>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ) : null}
+            </div>
           )}
 
           {adminManageTab === "one_on_one_contact" && (

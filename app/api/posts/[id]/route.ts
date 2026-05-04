@@ -235,6 +235,24 @@ export async function PATCH(request: Request, { params }: RouteCtx) {
     );
   }
 
+  if (post.type === "photo_bodycheck") {
+    const { data: phoneProfile, error: phoneProfileError } = await supabase
+      .from("profiles")
+      .select("phone_verified")
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (phoneProfileError) {
+      console.error("[PATCH /api/posts/[id]] phone verification lookup failed", phoneProfileError.message);
+      return NextResponse.json({ error: "휴대폰 인증 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });
+    }
+    if (phoneProfile?.phone_verified !== true) {
+      return NextResponse.json(
+        { error: "사진 몸평 글은 휴대폰 인증 완료 후 수정할 수 있습니다. 마이페이지에서 먼저 인증해 주세요.", code: "PHONE_VERIFICATION_REQUIRED" },
+        { status: 403 }
+      );
+    }
+  }
+
   const body = await request.json();
   const { title, content, images, gender } = body as {
     title?: string;

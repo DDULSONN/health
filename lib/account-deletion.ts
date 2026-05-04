@@ -79,7 +79,10 @@ async function insertDeletionAudit(
     ip_address: payload.ip_address ?? null,
     user_agent: payload.user_agent ?? null,
     deletion_mode: payload.deletion_mode,
-    initiated_by_user_id: payload.initiated_by_user_id ?? null,
+    initiated_by_user_id:
+      payload.initiated_by_user_id && payload.initiated_by_user_id !== payload.auth_user_id
+        ? payload.initiated_by_user_id
+        : null,
     initiated_by_role: payload.initiated_by_role ?? "self",
   });
 

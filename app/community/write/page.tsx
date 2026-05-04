@@ -51,6 +51,7 @@ export default function WritePage() {
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [phoneVerified, setPhoneVerified] = useState(false);
   const [error, setError] = useState("");
   const [toast, setToast] = useState("");
 
@@ -66,16 +67,30 @@ export default function WritePage() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+
     createClient()
       .auth.getUser()
-      .then(({ data: { user } }) => {
+      .then(async ({ data: { user } }) => {
         if (!user) {
           const redirect = `/community/write${isPhotoBodycheck ? "?type=photo_bodycheck" : ""}`;
           router.replace(`/login?redirect=${encodeURIComponent(redirect)}`);
           return;
         }
-        setAuthChecked(true);
+        const { data: profile } = await createClient()
+          .from("profiles")
+          .select("phone_verified")
+          .eq("user_id", user.id)
+          .maybeSingle();
+        if (!cancelled) {
+          setPhoneVerified(profile?.phone_verified === true);
+          setAuthChecked(true);
+        }
       });
+
+    return () => {
+      cancelled = true;
+    };
   }, [router, isPhotoBodycheck]);
 
   useEffect(() => {
@@ -204,6 +219,10 @@ export default function WritePage() {
       return;
     }
     if (isPhotoBodycheck) {
+      if (!phoneVerified) {
+        setError("사진 몸평 글은 휴대폰 인증 완료 후 작성할 수 있습니다. 마이페이지에서 먼저 인증해 주세요.");
+        return;
+      }
       if (!gender) {
         setError("사진 몸평은 성별 선택이 필요합니다.");
         return;
@@ -293,6 +312,11 @@ export default function WritePage() {
             <div className="rounded-xl border border-indigo-200 bg-indigo-50 p-3 text-xs text-indigo-800">
               사진 몸평 글은 다른 회원들이 4단계로 평가하게 됩니다.
             </div>
+            {!phoneVerified ? (
+              <div className="rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs leading-5 text-amber-800">
+                사진 몸평 글은 휴대폰 인증 완료 후 작성할 수 있어요. 마이페이지에서 인증을 먼저 완료해주세요.
+              </div>
+            ) : null}
             <p className="px-1 text-[11px] text-neutral-400">인스타그램 릴스에 등장할 수 있습니다.</p>
 
             <div>
@@ -436,7 +460,7 @@ export default function WritePage() {
 
         <button
           type="submit"
-          disabled={loading || uploading}
+          disabled={loading || uploading || (isPhotoBodycheck && !phoneVerified)}
           className="w-full min-h-[52px] rounded-xl bg-emerald-600 font-medium text-white transition-all hover:bg-emerald-700 active:scale-[0.98] disabled:opacity-50"
         >
           {loading ? "등록 중..." : "등록하기"}
