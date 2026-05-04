@@ -6231,54 +6231,62 @@ export default function MyPage() {
                     ? "결제 운영 (관리자)"
                     : "오픈카드 전체 내용 (관리자)"}
             </h2>
-            <button
-              type="button"
-              disabled={
-                adminManageTab === "payment_center"
-                  ? adminPaymentCenterLoading
-                  :
-                adminManageTab === "mail_center"
-                  ? adminOpenCardOutreachLoading
-                  :
-                adminManageTab === "open_cards"
+            <div className="flex flex-wrap items-center gap-2">
+              <Link
+                href={`/admin/unlock?next=${encodeURIComponent("/mypage")}`}
+                className="inline-flex h-8 items-center rounded-md border border-violet-300 bg-white px-3 text-xs font-semibold text-violet-900 hover:bg-violet-100"
+              >
+                관리자 잠금 해제
+              </Link>
+              <button
+                type="button"
+                disabled={
+                  adminManageTab === "payment_center"
+                    ? adminPaymentCenterLoading
+                    :
+                  adminManageTab === "mail_center"
+                    ? adminOpenCardOutreachLoading
+                    :
+                  adminManageTab === "open_cards"
+                    ? adminOpenCardsLoading
+                    : adminManageTab === "one_on_one_contact"
+                      ? adminOneOnOneContactLoading
+                      : adminQueueRefreshing
+                }
+                onClick={() =>
+                  void (adminManageTab === "payment_center"
+                    ? refreshAdminPaymentCenter(true)
+                    : adminManageTab === "mail_center"
+                    ? loadAdminOpenCardOutreachPreview()
+                    : adminManageTab === "open_cards"
+                    ? refreshAdminOpenCardData(true)
+                    : adminManageTab === "one_on_one_contact"
+                      ? refreshAdminOneOnOneContactData(true)
+                      : refreshAdminQueueData(true))
+                }
+                className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                {adminManageTab === "open_cards"
                   ? adminOpenCardsLoading
+                    ? "불러오는 중..."
+                    : "오픈카드 새로고침"
+                  : adminManageTab === "payment_center"
+                    ? adminPaymentCenterLoading
+                      ? "불러오는 중..."
+                      : "결제센터 새로고침"
                   : adminManageTab === "one_on_one_contact"
                     ? adminOneOnOneContactLoading
-                    : adminQueueRefreshing
-              }
-              onClick={() =>
-                void (adminManageTab === "payment_center"
-                  ? refreshAdminPaymentCenter(true)
+                      ? "불러오는 중..."
+                      : "번호 공개 새로고침"
                   : adminManageTab === "mail_center"
-                  ? loadAdminOpenCardOutreachPreview()
-                  : adminManageTab === "open_cards"
-                  ? refreshAdminOpenCardData(true)
-                  : adminManageTab === "one_on_one_contact"
-                    ? refreshAdminOneOnOneContactData(true)
-                    : refreshAdminQueueData(true))
-              }
-              className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {adminManageTab === "open_cards"
-                ? adminOpenCardsLoading
-                  ? "불러오는 중..."
-                  : "오픈카드 새로고침"
-                : adminManageTab === "payment_center"
-                  ? adminPaymentCenterLoading
-                    ? "불러오는 중..."
-                    : "결제센터 새로고침"
-                : adminManageTab === "one_on_one_contact"
-                  ? adminOneOnOneContactLoading
-                    ? "불러오는 중..."
-                    : "번호 공개 새로고침"
-                : adminManageTab === "mail_center"
-                  ? adminOpenCardOutreachLoading
-                    ? "불러오는 중..."
-                    : "메일 대상 새로고침"
-                : adminQueueRefreshing
-                  ? "새로고침 중..."
-                  : "신청목록 새로고침"}
-            </button>
+                    ? adminOpenCardOutreachLoading
+                      ? "불러오는 중..."
+                      : "메일 대상 새로고침"
+                  : adminQueueRefreshing
+                    ? "새로고침 중..."
+                    : "신청목록 새로고침"}
+              </button>
+            </div>
           </div>
 
           <div className="mb-3 flex flex-wrap gap-2">

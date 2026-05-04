@@ -119,7 +119,13 @@ export async function middleware(request: NextRequest) {
     const unlocked = await isAdminPanelUnlocked(user.id, request.cookies.get(getAdminPanelCookieName())?.value);
     if (!unlocked) {
       if (isApiRoute) {
-        return NextResponse.json({ error: "Admin panel unlock is required." }, { status: 423 });
+        return NextResponse.json(
+          {
+            error: "관리자 2차 확인이 필요합니다. 관리탭 상단의 '관리자 잠금 해제'를 눌러 비밀번호를 입력해주세요.",
+            unlockUrl: "/admin/unlock",
+          },
+          { status: 423 }
+        );
       }
       const url = new URL("/admin/unlock", request.url);
       url.searchParams.set("next", pathname + request.nextUrl.search);
