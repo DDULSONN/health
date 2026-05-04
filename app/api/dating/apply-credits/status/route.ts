@@ -16,7 +16,15 @@ export async function GET(req: Request) {
   try {
     const { client: supabase, user } = await getRequestAuthContext(req);
     if (!user) {
-      return json(401, { ok: false, code: "UNAUTHORIZED", requestId, message: "로그인이 필요합니다." });
+      return json(200, {
+        ok: true,
+        code: "UNAUTHORIZED",
+        requestId,
+        loggedIn: false,
+        baseUsed: 0,
+        baseRemaining: 0,
+        creditsRemaining: 0,
+      });
     }
 
     const kstDate = getKstDateString();
@@ -35,9 +43,10 @@ export async function GET(req: Request) {
       console.error(`[apply-credits-status] ${requestId} usage read error`, usageRes.error);
       return json(500, { ok: false, code: "READ_FAILED", requestId, message: "사용량 조회에 실패했습니다." });
     }
+
     if (creditsRes.error) {
       console.error(`[apply-credits-status] ${requestId} credits read error`, creditsRes.error);
-      return json(500, { ok: false, code: "READ_FAILED", requestId, message: "크레딧 조회에 실패했습니다." });
+      return json(500, { ok: false, code: "READ_FAILED", requestId, message: "지원권 조회에 실패했습니다." });
     }
 
     const baseUsed = Math.max(0, Math.min(2, Number(usageRes.data?.base_used ?? 0)));
@@ -48,6 +57,7 @@ export async function GET(req: Request) {
       ok: true,
       code: "SUCCESS",
       requestId,
+      loggedIn: true,
       kstDate,
       baseUsed,
       baseRemaining,

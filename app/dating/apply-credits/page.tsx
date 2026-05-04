@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
 import PaidPolicyNotice from "@/components/PaidPolicyNotice";
+import { createClient } from "@/lib/supabase/client";
 
 type ApplyCreditsStatusResponse = {
   ok?: boolean;
@@ -44,6 +45,7 @@ const TEXT = {
 } as const;
 
 export default function ApplyCreditsPage() {
+  const supabase = useMemo(() => createClient(), []);
   const [loggedIn, setLoggedIn] = useState(false);
   const [baseRemaining, setBaseRemaining] = useState(0);
   const [creditsRemaining, setCreditsRemaining] = useState(0);
@@ -51,29 +53,56 @@ export default function ApplyCreditsPage() {
 
   const loadStatus = useCallback(async () => {
     try {
-      const res = await fetch("/api/dating/apply-credits/status", { cache: "no-store" });
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const accessToken = session?.access_token ?? null;
+
+      setLoggedIn(Boolean(accessToken));
+
+      const res = await fetch("/api/dating/apply-credits/status", {
+        cache: "no-store",
+        headers: accessToken
+          ? {
+              Authorization: `Bearer ${accessToken}`,
+            }
+          : undefined,
+      });
       if (!res.ok) return;
       const body = (await res.json()) as ApplyCreditsStatusResponse;
-      setLoggedIn(body.loggedIn === true);
+      setLoggedIn(body.loggedIn === true || Boolean(accessToken));
       setBaseRemaining(Math.max(0, Number(body.baseRemaining ?? 0)));
       setCreditsRemaining(Math.max(0, Number(body.creditsRemaining ?? 0)));
     } catch {
       // ignore
     }
-  }, []);
+  }, [supabase]);
 
   useEffect(() => {
     void loadStatus();
   }, [loadStatus]);
 
   const handleCheckout = useCallback(async () => {
-    if (!loggedIn || submitting) return;
+    if (submitting) return;
     setSubmitting(true);
 
     try {
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+      const accessToken = session?.access_token ?? null;
+
+      if (!accessToken) {
+        alert(TEXT.loginRequired);
+        return;
+      }
+
       const res = await fetch("/api/payments/toss/create", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${accessToken}`,
+        },
         body: JSON.stringify({ productType: "apply_credits" }),
       });
       const body = (await res.json().catch(() => ({}))) as {
@@ -98,7 +127,7 @@ export default function ApplyCreditsPage() {
     } finally {
       setSubmitting(false);
     }
-  }, [loggedIn, submitting]);
+  }, [submitting, supabase]);
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-6">
