@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
 import AdminUnlockClient from "./AdminUnlockClient";
 
 export const metadata: Metadata = {
@@ -10,5 +11,9 @@ export const metadata: Metadata = {
 };
 
 export default function AdminUnlockPage() {
-  return <AdminUnlockClient />;
+  return (
+    <Suspense fallback={null}>
+      <AdminUnlockClient />
+    </Suspense>
+  );
 }
