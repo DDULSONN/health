@@ -688,7 +688,9 @@ async function sendInBatchesSafely(input: {
           };
         }
 
-        const result = await sendDatingEmailToAddressDetailed(item.email, subject, body).catch(() => ({
+        const result = await sendDatingEmailToAddressDetailed(item.email, subject, body, {
+          idempotencyKey: `open-card-outreach:${item.user_id}:${sentAt.slice(0, 10)}:${subject}`,
+        }).catch(() => ({
           ok: false,
           status: undefined,
           error: "UNHANDLED_SEND_ERROR",

@@ -484,6 +484,10 @@ export type DatingEmailSendResult = {
   retryable?: boolean;
 };
 
+type DatingEmailSendOptions = {
+  idempotencyKey?: string;
+};
+
 export async function sendDatingEmailToAddress(
   to: string,
   subject: string,
@@ -496,13 +500,17 @@ export async function sendDatingEmailToAddress(
 export async function sendDatingEmailToAddressDetailed(
   to: string,
   subject: string,
-  text: string
+  text: string,
+  options: DatingEmailSendOptions = {}
 ): Promise<DatingEmailSendResult> {
   const apiKey = process.env.RESEND_API_KEY?.trim();
   const from = process.env.NOTIFY_FROM_EMAIL?.trim();
   const recipient = String(to ?? "").trim();
   if (!apiKey || !from || !recipient) {
     return { ok: false, error: "EMAIL_CONFIG_MISSING", retryable: false };
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient)) {
+    return { ok: false, error: "INVALID_EMAIL", retryable: false };
   }
 
   const normalizedSubject = sanitizeOutgoingEmailCopy(subject, "GymTools 알림이 도착했어요");
@@ -543,12 +551,18 @@ export async function sendDatingEmailToAddressDetailed(
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
     let res: Response | null = null;
     try {
+      const headers: Record<string, string> = {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      };
+      const idempotencyKey = normalizeIdempotencyKey(options.idempotencyKey);
+      if (idempotencyKey) {
+        headers["Idempotency-Key"] = idempotencyKey;
+      }
+
       res = await fetch("https://api.resend.com/emails", {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          "Content-Type": "application/json",
-        },
+        headers,
         body: JSON.stringify(payload),
       });
     } catch {
@@ -586,29 +600,46 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+function normalizeIdempotencyKey(value: string | undefined) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  return encodeURIComponent(raw)
+    .replace(/%/g, "")
+    .replace(/[^A-Za-z0-9._:-]/g, "-")
+    .slice(0, 256);
+}
+
 const MOJIBAKE_MARKERS = [
-  "??륁",
-  "??뜚",
-  "?꾨",
-  "紐꾨",
-  "類ㅼ",
-  "寃곗",
-  "留덉씠",
-  "?ㅽ뵂",
-  "?꾩갑",
-  "?섎씫",
-  "踰덊샇",
-  "援먰솚",
+  "\uFFFD",
   "筌",
   "癰",
-  "獄",
-  "嶺",
+  "燁",
+  "諭",
+  "紐",
+  "類",
+  "源",
+  "袁",
+  "甕",
+  "野",
+  "뵠",
+  "뜚",
+  "륁",
+  "쎈탞",
+  "寃곗",
+  "留덉씠",
+  "ㅽ뵂",
+  "踰덊샇",
+  "援먰솚",
 ];
 
 function looksLikeBrokenKoreanCopy(value: string) {
   const trimmed = String(value ?? "").trim();
   if (!trimmed) return false;
-  return MOJIBAKE_MARKERS.some((marker) => trimmed.includes(marker));
+  if (MOJIBAKE_MARKERS.some((marker) => trimmed.includes(marker))) return true;
+
+  const questionMarks = trimmed.match(/\?/g)?.length ?? 0;
+  const koreanChars = trimmed.match(/[가-힣]/g)?.length ?? 0;
+  return questionMarks >= 8 && koreanChars < 5;
 }
 
 function sanitizeOutgoingEmailCopy(value: string, fallback: string) {
