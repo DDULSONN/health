@@ -9,6 +9,17 @@ type UnsubscribeRow = {
   user_id: string | null;
 };
 
+function isMissingUnsubscribeTableError(error: { code?: string; message?: string } | null | undefined) {
+  const code = String(error?.code ?? "");
+  const message = String(error?.message ?? "");
+  return (
+    code === "42P01" ||
+    code === "PGRST205" ||
+    message.includes(UNSUBSCRIBE_TABLE) ||
+    message.toLowerCase().includes("schema cache")
+  );
+}
+
 function getSiteUrl() {
   return (
     process.env.NEXT_PUBLIC_SITE_URL?.trim() ||
@@ -113,8 +124,7 @@ export async function fetchMarketingUnsubscribedUserIds(
       .in("campaign_key", [campaignKey, "all"]);
 
     if (res.error) {
-      const code = String(res.error.code ?? "");
-      if (code === "42P01") {
+      if (isMissingUnsubscribeTableError(res.error)) {
         console.warn(`[marketing-email] missing table: ${UNSUBSCRIBE_TABLE}`);
         return unsubscribed;
       }
