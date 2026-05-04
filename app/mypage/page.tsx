@@ -7174,58 +7174,111 @@ export default function MyPage() {
 
           {adminManageTab === "mail_center" && (
           <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <div>
                 <p className="text-xs font-semibold text-violet-800">오픈카드 등록 유도 메일</p>
                 <p className="mt-1 text-[11px] text-neutral-500">
-                  오픈카드가 없거나 마지막 카드가 오래전에 만료된 회원을 골라서, 인증 여부나 최근 접속 기준까지 더해 메일 대상을 좁혀볼 수 있어요.
+                  기본은 성공 발송 이력이 없는 회원을 가입 오래된 순으로 3,000명씩 보내는 흐름입니다.
                 </p>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminOpenCardOutreachScope("combined");
+                      setAdminOpenCardOutreachRecentMailFilter("never_sent_success");
+                      setAdminOpenCardOutreachSort("signup_oldest");
+                      setAdminOpenCardOutreachBatchLimit("3000");
+                    }}
+                    className="h-8 rounded-lg border border-violet-200 bg-violet-50 px-3 text-[11px] font-semibold text-violet-900"
+                  >
+                    오래된 가입자 3000명
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminOpenCardOutreachScope("no_card");
+                      setAdminOpenCardOutreachRecentMailFilter("not_sent_24h");
+                      setAdminOpenCardOutreachSort("recent_login");
+                    }}
+                    className="h-8 rounded-lg border border-violet-200 bg-white px-3 text-[11px] font-medium text-violet-900"
+                  >
+                    카드 없는 최근 접속자
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminOpenCardOutreachScope("expired_stale");
+                      setAdminOpenCardOutreachRecentMailFilter("not_sent_24h");
+                      setAdminOpenCardOutreachSort("expired_oldest");
+                    }}
+                    className="h-8 rounded-lg border border-violet-200 bg-white px-3 text-[11px] font-medium text-violet-900"
+                  >
+                    만료 오래된 회원
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 rounded-xl border border-violet-100 bg-violet-50/30 p-3 sm:grid-cols-2 xl:grid-cols-4">
+                <label className="block text-[11px] font-semibold text-violet-900">
+                  대상
                 <select
                   value={adminOpenCardOutreachScope}
                   onChange={(e) => setAdminOpenCardOutreachScope(e.target.value as AdminOpenCardOutreachScope)}
-                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs text-violet-900"
+                    className="mt-1 h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-violet-900"
                 >
                   <option value="combined">둘 다 포함</option>
                   <option value="no_card">오픈카드 없는 회원</option>
                   <option value="expired_stale">오래전 만료된 회원</option>
                 </select>
+                </label>
+                <label className="block text-[11px] font-semibold text-violet-900">
+                  휴대폰 인증
                 <select
                   value={adminOpenCardOutreachPhoneFilter}
                   onChange={(e) => setAdminOpenCardOutreachPhoneFilter(e.target.value as AdminOpenCardOutreachPhoneFilter)}
-                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs text-violet-900"
+                    className="mt-1 h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-violet-900"
                 >
                   <option value="all">휴대폰 인증 전체</option>
                   <option value="verified">휴대폰 인증 완료만</option>
                   <option value="unverified">휴대폰 미인증만</option>
                 </select>
+                </label>
+                <label className="block text-[11px] font-semibold text-violet-900">
+                  최근 접속
                 <select
                   value={adminOpenCardOutreachRecentLoginDays}
                   onChange={(e) => setAdminOpenCardOutreachRecentLoginDays(e.target.value)}
-                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs text-violet-900"
+                    className="mt-1 h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-violet-900"
                 >
                   <option value="all">최근 접속 전체</option>
                   <option value="7">최근 7일 내 접속</option>
                   <option value="30">최근 30일 내 접속</option>
                   <option value="90">최근 90일 내 접속</option>
                 </select>
+                </label>
+                <label className="block text-[11px] font-semibold text-violet-900">
+                  발송 이력
                 <select
                   value={adminOpenCardOutreachRecentMailFilter}
                   onChange={(e) =>
                     setAdminOpenCardOutreachRecentMailFilter(e.target.value as AdminOpenCardOutreachRecentMailFilter)
                   }
-                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs text-violet-900"
+                    className="mt-1 h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-violet-900"
                 >
                   <option value="never_sent_success">성공 발송 이력 없는 회원만</option>
                   <option value="not_sent_24h">최근 24시간 미발송만</option>
                   <option value="all">최근 24시간 발송 전체</option>
                   <option value="sent_24h">최근 24시간 발송 성공자만</option>
                 </select>
+                </label>
+                <label className="block text-[11px] font-semibold text-violet-900">
+                  정렬
                 <select
                   value={adminOpenCardOutreachSort}
                   onChange={(e) => setAdminOpenCardOutreachSort(e.target.value as AdminOpenCardOutreachSort)}
-                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs text-violet-900"
+                    className="mt-1 h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-violet-900"
                 >
                   <option value="signup_oldest">가입 오래된 순</option>
                   <option value="priority">우선순위 추천</option>
@@ -7234,35 +7287,41 @@ export default function MyPage() {
                   <option value="nickname">닉네임 순</option>
                   <option value="recent_mail">최근 메일 발송 순</option>
                 </select>
-                <div className="flex items-center gap-2 rounded-lg border border-violet-200 bg-white px-3">
-                  <span className="text-[11px] text-neutral-500">배치</span>
+                </label>
+                <label className="block text-[11px] font-semibold text-violet-900">
+                  발송 묶음
+                  <div className="mt-1 flex h-9 items-center gap-2 rounded-lg border border-violet-200 bg-white px-3">
                   <input
                     type="number"
                     min={100}
                     max={10000}
                     value={adminOpenCardOutreachBatchLimit}
                     onChange={(e) => setAdminOpenCardOutreachBatchLimit(e.target.value)}
-                    className="h-9 w-16 bg-transparent text-center text-xs text-neutral-900 outline-none"
+                      className="h-8 w-full bg-transparent text-center text-xs text-neutral-900 outline-none"
                   />
                   <span className="text-[11px] text-neutral-500">명</span>
-                </div>
-                <div className="flex items-center gap-2 rounded-lg border border-violet-200 bg-white px-3">
-                  <span className="text-[11px] text-neutral-500">만료 후</span>
+                  </div>
+                </label>
+                <label className="block text-[11px] font-semibold text-violet-900">
+                  만료 기준
+                  <div className="mt-1 flex h-9 items-center gap-2 rounded-lg border border-violet-200 bg-white px-3">
                   <input
                     type="number"
                     min={7}
                     max={180}
                     value={adminOpenCardOutreachStaleDays}
                     onChange={(e) => setAdminOpenCardOutreachStaleDays(e.target.value)}
-                    className="h-9 w-14 bg-transparent text-center text-xs text-neutral-900 outline-none"
+                      className="h-8 w-full bg-transparent text-center text-xs text-neutral-900 outline-none"
                   />
-                  <span className="text-[11px] text-neutral-500">일</span>
-                </div>
+                    <span className="whitespace-nowrap text-[11px] text-neutral-500">일 경과</span>
+                  </div>
+                </label>
+                <div className="flex gap-2 sm:col-span-2 xl:col-span-2 xl:justify-end">
                 <button
                   type="button"
                   onClick={() => void loadAdminOpenCardOutreachPreview()}
                   disabled={adminOpenCardOutreachLoading}
-                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs font-medium text-violet-900 disabled:opacity-60"
+                    className="h-9 flex-1 rounded-lg border border-violet-200 bg-white px-3 text-xs font-medium text-violet-900 disabled:opacity-60 xl:flex-none"
                 >
                   {adminOpenCardOutreachLoading ? "미리보기 불러오는 중..." : "미리보기 새로고침"}
                 </button>
@@ -7270,10 +7329,11 @@ export default function MyPage() {
                   type="button"
                   onClick={() => void handleAdminSendOpenCardOutreach()}
                   disabled={adminOpenCardOutreachSending || adminOpenCardOutreachLoading || !adminOpenCardOutreachPreview?.recipient_count}
-                  className="h-9 rounded-lg bg-violet-600 px-3 text-xs font-semibold text-white disabled:opacity-60"
+                    className="h-9 flex-1 rounded-lg bg-violet-600 px-3 text-xs font-semibold text-white disabled:opacity-60 xl:flex-none"
                 >
                   {adminOpenCardOutreachSending ? "발송 중..." : "안내 메일 발송"}
                 </button>
+                </div>
               </div>
             </div>
 
@@ -7408,18 +7468,58 @@ export default function MyPage() {
 
           {adminManageTab === "mail_center" && (
           <div className="mb-3 rounded-xl border border-sky-200 bg-white p-3">
-            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-              <div>
+            <div className="flex flex-col gap-3">
+              <div className="flex flex-col gap-2 md:flex-row md:items-start md:justify-between">
+                <div>
                 <p className="text-xs font-semibold text-sky-800">1:1 소개팅 안내 메일</p>
                 <p className="mt-1 text-[11px] text-neutral-500">
-                  1:1 카드가 아직 없거나, 심사 중이거나, 승인됐지만 아직 매칭이 없거나, 쌍방매칭 후 번호교환 전인 회원만 골라서 보낼 수 있어요.
+                  1:1 신청 전, 심사 중, 승인 후 미매칭, 쌍방매칭 후 번호교환 전 회원을 나눠서 볼 수 있어요.
                 </p>
               </div>
-              <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-6">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminOneOnOneOutreachScope("no_card");
+                      setAdminOneOnOneOutreachRecentMailFilter("not_sent_24h");
+                      setAdminOneOnOneOutreachSort("recent_login");
+                    }}
+                    className="h-8 rounded-lg border border-sky-200 bg-sky-50 px-3 text-[11px] font-semibold text-sky-900"
+                  >
+                    1:1 미신청 최근 접속자
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminOneOnOneOutreachScope("approved_no_match");
+                      setAdminOneOnOneOutreachRecentMailFilter("not_sent_24h");
+                      setAdminOneOnOneOutreachSort("activity_recent");
+                    }}
+                    className="h-8 rounded-lg border border-sky-200 bg-white px-3 text-[11px] font-medium text-sky-900"
+                  >
+                    승인 후 미매칭
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAdminOneOnOneOutreachScope("mutual_no_exchange");
+                      setAdminOneOnOneOutreachRecentMailFilter("not_sent_24h");
+                      setAdminOneOnOneOutreachSort("activity_recent");
+                    }}
+                    className="h-8 rounded-lg border border-sky-200 bg-white px-3 text-[11px] font-medium text-sky-900"
+                  >
+                    번호교환 전
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid gap-3 rounded-xl border border-sky-100 bg-sky-50/30 p-3 sm:grid-cols-2 xl:grid-cols-4">
+                <label className="block text-[11px] font-semibold text-sky-900">
+                  대상
                 <select
                   value={adminOneOnOneOutreachScope}
                   onChange={(e) => setAdminOneOnOneOutreachScope(e.target.value as AdminOneOnOneOutreachScope)}
-                  className="h-9 rounded-lg border border-sky-200 bg-white px-3 text-xs text-sky-900"
+                    className="mt-1 h-9 w-full rounded-lg border border-sky-200 bg-white px-3 text-xs text-sky-900"
                 >
                   <option value="combined">둘 다 포함</option>
                   <option value="no_card">1:1 카드 없는 회원</option>
@@ -7427,40 +7527,52 @@ export default function MyPage() {
                   <option value="approved_no_match">1:1 승인 후 아직 매칭 없는 회원</option>
                   <option value="mutual_no_exchange">쌍방매칭 후 번호교환 전 회원</option>
                 </select>
+                </label>
+                <label className="block text-[11px] font-semibold text-sky-900">
+                  휴대폰 인증
                 <select
                   value={adminOneOnOneOutreachPhoneFilter}
                   onChange={(e) => setAdminOneOnOneOutreachPhoneFilter(e.target.value as AdminOpenCardOutreachPhoneFilter)}
-                  className="h-9 rounded-lg border border-sky-200 bg-white px-3 text-xs text-sky-900"
+                    className="mt-1 h-9 w-full rounded-lg border border-sky-200 bg-white px-3 text-xs text-sky-900"
                 >
                   <option value="all">휴대폰 인증 전체</option>
                   <option value="verified">휴대폰 인증 완료만</option>
                   <option value="unverified">휴대폰 미인증만</option>
                 </select>
+                </label>
+                <label className="block text-[11px] font-semibold text-sky-900">
+                  최근 접속
                 <select
                   value={adminOneOnOneOutreachRecentLoginDays}
                   onChange={(e) => setAdminOneOnOneOutreachRecentLoginDays(e.target.value)}
-                  className="h-9 rounded-lg border border-sky-200 bg-white px-3 text-xs text-sky-900"
+                    className="mt-1 h-9 w-full rounded-lg border border-sky-200 bg-white px-3 text-xs text-sky-900"
                 >
                   <option value="all">최근 접속 전체</option>
                   <option value="7">최근 7일 내 접속</option>
                   <option value="30">최근 30일 내 접속</option>
                   <option value="90">최근 90일 내 접속</option>
                 </select>
+                </label>
+                <label className="block text-[11px] font-semibold text-sky-900">
+                  발송 이력
                 <select
                   value={adminOneOnOneOutreachRecentMailFilter}
                   onChange={(e) =>
                     setAdminOneOnOneOutreachRecentMailFilter(e.target.value as AdminOpenCardOutreachRecentMailFilter)
                   }
-                  className="h-9 rounded-lg border border-sky-200 bg-white px-3 text-xs text-sky-900"
+                    className="mt-1 h-9 w-full rounded-lg border border-sky-200 bg-white px-3 text-xs text-sky-900"
                 >
                   <option value="not_sent_24h">최근 24시간 미발송만</option>
                   <option value="all">최근 24시간 발송 전체</option>
                   <option value="sent_24h">최근 24시간 발송 성공자만</option>
                 </select>
+                </label>
+                <label className="block text-[11px] font-semibold text-sky-900 sm:col-span-2">
+                  정렬
                 <select
                   value={adminOneOnOneOutreachSort}
                   onChange={(e) => setAdminOneOnOneOutreachSort(e.target.value as AdminOneOnOneOutreachSort)}
-                  className="h-9 rounded-lg border border-sky-200 bg-white px-3 text-xs text-sky-900"
+                    className="mt-1 h-9 w-full rounded-lg border border-sky-200 bg-white px-3 text-xs text-sky-900"
                 >
                   <option value="priority">우선순위 추천</option>
                   <option value="activity_recent">최근 1:1 활동 순</option>
@@ -7468,11 +7580,13 @@ export default function MyPage() {
                   <option value="nickname">닉네임 순</option>
                   <option value="recent_mail">최근 메일 발송 순</option>
                 </select>
+                </label>
+                <div className="flex gap-2 sm:col-span-2 xl:col-span-2 xl:justify-end">
                 <button
                   type="button"
                   onClick={() => void loadAdminOneOnOneOutreachPreview()}
                   disabled={adminOneOnOneOutreachLoading}
-                  className="h-9 rounded-lg border border-sky-200 bg-white px-3 text-xs font-medium text-sky-900 disabled:opacity-60"
+                    className="h-9 flex-1 rounded-lg border border-sky-200 bg-white px-3 text-xs font-medium text-sky-900 disabled:opacity-60 xl:flex-none"
                 >
                   {adminOneOnOneOutreachLoading ? "미리보기 불러오는 중..." : "미리보기 새로고침"}
                 </button>
@@ -7480,10 +7594,11 @@ export default function MyPage() {
                   type="button"
                   onClick={() => void handleAdminSendOneOnOneOutreach()}
                   disabled={adminOneOnOneOutreachSending || adminOneOnOneOutreachLoading || !adminOneOnOneOutreachPreview?.recipient_count}
-                  className="h-9 rounded-lg bg-sky-600 px-3 text-xs font-semibold text-white disabled:opacity-60"
+                    className="h-9 flex-1 rounded-lg bg-sky-600 px-3 text-xs font-semibold text-white disabled:opacity-60 xl:flex-none"
                 >
                   {adminOneOnOneOutreachSending ? "발송 중..." : "1:1 메일 발송"}
                 </button>
+                </div>
               </div>
             </div>
 
