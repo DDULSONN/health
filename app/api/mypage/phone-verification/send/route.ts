@@ -1,29 +1,10 @@
 import { kvIncrWindow } from "@/lib/edge-kv";
+import { getPhoneValidationMessage, hashForOperationalLog, normalizePhoneToE164 } from "@/lib/phone-verification";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
-function normalizeToE164(raw: string): string {
-  const digits = raw.replace(/[^0-9]/g, "");
-  if (!digits) return "";
-  if (digits.startsWith("0")) return `+82${digits.slice(1)}`;
-  if (digits.startsWith("82")) return `+${digits}`;
-  if (digits.startsWith("1") && digits.length === 11) return `+${digits}`;
-  return `+${digits}`;
-}
-
-function isLikelyValidE164(phone: string): boolean {
-  return /^\+[1-9][0-9]{7,14}$/.test(phone);
-}
-
-function hashForLog(input: string): string {
-  let hash = 2166136261;
-  for (let i = 0; i < input.length; i += 1) {
-    hash ^= input.charCodeAt(i);
-    hash = Math.imul(hash, 16777619);
-  }
-  return (hash >>> 0).toString(16);
-}
+const ATTEMPT_LOG_TABLE = "profile_phone_verification_attempts";
 
 function mapAuthErrorToUserMessage(message: string): string {
   const lower = message.toLowerCase();
@@ -45,6 +26,40 @@ async function enforceOtpWindowLimit(key: string, windowSec: number, limit: numb
     return { allowed: false, retryAfterSec: result.ttlRemainingSec, count: result.count, provider: result.provider };
   }
   return { allowed: true, retryAfterSec: 0, count: result.count, provider: result.provider };
+}
+
+async function logPhoneVerificationAttempt(input: {
+  userId: string | null;
+  phoneE164: string | null;
+  action: "send";
+  status: "queued" | "fail" | "blocked";
+  requestId: string;
+  ip: string;
+  providerError?: string | null;
+  retryAfterSec?: number | null;
+  meta?: Record<string, unknown>;
+}) {
+  try {
+    const admin = createAdminClient();
+    const res = await admin.from(ATTEMPT_LOG_TABLE).insert({
+      user_id: input.userId,
+      phone_e164: input.phoneE164,
+      phone_hash: input.phoneE164 ? hashForOperationalLog(input.phoneE164) : null,
+      action: input.action,
+      status: input.status,
+      provider: "supabase_auth",
+      provider_error: input.providerError ?? null,
+      request_id: input.requestId,
+      ip_hash: hashForOperationalLog(input.ip),
+      retry_after_sec: input.retryAfterSec ?? null,
+      meta: input.meta ?? {},
+    });
+    if (res.error && res.error.code !== "42P01") {
+      console.warn("[phone-otp-send] failed_to_insert_attempt_log", res.error.message);
+    }
+  } catch (error) {
+    console.warn("[phone-otp-send] attempt_log_unavailable", error);
+  }
 }
 
 export async function POST(req: Request) {
@@ -78,9 +93,19 @@ export async function POST(req: Request) {
     }
 
     const body = (await req.json().catch(() => ({}))) as { phone?: string };
-    const phoneE164 = normalizeToE164(body.phone ?? "");
-    if (!phoneE164 || !isLikelyValidE164(phoneE164)) {
-      return NextResponse.json({ error: "휴대폰번호를 올바르게 입력해 주세요." }, { status: 400 });
+    const phoneE164 = normalizePhoneToE164(body.phone ?? "");
+    const validationMessage = getPhoneValidationMessage(phoneE164);
+    if (validationMessage) {
+      await logPhoneVerificationAttempt({
+        userId: user.id,
+        phoneE164: phoneE164 || null,
+        action: "send",
+        status: "fail",
+        requestId,
+        ip,
+        providerError: "INVALID_PHONE_FORMAT",
+      });
+      return NextResponse.json({ error: validationMessage, code: "INVALID_PHONE_FORMAT" }, { status: 400 });
     }
 
     const windowRules = [
@@ -95,10 +120,25 @@ export async function POST(req: Request) {
       const blocked = checks[blockedIndex];
       const rule = windowRules[blockedIndex];
       console.warn(
-        `[phone-otp-send] blocked requestId=${requestId} user=${user.id} ipHash=${hashForLog(ip)} phoneHash=${hashForLog(phoneE164)} rule=${rule.label} count=${blocked.count}/${rule.limit} provider=${blocked.provider}`
+        `[phone-otp-send] blocked requestId=${requestId} user=${user.id} ipHash=${hashForOperationalLog(ip)} phoneHash=${hashForOperationalLog(phoneE164)} rule=${rule.label} count=${blocked.count}/${rule.limit} provider=${blocked.provider}`
       );
+      await logPhoneVerificationAttempt({
+        userId: user.id,
+        phoneE164,
+        action: "send",
+        status: "blocked",
+        requestId,
+        ip,
+        providerError: `RATE_LIMIT_${rule.label}`,
+        retryAfterSec: blocked.retryAfterSec,
+        meta: { count: blocked.count, limit: rule.limit, provider: blocked.provider },
+      });
       return NextResponse.json(
-        { error: `인증번호 재발송이 너무 잦습니다. ${blocked.retryAfterSec}초 후 다시 시도해 주세요.`, retryAfterSec: blocked.retryAfterSec },
+        {
+          error: `인증번호 재발송이 너무 잦습니다. ${blocked.retryAfterSec}초 후 다시 시도해 주세요.`,
+          retryAfterSec: blocked.retryAfterSec,
+          code: "RATE_LIMITED",
+        },
         { status: 429, headers: { "Retry-After": String(blocked.retryAfterSec) } }
       );
     }
@@ -106,17 +146,39 @@ export async function POST(req: Request) {
     const { error } = await supabase.auth.updateUser({ phone: phoneE164 });
     if (error) {
       console.warn(
-        `[phone-otp-send] supabase_auth_error requestId=${requestId} user=${user.id} ipHash=${hashForLog(ip)} phoneHash=${hashForLog(phoneE164)} message=${JSON.stringify(
+        `[phone-otp-send] supabase_auth_error requestId=${requestId} user=${user.id} ipHash=${hashForOperationalLog(ip)} phoneHash=${hashForOperationalLog(phoneE164)} message=${JSON.stringify(
           error.message
         )}`
       );
+      await logPhoneVerificationAttempt({
+        userId: user.id,
+        phoneE164,
+        action: "send",
+        status: "fail",
+        requestId,
+        ip,
+        providerError: error.message,
+      });
       return NextResponse.json({ error: mapAuthErrorToUserMessage(error.message), code: "SUPABASE_AUTH_ERROR" }, { status: 400 });
     }
 
     console.info(
-      `[phone-otp-send] queued requestId=${requestId} user=${user.id} ipHash=${hashForLog(ip)} phoneHash=${hashForLog(phoneE164)}`
+      `[phone-otp-send] queued requestId=${requestId} user=${user.id} ipHash=${hashForOperationalLog(ip)} phoneHash=${hashForOperationalLog(phoneE164)}`
     );
-    return NextResponse.json({ ok: true, pendingPhone: phoneE164 });
+    await logPhoneVerificationAttempt({
+      userId: user.id,
+      phoneE164,
+      action: "send",
+      status: "queued",
+      requestId,
+      ip,
+    });
+    return NextResponse.json({
+      ok: true,
+      pendingPhone: phoneE164,
+      message: "인증번호를 보냈어요. 보통 1분 안에 도착하지만 통신사 사정에 따라 조금 늦을 수 있습니다.",
+      resendAfterSec: 60,
+    });
   } catch (error) {
     console.error("[POST /api/mypage/phone-verification/send] failed", { requestId, error });
     return NextResponse.json({ error: "인증번호 발송 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });

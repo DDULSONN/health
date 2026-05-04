@@ -1,18 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAdminRoute } from "@/lib/admin-route";
+import { getPhoneValidationMessage, hashForOperationalLog, normalizePhoneToE164 } from "@/lib/phone-verification";
 
-function normalizeToE164(raw: string): string {
-  const digits = raw.replace(/[^0-9]/g, "");
-  if (!digits) return "";
-  if (digits.startsWith("0")) return `+82${digits.slice(1)}`;
-  if (digits.startsWith("82")) return `+${digits}`;
-  if (digits.startsWith("1") && digits.length === 11) return `+${digits}`;
-  return `+${digits}`;
-}
-
-function isLikelyValidE164(phone: string): boolean {
-  return /^\+[1-9][0-9]{7,14}$/.test(phone);
-}
+const ATTEMPT_LOG_TABLE = "profile_phone_verification_attempts";
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -28,14 +18,15 @@ export async function POST(request: Request) {
   };
 
   const identifier = body.identifier?.trim() ?? "";
-  const phoneE164 = normalizeToE164(body.phone ?? "");
+  const phoneE164 = normalizePhoneToE164(body.phone ?? "");
 
   if (!identifier) {
     return NextResponse.json({ error: "닉네임 또는 사용자 ID를 입력해주세요." }, { status: 400 });
   }
 
-  if (!phoneE164 || !isLikelyValidE164(phoneE164)) {
-    return NextResponse.json({ error: "휴대폰 번호를 올바르게 입력해주세요." }, { status: 400 });
+  const validationMessage = getPhoneValidationMessage(phoneE164);
+  if (validationMessage) {
+    return NextResponse.json({ error: validationMessage }, { status: 400 });
   }
 
   const profileRes = isUuid(identifier)
@@ -70,6 +61,29 @@ export async function POST(request: Request) {
   if (updateError) {
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
+
+  await auth.admin
+    .from(ATTEMPT_LOG_TABLE)
+    .insert({
+      user_id: userId,
+      phone_e164: phoneE164,
+      phone_hash: hashForOperationalLog(phoneE164),
+      action: "manual",
+      status: "success",
+      provider: "admin_manual",
+      provider_error: null,
+      request_id: null,
+      ip_hash: null,
+      meta: {
+        admin_user_id: auth.user.id,
+        identifier,
+      },
+    })
+    .then((res) => {
+      if (res.error && res.error.code !== "42P01") {
+        console.warn("[admin-phone-verification] failed_to_insert_attempt_log", res.error.message);
+      }
+    });
 
   return NextResponse.json({
     ok: true,

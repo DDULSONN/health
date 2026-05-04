@@ -1262,6 +1262,7 @@ export default function MyPage() {
   const [phoneInput, setPhoneInput] = useState("");
   const [phoneOtpCode, setPhoneOtpCode] = useState("");
   const [phoneOtpPending, setPhoneOtpPending] = useState<string | null>(null);
+  const [phoneOtpResendAfterSec, setPhoneOtpResendAfterSec] = useState(0);
   const [sendingPhoneOtp, setSendingPhoneOtp] = useState(false);
   const [verifyingPhoneOtp, setVerifyingPhoneOtp] = useState(false);
   const [phoneVerifyError, setPhoneVerifyError] = useState("");
@@ -2278,6 +2279,14 @@ export default function MyPage() {
     }
   }, [summary?.profile.email, supportContactEmail]);
 
+  useEffect(() => {
+    if (phoneOtpResendAfterSec <= 0) return;
+    const timer = window.setInterval(() => {
+      setPhoneOtpResendAfterSec((prev) => Math.max(0, prev - 1));
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [phoneOtpResendAfterSec]);
+
   const handleLogout = async () => {
     if (loggingOut) return;
     setLoggingOut(true);
@@ -2291,7 +2300,7 @@ export default function MyPage() {
     if (!digits) return "";
     if (digits.startsWith("0")) return `+82${digits.slice(1)}`;
     if (digits.startsWith("82")) return `+${digits}`;
-    if (digits.startsWith("1")) return `+${digits}`;
+    if (digits.startsWith("1") && digits.length === 11) return `+${digits}`;
     return `+${digits}`;
   };
 
@@ -2341,12 +2350,12 @@ export default function MyPage() {
   };
 
   const handleSendPhoneOtp = async () => {
-    if (sendingPhoneOtp) return;
+    if (sendingPhoneOtp || phoneOtpResendAfterSec > 0) return;
     setPhoneVerifyError("");
     setPhoneVerifyInfo("");
     const e164 = normalizePhoneForOtp(phoneInput);
-    if (!e164 || e164.length < 11) {
-      setPhoneVerifyError("휴대폰 번호를 올바르게 입력해주세요.");
+    if (!/^\+[1-9][0-9]{7,14}$/.test(e164)) {
+      setPhoneVerifyError("휴대폰 번호를 올바르게 입력해주세요. 예: 01012345678");
       return;
     }
 
@@ -2357,13 +2366,27 @@ export default function MyPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: e164 }),
       });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean; pendingPhone?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        ok?: boolean;
+        pendingPhone?: string;
+        message?: string;
+        retryAfterSec?: number;
+        resendAfterSec?: number;
+      };
       if (!res.ok || !body.ok) {
         setPhoneVerifyError(body.error ?? "인증번호 발송에 실패했습니다.");
+        if (body.retryAfterSec && body.retryAfterSec > 0) {
+          setPhoneOtpResendAfterSec(body.retryAfterSec);
+        }
         return;
       }
       setPhoneOtpPending(body.pendingPhone ?? e164);
-      setPhoneVerifyInfo("인증번호를 발송했습니다. 문자로 받은 코드를 입력해주세요.");
+      setPhoneOtpCode("");
+      setPhoneOtpResendAfterSec(body.resendAfterSec ?? 60);
+      setPhoneVerifyInfo(body.message ?? "인증번호를 발송했습니다. 문자로 받은 코드를 입력해주세요.");
+    } catch {
+      setPhoneVerifyError("인증번호 발송 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
       setSendingPhoneOtp(false);
     }
@@ -2384,26 +2407,25 @@ export default function MyPage() {
 
     setVerifyingPhoneOtp(true);
     try {
-      const { error: verifyError } = await supabase.auth.verifyOtp({
-        phone: phoneOtpPending,
-        token: phoneOtpCode.trim(),
-        type: "phone_change",
-      });
-      if (verifyError) {
-        setPhoneVerifyError(verifyError.message);
-        return;
-      }
-
-      const syncRes = await fetch("/api/mypage/phone-verification/sync", {
+      const verifyRes = await fetch("/api/mypage/phone-verification/verify", {
         method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone: phoneOtpPending,
+          token: phoneOtpCode.trim(),
+        }),
       });
-      const syncBody = (await syncRes.json().catch(() => ({}))) as {
+      const verifyBody = (await verifyRes.json().catch(() => ({}))) as {
         error?: string;
         phone_verified?: boolean;
         phone_verified_at?: string | null;
+        retryAfterSec?: number;
       };
-      if (!syncRes.ok || syncBody.phone_verified !== true) {
-        setPhoneVerifyError(syncBody.error ?? "인증 정보 동기화에 실패했습니다.");
+      if (!verifyRes.ok || verifyBody.phone_verified !== true) {
+        setPhoneVerifyError(verifyBody.error ?? "인증번호 확인에 실패했습니다.");
+        if (verifyBody.retryAfterSec && verifyBody.retryAfterSec > 0) {
+          setPhoneOtpResendAfterSec(verifyBody.retryAfterSec);
+        }
         return;
       }
 
@@ -2414,14 +2436,17 @@ export default function MyPage() {
               profile: {
                 ...prev.profile,
                 phone_verified: true,
-                phone_verified_at: syncBody.phone_verified_at ?? null,
+                phone_verified_at: verifyBody.phone_verified_at ?? null,
               },
             }
           : prev
       );
       setPhoneOtpCode("");
       setPhoneOtpPending(null);
+      setPhoneOtpResendAfterSec(0);
       setPhoneVerifyInfo("휴대폰 인증이 완료되었습니다.");
+    } catch {
+      setPhoneVerifyError("인증번호 확인 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
       setVerifyingPhoneOtp(false);
     }
@@ -4210,6 +4235,9 @@ export default function MyPage() {
 
           {!phoneVerified && (
             <div className="mt-3 space-y-2">
+              <p className="rounded-lg bg-white px-3 py-2 text-[11px] leading-5 text-neutral-500">
+                010 번호를 입력하면 문자 인증번호를 보내드려요. 보통 1분 안에 도착하며, 오지 않으면 스팸/차단 설정을 확인한 뒤 재발송해주세요.
+              </p>
               <input
                 type="tel"
                 value={phoneInput}
@@ -4220,14 +4248,23 @@ export default function MyPage() {
               <button
                 type="button"
                 onClick={() => void handleSendPhoneOtp()}
-                disabled={sendingPhoneOtp}
+                disabled={sendingPhoneOtp || phoneOtpResendAfterSec > 0}
                 className="h-10 rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-700 disabled:opacity-60"
               >
-                {sendingPhoneOtp ? "발송 중..." : "인증번호 발송"}
+                {sendingPhoneOtp
+                  ? "발송 중..."
+                  : phoneOtpResendAfterSec > 0
+                    ? `${phoneOtpResendAfterSec}초 후 재발송`
+                    : phoneOtpPending
+                      ? "인증번호 재발송"
+                      : "인증번호 발송"}
               </button>
 
               {phoneOtpPending && (
                 <div className="space-y-2">
+                  <p className="text-[11px] text-neutral-500">
+                    인증번호가 오지 않으면 1분 정도 기다린 뒤 재발송해주세요. 계속 실패하면 오픈카톡으로 닉네임과 번호를 보내주시면 수동 확인해드릴게요.
+                  </p>
                   <input
                     type="text"
                     value={phoneOtpCode}

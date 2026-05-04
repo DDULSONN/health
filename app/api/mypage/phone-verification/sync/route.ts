@@ -1,3 +1,4 @@
+import { normalizePhoneToE164 } from "@/lib/phone-verification";
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -5,16 +6,6 @@ type AuthUserLike = {
   phone?: string | null;
   phone_confirmed_at?: string | null;
 };
-
-function normalizeToE164(raw: string): string | null {
-  const value = raw.trim();
-  if (!value) return null;
-  const digits = value.replace(/[^0-9+]/g, "");
-  if (!digits) return null;
-  if (digits.startsWith("+")) return digits;
-  if (digits.startsWith("0")) return `+82${digits.slice(1)}`;
-  return `+${digits}`;
-}
 
 export async function POST() {
   const supabase = await createClient();
@@ -27,7 +18,7 @@ export async function POST() {
   }
 
   const candidate = user as unknown as AuthUserLike;
-  const phoneE164 = normalizeToE164(candidate.phone ?? "");
+  const phoneE164 = normalizePhoneToE164(candidate.phone ?? "");
   const phoneConfirmedAt = candidate.phone_confirmed_at ?? null;
 
   if (!phoneE164 || !phoneConfirmedAt) {
@@ -55,4 +46,3 @@ export async function POST() {
     phone_verified_at: phoneConfirmedAt,
   });
 }
-
