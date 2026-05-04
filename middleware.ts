@@ -25,6 +25,7 @@ export async function middleware(request: NextRequest) {
   const isAdminProtectedPath = isAdminPath || isAdminApiPath || isLegacyAdminApiPath;
   const isAdminUnlockPage = pathname === "/admin/unlock";
   const isAdminUnlockApi = pathname === "/api/admin/panel-unlock";
+  const isAdminMeApi = pathname === "/api/admin/me";
   const isOpenCardsRoute =
     pathname === "/community/dating/cards" ||
     pathname.startsWith("/community/dating/cards/");
@@ -107,7 +108,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(new URL("/", request.url));
   }
 
-  if (isAdminProtectedPath && isAdmin && isAdminPanelLockEnabled() && !isAdminUnlockPage && !isAdminUnlockApi) {
+  if (
+    isAdminProtectedPath &&
+    isAdmin &&
+    isAdminPanelLockEnabled() &&
+    !isAdminUnlockPage &&
+    !isAdminUnlockApi &&
+    !isAdminMeApi
+  ) {
     const unlocked = await isAdminPanelUnlocked(user.id, request.cookies.get(getAdminPanelCookieName())?.value);
     if (!unlocked) {
       if (isApiRoute) {
