@@ -12,6 +12,10 @@ import { createAdminClient } from "@/lib/supabase/server";
 const APPLICANT_BATCH_SIZE = 1000;
 const MATCH_BATCH_SIZE = 1000;
 const SEND_CONCURRENCY = 8;
+const FULL_MATCH_SELECT =
+  "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,contact_exchange_status,contact_exchange_requested_at,contact_exchange_paid_at,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_approved_by_user_id,contact_exchange_note,source_phone_share_consented_at,candidate_phone_share_consented_at,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at";
+const LEGACY_MATCH_SELECT =
+  "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at";
 
 type NoticeScope = "all_applicants" | "mutual_only" | "legacy_mutual" | "new_mutual";
 
@@ -26,6 +30,51 @@ type NoticePreviewResponse = {
 };
 
 const DEFAULT_NOTICE_SCOPE: NoticeScope = "mutual_only";
+
+type LegacyNoticeMatchRow = Omit<
+  DatingOneOnOneMatchRow,
+  | "contact_exchange_status"
+  | "contact_exchange_requested_at"
+  | "contact_exchange_paid_at"
+  | "contact_exchange_paid_by_user_id"
+  | "contact_exchange_approved_at"
+  | "contact_exchange_approved_by_user_id"
+  | "contact_exchange_note"
+  | "source_phone_share_consented_at"
+  | "candidate_phone_share_consented_at"
+> & {
+  contact_exchange_status?: never;
+};
+
+function isMissingContactExchangeColumnsError(error: { message?: string } | null | undefined) {
+  const message = String(error?.message ?? "");
+  return (
+    message.includes("contact_exchange_status") ||
+    message.includes("contact_exchange_requested_at") ||
+    message.includes("contact_exchange_paid_at") ||
+    message.includes("contact_exchange_paid_by_user_id") ||
+    message.includes("contact_exchange_approved_at") ||
+    message.includes("contact_exchange_approved_by_user_id") ||
+    message.includes("contact_exchange_note") ||
+    message.includes("source_phone_share_consented_at") ||
+    message.includes("candidate_phone_share_consented_at")
+  );
+}
+
+function toLegacyCompatibleMatchRow(row: LegacyNoticeMatchRow): DatingOneOnOneMatchRow {
+  return {
+    ...row,
+    contact_exchange_status: "none",
+    contact_exchange_requested_at: null,
+    contact_exchange_paid_at: null,
+    contact_exchange_paid_by_user_id: null,
+    contact_exchange_approved_at: null,
+    contact_exchange_approved_by_user_id: null,
+    contact_exchange_note: null,
+    source_phone_share_consented_at: null,
+    candidate_phone_share_consented_at: null,
+  };
+}
 
 function getDefaultNoticeSubject() {
   return "[GymTools] 1:1 소개팅 진행 방식 안내";
@@ -84,22 +133,30 @@ async function fetchApplicantUserIds(admin: ReturnType<typeof createAdminClient>
 async function fetchMutualAcceptedMatches(admin: ReturnType<typeof createAdminClient>) {
   const rows: DatingOneOnOneMatchRow[] = [];
   let from = 0;
+  let useLegacySelect = false;
 
   while (true) {
-    const { data, error } = await admin
-      .from("dating_1on1_match_proposals")
-      .select(
-        "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,contact_exchange_status,contact_exchange_requested_at,contact_exchange_paid_at,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_approved_by_user_id,contact_exchange_note,source_phone_share_consented_at,candidate_phone_share_consented_at,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at"
-      )
-      .eq("state", "mutual_accepted")
-      .order("created_at", { ascending: false })
-      .range(from, from + MATCH_BATCH_SIZE - 1);
+    const buildQuery = (selectColumns: string) =>
+      admin
+        .from("dating_1on1_match_proposals")
+        .select(selectColumns)
+        .eq("state", "mutual_accepted")
+        .order("created_at", { ascending: false })
+        .range(from, from + MATCH_BATCH_SIZE - 1);
+
+    let { data, error } = await buildQuery(useLegacySelect ? LEGACY_MATCH_SELECT : FULL_MATCH_SELECT)
+    if (error && !useLegacySelect && isMissingContactExchangeColumnsError(error)) {
+      useLegacySelect = true;
+      ({ data, error } = await buildQuery(LEGACY_MATCH_SELECT));
+    }
 
     if (error) throw error;
 
-    const batch = (data ?? []) as DatingOneOnOneMatchRow[];
-    rows.push(...batch);
+    const batch = useLegacySelect
+      ? ((data ?? []) as LegacyNoticeMatchRow[]).map(toLegacyCompatibleMatchRow)
+      : ((data ?? []) as DatingOneOnOneMatchRow[]);
 
+    rows.push(...batch);
     if (batch.length < MATCH_BATCH_SIZE) break;
     from += MATCH_BATCH_SIZE;
   }
