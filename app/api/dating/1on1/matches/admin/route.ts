@@ -168,12 +168,8 @@ export async function GET(req: Request) {
     rows.flatMap((row) => [row.source_card_id, row.candidate_card_id])
   ).catch((cardError) => {
     console.error("[GET /api/dating/1on1/matches/admin] cards failed", cardError);
-    return null;
+    return new Map();
   });
-
-  if (!cardMap) {
-    return NextResponse.json({ error: "Failed to load card details." }, { status: 500 });
-  }
 
   return NextResponse.json({
     items: rows.map((row) => ({
