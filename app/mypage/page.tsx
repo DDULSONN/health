@@ -5659,7 +5659,12 @@ export default function MyPage() {
                                     <p className="mt-1 text-xs text-neutral-700">
                                       기존 쌍방 매칭도 지금 결제하면 상대 연락처가 바로 교환됩니다.
                                     </p>
-                                    <p className="mt-2 text-[11px] text-neutral-500">그 밖의 결제 문의는 오픈카톡으로 부탁드려요. 매칭 ID {match.id}</p>
+                                    <p className="mt-2 text-[11px] text-neutral-500">
+                                      현재는 카카오페이 간편결제로 바로 번호 교환이 가능해요.
+                                    </p>
+                                    <p className="mt-1 text-[11px] text-neutral-500">
+                                      다른 방식은 오픈카톡으로 입금해주시면 관리자가 수동으로 승인해드려요. 매칭 ID {match.id}
+                                    </p>
                                     <div className="mt-2 flex flex-wrap gap-2">
                                       <a
                                         href={OPEN_KAKAO_URL}

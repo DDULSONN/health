@@ -368,6 +368,9 @@ function DatingOneOnOnePageContent() {
         <p className="mt-2 text-xs text-neutral-500">
           신청 내용은 외부에 공개되지 않고, 전화번호는 번호 교환이 완료되기 전까지 상대에게 공개되지 않습니다.
         </p>
+        <p className="mt-1 text-xs text-neutral-500">
+          쌍방 매칭 후 번호 교환은 현재 카카오페이 간편결제로 바로 진행할 수 있고, 다른 방식은 오픈카톡 입금 후 관리자 수동 승인으로 도와드리고 있습니다.
+        </p>
         <div className="mt-4 grid gap-2 sm:grid-cols-3">
           <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
             <p className="text-[11px] font-semibold tracking-wide text-neutral-500">1단계</p>
