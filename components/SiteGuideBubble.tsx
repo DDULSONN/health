@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Image from "next/image";
 import Link from "next/link";
@@ -131,6 +131,20 @@ function buildSuggestions(input: {
         body: "대기 중인 카드와 들어온 반응은 마이페이지에서 한 번에 볼 수 있어요. 흐름 정리할 때 제일 편해요.",
         href: "/mypage",
         cta: "마이페이지 가기",
+      },
+      {
+        id: "pending-paid-fast",
+        title: "짐냥이가 보기엔 빨리 공개하고 싶다면 대기 없이 등록이 잘 맞아요",
+        body: "심사 대기 없이 바로 공개하고 싶을 때는 유료 카드 쪽이 훨씬 시원하게 이어져요.",
+        href: "/dating/paid",
+        cta: "대기 없이 등록 보기",
+      },
+      {
+        id: "pending-paid-top",
+        title: "기다리는 동안 고민된다면 상단 고정도 같이 볼 만해요",
+        body: "그냥 기다리기보다 더 잘 보이게 올리는 쪽이 지금 타이밍엔 더 잘 맞을 수도 있어요.",
+        href: "/dating/paid",
+        cta: "유료 카드 보기",
       }
     );
   }
@@ -544,3 +558,4 @@ export default function SiteGuideBubble() {
     </div>
   );
 }
+
