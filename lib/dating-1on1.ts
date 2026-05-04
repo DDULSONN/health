@@ -237,23 +237,30 @@ export async function getDatingOneOnOneCardsByIds(
   const legacySelect =
     "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,photo_paths";
 
-  let { data, error } = await adminClient
+  const fullRes = await adminClient
     .from("dating_1on1_cards")
     .select(fullSelect)
     .in("id", uniqueIds);
 
+  let data = fullRes.data as unknown;
+  let error = fullRes.error;
+
   if (error && String(error.message ?? "").includes("recommendation_refresh_used_at")) {
-    ({ data, error } = await adminClient
+    const legacyRes = await adminClient
       .from("dating_1on1_cards")
       .select(legacySelect)
-      .in("id", uniqueIds));
+      .in("id", uniqueIds);
+    data = legacyRes.data as unknown;
+    error = legacyRes.error;
   }
 
   if (error) {
     throw error;
   }
 
-  return new Map((data ?? []).map((row) => [row.id, toDatingOneOnOneCardDetail(row as DatingOneOnOneCardRow)]));
+  const rowsRaw = (data ?? []) as unknown as DatingOneOnOneCardRow[];
+
+  return new Map(rowsRaw.map((row) => [row.id, toDatingOneOnOneCardDetail(row)]));
 }
 
 export async function getDatingOneOnOneCardPhonesByIds(

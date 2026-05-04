@@ -130,8 +130,8 @@ async function fetchAllAdminMatches(
     if (error) throw error;
 
     const batch = useLegacySelect
-      ? ((data ?? []) as LegacyAdminMatchRow[]).map(toLegacyCompatibleMatchRow)
-      : ((data ?? []) as DatingOneOnOneMatchRow[]);
+      ? ((data ?? []) as unknown as LegacyAdminMatchRow[]).map(toLegacyCompatibleMatchRow)
+      : ((data ?? []) as unknown as DatingOneOnOneMatchRow[]);
     rows.push(...batch);
     if (batch.length < MATCH_BATCH_SIZE) break;
     from += MATCH_BATCH_SIZE;

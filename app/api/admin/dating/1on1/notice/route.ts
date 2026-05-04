@@ -153,8 +153,8 @@ async function fetchMutualAcceptedMatches(admin: ReturnType<typeof createAdminCl
     if (error) throw error;
 
     const batch = useLegacySelect
-      ? ((data ?? []) as LegacyNoticeMatchRow[]).map(toLegacyCompatibleMatchRow)
-      : ((data ?? []) as DatingOneOnOneMatchRow[]);
+      ? ((data ?? []) as unknown as LegacyNoticeMatchRow[]).map(toLegacyCompatibleMatchRow)
+      : ((data ?? []) as unknown as DatingOneOnOneMatchRow[]);
 
     rows.push(...batch);
     if (batch.length < MATCH_BATCH_SIZE) break;
