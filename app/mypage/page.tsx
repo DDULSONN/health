@@ -723,10 +723,12 @@ type AdminOpenCardOutreachSendResult = {
   recent_mail_filter?: AdminOpenCardOutreachRecentMailFilter;
   sort?: AdminOpenCardOutreachSort;
   batch_limit?: number;
+  send_limit?: number;
   requested: number;
   sent: number;
   failed: number;
   failure_summary?: string[];
+  first_failure?: string | null;
 };
 
 type AdminOneOnOneOutreachScope =
@@ -754,6 +756,8 @@ type AdminOneOnOneOutreachPreview = {
   recent_login_days: number | null;
   recent_mail_filter: AdminOpenCardOutreachRecentMailFilter;
   sort: AdminOneOnOneOutreachSort;
+  send_limit: number;
+  total_candidate_count: number;
   recipient_count: number;
   no_card_count: number;
   pending_review_count: number;
@@ -771,10 +775,12 @@ type AdminOneOnOneOutreachSendResult = {
   recent_login_days?: number | null;
   recent_mail_filter?: AdminOpenCardOutreachRecentMailFilter;
   sort?: AdminOneOnOneOutreachSort;
+  send_limit?: number;
   requested: number;
   sent: number;
   failed: number;
   failure_summary?: string[];
+  first_failure?: string | null;
 };
 
 type AdminDatingStats = {
@@ -1142,7 +1148,7 @@ export default function MyPage() {
     useState<AdminOpenCardOutreachRecentMailFilter>("never_sent_success");
   const [adminOpenCardOutreachSort, setAdminOpenCardOutreachSort] =
     useState<AdminOpenCardOutreachSort>("signup_oldest");
-  const [adminOpenCardOutreachBatchLimit, setAdminOpenCardOutreachBatchLimit] = useState("3000");
+  const [adminOpenCardOutreachBatchLimit, setAdminOpenCardOutreachBatchLimit] = useState("150");
   const [adminOpenCardOutreachPreview, setAdminOpenCardOutreachPreview] = useState<AdminOpenCardOutreachPreview | null>(null);
   const [adminOpenCardOutreachLoading, setAdminOpenCardOutreachLoading] = useState(false);
   const [adminOpenCardOutreachSending, setAdminOpenCardOutreachSending] = useState(false);
@@ -1486,7 +1492,7 @@ export default function MyPage() {
         recentLoginDays: adminOpenCardOutreachRecentLoginDays.trim() || "all",
         recentMail: adminOpenCardOutreachRecentMailFilter,
         sort: adminOpenCardOutreachSort,
-        batchLimit: adminOpenCardOutreachBatchLimit.trim() || "3000",
+        batchLimit: adminOpenCardOutreachBatchLimit.trim() || "150",
       }).toString();
       const res = await fetch(`/api/admin/dating/cards/outreach?${query}`, { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as AdminOpenCardOutreachPreview & { error?: string };
@@ -1546,7 +1552,7 @@ export default function MyPage() {
     setError("");
     try {
       const staleDays = Number(adminOpenCardOutreachStaleDays.trim() || "30");
-      const batchLimit = Number(adminOpenCardOutreachBatchLimit.trim() || "3000");
+      const batchLimit = Number(adminOpenCardOutreachBatchLimit.trim() || "150");
       const res = await fetch("/api/admin/dating/cards/outreach", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1581,10 +1587,12 @@ export default function MyPage() {
           "recent_mail_filter" in responseBody ? responseBody.recent_mail_filter : adminOpenCardOutreachRecentMailFilter,
         sort: "sort" in responseBody ? responseBody.sort : adminOpenCardOutreachSort,
         batch_limit: "batch_limit" in responseBody ? responseBody.batch_limit : batchLimit,
+        send_limit: "send_limit" in responseBody ? responseBody.send_limit : 150,
         requested: "requested" in responseBody ? responseBody.requested : 0,
         sent: "sent" in responseBody ? responseBody.sent : 0,
         failed: "failed" in responseBody ? responseBody.failed : 0,
         failure_summary: "failure_summary" in responseBody ? responseBody.failure_summary ?? [] : [],
+        first_failure: "first_failure" in responseBody ? responseBody.first_failure ?? null : null,
       });
       await loadAdminOpenCardOutreachPreview();
     } catch (error) {
@@ -1705,10 +1713,12 @@ export default function MyPage() {
         recent_mail_filter:
           "recent_mail_filter" in responseBody ? responseBody.recent_mail_filter : adminOneOnOneOutreachRecentMailFilter,
         sort: "sort" in responseBody ? responseBody.sort : adminOneOnOneOutreachSort,
+        send_limit: "send_limit" in responseBody ? responseBody.send_limit : 150,
         requested: "requested" in responseBody ? responseBody.requested : 0,
         sent: "sent" in responseBody ? responseBody.sent : 0,
         failed: "failed" in responseBody ? responseBody.failed : 0,
         failure_summary: "failure_summary" in responseBody ? responseBody.failure_summary ?? [] : [],
+        first_failure: "first_failure" in responseBody ? responseBody.first_failure ?? null : null,
       });
       await loadAdminOneOnOneOutreachPreview();
     } catch (error) {
@@ -7179,7 +7189,7 @@ export default function MyPage() {
                 <div>
                 <p className="text-xs font-semibold text-violet-800">오픈카드 등록 유도 메일</p>
                 <p className="mt-1 text-[11px] text-neutral-500">
-                  기본은 성공 발송 이력이 없는 회원을 가입 오래된 순으로 3,000명씩 보내는 흐름입니다.
+                  기본은 성공 발송 이력이 없는 회원을 가입 오래된 순으로 안전하게 150명씩 나눠 보내는 흐름입니다.
                 </p>
               </div>
                 <div className="flex flex-wrap gap-2">
@@ -7189,11 +7199,11 @@ export default function MyPage() {
                       setAdminOpenCardOutreachScope("combined");
                       setAdminOpenCardOutreachRecentMailFilter("never_sent_success");
                       setAdminOpenCardOutreachSort("signup_oldest");
-                      setAdminOpenCardOutreachBatchLimit("3000");
+                      setAdminOpenCardOutreachBatchLimit("150");
                     }}
                     className="h-8 rounded-lg border border-violet-200 bg-violet-50 px-3 text-[11px] font-semibold text-violet-900"
                   >
-                    오래된 가입자 3000명
+                    오래된 가입자 150명
                   </button>
                   <button
                     type="button"
@@ -7293,8 +7303,8 @@ export default function MyPage() {
                   <div className="mt-1 flex h-9 items-center gap-2 rounded-lg border border-violet-200 bg-white px-3">
                   <input
                     type="number"
-                    min={100}
-                    max={10000}
+                    min={1}
+                    max={150}
                     value={adminOpenCardOutreachBatchLimit}
                     onChange={(e) => setAdminOpenCardOutreachBatchLimit(e.target.value)}
                       className="h-8 w-full bg-transparent text-center text-xs text-neutral-900 outline-none"
@@ -7348,6 +7358,11 @@ export default function MyPage() {
                     <p className="mt-1 text-[11px] text-neutral-500">
                       전체 후보 {adminOpenCardOutreachPreview.total_candidate_count.toLocaleString("ko-KR")}명 중
                     </p>
+                    {adminOpenCardOutreachPreview.total_candidate_count > adminOpenCardOutreachPreview.recipient_count ? (
+                      <p className="mt-1 text-[11px] text-violet-700">
+                        남은 대상은 새로고침 후 이어서 발송
+                      </p>
+                    ) : null}
                   </div>
                   <div className="rounded-xl border border-violet-100 bg-violet-50/40 px-3 py-3">
                     <p className="text-[11px] text-neutral-500">오픈카드 없는 회원</p>
@@ -7386,6 +7401,9 @@ export default function MyPage() {
                     <span>· {adminOpenCardOutreachSortLabel(adminOpenCardOutreachPreview.sort)}</span>
                     <span>· {adminOpenCardOutreachPreview.batch_limit.toLocaleString("ko-KR")}명씩 발송</span>
                   </div>
+                  <p className="mt-2 text-[11px] text-neutral-500">
+                    대량 발송 실패를 막기 위해 한 번에 최대 150명까지만 전송합니다. 발송 후 미리보기를 새로고침하면 성공 발송자를 제외하고 이어서 보낼 수 있어요.
+                  </p>
                   <label className="mt-3 block text-xs font-semibold text-neutral-900">제목</label>
                   <input
                     value={adminOpenCardOutreachSubject}
@@ -7451,6 +7469,15 @@ export default function MyPage() {
                   {adminOpenCardOutreachResult.requested}명 / 성공 {adminOpenCardOutreachResult.sent}명 / 실패{" "}
                   {adminOpenCardOutreachResult.failed}명
                 </p>
+                <p className="text-[11px] text-neutral-500">
+                  안전 발송 단위: 최대 {(adminOpenCardOutreachResult.send_limit ?? 150).toLocaleString("ko-KR")}명씩 처리됩니다.
+                  실패가 있어도 성공한 발송은 이력에 기록됩니다.
+                </p>
+                {adminOpenCardOutreachResult.first_failure ? (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                    첫 실패: {adminOpenCardOutreachResult.first_failure}
+                  </p>
+                ) : null}
                 {adminOpenCardOutreachResult.failure_summary?.length ? (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
                     <p className="font-semibold">주요 실패 사유</p>
@@ -7646,7 +7673,9 @@ export default function MyPage() {
                     <span>· {adminOneOnOneOutreachSortLabel(adminOneOnOneOutreachPreview.sort)}</span>
                   </div>
                   <p className="mt-2 text-[11px] text-neutral-500">
-                    최근 24시간 발송 성공: {adminOneOnOneOutreachPreview.recent_success_24h_count.toLocaleString("ko-KR")}명
+                    전체 후보 {adminOneOnOneOutreachPreview.total_candidate_count.toLocaleString("ko-KR")}명 중 최대{" "}
+                    {adminOneOnOneOutreachPreview.send_limit.toLocaleString("ko-KR")}명씩 안전 발송 · 최근 24시간 발송 성공:{" "}
+                    {adminOneOnOneOutreachPreview.recent_success_24h_count.toLocaleString("ko-KR")}명
                   </p>
                   <label className="mt-3 block text-xs font-semibold text-neutral-900">제목</label>
                   <input
@@ -7707,6 +7736,15 @@ export default function MyPage() {
                   {adminOneOnOneOutreachResult.requested}명 / 성공 {adminOneOnOneOutreachResult.sent}명 / 실패{" "}
                   {adminOneOnOneOutreachResult.failed}명
                 </p>
+                <p className="text-[11px] text-neutral-500">
+                  안전 발송 단위: 최대 {(adminOneOnOneOutreachResult.send_limit ?? 150).toLocaleString("ko-KR")}명씩 처리됩니다.
+                  실패가 있어도 성공한 발송은 이력에 기록됩니다.
+                </p>
+                {adminOneOnOneOutreachResult.first_failure ? (
+                  <p className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
+                    첫 실패: {adminOneOnOneOutreachResult.first_failure}
+                  </p>
+                ) : null}
                 {adminOneOnOneOutreachResult.failure_summary?.length ? (
                   <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-800">
                     <p className="font-semibold">주요 실패 사유</p>

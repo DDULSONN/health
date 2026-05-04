@@ -7,7 +7,8 @@ const USER_PAGE_SIZE = 200;
 const CARD_BATCH_SIZE = 1000;
 const PROFILE_BATCH_SIZE = 500;
 const SEND_CONCURRENCY = 2;
-const SEND_BATCH_PAUSE_MS = 400;
+const SEND_BATCH_PAUSE_MS = 200;
+const MAX_SEND_PER_REQUEST = 150;
 const DEFAULT_STALE_DAYS = 30;
 const RECENT_SUCCESS_HOURS = 24;
 const MAIL_LOG_TABLE = "admin_open_card_outreach_mail_logs";
@@ -149,8 +150,8 @@ function parseSort(value: string | null | undefined): SortMode {
 
 function parseBatchLimit(value: string | null | undefined): number {
   const parsed = Number(String(value ?? "").trim());
-  if (!Number.isFinite(parsed)) return 3000;
-  return Math.min(10000, Math.max(100, Math.round(parsed)));
+  if (!Number.isFinite(parsed)) return MAX_SEND_PER_REQUEST;
+  return Math.min(MAX_SEND_PER_REQUEST, Math.max(1, Math.round(parsed)));
 }
 
 function buildDefaultSubject(scope: OutreachScope) {
@@ -873,14 +874,6 @@ export async function POST(request: Request) {
       batchLimit,
     });
 
-    if (sent === 0 && recipients.length > 0) {
-      const detail = firstFailure ? ` (${firstFailure})` : "";
-      return NextResponse.json(
-        { error: `오픈카드 안내 메일 발송에 실패했습니다.${detail}` },
-        { status: 500 }
-      );
-    }
-
     return NextResponse.json({
       ok: true,
       scope,
@@ -890,10 +883,12 @@ export async function POST(request: Request) {
       recent_mail_filter: recentMailFilter,
       sort,
       batch_limit: batchLimit,
+      send_limit: MAX_SEND_PER_REQUEST,
       requested: recipients.length,
       sent,
       failed,
       failure_summary: failureSummary,
+      first_failure: firstFailure,
     });
   } catch (error) {
     console.error("[POST /api/admin/dating/cards/outreach] failed", error);

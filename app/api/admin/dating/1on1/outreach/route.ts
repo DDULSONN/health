@@ -8,7 +8,8 @@ const CARD_BATCH_SIZE = 1000;
 const MATCH_BATCH_SIZE = 1000;
 const PROFILE_BATCH_SIZE = 500;
 const SEND_CONCURRENCY = 2;
-const SEND_BATCH_PAUSE_MS = 400;
+const SEND_BATCH_PAUSE_MS = 200;
+const MAX_SEND_PER_REQUEST = 150;
 const RECENT_SUCCESS_HOURS = 24;
 const MAIL_LOG_TABLE = "admin_open_card_outreach_mail_logs";
 
@@ -73,6 +74,8 @@ type OneOnOnePreviewResponse = {
   recent_login_days: number | null;
   recent_mail_filter: RecentMailFilter;
   sort: SortMode;
+  send_limit: number;
+  total_candidate_count: number;
   recipient_count: number;
   no_card_count: number;
   pending_review_count: number;
@@ -551,10 +554,13 @@ function buildRecipients(input: {
   }
 
   sortRecipients(recipients, sort);
+  const totalCandidateCount = recipients.length;
+  const limitedRecipients = recipients.slice(0, MAX_SEND_PER_REQUEST);
   const recentSuccess24hCount = recipients.filter((item) => item.recent_success_mail_sent_at).length;
 
   return {
-    recipients,
+    recipients: limitedRecipients,
+    totalCandidateCount,
     noCardCount,
     pendingReviewCount,
     approvedNoMatchCount,
@@ -580,7 +586,7 @@ async function buildPreview(
     fetchRecentSuccessfulMailMap(admin, userIds),
   ]);
 
-  const { recipients, noCardCount, pendingReviewCount, approvedNoMatchCount, mutualNoExchangeCount, recentSuccess24hCount } =
+  const { recipients, totalCandidateCount, noCardCount, pendingReviewCount, approvedNoMatchCount, mutualNoExchangeCount, recentSuccess24hCount } =
     buildRecipients({
       users,
       profileByUserId,
@@ -600,6 +606,8 @@ async function buildPreview(
     recent_login_days: recentLoginDays,
     recent_mail_filter: recentMailFilter,
     sort,
+    send_limit: MAX_SEND_PER_REQUEST,
+    total_candidate_count: totalCandidateCount,
     recipient_count: recipients.length,
     no_card_count: noCardCount,
     pending_review_count: pendingReviewCount,
@@ -845,11 +853,6 @@ export async function POST(request: Request) {
       sort,
     });
 
-    if (sent === 0 && recipients.length > 0) {
-      const detail = firstFailure ? ` (${firstFailure})` : "";
-      return NextResponse.json({ error: `1:1 소개팅 메일 발송에 실패했습니다.${detail}` }, { status: 500 });
-    }
-
     return NextResponse.json({
       ok: true,
       scope,
@@ -857,10 +860,12 @@ export async function POST(request: Request) {
       recent_login_days: recentLoginDays,
       recent_mail_filter: recentMailFilter,
       sort,
+      send_limit: MAX_SEND_PER_REQUEST,
       requested: recipients.length,
       sent,
       failed,
       failure_summary: failureSummary,
+      first_failure: firstFailure,
     });
   } catch (error) {
     console.error("[POST /api/admin/dating/1on1/outreach] failed", error);
