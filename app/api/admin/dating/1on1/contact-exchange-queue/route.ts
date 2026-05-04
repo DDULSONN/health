@@ -5,6 +5,23 @@ import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 
 const BATCH_SIZE = 500;
+const FULL_QUEUE_SELECT =
+  "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,contact_exchange_status,contact_exchange_requested_at,contact_exchange_paid_at,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_approved_by_user_id,contact_exchange_note,source_phone_share_consented_at,candidate_phone_share_consented_at,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at";
+
+function isMissingContactExchangeColumnsError(error: { message?: string } | null | undefined) {
+  const message = String(error?.message ?? "");
+  return (
+    message.includes("contact_exchange_status") ||
+    message.includes("contact_exchange_requested_at") ||
+    message.includes("contact_exchange_paid_at") ||
+    message.includes("contact_exchange_paid_by_user_id") ||
+    message.includes("contact_exchange_approved_at") ||
+    message.includes("contact_exchange_approved_by_user_id") ||
+    message.includes("contact_exchange_note") ||
+    message.includes("source_phone_share_consented_at") ||
+    message.includes("candidate_phone_share_consented_at")
+  );
+}
 
 async function fetchPendingContactExchangeMatches(admin: ReturnType<typeof createAdminClient>) {
   const rows: DatingOneOnOneMatchRow[] = [];
@@ -13,16 +30,19 @@ async function fetchPendingContactExchangeMatches(admin: ReturnType<typeof creat
   while (true) {
     const { data, error } = await admin
       .from("dating_1on1_match_proposals")
-      .select(
-        "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,contact_exchange_status,contact_exchange_requested_at,contact_exchange_paid_at,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_approved_by_user_id,contact_exchange_note,source_phone_share_consented_at,candidate_phone_share_consented_at,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at"
-      )
+      .select(FULL_QUEUE_SELECT)
       .eq("state", "mutual_accepted")
       .eq("contact_exchange_status", "payment_pending_admin")
       .order("contact_exchange_paid_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
       .range(from, from + BATCH_SIZE - 1);
 
-    if (error) throw error;
+    if (error) {
+      if (isMissingContactExchangeColumnsError(error)) {
+        return [];
+      }
+      throw error;
+    }
 
     const batch = (data ?? []) as DatingOneOnOneMatchRow[];
     rows.push(...batch);

@@ -232,12 +232,22 @@ export async function getDatingOneOnOneCardsByIds(
     return new Map();
   }
 
-  const { data, error } = await adminClient
+  const fullSelect =
+    "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,recommendation_refresh_used_at,photo_paths";
+  const legacySelect =
+    "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,photo_paths";
+
+  let { data, error } = await adminClient
     .from("dating_1on1_cards")
-    .select(
-      "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,recommendation_refresh_used_at,photo_paths"
-    )
+    .select(fullSelect)
     .in("id", uniqueIds);
+
+  if (error && String(error.message ?? "").includes("recommendation_refresh_used_at")) {
+    ({ data, error } = await adminClient
+      .from("dating_1on1_cards")
+      .select(legacySelect)
+      .in("id", uniqueIds));
+  }
 
   if (error) {
     throw error;
