@@ -131,6 +131,19 @@ type DatingOneOnOneCardRow = {
   photo_paths: unknown;
 };
 
+type DatingOneOnOneCardMinimalRow = {
+  id: string;
+  user_id: string;
+  sex: "male" | "female";
+  name: string;
+  birth_year: number;
+  height_cm: number;
+  job: string;
+  region: string;
+  status: "submitted" | "reviewing" | "approved" | "rejected";
+  created_at: string;
+};
+
 type DatingOneOnOneCardPhoneRow = {
   id: string;
   phone: string | null;
@@ -223,6 +236,29 @@ export function toDatingOneOnOneCardDetail(row: DatingOneOnOneCardRow): DatingOn
   };
 }
 
+function toDatingOneOnOneCardDetailFromMinimal(row: DatingOneOnOneCardMinimalRow): DatingOneOnOneCardDetail {
+  return {
+    id: row.id,
+    user_id: row.user_id,
+    sex: row.sex,
+    name: row.name,
+    birth_year: row.birth_year,
+    age: toDatingOneOnOneAge(row.birth_year),
+    height_cm: row.height_cm,
+    job: row.job,
+    region: row.region,
+    intro_text: "",
+    strengths_text: "",
+    preferred_partner_text: "",
+    smoking: "non_smoker",
+    workout_frequency: null,
+    status: row.status,
+    created_at: row.created_at,
+    recommendation_refresh_used_at: null,
+    photo_signed_urls: [],
+  };
+}
+
 export async function getDatingOneOnOneCardsByIds(
   adminClient: SupabaseClient,
   ids: string[]
@@ -236,6 +272,7 @@ export async function getDatingOneOnOneCardsByIds(
     "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,recommendation_refresh_used_at,photo_paths";
   const legacySelect =
     "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,photo_paths";
+  const minimalSelect = "id,user_id,sex,name,birth_year,height_cm,job,region,status,created_at";
 
   const fullRes = await adminClient
     .from("dating_1on1_cards")
@@ -252,6 +289,17 @@ export async function getDatingOneOnOneCardsByIds(
       .in("id", uniqueIds);
     data = legacyRes.data as unknown;
     error = legacyRes.error;
+  }
+
+  if (error) {
+    const minimalRes = await adminClient
+      .from("dating_1on1_cards")
+      .select(minimalSelect)
+      .in("id", uniqueIds);
+    if (!minimalRes.error) {
+      const minimalRows = (minimalRes.data ?? []) as unknown as DatingOneOnOneCardMinimalRow[];
+      return new Map(minimalRows.map((row) => [row.id, toDatingOneOnOneCardDetailFromMinimal(row)]));
+    }
   }
 
   if (error) {
