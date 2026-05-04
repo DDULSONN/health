@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireAdminRoute } from "@/lib/admin-route";
 import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
+import {
+  appendMarketingEmailFooter,
+  fetchMarketingUnsubscribedUserIds,
+  normalizeMarketingSubject,
+} from "@/lib/marketing-email";
 import { createAdminClient } from "@/lib/supabase/server";
 
 const USER_PAGE_SIZE = 200;
@@ -12,6 +17,7 @@ const MAX_SEND_PER_REQUEST = 150;
 const DEFAULT_STALE_DAYS = 30;
 const RECENT_SUCCESS_HOURS = 24;
 const MAIL_LOG_TABLE = "admin_open_card_outreach_mail_logs";
+const CAMPAIGN_KEY = "open_card_outreach";
 
 type OutreachScope = "no_card" | "expired_stale" | "combined";
 type RecipientReason = "no_card" | "expired_stale";
@@ -155,9 +161,9 @@ function parseBatchLimit(value: string | null | undefined): number {
 }
 
 function buildDefaultSubject(scope: OutreachScope) {
-  if (scope === "no_card") return "[GymTools] 오픈카드 등록하고 연결을 시작해보세요";
-  if (scope === "expired_stale") return "[GymTools] 오픈카드를 다시 열어보실까요?";
-  return "[GymTools] 오픈카드로 자연스럽게 연결을 다시 시작해보세요";
+  if (scope === "no_card") return normalizeMarketingSubject("오픈카드 등록하고 가까운 이상형을 확인해보세요");
+  if (scope === "expired_stale") return normalizeMarketingSubject("오픈카드를 다시 열고 새로운 연결을 받아보세요");
+  return normalizeMarketingSubject("오픈카드로 자연스럽게 연결을 다시 시작해보세요");
 }
 
 function buildDefaultBody() {
@@ -293,7 +299,7 @@ async function fetchRecentSuccessfulMailMap(admin: AdminClient, userIds: string[
     const res = await admin
       .from(MAIL_LOG_TABLE)
       .select("user_id,sent_at")
-      .eq("campaign_key", "open_card_outreach")
+      .eq("campaign_key", CAMPAIGN_KEY)
       .eq("success", true)
       .gte("sent_at", cutoff)
       .in("user_id", chunk)
@@ -329,7 +335,7 @@ async function fetchLatestSuccessfulMailMap(admin: AdminClient, userIds: string[
     const res = await admin
       .from(MAIL_LOG_TABLE)
       .select("user_id,sent_at")
-      .eq("campaign_key", "open_card_outreach")
+      .eq("campaign_key", CAMPAIGN_KEY)
       .eq("success", true)
       .in("user_id", chunk)
       .order("sent_at", { ascending: false });
@@ -436,6 +442,7 @@ function buildRecipients(input: {
   recentMailFilter: RecentMailFilter;
   recentSuccessMailByUserId: Map<string, string>;
   successfulMailByUserId: Map<string, string>;
+  unsubscribedUserIds: Set<string>;
   sort: SortMode;
   batchLimit: number;
 }) {
@@ -450,6 +457,7 @@ function buildRecipients(input: {
     recentMailFilter,
     recentSuccessMailByUserId,
     successfulMailByUserId,
+    unsubscribedUserIds,
     sort,
     batchLimit,
   } = input;
@@ -473,6 +481,7 @@ function buildRecipients(input: {
   for (const user of users) {
     const profile = profileByUserId.get(user.id);
     if (profile?.role === "admin") continue;
+    if (unsubscribedUserIds.has(user.id)) continue;
 
     const phoneVerified = profile?.phone_verified === true;
     if (!matchesPhoneFilter(phoneVerified, phoneVerifiedFilter)) continue;
@@ -562,11 +571,12 @@ async function buildPreview(
 ): Promise<OutreachPreviewResponse> {
   const users = await fetchAllAuthUsers(admin);
   const userIds = users.map((user) => user.id);
-  const [profileByUserId, cards, recentSuccessMailByUserId, successfulMailByUserId] = await Promise.all([
+  const [profileByUserId, cards, recentSuccessMailByUserId, successfulMailByUserId, unsubscribedUserIds] = await Promise.all([
     fetchProfilesByUserIds(admin, userIds),
     fetchAllDatingCards(admin),
     fetchRecentSuccessfulMailMap(admin, userIds),
     fetchLatestSuccessfulMailMap(admin, userIds),
+    fetchMarketingUnsubscribedUserIds(admin, userIds, CAMPAIGN_KEY),
   ]);
 
   const { recipients, totalCandidateCount, noCardCount, expiredStaleCount, recentSuccess24hCount, successfulMailCount } = buildRecipients({
@@ -580,6 +590,7 @@ async function buildPreview(
     recentMailFilter,
     recentSuccessMailByUserId,
     successfulMailByUserId,
+    unsubscribedUserIds,
     sort,
     batchLimit,
   });
@@ -674,7 +685,7 @@ async function sendInBatchesSafely(input: {
             ok: false as const,
             error,
             logRow: {
-              campaign_key: "open_card_outreach",
+              campaign_key: CAMPAIGN_KEY,
               user_id: item.user_id,
               email: null,
               subject,
@@ -689,7 +700,13 @@ async function sendInBatchesSafely(input: {
           };
         }
 
-        const result = await sendDatingEmailToAddressDetailed(item.email, subject, body, {
+        const mailBody = appendMarketingEmailFooter({
+          body,
+          userId: item.user_id,
+          email: item.email,
+          campaignKey: CAMPAIGN_KEY,
+        });
+        const result = await sendDatingEmailToAddressDetailed(item.email, subject, mailBody, {
           idempotencyKey: `open-card-outreach:${item.user_id}:${sentAt.slice(0, 10)}:${subject}`,
         }).catch(() => ({
           ok: false,
@@ -703,7 +720,7 @@ async function sendInBatchesSafely(input: {
               ok: true as const,
               error: null,
               logRow: {
-                campaign_key: "open_card_outreach",
+                campaign_key: CAMPAIGN_KEY,
                 user_id: item.user_id,
                 email: item.email,
                 subject,
@@ -720,7 +737,7 @@ async function sendInBatchesSafely(input: {
               ok: false as const,
               error: `발송 실패: ${item.nickname ?? item.email} (${item.email}) / ${result.status ?? "-"} / ${result.error ?? "UNKNOWN"}`,
               logRow: {
-                campaign_key: "open_card_outreach",
+                campaign_key: CAMPAIGN_KEY,
                 user_id: item.user_id,
                 email: item.email,
                 subject,
@@ -824,7 +841,7 @@ export async function POST(request: Request) {
     const recentMailFilter = parseRecentMailFilter(payload?.recentMail);
     const sort = parseSort(payload?.sort);
     const batchLimit = parseBatchLimit(String(payload?.batchLimit ?? ""));
-    const subject = String(payload?.subject ?? "").trim();
+    const subject = normalizeMarketingSubject(String(payload?.subject ?? "").trim());
     const body = String(payload?.body ?? "").trim();
 
     if (!subject) {
@@ -837,11 +854,12 @@ export async function POST(request: Request) {
 
     const users = await fetchAllAuthUsers(auth.admin);
     const userIds = users.map((user) => user.id);
-    const [profileByUserId, cards, recentSuccessMailByUserId, successfulMailByUserId] = await Promise.all([
+    const [profileByUserId, cards, recentSuccessMailByUserId, successfulMailByUserId, unsubscribedUserIds] = await Promise.all([
       fetchProfilesByUserIds(auth.admin, userIds),
       fetchAllDatingCards(auth.admin),
       fetchRecentSuccessfulMailMap(auth.admin, userIds),
       fetchLatestSuccessfulMailMap(auth.admin, userIds),
+      fetchMarketingUnsubscribedUserIds(auth.admin, userIds, CAMPAIGN_KEY),
     ]);
 
     const { recipients } = buildRecipients({
@@ -855,6 +873,7 @@ export async function POST(request: Request) {
       recentMailFilter,
       recentSuccessMailByUserId,
       successfulMailByUserId,
+      unsubscribedUserIds,
       sort,
       batchLimit,
     });

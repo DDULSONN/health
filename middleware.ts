@@ -1,6 +1,11 @@
-﻿import { NextResponse, type NextRequest } from "next/server";
+import { NextResponse, type NextRequest } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 import { isEmailConfirmed } from "@/lib/auth-confirmed";
+import {
+  getAdminPanelCookieName,
+  isAdminPanelLockEnabled,
+  isAdminPanelUnlocked,
+} from "@/lib/admin-panel-lock";
 
 function getAdminEmails(): string[] {
   return (process.env.ADMIN_EMAILS ?? "")
@@ -12,6 +17,14 @@ function getAdminEmails(): string[] {
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const isApiRoute = pathname.startsWith("/api/");
+  const isAdminPath = pathname.startsWith("/admin");
+  const isAdminApiPath = pathname.startsWith("/api/admin");
+  const isLegacyAdminApiPath =
+    pathname === "/api/dating/1on1/matches/admin" ||
+    pathname.startsWith("/api/dating/cards/admin/");
+  const isAdminProtectedPath = isAdminPath || isAdminApiPath || isLegacyAdminApiPath;
+  const isAdminUnlockPage = pathname === "/admin/unlock";
+  const isAdminUnlockApi = pathname === "/api/admin/panel-unlock";
   const isOpenCardsRoute =
     pathname === "/community/dating/cards" ||
     pathname.startsWith("/community/dating/cards/");
@@ -70,7 +83,10 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (isProtected && !user) {
+  if ((isAdminProtectedPath || isProtected) && !user) {
+    if (isAdminApiPath || isLegacyAdminApiPath) {
+      return NextResponse.json({ error: "Login is required." }, { status: 401 });
+    }
     const url = new URL("/login", request.url);
     const original = pathname + request.nextUrl.search;
     url.searchParams.set("next", original);
@@ -84,8 +100,23 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  if (pathname.startsWith("/admin") && !isAdmin) {
+  if (isAdminProtectedPath && !isAdmin) {
+    if (isApiRoute) {
+      return NextResponse.json({ error: "Admin only." }, { status: 403 });
+    }
     return NextResponse.redirect(new URL("/", request.url));
+  }
+
+  if (isAdminProtectedPath && isAdmin && isAdminPanelLockEnabled() && !isAdminUnlockPage && !isAdminUnlockApi) {
+    const unlocked = await isAdminPanelUnlocked(user.id, request.cookies.get(getAdminPanelCookieName())?.value);
+    if (!unlocked) {
+      if (isApiRoute) {
+        return NextResponse.json({ error: "Admin panel unlock is required." }, { status: 423 });
+      }
+      const url = new URL("/admin/unlock", request.url);
+      url.searchParams.set("next", pathname + request.nextUrl.search);
+      return NextResponse.redirect(url);
+    }
   }
 
   if (isBodyBattlePath && !isAdmin) {
@@ -109,5 +140,8 @@ export const config = {
     "/bodybattle/:path*",
     "/api/bodybattle/:path*",
     "/api/admin/bodybattle/:path*",
+    "/api/admin/:path*",
+    "/api/dating/1on1/matches/admin",
+    "/api/dating/cards/admin/:path*",
   ],
 };

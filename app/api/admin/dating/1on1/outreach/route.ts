@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { requireAdminRoute } from "@/lib/admin-route";
 import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
+import {
+  appendMarketingEmailFooter,
+  fetchMarketingUnsubscribedUserIds,
+  normalizeMarketingSubject,
+} from "@/lib/marketing-email";
 import { createAdminClient } from "@/lib/supabase/server";
 
 const USER_PAGE_SIZE = 200;
@@ -12,6 +17,7 @@ const SEND_BATCH_PAUSE_MS = 200;
 const MAX_SEND_PER_REQUEST = 150;
 const RECENT_SUCCESS_HOURS = 24;
 const MAIL_LOG_TABLE = "admin_open_card_outreach_mail_logs";
+const CAMPAIGN_KEY = "one_on_one_outreach";
 
 type OneOnOneScope =
   | "combined"
@@ -158,11 +164,11 @@ function parseSort(value: string | null | undefined): SortMode {
 }
 
 function buildDefaultSubject(scope: OneOnOneScope) {
-  if (scope === "no_card") return "[GymTools] 1:1 소개팅도 가볍게 시작해보세요";
-  if (scope === "pending_review") return "[GymTools] 1:1 소개팅 카드가 접수되어 있어요";
-  if (scope === "approved_no_match") return "[GymTools] 1:1 소개팅 카드가 준비되어 있어요";
-  if (scope === "mutual_no_exchange") return "[GymTools] 1:1 소개팅에서 좋은 소식이 있어요";
-  return "[GymTools] 1:1 소개팅으로 더 자연스럽게 연결해보세요";
+  if (scope === "no_card") return normalizeMarketingSubject("1:1 소개팅도 가볍게 시작해보세요");
+  if (scope === "pending_review") return normalizeMarketingSubject("1:1 소개팅 카드가 접수되어 있어요");
+  if (scope === "approved_no_match") return normalizeMarketingSubject("1:1 소개팅 카드가 준비되어 있어요");
+  if (scope === "mutual_no_exchange") return normalizeMarketingSubject("1:1 소개팅에서 좋은 소식이 있어요");
+  return normalizeMarketingSubject("1:1 소개팅으로 더 자연스럽게 연결해보세요");
 }
 
 function buildDefaultBody(scope: OneOnOneScope) {
@@ -331,7 +337,7 @@ async function fetchRecentSuccessfulMailMap(admin: AdminClient, userIds: string[
     const res = await admin
       .from(MAIL_LOG_TABLE)
       .select("user_id,sent_at")
-      .eq("campaign_key", "one_on_one_outreach")
+      .eq("campaign_key", CAMPAIGN_KEY)
       .eq("success", true)
       .gte("sent_at", cutoff)
       .in("user_id", chunk)
@@ -467,6 +473,7 @@ function buildRecipients(input: {
   recentLoginDays: number | null;
   recentMailFilter: RecentMailFilter;
   recentSuccessMailByUserId: Map<string, string>;
+  unsubscribedUserIds: Set<string>;
   sort: SortMode;
 }) {
   const {
@@ -479,6 +486,7 @@ function buildRecipients(input: {
     recentLoginDays,
     recentMailFilter,
     recentSuccessMailByUserId,
+    unsubscribedUserIds,
     sort,
   } = input;
 
@@ -502,6 +510,7 @@ function buildRecipients(input: {
   for (const user of users) {
     const profile = profileByUserId.get(user.id);
     if (profile?.role === "admin") continue;
+    if (unsubscribedUserIds.has(user.id)) continue;
 
     const phoneVerified = profile?.phone_verified === true;
     if (!matchesPhoneFilter(phoneVerified, phoneVerifiedFilter)) continue;
@@ -579,11 +588,12 @@ async function buildPreview(
 ): Promise<OneOnOnePreviewResponse> {
   const users = await fetchAllAuthUsers(admin);
   const userIds = users.map((user) => user.id);
-  const [profileByUserId, cards, matches, recentSuccessMailByUserId] = await Promise.all([
+  const [profileByUserId, cards, matches, recentSuccessMailByUserId, unsubscribedUserIds] = await Promise.all([
     fetchProfilesByUserIds(admin, userIds),
     fetchAllOneOnOneCards(admin),
     fetchAllOneOnOneMatches(admin),
     fetchRecentSuccessfulMailMap(admin, userIds),
+    fetchMarketingUnsubscribedUserIds(admin, userIds, CAMPAIGN_KEY),
   ]);
 
   const { recipients, totalCandidateCount, noCardCount, pendingReviewCount, approvedNoMatchCount, mutualNoExchangeCount, recentSuccess24hCount } =
@@ -597,6 +607,7 @@ async function buildPreview(
       recentLoginDays,
       recentMailFilter,
       recentSuccessMailByUserId,
+      unsubscribedUserIds,
       sort,
     });
 
@@ -668,7 +679,7 @@ async function sendInBatchesSafely(input: {
             ok: false as const,
             error: `발송 실패: ${item.nickname ?? item.user_id} / EMAIL_MISSING`,
             logRow: {
-              campaign_key: "one_on_one_outreach",
+              campaign_key: CAMPAIGN_KEY,
               user_id: item.user_id,
               email: null,
               subject,
@@ -683,7 +694,13 @@ async function sendInBatchesSafely(input: {
           };
         }
 
-        const result = await sendDatingEmailToAddressDetailed(item.email, subject, body, {
+        const mailBody = appendMarketingEmailFooter({
+          body,
+          userId: item.user_id,
+          email: item.email,
+          campaignKey: CAMPAIGN_KEY,
+        });
+        const result = await sendDatingEmailToAddressDetailed(item.email, subject, mailBody, {
           idempotencyKey: `one-on-one-outreach:${item.user_id}:${sentAt.slice(0, 10)}:${subject}`,
         }).catch(() => ({
           ok: false,
@@ -697,7 +714,7 @@ async function sendInBatchesSafely(input: {
               ok: true as const,
               error: null,
               logRow: {
-                campaign_key: "one_on_one_outreach",
+                campaign_key: CAMPAIGN_KEY,
                 user_id: item.user_id,
                 email: item.email,
                 subject,
@@ -714,7 +731,7 @@ async function sendInBatchesSafely(input: {
               ok: false as const,
               error: `발송 실패: ${item.nickname ?? item.email} (${item.email}) / ${result.status ?? "-"} / ${result.error ?? "UNKNOWN"}`,
               logRow: {
-                campaign_key: "one_on_one_outreach",
+                campaign_key: CAMPAIGN_KEY,
                 user_id: item.user_id,
                 email: item.email,
                 subject,
@@ -808,7 +825,7 @@ export async function POST(request: Request) {
     const recentLoginDays = parseRecentLoginDays(String(payload?.recentLoginDays ?? ""));
     const recentMailFilter = parseRecentMailFilter(payload?.recentMail);
     const sort = parseSort(payload?.sort);
-    const subject = String(payload?.subject ?? "").trim();
+    const subject = normalizeMarketingSubject(String(payload?.subject ?? "").trim());
     const body = String(payload?.body ?? "").trim();
 
     if (!subject) {
@@ -820,11 +837,12 @@ export async function POST(request: Request) {
 
     const users = await fetchAllAuthUsers(auth.admin);
     const userIds = users.map((user) => user.id);
-    const [profileByUserId, cards, matches, recentSuccessMailByUserId] = await Promise.all([
+    const [profileByUserId, cards, matches, recentSuccessMailByUserId, unsubscribedUserIds] = await Promise.all([
       fetchProfilesByUserIds(auth.admin, userIds),
       fetchAllOneOnOneCards(auth.admin),
       fetchAllOneOnOneMatches(auth.admin),
       fetchRecentSuccessfulMailMap(auth.admin, userIds),
+      fetchMarketingUnsubscribedUserIds(auth.admin, userIds, CAMPAIGN_KEY),
     ]);
 
     const { recipients } = buildRecipients({
@@ -837,6 +855,7 @@ export async function POST(request: Request) {
       recentLoginDays,
       recentMailFilter,
       recentSuccessMailByUserId,
+      unsubscribedUserIds,
       sort,
     });
 

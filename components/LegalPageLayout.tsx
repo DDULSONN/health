@@ -35,6 +35,9 @@ export default function LegalPageLayout({
           <Link href="/refund" className="hover:text-neutral-700">
             환불/취소 규정
           </Link>
+          <Link href="/dating-policy" className="hover:text-neutral-700">
+            소개팅 안전/운영정책
+          </Link>
         </div>
       </div>
     </main>
