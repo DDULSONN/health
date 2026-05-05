@@ -37,6 +37,18 @@ const AdminCommunityModerationPanel = dynamic(() => import("@/components/AdminCo
 });
 
 const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
+const OUTREACH_AUTO_BATCH_DELAY_MS = 1200;
+const OUTREACH_AUTO_MAX_BATCHES = 40;
+
+function waitFor(ms: number) {
+  return new Promise<void>((resolve) => {
+    window.setTimeout(resolve, ms);
+  });
+}
+
+function mergeFailureSummary(current: string[] | undefined, next: string[] | undefined) {
+  return Array.from(new Set([...(current ?? []), ...(next ?? [])].filter(Boolean))).slice(0, 10);
+}
 
 type MyPageTab = "my_cert" | "request_status" | "admin_review";
 type MyPageSectionTab = "profile" | "matching" | "payment" | "admin";
@@ -1662,6 +1674,142 @@ export default function MyPage() {
     loadAdminOpenCardOutreachPreview,
   ]);
 
+  const handleAdminSendOpenCardOutreachAll = useCallback(async () => {
+    if (adminOpenCardOutreachSending) return;
+
+    const targetCount =
+      adminOpenCardOutreachPreview?.total_candidate_count ?? adminOpenCardOutreachPreview?.recipient_count ?? 0;
+    if (!targetCount) {
+      alert("발송 대상이 없습니다.");
+      return;
+    }
+    if (adminOpenCardOutreachRecentMailFilter !== "never_sent_success" && adminOpenCardOutreachRecentMailFilter !== "not_sent_24h") {
+      alert("중복 발송 방지를 위해 전체 자동 발송은 '성공 발송 이력 없는 회원만' 또는 '최근 24시간 미발송만' 조건에서만 사용할 수 있습니다.");
+      return;
+    }
+
+    const subject = adminOpenCardOutreachSubject.trim();
+    const body = adminOpenCardOutreachBody.trim();
+    if (!subject) {
+      alert("메일 제목을 입력해주세요.");
+      return;
+    }
+    if (!body) {
+      alert("메일 본문을 입력해주세요.");
+      return;
+    }
+
+    if (
+      !confirm(
+        `${adminOpenCardOutreachScopeLabel(adminOpenCardOutreachScope)} 대상 ${targetCount.toLocaleString(
+          "ko-KR"
+        )}명을 150명 이하씩 자동으로 이어서 발송할까요?\n\n창을 닫으면 자동 발송이 중단될 수 있습니다.`
+      )
+    ) {
+      return;
+    }
+
+    setAdminOpenCardOutreachSending(true);
+    setAdminOpenCardOutreachResult(null);
+    setError("");
+
+    const staleDays = Number(adminOpenCardOutreachStaleDays.trim() || "30");
+    const batchLimit = Math.min(150, Math.max(1, Number(adminOpenCardOutreachBatchLimit.trim() || "150") || 150));
+    const aggregate: AdminOpenCardOutreachSendResult = {
+      scope: adminOpenCardOutreachScope,
+      stale_days: staleDays,
+      phone_verified_filter: adminOpenCardOutreachPhoneFilter,
+      recent_login_days: Number(adminOpenCardOutreachRecentLoginDays) || null,
+      recent_mail_filter: adminOpenCardOutreachRecentMailFilter,
+      sort: adminOpenCardOutreachSort,
+      batch_limit: batchLimit,
+      send_limit: 150,
+      requested: 0,
+      sent: 0,
+      failed: 0,
+      failure_summary: [],
+      first_failure: null,
+    };
+
+    try {
+      for (let batchIndex = 0; batchIndex < OUTREACH_AUTO_MAX_BATCHES; batchIndex += 1) {
+        const res = await fetch("/api/admin/dating/cards/outreach", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scope: adminOpenCardOutreachScope,
+            staleDays,
+            phoneVerified: adminOpenCardOutreachPhoneFilter,
+            recentLoginDays: adminOpenCardOutreachRecentLoginDays.trim() || "all",
+            recentMail: adminOpenCardOutreachRecentMailFilter,
+            sort: adminOpenCardOutreachSort,
+            batchLimit,
+            subject,
+            body,
+          }),
+        });
+        const responseBody = (await res.json().catch(() => ({}))) as
+          | (AdminOpenCardOutreachSendResult & { ok?: boolean; error?: string })
+          | { error?: string };
+
+        if (!res.ok) {
+          throw new Error(responseBody.error ?? "오픈카드 안내 메일 발송에 실패했습니다.");
+        }
+
+        const current: AdminOpenCardOutreachSendResult = {
+          scope: "scope" in responseBody ? responseBody.scope : adminOpenCardOutreachScope,
+          stale_days: "stale_days" in responseBody ? responseBody.stale_days : staleDays,
+          phone_verified_filter:
+            "phone_verified_filter" in responseBody ? responseBody.phone_verified_filter : adminOpenCardOutreachPhoneFilter,
+          recent_login_days:
+            "recent_login_days" in responseBody ? responseBody.recent_login_days : Number(adminOpenCardOutreachRecentLoginDays) || null,
+          recent_mail_filter:
+            "recent_mail_filter" in responseBody ? responseBody.recent_mail_filter : adminOpenCardOutreachRecentMailFilter,
+          sort: "sort" in responseBody ? responseBody.sort : adminOpenCardOutreachSort,
+          batch_limit: "batch_limit" in responseBody ? responseBody.batch_limit : batchLimit,
+          send_limit: "send_limit" in responseBody ? responseBody.send_limit : 150,
+          requested: "requested" in responseBody ? responseBody.requested : 0,
+          sent: "sent" in responseBody ? responseBody.sent : 0,
+          failed: "failed" in responseBody ? responseBody.failed : 0,
+          failure_summary: "failure_summary" in responseBody ? responseBody.failure_summary ?? [] : [],
+          first_failure: "first_failure" in responseBody ? responseBody.first_failure ?? null : null,
+        };
+
+        aggregate.requested += current.requested;
+        aggregate.sent += current.sent;
+        aggregate.failed += current.failed;
+        aggregate.send_limit = current.send_limit;
+        aggregate.failure_summary = mergeFailureSummary(aggregate.failure_summary, current.failure_summary);
+        aggregate.first_failure = aggregate.first_failure ?? current.first_failure ?? null;
+        setAdminOpenCardOutreachResult({ ...aggregate });
+
+        if (current.requested < batchLimit || current.sent <= 0) break;
+        await waitFor(OUTREACH_AUTO_BATCH_DELAY_MS);
+      }
+
+      await loadAdminOpenCardOutreachPreview();
+    } catch (error) {
+      console.error("[mypage] admin open card outreach auto send failed", error);
+      setError(error instanceof Error ? error.message : "오픈카드 안내 메일 자동 발송에 실패했습니다.");
+    } finally {
+      setAdminOpenCardOutreachSending(false);
+    }
+  }, [
+    adminOpenCardOutreachBatchLimit,
+    adminOpenCardOutreachBody,
+    adminOpenCardOutreachPhoneFilter,
+    adminOpenCardOutreachPreview?.recipient_count,
+    adminOpenCardOutreachPreview?.total_candidate_count,
+    adminOpenCardOutreachRecentLoginDays,
+    adminOpenCardOutreachRecentMailFilter,
+    adminOpenCardOutreachScope,
+    adminOpenCardOutreachSending,
+    adminOpenCardOutreachSort,
+    adminOpenCardOutreachStaleDays,
+    adminOpenCardOutreachSubject,
+    loadAdminOpenCardOutreachPreview,
+  ]);
+
   const loadAdminOneOnOneOutreachPreview = useCallback(async () => {
     if (!isAdmin) return;
 
@@ -1777,6 +1925,132 @@ export default function MyPage() {
     adminOneOnOneOutreachBody,
     adminOneOnOneOutreachPhoneFilter,
     adminOneOnOneOutreachPreview?.recipient_count,
+    adminOneOnOneOutreachRecentLoginDays,
+    adminOneOnOneOutreachRecentMailFilter,
+    adminOneOnOneOutreachScope,
+    adminOneOnOneOutreachSending,
+    adminOneOnOneOutreachSort,
+    adminOneOnOneOutreachSubject,
+    loadAdminOneOnOneOutreachPreview,
+  ]);
+
+  const handleAdminSendOneOnOneOutreachAll = useCallback(async () => {
+    if (adminOneOnOneOutreachSending) return;
+
+    const targetCount =
+      adminOneOnOneOutreachPreview?.total_candidate_count ?? adminOneOnOneOutreachPreview?.recipient_count ?? 0;
+    if (!targetCount) {
+      alert("발송 대상이 없습니다.");
+      return;
+    }
+    if (adminOneOnOneOutreachRecentMailFilter !== "not_sent_24h") {
+      alert("중복 발송 방지를 위해 1:1 전체 자동 발송은 '최근 24시간 미발송만' 조건에서만 사용할 수 있습니다.");
+      return;
+    }
+
+    const subject = adminOneOnOneOutreachSubject.trim();
+    const body = adminOneOnOneOutreachBody.trim();
+    if (!subject) {
+      alert("메일 제목을 입력해주세요.");
+      return;
+    }
+    if (!body) {
+      alert("메일 본문을 입력해주세요.");
+      return;
+    }
+
+    if (
+      !confirm(
+        `${adminOneOnOneOutreachScopeLabel(adminOneOnOneOutreachScope)} 대상 ${targetCount.toLocaleString(
+          "ko-KR"
+        )}명을 150명씩 자동으로 이어서 발송할까요?\n\n창을 닫으면 자동 발송이 중단될 수 있습니다.`
+      )
+    ) {
+      return;
+    }
+
+    setAdminOneOnOneOutreachSending(true);
+    setAdminOneOnOneOutreachResult(null);
+    setError("");
+
+    const aggregate: AdminOneOnOneOutreachSendResult = {
+      scope: adminOneOnOneOutreachScope,
+      phone_verified_filter: adminOneOnOneOutreachPhoneFilter,
+      recent_login_days: Number(adminOneOnOneOutreachRecentLoginDays) || null,
+      recent_mail_filter: adminOneOnOneOutreachRecentMailFilter,
+      sort: adminOneOnOneOutreachSort,
+      send_limit: 150,
+      requested: 0,
+      sent: 0,
+      failed: 0,
+      failure_summary: [],
+      first_failure: null,
+    };
+
+    try {
+      for (let batchIndex = 0; batchIndex < OUTREACH_AUTO_MAX_BATCHES; batchIndex += 1) {
+        const res = await fetch("/api/admin/dating/1on1/outreach", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            scope: adminOneOnOneOutreachScope,
+            phoneVerified: adminOneOnOneOutreachPhoneFilter,
+            recentLoginDays: adminOneOnOneOutreachRecentLoginDays.trim() || "all",
+            recentMail: adminOneOnOneOutreachRecentMailFilter,
+            sort: adminOneOnOneOutreachSort,
+            subject,
+            body,
+          }),
+        });
+        const responseBody = (await res.json().catch(() => ({}))) as
+          | (AdminOneOnOneOutreachSendResult & { ok?: boolean; error?: string })
+          | { error?: string };
+
+        if (!res.ok) {
+          throw new Error(responseBody.error ?? "1:1 소개팅 메일 발송에 실패했습니다.");
+        }
+
+        const current: AdminOneOnOneOutreachSendResult = {
+          scope: "scope" in responseBody ? responseBody.scope : adminOneOnOneOutreachScope,
+          phone_verified_filter:
+            "phone_verified_filter" in responseBody ? responseBody.phone_verified_filter : adminOneOnOneOutreachPhoneFilter,
+          recent_login_days:
+            "recent_login_days" in responseBody ? responseBody.recent_login_days : Number(adminOneOnOneOutreachRecentLoginDays) || null,
+          recent_mail_filter:
+            "recent_mail_filter" in responseBody ? responseBody.recent_mail_filter : adminOneOnOneOutreachRecentMailFilter,
+          sort: "sort" in responseBody ? responseBody.sort : adminOneOnOneOutreachSort,
+          send_limit: "send_limit" in responseBody ? responseBody.send_limit : 150,
+          requested: "requested" in responseBody ? responseBody.requested : 0,
+          sent: "sent" in responseBody ? responseBody.sent : 0,
+          failed: "failed" in responseBody ? responseBody.failed : 0,
+          failure_summary: "failure_summary" in responseBody ? responseBody.failure_summary ?? [] : [],
+          first_failure: "first_failure" in responseBody ? responseBody.first_failure ?? null : null,
+        };
+
+        aggregate.requested += current.requested;
+        aggregate.sent += current.sent;
+        aggregate.failed += current.failed;
+        aggregate.send_limit = current.send_limit;
+        aggregate.failure_summary = mergeFailureSummary(aggregate.failure_summary, current.failure_summary);
+        aggregate.first_failure = aggregate.first_failure ?? current.first_failure ?? null;
+        setAdminOneOnOneOutreachResult({ ...aggregate });
+
+        if (current.requested < (current.send_limit ?? 150) || current.sent <= 0) break;
+        await waitFor(OUTREACH_AUTO_BATCH_DELAY_MS);
+      }
+
+      await loadAdminOneOnOneOutreachPreview();
+    } catch (error) {
+      console.error("[mypage] admin 1on1 outreach auto send failed", error);
+      setError(error instanceof Error ? error.message : "1:1 소개팅 메일 자동 발송에 실패했습니다.");
+    } finally {
+      setAdminOneOnOneOutreachSending(false);
+    }
+  }, [
+    adminOneOnOneOutreachBody,
+    adminOneOnOneOutreachPhoneFilter,
+    adminOneOnOneOutreachPreview?.recipient_count,
+    adminOneOnOneOutreachPreview?.total_candidate_count,
     adminOneOnOneOutreachRecentLoginDays,
     adminOneOnOneOutreachRecentMailFilter,
     adminOneOnOneOutreachScope,
@@ -7454,7 +7728,7 @@ export default function MyPage() {
                     <span className="whitespace-nowrap text-[11px] text-neutral-500">일 경과</span>
                   </div>
                 </label>
-                <div className="flex gap-2 sm:col-span-2 xl:col-span-2 xl:justify-end">
+                <div className="flex flex-wrap gap-2 sm:col-span-2 xl:col-span-2 xl:justify-end">
                 <button
                   type="button"
                   onClick={() => void loadAdminOpenCardOutreachPreview()}
@@ -7470,6 +7744,14 @@ export default function MyPage() {
                     className="h-9 flex-1 rounded-lg bg-violet-600 px-3 text-xs font-semibold text-white disabled:opacity-60 xl:flex-none"
                 >
                   {adminOpenCardOutreachSending ? "발송 중..." : "안내 메일 발송"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleAdminSendOpenCardOutreachAll()}
+                  disabled={adminOpenCardOutreachSending || adminOpenCardOutreachLoading || !adminOpenCardOutreachPreview?.recipient_count}
+                    className="h-9 flex-1 rounded-lg bg-neutral-950 px-3 text-xs font-semibold text-white disabled:opacity-60 xl:flex-none"
+                >
+                  {adminOpenCardOutreachSending ? "자동 발송 중..." : "전체 자동 발송"}
                 </button>
                 </div>
               </div>
@@ -7530,7 +7812,7 @@ export default function MyPage() {
                     <span>· {adminOpenCardOutreachPreview.batch_limit.toLocaleString("ko-KR")}명씩 발송</span>
                   </div>
                   <p className="mt-2 text-[11px] text-neutral-500">
-                    대량 발송 실패를 막기 위해 한 번에 최대 150명까지만 전송합니다. 발송 후 미리보기를 새로고침하면 성공 발송자를 제외하고 이어서 보낼 수 있어요.
+                    대량 발송 실패를 막기 위해 한 요청은 최대 150명까지만 전송합니다. 전체 자동 발송은 성공 발송자를 제외하며 다음 묶음을 이어서 처리합니다.
                   </p>
                   <label className="mt-3 block text-xs font-semibold text-neutral-900">제목</label>
                   <input
@@ -7736,7 +8018,7 @@ export default function MyPage() {
                   <option value="recent_mail">최근 메일 발송 순</option>
                 </select>
                 </label>
-                <div className="flex gap-2 sm:col-span-2 xl:col-span-2 xl:justify-end">
+                <div className="flex flex-wrap gap-2 sm:col-span-2 xl:col-span-2 xl:justify-end">
                 <button
                   type="button"
                   onClick={() => void loadAdminOneOnOneOutreachPreview()}
@@ -7752,6 +8034,14 @@ export default function MyPage() {
                     className="h-9 flex-1 rounded-lg bg-sky-600 px-3 text-xs font-semibold text-white disabled:opacity-60 xl:flex-none"
                 >
                   {adminOneOnOneOutreachSending ? "발송 중..." : "1:1 메일 발송"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleAdminSendOneOnOneOutreachAll()}
+                  disabled={adminOneOnOneOutreachSending || adminOneOnOneOutreachLoading || !adminOneOnOneOutreachPreview?.recipient_count}
+                    className="h-9 flex-1 rounded-lg bg-neutral-950 px-3 text-xs font-semibold text-white disabled:opacity-60 xl:flex-none"
+                >
+                  {adminOneOnOneOutreachSending ? "자동 발송 중..." : "전체 자동 발송"}
                 </button>
                 </div>
               </div>
@@ -7802,7 +8092,7 @@ export default function MyPage() {
                   </div>
                   <p className="mt-2 text-[11px] text-neutral-500">
                     전체 후보 {adminOneOnOneOutreachPreview.total_candidate_count.toLocaleString("ko-KR")}명 중 최대{" "}
-                    {adminOneOnOneOutreachPreview.send_limit.toLocaleString("ko-KR")}명씩 안전 발송 · 최근 24시간 발송 성공:{" "}
+                    {adminOneOnOneOutreachPreview.send_limit.toLocaleString("ko-KR")}명씩 안전 발송 · 전체 자동 발송은 성공 발송자를 제외하며 이어서 처리 · 최근 24시간 발송 성공:{" "}
                     {adminOneOnOneOutreachPreview.recent_success_24h_count.toLocaleString("ko-KR")}명
                   </p>
                   <label className="mt-3 block text-xs font-semibold text-neutral-900">제목</label>
