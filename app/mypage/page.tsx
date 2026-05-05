@@ -769,6 +769,9 @@ type AdminOpenCardOutreachPreview = {
 };
 
 type AdminOpenCardOutreachSendResult = {
+  queued?: boolean;
+  background_job_id?: string;
+  total_count?: number;
   scope?: AdminOpenCardOutreachScope;
   stale_days?: number;
   phone_verified_filter?: AdminOpenCardOutreachPhoneFilter;
@@ -823,6 +826,9 @@ type AdminOneOnOneOutreachPreview = {
 };
 
 type AdminOneOnOneOutreachSendResult = {
+  queued?: boolean;
+  background_job_id?: string;
+  total_count?: number;
   scope?: AdminOneOnOneOutreachScope;
   phone_verified_filter?: AdminOpenCardOutreachPhoneFilter;
   recent_login_days?: number | null;
@@ -1558,8 +1564,8 @@ export default function MyPage() {
         throw new Error(body.error ?? "오픈카드 안내 메일 미리보기를 불러오지 못했습니다.");
       }
       setAdminOpenCardOutreachPreview(body);
-      setAdminOpenCardOutreachSubject(body.subject ?? "");
-      setAdminOpenCardOutreachBody(body.body ?? "");
+      setAdminOpenCardOutreachSubject((current) => (current.trim() ? current : body.subject ?? ""));
+      setAdminOpenCardOutreachBody((current) => (current.trim() ? current : body.body ?? ""));
     } catch (error) {
       console.error("[mypage] admin open card outreach preview failed", error);
       setError(error instanceof Error ? error.message : "오픈카드 안내 메일 미리보기를 불러오지 못했습니다.");
@@ -1810,6 +1816,108 @@ export default function MyPage() {
     loadAdminOpenCardOutreachPreview,
   ]);
 
+  const handleAdminQueueOpenCardOutreach = useCallback(async () => {
+    if (adminOpenCardOutreachSending) return;
+
+    const targetCount =
+      adminOpenCardOutreachPreview?.total_candidate_count ?? adminOpenCardOutreachPreview?.recipient_count ?? 0;
+    if (!targetCount) {
+      alert("발송 대상이 없습니다.");
+      return;
+    }
+
+    const subject = adminOpenCardOutreachSubject.trim();
+    const body = adminOpenCardOutreachBody.trim();
+    if (!subject) {
+      alert("메일 제목을 입력해주세요.");
+      return;
+    }
+    if (!body) {
+      alert("메일 본문을 입력해주세요.");
+      return;
+    }
+
+    if (
+      !confirm(
+        `${adminOpenCardOutreachScopeLabel(adminOpenCardOutreachScope)} 대상 ${targetCount.toLocaleString(
+          "ko-KR"
+        )}명을 백그라운드 발송 작업으로 등록할까요?\n\n등록 후에는 창을 닫아도 cron이 이어서 발송합니다.`
+      )
+    ) {
+      return;
+    }
+
+    setAdminOpenCardOutreachSending(true);
+    setAdminOpenCardOutreachResult(null);
+    setError("");
+    try {
+      const staleDays = Number(adminOpenCardOutreachStaleDays.trim() || "30");
+      const batchLimit = Number(adminOpenCardOutreachBatchLimit.trim() || "150");
+      const res = await fetch("/api/admin/dating/cards/outreach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          background: true,
+          scope: adminOpenCardOutreachScope,
+          staleDays,
+          phoneVerified: adminOpenCardOutreachPhoneFilter,
+          recentLoginDays: adminOpenCardOutreachRecentLoginDays.trim() || "all",
+          recentMail: adminOpenCardOutreachRecentMailFilter,
+          sort: adminOpenCardOutreachSort,
+          batchLimit,
+          subject,
+          body,
+        }),
+      });
+      const responseBody = (await res.json().catch(() => ({}))) as
+        | (AdminOpenCardOutreachSendResult & { ok?: boolean; error?: string })
+        | { error?: string };
+
+      if (!res.ok) {
+        throw new Error(responseBody.error ?? "오픈카드 안내 메일 백그라운드 작업 등록에 실패했습니다.");
+      }
+
+      setAdminOpenCardOutreachResult({
+        queued: "queued" in responseBody ? responseBody.queued : true,
+        background_job_id: "job_id" in responseBody ? String(responseBody.job_id ?? "") : undefined,
+        total_count: "total_count" in responseBody ? Number(responseBody.total_count ?? 0) : targetCount,
+        scope: adminOpenCardOutreachScope,
+        stale_days: staleDays,
+        phone_verified_filter: adminOpenCardOutreachPhoneFilter,
+        recent_login_days: Number(adminOpenCardOutreachRecentLoginDays) || null,
+        recent_mail_filter: adminOpenCardOutreachRecentMailFilter,
+        sort: adminOpenCardOutreachSort,
+        batch_limit: batchLimit,
+        send_limit: 150,
+        requested: "total_count" in responseBody ? Number(responseBody.total_count ?? 0) : targetCount,
+        sent: 0,
+        failed: 0,
+        failure_summary: [],
+        first_failure: null,
+      });
+      await loadAdminOpenCardOutreachPreview();
+    } catch (error) {
+      console.error("[mypage] admin open card outreach queue failed", error);
+      setError(error instanceof Error ? error.message : "오픈카드 안내 메일 백그라운드 작업 등록에 실패했습니다.");
+    } finally {
+      setAdminOpenCardOutreachSending(false);
+    }
+  }, [
+    adminOpenCardOutreachBatchLimit,
+    adminOpenCardOutreachBody,
+    adminOpenCardOutreachPhoneFilter,
+    adminOpenCardOutreachPreview?.recipient_count,
+    adminOpenCardOutreachPreview?.total_candidate_count,
+    adminOpenCardOutreachRecentLoginDays,
+    adminOpenCardOutreachRecentMailFilter,
+    adminOpenCardOutreachScope,
+    adminOpenCardOutreachSending,
+    adminOpenCardOutreachSort,
+    adminOpenCardOutreachStaleDays,
+    adminOpenCardOutreachSubject,
+    loadAdminOpenCardOutreachPreview,
+  ]);
+
   const loadAdminOneOnOneOutreachPreview = useCallback(async () => {
     if (!isAdmin) return;
 
@@ -1828,8 +1936,8 @@ export default function MyPage() {
         throw new Error(body.error ?? "1:1 소개팅 메일 미리보기를 불러오지 못했습니다.");
       }
       setAdminOneOnOneOutreachPreview(body);
-      setAdminOneOnOneOutreachSubject(body.subject ?? "");
-      setAdminOneOnOneOutreachBody(body.body ?? "");
+      setAdminOneOnOneOutreachSubject((current) => (current.trim() ? current : body.subject ?? ""));
+      setAdminOneOnOneOutreachBody((current) => (current.trim() ? current : body.body ?? ""));
     } catch (error) {
       console.error("[mypage] admin 1on1 outreach preview failed", error);
       setError(error instanceof Error ? error.message : "1:1 소개팅 메일 미리보기를 불러오지 못했습니다.");
@@ -2043,6 +2151,100 @@ export default function MyPage() {
     } catch (error) {
       console.error("[mypage] admin 1on1 outreach auto send failed", error);
       setError(error instanceof Error ? error.message : "1:1 소개팅 메일 자동 발송에 실패했습니다.");
+    } finally {
+      setAdminOneOnOneOutreachSending(false);
+    }
+  }, [
+    adminOneOnOneOutreachBody,
+    adminOneOnOneOutreachPhoneFilter,
+    adminOneOnOneOutreachPreview?.recipient_count,
+    adminOneOnOneOutreachPreview?.total_candidate_count,
+    adminOneOnOneOutreachRecentLoginDays,
+    adminOneOnOneOutreachRecentMailFilter,
+    adminOneOnOneOutreachScope,
+    adminOneOnOneOutreachSending,
+    adminOneOnOneOutreachSort,
+    adminOneOnOneOutreachSubject,
+    loadAdminOneOnOneOutreachPreview,
+  ]);
+
+  const handleAdminQueueOneOnOneOutreach = useCallback(async () => {
+    if (adminOneOnOneOutreachSending) return;
+
+    const targetCount =
+      adminOneOnOneOutreachPreview?.total_candidate_count ?? adminOneOnOneOutreachPreview?.recipient_count ?? 0;
+    if (!targetCount) {
+      alert("발송 대상이 없습니다.");
+      return;
+    }
+
+    const subject = adminOneOnOneOutreachSubject.trim();
+    const body = adminOneOnOneOutreachBody.trim();
+    if (!subject) {
+      alert("메일 제목을 입력해주세요.");
+      return;
+    }
+    if (!body) {
+      alert("메일 본문을 입력해주세요.");
+      return;
+    }
+
+    if (
+      !confirm(
+        `${adminOneOnOneOutreachScopeLabel(adminOneOnOneOutreachScope)} 대상 ${targetCount.toLocaleString(
+          "ko-KR"
+        )}명을 백그라운드 발송 작업으로 등록할까요?\n\n등록 후에는 창을 닫아도 cron이 이어서 발송합니다.`
+      )
+    ) {
+      return;
+    }
+
+    setAdminOneOnOneOutreachSending(true);
+    setAdminOneOnOneOutreachResult(null);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/dating/1on1/outreach", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          background: true,
+          scope: adminOneOnOneOutreachScope,
+          phoneVerified: adminOneOnOneOutreachPhoneFilter,
+          recentLoginDays: adminOneOnOneOutreachRecentLoginDays.trim() || "all",
+          recentMail: adminOneOnOneOutreachRecentMailFilter,
+          sort: adminOneOnOneOutreachSort,
+          subject,
+          body,
+        }),
+      });
+      const responseBody = (await res.json().catch(() => ({}))) as
+        | (AdminOneOnOneOutreachSendResult & { ok?: boolean; error?: string })
+        | { error?: string };
+
+      if (!res.ok) {
+        throw new Error(responseBody.error ?? "1:1 소개팅 메일 백그라운드 작업 등록에 실패했습니다.");
+      }
+
+      setAdminOneOnOneOutreachResult({
+        queued: "queued" in responseBody ? responseBody.queued : true,
+        background_job_id: "job_id" in responseBody ? String(responseBody.job_id ?? "") : undefined,
+        total_count: "total_count" in responseBody ? Number(responseBody.total_count ?? 0) : targetCount,
+        scope: adminOneOnOneOutreachScope,
+        phone_verified_filter: adminOneOnOneOutreachPhoneFilter,
+        recent_login_days: Number(adminOneOnOneOutreachRecentLoginDays) || null,
+        recent_mail_filter: adminOneOnOneOutreachRecentMailFilter,
+        sort: adminOneOnOneOutreachSort,
+        send_limit: 150,
+        requested: "total_count" in responseBody ? Number(responseBody.total_count ?? 0) : targetCount,
+        sent: 0,
+        failed: 0,
+        failure_summary: [],
+        first_failure: null,
+      });
+      await loadAdminOneOnOneOutreachPreview();
+    } catch (error) {
+      console.error("[mypage] admin 1on1 outreach queue failed", error);
+      setError(error instanceof Error ? error.message : "1:1 소개팅 메일 백그라운드 작업 등록에 실패했습니다.");
     } finally {
       setAdminOneOnOneOutreachSending(false);
     }
@@ -7747,11 +7949,11 @@ export default function MyPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => void handleAdminSendOpenCardOutreachAll()}
+                  onClick={() => void handleAdminQueueOpenCardOutreach()}
                   disabled={adminOpenCardOutreachSending || adminOpenCardOutreachLoading || !adminOpenCardOutreachPreview?.recipient_count}
                     className="h-9 flex-1 rounded-lg bg-neutral-950 px-3 text-xs font-semibold text-white disabled:opacity-60 xl:flex-none"
                 >
-                  {adminOpenCardOutreachSending ? "자동 발송 중..." : "전체 자동 발송"}
+                  {adminOpenCardOutreachSending ? "작업 등록 중..." : "백그라운드 발송"}
                 </button>
                 </div>
               </div>
@@ -7812,7 +8014,7 @@ export default function MyPage() {
                     <span>· {adminOpenCardOutreachPreview.batch_limit.toLocaleString("ko-KR")}명씩 발송</span>
                   </div>
                   <p className="mt-2 text-[11px] text-neutral-500">
-                    대량 발송 실패를 막기 위해 한 요청은 최대 150명까지만 전송합니다. 전체 자동 발송은 성공 발송자를 제외하며 다음 묶음을 이어서 처리합니다.
+                    대량 발송 실패를 막기 위해 직접 발송은 한 요청당 최대 150명만 전송합니다. 백그라운드 발송은 현재 입력한 제목/본문과 대상 목록을 저장한 뒤 cron이 이어서 처리합니다.
                   </p>
                   <label className="mt-3 block text-xs font-semibold text-neutral-900">제목</label>
                   <input
@@ -7875,10 +8077,14 @@ export default function MyPage() {
             {adminOpenCardOutreachResult ? (
               <div className="mt-3 space-y-2">
                 <p className="text-sm text-violet-900">
-                  발송 완료: {adminOpenCardOutreachScopeLabel(adminOpenCardOutreachResult.scope ?? adminOpenCardOutreachScope)} 요청{" "}
+                  {adminOpenCardOutreachResult.queued ? "백그라운드 발송 등록" : "발송 완료"}:{" "}
+                  {adminOpenCardOutreachScopeLabel(adminOpenCardOutreachResult.scope ?? adminOpenCardOutreachScope)} 요청{" "}
                   {adminOpenCardOutreachResult.requested}명 / 성공 {adminOpenCardOutreachResult.sent}명 / 실패{" "}
                   {adminOpenCardOutreachResult.failed}명
                 </p>
+                {adminOpenCardOutreachResult.background_job_id ? (
+                  <p className="text-[11px] text-neutral-500">작업 ID: {adminOpenCardOutreachResult.background_job_id}</p>
+                ) : null}
                 <p className="text-[11px] text-neutral-500">
                   안전 발송 단위: 최대 {(adminOpenCardOutreachResult.send_limit ?? 150).toLocaleString("ko-KR")}명씩 처리됩니다.
                   실패가 있어도 성공한 발송은 이력에 기록됩니다.
@@ -8037,11 +8243,11 @@ export default function MyPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => void handleAdminSendOneOnOneOutreachAll()}
+                  onClick={() => void handleAdminQueueOneOnOneOutreach()}
                   disabled={adminOneOnOneOutreachSending || adminOneOnOneOutreachLoading || !adminOneOnOneOutreachPreview?.recipient_count}
                     className="h-9 flex-1 rounded-lg bg-neutral-950 px-3 text-xs font-semibold text-white disabled:opacity-60 xl:flex-none"
                 >
-                  {adminOneOnOneOutreachSending ? "자동 발송 중..." : "전체 자동 발송"}
+                  {adminOneOnOneOutreachSending ? "작업 등록 중..." : "백그라운드 발송"}
                 </button>
                 </div>
               </div>
@@ -8092,7 +8298,7 @@ export default function MyPage() {
                   </div>
                   <p className="mt-2 text-[11px] text-neutral-500">
                     전체 후보 {adminOneOnOneOutreachPreview.total_candidate_count.toLocaleString("ko-KR")}명 중 최대{" "}
-                    {adminOneOnOneOutreachPreview.send_limit.toLocaleString("ko-KR")}명씩 안전 발송 · 전체 자동 발송은 성공 발송자를 제외하며 이어서 처리 · 최근 24시간 발송 성공:{" "}
+                    {adminOneOnOneOutreachPreview.send_limit.toLocaleString("ko-KR")}명씩 안전 발송 · 백그라운드 발송은 현재 입력한 제목/본문과 대상 목록을 저장한 뒤 cron이 이어서 처리 · 최근 24시간 발송 성공:{" "}
                     {adminOneOnOneOutreachPreview.recent_success_24h_count.toLocaleString("ko-KR")}명
                   </p>
                   <label className="mt-3 block text-xs font-semibold text-neutral-900">제목</label>
@@ -8150,10 +8356,14 @@ export default function MyPage() {
             {adminOneOnOneOutreachResult ? (
               <div className="mt-3 space-y-2">
                 <p className="text-sm text-sky-900">
-                  발송 완료: {adminOneOnOneOutreachScopeLabel(adminOneOnOneOutreachResult.scope ?? adminOneOnOneOutreachScope)} 요청{" "}
+                  {adminOneOnOneOutreachResult.queued ? "백그라운드 발송 등록" : "발송 완료"}:{" "}
+                  {adminOneOnOneOutreachScopeLabel(adminOneOnOneOutreachResult.scope ?? adminOneOnOneOutreachScope)} 요청{" "}
                   {adminOneOnOneOutreachResult.requested}명 / 성공 {adminOneOnOneOutreachResult.sent}명 / 실패{" "}
                   {adminOneOnOneOutreachResult.failed}명
                 </p>
+                {adminOneOnOneOutreachResult.background_job_id ? (
+                  <p className="text-[11px] text-neutral-500">작업 ID: {adminOneOnOneOutreachResult.background_job_id}</p>
+                ) : null}
                 <p className="text-[11px] text-neutral-500">
                   안전 발송 단위: 최대 {(adminOneOnOneOutreachResult.send_limit ?? 150).toLocaleString("ko-KR")}명씩 처리됩니다.
                   실패가 있어도 성공한 발송은 이력에 기록됩니다.

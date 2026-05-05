@@ -17,6 +17,7 @@ const MAX_SEND_PER_REQUEST = 150;
 const DEFAULT_STALE_DAYS = 30;
 const RECENT_SUCCESS_HOURS = 24;
 const MAIL_LOG_TABLE = "admin_open_card_outreach_mail_logs";
+const MAIL_JOB_TABLE = "admin_outreach_mail_jobs";
 const CAMPAIGN_KEY = "open_card_outreach";
 
 type OutreachScope = "no_card" | "expired_stale" | "combined";
@@ -84,6 +85,7 @@ type OutreachPreviewResponse = {
 };
 
 type OutreachPostPayload = {
+  background?: boolean;
   scope?: OutreachScope;
   staleDays?: number | string | null;
   phoneVerified?: PhoneVerifiedFilter;
@@ -444,7 +446,7 @@ function buildRecipients(input: {
   successfulMailByUserId: Map<string, string>;
   unsubscribedUserIds: Set<string>;
   sort: SortMode;
-  batchLimit: number;
+  batchLimit: number | null;
 }) {
   const {
     users,
@@ -545,7 +547,7 @@ function buildRecipients(input: {
 
   sortRecipients(recipients, sort);
   const totalCandidateCount = recipients.length;
-  const limitedRecipients = recipients.slice(0, batchLimit);
+  const limitedRecipients = batchLimit == null ? recipients : recipients.slice(0, batchLimit);
   const recentSuccess24hCount = recipients.filter((item) => item.recent_success_mail_sent_at).length;
   const successfulMailCount = recipients.filter((item) => item.successful_mail_sent_at).length;
 
@@ -557,6 +559,46 @@ function buildRecipients(input: {
     recentSuccess24hCount,
     successfulMailCount,
   };
+}
+
+function isMissingJobTableError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? String(error.code ?? "").trim() : "";
+  const message = "message" in error ? String(error.message ?? "").trim() : "";
+  return code === "42P01" || code === "PGRST205" || message.includes(MAIL_JOB_TABLE) || message.toLowerCase().includes("schema cache");
+}
+
+async function createBackgroundJob(input: {
+  admin: AdminClient;
+  adminUserId: string;
+  subject: string;
+  body: string;
+  recipients: OutreachRecipientPreview[];
+  filters: Record<string, unknown>;
+}) {
+  const res = await input.admin
+    .from(MAIL_JOB_TABLE)
+    .insert({
+      campaign_key: CAMPAIGN_KEY,
+      status: "queued",
+      subject: input.subject,
+      body: input.body,
+      filters: input.filters,
+      recipients: input.recipients,
+      total_count: input.recipients.length,
+      admin_user_id: input.adminUserId,
+    })
+    .select("id")
+    .single();
+
+  if (res.error) {
+    if (isMissingJobTableError(res.error)) {
+      throw new Error("백그라운드 메일 작업 테이블이 아직 없습니다. Supabase에서 admin_outreach_mail_jobs.sql을 먼저 실행해주세요.");
+    }
+    throw new Error(`백그라운드 메일 작업을 등록하지 못했습니다. ${res.error.message}`);
+  }
+
+  return String(res.data?.id ?? "");
 }
 
 async function buildPreview(
@@ -841,6 +883,7 @@ export async function POST(request: Request) {
     const recentMailFilter = parseRecentMailFilter(payload?.recentMail);
     const sort = parseSort(payload?.sort);
     const batchLimit = parseBatchLimit(String(payload?.batchLimit ?? ""));
+    const background = payload?.background === true;
     const subject = normalizeMarketingSubject(String(payload?.subject ?? "").trim());
     const body = String(payload?.body ?? "").trim();
 
@@ -875,8 +918,36 @@ export async function POST(request: Request) {
       successfulMailByUserId,
       unsubscribedUserIds,
       sort,
-      batchLimit,
+      batchLimit: background ? null : batchLimit,
     });
+
+    if (background) {
+      const jobId = await createBackgroundJob({
+        admin: auth.admin,
+        adminUserId: auth.user.id,
+        subject,
+        body,
+        recipients,
+        filters: {
+          scope,
+          stale_days: staleDays,
+          phone_verified_filter: phoneVerifiedFilter,
+          recent_login_days: recentLoginDays,
+          recent_mail_filter: recentMailFilter,
+          sort,
+          requested_batch_limit: batchLimit,
+        },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        queued: true,
+        job_id: jobId,
+        campaign_key: CAMPAIGN_KEY,
+        total_count: recipients.length,
+        send_limit: MAX_SEND_PER_REQUEST,
+      });
+    }
 
     const { sent, failed, firstFailure, failureSummary } = await sendInBatchesSafely({
       admin: auth.admin,
