@@ -50,6 +50,14 @@ function mergeFailureSummary(current: string[] | undefined, next: string[] | und
   return Array.from(new Set([...(current ?? []), ...(next ?? [])].filter(Boolean))).slice(0, 10);
 }
 
+function oneOnOneContactDisplayName(
+  card: { name?: string | null } | null,
+  profile: { nickname?: string | null } | null | undefined,
+  userId: string | null | undefined
+) {
+  return card?.name?.trim() || profile?.nickname?.trim() || (userId ? `회원 ${userId.slice(0, 8)}` : "-");
+}
+
 type MyPageTab = "my_cert" | "request_status" | "admin_review";
 type MyPageSectionTab = "profile" | "matching" | "payment" | "admin";
 
@@ -707,6 +715,8 @@ type AdminCityViewGrantCandidate = {
 type AdminOneOnOneContactExchangeRequest = {
   id: string;
   state: "mutual_accepted";
+  source_user_id: string;
+  candidate_user_id: string;
   contact_exchange_status: "payment_pending_admin";
   contact_exchange_requested_at: string | null;
   contact_exchange_paid_at: string | null;
@@ -728,6 +738,14 @@ type AdminOneOnOneContactExchangeRequest = {
     age: number | null;
     region: string;
     phone?: string | null;
+  } | null;
+  source_profile?: {
+    user_id: string | null;
+    nickname: string | null;
+  } | null;
+  candidate_profile?: {
+    user_id: string | null;
+    nickname: string | null;
   } | null;
 };
 
@@ -4605,12 +4623,14 @@ export default function MyPage() {
     normalizedAdminOneOnOneContactSearch.length === 0
       ? adminOneOnOneContactRequests
       : adminOneOnOneContactRequests.filter((item) => {
-          const sourceName = (item.source_card?.name ?? "").trim().toLowerCase();
-          const candidateName = (item.candidate_card?.name ?? "").trim().toLowerCase();
+          const sourceName = oneOnOneContactDisplayName(item.source_card, item.source_profile, item.source_user_id).toLowerCase();
+          const candidateName = oneOnOneContactDisplayName(item.candidate_card, item.candidate_profile, item.candidate_user_id).toLowerCase();
           const sourceRegion = (item.source_card?.region ?? "").trim().toLowerCase();
           const candidateRegion = (item.candidate_card?.region ?? "").trim().toLowerCase();
           const sourcePhone = (item.source_card?.phone ?? "").trim().toLowerCase();
           const candidatePhone = (item.candidate_card?.phone ?? "").trim().toLowerCase();
+          const sourceUserId = item.source_user_id.trim().toLowerCase();
+          const candidateUserId = item.candidate_user_id.trim().toLowerCase();
           const matchId = item.id.trim().toLowerCase();
           return (
             sourceName.includes(normalizedAdminOneOnOneContactSearch) ||
@@ -4619,6 +4639,8 @@ export default function MyPage() {
             candidateRegion.includes(normalizedAdminOneOnOneContactSearch) ||
             sourcePhone.includes(normalizedAdminOneOnOneContactSearch) ||
             candidatePhone.includes(normalizedAdminOneOnOneContactSearch) ||
+            sourceUserId.includes(normalizedAdminOneOnOneContactSearch) ||
+            candidateUserId.includes(normalizedAdminOneOnOneContactSearch) ||
             matchId.includes(normalizedAdminOneOnOneContactSearch)
           );
         });
@@ -8521,6 +8543,8 @@ export default function MyPage() {
               <div className="mt-3 space-y-2">
                 {filteredAdminOneOnOneContactRequests.map((item) => {
                   const processing = processingOneOnOneContactExchangeIds.includes(item.id);
+                  const sourceName = oneOnOneContactDisplayName(item.source_card, item.source_profile, item.source_user_id);
+                  const candidateName = oneOnOneContactDisplayName(item.candidate_card, item.candidate_profile, item.candidate_user_id);
                   return (
                     <div
                       key={item.id}
@@ -8529,7 +8553,7 @@ export default function MyPage() {
                       <div className="flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0">
                           <p className="text-sm font-semibold text-neutral-900">
-                            지원자 {item.source_card?.name ?? "-"} → 상대 {item.candidate_card?.name ?? "-"}
+                            지원자 {sourceName} → 상대 {candidateName}
                           </p>
                           <p className="mt-1 text-[11px] text-neutral-500 break-all">
                             매칭ID {item.id} / 요청 {item.contact_exchange_requested_at ? new Date(item.contact_exchange_requested_at).toLocaleString("ko-KR") : "-"}

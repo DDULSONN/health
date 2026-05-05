@@ -65,6 +65,11 @@ type MatchCard = {
   photo_signed_urls?: string[];
 };
 
+type MatchProfile = {
+  user_id: string | null;
+  nickname: string | null;
+};
+
 type AdminMatchItem = {
   id: string;
   admin_sent_by_user_id?: string | null;
@@ -92,7 +97,9 @@ type AdminMatchItem = {
   source_phone_share_consented_at: string | null;
   candidate_phone_share_consented_at: string | null;
   source_card_id: string;
+  source_user_id: string;
   candidate_card_id: string;
+  candidate_user_id: string;
   source_selected_at: string | null;
   candidate_responded_at: string | null;
   source_final_responded_at: string | null;
@@ -100,6 +107,8 @@ type AdminMatchItem = {
   updated_at: string;
   source_card: MatchCard | null;
   candidate_card: MatchCard | null;
+  source_profile?: MatchProfile | null;
+  candidate_profile?: MatchProfile | null;
 };
 
 type OneOnOneNoticePreview = {
@@ -126,6 +135,14 @@ function noticeScopeLabel(scope: NoticeScope): string {
   if (scope === "legacy_mutual") return "기존 쌍방 수락만";
   if (scope === "new_mutual") return "신규 쌍방 수락만";
   return "쌍방 수락만";
+}
+
+function matchDisplayName(
+  card: MatchCard | null,
+  profile: MatchProfile | null | undefined,
+  userId: string | null | undefined
+) {
+  return card?.name?.trim() || profile?.nickname?.trim() || (userId ? `회원 ${userId.slice(0, 8)}` : "-");
 }
 
 type AutoCandidateRange = {
@@ -1327,11 +1344,14 @@ export default function AdminDatingOneOnOnePage() {
           {visibleMatches.length === 0 ? (
             <p className="text-sm text-neutral-500">해당 조건의 매칭 기록이 없습니다.</p>
           ) : (
-            visibleMatches.map((match) => (
+            visibleMatches.map((match) => {
+              const sourceName = matchDisplayName(match.source_card, match.source_profile, match.source_user_id);
+              const candidateName = matchDisplayName(match.candidate_card, match.candidate_profile, match.candidate_user_id);
+              return (
               <div key={match.id} className="rounded-xl border border-emerald-200 bg-white p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-medium text-neutral-900">
-                    {match.source_card?.name ?? "-"} → {match.candidate_card?.name ?? "-"}
+                    {sourceName} → {candidateName}
                   </p>
                   <div className="flex flex-wrap items-center gap-1">
                     <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${matchStateBadgeClass(match.state)}`}>
@@ -1372,7 +1392,7 @@ export default function AdminDatingOneOnOnePage() {
                       </p>
                     )}
                     <p className="mt-1 text-[11px] text-neutral-500">
-                      지원자 {match.source_card?.name ?? "-"} / 요청 {match.contact_exchange_requested_at ? new Date(match.contact_exchange_requested_at).toLocaleString("ko-KR") : "-"}
+                      지원자 {sourceName} / 요청 {match.contact_exchange_requested_at ? new Date(match.contact_exchange_requested_at).toLocaleString("ko-KR") : "-"}
                       {match.contact_exchange_paid_at ? ` / 입금확인요청 ${new Date(match.contact_exchange_paid_at).toLocaleString("ko-KR")}` : ""}
                       {match.contact_exchange_approved_at ? ` / 승인 ${new Date(match.contact_exchange_approved_at).toLocaleString("ko-KR")}` : ""}
                     </p>
@@ -1406,7 +1426,8 @@ export default function AdminDatingOneOnOnePage() {
                   </div>
                 )}
               </div>
-            ))
+              );
+            })
           )}
         </div>
       </section>

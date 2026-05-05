@@ -23,6 +23,11 @@ type AdminCreateResponse = {
   skipped_candidate_card_ids?: string[];
 };
 
+type ProfileLite = {
+  user_id: string | null;
+  nickname: string | null;
+};
+
 const MATCH_STATES = new Set([
   "proposed",
   "source_selected",
@@ -140,6 +145,27 @@ async function fetchAllAdminMatches(
   return rows;
 }
 
+async function fetchProfilesByUserIds(admin: ReturnType<typeof createAdminClient>, userIds: string[]) {
+  const uniqueUserIds = [...new Set(userIds.map((id) => String(id ?? "").trim()).filter(Boolean))];
+  if (!uniqueUserIds.length) return new Map<string, ProfileLite>();
+
+  const { data, error } = await admin
+    .from("profiles")
+    .select("user_id,nickname")
+    .in("user_id", uniqueUserIds);
+
+  if (error) {
+    console.error("[GET /api/dating/1on1/matches/admin] profiles failed", error);
+    return new Map<string, ProfileLite>();
+  }
+
+  return new Map(
+    ((data ?? []) as ProfileLite[])
+      .map((row) => [String(row.user_id ?? "").trim(), row] as const)
+      .filter(([userId]) => userId.length > 0)
+  );
+}
+
 export async function GET(req: Request) {
   const { user } = await getRequestAuthContext(req);
 
@@ -170,12 +196,18 @@ export async function GET(req: Request) {
     console.error("[GET /api/dating/1on1/matches/admin] cards failed", cardError);
     return new Map();
   });
+  const profileMap = await fetchProfilesByUserIds(
+    admin,
+    rows.flatMap((row) => [row.source_user_id, row.candidate_user_id])
+  );
 
   return NextResponse.json({
     items: rows.map((row) => ({
       ...row,
       source_card: cardMap.get(row.source_card_id) ?? null,
       candidate_card: cardMap.get(row.candidate_card_id) ?? null,
+      source_profile: profileMap.get(row.source_user_id) ?? null,
+      candidate_profile: profileMap.get(row.candidate_user_id) ?? null,
     })),
   });
 }

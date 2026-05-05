@@ -8,6 +8,11 @@ const BATCH_SIZE = 500;
 const FULL_QUEUE_SELECT =
   "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,contact_exchange_status,contact_exchange_requested_at,contact_exchange_paid_at,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_approved_by_user_id,contact_exchange_note,source_phone_share_consented_at,candidate_phone_share_consented_at,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at";
 
+type ProfileLite = {
+  user_id: string | null;
+  nickname: string | null;
+};
+
 function isMissingContactExchangeColumnsError(error: { message?: string } | null | undefined) {
   const message = String(error?.message ?? "");
   return (
@@ -53,6 +58,27 @@ async function fetchPendingContactExchangeMatches(admin: ReturnType<typeof creat
   return rows;
 }
 
+async function fetchProfilesByUserIds(admin: ReturnType<typeof createAdminClient>, userIds: string[]) {
+  const uniqueUserIds = [...new Set(userIds.map((id) => String(id ?? "").trim()).filter(Boolean))];
+  if (!uniqueUserIds.length) return new Map<string, ProfileLite>();
+
+  const { data, error } = await admin
+    .from("profiles")
+    .select("user_id,nickname")
+    .in("user_id", uniqueUserIds);
+
+  if (error) {
+    console.error("[GET /api/admin/dating/1on1/contact-exchange-queue] profiles failed", error);
+    return new Map<string, ProfileLite>();
+  }
+
+  return new Map(
+    ((data ?? []) as ProfileLite[])
+      .map((row) => [String(row.user_id ?? "").trim(), row] as const)
+      .filter(([userId]) => userId.length > 0)
+  );
+}
+
 export async function GET(req: Request) {
   const { user } = await getRequestAuthContext(req);
 
@@ -71,12 +97,18 @@ export async function GET(req: Request) {
       admin,
       rows.flatMap((row) => [row.source_card_id, row.candidate_card_id])
     );
+    const profileMap = await fetchProfilesByUserIds(
+      admin,
+      rows.flatMap((row) => [row.source_user_id, row.candidate_user_id])
+    );
 
     return NextResponse.json({
       items: rows.map((row) => ({
         ...row,
         source_card: cardMap.get(row.source_card_id) ?? null,
         candidate_card: cardMap.get(row.candidate_card_id) ?? null,
+        source_profile: profileMap.get(row.source_user_id) ?? null,
+        candidate_profile: profileMap.get(row.candidate_user_id) ?? null,
       })),
     });
   } catch (error) {
