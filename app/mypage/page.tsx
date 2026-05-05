@@ -52,10 +52,10 @@ function mergeFailureSummary(current: string[] | undefined, next: string[] | und
 
 function oneOnOneContactDisplayName(
   card: { name?: string | null } | null,
-  profile: { nickname?: string | null } | null | undefined,
+  profile: { nickname?: string | null; email?: string | null } | null | undefined,
   userId: string | null | undefined
 ) {
-  return card?.name?.trim() || profile?.nickname?.trim() || (userId ? `회원 ${userId.slice(0, 8)}` : "-");
+  return card?.name?.trim() || profile?.nickname?.trim() || profile?.email?.trim() || (userId ? `회원 ${userId.slice(0, 8)}` : "-");
 }
 
 type MyPageTab = "my_cert" | "request_status" | "admin_review";
@@ -742,10 +742,12 @@ type AdminOneOnOneContactExchangeRequest = {
   source_profile?: {
     user_id: string | null;
     nickname: string | null;
+    email?: string | null;
   } | null;
   candidate_profile?: {
     user_id: string | null;
     nickname: string | null;
+    email?: string | null;
   } | null;
 };
 

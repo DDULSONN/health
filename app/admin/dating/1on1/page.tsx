@@ -68,6 +68,7 @@ type MatchCard = {
 type MatchProfile = {
   user_id: string | null;
   nickname: string | null;
+  email?: string | null;
 };
 
 type AdminMatchItem = {
@@ -142,7 +143,7 @@ function matchDisplayName(
   profile: MatchProfile | null | undefined,
   userId: string | null | undefined
 ) {
-  return card?.name?.trim() || profile?.nickname?.trim() || (userId ? `회원 ${userId.slice(0, 8)}` : "-");
+  return card?.name?.trim() || profile?.nickname?.trim() || profile?.email?.trim() || (userId ? `회원 ${userId.slice(0, 8)}` : "-");
 }
 
 type AutoCandidateRange = {

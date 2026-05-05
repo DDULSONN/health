@@ -11,6 +11,7 @@ const FULL_QUEUE_SELECT =
 type ProfileLite = {
   user_id: string | null;
   nickname: string | null;
+  email?: string | null;
 };
 
 function isMissingContactExchangeColumnsError(error: { message?: string } | null | undefined) {
@@ -67,16 +68,46 @@ async function fetchProfilesByUserIds(admin: ReturnType<typeof createAdminClient
     .select("user_id,nickname")
     .in("user_id", uniqueUserIds);
 
+  const profileMap = new Map<string, ProfileLite>();
   if (error) {
     console.error("[GET /api/admin/dating/1on1/contact-exchange-queue] profiles failed", error);
-    return new Map<string, ProfileLite>();
+  } else {
+    for (const row of (data ?? []) as ProfileLite[]) {
+      const userId = String(row.user_id ?? "").trim();
+      if (!userId) continue;
+      profileMap.set(userId, { user_id: userId, nickname: row.nickname ?? null });
+    }
   }
 
-  return new Map(
-    ((data ?? []) as ProfileLite[])
-      .map((row) => [String(row.user_id ?? "").trim(), row] as const)
-      .filter(([userId]) => userId.length > 0)
-  );
+  const missingUserIds = uniqueUserIds.filter((userId) => !String(profileMap.get(userId)?.nickname ?? "").trim());
+  for (let start = 0; start < missingUserIds.length; start += 20) {
+    const chunk = missingUserIds.slice(start, start + 20);
+    const results = await Promise.all(
+      chunk.map(async (userId) => {
+        const res = await admin.auth.admin.getUserById(userId);
+        if (res.error || !res.data.user) return null;
+        const metadata = res.data.user.user_metadata as Record<string, unknown> | null;
+        const nickname = String(metadata?.nickname ?? metadata?.name ?? "").trim() || null;
+        return {
+          user_id: userId,
+          nickname,
+          email: res.data.user.email ?? null,
+        } satisfies ProfileLite;
+      })
+    );
+
+    for (const row of results) {
+      if (!row?.user_id) continue;
+      const existing = profileMap.get(row.user_id);
+      profileMap.set(row.user_id, {
+        user_id: row.user_id,
+        nickname: existing?.nickname ?? row.nickname,
+        email: row.email ?? existing?.email ?? null,
+      });
+    }
+  }
+
+  return profileMap;
 }
 
 export async function GET(req: Request) {
