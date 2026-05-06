@@ -3,6 +3,10 @@ import {
   DATING_ONE_ON_ONE_MATCH_CANDIDATE_SINGLE_TRACK_STATES,
   toDatingOneOnOneCardDetail,
 } from "@/lib/dating-1on1";
+import {
+  getOneOnOnePhoneBlockMapForUsers,
+  isOneOnOnePhoneBlockedPair,
+} from "@/lib/dating-1on1-phone-blocks";
 import { getRegionDistanceMeta } from "@/lib/region-distance";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -30,7 +34,9 @@ type CardRow = {
   created_at: string;
   recommendation_refresh_used_at?: string | null;
   photo_paths: unknown;
+  phone: string | null;
 };
+type RecommendationCard = ReturnType<typeof toDatingOneOnOneCardDetail> & { phone: string | null };
 
 function getAgeRange(card: { sex: "male" | "female"; age: number | null }) {
   if (card.age == null || !Number.isFinite(card.age)) {
@@ -71,8 +77,8 @@ function getDistanceRank(sourceRegion: string | null, candidateRegion: string | 
 }
 
 function sortCandidatesForSource(
-  sourceCard: ReturnType<typeof toDatingOneOnOneCardDetail>,
-  candidates: ReturnType<typeof toDatingOneOnOneCardDetail>[],
+  sourceCard: RecommendationCard,
+  candidates: RecommendationCard[],
   seedSuffix: string
 ) {
   const sourceAgeRange = getAgeRange(sourceCard);
@@ -132,7 +138,7 @@ function rotateCandidates<T>(items: T[], offset: number) {
 }
 
 function takeRecommendations(
-  sortedCandidates: ReturnType<typeof toDatingOneOnOneCardDetail>[],
+  sortedCandidates: RecommendationCard[],
   limit: number,
   preferredExcludeIds: Set<string> | null = null,
   rotationSeed: string | null = null
@@ -147,7 +153,7 @@ function takeRecommendations(
       ? rotateCandidates(preferredPool, hashSeed(rotationSeed) % preferredPool.length)
       : preferredPool;
 
-  const picked: ReturnType<typeof toDatingOneOnOneCardDetail>[] = [];
+  const picked: RecommendationCard[] = [];
   for (const candidate of rotatedPreferredPool) {
     if (preferredExcludeIds.has(candidate.id)) continue;
     picked.push(candidate);
@@ -193,6 +199,11 @@ function getRefreshAvailability(refreshUsedAt?: string | null) {
   };
 }
 
+function stripInternalPhone(card: RecommendationCard) {
+  const { phone: _phone, ...publicCard } = card;
+  return publicCard;
+}
+
 async function fetchAllActiveCards(admin: ReturnType<typeof createAdminClient>) {
   const rows: CardRow[] = [];
   let from = 0;
@@ -201,7 +212,7 @@ async function fetchAllActiveCards(admin: ReturnType<typeof createAdminClient>) 
     const { data, error } = await admin
       .from("dating_1on1_cards")
       .select(
-        "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,recommendation_refresh_used_at,photo_paths"
+        "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,recommendation_refresh_used_at,photo_paths,phone"
       )
       .in("status", [...DATING_ONE_ON_ONE_ACTIVE_STATUSES])
       .order("created_at", { ascending: false })
@@ -234,7 +245,10 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Failed to load active cards." }, { status: 500 });
   }
 
-  const normalizedCards = activeCards.map((row) => toDatingOneOnOneCardDetail(row));
+  const normalizedCards = activeCards.map((row) => ({
+    ...toDatingOneOnOneCardDetail(row),
+    phone: row.phone ?? null,
+  }));
   const myCards = normalizedCards.filter((card) => card.user_id === user.id);
   const mySourceCards = myCards.filter(
     (card) => card.status === "submitted" || card.status === "reviewing" || card.status === "approved"
@@ -246,7 +260,7 @@ export async function GET(req: Request) {
 
   const sourceCardIds = mySourceCards.map((card) => card.id);
 
-  const [existingPairRes, blockedCandidateRes] = await Promise.all([
+  const [existingPairRes, blockedCandidateRes, phoneBlockMap] = await Promise.all([
     admin
       .from("dating_1on1_match_proposals")
       .select("source_card_id,candidate_card_id")
@@ -255,6 +269,10 @@ export async function GET(req: Request) {
       .from("dating_1on1_match_proposals")
       .select("candidate_card_id")
       .in("state", [...DATING_ONE_ON_ONE_MATCH_CANDIDATE_SINGLE_TRACK_STATES]),
+    getOneOnOnePhoneBlockMapForUsers(
+      admin,
+      normalizedCards.map((card) => card.user_id)
+    ),
   ]);
 
   if (existingPairRes.error) {
@@ -282,6 +300,17 @@ export async function GET(req: Request) {
       if (candidateCard.sex === sourceCard.sex) return false;
       if (blockedCandidateIds.has(candidateCard.id)) return false;
       if (excludedIds.has(candidateCard.id)) return false;
+      if (
+        isOneOnOnePhoneBlockedPair({
+          sourceUserId: sourceCard.user_id,
+          sourcePhone: sourceCard.phone,
+          candidateUserId: candidateCard.user_id,
+          candidatePhone: candidateCard.phone,
+          blockMap: phoneBlockMap,
+        })
+      ) {
+        return false;
+      }
       return (
         candidateCard.status === "submitted" ||
         candidateCard.status === "reviewing" ||
@@ -308,7 +337,7 @@ export async function GET(req: Request) {
       refresh_used_at: sourceCard.recommendation_refresh_used_at ?? null,
       next_refresh_at: refreshAvailability.nextRefreshAt,
       can_refresh: refreshAvailability.canRefreshNow && candidates.length > RECOMMENDATION_LIMIT,
-      recommendations,
+      recommendations: recommendations.map(stripInternalPhone),
     };
   });
 

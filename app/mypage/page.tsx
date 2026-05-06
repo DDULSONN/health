@@ -488,6 +488,13 @@ type MyOneOnOneAutoRecommendationGroup = {
   recommendations: MyOneOnOneMatchCard[];
 };
 
+type MyOneOnOnePhoneBlock = {
+  id: string;
+  phone_last4: string | null;
+  label: string | null;
+  created_at: string;
+};
+
 type AdminOpenCard = {
   id: string;
   owner_user_id: string;
@@ -1201,6 +1208,11 @@ export default function MyPage() {
   const [myOneOnOneCards, setMyOneOnOneCards] = useState<MyOneOnOneCard[]>([]);
   const [myOneOnOneMatches, setMyOneOnOneMatches] = useState<MyOneOnOneMatch[]>([]);
   const [myOneOnOneAutoRecommendations, setMyOneOnOneAutoRecommendations] = useState<MyOneOnOneAutoRecommendationGroup[]>([]);
+  const [myOneOnOnePhoneBlocks, setMyOneOnOnePhoneBlocks] = useState<MyOneOnOnePhoneBlock[]>([]);
+  const [oneOnOneBlockPhoneInput, setOneOnOneBlockPhoneInput] = useState("");
+  const [oneOnOneBlockLabelInput, setOneOnOneBlockLabelInput] = useState("");
+  const [oneOnOnePhoneBlockSubmitting, setOneOnOnePhoneBlockSubmitting] = useState(false);
+  const [deletingOneOnOnePhoneBlockIds, setDeletingOneOnOnePhoneBlockIds] = useState<string[]>([]);
   const [datingConnections, setDatingConnections] = useState<DatingConnection[]>([]);
   const [swipeStatusSummary, setSwipeStatusSummary] = useState<SwipeStatusResponse["summary"] | null>(null);
   const [myOutgoingSwipeLikes, setMyOutgoingSwipeLikes] = useState<SwipeStatusItem[]>([]);
@@ -2400,6 +2412,7 @@ export default function MyPage() {
           oneOnOneRes,
           oneOnOneMatchesRes,
           oneOnOneRecommendationsRes,
+          oneOnOnePhoneBlocksRes,
           connectionsRes,
           paidConnectionsRes,
           writeSettingRes,
@@ -2417,6 +2430,7 @@ export default function MyPage() {
           fetch("/api/dating/1on1/my", { cache: "no-store" }),
           fetch("/api/dating/1on1/matches/my", { cache: "no-store" }),
           fetch("/api/dating/1on1/recommendations/my", { cache: "no-store" }),
+          fetch("/api/dating/1on1/phone-blocks", { cache: "no-store" }),
           fetch("/api/dating/cards/my/connections", { cache: "no-store" }),
           fetch("/api/dating/paid/my/connections", { cache: "no-store" }),
           fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
@@ -2466,6 +2480,10 @@ export default function MyPage() {
           error?: string;
           items?: MyOneOnOneAutoRecommendationGroup[];
         };
+        const oneOnOnePhoneBlocksBody = (await oneOnOnePhoneBlocksRes.json().catch(() => ({}))) as {
+          error?: string;
+          items?: MyOneOnOnePhoneBlock[];
+        };
         const connectionsBody = (await connectionsRes.json().catch(() => ({}))) as {
           error?: string;
           items?: DatingConnection[];
@@ -2507,6 +2525,9 @@ export default function MyPage() {
         if (!oneOnOneRecommendationsRes.ok) {
           console.error("[mypage] 1on1 recommendations load failed", oneOnOneRecommendationsBody.error ?? "unknown error");
         }
+        if (!oneOnOnePhoneBlocksRes.ok) {
+          console.error("[mypage] 1on1 phone blocks load failed", oneOnOnePhoneBlocksBody.error ?? "unknown error");
+        }
         if (!connectionsRes.ok) {
           console.error("[mypage] open connections load failed", connectionsBody.error ?? "unknown error");
         }
@@ -2531,6 +2552,7 @@ export default function MyPage() {
           setMyOneOnOneAutoRecommendations(
             oneOnOneRecommendationsRes.ok ? (oneOnOneRecommendationsBody.items ?? []) : []
           );
+          setMyOneOnOnePhoneBlocks(oneOnOnePhoneBlocksRes.ok ? (oneOnOnePhoneBlocksBody.items ?? []) : []);
           setSwipeStatusSummary(null);
           setMyOutgoingSwipeLikes([]);
           setMyIncomingSwipeLikes([]);
@@ -3260,6 +3282,77 @@ export default function MyPage() {
       throw new Error(body.error ?? "1:1 자동 추천 후보를 다시 불러오지 못했습니다.");
     }
     setMyOneOnOneAutoRecommendations(body.items ?? []);
+  };
+
+  const reloadOneOnOnePhoneBlocks = async () => {
+    const res = await fetch("/api/dating/1on1/phone-blocks", { cache: "no-store" });
+    const body = (await res.json().catch(() => ({}))) as { items?: MyOneOnOnePhoneBlock[]; error?: string };
+    if (!res.ok) {
+      throw new Error(body.error ?? "1:1 지인 차단 목록을 다시 불러오지 못했습니다.");
+    }
+    setMyOneOnOnePhoneBlocks(body.items ?? []);
+  };
+
+  const handleAddOneOnOnePhoneBlock = async () => {
+    if (oneOnOnePhoneBlockSubmitting) return;
+    const phone = oneOnOneBlockPhoneInput.trim();
+    if (!phone) {
+      alert("차단할 휴대폰 번호를 입력해주세요.");
+      return;
+    }
+
+    setOneOnOnePhoneBlockSubmitting(true);
+    try {
+      const res = await fetch("/api/dating/1on1/phone-blocks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone,
+          label: oneOnOneBlockLabelInput.trim() || null,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        item?: MyOneOnOnePhoneBlock | null;
+        error?: string;
+      };
+      if (!res.ok || body.ok === false) {
+        alert(body.error ?? "차단 번호 저장에 실패했습니다.");
+        return;
+      }
+      setOneOnOneBlockPhoneInput("");
+      setOneOnOneBlockLabelInput("");
+      await Promise.all([reloadOneOnOnePhoneBlocks(), reloadOneOnOneRecommendations()]);
+      alert("1:1 후보에서 서로 보이지 않도록 차단했습니다.");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "차단 번호 저장에 실패했습니다.");
+    } finally {
+      setOneOnOnePhoneBlockSubmitting(false);
+    }
+  };
+
+  const handleDeleteOneOnOnePhoneBlock = async (id: string) => {
+    if (deletingOneOnOnePhoneBlockIds.includes(id)) return;
+    if (!confirm("이 번호 차단을 해제할까요? 이후 1:1 후보로 다시 노출될 수 있습니다.")) return;
+
+    setDeletingOneOnOnePhoneBlockIds((prev) => [...prev, id]);
+    try {
+      const res = await fetch("/api/dating/1on1/phone-blocks", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || body.ok === false) {
+        alert(body.error ?? "차단 번호 삭제에 실패했습니다.");
+        return;
+      }
+      await Promise.all([reloadOneOnOnePhoneBlocks(), reloadOneOnOneRecommendations()]);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "차단 번호 삭제에 실패했습니다.");
+    } finally {
+      setDeletingOneOnOnePhoneBlockIds((prev) => prev.filter((blockId) => blockId !== id));
+    }
   };
 
   const reloadSwipeStatus = async () => {
@@ -5841,6 +5934,65 @@ export default function MyPage() {
           <p className="mt-1 text-[11px] leading-5 text-neutral-600">
             쌍방 수락 후 기존 매칭을 포함해 결제가 완료되면 상대 연락처가 바로 공개됩니다. 공개된 번호의 외부 공유, 무단 저장, 불쾌한 연락은 제재 대상입니다.
           </p>
+        </div>
+        <div className="mb-3 rounded-xl border border-rose-200 bg-white px-3 py-3">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-xs font-semibold text-rose-900">지인 번호 차단</p>
+              <p className="mt-1 text-[11px] leading-5 text-neutral-600">
+                아는 사람 번호를 입력하면 1:1 후보에서 서로 보이지 않게 제외됩니다. 번호는 원문이 아니라 해시로 저장돼요.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2 md:min-w-[360px]">
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="tel"
+                  value={oneOnOneBlockPhoneInput}
+                  onChange={(event) => setOneOnOneBlockPhoneInput(event.target.value)}
+                  placeholder="01012345678"
+                  className="min-h-[38px] flex-1 rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+                />
+                <input
+                  type="text"
+                  value={oneOnOneBlockLabelInput}
+                  onChange={(event) => setOneOnOneBlockLabelInput(event.target.value)}
+                  placeholder="메모 선택"
+                  className="min-h-[38px] flex-1 rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+                />
+                <button
+                  type="button"
+                  onClick={() => void handleAddOneOnOnePhoneBlock()}
+                  disabled={oneOnOnePhoneBlockSubmitting}
+                  className="inline-flex min-h-[38px] items-center justify-center rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white disabled:opacity-50"
+                >
+                  {oneOnOnePhoneBlockSubmitting ? "저장 중..." : "차단"}
+                </button>
+              </div>
+              {myOneOnOnePhoneBlocks.length > 0 && (
+                <div className="flex flex-wrap gap-2">
+                  {myOneOnOnePhoneBlocks.map((block) => {
+                    const deleting = deletingOneOnOnePhoneBlockIds.includes(block.id);
+                    return (
+                      <span
+                        key={block.id}
+                        className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] text-rose-800"
+                      >
+                        {block.label ? `${block.label} · ` : ""}끝자리 {block.phone_last4 ?? "----"}
+                        <button
+                          type="button"
+                          disabled={deleting}
+                          onClick={() => void handleDeleteOneOnOnePhoneBlock(block.id)}
+                          className="font-semibold text-rose-700 disabled:opacity-50"
+                        >
+                          {deleting ? "삭제 중" : "해제"}
+                        </button>
+                      </span>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
         {myOneOnOneCards.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 신청한 내역이 없습니다.</p>

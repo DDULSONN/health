@@ -2,6 +2,10 @@ import {
   DATING_ONE_ON_ONE_ACTIVE_STATUSES,
   DATING_ONE_ON_ONE_MATCH_CANDIDATE_SINGLE_TRACK_STATES,
 } from "@/lib/dating-1on1";
+import {
+  getOneOnOnePhoneBlockMapForUsers,
+  isOneOnOnePhoneBlockedPair,
+} from "@/lib/dating-1on1-phone-blocks";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
@@ -34,12 +38,12 @@ export async function POST(req: Request) {
   const [sourceRes, candidateRes] = await Promise.all([
     admin
       .from("dating_1on1_cards")
-      .select("id,user_id,sex,status")
+      .select("id,user_id,sex,status,phone")
       .eq("id", sourceCardId)
       .maybeSingle(),
     admin
       .from("dating_1on1_cards")
-      .select("id,user_id,sex,status")
+      .select("id,user_id,sex,status,phone")
       .eq("id", candidateCardId)
       .maybeSingle(),
   ]);
@@ -67,6 +71,28 @@ export async function POST(req: Request) {
   }
   if (sourceRes.data.user_id === candidateRes.data.user_id || sourceRes.data.sex === candidateRes.data.sex) {
     return NextResponse.json({ error: "Candidate card is not eligible." }, { status: 409 });
+  }
+
+  const phoneBlockMap = await getOneOnOnePhoneBlockMapForUsers(admin, [
+    sourceRes.data.user_id,
+    candidateRes.data.user_id,
+  ]).catch((error) => {
+    console.error("[POST /api/dating/1on1/matches/auto] phone block lookup failed", error);
+    return null;
+  });
+  if (!phoneBlockMap) {
+    return NextResponse.json({ error: "차단 번호 설정을 확인하지 못했습니다." }, { status: 500 });
+  }
+  if (
+    isOneOnOnePhoneBlockedPair({
+      sourceUserId: sourceRes.data.user_id,
+      sourcePhone: sourceRes.data.phone ?? null,
+      candidateUserId: candidateRes.data.user_id,
+      candidatePhone: candidateRes.data.phone ?? null,
+      blockMap: phoneBlockMap,
+    })
+  ) {
+    return NextResponse.json({ error: "차단한 번호와는 1:1 매칭을 진행할 수 없습니다." }, { status: 409 });
   }
 
   const [existingPairRes, candidateTrackRes] = await Promise.all([
