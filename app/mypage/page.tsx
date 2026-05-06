@@ -5940,7 +5940,7 @@ export default function MyPage() {
             <div>
               <p className="text-xs font-semibold text-rose-900">지인 번호 차단</p>
               <p className="mt-1 text-[11px] leading-5 text-neutral-600">
-                아는 사람 번호를 입력하면 1:1 후보에서 서로 보이지 않게 제외됩니다. 번호는 원문이 아니라 해시로 저장돼요.
+                아는 사람 번호를 입력하면 1:1 후보에서 서로 보이지 않게 제외됩니다. 입력한 번호는 안전하게 보호돼요.
               </p>
             </div>
             <div className="flex flex-col gap-2 md:min-w-[360px]">
