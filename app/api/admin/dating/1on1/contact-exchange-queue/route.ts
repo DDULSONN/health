@@ -38,7 +38,7 @@ async function fetchPendingContactExchangeMatches(admin: ReturnType<typeof creat
       .from("dating_1on1_match_proposals")
       .select(FULL_QUEUE_SELECT)
       .eq("state", "mutual_accepted")
-      .eq("contact_exchange_status", "payment_pending_admin")
+      .in("contact_exchange_status", ["payment_pending_admin", "awaiting_applicant_payment"])
       .order("contact_exchange_paid_at", { ascending: false, nullsFirst: false })
       .order("created_at", { ascending: false })
       .range(from, from + BATCH_SIZE - 1);
@@ -144,6 +144,6 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     console.error("[GET /api/admin/dating/1on1/contact-exchange-queue] failed", error);
-    return NextResponse.json({ error: "번호 공개 승인 대기를 불러오지 못했습니다." }, { status: 500 });
+    return NextResponse.json({ error: "번호 공개 가능 매칭을 불러오지 못했습니다." }, { status: 500 });
   }
 }

@@ -724,7 +724,7 @@ type AdminOneOnOneContactExchangeRequest = {
   state: "mutual_accepted";
   source_user_id: string;
   candidate_user_id: string;
-  contact_exchange_status: "payment_pending_admin";
+  contact_exchange_status: "awaiting_applicant_payment" | "payment_pending_admin";
   contact_exchange_requested_at: string | null;
   contact_exchange_paid_at: string | null;
   source_phone_share_consented_at: string | null;
@@ -8670,10 +8670,10 @@ export default function MyPage() {
           {adminManageTab === "one_on_one_contact" && (
           <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
             <p className="text-xs font-semibold text-violet-800">
-              1:1 번호 공개 승인 대기 {adminOneOnOneContactRequests.length}건
+              1:1 번호 공개 가능 매칭 {adminOneOnOneContactRequests.length}건
             </p>
             <p className="mt-1 text-[11px] text-neutral-500">
-              직접 승인 대기 중인 1:1 번호 교환 건만 따로 모았습니다. 여기서 승인하면 양쪽 번호가 공개됩니다.
+              쌍방 수락 후 아직 번호 교환 전인 건을 모았습니다. 오픈카톡으로 입금 확인이 오면 여기서 바로 승인하면 됩니다.
             </p>
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <input
@@ -8691,7 +8691,7 @@ export default function MyPage() {
               <p className="mt-3 text-xs text-neutral-500">불러오는 중...</p>
             ) : filteredAdminOneOnOneContactRequests.length === 0 ? (
               <p className="mt-3 text-xs text-neutral-500">
-                {normalizedAdminOneOnOneContactSearch ? "검색된 번호 공개 요청이 없습니다." : "현재 승인 대기 중인 번호 공개 요청이 없습니다."}
+                {normalizedAdminOneOnOneContactSearch ? "검색된 번호 공개 가능 매칭이 없습니다." : "현재 번호 공개 가능한 매칭이 없습니다."}
               </p>
             ) : (
               <div className="mt-3 space-y-2">
