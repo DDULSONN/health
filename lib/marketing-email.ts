@@ -42,7 +42,10 @@ function normalizeEmail(email: string | null | undefined) {
 }
 
 export function normalizeMarketingSubject(subject: string) {
-  const clean = String(subject ?? "").trim().replace(/^\[광고\]\s*/i, "");
+  const clean = String(subject ?? "")
+    .trim()
+    .replace(/^\[광고\]\s*/i, "")
+    .replace(/^\[愿묎퀬\]\s*/i, "");
   return `[광고] ${clean || "GymTools 안내"}`;
 }
 
@@ -98,7 +101,7 @@ export function appendMarketingEmailFooter(input: {
     trimmedBody,
     "",
     "-----",
-    "본 메일은 GymTools 서비스 이용 회원에게 발송되는 광고성 안내 메일입니다.",
+    "본 메일은 GymTools 회원님께 발송되는 광고성 안내 메일입니다.",
     "더 이상 GymTools 안내 메일을 받고 싶지 않다면 아래 링크에서 수신거부할 수 있습니다.",
     unsubscribeUrl,
     "",
