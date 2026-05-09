@@ -37,10 +37,10 @@ declare
   v_index int;
   v_base timestamptz := timezone('utc', now());
 begin
-  select id, sex, status
+  select dc.id, dc.sex, dc.status
     into v_card
-  from public.dating_cards
-  where id = p_card_id;
+  from public.dating_cards dc
+  where dc.id = p_card_id;
 
   if not found then
     raise exception 'CARD_NOT_FOUND';
@@ -50,11 +50,11 @@ begin
     raise exception 'CARD_NOT_PENDING';
   end if;
 
-  select array_agg(id order by queue_priority_at asc, created_at asc, id asc)
+  select array_agg(dc.id order by dc.queue_priority_at asc, dc.created_at asc, dc.id asc)
     into v_ordered_ids
-  from public.dating_cards
-  where sex = v_card.sex
-    and status = 'pending';
+  from public.dating_cards dc
+  where dc.sex = v_card.sex
+    and dc.status = 'pending';
 
   v_total := coalesce(array_length(v_ordered_ids, 1), 0);
   if v_total = 0 then
@@ -78,9 +78,9 @@ begin
   end if;
 
   for v_index in 1..array_length(v_new_ids, 1) loop
-    update public.dating_cards
+    update public.dating_cards dc
     set queue_priority_at = v_base + make_interval(secs => v_index)
-    where id = v_new_ids[v_index];
+    where dc.id = v_new_ids[v_index];
   end loop;
 
   return query select p_card_id, v_card.sex, v_old_position, v_target, v_total;
