@@ -32,6 +32,14 @@ function safeSearchTerm(value: string): string {
   return value.trim().replace(/[,%]/g, " ");
 }
 
+function escapeIlikeTerm(value: string): string {
+  return safeSearchTerm(value).replace(/\\/g, "\\\\").replace(/_/g, "\\_");
+}
+
+function ilikePattern(value: string): string {
+  return `%${escapeIlikeTerm(value)}%`;
+}
+
 function isMissingSchemaError(error: unknown) {
   if (!error || typeof error !== "object") return false;
   const code = String((error as { code?: unknown }).code ?? "");
@@ -94,6 +102,165 @@ async function fetchProfile(admin: AdminClient, userId: string) {
   return res.data ?? null;
 }
 
+type UserCandidate = {
+  userId: string;
+  profile?: Record<string, unknown> | null;
+  source: string;
+  label?: string | null;
+  priority: number;
+};
+
+function pushCandidate(
+  candidates: UserCandidate[],
+  seen: Set<string>,
+  candidate: UserCandidate | null | undefined
+) {
+  if (!candidate?.userId || seen.has(candidate.userId)) return;
+  seen.add(candidate.userId);
+  candidates.push(candidate);
+}
+
+function isExactTextMatch(left: unknown, right: string): boolean {
+  return typeof left === "string" && left.trim().toLowerCase() === right.trim().toLowerCase();
+}
+
+async function findUserCandidatesByNickname(admin: AdminClient, query: string) {
+  const candidates: UserCandidate[] = [];
+  const seen = new Set<string>();
+  const pattern = ilikePattern(query);
+
+  const profileRows = await listSafe<Record<string, unknown>>(
+    admin
+      .from("profiles")
+      .select("user_id,nickname,role,phone_verified,phone_e164,phone_verified_at,swipe_profile_visible,created_at")
+      .ilike("nickname", pattern)
+      .limit(10)
+  );
+
+  for (const row of profileRows) {
+    const exact = isExactTextMatch(row.nickname, query);
+    pushCandidate(candidates, seen, {
+      userId: String(row.user_id),
+      profile: row,
+      source: "profile_nickname",
+      label: typeof row.nickname === "string" ? row.nickname : null,
+      priority: exact ? 0 : 10,
+    });
+  }
+
+  const openCards = await listSafe<Record<string, unknown>>(
+    admin
+      .from("dating_cards")
+      .select("owner_user_id,display_nickname,created_at")
+      .ilike("display_nickname", pattern)
+      .order("created_at", { ascending: false })
+      .limit(10)
+  );
+  for (const row of openCards) {
+    const exact = isExactTextMatch(row.display_nickname, query);
+    pushCandidate(candidates, seen, {
+      userId: String(row.owner_user_id),
+      source: "open_card_display_nickname",
+      label: typeof row.display_nickname === "string" ? row.display_nickname : null,
+      priority: exact ? 1 : 20,
+    });
+  }
+
+  const openApplications = await listSafe<Record<string, unknown>>(
+    admin
+      .from("dating_card_applications")
+      .select("applicant_user_id,applicant_display_nickname,created_at")
+      .ilike("applicant_display_nickname", pattern)
+      .order("created_at", { ascending: false })
+      .limit(10)
+  );
+  for (const row of openApplications) {
+    const exact = isExactTextMatch(row.applicant_display_nickname, query);
+    pushCandidate(candidates, seen, {
+      userId: String(row.applicant_user_id),
+      source: "open_card_application_nickname",
+      label: typeof row.applicant_display_nickname === "string" ? row.applicant_display_nickname : null,
+      priority: exact ? 2 : 30,
+    });
+  }
+
+  const paidCards = await listSafe<Record<string, unknown>>(
+    admin
+      .from("dating_paid_cards")
+      .select("user_id,nickname,created_at")
+      .ilike("nickname", pattern)
+      .order("created_at", { ascending: false })
+      .limit(10)
+  );
+  for (const row of paidCards) {
+    const exact = isExactTextMatch(row.nickname, query);
+    pushCandidate(candidates, seen, {
+      userId: String(row.user_id),
+      source: "paid_card_nickname",
+      label: typeof row.nickname === "string" ? row.nickname : null,
+      priority: exact ? 3 : 40,
+    });
+  }
+
+  const paidApplications = await listSafe<Record<string, unknown>>(
+    admin
+      .from("dating_paid_card_applications")
+      .select("applicant_user_id,applicant_display_nickname,created_at")
+      .ilike("applicant_display_nickname", pattern)
+      .order("created_at", { ascending: false })
+      .limit(10)
+  );
+  for (const row of paidApplications) {
+    const exact = isExactTextMatch(row.applicant_display_nickname, query);
+    pushCandidate(candidates, seen, {
+      userId: String(row.applicant_user_id),
+      source: "paid_card_application_nickname",
+      label: typeof row.applicant_display_nickname === "string" ? row.applicant_display_nickname : null,
+      priority: exact ? 4 : 50,
+    });
+  }
+
+  const oneOnOneCards = await listSafe<Record<string, unknown>>(
+    admin
+      .from("dating_1on1_cards")
+      .select("user_id,name,created_at")
+      .ilike("name", pattern)
+      .order("created_at", { ascending: false })
+      .limit(10)
+  );
+  for (const row of oneOnOneCards) {
+    const exact = isExactTextMatch(row.name, query);
+    pushCandidate(candidates, seen, {
+      userId: String(row.user_id),
+      source: "one_on_one_name",
+      label: typeof row.name === "string" ? row.name : null,
+      priority: exact ? 5 : 60,
+    });
+  }
+
+  candidates.sort((a, b) => a.priority - b.priority);
+  return candidates;
+}
+
+async function findUserCandidateByProfilePhone(admin: AdminClient, phone: string) {
+  const normalizedPhone = normalizePhone(phone);
+  if (toDigits(normalizedPhone).length < 8) return null;
+
+  const rows = await listSafe<Record<string, unknown>>(
+    admin
+      .from("profiles")
+      .select("user_id,nickname,role,phone_verified,phone_e164,phone_verified_at,swipe_profile_visible,created_at")
+      .ilike("phone_e164", ilikePattern(normalizedPhone))
+      .limit(1)
+  );
+  const profile = rows[0] ?? null;
+  if (!profile) return null;
+  return {
+    userId: String(profile.user_id),
+    profile,
+  };
+}
+
 async function resolveUser(admin: AdminClient, query: string) {
   if (isUuid(query)) {
     const [{ data: userData }, profile] = await Promise.all([
@@ -107,15 +274,13 @@ async function resolveUser(admin: AdminClient, query: string) {
     };
   }
 
-  const normalizedPhone = normalizePhone(query);
-  const [profileRes, emailUser, phoneUser] = await Promise.all([
-    admin
-      .from("profiles")
-      .select("user_id,nickname,role,phone_verified,phone_e164,phone_verified_at,swipe_profile_visible,created_at")
-      .or(`nickname.ilike.%${safeSearchTerm(query)}%,phone_e164.ilike.%${safeSearchTerm(normalizedPhone)}%`)
-      .limit(5),
-    findAuthUserByEmail(admin, query),
-    findAuthUserByPhone(admin, query),
+  const isEmailQuery = query.includes("@");
+  const isPhoneQuery = toDigits(query).length >= 8;
+  const [nicknameCandidates, profilePhoneCandidate, emailUser, phoneUser] = await Promise.all([
+    isEmailQuery || isPhoneQuery ? Promise.resolve([]) : findUserCandidatesByNickname(admin, query),
+    isPhoneQuery ? findUserCandidateByProfilePhone(admin, query) : Promise.resolve(null),
+    isEmailQuery ? findAuthUserByEmail(admin, query) : Promise.resolve(null),
+    isPhoneQuery ? findAuthUserByPhone(admin, query) : Promise.resolve(null),
   ]);
 
   const authUser = emailUser ?? phoneUser;
@@ -123,10 +288,12 @@ async function resolveUser(admin: AdminClient, query: string) {
     return { userId: authUser.id, authUser, profile: await fetchProfile(admin, authUser.id) };
   }
 
-  const profile = profileRes.data?.[0] ?? null;
-  if (!profile) return null;
-  const { data } = await admin.auth.admin.getUserById(String(profile.user_id)).catch(() => ({ data: { user: null } }));
-  return { userId: String(profile.user_id), authUser: data.user, profile };
+  const resolvedCandidate = profilePhoneCandidate ?? nicknameCandidates[0] ?? null;
+  if (!resolvedCandidate) return null;
+
+  const profile = resolvedCandidate.profile ?? (await fetchProfile(admin, resolvedCandidate.userId));
+  const { data } = await admin.auth.admin.getUserById(String(resolvedCandidate.userId)).catch(() => ({ data: { user: null } }));
+  return { userId: String(resolvedCandidate.userId), authUser: data.user, profile };
 }
 
 async function findDeletedAudit(admin: AdminClient, query: string) {
