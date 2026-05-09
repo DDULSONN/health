@@ -1,4 +1,5 @@
 import { getMoreViewStatusBySex } from "@/lib/dating-more-view";
+import { getDailyBaseApplyLimit, getKstDateString, isKoreanWeekend } from "@/lib/dating-apply-limits";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -23,11 +24,6 @@ type TossOrderRow = {
 
 function json(status: number, payload: Record<string, unknown>) {
   return NextResponse.json(payload, { status });
-}
-
-function getKstDateString(now = new Date()): string {
-  const kstMs = now.getTime() + 9 * 60 * 60 * 1000;
-  return new Date(kstMs).toISOString().slice(0, 10);
 }
 
 export async function GET(req: Request) {
@@ -67,9 +63,10 @@ export async function GET(req: Request) {
       return json(500, { ok: false, code: "READ_FAILED", requestId, message: "결제 정보를 불러오지 못했습니다." });
     }
 
-    const baseUsed = Math.max(0, Math.min(2, Number(usageRes.data?.base_used ?? 0)));
+    const baseLimit = getDailyBaseApplyLimit();
+    const baseUsed = Math.max(0, Math.min(baseLimit, Number(usageRes.data?.base_used ?? 0)));
     const creditsRemaining = Math.max(0, Number(creditsRes.data?.credits ?? 0));
-    const baseRemaining = Math.max(0, 2 - baseUsed);
+    const baseRemaining = Math.max(0, baseLimit - baseUsed);
     const orders = (ordersRes.data ?? []) as TossOrderRow[];
 
     return json(200, {
@@ -77,7 +74,9 @@ export async function GET(req: Request) {
       requestId,
       summary: {
         creditsRemaining,
+        baseLimit,
         baseRemaining,
+        weekendBenefitActive: isKoreanWeekend(),
         moreViewMale: moreViewStatus.male,
         moreViewFemale: moreViewStatus.female,
       },

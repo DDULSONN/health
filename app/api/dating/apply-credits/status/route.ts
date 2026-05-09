@@ -1,3 +1,4 @@
+import { getDailyBaseApplyLimit, getKstDateString, isKoreanWeekend } from "@/lib/dating-apply-limits";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
@@ -5,13 +6,9 @@ function json(status: number, payload: Record<string, unknown>) {
   return NextResponse.json(payload, { status });
 }
 
-function getKstDateString(now = new Date()): string {
-  const kstMs = now.getTime() + 9 * 60 * 60 * 1000;
-  return new Date(kstMs).toISOString().slice(0, 10);
-}
-
 export async function GET(req: Request) {
   const requestId = crypto.randomUUID();
+  const baseLimit = getDailyBaseApplyLimit();
 
   try {
     const { client: supabase, user } = await getRequestAuthContext(req);
@@ -21,6 +18,8 @@ export async function GET(req: Request) {
         code: "UNAUTHORIZED",
         requestId,
         loggedIn: false,
+        baseLimit,
+        weekendBenefitActive: isKoreanWeekend(),
         baseUsed: 0,
         baseRemaining: 0,
         creditsRemaining: 0,
@@ -41,17 +40,17 @@ export async function GET(req: Request) {
 
     if (usageRes.error) {
       console.error(`[apply-credits-status] ${requestId} usage read error`, usageRes.error);
-      return json(500, { ok: false, code: "READ_FAILED", requestId, message: "사용량 조회에 실패했습니다." });
+      return json(500, { ok: false, code: "READ_FAILED", requestId, message: "지원권 사용 현황을 불러오지 못했습니다." });
     }
 
     if (creditsRes.error) {
       console.error(`[apply-credits-status] ${requestId} credits read error`, creditsRes.error);
-      return json(500, { ok: false, code: "READ_FAILED", requestId, message: "지원권 조회에 실패했습니다." });
+      return json(500, { ok: false, code: "READ_FAILED", requestId, message: "추가 지원권을 불러오지 못했습니다." });
     }
 
-    const baseUsed = Math.max(0, Math.min(2, Number(usageRes.data?.base_used ?? 0)));
+    const baseUsed = Math.max(0, Math.min(baseLimit, Number(usageRes.data?.base_used ?? 0)));
     const creditsRemaining = Math.max(0, Number(creditsRes.data?.credits ?? 0));
-    const baseRemaining = Math.max(0, 2 - baseUsed);
+    const baseRemaining = Math.max(0, baseLimit - baseUsed);
 
     return json(200, {
       ok: true,
@@ -59,6 +58,8 @@ export async function GET(req: Request) {
       requestId,
       loggedIn: true,
       kstDate,
+      baseLimit,
+      weekendBenefitActive: isKoreanWeekend(),
       baseUsed,
       baseRemaining,
       creditsRemaining,

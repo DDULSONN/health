@@ -1,5 +1,5 @@
 -- Apply quota + paid credits for open-card applications.
--- Base: 2 applies per KST day.
+-- Base: 2 applies per KST weekday, 3 applies per KST Saturday/Sunday.
 -- Credits: non-expiring carry-over.
 
 begin;
@@ -7,11 +7,18 @@ begin;
 create table if not exists public.user_daily_apply_usage (
   user_id uuid not null references auth.users(id) on delete cascade,
   kst_date date not null,
-  base_used int not null default 0 check (base_used >= 0 and base_used <= 2),
+  base_used int not null default 0 check (base_used >= 0 and base_used <= 3),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   primary key (user_id, kst_date)
 );
+
+alter table public.user_daily_apply_usage
+  drop constraint if exists user_daily_apply_usage_base_used_check;
+
+alter table public.user_daily_apply_usage
+  add constraint user_daily_apply_usage_base_used_check
+  check (base_used >= 0 and base_used <= 3);
 
 create table if not exists public.user_apply_credits (
   user_id uuid primary key references auth.users(id) on delete cascade,
@@ -93,6 +100,18 @@ create policy "apply_credit_orders_admin_all"
     )
   );
 
+create or replace function public.get_daily_apply_base_limit(p_kst_date date default (timezone('Asia/Seoul', now()))::date)
+returns int
+language sql
+stable
+set search_path = public
+as $$
+  select case
+    when extract(isodow from p_kst_date) in (6, 7) then 3
+    else 2
+  end;
+$$;
+
 create or replace function public.consume_apply_token(p_user_id uuid)
 returns table (
   used text,
@@ -105,6 +124,7 @@ set search_path = public
 as $$
 declare
   v_kst_date date := (timezone('Asia/Seoul', now()))::date;
+  v_base_limit int := public.get_daily_apply_base_limit((timezone('Asia/Seoul', now()))::date);
   v_base_used int := 0;
   v_credits int := 0;
 begin
@@ -118,7 +138,7 @@ begin
   where u.user_id = p_user_id and u.kst_date = v_kst_date
   for update;
 
-  if coalesce(v_base_used, 0) < 2 then
+  if coalesce(v_base_used, 0) < v_base_limit then
     update public.user_daily_apply_usage as u
     set base_used = u.base_used + 1, updated_at = now()
     where u.user_id = p_user_id and u.kst_date = v_kst_date;
@@ -157,13 +177,16 @@ begin
     from public.user_apply_credits c
     where c.user_id = p_user_id;
 
-    return query select 'credit'::text, coalesce(v_base_used, 2), greatest(coalesce(v_credits, 0), 0);
+    return query select 'credit'::text, coalesce(v_base_used, v_base_limit), greatest(coalesce(v_credits, 0), 0);
     return;
   end if;
 
-  return query select 'none'::text, coalesce(v_base_used, 2), 0;
+  return query select 'none'::text, coalesce(v_base_used, v_base_limit), 0;
 end;
 $$;
+
+revoke all on function public.get_daily_apply_base_limit(date) from public;
+grant execute on function public.get_daily_apply_base_limit(date) to authenticated, service_role;
 
 revoke all on function public.consume_apply_token(uuid) from public;
 grant execute on function public.consume_apply_token(uuid) to authenticated;

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
+import { isKoreanWeekend } from "@/lib/dating-apply-limits";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import {
   SWIPE_PREMIUM_DAILY_LIMIT,
@@ -312,6 +313,7 @@ export default function OpenCardsPage() {
   const [swipeSubscriptionLoading, setSwipeSubscriptionLoading] = useState(false);
   const [swipeSubscriptionSubmitting, setSwipeSubscriptionSubmitting] = useState(false);
   const [swipePremiumGuideOpen, setSwipePremiumGuideOpen] = useState(false);
+  const [showWeekendApplyCreditBenefit, setShowWeekendApplyCreditBenefit] = useState(false);
 
   useEffect(() => {
     activeSexRef.current = activeSex;
@@ -343,6 +345,13 @@ export default function OpenCardsPage() {
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick((v) => v + 1), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const updateWeekendBenefit = () => setShowWeekendApplyCreditBenefit(isKoreanWeekend());
+    updateWeekendBenefit();
+    const timer = window.setInterval(updateWeekendBenefit, 60_000);
     return () => window.clearInterval(timer);
   }, []);
 
@@ -830,6 +839,12 @@ export default function OpenCardsPage() {
                 <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white">혜택</span>
                 <p className="text-sm font-semibold text-emerald-900">오픈카드 등록하면 매주 원하는 지역 1곳 무료 오픈</p>
               </div>
+              {showWeekendApplyCreditBenefit && (
+                <div className="mt-2 inline-flex flex-wrap items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2">
+                  <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white">혜택</span>
+                  <p className="text-sm font-semibold text-emerald-900">주말에는 기본 지원권이 3장으로 늘어나요.</p>
+                </div>
+              )}
 
               <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-[24px] bg-neutral-50 p-4">

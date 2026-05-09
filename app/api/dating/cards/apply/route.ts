@@ -1,7 +1,9 @@
 import { getKstDayRangeUtc } from "@/lib/dating-open";
+import { getDailyBaseApplyLimit } from "@/lib/dating-apply-limits";
 import { hasMoreViewAccess } from "@/lib/dating-more-view";
 import { hasCityViewAccess } from "@/lib/dating-city-view";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
+import { buildDatingApplicationReceivedNotification } from "@/lib/dating-email-templates";
 import { sendDatingEmailNotification } from "@/lib/dating-swipe";
 import { sendExpoPushToUser } from "@/lib/expo-push";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
@@ -200,6 +202,7 @@ async function refundLegacyCredit(adminClient: ReturnType<typeof createAdminClie
 }
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
+  const dailyBaseLimit = getDailyBaseApplyLimit();
   let userId: string | null = null;
   let body: unknown = null;
 
@@ -392,7 +395,7 @@ export async function POST(req: Request) {
           .in("status", ["submitted", "accepted", "rejected"])
           .gte("created_at", startUtcIso)
           .lt("created_at", endUtcIso)
-          .limit(2)
+          .limit(dailyBaseLimit)
       );
       const todayRowsError = toDbErrorShape(todayRowsRes.error);
       if (todayRowsRes.error) {
@@ -403,10 +406,10 @@ export async function POST(req: Request) {
 
       const todayCount = Array.isArray(todayRowsRes.data) ? todayRowsRes.data.length : 0;
       const currentCredits = await getLegacyCreditBalance(adminClient, userId);
-      if (todayCount < 2) {
+      if (todayCount < dailyBaseLimit) {
         tokenUsage = {
           used: "base",
-          base_used: Math.min(2, todayCount + 1),
+          base_used: Math.min(dailyBaseLimit, todayCount + 1),
           credits_remaining: currentCredits,
         };
       } else if (currentCredits > 0) {
@@ -423,7 +426,7 @@ export async function POST(req: Request) {
         usedLegacyManualCredit = true;
         tokenUsage = {
           used: "credit",
-          base_used: 2,
+          base_used: dailyBaseLimit,
           credits_remaining: Math.max(0, currentCredits - 1),
         };
       } else {
@@ -431,7 +434,7 @@ export async function POST(req: Request) {
           429,
           "DAILY_APPLY_LIMIT",
           requestId,
-          "?ㅻ뒛 湲곕낯 吏??2?뚮? 紐⑤몢 ?ъ슜?덉뒿?덈떎. 異붽? 吏?먭텒???덉쑝硫?怨꾩냽 吏?먰븷 ???덉뒿?덈떎.",
+          `오늘 기본 지원 ${dailyBaseLimit}회를 모두 사용했습니다. 추가 지원권이 있으면 계속 지원할 수 있습니다.`,
           {
             baseRemaining: 0,
             creditsRemaining: 0,
@@ -459,14 +462,14 @@ export async function POST(req: Request) {
         usedLegacyManualCredit = true;
         tokenUsage = {
           used: "credit",
-          base_used: Math.min(2, tokenUsage.base_used),
+          base_used: Math.min(dailyBaseLimit, tokenUsage.base_used),
           credits_remaining: Math.max(0, currentCredits - 1),
         };
       }
     }
     if (tokenUsage.used === "none") {
-      return jsonResponse(429, "DAILY_APPLY_LIMIT", requestId, "오늘 기본 지원 2회를 모두 사용했습니다. 추가 지원권이 있으면 계속 지원할 수 있습니다.", {
-        baseRemaining: Math.max(0, 2 - tokenUsage.base_used),
+      return jsonResponse(429, "DAILY_APPLY_LIMIT", requestId, `오늘 기본 지원 ${dailyBaseLimit}회를 모두 사용했습니다. 추가 지원권이 있으면 계속 지원할 수 있습니다.`, {
+        baseRemaining: Math.max(0, dailyBaseLimit - tokenUsage.base_used),
         creditsRemaining: Math.max(0, tokenUsage.credits_remaining),
       });
     }
@@ -638,19 +641,64 @@ export async function POST(req: Request) {
         }
       });
 
+    const applicationId = insertRes.data.id;
+    const applicationNotification = buildDatingApplicationReceivedNotification(applicantDisplayNickname);
+
     await sendExpoPushToUser(adminClient, card.owner_user_id, {
-      title: "새 지원 도착",
-      body: `${applicantDisplayNickname}님이 내 오픈카드에 지원했습니다.`,
+      title: applicationNotification.pushTitle,
+      body: applicationNotification.pushBody,
       data: {
         type: "dating_application_received",
         cardId,
-        applicationId: insertRes.data.id,
+        applicationId,
       },
     }).catch((pushError) => {
       console.error(`[apply] ${requestId} L8 expo push failed`, pushError);
     });
 
     await sendDatingEmailNotification(
+      adminClient,
+      card.owner_user_id,
+      applicationNotification.emailSubject,
+      applicationNotification.emailText
+    ).catch((notifyError) => {
+      console.error(`[apply] ${requestId} L8 notify failed`, notifyError);
+    });
+
+    if (false) await sendExpoPushToUser(adminClient, card.owner_user_id, {
+      title: "새 지원 도착",
+      body: `${applicantDisplayNickname}님이 내 오픈카드에 지원했습니다.`,
+      data: {
+        type: "dating_application_received",
+        cardId,
+        applicationId,
+      },
+    }).catch((pushError) => {
+      console.error(`[apply] ${requestId} L8 expo push failed`, pushError);
+    });
+
+    if (false) await sendDatingEmailNotification(
+      adminClient,
+      card.owner_user_id,
+      "오픈카드에 새 지원이 도착했어요",
+      `${applicantDisplayNickname}님이 내 오픈카드에 지원했습니다.\n사이트에서 지원 내용을 확인해 주세요.`
+    ).catch((notifyError) => {
+      console.error(`[apply] ${requestId} L8 notify failed`, notifyError);
+    });
+
+    if (false) await sendExpoPushToUser(adminClient, card.owner_user_id, {
+      title: "새 지원 도착",
+      body: `${applicantDisplayNickname}님이 내 오픈카드에 지원했습니다.`,
+      data: {
+        type: "dating_application_received",
+        cardId,
+        applicationId,
+      },
+    }).catch((pushError) => {
+      console.error(`[apply] ${requestId} L8 expo push failed`, pushError);
+    });
+
+    if (false) await sendDatingEmailNotification(
       adminClient,
       card.owner_user_id,
       "??쎈탞燁삳?諭????筌왖?癒?퐣揶쎛 ?袁⑷컩??됰뮸??덈뼄",
@@ -662,7 +710,7 @@ export async function POST(req: Request) {
     return jsonResponse(200, "SUCCESS", requestId, "?耀붾굝???????????????獄쏅챶留???????????", {
       id: insertRes.data.id,
       usedToken: tokenUsage.used,
-      baseRemaining: Math.max(0, 2 - tokenUsage.base_used),
+      baseRemaining: Math.max(0, dailyBaseLimit - tokenUsage.base_used),
       creditsRemaining: Math.max(0, tokenUsage.credits_remaining),
     });
   } catch (e) {
