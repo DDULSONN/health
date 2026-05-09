@@ -641,6 +641,7 @@ type AdminUserActivityResult = {
     retention_until: string;
   }>;
   counts: Record<string, number>;
+  details?: Record<string, Array<Record<string, unknown>>>;
   activities: AdminUserActivityItem[];
 };
 
@@ -1369,6 +1370,11 @@ export default function MyPage() {
   const [adminUserActivityLoading, setAdminUserActivityLoading] = useState(false);
   const [adminUserActivityError, setAdminUserActivityError] = useState("");
   const [adminUserActivityResult, setAdminUserActivityResult] = useState<AdminUserActivityResult | null>(null);
+  const [adminQueueMoveCardId, setAdminQueueMoveCardId] = useState("");
+  const [adminQueueMovePosition, setAdminQueueMovePosition] = useState("");
+  const [adminQueueMoveLoading, setAdminQueueMoveLoading] = useState(false);
+  const [adminQueueMoveError, setAdminQueueMoveError] = useState("");
+  const [adminQueueMoveInfo, setAdminQueueMoveInfo] = useState("");
   const [adminDeleteIdentifier, setAdminDeleteIdentifier] = useState("");
   const [adminDeleteLoading, setAdminDeleteLoading] = useState(false);
   const [adminDeleteError, setAdminDeleteError] = useState("");
@@ -4418,10 +4424,48 @@ export default function MyPage() {
       }
 
       setAdminUserActivityResult(body);
+      const pendingOpenCard = body.details?.open_cards?.find((item) => item.status === "pending");
+      if (pendingOpenCard?.id) {
+        setAdminQueueMoveCardId(String(pendingOpenCard.id));
+        setAdminQueueMovePosition(String(Number(pendingOpenCard.queue_position ?? 1) || 1));
+      }
     } catch (err) {
       setAdminUserActivityError(err instanceof Error ? err.message : "회원 기록을 불러오지 못했습니다.");
     } finally {
       setAdminUserActivityLoading(false);
+    }
+  };
+
+  const handleAdminMoveOpenCardQueuePosition = async (cardId?: string, targetPosition?: string) => {
+    const selectedCardId = (cardId ?? adminQueueMoveCardId).trim();
+    const selectedPosition = (targetPosition ?? adminQueueMovePosition).trim();
+    const position = Number(selectedPosition);
+
+    setAdminQueueMoveError("");
+    setAdminQueueMoveInfo("");
+
+    if (!selectedCardId || !Number.isFinite(position) || position < 1) {
+      setAdminQueueMoveError("대기중 카드 ID와 이동할 순번을 입력해주세요.");
+      return;
+    }
+
+    setAdminQueueMoveLoading(true);
+    try {
+      const res = await fetch("/api/admin/dating/cards/queue-position", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cardId: selectedCardId, targetPosition: Math.floor(position) }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+      if (!res.ok || !body.ok) {
+        throw new Error(body.message || "대기 순번 이동에 실패했습니다.");
+      }
+      setAdminQueueMoveInfo(body.message || "대기 순번을 이동했습니다.");
+      await handleAdminLoadUserActivity();
+    } catch (err) {
+      setAdminQueueMoveError(err instanceof Error ? err.message : "대기 순번 이동에 실패했습니다.");
+    } finally {
+      setAdminQueueMoveLoading(false);
     }
   };
 
@@ -7007,7 +7051,7 @@ export default function MyPage() {
                 adminManageTab === "user_activity" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
               }`}
             >
-              회원 기록
+              회원 관리
             </button>
             <button
               type="button"
@@ -8644,6 +8688,103 @@ export default function MyPage() {
                       </div>
                     ))}
                   </div>
+
+                  <div className="rounded-xl border border-violet-100 bg-white p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold text-violet-900">오픈카드 대기 순번 이동</p>
+                        <p className="mt-1 text-[11px] text-neutral-500">
+                          검색된 회원의 대기중 오픈카드를 원하는 순번으로 옮깁니다. 같은 성별 대기열 안에서만 재정렬됩니다.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+                      <input
+                        type="text"
+                        value={adminQueueMoveCardId}
+                        onChange={(e) => setAdminQueueMoveCardId(e.target.value)}
+                        placeholder="대기중 오픈카드 ID"
+                        className="h-9 min-w-0 flex-1 rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none"
+                      />
+                      <input
+                        type="number"
+                        min={1}
+                        value={adminQueueMovePosition}
+                        onChange={(e) => setAdminQueueMovePosition(e.target.value)}
+                        placeholder="이동할 순번"
+                        className="h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none sm:w-32"
+                      />
+                      <button
+                        type="button"
+                        disabled={adminQueueMoveLoading}
+                        onClick={() => void handleAdminMoveOpenCardQueuePosition()}
+                        className="h-9 rounded-lg bg-violet-600 px-3 text-xs font-semibold text-white disabled:opacity-60"
+                      >
+                        {adminQueueMoveLoading ? "이동 중..." : "순번 이동"}
+                      </button>
+                    </div>
+                    {adminQueueMoveError ? <p className="mt-2 text-xs text-rose-600">{adminQueueMoveError}</p> : null}
+                    {adminQueueMoveInfo ? <p className="mt-2 text-xs text-emerald-700">{adminQueueMoveInfo}</p> : null}
+                    {adminUserActivityResult.details?.open_cards?.some((item) => item.status === "pending") ? (
+                      <div className="mt-3 space-y-2">
+                        {adminUserActivityResult.details.open_cards
+                          .filter((item) => item.status === "pending")
+                          .map((card) => (
+                            <div key={`queue-card-${String(card.id)}`} className="rounded-lg border border-violet-100 bg-violet-50/40 px-3 py-2">
+                              <div className="flex flex-wrap items-center justify-between gap-2">
+                                <p className="text-xs font-semibold text-neutral-900">
+                                  {String(card.display_nickname ?? "오픈카드")} · {card.sex === "female" ? "여성" : "남성"} · 현재{" "}
+                                  {Number(card.queue_position ?? 0) > 0 ? `${Number(card.queue_position)}번` : "순번 확인 중"}
+                                </p>
+                                <button
+                                  type="button"
+                                  disabled={adminQueueMoveLoading}
+                                  onClick={() => {
+                                    setAdminQueueMoveCardId(String(card.id));
+                                    setAdminQueueMovePosition(String(Number(card.queue_position ?? 1) || 1));
+                                  }}
+                                  className="h-7 rounded-md border border-violet-200 bg-white px-2 text-[11px] font-medium text-violet-800 disabled:opacity-60"
+                                >
+                                  이 카드 선택
+                                </button>
+                              </div>
+                              <p className="mt-1 break-all text-[11px] text-neutral-500">카드 ID {String(card.id)}</p>
+                            </div>
+                          ))}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-xs text-neutral-500">이 회원의 대기중 오픈카드가 없습니다.</p>
+                    )}
+                  </div>
+
+                  {adminUserActivityResult.details ? (
+                    <div className="rounded-xl border border-neutral-200 bg-white p-3">
+                      <p className="text-xs font-semibold text-neutral-900">세부 기록</p>
+                      <div className="mt-2 grid gap-2 lg:grid-cols-2">
+                        {Object.entries(adminUserActivityResult.details).map(([key, rows]) => (
+                          <details key={`detail-${key}`} className="rounded-lg border border-neutral-100 bg-neutral-50 px-3 py-2">
+                            <summary className="cursor-pointer text-xs font-semibold text-neutral-800">
+                              {key} {Array.isArray(rows) ? rows.length.toLocaleString("ko-KR") : 0}건
+                            </summary>
+                            {Array.isArray(rows) && rows.length > 0 ? (
+                              <div className="mt-2 max-h-[320px] space-y-2 overflow-auto pr-1">
+                                {rows.slice(0, 30).map((row, index) => (
+                                  <pre
+                                    key={`${key}-${String(row.id ?? index)}`}
+                                    className="whitespace-pre-wrap break-words rounded-md bg-white p-2 text-[11px] leading-5 text-neutral-600"
+                                  >
+                                    {JSON.stringify(row, null, 2)}
+                                  </pre>
+                                ))}
+                              </div>
+                            ) : (
+                              <p className="mt-2 text-xs text-neutral-500">기록 없음</p>
+                            )}
+                          </details>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
 
                   <div className="rounded-xl border border-neutral-200 bg-white p-3">
                     <p className="text-xs font-semibold text-neutral-900">최근 활동</p>

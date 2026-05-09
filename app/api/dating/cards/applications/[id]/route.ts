@@ -1,5 +1,4 @@
 ﻿import { isAdminEmail } from "@/lib/admin";
-import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
 import { buildDatingApplicationAcceptedNotification } from "@/lib/dating-email-templates";
 import { sendExpoPushToUser } from "@/lib/expo-push";
 import { recordDatingMatchEvent } from "@/lib/dating-match-metrics";
@@ -99,33 +98,7 @@ export async function PATCH(
     }
   }
 
-  let cardHidden = false;
-
-  if (status === "accepted" && card.status === "public") {
-    const nowIso = new Date().toISOString();
-
-    const { error: cardHideError } = await adminClient
-      .from("dating_cards")
-      .update({ status: "hidden", expires_at: nowIso })
-      .eq("id", app.card_id);
-
-    if (cardHideError) {
-      console.error("[PATCH /api/dating/cards/applications/[id]] card hide failed", cardHideError);
-      return NextResponse.json(
-        { error: "지원자 수락은 됐지만 카드 숨김 처리에 실패했습니다. 관리자에게 문의해주세요." },
-        { status: 500 }
-      );
-    }
-
-    cardHidden = true;
-
-    const sex = card.sex === "female" ? "female" : "male";
-    try {
-      await promotePendingCardsBySex(adminClient, sex);
-    } catch (promoteError) {
-      console.error("[PATCH /api/dating/cards/applications/[id]] promote pending failed", promoteError);
-    }
-  }
+  const cardHidden = false;
 
   if (status === "accepted") {
     try {
@@ -202,7 +175,7 @@ export async function PATCH(
   return NextResponse.json({
     ok: true,
     status,
-    // Open card leaves the public list after the first acceptance, but existing submitted applications stay actionable.
+    // Open cards stay public after acceptance so owners can accept more than one applicant.
     card_hidden: cardHidden,
   });
 }

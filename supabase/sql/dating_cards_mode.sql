@@ -35,6 +35,7 @@ create table if not exists public.dating_cards (
   status text not null default 'pending' check (status in ('pending', 'public', 'expired', 'hidden')),
   published_at timestamptz,
   expires_at timestamptz,
+  queue_priority_at timestamptz not null default now(),
   created_at timestamptz not null default now()
 );
 
@@ -44,6 +45,7 @@ alter table public.dating_cards add column if not exists photo_paths jsonb not n
 alter table public.dating_cards add column if not exists blur_thumb_path text;
 alter table public.dating_cards add column if not exists published_at timestamptz;
 alter table public.dating_cards add column if not exists expires_at timestamptz;
+alter table public.dating_cards add column if not exists queue_priority_at timestamptz not null default now();
 
 -- compatibility rename (old owner_instagram_id -> instagram_id)
 do $$
@@ -104,6 +106,8 @@ create index if not exists idx_dating_cards_owner
   on public.dating_cards (owner_user_id, created_at desc);
 create index if not exists idx_dating_cards_created
   on public.dating_cards (created_at desc);
+create index if not exists idx_dating_cards_pending_queue_priority
+  on public.dating_cards (sex, status, queue_priority_at, created_at, id);
 
 -- dating_card_applications
 create table if not exists public.dating_card_applications (

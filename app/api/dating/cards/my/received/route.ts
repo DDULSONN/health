@@ -61,6 +61,25 @@ async function getPendingQueuePosition(
   createdAt: string,
   cardId: string
 ): Promise<number | null> {
+  const orderedRes = await adminClient
+    .from("dating_cards")
+    .select("id")
+    .eq("sex", sex)
+    .eq("status", "pending")
+    .order("queue_priority_at", { ascending: true })
+    .order("created_at", { ascending: true })
+    .order("id", { ascending: true })
+    .limit(1000);
+
+  if (!orderedRes.error) {
+    const index = (orderedRes.data ?? []).findIndex((row) => row.id === cardId);
+    return index >= 0 ? index + 1 : null;
+  }
+
+  if (orderedRes.error.code !== "42703") {
+    return null;
+  }
+
   const [beforeRes, sameTsRes] = await Promise.all([
     adminClient
       .from("dating_cards")

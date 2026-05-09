@@ -46,14 +46,31 @@ async function promoteOnePending(
   adminClient: ReturnType<typeof createAdminClient>,
   sex: CardSex
 ) {
-  const { data: pendingCard, error: pendingError } = await adminClient
+  let { data: pendingCard, error: pendingError } = (await adminClient
     .from("dating_cards")
-    .select("id, created_at")
+    .select("id, created_at, queue_priority_at")
     .eq("sex", sex)
     .eq("status", "pending")
+    .order("queue_priority_at", { ascending: true })
     .order("created_at", { ascending: true })
     .limit(1)
-    .maybeSingle();
+    .maybeSingle()) as {
+      data: { id: string; created_at: string; queue_priority_at?: string | null } | null;
+      error: { code?: string; message?: string } | null;
+    };
+
+  if (pendingError && isMissingColumnError(pendingError)) {
+    const fallback = await adminClient
+      .from("dating_cards")
+      .select("id, created_at")
+      .eq("sex", sex)
+      .eq("status", "pending")
+      .order("created_at", { ascending: true })
+      .limit(1)
+      .maybeSingle();
+    pendingCard = fallback.data ? { ...fallback.data, queue_priority_at: null } : null;
+    pendingError = fallback.error;
+  }
 
   if (pendingError) throw pendingError;
   if (!pendingCard) return null;
@@ -233,18 +250,9 @@ async function requeueExpiredCardsOnce(
   }
 
   const cardIds = rows.map((row) => row.id);
-  const acceptedRes = await adminClient
-    .from("dating_card_applications")
-    .select("card_id")
-    .in("card_id", cardIds)
-    .eq("status", "accepted");
-
-  if (acceptedRes.error) throw acceptedRes.error;
-
-  const acceptedCardIds = new Set((acceptedRes.data ?? []).map((row) => row.card_id));
   const requeueIdSet = new Set(
     rows
-      .filter((row) => !acceptedCardIds.has(row.id) && Number(row.auto_requeue_count ?? 0) < OPEN_CARD_AUTO_REQUEUE_LIMIT)
+      .filter((row) => Number(row.auto_requeue_count ?? 0) < OPEN_CARD_AUTO_REQUEUE_LIMIT)
       .map((row) => row.id)
   );
   const requeueRows = rows.filter(
