@@ -2443,7 +2443,7 @@ export default function MyPage() {
           fetch("/api/dating/paid/my/connections", { cache: "no-store" }),
           fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
           fetch("/api/dating/apply-credits/status", { cache: "no-store" }),
-          fetch("/api/site/ad-inquiry", { cache: "no-store" }),
+          fetch("/api/admin/site/ad-inquiry", { cache: "no-store" }),
         ]);
 
         const summaryBody = (await summaryRes.json().catch(() => ({}))) as SummaryResponse & {

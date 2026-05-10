@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { isAdminEmail } from "@/lib/admin";
+import { isAllowedAdminUser } from "@/lib/admin";
 import {
   AD_INQUIRY_SETTING_KEY,
   DEFAULT_AD_INQUIRY_SETTING,
@@ -13,20 +13,20 @@ async function checkAdmin() {
   const {
     data: { user },
   } = await supabase.auth.getUser();
-  if (!user || !isAdminEmail(user.email)) return null;
+  if (!user || !isAllowedAdminUser(user.id, user.email)) return null;
   return user;
 }
 
 export async function GET() {
   const user = await checkAdmin();
-  if (!user) return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
+  if (!user) return NextResponse.json({ error: "관리자 권한이 없습니다." }, { status: 403 });
 
   return NextResponse.json(await readAdInquirySetting());
 }
 
 export async function PATCH(req: Request) {
   const user = await checkAdmin();
-  if (!user) return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
+  if (!user) return NextResponse.json({ error: "관리자 권한이 없습니다." }, { status: 403 });
 
   const body = await req.json().catch(() => null);
   if (!body || typeof body !== "object") {
