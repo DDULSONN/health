@@ -436,7 +436,7 @@ export default function CommunityPage() {
 
       {isAdmin ? (
         <Link
-          href="/community/classes"
+          href="/community/classes/manage"
           className="mt-4 flex items-center justify-between gap-3 rounded-[24px] border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm shadow-sm transition hover:border-emerald-200 hover:bg-emerald-100"
         >
           <span>

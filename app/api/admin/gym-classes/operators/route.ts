@@ -4,6 +4,7 @@ import { requireAdminRoute } from "@/lib/admin-route";
 type GymHostType = "trainer" | "gym" | "brand" | "individual" | "other";
 
 const HOST_TYPES = new Set<GymHostType>(["trainer", "gym", "brand", "individual", "other"]);
+const OPERATOR_TERMS_VERSION = "gym_operator_terms_v1";
 
 function asRecord(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {};
@@ -23,6 +24,21 @@ function requiredText(value: unknown, label: string, maxLength = 120) {
 
 function cleanHostType(value: unknown): GymHostType {
   return typeof value === "string" && HOST_TYPES.has(value as GymHostType) ? (value as GymHostType) : "trainer";
+}
+
+function getClientIp(req: Request) {
+  const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return forwarded || req.headers.get("x-real-ip") || null;
+}
+
+function ensureAccepted(body: Record<string, unknown>) {
+  if (
+    body.operator_terms_accepted !== true ||
+    body.operator_responsibility_accepted !== true ||
+    body.participant_data_accepted !== true
+  ) {
+    throw new Error("입점 운영 약관과 책임 고지에 동의해 주세요.");
+  }
 }
 
 export async function GET() {
@@ -68,6 +84,8 @@ export async function POST(req: Request) {
 
   try {
     const body = asRecord(await req.json());
+    ensureAccepted(body);
+    const now = new Date().toISOString();
     const payload = {
       user_id: cleanText(body.user_id, 80),
       applicant_name: requiredText(body.applicant_name, "신청자명", 80),
@@ -81,8 +99,17 @@ export async function POST(req: Request) {
       desired_class_summary: cleanText(body.desired_class_summary, 1200),
       status: "pending",
       admin_note: cleanText(body.admin_note, 1000),
-      terms_accepted_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      terms_version: OPERATOR_TERMS_VERSION,
+      terms_accepted_at: now,
+      terms_accepted_ip: getClientIp(req),
+      terms_accepted_user_agent: cleanText(req.headers.get("user-agent"), 500),
+      terms_payload: {
+        operator_terms_accepted: true,
+        operator_responsibility_accepted: true,
+        participant_data_accepted: true,
+        version: OPERATOR_TERMS_VERSION,
+      },
+      updated_at: now,
     };
 
     const { data, error } = await auth.admin

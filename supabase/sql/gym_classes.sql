@@ -42,7 +42,11 @@ create table if not exists public.gym_class_operator_requests (
   desired_class_summary text null,
   status text not null default 'pending'
     check (status in ('pending', 'approved', 'rejected')),
+  terms_version text null,
   terms_accepted_at timestamptz null,
+  terms_accepted_ip text null,
+  terms_accepted_user_agent text null,
+  terms_payload jsonb not null default '{}'::jsonb,
   reviewed_by_user_id uuid null references auth.users(id) on delete set null,
   reviewed_at timestamptz null,
   admin_note text null,
@@ -78,7 +82,11 @@ alter table public.gym_classes
 alter table public.gym_class_operator_requests
   add column if not exists website_url text null,
   add column if not exists desired_class_summary text null,
-  add column if not exists terms_accepted_at timestamptz null;
+  add column if not exists terms_version text null,
+  add column if not exists terms_accepted_at timestamptz null,
+  add column if not exists terms_accepted_ip text null,
+  add column if not exists terms_accepted_user_agent text null,
+  add column if not exists terms_payload jsonb not null default '{}'::jsonb;
 
 alter table public.gym_class_operators
   add column if not exists contact_url text null,
@@ -119,6 +127,12 @@ create table if not exists public.gym_class_applications (
   operator_note text null,
   confirmed_at timestamptz null,
   canceled_at timestamptz null,
+  terms_version text null,
+  privacy_accepted_at timestamptz null,
+  broker_notice_accepted_at timestamptz null,
+  accepted_ip text null,
+  accepted_user_agent text null,
+  terms_payload jsonb not null default '{}'::jsonb,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
@@ -150,7 +164,13 @@ create index if not exists idx_gym_class_applications_status_created_at
 alter table public.gym_class_applications
   add column if not exists operator_note text null,
   add column if not exists confirmed_at timestamptz null,
-  add column if not exists canceled_at timestamptz null;
+  add column if not exists canceled_at timestamptz null,
+  add column if not exists terms_version text null,
+  add column if not exists privacy_accepted_at timestamptz null,
+  add column if not exists broker_notice_accepted_at timestamptz null,
+  add column if not exists accepted_ip text null,
+  add column if not exists accepted_user_agent text null,
+  add column if not exists terms_payload jsonb not null default '{}'::jsonb;
 
 alter table public.gym_classes enable row level security;
 alter table public.gym_class_operator_requests enable row level security;

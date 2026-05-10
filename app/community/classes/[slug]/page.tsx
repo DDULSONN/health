@@ -36,6 +36,8 @@ type ApplyForm = {
   email: string;
   memo: string;
   schedule_id: string;
+  privacy_accepted: boolean;
+  broker_notice_accepted: boolean;
 };
 
 const EMPTY_APPLY_FORM: ApplyForm = {
@@ -44,6 +46,8 @@ const EMPTY_APPLY_FORM: ApplyForm = {
   email: "",
   memo: "",
   schedule_id: "",
+  privacy_accepted: false,
+  broker_notice_accepted: false,
 };
 
 function formatDate(value: string | null | undefined) {
@@ -146,7 +150,7 @@ export default function GymClassPreviewPage() {
   return (
     <main className="mx-auto max-w-3xl px-4 py-6">
       <div className="mb-4 flex items-center justify-between gap-3">
-        <Link href="/community/classes" className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-bold text-neutral-700">
+        <Link href="/community/classes/manage" className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-bold text-neutral-700">
           관리로 돌아가기
         </Link>
         <span className="rounded-full bg-amber-50 px-3 py-2 text-xs font-black text-amber-700">관리자 미리보기</span>
@@ -211,9 +215,24 @@ export default function GymClassPreviewPage() {
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm md:col-span-2" placeholder="이메일" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
             </div>
             <textarea className="mt-3 min-h-24 w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="메모" value={form.memo} onChange={(e) => setForm({ ...form, memo: e.target.value })} />
+            <div className="mt-3 space-y-2 rounded-[22px] border border-neutral-100 bg-neutral-50 p-4">
+              <p className="text-sm font-black text-neutral-900">신청 전 확인</p>
+              <label className="flex gap-2 text-sm text-neutral-700">
+                <input type="checkbox" checked={form.privacy_accepted} onChange={(e) => setForm({ ...form, privacy_accepted: e.target.checked })} />
+                <span>신청 정보가 일정 안내와 참가자 관리를 위해 해당 운영자에게 전달되는 것에 동의합니다.</span>
+              </label>
+              <label className="flex gap-2 text-sm text-neutral-700">
+                <input type="checkbox" checked={form.broker_notice_accepted} onChange={(e) => setForm({ ...form, broker_notice_accepted: e.target.checked })} />
+                <span>GymTools는 클래스 연결 플랫폼이며 실제 운영과 현장 진행은 입점 운영자가 담당함을 확인했습니다.</span>
+              </label>
+            </div>
             <button type="button" disabled={submitting} onClick={submitApplication} className="mt-3 w-full rounded-2xl bg-emerald-600 px-5 py-4 text-sm font-black text-white disabled:opacity-50">
               신청 접수
             </button>
+          </section>
+
+          <section className="rounded-[24px] border border-neutral-200 bg-neutral-50 p-4 text-xs leading-6 text-neutral-500">
+            GymTools는 클래스 모집과 신청 연결을 돕는 플랫폼입니다. 실제 클래스 내용, 일정, 환불, 현장 안전 및 운영 책임은 각 입점 운영자에게 있습니다.
           </section>
 
           {item.description || item.preparation_note ? (

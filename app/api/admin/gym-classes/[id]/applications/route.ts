@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAdminRoute } from "@/lib/admin-route";
 
+const CLASS_APPLICATION_TERMS_VERSION = "gym_class_application_terms_v1";
+
 type RouteContext = {
   params: Promise<{ id: string }>;
 };
@@ -19,6 +21,17 @@ function requiredText(value: unknown, label: string, maxLength = 120) {
   const cleaned = cleanText(value, maxLength);
   if (!cleaned) throw new Error(`${label}을 입력해 주세요.`);
   return cleaned;
+}
+
+function getClientIp(req: Request) {
+  const forwarded = req.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
+  return forwarded || req.headers.get("x-real-ip") || null;
+}
+
+function ensureApplicationTermsAccepted(body: Record<string, unknown>) {
+  if (body.privacy_accepted !== true || body.broker_notice_accepted !== true) {
+    throw new Error("개인정보 제공 및 중개자 고지에 동의해 주세요.");
+  }
 }
 
 export async function GET(_req: Request, context: RouteContext) {
@@ -46,7 +59,9 @@ export async function POST(req: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const body = asRecord(await req.json());
+    ensureApplicationTermsAccepted(body);
     const scheduleId = cleanText(body.schedule_id, 80);
+    const now = new Date().toISOString();
 
     const { data: gymClass, error: classError } = await auth.admin
       .from("gym_classes")
@@ -118,7 +133,17 @@ export async function POST(req: Request, context: RouteContext) {
       memo: cleanText(body.memo, 1000),
       status: "submitted",
       admin_note: cleanText(body.admin_note, 1000),
-      updated_at: new Date().toISOString(),
+      terms_version: CLASS_APPLICATION_TERMS_VERSION,
+      privacy_accepted_at: now,
+      broker_notice_accepted_at: now,
+      accepted_ip: getClientIp(req),
+      accepted_user_agent: cleanText(req.headers.get("user-agent"), 500),
+      terms_payload: {
+        privacy_accepted: true,
+        broker_notice_accepted: true,
+        version: CLASS_APPLICATION_TERMS_VERSION,
+      },
+      updated_at: now,
     };
 
     const { data, error } = await auth.admin.from("gym_class_applications").insert(payload).select("*").single();
