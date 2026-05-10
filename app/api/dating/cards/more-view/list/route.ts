@@ -3,6 +3,7 @@ import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
@@ -88,7 +89,7 @@ export async function GET(req: Request) {
     const pendingCardsRes = await admin
       .from("dating_cards")
       .select(
-        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, expires_at, created_at, status"
+        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, instagram_id, expires_at, created_at, status"
       )
       .eq("status", "pending")
       .eq("sex", sex)
@@ -120,10 +121,11 @@ export async function GET(req: Request) {
       }
     }
 
-    const selectedRows = selectedCardIds
+    let selectedRows = selectedCardIds
       .map((id) => pendingById.get(id))
       .filter((row): row is NonNullable<typeof row> => Boolean(row))
       .filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")));
+    selectedRows = await filterDatingCardsByContactBlocks(admin, user.id, selectedRows);
     const ownerIds = [...new Set(selectedRows.map((row) => String(row.owner_user_id ?? "")).filter((id) => id.length > 0))];
     const phoneVerifiedByOwner = new Map<string, boolean>();
     if (ownerIds.length > 0) {

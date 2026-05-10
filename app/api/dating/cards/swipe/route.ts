@@ -10,6 +10,7 @@ import {
 } from "@/lib/dating-swipe";
 import { recordDatingMatchEvent } from "@/lib/dating-match-metrics";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
+import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -226,7 +227,11 @@ export async function POST(req: Request) {
     }
 
     const blocked = await hasDatingBlockBetween(adminClient, user.id, targetUserId);
-    if (blocked) {
+    const contactBlocked = await hasDatingContactBlockBetween(adminClient, user.id, targetUserId, {
+      userAInstagramIds: [myCard.instagram_id],
+      userBInstagramIds: [targetCard.instagram_id],
+    });
+    if (blocked || contactBlocked) {
       return NextResponse.json({ error: "차단한 상대에게는 빠른 매칭을 사용할 수 없습니다." }, { status: 403 });
     }
     if (!String(targetCard.instagram_id ?? "").trim()) {

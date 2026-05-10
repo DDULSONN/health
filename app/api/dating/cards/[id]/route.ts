@@ -1,6 +1,7 @@
 ﻿import { buildPublicLiteImageUrl, buildSignedImageUrl, buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { hasMoreViewAccess } from "@/lib/dating-more-view";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
+import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
 import { hasCityViewAccess } from "@/lib/dating-city-view";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { kvGetString, kvSetString } from "@/lib/edge-kv";
@@ -231,7 +232,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   let { data, error } = await adminClient
     .from("dating_cards")
     .select(
-      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, expires_at, created_at, status"
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, instagram_id, expires_at, created_at, status"
     )
     .eq("id", id)
     .single();
@@ -240,7 +241,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
     const legacyRes = await adminClient
       .from("dating_cards")
       .select(
-        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, expires_at, created_at, status"
+        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, instagram_id, expires_at, created_at, status"
       )
       .eq("id", id)
       .single();
@@ -262,7 +263,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   if (user?.id) {
     const blocked = await hasDatingBlockBetween(adminClient, user.id, String(data.owner_user_id ?? ""));
-    if (blocked) {
+    const contactBlocked = await hasDatingContactBlockBetween(adminClient, user.id, String(data.owner_user_id ?? ""), {
+      userBInstagramIds: [data.instagram_id],
+    });
+    if (blocked || contactBlocked) {
       return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
     }
   }

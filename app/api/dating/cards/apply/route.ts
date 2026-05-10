@@ -3,6 +3,7 @@ import { getDailyBaseApplyLimit } from "@/lib/dating-apply-limits";
 import { hasMoreViewAccess } from "@/lib/dating-more-view";
 import { hasCityViewAccess } from "@/lib/dating-city-view";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
+import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
 import { buildDatingApplicationReceivedNotification } from "@/lib/dating-email-templates";
 import { sendDatingEmailNotification } from "@/lib/dating-swipe";
 import { sendExpoPushToUser } from "@/lib/expo-push";
@@ -313,7 +314,7 @@ export async function POST(req: Request) {
     const adminClient = createAdminClient();
     const cardRes = await adminClient
       .from("dating_cards")
-      .select("id, owner_user_id, status, expires_at, sex, region")
+      .select("id, owner_user_id, status, expires_at, sex, region, instagram_id")
       .eq("id", cardId)
       .single();
     const cardError = toDbErrorShape(cardRes.error);
@@ -338,7 +339,11 @@ export async function POST(req: Request) {
 
     const card = cardRes.data;
     const blocked = await hasDatingBlockBetween(adminClient, userId, String(card.owner_user_id ?? ""));
-    if (blocked) {
+    const contactBlocked = await hasDatingContactBlockBetween(adminClient, userId, String(card.owner_user_id ?? ""), {
+      userAInstagramIds: [instagramId],
+      userBInstagramIds: [card.instagram_id],
+    });
+    if (blocked || contactBlocked) {
       return jsonResponse(403, "FORBIDDEN", requestId, "차단한 상대에게는 지원할 수 없습니다.");
     }
     if (card.owner_user_id === userId) {

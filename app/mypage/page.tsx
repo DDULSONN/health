@@ -497,6 +497,14 @@ type MyOneOnOnePhoneBlock = {
   created_at: string;
 };
 
+type MyDatingContactBlock = {
+  id: string;
+  block_type: "phone" | "instagram";
+  value_hint: string | null;
+  label: string | null;
+  created_at: string;
+};
+
 type AdminOpenCard = {
   id: string;
   owner_user_id: string;
@@ -1317,6 +1325,7 @@ export default function MyPage() {
   const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
   const [processingOneOnOneContactExchangeIds, setProcessingOneOnOneContactExchangeIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
+  const [deletingOneOnOneMatchIds, setDeletingOneOnOneMatchIds] = useState<string[]>([]);
   const [processingSwipeLikeBackIds, setProcessingSwipeLikeBackIds] = useState<string[]>([]);
   const [deletingSwipeLikeIds, setDeletingSwipeLikeIds] = useState<string[]>([]);
   const [deletingConnectionIds, setDeletingConnectionIds] = useState<string[]>([]);
@@ -1347,6 +1356,12 @@ export default function MyPage() {
   const [deletingOpenCardIds, setDeletingOpenCardIds] = useState<string[]>([]);
   const [deletingPaidCardIds, setDeletingPaidCardIds] = useState<string[]>([]);
   const [applyCreditsRemaining, setApplyCreditsRemaining] = useState(0);
+  const [myDatingContactBlocks, setMyDatingContactBlocks] = useState<MyDatingContactBlock[]>([]);
+  const [datingContactBlockType, setDatingContactBlockType] = useState<"phone" | "instagram">("phone");
+  const [datingContactBlockValue, setDatingContactBlockValue] = useState("");
+  const [datingContactBlockLabel, setDatingContactBlockLabel] = useState("");
+  const [datingContactBlockSubmitting, setDatingContactBlockSubmitting] = useState(false);
+  const [deletingDatingContactBlockIds, setDeletingDatingContactBlockIds] = useState<string[]>([]);
 
   const [nicknameOpen, setNicknameOpen] = useState(false);
   const [newNickname, setNewNickname] = useState("");
@@ -2421,6 +2436,7 @@ export default function MyPage() {
           oneOnOneMatchesRes,
           oneOnOneRecommendationsRes,
           oneOnOnePhoneBlocksRes,
+          datingContactBlocksRes,
           connectionsRes,
           paidConnectionsRes,
           writeSettingRes,
@@ -2439,6 +2455,7 @@ export default function MyPage() {
           fetch("/api/dating/1on1/matches/my", { cache: "no-store" }),
           fetch("/api/dating/1on1/recommendations/my", { cache: "no-store" }),
           fetch("/api/dating/1on1/phone-blocks", { cache: "no-store" }),
+          fetch("/api/dating/contact-blocks", { cache: "no-store" }),
           fetch("/api/dating/cards/my/connections", { cache: "no-store" }),
           fetch("/api/dating/paid/my/connections", { cache: "no-store" }),
           fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
@@ -2492,6 +2509,10 @@ export default function MyPage() {
           error?: string;
           items?: MyOneOnOnePhoneBlock[];
         };
+        const datingContactBlocksBody = (await datingContactBlocksRes.json().catch(() => ({}))) as {
+          error?: string;
+          items?: MyDatingContactBlock[];
+        };
         const connectionsBody = (await connectionsRes.json().catch(() => ({}))) as {
           error?: string;
           items?: DatingConnection[];
@@ -2536,6 +2557,9 @@ export default function MyPage() {
         if (!oneOnOnePhoneBlocksRes.ok) {
           console.error("[mypage] 1on1 phone blocks load failed", oneOnOnePhoneBlocksBody.error ?? "unknown error");
         }
+        if (!datingContactBlocksRes.ok) {
+          console.error("[mypage] dating contact blocks load failed", datingContactBlocksBody.error ?? "unknown error");
+        }
         if (!connectionsRes.ok) {
           console.error("[mypage] open connections load failed", connectionsBody.error ?? "unknown error");
         }
@@ -2561,6 +2585,7 @@ export default function MyPage() {
             oneOnOneRecommendationsRes.ok ? (oneOnOneRecommendationsBody.items ?? []) : []
           );
           setMyOneOnOnePhoneBlocks(oneOnOnePhoneBlocksRes.ok ? (oneOnOnePhoneBlocksBody.items ?? []) : []);
+          setMyDatingContactBlocks(datingContactBlocksRes.ok ? (datingContactBlocksBody.items ?? []) : []);
           setSwipeStatusSummary(null);
           setMyOutgoingSwipeLikes([]);
           setMyIncomingSwipeLikes([]);
@@ -3360,6 +3385,102 @@ export default function MyPage() {
       alert(e instanceof Error ? e.message : "차단 번호 삭제에 실패했습니다.");
     } finally {
       setDeletingOneOnOnePhoneBlockIds((prev) => prev.filter((blockId) => blockId !== id));
+    }
+  };
+
+  const reloadDatingContactBlocks = async () => {
+    const res = await fetch("/api/dating/contact-blocks", { cache: "no-store" });
+    const body = (await res.json().catch(() => ({}))) as { items?: MyDatingContactBlock[]; error?: string };
+    if (!res.ok) {
+      throw new Error(body.error ?? "오픈카드 지인 차단 목록을 다시 불러오지 못했습니다.");
+    }
+    setMyDatingContactBlocks(body.items ?? []);
+  };
+
+  const handleAddDatingContactBlock = async () => {
+    if (datingContactBlockSubmitting) return;
+    const value = datingContactBlockValue.trim();
+    if (!value) {
+      alert(datingContactBlockType === "phone" ? "차단할 휴대폰 번호를 입력해주세요." : "차단할 인스타 아이디를 입력해주세요.");
+      return;
+    }
+
+    setDatingContactBlockSubmitting(true);
+    try {
+      const res = await fetch("/api/dating/contact-blocks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          block_type: datingContactBlockType,
+          value,
+          label: datingContactBlockLabel.trim() || null,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        item?: MyDatingContactBlock | null;
+        error?: string;
+      };
+      if (!res.ok || body.ok === false) {
+        alert(body.error ?? "오픈카드 지인 차단 저장에 실패했습니다.");
+        return;
+      }
+      setDatingContactBlockValue("");
+      setDatingContactBlockLabel("");
+      await Promise.all([reloadDatingContactBlocks(), reloadSwipeStatus()]);
+      alert("오픈카드와 빠른매칭에서 서로 보이지 않도록 차단했습니다.");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "오픈카드 지인 차단 저장에 실패했습니다.");
+    } finally {
+      setDatingContactBlockSubmitting(false);
+    }
+  };
+
+  const handleDeleteDatingContactBlock = async (id: string) => {
+    if (deletingDatingContactBlockIds.includes(id)) return;
+    if (!confirm("이 지인 차단을 해제할까요? 이후 오픈카드나 빠른매칭에서 다시 보일 수 있습니다.")) return;
+
+    setDeletingDatingContactBlockIds((prev) => [...prev, id]);
+    try {
+      const res = await fetch("/api/dating/contact-blocks", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || body.ok === false) {
+        alert(body.error ?? "오픈카드 지인 차단 삭제에 실패했습니다.");
+        return;
+      }
+      await Promise.all([reloadDatingContactBlocks(), reloadSwipeStatus()]);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "오픈카드 지인 차단 삭제에 실패했습니다.");
+    } finally {
+      setDeletingDatingContactBlockIds((prev) => prev.filter((blockId) => blockId !== id));
+    }
+  };
+
+  const handleDeleteOneOnOneClosedMatch = async (id: string) => {
+    if (deletingOneOnOneMatchIds.includes(id)) return;
+    if (!confirm("이 지난 매칭 기록을 내 목록에서 삭제할까요?")) return;
+
+    setDeletingOneOnOneMatchIds((prev) => [...prev, id]);
+    try {
+      const res = await fetch("/api/dating/1on1/matches/my", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || body.ok === false) {
+        alert(body.error ?? "지난 매칭 기록 삭제에 실패했습니다.");
+        return;
+      }
+      setMyOneOnOneMatches((prev) => prev.filter((match) => match.id !== id));
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "지난 매칭 기록 삭제에 실패했습니다.");
+    } finally {
+      setDeletingOneOnOneMatchIds((prev) => prev.filter((matchId) => matchId !== id));
     }
   };
 
@@ -6567,15 +6688,26 @@ export default function MyPage() {
                       <div className="mt-2 space-y-2">
                         {closedMatches.map((match) => {
                           const card = match.counterparty_card;
+                          const deleting = deletingOneOnOneMatchIds.includes(match.id);
                           if (!card) return null;
                           return (
                             <div key={match.id} className="flex items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2">
                               <p className="text-xs text-neutral-700">
                                 {card.name} / {card.age ?? "-"}세 / {card.region}
                               </p>
-                              <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${oneOnOneMatchStateColor[match.state]}`}>
-                                {oneOnOneMatchStateText[match.state]}
-                              </span>
+                              <div className="flex shrink-0 items-center gap-2">
+                                <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${oneOnOneMatchStateColor[match.state]}`}>
+                                  {oneOnOneMatchStateText[match.state]}
+                                </span>
+                                <button
+                                  type="button"
+                                  disabled={deleting}
+                                  onClick={() => void handleDeleteOneOnOneClosedMatch(match.id)}
+                                  className="rounded-full border border-neutral-200 px-2 py-0.5 text-[11px] font-medium text-neutral-500 disabled:opacity-50"
+                                >
+                                  {deleting ? "삭제 중" : "삭제"}
+                                </button>
+                              </div>
                             </div>
                           );
                         })}
@@ -6612,6 +6744,78 @@ export default function MyPage() {
             })}
           </div>
         )}
+      </section>
+
+      <section className="mb-5 rounded-2xl border border-rose-200 bg-white p-5">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-lg font-bold text-rose-900">오픈카드 지인 차단</h2>
+            <p className="mt-1 text-xs leading-5 text-neutral-600">
+              휴대폰 번호나 인스타 아이디를 입력하면 오픈카드와 빠른매칭에서 서로 보이지 않게 제외돼요.
+            </p>
+            <p className="mt-1 text-[11px] text-neutral-500">입력값은 원문 그대로 저장하지 않고 안전하게 비교해요.</p>
+          </div>
+          <div className="flex flex-col gap-2 md:min-w-[430px]">
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <select
+                value={datingContactBlockType}
+                onChange={(event) => setDatingContactBlockType(event.target.value === "instagram" ? "instagram" : "phone")}
+                className="min-h-[38px] rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+              >
+                <option value="phone">휴대폰</option>
+                <option value="instagram">인스타</option>
+              </select>
+              <input
+                type={datingContactBlockType === "phone" ? "tel" : "text"}
+                value={datingContactBlockValue}
+                onChange={(event) => setDatingContactBlockValue(event.target.value)}
+                placeholder={datingContactBlockType === "phone" ? "01012345678" : "instagram_id"}
+                className="min-h-[38px] flex-1 rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+              />
+              <input
+                type="text"
+                value={datingContactBlockLabel}
+                onChange={(event) => setDatingContactBlockLabel(event.target.value)}
+                placeholder="메모 선택"
+                className="min-h-[38px] flex-1 rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+              />
+              <button
+                type="button"
+                onClick={() => void handleAddDatingContactBlock()}
+                disabled={datingContactBlockSubmitting}
+                className="inline-flex min-h-[38px] items-center justify-center rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white disabled:opacity-50"
+              >
+                {datingContactBlockSubmitting ? "저장 중..." : "차단"}
+              </button>
+            </div>
+            {myDatingContactBlocks.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {myDatingContactBlocks.map((block) => {
+                  const deleting = deletingDatingContactBlockIds.includes(block.id);
+                  return (
+                    <span
+                      key={block.id}
+                      className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] text-rose-800"
+                    >
+                      {block.label ? `${block.label} · ` : ""}
+                      {block.block_type === "phone" ? "휴대폰" : "인스타"} {block.value_hint ?? ""}
+                      <button
+                        type="button"
+                        disabled={deleting}
+                        onClick={() => void handleDeleteDatingContactBlock(block.id)}
+                        className="font-semibold text-rose-700 disabled:opacity-50"
+                      >
+                        {deleting ? "삭제 중" : "해제"}
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-[11px] text-neutral-500">아직 등록한 오픈카드 지인 차단이 없습니다.</p>
+            )}
+          </div>
+        </div>
       </section>
 
       <section className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-5">

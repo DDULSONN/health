@@ -6,6 +6,7 @@ import {
 } from "@/lib/images";
 import { getKstDayRangeUtc } from "@/lib/dating-open";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
 import { createAdminClient } from "@/lib/supabase/server";
 
 export const SWIPE_BASE_DAILY_LIMIT = 5;
@@ -418,7 +419,13 @@ export async function getSwipeCandidate(
   const dayKey = getSwipeDayKeyKst();
   const candidates: Array<{ rank: number; candidate: SwipeCandidate }> = [];
 
-  for (const row of (cardsRes.data ?? []) as DatingCardRow[]) {
+  const contactVisibleCards = await filterDatingCardsByContactBlocks(
+    adminClient,
+    actorUserId,
+    (cardsRes.data ?? []) as DatingCardRow[]
+  );
+
+  for (const row of contactVisibleCards) {
     const ownerId = String(row.owner_user_id ?? "").trim();
     if (!ownerId || ownerId === actorUserId) continue;
     if (seenOwners.has(ownerId)) continue;

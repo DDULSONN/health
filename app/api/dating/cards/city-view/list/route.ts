@@ -4,6 +4,7 @@ import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
 import { NextResponse } from "next/server";
 
 function normalizePath(value: unknown): string {
@@ -69,7 +70,7 @@ export async function GET(req: Request) {
   const pendingCardsRes = await admin
     .from("dating_cards")
     .select(
-      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, expires_at, created_at, status"
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, instagram_id, expires_at, created_at, status"
     )
     .eq("status", "pending")
     .order("created_at", { ascending: false })
@@ -80,10 +81,11 @@ export async function GET(req: Request) {
   }
 
   const rows = Array.isArray(pendingCardsRes.data) ? pendingCardsRes.data : [];
-  const selected = rows
+  let selected = rows
     .filter((row) => extractProvinceFromRegion(row.region) === province)
     .filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")))
     .slice(0, 500);
+  selected = await filterDatingCardsByContactBlocks(admin, user.id, selected);
   const ownerIds = [...new Set(selected.map((row) => String(row.owner_user_id ?? "")).filter((id) => id.length > 0))];
   const phoneVerifiedByOwner = new Map<string, boolean>();
   if (ownerIds.length > 0) {

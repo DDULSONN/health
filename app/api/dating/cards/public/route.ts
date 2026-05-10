@@ -1,5 +1,6 @@
 import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
 import { buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -250,7 +251,7 @@ export async function GET(req: Request) {
   let query = adminClient
     .from("dating_cards")
     .select(
-      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, expires_at, created_at"
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, instagram_id, expires_at, created_at"
     )
     .eq("status", "public")
     .gt("expires_at", new Date().toISOString())
@@ -277,7 +278,7 @@ export async function GET(req: Request) {
     let legacyQuery = adminClient
       .from("dating_cards")
       .select(
-        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, expires_at, created_at"
+        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, instagram_id, expires_at, created_at"
       )
       .eq("status", "public")
       .gt("expires_at", new Date().toISOString())
@@ -322,6 +323,7 @@ export async function GET(req: Request) {
   if (user?.id) {
     const blockedUserIds = await getDatingBlockedUserIds(adminClient, user.id);
     pageRows = pageRows.filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")));
+    pageRows = await filterDatingCardsByContactBlocks(adminClient, user.id, pageRows);
   }
   const ownerIds = [...new Set(pageRows.map((row) => String(row.owner_user_id ?? "")).filter((id) => id.length > 0))];
   const phoneVerifiedByOwner = new Map<string, boolean>();
