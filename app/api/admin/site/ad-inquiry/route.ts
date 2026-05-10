@@ -55,7 +55,7 @@ export async function PATCH(req: Request) {
 
   if (error) {
     console.error("[PATCH /api/admin/site/ad-inquiry] failed", error);
-    return NextResponse.json({ error: "광고 문의 설정 저장에 실패했습니다." }, { status: 500 });
+    return NextResponse.json({ error: "광고 링크 설정 저장에 실패했습니다." }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true, setting });

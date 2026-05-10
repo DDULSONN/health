@@ -15,12 +15,12 @@ export type AdInquirySetting = {
 };
 
 export const DEFAULT_AD_INQUIRY_SETTING: AdInquirySetting = {
-  enabled: true,
-  title: "(광고) 문의 주세요",
+  enabled: false,
+  title: "헬스장 로테이션 소개팅 참여하기",
   description: "배너, 제휴, 스폰서 문의는 오픈카톡으로 편하게 남겨 주세요.",
-  cta: "오픈카톡 문의",
+  cta: "자세히 보기",
   linkUrl: DEFAULT_OPENKAKAO_URL,
-  badge: "AD SLOT",
+  badge: "AD",
 };
 
 export function normalizeAdInquirySetting(value: unknown): AdInquirySetting {
@@ -46,9 +46,10 @@ export function normalizeAdInquirySetting(value: unknown): AdInquirySetting {
     typeof raw.badge === "string" && raw.badge.trim().length > 0
       ? raw.badge.trim().slice(0, 20)
       : DEFAULT_AD_INQUIRY_SETTING.badge;
+  const rawLinkUrl = typeof raw.linkUrl === "string" ? raw.linkUrl.trim() : "";
   const linkUrl =
-    typeof raw.linkUrl === "string" && /^https?:\/\//i.test(raw.linkUrl.trim())
-      ? raw.linkUrl.trim().slice(0, 300)
+    rawLinkUrl.startsWith("/") || /^https?:\/\//i.test(rawLinkUrl)
+      ? rawLinkUrl.slice(0, 300)
       : DEFAULT_AD_INQUIRY_SETTING.linkUrl;
 
   return {

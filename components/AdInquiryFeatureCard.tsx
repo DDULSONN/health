@@ -12,12 +12,12 @@ type AdInquirySetting = {
 };
 
 const FALLBACK_SETTING: AdInquirySetting = {
-  enabled: true,
-  title: "(광고) 문의 주세요",
+  enabled: false,
+  title: "헬스장 로테이션 소개팅 참여하기",
   description: "배너, 제휴, 스폰서 문의는 오픈카톡으로 편하게 남겨 주세요.",
-  cta: "오픈카톡 문의",
+  cta: "자세히 보기",
   linkUrl: process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi",
-  badge: "AD SLOT",
+  badge: "AD",
 };
 
 export default function AdInquiryFeatureCard() {
@@ -31,7 +31,7 @@ export default function AdInquiryFeatureCard() {
       .then((data: Partial<AdInquirySetting>) => {
         if (!active) return;
         setSetting({
-          enabled: data.enabled !== false,
+          enabled: data.enabled === true,
           title: data.title?.trim() || FALLBACK_SETTING.title,
           description: data.description?.trim() || FALLBACK_SETTING.description,
           cta: data.cta?.trim() || FALLBACK_SETTING.cta,
@@ -54,13 +54,13 @@ export default function AdInquiryFeatureCard() {
   return (
     <a
       href={setting.linkUrl}
-      target="_blank"
-      rel="noreferrer"
+      target={setting.linkUrl.startsWith("/") ? undefined : "_blank"}
+      rel={setting.linkUrl.startsWith("/") ? undefined : "noreferrer"}
       className="group block rounded-2xl border-2 border-fuchsia-200 bg-fuchsia-50 p-5 transition-all hover:border-fuchsia-400 active:scale-[0.99]"
     >
       <div className="flex items-start gap-4">
         <span className="shrink-0 text-3xl" aria-hidden>
-          📣
+          AD
         </span>
         <div className="min-w-0 w-full">
           <p className="text-[11px] font-semibold tracking-[0.18em] text-fuchsia-600">{setting.badge}</p>

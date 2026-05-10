@@ -14,6 +14,13 @@ values (
 )
 on conflict (key) do nothing;
 
+insert into public.site_settings (key, value_json)
+values (
+  'ad_inquiry_slot',
+  '{"enabled": false, "title": "헬스장 로테이션 소개팅 참여하기", "description": "배너, 제휴, 스폰서 문의는 오픈카톡으로 편하게 남겨 주세요.", "cta": "자세히 보기", "linkUrl": "https://open.kakao.com/o/s2gvTdhi", "badge": "AD"}'::jsonb
+)
+on conflict (key) do nothing;
+
 alter table public.site_settings enable row level security;
 
 drop policy if exists "site_settings_select_all" on public.site_settings;

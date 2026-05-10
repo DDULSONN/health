@@ -60,6 +60,15 @@ type MoreViewStatusResponse = {
   female?: MoreViewStatus;
 };
 
+type HomeAdLinkSetting = {
+  enabled: boolean;
+  title: string;
+  description?: string;
+  cta?: string;
+  linkUrl: string;
+  badge?: string;
+};
+
 type PaidCard = {
   id: string;
   nickname: string;
@@ -314,6 +323,7 @@ export default function OpenCardsPage() {
   const [swipeSubscriptionSubmitting, setSwipeSubscriptionSubmitting] = useState(false);
   const [swipePremiumGuideOpen, setSwipePremiumGuideOpen] = useState(false);
   const [showWeekendApplyCreditBenefit, setShowWeekendApplyCreditBenefit] = useState(false);
+  const [homeAdLink, setHomeAdLink] = useState<HomeAdLinkSetting | null>(null);
 
   useEffect(() => {
     activeSexRef.current = activeSex;
@@ -353,6 +363,37 @@ export default function OpenCardsPage() {
     updateWeekendBenefit();
     const timer = window.setInterval(updateWeekendBenefit, 60_000);
     return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/site/ad-inquiry", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data: Partial<HomeAdLinkSetting>) => {
+        if (cancelled) return;
+        const title = data.title?.trim() || data.cta?.trim() || "";
+        const linkUrl = data.linkUrl?.trim() || "";
+        if (data.enabled === false || !title || !linkUrl) {
+          setHomeAdLink(null);
+          return;
+        }
+        setHomeAdLink({
+          enabled: true,
+          title,
+          description: data.description?.trim() || "",
+          cta: data.cta?.trim() || "",
+          linkUrl,
+          badge: data.badge?.trim() || "",
+        });
+      })
+      .catch(() => {
+        if (!cancelled) setHomeAdLink(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -845,6 +886,18 @@ export default function OpenCardsPage() {
                   <p className="text-sm font-semibold text-emerald-900">주말에는 기본 지원권이 3장으로 늘어나요.</p>
                 </div>
               )}
+              {homeAdLink ? (
+                <a
+                  href={homeAdLink.linkUrl}
+                  target={homeAdLink.linkUrl.startsWith("/") ? undefined : "_blank"}
+                  rel={homeAdLink.linkUrl.startsWith("/") ? undefined : "noreferrer"}
+                  className="mt-2 inline-flex flex-wrap items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 transition hover:border-emerald-300 hover:bg-emerald-100"
+                  title={homeAdLink.description || homeAdLink.title}
+                >
+                  <p className="text-sm font-semibold text-emerald-900">{homeAdLink.title}</p>
+                  <span className="text-xs font-black text-emerald-700">바로가기</span>
+                </a>
+              ) : null}
 
               <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                 <div className="rounded-[24px] bg-neutral-50 p-4">
