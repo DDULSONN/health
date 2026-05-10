@@ -5518,6 +5518,76 @@ export default function MyPage() {
           <p className="mt-1 text-xl font-bold text-amber-900">{weeklyWinCount}점</p>
         </div>
 
+        <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50/50 p-3">
+          <div className="flex flex-col gap-3">
+            <div>
+              <p className="text-sm font-semibold text-rose-900">오픈카드 지인 차단</p>
+              <p className="mt-1 text-xs leading-5 text-neutral-600">
+                휴대폰 번호나 인스타 아이디를 입력하면 오픈카드와 빠른매칭에서 서로 보이지 않게 제외돼요.
+              </p>
+              <p className="mt-1 text-[11px] text-neutral-500">입력값은 원문 그대로 저장하지 않고 안전하게 비교해요.</p>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-[90px_1fr_1fr_auto]">
+              <select
+                value={datingContactBlockType}
+                onChange={(event) => setDatingContactBlockType(event.target.value === "instagram" ? "instagram" : "phone")}
+                className="min-h-[38px] rounded-lg border border-rose-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+              >
+                <option value="phone">휴대폰</option>
+                <option value="instagram">인스타</option>
+              </select>
+              <input
+                type={datingContactBlockType === "phone" ? "tel" : "text"}
+                value={datingContactBlockValue}
+                onChange={(event) => setDatingContactBlockValue(event.target.value)}
+                placeholder={datingContactBlockType === "phone" ? "01012345678" : "instagram_id"}
+                className="min-h-[38px] rounded-lg border border-rose-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+              />
+              <input
+                type="text"
+                value={datingContactBlockLabel}
+                onChange={(event) => setDatingContactBlockLabel(event.target.value)}
+                placeholder="메모 선택"
+                className="min-h-[38px] rounded-lg border border-rose-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+              />
+              <button
+                type="button"
+                onClick={() => void handleAddDatingContactBlock()}
+                disabled={datingContactBlockSubmitting}
+                className="inline-flex min-h-[38px] items-center justify-center rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white disabled:opacity-50"
+              >
+                {datingContactBlockSubmitting ? "저장 중..." : "차단"}
+              </button>
+            </div>
+            {myDatingContactBlocks.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {myDatingContactBlocks.map((block) => {
+                  const deleting = deletingDatingContactBlockIds.includes(block.id);
+                  return (
+                    <span
+                      key={`profile-${block.id}`}
+                      className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-white px-3 py-1 text-[11px] text-rose-800"
+                    >
+                      {block.label ? `${block.label} · ` : ""}
+                      {block.block_type === "phone" ? "휴대폰" : "인스타"} {block.value_hint ?? ""}
+                      <button
+                        type="button"
+                        disabled={deleting}
+                        onClick={() => void handleDeleteDatingContactBlock(block.id)}
+                        className="font-semibold text-rose-700 disabled:opacity-50"
+                      >
+                        {deleting ? "삭제 중" : "해제"}
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-[11px] text-neutral-500">아직 등록한 지인 차단이 없습니다.</p>
+            )}
+          </div>
+        </div>
+
         <div className="mt-4 flex flex-wrap gap-2">
           <Link
             href="/my-records"
