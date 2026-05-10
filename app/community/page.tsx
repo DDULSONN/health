@@ -90,6 +90,7 @@ export default function CommunityPage() {
   const [popularPosts, setPopularPosts] = useState<Post[]>([]);
   const [popularLoading, setPopularLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
+  const [isAdmin, setIsAdmin] = useState(false);
   const [quickVotePostId, setQuickVotePostId] = useState<string | null>(null);
   const [tabReady, setTabReady] = useState(false);
   const feedCacheRef = useRef(new Map<string, FeedCacheEntry>());
@@ -171,6 +172,13 @@ export default function CommunityPage() {
       .then(({ data: { user } }) => {
         setUserId(user?.id ?? null);
       });
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/admin/me", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload: { isAdmin?: boolean }) => setIsAdmin(Boolean(payload.isAdmin)))
+      .catch(() => setIsAdmin(false));
   }, []);
 
   useEffect(() => {
@@ -425,6 +433,19 @@ export default function CommunityPage() {
       </div>
 
       <CommunityBodycheckHub />
+
+      {isAdmin ? (
+        <Link
+          href="/community/classes"
+          className="mt-4 flex items-center justify-between gap-3 rounded-[24px] border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm shadow-sm transition hover:border-emerald-200 hover:bg-emerald-100"
+        >
+          <span>
+            <span className="block font-black text-neutral-900">운동 클래스</span>
+            <span className="mt-0.5 block text-xs font-medium text-neutral-500">일일 PT·모집 관리</span>
+          </span>
+          <span className="rounded-full bg-white px-3 py-2 text-xs font-black text-emerald-700">관리</span>
+        </Link>
+      ) : null}
 
       {false ? (
       <section className="mt-5 rounded-[28px] border border-amber-200 bg-gradient-to-r from-amber-50 via-orange-50 to-white p-5">
