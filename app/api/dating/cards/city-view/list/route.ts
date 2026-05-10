@@ -67,20 +67,28 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "해당 도/광역시는 승인 후 이용 가능합니다." }, { status: 403 });
   }
 
-  const pendingCardsRes = await admin
-    .from("dating_cards")
-    .select(
-      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, instagram_id, expires_at, created_at, status"
-    )
-    .in("status", ["pending", "public"])
-    .order("created_at", { ascending: false })
-    .limit(10000);
+  const selectColumns =
+    "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, instagram_id, expires_at, created_at, status";
+  const nowIso = new Date().toISOString();
+  const [pendingCardsRes, publicCardsRes] = await Promise.all([
+    admin.from("dating_cards").select(selectColumns).eq("status", "pending").order("created_at", { ascending: false }).limit(5000),
+    admin
+      .from("dating_cards")
+      .select(selectColumns)
+      .eq("status", "public")
+      .gt("expires_at", nowIso)
+      .order("created_at", { ascending: false })
+      .limit(5000),
+  ]);
 
-  if (pendingCardsRes.error) {
+  if (pendingCardsRes.error && publicCardsRes.error) {
     return NextResponse.json({ error: "목록을 불러오지 못했습니다." }, { status: 500 });
   }
 
-  const rows = Array.isArray(pendingCardsRes.data) ? pendingCardsRes.data : [];
+  const rows = [
+    ...(!pendingCardsRes.error && Array.isArray(pendingCardsRes.data) ? pendingCardsRes.data : []),
+    ...(!publicCardsRes.error && Array.isArray(publicCardsRes.data) ? publicCardsRes.data : []),
+  ];
   const now = Date.now();
   let selected = rows
     .filter((row) => row.status === "pending" || (row.status === "public" && row.expires_at && new Date(row.expires_at).getTime() > now))

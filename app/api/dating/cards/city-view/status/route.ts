@@ -77,18 +77,20 @@ function hasLivePendingRow(rows: CityViewRequestRow[]): boolean {
 }
 
 async function buildProvinceStats(admin: ReturnType<typeof createAdminClient>): Promise<ProvinceStat[]> {
-  const cardsRes = await admin
-    .from("dating_cards")
-    .select("sex,region,status,expires_at")
-    .in("status", ["pending", "public"])
-    .order("created_at", { ascending: false })
-    .limit(10000);
-
-  if (cardsRes.error || !Array.isArray(cardsRes.data)) return [];
+  const nowIso = new Date().toISOString();
+  const [pendingRes, publicRes] = await Promise.all([
+    admin.from("dating_cards").select("sex,region,status,expires_at").eq("status", "pending").limit(5000),
+    admin.from("dating_cards").select("sex,region,status,expires_at").eq("status", "public").gt("expires_at", nowIso).limit(5000),
+  ]);
 
   const map = new Map<string, ProvinceStat>();
   const now = Date.now();
-  for (const row of cardsRes.data as Array<{ sex: string | null; region: string | null; status: string | null; expires_at: string | null }>) {
+  const rows = [
+    ...(!pendingRes.error && Array.isArray(pendingRes.data) ? pendingRes.data : []),
+    ...(!publicRes.error && Array.isArray(publicRes.data) ? publicRes.data : []),
+  ] as Array<{ sex: string | null; region: string | null; status: string | null; expires_at: string | null }>;
+
+  for (const row of rows) {
     if (row.status === "public" && (!row.expires_at || new Date(row.expires_at).getTime() <= now)) continue;
     const province = extractProvinceFromRegion(row.region);
     if (!province) continue;
