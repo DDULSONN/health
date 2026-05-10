@@ -19,15 +19,19 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
+const siteTitle = "짐툴 GymTools - 운동하는 사람들의 소개팅";
+const siteDescription =
+  "짐툴은 오픈카드, 빠른매칭, 1:1 소개팅으로 운동하는 사람들이 더 자연스럽게 연결되는 소개팅 서비스입니다.";
+
 export const metadata: Metadata = {
   title: {
-    default: "짐툴 (GymTools) - 헬스 계산기 & 몸평 커뮤니티",
+    default: siteTitle,
     template: "%s | 짐툴 GymTools",
   },
-  description:
-    "짐툴은 1RM 계산기, 3대 합계 계산기, 몸평 커뮤니티와 소개팅 기능을 제공하는 헬스 플랫폼입니다.",
+  description: siteDescription,
   applicationName: "짐툴",
   manifest: "/manifest.webmanifest",
+  keywords: ["짐툴", "GymTools", "운동 소개팅", "헬스 소개팅", "오픈카드", "빠른매칭", "1:1 소개팅"],
   icons: {
     apple: "/apple-touch-icon.png",
     icon: [
@@ -41,12 +45,16 @@ export const metadata: Metadata = {
     title: "GymTools",
   },
   openGraph: {
-    title: "짐툴 (GymTools) - 헬스 계산기 & 몸평 커뮤니티",
-    description:
-      "짐툴은 1RM 계산기, 3대 합계 계산기, 몸평 커뮤니티와 소개팅 기능을 제공하는 헬스 플랫폼입니다.",
+    title: siteTitle,
+    description: "오픈카드로 바로 지원하고, 빠른매칭과 1:1 소개팅으로 운동 취향이 맞는 사람을 만나보세요.",
     siteName: "짐툴 GymTools",
     type: "website",
     locale: "ko_KR",
+  },
+  twitter: {
+    card: "summary",
+    title: siteTitle,
+    description: "오픈카드, 빠른매칭, 1:1 소개팅으로 운동하는 사람들과 자연스럽게 연결돼요.",
   },
 };
 
@@ -65,7 +73,8 @@ export default function RootLayout({
     "@context": "https://schema.org",
     "@type": "WebSite",
     name: "짐툴 GymTools",
-    alternateName: ["GymTools", "짐툴"],
+    alternateName: ["GymTools", "짐툴", "운동 소개팅"],
+    description: siteDescription,
     url: "https://helchang.com",
   };
 
