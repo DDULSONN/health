@@ -72,7 +72,7 @@ export async function GET(req: Request) {
     .select(
       "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, instagram_id, expires_at, created_at, status"
     )
-    .eq("status", "pending")
+    .in("status", ["pending", "public"])
     .order("created_at", { ascending: false })
     .limit(10000);
 
@@ -81,7 +81,9 @@ export async function GET(req: Request) {
   }
 
   const rows = Array.isArray(pendingCardsRes.data) ? pendingCardsRes.data : [];
+  const now = Date.now();
   let selected = rows
+    .filter((row) => row.status === "pending" || (row.status === "public" && row.expires_at && new Date(row.expires_at).getTime() > now))
     .filter((row) => extractProvinceFromRegion(row.region) === province)
     .filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")))
     .slice(0, 500);

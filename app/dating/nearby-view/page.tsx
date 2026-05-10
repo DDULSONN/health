@@ -263,7 +263,7 @@ export default function NearbyViewPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-2xl">
             <h1 className="text-[28px] font-black tracking-tight text-neutral-950">가까운 이상형 보기</h1>
-            <p className="mt-2 text-sm text-neutral-600">지역별 대기 인원을 먼저 보고, 원하는 지역만 열어 바로 살펴볼 수 있어요.</p>
+            <p className="mt-2 text-sm text-neutral-600">지역별 인원을 먼저 보고, 원하는 지역만 열어 바로 살펴볼 수 있어요.</p>
             <div className="mt-4 flex flex-wrap gap-2">
               <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">지역당 5,000원</span>
               <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">3시간 이용</span>
@@ -299,9 +299,9 @@ export default function NearbyViewPage() {
       <DatingAdultNotice />
 
       <section className="mt-5 rounded-[28px] border border-neutral-200 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
-        <h2 className="mb-3 text-sm font-semibold text-neutral-800">지역별 대기 인원</h2>
+        <h2 className="mb-3 text-sm font-semibold text-neutral-800">지역별 인원</h2>
         <div className="space-y-2">
-          {(status.provinceStats ?? []).length === 0 ? <p className="text-xs text-neutral-500">대기 카드가 없습니다.</p> : null}
+          {(status.provinceStats ?? []).length === 0 ? <p className="text-xs text-neutral-500">현재 보여줄 지역 카드가 없습니다.</p> : null}
           {(status.provinceStats ?? []).map((stat) => {
             const isActive = (status.activeCities ?? []).includes(stat.province);
             const isPending = (status.pendingCities ?? []).includes(stat.province);
@@ -367,7 +367,7 @@ export default function NearbyViewPage() {
         ) : (
           <div className="space-y-5">
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-neutral-800">{selectedProvince} 대기 카드</h2>
+              <h2 className="text-sm font-semibold text-neutral-800">{selectedProvince} 카드</h2>
               <span className="text-xs font-medium text-emerald-700">남은 시간 {formatRemaining(selectedExpiresAt)}</span>
             </div>
             <div className="flex gap-2">
@@ -391,7 +391,7 @@ export default function NearbyViewPage() {
               </button>
             </div>
             <CardSection
-              title={activeSex === "male" ? `${selectedProvince} 남자 대기 카드` : `${selectedProvince} 여자 대기 카드`}
+              title={activeSex === "male" ? `${selectedProvince} 남자 카드` : `${selectedProvince} 여자 카드`}
               items={activeSex === "male" ? maleItems : femaleItems}
               onNavigateAway={() =>
                 writeNearbyViewSnapshot({

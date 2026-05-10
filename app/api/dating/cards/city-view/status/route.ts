@@ -77,17 +77,19 @@ function hasLivePendingRow(rows: CityViewRequestRow[]): boolean {
 }
 
 async function buildProvinceStats(admin: ReturnType<typeof createAdminClient>): Promise<ProvinceStat[]> {
-  const pendingRes = await admin
+  const cardsRes = await admin
     .from("dating_cards")
-    .select("sex,region")
-    .eq("status", "pending")
+    .select("sex,region,status,expires_at")
+    .in("status", ["pending", "public"])
     .order("created_at", { ascending: false })
     .limit(10000);
 
-  if (pendingRes.error || !Array.isArray(pendingRes.data)) return [];
+  if (cardsRes.error || !Array.isArray(cardsRes.data)) return [];
 
   const map = new Map<string, ProvinceStat>();
-  for (const row of pendingRes.data as Array<{ sex: string | null; region: string | null }>) {
+  const now = Date.now();
+  for (const row of cardsRes.data as Array<{ sex: string | null; region: string | null; status: string | null; expires_at: string | null }>) {
+    if (row.status === "public" && (!row.expires_at || new Date(row.expires_at).getTime() <= now)) continue;
     const province = extractProvinceFromRegion(row.region);
     if (!province) continue;
     const prev = map.get(province) ?? { province, total: 0, male: 0, female: 0 };
