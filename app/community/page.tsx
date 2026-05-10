@@ -43,6 +43,14 @@ type WeeklyRankingResponse = {
   items: WeeklyTopItem[];
 };
 
+type CommunityTopBanner = {
+  enabled: boolean;
+  title: string;
+  description: string;
+  cta: string;
+  linkUrl: string;
+};
+
 type FeedResponse = {
   posts?: Post[];
   total?: number;
@@ -91,6 +99,16 @@ export default function CommunityPage() {
   const [popularLoading, setPopularLoading] = useState(true);
   const [userId, setUserId] = useState<string | null>(null);
   const [isAdmin, setIsAdmin] = useState(false);
+  const [topBanner, setTopBanner] = useState<CommunityTopBanner | null>(null);
+  const [bannerForm, setBannerForm] = useState<CommunityTopBanner>({
+    enabled: false,
+    title: "",
+    description: "",
+    cta: "자세히 보기",
+    linkUrl: "",
+  });
+  const [showBannerEditor, setShowBannerEditor] = useState(false);
+  const [savingBanner, setSavingBanner] = useState(false);
   const [quickVotePostId, setQuickVotePostId] = useState<string | null>(null);
   const [tabReady, setTabReady] = useState(false);
   const feedCacheRef = useRef(new Map<string, FeedCacheEntry>());
@@ -177,8 +195,32 @@ export default function CommunityPage() {
   useEffect(() => {
     fetch("/api/admin/me", { cache: "no-store" })
       .then((response) => response.json())
-      .then((payload: { isAdmin?: boolean }) => setIsAdmin(Boolean(payload.isAdmin)))
+      .then((payload: { isAdmin?: boolean }) => {
+        const nextIsAdmin = Boolean(payload.isAdmin);
+        setIsAdmin(nextIsAdmin);
+        if (nextIsAdmin) {
+          fetch("/api/admin/community/top-banner", { cache: "no-store" })
+            .then((response) => response.json())
+            .then((setting: CommunityTopBanner) => {
+              setBannerForm({
+                enabled: Boolean(setting.enabled),
+                title: setting.title ?? "",
+                description: setting.description ?? "",
+                cta: setting.cta || "자세히 보기",
+                linkUrl: setting.linkUrl ?? "",
+              });
+            })
+            .catch(() => undefined);
+        }
+      })
       .catch(() => setIsAdmin(false));
+  }, []);
+
+  useEffect(() => {
+    fetch("/api/community/top-banner", { cache: "no-store" })
+      .then((response) => response.json())
+      .then((payload: CommunityTopBanner) => setTopBanner(payload.enabled ? payload : null))
+      .catch(() => setTopBanner(null));
   }, []);
 
   useEffect(() => {
@@ -301,6 +343,30 @@ export default function CommunityPage() {
     }
 
     router.push(redirect);
+  };
+
+  const saveTopBanner = async () => {
+    setSavingBanner(true);
+    try {
+      const response = await fetch("/api/admin/community/top-banner", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(bannerForm),
+      });
+
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => ({}))) as { error?: string };
+        alert(payload.error ?? "상단 안내 저장에 실패했습니다.");
+        return;
+      }
+
+      const payload = (await response.json()) as { setting: CommunityTopBanner };
+      setBannerForm(payload.setting);
+      setTopBanner(payload.setting.enabled ? payload.setting : null);
+      setShowBannerEditor(false);
+    } finally {
+      setSavingBanner(false);
+    }
   };
 
   const handleQuickBodycheckVote = useCallback(
@@ -431,6 +497,85 @@ export default function CommunityPage() {
           </button>
         </div>
       </div>
+
+      {topBanner ? (
+        <Link
+          href={topBanner.linkUrl}
+          className="mt-4 block rounded-[24px] border border-rose-100 bg-gradient-to-r from-rose-50 via-white to-emerald-50 p-4 shadow-sm transition hover:border-rose-200 hover:shadow-md"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-black text-rose-600">안내</p>
+              <p className="mt-1 text-base font-black text-neutral-950">{topBanner.title}</p>
+              {topBanner.description ? <p className="mt-1 text-sm text-neutral-500">{topBanner.description}</p> : null}
+            </div>
+            <span className="shrink-0 rounded-full bg-neutral-950 px-3 py-2 text-xs font-black text-white">
+              {topBanner.cta}
+            </span>
+          </div>
+        </Link>
+      ) : null}
+
+      {isAdmin ? (
+        <div className="mt-3 rounded-[24px] border border-neutral-200 bg-white p-3 shadow-sm">
+          <button
+            type="button"
+            onClick={() => setShowBannerEditor((value) => !value)}
+            className="flex w-full items-center justify-between text-left text-sm font-black text-neutral-900"
+          >
+            <span>커뮤니티 상단 안내 관리</span>
+            <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs text-neutral-500">
+              {showBannerEditor ? "닫기" : "열기"}
+            </span>
+          </button>
+          {showBannerEditor ? (
+            <div className="mt-3 space-y-2">
+              <label className="flex items-center gap-2 text-sm font-semibold text-neutral-700">
+                <input
+                  type="checkbox"
+                  checked={bannerForm.enabled}
+                  onChange={(event) => setBannerForm({ ...bannerForm, enabled: event.target.checked })}
+                />
+                상단 안내 노출
+              </label>
+              <input
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400"
+                placeholder="제목 예: 헬스장 로테이션 소개팅 참여"
+                value={bannerForm.title}
+                onChange={(event) => setBannerForm({ ...bannerForm, title: event.target.value })}
+              />
+              <input
+                className="w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400"
+                placeholder="설명"
+                value={bannerForm.description}
+                onChange={(event) => setBannerForm({ ...bannerForm, description: event.target.value })}
+              />
+              <div className="grid gap-2 sm:grid-cols-[1fr_2fr]">
+                <input
+                  className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400"
+                  placeholder="버튼 문구"
+                  value={bannerForm.cta}
+                  onChange={(event) => setBannerForm({ ...bannerForm, cta: event.target.value })}
+                />
+                <input
+                  className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400"
+                  placeholder="이동 링크"
+                  value={bannerForm.linkUrl}
+                  onChange={(event) => setBannerForm({ ...bannerForm, linkUrl: event.target.value })}
+                />
+              </div>
+              <button
+                type="button"
+                onClick={saveTopBanner}
+                disabled={savingBanner}
+                className="rounded-2xl bg-neutral-950 px-5 py-3 text-sm font-black text-white disabled:opacity-50"
+              >
+                저장
+              </button>
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       <CommunityBodycheckHub />
 
