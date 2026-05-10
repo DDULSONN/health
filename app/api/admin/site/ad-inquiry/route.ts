@@ -40,6 +40,7 @@ export async function PATCH(req: Request) {
     cta: (body as { cta?: unknown }).cta,
     linkUrl: (body as { linkUrl?: unknown }).linkUrl,
     badge: (body as { badge?: unknown }).badge,
+    theme: (body as { theme?: unknown }).theme,
   });
 
   const adminClient = createAdminClient();

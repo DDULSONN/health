@@ -67,6 +67,40 @@ type HomeAdLinkSetting = {
   cta?: string;
   linkUrl: string;
   badge?: string;
+  theme?: "emerald" | "rose" | "violet" | "sky" | "amber" | "neutral";
+};
+
+const homeAdLinkThemeClass: Record<NonNullable<HomeAdLinkSetting["theme"]>, { wrap: string; text: string; cta: string }> = {
+  emerald: {
+    wrap: "border-emerald-200 bg-emerald-50 hover:border-emerald-300 hover:bg-emerald-100",
+    text: "text-emerald-900",
+    cta: "text-emerald-700",
+  },
+  rose: {
+    wrap: "border-rose-200 bg-rose-50 hover:border-rose-300 hover:bg-rose-100",
+    text: "text-rose-900",
+    cta: "text-rose-700",
+  },
+  violet: {
+    wrap: "border-violet-200 bg-violet-50 hover:border-violet-300 hover:bg-violet-100",
+    text: "text-violet-900",
+    cta: "text-violet-700",
+  },
+  sky: {
+    wrap: "border-sky-200 bg-sky-50 hover:border-sky-300 hover:bg-sky-100",
+    text: "text-sky-900",
+    cta: "text-sky-700",
+  },
+  amber: {
+    wrap: "border-amber-200 bg-amber-50 hover:border-amber-300 hover:bg-amber-100",
+    text: "text-amber-900",
+    cta: "text-amber-700",
+  },
+  neutral: {
+    wrap: "border-neutral-200 bg-neutral-50 hover:border-neutral-300 hover:bg-neutral-100",
+    text: "text-neutral-900",
+    cta: "text-neutral-700",
+  },
 };
 
 type PaidCard = {
@@ -385,6 +419,7 @@ export default function OpenCardsPage() {
           cta: data.cta?.trim() || "",
           linkUrl,
           badge: data.badge?.trim() || "",
+          theme: data.theme ?? "emerald",
         });
       })
       .catch(() => {
@@ -887,16 +922,21 @@ export default function OpenCardsPage() {
                 </div>
               )}
               {homeAdLink ? (
-                <a
-                  href={homeAdLink.linkUrl}
-                  target={homeAdLink.linkUrl.startsWith("/") ? undefined : "_blank"}
-                  rel={homeAdLink.linkUrl.startsWith("/") ? undefined : "noreferrer"}
-                  className="mt-2 inline-flex flex-wrap items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2 transition hover:border-emerald-300 hover:bg-emerald-100"
-                  title={homeAdLink.description || homeAdLink.title}
-                >
-                  <p className="text-sm font-semibold text-emerald-900">{homeAdLink.title}</p>
-                  <span className="text-xs font-black text-emerald-700">바로가기</span>
-                </a>
+                (() => {
+                  const theme = homeAdLinkThemeClass[homeAdLink.theme ?? "emerald"];
+                  return (
+                    <a
+                      href={homeAdLink.linkUrl}
+                      target={homeAdLink.linkUrl.startsWith("/") ? undefined : "_blank"}
+                      rel={homeAdLink.linkUrl.startsWith("/") ? undefined : "noreferrer"}
+                      className={`mt-2 inline-flex flex-wrap items-center gap-2 rounded-full border px-4 py-2 transition ${theme.wrap}`}
+                      title={homeAdLink.description || homeAdLink.title}
+                    >
+                      <p className={`text-sm font-semibold ${theme.text}`}>{homeAdLink.title}</p>
+                      <span className={`text-xs font-black ${theme.cta}`}>바로가기</span>
+                    </a>
+                  );
+                })()
               ) : null}
 
               <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

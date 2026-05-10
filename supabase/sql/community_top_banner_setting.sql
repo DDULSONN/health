@@ -17,9 +17,14 @@ on conflict (key) do nothing;
 insert into public.site_settings (key, value_json)
 values (
   'ad_inquiry_slot',
-  '{"enabled": false, "title": "헬스장 로테이션 소개팅 참여하기", "description": "배너, 제휴, 스폰서 문의는 오픈카톡으로 편하게 남겨 주세요.", "cta": "자세히 보기", "linkUrl": "https://open.kakao.com/o/s2gvTdhi", "badge": "AD"}'::jsonb
+  '{"enabled": false, "title": "헬스장 로테이션 소개팅 참여하기", "description": "배너, 제휴, 스폰서 문의는 오픈카톡으로 편하게 남겨 주세요.", "cta": "자세히 보기", "linkUrl": "https://open.kakao.com/o/s2gvTdhi", "badge": "AD", "theme": "emerald"}'::jsonb
 )
 on conflict (key) do nothing;
+
+update public.site_settings
+set value_json = '{"theme": "emerald"}'::jsonb || value_json
+where key = 'ad_inquiry_slot'
+  and not (value_json ? 'theme');
 
 alter table public.site_settings enable row level security;
 

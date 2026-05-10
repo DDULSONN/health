@@ -1200,6 +1200,7 @@ type AdInquirySettingsResponse = {
   cta?: string;
   linkUrl?: string;
   badge?: string;
+  theme?: "emerald" | "rose" | "violet" | "sky" | "amber" | "neutral";
 };
 
 export default function MyPage() {
@@ -1341,6 +1342,7 @@ export default function MyPage() {
   const [adInquiryCta, setAdInquiryCta] = useState("");
   const [adInquiryLinkUrl, setAdInquiryLinkUrl] = useState("");
   const [adInquiryBadge, setAdInquiryBadge] = useState("");
+  const [adInquiryTheme, setAdInquiryTheme] = useState<"emerald" | "rose" | "violet" | "sky" | "amber" | "neutral">("emerald");
   const [adInquirySaving, setAdInquirySaving] = useState(false);
   const [adInquiryError, setAdInquiryError] = useState("");
   const [adInquiryInfo, setAdInquiryInfo] = useState("");
@@ -2604,6 +2606,7 @@ export default function MyPage() {
           setAdInquiryCta(adInquiryBody.cta ?? "오픈카톡 문의");
           setAdInquiryLinkUrl(adInquiryBody.linkUrl ?? "");
           setAdInquiryBadge(adInquiryBody.badge ?? "AD SLOT");
+          setAdInquiryTheme(adInquiryBody.theme ?? "emerald");
           setError("");
 
           if (adminFlag) {
@@ -3950,6 +3953,7 @@ export default function MyPage() {
           cta: adInquiryCta,
           linkUrl: adInquiryLinkUrl,
           badge: adInquiryBadge,
+          theme: adInquiryTheme,
         }),
       });
       const body = (await res.json().catch(() => ({}))) as {
@@ -3970,6 +3974,7 @@ export default function MyPage() {
       setAdInquiryCta(body.setting.cta ?? "오픈카톡 문의");
       setAdInquiryLinkUrl(body.setting.linkUrl ?? "");
       setAdInquiryBadge(body.setting.badge ?? "AD SLOT");
+      setAdInquiryTheme(body.setting.theme ?? "emerald");
       setAdInquiryInfo("광고 문의 슬롯 설정을 저장했습니다.");
     } catch (e) {
       setAdInquiryError(e instanceof Error ? e.message : "광고 문의 설정 저장에 실패했습니다.");
@@ -9863,6 +9868,25 @@ export default function MyPage() {
                 placeholder="링크 URL"
                 className="h-10 rounded-lg border border-violet-200 px-3 text-sm"
               />
+              <select
+                value={adInquiryTheme}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  setAdInquiryTheme(
+                    next === "rose" || next === "violet" || next === "sky" || next === "amber" || next === "neutral"
+                      ? next
+                      : "emerald"
+                  );
+                }}
+                className="h-10 rounded-lg border border-violet-200 bg-white px-3 text-sm sm:col-span-2"
+              >
+                <option value="emerald">초록</option>
+                <option value="rose">분홍</option>
+                <option value="violet">보라</option>
+                <option value="sky">하늘</option>
+                <option value="amber">노랑</option>
+                <option value="neutral">검정/회색</option>
+              </select>
             </div>
             <textarea
               value={adInquiryDescription}
