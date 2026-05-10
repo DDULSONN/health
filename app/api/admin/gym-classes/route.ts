@@ -128,6 +128,29 @@ async function buildUniqueSlug(admin: SupabaseClient, preferred: string) {
   return `${base}-${Date.now().toString(36)}`;
 }
 
+async function ensureClassCanOpen(admin: SupabaseClient, operatorId: string | null, status: GymClassStatus) {
+  if (!operatorId) {
+    if (status === "published") {
+      throw new Error("모집중으로 열려면 승인된 운영자를 연결해 주세요.");
+    }
+    return;
+  }
+
+  const { data, error } = await admin
+    .from("gym_class_operators")
+    .select("id,status")
+    .eq("id", operatorId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error("운영자 확인에 실패했습니다.");
+  }
+
+  if (!data || data.status !== "active") {
+    throw new Error("승인된 운영자만 클래스에 연결할 수 있습니다.");
+  }
+}
+
 function buildClassPayload(body: Record<string, unknown>, userId: string) {
   const title = requiredText(body.title, "클래스명");
   const hostName = requiredText(body.host_name, "진행자명");
@@ -247,6 +270,7 @@ export async function POST(req: Request) {
     const body = asRecord(await req.json());
     const payload = buildClassPayload(body, auth.user.id);
     const slug = await buildUniqueSlug(auth.admin, normalizeSlug(body.slug));
+    await ensureClassCanOpen(auth.admin, payload.operator_id, payload.status);
 
     const { data, error } = await auth.admin
       .from("gym_classes")

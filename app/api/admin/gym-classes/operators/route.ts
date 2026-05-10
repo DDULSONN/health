@@ -76,9 +76,12 @@ export async function POST(req: Request) {
       host_name: requiredText(body.host_name, "운영명", 120),
       host_type: cleanHostType(body.host_type),
       region: cleanText(body.region, 80),
+      website_url: cleanText(body.website_url, 500),
       intro: cleanText(body.intro, 1200),
+      desired_class_summary: cleanText(body.desired_class_summary, 1200),
       status: "pending",
       admin_note: cleanText(body.admin_note, 1000),
+      terms_accepted_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     };
 

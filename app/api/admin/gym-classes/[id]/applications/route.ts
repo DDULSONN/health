@@ -46,9 +46,72 @@ export async function POST(req: Request, context: RouteContext) {
   try {
     const { id } = await context.params;
     const body = asRecord(await req.json());
+    const scheduleId = cleanText(body.schedule_id, 80);
+
+    const { data: gymClass, error: classError } = await auth.admin
+      .from("gym_classes")
+      .select("id,status,capacity,application_deadline")
+      .eq("id", id)
+      .single();
+
+    if (classError || !gymClass) {
+      return NextResponse.json({ error: "클래스를 찾지 못했습니다.", detail: classError?.message }, { status: 404 });
+    }
+
+    if (gymClass.status !== "published") {
+      return NextResponse.json({ error: "모집중인 클래스만 신청할 수 있습니다." }, { status: 400 });
+    }
+
+    if (gymClass.application_deadline && new Date(gymClass.application_deadline).getTime() < Date.now()) {
+      return NextResponse.json({ error: "신청 마감 시간이 지난 클래스입니다." }, { status: 400 });
+    }
+
+    if (scheduleId) {
+      const { data: schedule, error: scheduleError } = await auth.admin
+        .from("gym_class_schedules")
+        .select("id,capacity")
+        .eq("id", scheduleId)
+        .eq("class_id", id)
+        .single();
+
+      if (scheduleError || !schedule) {
+        return NextResponse.json({ error: "선택한 일정을 찾지 못했습니다.", detail: scheduleError?.message }, { status: 404 });
+      }
+
+      if (schedule.capacity) {
+        const { count, error: countError } = await auth.admin
+          .from("gym_class_applications")
+          .select("id", { count: "exact", head: true })
+          .eq("schedule_id", scheduleId)
+          .in("status", ["submitted", "confirmed"]);
+
+        if (countError) {
+          return NextResponse.json({ error: "정원 확인에 실패했습니다.", detail: countError.message }, { status: 500 });
+        }
+
+        if ((count ?? 0) >= schedule.capacity) {
+          return NextResponse.json({ error: "선택한 일정의 정원이 마감되었습니다." }, { status: 400 });
+        }
+      }
+    } else if (gymClass.capacity) {
+      const { count, error: countError } = await auth.admin
+        .from("gym_class_applications")
+        .select("id", { count: "exact", head: true })
+        .eq("class_id", id)
+        .in("status", ["submitted", "confirmed"]);
+
+      if (countError) {
+        return NextResponse.json({ error: "정원 확인에 실패했습니다.", detail: countError.message }, { status: 500 });
+      }
+
+      if ((count ?? 0) >= gymClass.capacity) {
+        return NextResponse.json({ error: "클래스 정원이 마감되었습니다." }, { status: 400 });
+      }
+    }
+
     const payload = {
       class_id: id,
-      schedule_id: cleanText(body.schedule_id, 80),
+      schedule_id: scheduleId,
       name: requiredText(body.name, "이름", 80),
       phone: cleanText(body.phone, 40),
       email: cleanText(body.email, 160),

@@ -24,6 +24,7 @@ type GymClassPreview = {
   price_text: string | null;
   application_deadline: string | null;
   contact_url: string | null;
+  cover_image_url: string | null;
   preparation_note: string | null;
   schedules: Schedule[];
   application_count: number;
@@ -158,6 +159,11 @@ export default function GymClassPreviewPage() {
       ) : item ? (
         <div className="space-y-4">
           <section className="rounded-[32px] border border-neutral-200 bg-white p-6 shadow-sm">
+            {item.cover_image_url ? (
+              <div className="-mx-2 -mt-2 mb-5 overflow-hidden rounded-[28px] bg-neutral-200">
+                <img src={item.cover_image_url} alt="" className="h-64 w-full object-cover" loading="lazy" />
+              </div>
+            ) : null}
             <div className="flex flex-wrap items-center gap-2">
               <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
                 {item.region || "지역 미정"}
@@ -172,7 +178,7 @@ export default function GymClassPreviewPage() {
           </section>
 
           <section className="rounded-[28px] border border-neutral-200 bg-white p-5 shadow-sm">
-            <h2 className="text-lg font-black text-neutral-950">일정</h2>
+            <h2 className="text-lg font-black text-neutral-950">일정 선택</h2>
             <div className="mt-3 space-y-2">
               {item.schedules.length === 0 ? (
                 <div className="rounded-2xl bg-neutral-50 px-4 py-6 text-center text-sm text-neutral-500">일정 준비중입니다.</div>
@@ -198,6 +204,7 @@ export default function GymClassPreviewPage() {
 
           <section className="rounded-[28px] border border-neutral-200 bg-white p-5 shadow-sm">
             <h2 className="text-lg font-black text-neutral-950">신청하기</h2>
+            <p className="mt-1 text-sm text-neutral-500">이름과 연락처만 남기면 신청이 접수됩니다.</p>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="이름" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="연락처" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} />

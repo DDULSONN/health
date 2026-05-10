@@ -48,6 +48,29 @@ function cleanHostType(value: unknown): GymHostType {
   return typeof value === "string" && HOST_TYPES.has(value as GymHostType) ? (value as GymHostType) : "trainer";
 }
 
+async function ensureClassCanOpen(admin: SupabaseClient, operatorId: string | null, status: GymClassStatus) {
+  if (!operatorId) {
+    if (status === "published") {
+      throw new Error("모집중으로 열려면 승인된 운영자를 연결해 주세요.");
+    }
+    return;
+  }
+
+  const { data, error } = await admin
+    .from("gym_class_operators")
+    .select("id,status")
+    .eq("id", operatorId)
+    .maybeSingle();
+
+  if (error) {
+    throw new Error("운영자 확인에 실패했습니다.");
+  }
+
+  if (!data || data.status !== "active") {
+    throw new Error("승인된 운영자만 클래스에 연결할 수 있습니다.");
+  }
+}
+
 function normalizeSlug(value: unknown) {
   if (typeof value !== "string") return null;
   const slug = value
@@ -150,7 +173,9 @@ export async function PATCH(req: Request, context: RouteContext) {
     const { id } = await context.params;
     const body = asRecord(await req.json());
     const slug = normalizeSlug(body.slug);
-    const payload = slug ? { ...buildUpdatePayload(body), slug } : buildUpdatePayload(body);
+    const updatePayload = buildUpdatePayload(body);
+    await ensureClassCanOpen(auth.admin, updatePayload.operator_id, updatePayload.status);
+    const payload = slug ? { ...updatePayload, slug } : updatePayload;
 
     const { error } = await auth.admin.from("gym_classes").update(payload).eq("id", id);
     if (error) {

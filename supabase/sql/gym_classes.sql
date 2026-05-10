@@ -37,9 +37,12 @@ create table if not exists public.gym_class_operator_requests (
   host_type text not null default 'trainer'
     check (host_type in ('trainer', 'gym', 'brand', 'individual', 'other')),
   region text null,
+  website_url text null,
   intro text null,
+  desired_class_summary text null,
   status text not null default 'pending'
     check (status in ('pending', 'approved', 'rejected')),
+  terms_accepted_at timestamptz null,
   reviewed_by_user_id uuid null references auth.users(id) on delete set null,
   reviewed_at timestamptz null,
   admin_note text null,
@@ -58,7 +61,9 @@ create table if not exists public.gym_class_operators (
   host_type text not null default 'trainer'
     check (host_type in ('trainer', 'gym', 'brand', 'individual', 'other')),
   region text null,
+  contact_url text null,
   intro text null,
+  admin_note text null,
   status text not null default 'active'
     check (status in ('active', 'suspended')),
   approved_by_user_id uuid null references auth.users(id) on delete set null,
@@ -69,6 +74,15 @@ create table if not exists public.gym_class_operators (
 
 alter table public.gym_classes
   add column if not exists operator_id uuid null references public.gym_class_operators(id) on delete set null;
+
+alter table public.gym_class_operator_requests
+  add column if not exists website_url text null,
+  add column if not exists desired_class_summary text null,
+  add column if not exists terms_accepted_at timestamptz null;
+
+alter table public.gym_class_operators
+  add column if not exists contact_url text null,
+  add column if not exists admin_note text null;
 
 do $$
 begin
@@ -102,6 +116,9 @@ create table if not exists public.gym_class_applications (
   status text not null default 'submitted'
     check (status in ('submitted', 'confirmed', 'canceled', 'attended', 'no_show')),
   admin_note text null,
+  operator_note text null,
+  confirmed_at timestamptz null,
+  canceled_at timestamptz null,
   created_at timestamptz not null default timezone('utc', now()),
   updated_at timestamptz not null default timezone('utc', now())
 );
@@ -129,6 +146,11 @@ create index if not exists idx_gym_class_applications_class_created_at
 
 create index if not exists idx_gym_class_applications_status_created_at
   on public.gym_class_applications(status, created_at desc);
+
+alter table public.gym_class_applications
+  add column if not exists operator_note text null,
+  add column if not exists confirmed_at timestamptz null,
+  add column if not exists canceled_at timestamptz null;
 
 alter table public.gym_classes enable row level security;
 alter table public.gym_class_operator_requests enable row level security;
@@ -199,6 +221,47 @@ create policy gym_class_operators_admin_all
     )
   );
 
+drop policy if exists gym_class_operators_owner_read on public.gym_class_operators;
+create policy gym_class_operators_owner_read
+  on public.gym_class_operators
+  for select
+  using (user_id = auth.uid() and status = 'active');
+
+drop policy if exists gym_class_operator_requests_owner_insert on public.gym_class_operator_requests;
+create policy gym_class_operator_requests_owner_insert
+  on public.gym_class_operator_requests
+  for insert
+  with check (auth.uid() is not null and (user_id is null or user_id = auth.uid()));
+
+drop policy if exists gym_class_operator_requests_owner_read on public.gym_class_operator_requests;
+create policy gym_class_operator_requests_owner_read
+  on public.gym_class_operator_requests
+  for select
+  using (user_id = auth.uid());
+
+drop policy if exists gym_classes_operator_all on public.gym_classes;
+create policy gym_classes_operator_all
+  on public.gym_classes
+  for all
+  using (
+    exists (
+      select 1
+      from public.gym_class_operators o
+      where o.id = gym_classes.operator_id
+        and o.user_id = auth.uid()
+        and o.status = 'active'
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.gym_class_operators o
+      where o.id = gym_classes.operator_id
+        and o.user_id = auth.uid()
+        and o.status = 'active'
+    )
+  );
+
 drop policy if exists gym_class_schedules_admin_all on public.gym_class_schedules;
 create policy gym_class_schedules_admin_all
   on public.gym_class_schedules
@@ -220,6 +283,31 @@ create policy gym_class_schedules_admin_all
     )
   );
 
+drop policy if exists gym_class_schedules_operator_all on public.gym_class_schedules;
+create policy gym_class_schedules_operator_all
+  on public.gym_class_schedules
+  for all
+  using (
+    exists (
+      select 1
+      from public.gym_classes c
+      join public.gym_class_operators o on o.id = c.operator_id
+      where c.id = gym_class_schedules.class_id
+        and o.user_id = auth.uid()
+        and o.status = 'active'
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.gym_classes c
+      join public.gym_class_operators o on o.id = c.operator_id
+      where c.id = gym_class_schedules.class_id
+        and o.user_id = auth.uid()
+        and o.status = 'active'
+    )
+  );
+
 drop policy if exists gym_class_applications_admin_all on public.gym_class_applications;
 create policy gym_class_applications_admin_all
   on public.gym_class_applications
@@ -238,6 +326,31 @@ create policy gym_class_applications_admin_all
       from public.profiles p
       where p.user_id = auth.uid()
         and coalesce(p.role, '') = 'admin'
+    )
+  );
+
+drop policy if exists gym_class_applications_operator_read_update on public.gym_class_applications;
+create policy gym_class_applications_operator_read_update
+  on public.gym_class_applications
+  for all
+  using (
+    exists (
+      select 1
+      from public.gym_classes c
+      join public.gym_class_operators o on o.id = c.operator_id
+      where c.id = gym_class_applications.class_id
+        and o.user_id = auth.uid()
+        and o.status = 'active'
+    )
+  )
+  with check (
+    exists (
+      select 1
+      from public.gym_classes c
+      join public.gym_class_operators o on o.id = c.operator_id
+      where c.id = gym_class_applications.class_id
+        and o.user_id = auth.uid()
+        and o.status = 'active'
     )
   );
 

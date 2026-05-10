@@ -28,6 +28,9 @@ export async function PATCH(req: Request, context: RouteContext) {
   const patch = {
     ...(status ? { status } : {}),
     admin_note: cleanText(body.admin_note, 1000),
+    operator_note: cleanText(body.operator_note, 1000),
+    ...(status === "confirmed" ? { confirmed_at: new Date().toISOString(), canceled_at: null } : {}),
+    ...(status === "canceled" ? { canceled_at: new Date().toISOString() } : {}),
     updated_at: new Date().toISOString(),
   };
 

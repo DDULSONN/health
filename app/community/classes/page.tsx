@@ -23,6 +23,7 @@ type GymApplication = {
   memo: string | null;
   status: ApplicationStatus;
   admin_note: string | null;
+  operator_note: string | null;
   created_at: string;
 };
 
@@ -34,7 +35,9 @@ type GymOperatorRequest = {
   host_name: string;
   host_type: HostType;
   region: string | null;
+  website_url: string | null;
   intro: string | null;
+  desired_class_summary: string | null;
   status: "pending" | "approved" | "rejected";
   admin_note: string | null;
   created_at: string;
@@ -48,6 +51,7 @@ type GymOperator = {
   host_name: string;
   host_type: HostType;
   region: string | null;
+  contact_url: string | null;
   status: "active" | "suspended";
 };
 
@@ -105,13 +109,16 @@ type GymClassForm = {
 };
 
 type OperatorRequestForm = {
+  user_id: string;
   applicant_name: string;
   email: string;
   phone: string;
   host_name: string;
   host_type: HostType;
   region: string;
+  website_url: string;
   intro: string;
+  desired_class_summary: string;
 };
 
 type ScheduleForm = {
@@ -152,6 +159,13 @@ const APPLICATION_STATUS_LABELS: Record<ApplicationStatus, string> = {
   no_show: "불참",
 };
 
+const SHOP_FLOW_STEPS = [
+  { title: "입점 신청", description: "운영자 정보를 받고 승인합니다." },
+  { title: "클래스 오픈", description: "승인된 운영자만 모집을 열 수 있습니다." },
+  { title: "클래스 지원", description: "일정과 정원을 확인해 신청을 받습니다." },
+  { title: "인원 관리", description: "신청자를 확정, 취소, 참석 처리합니다." },
+];
+
 const EMPTY_FORM: GymClassForm = {
   id: null,
   title: "",
@@ -176,13 +190,16 @@ const EMPTY_FORM: GymClassForm = {
 };
 
 const EMPTY_OPERATOR_REQUEST: OperatorRequestForm = {
+  user_id: "",
   applicant_name: "",
   email: "",
   phone: "",
   host_name: "",
   host_type: "trainer",
   region: "",
+  website_url: "",
   intro: "",
+  desired_class_summary: "",
 };
 
 const EMPTY_APPLICANT: ApplicantForm = {
@@ -297,10 +314,16 @@ export default function CommunityClassesPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
-  const [panel, setPanel] = useState<"classes" | "operators">("classes");
+  const [panel, setPanel] = useState<"classes" | "operators" | "operatorPreview">("classes");
+  const [previewOperatorId, setPreviewOperatorId] = useState("");
+  const [uploadingCover, setUploadingCover] = useState(false);
 
   const activeApplications = useMemo(() => selected?.applications ?? [], [selected]);
   const pendingRequestCount = operatorRequests.filter((item) => item.status === "pending").length;
+  const previewOperator = operators.find((operator) => operator.id === previewOperatorId) ?? operators[0] ?? null;
+  const previewOperatorClasses = previewOperator
+    ? items.filter((item) => item.operator_id === previewOperator.id)
+    : [];
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -391,6 +414,32 @@ export default function CommunityClassesPage() {
       setMessage(error instanceof Error ? error.message : "저장에 실패했습니다.");
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function uploadCover(file: File | null) {
+    if (!file) return;
+    setUploadingCover(true);
+    setMessage("");
+
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("operator_id", form.operator_id || "admin");
+
+      const response = await fetch("/api/admin/gym-classes/upload-cover", {
+        method: "POST",
+        body: formData,
+      });
+      if (!response.ok) throw new Error(await readError(response));
+      const payload = (await response.json()) as { url?: string };
+      if (!payload.url) throw new Error("업로드 URL을 받지 못했습니다.");
+      setForm((current) => ({ ...current, cover_image_url: payload.url ?? "" }));
+      setMessage("대표 사진을 업로드했습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "대표 사진 업로드에 실패했습니다.");
+    } finally {
+      setUploadingCover(false);
     }
   }
 
@@ -514,7 +563,7 @@ export default function CommunityClassesPage() {
         <div>
           <p className="text-xs font-bold text-emerald-600">관리자 전용</p>
           <h1 className="mt-1 text-3xl font-black tracking-tight text-neutral-950">운동 클래스</h1>
-          <p className="mt-2 text-sm text-neutral-500">일일 PT·클래스 모집을 작게 관리합니다.</p>
+          <p className="mt-2 text-sm text-neutral-500">입점 승인부터 클래스 모집, 인원 관리까지 한 곳에서 봅니다.</p>
         </div>
         <div className="flex gap-2">
           <Link className="rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-bold text-neutral-700" href="/community">
@@ -541,6 +590,18 @@ export default function CommunityClassesPage() {
         </div>
       ) : null}
 
+      <section className="mt-4 grid gap-2 sm:grid-cols-4">
+        {SHOP_FLOW_STEPS.map((step, index) => (
+          <div key={step.title} className="rounded-[22px] border border-neutral-100 bg-white p-4 shadow-sm">
+            <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-black text-emerald-700">
+              {index + 1}
+            </span>
+            <p className="mt-3 text-sm font-black text-neutral-950">{step.title}</p>
+            <p className="mt-1 text-xs leading-5 text-neutral-500">{step.description}</p>
+          </div>
+        ))}
+      </section>
+
       <div className="mt-4 flex gap-2 rounded-[22px] border border-neutral-200 bg-neutral-50 p-1">
         <button
           type="button"
@@ -549,7 +610,7 @@ export default function CommunityClassesPage() {
             panel === "classes" ? "bg-white text-neutral-950 shadow-sm" : "text-neutral-500"
           }`}
         >
-          클래스
+          클래스 오픈
         </button>
         <button
           type="button"
@@ -558,7 +619,16 @@ export default function CommunityClassesPage() {
             panel === "operators" ? "bg-white text-neutral-950 shadow-sm" : "text-neutral-500"
           }`}
         >
-          입점 신청 {pendingRequestCount ? `(${pendingRequestCount})` : ""}
+          입점 승인 {pendingRequestCount ? `(${pendingRequestCount})` : ""}
+        </button>
+        <button
+          type="button"
+          onClick={() => setPanel("operatorPreview")}
+          className={`flex-1 rounded-2xl px-4 py-3 text-sm font-black transition ${
+            panel === "operatorPreview" ? "bg-white text-neutral-950 shadow-sm" : "text-neutral-500"
+          }`}
+        >
+          인원 관리
         </button>
       </div>
 
@@ -566,8 +636,9 @@ export default function CommunityClassesPage() {
         <section className="mt-5 grid gap-4 lg:grid-cols-[1fr_1fr]">
           <div className="rounded-[28px] border border-neutral-200 bg-white p-5 shadow-sm">
             <h2 className="text-lg font-black text-neutral-950">운영 신청 등록</h2>
-            <p className="mt-1 text-sm text-neutral-500">지금은 관리자만 테스트합니다.</p>
+            <p className="mt-1 text-sm text-neutral-500">운영자 기본 정보만 간단히 받습니다.</p>
             <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="연결 사용자 ID(선택)" value={operatorForm.user_id} onChange={(e) => setOperatorForm({ ...operatorForm, user_id: e.target.value })} />
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="신청자명" value={operatorForm.applicant_name} onChange={(e) => setOperatorForm({ ...operatorForm, applicant_name: e.target.value })} />
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="운영명" value={operatorForm.host_name} onChange={(e) => setOperatorForm({ ...operatorForm, host_name: e.target.value })} />
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="이메일" value={operatorForm.email} onChange={(e) => setOperatorForm({ ...operatorForm, email: e.target.value })} />
@@ -578,16 +649,19 @@ export default function CommunityClassesPage() {
                 ))}
               </select>
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="지역" value={operatorForm.region} onChange={(e) => setOperatorForm({ ...operatorForm, region: e.target.value })} />
+              <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="문의/소개 링크" value={operatorForm.website_url} onChange={(e) => setOperatorForm({ ...operatorForm, website_url: e.target.value })} />
             </div>
             <textarea className="mt-3 min-h-28 w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="운영 소개" value={operatorForm.intro} onChange={(e) => setOperatorForm({ ...operatorForm, intro: e.target.value })} />
+            <textarea className="mt-3 min-h-24 w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="열고 싶은 클래스" value={operatorForm.desired_class_summary} onChange={(e) => setOperatorForm({ ...operatorForm, desired_class_summary: e.target.value })} />
             <button type="button" onClick={submitOperatorRequest} disabled={saving} className="mt-3 rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-black text-white disabled:opacity-50">
-              신청 등록
+              입점 신청 등록
             </button>
           </div>
 
           <div className="space-y-4">
             <div className="rounded-[28px] border border-neutral-200 bg-white p-5 shadow-sm">
               <h2 className="text-lg font-black text-neutral-950">승인 대기</h2>
+              <p className="mt-1 text-sm text-neutral-500">확인 후 승인하면 운영자가 생성됩니다.</p>
               <div className="mt-3 space-y-2">
                 {operatorRequests.length === 0 ? (
                   <div className="rounded-2xl bg-neutral-50 px-4 py-8 text-center text-sm text-neutral-500">운영 신청이 없습니다.</div>
@@ -599,6 +673,8 @@ export default function CommunityClassesPage() {
                           <p className="font-black text-neutral-900">{request.host_name}</p>
                           <p className="mt-1 text-sm text-neutral-500">{request.applicant_name} · {request.region || "지역 미정"}</p>
                           {request.intro ? <p className="mt-2 line-clamp-2 text-sm text-neutral-600">{request.intro}</p> : null}
+                          {request.desired_class_summary ? <p className="mt-2 line-clamp-2 text-sm text-emerald-700">{request.desired_class_summary}</p> : null}
+                          {request.website_url ? <p className="mt-2 text-xs font-semibold text-neutral-400">{request.website_url}</p> : null}
                         </div>
                         <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-neutral-600">{request.status}</span>
                       </div>
@@ -634,6 +710,91 @@ export default function CommunityClassesPage() {
               </div>
             </div>
           </div>
+        </section>
+      ) : null}
+
+      {panel === "operatorPreview" ? (
+        <section className="mt-5 rounded-[28px] border border-neutral-200 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-black text-neutral-950">운영자별 인원 관리</h2>
+              <p className="mt-1 text-sm text-neutral-500">운영자는 자기 클래스와 신청자만 봅니다.</p>
+            </div>
+            <select
+              className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm font-bold"
+              value={previewOperator?.id ?? ""}
+              onChange={(e) => setPreviewOperatorId(e.target.value)}
+            >
+              {operators.length === 0 ? <option value="">운영자 없음</option> : null}
+              {operators.map((operator) => (
+                <option key={operator.id} value={operator.id}>
+                  {operator.host_name} · {operator.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {previewOperator ? (
+            <div className="mt-4">
+              <div className="rounded-[24px] bg-neutral-50 p-4">
+                <p className="text-xl font-black text-neutral-950">{previewOperator.host_name}</p>
+                <p className="mt-1 text-sm text-neutral-500">
+                  {previewOperator.name} · {previewOperator.region || "지역 미정"}
+                </p>
+                {previewOperator.contact_url ? (
+                  <p className="mt-2 text-xs font-semibold text-emerald-700">{previewOperator.contact_url}</p>
+                ) : null}
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-2">
+                {previewOperatorClasses.length === 0 ? (
+                  <div className="rounded-2xl bg-neutral-50 px-4 py-8 text-center text-sm text-neutral-500 md:col-span-2">
+                    이 운영자에게 연결된 클래스가 없습니다.
+                  </div>
+                ) : (
+                  previewOperatorClasses.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => {
+                        setPanel("classes");
+                        void loadDetail(item.id);
+                      }}
+                      className="rounded-[24px] border border-neutral-100 bg-neutral-50 p-4 text-left transition hover:border-emerald-200 hover:bg-emerald-50"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="line-clamp-1 font-black text-neutral-950">{item.title}</p>
+                          <p className="mt-1 text-sm text-neutral-500">{item.region || "지역 미정"} · {item.price_text || "가격 미정"}</p>
+                        </div>
+                        <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-emerald-700">
+                          {STATUS_LABELS[item.status]}
+                        </span>
+                      </div>
+                      <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
+                        <div className="rounded-2xl bg-white px-2 py-3">
+                          <p className="font-black text-neutral-950">{item.schedules?.length ?? 0}</p>
+                          <p className="mt-1 text-neutral-400">일정</p>
+                        </div>
+                        <div className="rounded-2xl bg-white px-2 py-3">
+                          <p className="font-black text-neutral-950">{item.application_stats?.total ?? 0}</p>
+                          <p className="mt-1 text-neutral-400">신청</p>
+                        </div>
+                        <div className="rounded-2xl bg-white px-2 py-3">
+                          <p className="font-black text-neutral-950">{item.application_stats?.confirmed ?? 0}</p>
+                          <p className="mt-1 text-neutral-400">확정</p>
+                        </div>
+                      </div>
+                    </button>
+                  ))
+                )}
+              </div>
+            </div>
+          ) : (
+            <div className="mt-4 rounded-2xl bg-neutral-50 px-4 py-8 text-center text-sm text-neutral-500">
+              승인된 운영자가 없습니다.
+            </div>
+          )}
         </section>
       ) : null}
 
@@ -684,7 +845,10 @@ export default function CommunityClassesPage() {
         <section className="space-y-4">
           <div className="rounded-[28px] border border-neutral-200 bg-white p-5 shadow-sm">
             <div className="flex flex-wrap items-center justify-between gap-3">
-              <h2 className="text-lg font-black text-neutral-950">{form.id ? "클래스 수정" : "새 클래스 등록"}</h2>
+              <div>
+                <h2 className="text-lg font-black text-neutral-950">{form.id ? "클래스 수정" : "새 클래스 등록"}</h2>
+                <p className="mt-1 text-sm text-neutral-500">운영자를 연결하고 일정만 넣으면 모집을 열 수 있습니다.</p>
+              </div>
               <div className="flex gap-2">
                 {form.id ? (
                   <Link
@@ -715,6 +879,10 @@ export default function CommunityClassesPage() {
               </div>
             </div>
 
+            <div className="mt-4 rounded-[22px] border border-emerald-100 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-800">
+              모집중 공개는 승인된 운영자 연결이 필수입니다.
+            </div>
+
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="클래스명" value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} />
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="진행자명" value={form.host_name} onChange={(e) => setForm({ ...form, host_name: e.target.value })} />
@@ -742,6 +910,44 @@ export default function CommunityClassesPage() {
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="정원" inputMode="numeric" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} />
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="신청 마감" type="datetime-local" value={form.application_deadline} onChange={(e) => setForm({ ...form, application_deadline: e.target.value })} />
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="문의 링크" value={form.contact_url} onChange={(e) => setForm({ ...form, contact_url: e.target.value })} />
+            </div>
+
+            <div className="mt-4 rounded-[24px] border border-neutral-100 bg-neutral-50 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-black text-neutral-900">미니 홈페이지 대표 사진</h3>
+                  <p className="mt-1 text-xs text-neutral-500">클래스 페이지 상단에 표시됩니다.</p>
+                </div>
+                <label className="cursor-pointer rounded-2xl bg-white px-4 py-3 text-xs font-black text-emerald-700 shadow-sm">
+                  {uploadingCover ? "업로드 중" : "사진 업로드"}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    disabled={uploadingCover}
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null;
+                      event.currentTarget.value = "";
+                      void uploadCover(file);
+                    }}
+                  />
+                </label>
+              </div>
+              {form.cover_image_url ? (
+                <div className="mt-3 overflow-hidden rounded-[22px] bg-neutral-200">
+                  <img src={form.cover_image_url} alt="" className="h-48 w-full object-cover" loading="lazy" />
+                </div>
+              ) : (
+                <div className="mt-3 rounded-[22px] border border-dashed border-neutral-200 bg-white px-4 py-8 text-center text-sm text-neutral-400">
+                  아직 대표 사진이 없습니다.
+                </div>
+              )}
+              <input
+                className="mt-3 w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-400"
+                placeholder="대표 사진 URL"
+                value={form.cover_image_url}
+                onChange={(e) => setForm({ ...form, cover_image_url: e.target.value })}
+              />
             </div>
 
             <textarea className="mt-3 min-h-20 w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="한 줄 소개" value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} />
