@@ -1,6 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { normalizeCardSex } from "@/lib/dating-more-view";
-import { approveMoreViewRequest, grantMoreViewAccess } from "@/lib/dating-purchase-fulfillment";
+import { approveMoreViewRequest, grantCityViewAccess, grantMoreViewAccess } from "@/lib/dating-purchase-fulfillment";
 import {
   SWIPE_PREMIUM_DAILY_LIMIT,
   SWIPE_PREMIUM_DURATION_DAYS,
@@ -417,13 +417,39 @@ export async function POST(req: Request) {
       }
 
       const duplicateOrders = duplicateOrderRes.data ?? [];
-      if (duplicateOrders.some((row) => row.status === "paid")) {
-        return json(409, {
-          ok: false,
-          code: "ALREADY_PAID",
-          requestId,
-          message: "이미 결제가 완료된 지역 열람입니다. 이용 내역을 다시 확인해주세요.",
-        });
+      const paidOrder = duplicateOrders.find((row) => row.status === "paid");
+      if (paidOrder) {
+        const paidAt = new Date(paidOrder.created_at).getTime();
+        const expiresAt = Number.isFinite(paidAt) ? paidAt + 3 * 60 * 60 * 1000 : 0;
+        const remainingHours = Math.max((expiresAt - Date.now()) / (60 * 60 * 1000), 0);
+
+        if (remainingHours > 0) {
+          try {
+            await grantCityViewAccess(admin, {
+              userId: user.id,
+              city: province,
+              accessHours: remainingHours,
+              note: `recovered from paid toss order ${paidOrder.id}`,
+              bonusCredits: 1,
+            });
+
+            return json(200, {
+              ok: true,
+              recovered: true,
+              code: "ALREADY_PAID_RECOVERED",
+              requestId,
+              message: "이전 결제를 확인해 가까운 이상형 권한을 바로 복구했습니다.",
+            });
+          } catch (error) {
+            console.error("[toss-create] city view paid order recovery failed", error);
+            return json(409, {
+              ok: false,
+              code: "ALREADY_PAID_RECOVERY_FAILED",
+              requestId,
+              message: "이미 결제가 완료된 지역 열람입니다. 권한 복구에 실패해 오픈카톡으로 문의해주세요.",
+            });
+          }
+        }
       }
 
       const readyOrderIds = duplicateOrders.filter((row) => row.status === "ready").map((row) => row.id);

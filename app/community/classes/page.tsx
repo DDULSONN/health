@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 type GymClassListItem = {
   id: string;
@@ -10,12 +10,26 @@ type GymClassListItem = {
   host_name: string;
   status: "draft" | "published" | "closed" | "canceled";
   summary: string | null;
+  purpose_tags: string[] | null;
   region: string | null;
   venue: string | null;
+  price_amount_krw: number | null;
   price_text: string | null;
+  capacity: number | null;
+  male_capacity: number | null;
+  female_capacity: number | null;
+  min_participants: number | null;
   cover_image_url: string | null;
   schedules?: { id: string; starts_at: string; label: string | null }[];
-  application_stats?: { total: number; submitted: number; confirmed: number };
+  application_stats?: {
+    active: number;
+    paid: number;
+    male: number;
+    female: number;
+    remaining: number | null;
+    isFull: boolean;
+    minParticipantsMet: boolean;
+  };
 };
 
 async function readError(response: Response) {
@@ -38,11 +52,22 @@ function formatDate(value: string | null | undefined) {
   }).format(new Date(value));
 }
 
+function priceBucket(item: GymClassListItem) {
+  const price = item.price_amount_krw ?? 0;
+  if (price <= 0) return "미정";
+  if (price < 30000) return "3만원 미만";
+  if (price < 70000) return "3-7만원";
+  return "7만원 이상";
+}
+
 export default function CommunityClassesListPage() {
   const [isAdmin, setIsAdmin] = useState<boolean | null>(null);
   const [items, setItems] = useState<GymClassListItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [message, setMessage] = useState("");
+  const [region, setRegion] = useState("전체");
+  const [purpose, setPurpose] = useState("전체");
+  const [price, setPrice] = useState("전체");
 
   useEffect(() => {
     let mounted = true;
@@ -77,6 +102,23 @@ export default function CommunityClassesListPage() {
     };
   }, []);
 
+  const regions = useMemo(() => ["전체", ...Array.from(new Set(items.map((item) => item.region).filter(Boolean) as string[]))], [items]);
+  const purposes = useMemo(
+    () => ["전체", ...Array.from(new Set(items.flatMap((item) => item.purpose_tags ?? []).filter(Boolean)))],
+    [items],
+  );
+  const prices = ["전체", "3만원 미만", "3-7만원", "7만원 이상", "미정"];
+  const filteredItems = useMemo(
+    () =>
+      items.filter((item) => {
+        if (region !== "전체" && item.region !== region) return false;
+        if (purpose !== "전체" && !(item.purpose_tags ?? []).includes(purpose)) return false;
+        if (price !== "전체" && priceBucket(item) !== price) return false;
+        return true;
+      }),
+    [items, price, purpose, region],
+  );
+
   if (isAdmin === false) {
     return (
       <main className="mx-auto max-w-3xl px-4 py-8">
@@ -96,8 +138,8 @@ export default function CommunityClassesListPage() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <p className="text-xs font-black text-emerald-600">관리자 미리보기</p>
-          <h1 className="mt-1 text-3xl font-black tracking-tight text-neutral-950">운동 클래스</h1>
-          <p className="mt-2 text-sm text-neutral-500">모집중인 클래스를 유저가 보는 형태로 확인합니다.</p>
+          <h1 className="mt-1 text-3xl font-black tracking-tight text-neutral-950">운동 클래스 마켓</h1>
+          <p className="mt-2 text-sm text-neutral-500">지역, 가격, 목적별로 클래스를 한눈에 볼 수 있습니다.</p>
         </div>
         <Link href="/community/classes/manage" className="rounded-2xl bg-neutral-950 px-4 py-3 text-sm font-black text-white">
           관리 페이지
@@ -110,17 +152,31 @@ export default function CommunityClassesListPage() {
         </div>
       ) : null}
 
+      <section className="mt-5 rounded-[28px] border border-neutral-200 bg-white p-4 shadow-sm">
+        <div className="grid gap-2 md:grid-cols-3">
+          <select className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm font-bold" value={region} onChange={(event) => setRegion(event.target.value)}>
+            {regions.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+          <select className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm font-bold" value={purpose} onChange={(event) => setPurpose(event.target.value)}>
+            {purposes.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+          <select className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm font-bold" value={price} onChange={(event) => setPrice(event.target.value)}>
+            {prices.map((item) => <option key={item} value={item}>{item}</option>)}
+          </select>
+        </div>
+      </section>
+
       {loading ? (
         <div className="mt-5 rounded-[28px] border border-neutral-200 bg-white px-4 py-12 text-center text-sm text-neutral-500 shadow-sm">
           불러오는 중
         </div>
-      ) : items.length === 0 ? (
+      ) : filteredItems.length === 0 ? (
         <div className="mt-5 rounded-[28px] border border-neutral-200 bg-white px-4 py-12 text-center text-sm text-neutral-500 shadow-sm">
-          현재 모집중인 클래스가 없습니다.
+          조건에 맞는 모집중 클래스가 없습니다.
         </div>
       ) : (
         <section className="mt-5 grid gap-4 md:grid-cols-2">
-          {items.map((item) => {
+          {filteredItems.map((item) => {
             const nextSchedule = item.schedules?.[0];
             return (
               <Link
@@ -137,19 +193,39 @@ export default function CommunityClassesListPage() {
                 )}
                 <div className="p-5">
                   <div className="flex flex-wrap items-center gap-2">
-                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">
-                      {item.region || "지역 미정"}
-                    </span>
-                    <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-black text-neutral-600">
-                      {item.price_text || "가격 미정"}
+                    <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-black text-emerald-700">{item.region || "지역 미정"}</span>
+                    <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-black text-neutral-600">{item.price_text || "가격 미정"}</span>
+                    <span className="rounded-full bg-amber-50 px-3 py-1 text-xs font-black text-amber-700">
+                      {item.application_stats?.isFull ? "정원마감" : "모집중"}
                     </span>
                   </div>
                   <h2 className="mt-4 line-clamp-2 text-xl font-black text-neutral-950">{item.title}</h2>
                   <p className="mt-1 text-sm font-semibold text-neutral-500">{item.host_name}</p>
                   {item.summary ? <p className="mt-3 line-clamp-2 text-sm leading-6 text-neutral-600">{item.summary}</p> : null}
+                  {(item.purpose_tags ?? []).length > 0 ? (
+                    <div className="mt-3 flex flex-wrap gap-1.5">
+                      {(item.purpose_tags ?? []).slice(0, 4).map((tag) => (
+                        <span key={tag} className="rounded-full bg-neutral-50 px-2.5 py-1 text-[11px] font-bold text-neutral-500">
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-neutral-50 px-4 py-3">
                     <span className="text-xs font-bold text-neutral-500">{formatDate(nextSchedule?.starts_at)}</span>
-                    <span className="text-xs font-black text-emerald-700">신청 {item.application_stats?.total ?? 0}명</span>
+                    <span className="text-xs font-black text-emerald-700">
+                      {item.application_stats?.isFull
+                        ? "정원마감"
+                        : item.capacity
+                          ? `${item.application_stats?.active ?? 0}/${item.capacity}명`
+                          : `신청 ${item.application_stats?.active ?? 0}명`}
+                    </span>
+                  </div>
+                  <div className="mt-2 rounded-2xl bg-neutral-50 px-4 py-3 text-xs font-bold text-neutral-500">
+                    남 {item.application_stats?.male ?? 0}
+                    {item.male_capacity !== null && item.male_capacity !== undefined ? `/${item.male_capacity}` : ""} · 여 {item.application_stats?.female ?? 0}
+                    {item.female_capacity !== null && item.female_capacity !== undefined ? `/${item.female_capacity}` : ""}
+                    {item.min_participants ? ` · 최소 ${item.min_participants}명 진행` : ""}
                   </div>
                 </div>
               </Link>

@@ -6,6 +6,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 type ClassStatus = "draft" | "published" | "closed" | "canceled";
 type HostType = "trainer" | "gym" | "brand" | "individual" | "other";
 type ApplicationStatus = "submitted" | "confirmed" | "canceled" | "attended" | "no_show";
+type ApplicationGender = "male" | "female" | "other" | "";
+type PaymentStatus = "unpaid" | "pending" | "paid" | "manual_paid" | "refunded" | "partial_refunded";
+type RefundStatus = "none" | "requested" | "approved" | "rejected" | "refunded";
 
 type GymSchedule = {
   id?: string;
@@ -21,7 +24,13 @@ type GymApplication = {
   phone: string | null;
   email: string | null;
   memo: string | null;
+  gender: ApplicationGender | null;
   status: ApplicationStatus;
+  payment_status: PaymentStatus;
+  paid_amount_krw: number | null;
+  refund_status: RefundStatus;
+  refund_reason: string | null;
+  refund_amount_krw: number | null;
   admin_note: string | null;
   operator_note: string | null;
   created_at: string;
@@ -42,6 +51,53 @@ type GymOperatorRequest = {
   admin_note: string | null;
   terms_version: string | null;
   terms_accepted_at: string | null;
+  created_at: string;
+};
+
+type GymClassReview = {
+  id: string;
+  rating: number;
+  content: string | null;
+  status: "visible" | "hidden" | "reported";
+  created_at: string;
+};
+
+type GymClassReport = {
+  id: string;
+  category: string;
+  content: string;
+  status: "open" | "reviewing" | "resolved" | "rejected";
+  admin_note: string | null;
+  created_at: string;
+};
+
+type GymClassInquiry = {
+  id: string;
+  name: string | null;
+  email: string | null;
+  phone: string | null;
+  question: string;
+  answer: string | null;
+  status: "open" | "answered" | "closed";
+  created_at: string;
+};
+
+type GymClassWaitlist = {
+  id: string;
+  name: string;
+  phone: string | null;
+  email: string | null;
+  gender: ApplicationGender | null;
+  memo: string | null;
+  status: "waiting" | "notified" | "converted" | "canceled";
+  created_at: string;
+};
+
+type GymClassNotification = {
+  id: string;
+  kind: string;
+  title: string;
+  status: "queued" | "sent" | "skipped" | "failed";
   created_at: string;
 };
 
@@ -66,24 +122,80 @@ type GymClass = {
   status: ClassStatus;
   summary: string | null;
   description: string | null;
+  target_audience: string | null;
+  service_process: string | null;
+  curriculum: string | null;
+  available_days: string | null;
+  included_items: string | null;
+  faq: string | null;
+  expert_profile: string | null;
+  purpose_tags: string[] | null;
   region: string | null;
   venue: string | null;
+  price_amount_krw: number | null;
   price_text: string | null;
   capacity: number | null;
+  male_capacity: number | null;
+  female_capacity: number | null;
+  min_participants: number | null;
   application_deadline: string | null;
   contact_url: string | null;
   cover_image_url: string | null;
   preparation_note: string | null;
+  refund_policy_text: string | null;
+  refund_full_until_days: number | null;
+  refund_half_until_days: number | null;
+  no_refund_within_days: number | null;
+  platform_fee_percent: number | null;
+  settlement_status: "unsettled" | "pending" | "settled" | "hold";
+  settlement_total_paid_krw: number | null;
+  settlement_platform_fee_krw: number | null;
+  settlement_operator_amount_krw: number | null;
+  settlement_note: string | null;
+  settled_at: string | null;
+  photo_consent_required: boolean;
+  safety_notice: string | null;
   admin_note: string | null;
   operator_id: string | null;
   is_featured: boolean;
   created_at: string;
   schedules?: GymSchedule[];
   applications?: GymApplication[];
+  reviews?: GymClassReview[];
+  reports?: GymClassReport[];
+  inquiries?: GymClassInquiry[];
+  waitlist?: GymClassWaitlist[];
+  notifications?: GymClassNotification[];
+  review_stats?: {
+    count: number;
+    average: number | null;
+  };
+  settlement_preview?: {
+    total_paid_krw: number;
+    refunded_krw: number;
+    platform_fee_krw: number;
+    operator_amount_krw: number;
+  };
   application_stats?: {
     total: number;
     submitted: number;
     confirmed: number;
+    active: number;
+    paid: number;
+    paidTotalKrw: number;
+    refundedTotalKrw: number;
+    platformFeeKrw: number;
+    operatorSettlementKrw: number;
+    male: number;
+    female: number;
+    other: number;
+    remaining: number | null;
+    maleRemaining: number | null;
+    femaleRemaining: number | null;
+    isFull: boolean;
+    maleFull: boolean;
+    femaleFull: boolean;
+    minParticipantsMet: boolean;
   };
 };
 
@@ -96,14 +208,38 @@ type GymClassForm = {
   status: ClassStatus;
   summary: string;
   description: string;
+  target_audience: string;
+  service_process: string;
+  curriculum: string;
+  available_days: string;
+  included_items: string;
+  faq: string;
+  expert_profile: string;
+  purpose_tags: string;
   region: string;
   venue: string;
+  price_amount_krw: string;
   price_text: string;
   capacity: string;
+  male_capacity: string;
+  female_capacity: string;
+  min_participants: string;
   application_deadline: string;
   contact_url: string;
   cover_image_url: string;
   preparation_note: string;
+  refund_policy_text: string;
+  refund_full_until_days: string;
+  refund_half_until_days: string;
+  no_refund_within_days: string;
+  platform_fee_percent: string;
+  settlement_status: "unsettled" | "pending" | "settled" | "hold";
+  settlement_total_paid_krw: string;
+  settlement_platform_fee_krw: string;
+  settlement_operator_amount_krw: string;
+  settlement_note: string;
+  photo_consent_required: boolean;
+  safety_notice: string;
   admin_note: string;
   operator_id: string;
   is_featured: boolean;
@@ -137,6 +273,18 @@ type ApplicantForm = {
   name: string;
   phone: string;
   email: string;
+  gender: ApplicationGender;
+  memo: string;
+  schedule_id: string;
+  payment_status: PaymentStatus;
+  paid_amount_krw: string;
+};
+
+type WaitlistForm = {
+  name: string;
+  phone: string;
+  email: string;
+  gender: ApplicationGender;
   memo: string;
   schedule_id: string;
 };
@@ -164,6 +312,43 @@ const APPLICATION_STATUS_LABELS: Record<ApplicationStatus, string> = {
   no_show: "불참",
 };
 
+const PAYMENT_STATUS_LABELS: Record<PaymentStatus, string> = {
+  unpaid: "미결제",
+  pending: "확인중",
+  paid: "결제완료",
+  manual_paid: "수동입금",
+  refunded: "환불완료",
+  partial_refunded: "부분환불",
+};
+
+const REFUND_STATUS_LABELS: Record<RefundStatus, string> = {
+  none: "없음",
+  requested: "요청",
+  approved: "승인",
+  rejected: "거절",
+  refunded: "환불완료",
+};
+
+const SETTLEMENT_STATUS_LABELS: Record<GymClassForm["settlement_status"], string> = {
+  unsettled: "미정산",
+  pending: "정산대기",
+  settled: "정산완료",
+  hold: "보류",
+};
+
+const WAITLIST_STATUS_LABELS: Record<GymClassWaitlist["status"], string> = {
+  waiting: "대기",
+  notified: "연락완료",
+  converted: "신청전환",
+  canceled: "취소",
+};
+
+const GENDER_LABELS: Record<Exclude<ApplicationGender, "">, string> = {
+  male: "남성",
+  female: "여성",
+  other: "기타",
+};
+
 const SHOP_FLOW_STEPS = [
   { title: "입점 신청", description: "운영자 정보를 받고 승인합니다." },
   { title: "클래스 오픈", description: "승인된 운영자만 모집을 열 수 있습니다." },
@@ -180,14 +365,39 @@ const EMPTY_FORM: GymClassForm = {
   status: "draft",
   summary: "",
   description: "",
+  target_audience: "",
+  service_process: "",
+  curriculum: "",
+  available_days: "",
+  included_items: "",
+  faq: "",
+  expert_profile: "",
+  purpose_tags: "",
   region: "",
   venue: "",
+  price_amount_krw: "",
   price_text: "",
   capacity: "",
+  male_capacity: "",
+  female_capacity: "",
+  min_participants: "",
   application_deadline: "",
   contact_url: "",
   cover_image_url: "",
   preparation_note: "",
+  refund_policy_text:
+    "클래스 시작 3일 전까지 전액 환불, 2일 전까지 50% 환불이 가능합니다. 하루 전과 당일에는 정원 확보 및 준비 비용으로 환불이 제한될 수 있습니다. 운영자 사정으로 취소되는 경우 전액 환불됩니다.",
+  refund_full_until_days: "3",
+  refund_half_until_days: "2",
+  no_refund_within_days: "1",
+  platform_fee_percent: "10",
+  settlement_status: "unsettled",
+  settlement_total_paid_krw: "",
+  settlement_platform_fee_krw: "",
+  settlement_operator_amount_krw: "",
+  settlement_note: "",
+  photo_consent_required: false,
+  safety_notice: "",
   admin_note: "",
   operator_id: "",
   is_featured: false,
@@ -214,6 +424,18 @@ const EMPTY_APPLICANT: ApplicantForm = {
   name: "",
   phone: "",
   email: "",
+  gender: "",
+  memo: "",
+  schedule_id: "",
+  payment_status: "unpaid",
+  paid_amount_krw: "",
+};
+
+const EMPTY_WAITLIST: WaitlistForm = {
+  name: "",
+  phone: "",
+  email: "",
+  gender: "",
   memo: "",
   schedule_id: "",
 };
@@ -245,14 +467,40 @@ function fromClassToForm(item: GymClass): GymClassForm {
     status: item.status,
     summary: item.summary ?? "",
     description: item.description ?? "",
+    target_audience: item.target_audience ?? "",
+    service_process: item.service_process ?? "",
+    curriculum: item.curriculum ?? "",
+    available_days: item.available_days ?? "",
+    included_items: item.included_items ?? "",
+    faq: item.faq ?? "",
+    expert_profile: item.expert_profile ?? "",
+    purpose_tags: (item.purpose_tags ?? []).join(", "),
     region: item.region ?? "",
     venue: item.venue ?? "",
+    price_amount_krw: item.price_amount_krw !== null && item.price_amount_krw !== undefined ? String(item.price_amount_krw) : "",
     price_text: item.price_text ?? "",
     capacity: item.capacity ? String(item.capacity) : "",
+    male_capacity: item.male_capacity !== null && item.male_capacity !== undefined ? String(item.male_capacity) : "",
+    female_capacity: item.female_capacity !== null && item.female_capacity !== undefined ? String(item.female_capacity) : "",
+    min_participants: item.min_participants ? String(item.min_participants) : "",
     application_deadline: toDateTimeLocal(item.application_deadline),
     contact_url: item.contact_url ?? "",
     cover_image_url: item.cover_image_url ?? "",
     preparation_note: item.preparation_note ?? "",
+    refund_policy_text: item.refund_policy_text ?? EMPTY_FORM.refund_policy_text,
+    refund_full_until_days: item.refund_full_until_days !== null && item.refund_full_until_days !== undefined ? String(item.refund_full_until_days) : "3",
+    refund_half_until_days: item.refund_half_until_days !== null && item.refund_half_until_days !== undefined ? String(item.refund_half_until_days) : "2",
+    no_refund_within_days: item.no_refund_within_days !== null && item.no_refund_within_days !== undefined ? String(item.no_refund_within_days) : "1",
+    platform_fee_percent: item.platform_fee_percent !== null && item.platform_fee_percent !== undefined ? String(item.platform_fee_percent) : "10",
+    settlement_status: item.settlement_status ?? "unsettled",
+    settlement_total_paid_krw: item.settlement_total_paid_krw !== null && item.settlement_total_paid_krw !== undefined ? String(item.settlement_total_paid_krw) : "",
+    settlement_platform_fee_krw:
+      item.settlement_platform_fee_krw !== null && item.settlement_platform_fee_krw !== undefined ? String(item.settlement_platform_fee_krw) : "",
+    settlement_operator_amount_krw:
+      item.settlement_operator_amount_krw !== null && item.settlement_operator_amount_krw !== undefined ? String(item.settlement_operator_amount_krw) : "",
+    settlement_note: item.settlement_note ?? "",
+    photo_consent_required: Boolean(item.photo_consent_required),
+    safety_notice: item.safety_notice ?? "",
     admin_note: item.admin_note ?? "",
     operator_id: item.operator_id ?? "",
     is_featured: item.is_featured,
@@ -269,14 +517,41 @@ function formToPayload(form: GymClassForm) {
     status: form.status,
     summary: form.summary,
     description: form.description,
+    target_audience: form.target_audience,
+    service_process: form.service_process,
+    curriculum: form.curriculum,
+    available_days: form.available_days,
+    included_items: form.included_items,
+    faq: form.faq,
+    expert_profile: form.expert_profile,
+    purpose_tags: form.purpose_tags
+      .split(/[,\n]/)
+      .map((tag) => tag.trim())
+      .filter(Boolean),
     region: form.region,
     venue: form.venue,
+    price_amount_krw: form.price_amount_krw,
     price_text: form.price_text,
     capacity: form.capacity,
+    male_capacity: form.male_capacity,
+    female_capacity: form.female_capacity,
+    min_participants: form.min_participants,
     application_deadline: form.application_deadline,
     contact_url: form.contact_url,
     cover_image_url: form.cover_image_url,
     preparation_note: form.preparation_note,
+    refund_policy_text: form.refund_policy_text,
+    refund_full_until_days: form.refund_full_until_days,
+    refund_half_until_days: form.refund_half_until_days,
+    no_refund_within_days: form.no_refund_within_days,
+    platform_fee_percent: form.platform_fee_percent,
+    settlement_status: form.settlement_status,
+    settlement_total_paid_krw: form.settlement_total_paid_krw,
+    settlement_platform_fee_krw: form.settlement_platform_fee_krw,
+    settlement_operator_amount_krw: form.settlement_operator_amount_krw,
+    settlement_note: form.settlement_note,
+    photo_consent_required: form.photo_consent_required,
+    safety_notice: form.safety_notice,
     admin_note: form.admin_note,
     operator_id: form.operator_id,
     is_featured: form.is_featured,
@@ -301,6 +576,25 @@ function formatDate(value: string | null | undefined) {
   }).format(new Date(value));
 }
 
+function buildFillLabel(item: GymClass) {
+  const stats = item.application_stats;
+  if (!stats) return "정원 미정";
+  const total = item.capacity ? `${stats.active}/${item.capacity}명` : `${stats.active}명`;
+  const gender = `남 ${stats.male}${item.male_capacity !== null && item.male_capacity !== undefined ? `/${item.male_capacity}` : ""} · 여 ${stats.female}${item.female_capacity !== null && item.female_capacity !== undefined ? `/${item.female_capacity}` : ""}`;
+  return `${total} · ${gender}`;
+}
+
+function buildFillBadge(item: GymClass) {
+  const stats = item.application_stats;
+  if (!stats) return "모집 현황";
+  if (stats.isFull) return "정원마감";
+  if (stats.maleFull && !stats.femaleFull) return "남성마감";
+  if (stats.femaleFull && !stats.maleFull) return "여성마감";
+  if (stats.remaining !== null && stats.remaining <= 2) return "마감임박";
+  if (!stats.minParticipantsMet) return "최소인원 대기";
+  return "모집 가능";
+}
+
 async function readError(response: Response) {
   try {
     const payload = (await response.json()) as { error?: string; detail?: string };
@@ -319,6 +613,8 @@ export default function CommunityClassesPage() {
   const [form, setForm] = useState<GymClassForm>(EMPTY_FORM);
   const [operatorForm, setOperatorForm] = useState<OperatorRequestForm>(EMPTY_OPERATOR_REQUEST);
   const [applicantForm, setApplicantForm] = useState<ApplicantForm>(EMPTY_APPLICANT);
+  const [waitlistForm, setWaitlistForm] = useState<WaitlistForm>(EMPTY_WAITLIST);
+  const [classSearch, setClassSearch] = useState("");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [message, setMessage] = useState("");
@@ -332,6 +628,17 @@ export default function CommunityClassesPage() {
   const previewOperatorClasses = previewOperator
     ? items.filter((item) => item.operator_id === previewOperator.id)
     : [];
+  const filteredItems = useMemo(() => {
+    const query = classSearch.trim().toLowerCase();
+    if (!query) return items;
+    return items.filter((item) =>
+      [item.title, item.host_name, item.region, item.venue, item.price_text, ...(item.purpose_tags ?? [])]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase()
+        .includes(query),
+    );
+  }, [classSearch, items]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -357,6 +664,7 @@ export default function CommunityClassesPage() {
       setSelected(payload.item);
       setForm(fromClassToForm(payload.item));
       setApplicantForm(EMPTY_APPLICANT);
+      setWaitlistForm(EMPTY_WAITLIST);
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "상세 정보를 불러오지 못했습니다.");
     }
@@ -479,7 +787,13 @@ export default function CommunityClassesPage() {
       const response = await fetch(`/api/admin/gym-classes/${form.id}/applications`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(applicantForm),
+        body: JSON.stringify({
+          ...applicantForm,
+          privacy_accepted: true,
+          broker_notice_accepted: true,
+          refund_policy_accepted: true,
+          photo_consent_accepted: true,
+        }),
       });
       if (!response.ok) throw new Error(await readError(response));
       setApplicantForm(EMPTY_APPLICANT);
@@ -488,6 +802,78 @@ export default function CommunityClassesPage() {
       setMessage("지원자를 추가했습니다.");
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "지원자 추가에 실패했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function addWaitlist() {
+    if (!form.id) return;
+    setSaving(true);
+    setMessage("");
+
+    try {
+      const response = await fetch(`/api/admin/gym-classes/${form.id}/waitlist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(waitlistForm),
+      });
+      if (!response.ok) throw new Error(await readError(response));
+      setWaitlistForm(EMPTY_WAITLIST);
+      await loadDetail(form.id);
+      setMessage("대기자를 등록했습니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "대기자 등록에 실패했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function updateWaitlist(id: string, status: GymClassWaitlist["status"]) {
+    if (!form.id) return;
+    const response = await fetch(`/api/admin/gym-classes/waitlist/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    if (!response.ok) {
+      setMessage(await readError(response));
+      return;
+    }
+    await loadDetail(form.id);
+  }
+
+  async function copyClass() {
+    if (!form.id) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/admin/gym-classes/${form.id}/copy`, { method: "POST" });
+      if (!response.ok) throw new Error(await readError(response));
+      const payload = (await response.json()) as { item: GymClass };
+      await refresh();
+      await loadDetail(payload.item.id);
+      setMessage("클래스를 복사했습니다. 복사본은 준비중 상태입니다.");
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "클래스 복사에 실패했습니다.");
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function autoCloseClass() {
+    if (!form.id) return;
+    setSaving(true);
+    setMessage("");
+    try {
+      const response = await fetch(`/api/admin/gym-classes/${form.id}/auto-status`, { method: "POST" });
+      if (!response.ok) throw new Error(await readError(response));
+      const payload = (await response.json()) as { changed?: boolean; reason?: string };
+      await loadDetail(form.id);
+      await refresh();
+      setMessage(payload.reason ?? (payload.changed ? "상태를 자동 정리했습니다." : "상태 변경이 필요하지 않습니다."));
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "상태 자동 정리에 실패했습니다.");
     } finally {
       setSaving(false);
     }
@@ -534,7 +920,7 @@ export default function CommunityClassesPage() {
     }
   }
 
-  async function updateApplicant(id: string, patch: Partial<Pick<GymApplication, "status" | "admin_note">>) {
+  async function updateApplicant(id: string, patch: Partial<GymApplication>) {
     if (!form.id) return;
     setMessage("");
 
@@ -550,6 +936,48 @@ export default function CommunityClassesPage() {
     } catch (error) {
       setMessage(error instanceof Error ? error.message : "지원자 수정에 실패했습니다.");
     }
+  }
+
+  async function updateInquiry(id: string, answer: string) {
+    if (!form.id) return;
+    const response = await fetch(`/api/admin/gym-classes/inquiries/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ answer }),
+    });
+    if (!response.ok) {
+      setMessage(await readError(response));
+      return;
+    }
+    await loadDetail(form.id);
+  }
+
+  async function updateReport(id: string, status: GymClassReport["status"], adminNote?: string | null) {
+    if (!form.id) return;
+    const response = await fetch(`/api/admin/gym-classes/reports/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status, admin_note: adminNote ?? "" }),
+    });
+    if (!response.ok) {
+      setMessage(await readError(response));
+      return;
+    }
+    await loadDetail(form.id);
+  }
+
+  async function updateReview(id: string, status: GymClassReview["status"]) {
+    if (!form.id) return;
+    const response = await fetch(`/api/admin/gym-classes/reviews/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status }),
+    });
+    if (!response.ok) {
+      setMessage(await readError(response));
+      return;
+    }
+    await loadDetail(form.id);
   }
 
   if (isAdmin === false) {
@@ -812,14 +1240,15 @@ export default function CommunityClassesPage() {
                           <p className="mt-1 text-neutral-400">일정</p>
                         </div>
                         <div className="rounded-2xl bg-white px-2 py-3">
-                          <p className="font-black text-neutral-950">{item.application_stats?.total ?? 0}</p>
-                          <p className="mt-1 text-neutral-400">신청</p>
+                          <p className="font-black text-neutral-950">{item.application_stats?.active ?? 0}</p>
+                          <p className="mt-1 text-neutral-400">유효</p>
                         </div>
                         <div className="rounded-2xl bg-white px-2 py-3">
-                          <p className="font-black text-neutral-950">{item.application_stats?.confirmed ?? 0}</p>
-                          <p className="mt-1 text-neutral-400">확정</p>
+                          <p className="font-black text-neutral-950">{item.application_stats?.paid ?? 0}</p>
+                          <p className="mt-1 text-neutral-400">결제</p>
                         </div>
                       </div>
+                      <p className="mt-3 text-xs font-bold text-emerald-700">{buildFillLabel(item)}</p>
                     </button>
                   ))
                 )}
@@ -842,13 +1271,19 @@ export default function CommunityClassesPage() {
               새로고침
             </button>
           </div>
+          <input
+            className="mb-2 w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm outline-none focus:border-emerald-400"
+            placeholder="지역, 목적, 가격, 클래스 검색"
+            value={classSearch}
+            onChange={(event) => setClassSearch(event.target.value)}
+          />
           {loading ? (
             <div className="rounded-2xl bg-neutral-50 px-4 py-8 text-center text-sm text-neutral-500">불러오는 중</div>
-          ) : items.length === 0 ? (
+          ) : filteredItems.length === 0 ? (
             <div className="rounded-2xl bg-neutral-50 px-4 py-8 text-center text-sm text-neutral-500">아직 등록된 클래스가 없습니다.</div>
           ) : (
             <div className="space-y-2">
-              {items.map((item) => (
+              {filteredItems.map((item) => (
                 <button
                   key={item.id}
                   type="button"
@@ -866,11 +1301,15 @@ export default function CommunityClassesPage() {
                     </span>
                   </div>
                   <p className="mt-1 line-clamp-1 text-xs text-neutral-500">
-                    {item.host_name} · {item.region || "지역 미정"}
+                    {item.host_name} · {item.region || "지역 미정"} · {item.price_text || "가격 미정"}
                   </p>
+                  {(item.purpose_tags ?? []).length > 0 ? (
+                    <p className="mt-1 line-clamp-1 text-[11px] font-bold text-neutral-400">{(item.purpose_tags ?? []).join(" · ")}</p>
+                  ) : null}
                   <p className="mt-2 text-xs font-semibold text-neutral-400">
-                    일정 {item.schedules?.length ?? 0}개 · 신청 {item.application_stats?.total ?? 0}명
+                    {buildFillLabel(item)}
                   </p>
+                  <p className="mt-1 text-xs font-black text-emerald-700">{buildFillBadge(item)}</p>
                 </button>
               ))}
             </div>
@@ -892,6 +1331,26 @@ export default function CommunityClassesPage() {
                   >
                     미리보기
                   </Link>
+                ) : null}
+                {form.id ? (
+                  <button
+                    type="button"
+                    onClick={copyClass}
+                    disabled={saving}
+                    className="rounded-2xl border border-neutral-200 px-4 py-2 text-sm font-bold text-neutral-700 disabled:opacity-50"
+                  >
+                    복사
+                  </button>
+                ) : null}
+                {form.id ? (
+                  <button
+                    type="button"
+                    onClick={autoCloseClass}
+                    disabled={saving}
+                    className="rounded-2xl border border-amber-200 px-4 py-2 text-sm font-bold text-amber-700 disabled:opacity-50"
+                  >
+                    상태정리
+                  </button>
                 ) : null}
                 {form.id ? (
                   <button
@@ -942,9 +1401,79 @@ export default function CommunityClassesPage() {
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="지역" value={form.region} onChange={(e) => setForm({ ...form, region: e.target.value })} />
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="장소" value={form.venue} onChange={(e) => setForm({ ...form, venue: e.target.value })} />
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="가격 예: 1회 30,000원" value={form.price_text} onChange={(e) => setForm({ ...form, price_text: e.target.value })} />
+              <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="가격 숫자 예: 30000" inputMode="numeric" value={form.price_amount_krw} onChange={(e) => setForm({ ...form, price_amount_krw: e.target.value })} />
+              <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="목적 태그 예: 다이어트, 자세교정, 모임" value={form.purpose_tags} onChange={(e) => setForm({ ...form, purpose_tags: e.target.value })} />
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="정원" inputMode="numeric" value={form.capacity} onChange={(e) => setForm({ ...form, capacity: e.target.value })} />
+              <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="남성 정원" inputMode="numeric" value={form.male_capacity} onChange={(e) => setForm({ ...form, male_capacity: e.target.value })} />
+              <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="여성 정원" inputMode="numeric" value={form.female_capacity} onChange={(e) => setForm({ ...form, female_capacity: e.target.value })} />
+              <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="최소 진행 인원" inputMode="numeric" value={form.min_participants} onChange={(e) => setForm({ ...form, min_participants: e.target.value })} />
+              <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="짐툴 수수료 %" inputMode="decimal" value={form.platform_fee_percent} onChange={(e) => setForm({ ...form, platform_fee_percent: e.target.value })} />
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="신청 마감" type="datetime-local" value={form.application_deadline} onChange={(e) => setForm({ ...form, application_deadline: e.target.value })} />
               <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="문의 링크" value={form.contact_url} onChange={(e) => setForm({ ...form, contact_url: e.target.value })} />
+            </div>
+
+            <div className="mt-4 rounded-[24px] border border-amber-100 bg-amber-50 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-black text-neutral-900">환불/운영 기준</h3>
+                  <p className="mt-1 text-xs text-neutral-500">유저 신청 화면과 관리자 환불 처리에 같이 사용됩니다.</p>
+                </div>
+                <label className="flex items-center gap-2 rounded-full bg-white px-3 py-2 text-xs font-bold text-neutral-600">
+                  <input type="checkbox" checked={form.photo_consent_required} onChange={(e) => setForm({ ...form, photo_consent_required: e.target.checked })} />
+                  촬영 동의 필요
+                </label>
+              </div>
+              <div className="mt-3 grid gap-2 md:grid-cols-3">
+                <input className="rounded-2xl border border-amber-100 bg-white px-4 py-3 text-sm" placeholder="전액 환불 기준 일수" inputMode="numeric" value={form.refund_full_until_days} onChange={(e) => setForm({ ...form, refund_full_until_days: e.target.value })} />
+                <input className="rounded-2xl border border-amber-100 bg-white px-4 py-3 text-sm" placeholder="50% 환불 기준 일수" inputMode="numeric" value={form.refund_half_until_days} onChange={(e) => setForm({ ...form, refund_half_until_days: e.target.value })} />
+                <input className="rounded-2xl border border-amber-100 bg-white px-4 py-3 text-sm" placeholder="환불 제한 기준 일수" inputMode="numeric" value={form.no_refund_within_days} onChange={(e) => setForm({ ...form, no_refund_within_days: e.target.value })} />
+              </div>
+              <textarea className="mt-2 min-h-20 w-full rounded-2xl border border-amber-100 bg-white px-4 py-3 text-sm" placeholder="환불 규정" value={form.refund_policy_text} onChange={(e) => setForm({ ...form, refund_policy_text: e.target.value })} />
+              <textarea className="mt-2 min-h-16 w-full rounded-2xl border border-amber-100 bg-white px-4 py-3 text-sm" placeholder="안전/부상/노쇼/매너 안내" value={form.safety_notice} onChange={(e) => setForm({ ...form, safety_notice: e.target.value })} />
+            </div>
+
+            <div className="mt-4 rounded-[24px] border border-sky-100 bg-sky-50 p-4">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <div>
+                  <h3 className="text-sm font-black text-neutral-900">결제/정산</h3>
+                  <p className="mt-1 text-xs text-neutral-500">결제 확인액에서 환불액과 수수료를 제외한 운영자 정산액을 봅니다.</p>
+                </div>
+                <select
+                  className="rounded-2xl border border-sky-100 bg-white px-4 py-3 text-sm font-bold"
+                  value={form.settlement_status}
+                  onChange={(e) => setForm({ ...form, settlement_status: e.target.value as GymClassForm["settlement_status"] })}
+                >
+                  {Object.entries(SETTLEMENT_STATUS_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+              </div>
+              {selected?.settlement_preview ? (
+                <div className="mt-3 grid gap-2 text-center text-xs sm:grid-cols-4">
+                  <div className="rounded-2xl bg-white px-3 py-3">
+                    <p className="text-lg font-black text-neutral-950">{selected.settlement_preview.total_paid_krw.toLocaleString("ko-KR")}원</p>
+                    <p className="mt-1 text-neutral-500">결제 확인</p>
+                  </div>
+                  <div className="rounded-2xl bg-white px-3 py-3">
+                    <p className="text-lg font-black text-neutral-950">{selected.settlement_preview.refunded_krw.toLocaleString("ko-KR")}원</p>
+                    <p className="mt-1 text-neutral-500">환불 반영</p>
+                  </div>
+                  <div className="rounded-2xl bg-white px-3 py-3">
+                    <p className="text-lg font-black text-neutral-950">{selected.settlement_preview.platform_fee_krw.toLocaleString("ko-KR")}원</p>
+                    <p className="mt-1 text-neutral-500">짐툴 수수료</p>
+                  </div>
+                  <div className="rounded-2xl bg-white px-3 py-3">
+                    <p className="text-lg font-black text-neutral-950">{selected.settlement_preview.operator_amount_krw.toLocaleString("ko-KR")}원</p>
+                    <p className="mt-1 text-neutral-500">운영자 정산</p>
+                  </div>
+                </div>
+              ) : null}
+              <textarea
+                className="mt-3 min-h-16 w-full rounded-2xl border border-sky-100 bg-white px-4 py-3 text-sm"
+                placeholder="정산 메모"
+                value={form.settlement_note}
+                onChange={(e) => setForm({ ...form, settlement_note: e.target.value })}
+              />
             </div>
 
             <div className="mt-4 rounded-[24px] border border-neutral-100 bg-neutral-50 p-4">
@@ -986,7 +1515,20 @@ export default function CommunityClassesPage() {
             </div>
 
             <textarea className="mt-3 min-h-20 w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="한 줄 소개" value={form.summary} onChange={(e) => setForm({ ...form, summary: e.target.value })} />
-            <textarea className="mt-3 min-h-28 w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="상세 안내" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+            <div className="mt-4 rounded-[24px] border border-neutral-100 bg-neutral-50 p-4">
+              <h3 className="text-sm font-black text-neutral-900">크몽형 상품 설명</h3>
+              <p className="mt-1 text-xs text-neutral-500">유저가 보는 상세 페이지의 핵심 영역입니다. 줄바꿈으로 항목을 나눠 쓰면 보기 좋습니다.</p>
+              <div className="mt-3 grid gap-3 md:grid-cols-2">
+                <textarea className="min-h-28 rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="대상자 예: 운동 입문자, 자세교정이 필요한 분" value={form.target_audience} onChange={(e) => setForm({ ...form, target_audience: e.target.value })} />
+                <textarea className="min-h-28 rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="서비스 내용" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
+                <textarea className="min-h-28 rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="진행 절차 예: 상담 > 평가 > 수업" value={form.service_process} onChange={(e) => setForm({ ...form, service_process: e.target.value })} />
+                <textarea className="min-h-28 rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="커리큘럼/회차 안내" value={form.curriculum} onChange={(e) => setForm({ ...form, curriculum: e.target.value })} />
+                <textarea className="min-h-24 rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="가능일/가능 시간" value={form.available_days} onChange={(e) => setForm({ ...form, available_days: e.target.value })} />
+                <textarea className="min-h-24 rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="포함 항목 예: 대관료 포함, 준비물 제공" value={form.included_items} onChange={(e) => setForm({ ...form, included_items: e.target.value })} />
+                <textarea className="min-h-24 rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="전문가 소개/자격/경력" value={form.expert_profile} onChange={(e) => setForm({ ...form, expert_profile: e.target.value })} />
+                <textarea className="min-h-24 rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="자주 묻는 질문" value={form.faq} onChange={(e) => setForm({ ...form, faq: e.target.value })} />
+              </div>
+            </div>
             <textarea className="mt-3 min-h-20 w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm outline-none focus:border-emerald-400" placeholder="준비물/유의사항" value={form.preparation_note} onChange={(e) => setForm({ ...form, preparation_note: e.target.value })} />
 
             <div className="mt-4 rounded-[24px] bg-neutral-50 p-4">
@@ -1041,17 +1583,42 @@ export default function CommunityClassesPage() {
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
                   <h2 className="text-lg font-black text-neutral-950">지원자</h2>
-                  <p className="mt-1 text-sm text-neutral-500">신청 {activeApplications.length}명</p>
+                  <p className="mt-1 text-sm text-neutral-500">{buildFillLabel(selected)} · {buildFillBadge(selected)}</p>
                 </div>
                 <div className="rounded-full bg-neutral-100 px-3 py-2 text-xs font-bold text-neutral-500">
                   {STATUS_LABELS[selected.status]}
                 </div>
               </div>
 
-              <div className="mt-4 grid gap-2 md:grid-cols-[1fr_1fr_1fr_1fr_auto]">
+              <div className="mt-4 grid gap-2 text-center text-xs sm:grid-cols-4">
+                <div className="rounded-2xl bg-neutral-50 px-3 py-3">
+                  <p className="text-lg font-black text-neutral-950">{selected.application_stats?.active ?? 0}</p>
+                  <p className="mt-1 text-neutral-500">유효 신청</p>
+                </div>
+                <div className="rounded-2xl bg-neutral-50 px-3 py-3">
+                  <p className="text-lg font-black text-neutral-950">{selected.application_stats?.paid ?? 0}</p>
+                  <p className="mt-1 text-neutral-500">결제 확인</p>
+                </div>
+                <div className="rounded-2xl bg-neutral-50 px-3 py-3">
+                  <p className="text-lg font-black text-neutral-950">{selected.application_stats?.male ?? 0}</p>
+                  <p className="mt-1 text-neutral-500">남성</p>
+                </div>
+                <div className="rounded-2xl bg-neutral-50 px-3 py-3">
+                  <p className="text-lg font-black text-neutral-950">{selected.application_stats?.female ?? 0}</p>
+                  <p className="mt-1 text-neutral-500">여성</p>
+                </div>
+              </div>
+
+              <div className="mt-4 grid gap-2 md:grid-cols-[1fr_1fr_1fr_100px_1fr_auto]">
                 <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="이름" value={applicantForm.name} onChange={(e) => setApplicantForm({ ...applicantForm, name: e.target.value })} />
                 <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="연락처" value={applicantForm.phone} onChange={(e) => setApplicantForm({ ...applicantForm, phone: e.target.value })} />
                 <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="이메일" value={applicantForm.email} onChange={(e) => setApplicantForm({ ...applicantForm, email: e.target.value })} />
+                <select className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" value={applicantForm.gender} onChange={(e) => setApplicantForm({ ...applicantForm, gender: e.target.value as ApplicationGender })}>
+                  <option value="">성별</option>
+                  <option value="male">남성</option>
+                  <option value="female">여성</option>
+                  <option value="other">기타</option>
+                </select>
                 <select className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" value={applicantForm.schedule_id} onChange={(e) => setApplicantForm({ ...applicantForm, schedule_id: e.target.value })}>
                   <option value="">일정 선택</option>
                   {(selected.schedules ?? []).map((schedule) => (
@@ -1064,7 +1631,67 @@ export default function CommunityClassesPage() {
                   추가
                 </button>
               </div>
+              <div className="mt-2 grid gap-2 md:grid-cols-2">
+                <select className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" value={applicantForm.payment_status} onChange={(e) => setApplicantForm({ ...applicantForm, payment_status: e.target.value as PaymentStatus })}>
+                  {Object.entries(PAYMENT_STATUS_LABELS).map(([value, label]) => (
+                    <option key={value} value={value}>{label}</option>
+                  ))}
+                </select>
+                <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="결제 금액" inputMode="numeric" value={applicantForm.paid_amount_krw} onChange={(e) => setApplicantForm({ ...applicantForm, paid_amount_krw: e.target.value })} />
+              </div>
               <textarea className="mt-2 min-h-16 w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="메모" value={applicantForm.memo} onChange={(e) => setApplicantForm({ ...applicantForm, memo: e.target.value })} />
+
+              <div className="mt-4 rounded-[24px] border border-dashed border-neutral-200 bg-white p-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <h3 className="text-sm font-black text-neutral-900">대기자</h3>
+                    <p className="mt-1 text-xs text-neutral-500">정원이 찼을 때도 연락 가능한 사람을 따로 모아둡니다.</p>
+                  </div>
+                  <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-black text-neutral-600">
+                    {selected.waitlist?.filter((item) => item.status === "waiting").length ?? 0}명 대기
+                  </span>
+                </div>
+                <div className="mt-3 grid gap-2 md:grid-cols-[1fr_1fr_1fr_100px_1fr_auto]">
+                  <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="이름" value={waitlistForm.name} onChange={(e) => setWaitlistForm({ ...waitlistForm, name: e.target.value })} />
+                  <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="연락처" value={waitlistForm.phone} onChange={(e) => setWaitlistForm({ ...waitlistForm, phone: e.target.value })} />
+                  <input className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="이메일" value={waitlistForm.email} onChange={(e) => setWaitlistForm({ ...waitlistForm, email: e.target.value })} />
+                  <select className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" value={waitlistForm.gender} onChange={(e) => setWaitlistForm({ ...waitlistForm, gender: e.target.value as ApplicationGender })}>
+                    <option value="">성별</option>
+                    <option value="male">남성</option>
+                    <option value="female">여성</option>
+                    <option value="other">기타</option>
+                  </select>
+                  <select className="rounded-2xl border border-neutral-200 px-4 py-3 text-sm" value={waitlistForm.schedule_id} onChange={(e) => setWaitlistForm({ ...waitlistForm, schedule_id: e.target.value })}>
+                    <option value="">일정 선택</option>
+                    {(selected.schedules ?? []).map((schedule) => (
+                      <option key={schedule.id} value={schedule.id}>
+                        {schedule.label || formatDate(schedule.starts_at)}
+                      </option>
+                    ))}
+                  </select>
+                  <button type="button" onClick={addWaitlist} disabled={saving} className="rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-bold text-neutral-700 disabled:opacity-50">
+                    대기등록
+                  </button>
+                </div>
+                <textarea className="mt-2 min-h-14 w-full rounded-2xl border border-neutral-200 px-4 py-3 text-sm" placeholder="대기 메모" value={waitlistForm.memo} onChange={(e) => setWaitlistForm({ ...waitlistForm, memo: e.target.value })} />
+                {(selected.waitlist ?? []).length > 0 ? (
+                  <div className="mt-3 space-y-2">
+                    {(selected.waitlist ?? []).map((waiter) => (
+                      <div key={waiter.id} className="flex flex-wrap items-center justify-between gap-2 rounded-2xl bg-neutral-50 px-4 py-3 text-sm">
+                        <div>
+                          <p className="font-black text-neutral-900">{waiter.name}</p>
+                          <p className="text-xs text-neutral-500">{[waiter.phone, waiter.email].filter(Boolean).join(" · ") || "연락처 없음"}</p>
+                        </div>
+                        <select className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-bold" value={waiter.status} onChange={(e) => updateWaitlist(waiter.id, e.target.value as GymClassWaitlist["status"])}>
+                          {Object.entries(WAITLIST_STATUS_LABELS).map(([value, label]) => (
+                            <option key={value} value={value}>{label}</option>
+                          ))}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
 
               <div className="mt-4 space-y-2">
                 {activeApplications.length === 0 ? (
@@ -1078,7 +1705,23 @@ export default function CommunityClassesPage() {
                           <p className="mt-1 text-sm text-neutral-500">
                             {[application.phone, application.email].filter(Boolean).join(" · ") || "연락처 없음"}
                           </p>
+                          <div className="mt-2 flex flex-wrap gap-2 text-xs font-bold">
+                            {application.gender ? (
+                              <span className="rounded-full bg-white px-2.5 py-1 text-neutral-600">
+                                {GENDER_LABELS[application.gender as Exclude<ApplicationGender, "">]}
+                              </span>
+                            ) : null}
+                            <span className="rounded-full bg-white px-2.5 py-1 text-emerald-700">
+                              {PAYMENT_STATUS_LABELS[application.payment_status]}
+                              {application.paid_amount_krw ? ` · ${application.paid_amount_krw.toLocaleString("ko-KR")}원` : ""}
+                            </span>
+                            <span className="rounded-full bg-white px-2.5 py-1 text-amber-700">
+                              환불 {REFUND_STATUS_LABELS[application.refund_status]}
+                              {application.refund_amount_krw ? ` · ${application.refund_amount_krw.toLocaleString("ko-KR")}원` : ""}
+                            </span>
+                          </div>
                           {application.memo ? <p className="mt-2 text-sm text-neutral-600">{application.memo}</p> : null}
+                          {application.refund_reason ? <p className="mt-2 text-sm text-amber-700">환불 사유: {application.refund_reason}</p> : null}
                         </div>
                         <select
                           className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-bold"
@@ -1096,9 +1739,153 @@ export default function CommunityClassesPage() {
                         defaultValue={application.admin_note ?? ""}
                         onBlur={(e) => updateApplicant(application.id, { status: application.status, admin_note: e.target.value })}
                       />
+                      <div className="mt-2 grid gap-2 md:grid-cols-[1fr_1fr_1fr_auto]">
+                        <select
+                          className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-bold"
+                          value={application.payment_status}
+                          onChange={(e) => updateApplicant(application.id, { status: application.status, admin_note: application.admin_note, payment_status: e.target.value as PaymentStatus } as Partial<GymApplication>)}
+                        >
+                          {Object.entries(PAYMENT_STATUS_LABELS).map(([value, label]) => (
+                            <option key={value} value={value}>{label}</option>
+                          ))}
+                        </select>
+                        <select
+                          className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm font-bold"
+                          value={application.refund_status}
+                          onChange={(e) => updateApplicant(application.id, { status: application.status, admin_note: application.admin_note, refund_status: e.target.value as RefundStatus } as Partial<GymApplication>)}
+                        >
+                          {Object.entries(REFUND_STATUS_LABELS).map(([value, label]) => (
+                            <option key={value} value={value}>{label}</option>
+                          ))}
+                        </select>
+                        <input
+                          className="rounded-xl border border-neutral-200 bg-white px-3 py-2 text-sm"
+                          placeholder="환불액"
+                          defaultValue={application.refund_amount_krw ?? ""}
+                          onBlur={(e) => updateApplicant(application.id, { status: application.status, admin_note: application.admin_note, refund_amount_krw: e.target.value ? Number(e.target.value) : null } as Partial<GymApplication>)}
+                        />
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!confirm("환불 요청으로 표시할까요?")) return;
+                            const response = await fetch(`/api/admin/gym-classes/applications/${application.id}/refund`, {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ reason: application.refund_reason ?? "관리자 등록" }),
+                            });
+                            if (!response.ok) {
+                              setMessage(await readError(response));
+                              return;
+                            }
+                            if (form.id) await loadDetail(form.id);
+                            setMessage("환불 요청을 등록했습니다.");
+                          }}
+                          className="rounded-xl border border-amber-200 bg-white px-3 py-2 text-xs font-black text-amber-700"
+                        >
+                          환불요청
+                        </button>
+                      </div>
                     </div>
                   ))
                 )}
+              </div>
+
+              <div className="mt-5 grid gap-3 lg:grid-cols-3">
+                <div className="rounded-[24px] border border-neutral-100 bg-neutral-50 p-4">
+                  <h3 className="text-sm font-black text-neutral-900">문의/채팅</h3>
+                  <p className="mt-1 text-xs text-neutral-500">간단 Q&A 형태로 먼저 운영합니다.</p>
+                  <div className="mt-3 space-y-2">
+                    {(selected.inquiries ?? []).length === 0 ? (
+                      <p className="rounded-2xl bg-white px-4 py-6 text-center text-xs text-neutral-400">문의 없음</p>
+                    ) : (
+                      (selected.inquiries ?? []).map((inquiry) => (
+                        <div key={inquiry.id} className="rounded-2xl bg-white p-3">
+                          <p className="text-xs font-bold text-neutral-400">{inquiry.name || "익명"} · {inquiry.status}</p>
+                          <p className="mt-1 text-sm font-semibold text-neutral-800">{inquiry.question}</p>
+                          <textarea
+                            className="mt-2 min-h-16 w-full rounded-xl border border-neutral-200 px-3 py-2 text-xs"
+                            placeholder="답변"
+                            defaultValue={inquiry.answer ?? ""}
+                            onBlur={(event) => updateInquiry(inquiry.id, event.target.value)}
+                          />
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-[24px] border border-neutral-100 bg-neutral-50 p-4">
+                  <h3 className="text-sm font-black text-neutral-900">신고/분쟁</h3>
+                  <p className="mt-1 text-xs text-neutral-500">환불, 안전, 운영자 이슈를 따로 추적합니다.</p>
+                  <div className="mt-3 space-y-2">
+                    {(selected.reports ?? []).length === 0 ? (
+                      <p className="rounded-2xl bg-white px-4 py-6 text-center text-xs text-neutral-400">접수 없음</p>
+                    ) : (
+                      (selected.reports ?? []).map((report) => (
+                        <div key={report.id} className="rounded-2xl bg-white p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs font-black text-rose-600">{report.category}</p>
+                            <select className="rounded-xl border border-neutral-200 px-2 py-1 text-xs" value={report.status} onChange={(event) => updateReport(report.id, event.target.value as GymClassReport["status"], report.admin_note)}>
+                              <option value="open">접수</option>
+                              <option value="reviewing">확인중</option>
+                              <option value="resolved">해결</option>
+                              <option value="rejected">종결</option>
+                            </select>
+                          </div>
+                          <p className="mt-2 text-sm text-neutral-700">{report.content}</p>
+                          <input
+                            className="mt-2 w-full rounded-xl border border-neutral-200 px-3 py-2 text-xs"
+                            placeholder="처리 메모"
+                            defaultValue={report.admin_note ?? ""}
+                            onBlur={(event) => updateReport(report.id, report.status, event.target.value)}
+                          />
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                <div className="rounded-[24px] border border-neutral-100 bg-neutral-50 p-4">
+                  <h3 className="text-sm font-black text-neutral-900">리뷰/평점</h3>
+                  <p className="mt-1 text-xs text-neutral-500">
+                    평균 {selected.review_stats?.average ?? "-"}점 · {selected.review_stats?.count ?? 0}개
+                  </p>
+                  <div className="mt-3 space-y-2">
+                    {(selected.reviews ?? []).length === 0 ? (
+                      <p className="rounded-2xl bg-white px-4 py-6 text-center text-xs text-neutral-400">리뷰 없음</p>
+                    ) : (
+                      (selected.reviews ?? []).map((review) => (
+                        <div key={review.id} className="rounded-2xl bg-white p-3">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-sm font-black text-neutral-900">{"★".repeat(review.rating)}{"☆".repeat(5 - review.rating)}</p>
+                            <select className="rounded-xl border border-neutral-200 px-2 py-1 text-xs" value={review.status} onChange={(event) => updateReview(review.id, event.target.value as GymClassReview["status"])}>
+                              <option value="visible">노출</option>
+                              <option value="hidden">숨김</option>
+                              <option value="reported">신고됨</option>
+                            </select>
+                          </div>
+                          {review.content ? <p className="mt-2 text-sm text-neutral-700">{review.content}</p> : null}
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="mt-3 rounded-[24px] border border-neutral-100 bg-neutral-50 p-4">
+                <h3 className="text-sm font-black text-neutral-900">알림 큐</h3>
+                <div className="mt-3 grid gap-2 md:grid-cols-2">
+                  {(selected.notifications ?? []).length === 0 ? (
+                    <p className="rounded-2xl bg-white px-4 py-6 text-center text-xs text-neutral-400 md:col-span-2">알림 기록 없음</p>
+                  ) : (
+                    (selected.notifications ?? []).map((notification) => (
+                      <div key={notification.id} className="rounded-2xl bg-white px-4 py-3">
+                        <p className="text-xs font-black text-emerald-700">{notification.status} · {notification.kind}</p>
+                        <p className="mt-1 text-sm font-bold text-neutral-900">{notification.title}</p>
+                      </div>
+                    ))
+                  )}
+                </div>
               </div>
             </div>
           ) : null}
