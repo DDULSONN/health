@@ -20,10 +20,6 @@ function MyPageWidgetSkeleton({ className = "h-40" }: { className?: string }) {
   );
 }
 
-const MyLiftGrowthChart = dynamic(() => import("@/components/MyLiftGrowthChart"), {
-  loading: () => <MyPageWidgetSkeleton className="h-[360px]" />,
-});
-
 const AdminCertReviewPanel = dynamic(() => import("@/components/AdminCertReviewPanel"), {
   loading: () => <MyPageWidgetSkeleton className="h-56" />,
 });
@@ -4728,7 +4724,6 @@ export default function MyPage() {
 
   const nickname = summary?.profile.nickname ?? "닉네임 없음";
   const posts = summary?.bodycheck_posts ?? [];
-  const weeklyWinCount = summary?.weekly_win_count ?? 0;
   const changedCount = summary?.profile.nickname_changed_count ?? 0;
   const credits = summary?.profile.nickname_change_credits ?? 0;
   const phoneVerified = summary?.profile.phone_verified === true;
@@ -5516,11 +5511,6 @@ export default function MyPage() {
               )}
             </div>
           )}
-        </div>
-
-        <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-3">
-          <p className="text-sm font-semibold text-amber-800">주간 몸평 계정 점수</p>
-          <p className="mt-1 text-xl font-bold text-amber-900">{weeklyWinCount}점</p>
         </div>
 
         <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50/50 p-3">
@@ -10294,10 +10284,6 @@ export default function MyPage() {
 
       {showProfileSection && (
       <>
-      <div className="mb-5">
-        <MyLiftGrowthChart />
-      </div>
-
       <section className="mb-5">
         <div className="mb-3 flex flex-wrap gap-2">
           <button
