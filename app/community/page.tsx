@@ -217,7 +217,7 @@ export default function CommunityPage() {
   }, []);
 
   useEffect(() => {
-    fetch("/api/community/top-banner", { cache: "no-store" })
+    fetch("/api/community/top-banner")
       .then((response) => response.json())
       .then((payload: CommunityTopBanner) => setTopBanner(payload.enabled ? payload : null))
       .catch(() => setTopBanner(null));

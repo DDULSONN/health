@@ -402,7 +402,7 @@ export default function OpenCardsPage() {
   useEffect(() => {
     let cancelled = false;
 
-    fetch("/api/site/ad-inquiry", { cache: "no-store" })
+    fetch("/api/site/ad-inquiry")
       .then((res) => res.json())
       .then((data: Partial<HomeAdLinkSetting>) => {
         if (cancelled) return;

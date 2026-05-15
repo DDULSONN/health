@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { publicCachedJson } from "@/lib/http-cache";
 import { createAdminClient } from "@/lib/supabase/server";
 
 function parseEnabled(value: unknown): boolean {
@@ -17,8 +17,8 @@ export async function GET() {
 
   if (error) {
     console.error("[GET /api/dating/cards/write-enabled] failed", error);
-    return NextResponse.json({ enabled: true });
+    return publicCachedJson({ enabled: true }, { sMaxAge: 30, staleWhileRevalidate: 60 });
   }
 
-  return NextResponse.json({ enabled: parseEnabled(data?.value_json) });
+  return publicCachedJson({ enabled: parseEnabled(data?.value_json) }, { sMaxAge: 30, staleWhileRevalidate: 60 });
 }

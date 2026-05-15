@@ -67,7 +67,7 @@ export default function AdInquiryFeatureCard() {
   useEffect(() => {
     let active = true;
 
-    fetch("/api/site/ad-inquiry", { cache: "no-store" })
+    fetch("/api/site/ad-inquiry")
       .then((res) => res.json())
       .then((data: Partial<AdInquirySetting>) => {
         if (!active) return;

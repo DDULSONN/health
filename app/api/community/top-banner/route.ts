@@ -1,9 +1,9 @@
-import { NextResponse } from "next/server";
 import {
   COMMUNITY_TOP_BANNER_KEY,
   DEFAULT_COMMUNITY_TOP_BANNER,
   normalizeCommunityTopBanner,
 } from "@/lib/community-top-banner";
+import { publicCachedJson } from "@/lib/http-cache";
 import { createAdminClient } from "@/lib/supabase/server";
 
 export async function GET() {
@@ -15,8 +15,8 @@ export async function GET() {
     .maybeSingle();
 
   if (error) {
-    return NextResponse.json(DEFAULT_COMMUNITY_TOP_BANNER);
+    return publicCachedJson(DEFAULT_COMMUNITY_TOP_BANNER, { sMaxAge: 60, staleWhileRevalidate: 300 });
   }
 
-  return NextResponse.json(normalizeCommunityTopBanner(data?.value_json));
+  return publicCachedJson(normalizeCommunityTopBanner(data?.value_json), { sMaxAge: 60, staleWhileRevalidate: 300 });
 }

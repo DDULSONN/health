@@ -15,6 +15,9 @@ type ChatBadgeState = {
   availableCount: number;
 };
 
+const CHAT_BADGE_CACHE_TTL_MS = 30_000;
+let chatBadgeCache: { value: ChatBadgeState; expiresAt: number } | null = null;
+
 const TABS: TabItem[] = [
   {
     href: "/community/dating/cards",
@@ -71,12 +74,19 @@ export default function MobileBottomTabBar() {
   const pathname = usePathname();
   const [chatBadge, setChatBadge] = useState<ChatBadgeState>({ unreadCount: 0, availableCount: 0 });
 
-  const loadChatBadge = useCallback(async () => {
+  const loadChatBadge = useCallback(async (options?: { force?: boolean }) => {
+    if (!options?.force && chatBadgeCache && chatBadgeCache.expiresAt > Date.now()) {
+      setChatBadge(chatBadgeCache.value);
+      return;
+    }
+
     try {
       const res = await fetch("/api/dating/chat/badge", { cache: "no-store" });
 
       if (res.status === 401) {
-        setChatBadge({ unreadCount: 0, availableCount: 0 });
+        const empty = { unreadCount: 0, availableCount: 0 };
+        chatBadgeCache = { value: empty, expiresAt: Date.now() + CHAT_BADGE_CACHE_TTL_MS };
+        setChatBadge(empty);
         return;
       }
 
@@ -91,8 +101,10 @@ export default function MobileBottomTabBar() {
 
       const unreadCount = Math.max(0, Number(body.unreadCount ?? 0));
       const availableCount = Math.max(0, Number(body.availableCount ?? 0));
+      const nextBadge = { unreadCount, availableCount };
 
-      setChatBadge({ unreadCount, availableCount });
+      chatBadgeCache = { value: nextBadge, expiresAt: Date.now() + CHAT_BADGE_CACHE_TTL_MS };
+      setChatBadge(nextBadge);
     } catch {
       setChatBadge({ unreadCount: 0, availableCount: 0 });
     }
@@ -109,7 +121,7 @@ export default function MobileBottomTabBar() {
   useEffect(() => {
     const onFocus = () => {
       if (document.visibilityState !== "visible") return;
-      void loadChatBadge();
+      void loadChatBadge({ force: true });
     };
 
     window.addEventListener("focus", onFocus);
