@@ -499,16 +499,24 @@ export default function FitRoomPage() {
 
             <div className="grid flex-1 grid-cols-[76px_1fr] gap-2 sm:grid-cols-[88px_1fr_auto]">
               <label
-                className={`flex h-16 cursor-pointer items-center justify-center overflow-hidden rounded-[20px] border border-dashed text-center text-xs transition active:scale-[0.98] sm:h-[58px] ${
+                className={`relative flex h-16 cursor-pointer items-center justify-center overflow-hidden rounded-[20px] border border-dashed text-center text-xs transition active:scale-[0.98] sm:h-[58px] ${
                   previewUrl
                     ? "border-emerald-300/55 bg-emerald-300/10 text-emerald-50 shadow-[0_0_24px_rgba(16,185,129,.18)]"
                     : "border-white/20 bg-black/30 text-white/45 hover:border-white/35 hover:bg-white/5"
                 }`}
               >
                 {previewUrl ? (
-                  <img src={previewUrl} alt="업로드 미리보기" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                  <>
+                    <img src={previewUrl} alt="업로드 미리보기" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                    <span className="absolute inset-x-1 bottom-1 rounded-full bg-black/60 px-2 py-0.5 text-[10px] font-black text-white backdrop-blur">
+                      변경
+                    </span>
+                  </>
                 ) : (
-                  <span>사진</span>
+                  <span className="grid gap-0.5 px-1">
+                    <span className="text-[11px] font-black text-white/80">사진 선택</span>
+                    <span className="text-[10px] font-semibold text-white/40">운동·식단</span>
+                  </span>
                 )}
                 <input
                   ref={fileInputRef}
