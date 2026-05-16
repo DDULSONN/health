@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
 import { isKoreanWeekend } from "@/lib/dating-apply-limits";
@@ -181,6 +182,7 @@ type HomeFeatureTab = "open_cards" | "quick_match" | "one_on_one";
 
 type OneOnOneCardPreview = {
   id?: string;
+  user_id?: string;
   name?: string | null;
   display_nickname?: string | null;
   nickname?: string | null;
@@ -190,12 +192,20 @@ type OneOnOneCardPreview = {
   region?: string | null;
   job?: string | null;
   height_cm?: number | null;
+  intro_text?: string | null;
+  strengths_text?: string | null;
+  preferred_partner_text?: string | null;
+  photo_signed_urls?: string[];
   status?: string | null;
 };
 
 type OneOnOneRecommendationGroup = {
   source_card_id?: string;
   source_card_status?: string;
+  refresh_used?: boolean;
+  refresh_used_at?: string | null;
+  next_refresh_at?: string | null;
+  can_refresh?: boolean;
   recommendations?: OneOnOneCardPreview[];
 };
 
@@ -322,7 +332,7 @@ function getOneOnOneAge(card?: OneOnOneCardPreview | null) {
 function getOneOnOneMeta(card?: OneOnOneCardPreview | null) {
   if (!card) return "후보 정보를 확인 중";
   const age = getOneOnOneAge(card);
-  return [age ? `${age}세` : null, card.region, card.job].filter(Boolean).join(" · ") || "상세 정보 확인";
+  return [age ? `${age}세` : null, card.region, card.height_cm ? `${card.height_cm}cm` : null, card.job].filter(Boolean).join(" · ") || "상세 정보 확인";
 }
 
 function oneOnOneStateLabel(state?: string) {
@@ -452,6 +462,7 @@ export default function OpenCardsPage() {
   const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
   const [processingOneOnOneContactIds, setProcessingOneOnOneContactIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
+  const [refreshingOneOnOneRecommendationIds, setRefreshingOneOnOneRecommendationIds] = useState<string[]>([]);
 
   useEffect(() => {
     activeSexRef.current = activeSex;
@@ -1121,6 +1132,30 @@ export default function OpenCardsPage() {
     [processingOneOnOneAutoKeys, reloadOneOnOneHome]
   );
 
+  const handleOneOnOneRecommendationRefresh = useCallback(
+    async (sourceCardId: string) => {
+      if (!sourceCardId || refreshingOneOnOneRecommendationIds.includes(sourceCardId)) return;
+      setRefreshingOneOnOneRecommendationIds((prev) => [...prev, sourceCardId]);
+      try {
+        const res = await fetch("/api/dating/1on1/recommendations/refresh", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ source_card_id: sourceCardId }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!res.ok || !body.ok) {
+          throw new Error(body.error ?? "추천 후보를 새로고침하지 못했습니다.");
+        }
+        await reloadOneOnOneHome();
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "추천 후보를 새로고침하지 못했습니다.");
+      } finally {
+        setRefreshingOneOnOneRecommendationIds((prev) => prev.filter((id) => id !== sourceCardId));
+      }
+    },
+    [refreshingOneOnOneRecommendationIds, reloadOneOnOneHome]
+  );
+
   const nowLabel = useMemo(() => tick, [tick]);
   void nowLabel;
   const malePaidItems = useMemo(() => paidItems.filter((item) => item.gender === "M"), [paidItems]);
@@ -1635,9 +1670,11 @@ export default function OpenCardsPage() {
           processingMatchIds={processingOneOnOneMatchIds}
           processingContactIds={processingOneOnOneContactIds}
           processingAutoKeys={processingOneOnOneAutoKeys}
+          refreshingRecommendationIds={refreshingOneOnOneRecommendationIds}
           onMatchAction={handleOneOnOneMatchAction}
           onContactCheckout={handleOneOnOneContactCheckout}
           onAutoSelect={handleOneOnOneAutoSelect}
+          onRefreshRecommendations={handleOneOnOneRecommendationRefresh}
         />
       ) : null}
 
@@ -1701,9 +1738,11 @@ function OneOnOneHomePanel({
   processingMatchIds,
   processingContactIds,
   processingAutoKeys,
+  refreshingRecommendationIds,
   onMatchAction,
   onContactCheckout,
   onAutoSelect,
+  onRefreshRecommendations,
 }: {
   viewerLoggedIn: boolean;
   loading: boolean;
@@ -1712,32 +1751,44 @@ function OneOnOneHomePanel({
   processingMatchIds: string[];
   processingContactIds: string[];
   processingAutoKeys: string[];
+  refreshingRecommendationIds: string[];
   onMatchAction: (
     matchId: string,
     action: "select_candidate" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
   ) => void;
   onContactCheckout: (matchId: string) => void;
   onAutoSelect: (sourceCardId: string, candidateCardId: string) => void;
+  onRefreshRecommendations: (sourceCardId: string) => void;
 }) {
   const myCards = data?.myCards ?? [];
   const matches = data?.matches ?? [];
-  const recommendations = (data?.recommendations ?? []).flatMap((group) =>
-    (group.recommendations ?? []).map((candidate) => ({
-      sourceCardId: String(group.source_card_id ?? ""),
-      candidate,
-    }))
-  );
+  const recommendationGroups = data?.recommendations ?? [];
+  const recommendationCount = recommendationGroups.reduce((sum, group) => sum + (group.recommendations?.length ?? 0), 0);
   const activeCards = myCards.filter((card) => card.status !== "rejected");
   const hasOneOnOneCard = activeCards.length > 0;
+  const actionRequiredCount = matches.filter((match) => {
+    if (match.action_required) return true;
+    return (
+      (match.role === "source" && match.state === "candidate_accepted") ||
+      match.state === "mutual_accepted" ||
+      match.contact_exchange_status === "approved"
+    );
+  }).length;
+  const sortedMatches = [...matches].sort((a, b) => {
+    const aImportant = a.action_required || a.state === "candidate_accepted" || a.state === "mutual_accepted" ? 1 : 0;
+    const bImportant = b.action_required || b.state === "candidate_accepted" || b.state === "mutual_accepted" ? 1 : 0;
+    if (aImportant !== bImportant) return bImportant - aImportant;
+    return String(b.created_at ?? "").localeCompare(String(a.created_at ?? ""));
+  });
 
   return (
     <section className="mb-5 rounded-[30px] border border-black/5 bg-white p-4 shadow-[0_14px_40px_rgba(15,23,42,0.05)] md:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <span className="inline-flex rounded-full bg-sky-50 px-3 py-1 text-xs font-black text-sky-700">1대1 매칭</span>
-          <h2 className="mt-3 text-[30px] font-black tracking-tight text-neutral-950">후보 보고 천천히 결정하기</h2>
+          <h2 className="mt-3 text-[30px] font-black tracking-tight text-neutral-950">내 후보를 보고 바로 진행하기</h2>
           <p className="mt-2 max-w-2xl text-[15px] leading-7 text-neutral-500">
-            1대1 프로필을 작성하면 내 조건에 맞는 후보와 진행 상태를 여기서 빠르게 확인할 수 있어요.
+            프로필 작성, 후보 확인, 수락, 번호 교환까지 이 탭에서 이어서 볼 수 있게 정리했어요.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -1756,79 +1807,110 @@ function OneOnOneHomePanel({
         </div>
       </div>
 
-      {!viewerLoggedIn ? (
-        <div className="mt-5 rounded-[24px] border border-sky-100 bg-sky-50/70 p-4">
-          <p className="text-sm font-bold text-sky-900">로그인하면 내 1대1 진행 상태를 볼 수 있어요.</p>
-          <Link
-            href={buildLoginRedirect("/community/dating/cards")}
-            className="mt-3 inline-flex min-h-[42px] items-center rounded-2xl bg-sky-600 px-4 text-sm font-bold text-white"
-          >
-            로그인하기
-          </Link>
+      {viewerLoggedIn && hasOneOnOneCard ? (
+        <div className="mt-5 grid grid-cols-3 gap-2">
+          <div className="rounded-2xl bg-neutral-50 px-3 py-3">
+            <p className="text-[11px] font-bold text-neutral-400">내 프로필</p>
+            <p className="mt-1 text-lg font-black text-neutral-950">{activeCards.length}개</p>
+          </div>
+          <div className="rounded-2xl bg-sky-50 px-3 py-3">
+            <p className="text-[11px] font-bold text-sky-500">추천 후보</p>
+            <p className="mt-1 text-lg font-black text-sky-800">{recommendationCount}명</p>
+          </div>
+          <div className="rounded-2xl bg-emerald-50 px-3 py-3">
+            <p className="text-[11px] font-bold text-emerald-500">확인 필요</p>
+            <p className="mt-1 text-lg font-black text-emerald-800">{actionRequiredCount}건</p>
+          </div>
         </div>
-      ) : loading ? (
-        <p className="mt-5 rounded-[24px] bg-neutral-50 p-5 text-sm text-neutral-500">1대1 정보를 불러오는 중...</p>
-      ) : error ? (
-        <p className="mt-5 rounded-[24px] border border-rose-100 bg-rose-50 p-5 text-sm font-semibold text-rose-700">{error}</p>
-      ) : !hasOneOnOneCard ? (
-        <div className="mt-5 rounded-[24px] border border-sky-100 bg-sky-50/70 p-5">
-          <p className="text-lg font-black text-sky-950">아직 1대1 프로필이 없어요.</p>
-          <p className="mt-2 text-sm leading-6 text-sky-900">
-            먼저 신청서를 작성하면 후보 확인과 매칭 진행을 이어갈 수 있어요. 신청은 무료입니다.
-          </p>
-          <Link
-            href="/dating/1on1"
-            className="mt-4 inline-flex min-h-[46px] items-center justify-center rounded-2xl bg-sky-600 px-5 text-sm font-black text-white hover:bg-sky-700"
-          >
-            1대1 프로필 작성하기
-          </Link>
-        </div>
-      ) : (
-        <div className="mt-5 grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
-          <div className="rounded-[24px] bg-neutral-50 p-4">
-            <p className="text-sm font-black text-neutral-900">내 1대1 프로필</p>
-            <div className="mt-3 space-y-2">
-              {activeCards.slice(0, 3).map((card) => (
-                <div key={card.id ?? getOneOnOneDisplayName(card)} className="rounded-2xl bg-white px-3 py-3">
-                  <p className="text-sm font-black text-neutral-900">{getOneOnOneDisplayName(card)}</p>
-                  <p className="mt-1 text-xs font-semibold text-neutral-500">{getOneOnOneMeta(card)}</p>
-                  <span className="mt-2 inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
-                    {card.status === "approved" ? "승인 완료" : card.status === "reviewing" ? "검토 중" : "접수 완료"}
-                  </span>
-                </div>
-              ))}
-            </div>
+      ) : null}
+
+      <div className="mt-5">
+        {!viewerLoggedIn ? (
+          <div className="rounded-[24px] border border-sky-100 bg-sky-50/70 p-4">
+            <p className="text-sm font-bold text-sky-900">로그인하면 내 1대1 진행 상태를 볼 수 있어요.</p>
             <Link
-              href="/mypage?section=matching"
-              className="mt-3 inline-flex min-h-[42px] w-full items-center justify-center rounded-2xl border border-neutral-200 bg-white text-sm font-bold text-neutral-700 hover:bg-neutral-100"
+              href={buildLoginRedirect("/community/dating/cards")}
+              className="mt-3 inline-flex min-h-[42px] items-center rounded-2xl bg-sky-600 px-4 text-sm font-bold text-white"
             >
-              마이페이지에서 자세히 보기
+              로그인하기
             </Link>
           </div>
-
+        ) : loading ? (
+          <p className="rounded-[24px] bg-neutral-50 p-5 text-sm text-neutral-500">1대1 정보를 불러오는 중...</p>
+        ) : error ? (
+          <p className="rounded-[24px] border border-rose-100 bg-rose-50 p-5 text-sm font-semibold text-rose-700">{error}</p>
+        ) : !hasOneOnOneCard ? (
+          <div className="rounded-[24px] border border-sky-100 bg-sky-50/70 p-5">
+            <p className="text-lg font-black text-sky-950">아직 1대1 프로필이 없어요.</p>
+            <p className="mt-2 text-sm leading-6 text-sky-900">
+              먼저 신청서를 작성하면 후보 확인과 매칭 진행을 이어갈 수 있어요. 신청은 무료입니다.
+            </p>
+            <Link
+              href="/dating/1on1"
+              className="mt-4 inline-flex min-h-[46px] items-center justify-center rounded-2xl bg-sky-600 px-5 text-sm font-black text-white hover:bg-sky-700"
+            >
+              1대1 프로필 작성하기
+            </Link>
+          </div>
+        ) : (
           <div className="space-y-4">
-            <div className="rounded-[24px] border border-black/5 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-[24px] border border-neutral-100 bg-neutral-50 p-4">
+                <p className="text-sm font-black text-neutral-950">1. 후보 확인</p>
+                <p className="mt-1 text-xs leading-5 text-neutral-500">추천 후보를 보고 마음에 드는 사람을 선택해요.</p>
+              </div>
+              <div className="rounded-[24px] border border-neutral-100 bg-neutral-50 p-4">
+                <p className="text-sm font-black text-neutral-950">2. 서로 수락</p>
+                <p className="mt-1 text-xs leading-5 text-neutral-500">상대도 수락하면 번호 교환 단계로 넘어가요.</p>
+              </div>
+              <div className="rounded-[24px] border border-emerald-100 bg-emerald-50/70 p-4">
+                <p className="text-sm font-black text-emerald-950">3. 번호 교환</p>
+                <p className="mt-1 text-xs leading-5 text-emerald-800">결제 완료 후 연락처가 바로 공개됩니다.</p>
+              </div>
+            </div>
+
+            <details className="rounded-[24px] border border-neutral-100 bg-neutral-50/70 px-4 py-3">
+              <summary className="cursor-pointer select-none text-sm font-black text-neutral-900">내 1대1 프로필 보기</summary>
+              <div className="mt-3 space-y-2">
+                {activeCards.slice(0, 3).map((card) => (
+                  <div key={card.id ?? getOneOnOneDisplayName(card)} className="rounded-2xl bg-white px-3 py-3">
+                    <p className="text-sm font-black text-neutral-900">{getOneOnOneDisplayName(card)}</p>
+                    <p className="mt-1 text-xs font-semibold text-neutral-500">{getOneOnOneMeta(card)}</p>
+                    <span className="mt-2 inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                      {card.status === "approved" ? "승인 완료" : card.status === "reviewing" ? "검토 중" : "접수 완료"}
+                    </span>
+                  </div>
+                ))}
+                <Link
+                  href="/mypage?section=matching"
+                  className="inline-flex min-h-[40px] w-full items-center justify-center rounded-2xl border border-neutral-200 bg-white text-sm font-bold text-neutral-700 hover:bg-neutral-100"
+                >
+                  마이페이지에서 전체 관리
+                </Link>
+              </div>
+            </details>
+
+            <div className="rounded-[26px] border border-black/5 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
               <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-black text-neutral-900">진행 중인 매칭</p>
+                <div>
+                  <p className="text-base font-black text-neutral-950">진행 중인 매칭</p>
+                  <p className="mt-1 text-xs leading-5 text-neutral-500">선택, 수락, 번호교환이 필요한 항목을 먼저 보여드려요.</p>
+                </div>
                 <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-bold text-neutral-500">{matches.length}건</span>
               </div>
               {matches.length === 0 ? (
-                <p className="mt-3 text-sm leading-6 text-neutral-500">아직 진행 중인 매칭이 없어요. 아래 후보를 확인해보세요.</p>
+                <p className="mt-3 rounded-2xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-500">아직 진행 중인 매칭이 없어요. 아래 추천 후보를 확인해보세요.</p>
               ) : (
-                <div className="mt-3 space-y-2">
-                  {matches.slice(0, 4).map((match) => (
-                    <div key={match.id} className="rounded-2xl border border-neutral-100 bg-neutral-50 px-3 py-3">
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-black text-neutral-900">{getOneOnOneDisplayName(match.counterparty_card)}</p>
-                          <p className="mt-1 text-xs font-semibold text-neutral-500">{getOneOnOneMeta(match.counterparty_card)}</p>
-                        </div>
-                        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-neutral-600">
-                          {oneOnOneStateLabel(match.state)}
-                        </span>
-                      </div>
-                      <p className="mt-2 text-xs font-semibold text-sky-700">{oneOnOneContactLabel(match.contact_exchange_status)}</p>
-                      {match.counterparty_phone ? <p className="mt-1 text-sm font-black text-emerald-700">{match.counterparty_phone}</p> : null}
+                <div className="mt-3 space-y-3">
+                  {sortedMatches.slice(0, 8).map((match) => (
+                    <OneOnOneCandidateCard
+                      key={match.id}
+                      card={match.counterparty_card}
+                      badge={oneOnOneStateLabel(match.state)}
+                      badgeClassName={match.action_required || match.state === "mutual_accepted" ? "bg-emerald-100 text-emerald-700" : "bg-white text-neutral-600"}
+                      note={oneOnOneContactLabel(match.contact_exchange_status)}
+                    >
+                      {match.counterparty_phone ? <p className="mt-2 text-sm font-black text-emerald-700">{match.counterparty_phone}</p> : null}
                       <OneOnOneMatchActions
                         match={match}
                         processing={processingMatchIds.includes(match.id)}
@@ -1836,50 +1918,185 @@ function OneOnOneHomePanel({
                         onMatchAction={onMatchAction}
                         onContactCheckout={onContactCheckout}
                       />
-                    </div>
+                    </OneOnOneCandidateCard>
                   ))}
                 </div>
               )}
             </div>
 
-            <div className="rounded-[24px] border border-black/5 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-              <div className="flex items-center justify-between gap-3">
-                <p className="text-sm font-black text-neutral-900">추천 후보</p>
-                <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">{recommendations.length}명</span>
+            <div className="rounded-[26px] border border-sky-100 bg-sky-50/60 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-base font-black text-sky-950">추천 후보</p>
+                  <p className="mt-1 text-xs leading-5 text-sky-700">프로필 기준으로 먼저 보여드리는 후보예요. 하루 1회 새로 섞을 수 있어요.</p>
+                </div>
+                <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-sky-700">{recommendationCount}명</span>
               </div>
-              {recommendations.length === 0 ? (
-                <p className="mt-3 text-sm leading-6 text-neutral-500">현재 보여줄 추천 후보가 없어요. 마이페이지에서 새로고침 상태를 확인할 수 있습니다.</p>
+
+              {recommendationGroups.length === 0 || recommendationCount === 0 ? (
+                <p className="mt-3 rounded-2xl bg-white/80 p-4 text-sm leading-6 text-sky-800">현재 보여줄 추천 후보가 없어요. 조건에 맞는 후보가 생기면 여기서 바로 볼 수 있습니다.</p>
               ) : (
-                <div className="-mx-1 mt-3 flex snap-x gap-2 overflow-x-auto px-1 pb-2">
-                  {recommendations.slice(0, 8).map(({ sourceCardId, candidate }) => {
-                    const candidateId = String(candidate.id ?? "");
-                    const actionKey = `${sourceCardId}:${candidateId}`;
-                    const canSelect = Boolean(sourceCardId && candidateId);
+                <div className="mt-3 space-y-4">
+                  {recommendationGroups.map((group, groupIndex) => {
+                    const sourceCardId = String(group.source_card_id ?? "");
+                    const sourceCard = activeCards.find((card) => card.id === sourceCardId);
+                    const recommendations = group.recommendations ?? [];
+                    const refreshing = refreshingRecommendationIds.includes(sourceCardId);
+                    const canRefresh = Boolean(sourceCardId && group.can_refresh);
+                    const nextRefreshLabel = group.next_refresh_at ? new Date(group.next_refresh_at).toLocaleString("ko-KR") : "";
+
                     return (
-                    <div
-                      key={`${sourceCardId}:${candidateId || getOneOnOneDisplayName(candidate)}`}
-                      className="min-w-[210px] snap-start rounded-2xl border border-sky-100 bg-sky-50/70 px-3 py-3"
-                    >
-                      <p className="text-sm font-black text-sky-950">{getOneOnOneDisplayName(candidate)}</p>
-                      <p className="mt-1 text-xs font-semibold text-sky-800/70">{getOneOnOneMeta(candidate)}</p>
-                      <button
-                        type="button"
-                        disabled={!canSelect || processingAutoKeys.includes(actionKey)}
-                        onClick={() => onAutoSelect(sourceCardId, candidateId)}
-                        className="mt-3 inline-flex min-h-[32px] items-center rounded-full bg-white px-3 text-[11px] font-black text-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
-                      >
-                        {processingAutoKeys.includes(actionKey) ? "선택 중..." : "후보 선택"}
-                      </button>
-                    </div>
-                  );
+                      <div key={sourceCardId || `group-${groupIndex}`} className="rounded-[24px] bg-white p-3 shadow-sm">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-black text-neutral-950">
+                              {sourceCard ? `${getOneOnOneDisplayName(sourceCard)} 기준 후보` : "추천 후보"}
+                            </p>
+                            <p className="mt-1 text-[11px] font-semibold text-neutral-500">
+                              {canRefresh ? "새 후보로 한 번 더 섞을 수 있어요." : nextRefreshLabel ? `다음 새로고침: ${nextRefreshLabel}` : "추천 상태를 확인 중입니다."}
+                            </p>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={!canRefresh || refreshing}
+                            onClick={() => onRefreshRecommendations(sourceCardId)}
+                            className="inline-flex min-h-[36px] items-center rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-black text-sky-700 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-sky-100"
+                          >
+                            {refreshing ? "새로고침 중..." : "후보 새로고침"}
+                          </button>
+                        </div>
+                        <div className="mt-3 space-y-3">
+                          {recommendations.map((candidate) => {
+                            const candidateId = String(candidate.id ?? "");
+                            const actionKey = `${sourceCardId}:${candidateId}`;
+                            const canSelect = Boolean(sourceCardId && candidateId);
+                            return (
+                              <OneOnOneCandidateCard
+                                key={`${sourceCardId}:${candidateId || getOneOnOneDisplayName(candidate)}`}
+                                card={candidate}
+                                badge="추천"
+                                badgeClassName="bg-sky-100 text-sky-700"
+                                note="선택하면 상대에게 수락 요청이 전달됩니다."
+                              >
+                                <button
+                                  type="button"
+                                  disabled={!canSelect || processingAutoKeys.includes(actionKey)}
+                                  onClick={() => onAutoSelect(sourceCardId, candidateId)}
+                                  className="mt-3 inline-flex min-h-[40px] w-full items-center justify-center rounded-xl bg-sky-600 px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-sky-700"
+                                >
+                                  {processingAutoKeys.includes(actionKey) ? "선택 중..." : "이 후보 선택"}
+                                </button>
+                              </OneOnOneCandidateCard>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
                   })}
                 </div>
               )}
             </div>
           </div>
+        )}
+      </div>
+
+      <details className="mt-5 rounded-2xl border border-neutral-100 bg-neutral-50/70 px-4 py-3 text-xs text-neutral-500">
+        <summary className="cursor-pointer select-none text-xs font-bold text-neutral-700">1대1 번호교환 결제 및 환불 안내</summary>
+        <div className="mt-3 space-y-1.5 leading-5">
+          <p>신청과 후보 확인은 무료이며, 번호교환 단계에서 결제 전 금액과 내용을 확인한 뒤 진행됩니다.</p>
+          <p>결제 후 상대 연락처 공개 등 서비스 제공이 시작된 경우 단순 변심 환불은 제한될 수 있습니다.</p>
+          <p>중복 결제, 결제 오류, 서비스 미반영 등은 주문번호와 닉네임을 알려주시면 확인 후 조치합니다.</p>
+          <Link href="/refund" className="inline-flex font-bold text-neutral-700 underline underline-offset-2 hover:text-neutral-950">
+            환불/취소 규정 자세히 보기
+          </Link>
         </div>
-      )}
+      </details>
     </section>
+  );
+}
+
+function OneOnOneCandidateCard({
+  card,
+  badge,
+  badgeClassName,
+  note,
+  children,
+}: {
+  card?: OneOnOneCardPreview | null;
+  badge?: string;
+  badgeClassName?: string;
+  note?: string;
+  children?: ReactNode;
+}) {
+  const photos = Array.isArray(card?.photo_signed_urls) ? card.photo_signed_urls.filter(Boolean).slice(0, 4) : [];
+  const primaryPhoto = photos[0] ?? "";
+  const name = getOneOnOneDisplayName(card);
+  const meta = getOneOnOneMeta(card);
+
+  return (
+    <article className="overflow-hidden rounded-2xl border border-neutral-100 bg-neutral-50 px-3 py-3">
+      <div className="flex gap-3">
+        <div className="h-[76px] w-[76px] shrink-0 overflow-hidden rounded-2xl border border-white bg-white shadow-sm">
+          {primaryPhoto ? (
+            <img
+              src={primaryPhoto}
+              alt={`${name} 후보 사진`}
+              loading="lazy"
+              decoding="async"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-100 to-neutral-50 text-[11px] font-bold text-neutral-400">
+              사진
+            </div>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <div className="flex flex-wrap items-start justify-between gap-2">
+            <div className="min-w-0">
+              <p className="truncate text-sm font-black text-neutral-950">{name}</p>
+              <p className="mt-1 text-xs font-semibold leading-5 text-neutral-500">{meta}</p>
+            </div>
+            {badge ? (
+              <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${badgeClassName ?? "bg-white text-neutral-600"}`}>
+                {badge}
+              </span>
+            ) : null}
+          </div>
+          {note ? <p className="mt-2 text-xs font-semibold leading-5 text-sky-700">{note}</p> : null}
+        </div>
+      </div>
+
+      {card?.intro_text ? <p className="mt-3 whitespace-pre-wrap break-words text-xs leading-6 text-neutral-700">{card.intro_text}</p> : null}
+      {card?.strengths_text ? <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-neutral-700">장점: {card.strengths_text}</p> : null}
+      {card?.preferred_partner_text ? (
+        <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-neutral-700">원하는 점: {card.preferred_partner_text}</p>
+      ) : null}
+
+      {photos.length > 1 ? (
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          {photos.slice(1).map((url, idx) => (
+            <a
+              key={`${url}-${idx}`}
+              href={url}
+              target="_blank"
+              rel="noreferrer"
+              className="block overflow-hidden rounded-xl border border-neutral-100 bg-white"
+            >
+              <img
+                src={url}
+                alt={`${name} 추가 사진 ${idx + 2}`}
+                loading="lazy"
+                decoding="async"
+                className="h-20 w-full object-cover"
+              />
+            </a>
+          ))}
+        </div>
+      ) : null}
+
+      {children}
+    </article>
   );
 }
 
@@ -1963,19 +2180,30 @@ function OneOnOneMatchActions({
     );
   }
 
-  if (match.state === "mutual_accepted" || match.state === "candidate_accepted") {
+  if (match.role === "candidate" && match.state === "candidate_accepted") {
+    return (
+      <p className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-800">
+        내가 수락했어요. 상대가 최종 수락하면 번호 교환 단계로 넘어갑니다.
+      </p>
+    );
+  }
+
+  if (match.state === "mutual_accepted") {
     if (match.contact_exchange_status === "approved") {
       return (
         <p className="mt-3 rounded-xl border border-emerald-100 bg-white px-3 py-2 text-xs font-semibold text-emerald-700">
-          번호 교환이 완료됐어요.
+          번호 교환이 완료됐어요. 공개된 연락처는 안전하게 이용해주세요.
         </p>
       );
     }
 
     return (
       <div className="mt-3 rounded-2xl border border-emerald-100 bg-white p-3">
-        <p className="text-xs font-black text-neutral-900">쌍방 수락 완료</p>
-        <p className="mt-1 text-xs leading-5 text-neutral-600">결제하면 상대 연락처가 바로 교환됩니다.</p>
+        <p className="text-xs font-black text-neutral-900">번호 교환 가능</p>
+        <p className="mt-1 text-xs leading-5 text-neutral-600">
+          결제 전 금액과 내용을 확인한 뒤 진행되며, 완료되면 상대 연락처가 바로 공개됩니다.
+        </p>
+        <p className="mt-1 text-[11px] leading-5 text-neutral-400">결제 오류나 미반영은 마이페이지 결제 내역 또는 오픈카톡으로 확인 요청해주세요.</p>
         <div className="mt-2 flex flex-wrap gap-2">
           <button
             type="button"
