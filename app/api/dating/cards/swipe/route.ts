@@ -1,6 +1,7 @@
 ﻿import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import {
   getLatestSwipeCardForUser,
+  getGuestSwipePreviewCandidate,
   getSwipeCandidate,
   getSwipeDailyUsage,
   getSwipeLimitInfo,
@@ -46,23 +47,11 @@ function sanitizeAction(value: unknown): SwipeAction | null {
 
 export async function GET(req: Request) {
   const { user } = await getRequestAuthContext(req);
-
-  if (!user) {
-    return NextResponse.json({
-      loggedIn: false,
-      canSwipe: false,
-      remaining: 0,
-      limit: 7,
-      candidate: null,
-      reason: "로그인하면 빠른매칭 후보와 오늘 남은 횟수를 바로 확인할 수 있습니다.",
-    });
-  }
-
   const ip = extractClientIp(req);
   const rateLimit = await checkRouteRateLimit({
     requestId: crypto.randomUUID(),
     scope: "dating-cards-swipe-get",
-    userId: user.id,
+    userId: user?.id ?? null,
     ip,
     userLimitPerMin: 40,
     ipLimitPerMin: 120,
@@ -79,6 +68,32 @@ export async function GET(req: Request) {
   }
 
   const adminClient = createAdminClient();
+
+  if (!user) {
+    try {
+      const candidate = await getGuestSwipePreviewCandidate(adminClient, sex);
+      return NextResponse.json({
+        loggedIn: false,
+        canSwipe: false,
+        remaining: 0,
+        limit: 7,
+        candidate,
+        reason: candidate
+          ? "로그인하면 여기서 바로 라이크를 보낼 수 있어요."
+          : "로그인하면 빠른매칭 후보와 오늘 남은 횟수를 바로 확인할 수 있습니다.",
+      });
+    } catch (error) {
+      console.error("[GET /api/dating/cards/swipe] guest preview failed", error);
+      return NextResponse.json({
+        loggedIn: false,
+        canSwipe: false,
+        remaining: 0,
+        limit: 7,
+        candidate: null,
+        reason: "로그인하면 빠른매칭 후보와 오늘 남은 횟수를 바로 확인할 수 있습니다.",
+      });
+    }
+  }
 
   try {
     const limitInfo = await getSwipeLimitInfo(adminClient, user.id);

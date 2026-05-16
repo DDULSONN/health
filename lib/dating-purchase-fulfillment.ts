@@ -1,4 +1,4 @@
-import { createAdminClient } from "@/lib/supabase/server";
+﻿import { createAdminClient } from "@/lib/supabase/server";
 import { DATING_PAID_FIXED_MS } from "@/lib/dating-paid";
 import { extractProvinceFromRegion } from "@/lib/region-city";
 
@@ -156,7 +156,6 @@ export async function rejectMoreViewRequest(admin: AdminClient, options: RejectM
   }
   return updateRes.data ?? null;
 }
-
 type GrantMoreViewAccessOptions = {
   userId: string;
   sex: MoreViewSex;
@@ -194,7 +193,7 @@ export async function grantMoreViewAccess(admin: AdminClient, options: GrantMore
   const accessExpiresAt = new Date(baseTime + accessHours * 60 * 60 * 1000).toISOString();
 
   if (activeRow?.id) {
-    const updateRes = await admin
+    let updateRes = await admin
       .from("dating_more_view_requests")
       .update({
         access_expires_at: accessExpiresAt,
@@ -205,7 +204,21 @@ export async function grantMoreViewAccess(admin: AdminClient, options: GrantMore
       .eq("id", activeRow.id)
       .select("id,user_id,sex,status,access_expires_at")
       .single();
-    if (updateRes.error && !isMissingColumnError(updateRes.error)) {
+
+    if (updateRes.error && isMissingColumnError(updateRes.error)) {
+      updateRes = await admin
+        .from("dating_more_view_requests")
+        .update({
+          access_expires_at: accessExpiresAt,
+          note: options.note ?? null,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq("id", activeRow.id)
+        .select("id,user_id,sex,status,access_expires_at")
+        .single();
+    }
+
+    if (updateRes.error) {
       throw updateRes.error;
     }
     const creditGrant = bonusCredits > 0 ? await grantApplyCredits(admin, options.userId, bonusCredits) : null;
@@ -251,6 +264,37 @@ export async function grantMoreViewAccess(admin: AdminClient, options: GrantMore
   }
 
   if (insertRes.error) {
+    const errorCode = String((insertRes.error as { code?: unknown }).code ?? "");
+    if (errorCode === "23505") {
+      const retryRes = await admin
+        .from("dating_more_view_requests")
+        .select("id,access_expires_at")
+        .eq("user_id", options.userId)
+        .eq("sex", options.sex)
+        .eq("status", "approved")
+        .order("reviewed_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false })
+        .limit(10);
+
+      if (!retryRes.error) {
+        const retryRow = (retryRes.data ?? []).find((row: { id: string; access_expires_at?: string | null }) => {
+          if (!row.access_expires_at) return false;
+          const expiresAt = new Date(row.access_expires_at).getTime();
+          return Number.isFinite(expiresAt) && expiresAt > now;
+        });
+
+        if (retryRow?.id) {
+          const creditGrant = bonusCredits > 0 ? await grantApplyCredits(admin, options.userId, bonusCredits) : null;
+          return {
+            requestId: retryRow.id,
+            userId: options.userId,
+            sex: options.sex,
+            accessExpiresAt: retryRow.access_expires_at ?? accessExpiresAt,
+            bonusCreditsGranted: creditGrant?.addedCredits ?? 0,
+          };
+        }
+      }
+    }
     throw insertRes.error;
   }
 
@@ -510,6 +554,134 @@ type ApproveSwipeSubscriptionRequestOptions = {
   note?: string | null;
 };
 
+type GrantSwipeSubscriptionOptions = {
+  userId: string;
+  amount?: number;
+  dailyLimit?: number;
+  durationDays?: number;
+  expiresAt?: string | null;
+  note?: string | null;
+};
+
+export async function grantSwipeSubscription(admin: AdminClient, options: GrantSwipeSubscriptionOptions) {
+  const now = new Date();
+  const amount = Math.max(0, Number(options.amount ?? 10000));
+  const dailyLimit = Math.max(1, Number(options.dailyLimit ?? 15));
+  const durationDays = Math.max(1, Number(options.durationDays ?? 30));
+  const nowIso = now.toISOString();
+  const explicitExpiresAtMs = options.expiresAt ? new Date(options.expiresAt).getTime() : Number.NaN;
+  const hasExplicitExpiresAt = Number.isFinite(explicitExpiresAtMs) && explicitExpiresAtMs > now.getTime();
+
+  const existingRes = await admin
+    .from("dating_swipe_subscription_requests")
+    .select("id,status,approved_at,expires_at")
+    .eq("user_id", options.userId)
+    .in("status", ["pending", "approved"])
+    .order("created_at", { ascending: false })
+    .limit(20);
+
+  if (existingRes.error) {
+    throw existingRes.error;
+  }
+
+  const rows = Array.isArray(existingRes.data)
+    ? (existingRes.data as Array<{
+        id: string;
+        status: "pending" | "approved";
+        approved_at: string | null;
+        expires_at: string | null;
+      }>)
+    : [];
+
+  const activeApproved = rows.find((row) => {
+    if (row.status !== "approved" || !row.expires_at) return false;
+    const expiresAtMs = new Date(row.expires_at).getTime();
+    return Number.isFinite(expiresAtMs) && expiresAtMs > now.getTime();
+  });
+
+  if (activeApproved?.id) {
+    const baseTime = activeApproved.expires_at
+      ? Math.max(new Date(activeApproved.expires_at).getTime(), now.getTime())
+      : now.getTime();
+    const expiresAt = new Date(
+      hasExplicitExpiresAt ? Math.max(baseTime, explicitExpiresAtMs) : baseTime + durationDays * 24 * 60 * 60 * 1000
+    ).toISOString();
+
+    const updateRes = await admin
+      .from("dating_swipe_subscription_requests")
+      .update({
+        amount,
+        daily_limit: dailyLimit,
+        duration_days: durationDays,
+        expires_at: expiresAt,
+        note: options.note ?? null,
+        reviewed_at: nowIso,
+        updated_at: nowIso,
+      })
+      .eq("id", activeApproved.id)
+      .select("id,user_id,status,amount,daily_limit,duration_days,approved_at,expires_at")
+      .single();
+
+    if (updateRes.error) {
+      throw updateRes.error;
+    }
+    return updateRes.data;
+  }
+
+  const pendingRow = rows.find((row) => row.status === "pending") ?? null;
+  const expiresAt = new Date(
+    hasExplicitExpiresAt ? explicitExpiresAtMs : now.getTime() + durationDays * 24 * 60 * 60 * 1000
+  ).toISOString();
+
+  if (pendingRow?.id) {
+    const approveRes = await admin
+      .from("dating_swipe_subscription_requests")
+      .update({
+        status: "approved",
+        amount,
+        daily_limit: dailyLimit,
+        duration_days: durationDays,
+        approved_at: nowIso,
+        expires_at: expiresAt,
+        reviewed_at: nowIso,
+        reviewed_by_user_id: null,
+        note: options.note ?? null,
+        updated_at: nowIso,
+      })
+      .eq("id", pendingRow.id)
+      .select("id,user_id,status,amount,daily_limit,duration_days,approved_at,expires_at")
+      .single();
+
+    if (approveRes.error) {
+      throw approveRes.error;
+    }
+    return approveRes.data;
+  }
+
+  const insertRes = await admin
+    .from("dating_swipe_subscription_requests")
+    .insert({
+      user_id: options.userId,
+      status: "approved",
+      amount,
+      daily_limit: dailyLimit,
+      duration_days: durationDays,
+      approved_at: nowIso,
+      expires_at: expiresAt,
+      reviewed_at: nowIso,
+      reviewed_by_user_id: null,
+      note: options.note ?? null,
+      updated_at: nowIso,
+    })
+    .select("id,user_id,status,amount,daily_limit,duration_days,approved_at,expires_at")
+    .single();
+
+  if (insertRes.error) {
+    throw insertRes.error;
+  }
+  return insertRes.data;
+}
+
 export async function approveSwipeSubscriptionRequest(
   admin: AdminClient,
   options: ApproveSwipeSubscriptionRequestOptions
@@ -556,7 +728,6 @@ export async function approveSwipeSubscriptionRequest(
   }
   return updateRes.data ?? null;
 }
-
 type RejectSwipeSubscriptionRequestOptions = {
   requestId: string;
   reviewedByUserId: string | null;
@@ -588,6 +759,88 @@ export async function rejectSwipeSubscriptionRequest(
   return updateRes.data ?? null;
 }
 
+
+type GrantOneOnOneContactExchangeOptions = {
+  matchId: string;
+  userId: string;
+  note?: string | null;
+};
+
+export async function grantOneOnOneContactExchange(admin: AdminClient, options: GrantOneOnOneContactExchangeOptions) {
+  const matchId = options.matchId.trim();
+  if (!matchId) {
+    throw new Error("dating_1on1_match_id 값이 필요합니다.");
+  }
+
+  const matchRes = await admin
+    .from("dating_1on1_match_proposals")
+    .select(
+      "id,source_user_id,candidate_user_id,state,contact_exchange_status,contact_exchange_paid_by_user_id"
+    )
+    .eq("id", matchId)
+    .maybeSingle();
+
+  if (matchRes.error) {
+    throw matchRes.error;
+  }
+  if (!matchRes.data) {
+    throw new Error("1:1 번호교환 대상 매칭을 찾지 못했습니다.");
+  }
+  const isParticipant =
+    matchRes.data.source_user_id === options.userId ||
+    matchRes.data.candidate_user_id === options.userId;
+  if (!isParticipant) {
+    throw new Error("1:1 번호교환 결제는 매칭된 두 사용자만 진행할 수 있습니다.");
+  }
+  if (!["mutual_accepted", "candidate_accepted"].includes(matchRes.data.state)) {
+    throw new Error("쌍방 수락이 완료된 매칭만 번호교환 결제를 진행할 수 있습니다.");
+  }
+  if (matchRes.data.contact_exchange_status === "approved") {
+    return {
+      id: matchRes.data.id,
+      state: matchRes.data.state,
+      contact_exchange_status: matchRes.data.contact_exchange_status,
+      alreadyApproved: true,
+    };
+  }
+  if (matchRes.data.contact_exchange_status === "canceled") {
+    throw new Error("취소된 1:1 매칭은 번호교환 결제를 진행할 수 없습니다.");
+  }
+
+  const nowIso = new Date().toISOString();
+  const note = (options.note ?? "").trim();
+  const nextNote = note ? `${note} | auto-approved` : "auto-approved via direct_store";
+
+  const approveRes = await admin
+    .from("dating_1on1_match_proposals")
+    .update({
+      state: "mutual_accepted",
+      contact_exchange_status: "approved",
+      contact_exchange_requested_at: nowIso,
+      contact_exchange_paid_at: nowIso,
+      contact_exchange_paid_by_user_id: options.userId,
+      contact_exchange_approved_at: nowIso,
+      contact_exchange_approved_by_user_id: null,
+      contact_exchange_note: nextNote,
+      updated_at: nowIso,
+    })
+    .eq("id", matchId)
+    .in("state", ["mutual_accepted", "candidate_accepted"])
+    .in("contact_exchange_status", ["none", "awaiting_applicant_payment", "payment_pending_admin"])
+    .select(
+      "id,source_user_id,candidate_user_id,state,contact_exchange_status,contact_exchange_paid_at,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_note"
+    )
+    .maybeSingle();
+
+  if (approveRes.error) {
+    throw approveRes.error;
+  }
+  if (!approveRes.data) {
+    throw new Error("이 1:1 번호교환 결제는 이미 처리되었습니다.");
+  }
+
+  return approveRes.data;
+}
 type ApprovePaidCardOptions = {
   paidCardId: string;
   displayMode?: "priority_24h" | "instant_public";

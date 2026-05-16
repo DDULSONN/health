@@ -177,9 +177,55 @@ type SwipeRequestOptions = {
   silent?: boolean;
 };
 
+type HomeFeatureTab = "open_cards" | "quick_match" | "one_on_one";
+
+type OneOnOneCardPreview = {
+  id?: string;
+  name?: string | null;
+  display_nickname?: string | null;
+  nickname?: string | null;
+  sex?: "male" | "female";
+  age?: number | null;
+  birth_year?: number | null;
+  region?: string | null;
+  job?: string | null;
+  height_cm?: number | null;
+  status?: string | null;
+};
+
+type OneOnOneRecommendationGroup = {
+  source_card_id?: string;
+  source_card_status?: string;
+  recommendations?: OneOnOneCardPreview[];
+};
+
+type OneOnOneMatchPreview = {
+  id: string;
+  role?: "source" | "candidate";
+  state?: string;
+  contact_exchange_status?: string;
+  action_required?: boolean;
+  counterparty_card?: OneOnOneCardPreview | null;
+  counterparty_phone?: string | null;
+  created_at?: string | null;
+};
+
+type OneOnOneHomeState = {
+  status: { canWrite?: boolean; totalApplications?: number; phoneVerified?: boolean; reason?: string | null } | null;
+  myCards: OneOnOneCardPreview[];
+  matches: OneOnOneMatchPreview[];
+  recommendations: OneOnOneRecommendationGroup[];
+};
+
 const PAGE_SIZE = 20;
 const OPEN_CARDS_CACHE_KEY = "community-dating-open-cards:v1";
 const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
+
+const HOME_FEATURE_TABS: Array<{ key: HomeFeatureTab; label: string; body: string }> = [
+  { key: "open_cards", label: "오픈카드", body: "카드 목록" },
+  { key: "quick_match", label: "빠른매칭", body: "랜덤 후보" },
+  { key: "one_on_one", label: "1대1매칭", body: "후보 확인" },
+];
 
 type OpenCardsSnapshot = {
   activeSex: "male" | "female";
@@ -257,6 +303,46 @@ const CARD_VISUAL_THEMES: CardVisualTheme[] = [
 function getCardVisualTheme(seed: string) {
   const hash = [...seed].reduce((acc, char) => acc + char.charCodeAt(0), 0);
   return CARD_VISUAL_THEMES[hash % CARD_VISUAL_THEMES.length];
+}
+
+function getOneOnOneDisplayName(card?: OneOnOneCardPreview | null) {
+  return card?.name || card?.display_nickname || card?.nickname || "1:1 후보";
+}
+
+function getOneOnOneAge(card?: OneOnOneCardPreview | null) {
+  if (!card) return null;
+  if (typeof card.age === "number" && Number.isFinite(card.age)) return card.age;
+  if (typeof card.birth_year === "number" && Number.isFinite(card.birth_year)) {
+    const currentYear = new Date().getFullYear();
+    return currentYear - card.birth_year + 1;
+  }
+  return null;
+}
+
+function getOneOnOneMeta(card?: OneOnOneCardPreview | null) {
+  if (!card) return "후보 정보를 확인 중";
+  const age = getOneOnOneAge(card);
+  return [age ? `${age}세` : null, card.region, card.job].filter(Boolean).join(" · ") || "상세 정보 확인";
+}
+
+function oneOnOneStateLabel(state?: string) {
+  if (state === "proposed") return "후보 제안";
+  if (state === "source_selected") return "내 선택 완료";
+  if (state === "candidate_accepted") return "상대 수락";
+  if (state === "mutual_accepted") return "쌍방 수락";
+  if (state === "candidate_rejected") return "상대 거절";
+  if (state === "source_declined") return "내 거절";
+  if (state === "source_skipped") return "넘김";
+  if (state === "admin_canceled") return "관리자 종료";
+  return "진행 중";
+}
+
+function oneOnOneContactLabel(status?: string) {
+  if (status === "approved") return "번호 공개 완료";
+  if (status === "paid") return "결제 완료";
+  if (status === "payment_pending_admin") return "관리자 확인 중";
+  if (status === "awaiting_applicant_payment") return "번호 교환 대기";
+  return "번호 교환 전";
 }
 
 function readOpenCardsSnapshot(): OpenCardsSnapshot | null {
@@ -359,6 +445,13 @@ export default function OpenCardsPage() {
   const [swipePremiumGuideOpen, setSwipePremiumGuideOpen] = useState(false);
   const [showWeekendApplyCreditBenefit, setShowWeekendApplyCreditBenefit] = useState(false);
   const [homeAdLink, setHomeAdLink] = useState<HomeAdLinkSetting | null>(null);
+  const [homeFeatureTab, setHomeFeatureTab] = useState<HomeFeatureTab>("open_cards");
+  const [oneOnOneHomeLoading, setOneOnOneHomeLoading] = useState(false);
+  const [oneOnOneHomeError, setOneOnOneHomeError] = useState("");
+  const [oneOnOneHome, setOneOnOneHome] = useState<OneOnOneHomeState | null>(null);
+  const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
+  const [processingOneOnOneContactIds, setProcessingOneOnOneContactIds] = useState<string[]>([]);
+  const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
 
   useEffect(() => {
     activeSexRef.current = activeSex;
@@ -480,6 +573,57 @@ export default function OpenCardsPage() {
       cancelled = true;
     };
   }, [viewerLoggedIn]);
+
+  const reloadOneOnOneHome = useCallback(async () => {
+    if (!viewerLoggedIn) {
+      setOneOnOneHome(null);
+      setOneOnOneHomeError("");
+      return;
+    }
+
+    setOneOnOneHomeLoading(true);
+    setOneOnOneHomeError("");
+    try {
+      const [statusRes, myCardsRes, matchesRes, recommendationsRes] = await Promise.all([
+        fetch("/api/dating/1on1/write-status", { cache: "no-store" }),
+        fetch("/api/dating/1on1/my", { cache: "no-store" }),
+        fetch("/api/dating/1on1/matches/my", { cache: "no-store" }),
+        fetch("/api/dating/1on1/recommendations/my", { cache: "no-store" }),
+      ]);
+
+      const [statusBody, myCardsBody, matchesBody, recommendationsBody] = await Promise.all([
+        statusRes.json().catch(() => ({})),
+        myCardsRes.json().catch(() => ({})),
+        matchesRes.json().catch(() => ({})),
+        recommendationsRes.json().catch(() => ({})),
+      ]);
+
+      if (!statusRes.ok) throw new Error(statusBody.error ?? "1:1 상태를 불러오지 못했습니다.");
+      if (!myCardsRes.ok) throw new Error(myCardsBody.error ?? "내 1:1 신청 내역을 불러오지 못했습니다.");
+
+      setOneOnOneHome({
+        status: statusBody,
+        myCards: Array.isArray(myCardsBody.items) ? myCardsBody.items : [],
+        matches: matchesRes.ok && Array.isArray(matchesBody.items) ? matchesBody.items : [],
+        recommendations: recommendationsRes.ok && Array.isArray(recommendationsBody.items) ? recommendationsBody.items : [],
+      });
+    } catch (error) {
+      setOneOnOneHomeError(error instanceof Error ? error.message : "1:1 정보를 불러오지 못했습니다.");
+    } finally {
+      setOneOnOneHomeLoading(false);
+    }
+  }, [viewerLoggedIn]);
+
+  useEffect(() => {
+    if (homeFeatureTab !== "one_on_one") return;
+    let cancelled = false;
+    void reloadOneOnOneHome().finally(() => {
+      if (cancelled) return;
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [homeFeatureTab, reloadOneOnOneHome]);
 
   useEffect(() => {
     writeOpenCardsSnapshot({
@@ -809,7 +953,11 @@ export default function OpenCardsPage() {
     async (action: "like" | "pass") => {
       if (!swipeState.candidate || swipeSubmitting) return;
       if (!swipeState.canSwipe) {
-        setSwipeMessage("라이크나 넘기기를 하려면 먼저 오픈카드를 등록해 주세요.");
+        setSwipeMessage(
+          swipeState.loggedIn
+            ? "라이크나 넘기기를 하려면 먼저 오픈카드를 등록해 주세요."
+            : "로그인하면 여기서 바로 라이크를 보낼 수 있어요."
+        );
         return;
       }
       setSwipeSubmitting(true);
@@ -848,7 +996,7 @@ export default function OpenCardsPage() {
         setSwipeSubmitting(false);
       }
     },
-    [activeSex, loadSwipe, swipeState.canSwipe, swipeState.candidate, swipeSubmitting]
+    [activeSex, loadSwipe, swipeState.canSwipe, swipeState.candidate, swipeState.loggedIn, swipeSubmitting]
   );
 
   const handleSwipePremiumCheckout = useCallback(async () => {
@@ -883,6 +1031,96 @@ export default function OpenCardsPage() {
     }
   }, [swipeSubscriptionSubmitting]);
 
+  const handleOneOnOneMatchAction = useCallback(
+    async (
+      matchId: string,
+      action: "select_candidate" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
+    ) => {
+      if (processingOneOnOneMatchIds.includes(matchId)) return;
+      setProcessingOneOnOneMatchIds((prev) => [...prev, matchId]);
+      try {
+        const res = await fetch(`/api/dating/1on1/matches/${matchId}`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!res.ok || !body.ok) {
+          throw new Error(body.error ?? "1:1 매칭 처리에 실패했습니다.");
+        }
+        await reloadOneOnOneHome();
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "1:1 매칭 처리에 실패했습니다.");
+      } finally {
+        setProcessingOneOnOneMatchIds((prev) => prev.filter((id) => id !== matchId));
+      }
+    },
+    [processingOneOnOneMatchIds, reloadOneOnOneHome]
+  );
+
+  const handleOneOnOneContactCheckout = useCallback(
+    async (matchId: string) => {
+      if (processingOneOnOneContactIds.includes(matchId)) return;
+      setProcessingOneOnOneContactIds((prev) => [...prev, matchId]);
+      try {
+        const res = await fetch("/api/payments/toss/create", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            productType: "one_on_one_contact_exchange",
+            matchId,
+          }),
+        });
+        const body = (await res.json().catch(() => ({}))) as {
+          ok?: boolean;
+          error?: string;
+          message?: string;
+          checkoutUrl?: string;
+        };
+        if (!res.ok || !body.ok) {
+          throw new Error(body.message ?? body.error ?? "번호 교환 결제를 시작하지 못했습니다.");
+        }
+        if (!body.checkoutUrl) {
+          throw new Error("결제창을 열지 못했습니다.");
+        }
+        window.location.href = body.checkoutUrl;
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "번호 교환 결제를 시작하지 못했습니다.");
+      } finally {
+        setProcessingOneOnOneContactIds((prev) => prev.filter((id) => id !== matchId));
+      }
+    },
+    [processingOneOnOneContactIds]
+  );
+
+  const handleOneOnOneAutoSelect = useCallback(
+    async (sourceCardId: string, candidateCardId: string) => {
+      const actionKey = `${sourceCardId}:${candidateCardId}`;
+      if (processingOneOnOneAutoKeys.includes(actionKey)) return;
+      setProcessingOneOnOneAutoKeys((prev) => [...prev, actionKey]);
+      try {
+        const res = await fetch("/api/dating/1on1/matches/auto", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            source_card_id: sourceCardId,
+            candidate_card_id: candidateCardId,
+          }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!res.ok || !body.ok) {
+          throw new Error(body.error ?? "후보 선택에 실패했습니다.");
+        }
+        await reloadOneOnOneHome();
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "후보 선택에 실패했습니다.");
+      } finally {
+        setProcessingOneOnOneAutoKeys((prev) => prev.filter((key) => key !== actionKey));
+      }
+    },
+    [processingOneOnOneAutoKeys, reloadOneOnOneHome]
+  );
+
   const nowLabel = useMemo(() => tick, [tick]);
   void nowLabel;
   const malePaidItems = useMemo(() => paidItems.filter((item) => item.gender === "M"), [paidItems]);
@@ -897,9 +1135,38 @@ export default function OpenCardsPage() {
   const activeCurrentCount = activeSex === "male" ? (queueStats?.male.public_count ?? males.length) : (queueStats?.female.public_count ?? females.length);
   const recentOpenCardApplicationCount = Math.max(0, Number(queueStats?.recent_open_card_applications_24h_count ?? 0));
   const swipeTheme = getCardVisualTheme(swipeState.candidate?.card_id ?? activeSex);
+  const showOpenCardSection = homeFeatureTab === "open_cards";
+  const showQuickMatchSection = homeFeatureTab === "quick_match";
+  const showGuideSection = homeFeatureTab === "open_cards";
+  const showOneOnOneSection = homeFeatureTab === "one_on_one";
   return (
     <main className="mx-auto max-w-5xl px-4 py-5 md:px-6 md:py-8">
       <DatingAdultNotice />
+      <section className="sticky top-[64px] z-30 mb-4 rounded-[24px] border border-black/5 bg-white/92 p-1.5 shadow-[0_12px_30px_rgba(15,23,42,0.08)] backdrop-blur">
+        <div className="grid grid-cols-3 gap-1">
+          {HOME_FEATURE_TABS.map((tab) => {
+            const active = homeFeatureTab === tab.key;
+            return (
+              <button
+                key={tab.key}
+                type="button"
+                onClick={() => setHomeFeatureTab(tab.key)}
+                className={`rounded-[18px] px-2 py-3 text-center transition ${
+                  active
+                    ? "bg-neutral-950 text-white shadow-[0_10px_22px_rgba(15,23,42,0.16)]"
+                    : "text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900"
+                }`}
+              >
+                <span className="block text-sm font-black leading-tight">{tab.label}</span>
+                <span className={`mt-0.5 block text-[10px] font-semibold ${active ? "text-white/70" : "text-neutral-400"}`}>
+                  {tab.body}
+                </span>
+              </button>
+            );
+          })}
+        </div>
+      </section>
+      {showOpenCardSection ? (
       <section className="mb-5 rounded-[30px] border border-black/5 bg-white p-4 shadow-[0_14px_40px_rgba(15,23,42,0.06)] md:p-6">
         <div className="flex flex-col gap-5">
           <div className="flex flex-wrap items-center gap-2">
@@ -985,12 +1252,13 @@ export default function OpenCardsPage() {
                   <p className="text-[15px] font-black tracking-tight text-neutral-900">후보를 보고 지원하는 1:1 소개팅도 함께 이용할 수 있어요.</p>
                   <p className="mt-1 text-sm text-neutral-500">마음에 드는 후보에 지원하고, 서로 수락되면 번호 교환이 진행됩니다.</p>
                 </div>
-                <Link
-                  href="/dating/1on1"
+                <button
+                  type="button"
+                  onClick={() => setHomeFeatureTab("one_on_one")}
                   className="inline-flex min-h-[40px] shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-700 hover:bg-neutral-100"
                 >
                   1:1 후보 보기
-                </Link>
+                </button>
               </div>
             </div>
 
@@ -1063,8 +1331,9 @@ export default function OpenCardsPage() {
           </div>
         </div>
       </section>
+      ) : null}
 
-      {!viewerLoggedIn ? (
+      {!viewerLoggedIn && showOpenCardSection ? (
         <section className="mb-4 rounded-[26px] border border-black/5 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
@@ -1081,6 +1350,7 @@ export default function OpenCardsPage() {
         </section>
       ) : null}
 
+      {showQuickMatchSection ? (
       <section className="mb-5 rounded-[30px] border border-black/5 bg-white p-4 shadow-[0_14px_40px_rgba(15,23,42,0.05)] md:p-6">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
@@ -1114,6 +1384,28 @@ export default function OpenCardsPage() {
 
         {swipeRefreshing && !swipeLoading ? <p className="mt-3 text-xs font-medium text-neutral-400">최신 후보로 업데이트 중...</p> : null}
         {swipeMessage ? <p className="mt-3 text-sm font-semibold text-emerald-700">{swipeMessage}</p> : null}
+        {swipeState.loggedIn && swipeState.candidate && !swipeState.canSwipe ? (
+          <div className="mt-4 rounded-[24px] border border-rose-100 bg-rose-50/70 p-4">
+            <p className="text-sm font-black text-rose-900">빠른매칭은 오픈카드 등록 후 이용할 수 있어요.</p>
+            <p className="mt-1 text-sm leading-6 text-rose-800">
+              후보 사진과 기본 정보는 미리 볼 수 있지만, 라이크와 넘기기는 내 오픈카드가 있어야 진행됩니다.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <Link
+                href="/dating/card/new"
+                className="inline-flex min-h-[40px] items-center rounded-2xl bg-rose-600 px-4 text-sm font-black text-white hover:bg-rose-700"
+              >
+                오픈카드 작성하기
+              </Link>
+              <Link
+                href="/dating/paid?apply=1"
+                className="inline-flex min-h-[40px] items-center rounded-2xl border border-rose-200 bg-white px-4 text-sm font-bold text-rose-700 hover:bg-rose-50"
+              >
+                대기 없이 등록
+              </Link>
+            </div>
+          </div>
+        ) : null}
 
         {swipeLoading ? (
           <p className="mt-5 text-sm text-neutral-500">후보를 불러오는 중...</p>
@@ -1220,27 +1512,65 @@ export default function OpenCardsPage() {
               </div>
 
               <div className="grid grid-cols-2 gap-3 pt-1">
-                <button
-                  type="button"
-                  onClick={() => void handleSwipe("pass")}
-                  disabled={swipeSubmitting}
-                  className="inline-flex min-h-[54px] items-center justify-center rounded-[18px] border border-neutral-200 bg-white px-4 text-lg font-bold text-neutral-500 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  넘기기
-                </button>
-                <button
-                  type="button"
-                  onClick={() => void handleSwipe("like")}
-                  disabled={swipeSubmitting}
-                  className="inline-flex min-h-[54px] items-center justify-center rounded-[18px] bg-rose-600 px-4 text-lg font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  라이크
-                </button>
+                {!swipeState.loggedIn ? (
+                  <>
+                    <Link
+                      href={buildLoginRedirect("/community/dating/cards")}
+                      className="inline-flex min-h-[54px] items-center justify-center rounded-[18px] border border-neutral-200 bg-white px-4 text-base font-bold text-neutral-600"
+                    >
+                      로그인하고 보기
+                    </Link>
+                    <Link
+                      href={buildLoginRedirect("/community/dating/cards")}
+                      className="inline-flex min-h-[54px] items-center justify-center rounded-[18px] bg-rose-600 px-4 text-base font-bold text-white"
+                    >
+                      로그인하고 라이크
+                    </Link>
+                  </>
+                ) : !swipeState.canSwipe ? (
+                  <>
+                    <Link
+                      href="/dating/card/new"
+                      className="inline-flex min-h-[54px] items-center justify-center rounded-[18px] border border-neutral-200 bg-white px-4 text-base font-bold text-neutral-600"
+                    >
+                      오픈카드 작성
+                    </Link>
+                    <Link
+                      href="/dating/paid?apply=1"
+                      className="inline-flex min-h-[54px] items-center justify-center rounded-[18px] bg-rose-600 px-4 text-base font-bold text-white"
+                    >
+                      대기 없이 등록
+                    </Link>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => void handleSwipe("pass")}
+                      disabled={swipeSubmitting}
+                      className="inline-flex min-h-[54px] items-center justify-center rounded-[18px] border border-neutral-200 bg-white px-4 text-lg font-bold text-neutral-500 disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      넘기기
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleSwipe("like")}
+                      disabled={swipeSubmitting}
+                      className="inline-flex min-h-[54px] items-center justify-center rounded-[18px] bg-rose-600 px-4 text-lg font-bold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    >
+                      라이크
+                    </button>
+                  </>
+                )}
               </div>
+              {!swipeState.loggedIn ? (
+                <p className="text-center text-xs font-semibold text-rose-600">로그인하면 이 후보에게 바로 라이크를 보낼 수 있어요.</p>
+              ) : null}
             </div>
           </div>
         )}
       </section>
+      ) : null}
 
       {swipePremiumGuideOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/45 px-4" role="dialog" aria-modal="true">
@@ -1296,6 +1626,22 @@ export default function OpenCardsPage() {
         </div>
       ) : null}
 
+      {showOneOnOneSection ? (
+        <OneOnOneHomePanel
+          viewerLoggedIn={viewerLoggedIn}
+          loading={oneOnOneHomeLoading}
+          error={oneOnOneHomeError}
+          data={oneOnOneHome}
+          processingMatchIds={processingOneOnOneMatchIds}
+          processingContactIds={processingOneOnOneContactIds}
+          processingAutoKeys={processingOneOnOneAutoKeys}
+          onMatchAction={handleOneOnOneMatchAction}
+          onContactCheckout={handleOneOnOneContactCheckout}
+          onAutoSelect={handleOneOnOneAutoSelect}
+        />
+      ) : null}
+
+      {showGuideSection ? (
       <section className="mb-5 rounded-[26px] border border-black/5 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
         <button
           type="button"
@@ -1328,10 +1674,11 @@ export default function OpenCardsPage() {
           </div>
         )}
       </section>
+      ) : null}
 
-      {loading ? (
+      {showOpenCardSection && loading ? (
         <p className="text-neutral-400 text-center py-10">불러오는 중...</p>
-      ) : (
+      ) : showOpenCardSection ? (
         <Section
           title={activeSex === "male" ? "남자 오픈카드" : "여자 오픈카드"}
           currentCount={activeCurrentCount}
@@ -1341,9 +1688,312 @@ export default function OpenCardsPage() {
           onMore={activeSex === "male" ? loadMoreMale : loadMoreFemale}
           viewerLoggedIn={viewerLoggedIn}
         />
-      )}
+      ) : null}
     </main>
   );
+}
+
+function OneOnOneHomePanel({
+  viewerLoggedIn,
+  loading,
+  error,
+  data,
+  processingMatchIds,
+  processingContactIds,
+  processingAutoKeys,
+  onMatchAction,
+  onContactCheckout,
+  onAutoSelect,
+}: {
+  viewerLoggedIn: boolean;
+  loading: boolean;
+  error: string;
+  data: OneOnOneHomeState | null;
+  processingMatchIds: string[];
+  processingContactIds: string[];
+  processingAutoKeys: string[];
+  onMatchAction: (
+    matchId: string,
+    action: "select_candidate" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
+  ) => void;
+  onContactCheckout: (matchId: string) => void;
+  onAutoSelect: (sourceCardId: string, candidateCardId: string) => void;
+}) {
+  const myCards = data?.myCards ?? [];
+  const matches = data?.matches ?? [];
+  const recommendations = (data?.recommendations ?? []).flatMap((group) =>
+    (group.recommendations ?? []).map((candidate) => ({
+      sourceCardId: String(group.source_card_id ?? ""),
+      candidate,
+    }))
+  );
+  const activeCards = myCards.filter((card) => card.status !== "rejected");
+  const hasOneOnOneCard = activeCards.length > 0;
+
+  return (
+    <section className="mb-5 rounded-[30px] border border-black/5 bg-white p-4 shadow-[0_14px_40px_rgba(15,23,42,0.05)] md:p-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div>
+          <span className="inline-flex rounded-full bg-sky-50 px-3 py-1 text-xs font-black text-sky-700">1대1 매칭</span>
+          <h2 className="mt-3 text-[30px] font-black tracking-tight text-neutral-950">후보 보고 천천히 결정하기</h2>
+          <p className="mt-2 max-w-2xl text-[15px] leading-7 text-neutral-500">
+            1대1 프로필을 작성하면 내 조건에 맞는 후보와 진행 상태를 여기서 빠르게 확인할 수 있어요.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href="/dating/1on1"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-2xl bg-neutral-950 px-4 text-sm font-bold text-white hover:bg-neutral-800"
+          >
+            1대1 작성
+          </Link>
+          <Link
+            href="/mypage?section=matching"
+            className="inline-flex min-h-[44px] items-center justify-center rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-700 hover:bg-neutral-50"
+          >
+            전체 관리
+          </Link>
+        </div>
+      </div>
+
+      {!viewerLoggedIn ? (
+        <div className="mt-5 rounded-[24px] border border-sky-100 bg-sky-50/70 p-4">
+          <p className="text-sm font-bold text-sky-900">로그인하면 내 1대1 진행 상태를 볼 수 있어요.</p>
+          <Link
+            href={buildLoginRedirect("/community/dating/cards")}
+            className="mt-3 inline-flex min-h-[42px] items-center rounded-2xl bg-sky-600 px-4 text-sm font-bold text-white"
+          >
+            로그인하기
+          </Link>
+        </div>
+      ) : loading ? (
+        <p className="mt-5 rounded-[24px] bg-neutral-50 p-5 text-sm text-neutral-500">1대1 정보를 불러오는 중...</p>
+      ) : error ? (
+        <p className="mt-5 rounded-[24px] border border-rose-100 bg-rose-50 p-5 text-sm font-semibold text-rose-700">{error}</p>
+      ) : !hasOneOnOneCard ? (
+        <div className="mt-5 rounded-[24px] border border-sky-100 bg-sky-50/70 p-5">
+          <p className="text-lg font-black text-sky-950">아직 1대1 프로필이 없어요.</p>
+          <p className="mt-2 text-sm leading-6 text-sky-900">
+            먼저 신청서를 작성하면 후보 확인과 매칭 진행을 이어갈 수 있어요. 신청은 무료입니다.
+          </p>
+          <Link
+            href="/dating/1on1"
+            className="mt-4 inline-flex min-h-[46px] items-center justify-center rounded-2xl bg-sky-600 px-5 text-sm font-black text-white hover:bg-sky-700"
+          >
+            1대1 프로필 작성하기
+          </Link>
+        </div>
+      ) : (
+        <div className="mt-5 grid gap-4 lg:grid-cols-[0.85fr_1.15fr]">
+          <div className="rounded-[24px] bg-neutral-50 p-4">
+            <p className="text-sm font-black text-neutral-900">내 1대1 프로필</p>
+            <div className="mt-3 space-y-2">
+              {activeCards.slice(0, 3).map((card) => (
+                <div key={card.id ?? getOneOnOneDisplayName(card)} className="rounded-2xl bg-white px-3 py-3">
+                  <p className="text-sm font-black text-neutral-900">{getOneOnOneDisplayName(card)}</p>
+                  <p className="mt-1 text-xs font-semibold text-neutral-500">{getOneOnOneMeta(card)}</p>
+                  <span className="mt-2 inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                    {card.status === "approved" ? "승인 완료" : card.status === "reviewing" ? "검토 중" : "접수 완료"}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <Link
+              href="/mypage?section=matching"
+              className="mt-3 inline-flex min-h-[42px] w-full items-center justify-center rounded-2xl border border-neutral-200 bg-white text-sm font-bold text-neutral-700 hover:bg-neutral-100"
+            >
+              마이페이지에서 자세히 보기
+            </Link>
+          </div>
+
+          <div className="space-y-4">
+            <div className="rounded-[24px] border border-black/5 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-black text-neutral-900">진행 중인 매칭</p>
+                <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-bold text-neutral-500">{matches.length}건</span>
+              </div>
+              {matches.length === 0 ? (
+                <p className="mt-3 text-sm leading-6 text-neutral-500">아직 진행 중인 매칭이 없어요. 아래 후보를 확인해보세요.</p>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {matches.slice(0, 4).map((match) => (
+                    <div key={match.id} className="rounded-2xl border border-neutral-100 bg-neutral-50 px-3 py-3">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-black text-neutral-900">{getOneOnOneDisplayName(match.counterparty_card)}</p>
+                          <p className="mt-1 text-xs font-semibold text-neutral-500">{getOneOnOneMeta(match.counterparty_card)}</p>
+                        </div>
+                        <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-neutral-600">
+                          {oneOnOneStateLabel(match.state)}
+                        </span>
+                      </div>
+                      <p className="mt-2 text-xs font-semibold text-sky-700">{oneOnOneContactLabel(match.contact_exchange_status)}</p>
+                      {match.counterparty_phone ? <p className="mt-1 text-sm font-black text-emerald-700">{match.counterparty_phone}</p> : null}
+                      <OneOnOneMatchActions
+                        match={match}
+                        processing={processingMatchIds.includes(match.id)}
+                        contactProcessing={processingContactIds.includes(match.id)}
+                        onMatchAction={onMatchAction}
+                        onContactCheckout={onContactCheckout}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="rounded-[24px] border border-black/5 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+              <div className="flex items-center justify-between gap-3">
+                <p className="text-sm font-black text-neutral-900">추천 후보</p>
+                <span className="rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-bold text-sky-700">{recommendations.length}명</span>
+              </div>
+              {recommendations.length === 0 ? (
+                <p className="mt-3 text-sm leading-6 text-neutral-500">현재 보여줄 추천 후보가 없어요. 마이페이지에서 새로고침 상태를 확인할 수 있습니다.</p>
+              ) : (
+                <div className="-mx-1 mt-3 flex snap-x gap-2 overflow-x-auto px-1 pb-2">
+                  {recommendations.slice(0, 8).map(({ sourceCardId, candidate }) => {
+                    const candidateId = String(candidate.id ?? "");
+                    const actionKey = `${sourceCardId}:${candidateId}`;
+                    const canSelect = Boolean(sourceCardId && candidateId);
+                    return (
+                    <div
+                      key={`${sourceCardId}:${candidateId || getOneOnOneDisplayName(candidate)}`}
+                      className="min-w-[210px] snap-start rounded-2xl border border-sky-100 bg-sky-50/70 px-3 py-3"
+                    >
+                      <p className="text-sm font-black text-sky-950">{getOneOnOneDisplayName(candidate)}</p>
+                      <p className="mt-1 text-xs font-semibold text-sky-800/70">{getOneOnOneMeta(candidate)}</p>
+                      <button
+                        type="button"
+                        disabled={!canSelect || processingAutoKeys.includes(actionKey)}
+                        onClick={() => onAutoSelect(sourceCardId, candidateId)}
+                        className="mt-3 inline-flex min-h-[32px] items-center rounded-full bg-white px-3 text-[11px] font-black text-sky-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {processingAutoKeys.includes(actionKey) ? "선택 중..." : "후보 선택"}
+                      </button>
+                    </div>
+                  );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </section>
+  );
+}
+
+function OneOnOneMatchActions({
+  match,
+  processing,
+  contactProcessing,
+  onMatchAction,
+  onContactCheckout,
+}: {
+  match: OneOnOneMatchPreview;
+  processing: boolean;
+  contactProcessing: boolean;
+  onMatchAction: (
+    matchId: string,
+    action: "select_candidate" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
+  ) => void;
+  onContactCheckout: (matchId: string) => void;
+}) {
+  if (match.role === "source" && match.state === "proposed") {
+    return (
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={processing}
+          onClick={() => onMatchAction(match.id, "select_candidate")}
+          className="inline-flex min-h-[34px] items-center rounded-xl bg-sky-600 px-3 text-xs font-black text-white disabled:opacity-50"
+        >
+          {processing ? "처리 중..." : "후보 선택"}
+        </button>
+        <Link href="/mypage?section=matching" className="inline-flex min-h-[34px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold text-neutral-600">
+          자세히
+        </Link>
+      </div>
+    );
+  }
+
+  if (match.role === "candidate" && match.state === "source_selected") {
+    return (
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={processing}
+          onClick={() => onMatchAction(match.id, "candidate_accept")}
+          className="inline-flex min-h-[34px] items-center rounded-xl bg-emerald-600 px-3 text-xs font-black text-white disabled:opacity-50"
+        >
+          {processing ? "처리 중..." : "수락"}
+        </button>
+        <button
+          type="button"
+          disabled={processing}
+          onClick={() => onMatchAction(match.id, "candidate_reject")}
+          className="inline-flex min-h-[34px] items-center rounded-xl border border-rose-200 bg-white px-3 text-xs font-bold text-rose-700 disabled:opacity-50"
+        >
+          거절
+        </button>
+      </div>
+    );
+  }
+
+  if (match.role === "source" && match.state === "candidate_accepted") {
+    return (
+      <div className="mt-3 flex flex-wrap gap-2">
+        <button
+          type="button"
+          disabled={processing}
+          onClick={() => onMatchAction(match.id, "source_accept")}
+          className="inline-flex min-h-[34px] items-center rounded-xl bg-emerald-600 px-3 text-xs font-black text-white disabled:opacity-50"
+        >
+          {processing ? "처리 중..." : "최종 수락"}
+        </button>
+        <button
+          type="button"
+          disabled={processing}
+          onClick={() => onMatchAction(match.id, "source_reject")}
+          className="inline-flex min-h-[34px] items-center rounded-xl border border-rose-200 bg-white px-3 text-xs font-bold text-rose-700 disabled:opacity-50"
+        >
+          거절
+        </button>
+      </div>
+    );
+  }
+
+  if (match.state === "mutual_accepted" || match.state === "candidate_accepted") {
+    if (match.contact_exchange_status === "approved") {
+      return (
+        <p className="mt-3 rounded-xl border border-emerald-100 bg-white px-3 py-2 text-xs font-semibold text-emerald-700">
+          번호 교환이 완료됐어요.
+        </p>
+      );
+    }
+
+    return (
+      <div className="mt-3 rounded-2xl border border-emerald-100 bg-white p-3">
+        <p className="text-xs font-black text-neutral-900">쌍방 수락 완료</p>
+        <p className="mt-1 text-xs leading-5 text-neutral-600">결제하면 상대 연락처가 바로 교환됩니다.</p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          <button
+            type="button"
+            disabled={contactProcessing}
+            onClick={() => onContactCheckout(match.id)}
+            className="inline-flex min-h-[34px] items-center rounded-xl bg-emerald-600 px-3 text-xs font-black text-white disabled:opacity-50"
+          >
+            {contactProcessing ? "결제 준비 중..." : "번호교환 결제"}
+          </button>
+          <Link href="/mypage?section=matching" className="inline-flex min-h-[34px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold text-neutral-600">
+            상세 보기
+          </Link>
+        </div>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function Section({

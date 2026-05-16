@@ -471,6 +471,94 @@ export async function getSwipeCandidate(
   return candidates[0]?.candidate ?? null;
 }
 
+export async function getGuestSwipePreviewCandidate(
+  adminClient: AdminClient,
+  sex: "male" | "female"
+): Promise<SwipeCandidate | null> {
+  const cardsRes = await adminClient
+    .from("dating_cards")
+    .select(
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, total_3lift, is_3lift_verified, photo_visibility, photo_paths, blur_paths, blur_thumb_path, instagram_id, status, expires_at, created_at"
+    )
+    .eq("sex", sex)
+    .order("created_at", { ascending: false })
+    .limit(120);
+
+  if (cardsRes.error) throw cardsRes.error;
+
+  const rows = (cardsRes.data ?? []) as DatingCardRow[];
+  const ownerIds = Array.from(
+    new Set(rows.map((row) => String(row.owner_user_id ?? "").trim()).filter((value) => value.length > 0))
+  );
+  const visibilityByUserId = new Map<string, boolean>();
+
+  if (ownerIds.length > 0) {
+    const profilesRes = await adminClient
+      .from("profiles")
+      .select("user_id, swipe_profile_visible")
+      .in("user_id", ownerIds);
+
+    if (profilesRes.error && !profilesRes.error.message?.includes("swipe_profile_visible")) {
+      throw profilesRes.error;
+    }
+
+    const profileRows =
+      profilesRes.error && profilesRes.error.message?.includes("swipe_profile_visible")
+        ? []
+        : ((profilesRes.data ?? []) as ProfileSwipeVisibilityRow[]);
+
+    for (const row of profileRows) {
+      const userId = String(row.user_id ?? "").trim();
+      if (!userId) continue;
+      visibilityByUserId.set(userId, row.swipe_profile_visible !== false);
+    }
+  }
+
+  const seenOwners = new Set<string>();
+  const dayKey = getSwipeDayKeyKst();
+  const candidates: Array<{ rank: number; candidate: SwipeCandidate }> = [];
+
+  for (const row of rows) {
+    const ownerId = String(row.owner_user_id ?? "").trim();
+    if (!ownerId || seenOwners.has(ownerId)) continue;
+    if (visibilityByUserId.get(ownerId) === false) continue;
+    if (!String(row.instagram_id ?? "").trim()) continue;
+    seenOwners.add(ownerId);
+
+    candidates.push({
+      rank: getDeterministicCandidateRank("guest-preview", dayKey, ownerId, row.id),
+      candidate: {
+        user_id: ownerId,
+        card_id: row.id,
+        sex: row.sex,
+        display_nickname: String(row.display_nickname ?? "회원").trim() || "회원",
+        age: row.age ?? null,
+        region: row.region ?? null,
+        height_cm: row.height_cm ?? null,
+        job: row.job ?? null,
+        training_years: row.training_years ?? null,
+        ideal_type: row.ideal_type ?? null,
+        strengths_text: row.strengths_text ?? null,
+        total_3lift: row.total_3lift ?? null,
+        is_3lift_verified: row.is_3lift_verified === true,
+        photo_visibility: row.photo_visibility === "public" ? "public" : "blur",
+        image_url: pickPreviewImage(row),
+        source_status: row.status,
+        created_at: row.created_at,
+      },
+    });
+  }
+
+  if (candidates.length === 0) return null;
+
+  candidates.sort((a, b) => {
+    if (a.rank !== b.rank) return a.rank - b.rank;
+    return b.candidate.created_at.localeCompare(a.candidate.created_at);
+  });
+
+  return candidates[0]?.candidate ?? null;
+}
+
 export async function sendDatingEmailNotification(
   adminClient: AdminClient,
   userId: string,

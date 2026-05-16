@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 
 type SummaryResponse = {
   profile?: {
@@ -38,6 +38,12 @@ type GuideSuggestion = {
 
 const HIDDEN_PATH_PREFIXES = ["/payments/success", "/payments/fail", "/account-deletion", "/login", "/signup", "/auth"];
 const COLLAPSE_STORAGE_KEY = "site-guide-collapsed";
+const POSITION_STORAGE_KEY = "site-guide-position";
+
+type GuidePosition = {
+  x: number;
+  y: number;
+};
 
 function buildSuggestions(input: {
   pathname: string;
@@ -372,8 +378,18 @@ function buildSuggestions(input: {
 export default function SiteGuideBubble() {
   const pathname = usePathname();
   const isMyPage = pathname?.startsWith("/mypage") ?? false;
+  const rootRef = useRef<HTMLDivElement | null>(null);
+  const dragRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    originX: number;
+    originY: number;
+    moved: boolean;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [collapsed, setCollapsed] = useState(false);
+  const [guidePosition, setGuidePosition] = useState<GuidePosition | null>(null);
   const [index, setIndex] = useState(0);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
@@ -384,6 +400,13 @@ export default function SiteGuideBubble() {
     try {
       const saved = window.localStorage.getItem(COLLAPSE_STORAGE_KEY);
       if (saved === "1") setCollapsed(true);
+      const savedPosition = window.localStorage.getItem(POSITION_STORAGE_KEY);
+      if (savedPosition) {
+        const parsed = JSON.parse(savedPosition) as Partial<GuidePosition>;
+        if (typeof parsed.x === "number" && typeof parsed.y === "number") {
+          setGuidePosition({ x: parsed.x, y: parsed.y });
+        }
+      }
     } catch {}
   }, []);
 
@@ -392,6 +415,13 @@ export default function SiteGuideBubble() {
       window.localStorage.setItem(COLLAPSE_STORAGE_KEY, collapsed ? "1" : "0");
     } catch {}
   }, [collapsed]);
+
+  useEffect(() => {
+    if (!guidePosition) return;
+    try {
+      window.localStorage.setItem(POSITION_STORAGE_KEY, JSON.stringify(guidePosition));
+    } catch {}
+  }, [guidePosition]);
 
   useEffect(() => {
     let cancelled = false;
@@ -472,11 +502,58 @@ export default function SiteGuideBubble() {
   const activeSuggestion = suggestions[index] ?? null;
   if (!activeSuggestion && !loading) return null;
 
+  const boundPosition = (x: number, y: number): GuidePosition => {
+    if (typeof window === "undefined") return { x, y };
+    const width = rootRef.current?.offsetWidth ?? 320;
+    const height = rootRef.current?.offsetHeight ?? 260;
+    return {
+      x: Math.min(Math.max(4, x), Math.max(4, window.innerWidth - width - 4)),
+      y: Math.min(Math.max(64, y), Math.max(64, window.innerHeight - height - 8)),
+    };
+  };
+
+  const handleMascotPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const rect = rootRef.current?.getBoundingClientRect();
+    if (!rect) return;
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      originX: rect.left,
+      originY: rect.top,
+      moved: false,
+    };
+  };
+
+  const handleMascotPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const nextX = drag.originX + event.clientX - drag.startX;
+    const nextY = drag.originY + event.clientY - drag.startY;
+    if (Math.abs(event.clientX - drag.startX) > 4 || Math.abs(event.clientY - drag.startY) > 4) {
+      drag.moved = true;
+    }
+    setGuidePosition(boundPosition(nextX, nextY));
+  };
+
+  const handleMascotPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    try {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    } catch {}
+  };
+
   return (
     <div
-      className={`pointer-events-none fixed right-2 z-40 w-[min(320px,calc(100vw-8px))] md:right-4 ${
-        isMyPage ? "top-[132px] md:top-[124px]" : "top-[84px] md:top-[92px]"
+      ref={rootRef}
+      className={`pointer-events-none fixed z-40 w-[min(320px,calc(100vw-8px))] ${
+        guidePosition ? "" : `right-2 md:right-4 ${isMyPage ? "top-[132px] md:top-[124px]" : "top-[84px] md:top-[92px]"}`
       }`}
+      style={guidePosition ? { left: guidePosition.x, top: guidePosition.y } : undefined}
     >
       <div className="relative flex flex-col items-end">
         {!collapsed ? (
@@ -536,9 +613,14 @@ export default function SiteGuideBubble() {
         )}
 
         <div
-          className={`pointer-events-auto relative z-10 shrink-0 transition-all duration-300 ${
+          onPointerDown={handleMascotPointerDown}
+          onPointerMove={handleMascotPointerMove}
+          onPointerUp={handleMascotPointerUp}
+          onPointerCancel={handleMascotPointerUp}
+          className={`pointer-events-auto relative z-10 shrink-0 cursor-grab touch-none select-none transition-all duration-300 active:cursor-grabbing ${
             collapsed ? "translate-y-0 scale-[0.72] origin-top-right" : "-translate-y-1 scale-100"
           }`}
+          title="꾹 눌러 원하는 위치로 옮길 수 있어요."
         >
           <div className={`relative transition-all duration-300 ${collapsed ? "h-[132px] w-[118px]" : "h-[190px] w-[170px]"}`}>
             <div className="absolute inset-x-6 bottom-1 h-5 rounded-full bg-black/10 blur-md" />
