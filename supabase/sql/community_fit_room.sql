@@ -36,6 +36,25 @@ create table if not exists public.community_fit_room_reactions (
   primary key (entry_id, user_id)
 );
 
+create table if not exists public.community_fit_room_reports (
+  id uuid primary key default gen_random_uuid(),
+  reporter_user_id uuid not null references auth.users(id) on delete cascade,
+  entry_id uuid null references public.community_fit_room_entries(id) on delete cascade,
+  comment_id uuid null references public.community_fit_room_comments(id) on delete cascade,
+  target_user_id uuid null references auth.users(id) on delete set null,
+  reason text not null,
+  detail text not null default '',
+  status text not null default 'pending' check (status in ('pending', 'reviewed', 'dismissed', 'actioned')),
+  admin_note text not null default '',
+  resolved_by_user_id uuid null references auth.users(id) on delete set null,
+  resolved_at timestamptz null,
+  created_at timestamptz not null default timezone('utc', now()),
+  check (
+    (entry_id is not null and comment_id is null)
+    or (entry_id is null and comment_id is not null)
+  )
+);
+
 create index if not exists idx_community_fit_room_entries_visible
   on public.community_fit_room_entries(expires_at desc, created_at desc)
   where deleted_at is null;
@@ -53,9 +72,24 @@ create index if not exists idx_community_fit_room_comments_user_created
 create index if not exists idx_community_fit_room_reactions_user
   on public.community_fit_room_reactions(user_id, updated_at desc);
 
+create unique index if not exists uq_community_fit_room_reports_entry_reporter
+  on public.community_fit_room_reports(reporter_user_id, entry_id)
+  where entry_id is not null;
+
+create unique index if not exists uq_community_fit_room_reports_comment_reporter
+  on public.community_fit_room_reports(reporter_user_id, comment_id)
+  where comment_id is not null;
+
+create index if not exists idx_community_fit_room_reports_status_created
+  on public.community_fit_room_reports(status, created_at desc);
+
+create index if not exists idx_community_fit_room_reports_target_user
+  on public.community_fit_room_reports(target_user_id, created_at desc);
+
 alter table public.community_fit_room_entries enable row level security;
 alter table public.community_fit_room_comments enable row level security;
 alter table public.community_fit_room_reactions enable row level security;
+alter table public.community_fit_room_reports enable row level security;
 
 commit;
 

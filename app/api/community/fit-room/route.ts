@@ -38,6 +38,13 @@ type ReactionRow = {
   reaction: "up" | "down";
 };
 
+type ReportRow = {
+  entry_id: string | null;
+  comment_id: string | null;
+  reporter_user_id: string;
+  status: string;
+};
+
 type ProfileRow = {
   user_id: string;
   nickname: string | null;
@@ -160,6 +167,30 @@ export async function GET() {
   const comments = (commentRes.data ?? []) as CommentRow[];
   const reactions = (reactionRes.data ?? []) as ReactionRow[];
   const myReactions = (myReactionRes.data ?? []) as ReactionRow[];
+  const commentIds = comments.map((comment) => comment.id);
+  const [entryReportRes, commentReportRes] = await Promise.all([
+    entryIds.length
+      ? admin
+          .from("community_fit_room_reports")
+          .select("entry_id,comment_id,reporter_user_id,status")
+          .in("entry_id", entryIds)
+      : Promise.resolve({ data: [] as ReportRow[], error: null }),
+    commentIds.length
+      ? admin
+          .from("community_fit_room_reports")
+          .select("entry_id,comment_id,reporter_user_id,status")
+          .in("comment_id", commentIds)
+      : Promise.resolve({ data: [] as ReportRow[], error: null }),
+  ]);
+
+  const reportRows =
+    entryReportRes.error || commentReportRes.error
+      ? []
+      : ([...(entryReportRes.data ?? []), ...(commentReportRes.data ?? [])] as ReportRow[]).filter((row) => row.status !== "dismissed");
+  if ((entryReportRes.error && !isMissingFitRoomTable(entryReportRes.error)) || (commentReportRes.error && !isMissingFitRoomTable(commentReportRes.error))) {
+    console.warn("[GET /api/community/fit-room] report fetch skipped", entryReportRes.error ?? commentReportRes.error);
+  }
+
   const userIds = [
     ...new Set([
       ...visibleEntries.map((entry) => entry.user_id),
@@ -181,6 +212,22 @@ export async function GET() {
   }
 
   const myReactionMap = new Map(myReactions.map((row) => [row.entry_id, row.reaction]));
+  const entryReportMap = new Map<string, { count: number; reportedByMe: boolean }>();
+  const commentReportMap = new Map<string, { count: number; reportedByMe: boolean }>();
+  for (const report of reportRows) {
+    if (report.entry_id) {
+      const current = entryReportMap.get(report.entry_id) ?? { count: 0, reportedByMe: false };
+      current.count += 1;
+      current.reportedByMe = current.reportedByMe || Boolean(user && report.reporter_user_id === user.id);
+      entryReportMap.set(report.entry_id, current);
+    }
+    if (report.comment_id) {
+      const current = commentReportMap.get(report.comment_id) ?? { count: 0, reportedByMe: false };
+      current.count += 1;
+      current.reportedByMe = current.reportedByMe || Boolean(user && report.reporter_user_id === user.id);
+      commentReportMap.set(report.comment_id, current);
+    }
+  }
   const commentMap = new Map<string, CommentRow[]>();
   for (const comment of comments) {
     const bucket = commentMap.get(comment.entry_id) ?? [];
@@ -191,6 +238,7 @@ export async function GET() {
   const items = visibleEntries.map((entry) => {
     const author = profileMap.get(entry.user_id);
     const summary = reactionSummary.get(entry.id) ?? { up: 0, down: 0, score: 0 };
+    const entryReports = entryReportMap.get(entry.id) ?? { count: 0, reportedByMe: false };
     return {
       id: entry.id,
       kind: entry.kind,
@@ -199,6 +247,8 @@ export async function GET() {
       createdAt: entry.created_at,
       expiresAt: entry.expires_at,
       canDelete: Boolean(user && entry.user_id === user.id),
+      reportCount: entryReports.count,
+      reportedByMe: entryReports.reportedByMe,
       author: {
         userId: entry.user_id,
         nickname: profileLabel(author, entry.user_id),
@@ -213,11 +263,14 @@ export async function GET() {
         .reverse()
         .map((comment) => {
           const commentAuthor = profileMap.get(comment.user_id);
+          const commentReports = commentReportMap.get(comment.id) ?? { count: 0, reportedByMe: false };
           return {
             id: comment.id,
             content: comment.content,
             createdAt: comment.created_at,
             canDelete: Boolean(user && comment.user_id === user.id),
+            reportCount: commentReports.count,
+            reportedByMe: commentReports.reportedByMe,
             author: {
               userId: comment.user_id,
               nickname: profileLabel(commentAuthor, comment.user_id),

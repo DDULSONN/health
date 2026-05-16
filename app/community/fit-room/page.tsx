@@ -11,6 +11,8 @@ type FitRoomComment = {
   content: string;
   createdAt: string;
   canDelete: boolean;
+  reportCount: number;
+  reportedByMe: boolean;
   author: {
     userId: string;
     nickname: string;
@@ -26,6 +28,8 @@ type FitRoomEntry = {
   createdAt: string;
   expiresAt: string;
   canDelete: boolean;
+  reportCount: number;
+  reportedByMe: boolean;
   author: {
     userId: string;
     nickname: string;
@@ -338,6 +342,60 @@ export default function FitRoomPage() {
     }
   };
 
+  const reportEntry = async (entry: FitRoomEntry) => {
+    if (!requireLogin(viewer.loggedIn)) return;
+    const detail = window.prompt("신고 사유를 간단히 입력해 주세요. 운영자가 확인합니다.");
+    if (detail === null) return;
+    const cleanDetail = detail.trim();
+    if (!cleanDetail) {
+      window.alert("신고 사유를 입력해 주세요.");
+      return;
+    }
+    setProcessingKey(`report:${entry.id}`);
+    try {
+      const res = await fetch(`/api/community/fit-room/${entry.id}/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "other", detail: cleanDetail }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; message?: string };
+      if (!res.ok || !body.ok) throw new Error(body.error ?? "신고 접수에 실패했습니다.");
+      window.alert(body.message ?? "신고가 접수되었습니다.");
+      await loadRoom(true);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "신고 접수에 실패했습니다.");
+    } finally {
+      setProcessingKey(null);
+    }
+  };
+
+  const reportComment = async (comment: FitRoomComment) => {
+    if (!requireLogin(viewer.loggedIn)) return;
+    const detail = window.prompt("댓글 신고 사유를 간단히 입력해 주세요. 운영자가 확인합니다.");
+    if (detail === null) return;
+    const cleanDetail = detail.trim();
+    if (!cleanDetail) {
+      window.alert("신고 사유를 입력해 주세요.");
+      return;
+    }
+    setProcessingKey(`report-comment:${comment.id}`);
+    try {
+      const res = await fetch(`/api/community/fit-room/comments/${comment.id}/report`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ reason: "other", detail: cleanDetail }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; message?: string };
+      if (!res.ok || !body.ok) throw new Error(body.error ?? "신고 접수에 실패했습니다.");
+      window.alert(body.message ?? "신고가 접수되었습니다.");
+      await loadRoom(true);
+    } catch (err) {
+      window.alert(err instanceof Error ? err.message : "신고 접수에 실패했습니다.");
+    } finally {
+      setProcessingKey(null);
+    }
+  };
+
   const banUser = async (userId: string, nickname: string) => {
     const reason = window.prompt(`${nickname} 회원의 커뮤니티 이용을 제한할까요? 사유를 입력해 주세요.`, "커뮤니티 운영 정책 위반");
     if (reason === null) return;
@@ -604,6 +662,8 @@ export default function FitRoomPage() {
             onReact={(entry, reaction) => void reactToEntry(entry, reaction)}
             onDeleteEntry={(entry) => void deleteEntry(entry)}
             onDeleteComment={(comment) => void deleteComment(comment)}
+            onReportEntry={(entry) => void reportEntry(entry)}
+            onReportComment={(comment) => void reportComment(comment)}
             onBanUser={(userId, nickname) => void banUser(userId, nickname)}
           />
         </div>
@@ -682,6 +742,8 @@ function EntryPanel({
   onReact,
   onDeleteEntry,
   onDeleteComment,
+  onReportEntry,
+  onReportComment,
   onBanUser,
 }: {
   entry: FitRoomEntry | null;
@@ -696,6 +758,8 @@ function EntryPanel({
   onReact: (entry: FitRoomEntry, reaction: "up" | "down") => void;
   onDeleteEntry: (entry: FitRoomEntry) => void;
   onDeleteComment: (comment: FitRoomComment) => void;
+  onReportEntry: (entry: FitRoomEntry) => void;
+  onReportComment: (comment: FitRoomComment) => void;
   onBanUser: (userId: string, nickname: string) => void;
 }) {
   return (
@@ -709,6 +773,11 @@ function EntryPanel({
               <p className="mt-1 text-[11px] text-white/40">
                 {remainingLabel(entry.expiresAt)} · {timeAgo(entry.createdAt)}
               </p>
+              {viewerIsAdmin && entry.reportCount > 0 ? (
+                <p className="mt-1 inline-flex rounded-full bg-rose-400/15 px-2 py-0.5 text-[11px] font-black text-rose-100">
+                  신고 {entry.reportCount}건
+                </p>
+              ) : null}
             </div>
             <button type="button" onClick={onClose} className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/70">
               접기
@@ -756,6 +825,17 @@ function EntryPanel({
             </button>
           </div>
 
+          {viewerLoggedIn && entry.author.userId !== viewerUserId ? (
+            <button
+              type="button"
+              disabled={processingKey !== null || entry.reportedByMe}
+              onClick={() => onReportEntry(entry)}
+              className="mt-2 w-full rounded-2xl border border-white/10 bg-white/[0.04] px-3 py-2 text-xs font-bold text-white/55 transition hover:bg-white/10 disabled:opacity-45"
+            >
+              {entry.reportedByMe ? "신고 접수됨" : "문제 있는 사진 신고"}
+            </button>
+          ) : null}
+
           <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
             {entry.comments.length === 0 ? (
               <p className="rounded-2xl bg-white/5 p-3 text-xs text-white/40">댓글 없음</p>
@@ -763,12 +843,27 @@ function EntryPanel({
               entry.comments.map((comment) => (
                 <div key={comment.id} className="rounded-2xl bg-white/5 p-3">
                   <div className="flex items-center justify-between gap-2">
-                    <p className="text-[11px] font-black text-white/60">{comment.author.nickname}</p>
-                    {(comment.canDelete || viewerIsAdmin) && (
-                      <button type="button" disabled={processingKey !== null} onClick={() => onDeleteComment(comment)} className="text-[11px] font-bold text-rose-200 disabled:opacity-50">
-                        삭제
-                      </button>
-                    )}
+                    <p className="text-[11px] font-black text-white/60">
+                      {comment.author.nickname}
+                      {viewerIsAdmin && comment.reportCount > 0 ? <span className="ml-2 text-rose-200">신고 {comment.reportCount}</span> : null}
+                    </p>
+                    <div className="flex items-center gap-2">
+                      {viewerLoggedIn && comment.author.userId !== viewerUserId ? (
+                        <button
+                          type="button"
+                          disabled={processingKey !== null || comment.reportedByMe}
+                          onClick={() => onReportComment(comment)}
+                          className="text-[11px] font-bold text-white/45 disabled:opacity-40"
+                        >
+                          {comment.reportedByMe ? "신고됨" : "신고"}
+                        </button>
+                      ) : null}
+                      {(comment.canDelete || viewerIsAdmin) && (
+                        <button type="button" disabled={processingKey !== null} onClick={() => onDeleteComment(comment)} className="text-[11px] font-bold text-rose-200 disabled:opacity-50">
+                          삭제
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <p className="mt-1 text-xs leading-5 text-white/80">{comment.content}</p>
                 </div>
