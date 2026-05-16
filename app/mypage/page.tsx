@@ -1383,6 +1383,12 @@ export default function MyPage() {
   const [adminUserActivityLoading, setAdminUserActivityLoading] = useState(false);
   const [adminUserActivityError, setAdminUserActivityError] = useState("");
   const [adminUserActivityResult, setAdminUserActivityResult] = useState<AdminUserActivityResult | null>(null);
+  const [adminRefundOrderId, setAdminRefundOrderId] = useState("");
+  const [adminRefundReasonByOrderId, setAdminRefundReasonByOrderId] = useState<Record<string, string>>({});
+  const [adminRefundAmountByOrderId, setAdminRefundAmountByOrderId] = useState<Record<string, string>>({});
+  const [adminRefundingOrderId, setAdminRefundingOrderId] = useState<string | null>(null);
+  const [adminRefundError, setAdminRefundError] = useState("");
+  const [adminRefundInfo, setAdminRefundInfo] = useState("");
   const [adminQueueMoveCardId, setAdminQueueMoveCardId] = useState("");
   const [adminQueueMovePosition, setAdminQueueMovePosition] = useState("");
   const [adminQueueMoveLoading, setAdminQueueMoveLoading] = useState(false);
@@ -2723,6 +2729,13 @@ export default function MyPage() {
       setActiveTab("my_cert");
     }
   }, [isAdmin, activeTab]);
+
+  useEffect(() => {
+    const section = new URLSearchParams(window.location.search).get("section");
+    if (section === "matching" || section === "payment" || section === "profile" || section === "admin") {
+      setPageSectionTab(section);
+    }
+  }, []);
 
   useEffect(() => {
     if (!isAdmin && pageSectionTab === "admin") {
@@ -4551,10 +4564,61 @@ export default function MyPage() {
         setAdminQueueMoveCardId(String(pendingOpenCard.id));
         setAdminQueueMovePosition(String(Number(pendingOpenCard.queue_position ?? 1) || 1));
       }
+      const latestPaidOrder = body.details?.payments?.find((item) => item.status === "paid" && item.payment_key);
+      setAdminRefundOrderId(latestPaidOrder?.id ? String(latestPaidOrder.id) : "");
+      setAdminRefundError("");
+      setAdminRefundInfo("");
     } catch (err) {
       setAdminUserActivityError(err instanceof Error ? err.message : "회원 기록을 불러오지 못했습니다.");
     } finally {
       setAdminUserActivityLoading(false);
+    }
+  };
+
+  const handleAdminRefundTossOrder = async (order?: Record<string, unknown>) => {
+    const orderId = String(order?.id ?? adminRefundOrderId).trim();
+    if (!orderId) {
+      setAdminRefundError("환불할 결제 주문을 선택해주세요.");
+      return;
+    }
+
+    const amountRaw = (adminRefundAmountByOrderId[orderId] ?? "").trim();
+    const reason = (adminRefundReasonByOrderId[orderId] ?? "관리자 환불 처리").trim() || "관리자 환불 처리";
+    const amount = amountRaw ? Number(amountRaw.replace(/[^\d]/g, "")) : null;
+    if (amountRaw && (!Number.isFinite(amount) || Number(amount) <= 0)) {
+      setAdminRefundError("부분 환불액은 숫자로 입력해주세요.");
+      return;
+    }
+
+    const orderName = String(order?.order_name ?? order?.toss_order_id ?? orderId);
+    const fullOrPartial = amount && Number(order?.amount ?? 0) > amount ? `${amount.toLocaleString("ko-KR")}원 부분 환불` : "전체 환불";
+    if (!confirm(`${orderName} 결제를 ${fullOrPartial} 처리할까요? 토스 결제 취소가 바로 요청됩니다.`)) {
+      return;
+    }
+
+    setAdminRefundingOrderId(orderId);
+    setAdminRefundError("");
+    setAdminRefundInfo("");
+    try {
+      const res = await fetch("/api/admin/payments/toss-refund", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          orderId,
+          cancelReason: reason,
+          ...(amount ? { cancelAmount: amount } : {}),
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+      if (!res.ok || !body.ok) {
+        throw new Error(body.message || "토스 환불 처리에 실패했습니다.");
+      }
+      setAdminRefundInfo(body.message || "환불이 완료되었습니다.");
+      await handleAdminLoadUserActivity();
+    } catch (err) {
+      setAdminRefundError(err instanceof Error ? err.message : "토스 환불 처리에 실패했습니다.");
+    } finally {
+      setAdminRefundingOrderId(null);
     }
   };
 
@@ -8956,6 +9020,94 @@ export default function MyPage() {
                         <p className="mt-1 text-lg font-black text-neutral-900">{Number(value ?? 0).toLocaleString("ko-KR")}</p>
                       </div>
                     ))}
+                  </div>
+
+                  <div className="rounded-xl border border-rose-100 bg-white p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold text-rose-900">토스 결제 환불</p>
+                        <p className="mt-1 text-[11px] text-neutral-500">
+                          결제 완료 건만 토스 자동 환불이 가능합니다. 부분 환불액을 비우면 전체 환불로 처리됩니다.
+                        </p>
+                      </div>
+                    </div>
+                    {adminRefundError ? <p className="mt-2 text-xs text-rose-600">{adminRefundError}</p> : null}
+                    {adminRefundInfo ? <p className="mt-2 text-xs text-emerald-700">{adminRefundInfo}</p> : null}
+                    {adminUserActivityResult.details?.payments?.length ? (
+                      <div className="mt-3 space-y-2">
+                        {adminUserActivityResult.details.payments.slice(0, 20).map((order) => {
+                          const orderId = String(order.id ?? "");
+                          const status = String(order.status ?? "");
+                          const amount = Number(order.amount ?? 0);
+                          const canRefund = status === "paid" && Boolean(order.payment_key);
+                          const rawResponse = order.raw_response && typeof order.raw_response === "object" ? (order.raw_response as Record<string, unknown>) : {};
+                          const refundMeta =
+                            rawResponse.admin_refund && typeof rawResponse.admin_refund === "object"
+                              ? (rawResponse.admin_refund as Record<string, unknown>)
+                              : null;
+                          return (
+                            <div key={`refund-order-${orderId}`} className="rounded-lg border border-rose-100 bg-rose-50/30 px-3 py-2">
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div className="min-w-0">
+                                  <p className="text-xs font-semibold text-neutral-900">
+                                    {String(order.order_name ?? order.product_type ?? "토스 결제")} · {amount.toLocaleString("ko-KR")}원
+                                  </p>
+                                  <p className="mt-1 break-all text-[11px] text-neutral-500">
+                                    상태 {status} · 주문 {String(order.toss_order_id ?? "-")} · 승인{" "}
+                                    {order.approved_at ? new Date(String(order.approved_at)).toLocaleString("ko-KR") : "-"}
+                                  </p>
+                                  {refundMeta ? (
+                                    <p className="mt-1 text-[11px] text-rose-700">
+                                      환불 반영: {Number(refundMeta.canceledTotal ?? 0).toLocaleString("ko-KR")}원 · {String(refundMeta.cancelReason ?? "-")}
+                                    </p>
+                                  ) : null}
+                                </div>
+                                <span
+                                  className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
+                                    canRefund ? "bg-emerald-100 text-emerald-800" : "bg-neutral-100 text-neutral-500"
+                                  }`}
+                                >
+                                  {canRefund ? "환불 가능" : status === "canceled" ? "환불 완료" : "환불 불가"}
+                                </span>
+                              </div>
+                              {canRefund ? (
+                                <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_120px_auto]">
+                                  <input
+                                    type="text"
+                                    value={adminRefundReasonByOrderId[orderId] ?? ""}
+                                    onChange={(e) =>
+                                      setAdminRefundReasonByOrderId((prev) => ({ ...prev, [orderId]: e.target.value }))
+                                    }
+                                    placeholder="환불 사유"
+                                    className="h-9 rounded-lg border border-rose-200 bg-white px-3 text-xs text-neutral-900 outline-none"
+                                  />
+                                  <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={adminRefundAmountByOrderId[orderId] ?? ""}
+                                    onChange={(e) =>
+                                      setAdminRefundAmountByOrderId((prev) => ({ ...prev, [orderId]: e.target.value }))
+                                    }
+                                    placeholder="부분 환불액"
+                                    className="h-9 rounded-lg border border-rose-200 bg-white px-3 text-xs text-neutral-900 outline-none"
+                                  />
+                                  <button
+                                    type="button"
+                                    disabled={adminRefundingOrderId === orderId}
+                                    onClick={() => void handleAdminRefundTossOrder(order)}
+                                    className="h-9 rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white disabled:opacity-60"
+                                  >
+                                    {adminRefundingOrderId === orderId ? "처리 중..." : "환불 처리"}
+                                  </button>
+                                </div>
+                              ) : null}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-xs text-neutral-500">이 회원의 토스 결제 내역이 없습니다.</p>
+                    )}
                   </div>
 
                   <div className="rounded-xl border border-violet-100 bg-white p-3">

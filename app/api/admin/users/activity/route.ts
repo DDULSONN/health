@@ -484,7 +484,7 @@ export async function GET(request: Request) {
       listSafe<Record<string, unknown>>(
         auth.admin
           .from("toss_test_payment_orders")
-          .select("id,product_type,product_meta,amount,status,order_name,toss_order_id,created_at,approved_at")
+          .select("id,product_type,product_meta,amount,status,order_name,toss_order_id,payment_key,raw_response,created_at,approved_at")
           .eq("user_id", userId)
           .order("created_at", { ascending: false })
           .limit(50)

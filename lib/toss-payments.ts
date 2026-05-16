@@ -64,6 +64,8 @@ export type TossCreatePaymentParams = {
   failUrl: string;
   customerEmail?: string;
   customerName?: string;
+  flowMode?: "DEFAULT" | "DIRECT";
+  easyPay?: "KAKAOPAY";
 };
 
 export type TossCreatePaymentResponse = {
@@ -80,6 +82,14 @@ export type TossConfirmPaymentResponse = {
   totalAmount?: number;
   status?: string;
   approvedAt?: string;
+  cancels?: TossPaymentCancel[];
+};
+
+export type TossPaymentCancel = {
+  cancelAmount?: number;
+  cancelReason?: string;
+  canceledAt?: string;
+  transactionKey?: string;
 };
 
 export async function createTossPayment(params: TossCreatePaymentParams) {
@@ -102,8 +112,29 @@ export async function confirmTossPayment(input: {
   });
 }
 
+export async function cancelTossPayment(input: {
+  paymentKey: string;
+  cancelReason: string;
+  cancelAmount?: number;
+  idempotencyKey?: string;
+}) {
+  const body: Record<string, unknown> = {
+    cancelReason: input.cancelReason,
+  };
+  if (typeof input.cancelAmount === "number" && Number.isFinite(input.cancelAmount) && input.cancelAmount > 0) {
+    body.cancelAmount = Math.floor(input.cancelAmount);
+  }
+
+  return tossFetch<TossConfirmPaymentResponse>(`/v1/payments/${encodeURIComponent(input.paymentKey)}/cancel`, {
+    method: "POST",
+    body: JSON.stringify(body),
+    idempotencyKey: input.idempotencyKey ?? crypto.randomUUID(),
+  });
+}
+
 export const getTossTestClientKey = getTossClientKey;
 export const isTossTestConfigured = isTossConfigured;
 export const getMissingTossTestConfigKeys = getMissingTossConfigKeys;
 export const createTossTestPayment = createTossPayment;
 export const confirmTossTestPayment = confirmTossPayment;
+export const cancelTossTestPayment = cancelTossPayment;
