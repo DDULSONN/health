@@ -162,9 +162,10 @@ function getMobileOrbitStyle(entry: FitRoomEntry, index: number): CSSProperties 
     top: centerY + y,
     width: size,
     height: size,
-    transform: "translate(-50%, -50%)",
+    "--base-x": "-50%",
+    "--base-y": "-50%",
     zIndex: 20 + score,
-  };
+  } as CSSProperties;
 }
 
 export default function FitRoomPage() {
@@ -183,7 +184,10 @@ export default function FitRoomPage() {
   const [commentDraft, setCommentDraft] = useState("");
   const [processingKey, setProcessingKey] = useState<string | null>(null);
   const [activePulseId, setActivePulseId] = useState<string | null>(null);
+  const [newArrivalNotice, setNewArrivalNotice] = useState("");
   const fileInputRef = useRef<HTMLInputElement | null>(null);
+  const knownEntryIdsRef = useRef<Set<string> | null>(null);
+  const newArrivalTimerRef = useRef<number | null>(null);
 
   const sortedItems = useMemo(
     () => [...items].sort((a, b) => b.reactions.score - a.reactions.score || Date.parse(b.createdAt) - Date.parse(a.createdAt)),
@@ -206,7 +210,23 @@ export default function FitRoomPage() {
       const res = await fetch("/api/community/fit-room", { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as FitRoomResponse;
       if (!res.ok || !body.ok) throw new Error(body.error ?? "인증방을 불러오지 못했습니다.");
-      setItems(body.items ?? []);
+      const nextItems = body.items ?? [];
+      const previousIds = knownEntryIdsRef.current;
+      if (previousIds) {
+        const newItems = nextItems.filter((item) => !previousIds.has(item.id));
+        if (newItems.length > 0) {
+          setNewArrivalNotice(newItems.length === 1 ? "새 인증이 떠올랐어요" : `새 인증 ${newItems.length}개가 떠올랐어요`);
+          setActivePulseId(newItems[0].id);
+          if (newArrivalTimerRef.current) window.clearTimeout(newArrivalTimerRef.current);
+          newArrivalTimerRef.current = window.setTimeout(() => {
+            setNewArrivalNotice("");
+            setActivePulseId((current) => (newItems.some((item) => item.id === current) ? null : current));
+            newArrivalTimerRef.current = null;
+          }, 3400);
+        }
+      }
+      knownEntryIdsRef.current = new Set(nextItems.map((item) => item.id));
+      setItems(nextItems);
       setSetupRequired(Boolean(body.setupRequired));
       setViewer({
         loggedIn: Boolean(body.viewer?.loggedIn),
@@ -225,7 +245,10 @@ export default function FitRoomPage() {
   useEffect(() => {
     void loadRoom();
     const timer = window.setInterval(() => void loadRoom(true), 60_000);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      if (newArrivalTimerRef.current) window.clearTimeout(newArrivalTimerRef.current);
+    };
   }, [loadRoom]);
 
   useEffect(() => {
@@ -430,10 +453,37 @@ export default function FitRoomPage() {
         @keyframes fit-room-drift {
           0%,
           100% {
-            transform: translate3d(var(--float-x, 0px), 0, 0) rotate(-1.5deg);
+            transform: translate(var(--base-x, 0), var(--base-y, 0)) translate3d(var(--float-x, 0px), 0, 0) rotate(-1.5deg);
           }
           50% {
-            transform: translate3d(calc(var(--float-x, 0px) * -1), var(--float-y, -8px), 0) rotate(1.5deg);
+            transform: translate(var(--base-x, 0), var(--base-y, 0)) translate3d(calc(var(--float-x, 0px) * -1), var(--float-y, -8px), 0) rotate(1.5deg);
+          }
+        }
+
+        @keyframes fit-room-mobile-sheet-in {
+          0% {
+            opacity: 0;
+            transform: translateY(24px) scale(0.98);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes fit-room-arrival-toast {
+          0% {
+            opacity: 0;
+            transform: translate(-50%, -10px) scale(0.96);
+          }
+          14%,
+          86% {
+            opacity: 1;
+            transform: translate(-50%, 0) scale(1);
+          }
+          100% {
+            opacity: 0;
+            transform: translate(-50%, -8px) scale(0.98);
           }
         }
 
@@ -505,6 +555,10 @@ export default function FitRoomPage() {
           animation: fit-room-panel-in 220ms ease-out both;
         }
 
+        .fit-room-arrival-toast {
+          animation: fit-room-arrival-toast 3.4s ease both;
+        }
+
         .fit-room-aurora {
           background-size: 180% 180%;
           animation: fit-room-aurora 7s ease infinite;
@@ -567,8 +621,15 @@ export default function FitRoomPage() {
           .fit-room-orb-inner,
           .fit-room-orb-glow,
           .fit-room-panel,
+          .fit-room-arrival-toast,
           .fit-room-aurora {
             animation: none !important;
+          }
+        }
+
+        @media (max-width: 1023px) {
+          .fit-room-panel-mobile-open {
+            animation: fit-room-mobile-sheet-in 180ms ease-out both;
           }
         }
       `}</style>
@@ -585,6 +646,11 @@ export default function FitRoomPage() {
           {refreshing ? "동기화 중" : "새로고침"}
         </button>
       </header>
+      {newArrivalNotice ? (
+        <div className="fit-room-arrival-toast fixed left-1/2 top-4 z-[70] rounded-full border border-emerald-200/25 bg-neutral-950/85 px-4 py-2 text-xs font-black text-emerald-100 shadow-[0_0_32px_rgba(52,211,153,.25)] backdrop-blur-xl">
+          {newArrivalNotice}
+        </div>
+      ) : null}
 
       <section className="relative z-10 mx-auto max-w-7xl px-3 pb-8 sm:px-4 sm:pb-10">
         <div className="mb-3 rounded-[28px] border border-white/10 bg-neutral-950/55 p-3 shadow-2xl shadow-black/25 backdrop-blur-2xl">
@@ -724,6 +790,7 @@ export default function FitRoomPage() {
             viewerIsAdmin={viewer.isAdmin}
             viewerUserId={viewer.userId}
             viewerLoggedIn={viewer.loggedIn}
+            mobileOpen={Boolean(selectedEntryId)}
             onClose={() => setSelectedEntryId(null)}
             onCommentDraftChange={setCommentDraft}
             onSubmitComment={() => void submitComment()}
@@ -759,6 +826,7 @@ function OrbitPhoto({
   onSelect: () => void;
 }) {
   const hash = hashString(entry.id);
+  const glow = clamp(entry.reactions.score, 0, 12);
   const driftStyle = {
     ...style,
     "--float-x": `${(hash % 9) - 4}px`,
@@ -781,8 +849,20 @@ function OrbitPhoto({
         className={`absolute inset-[-5px] rounded-full bg-gradient-to-br ${KIND_RING[entry.kind]} opacity-80 blur-[1px] transition duration-300 group-hover:opacity-100 ${
           selected ? "opacity-100 shadow-[0_0_46px_rgba(255,255,255,.28)]" : ""
         }`}
+        style={{
+          boxShadow:
+            glow > 0
+              ? `0 0 ${24 + glow * 5}px rgba(52, 211, 153, ${0.16 + glow * 0.018}), 0 0 ${48 + glow * 9}px rgba(255, 255, 255, ${0.08 + glow * 0.01})`
+              : undefined,
+          opacity: Math.min(1, 0.74 + glow * 0.025),
+        }}
       />
-      <span className="absolute inset-0 rounded-full bg-white/10 shadow-[0_0_44px_rgba(255,255,255,.18)]" />
+      <span
+        className="absolute inset-0 rounded-full bg-white/10 shadow-[0_0_44px_rgba(255,255,255,.18)]"
+        style={{
+          boxShadow: glow > 0 ? `0 0 ${34 + glow * 7}px rgba(255,255,255,${0.14 + glow * 0.01})` : undefined,
+        }}
+      />
       <span
         className={`fit-room-orb-inner relative block h-full w-full overflow-hidden rounded-full border bg-neutral-950 p-1.5 shadow-2xl shadow-black/45 transition duration-300 sm:p-2 ${
           selected ? "border-white/80" : "border-white/40"
@@ -804,6 +884,7 @@ function EntryPanel({
   viewerIsAdmin,
   viewerUserId,
   viewerLoggedIn,
+  mobileOpen,
   onClose,
   onCommentDraftChange,
   onSubmitComment,
@@ -820,6 +901,7 @@ function EntryPanel({
   viewerIsAdmin: boolean;
   viewerUserId: string | null;
   viewerLoggedIn: boolean;
+  mobileOpen: boolean;
   onClose: () => void;
   onCommentDraftChange: (value: string) => void;
   onSubmitComment: () => void;
@@ -831,9 +913,24 @@ function EntryPanel({
   onBanUser: (userId: string, nickname: string) => void;
 }) {
   return (
-    <aside className="fit-room-panel rounded-[28px] border border-white/10 bg-neutral-950/75 p-3 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:rounded-[34px] sm:p-4 lg:sticky lg:top-5 lg:self-start">
-      {entry ? (
-        <>
+    <>
+      {mobileOpen ? (
+        <button
+          type="button"
+          aria-label="인증 상세 닫기"
+          onClick={onClose}
+          className="fixed inset-0 z-40 bg-black/45 backdrop-blur-[2px] lg:hidden"
+        />
+      ) : null}
+      <aside
+        className={`fit-room-panel rounded-[28px] border border-white/10 bg-neutral-950/75 p-3 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:rounded-[34px] sm:p-4 lg:sticky lg:top-5 lg:block lg:self-start ${
+          mobileOpen
+            ? "fit-room-panel-mobile-open fixed inset-x-2 bottom-2 z-50 max-h-[82vh] overflow-y-auto bg-neutral-950/95 lg:inset-auto lg:max-h-none lg:overflow-visible"
+            : "hidden"
+        }`}
+      >
+        {entry ? (
+          <>
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className={`text-xs font-black ${KIND_TEXT[entry.kind]}`}>{KIND_LABEL[entry.kind]}</p>
@@ -856,7 +953,7 @@ function EntryPanel({
             href={entry.imageUrl}
             target="_blank"
             rel="noreferrer"
-            className="mt-3 flex h-36 items-center justify-center overflow-hidden rounded-[24px] border border-white/10 bg-black/35 transition hover:border-white/25 sm:h-44"
+            className="mt-3 flex h-[46vh] min-h-[220px] max-h-[360px] items-center justify-center overflow-hidden rounded-[24px] border border-white/10 bg-black/35 transition hover:border-white/25 lg:h-44 lg:min-h-0"
             aria-label="인증 사진 원본 보기"
           >
             <img
@@ -984,13 +1081,14 @@ function EntryPanel({
               ) : null}
             </div>
           )}
-        </>
-      ) : (
-        <div className="py-10 text-center">
-          <p className="text-sm font-black text-white">사진 선택</p>
-          <p className="mt-2 text-xs text-white/45">사진을 누르면 댓글과 추천을 볼 수 있어요.</p>
-        </div>
-      )}
-    </aside>
+          </>
+        ) : (
+          <div className="py-10 text-center">
+            <p className="text-sm font-black text-white">사진 선택</p>
+            <p className="mt-2 text-xs text-white/45">사진을 누르면 댓글과 추천을 볼 수 있어요.</p>
+          </div>
+        )}
+      </aside>
+    </>
   );
 }
