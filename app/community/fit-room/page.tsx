@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type FitRoomKind = "workout" | "diet" | "body";
 type Reaction = "up" | "down" | null;
@@ -48,34 +48,45 @@ type FitRoomResponse = {
     userId: string | null;
     isAdmin: boolean;
   };
-  featured?: FitRoomEntry | null;
   items?: FitRoomEntry[];
-  liveComments?: Array<{
-    id: string;
-    entryId: string;
-    content: string;
-    createdAt: string;
-    entryKind: FitRoomKind;
-    author: {
-      userId: string;
-      nickname: string;
-      isBanned: boolean;
-    };
-  }>;
   error?: string;
 };
 
 const KIND_LABEL: Record<FitRoomKind, string> = {
-  workout: "운동 인증",
-  diet: "식단 인증",
+  workout: "운동",
+  diet: "식단",
   body: "몸 변화",
 };
 
-const KIND_GRADIENT: Record<FitRoomKind, string> = {
-  workout: "from-emerald-300 via-cyan-300 to-sky-400",
-  diet: "from-lime-300 via-emerald-300 to-teal-400",
-  body: "from-rose-300 via-fuchsia-300 to-violet-400",
+const KIND_COPY: Record<FitRoomKind, string> = {
+  workout: "운동 인증",
+  diet: "식단 인증",
+  body: "변화 기록",
 };
+
+const KIND_RING: Record<FitRoomKind, string> = {
+  workout: "from-emerald-300 via-cyan-200 to-white",
+  diet: "from-lime-300 via-emerald-200 to-white",
+  body: "from-rose-300 via-fuchsia-200 to-white",
+};
+
+const KIND_TEXT: Record<FitRoomKind, string> = {
+  workout: "text-emerald-100",
+  diet: "text-lime-100",
+  body: "text-rose-100",
+};
+
+function clamp(value: number, min: number, max: number) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function hashString(value: string) {
+  let hash = 0;
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) >>> 0;
+  }
+  return hash;
+}
 
 function timeAgo(raw: string) {
   const diff = Date.now() - Date.parse(raw);
@@ -97,10 +108,46 @@ function remainingLabel(raw: string) {
   return `${hours}시간 ${minutes}분 남음`;
 }
 
+function getDesktopOrbitStyle(entry: FitRoomEntry, index: number): CSSProperties {
+  const hash = hashString(entry.id);
+  const score = Math.max(0, entry.reactions.score);
+  const size = clamp(116 + score * 20 + entry.comments.length * 7, 112, 310);
+  const angle = ((index * 137.5 + (hash % 36)) * Math.PI) / 180;
+  const ring = 170 + (index % 5) * 82 + ((hash >> 3) % 42);
+  const gravity = clamp(score * 18, 0, 170);
+  const radius = Math.max(80, ring - gravity);
+  const centerX = 520;
+  const centerY = 360;
+
+  return {
+    left: centerX + Math.cos(angle) * radius - size / 2,
+    top: centerY + Math.sin(angle) * radius * 0.72 - size / 2,
+    width: size,
+    height: size,
+    zIndex: 20 + score,
+  };
+}
+
+function getMobileOrbitStyle(entry: FitRoomEntry, index: number): CSSProperties {
+  const hash = hashString(entry.id);
+  const score = Math.max(0, entry.reactions.score);
+  const size = clamp(94 + score * 15 + entry.comments.length * 5, 88, 190);
+  const lane = index % 3;
+  const leftMap = [18, 50, 82];
+  const top = 42 + index * 108 - Math.min(score * 10, 62) + ((hash >> 5) % 24);
+
+  return {
+    left: `${leftMap[lane]}%`,
+    top,
+    width: size,
+    height: size,
+    transform: "translateX(-50%)",
+    zIndex: 20 + score,
+  };
+}
+
 export default function FitRoomPage() {
   const [items, setItems] = useState<FitRoomEntry[]>([]);
-  const [featured, setFeatured] = useState<FitRoomEntry | null>(null);
-  const [liveComments, setLiveComments] = useState<FitRoomResponse["liveComments"]>([]);
   const [viewer, setViewer] = useState({ loggedIn: false, userId: null as string | null, isAdmin: false });
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -112,14 +159,24 @@ export default function FitRoomPage() {
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState("");
   const [uploading, setUploading] = useState(false);
-  const [commentDrafts, setCommentDrafts] = useState<Record<string, string>>({});
+  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
+  const [commentDraft, setCommentDraft] = useState("");
   const [processingKey, setProcessingKey] = useState<string | null>(null);
+  const [activePulseId, setActivePulseId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
-  const hotItems = useMemo(
-    () => [...items].sort((a, b) => b.reactions.score - a.reactions.score || Date.parse(b.createdAt) - Date.parse(a.createdAt)).slice(0, 6),
+  const sortedItems = useMemo(
+    () => [...items].sort((a, b) => b.reactions.score - a.reactions.score || Date.parse(b.createdAt) - Date.parse(a.createdAt)),
     [items]
   );
+
+  const selectedEntry = useMemo(
+    () => items.find((entry) => entry.id === selectedEntryId) ?? sortedItems[0] ?? null,
+    [items, selectedEntryId, sortedItems]
+  );
+
+  const desktopHeight = useMemo(() => clamp(720 + Math.floor(items.length / 9) * 180, 720, 1320), [items.length]);
+  const mobileHeight = useMemo(() => Math.max(520, items.length * 108 + 240), [items.length]);
 
   const loadRoom = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -134,8 +191,6 @@ export default function FitRoomPage() {
       }
       if (!res.ok || !body.ok) throw new Error(body.error ?? "인증방을 불러오지 못했습니다.");
       setItems(body.items ?? []);
-      setFeatured(body.featured ?? null);
-      setLiveComments(body.liveComments ?? []);
       setSetupRequired(Boolean(body.setupRequired));
       setViewer({
         loggedIn: Boolean(body.viewer?.loggedIn),
@@ -167,6 +222,13 @@ export default function FitRoomPage() {
     setPreviewUrl(url);
     return () => URL.revokeObjectURL(url);
   }, [file]);
+
+  const selectEntry = (entryId: string) => {
+    setSelectedEntryId(entryId);
+    setCommentDraft("");
+    setActivePulseId(entryId);
+    window.setTimeout(() => setActivePulseId((current) => (current === entryId ? null : current)), 720);
+  };
 
   const submitEntry = async () => {
     if (!viewer.isAdmin) {
@@ -203,6 +265,7 @@ export default function FitRoomPage() {
   const reactToEntry = async (entry: FitRoomEntry, reaction: "up" | "down") => {
     if (!viewer.isAdmin) return;
     const nextReaction = entry.reactions.mine === reaction ? "none" : reaction;
+    setActivePulseId(entry.id);
     setProcessingKey(`reaction:${entry.id}`);
     try {
       const res = await fetch(`/api/community/fit-room/${entry.id}/reaction`, {
@@ -220,20 +283,20 @@ export default function FitRoomPage() {
     }
   };
 
-  const submitComment = async (entryId: string) => {
-    if (!viewer.isAdmin) return;
-    const content = (commentDrafts[entryId] ?? "").trim();
+  const submitComment = async () => {
+    if (!viewer.isAdmin || !selectedEntry) return;
+    const content = commentDraft.trim();
     if (!content) return;
-    setProcessingKey(`comment:${entryId}`);
+    setProcessingKey(`comment:${selectedEntry.id}`);
     try {
-      const res = await fetch(`/api/community/fit-room/${entryId}/comments`, {
+      const res = await fetch(`/api/community/fit-room/${selectedEntry.id}/comments`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ content }),
       });
       const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok || !body.ok) throw new Error(body.error ?? "댓글 등록에 실패했습니다.");
-      setCommentDrafts((prev) => ({ ...prev, [entryId]: "" }));
+      setCommentDraft("");
       await loadRoom(true);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "댓글 등록에 실패했습니다.");
@@ -249,6 +312,7 @@ export default function FitRoomPage() {
       const res = await fetch(`/api/community/fit-room/${entry.id}`, { method: "DELETE" });
       const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok || !body.ok) throw new Error(body.error ?? "삭제에 실패했습니다.");
+      if (selectedEntryId === entry.id) setSelectedEntryId(null);
       await loadRoom(true);
     } catch (err) {
       window.alert(err instanceof Error ? err.message : "삭제에 실패했습니다.");
@@ -272,7 +336,7 @@ export default function FitRoomPage() {
   };
 
   const banUser = async (userId: string, nickname: string) => {
-    const reason = window.prompt(`${nickname} 회원을 커뮤니티 이용 제한 처리할까요? 사유를 입력해 주세요.`, "인증방 운영 정책 위반");
+    const reason = window.prompt(`${nickname} 회원의 커뮤니티 이용을 제한할까요? 사유를 입력해 주세요.`, "인증방 운영 정책 위반");
     if (reason === null) return;
     setProcessingKey(`ban:${userId}`);
     try {
@@ -292,13 +356,13 @@ export default function FitRoomPage() {
 
   if (!loading && accessDenied) {
     return (
-      <main className="min-h-screen bg-[#050712] px-4 py-8 text-white">
-        <div className="mx-auto max-w-xl rounded-[32px] border border-white/10 bg-white/[0.08] p-6 text-center shadow-2xl shadow-black/20">
+      <main className="min-h-screen bg-[#04050a] px-4 py-8 text-white">
+        <div className="mx-auto max-w-md rounded-[32px] border border-white/10 bg-white/[0.08] p-6 text-center shadow-2xl shadow-black/20">
           <p className="text-sm font-black text-emerald-300">LIVE 인증방</p>
-          <h1 className="mt-3 text-2xl font-black">관리자 전용 실험 기능입니다</h1>
+          <h1 className="mt-3 text-2xl font-black">관리자 전용입니다</h1>
           <p className="mt-3 text-sm leading-6 text-white/60">{error || "현재는 관리자만 확인할 수 있습니다."}</p>
           <Link href="/community" className="mt-5 inline-flex rounded-full bg-white px-5 py-3 text-sm font-black text-neutral-950">
-            커뮤니티로 돌아가기
+            커뮤니티로
           </Link>
         </div>
       </main>
@@ -306,344 +370,459 @@ export default function FitRoomPage() {
   }
 
   return (
-    <main className="min-h-screen overflow-hidden bg-[#050712] text-white">
-      <div className="pointer-events-none fixed inset-0 opacity-80">
-        <div className="absolute left-[-120px] top-[-120px] h-80 w-80 rounded-full bg-emerald-400/25 blur-3xl" />
-        <div className="absolute right-[-160px] top-24 h-96 w-96 rounded-full bg-fuchsia-500/20 blur-3xl" />
-        <div className="absolute bottom-[-140px] left-1/3 h-96 w-96 rounded-full bg-sky-500/20 blur-3xl" />
+    <main className="min-h-screen overflow-hidden bg-[#03040a] text-white">
+      <div className="pointer-events-none fixed inset-0">
+        <div className="fit-room-aurora absolute inset-0 bg-[radial-gradient(circle_at_50%_38%,rgba(255,255,255,0.08),transparent_18%),radial-gradient(circle_at_15%_20%,rgba(16,185,129,0.22),transparent_28%),radial-gradient(circle_at_85%_24%,rgba(217,70,239,0.20),transparent_30%),radial-gradient(circle_at_45%_90%,rgba(6,182,212,0.18),transparent_34%)]" />
+        <div className="absolute inset-0 opacity-[0.23] [background-image:radial-gradient(rgba(255,255,255,.55)_1px,transparent_1px)] [background-size:38px_38px]" />
       </div>
+      <style jsx global>{`
+        @keyframes fit-room-drift {
+          0%,
+          100% {
+            transform: translate3d(var(--float-x, 0px), 0, 0) rotate(-1.5deg);
+          }
+          50% {
+            transform: translate3d(calc(var(--float-x, 0px) * -1), var(--float-y, -8px), 0) rotate(1.5deg);
+          }
+        }
 
-      <div className="relative mx-auto max-w-6xl px-4 py-5 pb-20">
-        <header className="flex flex-wrap items-center justify-between gap-3">
-          <Link href="/community" className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-black text-white backdrop-blur">
-            커뮤니티로
-          </Link>
-          <button
-            type="button"
-            onClick={() => void loadRoom(true)}
-            className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-white/80 backdrop-blur hover:bg-white/15"
-          >
-            {refreshing ? "동기화 중" : "새로고침"}
-          </button>
-        </header>
+        @keyframes fit-room-pop {
+          0% {
+            transform: scale(0.72);
+            opacity: 0;
+          }
+          58% {
+            transform: scale(1.13);
+            opacity: 1;
+          }
+          100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+        }
 
-        <section className="mt-8 grid gap-5 lg:grid-cols-[1.1fr_0.9fr] lg:items-end">
-          <div>
-            <p className="text-sm font-black text-emerald-300">ADMIN ONLY · 24시간 인증방</p>
-            <h1 className="mt-3 max-w-2xl text-4xl font-black leading-tight tracking-tight sm:text-6xl">
-              식단과 운동 인증이 흐르는 실시간 방
+        @keyframes fit-room-pulse {
+          0% {
+            opacity: 0.9;
+            transform: scale(0.84);
+          }
+          100% {
+            opacity: 0;
+            transform: scale(1.72);
+          }
+        }
+
+        @keyframes fit-room-panel-in {
+          0% {
+            opacity: 0;
+            transform: translateY(12px) scale(0.98);
+          }
+          100% {
+            opacity: 1;
+            transform: translateY(0) scale(1);
+          }
+        }
+
+        @keyframes fit-room-aurora {
+          0% {
+            background-position: 0% 50%;
+          }
+          50% {
+            background-position: 100% 50%;
+          }
+          100% {
+            background-position: 0% 50%;
+          }
+        }
+
+        .fit-room-orb {
+          animation: fit-room-drift 5.8s ease-in-out infinite;
+          touch-action: manipulation;
+          will-change: transform;
+        }
+
+        .fit-room-orb-inner {
+          animation: fit-room-pop 420ms cubic-bezier(0.2, 0.9, 0.2, 1) both;
+        }
+
+        .fit-room-orb-selected .fit-room-orb-glow,
+        .fit-room-orb-pulse .fit-room-orb-glow {
+          animation: fit-room-pulse 760ms ease-out both;
+        }
+
+        .fit-room-panel {
+          animation: fit-room-panel-in 220ms ease-out both;
+        }
+
+        .fit-room-aurora {
+          background-size: 180% 180%;
+          animation: fit-room-aurora 7s ease infinite;
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+          .fit-room-orb,
+          .fit-room-orb-inner,
+          .fit-room-orb-glow,
+          .fit-room-panel,
+          .fit-room-aurora {
+            animation: none !important;
+          }
+        }
+      `}</style>
+
+      <header className="relative z-30 mx-auto flex max-w-7xl items-center justify-between gap-3 px-3 py-4 sm:px-4 sm:py-5">
+        <Link href="/community" className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-black text-white backdrop-blur">
+          커뮤니티로
+        </Link>
+        <button
+          type="button"
+          onClick={() => void loadRoom(true)}
+          className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-bold text-white/80 backdrop-blur hover:bg-white/15"
+        >
+          {refreshing ? "동기화 중" : "새로고침"}
+        </button>
+      </header>
+
+      <section className="relative z-10 mx-auto max-w-7xl px-3 pb-8 sm:px-4 sm:pb-10">
+        <div className="mb-3 grid gap-3 lg:grid-cols-[1fr_390px]">
+          <div className="flex min-h-[142px] flex-col justify-end rounded-[28px] border border-white/10 bg-white/[0.045] p-4 backdrop-blur-xl sm:min-h-[170px] sm:rounded-[34px] sm:p-5">
+            <p className="text-xs font-black text-emerald-300">ADMIN ONLY · 24시간 인증방</p>
+            <h1 className="mt-2 max-w-2xl text-3xl font-black leading-tight tracking-tight sm:text-6xl">
+              사진은 떠다니고, 반응은 커집니다
             </h1>
-            <p className="mt-4 max-w-xl text-sm leading-7 text-white/60">
-              현재는 관리자만 확인하는 실험 버전입니다. 사진은 24시간 뒤 자동으로 사라지고, 댓글과 추천 반응까지 한 화면에서 관리할 수 있어요.
+            <p className="mt-3 max-w-xl text-sm leading-6 text-white/50">
+              모바일에서는 별자리처럼 가볍게 보고, 데스크톱에서는 궤도처럼 자유롭게 탐색합니다.
             </p>
           </div>
 
-          <div className="rounded-[32px] border border-white/10 bg-white/[0.08] p-4 shadow-2xl shadow-black/20 backdrop-blur-xl">
+          <div className="rounded-[28px] border border-white/10 bg-neutral-950/70 p-3 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:rounded-[34px] sm:p-4">
             <div className="flex items-center justify-between gap-3">
-              <div>
-                <p className="text-sm font-black text-white">지금 인증 올리기</p>
-                <p className="mt-1 text-xs text-white/50">운동, 식단, 몸 변화 기록을 사진으로 테스트해보세요.</p>
-              </div>
+              <p className="text-sm font-black">지금 인증 올리기</p>
               <span className="rounded-full bg-emerald-300 px-3 py-1 text-xs font-black text-neutral-950">24H</span>
             </div>
-            <div className="mt-4 grid grid-cols-3 gap-2">
+            <div className="mt-3 flex gap-2">
               {(["workout", "diet", "body"] as FitRoomKind[]).map((item) => (
                 <button
                   key={item}
                   type="button"
                   onClick={() => setKind(item)}
-                  className={`rounded-2xl px-3 py-3 text-xs font-black transition ${
-                    kind === item ? "bg-white text-neutral-950" : "bg-white/10 text-white/70 hover:bg-white/15"
+                  className={`min-h-[38px] flex-1 rounded-full text-xs font-black transition ${
+                    kind === item ? "bg-white text-neutral-950" : "bg-white/10 text-white/65 hover:bg-white/15"
                   }`}
                 >
-                  {KIND_LABEL[item]}
+                  {KIND_COPY[item]}
                 </button>
               ))}
             </div>
-            <label className="mt-3 flex min-h-[150px] cursor-pointer items-center justify-center overflow-hidden rounded-[28px] border border-dashed border-white/20 bg-black/20 text-center text-sm text-white/50">
-              {previewUrl ? (
-                <img src={previewUrl} alt="업로드 미리보기" loading="lazy" decoding="async" className="h-full max-h-[260px] w-full object-cover" />
-              ) : (
-                <span>사진 선택</span>
-              )}
-              <input
-                ref={fileInputRef}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="hidden"
-                onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-              />
-            </label>
-            <textarea
-              value={caption}
-              onChange={(event) => setCaption(event.target.value.slice(0, 180))}
-              placeholder="짧게 남기기: 오늘 하체 완료, 식단 성공, 유산소 40분..."
-              className="mt-3 min-h-[86px] w-full resize-none rounded-3xl border border-white/10 bg-black/25 px-4 py-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-emerald-300"
-            />
-            <button
-              type="button"
-              disabled={uploading || setupRequired}
-              onClick={() => void submitEntry()}
-              className="mt-3 min-h-[48px] w-full rounded-2xl bg-white text-sm font-black text-neutral-950 disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {setupRequired ? "DB 적용 후 사용 가능" : uploading ? "업로드 중..." : "인증 올리기"}
-            </button>
+            <div className="mt-3 grid grid-cols-[92px_1fr] gap-2 sm:grid-cols-[112px_1fr] sm:gap-3">
+              <label
+                className={`flex h-24 cursor-pointer items-center justify-center overflow-hidden rounded-[22px] border border-dashed text-center text-xs transition active:scale-[0.98] sm:h-28 sm:rounded-[26px] ${
+                  previewUrl
+                    ? "border-emerald-300/55 bg-emerald-300/10 text-emerald-50 shadow-[0_0_24px_rgba(16,185,129,.18)]"
+                    : "border-white/20 bg-black/30 text-white/45 hover:border-white/35 hover:bg-white/5"
+                }`}
+              >
+                {previewUrl ? (
+                  <img src={previewUrl} alt="업로드 미리보기" loading="lazy" decoding="async" className="h-full w-full object-cover" />
+                ) : (
+                  <span>사진</span>
+                )}
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp"
+                  className="hidden"
+                  onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+                />
+              </label>
+              <div className="flex min-w-0 flex-col gap-2">
+                <textarea
+                  value={caption}
+                  onChange={(event) => setCaption(event.target.value.slice(0, 180))}
+                  placeholder="짧게 남기기"
+                  className="min-h-[60px] resize-none rounded-[20px] border border-white/10 bg-black/25 px-3 py-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-emerald-300 sm:min-h-[68px] sm:rounded-[22px] sm:px-4"
+                />
+                <button
+                  type="button"
+                  disabled={uploading || setupRequired}
+                  onClick={() => void submitEntry()}
+                  className="min-h-[42px] rounded-full bg-white text-sm font-black text-neutral-950 transition hover:scale-[1.01] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {setupRequired ? "DB 적용 필요" : uploading ? "올리는 중" : "인증 올리기"}
+                </button>
+              </div>
+            </div>
+            {setupRequired ? (
+              <p className="mt-3 rounded-2xl border border-amber-300/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">
+                Supabase에서 supabase/sql/community_fit_room.sql을 먼저 실행해야 합니다.
+              </p>
+            ) : null}
+            {error ? <p className="mt-3 rounded-2xl border border-rose-400/30 bg-rose-500/10 p-3 text-xs leading-5 text-rose-100">{error}</p> : null}
           </div>
-        </section>
+        </div>
 
-        {setupRequired ? (
-          <p className="mt-5 rounded-2xl border border-amber-300/30 bg-amber-400/10 p-4 text-sm text-amber-100">
-            Supabase에서 <span className="font-black">supabase/sql/community_fit_room.sql</span>을 먼저 실행하면 업로드가 활성화됩니다.
-          </p>
-        ) : null}
-        {error ? <p className="mt-5 rounded-2xl border border-rose-400/30 bg-rose-500/10 p-4 text-sm text-rose-100">{error}</p> : null}
-
-        {featured ? (
-          <section className="mt-8 rounded-[36px] border border-white/10 bg-white/[0.07] p-4 backdrop-blur-xl md:p-5">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <div>
-                <p className="text-xs font-black text-emerald-300">지금 가장 반응 좋은 인증</p>
-                <p className="mt-1 text-lg font-black text-white">추천을 많이 받은 사진은 크게 보여줘요</p>
-              </div>
-              <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-neutral-950">
-                점수 {featured.reactions.score}
-              </span>
+        <div className="grid gap-3 lg:grid-cols-[1fr_330px]">
+          <div className="rounded-[32px] border border-white/10 bg-black/20 shadow-2xl shadow-black/25 backdrop-blur-xl sm:rounded-[42px] lg:overflow-x-auto">
+            <div className="relative overflow-hidden lg:hidden" style={{ height: mobileHeight }}>
+              <div className="pointer-events-none absolute left-1/2 top-16 h-[calc(100%-7rem)] w-px -translate-x-1/2 bg-gradient-to-b from-transparent via-white/20 to-transparent" />
+              <div className="pointer-events-none absolute left-[15%] top-28 h-[calc(100%-12rem)] w-px bg-gradient-to-b from-transparent via-emerald-300/15 to-transparent" />
+              <div className="pointer-events-none absolute right-[15%] top-20 h-[calc(100%-11rem)] w-px bg-gradient-to-b from-transparent via-fuchsia-300/15 to-transparent" />
+              <MobileStatus loading={loading} count={items.length} />
+              {!loading
+                ? sortedItems.map((entry, index) => (
+                    <OrbitPhoto
+                      key={entry.id}
+                      entry={entry}
+                      selected={selectedEntryId === entry.id}
+                      pulsing={activePulseId === entry.id}
+                      style={getMobileOrbitStyle(entry, index)}
+                      onSelect={() => selectEntry(entry.id)}
+                    />
+                  ))
+                : null}
             </div>
-            <FitRoomCard
-              entry={featured}
-              large
-              viewerIsAdmin={viewer.isAdmin}
-              processingKey={processingKey}
-              commentDraft={commentDrafts[featured.id] ?? ""}
-              onCommentChange={(value) => setCommentDrafts((prev) => ({ ...prev, [featured.id]: value }))}
-              onReact={reactToEntry}
-              onComment={submitComment}
-              onDelete={deleteEntry}
-              onDeleteComment={deleteComment}
-              onBan={banUser}
-            />
-          </section>
-        ) : null}
 
-        <section className="mt-8 grid gap-5 lg:grid-cols-[1fr_320px]">
-          <div>
-            <div className="mb-3 flex items-center justify-between">
-              <h2 className="text-xl font-black">실시간 인증 흐름</h2>
-              <p className="text-xs text-white/40">{loading ? "불러오는 중" : `${items.length}개 표시 중`}</p>
+            <div className="relative hidden min-w-[1040px] lg:block" style={{ height: desktopHeight }}>
+              <div className="pointer-events-none absolute left-1/2 top-[360px] h-40 w-40 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/10 blur-2xl" />
+              <div className="pointer-events-none absolute left-1/2 top-[360px] h-[540px] w-[540px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10" />
+              <div className="pointer-events-none absolute left-1/2 top-[360px] h-[780px] w-[780px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.07]" />
+              <DesktopStatus loading={loading} count={items.length} />
+              {!loading
+                ? sortedItems.map((entry, index) => (
+                    <OrbitPhoto
+                      key={entry.id}
+                      entry={entry}
+                      selected={selectedEntryId === entry.id}
+                      pulsing={activePulseId === entry.id}
+                      style={getDesktopOrbitStyle(entry, index)}
+                      onSelect={() => selectEntry(entry.id)}
+                    />
+                  ))
+                : null}
             </div>
-            {loading ? (
-              <p className="rounded-[28px] border border-white/10 bg-white/[0.06] p-5 text-sm text-white/55">인증 사진을 불러오는 중...</p>
-            ) : items.length === 0 ? (
-              <p className="rounded-[28px] border border-white/10 bg-white/[0.06] p-5 text-sm text-white/55">아직 올라온 인증이 없어요. 테스트 사진을 올려보세요.</p>
-            ) : (
-              <div className="grid gap-4 md:grid-cols-2">
-                {items.map((entry) => (
-                  <FitRoomCard
-                    key={entry.id}
-                    entry={entry}
-                    viewerIsAdmin={viewer.isAdmin}
-                    processingKey={processingKey}
-                    commentDraft={commentDrafts[entry.id] ?? ""}
-                    onCommentChange={(value) => setCommentDrafts((prev) => ({ ...prev, [entry.id]: value }))}
-                    onReact={reactToEntry}
-                    onComment={submitComment}
-                    onDelete={deleteEntry}
-                    onDeleteComment={deleteComment}
-                    onBan={banUser}
-                  />
-                ))}
-              </div>
-            )}
           </div>
 
-          <aside className="space-y-4">
-            <div className="rounded-[30px] border border-white/10 bg-white/[0.07] p-4 backdrop-blur-xl">
-              <p className="text-sm font-black">추천 많은 사진</p>
-              <div className="mt-3 space-y-2">
-                {hotItems.length === 0 ? (
-                  <p className="text-sm text-white/45">아직 추천 데이터가 없어요.</p>
-                ) : (
-                  hotItems.map((entry, index) => (
-                    <div key={entry.id} className="flex items-center gap-3 rounded-2xl bg-white/10 p-2">
-                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-xs font-black text-neutral-950">{index + 1}</span>
-                      <img src={entry.imageUrl} alt="" loading="lazy" decoding="async" className="h-10 w-10 rounded-xl object-cover" />
-                      <div className="min-w-0 flex-1">
-                        <p className="truncate text-xs font-black text-white">{entry.author.nickname}</p>
-                        <p className="text-[11px] text-white/45">점수 {entry.reactions.score} · {KIND_LABEL[entry.kind]}</p>
-                      </div>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-
-            <div className="rounded-[30px] border border-white/10 bg-white/[0.07] p-4 backdrop-blur-xl">
-              <p className="text-sm font-black">실시간 댓글</p>
-              <div className="mt-3 space-y-2">
-                {(liveComments ?? []).length === 0 ? (
-                  <p className="text-sm text-white/45">댓글이 올라오면 여기에 모입니다.</p>
-                ) : (
-                  (liveComments ?? []).map((comment) => (
-                    <div key={comment.id} className="rounded-2xl bg-black/20 p-3">
-                      <p className="text-[11px] font-bold text-emerald-200">{comment.author.nickname} · {KIND_LABEL[comment.entryKind]}</p>
-                      <p className="mt-1 text-xs leading-5 text-white/75">{comment.content}</p>
-                    </div>
-                  ))
-                )}
-              </div>
-            </div>
-          </aside>
-        </section>
-      </div>
+          <EntryPanel
+            entry={selectedEntry}
+            commentDraft={commentDraft}
+            processingKey={processingKey}
+            onClose={() => setSelectedEntryId(null)}
+            onCommentDraftChange={setCommentDraft}
+            onSubmitComment={() => void submitComment()}
+            onReact={(entry, reaction) => void reactToEntry(entry, reaction)}
+            onDeleteEntry={(entry) => void deleteEntry(entry)}
+            onDeleteComment={(comment) => void deleteComment(comment)}
+            onBanUser={(userId, nickname) => void banUser(userId, nickname)}
+          />
+        </div>
+      </section>
     </main>
   );
 }
 
-function FitRoomCard({
+function MobileStatus({ loading, count }: { loading: boolean; count: number }) {
+  if (loading) {
+    return <p className="absolute left-4 top-4 rounded-full bg-white/10 px-4 py-3 text-sm text-white/50">불러오는 중...</p>;
+  }
+  if (count === 0) {
+    return <p className="absolute left-4 top-4 rounded-full bg-white/10 px-4 py-3 text-sm text-white/50">아직 떠 있는 사진이 없습니다.</p>;
+  }
+  return <p className="absolute left-4 top-4 rounded-full bg-white/10 px-4 py-3 text-xs font-bold text-white/55">{count}개 인증이 떠 있어요</p>;
+}
+
+function DesktopStatus({ loading, count }: { loading: boolean; count: number }) {
+  if (loading) {
+    return <p className="absolute left-8 top-8 rounded-full bg-white/10 px-4 py-3 text-sm text-white/50">불러오는 중...</p>;
+  }
+  if (count === 0) {
+    return <p className="absolute left-8 top-8 rounded-full bg-white/10 px-4 py-3 text-sm text-white/50">아직 떠 있는 사진이 없습니다.</p>;
+  }
+  return <p className="absolute left-8 top-8 rounded-full bg-white/10 px-4 py-3 text-xs font-bold text-white/55">{count}개 인증 표시 중</p>;
+}
+
+function OrbitPhoto({
   entry,
-  large = false,
-  viewerIsAdmin,
-  processingKey,
-  commentDraft,
-  onCommentChange,
-  onReact,
-  onComment,
-  onDelete,
-  onDeleteComment,
-  onBan,
+  selected,
+  pulsing,
+  style,
+  onSelect,
 }: {
   entry: FitRoomEntry;
-  large?: boolean;
-  viewerIsAdmin: boolean;
-  processingKey: string | null;
+  selected: boolean;
+  pulsing: boolean;
+  style: CSSProperties;
+  onSelect: () => void;
+}) {
+  const hash = hashString(entry.id);
+  const driftStyle = {
+    ...style,
+    "--float-x": `${(hash % 9) - 4}px`,
+    "--float-y": `${-6 - (hash % 7)}px`,
+    animationDelay: `${hash % 900}ms`,
+  } as CSSProperties;
+
+  return (
+    <button
+      type="button"
+      style={driftStyle}
+      onClick={onSelect}
+      className={`fit-room-orb group absolute rounded-full text-left transition duration-500 hover:z-50 hover:scale-[1.08] active:scale-95 ${
+        selected ? "fit-room-orb-selected z-50 scale-[1.08]" : ""
+      } ${pulsing ? "fit-room-orb-pulse" : ""}`}
+      aria-label={`${entry.author.nickname} ${KIND_LABEL[entry.kind]} 인증 보기`}
+    >
+      <span className="fit-room-orb-glow pointer-events-none absolute inset-[-18px] rounded-full bg-white/25" />
+      <span
+        className={`absolute inset-[-5px] rounded-full bg-gradient-to-br ${KIND_RING[entry.kind]} opacity-80 blur-[1px] transition duration-300 group-hover:opacity-100 ${
+          selected ? "opacity-100 shadow-[0_0_46px_rgba(255,255,255,.28)]" : ""
+        }`}
+      />
+      <span className="absolute inset-0 rounded-full bg-white/10 shadow-[0_0_44px_rgba(255,255,255,.18)]" />
+      <span
+        className={`fit-room-orb-inner relative block h-full w-full overflow-hidden rounded-full border bg-neutral-950 p-1.5 shadow-2xl shadow-black/45 transition duration-300 sm:p-2 ${
+          selected ? "border-white/80" : "border-white/40"
+      }`}
+    >
+        <img src={entry.imageUrl} alt={entry.caption || KIND_LABEL[entry.kind]} loading="lazy" decoding="async" className="h-full w-full rounded-full object-cover" />
+        <span className="absolute inset-x-2 bottom-2 rounded-full bg-black/60 px-2 py-1 text-center text-[10px] font-black text-white backdrop-blur transition group-hover:bg-white group-hover:text-neutral-950 sm:inset-x-3 sm:bottom-3 sm:text-[11px]">
+          추천 {entry.reactions.up}
+        </span>
+      </span>
+    </button>
+  );
+}
+
+function EntryPanel({
+  entry,
+  commentDraft,
+  processingKey,
+  onClose,
+  onCommentDraftChange,
+  onSubmitComment,
+  onReact,
+  onDeleteEntry,
+  onDeleteComment,
+  onBanUser,
+}: {
+  entry: FitRoomEntry | null;
   commentDraft: string;
-  onCommentChange: (value: string) => void;
+  processingKey: string | null;
+  onClose: () => void;
+  onCommentDraftChange: (value: string) => void;
+  onSubmitComment: () => void;
   onReact: (entry: FitRoomEntry, reaction: "up" | "down") => void;
-  onComment: (entryId: string) => void;
-  onDelete: (entry: FitRoomEntry) => void;
+  onDeleteEntry: (entry: FitRoomEntry) => void;
   onDeleteComment: (comment: FitRoomComment) => void;
-  onBan: (userId: string, nickname: string) => void;
+  onBanUser: (userId: string, nickname: string) => void;
 }) {
   return (
-    <article className="group overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.075] shadow-2xl shadow-black/10 backdrop-blur-xl">
-      <div className={`relative overflow-hidden ${large ? "min-h-[440px]" : "min-h-[310px]"}`}>
-        <img
-          src={entry.imageUrl}
-          alt={entry.caption || KIND_LABEL[entry.kind]}
-          loading="lazy"
-          decoding="async"
-          className={`h-full w-full object-cover ${large ? "max-h-[620px]" : "max-h-[420px]"}`}
-        />
-        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent p-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className={`rounded-full bg-gradient-to-r ${KIND_GRADIENT[entry.kind]} px-3 py-1 text-[11px] font-black text-neutral-950`}>
-              {KIND_LABEL[entry.kind]}
-            </span>
-            <span className="rounded-full bg-white/15 px-3 py-1 text-[11px] font-bold text-white backdrop-blur">{remainingLabel(entry.expiresAt)}</span>
+    <aside className="fit-room-panel rounded-[28px] border border-white/10 bg-neutral-950/75 p-3 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:rounded-[34px] sm:p-4 lg:sticky lg:top-5 lg:self-start">
+      {entry ? (
+        <>
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <p className={`text-xs font-black ${KIND_TEXT[entry.kind]}`}>{KIND_LABEL[entry.kind]}</p>
+              <h2 className="mt-1 text-xl font-black">{entry.author.nickname}</h2>
+              <p className="mt-1 text-[11px] text-white/40">
+                {remainingLabel(entry.expiresAt)} · {timeAgo(entry.createdAt)}
+              </p>
+            </div>
+            <button type="button" onClick={onClose} className="rounded-full bg-white/10 px-3 py-1 text-xs font-bold text-white/70">
+              접기
+            </button>
           </div>
-          <p className="mt-2 text-sm font-black text-white">{entry.author.nickname}</p>
-          {entry.caption ? <p className="mt-1 text-sm leading-6 text-white/85">{entry.caption}</p> : null}
-        </div>
-      </div>
 
-      <div className="p-4">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <p className="text-xs text-white/45">{timeAgo(entry.createdAt)} · 24시간 뒤 자동 삭제</p>
-          <div className="flex flex-wrap gap-2">
-            {(entry.canDelete || viewerIsAdmin) && (
-              <button
-                type="button"
-                disabled={processingKey !== null}
-                onClick={() => onDelete(entry)}
-                className="rounded-full border border-rose-300/30 bg-rose-500/10 px-3 py-1 text-[11px] font-bold text-rose-100 disabled:opacity-50"
-              >
-                사진 삭제
-              </button>
-            )}
-            {viewerIsAdmin && (
-              <button
-                type="button"
-                disabled={processingKey !== null || entry.author.isBanned}
-                onClick={() => onBan(entry.author.userId, entry.author.nickname)}
-                className="rounded-full border border-amber-300/30 bg-amber-500/10 px-3 py-1 text-[11px] font-bold text-amber-100 disabled:opacity-50"
-              >
-                유저 밴
-              </button>
-            )}
+          {entry.caption ? <p className="mt-3 rounded-2xl bg-white/5 p-3 text-sm leading-6 text-white/80">{entry.caption}</p> : null}
+
+          <div className="mt-3 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              disabled={processingKey !== null}
+              onClick={() => onReact(entry, "up")}
+              className={`min-h-[42px] rounded-2xl text-sm font-black transition active:scale-[0.96] disabled:opacity-50 ${
+                entry.reactions.mine === "up" ? "bg-emerald-300 text-neutral-950" : "bg-white/10 text-white"
+              }`}
+            >
+              추천 {entry.reactions.up}
+            </button>
+            <button
+              type="button"
+              disabled={processingKey !== null}
+              onClick={() => onReact(entry, "down")}
+              className={`min-h-[42px] rounded-2xl text-sm font-black transition active:scale-[0.96] disabled:opacity-50 ${
+                entry.reactions.mine === "down" ? "bg-rose-300 text-neutral-950" : "bg-white/10 text-white"
+              }`}
+            >
+              비추천 {entry.reactions.down}
+            </button>
           </div>
-        </div>
 
-        <div className="mt-3 grid grid-cols-2 gap-2">
-          <button
-            type="button"
-            disabled={processingKey !== null}
-            onClick={() => onReact(entry, "up")}
-            className={`min-h-[42px] rounded-2xl text-sm font-black transition disabled:opacity-50 ${
-              entry.reactions.mine === "up" ? "bg-emerald-300 text-neutral-950" : "bg-white/10 text-white hover:bg-white/15"
-            }`}
-          >
-            추천 {entry.reactions.up}
-          </button>
-          <button
-            type="button"
-            disabled={processingKey !== null}
-            onClick={() => onReact(entry, "down")}
-            className={`min-h-[42px] rounded-2xl text-sm font-black transition disabled:opacity-50 ${
-              entry.reactions.mine === "down" ? "bg-rose-300 text-neutral-950" : "bg-white/10 text-white hover:bg-white/15"
-            }`}
-          >
-            비추천 {entry.reactions.down}
-          </button>
-        </div>
-
-        <div className="mt-4 space-y-2">
-          {entry.comments.length === 0 ? (
-            <p className="rounded-2xl bg-black/20 p-3 text-xs text-white/40">아직 댓글이 없어요. 첫 반응을 남겨보세요.</p>
-          ) : (
-            entry.comments.map((comment) => (
-              <div key={comment.id} className="rounded-2xl bg-black/20 p-3">
-                <div className="flex items-center justify-between gap-2">
-                  <p className="text-[11px] font-black text-white/70">{comment.author.nickname} · {timeAgo(comment.createdAt)}</p>
-                  {(comment.canDelete || viewerIsAdmin) && (
-                    <button
-                      type="button"
-                      disabled={processingKey !== null}
-                      onClick={() => onDeleteComment(comment)}
-                      className="text-[11px] font-bold text-rose-200 disabled:opacity-50"
-                    >
+          <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
+            {entry.comments.length === 0 ? (
+              <p className="rounded-2xl bg-white/5 p-3 text-xs text-white/40">댓글 없음</p>
+            ) : (
+              entry.comments.map((comment) => (
+                <div key={comment.id} className="rounded-2xl bg-white/5 p-3">
+                  <div className="flex items-center justify-between gap-2">
+                    <p className="text-[11px] font-black text-white/60">{comment.author.nickname}</p>
+                    <button type="button" disabled={processingKey !== null} onClick={() => onDeleteComment(comment)} className="text-[11px] font-bold text-rose-200 disabled:opacity-50">
                       삭제
                     </button>
-                  )}
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-white/80">{comment.content}</p>
                 </div>
-                <p className="mt-1 text-xs leading-5 text-white/80">{comment.content}</p>
-              </div>
-            ))
-          )}
-        </div>
+              ))
+            )}
+          </div>
 
-        <div className="mt-3 flex gap-2">
-          <input
-            value={commentDraft}
-            onChange={(event) => onCommentChange(event.target.value.slice(0, 220))}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                event.preventDefault();
-                void onComment(entry.id);
-              }
-            }}
-            placeholder="댓글 쓰기"
-            className="min-h-[42px] min-w-0 flex-1 rounded-2xl border border-white/10 bg-black/25 px-4 text-sm text-white outline-none placeholder:text-white/35 focus:border-emerald-300"
-          />
-          <button
-            type="button"
-            disabled={processingKey !== null || !commentDraft.trim()}
-            onClick={() => void onComment(entry.id)}
-            className="min-h-[42px] rounded-2xl bg-white px-4 text-xs font-black text-neutral-950 disabled:opacity-50"
-          >
-            전송
-          </button>
+          <div className="mt-3 flex gap-2">
+            <input
+              value={commentDraft}
+              onChange={(event) => onCommentDraftChange(event.target.value.slice(0, 220))}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  onSubmitComment();
+                }
+              }}
+              placeholder="댓글"
+              className="min-h-[42px] min-w-0 flex-1 rounded-2xl border border-white/10 bg-black/25 px-4 text-sm text-white outline-none placeholder:text-white/35 focus:border-emerald-300"
+            />
+            <button
+              type="button"
+              disabled={processingKey !== null || !commentDraft.trim()}
+              onClick={onSubmitComment}
+              className="min-h-[42px] rounded-2xl bg-white px-4 text-xs font-black text-neutral-950 disabled:opacity-50"
+            >
+              전송
+            </button>
+          </div>
+
+          <div className="mt-3 flex gap-2">
+            <button
+              type="button"
+              disabled={processingKey !== null}
+              onClick={() => onDeleteEntry(entry)}
+              className="min-h-[38px] flex-1 rounded-2xl border border-rose-300/30 bg-rose-500/10 text-xs font-bold text-rose-100 disabled:opacity-50"
+            >
+              사진 삭제
+            </button>
+            <button
+              type="button"
+              disabled={processingKey !== null || entry.author.isBanned}
+              onClick={() => onBanUser(entry.author.userId, entry.author.nickname)}
+              className="min-h-[38px] flex-1 rounded-2xl border border-amber-300/30 bg-amber-500/10 text-xs font-bold text-amber-100 disabled:opacity-50"
+            >
+              유저 밴
+            </button>
+          </div>
+        </>
+      ) : (
+        <div className="py-10 text-center">
+          <p className="text-sm font-black text-white">사진을 누르면 여기서 관리합니다</p>
+          <p className="mt-2 text-xs leading-5 text-white/45">추천, 댓글, 삭제, 유저 밴을 한 곳에서 처리할 수 있어요.</p>
         </div>
-      </div>
-    </article>
+      )}
+    </aside>
   );
 }
