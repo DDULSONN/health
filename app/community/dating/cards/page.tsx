@@ -51,6 +51,10 @@ type QueueStats = {
   };
   accepted_matches_count?: number;
   recent_open_card_applications_24h_count?: number;
+  today_open_card_applications_count?: number;
+  today_paid_card_applications_count?: number;
+  today_swipe_likes_count?: number;
+  today_dating_reactions_count?: number;
   one_on_one_applicants_count?: number;
   one_on_one_matches_count?: number;
 };
@@ -1168,7 +1172,10 @@ export default function OpenCardsPage() {
   const activePaidItems = activeSex === "male" ? malePaidItems : femalePaidItems;
   const activeHasMore = activeSex === "male" ? maleHasMore : femaleHasMore;
   const activeCurrentCount = activeSex === "male" ? (queueStats?.male.public_count ?? males.length) : (queueStats?.female.public_count ?? females.length);
-  const recentOpenCardApplicationCount = Math.max(0, Number(queueStats?.recent_open_card_applications_24h_count ?? 0));
+  const todayDatingReactionCount = Math.max(
+    0,
+    Number(queueStats?.today_dating_reactions_count ?? queueStats?.recent_open_card_applications_24h_count ?? 0)
+  );
   const swipeTheme = getCardVisualTheme(swipeState.candidate?.card_id ?? activeSex);
   const showOpenCardSection = homeFeatureTab === "open_cards";
   const showQuickMatchSection = homeFeatureTab === "quick_match";
@@ -1263,7 +1270,7 @@ export default function OpenCardsPage() {
                   </p>
                   <p className="mt-1 text-sm text-neutral-400">현재까지 연결</p>
                   <p className="mt-2 text-xs font-semibold text-neutral-500">
-                    오늘 새 지원 {recentOpenCardApplicationCount.toLocaleString("ko-KR")}건 · 오픈카드 지원이 계속 들어오고 있어요.
+                    오늘 새 지원/라이크 {todayDatingReactionCount.toLocaleString("ko-KR")}건 · 오픈카드와 빠른매칭에서 반응이 계속 들어오고 있어요.
                   </p>
                 </div>
                 <div className="rounded-[24px] bg-neutral-50 p-4">

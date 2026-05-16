@@ -1,7 +1,7 @@
 import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
 import { countCumulativeOneOnOneApplicants, countCumulativeOneOnOneMatches } from "@/lib/dating-1on1-metrics";
 import { countCumulativeTotalDatingMatches } from "@/lib/dating-match-metrics";
-import { getOpenCardLimitBySex } from "@/lib/dating-open";
+import { getKstDayRangeUtc, getOpenCardLimitBySex } from "@/lib/dating-open";
 import { extractCityFromRegion } from "@/lib/region-city";
 import { createAdminClient } from "@/lib/supabase/server";
 import { publicCachedJson } from "@/lib/http-cache";
@@ -91,22 +91,41 @@ async function countOneOnOneMatches(adminClient: ReturnType<typeof createAdminCl
   return countCumulativeOneOnOneMatches(adminClient);
 }
 
-async function countRecentOpenCardApplications(adminClient: ReturnType<typeof createAdminClient>) {
-  const sinceIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
-  const [openRes, paidRes] = await Promise.all([
+async function countTodayDatingReactions(adminClient: ReturnType<typeof createAdminClient>) {
+  const { startUtcIso, endUtcIso } = getKstDayRangeUtc();
+  const [openRes, paidRes, swipeRes] = await Promise.all([
     adminClient
       .from("dating_card_applications")
       .select("id", { head: true, count: "exact" })
-      .gte("created_at", sinceIso),
+      .gte("created_at", startUtcIso)
+      .lt("created_at", endUtcIso),
     adminClient
       .from("dating_paid_card_applications")
       .select("id", { head: true, count: "exact" })
-      .gte("created_at", sinceIso),
+      .gte("created_at", startUtcIso)
+      .lt("created_at", endUtcIso),
+    adminClient
+      .from("dating_card_swipes")
+      .select("id", { head: true, count: "exact" })
+      .eq("action", "like")
+      .gte("created_at", startUtcIso)
+      .lt("created_at", endUtcIso),
   ]);
 
   if (openRes.error) throw openRes.error;
   if (paidRes.error) throw paidRes.error;
-  return (openRes.count ?? 0) + (paidRes.count ?? 0);
+  if (swipeRes.error) throw swipeRes.error;
+
+  const openCardApplications = openRes.count ?? 0;
+  const paidCardApplications = paidRes.count ?? 0;
+  const swipeLikes = swipeRes.count ?? 0;
+
+  return {
+    total: openCardApplications + paidCardApplications + swipeLikes,
+    openCardApplications,
+    paidCardApplications,
+    swipeLikes,
+  };
 }
 
 export async function GET() {
@@ -144,7 +163,7 @@ export async function GET() {
       acceptedMatches,
       oneOnOneApplicants,
       oneOnOneMatches,
-      recentOpenCardApplications,
+      todayDatingReactions,
     ] = await Promise.all([
       safeCount("malePublic", () => countPublic(adminClient, "male")),
       safeCount("femalePublic", () => countPublic(adminClient, "female")),
@@ -161,7 +180,10 @@ export async function GET() {
       safeCount("acceptedMatches", () => countAcceptedMatches(adminClient)),
       safeCount("oneOnOneApplicants", () => countOneOnOneApplicants(adminClient)),
       safeCount("oneOnOneMatches", () => countOneOnOneMatches(adminClient)),
-      safeCount("recentOpenCardApplications", () => countRecentOpenCardApplications(adminClient)),
+      countTodayDatingReactions(adminClient).catch((error) => {
+        console.error("[GET /api/dating/cards/queue-stats] count failed", { requestId, label: "todayDatingReactions", error });
+        return { total: 0, openCardApplications: 0, paidCardApplications: 0, swipeLikes: 0 };
+      }),
     ]);
 
     return publicCachedJson(
@@ -179,7 +201,11 @@ export async function GET() {
           pending_regions: femalePendingRegions,
         },
         accepted_matches_count: acceptedMatches,
-        recent_open_card_applications_24h_count: recentOpenCardApplications,
+        recent_open_card_applications_24h_count: todayDatingReactions.total,
+        today_open_card_applications_count: todayDatingReactions.openCardApplications,
+        today_paid_card_applications_count: todayDatingReactions.paidCardApplications,
+        today_swipe_likes_count: todayDatingReactions.swipeLikes,
+        today_dating_reactions_count: todayDatingReactions.total,
         one_on_one_applicants_count: oneOnOneApplicants,
         one_on_one_matches_count: oneOnOneMatches,
       },
@@ -193,6 +219,10 @@ export async function GET() {
         female: { public_count: 0, pending_count: 0, slot_limit: getOpenCardLimitBySex("female"), pending_regions: [] },
         accepted_matches_count: 0,
         recent_open_card_applications_24h_count: 0,
+        today_open_card_applications_count: 0,
+        today_paid_card_applications_count: 0,
+        today_swipe_likes_count: 0,
+        today_dating_reactions_count: 0,
         one_on_one_applicants_count: 0,
         one_on_one_matches_count: 0,
       },

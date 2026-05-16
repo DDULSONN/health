@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
-import { requireAdminRoute } from "@/lib/admin-route";
+import { isAllowedAdminUser } from "@/lib/admin";
 import { buildSignedImageUrl } from "@/lib/images";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 const BUCKET = "community-fit-room";
 const MAX_FILE_SIZE = 6 * 1024 * 1024;
@@ -10,7 +11,7 @@ const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const ENTRY_LIMIT = 80;
 const COMMENTS_PER_ENTRY = 8;
 
-type AdminClient = Extract<Awaited<ReturnType<typeof requireAdminRoute>>, { ok: true }>["admin"];
+type AdminClient = ReturnType<typeof createAdminClient>;
 type FitRoomKind = "workout" | "diet" | "body";
 
 type EntryRow = {
@@ -65,6 +66,18 @@ function isMissingFitRoomTable(error: unknown): boolean {
   );
 }
 
+async function getViewer() {
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  return {
+    user,
+    isAdmin: user ? isAllowedAdminUser(user.id, user.email) : false,
+  };
+}
+
 async function ensureBucket(admin: AdminClient) {
   const { error } = await admin.storage.createBucket(BUCKET, {
     public: false,
@@ -76,15 +89,18 @@ async function ensureBucket(admin: AdminClient) {
   }
 }
 
+async function isBannedUser(admin: AdminClient, userId: string) {
+  const { data } = await admin.from("profiles").select("is_banned").eq("user_id", userId).maybeSingle();
+  return Boolean(data?.is_banned);
+}
+
 function profileLabel(profile?: ProfileRow | null, fallbackUserId?: string) {
   return profile?.nickname?.trim() || (fallbackUserId ? `회원 ${fallbackUserId.slice(0, 8)}` : "익명");
 }
 
 export async function GET() {
-  const auth = await requireAdminRoute();
-  if (!auth.ok) return auth.response;
-
-  const admin = auth.admin;
+  const admin = createAdminClient();
+  const { user, isAdmin } = await getViewer();
   const nowIso = new Date().toISOString();
 
   const { data: entries, error: entryError } = await admin
@@ -101,9 +117,9 @@ export async function GET() {
         ok: true,
         setupRequired: true,
         viewer: {
-          loggedIn: true,
-          userId: auth.user.id,
-          isAdmin: true,
+          loggedIn: Boolean(user),
+          userId: user?.id ?? null,
+          isAdmin,
         },
         featured: null,
         items: [],
@@ -131,8 +147,8 @@ export async function GET() {
           .order("created_at", { ascending: false })
           .limit(ENTRY_LIMIT * COMMENTS_PER_ENTRY)
       : Promise.resolve({ data: [] as CommentRow[], error: null }),
-    entryIds.length
-      ? admin.from("community_fit_room_reactions").select("entry_id,user_id,reaction").eq("user_id", auth.user.id).in("entry_id", entryIds)
+    user && entryIds.length
+      ? admin.from("community_fit_room_reactions").select("entry_id,user_id,reaction").eq("user_id", user.id).in("entry_id", entryIds)
       : Promise.resolve({ data: [] as ReactionRow[], error: null }),
   ]);
 
@@ -163,6 +179,7 @@ export async function GET() {
     current.score = current.up - current.down;
     reactionSummary.set(row.entry_id, current);
   }
+
   const myReactionMap = new Map(myReactions.map((row) => [row.entry_id, row.reaction]));
   const commentMap = new Map<string, CommentRow[]>();
   for (const comment of comments) {
@@ -181,7 +198,7 @@ export async function GET() {
       imageUrl: buildSignedImageUrl(BUCKET, entry.image_path),
       createdAt: entry.created_at,
       expiresAt: entry.expires_at,
-      canDelete: entry.user_id === auth.user.id,
+      canDelete: Boolean(user && entry.user_id === user.id),
       author: {
         userId: entry.user_id,
         nickname: profileLabel(author, entry.user_id),
@@ -200,7 +217,7 @@ export async function GET() {
             id: comment.id,
             content: comment.content,
             createdAt: comment.created_at,
-            canDelete: comment.user_id === auth.user.id,
+            canDelete: Boolean(user && comment.user_id === user.id),
             author: {
               userId: comment.user_id,
               nickname: profileLabel(commentAuthor, comment.user_id),
@@ -240,9 +257,9 @@ export async function GET() {
   return NextResponse.json({
     ok: true,
     viewer: {
-      loggedIn: true,
-      userId: auth.user.id,
-      isAdmin: true,
+      loggedIn: Boolean(user),
+      userId: user?.id ?? null,
+      isAdmin,
     },
     featured,
     items,
@@ -255,15 +272,17 @@ export async function POST(request: Request) {
   const originError = ensureAllowedMutationOrigin(request);
   if (originError) return originError;
 
-  const auth = await requireAdminRoute();
-  if (!auth.ok) return auth.response;
+  const { user } = await getViewer();
+  if (!user) {
+    return NextResponse.json({ error: "로그인 후 올릴 수 있습니다." }, { status: 401 });
+  }
 
   const requestId = crypto.randomUUID();
   const ip = extractClientIp(request);
   const rateLimit = await checkRouteRateLimit({
     requestId,
     scope: "community-fit-room-entry",
-    userId: auth.user.id,
+    userId: user.id,
     ip,
     userLimitPerMin: 6,
     ipLimitPerMin: 30,
@@ -271,6 +290,11 @@ export async function POST(request: Request) {
   });
   if (!rateLimit.allowed) {
     return NextResponse.json({ error: "업로드 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." }, { status: 429 });
+  }
+
+  const admin = createAdminClient();
+  if (await isBannedUser(admin, user.id)) {
+    return NextResponse.json({ error: "커뮤니티 이용이 제한된 계정입니다." }, { status: 403 });
   }
 
   const form = await request.formData();
@@ -286,8 +310,7 @@ export async function POST(request: Request) {
   const kind = parseKind(form.get("kind"));
   const caption = cleanText(form.get("caption"), 180);
   const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
-  const imagePath = `${auth.user.id}/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${ext}`;
-  const admin = auth.admin;
+  const imagePath = `${user.id}/${new Date().toISOString().slice(0, 10)}/${crypto.randomUUID()}.${ext}`;
 
   await ensureBucket(admin);
   const buffer = Buffer.from(await file.arrayBuffer());
@@ -304,7 +327,7 @@ export async function POST(request: Request) {
   const insertRes = await admin
     .from("community_fit_room_entries")
     .insert({
-      user_id: auth.user.id,
+      user_id: user.id,
       kind,
       caption,
       image_path: imagePath,
@@ -318,7 +341,7 @@ export async function POST(request: Request) {
     if (isMissingFitRoomTable(insertRes.error)) {
       return NextResponse.json(
         { error: "인증방 DB가 아직 적용되지 않았습니다. supabase/sql/community_fit_room.sql을 먼저 실행해 주세요." },
-        { status: 503 }
+        { status: 503 },
       );
     }
     console.error("[POST /api/community/fit-room] insert failed", insertRes.error);

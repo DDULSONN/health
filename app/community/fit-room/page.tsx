@@ -55,10 +55,10 @@ type FitRoomResponse = {
 const KIND_LABEL: Record<FitRoomKind, string> = {
   workout: "운동",
   diet: "식단",
-  body: "몸 변화",
+  body: "변화",
 };
 
-const KIND_COPY: Record<FitRoomKind, string> = {
+const KIND_ACTION: Record<FitRoomKind, string> = {
   workout: "운동 인증",
   diet: "식단 인증",
   body: "변화 기록",
@@ -108,6 +108,19 @@ function remainingLabel(raw: string) {
   return `${hours}시간 ${minutes}분 남음`;
 }
 
+function getLoginUrl() {
+  if (typeof window === "undefined") return "/login";
+  return `/login?redirect=${encodeURIComponent(window.location.pathname + window.location.search)}`;
+}
+
+function requireLogin(loggedIn: boolean) {
+  if (loggedIn) return true;
+  if (window.confirm("로그인 후 이용할 수 있어요. 로그인하러 갈까요?")) {
+    window.location.href = getLoginUrl();
+  }
+  return false;
+}
+
 function getDesktopOrbitStyle(entry: FitRoomEntry, index: number): CSSProperties {
   const hash = hashString(entry.id);
   const score = Math.max(0, entry.reactions.score);
@@ -153,7 +166,6 @@ export default function FitRoomPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState("");
   const [setupRequired, setSetupRequired] = useState(false);
-  const [accessDenied, setAccessDenied] = useState(false);
   const [kind, setKind] = useState<FitRoomKind>("workout");
   const [caption, setCaption] = useState("");
   const [file, setFile] = useState<File | null>(null);
@@ -167,12 +179,12 @@ export default function FitRoomPage() {
 
   const sortedItems = useMemo(
     () => [...items].sort((a, b) => b.reactions.score - a.reactions.score || Date.parse(b.createdAt) - Date.parse(a.createdAt)),
-    [items]
+    [items],
   );
 
   const selectedEntry = useMemo(
     () => items.find((entry) => entry.id === selectedEntryId) ?? sortedItems[0] ?? null,
-    [items, selectedEntryId, sortedItems]
+    [items, selectedEntryId, sortedItems],
   );
 
   const desktopHeight = useMemo(() => clamp(720 + Math.floor(items.length / 9) * 180, 720, 1320), [items.length]);
@@ -184,11 +196,6 @@ export default function FitRoomPage() {
     try {
       const res = await fetch("/api/community/fit-room", { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as FitRoomResponse;
-      if (res.status === 401 || res.status === 403) {
-        setAccessDenied(true);
-        setError(body.error ?? "관리자만 볼 수 있는 실험 기능입니다.");
-        return;
-      }
       if (!res.ok || !body.ok) throw new Error(body.error ?? "인증방을 불러오지 못했습니다.");
       setItems(body.items ?? []);
       setSetupRequired(Boolean(body.setupRequired));
@@ -197,7 +204,6 @@ export default function FitRoomPage() {
         userId: body.viewer?.userId ?? null,
         isAdmin: Boolean(body.viewer?.isAdmin),
       });
-      setAccessDenied(false);
       setError("");
     } catch (err) {
       setError(err instanceof Error ? err.message : "인증방을 불러오지 못했습니다.");
@@ -231,10 +237,7 @@ export default function FitRoomPage() {
   };
 
   const submitEntry = async () => {
-    if (!viewer.isAdmin) {
-      window.alert("관리자만 등록할 수 있습니다.");
-      return;
-    }
+    if (!requireLogin(viewer.loggedIn)) return;
     if (!file) {
       window.alert("사진을 먼저 선택해 주세요.");
       return;
@@ -263,7 +266,7 @@ export default function FitRoomPage() {
   };
 
   const reactToEntry = async (entry: FitRoomEntry, reaction: "up" | "down") => {
-    if (!viewer.isAdmin) return;
+    if (!requireLogin(viewer.loggedIn)) return;
     const nextReaction = entry.reactions.mine === reaction ? "none" : reaction;
     setActivePulseId(entry.id);
     setProcessingKey(`reaction:${entry.id}`);
@@ -284,7 +287,7 @@ export default function FitRoomPage() {
   };
 
   const submitComment = async () => {
-    if (!viewer.isAdmin || !selectedEntry) return;
+    if (!requireLogin(viewer.loggedIn) || !selectedEntry) return;
     const content = commentDraft.trim();
     if (!content) return;
     setProcessingKey(`comment:${selectedEntry.id}`);
@@ -336,7 +339,7 @@ export default function FitRoomPage() {
   };
 
   const banUser = async (userId: string, nickname: string) => {
-    const reason = window.prompt(`${nickname} 회원의 커뮤니티 이용을 제한할까요? 사유를 입력해 주세요.`, "인증방 운영 정책 위반");
+    const reason = window.prompt(`${nickname} 회원의 커뮤니티 이용을 제한할까요? 사유를 입력해 주세요.`, "커뮤니티 운영 정책 위반");
     if (reason === null) return;
     setProcessingKey(`ban:${userId}`);
     try {
@@ -353,21 +356,6 @@ export default function FitRoomPage() {
       setProcessingKey(null);
     }
   };
-
-  if (!loading && accessDenied) {
-    return (
-      <main className="min-h-screen bg-[#04050a] px-4 py-8 text-white">
-        <div className="mx-auto max-w-md rounded-[32px] border border-white/10 bg-white/[0.08] p-6 text-center shadow-2xl shadow-black/20">
-          <p className="text-sm font-black text-emerald-300">LIVE 인증방</p>
-          <h1 className="mt-3 text-2xl font-black">관리자 전용입니다</h1>
-          <p className="mt-3 text-sm leading-6 text-white/60">{error || "현재는 관리자만 확인할 수 있습니다."}</p>
-          <Link href="/community" className="mt-5 inline-flex rounded-full bg-white px-5 py-3 text-sm font-black text-neutral-950">
-            커뮤니티로
-          </Link>
-        </div>
-      </main>
-    );
-  }
 
   return (
     <main className="min-h-screen overflow-hidden bg-[#03040a] text-white">
@@ -471,8 +459,8 @@ export default function FitRoomPage() {
       `}</style>
 
       <header className="relative z-30 mx-auto flex max-w-7xl items-center justify-between gap-3 px-3 py-4 sm:px-4 sm:py-5">
-        <Link href="/community" className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-black text-white backdrop-blur">
-          커뮤니티로
+        <Link href="/" className="rounded-full border border-white/10 bg-white/10 px-4 py-2 text-sm font-black text-white backdrop-blur">
+          홈
         </Link>
         <button
           type="button"
@@ -486,15 +474,15 @@ export default function FitRoomPage() {
       <section className="relative z-10 mx-auto max-w-7xl px-3 pb-8 sm:px-4 sm:pb-10">
         <div className="mb-3 rounded-[28px] border border-white/10 bg-neutral-950/55 p-3 shadow-2xl shadow-black/25 backdrop-blur-2xl">
           <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
-            <div className="flex shrink-0 items-center justify-between gap-3 lg:w-[210px]">
+            <div className="flex shrink-0 items-center justify-between gap-3 lg:w-[190px]">
               <div>
-                <p className="text-xs font-black text-emerald-300">ADMIN ONLY</p>
-                <p className="mt-0.5 text-sm font-black text-white">24시간 인증방</p>
+                <p className="text-xs font-black text-emerald-300">24시간 인증</p>
+                <p className="mt-0.5 text-sm font-black text-white">{viewer.loggedIn ? "가볍게 올려봐요" : "로그인하면 참여 가능"}</p>
               </div>
               <span className="rounded-full bg-emerald-300 px-3 py-1 text-xs font-black text-neutral-950">24H</span>
             </div>
 
-            <div className="flex gap-2 lg:w-[310px]">
+            <div className="flex gap-2 lg:w-[300px]">
               {(["workout", "diet", "body"] as FitRoomKind[]).map((item) => (
                 <button
                   key={item}
@@ -504,7 +492,7 @@ export default function FitRoomPage() {
                     kind === item ? "bg-white text-neutral-950" : "bg-white/10 text-white/65 hover:bg-white/15"
                   }`}
                 >
-                  {KIND_COPY[item]}
+                  {KIND_ACTION[item]}
                 </button>
               ))}
             </div>
@@ -546,14 +534,12 @@ export default function FitRoomPage() {
               </button>
             </div>
           </div>
-          <div>
-            {setupRequired ? (
-              <p className="mt-3 rounded-2xl border border-amber-300/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">
-                Supabase에서 supabase/sql/community_fit_room.sql을 먼저 실행해야 합니다.
-              </p>
-            ) : null}
-            {error ? <p className="mt-3 rounded-2xl border border-rose-400/30 bg-rose-500/10 p-3 text-xs leading-5 text-rose-100">{error}</p> : null}
-          </div>
+          {setupRequired ? (
+            <p className="mt-3 rounded-2xl border border-amber-300/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">
+              Supabase에서 supabase/sql/community_fit_room.sql을 먼저 실행해야 합니다.
+            </p>
+          ) : null}
+          {error ? <p className="mt-3 rounded-2xl border border-rose-400/30 bg-rose-500/10 p-3 text-xs leading-5 text-rose-100">{error}</p> : null}
         </div>
 
         <div className="grid gap-3 lg:grid-cols-[1fr_330px]">
@@ -562,7 +548,7 @@ export default function FitRoomPage() {
               <div className="pointer-events-none absolute left-1/2 top-16 h-[calc(100%-7rem)] w-px -translate-x-1/2 bg-gradient-to-b from-transparent via-white/20 to-transparent" />
               <div className="pointer-events-none absolute left-[15%] top-28 h-[calc(100%-12rem)] w-px bg-gradient-to-b from-transparent via-emerald-300/15 to-transparent" />
               <div className="pointer-events-none absolute right-[15%] top-20 h-[calc(100%-11rem)] w-px bg-gradient-to-b from-transparent via-fuchsia-300/15 to-transparent" />
-              <MobileStatus loading={loading} count={items.length} />
+              <RoomStatus loading={loading} count={items.length} mobile />
               {!loading
                 ? sortedItems.map((entry, index) => (
                     <OrbitPhoto
@@ -581,7 +567,7 @@ export default function FitRoomPage() {
               <div className="pointer-events-none absolute left-1/2 top-[360px] h-40 w-40 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/10 blur-2xl" />
               <div className="pointer-events-none absolute left-1/2 top-[360px] h-[540px] w-[540px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/10" />
               <div className="pointer-events-none absolute left-1/2 top-[360px] h-[780px] w-[780px] -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/[0.07]" />
-              <DesktopStatus loading={loading} count={items.length} />
+              <RoomStatus loading={loading} count={items.length} />
               {!loading
                 ? sortedItems.map((entry, index) => (
                     <OrbitPhoto
@@ -603,6 +589,7 @@ export default function FitRoomPage() {
             processingKey={processingKey}
             viewerIsAdmin={viewer.isAdmin}
             viewerUserId={viewer.userId}
+            viewerLoggedIn={viewer.loggedIn}
             onClose={() => setSelectedEntryId(null)}
             onCommentDraftChange={setCommentDraft}
             onSubmitComment={() => void submitComment()}
@@ -617,24 +604,9 @@ export default function FitRoomPage() {
   );
 }
 
-function MobileStatus({ loading, count }: { loading: boolean; count: number }) {
-  if (loading) {
-    return <p className="absolute left-4 top-4 rounded-full bg-white/10 px-4 py-2 text-xs text-white/50">로딩</p>;
-  }
-  if (count === 0) {
-    return <p className="absolute left-4 top-4 rounded-full bg-white/10 px-4 py-2 text-xs text-white/50">비어 있음</p>;
-  }
-  return <p className="absolute left-4 top-4 rounded-full bg-white/10 px-4 py-2 text-xs font-bold text-white/55">{count}개</p>;
-}
-
-function DesktopStatus({ loading, count }: { loading: boolean; count: number }) {
-  if (loading) {
-    return <p className="absolute left-8 top-8 rounded-full bg-white/10 px-4 py-2 text-xs text-white/50">로딩</p>;
-  }
-  if (count === 0) {
-    return <p className="absolute left-8 top-8 rounded-full bg-white/10 px-4 py-2 text-xs text-white/50">비어 있음</p>;
-  }
-  return <p className="absolute left-8 top-8 rounded-full bg-white/10 px-4 py-2 text-xs font-bold text-white/55">{count}개</p>;
+function RoomStatus({ loading, count, mobile = false }: { loading: boolean; count: number; mobile?: boolean }) {
+  const label = loading ? "로딩" : count === 0 ? "아직 사진 없음" : `${count}개`;
+  return <p className={`absolute ${mobile ? "left-4 top-4" : "left-8 top-8"} rounded-full bg-white/10 px-4 py-2 text-xs font-bold text-white/55`}>{label}</p>;
 }
 
 function OrbitPhoto({
@@ -678,8 +650,8 @@ function OrbitPhoto({
       <span
         className={`fit-room-orb-inner relative block h-full w-full overflow-hidden rounded-full border bg-neutral-950 p-1.5 shadow-2xl shadow-black/45 transition duration-300 sm:p-2 ${
           selected ? "border-white/80" : "border-white/40"
-      }`}
-    >
+        }`}
+      >
         <img src={entry.imageUrl} alt={entry.caption || KIND_LABEL[entry.kind]} loading="lazy" decoding="async" className="h-full w-full rounded-full object-cover" />
         <span className="absolute inset-x-2 bottom-2 rounded-full bg-black/60 px-2 py-1 text-center text-[10px] font-black text-white backdrop-blur transition group-hover:bg-white group-hover:text-neutral-950 sm:inset-x-3 sm:bottom-3 sm:text-[11px]">
           추천 {entry.reactions.up}
@@ -695,6 +667,7 @@ function EntryPanel({
   processingKey,
   viewerIsAdmin,
   viewerUserId,
+  viewerLoggedIn,
   onClose,
   onCommentDraftChange,
   onSubmitComment,
@@ -708,6 +681,7 @@ function EntryPanel({
   processingKey: string | null;
   viewerIsAdmin: boolean;
   viewerUserId: string | null;
+  viewerLoggedIn: boolean;
   onClose: () => void;
   onCommentDraftChange: (value: string) => void;
   onSubmitComment: () => void;
@@ -804,7 +778,7 @@ function EntryPanel({
                   onSubmitComment();
                 }
               }}
-              placeholder="댓글"
+              placeholder={viewerLoggedIn ? "댓글" : "로그인 후 댓글"}
               className="min-h-[42px] min-w-0 flex-1 rounded-2xl border border-white/10 bg-black/25 px-4 text-sm text-white outline-none placeholder:text-white/35 focus:border-emerald-300"
             />
             <button
@@ -843,6 +817,7 @@ function EntryPanel({
       ) : (
         <div className="py-10 text-center">
           <p className="text-sm font-black text-white">사진 선택</p>
+          <p className="mt-2 text-xs text-white/45">사진을 누르면 댓글과 추천을 볼 수 있어요.</p>
         </div>
       )}
     </aside>
