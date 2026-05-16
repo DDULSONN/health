@@ -148,17 +148,21 @@ function getDesktopOrbitStyle(entry: FitRoomEntry, index: number): CSSProperties
 function getMobileOrbitStyle(entry: FitRoomEntry, index: number): CSSProperties {
   const hash = hashString(entry.id);
   const score = Math.max(0, entry.reactions.score);
-  const size = clamp(94 + score * 15 + entry.comments.length * 5, 88, 190);
-  const lane = index % 3;
-  const leftMap = [18, 50, 82];
-  const top = 42 + index * 108 - Math.min(score * 10, 62) + ((hash >> 5) % 24);
+  const size = clamp(88 + score * 14 + entry.comments.length * 5, 78, 178);
+  const cluster = Math.floor(index / 7);
+  const slot = index % 7;
+  const angle = ((slot * 137.5 + (hash % 48)) * Math.PI) / 180;
+  const radius = 62 + slot * 13 + ((hash >> 5) % 22) - clamp(score * 7, 0, 46);
+  const centerY = 175 + cluster * 430 + (cluster % 2 === 0 ? 0 : 42);
+  const x = Math.cos(angle) * radius * 0.92;
+  const y = Math.sin(angle) * radius * 0.72 + slot * 12;
 
   return {
-    left: `${leftMap[lane]}%`,
-    top,
+    left: `calc(50% + ${x}px)`,
+    top: centerY + y,
     width: size,
     height: size,
-    transform: "translateX(-50%)",
+    transform: "translate(-50%, -50%)",
     zIndex: 20 + score,
   };
 }
@@ -192,7 +196,8 @@ export default function FitRoomPage() {
   );
 
   const desktopHeight = useMemo(() => clamp(720 + Math.floor(items.length / 9) * 180, 720, 1320), [items.length]);
-  const mobileHeight = useMemo(() => Math.max(520, items.length * 108 + 240), [items.length]);
+  const mobileClusterCount = useMemo(() => Math.ceil(Math.max(items.length, 1) / 7), [items.length]);
+  const mobileHeight = useMemo(() => Math.max(620, mobileClusterCount * 430 + 120), [mobileClusterCount]);
 
   const loadRoom = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -505,6 +510,58 @@ export default function FitRoomPage() {
           animation: fit-room-aurora 7s ease infinite;
         }
 
+        .fit-room-mobile-sky {
+          background:
+            radial-gradient(circle at 50% 190px, rgba(255, 255, 255, 0.13), transparent 8%),
+            radial-gradient(circle at 28% 160px, rgba(16, 185, 129, 0.17), transparent 24%),
+            radial-gradient(circle at 76% 235px, rgba(217, 70, 239, 0.17), transparent 28%),
+            linear-gradient(180deg, rgba(255, 255, 255, 0.045), transparent 18%, rgba(6, 182, 212, 0.055) 100%);
+        }
+
+        .fit-room-mobile-sky::before,
+        .fit-room-mobile-sky::after {
+          content: "";
+          pointer-events: none;
+          position: absolute;
+          left: 50%;
+          top: 170px;
+          border-radius: 9999px;
+          border: 1px solid rgba(255, 255, 255, 0.12);
+          transform: translate(-50%, -50%) rotate(-10deg);
+        }
+
+        .fit-room-mobile-sky::before {
+          width: 290px;
+          height: 210px;
+          box-shadow:
+            0 0 0 78px rgba(255, 255, 255, 0.035),
+            0 0 0 148px rgba(16, 185, 129, 0.035),
+            0 0 70px rgba(255, 255, 255, 0.08);
+        }
+
+        .fit-room-mobile-sky::after {
+          width: 210px;
+          height: 150px;
+          border-color: rgba(52, 211, 153, 0.16);
+          transform: translate(-50%, -50%) rotate(18deg);
+        }
+
+        .fit-room-mobile-stars {
+          background-image:
+            radial-gradient(rgba(255, 255, 255, 0.72) 1px, transparent 1px),
+            radial-gradient(rgba(52, 211, 153, 0.55) 1px, transparent 1px),
+            radial-gradient(rgba(217, 70, 239, 0.4) 1px, transparent 1px);
+          background-position:
+            0 0,
+            17px 23px,
+            31px 9px;
+          background-size:
+            36px 36px,
+            58px 58px,
+            84px 84px;
+          mask-image: linear-gradient(180deg, transparent, black 10%, black 88%, transparent);
+        }
+
         @media (prefers-reduced-motion: reduce) {
           .fit-room-orb,
           .fit-room-orb-inner,
@@ -610,10 +667,21 @@ export default function FitRoomPage() {
 
         <div className="grid gap-3 lg:grid-cols-[1fr_330px]">
           <div className="rounded-[32px] border border-white/10 bg-black/20 shadow-2xl shadow-black/25 backdrop-blur-xl sm:rounded-[42px] lg:overflow-x-auto">
-            <div className="relative overflow-hidden lg:hidden" style={{ height: mobileHeight }}>
-              <div className="pointer-events-none absolute left-1/2 top-16 h-[calc(100%-7rem)] w-px -translate-x-1/2 bg-gradient-to-b from-transparent via-white/20 to-transparent" />
-              <div className="pointer-events-none absolute left-[15%] top-28 h-[calc(100%-12rem)] w-px bg-gradient-to-b from-transparent via-emerald-300/15 to-transparent" />
-              <div className="pointer-events-none absolute right-[15%] top-20 h-[calc(100%-11rem)] w-px bg-gradient-to-b from-transparent via-fuchsia-300/15 to-transparent" />
+            <div className="fit-room-mobile-sky relative overflow-hidden lg:hidden" style={{ height: mobileHeight }}>
+              <div className="fit-room-mobile-stars pointer-events-none absolute inset-0 opacity-70" />
+              {Array.from({ length: mobileClusterCount }).map((_, cluster) => {
+                const top = 175 + cluster * 430 + (cluster % 2 === 0 ? 0 : 42);
+                return (
+                  <div key={cluster} className="pointer-events-none absolute left-1/2 h-[260px] w-[330px] -translate-x-1/2 -translate-y-1/2" style={{ top }}>
+                    <div className="absolute left-1/2 top-1/2 h-24 w-24 -translate-x-1/2 -translate-y-1/2 rounded-full bg-white/10 blur-2xl" />
+                    <div className="absolute left-1/2 top-1/2 h-[210px] w-[290px] -translate-x-1/2 -translate-y-1/2 rotate-[-10deg] rounded-full border border-white/10" />
+                    <div className="absolute left-1/2 top-1/2 h-[150px] w-[210px] -translate-x-1/2 -translate-y-1/2 rotate-[18deg] rounded-full border border-emerald-300/15" />
+                    <div className="absolute left-1/2 top-1/2 h-[310px] w-[410px] -translate-x-1/2 -translate-y-1/2 rotate-[8deg] rounded-full border border-white/[0.05]" />
+                  </div>
+                );
+              })}
+              <div className="pointer-events-none absolute left-[-20%] top-[360px] h-64 w-64 rounded-full bg-emerald-400/10 blur-3xl" />
+              <div className="pointer-events-none absolute right-[-24%] top-[520px] h-72 w-72 rounded-full bg-fuchsia-500/10 blur-3xl" />
               <RoomStatus loading={loading} count={items.length} mobile />
               {!loading
                 ? sortedItems.map((entry, index) => (
