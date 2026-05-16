@@ -601,6 +601,8 @@ export default function FitRoomPage() {
             entry={selectedEntry}
             commentDraft={commentDraft}
             processingKey={processingKey}
+            viewerIsAdmin={viewer.isAdmin}
+            viewerUserId={viewer.userId}
             onClose={() => setSelectedEntryId(null)}
             onCommentDraftChange={setCommentDraft}
             onSubmitComment={() => void submitComment()}
@@ -691,6 +693,8 @@ function EntryPanel({
   entry,
   commentDraft,
   processingKey,
+  viewerIsAdmin,
+  viewerUserId,
   onClose,
   onCommentDraftChange,
   onSubmitComment,
@@ -702,6 +706,8 @@ function EntryPanel({
   entry: FitRoomEntry | null;
   commentDraft: string;
   processingKey: string | null;
+  viewerIsAdmin: boolean;
+  viewerUserId: string | null;
   onClose: () => void;
   onCommentDraftChange: (value: string) => void;
   onSubmitComment: () => void;
@@ -726,6 +732,22 @@ function EntryPanel({
               접기
             </button>
           </div>
+
+          <a
+            href={entry.imageUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-3 flex h-36 items-center justify-center overflow-hidden rounded-[24px] border border-white/10 bg-black/35 transition hover:border-white/25 sm:h-44"
+            aria-label="인증 사진 원본 보기"
+          >
+            <img
+              src={entry.imageUrl}
+              alt={entry.caption || `${entry.author.nickname} ${KIND_LABEL[entry.kind]} 인증`}
+              loading="lazy"
+              decoding="async"
+              className="max-h-full max-w-full object-contain"
+            />
+          </a>
 
           {entry.caption ? <p className="mt-3 rounded-2xl bg-white/5 p-3 text-sm leading-6 text-white/80">{entry.caption}</p> : null}
 
@@ -760,9 +782,11 @@ function EntryPanel({
                 <div key={comment.id} className="rounded-2xl bg-white/5 p-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-[11px] font-black text-white/60">{comment.author.nickname}</p>
-                    <button type="button" disabled={processingKey !== null} onClick={() => onDeleteComment(comment)} className="text-[11px] font-bold text-rose-200 disabled:opacity-50">
-                      삭제
-                    </button>
+                    {(comment.canDelete || viewerIsAdmin) && (
+                      <button type="button" disabled={processingKey !== null} onClick={() => onDeleteComment(comment)} className="text-[11px] font-bold text-rose-200 disabled:opacity-50">
+                        삭제
+                      </button>
+                    )}
                   </div>
                   <p className="mt-1 text-xs leading-5 text-white/80">{comment.content}</p>
                 </div>
@@ -793,24 +817,28 @@ function EntryPanel({
             </button>
           </div>
 
-          <div className="mt-3 flex gap-2">
-            <button
-              type="button"
-              disabled={processingKey !== null}
-              onClick={() => onDeleteEntry(entry)}
-              className="min-h-[38px] flex-1 rounded-2xl border border-rose-300/30 bg-rose-500/10 text-xs font-bold text-rose-100 disabled:opacity-50"
-            >
-              사진 삭제
-            </button>
-            <button
-              type="button"
-              disabled={processingKey !== null || entry.author.isBanned}
-              onClick={() => onBanUser(entry.author.userId, entry.author.nickname)}
-              className="min-h-[38px] flex-1 rounded-2xl border border-amber-300/30 bg-amber-500/10 text-xs font-bold text-amber-100 disabled:opacity-50"
-            >
-              유저 밴
-            </button>
-          </div>
+          {(entry.canDelete || viewerIsAdmin) && (
+            <div className="mt-3 flex gap-2">
+              <button
+                type="button"
+                disabled={processingKey !== null}
+                onClick={() => onDeleteEntry(entry)}
+                className="min-h-[38px] flex-1 rounded-2xl border border-rose-300/30 bg-rose-500/10 text-xs font-bold text-rose-100 transition active:scale-[0.97] disabled:opacity-50"
+              >
+                {viewerIsAdmin && entry.author.userId !== viewerUserId ? "사진 삭제" : "내 사진 삭제"}
+              </button>
+              {viewerIsAdmin ? (
+                <button
+                  type="button"
+                  disabled={processingKey !== null || entry.author.isBanned}
+                  onClick={() => onBanUser(entry.author.userId, entry.author.nickname)}
+                  className="min-h-[38px] flex-1 rounded-2xl border border-amber-300/30 bg-amber-500/10 text-xs font-bold text-amber-100 transition active:scale-[0.97] disabled:opacity-50"
+                >
+                  유저 밴
+                </button>
+              ) : null}
+            </div>
+          )}
         </>
       ) : (
         <div className="py-10 text-center">

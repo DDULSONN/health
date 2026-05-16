@@ -181,7 +181,7 @@ export async function GET() {
       imageUrl: buildSignedImageUrl(BUCKET, entry.image_path),
       createdAt: entry.created_at,
       expiresAt: entry.expires_at,
-      canDelete: true,
+      canDelete: entry.user_id === auth.user.id,
       author: {
         userId: entry.user_id,
         nickname: profileLabel(author, entry.user_id),
@@ -200,7 +200,7 @@ export async function GET() {
             id: comment.id,
             content: comment.content,
             createdAt: comment.created_at,
-            canDelete: true,
+            canDelete: comment.user_id === auth.user.id,
             author: {
               userId: comment.user_id,
               nickname: profileLabel(commentAuthor, comment.user_id),
