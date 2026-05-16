@@ -93,7 +93,7 @@ async function countOneOnOneMatches(adminClient: ReturnType<typeof createAdminCl
 
 async function countTodayDatingReactions(adminClient: ReturnType<typeof createAdminClient>) {
   const { startUtcIso, endUtcIso } = getKstDayRangeUtc();
-  const [openRes, paidRes, swipeLikeRes, swipeActionRes] = await Promise.all([
+  const [openRes, paidRes, swipeLikeRes, oneOnOneRes] = await Promise.all([
     adminClient
       .from("dating_card_applications")
       .select("id", { head: true, count: "exact" })
@@ -111,28 +111,29 @@ async function countTodayDatingReactions(adminClient: ReturnType<typeof createAd
       .gte("created_at", startUtcIso)
       .lt("created_at", endUtcIso),
     adminClient
-      .from("dating_card_swipes")
+      .from("dating_1on1_match_proposals")
       .select("id", { head: true, count: "exact" })
-      .gte("created_at", startUtcIso)
-      .lt("created_at", endUtcIso),
+      .eq("state", "mutual_accepted")
+      .gte("source_final_responded_at", startUtcIso)
+      .lt("source_final_responded_at", endUtcIso),
   ]);
 
   if (openRes.error) throw openRes.error;
   if (paidRes.error) throw paidRes.error;
   if (swipeLikeRes.error) throw swipeLikeRes.error;
-  if (swipeActionRes.error) throw swipeActionRes.error;
+  if (oneOnOneRes.error) throw oneOnOneRes.error;
 
   const openCardApplications = openRes.count ?? 0;
   const paidCardApplications = paidRes.count ?? 0;
   const swipeLikes = swipeLikeRes.count ?? 0;
-  const swipeActions = swipeActionRes.count ?? 0;
+  const oneOnOneMutualMatches = oneOnOneRes.count ?? 0;
 
   return {
-    total: openCardApplications + paidCardApplications + swipeActions,
+    total: openCardApplications + paidCardApplications + swipeLikes + oneOnOneMutualMatches,
     openCardApplications,
     paidCardApplications,
     swipeLikes,
-    swipeActions,
+    oneOnOneMutualMatches,
   };
 }
 
@@ -190,7 +191,7 @@ export async function GET() {
       safeCount("oneOnOneMatches", () => countOneOnOneMatches(adminClient)),
       countTodayDatingReactions(adminClient).catch((error) => {
         console.error("[GET /api/dating/cards/queue-stats] count failed", { requestId, label: "todayDatingReactions", error });
-        return { total: 0, openCardApplications: 0, paidCardApplications: 0, swipeLikes: 0, swipeActions: 0 };
+        return { total: 0, openCardApplications: 0, paidCardApplications: 0, swipeLikes: 0, oneOnOneMutualMatches: 0 };
       }),
     ]);
 
@@ -213,7 +214,7 @@ export async function GET() {
         today_open_card_applications_count: todayDatingReactions.openCardApplications,
         today_paid_card_applications_count: todayDatingReactions.paidCardApplications,
         today_swipe_likes_count: todayDatingReactions.swipeLikes,
-        today_swipe_actions_count: todayDatingReactions.swipeActions,
+        today_one_on_one_mutual_matches_count: todayDatingReactions.oneOnOneMutualMatches,
         today_dating_reactions_count: todayDatingReactions.total,
         one_on_one_applicants_count: oneOnOneApplicants,
         one_on_one_matches_count: oneOnOneMatches,
@@ -231,7 +232,7 @@ export async function GET() {
         today_open_card_applications_count: 0,
         today_paid_card_applications_count: 0,
         today_swipe_likes_count: 0,
-        today_swipe_actions_count: 0,
+        today_one_on_one_mutual_matches_count: 0,
         today_dating_reactions_count: 0,
         one_on_one_applicants_count: 0,
         one_on_one_matches_count: 0,

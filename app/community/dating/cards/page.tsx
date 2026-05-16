@@ -54,7 +54,7 @@ type QueueStats = {
   today_open_card_applications_count?: number;
   today_paid_card_applications_count?: number;
   today_swipe_likes_count?: number;
-  today_swipe_actions_count?: number;
+  today_one_on_one_mutual_matches_count?: number;
   today_dating_reactions_count?: number;
   one_on_one_applicants_count?: number;
   one_on_one_matches_count?: number;
@@ -1271,7 +1271,7 @@ export default function OpenCardsPage() {
                   </p>
                   <p className="mt-1 text-sm text-neutral-400">현재까지 연결</p>
                   <p className="mt-2 text-xs font-semibold text-neutral-500">
-                    오늘 새 활동 {todayDatingReactionCount.toLocaleString("ko-KR")}건 · 오픈카드와 빠른매칭에서 반응이 계속 들어오고 있어요.
+                    오늘 새 지원/좋아요 {todayDatingReactionCount.toLocaleString("ko-KR")}건 · 오픈카드, 빠른매칭, 1대1에서 반응이 계속 들어오고 있어요.
                   </p>
                 </div>
                 <div className="rounded-[24px] bg-neutral-50 p-4">
