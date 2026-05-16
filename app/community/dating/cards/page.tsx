@@ -49,6 +49,7 @@ type QueueStats = {
     pending_regions?: Array<{ city: string; count: number }>;
   };
   accepted_matches_count?: number;
+  recent_open_card_applications_24h_count?: number;
   one_on_one_applicants_count?: number;
   one_on_one_matches_count?: number;
 };
@@ -894,6 +895,7 @@ export default function OpenCardsPage() {
   const activePaidItems = activeSex === "male" ? malePaidItems : femalePaidItems;
   const activeHasMore = activeSex === "male" ? maleHasMore : femaleHasMore;
   const activeCurrentCount = activeSex === "male" ? (queueStats?.male.public_count ?? males.length) : (queueStats?.female.public_count ?? females.length);
+  const recentOpenCardApplicationCount = Math.max(0, Number(queueStats?.recent_open_card_applications_24h_count ?? 0));
   const swipeTheme = getCardVisualTheme(swipeState.candidate?.card_id ?? activeSex);
   return (
     <main className="mx-auto max-w-5xl px-4 py-5 md:px-6 md:py-8">
@@ -958,6 +960,9 @@ export default function OpenCardsPage() {
                     {(queueStats?.accepted_matches_count ?? 0).toLocaleString("ko-KR")}명
                   </p>
                   <p className="mt-1 text-sm text-neutral-400">현재까지 연결</p>
+                  <p className="mt-2 text-xs font-semibold text-neutral-500">
+                    오늘 새 지원 {recentOpenCardApplicationCount.toLocaleString("ko-KR")}건 · 오픈카드 지원이 계속 들어오고 있어요.
+                  </p>
                 </div>
                 <div className="rounded-[24px] bg-neutral-50 p-4">
                   <p className="text-sm font-semibold text-neutral-400">1:1 신청</p>

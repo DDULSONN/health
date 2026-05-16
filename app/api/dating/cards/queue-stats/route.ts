@@ -91,6 +91,24 @@ async function countOneOnOneMatches(adminClient: ReturnType<typeof createAdminCl
   return countCumulativeOneOnOneMatches(adminClient);
 }
 
+async function countRecentOpenCardApplications(adminClient: ReturnType<typeof createAdminClient>) {
+  const sinceIso = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
+  const [openRes, paidRes] = await Promise.all([
+    adminClient
+      .from("dating_card_applications")
+      .select("id", { head: true, count: "exact" })
+      .gte("created_at", sinceIso),
+    adminClient
+      .from("dating_paid_card_applications")
+      .select("id", { head: true, count: "exact" })
+      .gte("created_at", sinceIso),
+  ]);
+
+  if (openRes.error) throw openRes.error;
+  if (paidRes.error) throw paidRes.error;
+  return (openRes.count ?? 0) + (paidRes.count ?? 0);
+}
+
 export async function GET() {
   const adminClient = createAdminClient();
   const requestId = crypto.randomUUID();
@@ -116,7 +134,18 @@ export async function GET() {
   };
 
   try {
-    const [malePublic, femalePublic, malePending, femalePending, malePendingRegions, femalePendingRegions, acceptedMatches, oneOnOneApplicants, oneOnOneMatches] = await Promise.all([
+    const [
+      malePublic,
+      femalePublic,
+      malePending,
+      femalePending,
+      malePendingRegions,
+      femalePendingRegions,
+      acceptedMatches,
+      oneOnOneApplicants,
+      oneOnOneMatches,
+      recentOpenCardApplications,
+    ] = await Promise.all([
       safeCount("malePublic", () => countPublic(adminClient, "male")),
       safeCount("femalePublic", () => countPublic(adminClient, "female")),
       safeCount("malePending", () => countPending(adminClient, "male")),
@@ -132,6 +161,7 @@ export async function GET() {
       safeCount("acceptedMatches", () => countAcceptedMatches(adminClient)),
       safeCount("oneOnOneApplicants", () => countOneOnOneApplicants(adminClient)),
       safeCount("oneOnOneMatches", () => countOneOnOneMatches(adminClient)),
+      safeCount("recentOpenCardApplications", () => countRecentOpenCardApplications(adminClient)),
     ]);
 
     return publicCachedJson(
@@ -149,6 +179,7 @@ export async function GET() {
           pending_regions: femalePendingRegions,
         },
         accepted_matches_count: acceptedMatches,
+        recent_open_card_applications_24h_count: recentOpenCardApplications,
         one_on_one_applicants_count: oneOnOneApplicants,
         one_on_one_matches_count: oneOnOneMatches,
       },
@@ -161,6 +192,7 @@ export async function GET() {
         male: { public_count: 0, pending_count: 0, slot_limit: getOpenCardLimitBySex("male"), pending_regions: [] },
         female: { public_count: 0, pending_count: 0, slot_limit: getOpenCardLimitBySex("female"), pending_regions: [] },
         accepted_matches_count: 0,
+        recent_open_card_applications_24h_count: 0,
         one_on_one_applicants_count: 0,
         one_on_one_matches_count: 0,
       },
