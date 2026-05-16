@@ -17,6 +17,9 @@ function getPrimaryAction(productType?: string | null) {
   if (productType === "city_view") {
     return { href: "/dating/nearby-view", label: "가까운 이상형 보기로 돌아가기" };
   }
+  if (productType === "love_fortune_detail") {
+    return { href: "/community/dating/cards", label: "연애운으로 돌아가기" };
+  }
   if (productType === "one_on_one_contact_exchange") {
     return { href: "/mypage", label: "마이페이지로 돌아가기" };
   }

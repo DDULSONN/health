@@ -26,7 +26,14 @@ type ConfirmBody = {
 type TossOrderRow = {
   id: string;
   user_id: string;
-  product_type: "apply_credits" | "paid_card" | "more_view" | "city_view" | "one_on_one_contact_exchange" | "swipe_premium_30d";
+  product_type:
+    | "apply_credits"
+    | "paid_card"
+    | "more_view"
+    | "city_view"
+    | "one_on_one_contact_exchange"
+    | "swipe_premium_30d"
+    | "love_fortune_detail";
   product_ref_id: string | null;
   product_meta: Record<string, unknown> | null;
   toss_order_id: string;
@@ -466,6 +473,34 @@ async function ensureOrderFulfilled(
 
   if (order.product_type === "swipe_premium_30d") {
     await ensureSwipePremiumFulfilled(admin, order);
+  }
+
+  if (order.product_type === "love_fortune_detail") {
+    if (!order.product_ref_id) {
+      throw new Error("LOVE_FORTUNE_READING_MISSING");
+    }
+
+    const readingRes = await admin
+      .from("love_fortune_readings")
+      .update({
+        status: "paid",
+        payment_order_id: order.id,
+        paid_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", order.product_ref_id)
+      .eq("user_id", order.user_id)
+      .in("status", ["pending_payment", "paid", "generated"])
+      .select("id")
+      .maybeSingle();
+
+    if (readingRes.error) {
+      throw readingRes.error;
+    }
+
+    if (!readingRes.data?.id) {
+      throw new Error("LOVE_FORTUNE_FULFILL_FAILED");
+    }
   }
 
   return { addedCredits: 0, creditsAfter: 0 };

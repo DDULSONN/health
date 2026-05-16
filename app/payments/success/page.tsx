@@ -24,6 +24,7 @@ function formatProductType(productType?: string) {
   if (productType === "city_view") return "가까운 이상형 보기";
   if (productType === "one_on_one_contact_exchange") return "1:1 번호 즉시 교환";
   if (productType === "swipe_premium_30d") return "빠른매칭 플러스";
+  if (productType === "love_fortune_detail") return "연애운 상세 분석";
   return "-";
 }
 
@@ -39,6 +40,9 @@ function getPrimaryAction(productType?: string) {
   }
   if (productType === "city_view") {
     return { href: "/dating/nearby-view", label: "가까운 이상형 보기로 돌아가기" };
+  }
+  if (productType === "love_fortune_detail") {
+    return { href: "/community/dating/cards", label: "연애운 확인하러 가기" };
   }
   return { href: "/dating/more-view", label: "이상형 더보기로 돌아가기" };
 }
@@ -134,6 +138,8 @@ function PaymentSuccessContent() {
                         ? "빠른매칭 플러스 적용 완료"
                         : result.productType === "city_view"
                           ? "가까운 이상형 보기 권한 반영 완료"
+                          : result.productType === "love_fortune_detail"
+                            ? "연애운 상세 분석 이용권 반영 완료"
                           : "결제 반영 완료"}
                 </p>
               </div>

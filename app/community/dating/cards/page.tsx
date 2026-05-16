@@ -183,7 +183,7 @@ type SwipeRequestOptions = {
   silent?: boolean;
 };
 
-type HomeFeatureTab = "open_cards" | "quick_match" | "one_on_one";
+type HomeFeatureTab = "open_cards" | "quick_match" | "one_on_one" | "love_fortune";
 
 type OneOnOneCardPreview = {
   id?: string;
@@ -240,6 +240,7 @@ const HOME_FEATURE_TABS: Array<{ key: HomeFeatureTab; label: string; body: strin
   { key: "open_cards", label: "오픈카드", body: "카드 목록" },
   { key: "quick_match", label: "빠른매칭", body: "랜덤 후보" },
   { key: "one_on_one", label: "1대1매칭", body: "후보 확인" },
+  { key: "love_fortune", label: "연애운", body: "ADMIN" },
 ];
 
 type OpenCardsSnapshot = {
@@ -389,6 +390,697 @@ function maskIdealTypeForPreview(value: string | null): string {
   return raw;
 }
 
+const BIRTH_TIME_OPTIONS = [
+  { key: "unknown", label: "모름", time: "괜찮아요" },
+  { key: "ja", label: "자시", time: "23-1시" },
+  { key: "chuk", label: "축시", time: "1-3시" },
+  { key: "in", label: "인시", time: "3-5시" },
+  { key: "myo", label: "묘시", time: "5-7시" },
+  { key: "jin", label: "진시", time: "7-9시" },
+  { key: "sa", label: "사시", time: "9-11시" },
+  { key: "oh", label: "오시", time: "11-13시" },
+  { key: "mi", label: "미시", time: "13-15시" },
+  { key: "sin", label: "신시", time: "15-17시" },
+  { key: "yu", label: "유시", time: "17-19시" },
+  { key: "sul", label: "술시", time: "19-21시" },
+  { key: "hae", label: "해시", time: "21-23시" },
+];
+
+const LOVE_STATE_OPTIONS = [
+  "솔로",
+  "썸/소개팅 전",
+  "연애 중",
+  "재회 고민",
+  "상대 찾는 중",
+  "최근 이별",
+  "연락 중인 상대 있음",
+  "결혼 고민",
+];
+
+const LOVE_FOCUS_OPTIONS = [
+  "나의 연애 성향",
+  "잘 맞는 상대",
+  "이번 달 연애운",
+  "오픈카드 문구",
+  "소개팅 성공 전략",
+  "썸 연락 타이밍",
+  "재회 가능성",
+  "궁합 포인트",
+  "잘 맞는 인상",
+];
+
+const CALENDAR_OPTIONS = [
+  { key: "solar", label: "양력" },
+  { key: "lunar", label: "음력" },
+  { key: "lunar_leap", label: "음력 윤달" },
+];
+
+const FORTUNE_GENDER_OPTIONS = [
+  { key: "female", label: "여성" },
+  { key: "male", label: "남성" },
+  { key: "other", label: "선택 안 함" },
+];
+
+const BIRTH_TIME_CERTAINTY_OPTIONS = [
+  { key: "exact", label: "정확해요" },
+  { key: "about", label: "대략 알아요" },
+  { key: "unknown", label: "잘 몰라요" },
+];
+
+const RELATIONSHIP_GOAL_OPTIONS = [
+  "진지한 연애",
+  "가벼운 만남보다 안정감",
+  "결혼까지 생각",
+  "일단 좋은 사람 찾기",
+  "재회/관계 회복",
+  "썸을 연애로 발전",
+  "소개팅 성공률 높이기",
+  "나와 맞는 사람 찾기",
+];
+
+const MEETING_STYLE_OPTIONS = [
+  "오픈카드로 직접 지원",
+  "빠른매칭으로 가볍게 확인",
+  "1대1 소개팅으로 신중하게",
+  "아직 모르겠음",
+  "상대가 먼저 다가오면 좋음",
+  "대화 후 천천히 결정",
+];
+
+const PARTNER_RELATION_OPTIONS = [
+  "상대 없음",
+  "썸/소개팅 상대",
+  "연애 중인 상대",
+  "재회 고민 상대",
+  "궁합만 보고 싶은 상대",
+];
+
+const DETAIL_QUESTION_GROUPS = [
+  {
+    title: "정확도 질문",
+    items: ["양력/음력/윤달 여부", "태어난 시간 확실도", "출생지 또는 해외 출생 여부"],
+  },
+  {
+    title: "연애운 질문",
+    items: ["현재 관계 상태", "최근 가장 큰 고민", "연애 목표", "원하는 만남 방식", "결혼/장기연애 의향"],
+  },
+  {
+    title: "궁합 질문",
+    items: ["상대 생년월일", "상대 태어난 시간", "상대와의 관계 단계", "보고 싶은 궁합 포인트"],
+  },
+  {
+    title: "소개팅 행동 질문",
+    items: ["첫 연락 방식", "첫 만남 장소", "답장 텀 고민", "오픈카드에서 보여주고 싶은 매력"],
+  },
+];
+
+const LOVE_FORTUNE_REPORT_SECTIONS = [
+  "입력 정확도 체크",
+  "내 연애 타입",
+  "끌리는 사람 vs 오래 맞는 사람",
+  "이번 주 연애 타이밍",
+  "잘 맞는 인상 카드",
+  "궁합/상대 정보 포인트",
+  "썸/소개팅 행동 가이드",
+  "연락 타이밍 가이드",
+  "피해야 할 상대 유형",
+  "오픈카드 문구 추천",
+  "짐툴에서 바로 할 추천 행동",
+];
+
+function pickBySeed(seed: number, values: string[]) {
+  return values[Math.abs(seed) % values.length];
+}
+
+function makeLoveFortunePreview(
+  birthDate: string,
+  birthTime: string,
+  loveState: string,
+  focus: string,
+  calendarType: string,
+  gender: string,
+  concern: string,
+  birthTimeCertainty: string = "unknown",
+  relationshipGoal: string = "",
+  meetingPreference: string = ""
+) {
+  const compact = birthDate.replace(/\D/g, "");
+  const seed =
+    compact.split("").reduce((sum, value) => sum + Number(value || 0), 0) +
+    birthTime.length +
+    loveState.length +
+    focus.length +
+    calendarType.length +
+    gender.length +
+    concern.length +
+    birthTimeCertainty.length +
+    relationshipGoal.length +
+    meetingPreference.length;
+  const month = Number(compact.slice(4, 6) || 0);
+  const calendarLabel = CALENDAR_OPTIONS.find((item) => item.key === calendarType)?.label ?? "양력";
+  const genderLabel = FORTUNE_GENDER_OPTIONS.find((item) => item.key === gender)?.label ?? "선택 안 함";
+  const seasonTone =
+    month >= 3 && month <= 5
+      ? "표현이 부드럽고 첫인상을 편하게 만드는 흐름"
+      : month >= 6 && month <= 8
+        ? "확신이 생기면 빠르게 다가가는 뜨거운 흐름"
+        : month >= 9 && month <= 11
+          ? "신중하지만 한번 마음을 정하면 오래 보는 흐름"
+          : "조용히 관찰하다가 깊게 빠지는 흐름";
+  const timeTone =
+    birthTime === "unknown"
+      ? "태어난 시간을 몰라도 큰 흐름은 충분히 볼 수 있어요."
+      : `${BIRTH_TIME_OPTIONS.find((item) => item.key === birthTime)?.label ?? "선택한 시간"} 기운이 더해져 감정의 온도 조절이 중요한 편이에요.`;
+
+  return {
+    headline: pickBySeed(seed + 11, [
+      "편한데 설레는 사람을 놓치지 않는 게 핵심이에요.",
+      "호감은 천천히 오지만, 맞는 사람 앞에서는 오래 깊어지는 타입이에요.",
+      "이번 흐름은 조건보다 대화 온도를 먼저 봐야 좋아요.",
+      "끌림보다 안정감이 오래 가는 관계를 만드는 열쇠예요.",
+    ]),
+    accuracy: `${calendarLabel} 기준으로 먼저 보고 있어요. 성별은 ${genderLabel}로 표시되며, 실제 상세 풀이에서는 절기 기준 만세력 계산과 태어난 시간 확실도를 함께 확인하는 흐름이 좋아요.`,
+    expertCheck: birthTimeCertainty === "exact"
+      ? "태어난 시간이 비교적 정확하다면 시주까지 반영한 연애 패턴을 더 깊게 볼 수 있어요."
+      : birthTimeCertainty === "about"
+        ? "태어난 시간이 대략적이면 핵심 성향은 보되, 세부 타이밍은 범위형으로 안내하는 편이 신뢰감 있어요."
+        : "태어난 시간을 모를 때는 성향과 관계 패턴 중심으로 보고, 타이밍 단정은 줄이는 편이 안전해요.",
+    personality: `${seasonTone}이 보여요. ${pickBySeed(seed, [
+      "가볍게 시작해도 대화가 잘 맞으면 금방 집중하는 타입이에요.",
+      "상대의 태도와 말투를 꽤 세밀하게 보는 타입이에요.",
+      "편한 사람 앞에서 매력이 늦게 올라오는 타입이에요.",
+      "처음엔 담백하지만 관계가 안정되면 애정 표현이 늘어나는 타입이에요.",
+    ])}`,
+    match: pickBySeed(seed + 3, [
+      "말을 예쁘게 하고 약속을 안정적으로 지키는 사람이 잘 맞아요.",
+      "운동, 생활 루틴, 가치관이 비슷한 사람과 속도가 잘 맞아요.",
+      "너무 밀어붙이기보다 여유 있게 다가오는 사람이 좋아요.",
+      "자기 일이 있고 감정 표현도 솔직한 사람에게 끌리기 쉬워요.",
+    ]),
+    caution: `${timeTone} ${pickBySeed(seed + 7, [
+      "상대 반응을 혼자 해석하기보다 짧게 확인하는 게 좋아요.",
+      "처음부터 완벽한 확신을 기다리면 좋은 타이밍을 놓칠 수 있어요.",
+      "호감이 있을수록 답장 속도보다 대화의 질을 보는 게 좋아요.",
+      "소개팅에서는 조건보다 실제 대화 텐션을 먼저 체크해보세요.",
+    ])}`,
+    concernGuide: concern.trim()
+      ? `입력한 고민은 "${concern.trim().slice(0, 48)}${concern.trim().length > 48 ? "..." : ""}" 쪽이에요. 상세 분석에서는 이 고민을 기준으로 타이밍, 대화 방식, 피해야 할 패턴을 나눠주면 설득력이 올라갑니다.`
+      : "상세 분석에서는 지금 가장 궁금한 고민을 한 줄로 받으면 결과가 훨씬 개인화돼 보여요.",
+    paidHint: focus === "오픈카드 문구"
+      ? "상세 기능에서는 내 성향에 맞는 오픈카드 첫 문장과 소개팅 대화 소재까지 이어서 만들 수 있게 설계하면 좋아요."
+      : focus === "잘 맞는 인상"
+        ? "상세 기능에서는 내 연애 흐름에 잘 맞는 인상, 분위기, 첫 만남에서 편한 상대 특징까지 카드처럼 보여주면 좋아요."
+        : "상세 기능에서는 상대 성향, 궁합 포인트, 이번 주 연애 타이밍까지 이어서 풀어주는 구조가 좋아요.",
+    action: pickBySeed(seed + 13, [
+      "오픈카드는 너무 강한 어필보다 생활 루틴과 대화 취향을 편하게 보여주는 쪽이 좋아요.",
+      "빠른매칭은 사진보다 첫 문장과 지역/생활권이 잘 맞는 사람부터 보는 게 유리해요.",
+      "1대1 소개팅은 조건을 넓게 잡고, 실제 대화가 편한 후보를 먼저 확인하는 흐름이 좋아요.",
+      "지금은 내 매력을 과장하기보다 오래 볼 수 있는 사람에게 신뢰를 주는 소개가 좋아요.",
+    ]),
+    goalGuide: relationshipGoal || meetingPreference
+      ? `${relationshipGoal || "연애 목표"} 기준으로 보면 ${meetingPreference || "맞는 만남 방식"} 쪽 행동 제안까지 이어주면 좋아요.`
+      : "상세 리포트에서는 연애 목표와 선호 만남 방식을 같이 받아야 소개팅 행동 추천이 더 설득력 있어요.",
+  };
+}
+
+function AdminLoveFortunePanel() {
+  const [birthDate, setBirthDate] = useState("");
+  const [birthTime, setBirthTime] = useState("unknown");
+  const [birthTimeCertainty, setBirthTimeCertainty] = useState("unknown");
+  const [birthPlace, setBirthPlace] = useState("");
+  const [calendarType, setCalendarType] = useState("solar");
+  const [gender, setGender] = useState("other");
+  const [loveState, setLoveState] = useState(LOVE_STATE_OPTIONS[0]);
+  const [focus, setFocus] = useState(LOVE_FOCUS_OPTIONS[0]);
+  const [relationshipGoal, setRelationshipGoal] = useState(RELATIONSHIP_GOAL_OPTIONS[0]);
+  const [meetingPreference, setMeetingPreference] = useState(MEETING_STYLE_OPTIONS[0]);
+  const [concern, setConcern] = useState("");
+  const [partnerBirthDate, setPartnerBirthDate] = useState("");
+  const [partnerBirthTime, setPartnerBirthTime] = useState("unknown");
+  const [partnerRelation, setPartnerRelation] = useState(PARTNER_RELATION_OPTIONS[0]);
+  const [detailOpen, setDetailOpen] = useState(true);
+  const [aiLoading, setAiLoading] = useState(false);
+  const [checkoutLoading, setCheckoutLoading] = useState(false);
+  const [aiResult, setAiResult] = useState("");
+  const [aiError, setAiError] = useState("");
+  const [checkoutError, setCheckoutError] = useState("");
+  const canPreview = /^\d{4}-\d{2}-\d{2}$/.test(birthDate);
+  const preview = canPreview
+    ? makeLoveFortunePreview(
+        birthDate,
+        birthTime,
+        loveState,
+        focus,
+        calendarType,
+        gender,
+        concern,
+        birthTimeCertainty,
+        relationshipGoal,
+        meetingPreference
+      )
+    : null;
+
+  const requestAiPreview = useCallback(async () => {
+    if (!canPreview || aiLoading) return;
+    setAiLoading(true);
+    setAiError("");
+    setAiResult("");
+    try {
+      const res = await fetch("/api/admin/love-fortune/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          birthDate,
+          birthTime,
+          birthTimeCertainty,
+          birthPlace,
+          calendarType,
+          gender,
+          loveState,
+          focus,
+          relationshipGoal,
+          meetingPreference,
+          concern,
+          partnerBirthDate,
+          partnerBirthTime,
+          partnerRelation,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; text?: string };
+      if (!res.ok || !body.ok || !body.text) {
+        throw new Error(body.message ?? "AI 연애운을 생성하지 못했습니다.");
+      }
+      setAiResult(body.text);
+    } catch (error) {
+      setAiError(error instanceof Error ? error.message : "AI 연애운을 생성하지 못했습니다.");
+    } finally {
+      setAiLoading(false);
+    }
+  }, [
+    aiLoading,
+    birthDate,
+    birthPlace,
+    birthTime,
+    birthTimeCertainty,
+    calendarType,
+    canPreview,
+    concern,
+    focus,
+    gender,
+    loveState,
+    meetingPreference,
+    partnerBirthDate,
+    partnerBirthTime,
+    partnerRelation,
+    relationshipGoal,
+  ]);
+
+  const requestLoveFortuneCheckout = useCallback(async () => {
+    if (!canPreview || checkoutLoading) return;
+    setCheckoutLoading(true);
+    setCheckoutError("");
+    try {
+      const res = await fetch("/api/payments/toss/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productType: "love_fortune_detail",
+          birthDate,
+          birthTime,
+          birthTimeCertainty,
+          birthPlace,
+          calendarType,
+          gender,
+          loveState,
+          focus,
+          relationshipGoal,
+          meetingPreference,
+          concern,
+          partnerBirthDate,
+          partnerBirthTime,
+          partnerRelation,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; checkoutUrl?: string };
+      if (!res.ok || !body.checkoutUrl) {
+        throw new Error(body.message ?? "연애운 결제를 시작하지 못했습니다.");
+      }
+      window.location.href = body.checkoutUrl;
+    } catch (error) {
+      setCheckoutError(error instanceof Error ? error.message : "연애운 결제를 시작하지 못했습니다.");
+    } finally {
+      setCheckoutLoading(false);
+    }
+  }, [
+    birthDate,
+    birthPlace,
+    birthTime,
+    birthTimeCertainty,
+    calendarType,
+    canPreview,
+    checkoutLoading,
+    concern,
+    focus,
+    gender,
+    loveState,
+    meetingPreference,
+    partnerBirthDate,
+    partnerBirthTime,
+    partnerRelation,
+    relationshipGoal,
+  ]);
+
+  return (
+    <section className="mb-5 overflow-hidden rounded-[30px] border border-rose-100 bg-gradient-to-br from-white via-rose-50 to-amber-50 p-4 shadow-[0_14px_40px_rgba(225,29,72,0.08)] md:p-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+        <div className="max-w-xl">
+          <span className="inline-flex rounded-full bg-neutral-950 px-3 py-1 text-[11px] font-black text-white">ADMIN TEST</span>
+          <h2 className="mt-3 text-[30px] font-black tracking-tight text-neutral-950 md:text-[40px]">소개팅으로 이어지는 연애운</h2>
+          <p className="mt-2 text-sm leading-6 text-neutral-600">
+            사주로 내 연애 타입을 보고 끝나는 게 아니라, 짐툴에서 어떤 사람을 만나고 어떻게 다가가면 좋을지까지 이어주는 리포트입니다.
+          </p>
+        </div>
+        <div className="rounded-[24px] border border-white/70 bg-white/80 p-4 shadow-sm lg:max-w-xs">
+          <p className="text-xs font-bold text-rose-700">상세 리포트</p>
+          <p className="mt-1 text-2xl font-black text-neutral-950">4,900원</p>
+          <p className="mt-1 text-xs leading-5 text-neutral-500">카카오페이 결제 후 AI 상세 분석을 생성하는 구조로 테스트합니다.</p>
+        </div>
+      </div>
+
+      <div className="mt-5 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
+        <div className="rounded-[26px] border border-white/80 bg-white/80 p-4 shadow-sm">
+          <div className="flex flex-wrap gap-2">
+            {CALENDAR_OPTIONS.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setCalendarType(item.key)}
+                className={`rounded-full px-4 py-2 text-sm font-black transition ${
+                  calendarType === item.key ? "bg-neutral-950 text-white" : "bg-white text-neutral-500 hover:bg-neutral-100"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          <label className="mt-5 block text-sm font-black text-neutral-900" htmlFor="love-birth-date">생년월일</label>
+          <input
+            id="love-birth-date"
+            type="date"
+            value={birthDate}
+            onChange={(event) => setBirthDate(event.target.value)}
+            className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+          />
+
+          <div className="mt-4 grid grid-cols-3 gap-2">
+            {FORTUNE_GENDER_OPTIONS.map((item) => (
+              <button
+                key={item.key}
+                type="button"
+                onClick={() => setGender(item.key)}
+                className={`rounded-2xl border px-3 py-3 text-sm font-black transition ${
+                  gender === item.key
+                    ? "border-rose-500 bg-rose-600 text-white"
+                    : "border-neutral-200 bg-white text-neutral-600 hover:border-rose-200"
+                }`}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+
+          <div className="mt-5">
+            <p className="text-sm font-black text-neutral-900">태어난 시간</p>
+            <div className="mt-2 grid grid-cols-3 gap-2">
+              {BIRTH_TIME_OPTIONS.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setBirthTime(item.key)}
+                  className={`rounded-2xl border px-2 py-2 text-center transition ${
+                    birthTime === item.key
+                      ? "border-neutral-950 bg-neutral-950 text-white"
+                      : "border-neutral-200 bg-white text-neutral-700 hover:border-rose-200"
+                  }`}
+                >
+                  <span className="block text-sm font-black">{item.label}</span>
+                  <span className={`mt-0.5 block text-[11px] ${birthTime === item.key ? "text-white/70" : "text-neutral-400"}`}>{item.time}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-5 rounded-[22px] border border-neutral-200 bg-white p-4">
+            <p className="text-sm font-black text-neutral-900">전문가 정확도 체크</p>
+            <p className="mt-1 text-xs leading-5 text-neutral-500">출생시간과 지역 정보가 정확할수록 상세 리포트의 타이밍 해석이 좋아집니다.</p>
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {BIRTH_TIME_CERTAINTY_OPTIONS.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setBirthTimeCertainty(item.key)}
+                  className={`rounded-2xl border px-2 py-2 text-sm font-black transition ${
+                    birthTimeCertainty === item.key
+                      ? "border-neutral-950 bg-neutral-950 text-white"
+                      : "border-neutral-200 bg-neutral-50 text-neutral-600 hover:border-rose-200"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <input
+              type="text"
+              value={birthPlace}
+              onChange={(event) => setBirthPlace(event.target.value.slice(0, 40))}
+              placeholder="태어난 지역 선택 입력 예: 서울, 부산, 일본 도쿄"
+              className="mt-3 h-11 w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm font-semibold text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-rose-300"
+            />
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-sm font-black text-neutral-900">현재 상황</span>
+              <select
+                value={loveState}
+                onChange={(event) => setLoveState(event.target.value)}
+                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+              >
+                {LOVE_STATE_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-sm font-black text-neutral-900">보고 싶은 것</span>
+              <select
+                value={focus}
+                onChange={(event) => setFocus(event.target.value)}
+                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+              >
+                {LOVE_FOCUS_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <div className="mt-5 grid gap-3 sm:grid-cols-2">
+            <label className="block">
+              <span className="text-sm font-black text-neutral-900">연애 목표</span>
+              <select
+                value={relationshipGoal}
+                onChange={(event) => setRelationshipGoal(event.target.value)}
+                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+              >
+                {RELATIONSHIP_GOAL_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-sm font-black text-neutral-900">선호 만남 방식</span>
+              <select
+                value={meetingPreference}
+                onChange={(event) => setMeetingPreference(event.target.value)}
+                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+              >
+                {MEETING_STYLE_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+              </select>
+            </label>
+          </div>
+
+          <label className="mt-5 block">
+            <span className="text-sm font-black text-neutral-900">지금 제일 궁금한 것</span>
+            <textarea
+              value={concern}
+              onChange={(event) => setConcern(event.target.value.slice(0, 140))}
+              placeholder="예: 소개팅이 잘 이어질지, 연락 텀이 애매한 상대가 있는지..."
+              className="mt-2 min-h-[92px] w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold leading-6 text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-rose-300"
+            />
+          </label>
+
+          <div className="mt-5 rounded-[22px] border border-rose-100 bg-rose-50 p-4">
+            <button
+              type="button"
+              onClick={() => setDetailOpen((value) => !value)}
+              className="flex w-full items-center justify-between gap-3 text-left"
+            >
+              <span>
+                <span className="block text-sm font-black text-rose-950">상세 연애운에서 더 물어볼 질문</span>
+                <span className="mt-1 block text-xs font-semibold text-rose-700">궁합, 연애 타이밍, 소개팅 전략까지 확장</span>
+              </span>
+              <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-rose-700">{detailOpen ? "접기" : "보기"}</span>
+            </button>
+            {detailOpen ? (
+              <div className="mt-4 grid gap-3">
+                {DETAIL_QUESTION_GROUPS.map((group) => (
+                  <div key={group.title} className="rounded-[18px] bg-white p-3">
+                    <p className="text-xs font-black text-neutral-900">{group.title}</p>
+                    <p className="mt-2 text-xs leading-5 text-neutral-500">{group.items.join(" · ")}</p>
+                  </div>
+                ))}
+                <label className="block">
+                  <span className="text-xs font-black text-neutral-900">상대 생년월일이 있다면</span>
+                  <input
+                    type="date"
+                    value={partnerBirthDate}
+                    onChange={(event) => setPartnerBirthDate(event.target.value)}
+                    className="mt-2 h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                  />
+                  <span className="mt-2 block text-[11px] leading-5 text-neutral-400">
+                    상대 정보는 궁합 상세에서만 선택적으로 받는 게 부담이 적습니다.
+                  </span>
+                </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="text-xs font-black text-neutral-900">상대 태어난 시간</span>
+                    <select
+                      value={partnerBirthTime}
+                      onChange={(event) => setPartnerBirthTime(event.target.value)}
+                      className="mt-2 h-11 w-full rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                    >
+                      {BIRTH_TIME_OPTIONS.map((option) => (
+                        <option key={option.key} value={option.key}>{option.label} · {option.time}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="block">
+                    <span className="text-xs font-black text-neutral-900">상대와의 관계</span>
+                    <select
+                      value={partnerRelation}
+                      onChange={(event) => setPartnerRelation(event.target.value)}
+                      className="mt-2 h-11 w-full rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                    >
+                      {PARTNER_RELATION_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+                    </select>
+                  </label>
+                </div>
+              </div>
+            ) : null}
+          </div>
+        </div>
+
+        <div className="rounded-[26px] border border-white/80 bg-white/85 p-4 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-black text-neutral-900">사주 풀이 미리보기</p>
+              <p className="mt-1 text-xs text-neutral-500">핵심만 짧게 보여주고 상세 분석으로 유도하는 화면입니다.</p>
+            </div>
+            <span className="rounded-full bg-rose-600 px-3 py-1 text-[11px] font-black text-white">연애 특화</span>
+          </div>
+
+          {preview ? (
+            <div className="mt-4 space-y-3">
+              <div className="rounded-[24px] bg-neutral-950 p-5 text-white">
+                <p className="text-xs font-black text-rose-200">무료 미리보기</p>
+                <p className="mt-2 text-xl font-black leading-8">{preview.headline}</p>
+              </div>
+              <div className="rounded-[22px] bg-neutral-50 p-4">
+                <p className="text-sm font-black text-rose-700">나의 연애 성향</p>
+                <p className="mt-2 text-sm leading-6 text-neutral-700">{preview.personality}</p>
+              </div>
+              <div className="rounded-[22px] bg-neutral-50 p-4">
+                <p className="text-sm font-black text-sky-700">잘 맞는 상대</p>
+                <p className="mt-2 text-sm leading-6 text-neutral-700">{preview.match}</p>
+              </div>
+              <div className="rounded-[22px] bg-neutral-50 p-4">
+                <p className="text-sm font-black text-emerald-700">짐툴 추천 행동</p>
+                <p className="mt-2 text-sm leading-6 text-neutral-700">{preview.action}</p>
+                <p className="mt-2 text-sm leading-6 text-neutral-700">{preview.goalGuide}</p>
+              </div>
+              <div className="relative overflow-hidden rounded-[24px] border border-neutral-200 bg-white p-4">
+                <p className="text-sm font-black text-neutral-950">상세 리포트에 포함되는 내용</p>
+                <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                  {LOVE_FORTUNE_REPORT_SECTIONS.map((section, index) => (
+                    <div key={section} className="relative overflow-hidden rounded-2xl bg-neutral-50 px-3 py-3">
+                      <p className={`text-sm font-bold text-neutral-800 ${index >= 3 ? "blur-[2px]" : ""}`}>{section}</p>
+                      {index >= 3 ? <div className="absolute inset-0 bg-white/45" aria-hidden /> : null}
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-3 text-xs font-semibold text-neutral-500">무료 미리보기 이후에는 상세 연애운, 궁합 포인트, 소개팅 행동 가이드가 열립니다.</p>
+              </div>
+              <div className="relative overflow-hidden rounded-[22px] border border-rose-100 bg-rose-50 p-4">
+                <div className="absolute inset-x-8 top-5 h-7 rounded-full bg-rose-200/60 blur-xl" aria-hidden />
+                <p className="relative text-sm font-black text-rose-900">상세 연애운으로 이어가기</p>
+                <p className="relative mt-2 text-sm leading-6 text-rose-800">
+                  {preview.paidHint} {preview.concernGuide}
+                </p>
+                <div className="relative mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void requestAiPreview()}
+                    disabled={aiLoading}
+                    className="rounded-full bg-neutral-950 px-4 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-neutral-400"
+                  >
+                    {aiLoading ? "AI 생성 중..." : "AI 상세 미리보기"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void requestLoveFortuneCheckout()}
+                    disabled={checkoutLoading}
+                    className="rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-bold text-rose-700 disabled:cursor-not-allowed disabled:text-neutral-400"
+                  >
+                    {checkoutLoading ? "결제 준비 중..." : "카카오페이로 상세 분석"}
+                  </button>
+                </div>
+              </div>
+              <div className="rounded-[22px] bg-neutral-50 p-4">
+                <p className="text-sm font-black text-neutral-900">입력 정확도</p>
+                <p className="mt-2 text-sm leading-6 text-neutral-700">{preview.accuracy}</p>
+                <p className="mt-2 text-sm leading-6 text-neutral-700">{preview.expertCheck}</p>
+                <p className="mt-2 text-sm leading-6 text-neutral-700">{preview.caution}</p>
+              </div>
+              {checkoutError ? (
+                <p className="rounded-[18px] border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{checkoutError}</p>
+              ) : null}
+              <details className="rounded-[18px] border border-neutral-200 bg-white p-3 text-xs leading-5 text-neutral-500">
+                <summary className="cursor-pointer font-black text-neutral-800">유료 이용/환불 기준</summary>
+                <p className="mt-2">연애운 상세 분석은 결제 후 입력 정보를 바탕으로 AI 분석 생성이 시작되는 디지털 콘텐츠입니다.</p>
+                <p className="mt-1">결제만 완료되고 분석이 생성되지 않은 경우 오픈카톡으로 확인 후 취소/환불을 도와드릴 수 있어요.</p>
+                <p className="mt-1">분석 결과가 생성된 뒤에는 콘텐츠 제공이 완료된 상태라 단순 변심 환불이 제한될 수 있습니다.</p>
+              </details>
+              {aiError ? (
+                <p className="rounded-[18px] border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{aiError}</p>
+              ) : null}
+              {aiResult ? (
+                <div className="rounded-[22px] border border-neutral-200 bg-white p-4">
+                  <p className="text-sm font-black text-neutral-950">Gemini 상세 미리보기</p>
+                  <div className="mt-3 whitespace-pre-wrap text-sm leading-7 text-neutral-700">{aiResult}</div>
+                </div>
+              ) : null}
+              <p className="text-[11px] leading-5 text-neutral-400">재미와 자기 이해를 위한 참고용 결과입니다. 실제 만남과 선택은 본인의 판단을 우선해 주세요.</p>
+            </div>
+          ) : (
+            <div className="mt-4 flex min-h-[360px] items-center justify-center rounded-[24px] border border-dashed border-neutral-200 bg-neutral-50 text-center">
+              <div>
+                <p className="text-lg font-black text-neutral-900">생년월일만 입력하면 바로 미리보기</p>
+                <p className="mt-2 text-sm text-neutral-500">예: 1998년 5월 17일</p>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 async function fetchBySex(
   sex: "male" | "female",
   _offsetLegacy: number,
@@ -461,6 +1153,7 @@ export default function OpenCardsPage() {
   const [showWeekendApplyCreditBenefit, setShowWeekendApplyCreditBenefit] = useState(false);
   const [homeAdLink, setHomeAdLink] = useState<HomeAdLinkSetting | null>(null);
   const [homeFeatureTab, setHomeFeatureTab] = useState<HomeFeatureTab>("open_cards");
+  const [isAdminPreviewUser, setIsAdminPreviewUser] = useState(false);
   const [oneOnOneHomeLoading, setOneOnOneHomeLoading] = useState(false);
   const [oneOnOneHomeError, setOneOnOneHomeError] = useState("");
   const [oneOnOneHome, setOneOnOneHome] = useState<OneOnOneHomeState | null>(null);
@@ -508,6 +1201,29 @@ export default function OpenCardsPage() {
     const timer = window.setInterval(updateWeekendBenefit, 60_000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/admin/me", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data: { isAdmin?: boolean }) => {
+        if (!cancelled) setIsAdminPreviewUser(Boolean(data.isAdmin));
+      })
+      .catch(() => {
+        if (!cancelled) setIsAdminPreviewUser(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!isAdminPreviewUser && homeFeatureTab === "love_fortune") {
+      setHomeFeatureTab("open_cards");
+    }
+  }, [homeFeatureTab, isAdminPreviewUser]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1182,12 +1898,17 @@ export default function OpenCardsPage() {
   const showQuickMatchSection = homeFeatureTab === "quick_match";
   const showGuideSection = homeFeatureTab === "open_cards";
   const showOneOnOneSection = homeFeatureTab === "one_on_one";
+  const showLoveFortuneSection = isAdminPreviewUser && homeFeatureTab === "love_fortune";
+  const visibleHomeFeatureTabs = useMemo(
+    () => HOME_FEATURE_TABS.filter((tab) => tab.key !== "love_fortune" || isAdminPreviewUser),
+    [isAdminPreviewUser]
+  );
   return (
     <main className="mx-auto max-w-5xl px-4 py-5 md:px-6 md:py-8">
       <DatingAdultNotice />
       <section className="sticky top-[64px] z-30 mb-4 rounded-[24px] border border-black/5 bg-white/92 p-1.5 shadow-[0_12px_30px_rgba(15,23,42,0.08)] backdrop-blur">
-        <div className="grid grid-cols-3 gap-1">
-          {HOME_FEATURE_TABS.map((tab) => {
+        <div className={`grid gap-1 ${visibleHomeFeatureTabs.length >= 4 ? "grid-cols-4" : "grid-cols-3"}`}>
+          {visibleHomeFeatureTabs.map((tab) => {
             const active = homeFeatureTab === tab.key;
             return (
               <button
@@ -1209,6 +1930,7 @@ export default function OpenCardsPage() {
           })}
         </div>
       </section>
+      {showLoveFortuneSection ? <AdminLoveFortunePanel /> : null}
       {showOpenCardSection ? (
       <section className="mb-5 rounded-[30px] border border-black/5 bg-white p-4 shadow-[0_14px_40px_rgba(15,23,42,0.06)] md:p-6">
         <div className="flex flex-col gap-5">

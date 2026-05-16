@@ -263,6 +263,44 @@ type MyPaymentCenterData = {
   orders: MyPaymentCenterOrder[];
 };
 
+type MyLoveFortuneReading = {
+  id: string;
+  status: "draft" | "pending_payment" | "paid" | "generated" | "refunded" | "canceled" | string;
+  calendarType: string;
+  birthDate: string;
+  birthTime: string;
+  birthTimeCertainty: string;
+  birthPlace: string | null;
+  gender: string;
+  loveState: string | null;
+  relationshipGoal: string | null;
+  meetingPreference: string | null;
+  focus: string | null;
+  concern: string | null;
+  partnerBirthDate: string | null;
+  partnerBirthTime: string | null;
+  partnerRelation: string | null;
+  amount: number;
+  aiModel: string | null;
+  aiResult: string | null;
+  idealFace: {
+    title?: string;
+    eye?: string;
+    smile?: string;
+    mood?: string;
+    style?: string;
+    firstDate?: string;
+    avoid?: string;
+    note?: string;
+    prompt?: string;
+  } | null;
+  idealFacePrompt: string | null;
+  idealFaceImageUrl: string | null;
+  paidAt: string | null;
+  generatedAt: string | null;
+  createdAt: string;
+};
+
 const SUPPORT_CATEGORY_LABELS: Record<SupportInquiry["category"], string> = {
   payment: "결제/환불",
   dating: "소개팅 기능",
@@ -291,6 +329,7 @@ function formatPaymentProductLabel(order: MyPaymentCenterOrder) {
   }
   if (order.product_type === "one_on_one_contact_exchange") return "1:1 번호 즉시 교환";
   if (order.product_type === "swipe_premium_30d") return "빠른매칭 플러스";
+  if (order.product_type === "love_fortune_detail") return "연애운 상세 분석";
   return order.order_name ?? order.product_type;
 }
 
@@ -313,7 +352,26 @@ function formatPaymentResultLabel(order: MyPaymentCenterOrder) {
   if (order.product_type === "city_view") return "가까운 이상형 보기 권한 반영 완료";
   if (order.product_type === "one_on_one_contact_exchange") return "상대 연락처 공개 완료";
   if (order.product_type === "swipe_premium_30d") return "빠른매칭 플러스 적용 완료";
+  if (order.product_type === "love_fortune_detail") return "연애운 상세 분석 이용권 반영 완료";
   return "결제 완료";
+}
+
+function formatLoveFortuneStatusLabel(status: MyLoveFortuneReading["status"]) {
+  if (status === "generated") return "분석 완료";
+  if (status === "paid") return "생성 가능";
+  if (status === "pending_payment") return "결제 대기";
+  if (status === "refunded") return "환불됨";
+  if (status === "canceled") return "취소됨";
+  return "준비 중";
+}
+
+function formatLoveFortuneInputSummary(reading: MyLoveFortuneReading) {
+  return [
+    reading.birthDate,
+    reading.calendarType === "lunar" ? "음력" : reading.calendarType === "lunar_leap" ? "음력 윤달" : "양력",
+    reading.loveState,
+    reading.relationshipGoal,
+  ].filter(Boolean).join(" · ");
 }
 
 function adminOpenCardOutreachScopeLabel(scope: AdminOpenCardOutreachScope) {
@@ -1422,6 +1480,12 @@ export default function MyPage() {
   const [paymentCenterLoading, setPaymentCenterLoading] = useState(false);
   const [paymentCenterError, setPaymentCenterError] = useState("");
   const [paymentCenterData, setPaymentCenterData] = useState<MyPaymentCenterData | null>(null);
+  const [loveFortuneOpen, setLoveFortuneOpen] = useState(false);
+  const [loveFortuneLoaded, setLoveFortuneLoaded] = useState(false);
+  const [loveFortuneLoading, setLoveFortuneLoading] = useState(false);
+  const [loveFortuneError, setLoveFortuneError] = useState("");
+  const [loveFortuneReadings, setLoveFortuneReadings] = useState<MyLoveFortuneReading[]>([]);
+  const [loveFortuneGeneratingId, setLoveFortuneGeneratingId] = useState<string | null>(null);
 
   const refreshAdminQueueData = useMemo(
     () =>
@@ -1516,6 +1580,68 @@ export default function MyPage() {
       setPaymentCenterLoading(false);
     }
   }, [paymentCenterLoaded, paymentCenterLoading]);
+
+  const loadLoveFortuneReadings = useCallback(async (force = false) => {
+    if (!isAdmin) return;
+    if (!force && (loveFortuneLoading || loveFortuneLoaded)) return;
+
+    setLoveFortuneLoading(true);
+    setLoveFortuneError("");
+
+    try {
+      const res = await fetch("/api/mypage/love-fortune", { cache: "no-store" });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        readings?: MyLoveFortuneReading[];
+        message?: string;
+      };
+
+      if (!res.ok || !body.ok) {
+        throw new Error(body.message ?? "연애운 내역을 불러오지 못했습니다.");
+      }
+
+      setLoveFortuneReadings(body.readings ?? []);
+      setLoveFortuneLoaded(true);
+    } catch (error) {
+      console.error("[mypage] love fortune load failed", error);
+      setLoveFortuneError(error instanceof Error ? error.message : "연애운 내역을 불러오지 못했습니다.");
+    } finally {
+      setLoveFortuneLoading(false);
+    }
+  }, [isAdmin, loveFortuneLoaded, loveFortuneLoading]);
+
+  const generateLoveFortuneReading = useCallback(async (readingId: string) => {
+    if (!isAdmin) return;
+    if (loveFortuneGeneratingId) return;
+
+    setLoveFortuneGeneratingId(readingId);
+    setLoveFortuneError("");
+
+    try {
+      const res = await fetch("/api/mypage/love-fortune", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ readingId }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        reading?: MyLoveFortuneReading;
+        message?: string;
+      };
+
+      if (!res.ok || !body.ok || !body.reading) {
+        throw new Error(body.message ?? "연애운 상세 분석을 생성하지 못했습니다.");
+      }
+
+      setLoveFortuneReadings((items) => items.map((item) => (item.id === body.reading?.id ? body.reading : item)));
+      setLoveFortuneLoaded(true);
+    } catch (error) {
+      console.error("[mypage] love fortune generate failed", error);
+      setLoveFortuneError(error instanceof Error ? error.message : "연애운 상세 분석을 생성하지 못했습니다.");
+    } finally {
+      setLoveFortuneGeneratingId(null);
+    }
+  }, [isAdmin, loveFortuneGeneratingId]);
 
   const refreshAdminPaymentCenter = useMemo(
     () =>
@@ -2793,6 +2919,11 @@ export default function MyPage() {
     if (!paymentCenterOpen || paymentCenterLoaded || paymentCenterLoading) return;
     void loadPaymentCenter(false);
   }, [paymentCenterLoaded, paymentCenterLoading, paymentCenterOpen, loadPaymentCenter]);
+
+  useEffect(() => {
+    if (!isAdmin || !loveFortuneOpen || loveFortuneLoaded || loveFortuneLoading) return;
+    void loadLoveFortuneReadings(false);
+  }, [isAdmin, loveFortuneLoaded, loveFortuneLoading, loveFortuneOpen, loadLoveFortuneReadings]);
 
   useEffect(() => {
     if (loading || !isAdmin) return;
@@ -5885,6 +6016,139 @@ export default function MyPage() {
           </>
         )}
       </section>
+      {isAdmin && (
+      <section className="mb-5 overflow-hidden rounded-2xl border border-rose-200 bg-gradient-to-br from-rose-50 via-white to-amber-50 p-5">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-rose-950">내 연애운</h2>
+            <p className="mt-1 text-sm text-rose-800">
+              결제한 연애운 상세 분석과 잘 맞는 인상 카드를 다시 볼 수 있어요.
+            </p>
+            {!loveFortuneOpen ? (
+              <p className="mt-1 text-xs text-rose-700">결제 후 생성된 결과는 이곳에 저장됩니다.</p>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href="/community/dating/cards"
+              className="rounded-lg border border-rose-300 bg-white px-3 py-2 text-xs font-medium text-rose-800 hover:bg-rose-100"
+            >
+              연애운 보기
+            </Link>
+            <button
+              type="button"
+              onClick={() => setLoveFortuneOpen((prev) => !prev)}
+              className="rounded-lg border border-rose-300 bg-white px-3 py-2 text-xs font-medium text-rose-800 hover:bg-rose-100"
+            >
+              {loveFortuneOpen ? "접기" : "내역 펼치기"}
+            </button>
+          </div>
+        </div>
+
+        {loveFortuneOpen ? (
+          <div className="mt-4">
+            <div className="flex justify-end">
+              <button
+                type="button"
+                onClick={() => void loadLoveFortuneReadings(true)}
+                disabled={loveFortuneLoading}
+                className="rounded-md border border-rose-300 bg-white px-3 py-2 text-xs font-medium text-rose-800 disabled:opacity-50"
+              >
+                {loveFortuneLoading ? "새로고침 중..." : "연애운 새로고침"}
+              </button>
+            </div>
+
+            {loveFortuneError ? (
+              <p className="mt-3 rounded-xl border border-red-100 bg-red-50 p-4 text-sm font-semibold text-red-700">{loveFortuneError}</p>
+            ) : null}
+
+            {loveFortuneLoading && loveFortuneReadings.length === 0 ? (
+              <p className="mt-3 rounded-xl border border-rose-100 bg-white p-4 text-sm text-neutral-500">연애운 내역을 불러오는 중입니다.</p>
+            ) : null}
+
+            {!loveFortuneLoading && loveFortuneLoaded && loveFortuneReadings.length === 0 ? (
+              <div className="mt-3 rounded-xl border border-dashed border-rose-200 bg-white/70 p-4">
+                <p className="text-sm font-semibold text-neutral-900">아직 저장된 연애운이 없습니다.</p>
+                <p className="mt-1 text-sm text-neutral-500">생년월일만 넣어도 무료 미리보기를 볼 수 있고, 상세 분석은 결제 후 여기서 다시 확인할 수 있어요.</p>
+              </div>
+            ) : null}
+
+            {loveFortuneReadings.length > 0 ? (
+              <div className="mt-3 space-y-3">
+                {loveFortuneReadings.map((reading) => {
+                  const canGenerate = reading.status === "paid" || reading.status === "generated";
+                  const generated = Boolean(reading.aiResult);
+                  const ideal = reading.idealFace ?? {};
+                  return (
+                    <article key={reading.id} className="overflow-hidden rounded-2xl border border-rose-100 bg-white shadow-sm">
+                      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-rose-50 p-4">
+                        <div>
+                          <p className="text-sm font-bold text-neutral-950">{formatLoveFortuneInputSummary(reading) || "연애운 상세 분석"}</p>
+                          <p className="mt-1 text-xs text-neutral-500">
+                            {reading.amount.toLocaleString("ko-KR")}원 · {new Date(reading.createdAt).toLocaleString("ko-KR")}
+                          </p>
+                        </div>
+                        <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-bold text-rose-800">
+                          {formatLoveFortuneStatusLabel(reading.status)}
+                        </span>
+                      </div>
+
+                      <div className="grid gap-3 p-4 lg:grid-cols-[0.8fr_1.2fr]">
+                        <div className="rounded-[24px] border border-rose-100 bg-gradient-to-br from-rose-50 via-white to-amber-50 p-4">
+                          <div className="mx-auto flex h-28 w-28 items-center justify-center rounded-[32px] border border-white bg-white/80 shadow-[0_18px_45px_rgba(244,63,94,0.16)]">
+                            <div className="relative h-20 w-20 rounded-full bg-gradient-to-br from-rose-200 via-amber-100 to-white">
+                              <div className="absolute left-4 top-8 h-2 w-2 rounded-full bg-neutral-800" />
+                              <div className="absolute right-4 top-8 h-2 w-2 rounded-full bg-neutral-800" />
+                              <div className="absolute bottom-5 left-1/2 h-2 w-7 -translate-x-1/2 rounded-full border-b-2 border-rose-500" />
+                            </div>
+                          </div>
+                          <p className="mt-3 text-center text-sm font-black text-rose-950">{String(ideal.title ?? "잘 맞는 인상 미리보기")}</p>
+                          <p className="mt-2 text-center text-xs leading-5 text-rose-700">{String(ideal.mood ?? "편안하고 신뢰감 있는 분위기")}</p>
+                          <div className="mt-3 grid gap-2 text-xs text-neutral-700">
+                            <p className="rounded-xl bg-white/80 p-2">눈매 · {String(ideal.eye ?? "편안하게 오래 마주볼 수 있는 눈매")}</p>
+                            <p className="rounded-xl bg-white/80 p-2">미소 · {String(ideal.smile ?? "담백하지만 따뜻한 미소")}</p>
+                            <p className="rounded-xl bg-white/80 p-2">스타일 · {String(ideal.style ?? "깔끔한 기본 스타일")}</p>
+                          </div>
+                          <p className="mt-3 text-[11px] leading-5 text-neutral-400">{String(ideal.note ?? "실제 외모를 단정하지 않는 참고용 카드입니다.")}</p>
+                        </div>
+
+                        <div>
+                          <div className="rounded-xl bg-neutral-50 p-3 text-sm leading-6 text-neutral-700">
+                            <p><span className="font-semibold text-neutral-900">상황</span> {reading.loveState ?? "-"} · {reading.focus ?? "-"}</p>
+                            <p><span className="font-semibold text-neutral-900">목표</span> {reading.relationshipGoal ?? "-"} · {reading.meetingPreference ?? "-"}</p>
+                            {reading.concern ? <p><span className="font-semibold text-neutral-900">고민</span> {reading.concern}</p> : null}
+                          </div>
+
+                          {!generated ? (
+                            <div className="mt-3 rounded-xl border border-dashed border-rose-200 bg-rose-50/60 p-4">
+                              <p className="text-sm font-semibold text-rose-950">상세 분석을 아직 생성하지 않았어요.</p>
+                              <p className="mt-1 text-xs leading-5 text-rose-700">결제가 완료된 건은 버튼을 누르면 AI 상세 리포트와 잘 맞는 인상 카드가 저장됩니다.</p>
+                              <button
+                                type="button"
+                                onClick={() => void generateLoveFortuneReading(reading.id)}
+                                disabled={!canGenerate || loveFortuneGeneratingId === reading.id}
+                                className="mt-3 rounded-full bg-rose-600 px-4 py-2 text-sm font-bold text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
+                              >
+                                {loveFortuneGeneratingId === reading.id ? "생성 중..." : canGenerate ? "상세 분석 생성" : "결제 후 생성 가능"}
+                              </button>
+                            </div>
+                          ) : (
+                            <details className="mt-3 rounded-xl border border-neutral-200 bg-white p-4" open>
+                              <summary className="cursor-pointer text-sm font-black text-neutral-950">상세 리포트 보기</summary>
+                              <div className="mt-3 whitespace-pre-wrap text-sm leading-7 text-neutral-700">{reading.aiResult}</div>
+                            </details>
+                          )}
+                        </div>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+      </section>
+      )}
       <section className="mb-5 rounded-2xl border border-sky-200 bg-sky-50/40 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

@@ -18,7 +18,8 @@ type ProductType =
   | "more_view"
   | "city_view"
   | "one_on_one_contact_exchange"
-  | "swipe_premium_30d";
+  | "swipe_premium_30d"
+  | "love_fortune_detail";
 
 type CreateBody = {
   productType?: unknown;
@@ -26,6 +27,20 @@ type CreateBody = {
   province?: unknown;
   matchId?: unknown;
   paidCardId?: unknown;
+  birthDate?: unknown;
+  birthTime?: unknown;
+  birthTimeCertainty?: unknown;
+  birthPlace?: unknown;
+  calendarType?: unknown;
+  gender?: unknown;
+  loveState?: unknown;
+  relationshipGoal?: unknown;
+  meetingPreference?: unknown;
+  focus?: unknown;
+  concern?: unknown;
+  partnerBirthDate?: unknown;
+  partnerBirthTime?: unknown;
+  partnerRelation?: unknown;
 };
 
 type OneOnOneMatchRow = {
@@ -69,6 +84,10 @@ const PRODUCT_CONFIG: Record<ProductType, { amount: number; orderName: string }>
     amount: SWIPE_PREMIUM_PRICE_KRW,
     orderName: "빠른매칭 플러스",
   },
+  love_fortune_detail: {
+    amount: 4900,
+    orderName: "연애운 상세 분석",
+  },
 };
 
 function json(status: number, payload: Record<string, unknown>) {
@@ -86,11 +105,49 @@ function parseProductType(raw: unknown): ProductType | "" {
     raw === "more_view" ||
     raw === "city_view" ||
     raw === "one_on_one_contact_exchange" ||
-    raw === "swipe_premium_30d"
+    raw === "swipe_premium_30d" ||
+    raw === "love_fortune_detail"
   ) {
     return raw;
   }
   return "";
+}
+
+function cleanText(value: unknown, maxLength: number) {
+  return String(value ?? "").trim().slice(0, maxLength);
+}
+
+function normalizeLoveFortuneInput(body: CreateBody) {
+  const birthDate = cleanText(body.birthDate, 20);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(birthDate)) {
+    return { ok: false as const, message: "생년월일을 먼저 입력해 주세요." };
+  }
+
+  const calendarType = cleanText(body.calendarType, 20);
+  const gender = cleanText(body.gender, 20);
+  const birthTimeCertainty = cleanText(body.birthTimeCertainty, 20);
+  const partnerBirthDate = cleanText(body.partnerBirthDate, 20);
+
+  return {
+    ok: true as const,
+    birthDate,
+    birthTime: cleanText(body.birthTime, 30) || "unknown",
+    birthTimeCertainty:
+      birthTimeCertainty === "exact" || birthTimeCertainty === "about" || birthTimeCertainty === "unknown"
+        ? birthTimeCertainty
+        : "unknown",
+    birthPlace: cleanText(body.birthPlace, 80),
+    calendarType: calendarType === "lunar" || calendarType === "lunar_leap" ? calendarType : "solar",
+    gender: gender === "female" || gender === "male" ? gender : "other",
+    loveState: cleanText(body.loveState, 60),
+    relationshipGoal: cleanText(body.relationshipGoal, 80),
+    meetingPreference: cleanText(body.meetingPreference, 80),
+    focus: cleanText(body.focus, 60),
+    concern: cleanText(body.concern, 180),
+    partnerBirthDate: /^\d{4}-\d{2}-\d{2}$/.test(partnerBirthDate) ? partnerBirthDate : null,
+    partnerBirthTime: cleanText(body.partnerBirthTime, 30) || null,
+    partnerRelation: cleanText(body.partnerRelation, 60),
+  };
 }
 
 async function cancelReadyOrders(admin: ReturnType<typeof createAdminClient>, orderIds: string[]) {
@@ -711,6 +768,88 @@ export async function POST(req: Request) {
       };
     }
 
+    if (productType === "love_fortune_detail") {
+      const input = normalizeLoveFortuneInput(body);
+      if (!input.ok) {
+        return json(400, {
+          ok: false,
+          code: "VALIDATION_ERROR",
+          requestId,
+          message: input.message,
+        });
+      }
+
+      const readyOrderRes = await admin
+        .from("toss_test_payment_orders")
+        .select("id")
+        .eq("product_type", "love_fortune_detail")
+        .eq("user_id", user.id)
+        .eq("status", "ready")
+        .limit(20);
+
+      if (readyOrderRes.error) {
+        console.error("[toss-create] love fortune ready order lookup failed", readyOrderRes.error);
+        return json(500, {
+          ok: false,
+          code: "ORDER_LOOKUP_FAILED",
+          requestId,
+          message: "기존 결제 진행 상태를 확인하지 못했습니다.",
+        });
+      }
+
+      await cancelReadyOrders(admin, (readyOrderRes.data ?? []).map((row) => row.id));
+
+      const readingRes = await admin
+        .from("love_fortune_readings")
+        .insert({
+          user_id: user.id,
+          status: "pending_payment",
+          calendar_type: input.calendarType,
+          birth_date: input.birthDate,
+          birth_time: input.birthTime,
+          birth_time_certainty: input.birthTimeCertainty,
+          birth_place: input.birthPlace || null,
+          gender: input.gender,
+          love_state: input.loveState || null,
+          relationship_goal: input.relationshipGoal || null,
+          meeting_preference: input.meetingPreference || null,
+          focus: input.focus || null,
+          concern: input.concern || null,
+          partner_birth_date: input.partnerBirthDate,
+          partner_birth_time: input.partnerBirthTime,
+          partner_relation: input.partnerRelation || null,
+          amount: config.amount,
+        })
+        .select("id")
+        .single();
+
+      if (readingRes.error || !readingRes.data?.id) {
+        console.error("[toss-create] love fortune reading insert failed", readingRes.error);
+        return json(500, {
+          ok: false,
+          code: "CREATE_READING_FAILED",
+          requestId,
+          message: "연애운 주문 정보를 저장하지 못했습니다.",
+        });
+      }
+
+      productRefId = readingRes.data.id;
+      productMeta = {
+        birthDate: input.birthDate,
+        birthTime: input.birthTime,
+        birthTimeCertainty: input.birthTimeCertainty,
+        hasBirthPlace: Boolean(input.birthPlace),
+        calendarType: input.calendarType,
+        gender: input.gender,
+        loveState: input.loveState,
+        relationshipGoal: input.relationshipGoal,
+        meetingPreference: input.meetingPreference,
+        focus: input.focus,
+        hasPartnerBirthDate: Boolean(input.partnerBirthDate),
+        partnerRelation: input.partnerRelation,
+      };
+    }
+
     const tossOrderId = crypto.randomUUID().replace(/-/g, "");
     const orderName =
       productType === "more_view"
@@ -773,7 +912,8 @@ export async function POST(req: Request) {
       productType === "more_view" ||
       productType === "city_view" ||
       productType === "one_on_one_contact_exchange" ||
-      productType === "swipe_premium_30d"
+      productType === "swipe_premium_30d" ||
+      productType === "love_fortune_detail"
         ? {
             flowMode: "DIRECT" as const,
             easyPay: "KAKAOPAY" as const,
