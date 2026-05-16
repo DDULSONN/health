@@ -2034,23 +2034,32 @@ function OneOnOneCandidateCard({
   const meta = getOneOnOneMeta(card);
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-neutral-100 bg-neutral-50 px-3 py-3">
+    <article className="overflow-hidden rounded-[24px] border border-neutral-100 bg-neutral-50 p-3">
       <div className="flex gap-3">
-        <div className="h-[76px] w-[76px] shrink-0 overflow-hidden rounded-2xl border border-white bg-white shadow-sm">
+        <a
+          href={primaryPhoto || undefined}
+          target={primaryPhoto ? "_blank" : undefined}
+          rel={primaryPhoto ? "noreferrer" : undefined}
+          className="relative h-[104px] w-[92px] shrink-0 overflow-hidden rounded-2xl border border-white bg-white shadow-sm"
+          aria-label={primaryPhoto ? `${name} 후보 사진 크게 보기` : undefined}
+        >
           {primaryPhoto ? (
-            <img
-              src={primaryPhoto}
-              alt={`${name} 후보 사진`}
-              loading="lazy"
-              decoding="async"
-              className="h-full w-full object-cover"
-            />
+            <>
+              <img src={primaryPhoto} alt="" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-cover opacity-25 blur-md" />
+              <img
+                src={primaryPhoto}
+                alt={`${name} 후보 사진`}
+                loading="lazy"
+                decoding="async"
+                className="relative z-10 h-full w-full object-contain p-1"
+              />
+            </>
           ) : (
             <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-neutral-100 to-neutral-50 text-[11px] font-bold text-neutral-400">
               사진
             </div>
           )}
-        </div>
+        </a>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
@@ -2081,14 +2090,15 @@ function OneOnOneCandidateCard({
               href={url}
               target="_blank"
               rel="noreferrer"
-              className="block overflow-hidden rounded-xl border border-neutral-100 bg-white"
+              className="relative block h-24 overflow-hidden rounded-xl border border-neutral-100 bg-white"
             >
+              <img src={url} alt="" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-cover opacity-20 blur-md" />
               <img
                 src={url}
                 alt={`${name} 추가 사진 ${idx + 2}`}
                 loading="lazy"
                 decoding="async"
-                className="h-20 w-full object-cover"
+                className="relative z-10 h-full w-full object-contain p-1"
               />
             </a>
           ))}
