@@ -484,23 +484,17 @@ export default function FitRoomPage() {
       </header>
 
       <section className="relative z-10 mx-auto max-w-7xl px-3 pb-8 sm:px-4 sm:pb-10">
-        <div className="mb-3 grid gap-3 lg:grid-cols-[1fr_390px]">
-          <div className="flex min-h-[142px] flex-col justify-end rounded-[28px] border border-white/10 bg-white/[0.045] p-4 backdrop-blur-xl sm:min-h-[170px] sm:rounded-[34px] sm:p-5">
-            <p className="text-xs font-black text-emerald-300">ADMIN ONLY · 24시간 인증방</p>
-            <h1 className="mt-2 max-w-2xl text-3xl font-black leading-tight tracking-tight sm:text-6xl">
-              사진은 떠다니고, 반응은 커집니다
-            </h1>
-            <p className="mt-3 max-w-xl text-sm leading-6 text-white/50">
-              모바일에서는 별자리처럼 가볍게 보고, 데스크톱에서는 궤도처럼 자유롭게 탐색합니다.
-            </p>
-          </div>
-
-          <div className="rounded-[28px] border border-white/10 bg-neutral-950/70 p-3 shadow-2xl shadow-black/30 backdrop-blur-2xl sm:rounded-[34px] sm:p-4">
-            <div className="flex items-center justify-between gap-3">
-              <p className="text-sm font-black">지금 인증 올리기</p>
+        <div className="mb-3 rounded-[28px] border border-white/10 bg-neutral-950/55 p-3 shadow-2xl shadow-black/25 backdrop-blur-2xl">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center">
+            <div className="flex shrink-0 items-center justify-between gap-3 lg:w-[210px]">
+              <div>
+                <p className="text-xs font-black text-emerald-300">ADMIN ONLY</p>
+                <p className="mt-0.5 text-sm font-black text-white">24시간 인증방</p>
+              </div>
               <span className="rounded-full bg-emerald-300 px-3 py-1 text-xs font-black text-neutral-950">24H</span>
             </div>
-            <div className="mt-3 flex gap-2">
+
+            <div className="flex gap-2 lg:w-[310px]">
               {(["workout", "diet", "body"] as FitRoomKind[]).map((item) => (
                 <button
                   key={item}
@@ -514,9 +508,10 @@ export default function FitRoomPage() {
                 </button>
               ))}
             </div>
-            <div className="mt-3 grid grid-cols-[92px_1fr] gap-2 sm:grid-cols-[112px_1fr] sm:gap-3">
+
+            <div className="grid flex-1 grid-cols-[76px_1fr] gap-2 sm:grid-cols-[88px_1fr_auto]">
               <label
-                className={`flex h-24 cursor-pointer items-center justify-center overflow-hidden rounded-[22px] border border-dashed text-center text-xs transition active:scale-[0.98] sm:h-28 sm:rounded-[26px] ${
+                className={`flex h-16 cursor-pointer items-center justify-center overflow-hidden rounded-[20px] border border-dashed text-center text-xs transition active:scale-[0.98] sm:h-[58px] ${
                   previewUrl
                     ? "border-emerald-300/55 bg-emerald-300/10 text-emerald-50 shadow-[0_0_24px_rgba(16,185,129,.18)]"
                     : "border-white/20 bg-black/30 text-white/45 hover:border-white/35 hover:bg-white/5"
@@ -535,23 +530,23 @@ export default function FitRoomPage() {
                   onChange={(event) => setFile(event.target.files?.[0] ?? null)}
                 />
               </label>
-              <div className="flex min-w-0 flex-col gap-2">
-                <textarea
-                  value={caption}
-                  onChange={(event) => setCaption(event.target.value.slice(0, 180))}
-                  placeholder="짧게 남기기"
-                  className="min-h-[60px] resize-none rounded-[20px] border border-white/10 bg-black/25 px-3 py-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-emerald-300 sm:min-h-[68px] sm:rounded-[22px] sm:px-4"
-                />
-                <button
-                  type="button"
-                  disabled={uploading || setupRequired}
-                  onClick={() => void submitEntry()}
-                  className="min-h-[42px] rounded-full bg-white text-sm font-black text-neutral-950 transition hover:scale-[1.01] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {setupRequired ? "DB 적용 필요" : uploading ? "올리는 중" : "인증 올리기"}
-                </button>
-              </div>
+              <input
+                value={caption}
+                onChange={(event) => setCaption(event.target.value.slice(0, 180))}
+                placeholder="짧게 남기기"
+                className="min-h-16 min-w-0 rounded-[20px] border border-white/10 bg-black/25 px-3 text-sm text-white outline-none placeholder:text-white/35 focus:border-emerald-300 sm:min-h-[58px] sm:px-4"
+              />
+              <button
+                type="button"
+                disabled={uploading || setupRequired}
+                onClick={() => void submitEntry()}
+                className="col-span-2 min-h-[42px] rounded-full bg-white px-5 text-sm font-black text-neutral-950 transition hover:scale-[1.01] active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50 sm:col-span-1 sm:min-h-[58px]"
+              >
+                {setupRequired ? "DB 필요" : uploading ? "올리는 중" : "올리기"}
+              </button>
             </div>
+          </div>
+          <div>
             {setupRequired ? (
               <p className="mt-3 rounded-2xl border border-amber-300/30 bg-amber-400/10 p-3 text-xs leading-5 text-amber-100">
                 Supabase에서 supabase/sql/community_fit_room.sql을 먼저 실행해야 합니다.
@@ -622,22 +617,22 @@ export default function FitRoomPage() {
 
 function MobileStatus({ loading, count }: { loading: boolean; count: number }) {
   if (loading) {
-    return <p className="absolute left-4 top-4 rounded-full bg-white/10 px-4 py-3 text-sm text-white/50">불러오는 중...</p>;
+    return <p className="absolute left-4 top-4 rounded-full bg-white/10 px-4 py-2 text-xs text-white/50">로딩</p>;
   }
   if (count === 0) {
-    return <p className="absolute left-4 top-4 rounded-full bg-white/10 px-4 py-3 text-sm text-white/50">아직 떠 있는 사진이 없습니다.</p>;
+    return <p className="absolute left-4 top-4 rounded-full bg-white/10 px-4 py-2 text-xs text-white/50">비어 있음</p>;
   }
-  return <p className="absolute left-4 top-4 rounded-full bg-white/10 px-4 py-3 text-xs font-bold text-white/55">{count}개 인증이 떠 있어요</p>;
+  return <p className="absolute left-4 top-4 rounded-full bg-white/10 px-4 py-2 text-xs font-bold text-white/55">{count}개</p>;
 }
 
 function DesktopStatus({ loading, count }: { loading: boolean; count: number }) {
   if (loading) {
-    return <p className="absolute left-8 top-8 rounded-full bg-white/10 px-4 py-3 text-sm text-white/50">불러오는 중...</p>;
+    return <p className="absolute left-8 top-8 rounded-full bg-white/10 px-4 py-2 text-xs text-white/50">로딩</p>;
   }
   if (count === 0) {
-    return <p className="absolute left-8 top-8 rounded-full bg-white/10 px-4 py-3 text-sm text-white/50">아직 떠 있는 사진이 없습니다.</p>;
+    return <p className="absolute left-8 top-8 rounded-full bg-white/10 px-4 py-2 text-xs text-white/50">비어 있음</p>;
   }
-  return <p className="absolute left-8 top-8 rounded-full bg-white/10 px-4 py-3 text-xs font-bold text-white/55">{count}개 인증 표시 중</p>;
+  return <p className="absolute left-8 top-8 rounded-full bg-white/10 px-4 py-2 text-xs font-bold text-white/55">{count}개</p>;
 }
 
 function OrbitPhoto({
@@ -819,8 +814,7 @@ function EntryPanel({
         </>
       ) : (
         <div className="py-10 text-center">
-          <p className="text-sm font-black text-white">사진을 누르면 여기서 관리합니다</p>
-          <p className="mt-2 text-xs leading-5 text-white/45">추천, 댓글, 삭제, 유저 밴을 한 곳에서 처리할 수 있어요.</p>
+          <p className="text-sm font-black text-white">사진 선택</p>
         </div>
       )}
     </aside>
