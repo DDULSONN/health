@@ -517,6 +517,22 @@ export default function CommunityPage() {
       ) : null}
 
       {isAdmin ? (
+        <Link
+          href="/community/fit-room"
+          className="mt-4 block overflow-hidden rounded-[26px] border border-neutral-900 bg-neutral-950 p-4 text-white shadow-sm transition hover:shadow-lg"
+        >
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-xs font-black text-emerald-300">ADMIN · LIVE 인증방</p>
+              <p className="mt-1 text-lg font-black">다이어트 · 운동 인증방 테스트</p>
+              <p className="mt-1 text-sm text-white/60">현재는 관리자만 확인합니다. 사진, 댓글, 추천/비추천, 24시간 자동 삭제 흐름을 점검할 수 있어요.</p>
+            </div>
+            <span className="shrink-0 rounded-full bg-white px-3 py-2 text-xs font-black text-neutral-950">관리</span>
+          </div>
+        </Link>
+      ) : null}
+
+      {isAdmin ? (
         <div className="mt-3 rounded-[24px] border border-neutral-200 bg-white p-3 shadow-sm">
           <button
             type="button"
