@@ -15,7 +15,7 @@
     },
     {
       "path": "/api/cron/community-fit-room-cleanup",
-      "schedule": "17 * * * *"
+      "schedule": "17 */6 * * *"
     }
   ]
 }

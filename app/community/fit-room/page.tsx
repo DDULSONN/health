@@ -154,7 +154,7 @@ export default function FitRoomPage() {
 
   useEffect(() => {
     void loadRoom();
-    const timer = window.setInterval(() => void loadRoom(true), 10000);
+    const timer = window.setInterval(() => void loadRoom(true), 60_000);
     return () => window.clearInterval(timer);
   }, [loadRoom]);
 
@@ -362,7 +362,7 @@ export default function FitRoomPage() {
             </div>
             <label className="mt-3 flex min-h-[150px] cursor-pointer items-center justify-center overflow-hidden rounded-[28px] border border-dashed border-white/20 bg-black/20 text-center text-sm text-white/50">
               {previewUrl ? (
-                <img src={previewUrl} alt="업로드 미리보기" className="h-full max-h-[260px] w-full object-cover" />
+                <img src={previewUrl} alt="업로드 미리보기" loading="lazy" decoding="async" className="h-full max-h-[260px] w-full object-cover" />
               ) : (
                 <span>사진 선택</span>
               )}
@@ -466,7 +466,7 @@ export default function FitRoomPage() {
                   hotItems.map((entry, index) => (
                     <div key={entry.id} className="flex items-center gap-3 rounded-2xl bg-white/10 p-2">
                       <span className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-xs font-black text-neutral-950">{index + 1}</span>
-                      <img src={entry.imageUrl} alt="" className="h-10 w-10 rounded-xl object-cover" />
+                      <img src={entry.imageUrl} alt="" loading="lazy" decoding="async" className="h-10 w-10 rounded-xl object-cover" />
                       <div className="min-w-0 flex-1">
                         <p className="truncate text-xs font-black text-white">{entry.author.nickname}</p>
                         <p className="text-[11px] text-white/45">점수 {entry.reactions.score} · {KIND_LABEL[entry.kind]}</p>
@@ -527,7 +527,13 @@ function FitRoomCard({
   return (
     <article className="group overflow-hidden rounded-[32px] border border-white/10 bg-white/[0.075] shadow-2xl shadow-black/10 backdrop-blur-xl">
       <div className={`relative overflow-hidden ${large ? "min-h-[440px]" : "min-h-[310px]"}`}>
-        <img src={entry.imageUrl} alt={entry.caption || KIND_LABEL[entry.kind]} className={`h-full w-full object-cover ${large ? "max-h-[620px]" : "max-h-[420px]"}`} />
+        <img
+          src={entry.imageUrl}
+          alt={entry.caption || KIND_LABEL[entry.kind]}
+          loading="lazy"
+          decoding="async"
+          className={`h-full w-full object-cover ${large ? "max-h-[620px]" : "max-h-[420px]"}`}
+        />
         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/85 via-black/25 to-transparent p-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className={`rounded-full bg-gradient-to-r ${KIND_GRADIENT[entry.kind]} px-3 py-1 text-[11px] font-black text-neutral-950`}>
