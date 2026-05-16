@@ -35,6 +35,8 @@ const AdminCommunityModerationPanel = dynamic(() => import("@/components/AdminCo
 const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
 const OUTREACH_AUTO_BATCH_DELAY_MS = 1200;
 const OUTREACH_AUTO_MAX_BATCHES = 40;
+const LOVE_FORTUNE_MASCOT_SRC = "/mascot/love-fortune-cat.png";
+const DEFAULT_JIMNYANG_MASCOT_SRC = "/mascot/jimnyang-guide-v2.png";
 
 function waitFor(ms: number) {
   return new Promise<void>((resolve) => {
@@ -6095,12 +6097,19 @@ export default function MyPage() {
 
                       <div className="grid gap-3 p-4 lg:grid-cols-[0.8fr_1.2fr]">
                         <div className="rounded-[24px] border border-rose-100 bg-gradient-to-br from-rose-50 via-white to-amber-50 p-4">
-                          <div className="mx-auto flex h-28 w-28 items-center justify-center rounded-[32px] border border-white bg-white/80 shadow-[0_18px_45px_rgba(244,63,94,0.16)]">
-                            <div className="relative h-20 w-20 rounded-full bg-gradient-to-br from-rose-200 via-amber-100 to-white">
-                              <div className="absolute left-4 top-8 h-2 w-2 rounded-full bg-neutral-800" />
-                              <div className="absolute right-4 top-8 h-2 w-2 rounded-full bg-neutral-800" />
-                              <div className="absolute bottom-5 left-1/2 h-2 w-7 -translate-x-1/2 rounded-full border-b-2 border-rose-500" />
-                            </div>
+                          <div className="mx-auto h-32 w-28 overflow-hidden rounded-[32px] border border-white bg-white/80 shadow-[0_18px_45px_rgba(244,63,94,0.16)]">
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={LOVE_FORTUNE_MASCOT_SRC}
+                              alt="연애운 짐냥이"
+                              loading="lazy"
+                              decoding="async"
+                              onError={(event) => {
+                                event.currentTarget.onerror = null;
+                                event.currentTarget.src = DEFAULT_JIMNYANG_MASCOT_SRC;
+                              }}
+                              className="h-full w-full object-cover"
+                            />
                           </div>
                           <p className="mt-3 text-center text-sm font-black text-rose-950">{String(ideal.title ?? "잘 맞는 인상 미리보기")}</p>
                           <p className="mt-2 text-center text-xs leading-5 text-rose-700">{String(ideal.mood ?? "편안하고 신뢰감 있는 분위기")}</p>

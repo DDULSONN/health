@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isAllowedAdminUser } from "@/lib/admin";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 
@@ -192,6 +193,10 @@ export async function GET(req: Request) {
       return json(401, { ok: false, requestId, message: "로그인이 필요합니다." });
     }
 
+    if (!isAllowedAdminUser(user.id, user.email)) {
+      return json(403, { ok: false, requestId, message: "연애운 상세 분석은 현재 관리자 테스트 중입니다." });
+    }
+
     const admin = createAdminClient();
     const res = await admin
       .from("love_fortune_readings")
@@ -222,6 +227,10 @@ export async function POST(req: Request) {
     const { user } = await getRequestAuthContext(req);
     if (!user) {
       return json(401, { ok: false, requestId, message: "로그인이 필요합니다." });
+    }
+
+    if (!isAllowedAdminUser(user.id, user.email)) {
+      return json(403, { ok: false, requestId, message: "연애운 상세 분석은 현재 관리자 테스트 중입니다." });
     }
 
     const body = (await req.json().catch(() => ({}))) as { readingId?: unknown };

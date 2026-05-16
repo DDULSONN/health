@@ -8,6 +8,7 @@ import {
   getLatestSwipeCardForUser,
   getSwipeLimitInfo,
 } from "@/lib/dating-swipe";
+import { isAllowedAdminUser } from "@/lib/admin";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { createTossPayment, getMissingTossConfigKeys, isTossConfigured } from "@/lib/toss-payments";
@@ -243,6 +244,15 @@ export async function POST(req: Request) {
         code: "VALIDATION_ERROR",
         requestId,
         message: "productType이 필요합니다.",
+      });
+    }
+
+    if (productType === "love_fortune_detail" && !isAllowedAdminUser(user.id, user.email)) {
+      return json(403, {
+        ok: false,
+        code: "LOVE_FORTUNE_ADMIN_ONLY",
+        requestId,
+        message: "연애운 상세 분석은 현재 관리자 테스트 중입니다.",
       });
     }
 

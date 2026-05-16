@@ -13,6 +13,7 @@ import {
   SWIPE_PREMIUM_PRICE_KRW,
   getSwipeLimitInfo,
 } from "@/lib/dating-swipe";
+import { isAllowedAdminUser } from "@/lib/admin";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { confirmTossPayment, getMissingTossConfigKeys, isTossConfigured } from "@/lib/toss-payments";
@@ -52,6 +53,16 @@ function toAmount(value: unknown) {
     if (Number.isFinite(parsed)) return parsed;
   }
   return null;
+}
+
+async function isLoveFortuneTester(admin: ReturnType<typeof createAdminClient>, userId: string) {
+  const profileRes = await admin.from("profiles").select("role").eq("user_id", userId).maybeSingle();
+  if (!profileRes.error && profileRes.data?.role === "admin") {
+    return true;
+  }
+
+  const authRes = await admin.auth.admin.getUserById(userId).catch(() => null);
+  return isAllowedAdminUser(userId, authRes?.data?.user?.email);
 }
 
 async function ensureApplyCreditsFulfilled(
@@ -478,6 +489,11 @@ async function ensureOrderFulfilled(
   if (order.product_type === "love_fortune_detail") {
     if (!order.product_ref_id) {
       throw new Error("LOVE_FORTUNE_READING_MISSING");
+    }
+
+    const allowedTester = await isLoveFortuneTester(admin, order.user_id);
+    if (!allowedTester) {
+      throw new Error("LOVE_FORTUNE_ADMIN_ONLY");
     }
 
     const readingRes = await admin

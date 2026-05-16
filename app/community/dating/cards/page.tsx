@@ -475,6 +475,9 @@ const PARTNER_RELATION_OPTIONS = [
   "궁합만 보고 싶은 상대",
 ];
 
+const LOVE_FORTUNE_MASCOT_SRC = "/mascot/love-fortune-cat.png";
+const DEFAULT_JIMNYANG_MASCOT_SRC = "/mascot/jimnyang-guide-v2.png";
+
 const DETAIL_QUESTION_GROUPS = [
   {
     title: "정확도 질문",
@@ -760,10 +763,26 @@ function AdminLoveFortunePanel() {
             사주로 내 연애 타입을 보고 끝나는 게 아니라, 짐툴에서 어떤 사람을 만나고 어떻게 다가가면 좋을지까지 이어주는 리포트입니다.
           </p>
         </div>
-        <div className="rounded-[24px] border border-white/70 bg-white/80 p-4 shadow-sm lg:max-w-xs">
-          <p className="text-xs font-bold text-rose-700">상세 리포트</p>
-          <p className="mt-1 text-2xl font-black text-neutral-950">4,900원</p>
-          <p className="mt-1 text-xs leading-5 text-neutral-500">카카오페이 결제 후 AI 상세 분석을 생성하는 구조로 테스트합니다.</p>
+        <div className="flex items-center gap-3 rounded-[24px] border border-white/70 bg-white/80 p-4 shadow-sm lg:max-w-sm">
+          <div className="h-24 w-20 shrink-0 overflow-hidden rounded-[24px] bg-gradient-to-br from-lime-100 via-amber-50 to-white">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={LOVE_FORTUNE_MASCOT_SRC}
+              alt="연애운 짐냥이"
+              loading="lazy"
+              decoding="async"
+              onError={(event) => {
+                event.currentTarget.onerror = null;
+                event.currentTarget.src = DEFAULT_JIMNYANG_MASCOT_SRC;
+              }}
+              className="h-full w-full object-cover"
+            />
+          </div>
+          <div>
+            <p className="text-xs font-bold text-rose-700">상세 리포트</p>
+            <p className="mt-1 text-2xl font-black text-neutral-950">4,900원</p>
+            <p className="mt-1 text-xs leading-5 text-neutral-500">카카오페이 결제 후 AI 상세 분석을 생성하는 구조로 테스트합니다.</p>
+          </div>
         </div>
       </div>
 
