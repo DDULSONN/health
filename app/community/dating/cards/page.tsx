@@ -621,7 +621,7 @@ function AdminLoveFortunePanel() {
   const [partnerBirthDate, setPartnerBirthDate] = useState("");
   const [partnerBirthTime, setPartnerBirthTime] = useState("unknown");
   const [partnerRelation, setPartnerRelation] = useState(PARTNER_RELATION_OPTIONS[0]);
-  const [detailOpen, setDetailOpen] = useState(true);
+  const [detailOpen, setDetailOpen] = useState(false);
   const [aiLoading, setAiLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [aiResult, setAiResult] = useState("");
@@ -753,22 +753,20 @@ function AdminLoveFortunePanel() {
     relationshipGoal,
   ]);
 
+  const calendarLabel = CALENDAR_OPTIONS.find((item) => item.key === calendarType)?.label ?? "양력";
+  const genderLabel = FORTUNE_GENDER_OPTIONS.find((item) => item.key === gender)?.label ?? "선택 안 함";
+  const birthTimeLabel = BIRTH_TIME_OPTIONS.find((item) => item.key === birthTime)?.label ?? "모름";
+  const certaintyLabel = BIRTH_TIME_CERTAINTY_OPTIONS.find((item) => item.key === birthTimeCertainty)?.label ?? "모름";
+
   return (
-    <section className="mb-5 overflow-hidden rounded-[30px] border border-rose-100 bg-gradient-to-br from-white via-rose-50 to-amber-50 p-4 shadow-[0_14px_40px_rgba(225,29,72,0.08)] md:p-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div className="max-w-xl">
-          <span className="inline-flex rounded-full bg-neutral-950 px-3 py-1 text-[11px] font-black text-white">ADMIN TEST</span>
-          <h2 className="mt-3 text-[30px] font-black tracking-tight text-neutral-950 md:text-[40px]">소개팅으로 이어지는 연애운</h2>
-          <p className="mt-2 text-sm leading-6 text-neutral-600">
-            사주로 내 연애 타입을 보고 끝나는 게 아니라, 짐툴에서 어떤 사람을 만나고 어떻게 다가가면 좋을지까지 이어주는 리포트입니다.
-          </p>
-        </div>
-        <div className="flex items-center gap-3 rounded-[24px] border border-white/70 bg-white/80 p-4 shadow-sm lg:max-w-sm">
-          <div className="h-24 w-20 shrink-0 overflow-hidden rounded-[24px] bg-gradient-to-br from-lime-100 via-amber-50 to-white">
+    <section className="mx-auto mb-5 max-w-3xl overflow-hidden rounded-[30px] border border-rose-100 bg-gradient-to-b from-white via-rose-50/70 to-white p-3 shadow-[0_14px_40px_rgba(225,29,72,0.08)] md:p-5">
+      <div className="mb-4 flex items-center justify-between gap-3 rounded-[24px] border border-white/80 bg-white/80 px-4 py-3 shadow-sm">
+        <div className="flex items-center gap-3">
+          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-lime-100 via-amber-50 to-white ring-2 ring-lime-100">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={LOVE_FORTUNE_MASCOT_SRC}
-              alt="연애운 짐냥이"
+              alt="도화냥"
               loading="lazy"
               decoding="async"
               onError={(event) => {
@@ -779,59 +777,102 @@ function AdminLoveFortunePanel() {
             />
           </div>
           <div>
-            <p className="text-xs font-bold text-rose-700">상세 리포트</p>
-            <p className="mt-1 text-2xl font-black text-neutral-950">4,900원</p>
-            <p className="mt-1 text-xs leading-5 text-neutral-500">카카오페이 결제 후 AI 상세 분석을 생성하는 구조로 테스트합니다.</p>
+            <p className="text-sm font-black text-neutral-950">도화냥</p>
+            <p className="text-xs font-semibold text-neutral-500">연애운을 대화로 풀어볼게요</p>
           </div>
+        </div>
+        <div className="text-right">
+          <span className="inline-flex rounded-full bg-neutral-950 px-3 py-1 text-[11px] font-black text-white">ADMIN</span>
+          <p className="mt-1 text-xs font-bold text-rose-600">상세 4,900원</p>
         </div>
       </div>
 
-      <div className="mt-5 grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
-        <div className="rounded-[26px] border border-white/80 bg-white/80 p-4 shadow-sm">
-          <div className="flex flex-wrap gap-2">
-            {CALENDAR_OPTIONS.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => setCalendarType(item.key)}
-                className={`rounded-full px-4 py-2 text-sm font-black transition ${
-                  calendarType === item.key ? "bg-neutral-950 text-white" : "bg-white text-neutral-500 hover:bg-neutral-100"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
+      <div className="space-y-4">
+        <div className="flex gap-3">
+          <div className="mt-1 h-9 w-9 shrink-0 overflow-hidden rounded-full bg-lime-50 ring-2 ring-white">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={LOVE_FORTUNE_MASCOT_SRC}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              onError={(event) => {
+                event.currentTarget.onerror = null;
+                event.currentTarget.src = DEFAULT_JIMNYANG_MASCOT_SRC;
+              }}
+              className="h-full w-full object-cover"
+            />
           </div>
-
-          <label className="mt-5 block text-sm font-black text-neutral-900" htmlFor="love-birth-date">생년월일</label>
-          <input
-            id="love-birth-date"
-            type="date"
-            value={birthDate}
-            onChange={(event) => setBirthDate(event.target.value)}
-            className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
-          />
-
-          <div className="mt-4 grid grid-cols-3 gap-2">
-            {FORTUNE_GENDER_OPTIONS.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => setGender(item.key)}
-                className={`rounded-2xl border px-3 py-3 text-sm font-black transition ${
-                  gender === item.key
-                    ? "border-rose-500 bg-rose-600 text-white"
-                    : "border-neutral-200 bg-white text-neutral-600 hover:border-rose-200"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
+          <div className="max-w-[86%] rounded-[24px] rounded-tl-md bg-white px-4 py-3 shadow-sm">
+            <p className="text-sm leading-6 text-neutral-800">
+              생년월일만 알려주면 먼저 가볍게 풀어볼게요. 정확한 시간은 몰라도 괜찮아요.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {CALENDAR_OPTIONS.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setCalendarType(item.key)}
+                  className={`rounded-full px-3 py-2 text-xs font-black transition ${
+                    calendarType === item.key ? "bg-neutral-950 text-white" : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <input
+              type="date"
+              value={birthDate}
+              onChange={(event) => setBirthDate(event.target.value)}
+              className="mt-3 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+            />
+            <div className="mt-3 grid grid-cols-3 gap-2">
+              {FORTUNE_GENDER_OPTIONS.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  onClick={() => setGender(item.key)}
+                  className={`rounded-2xl border px-3 py-3 text-sm font-black transition ${
+                    gender === item.key
+                      ? "border-rose-500 bg-rose-600 text-white"
+                      : "border-neutral-200 bg-white text-neutral-600 hover:border-rose-200"
+                  }`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
+        </div>
 
-          <div className="mt-5">
-            <p className="text-sm font-black text-neutral-900">태어난 시간</p>
-            <div className="mt-2 grid grid-cols-3 gap-2">
+        {birthDate ? (
+          <div className="flex justify-end">
+            <div className="max-w-[82%] rounded-[24px] rounded-tr-md bg-neutral-950 px-4 py-3 text-white">
+              <p className="text-sm font-bold">{calendarLabel} · {birthDate} · {genderLabel}</p>
+            </div>
+          </div>
+        ) : null}
+
+        <div className="flex gap-3">
+          <div className="mt-1 h-9 w-9 shrink-0 overflow-hidden rounded-full bg-lime-50 ring-2 ring-white">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={LOVE_FORTUNE_MASCOT_SRC}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              onError={(event) => {
+                event.currentTarget.onerror = null;
+                event.currentTarget.src = DEFAULT_JIMNYANG_MASCOT_SRC;
+              }}
+              className="h-full w-full object-cover"
+            />
+          </div>
+          <div className="max-w-[86%] rounded-[24px] rounded-tl-md bg-white px-4 py-3 shadow-sm">
+            <p className="text-sm font-black text-neutral-950">태어난 시간은 아세요?</p>
+            <p className="mt-1 text-xs leading-5 text-neutral-500">시간을 알면 시주까지 보고, 모르면 연애 성향 중심으로 볼게요.</p>
+            <div className="mt-3 grid grid-cols-3 gap-2">
               {BIRTH_TIME_OPTIONS.map((item) => (
                 <button
                   key={item.key}
@@ -848,20 +889,15 @@ function AdminLoveFortunePanel() {
                 </button>
               ))}
             </div>
-          </div>
-
-          <div className="mt-5 rounded-[22px] border border-neutral-200 bg-white p-4">
-            <p className="text-sm font-black text-neutral-900">전문가 정확도 체크</p>
-            <p className="mt-1 text-xs leading-5 text-neutral-500">출생시간과 지역 정보가 정확할수록 상세 리포트의 타이밍 해석이 좋아집니다.</p>
             <div className="mt-3 grid grid-cols-3 gap-2">
               {BIRTH_TIME_CERTAINTY_OPTIONS.map((item) => (
                 <button
                   key={item.key}
                   type="button"
                   onClick={() => setBirthTimeCertainty(item.key)}
-                  className={`rounded-2xl border px-2 py-2 text-sm font-black transition ${
+                  className={`rounded-2xl border px-2 py-2 text-xs font-black transition ${
                     birthTimeCertainty === item.key
-                      ? "border-neutral-950 bg-neutral-950 text-white"
+                      ? "border-rose-500 bg-rose-600 text-white"
                       : "border-neutral-200 bg-neutral-50 text-neutral-600 hover:border-rose-200"
                   }`}
                 >
@@ -873,228 +909,255 @@ function AdminLoveFortunePanel() {
               type="text"
               value={birthPlace}
               onChange={(event) => setBirthPlace(event.target.value.slice(0, 40))}
-              placeholder="태어난 지역 선택 입력 예: 서울, 부산, 일본 도쿄"
+              placeholder="태어난 지역도 알면 입력해 주세요"
               className="mt-3 h-11 w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm font-semibold text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-rose-300"
             />
           </div>
+        </div>
 
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="text-sm font-black text-neutral-900">현재 상황</span>
+        <div className="flex justify-end">
+          <div className="max-w-[82%] rounded-[24px] rounded-tr-md bg-neutral-100 px-4 py-3 text-neutral-800">
+            <p className="text-sm font-bold">{birthTimeLabel} · {certaintyLabel}{birthPlace ? ` · ${birthPlace}` : ""}</p>
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <div className="mt-1 h-9 w-9 shrink-0 overflow-hidden rounded-full bg-lime-50 ring-2 ring-white">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={LOVE_FORTUNE_MASCOT_SRC}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              onError={(event) => {
+                event.currentTarget.onerror = null;
+                event.currentTarget.src = DEFAULT_JIMNYANG_MASCOT_SRC;
+              }}
+              className="h-full w-full object-cover"
+            />
+          </div>
+          <div className="max-w-[86%] rounded-[24px] rounded-tl-md bg-white px-4 py-3 shadow-sm">
+            <p className="text-sm font-black text-neutral-950">지금 연애 상황도 알려주세요.</p>
+            <div className="mt-3 grid gap-2 sm:grid-cols-2">
               <select
                 value={loveState}
                 onChange={(event) => setLoveState(event.target.value)}
-                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
               >
                 {LOVE_STATE_OPTIONS.map((option) => <option key={option}>{option}</option>)}
               </select>
-            </label>
-            <label className="block">
-              <span className="text-sm font-black text-neutral-900">보고 싶은 것</span>
-              <select
-                value={focus}
-                onChange={(event) => setFocus(event.target.value)}
-                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
-              >
-                {LOVE_FOCUS_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-              </select>
-            </label>
-          </div>
-
-          <div className="mt-5 grid gap-3 sm:grid-cols-2">
-            <label className="block">
-              <span className="text-sm font-black text-neutral-900">연애 목표</span>
               <select
                 value={relationshipGoal}
                 onChange={(event) => setRelationshipGoal(event.target.value)}
-                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
               >
                 {RELATIONSHIP_GOAL_OPTIONS.map((option) => <option key={option}>{option}</option>)}
               </select>
-            </label>
-            <label className="block">
-              <span className="text-sm font-black text-neutral-900">선호 만남 방식</span>
               <select
                 value={meetingPreference}
                 onChange={(event) => setMeetingPreference(event.target.value)}
-                className="mt-2 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300 sm:col-span-2"
               >
                 {MEETING_STYLE_OPTIONS.map((option) => <option key={option}>{option}</option>)}
               </select>
-            </label>
+            </div>
           </div>
+        </div>
 
-          <label className="mt-5 block">
-            <span className="text-sm font-black text-neutral-900">지금 제일 궁금한 것</span>
+        <div className="flex justify-end">
+          <div className="max-w-[82%] rounded-[24px] rounded-tr-md bg-rose-600 px-4 py-3 text-white">
+            <p className="text-sm font-bold">{loveState}</p>
+            <p className="mt-1 text-xs text-white/80">{relationshipGoal} · {meetingPreference}</p>
+          </div>
+        </div>
+
+        <div className="flex gap-3">
+          <div className="mt-1 h-9 w-9 shrink-0 overflow-hidden rounded-full bg-lime-50 ring-2 ring-white">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={LOVE_FORTUNE_MASCOT_SRC}
+              alt=""
+              loading="lazy"
+              decoding="async"
+              onError={(event) => {
+                event.currentTarget.onerror = null;
+                event.currentTarget.src = DEFAULT_JIMNYANG_MASCOT_SRC;
+              }}
+              className="h-full w-full object-cover"
+            />
+          </div>
+          <div className="max-w-[86%] rounded-[24px] rounded-tl-md bg-white px-4 py-3 shadow-sm">
+            <p className="text-sm font-black text-neutral-950">어떤 쪽이 제일 궁금해요?</p>
+            <select
+              value={focus}
+              onChange={(event) => setFocus(event.target.value)}
+              className="mt-3 h-11 w-full rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+            >
+              {LOVE_FOCUS_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+            </select>
             <textarea
               value={concern}
               onChange={(event) => setConcern(event.target.value.slice(0, 140))}
-              placeholder="예: 소개팅이 잘 이어질지, 연락 텀이 애매한 상대가 있는지..."
-              className="mt-2 min-h-[92px] w-full rounded-2xl border border-neutral-200 bg-white px-4 py-3 text-sm font-semibold leading-6 text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-rose-300"
+              placeholder="한 줄만 적어도 좋아요. 예: 소개팅이 계속 끊겨요"
+              className="mt-3 min-h-[84px] w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-semibold leading-6 text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-rose-300"
             />
-          </label>
+          </div>
+        </div>
 
-          <div className="mt-5 rounded-[22px] border border-rose-100 bg-rose-50 p-4">
-            <button
-              type="button"
-              onClick={() => setDetailOpen((value) => !value)}
-              className="flex w-full items-center justify-between gap-3 text-left"
-            >
-              <span>
-                <span className="block text-sm font-black text-rose-950">상세 연애운에서 더 물어볼 질문</span>
-                <span className="mt-1 block text-xs font-semibold text-rose-700">궁합, 연애 타이밍, 소개팅 전략까지 확장</span>
-              </span>
-              <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-rose-700">{detailOpen ? "접기" : "보기"}</span>
-            </button>
-            {detailOpen ? (
-              <div className="mt-4 grid gap-3">
-                {DETAIL_QUESTION_GROUPS.map((group) => (
-                  <div key={group.title} className="rounded-[18px] bg-white p-3">
-                    <p className="text-xs font-black text-neutral-900">{group.title}</p>
-                    <p className="mt-2 text-xs leading-5 text-neutral-500">{group.items.join(" · ")}</p>
+        {preview ? (
+          <div className="flex gap-3">
+            <div className="mt-1 h-9 w-9 shrink-0 overflow-hidden rounded-full bg-lime-50 ring-2 ring-white">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={LOVE_FORTUNE_MASCOT_SRC}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                onError={(event) => {
+                  event.currentTarget.onerror = null;
+                  event.currentTarget.src = DEFAULT_JIMNYANG_MASCOT_SRC;
+                }}
+                className="h-full w-full object-cover"
+              />
+            </div>
+            <div className="max-w-[86%] rounded-[24px] rounded-tl-md bg-white px-4 py-3 shadow-sm">
+              <p className="text-xs font-black text-rose-600">무료 미리보기</p>
+              <p className="mt-2 text-xl font-black leading-8 text-neutral-950">{preview.headline}</p>
+              <div className="mt-4 space-y-2">
+                <div className="rounded-2xl bg-neutral-50 p-3">
+                  <p className="text-xs font-black text-rose-700">나의 연애 성향</p>
+                  <p className="mt-1 text-sm leading-6 text-neutral-700">{preview.personality}</p>
+                </div>
+                <div className="rounded-2xl bg-neutral-50 p-3">
+                  <p className="text-xs font-black text-sky-700">잘 맞는 상대</p>
+                  <p className="mt-1 text-sm leading-6 text-neutral-700">{preview.match}</p>
+                </div>
+                <div className="rounded-2xl bg-neutral-50 p-3">
+                  <p className="text-xs font-black text-emerald-700">짐툴 추천 행동</p>
+                  <p className="mt-1 text-sm leading-6 text-neutral-700">{preview.action}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDetailOpen((value) => !value)}
+                className="mt-3 rounded-full bg-neutral-100 px-4 py-2 text-xs font-black text-neutral-700"
+              >
+                {detailOpen ? "상세 질문 접기" : "상세 질문 더하기"}
+              </button>
+              {detailOpen ? (
+                <div className="mt-3 space-y-3 rounded-[20px] bg-rose-50 p-3">
+                  <p className="text-xs font-black text-rose-900">상세 리포트는 이런 것까지 봐요</p>
+                  <div className="flex flex-wrap gap-2">
+                    {LOVE_FORTUNE_REPORT_SECTIONS.slice(0, 8).map((section, index) => (
+                      <span
+                        key={section}
+                        className={`rounded-full px-3 py-1 text-xs font-bold ${
+                          index < 4 ? "bg-white text-neutral-800" : "bg-white/70 text-neutral-400 blur-[1px]"
+                        }`}
+                      >
+                        {section}
+                      </span>
+                    ))}
                   </div>
-                ))}
-                <label className="block">
-                  <span className="text-xs font-black text-neutral-900">상대 생년월일이 있다면</span>
-                  <input
-                    type="date"
-                    value={partnerBirthDate}
-                    onChange={(event) => setPartnerBirthDate(event.target.value)}
-                    className="mt-2 h-11 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
-                  />
-                  <span className="mt-2 block text-[11px] leading-5 text-neutral-400">
-                    상대 정보는 궁합 상세에서만 선택적으로 받는 게 부담이 적습니다.
-                  </span>
-                </label>
-                <div className="grid gap-3 sm:grid-cols-2">
-                  <label className="block">
-                    <span className="text-xs font-black text-neutral-900">상대 태어난 시간</span>
+                  <div className="grid gap-2 sm:grid-cols-2">
+                    <input
+                      type="date"
+                      value={partnerBirthDate}
+                      onChange={(event) => setPartnerBirthDate(event.target.value)}
+                      className="h-11 rounded-2xl border border-rose-100 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                    />
+                    <select
+                      value={partnerRelation}
+                      onChange={(event) => setPartnerRelation(event.target.value)}
+                      className="h-11 rounded-2xl border border-rose-100 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                    >
+                      {PARTNER_RELATION_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+                    </select>
                     <select
                       value={partnerBirthTime}
                       onChange={(event) => setPartnerBirthTime(event.target.value)}
-                      className="mt-2 h-11 w-full rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                      className="h-11 rounded-2xl border border-rose-100 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300 sm:col-span-2"
                     >
                       {BIRTH_TIME_OPTIONS.map((option) => (
                         <option key={option.key} value={option.key}>{option.label} · {option.time}</option>
                       ))}
                     </select>
-                  </label>
-                  <label className="block">
-                    <span className="text-xs font-black text-neutral-900">상대와의 관계</span>
-                    <select
-                      value={partnerRelation}
-                      onChange={(event) => setPartnerRelation(event.target.value)}
-                      className="mt-2 h-11 w-full rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
-                    >
-                      {PARTNER_RELATION_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-                    </select>
-                  </label>
+                  </div>
+                  <div className="space-y-2">
+                    {DETAIL_QUESTION_GROUPS.map((group) => (
+                      <p key={group.title} className="text-xs leading-5 text-rose-800">
+                        <span className="font-black">{group.title}</span> · {group.items.slice(0, 3).join(" · ")}
+                      </p>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="rounded-[26px] border border-white/80 bg-white/85 p-4 shadow-sm">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-black text-neutral-900">사주 풀이 미리보기</p>
-              <p className="mt-1 text-xs text-neutral-500">핵심만 짧게 보여주고 상세 분석으로 유도하는 화면입니다.</p>
-            </div>
-            <span className="rounded-full bg-rose-600 px-3 py-1 text-[11px] font-black text-white">연애 특화</span>
-          </div>
-
-          {preview ? (
-            <div className="mt-4 space-y-3">
-              <div className="rounded-[24px] bg-neutral-950 p-5 text-white">
-                <p className="text-xs font-black text-rose-200">무료 미리보기</p>
-                <p className="mt-2 text-xl font-black leading-8">{preview.headline}</p>
-              </div>
-              <div className="rounded-[22px] bg-neutral-50 p-4">
-                <p className="text-sm font-black text-rose-700">나의 연애 성향</p>
-                <p className="mt-2 text-sm leading-6 text-neutral-700">{preview.personality}</p>
-              </div>
-              <div className="rounded-[22px] bg-neutral-50 p-4">
-                <p className="text-sm font-black text-sky-700">잘 맞는 상대</p>
-                <p className="mt-2 text-sm leading-6 text-neutral-700">{preview.match}</p>
-              </div>
-              <div className="rounded-[22px] bg-neutral-50 p-4">
-                <p className="text-sm font-black text-emerald-700">짐툴 추천 행동</p>
-                <p className="mt-2 text-sm leading-6 text-neutral-700">{preview.action}</p>
-                <p className="mt-2 text-sm leading-6 text-neutral-700">{preview.goalGuide}</p>
-              </div>
-              <div className="relative overflow-hidden rounded-[24px] border border-neutral-200 bg-white p-4">
-                <p className="text-sm font-black text-neutral-950">상세 리포트에 포함되는 내용</p>
-                <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                  {LOVE_FORTUNE_REPORT_SECTIONS.map((section, index) => (
-                    <div key={section} className="relative overflow-hidden rounded-2xl bg-neutral-50 px-3 py-3">
-                      <p className={`text-sm font-bold text-neutral-800 ${index >= 3 ? "blur-[2px]" : ""}`}>{section}</p>
-                      {index >= 3 ? <div className="absolute inset-0 bg-white/45" aria-hidden /> : null}
-                    </div>
-                  ))}
-                </div>
-                <p className="mt-3 text-xs font-semibold text-neutral-500">무료 미리보기 이후에는 상세 연애운, 궁합 포인트, 소개팅 행동 가이드가 열립니다.</p>
-              </div>
-              <div className="relative overflow-hidden rounded-[22px] border border-rose-100 bg-rose-50 p-4">
-                <div className="absolute inset-x-8 top-5 h-7 rounded-full bg-rose-200/60 blur-xl" aria-hidden />
-                <p className="relative text-sm font-black text-rose-900">상세 연애운으로 이어가기</p>
-                <p className="relative mt-2 text-sm leading-6 text-rose-800">
-                  {preview.paidHint} {preview.concernGuide}
+              ) : null}
+              <div className="mt-4 rounded-[22px] border border-neutral-200 bg-neutral-950 p-4 text-white">
+                <p className="text-sm font-black">상세 연애운 열기</p>
+                <p className="mt-1 text-xs leading-5 text-white/70">
+                  {preview.paidHint} 결제 후 AI 상세 분석이 생성돼요.
                 </p>
-                <div className="relative mt-3 flex flex-wrap gap-2">
+                <div className="mt-3 flex flex-wrap gap-2">
                   <button
                     type="button"
                     onClick={() => void requestAiPreview()}
                     disabled={aiLoading}
-                    className="rounded-full bg-neutral-950 px-4 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-neutral-400"
+                    className="rounded-full bg-white px-4 py-2 text-sm font-black text-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-400"
                   >
-                    {aiLoading ? "AI 생성 중..." : "AI 상세 미리보기"}
+                    {aiLoading ? "생성 중..." : "AI 미리보기"}
                   </button>
                   <button
                     type="button"
                     onClick={() => void requestLoveFortuneCheckout()}
                     disabled={checkoutLoading}
-                    className="rounded-full border border-rose-200 bg-white px-4 py-2 text-sm font-bold text-rose-700 disabled:cursor-not-allowed disabled:text-neutral-400"
+                    className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-neutral-500"
                   >
-                    {checkoutLoading ? "결제 준비 중..." : "카카오페이로 상세 분석"}
+                    {checkoutLoading ? "결제 준비 중..." : "4,900원 결제"}
                   </button>
                 </div>
               </div>
-              <div className="rounded-[22px] bg-neutral-50 p-4">
-                <p className="text-sm font-black text-neutral-900">입력 정확도</p>
-                <p className="mt-2 text-sm leading-6 text-neutral-700">{preview.accuracy}</p>
-                <p className="mt-2 text-sm leading-6 text-neutral-700">{preview.expertCheck}</p>
-                <p className="mt-2 text-sm leading-6 text-neutral-700">{preview.caution}</p>
-              </div>
-              {checkoutError ? (
-                <p className="rounded-[18px] border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{checkoutError}</p>
-              ) : null}
-              <details className="rounded-[18px] border border-neutral-200 bg-white p-3 text-xs leading-5 text-neutral-500">
+              <details className="mt-3 rounded-[18px] border border-neutral-200 bg-white p-3 text-xs leading-5 text-neutral-500">
                 <summary className="cursor-pointer font-black text-neutral-800">유료 이용/환불 기준</summary>
                 <p className="mt-2">연애운 상세 분석은 결제 후 입력 정보를 바탕으로 AI 분석 생성이 시작되는 디지털 콘텐츠입니다.</p>
                 <p className="mt-1">결제만 완료되고 분석이 생성되지 않은 경우 오픈카톡으로 확인 후 취소/환불을 도와드릴 수 있어요.</p>
                 <p className="mt-1">분석 결과가 생성된 뒤에는 콘텐츠 제공이 완료된 상태라 단순 변심 환불이 제한될 수 있습니다.</p>
               </details>
+              {checkoutError ? (
+                <p className="mt-3 rounded-[18px] border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{checkoutError}</p>
+              ) : null}
               {aiError ? (
-                <p className="rounded-[18px] border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{aiError}</p>
+                <p className="mt-3 rounded-[18px] border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{aiError}</p>
               ) : null}
               {aiResult ? (
-                <div className="rounded-[22px] border border-neutral-200 bg-white p-4">
-                  <p className="text-sm font-black text-neutral-950">Gemini 상세 미리보기</p>
+                <div className="mt-3 rounded-[22px] border border-neutral-200 bg-white p-4">
+                  <p className="text-sm font-black text-neutral-950">도화냥 상세 미리보기</p>
                   <div className="mt-3 whitespace-pre-wrap text-sm leading-7 text-neutral-700">{aiResult}</div>
                 </div>
               ) : null}
-              <p className="text-[11px] leading-5 text-neutral-400">재미와 자기 이해를 위한 참고용 결과입니다. 실제 만남과 선택은 본인의 판단을 우선해 주세요.</p>
+              <p className="mt-3 text-[11px] leading-5 text-neutral-400">재미와 자기 이해를 위한 참고용 결과입니다. 실제 만남과 선택은 본인의 판단을 우선해 주세요.</p>
             </div>
-          ) : (
-            <div className="mt-4 flex min-h-[360px] items-center justify-center rounded-[24px] border border-dashed border-neutral-200 bg-neutral-50 text-center">
-              <div>
-                <p className="text-lg font-black text-neutral-900">생년월일만 입력하면 바로 미리보기</p>
-                <p className="mt-2 text-sm text-neutral-500">예: 1998년 5월 17일</p>
-              </div>
+          </div>
+        ) : (
+          <div className="flex gap-3">
+            <div className="mt-1 h-9 w-9 shrink-0 overflow-hidden rounded-full bg-lime-50 ring-2 ring-white">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={LOVE_FORTUNE_MASCOT_SRC}
+                alt=""
+                loading="lazy"
+                decoding="async"
+                onError={(event) => {
+                  event.currentTarget.onerror = null;
+                  event.currentTarget.src = DEFAULT_JIMNYANG_MASCOT_SRC;
+                }}
+                className="h-full w-full object-cover"
+              />
             </div>
-          )}
-        </div>
+            <div className="max-w-[86%] rounded-[24px] rounded-tl-md bg-neutral-950 px-4 py-3 text-white shadow-sm">
+              <p className="text-sm font-black">생년월일을 입력하면 바로 무료 미리보기를 보여줄게요.</p>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );

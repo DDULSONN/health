@@ -754,6 +754,13 @@ type AdminSwipeSubscriptionRequest = {
   expires_at: string | null;
   note: string | null;
 };
+type AdminSwipeSubscriptionGrantCandidate = {
+  userId: string;
+  nickname: string | null;
+  email: string | null;
+  activeUntil: string | null;
+  pending: boolean;
+};
 type AdminMoreViewRequest = {
   id: string;
   user_id: string;
@@ -1343,6 +1350,12 @@ export default function MyPage() {
   const [adminApplyCreditGrantNickname, setAdminApplyCreditGrantNickname] = useState("");
   const [adminApplyCreditGrantLoading, setAdminApplyCreditGrantLoading] = useState(false);
   const [adminSwipeSubscriptionSearch, setAdminSwipeSubscriptionSearch] = useState("");
+  const [adminSwipeSubscriptionGrantQuery, setAdminSwipeSubscriptionGrantQuery] = useState("");
+  const [adminSwipeSubscriptionGrantCandidates, setAdminSwipeSubscriptionGrantCandidates] = useState<AdminSwipeSubscriptionGrantCandidate[]>([]);
+  const [adminSwipeSubscriptionGrantLoading, setAdminSwipeSubscriptionGrantLoading] = useState(false);
+  const [adminSwipeSubscriptionGrantingUserId, setAdminSwipeSubscriptionGrantingUserId] = useState<string | null>(null);
+  const [adminSwipeSubscriptionGrantError, setAdminSwipeSubscriptionGrantError] = useState("");
+  const [adminSwipeSubscriptionGrantInfo, setAdminSwipeSubscriptionGrantInfo] = useState("");
   const [adminMoreViewSearch, setAdminMoreViewSearch] = useState("");
   const [adminDatingStats, setAdminDatingStats] = useState<AdminDatingStats | null>(null);
   const [adminDatingInsights, setAdminDatingInsights] = useState<AdminDatingInsights | null>(null);
@@ -4286,6 +4299,85 @@ export default function MyPage() {
       setAdminSwipeSubscriptionRequests((prev) => prev.filter((item) => item.id !== requestId));
     } finally {
       setProcessingSwipeSubscriptionIds((prev) => prev.filter((id) => id !== requestId));
+    }
+  };
+
+  const handleAdminSearchSwipeSubscriptionGrantCandidates = async () => {
+    const query = adminSwipeSubscriptionGrantQuery.trim();
+    setAdminSwipeSubscriptionGrantError("");
+    setAdminSwipeSubscriptionGrantInfo("");
+
+    if (query.length < 2) {
+      setAdminSwipeSubscriptionGrantError("닉네임이나 이메일을 2글자 이상 입력해주세요.");
+      setAdminSwipeSubscriptionGrantCandidates([]);
+      return;
+    }
+
+    setAdminSwipeSubscriptionGrantLoading(true);
+    try {
+      const res = await fetch(`/api/admin/dating/cards/swipe-subscriptions/grant?query=${encodeURIComponent(query)}`, {
+        cache: "no-store",
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        items?: AdminSwipeSubscriptionGrantCandidate[];
+      };
+
+      if (!res.ok || !body.ok) {
+        setAdminSwipeSubscriptionGrantError(body.message ?? "유저 검색에 실패했습니다.");
+        setAdminSwipeSubscriptionGrantCandidates([]);
+        return;
+      }
+
+      setAdminSwipeSubscriptionGrantCandidates(body.items ?? []);
+      if ((body.items ?? []).length === 0) {
+        setAdminSwipeSubscriptionGrantInfo("검색된 유저가 없습니다.");
+      }
+    } finally {
+      setAdminSwipeSubscriptionGrantLoading(false);
+    }
+  };
+
+  const handleAdminGrantSwipeSubscriptionToUser = async (userId: string) => {
+    if (adminSwipeSubscriptionGrantingUserId) return;
+
+    setAdminSwipeSubscriptionGrantError("");
+    setAdminSwipeSubscriptionGrantInfo("");
+    setAdminSwipeSubscriptionGrantingUserId(userId);
+    try {
+      const res = await fetch("/api/admin/dating/cards/swipe-subscriptions/grant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        item?: { expires_at?: string | null };
+      };
+
+      if (!res.ok || !body.ok) {
+        setAdminSwipeSubscriptionGrantError(body.message ?? "빠른매칭 플러스 지급에 실패했습니다.");
+        return;
+      }
+
+      const activeUntil = body.item?.expires_at ?? null;
+      setAdminSwipeSubscriptionGrantInfo(body.message ?? "빠른매칭 플러스를 바로 적용했습니다.");
+      setAdminSwipeSubscriptionGrantCandidates((prev) =>
+        prev.map((item) =>
+          item.userId !== userId
+            ? item
+            : {
+                ...item,
+                activeUntil,
+                pending: false,
+              }
+        )
+      );
+      setAdminSwipeSubscriptionRequests((prev) => prev.filter((item) => item.user_id !== userId));
+    } finally {
+      setAdminSwipeSubscriptionGrantingUserId(null);
     }
   };
 
@@ -9676,6 +9768,70 @@ export default function MyPage() {
             <p className="text-xs font-semibold text-violet-800">
               빠른매칭 라이크 구매 승인 대기 {adminSwipeSubscriptionRequests.length}건
             </p>
+            <div className="mt-3 rounded-lg border border-violet-200 bg-violet-50/60 p-3">
+              <div>
+                <p className="text-xs font-semibold text-violet-900">유저에게 빠른매칭 플러스 직접 적용</p>
+                <p className="mt-1 text-[11px] text-violet-800">
+                  닉네임이나 이메일로 유저를 찾은 뒤, 플러스 15일/하루 15회를 바로 적용할 수 있어요.
+                </p>
+              </div>
+              <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+                <input
+                  type="text"
+                  value={adminSwipeSubscriptionGrantQuery}
+                  onChange={(e) => setAdminSwipeSubscriptionGrantQuery(e.target.value)}
+                  placeholder="닉네임 또는 이메일로 검색"
+                  className="h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none ring-0 placeholder:text-neutral-400 sm:max-w-xs"
+                />
+                <button
+                  type="button"
+                  disabled={adminSwipeSubscriptionGrantLoading}
+                  onClick={() => void handleAdminSearchSwipeSubscriptionGrantCandidates()}
+                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs font-medium text-violet-900 disabled:opacity-60"
+                >
+                  {adminSwipeSubscriptionGrantLoading ? "검색 중..." : "유저 찾기"}
+                </button>
+              </div>
+              {adminSwipeSubscriptionGrantError ? (
+                <p className="mt-2 text-[11px] text-rose-600">{adminSwipeSubscriptionGrantError}</p>
+              ) : null}
+              {adminSwipeSubscriptionGrantInfo ? (
+                <p className="mt-2 text-[11px] text-emerald-700">{adminSwipeSubscriptionGrantInfo}</p>
+              ) : null}
+              {adminSwipeSubscriptionGrantCandidates.length > 0 ? (
+                <div className="mt-3 space-y-2">
+                  {adminSwipeSubscriptionGrantCandidates.map((item) => {
+                    const isGranting = adminSwipeSubscriptionGrantingUserId === item.userId;
+                    const activeLabel = item.activeUntil
+                      ? `${new Date(item.activeUntil).toLocaleString("ko-KR")}까지 이용 중`
+                      : item.pending
+                        ? "결제/승인 대기 요청 있음"
+                        : "현재 플러스 없음";
+                    return (
+                      <div
+                        key={item.userId}
+                        className="flex flex-col gap-2 rounded-lg border border-violet-100 bg-white px-3 py-2 sm:flex-row sm:items-center sm:justify-between"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-xs font-medium text-neutral-900">
+                            {item.nickname ?? "(닉네임 없음)"} / {item.email ?? item.userId.slice(0, 8)}
+                          </p>
+                          <p className="mt-1 text-[11px] text-neutral-500">{activeLabel}</p>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={isGranting}
+                          onClick={() => void handleAdminGrantSwipeSubscriptionToUser(item.userId)}
+                          className="h-8 rounded-md bg-violet-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                        >
+                          {isGranting ? "적용 중..." : "플러스 15일 적용"}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+            </div>
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <input
                 type="text"
