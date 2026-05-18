@@ -420,13 +420,14 @@ const LOVE_STATE_OPTIONS = [
 const LOVE_FOCUS_OPTIONS = [
   "나의 연애 성향",
   "잘 맞는 상대",
-  "이번 달 연애운",
-  "오픈카드 문구",
-  "소개팅 성공 전략",
+  "올해/이번 달 연애 흐름",
+  "새로운 인연이 들어오는 시기",
+  "소개팅에서 조심할 점",
   "썸 연락 타이밍",
   "재회 가능성",
   "궁합 포인트",
   "잘 맞는 인상",
+  "장기연애/결혼 흐름",
 ];
 
 const CALENDAR_OPTIONS = [
@@ -454,14 +455,14 @@ const RELATIONSHIP_GOAL_OPTIONS = [
   "일단 좋은 사람 찾기",
   "재회/관계 회복",
   "썸을 연애로 발전",
-  "소개팅 성공률 높이기",
+  "소개팅에서 자연스럽게 이어가기",
   "나와 맞는 사람 찾기",
 ];
 
 const MEETING_STYLE_OPTIONS = [
-  "오픈카드로 직접 지원",
-  "빠른매칭으로 가볍게 확인",
-  "1대1 소개팅으로 신중하게",
+  "천천히 알아가는 만남",
+  "대화가 잘 맞으면 빠르게 만나보기",
+  "소개팅처럼 목적이 분명한 만남",
   "아직 모르겠음",
   "상대가 먼저 다가오면 좋음",
   "대화 후 천천히 결정",
@@ -493,7 +494,7 @@ const DETAIL_QUESTION_GROUPS = [
   },
   {
     title: "소개팅 행동",
-    items: ["첫 연락 방식", "첫 만남 장소", "답장 텀 고민", "오픈카드에서 보여주고 싶은 매력"],
+    items: ["첫 연락 방식", "첫 만남 장소", "답장 텀 고민", "처음 보여주면 좋은 매력"],
   },
 ];
 
@@ -505,13 +506,14 @@ const LOVE_FORTUNE_REPORT_SECTIONS = [
   "내 연애 타입",
   "끌리는 사람 vs 오래 맞는 사람",
   "이번 주 연애 타이밍",
+  "소개팅에서 바로 써먹는 처방",
   "잘 맞는 인상 카드",
   "궁합/상대 정보 포인트",
   "썸/소개팅 행동 가이드",
   "연락 타이밍 가이드",
   "피해야 할 상대 유형",
-  "오픈카드 문구 추천",
-  "짐툴에서 바로 할 추천 행동",
+  "첫 만남 대화 방향",
+  "현실 행동 가이드",
 ];
 
 function pickBySeed(seed: number, values: string[]) {
@@ -592,19 +594,17 @@ function makeLoveFortunePreview(
     concernGuide: concern.trim()
       ? `입력한 고민은 "${concern.trim().slice(0, 48)}${concern.trim().length > 48 ? "..." : ""}" 쪽이에요. 상세 분석에서는 이 고민을 기준으로 타이밍, 대화 방식, 피해야 할 패턴을 나눠주면 설득력이 올라갑니다.`
       : "상세 분석에서는 지금 가장 궁금한 고민을 한 줄로 받으면 결과가 훨씬 개인화돼 보여요.",
-    paidHint: focus === "오픈카드 문구"
-      ? "상세 기능에서는 내 성향에 맞는 오픈카드 첫 문장과 소개팅 대화 소재까지 이어서 만들 수 있게 설계하면 좋아요."
-      : focus === "잘 맞는 인상"
+    paidHint: focus === "잘 맞는 인상"
         ? "상세 기능에서는 내 연애 흐름에 잘 맞는 인상, 분위기, 첫 만남에서 편한 상대 특징까지 카드처럼 보여주면 좋아요."
-        : "상세 기능에서는 상대 성향, 궁합 포인트, 이번 주 연애 타이밍까지 이어서 풀어주는 구조가 좋아요.",
+        : "상세 기능에서는 상대 성향, 궁합 포인트, 이번 주 연애 타이밍, 관계에서 조심할 패턴까지 이어서 풀어주는 구조가 좋아요.",
     action: pickBySeed(seed + 13, [
-      "오픈카드는 너무 강한 어필보다 생활 루틴과 대화 취향을 편하게 보여주는 쪽이 좋아요.",
-      "빠른매칭은 사진보다 첫 문장과 지역/생활권이 잘 맞는 사람부터 보는 게 유리해요.",
-      "1대1 소개팅은 조건을 넓게 잡고, 실제 대화가 편한 후보를 먼저 확인하는 흐름이 좋아요.",
+      "처음부터 강하게 어필하기보다 생활 루틴과 대화 취향을 편하게 보여주는 쪽이 좋아요.",
+      "사진보다 첫 문장과 생활권, 대화 온도가 잘 맞는 사람부터 보는 게 유리해요.",
+      "조건을 너무 좁히기보다 실제 대화가 편한 후보를 먼저 확인하는 흐름이 좋아요.",
       "지금은 내 매력을 과장하기보다 오래 볼 수 있는 사람에게 신뢰를 주는 소개가 좋아요.",
     ]),
     goalGuide: relationshipGoal || meetingPreference
-      ? `${relationshipGoal || "연애 목표"} 기준으로 보면 ${meetingPreference || "맞는 만남 방식"} 쪽 행동 제안까지 이어주면 좋아요.`
+      ? `${relationshipGoal || "연애 목표"} 기준으로 보면 ${meetingPreference || "맞는 만남 방식"}에 맞춘 행동 제안까지 이어볼 수 있어요.`
       : "상세 리포트에서는 연애 목표와 선호 만남 방식을 같이 받아야 소개팅 행동 추천이 더 설득력 있어요.",
   };
 }
@@ -1143,7 +1143,7 @@ function AdminLoveFortunePanel() {
                     <p className="mt-1 text-sm leading-6 text-neutral-700">{preview.match}</p>
                   </div>
                   <div className="rounded-2xl bg-neutral-50 p-3">
-                    <p className="text-xs font-black text-emerald-700">짐툴 추천 행동</p>
+                    <p className="text-xs font-black text-emerald-700">현실 행동 가이드</p>
                     <p className="mt-1 text-sm leading-6 text-neutral-700">{preview.action}</p>
                   </div>
                 </div>
@@ -1161,9 +1161,9 @@ function AdminLoveFortunePanel() {
               <>
                 {renderBotBubble(
                   <>
-                    <p className="text-sm font-black text-neutral-950">상세 리포트는 여기부터 열려요.</p>
+                    <p className="text-sm font-black text-neutral-950">상세 풀이에서는 여기까지 열려요.</p>
                     <p className="mt-1 text-xs leading-5 text-neutral-500">
-                      결제하면 명식 핵심, 대운 흐름, 반복되는 연애 패턴, 궁합, 소개팅 행동까지 바로 이 화면에서 풀어줘요.
+                      결제하면 명식표, 오행 흐름, 대운 해석, 반복되는 연애 패턴, 소개팅 처방까지 결과 페이지에서 바로 보여줘요.
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {LOVE_FORTUNE_REPORT_SECTIONS.slice(0, 8).map((section, index) => (

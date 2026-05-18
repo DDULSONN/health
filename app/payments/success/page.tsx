@@ -76,6 +76,14 @@ const BRANCHES = [
   { ko: "해", hanja: "亥", animal: "돼지", element: "수" },
 ];
 
+const ELEMENT_META = {
+  목: { label: "목", tone: "시작과 성장", color: "bg-emerald-500", text: "text-emerald-700", soft: "bg-emerald-50" },
+  화: { label: "화", tone: "표현과 끌림", color: "bg-red-500", text: "text-red-600", soft: "bg-red-50" },
+  토: { label: "토", tone: "안정과 현실감", color: "bg-amber-500", text: "text-amber-700", soft: "bg-amber-50" },
+  금: { label: "금", tone: "기준과 선택", color: "bg-slate-500", text: "text-slate-700", soft: "bg-slate-50" },
+  수: { label: "수", tone: "감정과 대화", color: "bg-blue-500", text: "text-blue-700", soft: "bg-blue-50" },
+} as const;
+
 function formatProductType(productType?: string) {
   if (productType === "apply_credits") return "오픈카드 지원권";
   if (productType === "paid_card") return "대기 없이 등록";
@@ -137,6 +145,20 @@ function buildFortuneSummary(reading: LoveFortuneReading | null) {
   const monthBranch = BRANCHES[(seed + 8) % BRANCHES.length];
   const yearStem = STEMS[(seed + 6) % STEMS.length];
   const yearBranch = BRANCHES[(seed + 1) % BRANCHES.length];
+  const hourStem = STEMS[(seed + 9) % STEMS.length];
+  const hourBranch = BRANCHES[(seed + 10) % BRANCHES.length];
+  const relationTypes = [
+    "천천히 가까워질수록 강해지는 관계형",
+    "대화 온도가 맞을 때 빠르게 깊어지는 관계형",
+    "편안함 속에서 설렘이 오래 남는 관계형",
+    "기준이 분명해야 안정되는 선택형",
+  ];
+  const flowNotes = [
+    "무리하게 확신을 요구하기보다, 첫 만남의 편안함을 기준으로 보면 좋아요.",
+    "호감이 생겼을 때 답장 속도보다 약속의 안정성을 먼저 보는 편이 좋아요.",
+    "초반에는 가벼운 대화로 문을 열고, 두 번째 만남에서 깊은 이야기를 꺼내는 흐름이 맞아요.",
+    "너무 강한 어필보다 생활 루틴과 가치관을 보여줄 때 매력이 오래 갑니다.",
+  ];
   const scores = [
     { label: "연애 표현력", value: 78 + (seed % 17) },
     { label: "관계 안정감", value: 74 + ((seed + 7) % 19) },
@@ -144,12 +166,30 @@ function buildFortuneSummary(reading: LoveFortuneReading | null) {
     { label: "소개팅 행동력", value: 72 + ((seed + 13) % 21) },
   ];
   const pillars = [
-    { label: "일주", stem, branch },
-    { label: "월주", stem: monthStem, branch: monthBranch },
     { label: "년주", stem: yearStem, branch: yearBranch },
+    { label: "월주", stem: monthStem, branch: monthBranch },
+    { label: "일주", stem, branch },
+    { label: "시주", stem: hourStem, branch: hourBranch },
   ];
+  const counts = pillars.reduce<Record<keyof typeof ELEMENT_META, number>>(
+    (acc, pillar) => {
+      acc[pillar.stem.element as keyof typeof ELEMENT_META] += 1;
+      acc[pillar.branch.element as keyof typeof ELEMENT_META] += 1;
+      return acc;
+    },
+    { 목: 0, 화: 0, 토: 0, 금: 0, 수: 0 }
+  );
+  const maxCount = Math.max(1, ...Object.values(counts));
+  const elementRows = (Object.keys(ELEMENT_META) as Array<keyof typeof ELEMENT_META>).map((key) => ({
+    key,
+    count: counts[key],
+    width: Math.max(8, Math.round((counts[key] / maxCount) * 100)),
+    ...ELEMENT_META[key],
+  }));
+  const relationType = relationTypes[seed % relationTypes.length];
+  const flowNote = flowNotes[(seed + 2) % flowNotes.length];
 
-  return { stem, branch, pillars, scores };
+  return { stem, branch, pillars, scores, elementRows, relationType, flowNote };
 }
 
 function LoveFortuneResultPanel({ reading }: { reading: LoveFortuneReading }) {
@@ -160,70 +200,136 @@ function LoveFortuneResultPanel({ reading }: { reading: LoveFortuneReading }) {
   const detailSections = sections.slice(1);
 
   return (
-    <section className="mt-6 overflow-hidden rounded-[32px] border border-amber-200 bg-[#fbf4e8] text-[#2b2118] shadow-[0_20px_60px_rgba(61,38,20,0.12)]">
-      <div className="border-b border-amber-200/70 bg-[radial-gradient(circle_at_20%_0%,rgba(251,191,36,0.22),transparent_34%),linear-gradient(135deg,#fff8ec,#f6ead8)] p-5 sm:p-7">
-        <p className="text-xs font-black tracking-[0.24em] text-amber-800">사랑운 명식 풀이</p>
-        <h2 className="mt-3 text-3xl font-black tracking-tight text-[#24170f] sm:text-4xl">사주풀이 결과</h2>
-        <p className="mt-2 text-sm leading-6 text-stone-600">
-          결제 확인 후 바로 생성된 상세 풀이입니다. 결과는 마이페이지에도 저장돼요.
+    <section className="mx-auto mt-6 max-w-[760px] overflow-hidden rounded-[34px] border border-[#d8c5a5] bg-[#f7efe2] text-[#2b2118] shadow-[0_24px_80px_rgba(55,33,12,0.16)]">
+      <div className="border-b border-[#d8c5a5] bg-[radial-gradient(circle_at_18%_0%,rgba(180,108,43,0.18),transparent_32%),linear-gradient(135deg,#fff9ee,#efe0c8)] p-6 text-center sm:p-8">
+        <p className="text-xs font-black tracking-[0.28em] text-[#9a5a23]">命式 · 사랑과 관계</p>
+        <h2 className="mt-4 text-3xl font-black tracking-tight text-[#24170f] sm:text-5xl">도화냥 연애 명식</h2>
+        <p className="mx-auto mt-3 max-w-xl text-sm leading-6 text-stone-600">
+          결제 확인 후 바로 생성된 상세 풀이입니다. 한눈에 보는 명식 요약과 아래의 상세 상담 풀이를 함께 확인해 주세요.
         </p>
       </div>
 
-      <div className="grid gap-4 p-5 sm:p-7 lg:grid-cols-[0.9fr_1.1fr]">
-        <div className="rounded-3xl border border-amber-200 bg-white/75 p-4">
-          <p className="text-sm font-black text-stone-800">입력 기반 명식 요약</p>
-          <p className="mt-1 text-xs leading-5 text-stone-500">정식 만세력 단정이 아닌 입력 기반 상담용 요약입니다.</p>
-
-          <div className="mt-4 grid grid-cols-3 overflow-hidden rounded-2xl border-2 border-stone-800 bg-white text-center">
-            {summary.pillars.map((pillar) => (
-              <div key={pillar.label} className="border-r border-stone-200 last:border-r-0">
-                <p className="border-b border-stone-200 bg-stone-50 py-2 text-xs font-black text-stone-500">{pillar.label}</p>
-                <div className={`${pillar.stem.bg} px-2 py-4`}>
-                  <p className={`text-4xl font-black ${pillar.stem.color}`}>{pillar.stem.ko}</p>
-                  <p className="text-sm font-bold text-stone-500">{pillar.stem.hanja} · {pillar.stem.element}</p>
-                </div>
-                <div className="border-t border-stone-200 px-2 py-4">
-                  <p className="text-3xl font-black text-stone-800">{pillar.branch.ko}</p>
-                  <p className="text-sm font-bold text-stone-500">{pillar.branch.hanja} · {pillar.branch.animal}</p>
-                </div>
+      <div className="space-y-5 p-5 sm:p-7">
+        <div className="space-y-4">
+          <div className="rounded-3xl border border-[#d8c5a5] bg-white/80 p-4">
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <p className="text-sm font-black text-stone-900">사주 원국</p>
+                <p className="mt-1 text-xs leading-5 text-stone-500">입력 정보 기반으로 정리한 상담용 명식입니다.</p>
               </div>
-            ))}
+              <span className="rounded-full bg-[#2b2118] px-3 py-1 text-[11px] font-black text-[#f6d9a8]">연애 특화</span>
+            </div>
+
+            <div className="mt-4 overflow-hidden rounded-2xl border-2 border-[#2b2118] bg-white text-center">
+              <div className="grid grid-cols-4 border-b-2 border-[#2b2118] bg-[#f4ead8]">
+                {summary.pillars.map((pillar) => (
+                  <p key={pillar.label} className="border-r border-[#d8c5a5] py-2 text-xs font-black text-stone-600 last:border-r-0">
+                    {pillar.label}
+                  </p>
+                ))}
+              </div>
+              <div className="grid grid-cols-4">
+                {summary.pillars.map((pillar) => (
+                  <div key={`${pillar.label}-stem`} className={`${pillar.stem.bg} border-r border-[#d8c5a5] px-2 py-4 last:border-r-0`}>
+                    <p className={`text-4xl font-black ${pillar.stem.color}`}>{pillar.stem.ko}</p>
+                    <p className="mt-1 text-sm font-bold text-stone-500">{pillar.stem.hanja} · {pillar.stem.element}</p>
+                    <p className="mt-1 text-[11px] font-semibold text-stone-400">천간</p>
+                  </div>
+                ))}
+              </div>
+              <div className="grid grid-cols-4 border-t border-[#d8c5a5]">
+                {summary.pillars.map((pillar) => (
+                  <div key={`${pillar.label}-branch`} className="border-r border-[#d8c5a5] px-2 py-4 last:border-r-0">
+                    <p className="text-3xl font-black text-stone-800">{pillar.branch.ko}</p>
+                    <p className="mt-1 text-sm font-bold text-stone-500">{pillar.branch.hanja} · {pillar.branch.animal}</p>
+                    <p className="mt-1 text-[11px] font-semibold text-stone-400">지지 · {pillar.branch.element}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
 
-          <div className="mt-4 grid grid-cols-2 gap-2">
+          <div className="rounded-3xl border border-[#d8c5a5] bg-white/80 p-4">
+            <p className="text-sm font-black text-stone-900">오행 분포</p>
+            <p className="mt-1 text-xs leading-5 text-stone-500">연애에서 드러나는 표현, 안정감, 선택 기준의 균형을 봅니다.</p>
+            <div className="mt-4 space-y-3">
+              {summary.elementRows.map((item) => (
+                <div key={item.key} className="grid grid-cols-[42px_1fr_32px] items-center gap-3">
+                  <p className={`text-sm font-black ${item.text}`}>{item.label}</p>
+                  <div className="h-3 overflow-hidden rounded-full bg-stone-100">
+                    <div className={`h-full rounded-full ${item.color}`} style={{ width: `${item.width}%` }} />
+                  </div>
+                  <p className="text-right text-xs font-black text-stone-500">{item.count}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2">
             {summary.scores.map((score) => (
-              <div key={score.label} className="rounded-2xl border border-amber-100 bg-[#f7efe4] p-3">
+              <div key={score.label} className="rounded-2xl border border-[#d8c5a5] bg-[#fdf8ee] p-4">
                 <p className="text-xs font-bold text-stone-500">{score.label}</p>
-                <p className="mt-2 text-2xl font-black text-red-700">{score.value}</p>
+                <p className="mt-2 text-3xl font-black text-[#b13b2e]">{score.value}</p>
+                <p className="mt-1 text-[11px] font-semibold text-stone-400">상담용 지표</p>
               </div>
             ))}
           </div>
         </div>
 
         <div className="space-y-4">
-          <div className="rounded-3xl border border-amber-200 bg-white p-5">
-            <p className="text-xs font-black tracking-[0.18em] text-amber-700">총평</p>
-            <h3 className="mt-2 text-2xl font-black leading-9 text-stone-950">{firstSection?.body || "상세 풀이가 생성되었습니다."}</h3>
+          <div className="rounded-3xl border border-[#d8c5a5] bg-[#2b2118] p-5 text-white">
+            <p className="text-xs font-black tracking-[0.18em] text-[#f6d9a8]">핵심 판정</p>
+            <h3 className="mt-3 text-2xl font-black leading-9">{summary.relationType}</h3>
+            <p className="mt-3 text-sm leading-7 text-white/75">{summary.flowNote}</p>
+          </div>
+
+          <div className="rounded-3xl border border-[#d8c5a5] bg-white p-5">
+            <p className="text-xs font-black tracking-[0.18em] text-[#9a5a23]">총평</p>
+            <div className="mt-2 whitespace-pre-wrap text-lg font-bold leading-8 text-stone-950">{firstSection?.body || "상세 풀이가 생성되었습니다."}</div>
           </div>
 
           <div className="rounded-3xl border border-rose-100 bg-white p-5">
             <p className="text-sm font-black text-rose-950">{String(ideal.title ?? "잘 맞는 인상 미리보기")}</p>
-            <div className="mt-3 grid gap-2 text-sm leading-6 text-stone-700 sm:grid-cols-2">
+            <div className="mt-3 grid gap-2 text-sm leading-6 text-stone-700">
               <p className="rounded-2xl bg-rose-50 p-3">눈매 · {String(ideal.eye ?? "편안하게 오래 마주볼 수 있는 눈매")}</p>
               <p className="rounded-2xl bg-rose-50 p-3">미소 · {String(ideal.smile ?? "담백하지만 따뜻한 미소")}</p>
-              <p className="rounded-2xl bg-rose-50 p-3">분위기 · {String(ideal.mood ?? "편안하고 신뢰감 있는 분위기")}</p>
               <p className="rounded-2xl bg-rose-50 p-3">첫 만남 · {String(ideal.firstDate ?? "대화가 편한 사람")}</p>
+            </div>
+          </div>
+
+          <div className="rounded-3xl border border-[#d8c5a5] bg-white p-5">
+            <p className="text-sm font-black text-stone-900">상세 풀이 구성</p>
+            <div className="mt-3 grid gap-2">
+              {detailSections.slice(0, 5).map((section, index) => (
+                <div key={`${section.title}-toc`} className="flex items-center gap-3 rounded-2xl bg-[#f7efe2] px-3 py-2">
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#2b2118] text-xs font-black text-[#f6d9a8]">{index + 1}</span>
+                  <p className="text-sm font-bold text-stone-800">{section.title}</p>
+                </div>
+              ))}
             </div>
           </div>
         </div>
       </div>
 
-      <div className="space-y-3 px-5 pb-6 sm:px-7">
+      <div className="border-t border-[#d8c5a5] bg-[#efe2cf] px-5 py-8 text-center sm:px-7">
+        <p className="text-xs font-black tracking-[0.26em] text-[#9a5a23]">DETAILED READING</p>
+        <h3 className="mt-2 text-2xl font-black text-[#2b2118]">아래부터는 상세 연애 풀이입니다</h3>
+        <p className="mx-auto mt-2 max-w-md text-sm leading-6 text-stone-600">
+          사주 용어는 일상어로 풀고, 실제 소개팅과 관계 선택에 연결되도록 정리했어요.
+        </p>
+      </div>
+
+      <div className="space-y-5 px-5 pb-8 sm:px-7">
         {detailSections.map((section, index) => (
-          <details key={`${section.title}-${index}`} className="rounded-3xl border border-amber-100 bg-white p-5" open={index < 3}>
-            <summary className="cursor-pointer text-base font-black text-stone-950">{section.title}</summary>
-            <div className="mt-3 whitespace-pre-wrap text-[15px] leading-8 text-stone-700">{section.body}</div>
-          </details>
+          <article key={`${section.title}-${index}`} className="rounded-[28px] border border-[#d8c5a5] bg-[#fffaf2] p-5 shadow-sm">
+            <div className="flex items-center gap-3 border-b border-[#ead9bf] pb-3">
+              <span className="flex h-9 w-9 items-center justify-center rounded-full bg-[#2b2118] text-sm font-black text-[#f6d9a8]">
+                {String(index + 1).padStart(2, "0")}
+              </span>
+              <h4 className="text-lg font-black text-stone-950">{section.title}</h4>
+            </div>
+            <div className="mt-4 whitespace-pre-wrap text-[15px] leading-8 text-stone-700">{section.body}</div>
+          </article>
         ))}
       </div>
     </section>
