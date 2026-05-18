@@ -22,7 +22,7 @@ create table if not exists public.love_fortune_readings (
   partner_birth_date date null,
   partner_birth_time text null,
   partner_relation text null,
-  amount integer not null default 4900,
+  amount integer not null default 9900,
   ai_model text null,
   preview_result jsonb not null default '{}'::jsonb,
   ai_result text null,
@@ -69,6 +69,9 @@ alter table public.love_fortune_readings
 
 alter table public.love_fortune_readings
   add column if not exists ideal_face_image_url text null;
+
+alter table public.love_fortune_readings
+  alter column amount set default 9900;
 
 alter table public.love_fortune_readings
   drop constraint if exists love_fortune_readings_birth_time_certainty_check;

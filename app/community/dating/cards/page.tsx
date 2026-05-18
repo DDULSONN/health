@@ -1287,9 +1287,9 @@ function AdminLoveFortunePanel() {
                 <button
                   type="button"
                   onClick={() => setDetailOpen((value) => !value)}
-                  className="mt-4 h-11 w-full rounded-2xl bg-neutral-950 text-sm font-black text-white"
+                  className="mt-4 h-12 w-full rounded-2xl bg-neutral-950 text-sm font-black text-white shadow-[0_14px_32px_rgba(0,0,0,0.18)]"
                 >
-                  {detailOpen ? "상세 닫기" : "상세 연애운에서 더 보는 것"}
+                  {detailOpen ? "상세 닫기" : "내 상세 연애운에서 열리는 것 보기"}
                 </button>
               </>
             )}
@@ -1300,8 +1300,26 @@ function AdminLoveFortunePanel() {
                   <>
                     <p className="text-sm font-black text-neutral-950">상세 풀이에서는 여기까지 열려요.</p>
                     <p className="mt-1 text-xs leading-5 text-neutral-500">
-                      결제하면 명식표, 오행 흐름, 대운 해석, 반복되는 연애 패턴, 소개팅 처방까지 결과 페이지에서 바로 보여줘요.
+                      무료 미리보기는 방향만 보여드려요. 상세 풀이에서는 내 연애가 반복해서 막히는 지점, 끌리지만 오래가기 어려운 상대, 지금 만남을 열어야 하는 타이밍까지 풀어드립니다.
                     </p>
+                    <div className="mt-3 overflow-hidden rounded-[22px] border border-amber-100 bg-[#fff8ec]">
+                      <div className="border-b border-amber-100 px-4 py-3">
+                        <p className="text-xs font-black text-amber-700">상세에서 잠금 해제</p>
+                        <p className="mt-1 text-sm font-black leading-6 text-neutral-950">“왜 나는 이 패턴이 반복될까?”를 사주 결로 끝까지 짚어요.</p>
+                      </div>
+                      <div className="grid gap-2 p-3 text-xs leading-5 text-neutral-600 sm:grid-cols-2">
+                        {[
+                          "내가 끌리는 사람과 오래 맞는 사람의 차이",
+                          "연락이 끊기거나 애매해지는 실제 지점",
+                          "이번 달/이번 주 만남을 열어야 하는 타이밍",
+                          "첫 연락, 첫 만남, 피해야 할 말까지 현실 처방",
+                        ].map((item) => (
+                          <div key={item} className="rounded-2xl bg-white px-3 py-2 font-bold">
+                            잠금 · {item}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {LOVE_FORTUNE_REPORT_SECTIONS.slice(0, 8).map((section, index) => (
                         <span
@@ -1339,7 +1357,10 @@ function AdminLoveFortunePanel() {
                       </select>
                     </div>
                     <div className="mt-4 rounded-[22px] border border-neutral-200 bg-neutral-950 p-4 text-white">
-                      <p className="text-sm font-black">상세 연애운 4,900원</p>
+                      <p className="text-sm font-black">상세 연애운 9,900원</p>
+                      <p className="mt-2 text-base font-black leading-7">
+                        내 연애 패턴, 오래 맞는 상대, 사랑 타이밍을 한 번에 열어볼게요.
+                      </p>
                       <p className="mt-1 text-xs leading-5 text-white/70">
                         결제 완료 후 결과 페이지에서 바로 상세 풀이가 생성되고, 마이페이지에도 저장돼요.
                       </p>
@@ -1357,9 +1378,9 @@ function AdminLoveFortunePanel() {
                           type="button"
                           onClick={() => void requestLoveFortuneCheckout()}
                           disabled={checkoutLoading}
-                          className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-neutral-500"
+                          className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white shadow-[0_12px_26px_rgba(225,29,72,0.28)] disabled:cursor-not-allowed disabled:bg-neutral-500"
                         >
-                          {checkoutLoading ? "결제 준비 중..." : "카카오페이로 열기"}
+                          {checkoutLoading ? "결제 준비 중..." : "9,900원으로 상세 풀이 보기"}
                         </button>
                       </div>
                     </div>

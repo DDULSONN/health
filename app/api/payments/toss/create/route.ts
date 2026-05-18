@@ -86,7 +86,7 @@ const PRODUCT_CONFIG: Record<ProductType, { amount: number; orderName: string }>
     orderName: "빠른매칭 플러스",
   },
   love_fortune_detail: {
-    amount: 4900,
+    amount: 9900,
     orderName: "연애운 상세 분석",
   },
 };
