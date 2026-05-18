@@ -622,6 +622,7 @@ function AdminLoveFortunePanel() {
   const [partnerBirthTime, setPartnerBirthTime] = useState("unknown");
   const [partnerRelation, setPartnerRelation] = useState(PARTNER_RELATION_OPTIONS[0]);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [fortuneStep, setFortuneStep] = useState(0);
   const [aiLoading, setAiLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [aiResult, setAiResult] = useState("");
@@ -757,12 +758,115 @@ function AdminLoveFortunePanel() {
   const genderLabel = FORTUNE_GENDER_OPTIONS.find((item) => item.key === gender)?.label ?? "선택 안 함";
   const birthTimeLabel = BIRTH_TIME_OPTIONS.find((item) => item.key === birthTime)?.label ?? "모름";
   const certaintyLabel = BIRTH_TIME_CERTAINTY_OPTIONS.find((item) => item.key === birthTimeCertainty)?.label ?? "모름";
+  const step = Math.min(fortuneStep, 4);
+  const canShowPaidDetail = step >= 4 && Boolean(preview);
+  const fortuneProgress = Math.max(1, Math.min(step + 1, 5));
+
+  const FortuneAvatar = () => (
+    <div className="fortune-avatar mt-1 h-10 w-10 shrink-0 overflow-hidden rounded-full bg-lime-50 ring-2 ring-amber-100/80">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={LOVE_FORTUNE_MASCOT_SRC}
+        alt=""
+        loading="lazy"
+        decoding="async"
+        onError={(event) => {
+          event.currentTarget.onerror = null;
+          event.currentTarget.src = DEFAULT_JIMNYANG_MASCOT_SRC;
+        }}
+        className="h-full w-full object-cover"
+      />
+    </div>
+  );
+
+  const renderBotBubble = (children: React.ReactNode) => (
+    <div className="fortune-bubble fortune-bubble-bot flex gap-3">
+      <FortuneAvatar />
+      <div className="max-w-[86%] rounded-[24px] rounded-tl-md border border-amber-100/80 bg-[#fffaf0] px-4 py-3 shadow-[0_12px_28px_rgba(59,28,9,0.08)]">{children}</div>
+    </div>
+  );
+
+  const renderUserBubble = (children: React.ReactNode, tone: "dark" | "rose" | "light" = "dark") => (
+    <div className="fortune-bubble fortune-bubble-user flex justify-end">
+      <div
+        className={`max-w-[82%] rounded-[24px] rounded-tr-md px-4 py-3 ${
+          tone === "rose"
+            ? "bg-rose-600 text-white shadow-[0_12px_26px_rgba(225,29,72,0.18)]"
+            : tone === "light"
+              ? "bg-amber-50 text-neutral-800 shadow-[0_12px_26px_rgba(120,53,15,0.08)]"
+              : "bg-neutral-950 text-white shadow-[0_12px_26px_rgba(0,0,0,0.16)]"
+        }`}
+      >
+        {children}
+      </div>
+    </div>
+  );
 
   return (
-    <section className="mx-auto mb-5 max-w-3xl overflow-hidden rounded-[30px] border border-rose-100 bg-gradient-to-b from-white via-rose-50/70 to-white p-3 shadow-[0_14px_40px_rgba(225,29,72,0.08)] md:p-5">
-      <div className="mb-4 flex items-center justify-between gap-3 rounded-[24px] border border-white/80 bg-white/80 px-4 py-3 shadow-sm">
+    <section className="fortune-room relative isolate mx-auto mb-5 max-w-2xl overflow-hidden rounded-[30px] border border-amber-200/70 bg-[#170f14] p-3 text-neutral-900 shadow-[0_18px_55px_rgba(69,26,3,0.18)] md:p-5">
+      <style>{`
+        .fortune-room::before {
+          content: "";
+          position: absolute;
+          inset: 0;
+          z-index: -2;
+          background:
+            radial-gradient(circle at 12% 8%, rgba(251, 191, 36, 0.28), transparent 24%),
+            radial-gradient(circle at 90% 10%, rgba(244, 63, 94, 0.22), transparent 24%),
+            radial-gradient(circle at 50% 118%, rgba(132, 204, 22, 0.18), transparent 34%),
+            linear-gradient(145deg, #170f14 0%, #2a1618 45%, #111014 100%);
+        }
+        .fortune-room::after {
+          content: "";
+          position: absolute;
+          inset: 0;
+          z-index: -1;
+          opacity: 0.2;
+          background-image:
+            linear-gradient(rgba(255,255,255,0.08) 1px, transparent 1px),
+            linear-gradient(90deg, rgba(255,255,255,0.07) 1px, transparent 1px);
+          background-size: 34px 34px;
+          mask-image: radial-gradient(circle at center, black 0%, transparent 78%);
+          pointer-events: none;
+        }
+        .fortune-chat-stage {
+          animation: fortuneStageIn 360ms ease both;
+        }
+        .fortune-bubble {
+          animation: fortuneBubbleIn 360ms cubic-bezier(.2,.9,.2,1) both;
+        }
+        .fortune-bubble-user {
+          animation-name: fortuneUserBubbleIn;
+        }
+        .fortune-avatar {
+          animation: fortuneFloat 3.4s ease-in-out infinite;
+        }
+        .fortune-choice {
+          transition: transform 150ms ease, box-shadow 150ms ease, border-color 150ms ease, background 150ms ease;
+        }
+        .fortune-choice:active {
+          transform: translateY(1px) scale(0.985);
+        }
+        @keyframes fortuneStageIn {
+          from { opacity: 0; transform: translateY(10px); filter: blur(4px); }
+          to { opacity: 1; transform: translateY(0); filter: blur(0); }
+        }
+        @keyframes fortuneBubbleIn {
+          from { opacity: 0; transform: translateY(12px) scale(.98); }
+          to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+        @keyframes fortuneUserBubbleIn {
+          from { opacity: 0; transform: translate(10px, 10px) scale(.98); }
+          to { opacity: 1; transform: translate(0, 0) scale(1); }
+        }
+        @keyframes fortuneFloat {
+          0%, 100% { transform: translateY(0) rotate(-1deg); }
+          50% { transform: translateY(-4px) rotate(1deg); }
+        }
+      `}</style>
+      <div className="mb-4 flex items-center justify-between gap-3 rounded-[24px] border border-amber-200/50 bg-[#fffaf0]/95 px-4 py-3 shadow-[0_14px_38px_rgba(0,0,0,0.16)] backdrop-blur">
         <div className="flex items-center gap-3">
-          <div className="h-12 w-12 shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-lime-100 via-amber-50 to-white ring-2 ring-lime-100">
+          <div className="fortune-avatar h-12 w-12 shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-lime-100 via-amber-50 to-white ring-2 ring-amber-200">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               src={LOVE_FORTUNE_MASCOT_SRC}
@@ -778,386 +882,378 @@ function AdminLoveFortunePanel() {
           </div>
           <div>
             <p className="text-sm font-black text-neutral-950">도화냥</p>
-            <p className="text-xs font-semibold text-neutral-500">연애운을 대화로 풀어볼게요</p>
+            <p className="text-xs font-semibold text-neutral-500">사주집처럼 하나씩 천천히 봐드릴게요</p>
           </div>
         </div>
         <div className="text-right">
           <span className="inline-flex rounded-full bg-neutral-950 px-3 py-1 text-[11px] font-black text-white">ADMIN</span>
-          <p className="mt-1 text-xs font-bold text-rose-600">상세 4,900원</p>
+          <p className="mt-1 text-xs font-bold text-amber-700">{fortuneProgress}/5 질문</p>
         </div>
       </div>
 
-      <div className="space-y-4">
-        <div className="flex gap-3">
-          <div className="mt-1 h-9 w-9 shrink-0 overflow-hidden rounded-full bg-lime-50 ring-2 ring-white">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={LOVE_FORTUNE_MASCOT_SRC}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              onError={(event) => {
-                event.currentTarget.onerror = null;
-                event.currentTarget.src = DEFAULT_JIMNYANG_MASCOT_SRC;
-              }}
-              className="h-full w-full object-cover"
-            />
-          </div>
-          <div className="max-w-[86%] rounded-[24px] rounded-tl-md bg-white px-4 py-3 shadow-sm">
+      <div key={step} className="fortune-chat-stage space-y-4 rounded-[26px] border border-amber-100/20 bg-white/[0.08] p-3 backdrop-blur-sm md:p-4">
+        {renderBotBubble(
+          <>
             <p className="text-sm leading-6 text-neutral-800">
-              생년월일만 알려주면 먼저 가볍게 풀어볼게요. 정확한 시간은 몰라도 괜찮아요.
+              반가워요. 오늘은 연애운을 가볍게 먼저 짚어볼게요.
             </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              {CALENDAR_OPTIONS.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => setCalendarType(item.key)}
-                  className={`rounded-full px-3 py-2 text-xs font-black transition ${
-                    calendarType === item.key ? "bg-neutral-950 text-white" : "bg-neutral-100 text-neutral-500 hover:bg-neutral-200"
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-            <input
-              type="date"
-              value={birthDate}
-              onChange={(event) => setBirthDate(event.target.value)}
-              className="mt-3 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
-            />
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              {FORTUNE_GENDER_OPTIONS.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => setGender(item.key)}
-                  className={`rounded-2xl border px-3 py-3 text-sm font-black transition ${
-                    gender === item.key
-                      ? "border-rose-500 bg-rose-600 text-white"
-                      : "border-neutral-200 bg-white text-neutral-600 hover:border-rose-200"
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+            <p className="mt-2 text-sm font-black text-neutral-950">먼저 생년월일을 알려주세요.</p>
+          </>
+        )}
 
-        {birthDate ? (
-          <div className="flex justify-end">
-            <div className="max-w-[82%] rounded-[24px] rounded-tr-md bg-neutral-950 px-4 py-3 text-white">
-              <p className="text-sm font-bold">{calendarLabel} · {birthDate} · {genderLabel}</p>
-            </div>
-          </div>
-        ) : null}
-
-        <div className="flex gap-3">
-          <div className="mt-1 h-9 w-9 shrink-0 overflow-hidden rounded-full bg-lime-50 ring-2 ring-white">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={LOVE_FORTUNE_MASCOT_SRC}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              onError={(event) => {
-                event.currentTarget.onerror = null;
-                event.currentTarget.src = DEFAULT_JIMNYANG_MASCOT_SRC;
-              }}
-              className="h-full w-full object-cover"
-            />
-          </div>
-          <div className="max-w-[86%] rounded-[24px] rounded-tl-md bg-white px-4 py-3 shadow-sm">
-            <p className="text-sm font-black text-neutral-950">태어난 시간은 아세요?</p>
-            <p className="mt-1 text-xs leading-5 text-neutral-500">시간을 알면 시주까지 보고, 모르면 연애 성향 중심으로 볼게요.</p>
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              {BIRTH_TIME_OPTIONS.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => setBirthTime(item.key)}
-                  className={`rounded-2xl border px-2 py-2 text-center transition ${
-                    birthTime === item.key
-                      ? "border-neutral-950 bg-neutral-950 text-white"
-                      : "border-neutral-200 bg-white text-neutral-700 hover:border-rose-200"
-                  }`}
-                >
-                  <span className="block text-sm font-black">{item.label}</span>
-                  <span className={`mt-0.5 block text-[11px] ${birthTime === item.key ? "text-white/70" : "text-neutral-400"}`}>{item.time}</span>
-                </button>
-              ))}
-            </div>
-            <div className="mt-3 grid grid-cols-3 gap-2">
-              {BIRTH_TIME_CERTAINTY_OPTIONS.map((item) => (
-                <button
-                  key={item.key}
-                  type="button"
-                  onClick={() => setBirthTimeCertainty(item.key)}
-                  className={`rounded-2xl border px-2 py-2 text-xs font-black transition ${
-                    birthTimeCertainty === item.key
-                      ? "border-rose-500 bg-rose-600 text-white"
-                      : "border-neutral-200 bg-neutral-50 text-neutral-600 hover:border-rose-200"
-                  }`}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-            <input
-              type="text"
-              value={birthPlace}
-              onChange={(event) => setBirthPlace(event.target.value.slice(0, 40))}
-              placeholder="태어난 지역도 알면 입력해 주세요"
-              className="mt-3 h-11 w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm font-semibold text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-rose-300"
-            />
-          </div>
-        </div>
-
-        <div className="flex justify-end">
-          <div className="max-w-[82%] rounded-[24px] rounded-tr-md bg-neutral-100 px-4 py-3 text-neutral-800">
-            <p className="text-sm font-bold">{birthTimeLabel} · {certaintyLabel}{birthPlace ? ` · ${birthPlace}` : ""}</p>
-          </div>
-        </div>
-
-        <div className="flex gap-3">
-          <div className="mt-1 h-9 w-9 shrink-0 overflow-hidden rounded-full bg-lime-50 ring-2 ring-white">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={LOVE_FORTUNE_MASCOT_SRC}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              onError={(event) => {
-                event.currentTarget.onerror = null;
-                event.currentTarget.src = DEFAULT_JIMNYANG_MASCOT_SRC;
-              }}
-              className="h-full w-full object-cover"
-            />
-          </div>
-          <div className="max-w-[86%] rounded-[24px] rounded-tl-md bg-white px-4 py-3 shadow-sm">
-            <p className="text-sm font-black text-neutral-950">지금 연애 상황도 알려주세요.</p>
-            <div className="mt-3 grid gap-2 sm:grid-cols-2">
-              <select
-                value={loveState}
-                onChange={(event) => setLoveState(event.target.value)}
-                className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
-              >
-                {LOVE_STATE_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-              </select>
-              <select
-                value={relationshipGoal}
-                onChange={(event) => setRelationshipGoal(event.target.value)}
-                className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
-              >
-                {RELATIONSHIP_GOAL_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-              </select>
-              <select
-                value={meetingPreference}
-                onChange={(event) => setMeetingPreference(event.target.value)}
-                className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300 sm:col-span-2"
-              >
-                {MEETING_STYLE_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-              </select>
-            </div>
-          </div>
-        </div>
-
-        <div className="flex justify-end">
-          <div className="max-w-[82%] rounded-[24px] rounded-tr-md bg-rose-600 px-4 py-3 text-white">
-            <p className="text-sm font-bold">{loveState}</p>
-            <p className="mt-1 text-xs text-white/80">{relationshipGoal} · {meetingPreference}</p>
-          </div>
-        </div>
-
-        <div className="flex gap-3">
-          <div className="mt-1 h-9 w-9 shrink-0 overflow-hidden rounded-full bg-lime-50 ring-2 ring-white">
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={LOVE_FORTUNE_MASCOT_SRC}
-              alt=""
-              loading="lazy"
-              decoding="async"
-              onError={(event) => {
-                event.currentTarget.onerror = null;
-                event.currentTarget.src = DEFAULT_JIMNYANG_MASCOT_SRC;
-              }}
-              className="h-full w-full object-cover"
-            />
-          </div>
-          <div className="max-w-[86%] rounded-[24px] rounded-tl-md bg-white px-4 py-3 shadow-sm">
-            <p className="text-sm font-black text-neutral-950">어떤 쪽이 제일 궁금해요?</p>
-            <select
-              value={focus}
-              onChange={(event) => setFocus(event.target.value)}
-              className="mt-3 h-11 w-full rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
-            >
-              {LOVE_FOCUS_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-            </select>
-            <textarea
-              value={concern}
-              onChange={(event) => setConcern(event.target.value.slice(0, 140))}
-              placeholder="한 줄만 적어도 좋아요. 예: 소개팅이 계속 끊겨요"
-              className="mt-3 min-h-[84px] w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-semibold leading-6 text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-rose-300"
-            />
-          </div>
-        </div>
-
-        {preview ? (
+        {step === 0 ? (
           <div className="flex gap-3">
-            <div className="mt-1 h-9 w-9 shrink-0 overflow-hidden rounded-full bg-lime-50 ring-2 ring-white">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={LOVE_FORTUNE_MASCOT_SRC}
-                alt=""
-                loading="lazy"
-                decoding="async"
-                onError={(event) => {
-                  event.currentTarget.onerror = null;
-                  event.currentTarget.src = DEFAULT_JIMNYANG_MASCOT_SRC;
-                }}
-                className="h-full w-full object-cover"
+            <div className="w-9 shrink-0" />
+            <div className="max-w-[86%] rounded-[24px] bg-white/80 px-4 py-3 shadow-sm">
+              <div className="flex flex-wrap gap-2">
+                {CALENDAR_OPTIONS.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => setCalendarType(item.key)}
+                    className={`fortune-choice rounded-full px-3 py-2 text-xs font-black ${
+                      calendarType === item.key ? "bg-neutral-950 text-white shadow-md" : "bg-neutral-100 text-neutral-500 hover:bg-amber-100"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+              <input
+                type="date"
+                value={birthDate}
+                onChange={(event) => setBirthDate(event.target.value)}
+                className="mt-3 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
               />
-            </div>
-            <div className="max-w-[86%] rounded-[24px] rounded-tl-md bg-white px-4 py-3 shadow-sm">
-              <p className="text-xs font-black text-rose-600">무료 미리보기</p>
-              <p className="mt-2 text-xl font-black leading-8 text-neutral-950">{preview.headline}</p>
-              <div className="mt-4 space-y-2">
-                <div className="rounded-2xl bg-neutral-50 p-3">
-                  <p className="text-xs font-black text-rose-700">나의 연애 성향</p>
-                  <p className="mt-1 text-sm leading-6 text-neutral-700">{preview.personality}</p>
-                </div>
-                <div className="rounded-2xl bg-neutral-50 p-3">
-                  <p className="text-xs font-black text-sky-700">잘 맞는 상대</p>
-                  <p className="mt-1 text-sm leading-6 text-neutral-700">{preview.match}</p>
-                </div>
-                <div className="rounded-2xl bg-neutral-50 p-3">
-                  <p className="text-xs font-black text-emerald-700">짐툴 추천 행동</p>
-                  <p className="mt-1 text-sm leading-6 text-neutral-700">{preview.action}</p>
-                </div>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                {FORTUNE_GENDER_OPTIONS.map((item) => (
+                  <button
+                    key={item.key}
+                    type="button"
+                    onClick={() => setGender(item.key)}
+                    className={`fortune-choice rounded-2xl border px-3 py-3 text-sm font-black ${
+                      gender === item.key
+                        ? "border-rose-500 bg-rose-600 text-white shadow-md"
+                        : "border-neutral-200 bg-white text-neutral-600 hover:border-amber-300 hover:bg-amber-50"
+                    }`}
+                  >
+                    {item.label}
+                  </button>
+                ))}
               </div>
               <button
                 type="button"
-                onClick={() => setDetailOpen((value) => !value)}
-                className="mt-3 rounded-full bg-neutral-100 px-4 py-2 text-xs font-black text-neutral-700"
+                disabled={!canPreview}
+                onClick={() => setFortuneStep(1)}
+                className="mt-3 h-11 w-full rounded-2xl bg-neutral-950 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
               >
-                {detailOpen ? "상세 질문 접기" : "상세 질문 더하기"}
+                다음
               </button>
-              {detailOpen ? (
-                <div className="mt-3 space-y-3 rounded-[20px] bg-rose-50 p-3">
-                  <p className="text-xs font-black text-rose-900">상세 리포트는 이런 것까지 봐요</p>
-                  <div className="flex flex-wrap gap-2">
-                    {LOVE_FORTUNE_REPORT_SECTIONS.slice(0, 8).map((section, index) => (
-                      <span
-                        key={section}
-                        className={`rounded-full px-3 py-1 text-xs font-bold ${
-                          index < 4 ? "bg-white text-neutral-800" : "bg-white/70 text-neutral-400 blur-[1px]"
-                        }`}
-                      >
-                        {section}
-                      </span>
-                    ))}
-                  </div>
-                  <div className="grid gap-2 sm:grid-cols-2">
-                    <input
-                      type="date"
-                      value={partnerBirthDate}
-                      onChange={(event) => setPartnerBirthDate(event.target.value)}
-                      className="h-11 rounded-2xl border border-rose-100 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
-                    />
-                    <select
-                      value={partnerRelation}
-                      onChange={(event) => setPartnerRelation(event.target.value)}
-                      className="h-11 rounded-2xl border border-rose-100 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
-                    >
-                      {PARTNER_RELATION_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-                    </select>
-                    <select
-                      value={partnerBirthTime}
-                      onChange={(event) => setPartnerBirthTime(event.target.value)}
-                      className="h-11 rounded-2xl border border-rose-100 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300 sm:col-span-2"
-                    >
-                      {BIRTH_TIME_OPTIONS.map((option) => (
-                        <option key={option.key} value={option.key}>{option.label} · {option.time}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-2">
-                    {DETAIL_QUESTION_GROUPS.map((group) => (
-                      <p key={group.title} className="text-xs leading-5 text-rose-800">
-                        <span className="font-black">{group.title}</span> · {group.items.slice(0, 3).join(" · ")}
-                      </p>
-                    ))}
-                  </div>
-                </div>
-              ) : null}
-              <div className="mt-4 rounded-[22px] border border-neutral-200 bg-neutral-950 p-4 text-white">
-                <p className="text-sm font-black">상세 연애운 열기</p>
-                <p className="mt-1 text-xs leading-5 text-white/70">
-                  {preview.paidHint} 결제 후 AI 상세 분석이 생성돼요.
-                </p>
-                <div className="mt-3 flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    onClick={() => void requestAiPreview()}
-                    disabled={aiLoading}
-                    className="rounded-full bg-white px-4 py-2 text-sm font-black text-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-400"
-                  >
-                    {aiLoading ? "생성 중..." : "AI 미리보기"}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void requestLoveFortuneCheckout()}
-                    disabled={checkoutLoading}
-                    className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-neutral-500"
-                  >
-                    {checkoutLoading ? "결제 준비 중..." : "4,900원 결제"}
-                  </button>
-                </div>
-              </div>
-              <details className="mt-3 rounded-[18px] border border-neutral-200 bg-white p-3 text-xs leading-5 text-neutral-500">
-                <summary className="cursor-pointer font-black text-neutral-800">유료 이용/환불 기준</summary>
-                <p className="mt-2">연애운 상세 분석은 결제 후 입력 정보를 바탕으로 AI 분석 생성이 시작되는 디지털 콘텐츠입니다.</p>
-                <p className="mt-1">결제만 완료되고 분석이 생성되지 않은 경우 오픈카톡으로 확인 후 취소/환불을 도와드릴 수 있어요.</p>
-                <p className="mt-1">분석 결과가 생성된 뒤에는 콘텐츠 제공이 완료된 상태라 단순 변심 환불이 제한될 수 있습니다.</p>
-              </details>
-              {checkoutError ? (
-                <p className="mt-3 rounded-[18px] border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{checkoutError}</p>
-              ) : null}
-              {aiError ? (
-                <p className="mt-3 rounded-[18px] border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{aiError}</p>
-              ) : null}
-              {aiResult ? (
-                <div className="mt-3 rounded-[22px] border border-neutral-200 bg-white p-4">
-                  <p className="text-sm font-black text-neutral-950">도화냥 상세 미리보기</p>
-                  <div className="mt-3 whitespace-pre-wrap text-sm leading-7 text-neutral-700">{aiResult}</div>
-                </div>
-              ) : null}
-              <p className="mt-3 text-[11px] leading-5 text-neutral-400">재미와 자기 이해를 위한 참고용 결과입니다. 실제 만남과 선택은 본인의 판단을 우선해 주세요.</p>
             </div>
           </div>
         ) : (
-          <div className="flex gap-3">
-            <div className="mt-1 h-9 w-9 shrink-0 overflow-hidden rounded-full bg-lime-50 ring-2 ring-white">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={LOVE_FORTUNE_MASCOT_SRC}
-                alt=""
-                loading="lazy"
-                decoding="async"
-                onError={(event) => {
-                  event.currentTarget.onerror = null;
-                  event.currentTarget.src = DEFAULT_JIMNYANG_MASCOT_SRC;
-                }}
-                className="h-full w-full object-cover"
-              />
-            </div>
-            <div className="max-w-[86%] rounded-[24px] rounded-tl-md bg-neutral-950 px-4 py-3 text-white shadow-sm">
-              <p className="text-sm font-black">생년월일을 입력하면 바로 무료 미리보기를 보여줄게요.</p>
-            </div>
-          </div>
+          renderUserBubble(<p className="text-sm font-bold">{calendarLabel} · {birthDate} · {genderLabel}</p>)
         )}
+
+        {step >= 1 ? (
+          <>
+            {renderBotBubble(
+              <>
+                <p className="text-sm font-black text-neutral-950">태어난 시간은 아세요?</p>
+                <p className="mt-1 text-xs leading-5 text-neutral-500">모르면 “모름”으로 가도 괜찮아요. 대신 연애 성향 중심으로 볼게요.</p>
+              </>
+            )}
+            {step === 1 ? (
+              <div className="flex gap-3">
+                <div className="w-9 shrink-0" />
+                <div className="max-w-[86%] rounded-[24px] bg-white/80 px-4 py-3 shadow-sm">
+                  <div className="grid grid-cols-3 gap-2">
+                    {BIRTH_TIME_OPTIONS.map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => setBirthTime(item.key)}
+                    className={`fortune-choice rounded-2xl border px-2 py-2 text-center ${
+                      birthTime === item.key
+                        ? "border-neutral-950 bg-neutral-950 text-white shadow-md"
+                        : "border-neutral-200 bg-white text-neutral-700 hover:border-amber-300 hover:bg-amber-50"
+                    }`}
+                  >
+                        <span className="block text-sm font-black">{item.label}</span>
+                        <span className={`mt-0.5 block text-[11px] ${birthTime === item.key ? "text-white/70" : "text-neutral-400"}`}>{item.time}</span>
+                      </button>
+                    ))}
+                  </div>
+                  <div className="mt-3 grid grid-cols-3 gap-2">
+                    {BIRTH_TIME_CERTAINTY_OPTIONS.map((item) => (
+                      <button
+                        key={item.key}
+                        type="button"
+                        onClick={() => setBirthTimeCertainty(item.key)}
+                    className={`fortune-choice rounded-2xl border px-2 py-2 text-xs font-black ${
+                      birthTimeCertainty === item.key
+                        ? "border-rose-500 bg-rose-600 text-white shadow-md"
+                        : "border-neutral-200 bg-neutral-50 text-neutral-600 hover:border-amber-300 hover:bg-amber-50"
+                    }`}
+                  >
+                        {item.label}
+                      </button>
+                    ))}
+                  </div>
+                  <input
+                    type="text"
+                    value={birthPlace}
+                    onChange={(event) => setBirthPlace(event.target.value.slice(0, 40))}
+                    placeholder="태어난 지역도 알면 입력해 주세요"
+                    className="mt-3 h-11 w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm font-semibold text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-rose-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setFortuneStep(2)}
+                    className="mt-3 h-11 w-full rounded-2xl bg-neutral-950 text-sm font-black text-white"
+                  >
+                    다음
+                  </button>
+                </div>
+              </div>
+            ) : (
+              renderUserBubble(<p className="text-sm font-bold">{birthTimeLabel} · {certaintyLabel}{birthPlace ? ` · ${birthPlace}` : ""}</p>, "light")
+            )}
+          </>
+        ) : null}
+
+        {step >= 2 ? (
+          <>
+            {renderBotBubble(<p className="text-sm font-black text-neutral-950">지금 연애 상황은 어떤 쪽에 가까워요?</p>)}
+            {step === 2 ? (
+              <div className="flex gap-3">
+                <div className="w-9 shrink-0" />
+                <div className="max-w-[86%] rounded-[24px] bg-white/80 px-4 py-3 shadow-sm">
+                  <div className="grid gap-2">
+                    <select
+                      value={loveState}
+                      onChange={(event) => setLoveState(event.target.value)}
+                      className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                    >
+                      {LOVE_STATE_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+                    </select>
+                    <select
+                      value={relationshipGoal}
+                      onChange={(event) => setRelationshipGoal(event.target.value)}
+                      className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                    >
+                      {RELATIONSHIP_GOAL_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+                    </select>
+                    <select
+                      value={meetingPreference}
+                      onChange={(event) => setMeetingPreference(event.target.value)}
+                      className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                    >
+                      {MEETING_STYLE_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+                    </select>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFortuneStep(3)}
+                    className="mt-3 h-11 w-full rounded-2xl bg-neutral-950 text-sm font-black text-white"
+                  >
+                    다음
+                  </button>
+                </div>
+              </div>
+            ) : (
+              renderUserBubble(
+                <>
+                  <p className="text-sm font-bold">{loveState}</p>
+                  <p className="mt-1 text-xs text-white/80">{relationshipGoal} · {meetingPreference}</p>
+                </>,
+                "rose"
+              )
+            )}
+          </>
+        ) : null}
+
+        {step >= 3 ? (
+          <>
+            {renderBotBubble(
+              <>
+                <p className="text-sm font-black text-neutral-950">마지막으로, 뭐가 제일 궁금해요?</p>
+                <p className="mt-1 text-xs leading-5 text-neutral-500">한 줄만 적어도 무료 미리보기에 반영할게요.</p>
+              </>
+            )}
+            {step === 3 ? (
+              <div className="flex gap-3">
+                <div className="w-9 shrink-0" />
+                <div className="max-w-[86%] rounded-[24px] bg-white/80 px-4 py-3 shadow-sm">
+                  <select
+                    value={focus}
+                    onChange={(event) => setFocus(event.target.value)}
+                    className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                  >
+                    {LOVE_FOCUS_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+                  </select>
+                  <textarea
+                    value={concern}
+                    onChange={(event) => setConcern(event.target.value.slice(0, 140))}
+                    placeholder="예: 소개팅이 계속 끊겨요"
+                    className="mt-3 min-h-[84px] w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-semibold leading-6 text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-rose-300"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setFortuneStep(4)}
+                    className="mt-3 h-11 w-full rounded-2xl bg-rose-600 text-sm font-black text-white"
+                  >
+                    무료 미리보기 보기
+                  </button>
+                </div>
+              </div>
+            ) : (
+              renderUserBubble(
+                <>
+                  <p className="text-sm font-bold">{focus}</p>
+                  {concern.trim() ? <p className="mt-1 text-xs text-white/80">{concern.trim()}</p> : null}
+                </>,
+                "rose"
+              )
+            )}
+          </>
+        ) : null}
+
+        {canShowPaidDetail && preview ? (
+          <>
+            {renderBotBubble(
+              <>
+                <p className="text-xs font-black text-rose-600">무료 미리보기</p>
+                <p className="mt-2 text-xl font-black leading-8 text-neutral-950">{preview.headline}</p>
+                <div className="mt-4 space-y-2">
+                  <div className="rounded-2xl bg-neutral-50 p-3">
+                    <p className="text-xs font-black text-rose-700">나의 연애 성향</p>
+                    <p className="mt-1 text-sm leading-6 text-neutral-700">{preview.personality}</p>
+                  </div>
+                  <div className="rounded-2xl bg-neutral-50 p-3">
+                    <p className="text-xs font-black text-sky-700">잘 맞는 상대</p>
+                    <p className="mt-1 text-sm leading-6 text-neutral-700">{preview.match}</p>
+                  </div>
+                  <div className="rounded-2xl bg-neutral-50 p-3">
+                    <p className="text-xs font-black text-emerald-700">짐툴 추천 행동</p>
+                    <p className="mt-1 text-sm leading-6 text-neutral-700">{preview.action}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDetailOpen((value) => !value)}
+                  className="mt-4 h-11 w-full rounded-2xl bg-neutral-950 text-sm font-black text-white"
+                >
+                  {detailOpen ? "상세 닫기" : "상세 연애운에서 더 보는 것"}
+                </button>
+              </>
+            )}
+
+            {detailOpen ? (
+              <>
+                {renderBotBubble(
+                  <>
+                    <p className="text-sm font-black text-neutral-950">상세 리포트는 여기부터 열려요.</p>
+                    <p className="mt-1 text-xs leading-5 text-neutral-500">
+                      결제하면 궁합, 타이밍, 소개팅 행동, 오픈카드 문구까지 길게 풀어줘요.
+                    </p>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {LOVE_FORTUNE_REPORT_SECTIONS.slice(0, 8).map((section, index) => (
+                        <span
+                          key={section}
+                          className={`rounded-full px-3 py-1 text-xs font-bold ${
+                            index < 3 ? "bg-neutral-100 text-neutral-800" : "bg-neutral-100/70 text-neutral-400 blur-[1px]"
+                          }`}
+                        >
+                          {section}
+                        </span>
+                      ))}
+                    </div>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      <input
+                        type="date"
+                        value={partnerBirthDate}
+                        onChange={(event) => setPartnerBirthDate(event.target.value)}
+                        className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                      />
+                      <select
+                        value={partnerRelation}
+                        onChange={(event) => setPartnerRelation(event.target.value)}
+                        className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                      >
+                        {PARTNER_RELATION_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+                      </select>
+                      <select
+                        value={partnerBirthTime}
+                        onChange={(event) => setPartnerBirthTime(event.target.value)}
+                        className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300 sm:col-span-2"
+                      >
+                        {BIRTH_TIME_OPTIONS.map((option) => (
+                          <option key={option.key} value={option.key}>{option.label} · {option.time}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="mt-4 rounded-[22px] border border-neutral-200 bg-neutral-950 p-4 text-white">
+                      <p className="text-sm font-black">상세 연애운 4,900원</p>
+                      <p className="mt-1 text-xs leading-5 text-white/70">{preview.paidHint}</p>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button
+                          type="button"
+                          onClick={() => void requestAiPreview()}
+                          disabled={aiLoading}
+                          className="rounded-full bg-white px-4 py-2 text-sm font-black text-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-400"
+                        >
+                          {aiLoading ? "생성 중..." : "AI 미리보기"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void requestLoveFortuneCheckout()}
+                          disabled={checkoutLoading}
+                          className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-neutral-500"
+                        >
+                          {checkoutLoading ? "결제 준비 중..." : "카카오페이로 열기"}
+                        </button>
+                      </div>
+                    </div>
+                  </>
+                )}
+                <details className="ml-12 rounded-[18px] border border-neutral-200 bg-white p-3 text-xs leading-5 text-neutral-500">
+                  <summary className="cursor-pointer font-black text-neutral-800">유료 이용/환불 기준</summary>
+                  <p className="mt-2">연애운 상세 분석은 결제 후 입력 정보를 바탕으로 AI 분석 생성이 시작되는 디지털 콘텐츠입니다.</p>
+                  <p className="mt-1">결제만 완료되고 분석이 생성되지 않은 경우 오픈카톡으로 확인 후 취소/환불을 도와드릴 수 있어요.</p>
+                  <p className="mt-1">분석 결과가 생성된 뒤에는 콘텐츠 제공이 완료된 상태라 단순 변심 환불이 제한될 수 있습니다.</p>
+                </details>
+              </>
+            ) : null}
+
+            {checkoutError ? (
+              <p className="ml-12 rounded-[18px] border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{checkoutError}</p>
+            ) : null}
+            {aiError ? (
+              <p className="ml-12 rounded-[18px] border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{aiError}</p>
+            ) : null}
+            {aiResult ? (
+              <div className="ml-12 rounded-[22px] border border-neutral-200 bg-white p-4">
+                <p className="text-sm font-black text-neutral-950">도화냥 상세 미리보기</p>
+                <div className="mt-3 whitespace-pre-wrap text-sm leading-7 text-neutral-700">{aiResult}</div>
+              </div>
+            ) : null}
+            <p className="ml-12 text-[11px] leading-5 text-neutral-400">재미와 자기 이해를 위한 참고용 결과입니다. 실제 만남과 선택은 본인의 판단을 우선해 주세요.</p>
+          </>
+        ) : null}
+
+        {step > 0 ? (
+          <button
+            type="button"
+            onClick={() => {
+              setFortuneStep(Math.max(0, step - 1));
+              setDetailOpen(false);
+            }}
+            className="ml-12 rounded-full bg-white px-3 py-1.5 text-[11px] font-black text-neutral-500 shadow-sm"
+          >
+            이전 질문으로
+          </button>
+        ) : null}
       </div>
     </section>
   );
