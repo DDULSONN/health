@@ -159,6 +159,19 @@ function buildFortuneSummary(reading: LoveFortuneReading | null) {
     "초반에는 가벼운 대화로 문을 열고, 두 번째 만남에서 깊은 이야기를 꺼내는 흐름이 맞아요.",
     "너무 강한 어필보다 생활 루틴과 가치관을 보여줄 때 매력이 오래 갑니다.",
   ];
+  const timingTone = [
+    "새 인연을 만나기 좋은 흐름",
+    "관계가 깊어지기 쉬운 흐름",
+    "기존 감정을 정리하고 선택하기 좋은 흐름",
+    "소개팅과 대화 운이 살아나는 흐름",
+  ];
+  const timingSeason = [
+    "봄에서 초여름 사이",
+    "여름이 지나 가을로 넘어가는 시기",
+    "연말 전후",
+    "새해 초반",
+  ];
+  const loveScore = 70 + (seed % 21);
   const scores = [
     { label: "연애 표현력", value: 78 + (seed % 17) },
     { label: "관계 안정감", value: 74 + ((seed + 7) % 19) },
@@ -188,14 +201,96 @@ function buildFortuneSummary(reading: LoveFortuneReading | null) {
   }));
   const relationType = relationTypes[seed % relationTypes.length];
   const flowNote = flowNotes[(seed + 2) % flowNotes.length];
+  const timingCards = [
+    {
+      title: "최고의 인연 시기",
+      period: timingSeason[seed % timingSeason.length],
+      body: timingTone[(seed + 1) % timingTone.length],
+    },
+    {
+      title: "연애운이 강한 시기",
+      period: timingSeason[(seed + 2) % timingSeason.length],
+      body: "먼저 다가가기보다 대화를 이어가며 확신을 쌓을 때 좋은 결과가 납니다.",
+    },
+    {
+      title: "조심할 시기",
+      period: timingSeason[(seed + 3) % timingSeason.length],
+      body: "감정이 앞서면 판단이 흐려질 수 있어, 약속과 태도를 천천히 확인하는 편이 좋아요.",
+    },
+  ];
 
-  return { stem, branch, pillars, scores, elementRows, relationType, flowNote };
+  return { stem, branch, pillars, scores, elementRows, relationType, flowNote, loveScore, timingCards };
+}
+
+function buildIdealFaceSketchDataUrl(reading: LoveFortuneReading, target: "male" | "female") {
+  const seed = seedFromReading(reading) + (target === "male" ? 17 : 41);
+  const ideal = reading.idealFace ?? {};
+  const accent = target === "male" ? "#6b4a2f" : "#c04f7a";
+  const accentLight = target === "male" ? "#efe1cf" : "#fde7ef";
+  const hair = target === "male" ? "#34261f" : "#2d2420";
+  const blush = target === "male" ? "#e9ad96" : "#f1a5b7";
+  const eyeY = 108 + (seed % 5);
+  const smileCurve = 146 + (seed % 4);
+  const hairPath =
+    target === "male"
+      ? "M66 88 C70 44 130 35 169 67 C184 79 190 102 186 128 C170 102 145 85 110 86 C91 86 78 91 66 88Z"
+      : "M55 111 C50 63 88 34 126 38 C169 39 195 72 195 124 C192 159 181 182 169 198 C172 144 157 91 124 88 C92 91 74 130 78 198 C64 180 56 153 55 111Z";
+  const hairLine =
+    target === "male"
+      ? "M82 84 C100 62 130 58 163 79 M78 91 C103 83 132 83 180 122"
+      : "M78 88 C97 63 138 61 168 91 M76 116 C95 100 151 101 174 119";
+  const label = target === "male" ? "남자 얼굴상" : "여자 얼굴상";
+  const subtitle = target === "male" ? "담백한 안정감" : "부드러운 온도감";
+  const encoded = encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 320">
+      <defs>
+        <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0" stop-color="#fffaf0"/>
+          <stop offset="1" stop-color="${accentLight}"/>
+        </linearGradient>
+        <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+          <feDropShadow dx="0" dy="12" stdDeviation="12" flood-color="#6b3f24" flood-opacity=".16"/>
+        </filter>
+      </defs>
+      <rect width="260" height="320" rx="34" fill="url(#bg)"/>
+      <circle cx="130" cy="124" r="82" fill="#fff7e8" stroke="${accent}" stroke-width="3" filter="url(#soft)"/>
+      <path d="${hairPath}" fill="${hair}" opacity=".96"/>
+      <path d="${hairLine}" fill="none" stroke="#fff0d5" stroke-width="4" stroke-linecap="round" opacity=".55"/>
+      <path d="M76 204 C95 231 164 232 184 204 C178 264 82 264 76 204Z" fill="#fff7e8" stroke="${accent}" stroke-width="3"/>
+      <path d="M71 224 C101 210 159 210 190 224 C205 236 210 262 210 286 L50 286 C50 262 56 236 71 224Z" fill="${accentLight}" stroke="${accent}" stroke-width="3"/>
+      <ellipse cx="98" cy="${eyeY}" rx="9" ry="12" fill="#2b2118"/>
+      <ellipse cx="162" cy="${eyeY}" rx="9" ry="12" fill="#2b2118"/>
+      <circle cx="101" cy="${eyeY - 4}" r="3" fill="#fff"/>
+      <circle cx="165" cy="${eyeY - 4}" r="3" fill="#fff"/>
+      <path d="M119 128 C126 132 134 132 141 128" fill="none" stroke="#a9795b" stroke-width="3" stroke-linecap="round"/>
+      <path d="M104 ${smileCurve} C121 ${smileCurve + 12} 143 ${smileCurve + 12} 158 ${smileCurve}" fill="none" stroke="#6b3f24" stroke-width="4" stroke-linecap="round"/>
+      <ellipse cx="79" cy="140" rx="14" ry="8" fill="${blush}" opacity=".55"/>
+      <ellipse cx="181" cy="140" rx="14" ry="8" fill="${blush}" opacity=".55"/>
+      <path d="M67 119 C83 106 94 101 105 102" fill="none" stroke="${accent}" stroke-width="3" stroke-linecap="round" opacity=".55"/>
+      <path d="M193 119 C177 106 166 101 155 102" fill="none" stroke="${accent}" stroke-width="3" stroke-linecap="round" opacity=".55"/>
+      <text x="130" y="44" text-anchor="middle" font-size="13" font-weight="800" fill="${accent}" font-family="Arial, sans-serif">${label}</text>
+      <text x="130" y="303" text-anchor="middle" font-size="13" font-weight="800" fill="#6b4a2f" font-family="Arial, sans-serif">${subtitle}</text>
+    </svg>
+  `);
+
+  return {
+    src: `data:image/svg+xml;charset=utf-8,${encoded}`,
+    label,
+    body:
+      target === "male"
+        ? `${String(ideal.eye ?? "편안한 눈매")}와 ${String(ideal.style ?? "깔끔한 스타일")} 쪽의 남성 인상`
+        : `${String(ideal.smile ?? "따뜻한 미소")}와 ${String(ideal.mood ?? "편안한 분위기")} 쪽의 여성 인상`,
+  };
 }
 
 function LoveFortuneResultPanel({ reading }: { reading: LoveFortuneReading }) {
   const sections = useMemo(() => parseLoveFortuneReport(reading.aiResult), [reading.aiResult]);
   const summary = useMemo(() => buildFortuneSummary(reading), [reading]);
   const ideal = reading.idealFace ?? {};
+  const idealSketches = useMemo(
+    () => [buildIdealFaceSketchDataUrl(reading, "male"), buildIdealFaceSketchDataUrl(reading, "female")],
+    [reading]
+  );
   const firstSection = sections[0];
   const detailSections = sections.slice(1);
 
@@ -277,6 +372,31 @@ function LoveFortuneResultPanel({ reading }: { reading: LoveFortuneReading }) {
         </div>
 
         <div className="space-y-4">
+          <div className="grid gap-3 sm:grid-cols-[0.9fr_1.1fr]">
+            <div className="rounded-3xl border border-[#d8c5a5] bg-white p-5">
+              <p className="text-xs font-black tracking-[0.18em] text-[#9a5a23]">현재 연애운</p>
+              <div className="mt-3 flex items-end gap-2">
+                <p className="text-6xl font-black text-[#e43f72]">{summary.loveScore}</p>
+                <p className="pb-2 text-2xl font-black text-[#e43f72]">%</p>
+              </div>
+              <p className="mt-3 text-sm leading-6 text-stone-600">
+                사주 흐름상 관계를 새로 열거나, 이미 있는 감정을 더 분명히 보기 좋은 구간입니다.
+              </p>
+            </div>
+            <div className="rounded-3xl border border-[#d8c5a5] bg-white p-5">
+              <p className="text-xs font-black tracking-[0.18em] text-[#9a5a23]">사랑 타이밍</p>
+              <div className="mt-3 space-y-2">
+                {summary.timingCards.map((item) => (
+                  <div key={item.title} className="rounded-2xl bg-[#fff4f7] p-3">
+                    <p className="text-sm font-black text-stone-950">{item.title}</p>
+                    <p className="mt-1 text-sm font-bold text-[#e43f72]">{item.period}</p>
+                    <p className="mt-1 text-xs leading-5 text-stone-500">{item.body}</p>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+
           <div className="rounded-3xl border border-[#d8c5a5] bg-[#2b2118] p-5 text-white">
             <p className="text-xs font-black tracking-[0.18em] text-[#f6d9a8]">핵심 판정</p>
             <h3 className="mt-3 text-2xl font-black leading-9">{summary.relationType}</h3>
@@ -290,6 +410,25 @@ function LoveFortuneResultPanel({ reading }: { reading: LoveFortuneReading }) {
 
           <div className="rounded-3xl border border-rose-100 bg-white p-5">
             <p className="text-sm font-black text-rose-950">{String(ideal.title ?? "잘 맞는 인상 미리보기")}</p>
+            <p className="mt-1 text-xs leading-5 text-stone-500">
+              외모를 단정하는 기능이 아니라, 내 연애 흐름과 오래 맞기 쉬운 분위기를 남/녀 스케치로 가볍게 정리한 참고 카드예요.
+            </p>
+            <div className="mt-4 grid gap-3 sm:grid-cols-2">
+              {idealSketches.map((sketch) => (
+                <div key={sketch.label} className="overflow-hidden rounded-[26px] border border-rose-100 bg-rose-50/50 p-3">
+                  {/* eslint-disable-next-line @next/next/no-img-element */}
+                  <img
+                    src={sketch.src}
+                    alt={`${sketch.label} 스케치`}
+                    loading="lazy"
+                    decoding="async"
+                    className="h-auto w-full rounded-[20px] bg-white object-contain"
+                  />
+                  <p className="mt-3 text-sm font-black text-stone-950">{sketch.label}</p>
+                  <p className="mt-1 text-xs leading-5 text-stone-600">{sketch.body}</p>
+                </div>
+              ))}
+            </div>
             <div className="mt-3 grid gap-2 text-sm leading-6 text-stone-700">
               <p className="rounded-2xl bg-rose-50 p-3">눈매 · {String(ideal.eye ?? "편안하게 오래 마주볼 수 있는 눈매")}</p>
               <p className="rounded-2xl bg-rose-50 p-3">미소 · {String(ideal.smile ?? "담백하지만 따뜻한 미소")}</p>
@@ -475,10 +614,15 @@ function PaymentSuccessContent() {
         ) : null}
 
         {isLoveFortune && fortuneLoading ? (
-          <div className="mt-6 rounded-3xl border border-amber-200 bg-amber-50 p-5">
-            <p className="text-sm font-black text-amber-900">도화냥이 명식 흐름을 짚고 있어요.</p>
+          <div className="mt-6 overflow-hidden rounded-3xl border border-amber-200 bg-[radial-gradient(circle_at_16%_0%,rgba(245,158,11,0.22),transparent_34%),linear-gradient(135deg,#fff7ed,#fef3c7)] p-5">
+            <p className="text-sm font-black text-amber-950">도화냥이 만세력 종이를 펴고 있어요.</p>
             <div className="mt-4 h-2 overflow-hidden rounded-full bg-amber-100">
-              <div className="h-full w-2/3 animate-pulse rounded-full bg-amber-700" />
+              <div className="h-full w-2/3 animate-pulse rounded-full bg-gradient-to-r from-amber-700 via-rose-500 to-amber-700" />
+            </div>
+            <div className="mt-4 grid gap-2 text-xs font-bold text-amber-900 sm:grid-cols-3">
+              <p className="rounded-2xl bg-white/70 px-3 py-2">사랑 결 읽는 중</p>
+              <p className="rounded-2xl bg-white/70 px-3 py-2">인연 타이밍 짚는 중</p>
+              <p className="rounded-2xl bg-white/70 px-3 py-2">얼굴상 스케치 중</p>
             </div>
             <p className="mt-3 text-sm leading-6 text-amber-800">결과가 나오면 이 화면에 바로 펼쳐집니다. 창을 닫아도 마이페이지에 저장돼요.</p>
           </div>

@@ -476,6 +476,36 @@ const PARTNER_RELATION_OPTIONS = [
   "궁합만 보고 싶은 상대",
 ];
 
+const LOVE_REPEAT_PATTERN_OPTIONS = [
+  "아직 잘 모르겠음",
+  "초반엔 잘 되다가 연락이 식어요",
+  "내가 더 좋아하면 불안해져요",
+  "상대가 다가오면 갑자기 식어요",
+  "좋은 사람보다 어려운 사람에게 끌려요",
+  "표현을 아끼다가 오해를 만들어요",
+  "관계가 안정되면 지루하게 느껴져요",
+  "상대 기준을 너무 빨리 판단해요",
+];
+
+const LOVE_CONTACT_STYLE_OPTIONS = [
+  "연락은 편하게 하는 편",
+  "답장이 늦으면 계속 신경 쓰임",
+  "먼저 연락을 잘 못 함",
+  "좋아질수록 말이 많아짐",
+  "좋아질수록 오히려 조심스러워짐",
+  "상대 텐션에 맞추는 편",
+];
+
+const LOVE_ANXIETY_MOMENT_OPTIONS = [
+  "딱히 크게 불안한 순간은 없음",
+  "상대 답장이 늦어질 때",
+  "관계가 애매하게 정의되지 않을 때",
+  "상대가 약속을 미룰 때",
+  "내 마음이 더 커진 것 같을 때",
+  "상대가 전보다 덜 다정할 때",
+  "첫 만남 이후 다음 약속이 안 잡힐 때",
+];
+
 const LOVE_FORTUNE_MASCOT_SRC = "/mascot/love-fortune-cat.png";
 const DEFAULT_JIMNYANG_MASCOT_SRC = "/mascot/jimnyang-guide-v2.png";
 
@@ -502,6 +532,7 @@ const LOVE_FORTUNE_REPORT_SECTIONS = [
   "입력 신뢰도",
   "명식 핵심 요약",
   "대운과 연애 흐름",
+  "개인 패턴 적중 포인트",
   "반복되는 연애 패턴",
   "내 연애 타입",
   "끌리는 사람 vs 오래 맞는 사람",
@@ -621,6 +652,10 @@ function AdminLoveFortunePanel() {
   const [relationshipGoal, setRelationshipGoal] = useState(RELATIONSHIP_GOAL_OPTIONS[0]);
   const [meetingPreference, setMeetingPreference] = useState(MEETING_STYLE_OPTIONS[0]);
   const [concern, setConcern] = useState("");
+  const [repeatPattern, setRepeatPattern] = useState(LOVE_REPEAT_PATTERN_OPTIONS[0]);
+  const [contactStyle, setContactStyle] = useState(LOVE_CONTACT_STYLE_OPTIONS[0]);
+  const [anxietyMoment, setAnxietyMoment] = useState(LOVE_ANXIETY_MOMENT_OPTIONS[0]);
+  const [partnerFeedback, setPartnerFeedback] = useState("");
   const [partnerBirthDate, setPartnerBirthDate] = useState("");
   const [partnerBirthTime, setPartnerBirthTime] = useState("unknown");
   const [partnerRelation, setPartnerRelation] = useState(PARTNER_RELATION_OPTIONS[0]);
@@ -632,6 +667,17 @@ function AdminLoveFortunePanel() {
   const [aiError, setAiError] = useState("");
   const [checkoutError, setCheckoutError] = useState("");
   const canPreview = /^\d{4}-\d{2}-\d{2}$/.test(birthDate);
+  const personalizedConcern = useMemo(() => {
+    const lines = [
+      concern.trim() ? `현재 고민: ${concern.trim()}` : "",
+      repeatPattern !== LOVE_REPEAT_PATTERN_OPTIONS[0] ? `반복 패턴: ${repeatPattern}` : "",
+      contactStyle !== LOVE_CONTACT_STYLE_OPTIONS[0] ? `연락 스타일: ${contactStyle}` : "",
+      anxietyMoment !== LOVE_ANXIETY_MOMENT_OPTIONS[0] ? `불안해지는 순간: ${anxietyMoment}` : "",
+      partnerFeedback.trim() ? `상대에게 자주 듣는 말: ${partnerFeedback.trim()}` : "",
+    ].filter(Boolean);
+
+    return lines.join("\n").slice(0, 680);
+  }, [anxietyMoment, concern, contactStyle, partnerFeedback, repeatPattern]);
   const preview = canPreview
     ? makeLoveFortunePreview(
         birthDate,
@@ -640,7 +686,7 @@ function AdminLoveFortunePanel() {
         focus,
         calendarType,
         gender,
-        concern,
+        personalizedConcern || concern,
         birthTimeCertainty,
         relationshipGoal,
         meetingPreference
@@ -667,7 +713,7 @@ function AdminLoveFortunePanel() {
           focus,
           relationshipGoal,
           meetingPreference,
-          concern,
+          concern: personalizedConcern || concern,
           partnerBirthDate,
           partnerBirthTime,
           partnerRelation,
@@ -696,6 +742,7 @@ function AdminLoveFortunePanel() {
     gender,
     loveState,
     meetingPreference,
+    personalizedConcern,
     partnerBirthDate,
     partnerBirthTime,
     partnerRelation,
@@ -722,7 +769,7 @@ function AdminLoveFortunePanel() {
           focus,
           relationshipGoal,
           meetingPreference,
-          concern,
+          concern: personalizedConcern || concern,
           partnerBirthDate,
           partnerBirthTime,
           partnerRelation,
@@ -751,6 +798,7 @@ function AdminLoveFortunePanel() {
     gender,
     loveState,
     meetingPreference,
+    personalizedConcern,
     partnerBirthDate,
     partnerBirthTime,
     partnerRelation,
@@ -867,6 +915,38 @@ function AdminLoveFortunePanel() {
           50% { transform: translateY(-4px) rotate(1deg); }
         }
       `}</style>
+      <div className="mb-4 overflow-hidden rounded-[30px] border border-rose-200 bg-[radial-gradient(circle_at_72%_0%,rgba(244,114,182,0.32),transparent_34%),linear-gradient(135deg,#fff1f7,#fff8ed)] p-5 shadow-[0_18px_50px_rgba(244,63,94,0.14)]">
+        <div className="flex items-start gap-4">
+          <div className="fortune-avatar h-16 w-16 shrink-0 overflow-hidden rounded-[24px] bg-white/80 ring-2 ring-white">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={LOVE_FORTUNE_MASCOT_SRC}
+              alt="도화냥"
+              loading="lazy"
+              decoding="async"
+              onError={(event) => {
+                event.currentTarget.onerror = null;
+                event.currentTarget.src = DEFAULT_JIMNYANG_MASCOT_SRC;
+              }}
+              className="h-full w-full object-cover"
+            />
+          </div>
+          <div className="min-w-0">
+            <p className="text-xs font-black tracking-[0.2em] text-rose-600">사주 × 연애</p>
+            <h2 className="mt-2 text-2xl font-black leading-8 text-neutral-950">사주로 보는 나의 사랑 흐름</h2>
+            <p className="mt-2 text-sm leading-6 text-neutral-600">
+              명식, 오행, 대운 흐름을 바탕으로 연애 성향과 사랑 타이밍을 먼저 가볍게 봅니다.
+            </p>
+          </div>
+        </div>
+        <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
+          {["명식 구성", "오행 분포", "대운 흐름", "궁합 포인트"].map((item) => (
+            <div key={item} className="rounded-2xl border border-white/70 bg-white/70 px-3 py-3 text-center text-xs font-black text-neutral-700">
+              {item}
+            </div>
+          ))}
+        </div>
+      </div>
       <div className="mb-4 flex items-center justify-between gap-3 rounded-[24px] border border-amber-200/50 bg-[#fffaf0]/95 px-4 py-3 shadow-[0_14px_38px_rgba(0,0,0,0.16)] backdrop-blur">
         <div className="flex items-center gap-3">
           <div className="fortune-avatar h-12 w-12 shrink-0 overflow-hidden rounded-full bg-gradient-to-br from-lime-100 via-amber-50 to-white ring-2 ring-amber-200">
@@ -1086,7 +1166,7 @@ function AdminLoveFortunePanel() {
             {renderBotBubble(
               <>
                 <p className="text-sm font-black text-neutral-950">마지막으로, 뭐가 제일 궁금해요?</p>
-                <p className="mt-1 text-xs leading-5 text-neutral-500">한 줄만 적어도 대운과 관계 패턴을 현실 행동 쪽으로 풀어볼게요.</p>
+                <p className="mt-1 text-xs leading-5 text-neutral-500">반복되는 패턴을 같이 보면 결과가 훨씬 내 얘기처럼 나와요.</p>
               </>
             )}
             {step === 3 ? (
@@ -1106,6 +1186,39 @@ function AdminLoveFortunePanel() {
                     placeholder="예: 소개팅이 계속 끊겨요"
                     className="mt-3 min-h-[84px] w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-semibold leading-6 text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-rose-300"
                   />
+                  <div className="mt-3 grid gap-2">
+                    <label className="text-[11px] font-black text-neutral-500">내 연애에서 자주 반복되는 느낌</label>
+                    <select
+                      value={repeatPattern}
+                      onChange={(event) => setRepeatPattern(event.target.value)}
+                      className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                    >
+                      {LOVE_REPEAT_PATTERN_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+                    </select>
+                    <label className="text-[11px] font-black text-neutral-500">연락할 때 나는 편</label>
+                    <select
+                      value={contactStyle}
+                      onChange={(event) => setContactStyle(event.target.value)}
+                      className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                    >
+                      {LOVE_CONTACT_STYLE_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+                    </select>
+                    <label className="text-[11px] font-black text-neutral-500">관계에서 불안해지는 순간</label>
+                    <select
+                      value={anxietyMoment}
+                      onChange={(event) => setAnxietyMoment(event.target.value)}
+                      className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                    >
+                      {LOVE_ANXIETY_MOMENT_OPTIONS.map((option) => <option key={option}>{option}</option>)}
+                    </select>
+                    <input
+                      type="text"
+                      value={partnerFeedback}
+                      onChange={(event) => setPartnerFeedback(event.target.value.slice(0, 70))}
+                      placeholder="상대에게 자주 들은 말이 있다면 (선택)"
+                      className="h-11 rounded-2xl border border-neutral-200 bg-neutral-50 px-3 text-sm font-semibold text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-rose-300"
+                    />
+                  </div>
                   <button
                     type="button"
                     onClick={() => setFortuneStep(4)}
@@ -1120,6 +1233,9 @@ function AdminLoveFortunePanel() {
                 <>
                   <p className="text-sm font-bold">{focus}</p>
                   {concern.trim() ? <p className="mt-1 text-xs text-white/80">{concern.trim()}</p> : null}
+                  <p className="mt-1 text-xs text-white/70">
+                    {[repeatPattern, contactStyle, anxietyMoment].filter((item) => !item.includes("모르겠음") && !item.includes("딱히")).slice(0, 2).join(" · ")}
+                  </p>
                 </>,
                 "rose"
               )
@@ -1134,9 +1250,30 @@ function AdminLoveFortunePanel() {
                 <p className="text-xs font-black text-rose-600">무료 미리보기</p>
                 <p className="mt-2 text-xl font-black leading-8 text-neutral-950">{preview.headline}</p>
                 <div className="mt-4 space-y-2">
+                  <div className="grid grid-cols-3 gap-2">
+                    <div className="rounded-2xl border border-rose-100 bg-rose-50 p-3 text-center">
+                      <p className="text-[11px] font-black text-rose-700">연애운</p>
+                      <p className="mt-1 text-xl font-black text-rose-600">{78 + (birthDate.replace(/\D/g, "").length % 12)}%</p>
+                    </div>
+                    <div className="rounded-2xl border border-amber-100 bg-amber-50 p-3 text-center">
+                      <p className="text-[11px] font-black text-amber-700">명식</p>
+                      <p className="mt-1 text-xl font-black text-amber-700">초안</p>
+                    </div>
+                    <div className="rounded-2xl border border-violet-100 bg-violet-50 p-3 text-center">
+                      <p className="text-[11px] font-black text-violet-700">타이밍</p>
+                      <p className="mt-1 text-xl font-black text-violet-700">열림</p>
+                    </div>
+                  </div>
                   <div className="rounded-2xl bg-neutral-50 p-3">
                     <p className="text-xs font-black text-rose-700">나의 연애 성향</p>
                     <p className="mt-1 text-sm leading-6 text-neutral-700">{preview.personality}</p>
+                  </div>
+                  <div className="rounded-2xl bg-neutral-50 p-3">
+                    <p className="text-xs font-black text-amber-700">개인 패턴 체크</p>
+                    <p className="mt-1 text-sm leading-6 text-neutral-700">
+                      {repeatPattern !== LOVE_REPEAT_PATTERN_OPTIONS[0] ? repeatPattern : "아직 반복 패턴은 넓게 볼게요."}
+                      {contactStyle !== LOVE_CONTACT_STYLE_OPTIONS[0] ? ` 연락은 ${contactStyle} 쪽으로 반영합니다.` : ""}
+                    </p>
                   </div>
                   <div className="rounded-2xl bg-neutral-50 p-3">
                     <p className="text-xs font-black text-sky-700">잘 맞는 상대</p>

@@ -144,7 +144,7 @@ function normalizeLoveFortuneInput(body: CreateBody) {
     relationshipGoal: cleanText(body.relationshipGoal, 80),
     meetingPreference: cleanText(body.meetingPreference, 80),
     focus: cleanText(body.focus, 60),
-    concern: cleanText(body.concern, 180),
+    concern: cleanText(body.concern, 700),
     partnerBirthDate: /^\d{4}-\d{2}-\d{2}$/.test(partnerBirthDate) ? partnerBirthDate : null,
     partnerBirthTime: cleanText(body.partnerBirthTime, 30) || null,
     partnerRelation: cleanText(body.partnerRelation, 60),

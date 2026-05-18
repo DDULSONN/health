@@ -44,7 +44,12 @@ function PaymentFailContent() {
           <p className="mt-1">주문번호: {orderId}</p>
         </div>
 
-        <p className="mt-4 text-sm text-neutral-500">카카오페이로 다시 시도해 보시고, 같은 문제가 이어지면 오픈카톡으로 문의해 주세요.</p>
+        <div className="mt-4 space-y-2 text-sm leading-6 text-neutral-500">
+          <p>카카오페이로 다시 시도해 보시고, 같은 문제가 이어지면 오픈카톡으로 문의해 주세요.</p>
+          <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">
+            현재 일부 카드사(국민, 우리, 현대)는 결제가 원활하지 않을 수 있어요. 실패하면 다른 카드나 다른 결제수단으로 다시 시도해 주세요.
+          </p>
+        </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
           <Link

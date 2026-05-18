@@ -36,7 +36,7 @@ function buildPrompt(body: LoveFortuneGenerateBody) {
   const relationshipGoal = cleanText(body.relationshipGoal, 80);
   const meetingPreference = cleanText(body.meetingPreference, 80);
   const focus = cleanText(body.focus, 80);
-  const concern = cleanText(body.concern, 220);
+  const concern = cleanText(body.concern, 700);
   const partnerBirthDate = cleanText(body.partnerBirthDate, 20);
   const partnerBirthTime = cleanText(body.partnerBirthTime, 30);
   const partnerRelation = cleanText(body.partnerRelation, 60);
@@ -59,6 +59,8 @@ function buildPrompt(body: LoveFortuneGenerateBody) {
     "- 핵심 섹션은 5~8문장으로 충분히 깊게 쓰되, 한 문단은 2~3문장 안에서 끊어 모바일에서 읽기 쉽게 만드세요.",
     "- 전체 결과는 최소 2,800자 이상으로 작성하세요. 단, 같은 말을 반복하지 말고 각 섹션마다 새로운 판단과 행동 가이드를 주세요.",
     "- 결과가 '그럴듯한 일반론'처럼 보이면 실패입니다. 입력된 연애 상태, 목표, 고민을 반복해서 끌어와 개인 상담처럼 써주세요.",
+    "- 현재 고민에 '반복 패턴', '연락 스타일', '불안해지는 순간', '상대에게 자주 듣는 말'이 포함되어 있으면 그 항목을 핵심 근거로 삼으세요.",
+    "- '대화를 많이 하세요', '솔직해지세요' 같은 당연한 조언으로 끝내지 마세요. 왜 그 사람이 그 패턴을 반복하는지, 다음 만남에서 어떤 문장/속도/선택으로 바꿀지까지 써주세요.",
     "- 각 해석 뒤에는 반드시 '그래서 실제로는 어떻게 하면 좋은지'를 붙이세요.",
     "- 좋은 말만 하지 말고, 연애에서 반복될 수 있는 약점과 조심할 점도 부드럽게 짚으세요.",
     "- 사용자가 바로 행동할 수 있게 첫 연락, 첫 만남, 자기소개 문장, 피해야 할 행동을 제안하세요.",
@@ -89,6 +91,8 @@ function buildPrompt(body: LoveFortuneGenerateBody) {
     "오행/기운/관계 결을 연애 성향으로 번역해서 설명. 목/화/토/금/수 중 어떤 기운이 강한 사람처럼 보이는지와 연애에서 어떻게 드러나는지.",
     "## 대운과 연애 흐름을 읽는 법",
     "대운이 무엇인지 쉬운 말로 설명하고, 큰 흐름이 좋을 때와 애매할 때 각각 어떻게 행동해야 하는지. '운이 들어온다'를 기다리는 말이 아니라 선택과 행동의 가이드로 풀기.",
+    "## 개인 패턴 적중 포인트",
+    "입력된 반복 패턴, 연락 스타일, 불안해지는 순간, 상대에게 자주 듣는 말을 근거로 '왜 이 사람이 이 지점에서 흔들리는지'를 짚고, 바로 고칠 수 있는 행동을 제안.",
     "## 연애할 때 드러나는 결",
     "표현 방식, 감정 속도, 관계에서 안정감을 느끼는 조건.",
     "## 반복되는 연애 패턴",
