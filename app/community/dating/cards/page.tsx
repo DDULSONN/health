@@ -480,25 +480,28 @@ const DEFAULT_JIMNYANG_MASCOT_SRC = "/mascot/jimnyang-guide-v2.png";
 
 const DETAIL_QUESTION_GROUPS = [
   {
-    title: "정확도 질문",
+    title: "명식 기준",
     items: ["양력/음력/윤달 여부", "태어난 시간 확실도", "출생지 또는 해외 출생 여부"],
   },
   {
-    title: "연애운 질문",
+    title: "연애 국면",
     items: ["현재 관계 상태", "최근 가장 큰 고민", "연애 목표", "원하는 만남 방식", "결혼/장기연애 의향"],
   },
   {
-    title: "궁합 질문",
+    title: "상대와 궁합",
     items: ["상대 생년월일", "상대 태어난 시간", "상대와의 관계 단계", "보고 싶은 궁합 포인트"],
   },
   {
-    title: "소개팅 행동 질문",
+    title: "소개팅 행동",
     items: ["첫 연락 방식", "첫 만남 장소", "답장 텀 고민", "오픈카드에서 보여주고 싶은 매력"],
   },
 ];
 
 const LOVE_FORTUNE_REPORT_SECTIONS = [
-  "입력 정확도 체크",
+  "입력 신뢰도",
+  "명식 핵심 요약",
+  "대운과 연애 흐름",
+  "반복되는 연애 패턴",
   "내 연애 타입",
   "끌리는 사람 vs 오래 맞는 사람",
   "이번 주 연애 타이밍",
@@ -895,9 +898,9 @@ function AdminLoveFortunePanel() {
         {renderBotBubble(
           <>
             <p className="text-sm leading-6 text-neutral-800">
-              반가워요. 오늘은 연애운을 가볍게 먼저 짚어볼게요.
+              반가워요. 오늘은 사랑 쪽 흐름을 먼저 조용히 짚어볼게요.
             </p>
-            <p className="mt-2 text-sm font-black text-neutral-950">먼저 생년월일을 알려주세요.</p>
+            <p className="mt-2 text-sm font-black text-neutral-950">먼저 명식의 기준이 되는 생년월일을 알려주세요.</p>
           </>
         )}
 
@@ -960,7 +963,7 @@ function AdminLoveFortunePanel() {
             {renderBotBubble(
               <>
                 <p className="text-sm font-black text-neutral-950">태어난 시간은 아세요?</p>
-                <p className="mt-1 text-xs leading-5 text-neutral-500">모르면 “모름”으로 가도 괜찮아요. 대신 연애 성향 중심으로 볼게요.</p>
+                <p className="mt-1 text-xs leading-5 text-neutral-500">정확할수록 관계의 세부 결까지 보고, 모르면 성향과 흐름 중심으로 볼게요.</p>
               </>
             )}
             {step === 1 ? (
@@ -1024,7 +1027,12 @@ function AdminLoveFortunePanel() {
 
         {step >= 2 ? (
           <>
-            {renderBotBubble(<p className="text-sm font-black text-neutral-950">지금 연애 상황은 어떤 쪽에 가까워요?</p>)}
+            {renderBotBubble(
+              <>
+                <p className="text-sm font-black text-neutral-950">지금 연애 국면은 어디에 가까워요?</p>
+                <p className="mt-1 text-xs leading-5 text-neutral-500">사주는 같은 생년월일이어도 현재 상황에 따라 풀이의 초점이 달라져요.</p>
+              </>
+            )}
             {step === 2 ? (
               <div className="flex gap-3">
                 <div className="w-9 shrink-0" />
@@ -1078,7 +1086,7 @@ function AdminLoveFortunePanel() {
             {renderBotBubble(
               <>
                 <p className="text-sm font-black text-neutral-950">마지막으로, 뭐가 제일 궁금해요?</p>
-                <p className="mt-1 text-xs leading-5 text-neutral-500">한 줄만 적어도 무료 미리보기에 반영할게요.</p>
+                <p className="mt-1 text-xs leading-5 text-neutral-500">한 줄만 적어도 대운과 관계 패턴을 현실 행동 쪽으로 풀어볼게요.</p>
               </>
             )}
             {step === 3 ? (
@@ -1155,7 +1163,7 @@ function AdminLoveFortunePanel() {
                   <>
                     <p className="text-sm font-black text-neutral-950">상세 리포트는 여기부터 열려요.</p>
                     <p className="mt-1 text-xs leading-5 text-neutral-500">
-                      결제하면 궁합, 타이밍, 소개팅 행동, 오픈카드 문구까지 사주 상담처럼 길게 풀어줘요.
+                      결제하면 명식 핵심, 대운 흐름, 반복되는 연애 패턴, 궁합, 소개팅 행동까지 바로 이 화면에서 풀어줘요.
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {LOVE_FORTUNE_REPORT_SECTIONS.slice(0, 8).map((section, index) => (
@@ -1195,7 +1203,10 @@ function AdminLoveFortunePanel() {
                     </div>
                     <div className="mt-4 rounded-[22px] border border-neutral-200 bg-neutral-950 p-4 text-white">
                       <p className="text-sm font-black">상세 연애운 4,900원</p>
-                      <p className="mt-1 text-xs leading-5 text-white/70">{preview.paidHint}</p>
+                      <p className="mt-1 text-xs leading-5 text-white/70">
+                        결제 완료 후 결과 페이지에서 바로 상세 풀이가 생성되고, 마이페이지에도 저장돼요.
+                      </p>
+                      <p className="mt-1 text-xs leading-5 text-white/60">{preview.paidHint}</p>
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button
                           type="button"

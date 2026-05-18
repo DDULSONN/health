@@ -6138,7 +6138,7 @@ export default function MyPage() {
         )}
       </section>
       {isAdmin && (
-      <section className="mb-5 overflow-hidden rounded-2xl border border-rose-200 bg-gradient-to-br from-rose-50 via-white to-amber-50 p-5">
+      <section id="love-fortune" className="mb-5 overflow-hidden rounded-2xl border border-rose-200 bg-gradient-to-br from-rose-50 via-white to-amber-50 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="text-lg font-bold text-rose-950">내 연애운</h2>
@@ -6263,7 +6263,7 @@ export default function MyPage() {
                             </div>
                           ) : (
                             <details className="mt-3 rounded-2xl border border-neutral-200 bg-white p-4" open>
-                              <summary className="cursor-pointer text-sm font-black text-neutral-950">상세 리포트 보기</summary>
+                              <summary className="cursor-pointer text-sm font-black text-neutral-950">상세 풀이 보기</summary>
                               <div className="mt-4 space-y-3">
                                 {reportSections.map((section, index) => (
                                   <section
