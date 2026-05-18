@@ -33,6 +33,8 @@ type LoveFortuneRow = {
 };
 
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models";
+const LOVE_FORTUNE_SELECT =
+  "id,user_id,status,calendar_type,birth_date,birth_time,birth_time_certainty,birth_place,gender,love_state,relationship_goal,meeting_preference,focus,concern,partner_birth_date,partner_birth_time,partner_relation,amount,ai_model,ai_result,ideal_face_profile,ideal_face_prompt,ideal_face_image_url,paid_at,generated_at,created_at";
 
 function json(status: number, payload: Record<string, unknown>) {
   return NextResponse.json(payload, { status });
@@ -61,12 +63,42 @@ function pick<T>(seed: number, values: T[]) {
 
 function buildIdealFaceProfile(row: LoveFortuneRow) {
   const seed = seedFromReading(row);
-  const eye = pick(seed + 1, ["차분하고 선한 눈매", "웃을 때 부드러워지는 눈매", "집중력이 느껴지는 또렷한 눈매", "편안하게 오래 마주볼 수 있는 눈매"]);
-  const smile = pick(seed + 3, ["장난기보다 안정감 있는 미소", "먼저 긴장을 풀어주는 환한 미소", "말보다 표정으로 배려가 보이는 미소", "담백하지만 따뜻한 미소"]);
-  const mood = pick(seed + 5, ["편안하고 신뢰감 있는 분위기", "운동 후에도 단정함이 살아 있는 분위기", "차분하지만 대화하면 밝아지는 분위기", "과하지 않고 오래 볼수록 매력적인 분위기"]);
-  const style = pick(seed + 7, ["깔끔한 기본 스타일", "담백한 스포츠 캐주얼", "부드러운 색감의 단정한 스타일", "자기 관리가 느껴지는 미니멀한 스타일"]);
-  const firstDate = pick(seed + 9, ["카페에서 짧게 만나도 대화가 끊기지 않는 사람", "운동이나 산책처럼 편한 활동에서 매력이 나오는 사람", "처음부터 강하게 밀어붙이기보다 속도를 맞춰주는 사람", "말보다 약속과 태도로 신뢰를 주는 사람"]);
-  const avoid = pick(seed + 11, ["감정 기복을 과하게 드러내는 인상", "대화보다 평가가 앞서는 태도", "연락 속도만 빠르고 약속이 불안정한 타입", "처음부터 확답을 강요하는 분위기"]);
+  const eye = pick(seed + 1, [
+    "차분하고 오래 마주봐도 편안한 눈매",
+    "웃을 때 부드럽게 풀리는 선한 눈매",
+    "집중력이 느껴지는 또렷한 눈매",
+    "말을 잘 들어줄 것 같은 안정적인 눈빛",
+  ]);
+  const smile = pick(seed + 3, [
+    "장난기보다 안정감이 먼저 느껴지는 미소",
+    "처음 만난 긴장을 자연스럽게 풀어주는 미소",
+    "말보다 배려가 먼저 보이는 담백한 미소",
+    "과하지 않지만 오래 기억나는 따뜻한 미소",
+  ]);
+  const mood = pick(seed + 5, [
+    "편안하고 신뢰감 있는 분위기",
+    "활동적인 자리에서도 상대를 배려하는 분위기",
+    "차분하지만 가까워질수록 밝아지는 분위기",
+    "과하지 않고 오래 볼수록 매력적인 분위기",
+  ]);
+  const style = pick(seed + 7, [
+    "깔끔한 기본 스타일",
+    "운동 후에도 편하게 어울리는 캐주얼 스타일",
+    "부드러운 색감의 단정한 스타일",
+    "자기 관리가 느껴지는 미니멀한 스타일",
+  ]);
+  const firstDate = pick(seed + 9, [
+    "카페에서 길게 이야기해도 대화가 쉽게 끊기지 않는 사람",
+    "산책이나 가벼운 활동에서 자연스럽게 매력이 드러나는 사람",
+    "처음부터 강하게 밀어붙이기보다 속도를 맞춰주는 사람",
+    "말보다 약속과 태도로 신뢰를 주는 사람",
+  ]);
+  const avoid = pick(seed + 11, [
+    "감정 기복을 초반부터 크게 드러내는 분위기",
+    "대화보다 평가가 앞서는 태도",
+    "연락 속도만 빠르고 약속은 불안정한 타입",
+    "처음부터 정답을 강요하는 분위기",
+  ]);
   const prompt = [
     "warm editorial dating profile illustration",
     mood,
@@ -84,7 +116,7 @@ function buildIdealFaceProfile(row: LoveFortuneRow) {
     style,
     firstDate,
     avoid,
-    note: "실제 외모를 단정하는 기능이 아니라, 내 연애 성향과 잘 맞는 분위기를 이미지 카드처럼 정리한 참고용입니다.",
+    note: "실제 외모를 단정하는 기능이 아니라, 입력된 연애 성향과 잘 맞는 분위기를 카드처럼 정리한 참고용입니다.",
     prompt,
   };
 }
@@ -93,23 +125,28 @@ function buildPrompt(row: LoveFortuneRow) {
   const ideal = buildIdealFaceProfile(row);
 
   return [
-    "당신은 한국어로 상담하는 사랑/연애 전문 사주 리포트 작가입니다.",
-    "사용자가 결제 후 보는 유료 리포트입니다. 무료 미리보기보다 훨씬 구체적이고 실용적으로 작성하세요.",
+    "당신은 오래 상담해온 한국식 사랑/연애 사주 상담가입니다.",
+    "사용자가 결제 후 보는 유료 풀이입니다. 무료 미리보기보다 훨씬 구체적이고, 실제 상담을 받은 것처럼 밀도 있게 작성하세요.",
+    "양산형 AI 문장처럼 쓰지 말고, 실제 사주 상담자가 앞에 앉아 '이 사람의 연애 결'을 짚어주는 말투로 쓰세요.",
     "",
-    "[중요 원칙]",
-    "- 실제 만세력 계산값이 없으므로 특정 간지, 오행, 대운, 세운을 단정하지 마세요.",
-    "- 출생시간 확실도가 낮으면 타이밍을 단정하지 말고 성향과 관계 패턴 중심으로 안내하세요.",
-    "- 공포 마케팅, 운명 단정, 질병/임신/투자 보장, 과도한 예언은 금지합니다.",
-    "- 짐툴 서비스 행동으로 자연스럽게 연결하세요: 오픈카드, 빠른매칭, 1대1 소개팅.",
+    "[반드시 지킬 것]",
+    "- 실제 만세력 계산값이 없으므로 특정 간지, 십성, 대운, 세운을 단정하지 마세요.",
+    "- 태어난 시간이 불확실하면 해석 범위를 먼저 설명하고, 성향/관계 패턴 중심으로 풀어주세요.",
+    "- 공포 마케팅, 운명 단정, 질병/임신/사망/재물 보장, 상대 외모 단정은 금지합니다.",
+    "- '사주적으로 보자면', '이 결은', '이 흐름은' 같은 분위기는 살리되, 허무맹랑하지 않게 현실적인 연애 조언으로 연결하세요.",
+    "- 'AI', '알고리즘', '데이터상' 같은 표현은 절대 쓰지 마세요.",
+    "- 듣기 좋은 말만 하지 말고, 반복될 수 있는 연애 약점과 조심할 점도 부드럽게 짚으세요.",
+    "- 각 섹션은 2~5문장으로, 모바일에서 읽기 쉽게 문단을 짧게 나누세요.",
+    "- 마지막에는 짐툴에서 바로 할 수 있는 행동을 자연스럽게 제안하세요.",
     "",
-    "[입력]",
+    "[입력 정보]",
     `생년월일: ${row.birth_date}`,
     `달력: ${row.calendar_type}`,
     `태어난 시간: ${row.birth_time}`,
-    `태어난 시간 확실도: ${row.birth_time_certainty}`,
-    `출생지/지역: ${row.birth_place ?? "미입력"}`,
+    `태어난 시간 확실성: ${row.birth_time_certainty}`,
+    `태어난 지역: ${row.birth_place ?? "미입력"}`,
     `성별: ${row.gender}`,
-    `현재 상황: ${row.love_state ?? "미입력"}`,
+    `현재 연애 상황: ${row.love_state ?? "미입력"}`,
     `연애 목표: ${row.relationship_goal ?? "미입력"}`,
     `선호 만남 방식: ${row.meeting_preference ?? "미입력"}`,
     `보고 싶은 항목: ${row.focus ?? "미입력"}`,
@@ -119,23 +156,35 @@ function buildPrompt(row: LoveFortuneRow) {
     `상대와의 관계: ${row.partner_relation ?? "미입력"}`,
     "",
     "[잘 맞는 인상 카드 참고]",
-    `인상: ${ideal.mood}`,
+    `분위기: ${ideal.mood}`,
     `눈매: ${ideal.eye}`,
     `미소: ${ideal.smile}`,
     `스타일: ${ideal.style}`,
+    `첫 만남: ${ideal.firstDate}`,
+    `피하면 좋은 느낌: ${ideal.avoid}`,
     "",
     "[출력 형식]",
-    "## 한 줄 리딩",
-    "## 입력 정확도 체크",
-    "## 나의 연애 타입",
+    "아래 제목을 그대로 사용하고, 각 제목 아래는 자연스러운 문단으로 작성하세요.",
+    "## 도화냥 총평",
+    "상담자가 첫마디로 짚어주는 듯한 결과 전체의 한 문장.",
+    "## 입력 신뢰도",
+    "현재 입력으로 볼 수 있는 것과 부족한 것, 태어난 시간 확실성에 따른 해석 범위.",
+    "## 연애할 때 드러나는 결",
+    "표현 방식, 감정 속도, 호감이 생기는 방식, 관계에서 안정감을 느끼는 조건.",
     "## 끌리는 사람 vs 오래 맞는 사람",
-    "## 지금 연애 흐름",
-    "## 잘 맞는 인상/관상 카드",
-    "## 상대 정보가 있을 때 보는 궁합 포인트",
-    "## 이번 주 행동 가이드",
-    "## 짐툴에서 바로 할 일",
-    "",
-    "각 섹션은 2~5문장 안에서 밀도 있게 작성하세요. 결과 마지막에는 참고용 안내를 자연스럽게 포함하세요.",
+    "순간적으로 끌리는 상대와 실제로 오래 가는 상대를 구분해서 설명.",
+    "## 지금 연애 흐름의 맥",
+    "현재 상태 기준으로 소개팅/썸/재회/새 만남 중 무엇이 유리한지와 이유.",
+    "## 잘 맞는 인상과 분위기",
+    "외모 단정 없이 눈빛, 미소, 말투, 스타일, 첫 만남 분위기를 구체적으로 설명.",
+    "## 상대 정보로 짚는 궁합 포인트",
+    "상대 정보가 있으면 궁합 포인트를, 없으면 나중에 확인하면 좋은 항목을 안내.",
+    "## 7일 행동 가이드",
+    "오늘 할 일, 이번 주 할 일, 피해야 할 행동을 각각 구체적으로.",
+    "## 짐툴 활용 추천",
+    "오픈카드, 빠른매칭, 1:1 매칭 중 어떤 방식이 맞는지와 프로필 문구 방향.",
+    "## 참고 안내",
+    "재미와 자기 이해를 위한 참고용이며 실제 선택은 본인 판단이 중요하다는 안내.",
   ].join("\n");
 }
 
@@ -152,7 +201,7 @@ function extractGeminiText(payload: unknown) {
 }
 
 function serialize(row: LoveFortuneRow) {
-  const idealFace = (row.ideal_face_profile && Object.keys(row.ideal_face_profile).length > 0)
+  const idealFace = row.ideal_face_profile && Object.keys(row.ideal_face_profile).length > 0
     ? row.ideal_face_profile
     : buildIdealFaceProfile(row);
 
@@ -200,7 +249,7 @@ export async function GET(req: Request) {
     const admin = createAdminClient();
     const res = await admin
       .from("love_fortune_readings")
-      .select("id,user_id,status,calendar_type,birth_date,birth_time,birth_time_certainty,birth_place,gender,love_state,relationship_goal,meeting_preference,focus,concern,partner_birth_date,partner_birth_time,partner_relation,amount,ai_model,ai_result,ideal_face_profile,ideal_face_prompt,ideal_face_image_url,paid_at,generated_at,created_at")
+      .select(LOVE_FORTUNE_SELECT)
       .eq("user_id", user.id)
       .order("created_at", { ascending: false })
       .limit(20);
@@ -242,7 +291,7 @@ export async function POST(req: Request) {
     const admin = createAdminClient();
     const readRes = await admin
       .from("love_fortune_readings")
-      .select("id,user_id,status,calendar_type,birth_date,birth_time,birth_time_certainty,birth_place,gender,love_state,relationship_goal,meeting_preference,focus,concern,partner_birth_date,partner_birth_time,partner_relation,amount,ai_model,ai_result,ideal_face_profile,ideal_face_prompt,ideal_face_image_url,paid_at,generated_at,created_at")
+      .select(LOVE_FORTUNE_SELECT)
       .eq("id", readingId)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -268,7 +317,7 @@ export async function POST(req: Request) {
 
     const apiKey = process.env.GEMINI_API_KEY;
     if (!apiKey) {
-      return json(500, { ok: false, requestId, message: "AI 설정이 아직 완료되지 않았습니다." });
+      return json(500, { ok: false, requestId, message: "상세 풀이 설정이 아직 완료되지 않았습니다." });
     }
 
     const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
@@ -285,7 +334,7 @@ export async function POST(req: Request) {
         generationConfig: {
           temperature: 0.72,
           topP: 0.9,
-          maxOutputTokens: 1300,
+          maxOutputTokens: 2600,
         },
       }),
     });
@@ -293,12 +342,12 @@ export async function POST(req: Request) {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) {
       console.error(`[mypage-love-fortune] ${requestId} gemini failed`, { status: res.status, data });
-      return json(502, { ok: false, requestId, message: "AI 연애운 생성에 실패했습니다. 잠시 후 다시 시도해 주세요." });
+      return json(502, { ok: false, requestId, message: "연애운 상세 풀이 생성에 실패했습니다. 잠시 후 다시 시도해 주세요." });
     }
 
     const text = extractGeminiText(data);
     if (!text) {
-      return json(502, { ok: false, requestId, message: "AI 응답이 비어 있습니다. 잠시 후 다시 시도해 주세요." });
+      return json(502, { ok: false, requestId, message: "연애운 상세 풀이 응답이 비어 있습니다. 잠시 후 다시 시도해 주세요." });
     }
 
     const updateRes = await admin
@@ -314,7 +363,7 @@ export async function POST(req: Request) {
       })
       .eq("id", row.id)
       .eq("user_id", user.id)
-      .select("id,user_id,status,calendar_type,birth_date,birth_time,birth_time_certainty,birth_place,gender,love_state,relationship_goal,meeting_preference,focus,concern,partner_birth_date,partner_birth_time,partner_relation,amount,ai_model,ai_result,ideal_face_profile,ideal_face_prompt,ideal_face_image_url,paid_at,generated_at,created_at")
+      .select(LOVE_FORTUNE_SELECT)
       .single();
 
     if (updateRes.error) {

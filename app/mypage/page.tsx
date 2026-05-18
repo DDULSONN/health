@@ -376,6 +376,33 @@ function formatLoveFortuneInputSummary(reading: MyLoveFortuneReading) {
   ].filter(Boolean).join(" · ");
 }
 
+function parseLoveFortuneReport(text: string | null) {
+  if (!text) return [];
+  const sections: Array<{ title: string; body: string }> = [];
+  let currentTitle = "상세 리포트";
+  let currentLines: string[] = [];
+
+  for (const rawLine of text.replace(/```/g, "").split(/\r?\n/)) {
+    const line = rawLine.trim();
+    const heading = line.match(/^#{1,3}\s+(.+)$/);
+    if (heading) {
+      if (currentLines.join("\n").trim()) {
+        sections.push({ title: currentTitle, body: currentLines.join("\n").trim() });
+      }
+      currentTitle = heading[1]?.trim() || "상세 리포트";
+      currentLines = [];
+      continue;
+    }
+    currentLines.push(rawLine);
+  }
+
+  if (currentLines.join("\n").trim()) {
+    sections.push({ title: currentTitle, body: currentLines.join("\n").trim() });
+  }
+
+  return sections.length > 0 ? sections : [{ title: "상세 리포트", body: text.trim() }];
+}
+
 function adminOpenCardOutreachScopeLabel(scope: AdminOpenCardOutreachScope) {
   if (scope === "no_card") return "오픈카드 없는 회원";
   if (scope === "expired_stale") return "오래전 만료된 회원";
@@ -1652,7 +1679,7 @@ export default function MyPage() {
       setLoveFortuneLoaded(true);
     } catch (error) {
       console.error("[mypage] love fortune generate failed", error);
-      setLoveFortuneError(error instanceof Error ? error.message : "연애운 상세 분석을 생성하지 못했습니다.");
+      setLoveFortuneError(error instanceof Error ? error.message : "연애운 상세 풀이를 생성하지 못했습니다.");
     } finally {
       setLoveFortuneGeneratingId(null);
     }
@@ -6173,6 +6200,7 @@ export default function MyPage() {
                   const canGenerate = reading.status === "paid" || reading.status === "generated";
                   const generated = Boolean(reading.aiResult);
                   const ideal = reading.idealFace ?? {};
+                  const reportSections = parseLoveFortuneReport(reading.aiResult);
                   return (
                     <article key={reading.id} className="overflow-hidden rounded-2xl border border-rose-100 bg-white shadow-sm">
                       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-rose-50 p-4">
@@ -6223,7 +6251,7 @@ export default function MyPage() {
                           {!generated ? (
                             <div className="mt-3 rounded-xl border border-dashed border-rose-200 bg-rose-50/60 p-4">
                               <p className="text-sm font-semibold text-rose-950">상세 분석을 아직 생성하지 않았어요.</p>
-                              <p className="mt-1 text-xs leading-5 text-rose-700">결제가 완료된 건은 버튼을 누르면 AI 상세 리포트와 잘 맞는 인상 카드가 저장됩니다.</p>
+                              <p className="mt-1 text-xs leading-5 text-rose-700">결제가 완료된 건은 버튼을 누르면 상세 풀이와 잘 맞는 인상 카드가 저장됩니다.</p>
                               <button
                                 type="button"
                                 onClick={() => void generateLoveFortuneReading(reading.id)}
@@ -6234,9 +6262,23 @@ export default function MyPage() {
                               </button>
                             </div>
                           ) : (
-                            <details className="mt-3 rounded-xl border border-neutral-200 bg-white p-4" open>
+                            <details className="mt-3 rounded-2xl border border-neutral-200 bg-white p-4" open>
                               <summary className="cursor-pointer text-sm font-black text-neutral-950">상세 리포트 보기</summary>
-                              <div className="mt-3 whitespace-pre-wrap text-sm leading-7 text-neutral-700">{reading.aiResult}</div>
+                              <div className="mt-4 space-y-3">
+                                {reportSections.map((section, index) => (
+                                  <section
+                                    key={`${reading.id}-${section.title}-${index}`}
+                                    className={`rounded-2xl border p-4 ${
+                                      index === 0
+                                        ? "border-rose-100 bg-rose-50/70"
+                                        : "border-neutral-100 bg-neutral-50/70"
+                                    }`}
+                                  >
+                                    <p className={`text-sm font-black ${index === 0 ? "text-rose-950" : "text-neutral-950"}`}>{section.title}</p>
+                                    <div className="mt-2 whitespace-pre-wrap text-sm leading-7 text-neutral-700">{section.body}</div>
+                                  </section>
+                                ))}
+                              </div>
                             </details>
                           )}
                         </div>

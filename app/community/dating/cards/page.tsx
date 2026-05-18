@@ -672,11 +672,11 @@ function AdminLoveFortunePanel() {
       });
       const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; text?: string };
       if (!res.ok || !body.ok || !body.text) {
-        throw new Error(body.message ?? "AI 연애운을 생성하지 못했습니다.");
+        throw new Error(body.message ?? "연애운 풀이를 생성하지 못했습니다.");
       }
       setAiResult(body.text);
     } catch (error) {
-      setAiError(error instanceof Error ? error.message : "AI 연애운을 생성하지 못했습니다.");
+      setAiError(error instanceof Error ? error.message : "연애운 풀이를 생성하지 못했습니다.");
     } finally {
       setAiLoading(false);
     }
@@ -1155,7 +1155,7 @@ function AdminLoveFortunePanel() {
                   <>
                     <p className="text-sm font-black text-neutral-950">상세 리포트는 여기부터 열려요.</p>
                     <p className="mt-1 text-xs leading-5 text-neutral-500">
-                      결제하면 궁합, 타이밍, 소개팅 행동, 오픈카드 문구까지 길게 풀어줘요.
+                      결제하면 궁합, 타이밍, 소개팅 행동, 오픈카드 문구까지 사주 상담처럼 길게 풀어줘요.
                     </p>
                     <div className="mt-3 flex flex-wrap gap-2">
                       {LOVE_FORTUNE_REPORT_SECTIONS.slice(0, 8).map((section, index) => (
@@ -1203,7 +1203,7 @@ function AdminLoveFortunePanel() {
                           disabled={aiLoading}
                           className="rounded-full bg-white px-4 py-2 text-sm font-black text-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-400"
                         >
-                          {aiLoading ? "생성 중..." : "AI 미리보기"}
+                          {aiLoading ? "풀이 중..." : "상담 미리보기"}
                         </button>
                         <button
                           type="button"
@@ -1219,7 +1219,7 @@ function AdminLoveFortunePanel() {
                 )}
                 <details className="ml-12 rounded-[18px] border border-neutral-200 bg-white p-3 text-xs leading-5 text-neutral-500">
                   <summary className="cursor-pointer font-black text-neutral-800">유료 이용/환불 기준</summary>
-                  <p className="mt-2">연애운 상세 분석은 결제 후 입력 정보를 바탕으로 AI 분석 생성이 시작되는 디지털 콘텐츠입니다.</p>
+                  <p className="mt-2">연애운 상세 분석은 결제 후 입력 정보를 바탕으로 상세 풀이 생성이 시작되는 디지털 콘텐츠입니다.</p>
                   <p className="mt-1">결제만 완료되고 분석이 생성되지 않은 경우 오픈카톡으로 확인 후 취소/환불을 도와드릴 수 있어요.</p>
                   <p className="mt-1">분석 결과가 생성된 뒤에는 콘텐츠 제공이 완료된 상태라 단순 변심 환불이 제한될 수 있습니다.</p>
                 </details>
