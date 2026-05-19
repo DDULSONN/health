@@ -448,6 +448,16 @@ const BIRTH_TIME_CERTAINTY_OPTIONS = [
   { key: "unknown", label: "잘 몰라요" },
 ];
 
+const LOVE_FORTUNE_BIRTH_YEARS = Array.from({ length: 69 }, (_, index) => String(2008 - index));
+const LOVE_FORTUNE_BIRTH_MONTHS = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0"));
+const LOVE_FORTUNE_BIRTH_DAYS = Array.from({ length: 31 }, (_, index) => String(index + 1).padStart(2, "0"));
+
+function getLoveFortuneBirthDays(year: string, month: string) {
+  if (!year || !month) return LOVE_FORTUNE_BIRTH_DAYS;
+  const daysInMonth = new Date(Number(year), Number(month), 0).getDate();
+  return LOVE_FORTUNE_BIRTH_DAYS.slice(0, daysInMonth);
+}
+
 const RELATIONSHIP_GOAL_OPTIONS = [
   "진지한 연애",
   "가벼운 만남보다 안정감",
@@ -641,7 +651,9 @@ function makeLoveFortunePreview(
 }
 
 function AdminLoveFortunePanel() {
-  const [birthDate, setBirthDate] = useState("");
+  const [birthYear, setBirthYear] = useState("");
+  const [birthMonth, setBirthMonth] = useState("");
+  const [birthDay, setBirthDay] = useState("");
   const [birthTime, setBirthTime] = useState("unknown");
   const [birthTimeCertainty, setBirthTimeCertainty] = useState("unknown");
   const [birthPlace, setBirthPlace] = useState("");
@@ -656,9 +668,9 @@ function AdminLoveFortunePanel() {
   const [contactStyle, setContactStyle] = useState(LOVE_CONTACT_STYLE_OPTIONS[0]);
   const [anxietyMoment, setAnxietyMoment] = useState(LOVE_ANXIETY_MOMENT_OPTIONS[0]);
   const [partnerFeedback, setPartnerFeedback] = useState("");
-  const [partnerBirthDate, setPartnerBirthDate] = useState("");
-  const [partnerBirthTime, setPartnerBirthTime] = useState("unknown");
-  const [partnerRelation, setPartnerRelation] = useState(PARTNER_RELATION_OPTIONS[0]);
+  const partnerBirthDate = "";
+  const partnerBirthTime = "unknown";
+  const partnerRelation = PARTNER_RELATION_OPTIONS[0];
   const [detailOpen, setDetailOpen] = useState(false);
   const [fortuneStep, setFortuneStep] = useState(0);
   const [aiLoading, setAiLoading] = useState(false);
@@ -666,6 +678,8 @@ function AdminLoveFortunePanel() {
   const [aiResult, setAiResult] = useState("");
   const [aiError, setAiError] = useState("");
   const [checkoutError, setCheckoutError] = useState("");
+  const birthDayOptions = useMemo(() => getLoveFortuneBirthDays(birthYear, birthMonth), [birthMonth, birthYear]);
+  const birthDate = birthYear && birthMonth && birthDay ? `${birthYear}-${birthMonth}-${birthDay}` : "";
   const canPreview = /^\d{4}-\d{2}-\d{2}$/.test(birthDate);
   const personalizedConcern = useMemo(() => {
     const lines = [
@@ -692,6 +706,12 @@ function AdminLoveFortunePanel() {
         meetingPreference
       )
     : null;
+
+  useEffect(() => {
+    if (birthDay && !birthDayOptions.includes(birthDay)) {
+      setBirthDay("");
+    }
+  }, [birthDay, birthDayOptions]);
 
   const requestAiPreview = useCallback(async () => {
     if (!canPreview || aiLoading) return;
@@ -1002,12 +1022,45 @@ function AdminLoveFortunePanel() {
                   </button>
                 ))}
               </div>
-              <input
-                type="date"
-                value={birthDate}
-                onChange={(event) => setBirthDate(event.target.value)}
-                className="mt-3 h-12 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
-              />
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <label className="sr-only" htmlFor="love-fortune-birth-year">태어난 연도</label>
+                <select
+                  id="love-fortune-birth-year"
+                  value={birthYear}
+                  onChange={(event) => setBirthYear(event.target.value)}
+                  className="h-12 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-black text-neutral-900 outline-none focus:border-rose-300"
+                >
+                  <option value="">년도</option>
+                  {LOVE_FORTUNE_BIRTH_YEARS.map((year) => (
+                    <option key={year} value={year}>{year}년</option>
+                  ))}
+                </select>
+                <label className="sr-only" htmlFor="love-fortune-birth-month">태어난 월</label>
+                <select
+                  id="love-fortune-birth-month"
+                  value={birthMonth}
+                  onChange={(event) => setBirthMonth(event.target.value)}
+                  className="h-12 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-black text-neutral-900 outline-none focus:border-rose-300"
+                >
+                  <option value="">월</option>
+                  {LOVE_FORTUNE_BIRTH_MONTHS.map((month) => (
+                    <option key={month} value={month}>{Number(month)}월</option>
+                  ))}
+                </select>
+                <label className="sr-only" htmlFor="love-fortune-birth-day">태어난 일</label>
+                <select
+                  id="love-fortune-birth-day"
+                  value={birthDay}
+                  onChange={(event) => setBirthDay(event.target.value)}
+                  className="h-12 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-black text-neutral-900 outline-none focus:border-rose-300"
+                >
+                  <option value="">일</option>
+                  {birthDayOptions.map((day) => (
+                    <option key={day} value={day}>{Number(day)}일</option>
+                  ))}
+                </select>
+              </div>
+              <p className="mt-2 text-xs font-semibold text-neutral-400">연도부터 바로 고를 수 있게 바꿨어요. 선택한 생년월일은 유료 상세에도 그대로 사용됩니다.</p>
               <div className="mt-3 grid grid-cols-3 gap-2">
                 {FORTUNE_GENDER_OPTIONS.map((item) => (
                   <button
@@ -1332,29 +1385,11 @@ function AdminLoveFortunePanel() {
                         </span>
                       ))}
                     </div>
-                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                      <input
-                        type="date"
-                        value={partnerBirthDate}
-                        onChange={(event) => setPartnerBirthDate(event.target.value)}
-                        className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
-                      />
-                      <select
-                        value={partnerRelation}
-                        onChange={(event) => setPartnerRelation(event.target.value)}
-                        className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
-                      >
-                        {PARTNER_RELATION_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-                      </select>
-                      <select
-                        value={partnerBirthTime}
-                        onChange={(event) => setPartnerBirthTime(event.target.value)}
-                        className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300 sm:col-span-2"
-                      >
-                        {BIRTH_TIME_OPTIONS.map((option) => (
-                          <option key={option.key} value={option.key}>{option.label} · {option.time}</option>
-                        ))}
-                      </select>
+                    <div className="mt-3 rounded-[20px] border border-neutral-100 bg-neutral-50 px-4 py-3">
+                      <p className="text-xs font-black text-neutral-700">입력한 정보 그대로 상세 풀이에 사용돼요.</p>
+                      <p className="mt-1 text-xs leading-5 text-neutral-500">
+                        생년월일, 태어난 시간, 현재 연애 상태, 고민 패턴을 다시 입력할 필요 없이 바로 결제로 이어집니다.
+                      </p>
                     </div>
                     <div className="mt-4 rounded-[22px] border border-neutral-200 bg-neutral-950 p-4 text-white">
                       <p className="text-sm font-black">상세 연애운 9,900원</p>
