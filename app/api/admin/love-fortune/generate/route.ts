@@ -116,6 +116,92 @@ function buildPrompt(body: LoveFortuneGenerateBody) {
   ].join("\n");
 }
 
+function textOrFallback(value: unknown, fallback = "미입력") {
+  const text = cleanText(value, 900);
+  return text || fallback;
+}
+
+function buildPromptV2(body: LoveFortuneGenerateBody) {
+  const birthDate = cleanText(body.birthDate, 20);
+  const birthTime = cleanText(body.birthTime, 30);
+  const birthTimeCertainty = cleanText(body.birthTimeCertainty, 30);
+  const birthPlace = cleanText(body.birthPlace, 80);
+  const calendarType = cleanText(body.calendarType, 30);
+  const gender = cleanText(body.gender, 20);
+  const loveState = cleanText(body.loveState, 80);
+  const relationshipGoal = cleanText(body.relationshipGoal, 100);
+  const meetingPreference = cleanText(body.meetingPreference, 100);
+  const focus = cleanText(body.focus, 100);
+  const concern = cleanText(body.concern, 900);
+  const partnerBirthDate = cleanText(body.partnerBirthDate, 20);
+  const partnerBirthTime = cleanText(body.partnerBirthTime, 30);
+  const partnerRelation = cleanText(body.partnerRelation, 80);
+  const concernLines = textOrFallback(concern)
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+
+  return [
+    "당신은 사랑과 연애 상담에 특화된 한국식 명리 상담가입니다.",
+    "관리자 테스트용 생성이지만, 실제 유료 리포트에 준하는 품질로 작성하세요. 사용자가 결제해도 아깝지 않다고 느낄 정도로 개인화와 구체성을 보여주세요.",
+    "",
+    "[핵심 원칙]",
+    "- 사랑/연애 전문으로만 풀이하세요. 재물운, 직업운, 건강운은 연애 행동에 영향을 줄 때만 짧게 언급하세요.",
+    "- 일반론 금지. 모든 큰 섹션에는 생년월일, 태어난 시간 확실도, 현재 연애 상태, 연애 목표, 선호 만남 방식, 고민 중 최소 1개를 근거로 사용하세요.",
+    "- 사주 용어는 일간, 일지, 오행, 십성, 대운, 세운, 시주, 배우자궁 같은 말로 전문성을 주되, 바로 옆에 쉬운 뜻을 붙이세요.",
+    "- 정확한 만세력 계산을 단정하지 말고, 입력값 기반 상담식 해석으로 표현하세요.",
+    "- 좋은 말만 하지 말고 연애에서 반복되는 약점, 상대가 답답해할 지점, 바꿔야 할 행동을 구체적으로 말하세요.",
+    "- 소개팅/연락/첫 만남에서 바로 쓸 수 있는 문장과 행동 예시를 반드시 넣으세요.",
+    "- 결과는 3,500자 이상, 모바일에서 읽기 쉽게 짧은 문단으로 작성하세요.",
+    "- 'AI', '알고리즘', '데이터상'이라는 표현은 쓰지 마세요.",
+    "- 운명 확정, 결혼 보장, 상대 마음 단정, 외모 단정은 금지입니다.",
+    "",
+    "[입력 정보]",
+    `생년월일: ${birthDate || "미입력"}`,
+    `달력: ${calendarType || "미입력"}`,
+    `태어난 시간: ${birthTime || "미입력"}`,
+    `시간 확실도: ${birthTimeCertainty || "미입력"}`,
+    `출생 지역: ${birthPlace || "미입력"}`,
+    `성별: ${gender || "미입력"}`,
+    `현재 연애 상태: ${loveState || "미입력"}`,
+    `연애 목표: ${relationshipGoal || "미입력"}`,
+    `선호 만남 방식: ${meetingPreference || "미입력"}`,
+    `가장 궁금한 주제: ${focus || "미입력"}`,
+    `상세 고민: ${concern || "미입력"}`,
+    `상대 생년월일: ${partnerBirthDate || "미입력"}`,
+    `상대 태어난 시간: ${partnerBirthTime || "미입력"}`,
+    `상대와의 관계: ${partnerRelation || "미입력"}`,
+    "",
+    "[고민 단서]",
+    ...(concernLines.length ? concernLines.map((line) => `- ${line}`) : ["- 상세 고민이 적지 않아 기본 입력값 중심으로 풀이합니다."]),
+    "",
+    "[출력 형식]",
+    "## 1. 한눈에 보는 연애 명식",
+    "연애운 점수, 안정감, 끌림, 표현력, 오래 갈 가능성, 지금 필요한 태도를 카드처럼 요약하고 각각 근거를 붙이세요.",
+    "## 2. 입력 신뢰도와 해석 범위",
+    "태어난 시간 확실도와 상대 정보 유무에 따른 해석 범위를 설명하세요.",
+    "## 3. 내 연애의 중심 기질",
+    "사주 용어와 쉬운 해설을 함께 사용해 사랑 앞에서 열리는 속도, 방어 방식, 안정감을 느끼는 조건을 설명하세요.",
+    "## 4. 끌리는 사람과 오래 맞는 사람",
+    "순간적으로 끌리는 유형과 오래 맞는 유형을 분리하세요.",
+    "## 5. 반복되는 연애 패턴",
+    "겉모습, 속마음, 상대가 받는 느낌, 바꾸는 방법으로 나누어 3개 이상 적으세요.",
+    "## 6. 지금 연애운의 흐름",
+    "대운/세운을 쉬운 말로 풀어 지금은 어떤 선택이 유리한지 설명하세요.",
+    "## 7. 소개팅과 첫 만남 처방",
+    "첫 메시지, 첫 만남 장소, 대화 주제, 연락 텀, 피해야 할 말투를 구체적으로 제안하세요.",
+    "## 8. 잘 맞는 인상과 분위기",
+    "외모 단정 없이 눈빛, 말투, 분위기, 스타일, 첫 데이트 결을 묘사하세요.",
+    "## 9. 궁합 확인 질문",
+    "상대 정보가 있으면 궁합 포인트를, 없으면 앞으로 확인할 질문 5개를 제안하세요.",
+    "## 10. 다음 7일 행동 가이드",
+    "오늘, 3일 안, 7일 안으로 나누어 실제 행동을 적으세요.",
+    "## 참고 안내",
+    "사주는 자기 이해를 돕는 참고용이며 실제 관계는 선택과 상호작용에 따라 달라진다고 안내하세요.",
+  ].join("\n");
+}
+
 function extractGeminiText(payload: unknown) {
   const data = payload as {
     candidates?: Array<{
@@ -144,7 +230,7 @@ export async function POST(req: Request) {
   }
 
   const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
-  const prompt = buildPrompt({ ...body, birthDate });
+  const prompt = buildPromptV2({ ...body, birthDate });
 
   try {
     const res = await fetch(`${GEMINI_API_URL}/${encodeURIComponent(model)}:generateContent`, {
@@ -158,7 +244,7 @@ export async function POST(req: Request) {
         generationConfig: {
           temperature: 0.72,
           topP: 0.9,
-          maxOutputTokens: 3800,
+          maxOutputTokens: 5600,
         },
       }),
     });

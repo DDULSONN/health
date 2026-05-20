@@ -206,6 +206,167 @@ function buildPrompt(row: LoveFortuneRow) {
   ].join("\n");
 }
 
+function textOrFallback(value: unknown, fallback = "미입력") {
+  const text = cleanText(value, 900);
+  return text || fallback;
+}
+
+function buildConcernEvidence(row: LoveFortuneRow) {
+  return textOrFallback(row.concern)
+    .split(/\n+/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+    .slice(0, 8);
+}
+
+function buildIdealFaceProfileV2(row: LoveFortuneRow) {
+  const seed = seedFromReading(row);
+  const eye = pick(seed + 1, [
+    "시선이 오래 머물러도 부담스럽지 않은 차분한 눈매",
+    "웃을 때 경계심을 자연스럽게 풀어주는 선한 눈매",
+    "말을 듣고 있다는 느낌을 주는 집중력 있는 눈빛",
+    "처음에는 담백하지만 가까워질수록 따뜻함이 보이는 눈매",
+  ]);
+  const smile = pick(seed + 3, [
+    "장난기보다 안정감이 먼저 느껴지는 미소",
+    "처음 만난 긴장을 자연스럽게 낮춰주는 부드러운 미소",
+    "말보다 배려가 먼저 보이는 담백한 미소",
+    "과하지 않지만 오래 기억에 남는 온도감 있는 미소",
+  ]);
+  const mood = pick(seed + 5, [
+    "급하게 밀고 들어오기보다 관계의 속도를 맞춰주는 분위기",
+    "자기 세계가 있으면서도 상대를 편하게 바라보는 분위기",
+    "차분하지만 가까워질수록 장난기가 살아나는 분위기",
+    "꾸밈보다 진정성이 먼저 보여 신뢰가 쌓이는 분위기",
+  ]);
+  const style = pick(seed + 7, [
+    "깔끔한 기본 스타일과 절제된 색감",
+    "운동 전후에도 자연스럽게 어울리는 캐주얼한 스타일",
+    "부드러운 색감과 정돈된 실루엣",
+    "자기 관리가 보이지만 과하게 꾸미지 않은 스타일",
+  ]);
+  const firstDate = pick(seed + 9, [
+    "카페나 산책처럼 대화가 길어져도 부담 없는 자리",
+    "짧게 만나도 텐션보다 편안함을 먼저 확인할 수 있는 자리",
+    "처음부터 강한 이벤트보다 서로의 리듬을 보는 자리",
+    "말을 많이 하기보다 태도와 약속을 확인할 수 있는 자리",
+  ]);
+  const avoid = pick(seed + 11, [
+    "초반부터 감정 기복을 크게 드러내는 사람",
+    "대화보다 평가가 앞서고 상대를 시험하는 태도",
+    "연락 속도는 빠르지만 약속과 책임감이 흐린 사람",
+    "처음부터 확답을 강요하거나 관계를 몰아붙이는 분위기",
+  ]);
+  const prompt = [
+    "simple warm ink sketch of an ideal romantic partner, Korean editorial fortune report style",
+    mood,
+    eye,
+    smile,
+    style,
+    "soft ivory background, elegant line art, respectful, not photorealistic",
+  ].join(", ");
+
+  return {
+    title: "나와 잘 맞는 인상 미리보기",
+    eye,
+    smile,
+    mood,
+    style,
+    firstDate,
+    avoid,
+    note: "실제 외모를 단정하는 기능이 아니라, 입력된 연애 성향과 사주 흐름에 맞는 분위기를 참고 카드처럼 정리한 내용입니다.",
+    prompt,
+  };
+}
+
+function buildPromptV2(row: LoveFortuneRow) {
+  const ideal = buildIdealFaceProfileV2(row);
+  const concernEvidence = buildConcernEvidence(row);
+  const birthTimeCertainty = textOrFallback(row.birth_time_certainty);
+  const inputSummary = [
+    `생년월일: ${textOrFallback(row.birth_date)}`,
+    `달력: ${textOrFallback(row.calendar_type)}`,
+    `태어난 시간: ${textOrFallback(row.birth_time)}`,
+    `시간 확실도: ${birthTimeCertainty}`,
+    `출생 지역: ${textOrFallback(row.birth_place)}`,
+    `성별: ${textOrFallback(row.gender)}`,
+    `현재 연애 상태: ${textOrFallback(row.love_state)}`,
+    `연애 목표: ${textOrFallback(row.relationship_goal)}`,
+    `선호 만남 방식: ${textOrFallback(row.meeting_preference)}`,
+    `가장 궁금한 주제: ${textOrFallback(row.focus)}`,
+    `상세 고민: ${textOrFallback(row.concern)}`,
+    `상대 생년월일: ${textOrFallback(row.partner_birth_date)}`,
+    `상대 태어난 시간: ${textOrFallback(row.partner_birth_time)}`,
+    `상대와의 관계: ${textOrFallback(row.partner_relation)}`,
+  ];
+
+  return [
+    "당신은 연애와 사랑 문제만 오래 상담해온 한국식 명리 상담가입니다.",
+    "이 결과는 결제 후 보여주는 유료 리포트입니다. 사용자가 '그냥 GPT가 쓴 말'이 아니라 '내 상황을 보고 짚었다'고 느껴야 합니다.",
+    "사주를 전혀 모르는 사람도 술술 읽히게 쓰되, 명리의 뼈대는 분명히 보여주세요. 전문 용어는 반드시 쉬운 말로 번역하고, 그 용어가 연애에서 어떻게 나타나는지 연결하세요.",
+    "",
+    "[품질 기준]",
+    "- 결과는 사랑/연애 전문 리포트입니다. 재물운, 직업운, 건강운으로 새지 마세요.",
+    "- 일반론 금지: '소통하세요', '기회를 잡으세요', '마음을 열어보세요'처럼 누구에게나 맞는 문장만 쓰면 실패입니다.",
+    "- 모든 큰 섹션에는 입력 정보 중 최소 1개를 근거로 직접 언급하세요. 현재 연애 상태, 목표, 만남 방식, 고민, 상대 정보가 있으면 반드시 활용하세요.",
+    "- 사주 용어는 일간, 일지, 오행, 십성, 대운, 세운, 시주, 배우자궁, 식상/관성/재성 같은 표현을 사용하되, 정확한 만세력 계산값을 단정하지 말고 '입력된 생년월일과 시간 조건으로 읽으면'처럼 상담식으로 표현하세요.",
+    "- 사용자의 태어난 시간이 모르거나 불확실하면, 시간 기둥으로 단정하지 말고 성향/관계 패턴 중심으로 읽고 한계를 정직하게 말하세요.",
+    "- 듣기 좋은 말만 하지 말고, 연애에서 반복될 수 있는 약점과 상대가 답답해할 지점도 부드럽게 짚으세요.",
+    "- 추상적인 조언 뒤에는 반드시 실제 행동 예시를 붙이세요. 예: 첫 메시지 문장, 첫 만남 장소, 대화 주제, 연락 텀, 피해야 할 말투.",
+    "- 전체 길이는 4,000자 이상으로 충분히 깊게 쓰세요. 모바일에서 읽기 쉽도록 문단은 짧게 나누세요.",
+    "- 결과 안에 'AI', '알고리즘', '데이터상'이라는 표현을 쓰지 마세요.",
+    "- 운명 확정, 질병, 결혼 보장, 임신, 외모 단정, 상대 마음 단정은 금지입니다. 대신 가능성과 선택 가이드로 말하세요.",
+    "",
+    "[개인화 체크리스트]",
+    "- 사용자가 결제한 보람을 느끼도록 '한눈에 보는 요약', '왜 그렇게 보는지', '내가 바로 바꿀 행동'을 모두 제공합니다.",
+    "- 사용자의 고민 문장에 들어 있는 표현을 4회 이상 자연스럽게 재사용하세요.",
+    "- 이 사람에게만 해당하는 듯한 문장을 최소 12개 이상 넣으세요.",
+    "- 잘 맞는 사람의 얼굴상이 아니라 '분위기, 눈빛, 말투, 첫 만남에서 느껴지는 결'로 묘사하세요.",
+    "",
+    "[사용자 입력]",
+    ...inputSummary,
+    "",
+    "[고민에서 뽑은 핵심 단서]",
+    ...(concernEvidence.length ? concernEvidence.map((line) => `- ${line}`) : ["- 상세 고민이 적지 않아 기본 입력값 중심으로 해석합니다."]),
+    "",
+    "[잘 맞는 인상 카드 참고]",
+    `분위기: ${ideal.mood}`,
+    `눈매: ${ideal.eye}`,
+    `미소: ${ideal.smile}`,
+    `스타일: ${ideal.style}`,
+    `첫 만남: ${ideal.firstDate}`,
+    `피하면 좋은 결: ${ideal.avoid}`,
+    "",
+    "[반드시 이 출력 형식을 지키세요]",
+    "## 1. 한눈에 보는 연애 명식",
+    "연애운 점수, 관계 안정감, 끌림의 강도, 표현력, 오래 갈 가능성, 지금 필요한 태도를 카드처럼 요약하세요. 각 점수 옆에는 왜 그렇게 보는지 1문장씩 붙이세요.",
+    "## 2. 입력 신뢰도와 해석 범위",
+    "생년월일, 시간 확실도, 상대 정보 유무를 근거로 어디까지 강하게 말할 수 있고 어디부터는 경향으로 봐야 하는지 설명하세요.",
+    "## 3. 내 연애의 중심 기질",
+    "일간/오행/배우자궁을 쉬운 말로 풀어, 이 사람이 사랑 앞에서 어떤 속도로 열리고 어떤 순간에 방어적인지 설명하세요.",
+    "## 4. 끌리는 사람과 오래 맞는 사람",
+    "순간적으로 끌리는 유형과 실제로 오래 안정되는 유형을 분리해서 설명하세요. 사용자가 헷갈릴 만한 지점을 콕 짚으세요.",
+    "## 5. 반복되는 연애 패턴",
+    "고민과 현재 상태를 바탕으로 반복 패턴을 3가지로 정리하세요. 각각 '겉으로 보이는 모습', '속마음', '상대가 받는 느낌', '바꾸는 방법'을 넣으세요.",
+    "## 6. 지금 연애운의 흐름",
+    "대운/세운을 쉬운 비유로 설명하고, 지금은 기다릴 때인지, 소개팅/새 만남을 넓힐 때인지, 기존 관계를 정리하거나 조율할 때인지 말하세요.",
+    "## 7. 소개팅과 첫 만남 처방",
+    "첫 메시지 2개, 피해야 할 첫 메시지 2개, 좋은 장소, 대화 주제, 연락 텀을 구체적으로 제안하세요.",
+    "## 8. 나와 잘 맞는 인상과 분위기",
+    "외모 단정 없이 눈빛, 말투, 옷차림, 에너지, 첫 데이트 분위기를 묘사하세요. 왜 그 결이 이 사람에게 맞는지도 설명하세요.",
+    "## 9. 상대 정보가 있을 때 보는 궁합 포인트",
+    "상대 정보가 있으면 궁합의 긴장점/편한점/확인할 질문을 쓰고, 없으면 앞으로 상대를 볼 때 확인해야 할 질문 5개를 제안하세요.",
+    "## 10. 절대 피해야 할 연애 선택",
+    "이 사람에게 특히 손해가 되는 선택 3가지를 현실 예시와 함께 적으세요.",
+    "## 11. 다음 7일 행동 가이드",
+    "오늘, 3일 안, 7일 안으로 나눠 실제로 할 일을 제안하세요.",
+    "## 12. 결제 리포트 핵심 정리",
+    "마지막에는 '당신이 오늘 가져가야 할 한 문장'과 '이번 달 연애 행동 원칙 3개'를 정리하세요.",
+    "## 참고 안내",
+    "사주는 자기 이해를 돕는 참고용이며 실제 관계는 본인의 선택과 상대와의 상호작용에 따라 달라진다고 안내하세요.",
+  ].join("\n");
+}
+
 function extractGeminiText(payload: unknown) {
   const data = payload as {
     candidates?: Array<{
@@ -221,7 +382,7 @@ function extractGeminiText(payload: unknown) {
 function serialize(row: LoveFortuneRow) {
   const idealFace = row.ideal_face_profile && Object.keys(row.ideal_face_profile).length > 0
     ? row.ideal_face_profile
-    : buildIdealFaceProfile(row);
+    : buildIdealFaceProfileV2(row);
 
   return {
     id: row.id,
@@ -329,7 +490,7 @@ export async function POST(req: Request) {
     }
 
     if (row.ai_result) {
-      const idealFace = buildIdealFaceProfile(row);
+      const idealFace = buildIdealFaceProfileV2(row);
       return json(200, { ok: true, requestId, reading: serialize({ ...row, ideal_face_profile: row.ideal_face_profile ?? idealFace }) });
     }
 
@@ -339,8 +500,8 @@ export async function POST(req: Request) {
     }
 
     const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
-    const prompt = buildPrompt(row);
-    const idealFace = buildIdealFaceProfile(row);
+    const prompt = buildPromptV2(row);
+    const idealFace = buildIdealFaceProfileV2(row);
     const res = await fetch(`${GEMINI_API_URL}/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
       headers: {
@@ -352,7 +513,7 @@ export async function POST(req: Request) {
         generationConfig: {
           temperature: 0.72,
           topP: 0.9,
-          maxOutputTokens: 4600,
+          maxOutputTokens: 6500,
         },
       }),
     });
