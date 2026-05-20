@@ -669,8 +669,8 @@ async function buildPreview(
     approved_no_match_count: approvedNoMatchCount,
     mutual_no_exchange_count: mutualNoExchangeCount,
     recent_success_24h_count: recentSuccess24hCount,
-    subject: buildDefaultSubject(scope),
-    body: buildDefaultBody(scope),
+    subject: "",
+    body: "",
     sample_recipients: recipients.slice(0, 20),
   };
 }
