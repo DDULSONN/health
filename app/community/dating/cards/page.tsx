@@ -408,7 +408,7 @@ const BIRTH_TIME_OPTIONS = [
 
 const LOVE_STATE_OPTIONS = [
   "솔로",
-  "썸/소개팅 전",
+  "새 인연을 기다리는 중",
   "연애 중",
   "재회 고민",
   "상대 찾는 중",
@@ -422,7 +422,7 @@ const LOVE_FOCUS_OPTIONS = [
   "잘 맞는 상대",
   "올해/이번 달 연애 흐름",
   "새로운 인연이 들어오는 시기",
-  "소개팅에서 조심할 점",
+  "첫 만남에서 조심할 점",
   "썸 연락 타이밍",
   "재회 가능성",
   "궁합 포인트",
@@ -442,15 +442,13 @@ const FORTUNE_GENDER_OPTIONS = [
   { key: "other", label: "선택 안 함" },
 ];
 
-const BIRTH_TIME_CERTAINTY_OPTIONS = [
-  { key: "exact", label: "정확해요" },
-  { key: "about", label: "대략 알아요" },
-  { key: "unknown", label: "잘 몰라요" },
-];
-
 const LOVE_FORTUNE_BIRTH_YEARS = Array.from({ length: 69 }, (_, index) => String(2008 - index));
 const LOVE_FORTUNE_BIRTH_MONTHS = Array.from({ length: 12 }, (_, index) => String(index + 1).padStart(2, "0"));
 const LOVE_FORTUNE_BIRTH_DAYS = Array.from({ length: 31 }, (_, index) => String(index + 1).padStart(2, "0"));
+
+const LOVE_FORTUNE_STEMS = ["갑", "을", "병", "정", "무", "기", "경", "신", "임", "계"];
+const LOVE_FORTUNE_BRANCHES = ["자", "축", "인", "묘", "진", "사", "오", "미", "신", "유", "술", "해"];
+const LOVE_FORTUNE_ELEMENTS = ["목", "화", "토", "금", "수"];
 
 function getLoveFortuneBirthDays(year: string, month: string) {
   if (!year || !month) return LOVE_FORTUNE_BIRTH_DAYS;
@@ -465,14 +463,14 @@ const RELATIONSHIP_GOAL_OPTIONS = [
   "일단 좋은 사람 찾기",
   "재회/관계 회복",
   "썸을 연애로 발전",
-  "소개팅에서 자연스럽게 이어가기",
+  "첫 만남에서 자연스럽게 이어가기",
   "나와 맞는 사람 찾기",
 ];
 
 const MEETING_STYLE_OPTIONS = [
   "천천히 알아가는 만남",
   "대화가 잘 맞으면 빠르게 만나보기",
-  "소개팅처럼 목적이 분명한 만남",
+  "목적이 분명한 만남",
   "아직 모르겠음",
   "상대가 먼저 다가오면 좋음",
   "대화 후 천천히 결정",
@@ -533,7 +531,7 @@ const DETAIL_QUESTION_GROUPS = [
     items: ["상대 생년월일", "상대 태어난 시간", "상대와의 관계 단계", "보고 싶은 궁합 포인트"],
   },
   {
-    title: "소개팅 행동",
+    title: "첫 만남 행동",
     items: ["첫 연락 방식", "첫 만남 장소", "답장 텀 고민", "처음 보여주면 좋은 매력"],
   },
 ];
@@ -547,10 +545,10 @@ const LOVE_FORTUNE_REPORT_SECTIONS = [
   "내 연애 타입",
   "끌리는 사람 vs 오래 맞는 사람",
   "이번 주 연애 타이밍",
-  "소개팅에서 바로 써먹는 처방",
+  "첫 만남에서 바로 쓰는 처방",
   "잘 맞는 인상 카드",
   "궁합/상대 정보 포인트",
-  "썸/소개팅 행동 가이드",
+  "썸/첫 만남 행동 가이드",
   "연락 타이밍 가이드",
   "피해야 할 상대 유형",
   "첫 만남 대화 방향",
@@ -600,31 +598,39 @@ function makeLoveFortunePreview(
     birthTime === "unknown"
       ? "태어난 시간을 몰라도 큰 흐름은 충분히 볼 수 있어요."
       : `${BIRTH_TIME_OPTIONS.find((item) => item.key === birthTime)?.label ?? "선택한 시간"} 기운이 더해져 감정의 온도 조절이 중요한 편이에요.`;
+  const dayStem = LOVE_FORTUNE_STEMS[(seed + month) % LOVE_FORTUNE_STEMS.length];
+  const dayBranch = LOVE_FORTUNE_BRANCHES[(seed + 3) % LOVE_FORTUNE_BRANCHES.length];
+  const monthElement = LOVE_FORTUNE_ELEMENTS[(seed + 2) % LOVE_FORTUNE_ELEMENTS.length];
+  const relationshipPalace = pickBySeed(seed + 17, ["배우자궁 안정형", "관계궁 조율형", "도화 기운 관찰형", "속도 조절형"]);
 
   return {
     headline: pickBySeed(seed + 11, [
-      "편한데 설레는 사람을 놓치지 않는 게 핵심이에요.",
-      "호감은 천천히 오지만, 맞는 사람 앞에서는 오래 깊어지는 타입이에요.",
-      "이번 흐름은 조건보다 대화 온도를 먼저 봐야 좋아요.",
-      "끌림보다 안정감이 오래 가는 관계를 만드는 열쇠예요.",
+      "처음엔 천천히 보지만, 맞는 결 앞에서는 오래 깊어지는 명식이에요.",
+      "도화가 크게 튀기보다 관계궁이 편해질 때 마음이 열리는 흐름이에요.",
+      "조건보다 대화의 온도와 약속의 안정감에서 인연이 살아나요.",
+      "끌림을 오래 가게 만들려면 초반 속도보다 신뢰의 결을 봐야 해요.",
     ]),
+    dayStem,
+    dayBranch,
+    monthElement,
+    relationshipPalace,
     accuracy: `${calendarLabel} 기준으로 먼저 보고 있어요. 성별은 ${genderLabel}로 표시되며, 실제 상세 풀이에서는 절기 기준 만세력 계산과 태어난 시간 확실도를 함께 확인하는 흐름이 좋아요.`,
     expertCheck: birthTimeCertainty === "exact"
       ? "태어난 시간이 비교적 정확하다면 시주까지 반영한 연애 패턴을 더 깊게 볼 수 있어요."
       : birthTimeCertainty === "about"
         ? "태어난 시간이 대략적이면 핵심 성향은 보되, 세부 타이밍은 범위형으로 안내하는 편이 신뢰감 있어요."
         : "태어난 시간을 모를 때는 성향과 관계 패턴 중심으로 보고, 타이밍 단정은 줄이는 편이 안전해요.",
-    personality: `${seasonTone}이 보여요. ${pickBySeed(seed, [
-      "가볍게 시작해도 대화가 잘 맞으면 금방 집중하는 타입이에요.",
-      "상대의 태도와 말투를 꽤 세밀하게 보는 타입이에요.",
-      "편한 사람 앞에서 매력이 늦게 올라오는 타입이에요.",
-      "처음엔 담백하지만 관계가 안정되면 애정 표현이 늘어나는 타입이에요.",
+    personality: `${dayStem}${dayBranch}의 결로 보면 ${seasonTone}이 먼저 보여요. ${pickBySeed(seed, [
+      "가볍게 시작해도 대화가 맞으면 마음의 집중이 빠르게 깊어지는 편입니다.",
+      "상대의 태도와 말투를 세밀하게 읽고, 작은 어긋남에도 관계궁이 예민하게 반응합니다.",
+      "첫인상보다 두 번째, 세 번째 만남에서 매력이 올라오는 명식입니다.",
+      "처음엔 담백하지만 관계가 안정되면 애정 표현이 분명해지는 흐름입니다.",
     ])}`,
     match: pickBySeed(seed + 3, [
-      "말을 예쁘게 하고 약속을 안정적으로 지키는 사람이 잘 맞아요.",
-      "운동, 생활 루틴, 가치관이 비슷한 사람과 속도가 잘 맞아요.",
-      "너무 밀어붙이기보다 여유 있게 다가오는 사람이 좋아요.",
-      "자기 일이 있고 감정 표현도 솔직한 사람에게 끌리기 쉬워요.",
+      "말의 온도가 부드럽고 약속을 가볍게 여기지 않는 사람이 오래 맞습니다.",
+      "생활 루틴과 가치관의 리듬이 비슷한 사람에게 관계궁이 편하게 열립니다.",
+      "초반에 몰아붙이기보다 여유 있게 다가오는 사람과 흐름이 좋습니다.",
+      "자기 일이 있으면서도 감정 표현을 숨기지 않는 사람에게 마음이 안정됩니다.",
     ]),
     caution: `${timeTone} ${pickBySeed(seed + 7, [
       "상대 반응을 혼자 해석하기보다 짧게 확인하는 게 좋아요.",
@@ -642,11 +648,11 @@ function makeLoveFortunePreview(
       "처음부터 강하게 어필하기보다 생활 루틴과 대화 취향을 편하게 보여주는 쪽이 좋아요.",
       "사진보다 첫 문장과 생활권, 대화 온도가 잘 맞는 사람부터 보는 게 유리해요.",
       "조건을 너무 좁히기보다 실제 대화가 편한 후보를 먼저 확인하는 흐름이 좋아요.",
-      "지금은 내 매력을 과장하기보다 오래 볼 수 있는 사람에게 신뢰를 주는 소개가 좋아요.",
+      "지금은 내 매력을 과장하기보다 오래 볼 수 있는 사람에게 신뢰를 주는 태도가 좋아요.",
     ]),
     goalGuide: relationshipGoal || meetingPreference
       ? `${relationshipGoal || "연애 목표"} 기준으로 보면 ${meetingPreference || "맞는 만남 방식"}에 맞춘 행동 제안까지 이어볼 수 있어요.`
-      : "상세 리포트에서는 연애 목표와 선호 만남 방식을 같이 받아야 소개팅 행동 추천이 더 설득력 있어요.",
+      : "상세 풀이에서는 현재 마음의 방향과 반복 패턴을 같이 읽어야 행동 처방이 더 선명해져요.",
   };
 }
 
@@ -661,8 +667,8 @@ function AdminLoveFortunePanel() {
   const [gender, setGender] = useState("other");
   const [loveState, setLoveState] = useState(LOVE_STATE_OPTIONS[0]);
   const [focus, setFocus] = useState(LOVE_FOCUS_OPTIONS[0]);
-  const [relationshipGoal, setRelationshipGoal] = useState(RELATIONSHIP_GOAL_OPTIONS[0]);
-  const [meetingPreference, setMeetingPreference] = useState(MEETING_STYLE_OPTIONS[0]);
+  const [relationshipGoal] = useState("");
+  const [meetingPreference] = useState("");
   const [concern, setConcern] = useState("");
   const [repeatPattern, setRepeatPattern] = useState(LOVE_REPEAT_PATTERN_OPTIONS[0]);
   const [contactStyle, setContactStyle] = useState(LOVE_CONTACT_STYLE_OPTIONS[0]);
@@ -673,10 +679,7 @@ function AdminLoveFortunePanel() {
   const partnerRelation = PARTNER_RELATION_OPTIONS[0];
   const [detailOpen, setDetailOpen] = useState(false);
   const [fortuneStep, setFortuneStep] = useState(0);
-  const [aiLoading, setAiLoading] = useState(false);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
-  const [aiResult, setAiResult] = useState("");
-  const [aiError, setAiError] = useState("");
   const [checkoutError, setCheckoutError] = useState("");
   const birthDayOptions = useMemo(() => getLoveFortuneBirthDays(birthYear, birthMonth), [birthMonth, birthYear]);
   const birthDate = birthYear && birthMonth && birthDay ? `${birthYear}-${birthMonth}-${birthDay}` : "";
@@ -712,62 +715,6 @@ function AdminLoveFortunePanel() {
       setBirthDay("");
     }
   }, [birthDay, birthDayOptions]);
-
-  const requestAiPreview = useCallback(async () => {
-    if (!canPreview || aiLoading) return;
-    setAiLoading(true);
-    setAiError("");
-    setAiResult("");
-    try {
-      const res = await fetch("/api/admin/love-fortune/generate", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          birthDate,
-          birthTime,
-          birthTimeCertainty,
-          birthPlace,
-          calendarType,
-          gender,
-          loveState,
-          focus,
-          relationshipGoal,
-          meetingPreference,
-          concern: personalizedConcern || concern,
-          partnerBirthDate,
-          partnerBirthTime,
-          partnerRelation,
-        }),
-      });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; text?: string };
-      if (!res.ok || !body.ok || !body.text) {
-        throw new Error(body.message ?? "연애운 풀이를 생성하지 못했습니다.");
-      }
-      setAiResult(body.text);
-    } catch (error) {
-      setAiError(error instanceof Error ? error.message : "연애운 풀이를 생성하지 못했습니다.");
-    } finally {
-      setAiLoading(false);
-    }
-  }, [
-    aiLoading,
-    birthDate,
-    birthPlace,
-    birthTime,
-    birthTimeCertainty,
-    calendarType,
-    canPreview,
-    concern,
-    focus,
-    gender,
-    loveState,
-    meetingPreference,
-    personalizedConcern,
-    partnerBirthDate,
-    partnerBirthTime,
-    partnerRelation,
-    relationshipGoal,
-  ]);
 
   const requestLoveFortuneCheckout = useCallback(async () => {
     if (!canPreview || checkoutLoading) return;
@@ -828,7 +775,6 @@ function AdminLoveFortunePanel() {
   const calendarLabel = CALENDAR_OPTIONS.find((item) => item.key === calendarType)?.label ?? "양력";
   const genderLabel = FORTUNE_GENDER_OPTIONS.find((item) => item.key === gender)?.label ?? "선택 안 함";
   const birthTimeLabel = BIRTH_TIME_OPTIONS.find((item) => item.key === birthTime)?.label ?? "모름";
-  const certaintyLabel = BIRTH_TIME_CERTAINTY_OPTIONS.find((item) => item.key === birthTimeCertainty)?.label ?? "모름";
   const step = Math.min(fortuneStep, 4);
   const canShowPaidDetail = step >= 4 && Boolean(preview);
   const fortuneProgress = Math.max(1, Math.min(step + 1, 5));
@@ -862,10 +808,10 @@ function AdminLoveFortunePanel() {
       <div
         className={`max-w-[82%] rounded-[24px] rounded-tr-md px-4 py-3 ${
           tone === "rose"
-            ? "bg-rose-600 text-white shadow-[0_12px_26px_rgba(225,29,72,0.18)]"
+            ? "bg-[#7a2f22] text-[#fff8ec] shadow-[0_12px_26px_rgba(87,39,18,0.18)]"
             : tone === "light"
-              ? "bg-amber-50 text-neutral-800 shadow-[0_12px_26px_rgba(120,53,15,0.08)]"
-              : "bg-neutral-950 text-white shadow-[0_12px_26px_rgba(0,0,0,0.16)]"
+              ? "bg-[#fff4dc] text-[#2b2118] shadow-[0_12px_26px_rgba(120,53,15,0.08)]"
+              : "bg-[#211710] text-[#fff8ec] shadow-[0_12px_26px_rgba(0,0,0,0.16)]"
         }`}
       >
         {children}
@@ -874,7 +820,7 @@ function AdminLoveFortunePanel() {
   );
 
   return (
-    <section className="fortune-room relative isolate mx-auto mb-5 max-w-2xl overflow-hidden rounded-[30px] border border-amber-200/70 bg-[#170f14] p-3 text-neutral-900 shadow-[0_18px_55px_rgba(69,26,3,0.18)] md:p-5">
+    <section className="fortune-room relative isolate mx-auto mb-5 max-w-2xl overflow-hidden rounded-[30px] border border-[#d6c29d] bg-[#2a2016] p-3 text-neutral-900 shadow-[0_18px_55px_rgba(69,26,3,0.18)] md:p-5">
       <style>{`
         .fortune-room::before {
           content: "";
@@ -882,10 +828,10 @@ function AdminLoveFortunePanel() {
           inset: 0;
           z-index: -2;
           background:
-            radial-gradient(circle at 12% 8%, rgba(251, 191, 36, 0.28), transparent 24%),
-            radial-gradient(circle at 90% 10%, rgba(244, 63, 94, 0.22), transparent 24%),
-            radial-gradient(circle at 50% 118%, rgba(132, 204, 22, 0.18), transparent 34%),
-            linear-gradient(145deg, #170f14 0%, #2a1618 45%, #111014 100%);
+            radial-gradient(circle at 12% 8%, rgba(184, 122, 47, 0.24), transparent 24%),
+            radial-gradient(circle at 88% 0%, rgba(120, 34, 24, 0.22), transparent 28%),
+            radial-gradient(circle at 50% 118%, rgba(215, 190, 145, 0.15), transparent 34%),
+            linear-gradient(145deg, #2b2118 0%, #3a2a1f 45%, #17130f 100%);
         }
         .fortune-room::after {
           content: "";
@@ -935,7 +881,7 @@ function AdminLoveFortunePanel() {
           50% { transform: translateY(-4px) rotate(1deg); }
         }
       `}</style>
-      <div className="mb-4 overflow-hidden rounded-[30px] border border-rose-200 bg-[radial-gradient(circle_at_72%_0%,rgba(244,114,182,0.32),transparent_34%),linear-gradient(135deg,#fff1f7,#fff8ed)] p-5 shadow-[0_18px_50px_rgba(244,63,94,0.14)]">
+      <div className="mb-4 overflow-hidden rounded-[30px] border border-[#d8c39d] bg-[radial-gradient(circle_at_72%_0%,rgba(154,90,35,0.18),transparent_34%),linear-gradient(135deg,#fff8ec,#f4e5c8)] p-5 shadow-[0_18px_50px_rgba(75,46,24,0.16)]">
         <div className="flex items-start gap-4">
           <div className="fortune-avatar h-16 w-16 shrink-0 overflow-hidden rounded-[24px] bg-white/80 ring-2 ring-white">
             {/* eslint-disable-next-line @next/next/no-img-element */}
@@ -952,16 +898,16 @@ function AdminLoveFortunePanel() {
             />
           </div>
           <div className="min-w-0">
-            <p className="text-xs font-black tracking-[0.2em] text-rose-600">사주 × 연애</p>
-            <h2 className="mt-2 text-2xl font-black leading-8 text-neutral-950">사주로 보는 나의 사랑 흐름</h2>
+            <p className="text-xs font-black tracking-[0.2em] text-[#8a2f20]">명리 · 연애</p>
+            <h2 className="mt-2 text-2xl font-black leading-8 text-[#24170f]">연애 명식 풀이</h2>
             <p className="mt-2 text-sm leading-6 text-neutral-600">
-              명식, 오행, 대운 흐름을 바탕으로 연애 성향과 사랑 타이밍을 먼저 가볍게 봅니다.
+              생년월일과 태어난 시간으로 명식의 결을 세우고, 사랑에서 반복되는 흐름을 봅니다.
             </p>
           </div>
         </div>
         <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-4">
-          {["명식 구성", "오행 분포", "대운 흐름", "궁합 포인트"].map((item) => (
-            <div key={item} className="rounded-2xl border border-white/70 bg-white/70 px-3 py-3 text-center text-xs font-black text-neutral-700">
+          {["사주팔자", "오행 균형", "배우자궁", "대운 흐름"].map((item) => (
+            <div key={item} className="rounded-2xl border border-[#e4d0aa] bg-[#fffaf0]/80 px-3 py-3 text-center text-xs font-black text-[#6b3f24]">
               {item}
             </div>
           ))}
@@ -1007,7 +953,7 @@ function AdminLoveFortunePanel() {
         {step === 0 ? (
           <div className="flex gap-3">
             <div className="w-9 shrink-0" />
-            <div className="max-w-[86%] rounded-[24px] bg-white/80 px-4 py-3 shadow-sm">
+            <div className="max-w-[86%] rounded-[24px] border border-[#d8c39d] bg-[#f6ead2] px-4 py-3 shadow-sm">
               <div className="flex flex-wrap gap-2">
                 {CALENDAR_OPTIONS.map((item) => (
                   <button
@@ -1015,7 +961,7 @@ function AdminLoveFortunePanel() {
                     type="button"
                     onClick={() => setCalendarType(item.key)}
                     className={`fortune-choice rounded-full px-3 py-2 text-xs font-black ${
-                      calendarType === item.key ? "bg-neutral-950 text-white shadow-md" : "bg-neutral-100 text-neutral-500 hover:bg-amber-100"
+                      calendarType === item.key ? "bg-[#2b2118] text-[#fff8ec] shadow-md" : "bg-[#fffaf0] text-[#6b3f24] hover:bg-[#f5e4c3]"
                     }`}
                   >
                     {item.label}
@@ -1028,7 +974,7 @@ function AdminLoveFortunePanel() {
                   id="love-fortune-birth-year"
                   value={birthYear}
                   onChange={(event) => setBirthYear(event.target.value)}
-                  className="h-12 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-black text-neutral-900 outline-none focus:border-rose-300"
+                  className="h-12 rounded-2xl border border-[#d6c29d] bg-[#fffaf0] px-3 text-sm font-black text-[#2b2118] outline-none focus:border-[#8a2f20]"
                 >
                   <option value="">년도</option>
                   {LOVE_FORTUNE_BIRTH_YEARS.map((year) => (
@@ -1040,7 +986,7 @@ function AdminLoveFortunePanel() {
                   id="love-fortune-birth-month"
                   value={birthMonth}
                   onChange={(event) => setBirthMonth(event.target.value)}
-                  className="h-12 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-black text-neutral-900 outline-none focus:border-rose-300"
+                  className="h-12 rounded-2xl border border-[#d6c29d] bg-[#fffaf0] px-3 text-sm font-black text-[#2b2118] outline-none focus:border-[#8a2f20]"
                 >
                   <option value="">월</option>
                   {LOVE_FORTUNE_BIRTH_MONTHS.map((month) => (
@@ -1052,7 +998,7 @@ function AdminLoveFortunePanel() {
                   id="love-fortune-birth-day"
                   value={birthDay}
                   onChange={(event) => setBirthDay(event.target.value)}
-                  className="h-12 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-black text-neutral-900 outline-none focus:border-rose-300"
+                  className="h-12 rounded-2xl border border-[#d6c29d] bg-[#fffaf0] px-3 text-sm font-black text-[#2b2118] outline-none focus:border-[#8a2f20]"
                 >
                   <option value="">일</option>
                   {birthDayOptions.map((day) => (
@@ -1060,7 +1006,7 @@ function AdminLoveFortunePanel() {
                   ))}
                 </select>
               </div>
-              <p className="mt-2 text-xs font-semibold text-neutral-400">연도부터 바로 고를 수 있게 바꿨어요. 선택한 생년월일은 유료 상세에도 그대로 사용됩니다.</p>
+              <p className="mt-2 text-xs font-semibold text-[#8a7353]">이 생년월일을 기준으로 명식의 큰 줄기를 세웁니다.</p>
               <div className="mt-3 grid grid-cols-3 gap-2">
                 {FORTUNE_GENDER_OPTIONS.map((item) => (
                   <button
@@ -1069,8 +1015,8 @@ function AdminLoveFortunePanel() {
                     onClick={() => setGender(item.key)}
                     className={`fortune-choice rounded-2xl border px-3 py-3 text-sm font-black ${
                       gender === item.key
-                        ? "border-rose-500 bg-rose-600 text-white shadow-md"
-                        : "border-neutral-200 bg-white text-neutral-600 hover:border-amber-300 hover:bg-amber-50"
+                        ? "border-[#2b2118] bg-[#2b2118] text-[#fff8ec] shadow-md"
+                        : "border-[#d6c29d] bg-[#fffaf0] text-[#6b3f24] hover:border-[#8a2f20] hover:bg-[#f5e4c3]"
                     }`}
                   >
                     {item.label}
@@ -1096,43 +1042,30 @@ function AdminLoveFortunePanel() {
             {renderBotBubble(
               <>
                 <p className="text-sm font-black text-neutral-950">태어난 시간은 아세요?</p>
-                <p className="mt-1 text-xs leading-5 text-neutral-500">정확할수록 관계의 세부 결까지 보고, 모르면 성향과 흐름 중심으로 볼게요.</p>
+                <p className="mt-1 text-xs leading-5 text-neutral-500">모르면 ‘모름’을 고르셔도 됩니다. 다시 한 번 정확도를 묻지 않아요.</p>
               </>
             )}
             {step === 1 ? (
               <div className="flex gap-3">
                 <div className="w-9 shrink-0" />
-                <div className="max-w-[86%] rounded-[24px] bg-white/80 px-4 py-3 shadow-sm">
+                <div className="max-w-[86%] rounded-[24px] border border-[#d8c39d] bg-[#f6ead2] px-4 py-3 shadow-sm">
                   <div className="grid grid-cols-3 gap-2">
                     {BIRTH_TIME_OPTIONS.map((item) => (
                       <button
                         key={item.key}
                         type="button"
-                        onClick={() => setBirthTime(item.key)}
+                        onClick={() => {
+                          setBirthTime(item.key);
+                          setBirthTimeCertainty(item.key === "unknown" ? "unknown" : "exact");
+                        }}
                     className={`fortune-choice rounded-2xl border px-2 py-2 text-center ${
                       birthTime === item.key
                         ? "border-neutral-950 bg-neutral-950 text-white shadow-md"
-                        : "border-neutral-200 bg-white text-neutral-700 hover:border-amber-300 hover:bg-amber-50"
+                        : "border-[#d6c29d] bg-[#fffaf0] text-[#4a3323] hover:border-[#8a2f20] hover:bg-[#f5e4c3]"
                     }`}
                   >
                         <span className="block text-sm font-black">{item.label}</span>
                         <span className={`mt-0.5 block text-[11px] ${birthTime === item.key ? "text-white/70" : "text-neutral-400"}`}>{item.time}</span>
-                      </button>
-                    ))}
-                  </div>
-                  <div className="mt-3 grid grid-cols-3 gap-2">
-                    {BIRTH_TIME_CERTAINTY_OPTIONS.map((item) => (
-                      <button
-                        key={item.key}
-                        type="button"
-                        onClick={() => setBirthTimeCertainty(item.key)}
-                    className={`fortune-choice rounded-2xl border px-2 py-2 text-xs font-black ${
-                      birthTimeCertainty === item.key
-                        ? "border-rose-500 bg-rose-600 text-white shadow-md"
-                        : "border-neutral-200 bg-neutral-50 text-neutral-600 hover:border-amber-300 hover:bg-amber-50"
-                    }`}
-                  >
-                        {item.label}
                       </button>
                     ))}
                   </div>
@@ -1141,7 +1074,7 @@ function AdminLoveFortunePanel() {
                     value={birthPlace}
                     onChange={(event) => setBirthPlace(event.target.value.slice(0, 40))}
                     placeholder="태어난 지역도 알면 입력해 주세요"
-                    className="mt-3 h-11 w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 text-sm font-semibold text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-rose-300"
+                    className="mt-3 h-11 w-full rounded-2xl border border-[#d6c29d] bg-[#fffaf0] px-4 text-sm font-semibold text-[#2b2118] outline-none placeholder:text-[#9b8463] focus:border-[#8a2f20]"
                   />
                   <button
                     type="button"
@@ -1153,7 +1086,7 @@ function AdminLoveFortunePanel() {
                 </div>
               </div>
             ) : (
-              renderUserBubble(<p className="text-sm font-bold">{birthTimeLabel} · {certaintyLabel}{birthPlace ? ` · ${birthPlace}` : ""}</p>, "light")
+              renderUserBubble(<p className="text-sm font-bold">{birthTimeLabel}{birthPlace ? ` · ${birthPlace}` : ""}</p>, "light")
             )}
           </>
         ) : null}
@@ -1162,35 +1095,21 @@ function AdminLoveFortunePanel() {
           <>
             {renderBotBubble(
               <>
-                <p className="text-sm font-black text-neutral-950">지금 연애 국면은 어디에 가까워요?</p>
-                <p className="mt-1 text-xs leading-5 text-neutral-500">사주는 같은 생년월일이어도 현재 상황에 따라 풀이의 초점이 달라져요.</p>
+                <p className="text-sm font-black text-neutral-950">지금 마음의 자리는 어디에 가까워요?</p>
+                <p className="mt-1 text-xs leading-5 text-neutral-500">같은 명식도 지금 놓인 관계의 자리마다 풀이의 초점이 달라집니다.</p>
               </>
             )}
             {step === 2 ? (
               <div className="flex gap-3">
                 <div className="w-9 shrink-0" />
-                <div className="max-w-[86%] rounded-[24px] bg-white/80 px-4 py-3 shadow-sm">
+                <div className="max-w-[86%] rounded-[24px] border border-[#d8c39d] bg-[#f6ead2] px-4 py-3 shadow-sm">
                   <div className="grid gap-2">
                     <select
                       value={loveState}
                       onChange={(event) => setLoveState(event.target.value)}
-                      className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                      className="h-11 rounded-2xl border border-[#d6c29d] bg-[#fffaf0] px-3 text-sm font-semibold text-[#2b2118] outline-none focus:border-[#8a2f20]"
                     >
                       {LOVE_STATE_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-                    </select>
-                    <select
-                      value={relationshipGoal}
-                      onChange={(event) => setRelationshipGoal(event.target.value)}
-                      className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
-                    >
-                      {RELATIONSHIP_GOAL_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-                    </select>
-                    <select
-                      value={meetingPreference}
-                      onChange={(event) => setMeetingPreference(event.target.value)}
-                      className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
-                    >
-                      {MEETING_STYLE_OPTIONS.map((option) => <option key={option}>{option}</option>)}
                     </select>
                   </div>
                   <button
@@ -1206,7 +1125,6 @@ function AdminLoveFortunePanel() {
               renderUserBubble(
                 <>
                   <p className="text-sm font-bold">{loveState}</p>
-                  <p className="mt-1 text-xs text-white/80">{relationshipGoal} · {meetingPreference}</p>
                 </>,
                 "rose"
               )
@@ -1219,48 +1137,48 @@ function AdminLoveFortunePanel() {
             {renderBotBubble(
               <>
                 <p className="text-sm font-black text-neutral-950">마지막으로, 뭐가 제일 궁금해요?</p>
-                <p className="mt-1 text-xs leading-5 text-neutral-500">반복되는 패턴을 같이 보면 결과가 훨씬 내 얘기처럼 나와요.</p>
+                <p className="mt-1 text-xs leading-5 text-neutral-500">반복되는 결을 같이 보면 풀이가 훨씬 또렷해집니다.</p>
               </>
             )}
             {step === 3 ? (
               <div className="flex gap-3">
                 <div className="w-9 shrink-0" />
-                <div className="max-w-[86%] rounded-[24px] bg-white/80 px-4 py-3 shadow-sm">
+                <div className="max-w-[86%] rounded-[24px] border border-[#d8c39d] bg-[#f6ead2] px-4 py-3 shadow-sm">
                   <select
                     value={focus}
                     onChange={(event) => setFocus(event.target.value)}
-                    className="h-11 w-full rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                    className="h-11 w-full rounded-2xl border border-[#d6c29d] bg-[#fffaf0] px-3 text-sm font-semibold text-[#2b2118] outline-none focus:border-[#8a2f20]"
                   >
                     {LOVE_FOCUS_OPTIONS.map((option) => <option key={option}>{option}</option>)}
                   </select>
                   <textarea
                     value={concern}
                     onChange={(event) => setConcern(event.target.value.slice(0, 140))}
-                    placeholder="예: 소개팅이 계속 끊겨요"
-                    className="mt-3 min-h-[84px] w-full rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-semibold leading-6 text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-rose-300"
+                    placeholder="예: 마음이 커질수록 불안해져요"
+                    className="mt-3 min-h-[84px] w-full rounded-2xl border border-[#d6c29d] bg-[#fffaf0] px-4 py-3 text-sm font-semibold leading-6 text-[#2b2118] outline-none placeholder:text-[#9b8463] focus:border-[#8a2f20]"
                   />
                   <div className="mt-3 grid gap-2">
-                    <label className="text-[11px] font-black text-neutral-500">내 연애에서 자주 반복되는 느낌</label>
+                    <label className="text-[11px] font-black text-[#8a7353]">내 연애에서 자주 반복되는 결</label>
                     <select
                       value={repeatPattern}
                       onChange={(event) => setRepeatPattern(event.target.value)}
-                      className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                      className="h-11 rounded-2xl border border-[#d6c29d] bg-[#fffaf0] px-3 text-sm font-semibold text-[#2b2118] outline-none focus:border-[#8a2f20]"
                     >
                       {LOVE_REPEAT_PATTERN_OPTIONS.map((option) => <option key={option}>{option}</option>)}
                     </select>
-                    <label className="text-[11px] font-black text-neutral-500">연락할 때 나는 편</label>
+                    <label className="text-[11px] font-black text-[#8a7353]">연락할 때 나는 편</label>
                     <select
                       value={contactStyle}
                       onChange={(event) => setContactStyle(event.target.value)}
-                      className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                      className="h-11 rounded-2xl border border-[#d6c29d] bg-[#fffaf0] px-3 text-sm font-semibold text-[#2b2118] outline-none focus:border-[#8a2f20]"
                     >
                       {LOVE_CONTACT_STYLE_OPTIONS.map((option) => <option key={option}>{option}</option>)}
                     </select>
-                    <label className="text-[11px] font-black text-neutral-500">관계에서 불안해지는 순간</label>
+                    <label className="text-[11px] font-black text-[#8a7353]">관계에서 불안해지는 순간</label>
                     <select
                       value={anxietyMoment}
                       onChange={(event) => setAnxietyMoment(event.target.value)}
-                      className="h-11 rounded-2xl border border-neutral-200 bg-white px-3 text-sm font-semibold text-neutral-900 outline-none focus:border-rose-300"
+                      className="h-11 rounded-2xl border border-[#d6c29d] bg-[#fffaf0] px-3 text-sm font-semibold text-[#2b2118] outline-none focus:border-[#8a2f20]"
                     >
                       {LOVE_ANXIETY_MOMENT_OPTIONS.map((option) => <option key={option}>{option}</option>)}
                     </select>
@@ -1269,15 +1187,15 @@ function AdminLoveFortunePanel() {
                       value={partnerFeedback}
                       onChange={(event) => setPartnerFeedback(event.target.value.slice(0, 70))}
                       placeholder="상대에게 자주 들은 말이 있다면 (선택)"
-                      className="h-11 rounded-2xl border border-neutral-200 bg-neutral-50 px-3 text-sm font-semibold text-neutral-900 outline-none placeholder:text-neutral-400 focus:border-rose-300"
+                      className="h-11 rounded-2xl border border-[#d6c29d] bg-[#fffaf0] px-3 text-sm font-semibold text-[#2b2118] outline-none placeholder:text-[#9b8463] focus:border-[#8a2f20]"
                     />
                   </div>
                   <button
                     type="button"
                     onClick={() => setFortuneStep(4)}
-                    className="mt-3 h-11 w-full rounded-2xl bg-rose-600 text-sm font-black text-white"
+                    className="mt-3 h-11 w-full rounded-2xl bg-[#2b2118] text-sm font-black text-[#fff8ec]"
                   >
-                    무료 미리보기 보기
+                    명식 맛보기 보기
                   </button>
                 </div>
               </div>
@@ -1300,41 +1218,41 @@ function AdminLoveFortunePanel() {
           <>
             {renderBotBubble(
               <>
-                <p className="text-xs font-black text-rose-600">무료 미리보기</p>
+                <p className="text-xs font-black text-[#8a2f20]">명식 맛보기</p>
                 <p className="mt-2 text-xl font-black leading-8 text-neutral-950">{preview.headline}</p>
                 <div className="mt-4 space-y-2">
                   <div className="grid grid-cols-3 gap-2">
-                    <div className="rounded-2xl border border-rose-100 bg-rose-50 p-3 text-center">
-                      <p className="text-[11px] font-black text-rose-700">연애운</p>
-                      <p className="mt-1 text-xl font-black text-rose-600">{78 + (birthDate.replace(/\D/g, "").length % 12)}%</p>
+                    <div className="rounded-2xl border border-[#e1caa1] bg-[#fff8ec] p-3 text-center">
+                      <p className="text-[11px] font-black text-[#8a2f20]">일간</p>
+                      <p className="mt-1 text-xl font-black text-[#2b2118]">{preview.dayStem}{preview.dayBranch}</p>
                     </div>
-                    <div className="rounded-2xl border border-amber-100 bg-amber-50 p-3 text-center">
-                      <p className="text-[11px] font-black text-amber-700">명식</p>
-                      <p className="mt-1 text-xl font-black text-amber-700">초안</p>
+                    <div className="rounded-2xl border border-[#e1caa1] bg-[#fff8ec] p-3 text-center">
+                      <p className="text-[11px] font-black text-[#8a2f20]">월 기운</p>
+                      <p className="mt-1 text-xl font-black text-[#9a5a23]">{preview.monthElement}</p>
                     </div>
-                    <div className="rounded-2xl border border-violet-100 bg-violet-50 p-3 text-center">
-                      <p className="text-[11px] font-black text-violet-700">타이밍</p>
-                      <p className="mt-1 text-xl font-black text-violet-700">열림</p>
+                    <div className="rounded-2xl border border-[#e1caa1] bg-[#fff8ec] p-3 text-center">
+                      <p className="text-[11px] font-black text-[#8a2f20]">관계궁</p>
+                      <p className="mt-1 text-base font-black text-[#2b2118]">{preview.relationshipPalace}</p>
                     </div>
                   </div>
-                  <div className="rounded-2xl bg-neutral-50 p-3">
-                    <p className="text-xs font-black text-rose-700">나의 연애 성향</p>
-                    <p className="mt-1 text-sm leading-6 text-neutral-700">{preview.personality}</p>
+                  <div className="rounded-2xl bg-[#fff8ec] p-3">
+                    <p className="text-xs font-black text-[#8a2f20]">연애 결</p>
+                    <p className="mt-1 text-sm leading-6 text-[#4a3323]">{preview.personality}</p>
                   </div>
-                  <div className="rounded-2xl bg-neutral-50 p-3">
-                    <p className="text-xs font-black text-amber-700">개인 패턴 체크</p>
-                    <p className="mt-1 text-sm leading-6 text-neutral-700">
+                  <div className="rounded-2xl bg-[#fff8ec] p-3">
+                    <p className="text-xs font-black text-[#9a5a23]">반복 결</p>
+                    <p className="mt-1 text-sm leading-6 text-[#4a3323]">
                       {repeatPattern !== LOVE_REPEAT_PATTERN_OPTIONS[0] ? repeatPattern : "아직 반복 패턴은 넓게 볼게요."}
                       {contactStyle !== LOVE_CONTACT_STYLE_OPTIONS[0] ? ` 연락은 ${contactStyle} 쪽으로 반영합니다.` : ""}
                     </p>
                   </div>
-                  <div className="rounded-2xl bg-neutral-50 p-3">
-                    <p className="text-xs font-black text-sky-700">잘 맞는 상대</p>
-                    <p className="mt-1 text-sm leading-6 text-neutral-700">{preview.match}</p>
+                  <div className="rounded-2xl bg-[#fff8ec] p-3">
+                    <p className="text-xs font-black text-[#315f55]">잘 맞는 상대</p>
+                    <p className="mt-1 text-sm leading-6 text-[#4a3323]">{preview.match}</p>
                   </div>
-                  <div className="rounded-2xl bg-neutral-50 p-3">
-                    <p className="text-xs font-black text-emerald-700">현실 행동 가이드</p>
-                    <p className="mt-1 text-sm leading-6 text-neutral-700">{preview.action}</p>
+                  <div className="rounded-2xl bg-[#fff8ec] p-3">
+                    <p className="text-xs font-black text-[#5c4a2f]">풀이 처방</p>
+                    <p className="mt-1 text-sm leading-6 text-[#4a3323]">{preview.action}</p>
                   </div>
                 </div>
                 <button
@@ -1353,7 +1271,7 @@ function AdminLoveFortunePanel() {
                   <>
                     <p className="text-sm font-black text-neutral-950">상세 풀이에서는 여기까지 열려요.</p>
                     <p className="mt-1 text-xs leading-5 text-neutral-500">
-                      무료 미리보기는 방향만 보여드려요. 상세 풀이에서는 내 연애가 반복해서 막히는 지점, 끌리지만 오래가기 어려운 상대, 지금 만남을 열어야 하는 타이밍까지 풀어드립니다.
+                      맛보기는 명식의 첫 결만 보여드립니다. 상세 풀이에서는 일간, 오행 균형, 배우자궁, 대운 흐름을 묶어서 내 연애가 반복해서 막히는 지점까지 풀어드립니다.
                     </p>
                     <div className="mt-3 overflow-hidden rounded-[22px] border border-amber-100 bg-[#fff8ec]">
                       <div className="border-b border-amber-100 px-4 py-3">
@@ -1362,9 +1280,9 @@ function AdminLoveFortunePanel() {
                       </div>
                       <div className="grid gap-2 p-3 text-xs leading-5 text-neutral-600 sm:grid-cols-2">
                         {[
-                          "내가 끌리는 사람과 오래 맞는 사람의 차이",
-                          "연락이 끊기거나 애매해지는 실제 지점",
-                          "이번 달/이번 주 만남을 열어야 하는 타이밍",
+                          "일간과 배우자궁으로 보는 내 연애의 기본 결",
+                          "오행 균형에서 보이는 끌림과 불안의 원인",
+                          "대운/세운으로 보는 만남이 열리는 시기",
                           "첫 연락, 첫 만남, 피해야 할 말까지 현실 처방",
                         ].map((item) => (
                           <div key={item} className="rounded-2xl bg-white px-3 py-2 font-bold">
@@ -1403,17 +1321,9 @@ function AdminLoveFortunePanel() {
                       <div className="mt-3 flex flex-wrap gap-2">
                         <button
                           type="button"
-                          onClick={() => void requestAiPreview()}
-                          disabled={aiLoading}
-                          className="rounded-full bg-white px-4 py-2 text-sm font-black text-neutral-950 disabled:cursor-not-allowed disabled:bg-neutral-400"
-                        >
-                          {aiLoading ? "풀이 중..." : "상담 미리보기"}
-                        </button>
-                        <button
-                          type="button"
                           onClick={() => void requestLoveFortuneCheckout()}
                           disabled={checkoutLoading}
-                          className="rounded-full bg-rose-600 px-4 py-2 text-sm font-black text-white shadow-[0_12px_26px_rgba(225,29,72,0.28)] disabled:cursor-not-allowed disabled:bg-neutral-500"
+                          className="rounded-full bg-[#8a2f20] px-4 py-2 text-sm font-black text-[#fff8ec] shadow-[0_12px_26px_rgba(87,39,18,0.28)] disabled:cursor-not-allowed disabled:bg-neutral-500"
                         >
                           {checkoutLoading ? "결제 준비 중..." : "9,900원으로 상세 풀이 보기"}
                         </button>
@@ -1432,15 +1342,6 @@ function AdminLoveFortunePanel() {
 
             {checkoutError ? (
               <p className="ml-12 rounded-[18px] border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{checkoutError}</p>
-            ) : null}
-            {aiError ? (
-              <p className="ml-12 rounded-[18px] border border-red-100 bg-red-50 p-3 text-sm font-semibold text-red-700">{aiError}</p>
-            ) : null}
-            {aiResult ? (
-              <div className="ml-12 rounded-[22px] border border-neutral-200 bg-white p-4">
-                <p className="text-sm font-black text-neutral-950">도화냥 상세 미리보기</p>
-                <div className="mt-3 whitespace-pre-wrap text-sm leading-7 text-neutral-700">{aiResult}</div>
-              </div>
             ) : null}
             <p className="ml-12 text-[11px] leading-5 text-neutral-400">재미와 자기 이해를 위한 참고용 결과입니다. 실제 만남과 선택은 본인의 판단을 우선해 주세요.</p>
           </>
