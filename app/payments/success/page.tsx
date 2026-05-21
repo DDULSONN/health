@@ -564,7 +564,7 @@ function PaymentSuccessContent() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (result?.productType !== "love_fortune_detail" || !result.readingId || fortuneReading || fortuneLoading || fortuneGenerateAttempted) return;
+    if (result?.productType !== "love_fortune_detail" || !result.readingId || fortuneReading || fortuneGenerateAttempted) return;
 
     let cancelled = false;
     const controller = new AbortController();
@@ -602,7 +602,7 @@ function PaymentSuccessContent() {
       window.clearTimeout(timeout);
       controller.abort();
     };
-  }, [fortuneGenerateAttempted, fortuneLoading, fortuneReading, result]);
+  }, [fortuneGenerateAttempted, fortuneReading, result]);
 
   useEffect(() => {
     if (!fortuneLoading) return;
