@@ -408,26 +408,20 @@ const BIRTH_TIME_OPTIONS = [
 
 const LOVE_STATE_OPTIONS = [
   "솔로",
-  "새 인연을 기다리는 중",
+  "썸/연락 중",
   "연애 중",
-  "재회 고민",
-  "상대 찾는 중",
   "최근 이별",
-  "연락 중인 상대 있음",
+  "재회 고민",
   "결혼 고민",
 ];
 
 const LOVE_FOCUS_OPTIONS = [
   "나의 연애 성향",
   "잘 맞는 상대",
-  "올해/이번 달 연애 흐름",
-  "새로운 인연이 들어오는 시기",
-  "첫 만남에서 조심할 점",
-  "썸 연락 타이밍",
+  "연애가 풀리는 시기",
+  "연락과 첫 만남",
   "재회 가능성",
   "궁합 포인트",
-  "잘 맞는 인상",
-  "장기연애/결혼 흐름",
 ];
 
 const CALENDAR_OPTIONS = [
@@ -488,11 +482,9 @@ const LOVE_REPEAT_PATTERN_OPTIONS = [
   "아직 잘 모르겠음",
   "초반엔 잘 되다가 연락이 식어요",
   "내가 더 좋아하면 불안해져요",
-  "상대가 다가오면 갑자기 식어요",
   "좋은 사람보다 어려운 사람에게 끌려요",
   "표현을 아끼다가 오해를 만들어요",
-  "관계가 안정되면 지루하게 느껴져요",
-  "상대 기준을 너무 빨리 판단해요",
+  "상대가 다가오면 오히려 조심스러워져요",
 ];
 
 const LOVE_CONTACT_STYLE_OPTIONS = [
@@ -656,6 +648,57 @@ function makeLoveFortunePreview(
   };
 }
 
+type LoveFortuneHistoryReading = {
+  id: string;
+  status: string;
+  birthDate: string;
+  calendarType: string;
+  gender: string;
+  loveState: string | null;
+  focus: string | null;
+  concern: string | null;
+  amount: number;
+  aiResult: string | null;
+  generatedAt: string | null;
+  createdAt: string;
+  idealFace: {
+    title?: string;
+    eye?: string;
+    smile?: string;
+    mood?: string;
+    style?: string;
+    firstDate?: string;
+    avoid?: string;
+    note?: string;
+  } | null;
+};
+
+function parseLoveFortuneHistoryReport(text: string | null) {
+  if (!text) return [];
+  const sections: Array<{ title: string; body: string }> = [];
+  let currentTitle = "상세 풀이";
+  let currentLines: string[] = [];
+
+  for (const rawLine of text.replace(/```/g, "").replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*/g, "").split(/\r?\n/)) {
+    const heading = rawLine.trim().match(/^#{1,3}\s+(.+)$/);
+    if (heading) {
+      if (currentLines.join("\n").trim()) {
+        sections.push({ title: currentTitle, body: currentLines.join("\n").trim() });
+      }
+      currentTitle = heading[1]?.trim() || "상세 풀이";
+      currentLines = [];
+      continue;
+    }
+    currentLines.push(rawLine);
+  }
+
+  if (currentLines.join("\n").trim()) {
+    sections.push({ title: currentTitle, body: currentLines.join("\n").trim() });
+  }
+
+  return sections.length > 0 ? sections : [{ title: "상세 풀이", body: text.trim() }];
+}
+
 function AdminLoveFortunePanel() {
   const [birthYear, setBirthYear] = useState("");
   const [birthMonth, setBirthMonth] = useState("");
@@ -681,6 +724,12 @@ function AdminLoveFortunePanel() {
   const [fortuneStep, setFortuneStep] = useState(0);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [checkoutError, setCheckoutError] = useState("");
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [historyError, setHistoryError] = useState("");
+  const [historyReadings, setHistoryReadings] = useState<LoveFortuneHistoryReading[]>([]);
+  const [selectedHistoryReading, setSelectedHistoryReading] = useState<LoveFortuneHistoryReading | null>(null);
   const birthDayOptions = useMemo(() => getLoveFortuneBirthDays(birthYear, birthMonth), [birthMonth, birthYear]);
   const birthDate = birthYear && birthMonth && birthDay ? `${birthYear}-${birthMonth}-${birthDay}` : "";
   const canPreview = /^\d{4}-\d{2}-\d{2}$/.test(birthDate);
@@ -771,6 +820,29 @@ function AdminLoveFortunePanel() {
     partnerRelation,
     relationshipGoal,
   ]);
+
+  const loadLoveFortuneHistory = useCallback(async (force = false) => {
+    if (historyLoading || (!force && historyLoaded)) return;
+    setHistoryLoading(true);
+    setHistoryError("");
+    try {
+      const res = await fetch("/api/mypage/love-fortune", { cache: "no-store" });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        readings?: LoveFortuneHistoryReading[];
+      };
+      if (!res.ok || !body.ok) {
+        throw new Error(body.message ?? "이전 운세를 불러오지 못했습니다.");
+      }
+      setHistoryReadings(body.readings ?? []);
+      setHistoryLoaded(true);
+    } catch (error) {
+      setHistoryError(error instanceof Error ? error.message : "이전 운세를 불러오지 못했습니다.");
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, [historyLoaded, historyLoading]);
 
   const calendarLabel = CALENDAR_OPTIONS.find((item) => item.key === calendarType)?.label ?? "양력";
   const genderLabel = FORTUNE_GENDER_OPTIONS.find((item) => item.key === gender)?.label ?? "선택 안 함";
@@ -912,6 +984,77 @@ function AdminLoveFortunePanel() {
             </div>
           ))}
         </div>
+      </div>
+      <div className="mb-4 overflow-hidden rounded-[24px] border border-amber-200/50 bg-[#fffaf0]/95 shadow-[0_14px_38px_rgba(0,0,0,0.12)] backdrop-blur">
+        <button
+          type="button"
+          onClick={() => {
+            const nextOpen = !historyOpen;
+            setHistoryOpen(nextOpen);
+            if (nextOpen) void loadLoveFortuneHistory(false);
+          }}
+          className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left"
+        >
+          <div>
+            <p className="text-sm font-black text-[#2b2118]">이전 운세 보기</p>
+            <p className="mt-1 text-xs font-semibold text-[#8a7353]">결제 후 생성된 연애운 결과를 이 탭에서 다시 볼 수 있어요.</p>
+          </div>
+          <span className="rounded-full bg-[#2b2118] px-3 py-1 text-xs font-black text-[#fff8ec]">
+            {historyOpen ? "닫기" : "열기"}
+          </span>
+        </button>
+        {historyOpen ? (
+          <div className="border-t border-amber-100 px-4 pb-4">
+            <div className="mt-3 flex justify-end">
+              <button
+                type="button"
+                onClick={() => void loadLoveFortuneHistory(true)}
+                disabled={historyLoading}
+                className="rounded-full border border-[#d6c29d] bg-white px-3 py-1.5 text-xs font-black text-[#6b3f24] disabled:opacity-50"
+              >
+                {historyLoading ? "불러오는 중" : "새로고침"}
+              </button>
+            </div>
+            {historyError ? (
+              <p className="mt-3 rounded-2xl border border-red-100 bg-red-50 p-3 text-sm font-bold text-red-700">{historyError}</p>
+            ) : null}
+            {historyLoading && historyReadings.length === 0 ? (
+              <p className="mt-3 rounded-2xl bg-white p-3 text-sm font-semibold text-neutral-500">이전 운세를 불러오는 중입니다.</p>
+            ) : null}
+            {!historyLoading && historyLoaded && historyReadings.length === 0 ? (
+              <p className="mt-3 rounded-2xl bg-white p-3 text-sm font-semibold text-neutral-500">아직 저장된 연애운 결과가 없습니다.</p>
+            ) : null}
+            {historyReadings.length > 0 ? (
+              <div className="mt-3 grid gap-2">
+                {historyReadings.map((reading) => {
+                  const generated = Boolean(reading.aiResult);
+                  return (
+                    <article key={reading.id} className="rounded-2xl border border-[#ead9bf] bg-white p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-black text-neutral-950">
+                            {[reading.birthDate, reading.loveState, reading.focus].filter(Boolean).join(" · ") || "연애운 상세 풀이"}
+                          </p>
+                          <p className="mt-1 text-xs text-neutral-500">
+                            {reading.amount.toLocaleString("ko-KR")}원 · {new Date(reading.createdAt).toLocaleString("ko-KR")}
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setSelectedHistoryReading(reading)}
+                          disabled={!generated}
+                          className="rounded-full bg-neutral-950 px-3 py-1.5 text-xs font-black text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
+                        >
+                          {generated ? "결과 보기" : "생성 전"}
+                        </button>
+                      </div>
+                    </article>
+                  );
+                })}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
       </div>
       <div className="mb-4 flex items-center justify-between gap-3 rounded-[24px] border border-amber-200/50 bg-[#fffaf0]/95 px-4 py-3 shadow-[0_14px_38px_rgba(0,0,0,0.16)] backdrop-blur">
         <div className="flex items-center gap-3">
@@ -1137,7 +1280,7 @@ function AdminLoveFortunePanel() {
             {renderBotBubble(
               <>
                 <p className="text-sm font-black text-neutral-950">마지막으로, 뭐가 제일 궁금해요?</p>
-                <p className="mt-1 text-xs leading-5 text-neutral-500">반복되는 결을 같이 보면 풀이가 훨씬 또렷해집니다.</p>
+                <p className="mt-1 text-xs leading-5 text-neutral-500">직접 적어준 고민을 중심으로 풀이가 달라집니다.</p>
               </>
             )}
             {step === 3 ? (
@@ -1158,29 +1301,13 @@ function AdminLoveFortunePanel() {
                     className="mt-3 min-h-[84px] w-full rounded-2xl border border-[#d6c29d] bg-[#fffaf0] px-4 py-3 text-sm font-semibold leading-6 text-[#2b2118] outline-none placeholder:text-[#9b8463] focus:border-[#8a2f20]"
                   />
                   <div className="mt-3 grid gap-2">
-                    <label className="text-[11px] font-black text-[#8a7353]">내 연애에서 자주 반복되는 결</label>
+                    <label className="text-[11px] font-black text-[#8a7353]">자주 반복되는 결이 있다면</label>
                     <select
                       value={repeatPattern}
                       onChange={(event) => setRepeatPattern(event.target.value)}
                       className="h-11 rounded-2xl border border-[#d6c29d] bg-[#fffaf0] px-3 text-sm font-semibold text-[#2b2118] outline-none focus:border-[#8a2f20]"
                     >
                       {LOVE_REPEAT_PATTERN_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-                    </select>
-                    <label className="text-[11px] font-black text-[#8a7353]">연락할 때 나는 편</label>
-                    <select
-                      value={contactStyle}
-                      onChange={(event) => setContactStyle(event.target.value)}
-                      className="h-11 rounded-2xl border border-[#d6c29d] bg-[#fffaf0] px-3 text-sm font-semibold text-[#2b2118] outline-none focus:border-[#8a2f20]"
-                    >
-                      {LOVE_CONTACT_STYLE_OPTIONS.map((option) => <option key={option}>{option}</option>)}
-                    </select>
-                    <label className="text-[11px] font-black text-[#8a7353]">관계에서 불안해지는 순간</label>
-                    <select
-                      value={anxietyMoment}
-                      onChange={(event) => setAnxietyMoment(event.target.value)}
-                      className="h-11 rounded-2xl border border-[#d6c29d] bg-[#fffaf0] px-3 text-sm font-semibold text-[#2b2118] outline-none focus:border-[#8a2f20]"
-                    >
-                      {LOVE_ANXIETY_MOMENT_OPTIONS.map((option) => <option key={option}>{option}</option>)}
                     </select>
                     <input
                       type="text"
@@ -1204,9 +1331,9 @@ function AdminLoveFortunePanel() {
                 <>
                   <p className="text-sm font-bold">{focus}</p>
                   {concern.trim() ? <p className="mt-1 text-xs text-white/80">{concern.trim()}</p> : null}
-                  <p className="mt-1 text-xs text-white/70">
-                    {[repeatPattern, contactStyle, anxietyMoment].filter((item) => !item.includes("모르겠음") && !item.includes("딱히")).slice(0, 2).join(" · ")}
-                  </p>
+                  {repeatPattern !== LOVE_REPEAT_PATTERN_OPTIONS[0] ? (
+                    <p className="mt-1 text-xs text-white/70">{repeatPattern}</p>
+                  ) : null}
                 </>,
                 "rose"
               )
@@ -1281,6 +1408,7 @@ function AdminLoveFortunePanel() {
                       <div className="grid gap-2 p-3 text-xs leading-5 text-neutral-600 sm:grid-cols-2">
                         {[
                           "일간과 배우자궁으로 보는 내 연애의 기본 결",
+                          "사주 흐름으로 정리한 나와 오래 맞는 배우자 얼굴상",
                           "오행 균형에서 보이는 끌림과 불안의 원인",
                           "대운/세운으로 보는 만남이 열리는 시기",
                           "첫 연락, 첫 만남, 피해야 할 말까지 현실 처방",
@@ -1312,7 +1440,7 @@ function AdminLoveFortunePanel() {
                     <div className="mt-4 rounded-[22px] border border-neutral-200 bg-neutral-950 p-4 text-white">
                       <p className="text-sm font-black">상세 연애운 9,900원</p>
                       <p className="mt-2 text-base font-black leading-7">
-                        내 연애 패턴, 오래 맞는 상대, 사랑 타이밍을 한 번에 열어볼게요.
+                        내 연애 패턴, 오래 맞는 상대, 배우자 얼굴상, 사랑 타이밍을 한 번에 열어볼게요.
                       </p>
                       <p className="mt-1 text-xs leading-5 text-white/70">
                         결제 완료 후 결과 페이지에서 바로 상세 풀이가 생성되고, 마이페이지에도 저장돼요.
@@ -1360,6 +1488,63 @@ function AdminLoveFortunePanel() {
           </button>
         ) : null}
       </div>
+      {selectedHistoryReading ? (() => {
+        const reading = selectedHistoryReading;
+        const sections = parseLoveFortuneHistoryReport(reading.aiResult);
+        const ideal = reading.idealFace ?? {};
+        return (
+          <div className="fixed inset-0 z-[90] overflow-y-auto bg-black/60 px-3 py-6 backdrop-blur-sm">
+            <div className="mx-auto max-w-3xl overflow-hidden rounded-[30px] border border-[#d8c5a5] bg-[#f7efe2] text-[#2b2118] shadow-2xl">
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[#d8c5a5] bg-[#fff7e8]/95 px-4 py-3 backdrop-blur">
+                <div>
+                  <p className="text-xs font-black tracking-[0.2em] text-[#9a5a23]">이전 연애운</p>
+                  <h3 className="mt-1 text-lg font-black text-stone-950">
+                    {[reading.birthDate, reading.loveState, reading.focus].filter(Boolean).join(" · ") || "내 연애운 상세 풀이"}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setSelectedHistoryReading(null)}
+                  className="rounded-full bg-[#2b2118] px-4 py-2 text-sm font-black text-[#f6d9a8]"
+                >
+                  닫기
+                </button>
+              </div>
+
+              <div className="space-y-4 p-4 sm:p-6">
+                <section className="rounded-[26px] border border-rose-100 bg-white p-4">
+                  <p className="text-xs font-black tracking-[0.16em] text-rose-700">배우자 얼굴상</p>
+                  <h4 className="mt-2 text-2xl font-black text-stone-950">{String(ideal.title ?? "나와 오래 맞기 쉬운 인상")}</h4>
+                  <p className="mt-2 text-sm leading-6 text-stone-600">{String(ideal.mood ?? "급하지 않고 신뢰가 쌓이는 분위기")}</p>
+                  <div className="mt-3 grid gap-2 text-sm leading-6 text-stone-700 sm:grid-cols-2">
+                    <p className="rounded-2xl bg-rose-50 p-3">눈매 · {String(ideal.eye ?? "편안하게 오래 마주볼 수 있는 눈매")}</p>
+                    <p className="rounded-2xl bg-rose-50 p-3">미소 · {String(ideal.smile ?? "담백하지만 따뜻한 미소")}</p>
+                    <p className="rounded-2xl bg-rose-50 p-3">스타일 · {String(ideal.style ?? "깔끔한 기본 스타일")}</p>
+                    <p className="rounded-2xl bg-amber-50 p-3 text-amber-900">첫 만남 · {String(ideal.firstDate ?? "대화가 편한 사람")}</p>
+                  </div>
+                </section>
+
+                {sections.map((section, index) => (
+                  <section
+                    key={`${reading.id}-history-${section.title}-${index}`}
+                    className={`rounded-[24px] border p-5 ${
+                      index === 0 ? "border-[#d8c5a5] bg-white" : "border-[#e7d8bd] bg-[#fffaf2]"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 border-b border-[#ead9bf] pb-3">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2b2118] text-xs font-black text-[#f6d9a8]">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      <h4 className="text-base font-black text-stone-950">{section.title}</h4>
+                    </div>
+                    <div className="mt-4 whitespace-pre-wrap text-[15px] leading-8 text-stone-700">{section.body}</div>
+                  </section>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })() : null}
     </section>
   );
 }

@@ -130,7 +130,7 @@ export default function WeeklyTopBanner() {
     data?.mode === "confirmed"
       ? data.male?.post_id
         ? `/community/${data.male.post_id}`
-        : "/hall-of-fame"
+        : "/community?tab=photo_bodycheck"
       : data?.male?.id
       ? `/community/${data.male.id}`
       : "/community?tab=photo_bodycheck";
@@ -139,7 +139,7 @@ export default function WeeklyTopBanner() {
     data?.mode === "confirmed"
       ? data.female?.post_id
         ? `/community/${data.female.post_id}`
-        : "/hall-of-fame"
+        : "/community?tab=photo_bodycheck"
       : data?.female?.id
       ? `/community/${data.female.id}`
       : "/community?tab=photo_bodycheck";
@@ -148,9 +148,6 @@ export default function WeeklyTopBanner() {
     <section className="mb-5 rounded-2xl border border-amber-200 bg-gradient-to-r from-amber-50 to-orange-50 p-4">
       <div className="mb-2 flex items-center justify-between">
         <p className="text-lg font-bold text-amber-800">🏆 이번 주 몸평 랭킹</p>
-        <Link href="/hall-of-fame" className="text-xs text-amber-700 hover:underline">
-          명예의 전당
-        </Link>
       </div>
 
       {data ? (

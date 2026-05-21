@@ -11,7 +11,6 @@ function isAllowedAdRoute(pathname: string): boolean {
     "/community/bodycheck",
     "/community/dating",
     "/community/dating/cards",
-    "/hall-of-fame",
     "/protein",
     "/1rm",
     "/lifts",

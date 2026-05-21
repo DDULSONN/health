@@ -161,13 +161,6 @@ export default function HeaderUserMenu({
             >
               마이페이지
             </Link>
-            <Link
-              href="/hall-of-fame"
-              onClick={onNavigate}
-              className="block rounded-lg px-3 py-2.5 text-sm text-neutral-600 hover:bg-neutral-50"
-            >
-              명예의 전당
-            </Link>
             <button
               type="button"
               onClick={() => void handleLogout()}
@@ -246,13 +239,6 @@ export default function HeaderUserMenu({
                 className="block px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
               >
                 마이페이지
-              </Link>
-              <Link
-                href="/hall-of-fame"
-                onClick={() => setMenuOpen(false)}
-                className="block px-3 py-2 text-sm text-neutral-700 hover:bg-neutral-50"
-              >
-                명예의 전당
               </Link>
               <button
                 type="button"

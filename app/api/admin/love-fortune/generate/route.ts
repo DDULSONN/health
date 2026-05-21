@@ -95,6 +95,7 @@ function buildPromptV2(body: LoveFortuneGenerateBody) {
     "- AI, 알고리즘, 데이터상이라는 표현은 쓰지 마세요.",
     "- 운명 확정, 결혼 보장, 상대 마음 단정, 외모 단정은 금지입니다.",
     "- 퍼센트 점수, MBTI식 유형명, 카드뉴스식 얕은 요약은 쓰지 마세요. 사주집에서 종이에 풀어주는 느낌으로 쓰세요.",
+    "- 굵게 표시용 마크다운 기호(**텍스트**)나 불릿 별표(*)를 쓰지 마세요. 제목은 ## 제목 형식만 사용하세요.",
     "",
     "[입력 정보]",
     `생년월일: ${birthDate || "미입력"}`,
@@ -151,6 +152,15 @@ function extractGeminiText(payload: unknown) {
   return data.candidates?.flatMap((candidate) => candidate.content?.parts ?? []).map((part) => part.text ?? "").join("\n").trim() ?? "";
 }
 
+function cleanGeneratedReport(text: string) {
+  return text
+    .replace(/```/g, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/\*/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
+}
+
 export async function POST(req: Request) {
   const admin = await requireAdminRoute();
   if (!admin.ok) return admin.response;
@@ -199,7 +209,7 @@ export async function POST(req: Request) {
       );
     }
 
-    const text = extractGeminiText(data);
+    const text = cleanGeneratedReport(extractGeminiText(data));
     if (!text) {
       return NextResponse.json({ ok: false, message: "연애운 상세 풀이 응답이 비어 있습니다." }, { status: 502 });
     }

@@ -382,7 +382,7 @@ function parseLoveFortuneReport(text: string | null) {
   let currentTitle = "상세 리포트";
   let currentLines: string[] = [];
 
-  for (const rawLine of text.replace(/```/g, "").split(/\r?\n/)) {
+  for (const rawLine of text.replace(/```/g, "").replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*/g, "").split(/\r?\n/)) {
     const line = rawLine.trim();
     const heading = line.match(/^#{1,3}\s+(.+)$/);
     if (heading) {
@@ -401,6 +401,55 @@ function parseLoveFortuneReport(text: string | null) {
   }
 
   return sections.length > 0 ? sections : [{ title: "상세 리포트", body: text.trim() }];
+}
+
+function buildLoveFortuneIdealSketch(reading: MyLoveFortuneReading) {
+  const target = reading.gender === "female" ? "male" : reading.gender === "male" ? "female" : "male";
+  const ideal = reading.idealFace ?? {};
+  const seed = [reading.birthDate, reading.birthTime, reading.loveState, reading.focus, reading.concern].join("|")
+    .split("")
+    .reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const accent = target === "male" ? "#6b4a2f" : "#c04f7a";
+  const accentLight = target === "male" ? "#efe1cf" : "#fde7ef";
+  const hair = "#2d2420";
+  const eyeY = 108 + (seed % 5);
+  const smileCurve = 146 + (seed % 4);
+  const hairPath =
+    target === "male"
+      ? "M66 88 C70 44 130 35 169 67 C184 79 190 102 186 128 C170 102 145 85 110 86 C91 86 78 91 66 88Z"
+      : "M55 111 C50 63 88 34 126 38 C169 39 195 72 195 124 C192 159 181 182 169 198 C172 144 157 91 124 88 C92 91 74 130 78 198 C64 180 56 153 55 111Z";
+  const label = target === "male" ? "남자 얼굴상" : "여자 얼굴상";
+  const encoded = encodeURIComponent(`
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 320">
+      <defs>
+        <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
+          <stop offset="0" stop-color="#fffaf0"/>
+          <stop offset="1" stop-color="${accentLight}"/>
+        </linearGradient>
+      </defs>
+      <rect width="260" height="320" rx="34" fill="url(#bg)"/>
+      <circle cx="130" cy="124" r="82" fill="#fff7e8" stroke="${accent}" stroke-width="3"/>
+      <path d="${hairPath}" fill="${hair}" opacity=".96"/>
+      <ellipse cx="98" cy="${eyeY}" rx="9" ry="12" fill="#2b2118"/>
+      <ellipse cx="162" cy="${eyeY}" rx="9" ry="12" fill="#2b2118"/>
+      <circle cx="101" cy="${eyeY - 4}" r="3" fill="#fff"/>
+      <circle cx="165" cy="${eyeY - 4}" r="3" fill="#fff"/>
+      <path d="M119 128 C126 132 134 132 141 128" fill="none" stroke="#a9795b" stroke-width="3" stroke-linecap="round"/>
+      <path d="M104 ${smileCurve} C121 ${smileCurve + 12} 143 ${smileCurve + 12} 158 ${smileCurve}" fill="none" stroke="#6b3f24" stroke-width="4" stroke-linecap="round"/>
+      <ellipse cx="79" cy="140" rx="14" ry="8" fill="#f1a5b7" opacity=".55"/>
+      <ellipse cx="181" cy="140" rx="14" ry="8" fill="#f1a5b7" opacity=".55"/>
+      <path d="M76 204 C95 231 164 232 184 204 C178 264 82 264 76 204Z" fill="#fff7e8" stroke="${accent}" stroke-width="3"/>
+      <path d="M71 224 C101 210 159 210 190 224 C205 236 210 262 210 286 L50 286 C50 262 56 236 71 224Z" fill="${accentLight}" stroke="${accent}" stroke-width="3"/>
+      <text x="130" y="44" text-anchor="middle" font-size="13" font-weight="800" fill="${accent}" font-family="Arial, sans-serif">${label}</text>
+      <text x="130" y="303" text-anchor="middle" font-size="13" font-weight="800" fill="#6b4a2f" font-family="Arial, sans-serif">사주 기반 인상 스케치</text>
+    </svg>
+  `);
+
+  return {
+    label,
+    src: `data:image/svg+xml;charset=utf-8,${encoded}`,
+    body: `${String(ideal.eye ?? "편안한 눈매")} · ${String(ideal.mood ?? "신뢰감 있는 분위기")}`,
+  };
 }
 
 function adminOpenCardOutreachScopeLabel(scope: AdminOpenCardOutreachScope) {
@@ -1528,6 +1577,7 @@ export default function MyPage() {
   const [loveFortuneError, setLoveFortuneError] = useState("");
   const [loveFortuneReadings, setLoveFortuneReadings] = useState<MyLoveFortuneReading[]>([]);
   const [loveFortuneGeneratingId, setLoveFortuneGeneratingId] = useState<string | null>(null);
+  const [loveFortuneViewerReading, setLoveFortuneViewerReading] = useState<MyLoveFortuneReading | null>(null);
 
   const refreshAdminQueueData = useMemo(
     () =>
@@ -6201,6 +6251,7 @@ export default function MyPage() {
                   const generated = Boolean(reading.aiResult);
                   const ideal = reading.idealFace ?? {};
                   const reportSections = parseLoveFortuneReport(reading.aiResult);
+                  const idealSketch = buildLoveFortuneIdealSketch(reading);
                   return (
                     <article key={reading.id} className="overflow-hidden rounded-2xl border border-rose-100 bg-white shadow-sm">
                       <div className="flex flex-wrap items-start justify-between gap-3 border-b border-rose-50 p-4">
@@ -6217,22 +6268,18 @@ export default function MyPage() {
 
                       <div className="grid gap-3 p-4 lg:grid-cols-[0.8fr_1.2fr]">
                         <div className="rounded-[24px] border border-rose-100 bg-gradient-to-br from-rose-50 via-white to-amber-50 p-4">
-                          <div className="mx-auto h-32 w-28 overflow-hidden rounded-[32px] border border-white bg-white/80 shadow-[0_18px_45px_rgba(244,63,94,0.16)]">
+                          <div className="mx-auto w-36 overflow-hidden rounded-[28px] border border-white bg-white/80 shadow-[0_18px_45px_rgba(244,63,94,0.16)]">
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
-                              src={LOVE_FORTUNE_MASCOT_SRC}
-                              alt="연애운 짐냥이"
+                              src={idealSketch.src}
+                              alt={`${idealSketch.label} 스케치`}
                               loading="lazy"
                               decoding="async"
-                              onError={(event) => {
-                                event.currentTarget.onerror = null;
-                                event.currentTarget.src = DEFAULT_JIMNYANG_MASCOT_SRC;
-                              }}
-                              className="h-full w-full object-cover"
+                              className="h-auto w-full object-contain"
                             />
                           </div>
-                          <p className="mt-3 text-center text-sm font-black text-rose-950">{String(ideal.title ?? "잘 맞는 인상 미리보기")}</p>
-                          <p className="mt-2 text-center text-xs leading-5 text-rose-700">{String(ideal.mood ?? "편안하고 신뢰감 있는 분위기")}</p>
+                          <p className="mt-3 text-center text-sm font-black text-rose-950">{idealSketch.label}</p>
+                          <p className="mt-2 text-center text-xs leading-5 text-rose-700">{idealSketch.body}</p>
                           <div className="mt-3 grid gap-2 text-xs text-neutral-700">
                             <p className="rounded-xl bg-white/80 p-2">눈매 · {String(ideal.eye ?? "편안하게 오래 마주볼 수 있는 눈매")}</p>
                             <p className="rounded-xl bg-white/80 p-2">미소 · {String(ideal.smile ?? "담백하지만 따뜻한 미소")}</p>
@@ -6262,24 +6309,19 @@ export default function MyPage() {
                               </button>
                             </div>
                           ) : (
-                            <details className="mt-3 rounded-2xl border border-neutral-200 bg-white p-4" open>
-                              <summary className="cursor-pointer text-sm font-black text-neutral-950">상세 풀이 보기</summary>
-                              <div className="mt-4 space-y-3">
-                                {reportSections.map((section, index) => (
-                                  <section
-                                    key={`${reading.id}-${section.title}-${index}`}
-                                    className={`rounded-2xl border p-4 ${
-                                      index === 0
-                                        ? "border-rose-100 bg-rose-50/70"
-                                        : "border-neutral-100 bg-neutral-50/70"
-                                    }`}
-                                  >
-                                    <p className={`text-sm font-black ${index === 0 ? "text-rose-950" : "text-neutral-950"}`}>{section.title}</p>
-                                    <div className="mt-2 whitespace-pre-wrap text-sm leading-7 text-neutral-700">{section.body}</div>
-                                  </section>
-                                ))}
-                              </div>
-                            </details>
+                            <div className="mt-3 rounded-2xl border border-neutral-200 bg-white p-4">
+                              <p className="text-sm font-black text-neutral-950">상세 풀이가 준비됐어요.</p>
+                              <p className="mt-1 text-xs leading-5 text-neutral-500">
+                                {reportSections.length}개 항목으로 정리된 결과를 별도 창에서 편하게 볼 수 있습니다.
+                              </p>
+                              <button
+                                type="button"
+                                onClick={() => setLoveFortuneViewerReading(reading)}
+                                className="mt-3 rounded-full bg-neutral-950 px-4 py-2 text-sm font-bold text-white"
+                              >
+                                결과 크게 보기
+                              </button>
+                            </div>
                           )}
                         </div>
                       </div>
@@ -6292,6 +6334,75 @@ export default function MyPage() {
         ) : null}
       </section>
       )}
+      {loveFortuneViewerReading ? (() => {
+        const reading = loveFortuneViewerReading;
+        const sections = parseLoveFortuneReport(reading.aiResult);
+        const ideal = reading.idealFace ?? {};
+        const sketch = buildLoveFortuneIdealSketch(reading);
+        return (
+          <div className="fixed inset-0 z-[80] overflow-y-auto bg-black/55 px-3 py-6 backdrop-blur-sm">
+            <div className="mx-auto max-w-3xl overflow-hidden rounded-[30px] border border-[#d8c5a5] bg-[#f7efe2] text-[#2b2118] shadow-2xl">
+              <div className="sticky top-0 z-10 flex items-center justify-between gap-3 border-b border-[#d8c5a5] bg-[#fff7e8]/95 px-4 py-3 backdrop-blur">
+                <div>
+                  <p className="text-xs font-black tracking-[0.2em] text-[#9a5a23]">연애 명식 리포트</p>
+                  <h3 className="mt-1 text-lg font-black text-stone-950">{formatLoveFortuneInputSummary(reading) || "내 연애운 상세 풀이"}</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setLoveFortuneViewerReading(null)}
+                  className="rounded-full bg-[#2b2118] px-4 py-2 text-sm font-black text-[#f6d9a8]"
+                >
+                  닫기
+                </button>
+              </div>
+
+              <div className="space-y-4 p-4 sm:p-6">
+                <section className="rounded-[26px] border border-rose-100 bg-white p-4">
+                  <div className="grid gap-4 sm:grid-cols-[180px_1fr]">
+                    <div>
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={sketch.src}
+                        alt={`${sketch.label} 스케치`}
+                        loading="lazy"
+                        decoding="async"
+                        className="w-full rounded-[22px] border border-rose-100 bg-rose-50 object-contain"
+                      />
+                    </div>
+                    <div>
+                      <p className="text-xs font-black tracking-[0.16em] text-rose-700">배우자 얼굴상</p>
+                      <h4 className="mt-2 text-2xl font-black text-stone-950">{sketch.label}</h4>
+                      <p className="mt-2 text-sm leading-6 text-stone-600">{String(ideal.mood ?? "오래 편하게 맞는 분위기")}</p>
+                      <div className="mt-3 grid gap-2 text-sm leading-6 text-stone-700">
+                        <p className="rounded-2xl bg-rose-50 p-3">눈매 · {String(ideal.eye ?? "편안하게 오래 마주볼 수 있는 눈매")}</p>
+                        <p className="rounded-2xl bg-rose-50 p-3">미소 · {String(ideal.smile ?? "담백하지만 따뜻한 미소")}</p>
+                        <p className="rounded-2xl bg-amber-50 p-3 text-amber-900">첫 만남 · {String(ideal.firstDate ?? "대화가 편한 사람")}</p>
+                      </div>
+                    </div>
+                  </div>
+                </section>
+
+                {sections.map((section, index) => (
+                  <section
+                    key={`${reading.id}-viewer-${section.title}-${index}`}
+                    className={`rounded-[24px] border p-5 ${
+                      index === 0 ? "border-[#d8c5a5] bg-white" : "border-[#e7d8bd] bg-[#fffaf2]"
+                    }`}
+                  >
+                    <div className="flex items-center gap-3 border-b border-[#ead9bf] pb-3">
+                      <span className="flex h-8 w-8 items-center justify-center rounded-full bg-[#2b2118] text-xs font-black text-[#f6d9a8]">
+                        {String(index + 1).padStart(2, "0")}
+                      </span>
+                      <h4 className="text-base font-black text-stone-950">{section.title}</h4>
+                    </div>
+                    <div className="mt-4 whitespace-pre-wrap text-[15px] leading-8 text-stone-700">{section.body}</div>
+                  </section>
+                ))}
+              </div>
+            </div>
+          </div>
+        );
+      })() : null}
       <section className="mb-5 rounded-2xl border border-sky-200 bg-sky-50/40 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>

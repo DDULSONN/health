@@ -556,9 +556,6 @@ export default function BodyBattlePage() {
           <Link href="/bodybattle/ranking" className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium text-neutral-700">
             주간 랭킹
           </Link>
-          <Link href="/bodybattle/hall-of-fame" className="rounded-lg border border-neutral-300 px-3 py-2 text-xs font-medium text-neutral-700">
-            명예의 전당
-          </Link>
         </div>
       </div>
 

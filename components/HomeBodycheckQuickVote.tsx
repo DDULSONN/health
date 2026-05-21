@@ -120,12 +120,6 @@ export default function HomeBodycheckQuickVote() {
           >
             몸평 탭
           </Link>
-          <Link
-            href="/hall-of-fame"
-            className="inline-flex min-h-[36px] items-center rounded-full border border-amber-200 bg-white px-3 text-xs font-semibold text-amber-700"
-          >
-            명예의 전당
-          </Link>
         </div>
       </div>
 

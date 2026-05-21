@@ -48,6 +48,37 @@ type LoveFortuneReading = {
   createdAt: string;
 };
 
+const LOVE_FORTUNE_LOADING_STEPS = [
+  {
+    title: "만세력 종이 펼치는 중",
+    detail: "양력/음력, 생년월일, 태어난 시간의 기준을 먼저 맞추고 있어요.",
+  },
+  {
+    title: "명식의 중심 잡는 중",
+    detail: "일간과 배우자궁을 보고 연애에서 마음이 열리는 방식을 읽고 있어요.",
+  },
+  {
+    title: "오행의 기울기 보는 중",
+    detail: "표현, 끌림, 거리감, 불안이 어디서 반복되는지 짚어보고 있어요.",
+  },
+  {
+    title: "대운과 세운 흐름 맞추는 중",
+    detail: "지금 시기에 새 인연이 유리한지, 기다림이 필요한지 확인 중이에요.",
+  },
+  {
+    title: "인연 타이밍 정리 중",
+    detail: "다가오는 흐름과 조심해야 할 관계 패턴을 현실적인 말로 풀고 있어요.",
+  },
+  {
+    title: "잘 맞는 얼굴상 스케치 중",
+    detail: "외모 단정이 아니라 오래 편한 분위기와 인상 결을 정리하고 있어요.",
+  },
+  {
+    title: "상세 풀이 문장 다듬는 중",
+    detail: "결과가 나오면 이 화면에 바로 펼쳐지고, 마이페이지에도 저장돼요.",
+  },
+] as const;
+
 const STEMS = [
   { ko: "갑", hanja: "甲", element: "목", color: "text-emerald-700", bg: "bg-emerald-50" },
   { ko: "을", hanja: "乙", element: "목", color: "text-emerald-700", bg: "bg-emerald-50" },
@@ -110,7 +141,7 @@ function parseLoveFortuneReport(text: string | null) {
   let currentTitle = "상세 풀이";
   let currentLines: string[] = [];
 
-  for (const rawLine of text.replace(/```/g, "").split(/\r?\n/)) {
+  for (const rawLine of text.replace(/```/g, "").replace(/\*\*(.*?)\*\*/g, "$1").replace(/\*/g, "").split(/\r?\n/)) {
     const heading = rawLine.trim().match(/^#{1,3}\s+(.+)$/);
     if (heading) {
       if (currentLines.join("\n").trim()) {
@@ -287,9 +318,10 @@ function LoveFortuneResultPanel({ reading }: { reading: LoveFortuneReading }) {
   const sections = useMemo(() => parseLoveFortuneReport(reading.aiResult), [reading.aiResult]);
   const summary = useMemo(() => buildFortuneSummary(reading), [reading]);
   const ideal = reading.idealFace ?? {};
+  const idealTarget = reading.gender === "female" ? "male" : reading.gender === "male" ? "female" : null;
   const idealSketches = useMemo(
-    () => [buildIdealFaceSketchDataUrl(reading, "male"), buildIdealFaceSketchDataUrl(reading, "female")],
-    [reading]
+    () => (idealTarget ? [buildIdealFaceSketchDataUrl(reading, idealTarget)] : [buildIdealFaceSketchDataUrl(reading, "male"), buildIdealFaceSketchDataUrl(reading, "female")]),
+    [idealTarget, reading]
   );
   const firstSection = sections[0];
   const detailSections = sections.slice(1);
@@ -305,6 +337,42 @@ function LoveFortuneResultPanel({ reading }: { reading: LoveFortuneReading }) {
       </div>
 
       <div className="space-y-5 p-5 sm:p-7">
+        <div className="rounded-[30px] border border-rose-100 bg-white p-5 shadow-sm">
+          <div className="flex flex-wrap items-end justify-between gap-2">
+            <div>
+              <p className="text-xs font-black tracking-[0.18em] text-[#b13b2e]">배우자 얼굴상</p>
+              <h3 className="mt-2 text-2xl font-black text-stone-950">나와 오래 맞기 쉬운 인상</h3>
+            </div>
+            <span className="rounded-full bg-rose-50 px-3 py-1 text-[11px] font-black text-rose-700">사주 기반 스케치</span>
+          </div>
+          <p className="mt-2 text-xs leading-5 text-stone-500">
+            실제 외모를 단정하지 않고, 입력한 연애 성향과 명식 흐름에서 오래 편하게 맞기 쉬운 분위기를 스케치로 정리했어요.
+          </p>
+          <div className="mt-4 grid gap-3 sm:grid-cols-[220px_1fr]">
+            {idealSketches.map((sketch) => (
+              <div key={sketch.label} className="overflow-hidden rounded-[26px] border border-rose-100 bg-rose-50/50 p-3">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={sketch.src}
+                  alt={`${sketch.label} 스케치`}
+                  loading="lazy"
+                  decoding="async"
+                  className="h-auto w-full rounded-[20px] bg-white object-contain"
+                />
+                <p className="mt-3 text-sm font-black text-stone-950">{sketch.label}</p>
+                <p className="mt-1 text-xs leading-5 text-stone-600">{sketch.body}</p>
+              </div>
+            ))}
+            <div className="grid content-start gap-2 text-sm leading-6 text-stone-700">
+              <p className="rounded-2xl bg-rose-50 p-3">눈매 · {String(ideal.eye ?? "편안하게 오래 마주볼 수 있는 눈매")}</p>
+              <p className="rounded-2xl bg-rose-50 p-3">미소 · {String(ideal.smile ?? "담백하지만 따뜻한 미소")}</p>
+              <p className="rounded-2xl bg-rose-50 p-3">분위기 · {String(ideal.mood ?? "급하지 않고 신뢰가 쌓이는 분위기")}</p>
+              <p className="rounded-2xl bg-rose-50 p-3">첫 만남 · {String(ideal.firstDate ?? "대화가 편한 사람")}</p>
+              <p className="rounded-2xl bg-amber-50 p-3 text-amber-900">피하면 좋은 흐름 · {String(ideal.avoid ?? "처음부터 확답을 강요하는 분위기")}</p>
+            </div>
+          </div>
+        </div>
+
         <div className="space-y-4">
           <div className="rounded-3xl border border-[#d8c5a5] bg-white/80 p-4">
             <div className="flex flex-wrap items-end justify-between gap-2">
@@ -408,34 +476,6 @@ function LoveFortuneResultPanel({ reading }: { reading: LoveFortuneReading }) {
             <div className="mt-2 whitespace-pre-wrap text-lg font-bold leading-8 text-stone-950">{firstSection?.body || "상세 풀이가 생성되었습니다."}</div>
           </div>
 
-          <div className="rounded-3xl border border-rose-100 bg-white p-5">
-            <p className="text-sm font-black text-rose-950">{String(ideal.title ?? "잘 맞는 인상 미리보기")}</p>
-            <p className="mt-1 text-xs leading-5 text-stone-500">
-              외모를 단정하는 기능이 아니라, 내 연애 흐름과 오래 맞기 쉬운 분위기를 남/녀 스케치로 가볍게 정리한 참고 카드예요.
-            </p>
-            <div className="mt-4 grid gap-3 sm:grid-cols-2">
-              {idealSketches.map((sketch) => (
-                <div key={sketch.label} className="overflow-hidden rounded-[26px] border border-rose-100 bg-rose-50/50 p-3">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={sketch.src}
-                    alt={`${sketch.label} 스케치`}
-                    loading="lazy"
-                    decoding="async"
-                    className="h-auto w-full rounded-[20px] bg-white object-contain"
-                  />
-                  <p className="mt-3 text-sm font-black text-stone-950">{sketch.label}</p>
-                  <p className="mt-1 text-xs leading-5 text-stone-600">{sketch.body}</p>
-                </div>
-              ))}
-            </div>
-            <div className="mt-3 grid gap-2 text-sm leading-6 text-stone-700">
-              <p className="rounded-2xl bg-rose-50 p-3">눈매 · {String(ideal.eye ?? "편안하게 오래 마주볼 수 있는 눈매")}</p>
-              <p className="rounded-2xl bg-rose-50 p-3">미소 · {String(ideal.smile ?? "담백하지만 따뜻한 미소")}</p>
-              <p className="rounded-2xl bg-rose-50 p-3">첫 만남 · {String(ideal.firstDate ?? "대화가 편한 사람")}</p>
-            </div>
-          </div>
-
           <div className="rounded-3xl border border-[#d8c5a5] bg-white p-5">
             <p className="text-sm font-black text-stone-900">상세 풀이 구성</p>
             <div className="mt-3 grid gap-2">
@@ -481,6 +521,8 @@ function PaymentSuccessContent() {
   const [error, setError] = useState("");
   const [result, setResult] = useState<ConfirmResponse | null>(null);
   const [fortuneLoading, setFortuneLoading] = useState(false);
+  const [fortuneLoadingStep, setFortuneLoadingStep] = useState(0);
+  const [fortuneGenerateAttempted, setFortuneGenerateAttempted] = useState(false);
   const [fortuneError, setFortuneError] = useState("");
   const [fortuneReading, setFortuneReading] = useState<LoveFortuneReading | null>(null);
 
@@ -522,9 +564,13 @@ function PaymentSuccessContent() {
   }, [searchParams]);
 
   useEffect(() => {
-    if (result?.productType !== "love_fortune_detail" || !result.readingId || fortuneReading || fortuneLoading) return;
+    if (result?.productType !== "love_fortune_detail" || !result.readingId || fortuneReading || fortuneLoading || fortuneGenerateAttempted) return;
 
     let cancelled = false;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 55000);
+    setFortuneGenerateAttempted(true);
+    setFortuneLoadingStep(0);
     setFortuneLoading(true);
     setFortuneError("");
     queueMicrotask(async () => {
@@ -532,6 +578,7 @@ function PaymentSuccessContent() {
         const res = await fetch("/api/mypage/love-fortune", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
+          signal: controller.signal,
           body: JSON.stringify({ readingId: result.readingId }),
         });
         const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; reading?: LoveFortuneReading };
@@ -540,19 +587,40 @@ function PaymentSuccessContent() {
         }
         if (!cancelled) setFortuneReading(body.reading);
       } catch (err) {
-        if (!cancelled) setFortuneError(err instanceof Error ? err.message : "연애운 상세 풀이를 생성하지 못했습니다.");
+        if (!cancelled) {
+          const isAbort = err instanceof DOMException && err.name === "AbortError";
+          setFortuneError(isAbort ? "상세 풀이 생성이 오래 걸리고 있어요. 결제는 저장됐으니 마이페이지에서 다시 열 수 있습니다." : err instanceof Error ? err.message : "연애운 상세 풀이를 생성하지 못했습니다.");
+        }
       } finally {
+        window.clearTimeout(timeout);
         if (!cancelled) setFortuneLoading(false);
       }
     });
 
     return () => {
       cancelled = true;
+      window.clearTimeout(timeout);
+      controller.abort();
     };
-  }, [fortuneLoading, fortuneReading, result]);
+  }, [fortuneGenerateAttempted, fortuneLoading, fortuneReading, result]);
+
+  useEffect(() => {
+    if (!fortuneLoading) return;
+
+    const timer = window.setInterval(() => {
+      setFortuneLoadingStep((current) => Math.min(current + 1, LOVE_FORTUNE_LOADING_STEPS.length - 1));
+    }, 1200);
+
+    return () => window.clearInterval(timer);
+  }, [fortuneLoading]);
 
   const primaryAction = getPrimaryAction(result?.productType);
   const isLoveFortune = result?.productType === "love_fortune_detail";
+  const activeFortuneLoadingStep = LOVE_FORTUNE_LOADING_STEPS[fortuneLoadingStep] ?? LOVE_FORTUNE_LOADING_STEPS[0];
+  const fortuneLoadingProgress = Math.min(
+    92,
+    Math.round(((fortuneLoadingStep + 1) / LOVE_FORTUNE_LOADING_STEPS.length) * 92),
+  );
 
   return (
     <main className={`mx-auto px-4 py-8 ${isLoveFortune ? "max-w-5xl" : "max-w-2xl"}`}>
@@ -614,15 +682,64 @@ function PaymentSuccessContent() {
         ) : null}
 
         {isLoveFortune && fortuneLoading ? (
-          <div className="mt-6 overflow-hidden rounded-3xl border border-amber-200 bg-[radial-gradient(circle_at_16%_0%,rgba(245,158,11,0.22),transparent_34%),linear-gradient(135deg,#fff7ed,#fef3c7)] p-5">
-            <p className="text-sm font-black text-amber-950">도화냥이 만세력 종이를 펴고 있어요.</p>
-            <div className="mt-4 h-2 overflow-hidden rounded-full bg-amber-100">
-              <div className="h-full w-2/3 animate-pulse rounded-full bg-gradient-to-r from-amber-700 via-rose-500 to-amber-700" />
+          <div className="mt-6 overflow-hidden rounded-3xl border border-amber-200 bg-[radial-gradient(circle_at_16%_0%,rgba(245,158,11,0.22),transparent_34%),linear-gradient(135deg,#fff7ed,#fef3c7)] p-5 shadow-[0_18px_45px_rgba(146,64,14,0.12)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-sm font-black text-amber-950">도화냥이 만세력 종이를 펴고 있어요.</p>
+                <p className="mt-1 text-xs font-bold text-amber-700">
+                  {fortuneLoadingStep + 1}/{LOVE_FORTUNE_LOADING_STEPS.length} 단계 분석 중
+                </p>
+              </div>
+              <div className="inline-flex items-center gap-1 rounded-full bg-white/75 px-3 py-1.5 text-xs font-black text-amber-900">
+                분석 중
+                <span className="ml-1 h-1.5 w-1.5 animate-bounce rounded-full bg-amber-700 [animation-delay:-0.2s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-rose-500 [animation-delay:-0.1s]" />
+                <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-amber-700" />
+              </div>
             </div>
-            <div className="mt-4 grid gap-2 text-xs font-bold text-amber-900 sm:grid-cols-3">
-              <p className="rounded-2xl bg-white/70 px-3 py-2">사랑 결 읽는 중</p>
-              <p className="rounded-2xl bg-white/70 px-3 py-2">인연 타이밍 짚는 중</p>
-              <p className="rounded-2xl bg-white/70 px-3 py-2">얼굴상 스케치 중</p>
+
+            <div className="mt-4 h-2 overflow-hidden rounded-full bg-amber-100/80">
+              <div
+                className="h-full rounded-full bg-gradient-to-r from-amber-800 via-rose-500 to-amber-700 shadow-[0_0_18px_rgba(244,63,94,0.45)] transition-all duration-700 ease-out"
+                style={{ width: `${fortuneLoadingProgress}%` }}
+              />
+            </div>
+
+            <div className="mt-4 rounded-3xl border border-white/70 bg-white/75 p-4">
+              <p className="text-base font-black text-amber-950">{activeFortuneLoadingStep.title}</p>
+              <p className="mt-2 text-sm leading-6 text-amber-800">{activeFortuneLoadingStep.detail}</p>
+            </div>
+
+            <div className="mt-4 grid gap-2 text-xs font-bold text-amber-900 sm:grid-cols-2">
+              {LOVE_FORTUNE_LOADING_STEPS.map((step, index) => {
+                const isDone = index < fortuneLoadingStep;
+                const isActive = index === fortuneLoadingStep;
+                return (
+                  <p
+                    key={step.title}
+                    className={`flex items-center gap-2 rounded-2xl px-3 py-2 transition-all duration-300 ${
+                      isActive
+                        ? "bg-amber-950 text-white shadow-sm"
+                        : isDone
+                          ? "bg-white/80 text-amber-950"
+                          : "bg-white/45 text-amber-700/70"
+                    }`}
+                  >
+                    <span
+                      className={`flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[10px] ${
+                        isActive
+                          ? "bg-white text-amber-950"
+                          : isDone
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-500"
+                      }`}
+                    >
+                      {isDone ? "✓" : index + 1}
+                    </span>
+                    {step.title}
+                  </p>
+                );
+              })}
             </div>
             <p className="mt-3 text-sm leading-6 text-amber-800">결과가 나오면 이 화면에 바로 펼쳐집니다. 창을 닫아도 마이페이지에 저장돼요.</p>
           </div>

@@ -157,12 +157,6 @@ export default function CommunityBodycheckHub() {
         </div>
         <p className="text-[11px] text-neutral-400">인스타그램 릴스에 등장할 수 있습니다.</p>
         <Link
-          href="/hall-of-fame"
-          className="inline-flex min-h-[42px] items-center rounded-full border border-neutral-300 px-4 text-sm font-semibold text-neutral-700 transition hover:border-neutral-400 hover:bg-neutral-50"
-        >
-          주간 1등 보기
-        </Link>
-        <Link
           href="/community?tab=photo_bodycheck"
           className="inline-flex min-h-[42px] items-center rounded-full border border-neutral-300 px-4 text-sm font-semibold text-neutral-700 transition hover:border-neutral-400 hover:bg-neutral-50"
         >

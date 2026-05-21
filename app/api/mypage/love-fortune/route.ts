@@ -200,6 +200,7 @@ function buildPromptV2(row: LoveFortuneRow) {
     "- 모든 큰 섹션에는 입력 정보나 고민을 근거로 끌어와 개인 상담처럼 쓰세요.",
     "- '대화를 많이 하세요' 같은 당연한 조언으로 끝내지 말고, 첫 연락 문장, 첫 만남 장소, 연락 텀, 피해야 할 말투까지 현실 예시를 주세요.",
     "- 퍼센트 점수, MBTI식 유형명, AI, 알고리즘, 데이터상이라는 표현은 쓰지 마세요.",
+    "- 굵게 표시용 마크다운 기호(**텍스트**)나 불릿 별표(*)를 쓰지 마세요. 제목은 ## 제목 형식만 사용하세요.",
     "- 운명 확정, 결혼 보장, 상대 마음 단정, 외모 단정은 금지입니다.",
     "- 전체는 4,000자 이상으로 깊게 쓰되, 모바일에서 읽기 쉽게 짧은 문단으로 나누세요.",
     "",
@@ -255,6 +256,15 @@ function extractGeminiText(payload: unknown) {
   };
 
   return data.candidates?.flatMap((candidate) => candidate.content?.parts ?? []).map((part) => part.text ?? "").join("\n").trim() ?? "";
+}
+
+function cleanGeneratedReport(text: string) {
+  return text
+    .replace(/```/g, "")
+    .replace(/\*\*(.*?)\*\*/g, "$1")
+    .replace(/\*/g, "")
+    .replace(/[ \t]+\n/g, "\n")
+    .trim();
 }
 
 function serialize(row: LoveFortuneRow) {
@@ -402,7 +412,7 @@ export async function POST(req: Request) {
       return json(502, { ok: false, requestId, message: "연애운 상세 풀이 생성에 실패했습니다. 잠시 후 다시 시도해 주세요." });
     }
 
-    const text = extractGeminiText(data);
+    const text = cleanGeneratedReport(extractGeminiText(data));
     if (!text) {
       return json(502, { ok: false, requestId, message: "연애운 상세 풀이 응답이 비어 있습니다. 잠시 후 다시 시도해 주세요." });
     }
