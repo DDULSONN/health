@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { timeAgo } from "@/lib/community";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
+import { pickLoveFortuneFaceAsset } from "@/lib/love-fortune-face-assets";
 import { PROVINCE_ORDER } from "@/lib/region-city";
 function MyPageWidgetSkeleton({ className = "h-40" }: { className?: string }) {
   return (
@@ -404,52 +405,19 @@ function parseLoveFortuneReport(text: string | null) {
 }
 
 function buildLoveFortuneIdealSketch(reading: MyLoveFortuneReading) {
-  const target = reading.gender === "female" ? "male" : reading.gender === "male" ? "female" : "male";
+  const asset = pickLoveFortuneFaceAsset({
+    gender: reading.gender,
+    idealFace: reading.idealFace,
+    seedParts: [reading.birthDate, reading.birthTime, reading.loveState, reading.focus, reading.concern],
+  });
   const ideal = reading.idealFace ?? {};
-  const seed = [reading.birthDate, reading.birthTime, reading.loveState, reading.focus, reading.concern].join("|")
-    .split("")
-    .reduce((sum, char) => sum + char.charCodeAt(0), 0);
-  const accent = target === "male" ? "#6b4a2f" : "#c04f7a";
-  const accentLight = target === "male" ? "#efe1cf" : "#fde7ef";
-  const hair = "#2d2420";
-  const eyeY = 108 + (seed % 5);
-  const smileCurve = 146 + (seed % 4);
-  const hairPath =
-    target === "male"
-      ? "M66 88 C70 44 130 35 169 67 C184 79 190 102 186 128 C170 102 145 85 110 86 C91 86 78 91 66 88Z"
-      : "M55 111 C50 63 88 34 126 38 C169 39 195 72 195 124 C192 159 181 182 169 198 C172 144 157 91 124 88 C92 91 74 130 78 198 C64 180 56 153 55 111Z";
-  const label = target === "male" ? "남자 얼굴상" : "여자 얼굴상";
-  const encoded = encodeURIComponent(`
-    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 260 320">
-      <defs>
-        <linearGradient id="bg" x1="0" x2="1" y1="0" y2="1">
-          <stop offset="0" stop-color="#fffaf0"/>
-          <stop offset="1" stop-color="${accentLight}"/>
-        </linearGradient>
-      </defs>
-      <rect width="260" height="320" rx="34" fill="url(#bg)"/>
-      <circle cx="130" cy="124" r="82" fill="#fff7e8" stroke="${accent}" stroke-width="3"/>
-      <path d="${hairPath}" fill="${hair}" opacity=".96"/>
-      <ellipse cx="98" cy="${eyeY}" rx="9" ry="12" fill="#2b2118"/>
-      <ellipse cx="162" cy="${eyeY}" rx="9" ry="12" fill="#2b2118"/>
-      <circle cx="101" cy="${eyeY - 4}" r="3" fill="#fff"/>
-      <circle cx="165" cy="${eyeY - 4}" r="3" fill="#fff"/>
-      <path d="M119 128 C126 132 134 132 141 128" fill="none" stroke="#a9795b" stroke-width="3" stroke-linecap="round"/>
-      <path d="M104 ${smileCurve} C121 ${smileCurve + 12} 143 ${smileCurve + 12} 158 ${smileCurve}" fill="none" stroke="#6b3f24" stroke-width="4" stroke-linecap="round"/>
-      <ellipse cx="79" cy="140" rx="14" ry="8" fill="#f1a5b7" opacity=".55"/>
-      <ellipse cx="181" cy="140" rx="14" ry="8" fill="#f1a5b7" opacity=".55"/>
-      <path d="M76 204 C95 231 164 232 184 204 C178 264 82 264 76 204Z" fill="#fff7e8" stroke="${accent}" stroke-width="3"/>
-      <path d="M71 224 C101 210 159 210 190 224 C205 236 210 262 210 286 L50 286 C50 262 56 236 71 224Z" fill="${accentLight}" stroke="${accent}" stroke-width="3"/>
-      <text x="130" y="44" text-anchor="middle" font-size="13" font-weight="800" fill="${accent}" font-family="Arial, sans-serif">${label}</text>
-      <text x="130" y="303" text-anchor="middle" font-size="13" font-weight="800" fill="#6b4a2f" font-family="Arial, sans-serif">사주 기반 인상 스케치</text>
-    </svg>
-  `);
 
   return {
-    label,
-    src: `data:image/svg+xml;charset=utf-8,${encoded}`,
-    body: `${String(ideal.eye ?? "편안한 눈매")} · ${String(ideal.mood ?? "신뢰감 있는 분위기")}`,
+    label: asset.label,
+    src: reading.idealFaceImageUrl || asset.src,
+    body: [ideal.eye, ideal.smile, ideal.mood, ideal.style].filter(Boolean).join(" · ") || asset.tone,
   };
+
 }
 
 function adminOpenCardOutreachScopeLabel(scope: AdminOpenCardOutreachScope) {
@@ -6272,7 +6240,7 @@ export default function MyPage() {
                             {/* eslint-disable-next-line @next/next/no-img-element */}
                             <img
                               src={idealSketch.src}
-                              alt={`${idealSketch.label} 스케치`}
+                              alt={`${idealSketch.label} 이미지`}
                               loading="lazy"
                               decoding="async"
                               className="h-auto w-full object-contain"
@@ -6363,7 +6331,7 @@ export default function MyPage() {
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
                         src={sketch.src}
-                        alt={`${sketch.label} 스케치`}
+                        alt={`${sketch.label} 이미지`}
                         loading="lazy"
                         decoding="async"
                         className="w-full rounded-[22px] border border-rose-100 bg-rose-50 object-contain"

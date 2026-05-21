@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { pickLoveFortuneFaceAsset } from "@/lib/love-fortune-face-assets";
 
 type ConfirmResponse = {
   ok?: boolean;
@@ -70,7 +71,7 @@ const LOVE_FORTUNE_LOADING_STEPS = [
     detail: "다가오는 흐름과 조심해야 할 관계 패턴을 현실적인 말로 풀고 있어요.",
   },
   {
-    title: "잘 맞는 얼굴상 스케치 중",
+    title: "잘 맞는 얼굴상 고르는 중",
     detail: "외모 단정이 아니라 오래 편한 분위기와 인상 결을 정리하고 있어요.",
   },
   {
@@ -314,15 +315,29 @@ function buildIdealFaceSketchDataUrl(reading: LoveFortuneReading, target: "male"
   };
 }
 
+function pickIdealFaceImage(reading: LoveFortuneReading) {
+  const asset = pickLoveFortuneFaceAsset({
+    gender: reading.gender,
+    idealFace: reading.idealFace,
+    seedParts: [reading.birthDate, reading.birthTime, reading.loveState, reading.focus, reading.concern],
+  });
+  const ideal = reading.idealFace ?? {};
+
+  return {
+    ...asset,
+    body: [ideal.eye, ideal.smile, ideal.mood, ideal.style].filter(Boolean).join(" · ") || asset.tone,
+  };
+}
+
 function LoveFortuneResultPanel({ reading }: { reading: LoveFortuneReading }) {
   const sections = useMemo(() => parseLoveFortuneReport(reading.aiResult), [reading.aiResult]);
   const summary = useMemo(() => buildFortuneSummary(reading), [reading]);
   const ideal = reading.idealFace ?? {};
-  const idealTarget = reading.gender === "female" ? "male" : reading.gender === "male" ? "female" : null;
   const idealSketches = useMemo(
-    () => (idealTarget ? [buildIdealFaceSketchDataUrl(reading, idealTarget)] : [buildIdealFaceSketchDataUrl(reading, "male"), buildIdealFaceSketchDataUrl(reading, "female")]),
-    [idealTarget, reading]
+    () => [pickIdealFaceImage(reading)],
+    [reading]
   );
+  const isDetailedReady = Boolean(reading.aiResult);
   const firstSection = sections[0];
   const detailSections = sections.slice(1);
 
@@ -343,10 +358,10 @@ function LoveFortuneResultPanel({ reading }: { reading: LoveFortuneReading }) {
               <p className="text-xs font-black tracking-[0.18em] text-[#b13b2e]">배우자 얼굴상</p>
               <h3 className="mt-2 text-2xl font-black text-stone-950">나와 오래 맞기 쉬운 인상</h3>
             </div>
-            <span className="rounded-full bg-rose-50 px-3 py-1 text-[11px] font-black text-rose-700">사주 기반 스케치</span>
+            <span className="rounded-full bg-rose-50 px-3 py-1 text-[11px] font-black text-rose-700">사주 기반 얼굴상</span>
           </div>
           <p className="mt-2 text-xs leading-5 text-stone-500">
-            실제 외모를 단정하지 않고, 입력한 연애 성향과 명식 흐름에서 오래 편하게 맞기 쉬운 분위기를 스케치로 정리했어요.
+            실제 외모를 단정하지 않고, 입력한 연애 성향과 명식 흐름에서 오래 편하게 맞기 쉬운 분위기를 이미지로 정리했어요.
           </p>
           <div className="mt-4 grid gap-3 sm:grid-cols-[220px_1fr]">
             {idealSketches.map((sketch) => (
@@ -354,7 +369,7 @@ function LoveFortuneResultPanel({ reading }: { reading: LoveFortuneReading }) {
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src={sketch.src}
-                  alt={`${sketch.label} 스케치`}
+                  alt={`${sketch.label} 이미지`}
                   loading="lazy"
                   decoding="async"
                   className="h-auto w-full rounded-[20px] bg-white object-contain"
@@ -471,10 +486,24 @@ function LoveFortuneResultPanel({ reading }: { reading: LoveFortuneReading }) {
             <p className="mt-3 text-sm leading-7 text-white/75">{summary.flowNote}</p>
           </div>
 
+          {!isDetailedReady ? (
+            <div className="rounded-3xl border border-amber-200 bg-amber-50 p-5 text-amber-950">
+              <p className="text-sm font-black">상세 풀이를 다듬는 중입니다.</p>
+              <p className="mt-2 text-sm leading-6">
+                얼굴상과 명식 요약은 먼저 준비됐고, 긴 연애운 리포트는 곧 자동으로 붙습니다. 창을 닫아도 마이페이지에 저장돼요.
+              </p>
+              <div className="mt-4 h-2 overflow-hidden rounded-full bg-amber-100">
+                <div className="h-full w-2/3 animate-pulse rounded-full bg-[#b45a1b]" />
+              </div>
+            </div>
+          ) : null}
+
+          {isDetailedReady ? (
           <div className="rounded-3xl border border-[#d8c5a5] bg-white p-5">
             <p className="text-xs font-black tracking-[0.18em] text-[#9a5a23]">총평</p>
             <div className="mt-2 whitespace-pre-wrap text-lg font-bold leading-8 text-stone-950">{firstSection?.body || "상세 풀이가 생성되었습니다."}</div>
           </div>
+          ) : null}
 
           <div className="rounded-3xl border border-[#d8c5a5] bg-white p-5">
             <p className="text-sm font-black text-stone-900">상세 풀이 구성</p>
@@ -603,6 +632,38 @@ function PaymentSuccessContent() {
       controller.abort();
     };
   }, [fortuneGenerateAttempted, fortuneReading, result]);
+
+  useEffect(() => {
+    if (result?.productType !== "love_fortune_detail" || !result.readingId || !fortuneReading || fortuneReading.aiResult) return;
+
+    let cancelled = false;
+    let tries = 0;
+    const timer = window.setInterval(async () => {
+      tries += 1;
+      try {
+        const res = await fetch("/api/mypage/love-fortune", { cache: "no-store" });
+        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; readings?: LoveFortuneReading[] };
+        const updated = body.readings?.find((item) => item.id === result.readingId);
+        if (!cancelled && updated) {
+          setFortuneReading(updated);
+        }
+        if (!cancelled && updated?.aiResult) {
+          window.clearInterval(timer);
+        }
+      } catch {
+        // The saved reading is already visible. Keep polling quietly for the detailed report.
+      }
+
+      if (tries >= 30) {
+        window.clearInterval(timer);
+      }
+    }, 2500);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(timer);
+    };
+  }, [fortuneReading, result]);
 
   useEffect(() => {
     if (!fortuneLoading) return;

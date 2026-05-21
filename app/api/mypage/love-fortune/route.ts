@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { isAllowedAdminUser } from "@/lib/admin";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -337,6 +337,62 @@ export async function GET(req: Request) {
   }
 }
 
+async function generateAndSaveReading(row: LoveFortuneRow, requestId: string) {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) throw new Error("GEMINI_API_KEY_MISSING");
+
+  const admin = createAdminClient();
+  const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
+  const prompt = buildPromptV2(row);
+  const idealFace = buildIdealFaceProfileV2(row);
+  const res = await fetch(`${GEMINI_API_URL}/${encodeURIComponent(model)}:generateContent`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "X-goog-api-key": apiKey,
+    },
+    body: JSON.stringify({
+      contents: [{ role: "user", parts: [{ text: prompt }] }],
+      generationConfig: {
+        temperature: 0.72,
+        topP: 0.9,
+        maxOutputTokens: 6500,
+      },
+    }),
+  });
+
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    console.error(`[mypage-love-fortune] ${requestId} gemini failed`, { status: res.status, data });
+    throw new Error("GEMINI_GENERATION_FAILED");
+  }
+
+  const text = cleanGeneratedReport(extractGeminiText(data));
+  if (!text) throw new Error("GEMINI_EMPTY_RESPONSE");
+
+  const updateRes = await admin
+    .from("love_fortune_readings")
+    .update({
+      status: "generated",
+      ai_model: model,
+      ai_result: text,
+      ideal_face_profile: idealFace,
+      ideal_face_prompt: idealFace.prompt,
+      generated_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", row.id)
+    .eq("user_id", row.user_id)
+    .is("ai_result", null)
+    .select("id")
+    .maybeSingle();
+
+  if (updateRes.error) {
+    console.error(`[mypage-love-fortune] ${requestId} update failed`, updateRes.error);
+    throw updateRes.error;
+  }
+}
+
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
   try {
@@ -387,6 +443,41 @@ export async function POST(req: Request) {
       return json(500, { ok: false, requestId, message: "상세 분석 설정이 아직 완료되지 않았습니다." });
     }
 
+    const preparedIdealFace = buildIdealFaceProfileV2(row);
+    const preparedRes = await admin
+      .from("love_fortune_readings")
+      .update({
+        ideal_face_profile: preparedIdealFace,
+        ideal_face_prompt: preparedIdealFace.prompt,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row.id)
+      .eq("user_id", user.id)
+      .select(LOVE_FORTUNE_SELECT)
+      .maybeSingle();
+
+    if (preparedRes.error) {
+      console.error(`[mypage-love-fortune] ${requestId} prepare failed`, preparedRes.error);
+      return json(500, { ok: false, requestId, message: "연애운 결과 준비에 실패했습니다." });
+    }
+
+    const preparedRow = (preparedRes.data as LoveFortuneRow | null) ?? {
+      ...row,
+      ideal_face_profile: preparedIdealFace,
+      ideal_face_prompt: preparedIdealFace.prompt,
+    };
+
+    after(async () => {
+      try {
+        await generateAndSaveReading(preparedRow, requestId);
+      } catch (error) {
+        console.error(`[mypage-love-fortune] ${requestId} background generation failed`, error);
+      }
+    });
+
+    return json(202, { ok: true, requestId, generating: true, reading: serialize(preparedRow) });
+
+    /*
     const model = process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
     const prompt = buildPromptV2(row);
     const idealFace = buildIdealFaceProfileV2(row);
@@ -439,6 +530,7 @@ export async function POST(req: Request) {
     }
 
     return json(200, { ok: true, requestId, reading: serialize(updateRes.data as LoveFortuneRow) });
+    */
   } catch (error) {
     console.error(`[mypage-love-fortune] ${requestId} generate unhandled`, error);
     return json(500, { ok: false, requestId, message: "서버 오류가 발생했습니다." });
