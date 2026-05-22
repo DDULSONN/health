@@ -2,8 +2,8 @@ export const DATING_CARD_REPORT_REASON_OPTIONS = [
   { code: "fake_profile", label: "허위 정보 / 사칭 의심" },
   { code: "explicit_content", label: "부적절한 사진 / 노출" },
   { code: "abuse_harassment", label: "욕설 / 괴롭힘 / 불쾌한 표현" },
-  { code: "commercial_spam", label: "영업 / 광고 / 외부 유도" },
-  { code: "safety_risk", label: "미성년 의심 / 안전상 위험" },
+  { code: "commercial_spam", label: "상업 / 광고 / 외부 유도" },
+  { code: "safety_risk", label: "미성년 의심 / 안전 위험" },
 ] as const;
 
 export type DatingCardReportReasonCode = (typeof DATING_CARD_REPORT_REASON_OPTIONS)[number]["code"];

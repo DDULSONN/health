@@ -61,6 +61,31 @@ function oneOnOneContactDisplayName(
   return card?.name?.trim() || profile?.nickname?.trim() || profile?.email?.trim() || (userId ? `회원 ${userId.slice(0, 8)}` : "-");
 }
 
+type DatingUserReportTargetType =
+  | "open_card_application"
+  | "paid_card_application"
+  | "one_on_one_card"
+  | "one_on_one_match";
+
+function SmallDatingReportButton({
+  disabled,
+  onClick,
+}: {
+  disabled?: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={onClick}
+      className="inline-flex h-8 items-center rounded-md border border-neutral-200 bg-white px-3 text-[11px] font-medium text-neutral-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+    >
+      {disabled ? "신고 중..." : "신고"}
+    </button>
+  );
+}
+
 type MyPageTab = "my_cert" | "request_status" | "admin_review";
 type MyPageSectionTab = "profile" | "matching" | "payment" | "admin";
 
@@ -1444,6 +1469,7 @@ export default function MyPage() {
   const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
   const [processingOneOnOneContactExchangeIds, setProcessingOneOnOneContactExchangeIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
+  const [reportingDatingTargetKeys, setReportingDatingTargetKeys] = useState<string[]>([]);
   const [deletingOneOnOneMatchIds, setDeletingOneOnOneMatchIds] = useState<string[]>([]);
   const [processingSwipeLikeBackIds, setProcessingSwipeLikeBackIds] = useState<string[]>([]);
   const [deletingSwipeLikeIds, setDeletingSwipeLikeIds] = useState<string[]>([]);
@@ -3689,6 +3715,45 @@ export default function MyPage() {
       alert(e instanceof Error ? e.message : "지난 매칭 기록 삭제에 실패했습니다.");
     } finally {
       setDeletingOneOnOneMatchIds((prev) => prev.filter((matchId) => matchId !== id));
+    }
+  };
+
+  const handleDatingUserReport = async (
+    targetType: DatingUserReportTargetType,
+    targetId: string,
+    label: string
+  ) => {
+    const reportKey = `${targetType}:${targetId}`;
+    if (reportingDatingTargetKeys.includes(reportKey)) return;
+
+    const detail = window.prompt(
+      `${label} 신고 사유를 간단히 적어주세요.\n허위 정보, 불쾌한 표현, 광고, 안전 우려 등을 적어주시면 관리자가 확인합니다.`,
+      ""
+    );
+    if (detail === null) return;
+
+    setReportingDatingTargetKeys((prev) => [...prev, reportKey]);
+    try {
+      const res = await fetch("/api/dating/user-reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          target_type: targetType,
+          target_id: targetId,
+          reason_code: "safety_risk",
+          detail,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+      if (!res.ok || body.ok === false) {
+        alert(body.message ?? "신고 접수에 실패했습니다.");
+        return;
+      }
+      alert("신고가 접수됐습니다. 관리자가 확인할게요.");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "신고 접수에 실패했습니다.");
+    } finally {
+      setReportingDatingTargetKeys((prev) => prev.filter((key) => key !== reportKey));
     }
   };
 
@@ -6602,8 +6667,9 @@ export default function MyPage() {
                   {app.status === "accepted" && app.instagram_id && (
                     <p className="mt-2 text-sm text-emerald-700 font-medium">지원자 인스타: @{app.instagram_id}</p>
                   )}
-                  {app.status === "submitted" && (
-                    <div className="mt-3 flex gap-2">
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {app.status === "submitted" && (
+                      <>
                       <button
                         type="button"
                         onClick={() => void handlePaidApplicationStatus(app.id, "accepted")}
@@ -6618,8 +6684,13 @@ export default function MyPage() {
                       >
                         거절
                       </button>
-                    </div>
-                  )}
+                      </>
+                    )}
+                    <SmallDatingReportButton
+                      disabled={reportingDatingTargetKeys.includes(`paid_card_application:${app.id}`)}
+                      onClick={() => void handleDatingUserReport("paid_card_application", app.id, "유료카드 지원자")}
+                    />
+                  </div>
                 </div>
               );
             })}
@@ -6948,7 +7019,7 @@ export default function MyPage() {
                                     ))}
                                   </div>
                                 )}
-                                <div className="mt-3">
+                                <div className="mt-3 flex flex-wrap gap-2">
                                   <button
                                     type="button"
                                     disabled={processing}
@@ -6957,6 +7028,10 @@ export default function MyPage() {
                                   >
                                     {processing ? "처리 중..." : "이 후보 선택"}
                                   </button>
+                                  <SmallDatingReportButton
+                                    disabled={reportingDatingTargetKeys.includes(`one_on_one_card:${card.id}`)}
+                                    onClick={() => void handleDatingUserReport("one_on_one_card", card.id, "1:1 추천 후보")}
+                                  />
                                 </div>
                               </div>
                             );
@@ -7016,7 +7091,7 @@ export default function MyPage() {
                                   ))}
                                 </div>
                               )}
-                              <div className="mt-3">
+                              <div className="mt-3 flex flex-wrap gap-2">
                                 <button
                                   type="button"
                                   disabled={processing}
@@ -7025,6 +7100,10 @@ export default function MyPage() {
                                 >
                                   {processing ? "처리 중..." : "이 후보 선택"}
                                 </button>
+                                <SmallDatingReportButton
+                                  disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}
+                                  onClick={() => void handleDatingUserReport("one_on_one_match", match.id, "1:1 후보")}
+                                />
                               </div>
                             </div>
                           );
@@ -7102,6 +7181,10 @@ export default function MyPage() {
                                 >
                                   거절
                                 </button>
+                                <SmallDatingReportButton
+                                  disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}
+                                  onClick={() => void handleDatingUserReport("one_on_one_match", match.id, "1:1 상대")}
+                                />
                               </div>
                             </div>
                           );
@@ -7128,6 +7211,12 @@ export default function MyPage() {
                                 </span>
                               </div>
                               <p className="mt-1 text-xs text-neutral-600">상대가 수락하면 바로 카카오페이 번호 교환 단계로 넘어갑니다.</p>
+                              <div className="mt-2 flex justify-end">
+                                <SmallDatingReportButton
+                                  disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}
+                                  onClick={() => void handleDatingUserReport("one_on_one_match", match.id, "1:1 후보")}
+                                />
+                              </div>
                             </div>
                           );
                         })}
@@ -7168,6 +7257,10 @@ export default function MyPage() {
                                 >
                                   거절
                                 </button>
+                                <SmallDatingReportButton
+                                  disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}
+                                  onClick={() => void handleDatingUserReport("one_on_one_match", match.id, "1:1 상대")}
+                                />
                               </div>
                             </div>
                           );
@@ -7269,6 +7362,12 @@ export default function MyPage() {
                                   </button>
                                 </div>
                               )}
+                              <div className="mt-2 flex justify-end">
+                                <SmallDatingReportButton
+                                  disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}
+                                  onClick={() => void handleDatingUserReport("one_on_one_match", match.id, "1:1 쌍방 매칭 상대")}
+                                />
+                              </div>
                               <p className="mt-2 text-xs text-neutral-700 whitespace-pre-wrap break-words">{card.intro_text}</p>
                               <p className="mt-2 text-xs text-neutral-700">장점: {card.strengths_text}</p>
                               <p className="mt-1 text-xs text-neutral-700">원하는 점: {card.preferred_partner_text}</p>
@@ -7327,6 +7426,10 @@ export default function MyPage() {
                                 >
                                   {deleting ? "삭제 중" : "삭제"}
                                 </button>
+                                <SmallDatingReportButton
+                                  disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}
+                                  onClick={() => void handleDatingUserReport("one_on_one_match", match.id, "지난 1:1 매칭 상대")}
+                                />
                               </div>
                             </div>
                           );
@@ -7591,8 +7694,9 @@ export default function MyPage() {
                     <p className="mt-2 text-sm text-emerald-700 font-medium">지원자 인스타: @{app.instagram_id}</p>
                   )}
 
-                  {app.status === "submitted" && (
-                    <div className="mt-3 flex gap-2">
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    {app.status === "submitted" && (
+                      <>
                       <button
                         type="button"
                         onClick={() => void handleCardApplicationStatus(app.id, "accepted")}
@@ -7607,8 +7711,13 @@ export default function MyPage() {
                       >
                         거절
                       </button>
-                    </div>
-                  )}
+                      </>
+                    )}
+                    <SmallDatingReportButton
+                      disabled={reportingDatingTargetKeys.includes(`open_card_application:${app.id}`)}
+                      onClick={() => void handleDatingUserReport("open_card_application", app.id, "오픈카드 지원자")}
+                    />
+                  </div>
                 </div>
               );
             })}

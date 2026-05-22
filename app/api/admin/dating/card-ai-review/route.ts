@@ -42,13 +42,17 @@ type CardReview = {
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 const SOURCE_TYPES: SourceType[] = ["open_card", "paid_card", "one_on_one"];
 const SUSPICIOUS_LEVELS = new Set<SuspicionLevel>(["medium", "high"]);
-const LOW_EFFORT_PATTERNS = [
-  /ㅋㅋ|ㅎㅎ|ㅈㅅ|ㅇㅇ|ㄱㄱ|테스트|test|asdf|qwer/i,
-  /대충|몰라|모름|아무나|없음|비밀|나중에|직접\s*물어/i,
-  /장난|광고|홍보|협찬|업체|문의|무료|이벤트/i,
-  /오픈\s*카톡|카카오톡|카톡|텔레그램|디엠|dm|line|라인/i,
-  /https?:\/\/|www\.|open\.kakao|t\.me|instagram\.com/i,
+const TEST_TEXT_PATTERNS = [/테스트|test|asdf|qwer|ㄹㄹ|ㅁㄴㅇ|ㅇㅇㅇ/i];
+const EXTERNAL_CONTACT_PATTERNS = [
+  /https?:\/\/|www\.|open\.kakao|t\.me|instagram\.com|bit\.ly|linktr\.ee/i,
+  /오픈\s*카톡|오픈\s*채팅|카카오톡|카톡\s*(아이디|id|문의|주세요|ㄱ)|디엠|dm\s*(주세요|문의|ㄱ)|텔레그램|telegram|라인\s*(id|아이디)?|line\s*(id)?/i,
 ];
+const COMMERCIAL_PATTERNS = [
+  /(광고|홍보|협찬|제휴|업체)\s*(문의|가능|환영|주세요|받아요)/i,
+  /(부업|수익|투자|코인|토토|바카라|카지노|대출|리딩방|공구)\s*(문의|모집|가능|추천|링크)?/i,
+  /(이벤트|무료)\s*(참여|모집|신청|링크|쿠폰)/i,
+];
+const UNSAFE_PATTERNS = [/조건\s*만남|조건만남|스폰|성인\s*만남|19금|불법|계좌|입금|후원|대가\s*성/i];
 
 function cleanText(value: unknown, max = 500) {
   return String(value ?? "").trim().slice(0, max);
@@ -94,18 +98,22 @@ function sourceLabel(value: SourceType) {
 }
 
 function likelyTextFlags(texts: Record<string, string>) {
-  const merged = Object.values(texts).join(" ").trim();
+  const reviewTexts = Object.entries(texts)
+    .filter(([key]) => !/instagram|job/i.test(key))
+    .map(([, value]) => value.trim())
+    .filter(Boolean);
+  const merged = reviewTexts.join(" ").trim();
   const flags: string[] = [];
 
-  if (merged.length < 12) flags.push("전체 소개 문구가 너무 짧음");
-  if (LOW_EFFORT_PATTERNS.some((pattern) => pattern.test(merged))) {
-    flags.push("장난/광고/외부유도 의심 문구");
+  if (merged.length > 0 && merged.length < 8) flags.push("소개 문구가 거의 없음");
+  if (TEST_TEXT_PATTERNS.some((pattern) => pattern.test(merged))) {
+    flags.push("테스트/장난성 문구");
   }
   if (/([가-힣A-Za-z0-9])\1{4,}/u.test(merged)) flags.push("반복 문자 과다");
   if (/010[-\s]?\d{3,4}[-\s]?\d{4}/.test(merged)) flags.push("전화번호 직접 노출 의심");
-  if (/(만남\s*알바|조건|스폰|성인|19금|불법|도박|카지노|코인|대출)/i.test(merged)) {
-    flags.push("부적절/광고성 키워드");
-  }
+  if (EXTERNAL_CONTACT_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("외부 연락/링크 유도 의심");
+  if (COMMERCIAL_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("광고/상업성 문구 의심");
+  if (UNSAFE_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("부적절/위험 키워드");
 
   return flags;
 }
@@ -114,25 +122,24 @@ function ruleReview(card: CandidateCard): CardReview {
   const photoFlags: string[] = [];
   const textFlags = likelyTextFlags(card.texts);
   const flags: string[] = [];
-  const importantFields = Object.entries(card.texts).filter(([key]) => !/instagram/i.test(key));
+  const requiredTextFields = Object.entries(card.texts).filter(([key]) => !/instagram|job/i.test(key));
 
   if (!card.displayName) flags.push("닉네임/이름 없음");
   if (card.photoPaths.length === 0) photoFlags.push("사진 없음");
   if (card.photoPaths.length === 1 && card.sourceType !== "paid_card") photoFlags.push("사진 1장만 등록");
 
-  for (const [key, value] of importantFields) {
+  for (const [key, value] of requiredTextFields) {
     const trimmed = value.trim();
     if (!trimmed) {
       textFlags.push(`${key} 비어 있음`);
-    } else if (trimmed.length < 8) {
-      textFlags.push(`${key} 너무 짧음`);
     }
   }
 
   flags.push(...photoFlags, ...textFlags);
   const uniqueFlags = Array.from(new Set(flags)).slice(0, 10);
+  const hasSeriousFlag = uniqueFlags.some((flag) => /부적절|위험|광고|상업|전화번호|외부 연락|링크/.test(flag));
   const suspicionLevel: SuspicionLevel =
-    uniqueFlags.some((flag) => /부적절|광고|전화번호|외부유도/.test(flag)) || uniqueFlags.length >= 4
+    hasSeriousFlag || uniqueFlags.length >= 4
       ? "high"
       : uniqueFlags.length >= 2
         ? "medium"
@@ -149,7 +156,7 @@ function ruleReview(card: CandidateCard): CardReview {
         : `${sourceLabel(card.sourceType)} 일반 검수상 큰 이상 없음`,
     photoFlags,
     textFlags: Array.from(new Set(textFlags)).slice(0, 10),
-    raw: { provider: "rules", version: "2026-05-22-1" },
+    raw: { provider: "rules", version: "2026-05-23-2" },
   };
 }
 
