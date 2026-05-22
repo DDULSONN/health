@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 type SourceType = "all" | "open_card" | "paid_card" | "one_on_one";
+type ReviewMode = "rules" | "ai";
 type SuspicionLevel = "clear" | "low" | "medium" | "high";
 
 type ReviewItem = {
@@ -22,12 +23,14 @@ type ReviewItem = {
   texts?: Record<string, string>;
   createdAt?: string | null;
   scanned_at?: string | null;
+  raw_result?: { provider?: string; [key: string]: unknown };
   review?: {
     suspicionLevel: SuspicionLevel;
     flags: string[];
     summary: string;
     photoFlags: string[];
     textFlags: string[];
+    raw?: { provider?: string; [key: string]: unknown };
   };
   suspicion_level?: SuspicionLevel;
   flags?: string[];
@@ -38,6 +41,7 @@ type ReviewItem = {
 
 type ScanResponse = {
   ok?: boolean;
+  mode?: ReviewMode;
   model?: string;
   scannedCount?: number;
   suspiciousCount?: number;
@@ -86,6 +90,7 @@ function itemReview(item: ReviewItem) {
     summary: item.review?.summary ?? item.summary ?? "",
     photoFlags: item.review?.photoFlags ?? item.photo_flags ?? [],
     textFlags: item.review?.textFlags ?? item.text_flags ?? [],
+    provider: item.review?.raw?.provider ?? item.raw_result?.provider ?? "",
   };
 }
 
@@ -96,11 +101,15 @@ function levelClass(level: SuspicionLevel) {
   return "border-neutral-200 bg-neutral-50 text-neutral-600";
 }
 
+function modeLabel(mode: ReviewMode) {
+  return mode === "rules" ? "일반 검수" : "AI 검수";
+}
+
 export default function AdminDatingCardAiReviewPanel() {
   const [source, setSource] = useState<SourceType>("all");
-  const [limit, setLimit] = useState("12");
+  const [limit, setLimit] = useState("50");
   const [items, setItems] = useState<ReviewItem[]>([]);
-  const [loading, setLoading] = useState(false);
+  const [loadingMode, setLoadingMode] = useState<ReviewMode | null>(null);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
 
@@ -120,29 +129,29 @@ export default function AdminDatingCardAiReviewPanel() {
     void loadLatest();
   }, []);
 
-  const runScan = async () => {
-    setLoading(true);
+  const runScan = async (mode: ReviewMode) => {
+    setLoadingMode(mode);
     setError("");
     setInfo("");
     try {
       const res = await fetch("/api/admin/dating/card-ai-review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source, limit: Number(limit) || 12 }),
+        body: JSON.stringify({ source, limit: Number(limit) || 50, mode }),
       });
       const body = (await res.json().catch(() => ({}))) as ScanResponse;
       if (!res.ok || body.ok === false) {
-        throw new Error([body.message, body.detail].filter(Boolean).join(" ") || "AI 검수에 실패했습니다.");
+        throw new Error([body.message, body.detail].filter(Boolean).join(" ") || "카드 검수에 실패했습니다.");
       }
       setItems(body.items ?? []);
       setInfo(
-        `${body.scannedCount ?? 0}개 검사, 의심 ${body.suspiciousCount ?? 0}개 표시` +
+        `${modeLabel(mode)} 완료: ${body.scannedCount ?? 0}개 검사, 의심 ${body.suspiciousCount ?? 0}개 표시` +
           (body.model ? ` (${body.model})` : "")
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "AI 검수에 실패했습니다.");
+      setError(err instanceof Error ? err.message : "카드 검수에 실패했습니다.");
     } finally {
-      setLoading(false);
+      setLoadingMode(null);
     }
   };
 
@@ -151,9 +160,9 @@ export default function AdminDatingCardAiReviewPanel() {
       <div className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-violet-900">AI 카드 검수</p>
+            <p className="text-sm font-semibold text-violet-900">카드 검수</p>
             <p className="mt-1 text-xs text-neutral-500">
-              삭제/거절/벤은 하지 않고, 사진이나 소개글이 수상한 카드만 관리자에게 보여줍니다.
+              일반 검수는 글자수·특정 문장·금칙어만 빠르게 보고, AI 검수는 사진까지 확인합니다. 둘 다 자동 조치는 하지 않습니다.
             </p>
           </div>
           <button
@@ -183,16 +192,29 @@ export default function AdminDatingCardAiReviewPanel() {
             className="h-11 rounded-xl border border-neutral-200 px-3 text-sm"
             placeholder="검사 수"
           />
-          <button
-            type="button"
-            onClick={() => void runScan()}
-            disabled={loading}
-            className="h-11 rounded-xl bg-black px-5 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            {loading ? "검수 중..." : "AI 검수 실행"}
-          </button>
+          <div className="grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              onClick={() => void runScan("rules")}
+              disabled={loadingMode !== null}
+              className="h-11 rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {loadingMode === "rules" ? "검수 중..." : "일반 검수"}
+            </button>
+            <button
+              type="button"
+              onClick={() => void runScan("ai")}
+              disabled={loadingMode !== null}
+              className="h-11 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white disabled:opacity-50"
+            >
+              {loadingMode === "ai" ? "AI 중..." : "AI 검수"}
+            </button>
+          </div>
         </div>
 
+        <p className="mt-2 text-[11px] text-neutral-500">
+          일반 검수는 비용 없이 빠르게 돌릴 수 있고, AI 검수는 사진/이미지 성격까지 보고 싶을 때만 쓰면 됩니다.
+        </p>
         {info ? <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{info}</p> : null}
         {error ? <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}
       </div>
@@ -218,6 +240,9 @@ export default function AdminDatingCardAiReviewPanel() {
                       <span className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${levelClass(review.suspicionLevel)}`}>
                         {LEVEL_LABEL[review.suspicionLevel]}
                       </span>
+                      {review.provider ? (
+                        <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] text-neutral-500">{review.provider}</span>
+                      ) : null}
                       <span className="text-xs text-neutral-500">{itemStatus(item)}</span>
                     </div>
                     <p className="mt-2 text-sm font-semibold text-neutral-900">
