@@ -33,6 +33,10 @@ const AdminCommunityModerationPanel = dynamic(() => import("@/components/AdminCo
   loading: () => <MyPageWidgetSkeleton className="h-80" />,
 });
 
+const AdminDatingCardAiReviewPanel = dynamic(() => import("@/components/admin/AdminDatingCardAiReviewPanel"), {
+  loading: () => <MyPageWidgetSkeleton className="h-80" />,
+});
+
 const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
 const OUTREACH_AUTO_BATCH_DELAY_MS = 1200;
 const OUTREACH_AUTO_MAX_BATCHES = 40;
@@ -698,6 +702,7 @@ type AdminManageTab =
   | "payment_center"
   | "dating_stats"
   | "dating_insights"
+  | "card_ai_review"
   | "user_activity"
   | "open_cards"
   | "mail_center"
@@ -7856,6 +7861,17 @@ export default function MyPage() {
             </button>
             <button
               type="button"
+              onClick={() => setAdminManageTab("card_ai_review")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "card_ai_review"
+                  ? "border-violet-600 bg-violet-600 text-white"
+                  : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              AI 카드 검수
+            </button>
+            <button
+              type="button"
               onClick={() => setAdminManageTab("mail_center")}
               className={`h-8 rounded-md border px-3 text-xs font-medium ${
                 adminManageTab === "mail_center" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
@@ -10393,6 +10409,12 @@ export default function MyPage() {
           {adminManageTab === "community" && (
           <div className="mb-3">
             <AdminCommunityModerationPanel />
+          </div>
+          )}
+
+          {adminManageTab === "card_ai_review" && (
+          <div className="mb-3">
+            <AdminDatingCardAiReviewPanel />
           </div>
           )}
 
