@@ -4,14 +4,13 @@ import {
   approvePaidCard,
   approveCityViewRequest,
   approveMoreViewRequest,
+  grantSwipeSubscription,
   grantCityViewAccess,
   grantMoreViewAccess,
 } from "@/lib/dating-purchase-fulfillment";
 import {
   SWIPE_PREMIUM_DAILY_LIMIT,
   SWIPE_PREMIUM_DURATION_DAYS,
-  SWIPE_PREMIUM_PRICE_KRW,
-  getSwipeLimitInfo,
 } from "@/lib/dating-swipe";
 import { isAllowedAdminUser } from "@/lib/admin";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -331,13 +330,10 @@ async function ensureSwipePremiumFulfilled(
   admin: ReturnType<typeof createAdminClient>,
   order: TossOrderRow
 ) {
-  const limitInfo = await getSwipeLimitInfo(admin, order.user_id);
-  if (limitInfo.activeSubscription) {
-    return { alreadyActive: true };
+  if (order.product_meta?.swipePremiumFulfilledAt) {
+    return { fulfilled: true, alreadyFulfilled: true };
   }
 
-  const now = new Date();
-  const nowIso = now.toISOString();
   const durationDays =
     typeof order.product_meta?.durationDays === "number" && Number.isFinite(order.product_meta.durationDays)
       ? Math.max(1, Number(order.product_meta.durationDays))
@@ -346,59 +342,31 @@ async function ensureSwipePremiumFulfilled(
     typeof order.product_meta?.dailyLimit === "number" && Number.isFinite(order.product_meta.dailyLimit)
       ? Math.max(SWIPE_PREMIUM_DAILY_LIMIT, Number(order.product_meta.dailyLimit))
       : SWIPE_PREMIUM_DAILY_LIMIT;
-  const expiresAtIso = new Date(now.getTime() + durationDays * 24 * 60 * 60 * 1000).toISOString();
 
-  if (limitInfo.pendingSubscription?.id) {
-    const approveRes = await admin
-      .from("dating_swipe_subscription_requests")
-      .update({
-        status: "approved",
-        amount: SWIPE_PREMIUM_PRICE_KRW,
-        daily_limit: dailyLimit,
-        duration_days: durationDays,
-        note: `toss payment ${order.toss_order_id} | auto-approved`,
-        approved_at: nowIso,
-        expires_at: expiresAtIso,
-        reviewed_at: nowIso,
-        reviewed_by_user_id: null,
-        updated_at: nowIso,
-      })
-      .eq("id", limitInfo.pendingSubscription.id)
-      .eq("user_id", order.user_id)
-      .eq("status", "pending")
-      .select("id")
-      .maybeSingle();
-
-    if (approveRes.error) {
-      throw approveRes.error;
-    }
-
-    if (approveRes.data) {
-      return { alreadyActive: false };
-    }
-  }
-
-  const insertRes = await admin.from("dating_swipe_subscription_requests").insert({
-    user_id: order.user_id,
-    status: "approved",
-    amount: SWIPE_PREMIUM_PRICE_KRW,
-    daily_limit: dailyLimit,
-    duration_days: durationDays,
+  await grantSwipeSubscription(admin, {
+    userId: order.user_id,
+    amount: order.amount,
+    dailyLimit,
+    durationDays,
     note: `toss payment ${order.toss_order_id} | auto-approved`,
-    requested_at: nowIso,
-    approved_at: nowIso,
-    expires_at: expiresAtIso,
-    reviewed_at: nowIso,
-    reviewed_by_user_id: null,
-    created_at: nowIso,
-    updated_at: nowIso,
   });
 
-  if (insertRes.error) {
-    throw insertRes.error;
+  const metaUpdateRes = await admin
+    .from("toss_test_payment_orders")
+    .update({
+      product_meta: {
+        ...(order.product_meta ?? {}),
+        swipePremiumFulfilledAt: new Date().toISOString(),
+      },
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", order.id);
+
+  if (metaUpdateRes.error) {
+    throw metaUpdateRes.error;
   }
 
-  return { alreadyActive: false };
+  return { fulfilled: true };
 }
 
 async function ensurePaidCardFulfilled(

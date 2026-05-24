@@ -59,7 +59,7 @@ export async function POST(req: Request) {
     const myCard = await getLatestSwipeCardForUser(admin, user.id);
     if (!myCard) {
       return NextResponse.json(
-        { ok: false, requestId, message: "오픈카드를 등록한 사용자만 빠른매칭 라이크 구매를 신청할 수 있습니다." },
+        { ok: false, requestId, message: "오픈카드를 등록한 사용자만 빠른매칭 플러스를 신청할 수 있습니다." },
         { status: 403 }
       );
     }
@@ -69,7 +69,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         ...toPayload(limitInfo),
         requestId,
-        message: "이미 빠른매칭 라이크 플랜을 이용 중입니다.",
+        message: "이미 빠른매칭 플러스를 이용 중입니다. 카카오페이 결제는 추가 기간 연장으로 진행할 수 있습니다.",
       });
     }
     if (limitInfo.pendingSubscription) {

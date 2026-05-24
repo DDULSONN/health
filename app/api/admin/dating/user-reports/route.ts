@@ -10,6 +10,12 @@ type DatingUserReportRow = {
   target_id: string;
   target_card_id: string | null;
   reason: string;
+  evidence_snapshot: unknown;
+  evidence_preserved_at: string | null;
+  admin_note: string | null;
+  action_type: "none" | "evidence_preserved" | "temporarily_hidden" | "warning" | "banned" | "restored";
+  action_note: string | null;
+  actioned_at: string | null;
   status: "open" | "resolved" | "dismissed";
   created_at: string;
   reviewed_at: string | null;
@@ -40,7 +46,7 @@ export async function GET(req: Request) {
   let query = admin
     .from("dating_user_reports")
     .select(
-      "id,reporter_user_id,reported_user_id,target_type,target_id,target_card_id,reason,status,created_at,reviewed_at,reviewed_by_user_id"
+      "id,reporter_user_id,reported_user_id,target_type,target_id,target_card_id,reason,evidence_snapshot,evidence_preserved_at,admin_note,action_type,action_note,actioned_at,status,created_at,reviewed_at,reviewed_by_user_id"
     )
     .order("created_at", { ascending: false })
     .limit(500);

@@ -85,6 +85,12 @@ type AdminUserReport = {
   target_id: string;
   target_card_id: string | null;
   reason: string;
+  evidence_snapshot: unknown;
+  evidence_preserved_at: string | null;
+  admin_note: string | null;
+  action_type: "none" | "evidence_preserved" | "temporarily_hidden" | "warning" | "banned" | "restored";
+  action_note: string | null;
+  actioned_at: string | null;
   status: "open" | "resolved" | "dismissed";
   created_at: string;
   reviewed_at: string | null;
@@ -106,6 +112,27 @@ function formatUserReportTargetType(type: AdminUserReport["target_type"]) {
   if (type === "paid_card_application") return "유료카드 지원";
   if (type === "one_on_one_card") return "1:1 후보 카드";
   return "1:1 매칭";
+}
+
+function formatUserReportAction(type: AdminUserReport["action_type"]) {
+  if (type === "evidence_preserved") return "증거 보존";
+  if (type === "temporarily_hidden") return "검토중 제한";
+  if (type === "warning") return "주의";
+  if (type === "banned") return "밴";
+  if (type === "restored") return "복구";
+  return "미조치";
+}
+
+function summarizeEvidenceSnapshot(snapshot: unknown) {
+  if (!snapshot || typeof snapshot !== "object") return "스냅샷 없음";
+  const value = snapshot as { captured_at?: unknown; recaptured_at?: unknown };
+  const capturedAt =
+    typeof value.recaptured_at === "string"
+      ? value.recaptured_at
+      : typeof value.captured_at === "string"
+        ? value.captured_at
+        : "";
+  return capturedAt ? `보존됨 ${formatDate(capturedAt)}` : "보존됨";
 }
 
 export default function AdminDatingCardsPage() {
@@ -359,20 +386,34 @@ export default function AdminDatingCardsPage() {
     );
   };
 
-  const updateUserReportStatus = async (id: string, status: AdminUserReport["status"]) => {
+  const updateUserReport = async (
+    id: string,
+    patch: Partial<Pick<AdminUserReport, "status" | "admin_note" | "action_type" | "action_note">> & {
+      preserve_evidence?: boolean;
+    }
+  ) => {
     const res = await fetch(`/api/admin/dating/user-reports/${id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify(patch),
     });
     const body = (await res.json().catch(() => ({}))) as { error?: string };
     if (!res.ok) {
-      alert(body.error ?? "지원/1:1 신고 상태 변경에 실패했습니다.");
+      alert(body.error ?? "지원/1:1 신고 처리에 실패했습니다.");
       return;
     }
+    const now = new Date().toISOString();
     setUserReports((prev) =>
       prev.map((report) =>
-        report.id === id ? { ...report, status, reviewed_at: new Date().toISOString() } : report
+        report.id === id
+          ? {
+              ...report,
+              ...patch,
+              evidence_preserved_at: patch.preserve_evidence ? now : report.evidence_preserved_at,
+              reviewed_at: now,
+              actioned_at: patch.action_type ? now : report.actioned_at,
+            }
+          : report
       )
     );
   };
@@ -672,7 +713,7 @@ export default function AdminDatingCardsPage() {
               <div>
                 <h2 className="text-lg font-semibold text-neutral-900">지원/1:1 신고</h2>
                 <p className="mt-1 text-xs text-neutral-500">
-                  내 카드 지원자, 유료카드 지원자, 1:1 후보/매칭 상대 신고를 모아봅니다.
+                  도용·사칭 분쟁에 대비해 신고 당시 정보, 관리자 메모, 조치 기록을 함께 남깁니다.
                 </p>
               </div>
               <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-medium text-rose-700">
@@ -693,9 +734,14 @@ export default function AdminDatingCardsPage() {
                         {report.target_card_id ? ` / card_id: ${report.target_card_id}` : ""}
                       </p>
                     </div>
-                    <span className="inline-flex rounded-full bg-neutral-100 px-2 py-1 text-xs text-neutral-700">
-                      상태: {report.status}
-                    </span>
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="inline-flex rounded-full bg-neutral-100 px-2 py-1 text-xs text-neutral-700">
+                        상태: {report.status}
+                      </span>
+                      <span className="inline-flex rounded-full bg-amber-50 px-2 py-1 text-xs text-amber-700">
+                        조치: {formatUserReportAction(report.action_type)}
+                      </span>
+                    </div>
                   </div>
 
                   <div className="mt-3 grid gap-2 rounded-lg border border-neutral-100 bg-neutral-50 p-3 text-xs text-neutral-700 sm:grid-cols-2">
@@ -716,29 +762,70 @@ export default function AdminDatingCardsPage() {
                   </div>
 
                   <p className="mt-3 whitespace-pre-wrap break-words text-sm text-neutral-700">{report.reason}</p>
+                  <div className="mt-2 grid gap-2 rounded-lg border border-amber-100 bg-amber-50 p-3 text-xs text-amber-900 sm:grid-cols-2">
+                    <p>증거 스냅샷: {summarizeEvidenceSnapshot(report.evidence_snapshot)}</p>
+                    <p>보존 시각: {formatDate(report.evidence_preserved_at)}</p>
+                    <p>관리자 메모: {report.admin_note || "-"}</p>
+                    <p>조치 메모: {report.action_note || "-"}</p>
+                  </div>
                   <p className="mt-1 text-xs text-neutral-500">
                     접수 {formatDate(report.created_at)}
                     {report.reviewed_at ? ` / 처리 ${formatDate(report.reviewed_at)}` : ""}
+                    {report.actioned_at ? ` / 조치 ${formatDate(report.actioned_at)}` : ""}
                   </p>
 
                   <div className="mt-3 flex flex-wrap gap-2">
                     <button
-                      onClick={() => void updateUserReportStatus(report.id, "resolved")}
+                      onClick={() => void updateUserReport(report.id, { status: "resolved" })}
                       className="h-8 rounded-md bg-emerald-600 px-3 text-xs text-white"
                     >
                       해결
                     </button>
                     <button
-                      onClick={() => void updateUserReportStatus(report.id, "dismissed")}
+                      onClick={() => void updateUserReport(report.id, { status: "dismissed" })}
                       className="h-8 rounded-md bg-neutral-800 px-3 text-xs text-white"
                     >
                       기각
                     </button>
                     <button
-                      onClick={() => void updateUserReportStatus(report.id, "open")}
+                      onClick={() => void updateUserReport(report.id, { status: "open" })}
                       className="h-8 rounded-md bg-amber-600 px-3 text-xs text-white"
                     >
                       다시 열기
+                    </button>
+                    <button
+                      onClick={() =>
+                        void updateUserReport(report.id, {
+                          action_type: "evidence_preserved",
+                          preserve_evidence: true,
+                        })
+                      }
+                      className="h-8 rounded-md bg-sky-600 px-3 text-xs text-white"
+                    >
+                      증거 재보존
+                    </button>
+                    <button
+                      onClick={() => {
+                        const note = window.prompt("관리자 메모를 입력하세요.", report.admin_note ?? "");
+                        if (note !== null) void updateUserReport(report.id, { admin_note: note });
+                      }}
+                      className="h-8 rounded-md bg-white px-3 text-xs text-neutral-700 ring-1 ring-neutral-200"
+                    >
+                      메모
+                    </button>
+                    <button
+                      onClick={() => {
+                        const note = window.prompt("조치 메모를 입력하세요.", report.action_note ?? "");
+                        if (note !== null) {
+                          void updateUserReport(report.id, {
+                            action_type: "temporarily_hidden",
+                            action_note: note || "도용/사칭 의심으로 검토중 제한 기록",
+                          });
+                        }
+                      }}
+                      className="h-8 rounded-md bg-rose-600 px-3 text-xs text-white"
+                    >
+                      검토중 제한 기록
                     </button>
                   </div>
                 </div>

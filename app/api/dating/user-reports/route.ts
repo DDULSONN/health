@@ -37,7 +37,15 @@ function asText(value: unknown, max = 1000) {
 }
 
 function isUuidLike(value: string) {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(value);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
+}
+
+async function safeMaybeSingle<T>(
+  query: PromiseLike<{ data: T | null; error: { message?: string } | null }>
+): Promise<T | null> {
+  const { data, error } = await query;
+  if (error) console.error("[dating user report] snapshot query failed", error);
+  return data ?? null;
 }
 
 async function resolveOpenCardApplicationTarget(
@@ -200,6 +208,51 @@ async function resolveReportTarget(
   return resolveOneOnOneMatchTarget(admin, reporterUserId, targetId);
 }
 
+async function buildEvidenceSnapshot(
+  admin: ReturnType<typeof createAdminClient>,
+  reporterUserId: string,
+  reportedUserId: string,
+  targetType: DatingUserReportTargetType,
+  targetId: string,
+  targetCardId: string | null
+) {
+  const [reporterProfile, reportedProfile] = await Promise.all([
+    safeMaybeSingle(
+      admin.from("profiles").select("user_id,nickname,is_banned,banned_reason").eq("user_id", reporterUserId).maybeSingle()
+    ),
+    safeMaybeSingle(
+      admin.from("profiles").select("user_id,nickname,is_banned,banned_reason").eq("user_id", reportedUserId).maybeSingle()
+    ),
+  ]);
+
+  let target: unknown = null;
+  let card: unknown = null;
+
+  if (targetType === "open_card_application") {
+    target = await safeMaybeSingle(admin.from("dating_card_applications").select("*").eq("id", targetId).maybeSingle());
+    if (targetCardId) card = await safeMaybeSingle(admin.from("dating_cards").select("*").eq("id", targetCardId).maybeSingle());
+  } else if (targetType === "paid_card_application") {
+    target = await safeMaybeSingle(admin.from("dating_paid_card_applications").select("*").eq("id", targetId).maybeSingle());
+    if (targetCardId) card = await safeMaybeSingle(admin.from("dating_paid_cards").select("*").eq("id", targetCardId).maybeSingle());
+  } else if (targetType === "one_on_one_card") {
+    card = await safeMaybeSingle(admin.from("dating_1on1_cards").select("*").eq("id", targetId).maybeSingle());
+  } else {
+    target = await safeMaybeSingle(admin.from("dating_1on1_match_proposals").select("*").eq("id", targetId).maybeSingle());
+    if (targetCardId) card = await safeMaybeSingle(admin.from("dating_1on1_cards").select("*").eq("id", targetCardId).maybeSingle());
+  }
+
+  return {
+    captured_at: new Date().toISOString(),
+    target_type: targetType,
+    target_id: targetId,
+    target_card_id: targetCardId,
+    reporter_profile: reporterProfile,
+    reported_profile: reportedProfile,
+    target,
+    card,
+  };
+}
+
 export async function POST(req: Request) {
   const { user } = await getRequestAuthContext(req);
 
@@ -229,6 +282,15 @@ export async function POST(req: Request) {
   }
 
   const reason = buildDatingCardReportReasonText(safeReasonCode, detail);
+  const evidenceSnapshot = await buildEvidenceSnapshot(
+    admin,
+    user.id,
+    resolved.reportedUserId,
+    targetType,
+    targetId,
+    resolved.targetCardId
+  );
+
   const { error } = await admin.from("dating_user_reports").insert({
     reporter_user_id: user.id,
     reported_user_id: resolved.reportedUserId,
@@ -236,6 +298,8 @@ export async function POST(req: Request) {
     target_id: targetId,
     target_card_id: resolved.targetCardId,
     reason,
+    evidence_snapshot: evidenceSnapshot,
+    evidence_preserved_at: evidenceSnapshot.captured_at,
   });
 
   if (error) {

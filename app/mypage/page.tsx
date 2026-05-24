@@ -5660,13 +5660,16 @@ export default function MyPage() {
                     type="button"
                     disabled={
                       swipeSubscriptionSubmitting ||
-                      swipeSubscriptionLoading ||
-                      swipeSubscriptionStatus?.status === "active"
+                      swipeSubscriptionLoading
                     }
                     onClick={() => void handleRequestSwipeSubscription()}
                     className="h-8 rounded-md bg-amber-500 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {swipeSubscriptionSubmitting ? "이동 중..." : "카카오페이로 시작"}
+                    {swipeSubscriptionSubmitting
+                      ? "이동 중..."
+                      : swipeSubscriptionStatus?.status === "active"
+                        ? "15일 더 연장"
+                        : "카카오페이로 시작"}
                   </button>
                 </div>
                 {swipeSubscriptionStatus?.status === "pending" && swipeSubscriptionStatus.pendingSubscription?.id ? (

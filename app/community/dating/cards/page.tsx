@@ -2836,12 +2836,12 @@ export default function OpenCardsPage() {
             <div className="mt-4 flex flex-wrap gap-2">
               <button
                 type="button"
-                disabled={!viewerLoggedIn || swipeSubscriptionSubmitting || swipeSubscriptionStatus?.status === "active" || swipeSubscriptionLoading}
+                disabled={!viewerLoggedIn || swipeSubscriptionSubmitting || swipeSubscriptionLoading}
                 onClick={() => void handleSwipePremiumCheckout()}
                 className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-2xl bg-amber-500 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-amber-600"
               >
                 {swipeSubscriptionStatus?.status === "active"
-                  ? "빠른매칭 플러스 이용 중"
+                  ? "15일 더 연장하기"
                   : swipeSubscriptionSubmitting
                     ? "이동 중..."
                     : "카카오페이로 시작"}

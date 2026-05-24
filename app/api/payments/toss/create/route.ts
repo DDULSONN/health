@@ -649,21 +649,13 @@ export async function POST(req: Request) {
       }
 
       const limitInfo = await getSwipeLimitInfo(admin, user.id);
-      if (limitInfo.activeSubscription) {
-        return json(409, {
-          ok: false,
-          code: "ALREADY_ACTIVE",
-          requestId,
-          message: "이미 빠른매칭 플러스를 이용 중입니다.",
-        });
-      }
 
       const duplicateOrderRes = await admin
         .from("toss_test_payment_orders")
         .select("id,status,created_at")
         .eq("product_type", "swipe_premium_30d")
         .eq("user_id", user.id)
-        .in("status", ["ready", "paid"])
+        .eq("status", "ready")
         .order("created_at", { ascending: false })
         .limit(5);
 
@@ -678,15 +670,6 @@ export async function POST(req: Request) {
       }
 
       const duplicateOrders = duplicateOrderRes.data ?? [];
-      if (duplicateOrders.some((row) => row.status === "paid")) {
-        return json(409, {
-          ok: false,
-          code: "ALREADY_PAID",
-          requestId,
-          message: "이미 빠른매칭 플러스 결제가 완료되어 이용 중입니다.",
-        });
-      }
-
       const readyOrderIds = duplicateOrders.filter((row) => row.status === "ready").map((row) => row.id);
       await cancelReadyOrders(admin, readyOrderIds);
 
