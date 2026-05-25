@@ -13,6 +13,7 @@ import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
+const APPLY_PHOTO_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 
 type ApiCode =
   | "SUCCESS"
@@ -47,6 +48,19 @@ function normalizeInstagramId(value: unknown): string {
 
 function validInstagramId(value: string) {
   return /^[A-Za-z0-9._]{1,30}$/.test(value);
+}
+
+function getApplyPhotoTimestamp(path: string): number | null {
+  const fileName = path.split("/").pop() ?? "";
+  const match = /^(\d{12,})-\d+\.(?:jpe?g|png|webp)$/i.exec(fileName);
+  if (!match) return null;
+  const timestamp = Number(match[1]);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function isFreshApplyPhotoPath(path: string): boolean {
+  const timestamp = getApplyPhotoTimestamp(path);
+  return timestamp != null && Date.now() - timestamp <= APPLY_PHOTO_RETENTION_MS;
 }
 
 function sanitizeText(value: unknown, maxLength: number): string {
@@ -275,6 +289,7 @@ export async function POST(req: Request) {
     if (heightCm == null || heightCm < 120 || heightCm > 230) validationErrors.push("height_cm");
     if (trainingYears == null || trainingYears < 0 || trainingYears > 50) validationErrors.push("training_years");
     if (!photoPaths.every((path) => path.startsWith(`card-applications/${userId}/`))) validationErrors.push("photo_paths_prefix");
+    if (!photoPaths.every(isFreshApplyPhotoPath)) validationErrors.push("photo_paths_expired");
 
     console.log(`[apply] ${requestId} L3 body.validated`, {
       userId,

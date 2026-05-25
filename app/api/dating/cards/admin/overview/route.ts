@@ -1,9 +1,11 @@
 ﻿import { isAllowedAdminUser } from "@/lib/admin";
+import { extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 const PAGE_SIZE = 1000;
+const APPLY_PHOTO_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 
 type DatingCardRow = {
   id: string;
@@ -106,6 +108,27 @@ async function fetchAllRows<T>(
 function getErrorCode(error: unknown) {
   if (!error || typeof error !== "object") return "";
   return String((error as { code?: unknown }).code ?? "");
+}
+
+function normalizeApplyPhotoPath(raw: unknown): string {
+  return (extractStorageObjectPathFromBuckets(raw, ["dating-apply-photos", "dating-photos"]) ?? "").trim();
+}
+
+function buildAdminApplicationPhotoUrl(path: string): string {
+  return `/api/admin/dating/cards/application-photo?path=${encodeURIComponent(path)}`;
+}
+
+function getApplyPhotoTimestamp(path: string): number | null {
+  const fileName = path.split("/").pop() ?? "";
+  const match = /^(\d{12,})-\d+\.(?:jpe?g|png|webp)$/i.exec(fileName);
+  if (!match) return null;
+  const timestamp = Number(match[1]);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function isFreshApplyPhotoPath(path: string): boolean {
+  const timestamp = getApplyPhotoTimestamp(path);
+  return timestamp != null && Date.now() - timestamp <= APPLY_PHOTO_RETENTION_MS;
 }
 
 export async function GET(req: Request) {
@@ -215,8 +238,15 @@ export async function GET(req: Request) {
   const cardsById = Object.fromEntries(cards.map((card) => [card.id, card])) as Record<string, (typeof cards)[number]>;
   const applications = (appsRes.data ?? []).map((app) => {
     const card = cardsById[app.card_id];
+    const photoPaths = Array.isArray(app.photo_paths)
+      ? app.photo_paths
+          .map((item) => normalizeApplyPhotoPath(item))
+          .filter((path) => path.length > 0 && isFreshApplyPhotoPath(path))
+      : [];
     return {
       ...app,
+      photo_paths: photoPaths,
+      admin_photo_urls: photoPaths.map((path) => buildAdminApplicationPhotoUrl(path)),
       applicant_nickname: nickMap[app.applicant_user_id] ?? null,
       card_owner_user_id: card?.owner_user_id ?? null,
       card_owner_nickname: card?.owner_nickname ?? null,

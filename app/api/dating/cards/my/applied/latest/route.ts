@@ -16,6 +16,21 @@ type LatestApplicationRow = {
   created_at: string;
 };
 
+const APPLY_PHOTO_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
+
+function getApplyPhotoTimestamp(path: string): number | null {
+  const fileName = path.split("/").pop() ?? "";
+  const match = /^(\d{12,})-\d+\.(?:jpe?g|png|webp)$/i.exec(fileName);
+  if (!match) return null;
+  const timestamp = Number(match[1]);
+  return Number.isFinite(timestamp) ? timestamp : null;
+}
+
+function isFreshApplyPhotoPath(path: string): boolean {
+  const timestamp = getApplyPhotoTimestamp(path);
+  return timestamp != null && Date.now() - timestamp <= APPLY_PHOTO_RETENTION_MS;
+}
+
 export async function GET(req: Request) {
   const { user } = await getRequestAuthContext(req);
 
@@ -43,7 +58,7 @@ export async function GET(req: Request) {
   }
 
   const photoPaths = Array.isArray(latest.photo_paths)
-    ? latest.photo_paths.filter((item): item is string => typeof item === "string")
+    ? latest.photo_paths.filter((item): item is string => typeof item === "string" && isFreshApplyPhotoPath(item))
     : [];
 
   return NextResponse.json({
