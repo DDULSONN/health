@@ -687,6 +687,7 @@ type AdminOpenCardApplication = {
   intro_text: string | null;
   instagram_id: string;
   photo_paths: string[];
+  admin_backup_photo_urls?: string[];
   status: "submitted" | "accepted" | "rejected" | "canceled";
   created_at: string;
   card_owner_user_id?: string | null;
@@ -11067,6 +11068,28 @@ export default function MyPage() {
                           <p className="mt-1 text-xs text-neutral-700 whitespace-pre-wrap break-words">
                             자기소개: {app.intro_text}
                           </p>
+                        )}
+                        {Array.isArray(app.admin_backup_photo_urls) && app.admin_backup_photo_urls.length > 0 && (
+                          <div className="mt-2 grid grid-cols-2 gap-2 sm:max-w-sm">
+                            {app.admin_backup_photo_urls.map((url, idx) => (
+                              <a
+                                key={`${app.id}-admin-backup-photo-${idx}`}
+                                href={url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="block overflow-hidden rounded-md border border-violet-200 bg-violet-50"
+                              >
+                                {/* eslint-disable-next-line @next/next/no-img-element */}
+                                <img
+                                  src={url}
+                                  alt={`관리자 백업 사진 ${idx + 1}`}
+                                  loading="lazy"
+                                  decoding="async"
+                                  className="h-28 w-full object-cover"
+                                />
+                              </a>
+                            ))}
+                          </div>
                         )}
                         <p className="mt-1 text-xs text-neutral-500 break-all">
                           사진 경로: {Array.isArray(app.photo_paths) ? app.photo_paths.join(", ") : "-"}

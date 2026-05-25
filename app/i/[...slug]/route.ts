@@ -6,6 +6,9 @@ export const runtime = "nodejs";
 
 const SIGNED_TTL_SEC = 3600;
 const OPTIMIZED_BUCKETS = new Set(["community", "dating-apply-photos"]);
+const BLOCKED_SIGNED_PREFIXES: Record<string, string[]> = {
+  "dating-apply-photos": ["admin-application-backups/"],
+};
 const DEFAULT_MAX_WIDTH = 1080;
 const DEFAULT_QUALITY = 72;
 const LONG_IMAGE_CACHE_CONTROL = "public, max-age=86400, s-maxage=2592000, stale-while-revalidate=604800";
@@ -119,6 +122,10 @@ async function createSignedUpstreamUrl(bucket: string, objectPath: string, reque
 }
 
 async function fetchSigned(bucket: string, objectPath: string, method: string, requestId: string) {
+  if (BLOCKED_SIGNED_PREFIXES[bucket]?.some((prefix) => objectPath.startsWith(prefix))) {
+    return new Response("Not Found", { status: 404 });
+  }
+
   const signedUrl = await createSignedUpstreamUrl(bucket, objectPath, requestId);
   if (!signedUrl) return new Response("Not Found", { status: 404 });
 
@@ -155,6 +162,10 @@ async function optimizeSignedImageResponse(
   method: string,
   requestId: string
 ) {
+  if (BLOCKED_SIGNED_PREFIXES[bucket]?.some((prefix) => objectPath.startsWith(prefix))) {
+    return new Response("Not Found", { status: 404 });
+  }
+
   const signedUrl = await createSignedUpstreamUrl(bucket, objectPath, requestId);
   if (!signedUrl) return new Response("Not Found", { status: 404 });
 

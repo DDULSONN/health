@@ -1,9 +1,11 @@
 ﻿import { isAllowedAdminUser } from "@/lib/admin";
+import { extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 const PAGE_SIZE = 1000;
+const BACKUP_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
 
 type DatingCardRow = {
   id: string;
@@ -106,6 +108,26 @@ async function fetchAllRows<T>(
 function getErrorCode(error: unknown) {
   if (!error || typeof error !== "object") return "";
   return String((error as { code?: unknown }).code ?? "");
+}
+
+function backupPathFromApplicationPhoto(raw: unknown): string | null {
+  const path = (extractStorageObjectPathFromBuckets(raw, ["dating-apply-photos", "dating-photos"]) ?? "").trim();
+  const parts = path.split("/").filter(Boolean);
+  if (parts.length !== 4 || parts[0] !== "card-applications") return null;
+
+  const fileName = parts[3];
+  const match = /^(\d{12,})-\d+\.(?:jpe?g|png|webp)$/i.exec(fileName);
+  if (!match) return null;
+
+  const timestamp = Number(match[1]);
+  if (!Number.isFinite(timestamp) || Date.now() - timestamp > BACKUP_RETENTION_MS) return null;
+
+  const backupFileName = fileName.replace(/\.(?:jpe?g|png|webp)$/i, ".webp");
+  return ["admin-application-backups", parts[1], parts[2], backupFileName].join("/");
+}
+
+function adminBackupPhotoUrl(path: string): string {
+  return `/api/admin/dating/cards/application-backup-photo?path=${encodeURIComponent(path)}`;
 }
 
 export async function GET(req: Request) {
@@ -215,8 +237,15 @@ export async function GET(req: Request) {
   const cardsById = Object.fromEntries(cards.map((card) => [card.id, card])) as Record<string, (typeof cards)[number]>;
   const applications = (appsRes.data ?? []).map((app) => {
     const card = cardsById[app.card_id];
+    const backupPhotoUrls = Array.isArray(app.photo_paths)
+      ? app.photo_paths
+          .map((path) => backupPathFromApplicationPhoto(path))
+          .filter((path): path is string => Boolean(path))
+          .map((path) => adminBackupPhotoUrl(path))
+      : [];
     return {
       ...app,
+      admin_backup_photo_urls: backupPhotoUrls,
       applicant_nickname: nickMap[app.applicant_user_id] ?? null,
       card_owner_user_id: card?.owner_user_id ?? null,
       card_owner_nickname: card?.owner_nickname ?? null,

@@ -10,6 +10,36 @@ export const runtime = "nodejs";
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const HEIC_TYPES = ["image/heic", "image/heif"];
+const ADMIN_BACKUP_WIDTH = 720;
+const ADMIN_BACKUP_QUALITY = 62;
+
+async function createAdminReviewBackup(
+  adminClient: ReturnType<typeof createAdminClient>,
+  file: File,
+  backupPath: string
+) {
+  try {
+    const sharp = (await import("sharp")).default;
+    const input = Buffer.from(await file.arrayBuffer());
+    const output = await sharp(input, { limitInputPixels: 33_000_000 })
+      .rotate()
+      .resize({ width: ADMIN_BACKUP_WIDTH, withoutEnlargement: true })
+      .webp({ quality: ADMIN_BACKUP_QUALITY })
+      .toBuffer();
+
+    const { error } = await adminClient.storage.from("dating-apply-photos").upload(backupPath, output, {
+      contentType: "image/webp",
+      upsert: false,
+      cacheControl: "1209600",
+    });
+    if (error) throw error;
+  } catch (error) {
+    console.warn("[POST /api/dating/cards/upload] admin review backup skipped", {
+      backupPathTail: backupPath.split("/").slice(-3).join("/"),
+      message: error instanceof Error ? error.message : String(error),
+    });
+  }
+}
 
 export async function POST(req: Request) {
   const originResponse = ensureAllowedMutationOrigin(req);
@@ -79,7 +109,9 @@ export async function POST(req: Request) {
   }
 
   const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
-  const path = `card-applications/${user.id}/${cardId}/${Date.now()}-${index}.${ext}`;
+  const createdAtMs = Date.now();
+  const path = `card-applications/${user.id}/${cardId}/${createdAtMs}-${index}.${ext}`;
+  const backupPath = `admin-application-backups/${user.id}/${cardId}/${createdAtMs}-${index}.webp`;
 
   const { error: uploadError } = await adminClient.storage.from("dating-apply-photos").upload(path, file, {
     contentType: file.type,
@@ -96,6 +128,8 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+
+  await createAdminReviewBackup(adminClient, file, backupPath);
 
   return NextResponse.json({ path }, { status: 201 });
 }
