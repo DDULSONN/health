@@ -2413,14 +2413,18 @@ export default function OpenCardsPage() {
               <p className="mt-3 max-w-xl text-[15px] leading-7 text-neutral-500 md:text-base">
                 둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.
               </p>
-              <div className="mt-4 inline-flex flex-wrap items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2">
-                <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white">혜택</span>
-                <p className="text-sm font-semibold text-emerald-900">오픈카드 등록하면 매주 원하는 지역 1곳 무료 오픈</p>
+              <div className="mt-4 flex w-full items-center gap-1.5 overflow-hidden rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 sm:inline-flex sm:w-auto sm:gap-2 sm:px-4">
+                <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-1 text-[10px] font-bold text-white sm:px-2.5 sm:text-[11px]">혜택</span>
+                <p className="min-w-0 whitespace-nowrap text-[clamp(10px,2.85vw,14px)] font-semibold leading-none text-emerald-900">
+                  오픈카드 등록하면 매주 원하는 지역 1곳 무료 오픈
+                </p>
               </div>
               {showWeekendApplyCreditBenefit && (
-                <div className="mt-2 inline-flex flex-wrap items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-4 py-2">
-                  <span className="rounded-full bg-emerald-600 px-2.5 py-1 text-[11px] font-bold text-white">혜택</span>
-                  <p className="text-sm font-semibold text-emerald-900">주말에는 기본 지원권이 3장으로 늘어나요.</p>
+                <div className="mt-2 flex w-full items-center gap-1.5 overflow-hidden rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 sm:inline-flex sm:w-auto sm:gap-2 sm:px-4">
+                  <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-1 text-[10px] font-bold text-white sm:px-2.5 sm:text-[11px]">혜택</span>
+                  <p className="min-w-0 whitespace-nowrap text-[clamp(10px,2.85vw,14px)] font-semibold leading-none text-emerald-900">
+                    주말에는 기본 지원권이 3장으로 늘어나요.
+                  </p>
                 </div>
               )}
               {homeAdLink ? (
@@ -2431,11 +2435,13 @@ export default function OpenCardsPage() {
                       href={homeAdLink.linkUrl}
                       target={homeAdLink.linkUrl.startsWith("/") ? undefined : "_blank"}
                       rel={homeAdLink.linkUrl.startsWith("/") ? undefined : "noreferrer"}
-                      className={`mt-2 inline-flex flex-wrap items-center gap-2 rounded-full border px-4 py-2 transition ${theme.wrap}`}
+                      className={`mt-2 flex w-full items-center gap-1.5 overflow-hidden rounded-full border px-3 py-2 transition sm:inline-flex sm:w-auto sm:gap-2 sm:px-4 ${theme.wrap}`}
                       title={homeAdLink.description || homeAdLink.title}
                     >
-                      <p className={`text-sm font-semibold ${theme.text}`}>{homeAdLink.title}</p>
-                      <span className={`text-xs font-black ${theme.cta}`}>바로가기</span>
+                      <p className={`min-w-0 flex-1 truncate whitespace-nowrap text-[clamp(10px,2.85vw,14px)] font-semibold leading-none sm:flex-none ${theme.text}`}>
+                        {homeAdLink.title}
+                      </p>
+                      <span className={`shrink-0 text-[11px] font-black sm:text-xs ${theme.cta}`}>바로가기</span>
                     </a>
                   );
                 })()
