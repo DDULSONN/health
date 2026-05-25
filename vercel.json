@@ -16,10 +16,6 @@
     {
       "path": "/api/cron/community-fit-room-cleanup",
       "schedule": "17 */6 * * *"
-    },
-    {
-      "path": "/api/cron/dating-apply-photos-cleanup",
-      "schedule": "43 18 * * *"
     }
   ]
 }

@@ -4,24 +4,12 @@ import { hasCityViewAccess } from "@/lib/dating-city-view";
 import { NextResponse } from "next/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
-import sharp from "sharp";
 
 export const runtime = "nodejs";
 
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const HEIC_TYPES = ["image/heic", "image/heif"];
-const ADMIN_REVIEW_WIDTH = 720;
-const ADMIN_REVIEW_QUALITY = 62;
-
-async function toAdminReviewWebp(file: File): Promise<Buffer> {
-  const input = Buffer.from(await file.arrayBuffer());
-  return sharp(input, { limitInputPixels: 33_000_000 })
-    .rotate()
-    .resize({ width: ADMIN_REVIEW_WIDTH, withoutEnlargement: true })
-    .webp({ quality: ADMIN_REVIEW_QUALITY })
-    .toBuffer();
-}
 
 export async function POST(req: Request) {
   const originResponse = ensureAllowedMutationOrigin(req);
@@ -90,13 +78,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "이 오픈카드는 이미 마감되었습니다." }, { status: 410 });
   }
 
-  const path = `card-applications/${user.id}/${cardId}/${Date.now()}-${index}.webp`;
-  const reviewBytes = await toAdminReviewWebp(file);
+  const ext = file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
+  const path = `card-applications/${user.id}/${cardId}/${Date.now()}-${index}.${ext}`;
 
-  const { error: uploadError } = await adminClient.storage.from("dating-apply-photos").upload(path, reviewBytes, {
-    contentType: "image/webp",
+  const { error: uploadError } = await adminClient.storage.from("dating-apply-photos").upload(path, file, {
+    contentType: file.type,
     upsert: false,
-    cacheControl: "1209600",
+    cacheControl: "3600",
   });
 
   if (uploadError) {

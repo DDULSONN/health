@@ -1,9 +1,12 @@
 ﻿import { createAdminClient } from "@/lib/supabase/server";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
+import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
+
+type SignCounters = { signCalls: number; cacheHit: number; cacheMiss: number };
 
 type CardRow = {
   id: string;
@@ -33,6 +36,24 @@ type ApplicationRow = {
   instagram_id: string | null;
   photo_paths: unknown[];
 };
+
+function normalizeApplyPhotoPath(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  const value = raw.trim();
+  if (!value) return "";
+  return extractStorageObjectPathFromBuckets(value, ["dating-apply-photos", "dating-photos"]) ?? value;
+}
+
+async function createApplyPhotoSignedUrl(
+  _adminClient: ReturnType<typeof createAdminClient>,
+  path: string,
+  _requestId: string,
+  counters: SignCounters
+) {
+  const proxy = buildSignedImageUrl("dating-apply-photos", path);
+  if (proxy) counters.cacheMiss += 1;
+  return proxy;
+}
 
 async function getPendingQueuePosition(
   adminClient: ReturnType<typeof createAdminClient>,
@@ -168,6 +189,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
   }
 
+  const counters: SignCounters = { signCalls: 0, cacheHit: 0, cacheMiss: 0 };
   const adminClient = createAdminClient();
   const blockedUserIds = await getDatingBlockedUserIds(adminClient, user.id);
 
@@ -229,18 +251,33 @@ export async function GET(req: Request) {
   }
 
   const visibleApps = appsRes.data.filter((app) => !blockedUserIds.has(app.applicant_user_id));
+  let rawSignedCount = 0;
   const safeApps = await Promise.all(
     visibleApps.map(async (app) => {
+      const rawPhotoPaths = Array.isArray(app.photo_paths)
+        ? app.photo_paths
+            .map((item) => normalizeApplyPhotoPath(item))
+            .filter((item): item is string => typeof item === "string" && item.length > 0)
+        : [];
+
+      const signedUrls = await Promise.all(
+        rawPhotoPaths.map((path) => createApplyPhotoSignedUrl(adminClient, path, requestId, counters))
+      );
+      const filteredUrls = signedUrls.filter((url) => url.length > 0);
+      rawSignedCount += filteredUrls.length;
+
       return {
         ...app,
         instagram_id: app.status === "accepted" ? app.instagram_id : null,
-        photo_signed_urls: [],
+        photo_signed_urls: filteredUrls,
       };
     })
   );
 
+  const signedTotal = counters.cacheHit + counters.cacheMiss;
+  const cacheHitRatePct = signedTotal > 0 ? Math.round((counters.cacheHit / signedTotal) * 1000) / 10 : 0;
   console.log(
-    `[list.metrics] requestId=${requestId} path=/api/dating/cards/my/received cards=${cards.length} ownerPhotoUrls=0`
+    `[list.metrics] requestId=${requestId} path=/api/dating/cards/my/received cards=${cards.length} rawSigned=${rawSignedCount} blurSigned=0 cacheHitRatePct=${cacheHitRatePct} signCalls=${counters.signCalls}`
   );
 
   const applicationsByCard = new Map<string, ApplicationRow[]>();
