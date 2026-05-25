@@ -48,6 +48,9 @@ type EditablePaidCard = {
   display_mode?: "priority_24h" | "instant_public";
   blur_thumb_path: string | null;
   photo_paths: string[];
+  status?: "pending" | "approved";
+  paid_at?: string | null;
+  expires_at?: string | null;
 };
 
 function normalizeInstagramId(value: string) {
@@ -108,6 +111,7 @@ export default function DatingPaidPage() {
   const [submitMode, setSubmitMode] = useState<"kakaopay" | "manual">("kakaopay");
   const [error, setError] = useState("");
   const [successId, setSuccessId] = useState("");
+  const [successWasEdit, setSuccessWasEdit] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
   const [editLoading, setEditLoading] = useState(false);
 
@@ -126,6 +130,7 @@ export default function DatingPaidPage() {
   const [previewUrls, setPreviewUrls] = useState<(string | null)[]>([null, null]);
   const [existingRawPaths, setExistingRawPaths] = useState<string[]>([]);
   const [existingBlurThumbPath, setExistingBlurThumbPath] = useState("");
+  const [editingPaidCardStatus, setEditingPaidCardStatus] = useState<"pending" | "approved" | "">("");
   const [tick, setTick] = useState(0);
 
   const openForm = () => {
@@ -207,6 +212,7 @@ export default function DatingPaidPage() {
         setDisplayMode(body.card.display_mode === "instant_public" ? "instant_public" : "priority_24h");
         setExistingRawPaths(Array.isArray(body.card.photo_paths) ? body.card.photo_paths : []);
         setExistingBlurThumbPath(body.card.blur_thumb_path ?? "");
+        setEditingPaidCardStatus(body.card.status === "approved" ? "approved" : "pending");
       } catch {
         if (!cancelled) setError("수정할 유료카드를 불러오지 못했습니다.");
       } finally {
@@ -222,6 +228,7 @@ export default function DatingPaidPage() {
     e.preventDefault();
     setError("");
     setSuccessId("");
+    setSuccessWasEdit(false);
 
     const {
       data: { user },
@@ -372,8 +379,28 @@ export default function DatingPaidPage() {
         return;
       }
 
+      if (isEditMode) {
+        setSuccessId(createBody.paidCardId);
+        setSuccessWasEdit(true);
+        setPhotos([null, null]);
+        setExistingRawPaths([]);
+        setExistingBlurThumbPath("");
+        setEditingPaidCardStatus("");
+        setFormOpen(false);
+        setEditId("");
+        if (typeof window !== "undefined") {
+          window.history.replaceState(null, "", "/dating/paid");
+        }
+        await loadItems();
+        if (typeof globalThis !== "undefined" && typeof globalThis.scrollTo === "function") {
+          globalThis.scrollTo({ top: 0, behavior: "smooth" });
+        }
+        return;
+      }
+
       if (submitMode === "manual") {
         setSuccessId(createBody.paidCardId);
+        setSuccessWasEdit(false);
         setPhotos([null, null]);
         setAge("");
         setRegion("");
@@ -386,6 +413,7 @@ export default function DatingPaidPage() {
         setDisplayMode("priority_24h");
         setExistingRawPaths([]);
         setExistingBlurThumbPath("");
+        setEditingPaidCardStatus("");
         setFormOpen(false);
         await loadItems();
         if (typeof globalThis !== "undefined" && typeof globalThis.scrollTo === "function") {
@@ -422,6 +450,7 @@ export default function DatingPaidPage() {
       }
 
       setSuccessId(createBody.paidCardId);
+      setSuccessWasEdit(false);
       setPhotos([null, null]);
       setAge("");
       setRegion("");
@@ -434,6 +463,7 @@ export default function DatingPaidPage() {
       setDisplayMode("priority_24h");
       setExistingRawPaths([]);
       setExistingBlurThumbPath("");
+      setEditingPaidCardStatus("");
       setFormOpen(false);
       await loadItems();
       if (typeof globalThis !== "undefined" && typeof globalThis.scrollTo === "function") {
@@ -499,14 +529,19 @@ export default function DatingPaidPage() {
 
       {successId && (
         <section className="mt-5 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          <p className="font-semibold">신청이 접수되었습니다.</p>
+          <p className="font-semibold">{successWasEdit ? "유료카드가 수정되었습니다." : "신청이 접수되었습니다."}</p>
           <p className="mt-1">신청ID: {successId}</p>
-          <p className="mt-1">결제는 스윙카톡에서 진행됩니다. 스윙카톡으로 &quot;닉네임 + 신청ID&quot;를 보내주세요.</p>
+          <p className="mt-1">
+            {successWasEdit
+              ? "기존 결제 상태와 노출 시간은 유지됩니다. 추가 결제는 진행되지 않습니다."
+              : "결제는 스윙카톡에서 진행됩니다. 스윙카톡으로 \"닉네임 + 신청ID\"를 보내주세요."}
+          </p>
           <div className="mt-3 flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => {
                 setSuccessId("");
+                setSuccessWasEdit(false);
                 setFormOpen(true);
                 if (typeof window !== "undefined") {
                   document.getElementById("paid-create-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
@@ -516,9 +551,11 @@ export default function DatingPaidPage() {
             >
               다시 작성하기
             </button>
-            <a href={openKakaoUrl} target="_blank" rel="noreferrer" className="inline-block rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-emerald-700">
-              스윙카톡 이동
-            </a>
+            {!successWasEdit && (
+              <a href={openKakaoUrl} target="_blank" rel="noreferrer" className="inline-block rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-emerald-700">
+                스윙카톡 이동
+              </a>
+            )}
           </div>
         </section>
       )}
@@ -608,29 +645,40 @@ export default function DatingPaidPage() {
             {error && <p className="text-sm text-red-600">{error}</p>}
 
             <button type="submit" onClick={() => setSubmitMode("kakaopay")} disabled={submitting || editLoading} className="h-11 rounded-xl bg-rose-500 px-4 text-sm font-medium text-white hover:bg-rose-600 disabled:opacity-50">
-              {submitting ? "신청 중..." : isEditMode ? "유료 신청 수정" : "유료 신청 등록"}
+              {submitting ? "신청 중..." : isEditMode ? "수정 저장" : "유료 신청 등록"}
             </button>
-            <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
-              <span>카카오페이가 어려우면 수동 신청 후 오픈카톡으로 이어갈 수 있어요.</span>
-              <button
-                type="submit"
-                onClick={() => setSubmitMode("manual")}
-                disabled={submitting || editLoading}
-                className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
-              >
-                {submitting && submitMode === "manual" ? "신청 접수 중.." : "수동 신청"}
-              </button>
-            </div>
+            {!isEditMode && (
+              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
+                <span>카카오페이가 어려우면 수동 신청 후 오픈카톡으로 이어갈 수 있어요.</span>
+                <button
+                  type="submit"
+                  onClick={() => setSubmitMode("manual")}
+                  disabled={submitting || editLoading}
+                  className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                >
+                  {submitting && submitMode === "manual" ? "신청 접수 중.." : "수동 신청"}
+                </button>
+              </div>
+            )}
+            {isEditMode && editingPaidCardStatus === "approved" && (
+              <p className="mt-2 text-xs font-medium text-emerald-700">결제 완료된 카드의 내용만 수정합니다. 추가 결제는 진행되지 않습니다.</p>
+            )}
           </form>
 
           {successId && (
             <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-800">
-              <p className="font-semibold">신청이 접수되었습니다.</p>
+              <p className="font-semibold">{successWasEdit ? "유료카드가 수정되었습니다." : "신청이 접수되었습니다."}</p>
               <p className="mt-1">신청ID: {successId}</p>
-              <p className="mt-1">결제는 오픈카톡에서 진행됩니다. 오픈카톡으로 &quot;닉네임 + 신청ID&quot;를 보내주세요.</p>
-              <a href={openKakaoUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-emerald-700">
-                오픈카톡 이동
-              </a>
+              <p className="mt-1">
+                {successWasEdit
+                  ? "기존 결제 상태와 노출 시간은 유지됩니다. 추가 결제는 진행되지 않습니다."
+                  : "결제는 오픈카톡에서 진행됩니다. 오픈카톡으로 \"닉네임 + 신청ID\"를 보내주세요."}
+              </p>
+              {!successWasEdit && (
+                <a href={openKakaoUrl} target="_blank" rel="noreferrer" className="mt-2 inline-block rounded-lg border border-emerald-300 bg-white px-3 py-1.5 text-emerald-700">
+                  오픈카톡 이동
+                </a>
+              )}
             </div>
           )}
         </section>

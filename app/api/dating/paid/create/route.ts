@@ -107,7 +107,7 @@ export async function GET(req: Request) {
   const adminClient = createAdminClient();
   const rowRes = await adminClient
     .from("dating_paid_cards")
-    .select("id,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,photo_visibility,display_mode,blur_thumb_path,photo_paths,status")
+    .select("id,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,photo_visibility,display_mode,blur_thumb_path,photo_paths,status,paid_at,expires_at")
     .eq("id", id)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -118,7 +118,7 @@ export async function GET(req: Request) {
   if (rowError && isMissingColumnError(rowError)) {
     const legacy = await adminClient
       .from("dating_paid_cards")
-      .select("id,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,photo_visibility,blur_thumb_path,photo_paths,status")
+      .select("id,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,photo_visibility,blur_thumb_path,photo_paths,status,paid_at,expires_at")
       .eq("id", id)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -134,8 +134,8 @@ export async function GET(req: Request) {
   if (rowError || !rowData) {
     return json(404, { ok: false, code: "NOT_FOUND", requestId, message: "유료 카드를 찾을 수 없습니다." });
   }
-  if (String(rowData.status ?? "") !== "pending") {
-    return json(400, { ok: false, code: "NOT_PENDING", requestId, message: "대기중 카드만 수정할 수 있습니다." });
+  if (!["pending", "approved"].includes(String(rowData.status ?? ""))) {
+    return json(400, { ok: false, code: "NOT_EDITABLE", requestId, message: "대기중 또는 결제 완료된 유료카드만 수정할 수 있습니다." });
   }
 
   return json(200, {
@@ -157,6 +157,9 @@ export async function GET(req: Request) {
       display_mode: rowData.display_mode === "instant_public" ? "instant_public" : "priority_24h",
       blur_thumb_path: typeof rowData.blur_thumb_path === "string" ? rowData.blur_thumb_path : null,
       photo_paths: Array.isArray(rowData.photo_paths) ? (rowData.photo_paths as string[]) : [],
+      status: rowData.status === "approved" ? "approved" : "pending",
+      paid_at: typeof rowData.paid_at === "string" ? rowData.paid_at : null,
+      expires_at: typeof rowData.expires_at === "string" ? rowData.expires_at : null,
     },
   });
 }
@@ -350,15 +353,21 @@ export async function PATCH(req: Request) {
     const adminClient = createAdminClient();
     const rowRes = await adminClient
       .from("dating_paid_cards")
-      .select("id,status")
+    .select("id,status,expires_at")
       .eq("id", id)
       .eq("user_id", user.id)
       .maybeSingle();
     if (rowRes.error || !rowRes.data) {
       return json(404, { ok: false, code: "NOT_FOUND", requestId, message: "유료 카드를 찾을 수 없습니다." });
     }
-    if (rowRes.data.status !== "pending") {
-      return json(400, { ok: false, code: "NOT_PENDING", requestId, message: "대기중 카드만 수정할 수 있습니다." });
+    if (!["pending", "approved"].includes(rowRes.data.status)) {
+      return json(400, { ok: false, code: "NOT_EDITABLE", requestId, message: "대기중 또는 결제 완료된 유료카드만 수정할 수 있습니다." });
+    }
+    if (rowRes.data.status === "approved") {
+      const expiresAt = rowRes.data.expires_at ? new Date(rowRes.data.expires_at).getTime() : Number.NaN;
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+        return json(400, { ok: false, code: "PAID_CARD_EXPIRED", requestId, message: "노출 기간이 끝난 유료카드는 다시 결제 후 등록할 수 있습니다." });
+      }
     }
 
     const profileRes = await adminClient
@@ -425,7 +434,6 @@ export async function PATCH(req: Request) {
       blur_thumb_path: finalBlurThumbPath || null,
       photo_paths: photoPaths,
       is_3lift_verified: is3LiftVerified,
-      status: "pending",
     };
 
     const updateRes = await adminClient
@@ -433,7 +441,7 @@ export async function PATCH(req: Request) {
       .update(updatePayload)
       .eq("id", id)
       .eq("user_id", user.id)
-      .eq("status", "pending")
+      .in("status", ["pending", "approved"])
       .select("id")
       .maybeSingle();
 

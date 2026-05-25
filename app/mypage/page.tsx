@@ -6611,7 +6611,7 @@ export default function MyPage() {
                       {card.display_mode === "instant_public" ? "즉시공개" : "36시간 상단고정"}
                     </span>
                   ) : null}
-                  {card.status === "pending" ? (
+                  {card.status === "pending" || card.status === "approved" ? (
                     <Link
                       href={`/dating/paid?editId=${card.id}`}
                       className="inline-flex h-8 items-center rounded-md border border-rose-300 bg-white px-3 text-xs font-medium text-rose-700 hover:bg-rose-50"
