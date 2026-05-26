@@ -1,6 +1,7 @@
 "use client";
 
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -39,10 +40,17 @@ export default function Header() {
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 md:h-[74px] md:px-6">
         <Link
           href="/community/dating/cards"
-          className="inline-flex items-center gap-3 text-[17px] font-black tracking-tight text-neutral-950 md:text-[18px]"
+          className="inline-flex items-center gap-2.5 text-[18px] font-black tracking-tight text-neutral-950 md:text-[19px]"
         >
-          <span className="inline-block h-2.5 w-2.5 rounded-full bg-rose-600" aria-hidden />
-          <span>GymTools</span>
+          <Image
+            src="/icon-192x192.png"
+            alt=""
+            width={30}
+            height={30}
+            className="h-7 w-7 rounded-lg shadow-[0_5px_14px_rgba(244,63,94,0.18)] md:h-8 md:w-8"
+            priority
+          />
+          <span>짐툴</span>
         </Link>
 
         <nav className="hidden items-center gap-2 md:flex">
