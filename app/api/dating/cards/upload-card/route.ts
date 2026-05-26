@@ -7,8 +7,9 @@ import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const UNSUPPORTED_IPHONE_PHOTO_TYPES = ["image/heic", "image/heif"];
 const CARD_BUCKET = "dating-card-photos";
 const LITE_PUBLIC_BUCKET = "dating-card-lite";
 const THUMB_WIDTH = 560;
@@ -179,12 +180,28 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "파일이 필요합니다." }, { status: 400 });
   }
 
+  const fileName = file.name.toLowerCase();
+  const isUnsupportedIphonePhoto =
+    UNSUPPORTED_IPHONE_PHOTO_TYPES.includes(file.type.toLowerCase()) ||
+    fileName.endsWith(".heic") ||
+    fileName.endsWith(".heif");
+
+  if (isUnsupportedIphonePhoto) {
+    return NextResponse.json(
+      { error: "iPhone 사진 형식은 어려워요. 캡쳐본으로 다시 올려주세요." },
+      { status: 400 }
+    );
+  }
+
   if (!ALLOWED_TYPES.includes(file.type)) {
-    return NextResponse.json({ error: "JPG/PNG/WebP 파일만 업로드할 수 있습니다." }, { status: 400 });
+    return NextResponse.json(
+      { error: "사진은 JPG/PNG/WebP만 가능해요. 캡쳐본으로 다시 올려주세요." },
+      { status: 400 }
+    );
   }
 
   if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: "파일은 5MB 이하만 가능합니다." }, { status: 400 });
+    return NextResponse.json({ error: "파일은 10MB 이하만 가능해요." }, { status: 400 });
   }
 
   if (index < 0 || index > 9) {

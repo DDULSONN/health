@@ -5,7 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const UNSUPPORTED_IPHONE_PHOTO_TYPES = ["image/heic", "image/heif"];
+const MAX_FILE_SIZE = 10 * 1024 * 1024;
 
 type MyCardItem = {
   id: string;
@@ -28,6 +29,19 @@ type MyCardItem = {
 
 function normalizeInstagramId(value: string) {
   return value.trim().replace(/^@+/, "").replace(/\s+/g, "").slice(0, 30);
+}
+
+function isUnsupportedIphonePhoto(file: File) {
+  const name = file.name.toLowerCase();
+  return (
+    UNSUPPORTED_IPHONE_PHOTO_TYPES.includes(file.type.toLowerCase()) ||
+    name.endsWith(".heic") ||
+    name.endsWith(".heif")
+  );
+}
+
+function photoFixMessage(slot: number) {
+  return `${slot}번 사진 형식을 읽지 못했어요. 캡쳐본으로 다시 올려주세요.`;
 }
 
 async function createBlurThumbnailFile(source: File): Promise<File> {
@@ -233,12 +247,16 @@ export default function NewDatingCardPage() {
     }
 
     for (const photo of photos.filter((p): p is File => Boolean(p))) {
+      if (isUnsupportedIphonePhoto(photo)) {
+        setError("iPhone 사진 형식은 어려워요. 캡쳐본으로 다시 올려주세요.");
+        return;
+      }
       if (!ALLOWED_TYPES.includes(photo.type)) {
-        setError("사진은 JPG/PNG/WebP만 업로드할 수 있습니다.");
+        setError("사진은 JPG/PNG/WebP만 가능해요. 캡쳐본으로 다시 올려주세요.");
         return;
       }
       if (photo.size > MAX_FILE_SIZE) {
-        setError("사진은 장당 5MB 이하만 가능합니다.");
+        setError("사진은 장당 10MB 이하만 가능합니다.");
         return;
       }
     }
@@ -274,7 +292,14 @@ export default function NewDatingCardPage() {
         }
         nextRawPaths[i] = body.path;
 
-        const liteFile = await createLiteFile(photo);
+        let liteFile: File;
+        try {
+          liteFile = await createLiteFile(photo);
+        } catch {
+          setError(photoFixMessage(i + 1));
+          setSubmitting(false);
+          return;
+        }
         const liteFd = new FormData();
         liteFd.append("file", liteFile);
         liteFd.append("kind", "lite");
@@ -287,7 +312,14 @@ export default function NewDatingCardPage() {
           return;
         }
 
-        const blurFile = await createBlurThumbnailFile(photo);
+        let blurFile: File;
+        try {
+          blurFile = await createBlurThumbnailFile(photo);
+        } catch {
+          setError(photoFixMessage(i + 1));
+          setSubmitting(false);
+          return;
+        }
         const blurFd = new FormData();
         blurFd.append("file", blurFile);
         blurFd.append("kind", "blur");
@@ -353,7 +385,7 @@ export default function NewDatingCardPage() {
       alert(body.message ?? (isEditMode ? "오픈카드를 수정했습니다." : "오픈카드를 생성했습니다."));
       router.push("/mypage");
     } catch {
-      setError("네트워크 오류가 발생했습니다.");
+      setError("업로드 중 오류가 났어요. 캡쳐본으로 다시 올려주세요.");
     }
 
     setSubmitting(false);
