@@ -20,6 +20,13 @@ type AcceptedApplication = {
   id: string;
   card_id: string;
   applicant_user_id: string;
+  applicant_display_nickname: string | null;
+  age: number | null;
+  height_cm: number | null;
+  region: string | null;
+  job: string | null;
+  training_years: number | null;
+  intro_text: string | null;
   instagram_id: string | null;
   created_at: string;
 };
@@ -48,6 +55,7 @@ type CardRow = {
   training_years: number | null;
   ideal_type: string | null;
   strengths_text: string | null;
+  intro_text: string | null;
 };
 
 type ProfileRow = {
@@ -69,7 +77,9 @@ export async function GET(req: Request) {
     adminClient.from("dating_cards").select("id, owner_user_id").eq("owner_user_id", user.id),
     adminClient
       .from("dating_card_applications")
-      .select("id, card_id, applicant_user_id, instagram_id, status, created_at")
+      .select(
+        "id, card_id, applicant_user_id, applicant_display_nickname, age, height_cm, region, job, training_years, intro_text, instagram_id, status, created_at"
+      )
       .eq("applicant_user_id", user.id)
       .eq("status", "accepted")
       .order("created_at", { ascending: false }),
@@ -88,7 +98,9 @@ export async function GET(req: Request) {
     ownedCardIds.length > 0
       ? await adminClient
           .from("dating_card_applications")
-          .select("id, card_id, applicant_user_id, instagram_id, status, created_at")
+          .select(
+            "id, card_id, applicant_user_id, applicant_display_nickname, age, height_cm, region, job, training_years, intro_text, instagram_id, status, created_at"
+          )
           .in("card_id", ownedCardIds)
           .eq("status", "accepted")
           .order("created_at", { ascending: false })
@@ -146,18 +158,39 @@ export async function GET(req: Request) {
       ? await adminClient
           .from("dating_cards")
           .select(
-            "id, owner_user_id, instagram_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text"
+            "id, owner_user_id, instagram_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, intro_text"
           )
           .in("id", cardIds)
       : { data: [], error: null };
 
-  if (cardsRes.error) {
-    console.error("[GET /api/dating/cards/my/connections] cards failed", cardsRes.error);
+  let cardsData = (cardsRes.data ?? []) as CardRow[];
+  let cardsError = cardsRes.error;
+
+  if (cardsRes.error && cardsRes.error.code === "42703") {
+    const fallbackCardsRes =
+      cardIds.length > 0
+        ? await adminClient
+            .from("dating_cards")
+            .select(
+              "id, owner_user_id, instagram_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text"
+            )
+            .in("id", cardIds)
+        : { data: [], error: null };
+
+    cardsData = ((fallbackCardsRes.data ?? []) as Omit<CardRow, "intro_text">[]).map((card) => ({
+      ...card,
+      intro_text: null,
+    }));
+    cardsError = fallbackCardsRes.error;
+  }
+
+  if (cardsError) {
+    console.error("[GET /api/dating/cards/my/connections] cards failed", cardsError);
     return NextResponse.json({ error: "?곌껐 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??" }, { status: 500 });
   }
 
-  const cardsById = new Map(((cardsRes.data ?? []) as CardRow[]).map((card) => [card.id, card]));
-  const ownerIds = [...new Set(((cardsRes.data ?? []) as CardRow[]).map((card) => card.owner_user_id))];
+  const cardsById = new Map(cardsData.map((card) => [card.id, card]));
+  const ownerIds = [...new Set(cardsData.map((card) => card.owner_user_id))];
   const swipeUserIds = swipeMatches.flatMap((match) => [match.user_a_id, match.user_b_id]);
   const profileIds = [...new Set([...ownerIds, ...acceptedApps.map((app) => app.applicant_user_id), ...swipeUserIds])];
 
@@ -193,7 +226,31 @@ export async function GET(req: Request) {
         my_instagram_id: myInstagram,
         other_instagram_id: otherInstagram,
         source: "open",
-        matched_card: null,
+        matched_card: isOwnerView
+          ? {
+              display_nickname: String(app.applicant_display_nickname ?? otherNickname).trim() || otherNickname,
+              sex: null,
+              age: app.age ?? null,
+              region: app.region ?? null,
+              height_cm: app.height_cm ?? null,
+              job: app.job ?? null,
+              training_years: app.training_years ?? null,
+              ideal_type: null,
+              strengths_text: null,
+              intro_text: app.intro_text ?? null,
+            }
+          : {
+              display_nickname: String(card.display_nickname ?? otherNickname).trim() || otherNickname,
+              sex: card.sex ?? null,
+              age: card.age ?? null,
+              region: card.region ?? null,
+              height_cm: card.height_cm ?? null,
+              job: card.job ?? null,
+              training_years: card.training_years ?? null,
+              ideal_type: card.ideal_type ?? null,
+              strengths_text: card.strengths_text ?? null,
+              intro_text: card.intro_text ?? null,
+            },
       };
     })
     .filter(Boolean);
@@ -228,6 +285,7 @@ export async function GET(req: Request) {
               training_years: otherCard.training_years ?? null,
               ideal_type: otherCard.ideal_type ?? null,
               strengths_text: otherCard.strengths_text ?? null,
+              intro_text: otherCard.intro_text ?? null,
             }
           : null,
       };

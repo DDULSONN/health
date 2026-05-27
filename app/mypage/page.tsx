@@ -25,10 +25,6 @@ const AdminCertReviewPanel = dynamic(() => import("@/components/AdminCertReviewP
   loading: () => <MyPageWidgetSkeleton className="h-56" />,
 });
 
-const BodyEvalMailbox = dynamic(() => import("@/components/BodyEvalMailbox"), {
-  loading: () => <MyPageWidgetSkeleton className="h-56" />,
-});
-
 const AdminCommunityModerationPanel = dynamic(() => import("@/components/AdminCommunityModerationPanel"), {
   loading: () => <MyPageWidgetSkeleton className="h-80" />,
 });
@@ -210,6 +206,7 @@ type DatingConnection = {
     training_years: number | null;
     ideal_type: string | null;
     strengths_text: string | null;
+    intro_text: string | null;
   } | null;
 };
 
@@ -5095,7 +5092,6 @@ export default function MyPage() {
   }
 
   const nickname = summary?.profile.nickname ?? "닉네임 없음";
-  const posts = summary?.bodycheck_posts ?? [];
   const changedCount = summary?.profile.nickname_changed_count ?? 0;
   const credits = summary?.profile.nickname_change_credits ?? 0;
   const phoneVerified = summary?.profile.phone_verified === true;
@@ -7777,9 +7773,14 @@ export default function MyPage() {
                     상대 인스타: @{item.other_instagram_id}
                   </p>
                 )}
-                {item.role === "swipe_match" && item.matched_card && (
+                {item.matched_card && (
                   <div className="mt-3 rounded-lg border border-emerald-200 bg-white p-3">
-                    <p className="text-xs font-semibold text-emerald-700">자동매칭된 상대 오픈카드</p>
+                    <p className="text-xs font-semibold text-emerald-700">
+                      {item.role === "owner" ? "수락한 지원자 정보" : "매칭된 상대 오픈카드"}
+                    </p>
+                    <p className="mt-1 text-sm font-semibold text-neutral-900">
+                      {item.matched_card.display_nickname || item.other_nickname}
+                    </p>
                     <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
                       <span>{item.matched_card.sex === "male" ? "남자" : item.matched_card.sex === "female" ? "여자" : "성별 미기재"}</span>
                       {item.matched_card.age != null && <span>나이 {item.matched_card.age}</span>}
@@ -7794,6 +7795,11 @@ export default function MyPage() {
                     {item.matched_card.strengths_text && (
                       <p className="mt-1 text-sm text-neutral-700 whitespace-pre-wrap break-words">
                         자기소개/장점: {item.matched_card.strengths_text}
+                      </p>
+                    )}
+                    {item.matched_card.intro_text && (
+                      <p className="mt-1 text-sm text-neutral-700 whitespace-pre-wrap break-words">
+                        소개글: {item.matched_card.intro_text}
                       </p>
                     )}
                   </div>
@@ -7817,8 +7823,6 @@ export default function MyPage() {
       </section>
       </>
       )}
-
-      {showProfileSection && <BodyEvalMailbox />}
 
       {showAdminSection && (
         <section className="mb-5 rounded-2xl border border-violet-200 bg-violet-50/40 p-5">
@@ -11225,44 +11229,6 @@ export default function MyPage() {
         )}
       </section>
 
-      <section>
-        <h2 className="mb-3 text-lg font-bold text-neutral-900">내 사진 몸평 게시글</h2>
-
-        {posts.length === 0 ? (
-          <p className="rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-500">
-            아직 등록한 사진 몸평 게시글이 없습니다.
-          </p>
-        ) : (
-          <div className="space-y-3">
-            {posts.map((post) => (
-              <Link
-                key={post.id}
-                href={`/community/${post.id}`}
-                className="block rounded-2xl border border-neutral-200 bg-white p-4 transition-all hover:border-emerald-300"
-              >
-                <div className="flex gap-3">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs text-neutral-400">{timeAgo(post.created_at)}</p>
-                    <p className="mt-1 truncate text-sm font-semibold text-neutral-900">{post.title}</p>
-                    <p className="mt-1 text-xs text-indigo-700">
-                      평균 {post.average_score.toFixed(2)} / 투표 {post.vote_count}
-                    </p>
-                  </div>
-                  {(post.images?.length ?? 0) > 0 && (
-                    <img
-                      src={post.images?.[0]}
-                      alt=""
-                      loading="lazy"
-                      decoding="async"
-                      className="h-16 w-16 shrink-0 rounded-lg border border-neutral-100 object-cover"
-                    />
-                  )}
-                </div>
-              </Link>
-            ))}
-          </div>
-        )}
-      </section>
       </>
       )}
 
