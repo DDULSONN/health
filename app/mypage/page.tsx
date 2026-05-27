@@ -5361,7 +5361,7 @@ export default function MyPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 pt-8 pb-[calc(120px+env(safe-area-inset-bottom))] md:pb-10">
-      <section className="mb-4 rounded-2xl border border-neutral-200 bg-[#f6f4f1] p-2">
+      <section className="mb-4 rounded-2xl border border-neutral-200/80 bg-white p-1.5 shadow-[0_10px_30px_rgba(17,24,39,0.04)]">
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
           {([
             { key: "profile", label: "프로필" },
@@ -5376,7 +5376,7 @@ export default function MyPage() {
                 type="button"
                 onClick={() => setPageSectionTab(tab.key)}
                 className={`min-h-[44px] rounded-xl text-sm font-semibold transition ${
-                  active ? "bg-white text-neutral-900 shadow-sm ring-1 ring-neutral-200" : "bg-transparent text-neutral-400"
+                  active ? "bg-neutral-950 text-white shadow-sm" : "bg-transparent text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800"
                 }`}
               >
                 {tab.label}
@@ -5387,15 +5387,20 @@ export default function MyPage() {
       </section>
 
       {showProfileSection && (
-      <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h1 className="text-2xl font-bold text-neutral-900">마이페이지</h1>
-        <p className="mt-1 text-sm text-neutral-600">{nickname}</p>
+      <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <span className="inline-flex rounded-full bg-rose-50 px-3 py-1 text-[11px] font-semibold text-rose-600">마이</span>
+            <h1 className="mt-3 text-2xl font-bold text-neutral-950">마이페이지</h1>
+            <p className="mt-1 text-sm text-neutral-500">{nickname}</p>
+          </div>
+        </div>
 
-        <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+        <div className="mt-4 rounded-xl border border-neutral-200/80 bg-[#fbfaf8] p-3">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <p className="text-sm font-semibold text-neutral-800">닉네임</p>
-              <p className="mt-1 text-xs text-neutral-600">
+              <p className="mt-1 text-xs text-neutral-500">
                 {remainingFree > 0
                   ? `무료 변경 ${remainingFree}회 남음`
                   : credits > 0
@@ -5412,7 +5417,7 @@ export default function MyPage() {
                 setNewNickname("");
               }}
               disabled={!canChangeNickname}
-              className="min-h-[44px] self-start rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
+              className="min-h-[44px] self-start rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
             >
               닉네임 변경
             </button>
@@ -5425,9 +5430,9 @@ export default function MyPage() {
           {nicknameInfo && <p className="mt-2 text-xs text-emerald-700">{nicknameInfo}</p>}
         </div>
 
-        <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+        <div className="mt-4 rounded-xl border border-neutral-200/80 bg-[#fbfaf8] p-3">
           <p className="text-sm font-semibold text-neutral-800">휴대폰 인증</p>
-          <p className="mt-1 text-xs text-neutral-600">
+          <p className="mt-1 text-xs text-neutral-500">
             상태:{" "}
             <span className={phoneVerified ? "font-medium text-emerald-700" : "font-medium text-amber-700"}>
               {phoneVerified ? "인증 완료" : "미인증"}
@@ -5441,7 +5446,7 @@ export default function MyPage() {
 
           {!phoneVerified && (
             <div className="mt-3 space-y-2">
-              <p className="rounded-lg bg-white px-3 py-2 text-[11px] leading-5 text-neutral-500">
+              <p className="rounded-lg border border-neutral-100 bg-white px-3 py-2 text-[11px] leading-5 text-neutral-500">
                 010 번호를 입력하면 문자 인증번호를 보내드려요. 보통 1분 안에 도착하며, 오지 않으면 스팸/차단 설정을 확인한 뒤 재발송해주세요.
               </p>
               <input
@@ -5449,13 +5454,13 @@ export default function MyPage() {
                 value={phoneInput}
                 onChange={(e) => setPhoneInput(e.target.value)}
                 placeholder="휴대폰 번호 (예: 01012345678)"
-                className="h-10 w-full rounded-lg border border-neutral-300 px-3 text-sm"
+                className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm"
               />
               <button
                 type="button"
                 onClick={() => void handleSendPhoneOtp()}
                 disabled={sendingPhoneOtp || phoneOtpResendAfterSec > 0}
-                className="h-10 rounded-lg border border-neutral-300 px-3 text-sm font-medium text-neutral-700 disabled:opacity-60"
+                className="h-10 rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 shadow-sm disabled:opacity-60"
               >
                 {sendingPhoneOtp
                   ? "발송 중..."
@@ -5476,13 +5481,13 @@ export default function MyPage() {
                     value={phoneOtpCode}
                     onChange={(e) => setPhoneOtpCode(e.target.value)}
                     placeholder="문자 인증번호"
-                    className="h-10 w-full rounded-lg border border-neutral-300 px-3 text-sm"
+                    className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm"
                   />
                   <button
                     type="button"
                     onClick={() => void handleVerifyPhoneOtp()}
                     disabled={verifyingPhoneOtp}
-                    className="h-10 rounded-lg bg-neutral-900 px-3 text-sm font-medium text-white disabled:opacity-60"
+                    className="h-10 rounded-lg bg-neutral-950 px-3 text-sm font-medium text-white disabled:opacity-60"
                   >
                     {verifyingPhoneOtp ? "확인 중..." : "인증번호 확인"}
                   </button>
@@ -5495,16 +5500,16 @@ export default function MyPage() {
           )}
         </div>
 
-        <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+        <div className="mt-4 rounded-xl border border-neutral-200/80 bg-[#fbfaf8] p-3">
           <div className="flex items-start justify-between gap-3">
             <div>
               <p className="text-sm font-semibold text-neutral-800">빠른매칭 노출</p>
-              <p className="mt-1 text-xs text-neutral-600">
+              <p className="mt-1 text-xs text-neutral-500">
                 빠른매칭에서 내 카드가 보일지 설정합니다. 기본값은 노출 ON입니다.
               </p>
             </div>
             <span
-              className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${
+              className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
                 swipeProfileVisible ? "bg-emerald-100 text-emerald-700" : "bg-neutral-200 text-neutral-700"
               }`}
             >
@@ -5516,7 +5521,7 @@ export default function MyPage() {
               type="button"
               onClick={() => void handleToggleSwipeVisibility(true)}
               disabled={savingSwipeVisibility || swipeProfileVisible}
-              className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-9 rounded-lg border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
             >
               내 카드 보이기
             </button>
@@ -5524,18 +5529,18 @@ export default function MyPage() {
               type="button"
               onClick={() => void handleToggleSwipeVisibility(false)}
               disabled={savingSwipeVisibility || !swipeProfileVisible}
-              className="h-9 rounded-lg border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50"
+              className="h-9 rounded-lg border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
             >
               숨기기
             </button>
           </div>
         </div>
 
-          <div className="mt-4 rounded-xl border border-pink-200 bg-pink-50/60 p-4">
+          <div className="mt-4 rounded-xl border border-rose-100 bg-rose-50/40 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <p className="text-sm font-semibold text-pink-900">빠른매칭 진행 상황</p>
-              <p className="mt-1 text-xs text-pink-700">
+                <p className="text-sm font-semibold text-neutral-900">빠른매칭 진행 상황</p>
+              <p className="mt-1 text-xs text-neutral-500">
                 마이페이지가 너무 길어지지 않게 접어두고, 필요할 때만 펼쳐서 확인할 수 있게 바꿨습니다.
               </p>
             </div>
@@ -5545,7 +5550,7 @@ export default function MyPage() {
                   <span className="rounded-full bg-white px-3 py-1 text-neutral-700">
                     보낸 라이크 {swipeStatusSummary?.outgoing_pending ?? 0}
                   </span>
-                  <span className="rounded-full bg-white px-3 py-1 text-pink-700">
+                  <span className="rounded-full bg-white px-3 py-1 text-rose-700">
                     받은 라이크 {swipeStatusSummary?.incoming_pending ?? 0}
                   </span>
                   <span className="rounded-full bg-white px-3 py-1 text-emerald-700">
@@ -5557,7 +5562,7 @@ export default function MyPage() {
                 type="button"
                 onClick={() => void handleToggleSwipeStatusPanel()}
                 disabled={swipeStatusLoading}
-                className="h-9 rounded-lg border border-pink-300 bg-white px-3 text-xs font-medium text-pink-800 disabled:cursor-not-allowed disabled:opacity-60"
+                className="h-9 rounded-lg border border-rose-200 bg-white px-3 text-xs font-medium text-rose-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-60"
               >
                 {swipeStatusLoading
                   ? "불러오는 중..."
@@ -6027,15 +6032,15 @@ export default function MyPage() {
 
       {showPaymentSection && (
       <>
-      <section className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50/30 p-5">
+      <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-emerald-900">결제센터</h2>
-            <p className="mt-1 text-sm text-emerald-800">
+            <h2 className="text-lg font-bold text-neutral-950">결제센터</h2>
+            <p className="mt-1 text-sm text-neutral-600">
               결제한 상품 상태와 현재 적용 중인 혜택을 한 곳에서 확인할 수 있어요.
             </p>
             {!paymentCenterOpen && (
-              <p className="mt-1 text-xs text-emerald-700">
+              <p className="mt-1 text-xs text-neutral-500">
                 결제 내역, 매출전표, 지원권 잔여 수량, 이상형 더보기 상태, 1:1 번호 교환 결제까지 여기서 확인할 수 있어요.
               </p>
             )}
@@ -6043,14 +6048,14 @@ export default function MyPage() {
           <div className="flex flex-wrap gap-2">
             <Link
               href="/refund"
-              className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+              className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs font-medium text-neutral-700 shadow-sm hover:bg-neutral-50"
             >
               환불 안내
             </Link>
             <button
               type="button"
               onClick={() => setPaymentCenterOpen((prev) => !prev)}
-              className="rounded-lg border border-emerald-300 bg-white px-3 py-2 text-xs font-medium text-emerald-800 hover:bg-emerald-100"
+              className="rounded-lg border border-neutral-200 bg-white px-3 py-2 text-xs font-medium text-neutral-700 shadow-sm hover:bg-neutral-50"
             >
               {paymentCenterOpen ? "결제센터 접기" : "결제센터 펼치기"}
             </button>
@@ -6064,18 +6069,18 @@ export default function MyPage() {
             ) : null}
 
             {paymentCenterLoading && !paymentCenterData ? (
-              <p className="mt-3 rounded-xl border border-emerald-200 bg-white p-4 text-sm text-neutral-500">결제센터를 불러오는 중입니다.</p>
+              <p className="mt-3 rounded-xl border border-neutral-200 bg-[#fbfaf8] p-4 text-sm text-neutral-500">결제센터를 불러오는 중입니다.</p>
             ) : null}
 
             {paymentCenterData ? (
               <>
                 <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-                  <div className="rounded-xl border border-emerald-200 bg-white p-4">
+                  <div className="rounded-xl border border-neutral-200 bg-[#fbfaf8] p-4">
                     <p className="text-xs text-neutral-500">남은 지원권</p>
                     <p className="mt-2 text-2xl font-black text-neutral-900">{paymentCenterData.summary.creditsRemaining.toLocaleString("ko-KR")}장</p>
                     <p className="mt-1 text-[11px] text-neutral-500">오늘 기본 지원 가능 {paymentCenterData.summary.baseRemaining}회</p>
                   </div>
-                  <div className="rounded-xl border border-emerald-200 bg-white p-4">
+                  <div className="rounded-xl border border-neutral-200 bg-[#fbfaf8] p-4">
                     <p className="text-xs text-neutral-500">남자 더보기 상태</p>
                     <p className="mt-2 text-lg font-bold text-neutral-900">
                       {paymentCenterData.summary.moreViewMale === "approved"
@@ -6087,7 +6092,7 @@ export default function MyPage() {
                             : "이용 없음"}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-emerald-200 bg-white p-4">
+                  <div className="rounded-xl border border-neutral-200 bg-[#fbfaf8] p-4">
                     <p className="text-xs text-neutral-500">여자 더보기 상태</p>
                     <p className="mt-2 text-lg font-bold text-neutral-900">
                       {paymentCenterData.summary.moreViewFemale === "approved"
@@ -6099,17 +6104,17 @@ export default function MyPage() {
                             : "이용 없음"}
                     </p>
                   </div>
-                  <div className="rounded-xl border border-emerald-200 bg-white p-4">
+                  <div className="rounded-xl border border-neutral-200 bg-[#fbfaf8] p-4">
                     <p className="text-xs text-neutral-500">최근 주문</p>
                     <p className="mt-2 text-2xl font-black text-neutral-900">{paymentCenterData.orders.length.toLocaleString("ko-KR")}건</p>
                     <p className="mt-1 text-[11px] text-neutral-500">최근 20건 기준</p>
                   </div>
                 </div>
 
-                <div className="mt-4 rounded-xl border border-emerald-200 bg-white p-4">
+                <div className="mt-4 rounded-xl border border-neutral-200 bg-[#fbfaf8] p-4">
                   <div className="flex items-center justify-between gap-3">
                     <div>
-                      <p className="text-sm font-semibold text-emerald-900">내 결제 내역</p>
+                      <p className="text-sm font-semibold text-neutral-900">내 결제 내역</p>
                       <p className="mt-1 text-xs text-neutral-500">
                         토스 문서 기준으로 결제 성공 후에는 주문번호, 금액, 상태를 확인할 수 있어야 하고, 카드 결제는 매출전표도 조회할 수 있어요.
                       </p>
@@ -6118,26 +6123,26 @@ export default function MyPage() {
                       type="button"
                       onClick={() => void loadPaymentCenter(true)}
                       disabled={paymentCenterLoading}
-                      className="h-8 rounded-md border border-emerald-300 bg-white px-3 text-xs font-medium text-emerald-800 disabled:opacity-50"
+                      className="h-8 rounded-md border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 shadow-sm disabled:opacity-50"
                     >
                       {paymentCenterLoading ? "새로고침 중..." : "결제 내역 새로고침"}
                     </button>
                   </div>
 
                   {paymentCenterData.orders.length === 0 ? (
-                    <p className="mt-3 rounded-xl border border-dashed border-emerald-200 bg-emerald-50/40 p-4 text-sm text-neutral-500">
+                    <p className="mt-3 rounded-xl border border-dashed border-neutral-200 bg-white p-4 text-sm text-neutral-500">
                       아직 결제한 내역이 없습니다.
                     </p>
                   ) : (
                     <div className="mt-3 space-y-2">
                       {paymentCenterData.orders.map((order) => (
-                        <article key={order.id} className="rounded-xl border border-emerald-100 bg-emerald-50/30 p-4">
+                        <article key={order.id} className="rounded-xl border border-neutral-200 bg-white p-4">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
                               <p className="text-sm font-semibold text-neutral-900">{formatPaymentProductLabel(order)}</p>
                               <p className="mt-1 text-[11px] text-neutral-500">주문번호 {order.toss_order_id}</p>
                             </div>
-                            <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-emerald-800">
+                            <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">
                               {formatPaymentStatusLabel(order.status)}
                             </span>
                           </div>
@@ -6165,7 +6170,7 @@ export default function MyPage() {
                                 href={order.receiptUrl}
                                 target="_blank"
                                 rel="noreferrer"
-                                className="rounded-full border border-emerald-300 bg-white px-2.5 py-1 font-medium text-emerald-800 hover:bg-emerald-100"
+                                className="rounded-full border border-neutral-200 bg-white px-2.5 py-1 font-medium text-neutral-700 hover:bg-neutral-50"
                               >
                                 매출전표 보기
                               </a>
@@ -6177,8 +6182,8 @@ export default function MyPage() {
                   )}
                 </div>
 
-                <div className="mt-4 rounded-xl border border-emerald-200 bg-white p-4">
-                  <p className="text-sm font-semibold text-emerald-900">결제 안내</p>
+                <div className="mt-4 rounded-xl border border-neutral-200 bg-[#fbfaf8] p-4">
+                  <p className="text-sm font-semibold text-neutral-900">결제 안내</p>
                   <ul className="mt-3 space-y-2 text-sm leading-6 text-neutral-700">
                     <li>결제 완료 후 적용까지 잠시 시간이 걸릴 수 있으며, 승인이 필요한 상품은 운영 확인 후 반영됩니다.</li>
                     <li>카드 결제는 매출전표 링크가 있는 경우 바로 확인할 수 있고, 필요하면 카드사 앱이나 토스 상점관리자 기준 내역으로도 조회할 수 있습니다.</li>
@@ -6543,14 +6548,14 @@ export default function MyPage() {
 
       {showMatchingSection && (
       <>
-      <section className="mb-5 rounded-2xl border border-rose-200 bg-rose-50/30 p-5">
-        <h2 className="text-lg font-bold text-rose-900 mb-3">내 유료카드 지원자</h2>
+      <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
+        <h2 className="text-lg font-bold text-neutral-950 mb-3">내 유료카드 지원자</h2>
         {myPaidCards.length === 0 ? (
           <p className="text-sm text-neutral-500">등록된 유료카드가 없습니다.</p>
         ) : (
           <div className="space-y-3">
             {myPaidCards.map((card) => (
-              <div key={card.id} className="rounded-xl border border-rose-200 bg-white p-3">
+              <div key={card.id} className="rounded-xl border border-neutral-200 bg-[#fbfaf8] p-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium text-neutral-900">
                     {card.nickname} / {card.gender === "M" ? "남자" : "여자"}
@@ -6576,7 +6581,7 @@ export default function MyPage() {
                   {card.status === "pending" || card.status === "approved" ? (
                     <Link
                       href={`/dating/paid?editId=${card.id}`}
-                      className="inline-flex h-8 items-center rounded-md border border-rose-300 bg-white px-3 text-xs font-medium text-rose-700 hover:bg-rose-50"
+                      className="inline-flex h-8 items-center rounded-md border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 shadow-sm hover:bg-neutral-50"
                     >
                       내용 수정
                     </Link>
@@ -6595,7 +6600,7 @@ export default function MyPage() {
             {receivedPaidApplications.map((app) => {
               const card = myPaidCards.find((c) => c.id === app.card_id);
               return (
-                <div key={app.id} className="rounded-xl border border-rose-200 bg-white p-3">
+                <div key={app.id} className="rounded-xl border border-neutral-200 bg-[#fbfaf8] p-3">
                   <p className="text-sm font-medium text-neutral-900">
                     카드 {card?.nickname ?? app.card_id.slice(0, 8)} / 지원자 {app.applicant_display_nickname ?? "익명"}
                   </p>
@@ -6663,14 +6668,14 @@ export default function MyPage() {
         )}
       </section>
 
-      <section className="mb-5 rounded-2xl border border-rose-200 bg-white p-5">
-        <h2 className="text-lg font-bold text-rose-900 mb-3">내 36시간 고정카드 지원 이력</h2>
+      <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
+        <h2 className="text-lg font-bold text-neutral-950 mb-3">내 36시간 고정카드 지원 이력</h2>
         {myAppliedPaidApplications.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 지원한 내역이 없습니다.</p>
         ) : (
           <div className="space-y-3">
             {myAppliedPaidApplications.map((app) => (
-              <div key={app.id} className="rounded-xl border border-rose-200 bg-rose-50/30 p-3">
+              <div key={app.id} className="rounded-xl border border-neutral-200 bg-[#fbfaf8] p-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium text-neutral-900">
                     {app.card?.nickname ?? "(카드 닉네임 없음)"} /{" "}
@@ -6712,7 +6717,7 @@ export default function MyPage() {
         )}
       </section>
 
-      <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
+      <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
         <h2 className="text-lg font-bold text-neutral-900 mb-3">소개팅 신청 현황</h2>
         {datingApplication ? (
           <div className="space-y-2 text-sm">
@@ -6743,17 +6748,17 @@ export default function MyPage() {
         <div className="mt-4">
           <Link
             href="/dating/apply"
-            className="inline-flex min-h-[42px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
+            className="inline-flex min-h-[42px] items-center rounded-lg bg-neutral-950 px-4 text-sm font-medium text-white hover:bg-neutral-800"
           >
             신청하러 가기
           </Link>
         </div>
       </section>
 
-      <section className="mb-5 rounded-2xl border border-sky-200 bg-sky-50/30 p-5">
-        <h2 className="text-lg font-bold text-sky-900 mb-3">내 1:1 소개팅 신청 내역</h2>
-        <div className="mb-3 rounded-xl border border-sky-200 bg-white/80 px-3 py-3">
-          <p className="text-xs font-semibold text-sky-900">1:1 이용 안내</p>
+      <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
+        <h2 className="text-lg font-bold text-neutral-950 mb-3">내 1:1 소개팅 신청 내역</h2>
+        <div className="mb-3 rounded-xl border border-neutral-200 bg-[#fbfaf8] px-3 py-3">
+          <p className="text-xs font-semibold text-neutral-900">1:1 이용 안내</p>
           <p className="mt-1 text-[11px] leading-5 text-neutral-600">
             쌍방 수락 후 기존 매칭을 포함해 결제가 완료되면 상대 연락처가 바로 공개됩니다. 공개된 번호의 외부 공유, 무단 저장, 불쾌한 연락은 제재 대상입니다.
           </p>
