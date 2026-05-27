@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { confirmTossTestPayment, getMissingTossTestConfigKeys, isTossTestConfigured } from "@/lib/toss-payments";
 import { isAllowedTestPaymentEmail } from "@/lib/test-payment";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 type ConfirmBody = {
   paymentKey?: unknown;
@@ -25,6 +26,8 @@ function toAmount(value: unknown) {
 
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
 
   try {
     const { user } = await getRequestAuthContext(req);

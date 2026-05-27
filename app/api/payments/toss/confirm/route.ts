@@ -16,6 +16,7 @@ import { isAllowedAdminUser } from "@/lib/admin";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { confirmTossPayment, getMissingTossConfigKeys, isTossConfigured } from "@/lib/toss-payments";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 type ConfirmBody = {
   paymentKey?: unknown;
@@ -492,6 +493,8 @@ async function ensureOrderFulfilled(
 
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
 
   try {
     const { user } = await getRequestAuthContext(req);

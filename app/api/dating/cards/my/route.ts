@@ -2,6 +2,7 @@ import type { PostgrestError } from "@supabase/supabase-js";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 function normalizeInstagramId(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -65,6 +66,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
+
   const { user } = await getRequestAuthContext(req);
   if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
@@ -332,6 +336,9 @@ export async function POST(req: Request) {
 }
 
 export async function PATCH(req: Request) {
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
+
   const { user } = await getRequestAuthContext(req);
   if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
@@ -534,6 +541,9 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
+
   const { user } = await getRequestAuthContext(req);
   if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 

@@ -11,6 +11,7 @@ import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
 
@@ -203,6 +204,9 @@ async function refundLegacyCredit(adminClient: ReturnType<typeof createAdminClie
 }
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
+
   const dailyBaseLimit = getDailyBaseApplyLimit();
   let userId: string | null = null;
   let body: unknown = null;

@@ -1,6 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { NextResponse } from "next/server";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 function normalizeInstagramId(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -49,6 +50,9 @@ function mapDbError(code?: string) {
 
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
+
   try {
     const supabase = await createClient();
     const {

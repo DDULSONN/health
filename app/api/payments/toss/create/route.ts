@@ -12,6 +12,7 @@ import { isAllowedAdminUser } from "@/lib/admin";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { createTossPayment, getMissingTossConfigKeys, isTossConfigured } from "@/lib/toss-payments";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 type ProductType =
   | "apply_credits"
@@ -210,6 +211,8 @@ async function recoverMoreViewAccess(
 
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
 
   try {
     const { user } = await getRequestAuthContext(req);

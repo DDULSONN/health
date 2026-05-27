@@ -1,4 +1,8 @@
 import { getCachedSignedUrlWithBucket } from "@/lib/signed-url-cache";
+import { hasCityViewAccess } from "@/lib/dating-city-view";
+import { hasMoreViewAccess, normalizeCardSex } from "@/lib/dating-more-view";
+import { isAllowedAdminUser } from "@/lib/admin";
+import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import sharp from "sharp";
 
@@ -6,6 +10,8 @@ export const runtime = "nodejs";
 
 const SIGNED_TTL_SEC = 3600;
 const OPTIMIZED_BUCKETS = new Set(["community", "dating-apply-photos"]);
+const PUBLIC_SIGNED_BUCKETS = new Set(["community", "dating-card-lite"]);
+const SENSITIVE_SIGNED_BUCKETS = new Set(["dating-card-photos", "dating-apply-photos", "dating-1on1-photos"]);
 const BLOCKED_SIGNED_PREFIXES: Record<string, string[]> = {
   "dating-apply-photos": ["admin-application-backups/"],
 };
@@ -38,6 +44,216 @@ function isCacheableImage(headers: Headers): boolean {
 
 function decodeSegments(parts: string[]): string {
   return parts.map((v) => decodeURIComponent(v)).join("/");
+}
+
+function ownerFromPath(objectPath: string): string {
+  const parts = objectPath.split("/");
+  return parts.length >= 2 && parts[0] === "cards" ? parts[1] : "";
+}
+
+function applicantFromApplyPath(objectPath: string): string {
+  const parts = objectPath.split("/");
+  if ((parts[0] === "card-applications" || parts[0] === "paid-card-applications") && parts.length >= 2) {
+    return parts[1];
+  }
+  return "";
+}
+
+function toBlurWebpPath(path: string): string {
+  return path.includes("/blur/") ? path.replace(/\.[^.\/]+$/, ".webp") : path;
+}
+
+function toThumbPath(rawPath: string): string {
+  return rawPath.replace("/raw/", "/thumb/").replace(/\.[^.\/]+$/, ".webp");
+}
+
+function toLitePath(rawPath: string): string {
+  return rawPath.replace("/raw/", "/lite/").replace(/\.[^.\/]+$/, ".webp");
+}
+
+function toBlurPath(rawPath: string): string {
+  return rawPath.replace("/raw/", "/blur/").replace(/\.[^.\/]+$/, ".webp");
+}
+
+function pathList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string" && item.length > 0) : [];
+}
+
+function matchesDatingCardPhoto(objectPath: string, row: Record<string, unknown>): boolean {
+  const rawPaths = pathList(row.photo_paths);
+  const blurPaths = pathList(row.blur_paths);
+  const blurThumbPath = typeof row.blur_thumb_path === "string" ? row.blur_thumb_path : "";
+  const candidates = new Set<string>();
+
+  for (const rawPath of rawPaths) {
+    candidates.add(rawPath);
+    candidates.add(toLitePath(rawPath));
+    candidates.add(toThumbPath(rawPath));
+    candidates.add(toBlurPath(rawPath));
+  }
+  for (const blurPath of blurPaths) {
+    candidates.add(blurPath);
+    candidates.add(toBlurWebpPath(blurPath));
+  }
+  if (blurThumbPath) {
+    candidates.add(blurThumbPath);
+    candidates.add(toBlurWebpPath(blurThumbPath));
+  }
+  return candidates.has(objectPath);
+}
+
+async function canReadDatingCardPhoto(
+  admin: ReturnType<typeof createAdminClient>,
+  objectPath: string,
+  userId: string | null,
+  isAdmin: boolean
+): Promise<boolean> {
+  const ownerId = ownerFromPath(objectPath);
+  if (isAdmin || (ownerId && userId === ownerId)) return true;
+
+  const isRaw = objectPath.includes("/raw/");
+  const nowIso = new Date().toISOString();
+  const openRowsRes = ownerId
+    ? await admin
+        .from("dating_cards")
+        .select("id,owner_user_id,sex,region,status,expires_at,photo_visibility,photo_paths,blur_paths,blur_thumb_path")
+        .eq("owner_user_id", ownerId)
+        .limit(100)
+    : await admin
+        .from("dating_cards")
+        .select("id,owner_user_id,sex,region,status,expires_at,photo_visibility,photo_paths,blur_paths,blur_thumb_path")
+        .limit(100);
+
+  if (!openRowsRes.error && Array.isArray(openRowsRes.data)) {
+    for (const row of openRowsRes.data as Array<Record<string, unknown>>) {
+      if (!matchesDatingCardPhoto(objectPath, row)) continue;
+      const status = String(row.status ?? "");
+      const expiresAt = typeof row.expires_at === "string" ? row.expires_at : "";
+      const activePublic = status === "public" && expiresAt > nowIso;
+      if (activePublic && (!isRaw || row.photo_visibility === "public")) return true;
+      if (!userId || status !== "pending") return false;
+
+      const sex = normalizeCardSex(row.sex);
+      const byMoreView = sex ? await hasMoreViewAccess(admin, userId, sex) : false;
+      const byCityView = await hasCityViewAccess(admin, userId, typeof row.region === "string" ? row.region : null);
+      return byMoreView || byCityView;
+    }
+  }
+
+  const paidRowsRes = ownerId
+    ? await admin
+        .from("dating_paid_cards")
+        .select("id,user_id,status,expires_at,photo_visibility,photo_paths,blur_thumb_path")
+        .eq("user_id", ownerId)
+        .limit(100)
+    : await admin
+        .from("dating_paid_cards")
+        .select("id,user_id,status,expires_at,photo_visibility,photo_paths,blur_thumb_path")
+        .limit(100);
+
+  if (!paidRowsRes.error && Array.isArray(paidRowsRes.data)) {
+    for (const row of paidRowsRes.data as Array<Record<string, unknown>>) {
+      if (!matchesDatingCardPhoto(objectPath, row)) continue;
+      const activeApproved = row.status === "approved" && typeof row.expires_at === "string" && row.expires_at > nowIso;
+      return activeApproved && (!isRaw || row.photo_visibility === "public");
+    }
+  }
+
+  return false;
+}
+
+async function canReadApplyPhoto(
+  admin: ReturnType<typeof createAdminClient>,
+  objectPath: string,
+  userId: string | null,
+  isAdmin: boolean
+): Promise<boolean> {
+  if (isAdmin) return true;
+  const applicantId = applicantFromApplyPath(objectPath);
+  if (!userId || !applicantId) return false;
+  if (userId === applicantId) return true;
+
+  if (objectPath.startsWith("card-applications/")) {
+    const appRes = await admin
+      .from("dating_card_applications")
+      .select("card_id,applicant_user_id,photo_paths,photo_urls")
+      .eq("applicant_user_id", applicantId)
+      .limit(100);
+    const appRows = !appRes.error && Array.isArray(appRes.data) ? appRes.data : [];
+    const matchedCardIds = appRows
+      .filter((row) => [...pathList(row.photo_paths), ...pathList(row.photo_urls)].includes(objectPath))
+      .map((row) => String(row.card_id ?? ""))
+      .filter(Boolean);
+    if (matchedCardIds.length === 0) return false;
+
+    const cardRes = await admin.from("dating_cards").select("id").in("id", matchedCardIds).eq("owner_user_id", userId).limit(1);
+    return !cardRes.error && Array.isArray(cardRes.data) && cardRes.data.length > 0;
+  }
+
+  if (objectPath.startsWith("paid-card-applications/")) {
+    const appRes = await admin
+      .from("dating_paid_card_applications")
+      .select("paid_card_id,applicant_user_id,photo_paths")
+      .eq("applicant_user_id", applicantId)
+      .limit(100);
+    const appRows = !appRes.error && Array.isArray(appRes.data) ? appRes.data : [];
+    const matchedCardIds = appRows
+      .filter((row) => pathList(row.photo_paths).includes(objectPath))
+      .map((row) => String(row.paid_card_id ?? ""))
+      .filter(Boolean);
+    if (matchedCardIds.length === 0) return false;
+
+    const cardRes = await admin.from("dating_paid_cards").select("id").in("id", matchedCardIds).eq("user_id", userId).limit(1);
+    return !cardRes.error && Array.isArray(cardRes.data) && cardRes.data.length > 0;
+  }
+
+  return false;
+}
+
+async function canReadOneOnOnePhoto(
+  admin: ReturnType<typeof createAdminClient>,
+  objectPath: string,
+  userId: string | null,
+  isAdmin: boolean
+): Promise<boolean> {
+  if (isAdmin) return true;
+  const ownerId = ownerFromPath(objectPath);
+  if (!userId || !ownerId) return false;
+  if (userId === ownerId) return true;
+
+  const cardRes = await admin
+    .from("dating_1on1_cards")
+    .select("id,user_id,status,photo_paths")
+    .eq("user_id", ownerId)
+    .limit(100);
+  if (cardRes.error || !Array.isArray(cardRes.data)) return false;
+
+  return cardRes.data.some((row) => {
+    const status = String(row.status ?? "");
+    return ["submitted", "approved", "active"].includes(status) && pathList(row.photo_paths).includes(objectPath);
+  });
+}
+
+async function canReadSignedObject(req: Request, bucket: string, objectPath: string): Promise<boolean> {
+  if (PUBLIC_SIGNED_BUCKETS.has(bucket)) return true;
+  if (!SENSITIVE_SIGNED_BUCKETS.has(bucket)) return false;
+
+  const { user } = await getRequestAuthContext(req);
+  const userId = user?.id ?? null;
+  const isAdmin = isAllowedAdminUser(user?.id, user?.email);
+  const admin = createAdminClient();
+
+  if (bucket === "dating-card-photos") {
+    return canReadDatingCardPhoto(admin, objectPath, userId, isAdmin);
+  }
+  if (bucket === "dating-apply-photos") {
+    return canReadApplyPhoto(admin, objectPath, userId, isAdmin);
+  }
+  if (bucket === "dating-1on1-photos") {
+    return canReadOneOnOnePhoto(admin, objectPath, userId, isAdmin);
+  }
+
+  return false;
 }
 
 async function fetchPublicLite(bucket: string, objectPath: string, method: string, requestId: string) {
@@ -249,6 +465,8 @@ async function handler(req: Request, params: Promise<{ slug: string[] }>) {
     return fetchPublicLite(bucket, objectPath, req.method, requestId);
   }
   if (mode === "signed") {
+    const allowed = await canReadSignedObject(req, bucket, objectPath);
+    if (!allowed) return new Response("Not Found", { status: 404 });
     if (OPTIMIZED_BUCKETS.has(bucket)) {
       return optimizeSignedImageResponse(req, bucket, objectPath, req.method, requestId);
     }

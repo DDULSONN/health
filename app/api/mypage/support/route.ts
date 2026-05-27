@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 const ALLOWED_CATEGORIES = new Set(["payment", "dating", "abuse", "account", "technical", "other"]);
 
@@ -39,6 +40,8 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
 
   try {
     const { user } = await getRequestAuthContext(req);

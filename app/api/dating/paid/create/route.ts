@@ -2,6 +2,7 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { ensureBlurThumbFromRaw } from "@/lib/dating-blur-thumb";
 import { NextResponse } from "next/server";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 type CreateBody = {
   id?: unknown;
   gender?: unknown;
@@ -166,6 +167,9 @@ export async function GET(req: Request) {
 
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
+
   console.log(`[dating-paid-create] ${requestId} start`);
 
   try {
@@ -310,6 +314,9 @@ export async function POST(req: Request) {
 
 export async function PATCH(req: Request) {
   const requestId = crypto.randomUUID();
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
+
   console.log(`[dating-paid-update] ${requestId} start`);
 
   try {
@@ -468,6 +475,8 @@ export async function PATCH(req: Request) {
 
 export async function DELETE(req: Request) {
   const requestId = crypto.randomUUID();
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
 
   try {
     const { user } = await getRequestAuthContext(req);

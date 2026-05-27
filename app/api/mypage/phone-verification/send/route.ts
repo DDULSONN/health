@@ -3,6 +3,7 @@ import { getPhoneValidationMessage, hashForOperationalLog, normalizePhoneToE164 
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 const ATTEMPT_LOG_TABLE = "profile_phone_verification_attempts";
 
@@ -64,6 +65,8 @@ async function logPhoneVerificationAttempt(input: {
 
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
 
   try {
     const supabase = await createClient();

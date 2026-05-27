@@ -6,8 +6,12 @@ import {
   verifyAdminPanelPassword,
 } from "@/lib/admin-panel-lock";
 import { requireAdminRoute } from "@/lib/admin-route";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 export async function POST(request: Request) {
+  const originResponse = ensureAllowedMutationOrigin(request);
+  if (originResponse) return originResponse;
+
   const adminGuard = await requireAdminRoute();
   if (!adminGuard.ok) return adminGuard.response;
 
