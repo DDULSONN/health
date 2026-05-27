@@ -157,11 +157,11 @@ export function pickPreviewImage(row: SwipePreviewRow): string | null {
       const litePath = toLitePath(rawPath);
       const thumbPath = toThumbPath(rawPath);
       return (
+        buildSignedImageUrlAllowRaw("dating-card-photos", rawPath) ||
         buildSignedImageUrl("dating-card-lite", thumbPath) ||
         buildSignedImageUrl("dating-card-lite", litePath) ||
         buildPublicLiteImageUrl("dating-card-lite", thumbPath) ||
         buildPublicLiteImageUrl("dating-card-lite", litePath) ||
-        buildSignedImageUrlAllowRaw("dating-card-photos", rawPath) ||
         null
       );
     }
