@@ -7,7 +7,7 @@ import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
 
-const MAX_FILE_SIZE = 10 * 1024 * 1024;
+const MAX_FILE_SIZE = 12 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const UNSUPPORTED_IPHONE_PHOTO_TYPES = ["image/heic", "image/heif"];
 const CARD_BUCKET = "dating-card-photos";
@@ -201,7 +201,7 @@ export async function POST(req: Request) {
   }
 
   if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: "파일은 10MB 이하만 가능해요." }, { status: 400 });
+    return NextResponse.json({ error: "파일은 12MB 이하만 가능해요." }, { status: 400 });
   }
 
   if (index < 0 || index > 9) {

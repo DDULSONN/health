@@ -5,7 +5,7 @@ import { requireAdminRoute } from "@/lib/admin-route";
 export const runtime = "nodejs";
 
 const BUCKET = "gym-class-covers";
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_FILE_SIZE = 12 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 function getExtension(type: string) {
@@ -49,7 +49,7 @@ export async function POST(req: Request) {
   }
 
   if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: "사진은 5MB 이하만 업로드할 수 있습니다." }, { status: 400 });
+    return NextResponse.json({ error: "사진은 12MB 이하만 업로드할 수 있습니다." }, { status: 400 });
   }
 
   try {

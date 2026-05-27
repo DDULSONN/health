@@ -22,7 +22,7 @@ function toBlurPath(rawPath: string): string {
 async function ensureLitePublicBucket(adminClient: ReturnType<typeof createAdminClient>) {
   const { error } = await adminClient.storage.createBucket(LITE_PUBLIC_BUCKET, {
     public: true,
-    fileSizeLimit: "5242880",
+    fileSizeLimit: "12582912",
     allowedMimeTypes: ["image/jpeg", "image/png", "image/webp"],
   });
 

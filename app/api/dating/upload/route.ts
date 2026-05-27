@@ -4,7 +4,7 @@ import { NextResponse } from "next/server";
 
 export const runtime = "nodejs";
 
-const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_SIZE = 12 * 1024 * 1024; // 12MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp"]);
 
@@ -101,7 +101,7 @@ export async function POST(request: Request) {
     }
 
     if (file.size > MAX_SIZE) {
-      return jsonError(400, "5MB 이하의 파일만 업로드할 수 있습니다.", "FILE_TOO_LARGE");
+      return jsonError(400, "12MB 이하의 파일만 업로드할 수 있습니다.", "FILE_TOO_LARGE");
     }
 
     const ext = getExtension(file.name) || "jpg";

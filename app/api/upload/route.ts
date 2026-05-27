@@ -4,7 +4,7 @@ import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { NextResponse } from "next/server";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
-const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+const MAX_SIZE = 12 * 1024 * 1024; // 12MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
 /** POST /api/upload - 이미지 업로드(Supabase Storage) */
@@ -44,7 +44,7 @@ export async function POST(request: Request) {
   }
 
   if (file.size > MAX_SIZE) {
-    return NextResponse.json({ error: "5MB 이하 파일만 업로드할 수 있습니다." }, { status: 400 });
+    return NextResponse.json({ error: "12MB 이하 파일만 업로드할 수 있습니다." }, { status: 400 });
   }
 
   if (!ALLOWED_TYPES.includes(file.type)) {

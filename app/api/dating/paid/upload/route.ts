@@ -4,7 +4,7 @@ import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 export const runtime = "nodejs";
 
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_FILE_SIZE = 12 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const HEIC_TYPES = ["image/heic", "image/heif"];
 
@@ -40,7 +40,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "사진은 JPG, PNG, WebP 형식만 업로드할 수 있어요." }, { status: 400 });
   }
   if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: "사진은 5MB 이하만 업로드할 수 있어요." }, { status: 400 });
+    return NextResponse.json({ error: "사진은 12MB 이하만 업로드할 수 있어요." }, { status: 400 });
   }
   if (index < 0 || index > 9) {
     return NextResponse.json({ error: "사진 순서 정보가 올바르지 않습니다." }, { status: 400 });

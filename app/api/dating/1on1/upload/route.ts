@@ -7,7 +7,7 @@ import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 export const runtime = "nodejs";
 
 const BUCKET = "dating-1on1-photos";
-const MAX_FILE_SIZE = 7 * 1024 * 1024;
+const MAX_FILE_SIZE = 12 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 
 async function ensureBucket(adminClient: ReturnType<typeof createAdminClient>) {
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
   }
 
   if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: "File size must be 7MB or less." }, { status: 400 });
+    return NextResponse.json({ error: "File size must be 12MB or less." }, { status: 400 });
   }
 
   const webpBytes = await sharp(Buffer.from(await file.arrayBuffer()))

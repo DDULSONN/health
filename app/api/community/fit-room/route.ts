@@ -6,7 +6,7 @@ import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 const BUCKET = "community-fit-room";
-const MAX_FILE_SIZE = 6 * 1024 * 1024;
+const MAX_FILE_SIZE = 12 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const ENTRY_LIMIT = 80;
 const COMMENTS_PER_ENTRY = 8;
@@ -357,7 +357,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "JPG, PNG, WebP 사진만 올릴 수 있습니다." }, { status: 400 });
   }
   if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: "사진은 6MB 이하로 올려 주세요." }, { status: 400 });
+    return NextResponse.json({ error: "사진은 12MB 이하로 올려 주세요." }, { status: 400 });
   }
 
   const kind = parseKind(form.get("kind"));

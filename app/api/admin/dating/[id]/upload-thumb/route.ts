@@ -2,7 +2,7 @@ import { isAdminEmail } from "@/lib/admin";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
-const MAX_SIZE = 5 * 1024 * 1024;
+const MAX_SIZE = 12 * 1024 * 1024;
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 export async function POST(
@@ -27,7 +27,7 @@ export async function POST(
   }
 
   if (file.size > MAX_SIZE) {
-    return NextResponse.json({ error: "5MB 이하의 파일만 업로드할 수 있습니다." }, { status: 400 });
+    return NextResponse.json({ error: "12MB 이하의 파일만 업로드할 수 있습니다." }, { status: 400 });
   }
 
   if (!ALLOWED_TYPES.includes(file.type)) {
