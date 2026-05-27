@@ -35,6 +35,11 @@ function normalizePath(raw: unknown): string {
   return extractStorageObjectPathFromBuckets(trimmed, ["dating-1on1-photos"]) ?? trimmed;
 }
 
+function isOwnedPhotoPath(path: string, userId: string): boolean {
+  if (!path || path.startsWith("/") || path.includes("\\") || path.split("/").includes("..")) return false;
+  return path.startsWith(`cards/${userId}/`);
+}
+
 function toCurrentAge(birthYear: number | null | undefined): number | null {
   if (!birthYear || !Number.isFinite(birthYear)) return null;
   return new Date().getFullYear() - birthYear + 1;
@@ -197,6 +202,9 @@ export async function PATCH(req: Request) {
 
   if (nextPhotoPaths && nextPhotoPaths.length !== 2) {
     return NextResponse.json({ error: "Exactly two photos are required." }, { status: 400 });
+  }
+  if (nextPhotoPaths && !nextPhotoPaths.every((path) => isOwnedPhotoPath(path, user.id))) {
+    return NextResponse.json({ error: "사진 업로드 정보가 올바르지 않습니다. 다시 업로드해주세요." }, { status: 400 });
   }
 
   const existingPhotoPaths = Array.isArray(currentRes.data.photo_paths)
