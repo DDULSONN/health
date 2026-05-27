@@ -2400,31 +2400,36 @@ export default function OpenCardsPage() {
       </section>
       {showLoveFortuneSection ? <AdminLoveFortunePanel /> : null}
       {showOpenCardSection ? (
-      <section className="mb-5 rounded-[30px] border border-black/5 bg-gradient-to-b from-white to-neutral-50/80 p-4 shadow-[0_14px_40px_rgba(15,23,42,0.06)] md:p-6">
-        <div className="flex flex-col gap-5">
+      <section className="mb-4 rounded-[24px] border border-neutral-200/80 bg-white p-5 shadow-[0_12px_34px_rgba(15,23,42,0.06)] md:p-6">
+        <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-xl bg-rose-600 px-3 py-1.5 text-xs font-bold text-white">오픈카드</span>
-            <span className="text-sm font-medium text-neutral-400">24시간 공개 · 미연결 시 1회 재대기</span>
+            <span className="rounded-full bg-rose-50 px-3 py-1.5 text-xs font-black text-rose-600">오픈카드</span>
+            <span className="text-sm font-semibold text-neutral-400">24시간 공개 · 미연결 시 1회 재대기</span>
           </div>
 
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 flex-1">
-              <h1 className="text-[38px] font-black tracking-tight text-neutral-950 md:text-[46px]">오픈카드</h1>
-              <p className="mt-3 max-w-xl text-[15px] leading-7 text-neutral-500 md:text-base">
+              <h1 className="text-[30px] font-black tracking-tight text-neutral-950 md:text-[38px]">오픈카드</h1>
+              <p className="mt-2 max-w-xl text-[15px] leading-7 text-neutral-600 md:text-base">
                 둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.
               </p>
-              <div className="mt-4 flex w-full items-center gap-1.5 overflow-hidden rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 sm:inline-flex sm:w-auto sm:gap-2 sm:px-4">
-                <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-1 text-[10px] font-bold text-white sm:px-2.5 sm:text-[11px]">혜택</span>
-                <p className="min-w-0 whitespace-nowrap text-[clamp(10px,2.85vw,14px)] font-semibold leading-none text-emerald-900">
-                  오픈카드 등록하면 매주 원하는 지역 1곳 무료 오픈
-                </p>
+
+              <div className="mt-4 overflow-hidden rounded-[14px] bg-emerald-50 px-2.5 py-3 sm:px-4">
+                <div className="flex items-center gap-3">
+                  <span className="shrink-0 text-[11px] font-black text-emerald-700 sm:text-xs">혜택</span>
+                  <p className="min-w-0 flex-1 whitespace-nowrap text-[clamp(9px,2.58vw,14px)] font-black leading-5 text-emerald-900">
+                    오픈카드 등록하면 매주 원하는 지역 1곳 무료 오픈
+                  </p>
+                </div>
               </div>
               {showWeekendApplyCreditBenefit && (
-                <div className="mt-2 flex w-full items-center gap-1.5 overflow-hidden rounded-full border border-emerald-200 bg-emerald-50 px-3 py-2 sm:inline-flex sm:w-auto sm:gap-2 sm:px-4">
-                  <span className="shrink-0 rounded-full bg-emerald-600 px-2 py-1 text-[10px] font-bold text-white sm:px-2.5 sm:text-[11px]">혜택</span>
-                  <p className="min-w-0 whitespace-nowrap text-[clamp(10px,2.85vw,14px)] font-semibold leading-none text-emerald-900">
-                    주말에는 기본 지원권이 3장으로 늘어나요.
-                  </p>
+                <div className="mt-2 overflow-hidden rounded-[14px] bg-emerald-50 px-2.5 py-3 sm:px-4">
+                  <div className="flex items-center gap-3">
+                    <span className="shrink-0 text-[11px] font-black text-emerald-700 sm:text-xs">주말</span>
+                    <p className="min-w-0 flex-1 whitespace-nowrap text-[clamp(9px,2.58vw,14px)] font-black leading-5 text-emerald-900">
+                      주말에는 기본 지원권이 3장으로 늘어나요.
+                    </p>
+                  </div>
                 </div>
               )}
               {homeAdLink ? (
@@ -2435,54 +2440,63 @@ export default function OpenCardsPage() {
                       href={homeAdLink.linkUrl}
                       target={homeAdLink.linkUrl.startsWith("/") ? undefined : "_blank"}
                       rel={homeAdLink.linkUrl.startsWith("/") ? undefined : "noreferrer"}
-                      className={`mt-2 flex w-full items-center gap-2 rounded-[20px] border px-3 py-2.5 transition sm:inline-flex sm:w-auto sm:rounded-full sm:px-4 sm:py-2 ${theme.wrap}`}
+                      className={`mt-3 flex w-full items-center gap-3 rounded-[14px] border px-3 py-3 transition sm:inline-flex sm:w-auto sm:px-4 ${theme.wrap}`}
                       title={homeAdLink.description || homeAdLink.title}
                     >
-                      <p className={`min-w-0 flex-1 text-[13px] font-semibold leading-5 sm:flex-none sm:whitespace-nowrap sm:text-sm sm:leading-none ${theme.text}`}>
+                      <p className={`min-w-0 flex-1 break-keep text-[clamp(13px,3.7vw,14px)] font-semibold leading-6 sm:flex-none ${theme.text}`}>
                         {homeAdLink.title}
                       </p>
-                      <span className={`shrink-0 text-[11px] font-black sm:text-xs ${theme.cta}`}>바로가기</span>
+                      <span className={`shrink-0 text-xs font-black ${theme.cta}`}>바로가기</span>
                     </a>
                   );
                 })()
               ) : null}
 
-              <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-                <div className="rounded-[22px] border border-neutral-200/70 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.035)]">
-                  <p className="text-sm font-semibold text-neutral-500">고정 노출</p>
-                  <p className="mt-3 text-[18px] font-black text-rose-600 md:text-[20px]">{fixedPaidCount}명</p>
-                  <p className="mt-1 text-sm text-neutral-500">상단 우선 공개</p>
+              <div className="mt-4 divide-y divide-neutral-100 rounded-[18px] border border-neutral-200 bg-white">
+                <div className="grid grid-cols-[1fr_auto] gap-4 p-4">
+                  <div>
+                    <p className="text-sm font-bold text-neutral-500">고정 노출</p>
+                    <p className="mt-1 text-xs font-medium text-neutral-400">상단 우선 공개</p>
+                  </div>
+                  <p className="self-center text-[22px] font-black leading-none text-rose-600">{fixedPaidCount}명</p>
                 </div>
-                <div className="rounded-[22px] border border-neutral-200/70 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.035)]">
-                  <p className="text-sm font-semibold text-neutral-500">현재 공개중</p>
-                  <p className="mt-3 text-[18px] font-black text-rose-600 md:text-[20px]">
-                    남 {queueStats?.male.public_count ?? males.length} · 여 {queueStats?.female.public_count ?? females.length}
-                  </p>
-                  <p className="mt-1 text-sm text-neutral-500">대기열은 오픈카드 등록 후 마이페이지에서 확인</p>
-                </div>
-                <div className="rounded-[22px] border border-neutral-200/70 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.035)] sm:col-span-2 lg:col-span-2">
-                  <p className="text-sm font-semibold text-neutral-500">누적 매칭</p>
-                  <p className="mt-3 text-[18px] font-black text-rose-600 md:text-[20px]">
-                    {(queueStats?.accepted_matches_count ?? 0).toLocaleString("ko-KR")}명
-                  </p>
-                  <p className="mt-1 text-sm text-neutral-500">현재까지 연결</p>
-                  <p className="mt-2 text-xs font-semibold text-neutral-500">
-                    오늘 새 지원/좋아요 {todayDatingReactionCount.toLocaleString("ko-KR")}건 · 오픈카드, 빠른매칭, 1대1에서 반응이 계속 들어오고 있어요.
+                <div className="grid grid-cols-[1fr_auto] gap-4 p-4">
+                  <div>
+                    <p className="text-sm font-bold text-neutral-500">현재 공개중</p>
+                    <p className="mt-1 text-xs font-medium text-neutral-400">대기열은 오픈카드 등록 후 마이페이지에서 확인</p>
+                  </div>
+                  <p className="self-center whitespace-nowrap text-[22px] font-black leading-none text-neutral-950">
+                    남 <span className="text-rose-600">{queueStats?.male.public_count ?? males.length}</span> · 여{" "}
+                    <span className="text-rose-600">{queueStats?.female.public_count ?? females.length}</span>
                   </p>
                 </div>
-                <div className="rounded-[22px] border border-neutral-200/70 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.035)]">
-                  <p className="text-sm font-semibold text-neutral-500">1:1 신청</p>
-                  <p className="mt-3 text-[18px] font-black text-neutral-900 md:text-[20px]">
-                    {Number(queueStats?.one_on_one_applicants_count ?? 0).toLocaleString("ko-KR")}명
+                <div className="p-4">
+                  <div className="grid grid-cols-[1fr_auto] gap-4">
+                    <div>
+                      <p className="text-sm font-bold text-neutral-500">누적 매칭</p>
+                      <p className="mt-1 text-xs font-medium text-neutral-400">현재까지 연결</p>
+                    </div>
+                    <p className="self-center text-[22px] font-black leading-none text-rose-600">
+                      {(queueStats?.accepted_matches_count ?? 0).toLocaleString("ko-KR")}명
+                    </p>
+                  </div>
+                  <p className="mt-3 text-right text-xs font-semibold leading-5 text-neutral-500">
+                    오늘 새 지원·좋아요 {todayDatingReactionCount.toLocaleString("ko-KR")}건, 반응이 계속 들어오고 있어요.
                   </p>
-                  <p className="mt-1 text-sm text-neutral-500">누적 신청자</p>
                 </div>
-                <div className="rounded-[22px] border border-neutral-200/70 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.035)]">
-                  <p className="text-sm font-semibold text-neutral-500">1:1 매칭</p>
-                  <p className="mt-3 text-[18px] font-black text-neutral-900 md:text-[20px]">
-                    {Number(queueStats?.one_on_one_matches_count ?? 0).toLocaleString("ko-KR")}건
-                  </p>
-                  <p className="mt-1 text-sm text-neutral-500">서로 수락 완료</p>
+                <div className="grid grid-cols-2 divide-x divide-neutral-100">
+                  <div className="p-4">
+                    <p className="text-sm font-bold text-neutral-500">1:1 신청</p>
+                    <p className="mt-2 text-[20px] font-black text-neutral-950">
+                      {Number(queueStats?.one_on_one_applicants_count ?? 0).toLocaleString("ko-KR")}명
+                    </p>
+                  </div>
+                  <div className="p-4">
+                    <p className="text-sm font-bold text-neutral-500">1:1 매칭</p>
+                    <p className="mt-2 text-[20px] font-black text-neutral-950">
+                      {Number(queueStats?.one_on_one_matches_count ?? 0).toLocaleString("ko-KR")}건
+                    </p>
+                  </div>
                 </div>
               </div>
 
@@ -2520,33 +2534,8 @@ export default function OpenCardsPage() {
             </div>
           </div>
 
-          <div className="border-t border-neutral-100 pt-1">
+          <div className="border-t border-neutral-100 pt-4">
             <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                onClick={() => setActiveSex("female")}
-                className={`inline-flex min-h-[52px] items-center rounded-full px-6 text-lg font-bold transition ${
-                  activeSex === "female"
-                    ? "bg-rose-600 text-white shadow-[0_12px_24px_rgba(225,29,72,0.18)]"
-                    : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
-                }`}
-              >
-                여자 카드 보기
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveSex("male")}
-                className={`inline-flex min-h-[52px] items-center rounded-full px-6 text-lg font-bold transition ${
-                  activeSex === "male"
-                    ? "bg-slate-900 text-white shadow-[0_12px_24px_rgba(15,23,42,0.14)]"
-                    : "bg-neutral-100 text-neutral-700 hover:bg-neutral-200"
-                }`}
-              >
-                남자 카드 보기
-              </button>
-            </div>
-
-            <div className="mt-3 flex flex-wrap gap-2">
               <span className="inline-flex min-h-[42px] items-center rounded-full bg-neutral-950 px-4 text-sm font-bold text-white">전체</span>
               <Link
                 href="/dating/apply-credits"
@@ -2915,6 +2904,33 @@ export default function OpenCardsPage() {
           </div>
         )}
       </section>
+      ) : null}
+
+      {showOpenCardSection ? (
+        <div className="mb-4 grid grid-cols-2 gap-2 rounded-[18px] border border-neutral-200/80 bg-white p-1.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+          <button
+            type="button"
+            onClick={() => setActiveSex("female")}
+            className={`inline-flex min-h-[46px] items-center justify-center rounded-[14px] px-3 text-sm font-black transition ${
+              activeSex === "female"
+                ? "bg-rose-600 text-white shadow-[0_10px_20px_rgba(225,29,72,0.18)]"
+                : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
+            }`}
+          >
+            여자 카드 보기
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveSex("male")}
+            className={`inline-flex min-h-[46px] items-center justify-center rounded-[14px] px-3 text-sm font-black transition ${
+              activeSex === "male"
+                ? "bg-slate-900 text-white shadow-[0_10px_20px_rgba(15,23,42,0.14)]"
+                : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
+            }`}
+          >
+            남자 카드 보기
+          </button>
+        </div>
       ) : null}
 
       {showOpenCardSection && loading ? (
