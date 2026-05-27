@@ -102,6 +102,43 @@ function matchesDatingCardPhoto(objectPath: string, row: Record<string, unknown>
   return candidates.has(objectPath);
 }
 
+async function canReadSwipeRelatedDatingCardPhoto(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  ownerId: string,
+  cardId: string
+): Promise<boolean> {
+  const [sentRes, receivedRes, matchRes] = await Promise.all([
+    admin
+      .from("dating_card_swipes")
+      .select("id")
+      .eq("actor_user_id", userId)
+      .eq("target_user_id", ownerId)
+      .eq("target_card_id", cardId)
+      .eq("action", "like")
+      .limit(1),
+    admin
+      .from("dating_card_swipes")
+      .select("id")
+      .eq("actor_user_id", ownerId)
+      .eq("target_user_id", userId)
+      .eq("actor_card_id", cardId)
+      .eq("action", "like")
+      .limit(1),
+    admin
+      .from("dating_card_swipe_matches")
+      .select("id")
+      .or(`and(user_a_id.eq.${userId},user_b_id.eq.${ownerId}),and(user_a_id.eq.${ownerId},user_b_id.eq.${userId})`)
+      .limit(1),
+  ]);
+
+  return (
+    (!sentRes.error && Array.isArray(sentRes.data) && sentRes.data.length > 0) ||
+    (!receivedRes.error && Array.isArray(receivedRes.data) && receivedRes.data.length > 0) ||
+    (!matchRes.error && Array.isArray(matchRes.data) && matchRes.data.length > 0)
+  );
+}
+
 async function canReadDatingCardPhoto(
   admin: ReturnType<typeof createAdminClient>,
   objectPath: string,
@@ -131,6 +168,14 @@ async function canReadDatingCardPhoto(
       const expiresAt = typeof row.expires_at === "string" ? row.expires_at : "";
       const activePublic = status === "public" && expiresAt > nowIso;
       if (activePublic && (!isRaw || row.photo_visibility === "public")) return true;
+
+      const rowOwnerId = typeof row.owner_user_id === "string" ? row.owner_user_id : "";
+      const rowCardId = typeof row.id === "string" ? row.id : "";
+      if (userId && rowOwnerId && rowCardId) {
+        const swipeRelated = await canReadSwipeRelatedDatingCardPhoto(admin, userId, rowOwnerId, rowCardId);
+        if (swipeRelated) return !isRaw || row.photo_visibility === "public";
+      }
+
       if (!userId || status !== "pending") return false;
 
       const sex = normalizeCardSex(row.sex);
