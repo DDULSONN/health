@@ -737,7 +737,6 @@ type AdminManageTab =
   | "swipe_subscriptions"
   | "more_view"
   | "city_view"
-  | "bodybattle"
   | "community"
   | "phone_verify"
   | "account_deletions"
@@ -782,27 +781,6 @@ type AdminUserActivityResult = {
   counts: Record<string, number>;
   details?: Record<string, Array<Record<string, unknown>>>;
   activities: AdminUserActivityItem[];
-};
-
-type AdminBodyBattleOverview = {
-  season: {
-    id: string;
-    week_id: string;
-    theme_slug: string;
-    theme_label: string;
-    start_at: string;
-    end_at: string;
-    status: "draft" | "active" | "closed";
-  } | null;
-  counts: {
-    entries_total: number;
-    entries_pending: number;
-    entries_approved_active: number;
-    entries_hidden: number;
-    reports_open: number;
-    votes_total: number;
-    rewards_claimed: number;
-  } | null;
 };
 
 type AdminApplyCreditOrder = {
@@ -1341,6 +1319,12 @@ type AdInquirySettingsResponse = {
   theme?: "emerald" | "rose" | "violet" | "sky" | "amber" | "neutral";
 };
 
+type OpenCardHomeCopyResponse = {
+  subtitle?: string;
+};
+
+const DEFAULT_OPEN_CARD_HOME_SUBTITLE = "둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.";
+
 export default function MyPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
@@ -1460,9 +1444,7 @@ export default function MyPage() {
   const [adminCityViewUnblockLoading, setAdminCityViewUnblockLoading] = useState(false);
   const [adminCityViewUnblockInfo, setAdminCityViewUnblockInfo] = useState("");
   const [adminCityViewUnblockError, setAdminCityViewUnblockError] = useState("");
-  const [adminBodyBattleOverview, setAdminBodyBattleOverview] = useState<AdminBodyBattleOverview | null>(null);
   const [adminQueueRefreshing, setAdminQueueRefreshing] = useState(false);
-  const [runningBodyBattleAdminTask, setRunningBodyBattleAdminTask] = useState(false);
   const [approvingOrderIds, setApprovingOrderIds] = useState<string[]>([]);
   const [processingMoreViewIds, setProcessingMoreViewIds] = useState<string[]>([]);
   const [processingSwipeSubscriptionIds, setProcessingSwipeSubscriptionIds] = useState<string[]>([]);
@@ -1481,6 +1463,10 @@ export default function MyPage() {
   const [refreshingOneOnOneRecommendationIds, setRefreshingOneOnOneRecommendationIds] = useState<string[]>([]);
   const [openCardWriteEnabled, setOpenCardWriteEnabled] = useState(true);
   const [openCardWriteSaving, setOpenCardWriteSaving] = useState(false);
+  const [openCardHomeSubtitle, setOpenCardHomeSubtitle] = useState(DEFAULT_OPEN_CARD_HOME_SUBTITLE);
+  const [openCardHomeCopySaving, setOpenCardHomeCopySaving] = useState(false);
+  const [openCardHomeCopyError, setOpenCardHomeCopyError] = useState("");
+  const [openCardHomeCopyInfo, setOpenCardHomeCopyInfo] = useState("");
   const [adInquiryEnabled, setAdInquiryEnabled] = useState(true);
   const [adInquiryTitle, setAdInquiryTitle] = useState("");
   const [adInquiryDescription, setAdInquiryDescription] = useState("");
@@ -2664,6 +2650,7 @@ export default function MyPage() {
           writeSettingRes,
           applyCreditsStatusRes,
           adInquiryRes,
+          openCardHomeCopyRes,
         ] = await Promise.all([
           fetch("/api/mypage/summary", { cache: "no-store" }),
           fetch("/api/cert-requests", { cache: "no-store" }),
@@ -2683,6 +2670,7 @@ export default function MyPage() {
           fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
           fetch("/api/dating/apply-credits/status", { cache: "no-store" }),
           fetch("/api/admin/site/ad-inquiry", { cache: "no-store" }),
+          fetch("/api/admin/dating/cards/home-copy", { cache: "no-store" }),
         ]);
 
         const summaryBody = (await summaryRes.json().catch(() => ({}))) as SummaryResponse & {
@@ -2748,6 +2736,7 @@ export default function MyPage() {
         };
         const applyCreditsBody = (await applyCreditsStatusRes.json().catch(() => ({}))) as ApplyCreditsStatusResponse;
         const adInquiryBody = (await adInquiryRes.json().catch(() => ({}))) as AdInquirySettingsResponse;
+        const openCardHomeCopyBody = (await openCardHomeCopyRes.json().catch(() => ({}))) as OpenCardHomeCopyResponse;
 
         if (!summaryRes.ok) {
           throw new Error(summaryBody.error ?? "마이페이지 정보를 불러오지 못했습니다.");
@@ -2817,6 +2806,7 @@ export default function MyPage() {
             ...(paidConnectionsRes.ok ? (paidConnectionsBody.items ?? []) : []),
           ]);
           setOpenCardWriteEnabled(writeSettingBody.enabled !== false);
+          setOpenCardHomeSubtitle(openCardHomeCopyBody.subtitle?.trim() || DEFAULT_OPEN_CARD_HOME_SUBTITLE);
           setApplyCreditsRemaining(Math.max(0, Number(applyCreditsBody.creditsRemaining ?? 0)));
           setAdInquiryEnabled(adInquiryBody.enabled !== false);
           setAdInquiryTitle(adInquiryBody.title ?? "(광고) 문의 주세요");
@@ -2836,7 +2826,6 @@ export default function MyPage() {
               ordersRes,
               moreViewRes,
               cityViewRes,
-              bodyBattleOverviewRes,
               accountDeletionAuditsRes,
             ] = await Promise.all([
               fetch("/api/admin/dating/stats", { cache: "no-store" }),
@@ -2844,7 +2833,6 @@ export default function MyPage() {
               fetch("/api/admin/dating/apply-credits/orders?status=pending", { cache: "no-store" }),
               fetch("/api/admin/dating/cards/more-view/requests?status=pending", { cache: "no-store" }),
               fetch("/api/admin/dating/cards/city-view/requests?status=pending", { cache: "no-store" }),
-              fetch("/api/admin/bodybattle/overview", { cache: "no-store" }),
               fetch("/api/admin/account-deletion-audits", { cache: "no-store" }),
             ]);
             const datingStatsBody = (await datingStatsRes.json().catch(() => ({}))) as {
@@ -2865,12 +2853,6 @@ export default function MyPage() {
             const cityViewBody = (await cityViewRes.json().catch(() => ({}))) as {
               error?: string;
               items?: AdminCityViewRequest[];
-            };
-            const bodyBattleOverviewBody = (await bodyBattleOverviewRes.json().catch(() => ({}))) as {
-              ok?: boolean;
-              message?: string;
-              season?: AdminBodyBattleOverview["season"];
-              counts?: AdminBodyBattleOverview["counts"];
             };
             const accountDeletionAuditsBody = (await accountDeletionAuditsRes.json().catch(() => ({}))) as {
               error?: string;
@@ -2905,11 +2887,6 @@ export default function MyPage() {
               setAdminAccountDeletionAudits(
                 accountDeletionAuditsRes.ok ? accountDeletionAuditsBody.items ?? [] : []
               );
-              setAdminBodyBattleOverview(
-                bodyBattleOverviewRes.ok && bodyBattleOverviewBody.ok
-                  ? { season: bodyBattleOverviewBody.season ?? null, counts: bodyBattleOverviewBody.counts ?? null }
-                  : null
-              );
             }
           } else {
             setAdminDatingStats(null);
@@ -2926,7 +2903,6 @@ export default function MyPage() {
             setAdminMoreViewRequests([]);
             setAdminCityViewRequests([]);
             setAdminAccountDeletionAudits([]);
-            setAdminBodyBattleOverview(null);
           }
         }
       } catch (e) {
@@ -4209,6 +4185,35 @@ export default function MyPage() {
     }
   };
 
+  const handleAdminSaveOpenCardHomeCopy = async () => {
+    setOpenCardHomeCopySaving(true);
+    setOpenCardHomeCopyError("");
+    setOpenCardHomeCopyInfo("");
+    try {
+      const res = await fetch("/api/admin/dating/cards/home-copy", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ subtitle: openCardHomeSubtitle }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        setting?: OpenCardHomeCopyResponse;
+      };
+      if (!res.ok || !body.ok || !body.setting) {
+        setOpenCardHomeCopyError(body.error ?? "오픈카드 홈 문구 저장에 실패했습니다.");
+        return;
+      }
+
+      setOpenCardHomeSubtitle(body.setting.subtitle?.trim() || DEFAULT_OPEN_CARD_HOME_SUBTITLE);
+      setOpenCardHomeCopyInfo("오픈카드 홈 문구를 저장했습니다.");
+    } catch (e) {
+      setOpenCardHomeCopyError(e instanceof Error ? e.message : "오픈카드 홈 문구 저장에 실패했습니다.");
+    } finally {
+      setOpenCardHomeCopySaving(false);
+    }
+  };
+
   const handleAdminSaveAdInquiry = async () => {
     setAdInquirySaving(true);
     setAdInquiryError("");
@@ -4789,44 +4794,6 @@ export default function MyPage() {
       );
     } finally {
       setAdminCityViewGrantingUserId(null);
-    }
-  };
-
-  const handleAdminRunBodyBattleOps = async () => {
-    if (runningBodyBattleAdminTask) return;
-    setRunningBodyBattleAdminTask(true);
-    try {
-      const res = await fetch("/api/admin/bodybattle/season/run", {
-        method: "POST",
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        message?: string;
-        overview?: AdminBodyBattleOverview;
-      };
-      if (!res.ok || !body.ok) {
-        alert(body.message ?? "바디배틀 운영 작업 실행에 실패했습니다.");
-        return;
-      }
-      if (body.overview) {
-        setAdminBodyBattleOverview(body.overview);
-      } else {
-        const refreshRes = await fetch("/api/admin/bodybattle/overview", { cache: "no-store" });
-        const refreshBody = (await refreshRes.json().catch(() => ({}))) as {
-          ok?: boolean;
-          season?: AdminBodyBattleOverview["season"];
-          counts?: AdminBodyBattleOverview["counts"];
-        };
-        if (refreshRes.ok && refreshBody.ok) {
-          setAdminBodyBattleOverview({
-            season: refreshBody.season ?? null,
-            counts: refreshBody.counts ?? null,
-          });
-        }
-      }
-      alert("바디배틀 운영 작업을 실행했습니다.");
-    } finally {
-      setRunningBodyBattleAdminTask(false);
     }
   };
 
@@ -6029,12 +5996,6 @@ export default function MyPage() {
                 className="flex min-h-[44px] items-center rounded-xl border border-sky-200 bg-sky-50 px-4 text-sm font-medium text-sky-700 hover:bg-sky-100"
               >
                 1:1 이상형 관리
-              </Link>
-              <Link
-                href="/admin/bodybattle"
-                className="flex min-h-[44px] items-center rounded-xl border border-orange-200 bg-orange-50 px-4 text-sm font-medium text-orange-700 hover:bg-orange-100"
-              >
-                바디배틀 관리
               </Link>
               <Link
                 href="/admin/support"
@@ -8052,15 +8013,6 @@ export default function MyPage() {
             </button>
             <button
               type="button"
-              onClick={() => setAdminManageTab("bodybattle")}
-              className={`h-8 rounded-md border px-3 text-xs font-medium ${
-                adminManageTab === "bodybattle" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
-              }`}
-            >
-              바디배틀
-            </button>
-            <button
-              type="button"
               onClick={() => setAdminManageTab("community")}
               className={`h-8 rounded-md border px-3 text-xs font-medium ${
                 adminManageTab === "community" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
@@ -8952,6 +8904,40 @@ export default function MyPage() {
               <span className="text-xs text-neutral-600">
                 현재: {openCardWriteEnabled ? "작성 가능" : "작성 중단"}
               </span>
+            </div>
+            <div className="mt-4 border-t border-violet-100 pt-3">
+              <p className="text-xs font-semibold text-violet-800">오픈카드 홈 소개 문구</p>
+              <p className="mt-1 text-[11px] text-neutral-500">
+                홈 오픈카드 제목 아래 옅은 회색 문구를 수정합니다. 너무 길면 화면에서 두 줄로 보일 수 있어요.
+              </p>
+              <textarea
+                value={openCardHomeSubtitle}
+                onChange={(e) => setOpenCardHomeSubtitle(e.target.value)}
+                maxLength={90}
+                placeholder={DEFAULT_OPEN_CARD_HOME_SUBTITLE}
+                className="mt-2 min-h-[76px] w-full rounded-lg border border-violet-200 px-3 py-2 text-sm"
+              />
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleAdminSaveOpenCardHomeCopy()}
+                  disabled={openCardHomeCopySaving}
+                  className="h-9 rounded-lg bg-violet-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                >
+                  {openCardHomeCopySaving ? "저장 중..." : "문구 저장"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setOpenCardHomeSubtitle(DEFAULT_OPEN_CARD_HOME_SUBTITLE)}
+                  disabled={openCardHomeCopySaving}
+                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 disabled:opacity-50"
+                >
+                  기본 문구
+                </button>
+                <span className="text-[11px] text-neutral-500">{openCardHomeSubtitle.length}/90</span>
+              </div>
+              {openCardHomeCopyError && <p className="mt-2 text-xs text-rose-600">{openCardHomeCopyError}</p>}
+              {openCardHomeCopyInfo && <p className="mt-2 text-xs text-emerald-700">{openCardHomeCopyInfo}</p>}
             </div>
           </div>
           )}
@@ -10471,51 +10457,6 @@ export default function MyPage() {
                 })}
               </div>
             )}
-          </div>
-          )}
-
-          {adminManageTab === "bodybattle" && (
-          <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <p className="text-xs font-semibold text-violet-800">바디배틀 운영</p>
-              <button
-                type="button"
-                disabled={runningBodyBattleAdminTask}
-                onClick={() => void handleAdminRunBodyBattleOps()}
-                className="h-8 rounded-md bg-violet-600 px-3 text-xs font-medium text-white disabled:opacity-50"
-              >
-                {runningBodyBattleAdminTask ? "실행 중..." : "시즌 작업 실행"}
-              </button>
-            </div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              <Link
-                href="/admin/bodybattle"
-                className="h-8 rounded-md border border-violet-200 bg-violet-50 px-3 text-xs font-medium text-violet-700 inline-flex items-center"
-              >
-                바디배틀 관리자 페이지
-              </Link>
-              <Link
-                href="/bodybattle"
-                className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-700 inline-flex items-center"
-              >
-                바디배틀 화면(관리자)
-              </Link>
-            </div>
-            <div className="mt-3 rounded-lg border border-violet-100 bg-violet-50/40 p-2 text-xs text-neutral-700">
-              <p>
-                현재 시즌:{" "}
-                {adminBodyBattleOverview?.season
-                  ? `${adminBodyBattleOverview.season.week_id} / ${adminBodyBattleOverview.season.theme_label} (${adminBodyBattleOverview.season.status})`
-                  : "없음"}
-              </p>
-              <p className="mt-1">
-                참가 {adminBodyBattleOverview?.counts?.entries_total ?? 0} · 승인활성 {adminBodyBattleOverview?.counts?.entries_approved_active ?? 0}
-                {" "}· 검수대기 {adminBodyBattleOverview?.counts?.entries_pending ?? 0} · 신고대기 {adminBodyBattleOverview?.counts?.reports_open ?? 0}
-              </p>
-              <p className="mt-1">
-                투표 {adminBodyBattleOverview?.counts?.votes_total ?? 0} · 보상수령 {adminBodyBattleOverview?.counts?.rewards_claimed ?? 0}
-              </p>
-            </div>
           </div>
           )}
 

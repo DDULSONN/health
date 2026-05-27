@@ -219,6 +219,7 @@ alter table public.bodybattle_hall_of_fame enable row level security;
 alter table public.bodybattle_entry_comments enable row level security;
 alter table public.bodybattle_voter_profiles enable row level security;
 alter table public.bodybattle_reward_claims enable row level security;
+alter table public.bodybattle_admin_runs enable row level security;
 
 drop policy if exists "bodybattle_seasons_select_all" on public.bodybattle_seasons;
 create policy "bodybattle_seasons_select_all"

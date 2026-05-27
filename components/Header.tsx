@@ -21,6 +21,7 @@ const NAV_ITEMS = [
 const TOOL_ITEMS = [
   { href: "/lifts", label: "3대 합계 계산기" },
   { href: "/1rm", label: "1RM 계산기" },
+  { href: "/certify", label: "3대 인증 신청" },
 ];
 
 function isActive(pathname: string, href: string) {
@@ -82,7 +83,7 @@ export default function Header() {
             >
               도구
             </Link>
-            <div className="invisible absolute left-1/2 top-full z-50 mt-2 w-48 -translate-x-1/2 rounded-2xl border border-black/5 bg-white p-2 opacity-0 shadow-[0_16px_38px_rgba(15,23,42,0.14)] transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
+            <div className="invisible absolute left-1/2 top-full z-50 mt-2 w-52 -translate-x-1/2 rounded-2xl border border-black/5 bg-white p-2 opacity-0 shadow-[0_16px_38px_rgba(15,23,42,0.14)] transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
               {TOOL_ITEMS.map((item) => (
                 <Link
                   key={item.href}
@@ -169,4 +170,3 @@ export default function Header() {
     </header>
   );
 }
-

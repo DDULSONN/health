@@ -17,6 +17,18 @@ function getAdminEmails(): string[] {
 export async function middleware(request: NextRequest) {
   const pathname = request.nextUrl.pathname;
   const isApiRoute = pathname.startsWith("/api/");
+  const isBodyBattlePagePath = pathname === "/bodybattle" || pathname.startsWith("/bodybattle/");
+  const isBodyBattleApiPath = pathname.startsWith("/api/bodybattle") || pathname.startsWith("/api/admin/bodybattle");
+  const isBodyBattleCronPath = pathname === "/api/cron/bodybattle-season";
+  const isBodyBattlePath = isBodyBattlePagePath || isBodyBattleApiPath || isBodyBattleCronPath;
+
+  if (isBodyBattlePath) {
+    if (isApiRoute) {
+      return NextResponse.json({ ok: false, message: "BodyBattle is no longer available." }, { status: 410 });
+    }
+    return NextResponse.redirect(new URL("/", request.url));
+  }
+
   const isAdminPath = pathname.startsWith("/admin");
   const isAdminApiPath = pathname.startsWith("/api/admin");
   const isLegacyAdminApiPath =
@@ -35,15 +47,6 @@ export async function middleware(request: NextRequest) {
   }
 
   const response = NextResponse.next({ request });
-
-  const isBodyBattlePagePath = pathname === "/bodybattle" || pathname.startsWith("/bodybattle/");
-  const isBodyBattleApiPath = pathname.startsWith("/api/bodybattle") || pathname.startsWith("/api/admin/bodybattle");
-  const isBodyBattlePath = isBodyBattlePagePath || isBodyBattleApiPath;
-  if (isBodyBattlePath) {
-    response.headers.set("Cache-Control", "no-store, max-age=0, s-maxage=0, must-revalidate");
-    response.headers.set("Pragma", "no-cache");
-    response.headers.set("Expires", "0");
-  }
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
@@ -154,6 +157,7 @@ export const config = {
     "/bodybattle/:path*",
     "/api/bodybattle/:path*",
     "/api/admin/bodybattle/:path*",
+    "/api/cron/bodybattle-season",
     "/api/admin/:path*",
     "/api/dating/1on1/matches/admin",
     "/api/dating/cards/admin/:path*",

@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/client";
 import { timeAgo, type Post, type Report } from "@/lib/community";
 
@@ -95,12 +94,6 @@ export default function AdminPage() {
     <main className="max-w-2xl mx-auto px-4 py-8">
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-neutral-900">관리자</h1>
-        <Link
-          href="/admin/bodybattle"
-          className="rounded-lg border border-blue-300 bg-blue-50 px-3 py-2 text-xs font-semibold text-blue-700"
-        >
-          BodyBattle Admin
-        </Link>
       </div>
 
       <div className="flex rounded-xl border border-neutral-300 overflow-hidden mb-5">

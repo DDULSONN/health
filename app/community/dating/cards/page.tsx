@@ -77,6 +77,12 @@ type HomeAdLinkSetting = {
   theme?: "emerald" | "rose" | "violet" | "sky" | "amber" | "neutral";
 };
 
+type OpenCardHomeCopySetting = {
+  subtitle: string;
+};
+
+const DEFAULT_OPEN_CARD_HOME_SUBTITLE = "둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.";
+
 const homeAdLinkThemeClass: Record<NonNullable<HomeAdLinkSetting["theme"]>, { wrap: string; text: string; cta: string }> = {
   emerald: {
     wrap: "border-emerald-200 bg-emerald-50 hover:border-emerald-300 hover:bg-emerald-100",
@@ -1620,6 +1626,9 @@ export default function OpenCardsPage() {
   const [swipePremiumGuideOpen, setSwipePremiumGuideOpen] = useState(false);
   const [showWeekendApplyCreditBenefit, setShowWeekendApplyCreditBenefit] = useState(false);
   const [homeAdLink, setHomeAdLink] = useState<HomeAdLinkSetting | null>(null);
+  const [openCardHomeCopy, setOpenCardHomeCopy] = useState<OpenCardHomeCopySetting>({
+    subtitle: DEFAULT_OPEN_CARD_HOME_SUBTITLE,
+  });
   const [homeFeatureTab, setHomeFeatureTab] = useState<HomeFeatureTab>("open_cards");
   const [isAdminPreviewUser, setIsAdminPreviewUser] = useState(false);
   const [oneOnOneHomeLoading, setOneOnOneHomeLoading] = useState(false);
@@ -1692,6 +1701,24 @@ export default function OpenCardsPage() {
       setHomeFeatureTab("open_cards");
     }
   }, [homeFeatureTab, isAdminPreviewUser]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    fetch("/api/dating/cards/home-copy")
+      .then((res) => res.json())
+      .then((data: Partial<OpenCardHomeCopySetting>) => {
+        if (cancelled) return;
+        setOpenCardHomeCopy({ subtitle: data.subtitle?.trim() || DEFAULT_OPEN_CARD_HOME_SUBTITLE });
+      })
+      .catch(() => {
+        if (!cancelled) setOpenCardHomeCopy({ subtitle: DEFAULT_OPEN_CARD_HOME_SUBTITLE });
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -2411,7 +2438,7 @@ export default function OpenCardsPage() {
             <div className="min-w-0 flex-1">
               <h1 className="text-[30px] font-black tracking-tight text-neutral-950 md:text-[38px]">오픈카드</h1>
               <p className="mt-2 max-w-xl text-[15px] leading-7 text-neutral-600 md:text-base">
-                둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.
+                {openCardHomeCopy.subtitle}
               </p>
 
               <div className="mt-4 overflow-hidden rounded-[14px] bg-emerald-50 px-2.5 py-3 sm:px-4">
