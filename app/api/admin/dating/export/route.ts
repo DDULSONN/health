@@ -1,4 +1,5 @@
 import { isAllowedAdminUser } from "@/lib/admin";
+import { recordAdminAuditEvent } from "@/lib/admin-audit";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -450,6 +451,7 @@ async function exportCityViewRequests() {
 }
 
 export async function GET(req: Request) {
+  const requestId = crypto.randomUUID();
   const { user } = await getRequestAuthContext(req);
   if (!user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
@@ -478,8 +480,28 @@ export async function GET(req: Request) {
     } else if (kind === "city_view_requests") {
       csv = await exportCityViewRequests();
     } else {
+      await recordAdminAuditEvent({
+        adminUser: user,
+        request: req,
+        action: "dating_export_download",
+        targetType: "dating_export",
+        targetId: kind || "unknown",
+        requestId,
+        status: "failure",
+        metadata: { reason: "invalid_kind", kind },
+      });
       return NextResponse.json({ error: "Invalid export kind." }, { status: 400 });
     }
+
+    await recordAdminAuditEvent({
+      adminUser: user,
+      request: req,
+      action: "dating_export_download",
+      targetType: "dating_export",
+      targetId: kind,
+      requestId,
+      metadata: { kind, bytes: Buffer.byteLength(csv, "utf8") },
+    });
 
     return new NextResponse(csv, {
       status: 200,
@@ -491,6 +513,16 @@ export async function GET(req: Request) {
     });
   } catch (error) {
     console.error("[GET /api/admin/dating/export] failed", { kind, error });
+    await recordAdminAuditEvent({
+      adminUser: user,
+      request: req,
+      action: "dating_export_download",
+      targetType: "dating_export",
+      targetId: kind || "unknown",
+      requestId,
+      status: "failure",
+      metadata: { kind, message: error instanceof Error ? error.message : String(error) },
+    });
     return NextResponse.json({ error: "Failed to export dating data." }, { status: 500 });
   }
 }

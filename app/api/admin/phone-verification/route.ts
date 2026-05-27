@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { recordAdminAuditEvent } from "@/lib/admin-audit";
 import { requireAdminRoute } from "@/lib/admin-route";
 import { getPhoneValidationMessage, hashForOperationalLog, normalizePhoneToE164 } from "@/lib/phone-verification";
 
@@ -9,6 +10,7 @@ function isUuid(value: string): boolean {
 }
 
 export async function POST(request: Request) {
+  const requestId = crypto.randomUUID();
   const auth = await requireAdminRoute();
   if (!auth.ok) return auth.response;
 
@@ -21,11 +23,32 @@ export async function POST(request: Request) {
   const phoneE164 = normalizePhoneToE164(body.phone ?? "");
 
   if (!identifier) {
+    await recordAdminAuditEvent({
+      admin: auth.admin,
+      adminUser: auth.user,
+      request,
+      action: "phone_verification_manual",
+      targetType: "profile",
+      requestId,
+      status: "failure",
+      metadata: { reason: "missing_identifier" },
+    });
     return NextResponse.json({ error: "닉네임 또는 사용자 ID를 입력해주세요." }, { status: 400 });
   }
 
   const validationMessage = getPhoneValidationMessage(phoneE164);
   if (validationMessage) {
+    await recordAdminAuditEvent({
+      admin: auth.admin,
+      adminUser: auth.user,
+      request,
+      action: "phone_verification_manual",
+      targetType: "profile",
+      targetId: identifier,
+      requestId,
+      status: "failure",
+      metadata: { reason: "invalid_phone", phone_hash: hashForOperationalLog(phoneE164) },
+    });
     return NextResponse.json({ error: validationMessage }, { status: 400 });
   }
 
@@ -39,6 +62,17 @@ export async function POST(request: Request) {
 
   const profile = profileRes.data;
   if (!profile) {
+    await recordAdminAuditEvent({
+      admin: auth.admin,
+      adminUser: auth.user,
+      request,
+      action: "phone_verification_manual",
+      targetType: "profile",
+      targetId: identifier,
+      requestId,
+      status: "failure",
+      metadata: { reason: "profile_not_found", phone_hash: hashForOperationalLog(phoneE164) },
+    });
     return NextResponse.json({ error: "해당 닉네임 또는 사용자 계정을 찾지 못했습니다." }, { status: 404 });
   }
 
@@ -59,6 +93,17 @@ export async function POST(request: Request) {
     .eq("user_id", userId);
 
   if (updateError) {
+    await recordAdminAuditEvent({
+      admin: auth.admin,
+      adminUser: auth.user,
+      request,
+      action: "phone_verification_manual",
+      targetType: "profile",
+      targetId: userId,
+      requestId,
+      status: "failure",
+      metadata: { reason: "update_failed", phone_hash: hashForOperationalLog(phoneE164), message: updateError.message },
+    });
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
 
@@ -84,6 +129,17 @@ export async function POST(request: Request) {
         console.warn("[admin-phone-verification] failed_to_insert_attempt_log", res.error.message);
       }
     });
+
+  await recordAdminAuditEvent({
+    admin: auth.admin,
+    adminUser: auth.user,
+    request,
+    action: "phone_verification_manual",
+    targetType: "profile",
+    targetId: userId,
+    requestId,
+    metadata: { identifier, phone_hash: hashForOperationalLog(phoneE164) },
+  });
 
   return NextResponse.json({
     ok: true,

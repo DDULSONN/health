@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { recordAdminAuditEvent } from "@/lib/admin-audit";
 import { requireAdminRoute } from "@/lib/admin-route";
 import { cancelTossPayment, getMissingTossConfigKeys, isTossConfigured } from "@/lib/toss-payments";
 
@@ -49,6 +50,7 @@ function isMissingColumnError(error: unknown) {
 }
 
 export async function POST(request: Request) {
+  const requestId = crypto.randomUUID();
   const auth = await requireAdminRoute();
   if (!auth.ok) return auth.response;
 
@@ -66,6 +68,16 @@ export async function POST(request: Request) {
   const hasCancelAmountInput = body.cancelAmount !== undefined && body.cancelAmount !== null && body.cancelAmount !== "";
 
   if (!orderId) {
+    await recordAdminAuditEvent({
+      admin: auth.admin,
+      adminUser: auth.user,
+      request,
+      action: "payment_refund",
+      targetType: "toss_test_payment_order",
+      requestId,
+      status: "failure",
+      metadata: { reason: "missing_order_id" },
+    });
     return json(400, { ok: false, message: "환불할 주문 ID가 필요합니다." });
   }
   if (hasCancelAmountInput && (!requestedCancelAmount || requestedCancelAmount <= 0)) {
@@ -84,6 +96,17 @@ export async function POST(request: Request) {
 
   const order = orderRes.data as TossOrderRow | null;
   if (!order) {
+    await recordAdminAuditEvent({
+      admin: auth.admin,
+      adminUser: auth.user,
+      request,
+      action: "payment_refund",
+      targetType: "toss_test_payment_order",
+      targetId: orderId,
+      requestId,
+      status: "failure",
+      metadata: { reason: "order_not_found" },
+    });
     return json(404, { ok: false, message: "결제 주문을 찾지 못했습니다." });
   }
   if (order.status !== "paid") {
@@ -146,6 +169,17 @@ export async function POST(request: Request) {
     }
 
     if (updateRes.error) {
+      await recordAdminAuditEvent({
+        admin: auth.admin,
+        adminUser: auth.user,
+        request,
+        action: "payment_refund",
+        targetType: "toss_test_payment_order",
+        targetId: order.id,
+        requestId,
+        status: "failure",
+        metadata: { reason: "order_update_failed", cancelAmount: cancelAmount ?? Number(order.amount), message: updateRes.error.message },
+      });
       return json(500, {
         ok: false,
         message: "토스 환불은 완료됐지만 주문 상태 저장에 실패했습니다. 결제센터에서 다시 확인해주세요.",
@@ -153,6 +187,22 @@ export async function POST(request: Request) {
         tossPayment,
       });
     }
+
+    await recordAdminAuditEvent({
+      admin: auth.admin,
+      adminUser: auth.user,
+      request,
+      action: "payment_refund",
+      targetType: "toss_test_payment_order",
+      targetId: order.id,
+      requestId,
+      metadata: {
+        cancelAmount: cancelAmount ?? Number(order.amount),
+        canceledTotal,
+        isFullyCanceled,
+        orderUserId: order.user_id,
+      },
+    });
 
     return json(200, {
       ok: true,
@@ -172,6 +222,17 @@ export async function POST(request: Request) {
         message = error.message || message;
       }
     }
+    await recordAdminAuditEvent({
+      admin: auth.admin,
+      adminUser: auth.user,
+      request,
+      action: "payment_refund",
+      targetType: "toss_test_payment_order",
+      targetId: orderId || null,
+      requestId,
+      status: "failure",
+      metadata: { reason: "toss_cancel_failed", message },
+    });
     return json(500, { ok: false, message });
   }
 }

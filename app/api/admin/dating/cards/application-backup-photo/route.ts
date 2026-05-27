@@ -1,4 +1,5 @@
 import { isAllowedAdminUser } from "@/lib/admin";
+import { hashAdminAuditValue, recordAdminAuditEvent } from "@/lib/admin-audit";
 import { extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -24,6 +25,7 @@ function timestampFromBackupPath(path: string): number | null {
 }
 
 export async function GET(req: Request) {
+  const requestId = crypto.randomUUID();
   const { user } = await getRequestAuthContext(req);
   if (!user || !isAllowedAdminUser(user.id, user.email)) {
     return new Response("Forbidden", { status: 403 });
@@ -47,8 +49,30 @@ export async function GET(req: Request) {
       pathTail: path.split("/").slice(-3).join("/"),
       message: error?.message ?? null,
     });
+    await recordAdminAuditEvent({
+      admin,
+      adminUser: user,
+      request: req,
+      action: "application_backup_photo_view",
+      targetType: "dating_apply_photo_backup",
+      targetId: hashAdminAuditValue(path),
+      requestId,
+      status: "failure",
+      metadata: { path_tail: path.split("/").slice(-3).join("/"), message: error?.message ?? null },
+    });
     return new Response("Not Found", { status: 404 });
   }
+
+  await recordAdminAuditEvent({
+    admin,
+    adminUser: user,
+    request: req,
+    action: "application_backup_photo_view",
+    targetType: "dating_apply_photo_backup",
+    targetId: hashAdminAuditValue(path),
+    requestId,
+    metadata: { path_tail: path.split("/").slice(-3).join("/"), age_ms: Date.now() - (timestamp ?? Date.now()) },
+  });
 
   const headers = new Headers();
   headers.set("Content-Type", "image/webp");
