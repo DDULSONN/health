@@ -755,6 +755,7 @@ type AdminManageTab =
   | "card_ai_review"
   | "user_activity"
   | "open_cards"
+  | "accepted_applications"
   | "mail_center"
   | "one_on_one_contact"
   | "apply_credits"
@@ -1384,6 +1385,8 @@ export default function MyPage() {
   const [adminPaidCardApplications, setAdminPaidCardApplications] = useState<AdminPaidCardApplication[]>([]);
   const [adminAcceptedRecentApplications, setAdminAcceptedRecentApplications] = useState<AdminAcceptedRecentApplication[]>([]);
   const [adminAcceptedRecentFallback, setAdminAcceptedRecentFallback] = useState(false);
+  const [adminAcceptedRecentLoaded, setAdminAcceptedRecentLoaded] = useState(false);
+  const [adminAcceptedRecentLoading, setAdminAcceptedRecentLoading] = useState(false);
   const [adminOpenCardsLoaded, setAdminOpenCardsLoaded] = useState(false);
   const [adminOpenCardsLoading, setAdminOpenCardsLoading] = useState(false);
   const [adminOneOnOneContactRequests, setAdminOneOnOneContactRequests] = useState<AdminOneOnOneContactExchangeRequest[]>([]);
@@ -1796,16 +1799,14 @@ export default function MyPage() {
         }
 
         try {
-          const [overviewRes, paidAppsRes, acceptedRecentRes] = await Promise.all([
+          const [overviewRes, paidAppsRes] = await Promise.all([
             fetch("/api/dating/cards/admin/overview", { cache: "no-store" }),
             fetch("/api/admin/dating/paid/applications", { cache: "no-store" }),
-            fetch("/api/admin/dating/accepted-applications/recent?days=7", { cache: "no-store" }),
           ]);
 
-          const [overviewBody, paidAppsBody, acceptedRecentBody] = await Promise.all([
+          const [overviewBody, paidAppsBody] = await Promise.all([
             overviewRes.json().catch(() => ({})),
             paidAppsRes.json().catch(() => ({})),
-            acceptedRecentRes.json().catch(() => ({})),
           ]);
 
           if (overviewRes.ok) {
@@ -1823,25 +1824,51 @@ export default function MyPage() {
             console.error("[mypage] paid applications refresh failed", paidAppsBody);
           }
 
-          if (acceptedRecentRes.ok) {
-            const body = acceptedRecentBody as {
-              items?: AdminAcceptedRecentApplication[];
-              fallback_created_at?: boolean;
-            };
-            setAdminAcceptedRecentApplications(body.items ?? []);
-            setAdminAcceptedRecentFallback(Boolean(body.fallback_created_at));
-          } else {
-            console.error("[mypage] accepted recent applications refresh failed", acceptedRecentBody);
-            setAdminAcceptedRecentApplications([]);
-            setAdminAcceptedRecentFallback(false);
-          }
-
           setAdminOpenCardsLoaded(true);
         } catch (error) {
           console.error("[mypage] admin open card data refresh failed", error);
         } finally {
           if (showLoading) {
             setAdminOpenCardsLoading(false);
+          }
+        }
+      },
+    [isAdmin]
+  );
+
+  const refreshAdminAcceptedRecentApplications = useMemo(
+    () =>
+      async (showLoading = true) => {
+        if (!isAdmin) return;
+
+        if (showLoading) {
+          setAdminAcceptedRecentLoading(true);
+        }
+
+        try {
+          const res = await fetch("/api/admin/dating/accepted-applications/recent?days=7", { cache: "no-store" });
+          const body = await res.json().catch(() => ({}));
+
+          if (res.ok) {
+            const parsed = body as {
+              items?: AdminAcceptedRecentApplication[];
+              fallback_created_at?: boolean;
+            };
+            setAdminAcceptedRecentApplications(parsed.items ?? []);
+            setAdminAcceptedRecentFallback(Boolean(parsed.fallback_created_at));
+            setAdminAcceptedRecentLoaded(true);
+          } else {
+            console.error("[mypage] accepted recent applications refresh failed", body);
+            setAdminAcceptedRecentApplications([]);
+            setAdminAcceptedRecentFallback(false);
+          }
+        } catch (error) {
+          console.error("[mypage] accepted recent applications refresh failed", error);
+          setAdminAcceptedRecentApplications([]);
+          setAdminAcceptedRecentFallback(false);
+        } finally {
+          if (showLoading) {
+            setAdminAcceptedRecentLoading(false);
           }
         }
       },
@@ -2920,6 +2947,7 @@ export default function MyPage() {
               setAdminPaidCardApplications([]);
               setAdminAcceptedRecentApplications([]);
               setAdminAcceptedRecentFallback(false);
+              setAdminAcceptedRecentLoaded(false);
               setAdminOpenCardsLoaded(false);
               setAdminPaymentCenter(null);
               setAdminOneOnOneContactRequests([]);
@@ -2939,6 +2967,7 @@ export default function MyPage() {
             setAdminPaidCardApplications([]);
             setAdminAcceptedRecentApplications([]);
             setAdminAcceptedRecentFallback(false);
+            setAdminAcceptedRecentLoaded(false);
             setAdminOpenCardsLoaded(false);
             setAdminPaymentCenter(null);
             setAdminOneOnOneContactRequests([]);
@@ -2989,6 +3018,25 @@ export default function MyPage() {
 
     void refreshAdminOpenCardData(true);
   }, [adminManageTab, adminOpenCardsLoaded, adminOpenCardsLoading, isAdmin, refreshAdminOpenCardData]);
+
+  useEffect(() => {
+    if (
+      !isAdmin ||
+      adminManageTab !== "accepted_applications" ||
+      adminAcceptedRecentLoaded ||
+      adminAcceptedRecentLoading
+    ) {
+      return;
+    }
+
+    void refreshAdminAcceptedRecentApplications(true);
+  }, [
+    adminAcceptedRecentLoaded,
+    adminAcceptedRecentLoading,
+    adminManageTab,
+    isAdmin,
+    refreshAdminAcceptedRecentApplications,
+  ]);
 
   useEffect(() => {
     if (!isAdmin || adminManageTab !== "mail_center") {
@@ -7882,6 +7930,8 @@ export default function MyPage() {
                   ? "1:1 번호 공개 관리 (관리자)"
                   : adminManageTab === "payment_center"
                     ? "결제 운영 (관리자)"
+                    : adminManageTab === "accepted_applications"
+                      ? "최근 수락 지원 (관리자)"
                     : "오픈카드 전체 내용 (관리자)"}
             </h2>
             <div className="flex flex-wrap items-center gap-2">
@@ -7902,6 +7952,8 @@ export default function MyPage() {
                     :
                   adminManageTab === "open_cards"
                     ? adminOpenCardsLoading
+                    : adminManageTab === "accepted_applications"
+                    ? adminAcceptedRecentLoading
                     : adminManageTab === "one_on_one_contact"
                       ? adminOneOnOneContactLoading
                       : adminQueueRefreshing
@@ -7913,6 +7965,8 @@ export default function MyPage() {
                     ? loadAdminOpenCardOutreachPreview()
                     : adminManageTab === "open_cards"
                     ? refreshAdminOpenCardData(true)
+                    : adminManageTab === "accepted_applications"
+                    ? refreshAdminAcceptedRecentApplications(true)
                     : adminManageTab === "one_on_one_contact"
                       ? refreshAdminOneOnOneContactData(true)
                       : refreshAdminQueueData(true))
@@ -7923,6 +7977,10 @@ export default function MyPage() {
                   ? adminOpenCardsLoading
                     ? "불러오는 중..."
                     : "오픈카드 새로고침"
+                  : adminManageTab === "accepted_applications"
+                    ? adminAcceptedRecentLoading
+                      ? "불러오는 중..."
+                      : "최근 수락 새로고침"
                   : adminManageTab === "payment_center"
                     ? adminPaymentCenterLoading
                       ? "불러오는 중..."
@@ -7989,6 +8047,17 @@ export default function MyPage() {
               }`}
             >
               오픈카드
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdminManageTab("accepted_applications")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "accepted_applications"
+                  ? "border-violet-600 bg-violet-600 text-white"
+                  : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              최근 수락
             </button>
             <button
               type="button"
@@ -10744,6 +10813,100 @@ export default function MyPage() {
           </div>
           )}
 
+          {adminManageTab === "accepted_applications" && (
+            <div className="space-y-3">
+              {!adminAcceptedRecentLoaded ? (
+                <div className="rounded-xl border border-emerald-200 bg-white p-4 text-sm text-neutral-600">
+                  최근 수락 탭을 열 때만 최근 7일 수락 지원을 불러옵니다. 잠시만 기다려 주세요.
+                </div>
+              ) : null}
+              <div className="rounded-xl border border-emerald-200 bg-white p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-emerald-900">
+                      최근 7일 수락된 지원 {adminAcceptedRecentApplications.length}건
+                    </p>
+                    <p className="mt-1 text-xs text-neutral-500">
+                      오픈카드와 36시간 카드에서 최근 수락된 지원서와 지원한 카드를 함께 표시합니다.
+                    </p>
+                  </div>
+                  {adminAcceptedRecentFallback ? (
+                    <span className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700">
+                      accepted_at 적용 전 데이터는 지원일 기준
+                    </span>
+                  ) : null}
+                </div>
+                {adminAcceptedRecentLoading ? (
+                  <p className="mt-3 text-xs text-neutral-500">불러오는 중...</p>
+                ) : adminAcceptedRecentApplications.length === 0 ? (
+                  <p className="mt-3 text-xs text-neutral-500">최근 7일 기준 수락 기록이 없습니다.</p>
+                ) : (
+                  <div className="mt-3 space-y-2">
+                    {adminAcceptedRecentApplications.map((item) => (
+                      <div
+                        key={`${item.source_kind}-${item.application_id}`}
+                        className="rounded-lg border border-emerald-100 bg-emerald-50/30 p-3"
+                      >
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-neutral-900">
+                              {item.source_kind === "open_card" ? "오픈카드" : "36시간 카드"} 지원서{" "}
+                              {item.application_id.slice(0, 8)}...
+                            </p>
+                            <p className="mt-1 text-xs text-neutral-600">
+                              수락 시각:{" "}
+                              {item.accepted_at
+                                ? new Date(item.accepted_at).toLocaleString("ko-KR")
+                                : "수락 시각 기록 전"}
+                            </p>
+                          </div>
+                          <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-emerald-700">
+                            accepted
+                          </span>
+                        </div>
+                        <div className="mt-2 grid gap-2 text-xs text-neutral-700 sm:grid-cols-2">
+                          <div className="rounded-md bg-white/80 p-2">
+                            <p className="font-semibold text-neutral-900">지원자</p>
+                            <p className="mt-1">
+                              {item.applicant_nickname ?? item.applicant_display_nickname ?? item.applicant_user_id.slice(0, 8)}
+                            </p>
+                            <p className="mt-1">
+                              {item.age ?? "-"}세 · {item.height_cm ?? "-"}cm · {item.region ?? "지역 없음"}
+                            </p>
+                            <p className="mt-1">
+                              {item.job ?? "직업 없음"} · 운동 {item.training_years ?? "-"}년
+                            </p>
+                            <p className="mt-1 font-medium text-emerald-700">
+                              인스타: {item.instagram_id ? `@${item.instagram_id}` : "-"}
+                            </p>
+                          </div>
+                          <div className="rounded-md bg-white/80 p-2">
+                            <p className="font-semibold text-neutral-900">지원한 카드</p>
+                            <p className="mt-1">
+                              {item.card_display_name ?? item.card_id.slice(0, 8)}{" "}
+                              {item.card_sex_label ? `/ ${item.card_sex_label}` : ""}
+                            </p>
+                            <p className="mt-1">
+                              작성자: {item.card_owner_nickname ?? item.card_owner_user_id?.slice(0, 8) ?? "-"}
+                            </p>
+                            <p className="mt-1">
+                              상태 {item.card_status ?? "-"} {item.card_region ? `· 지역 ${item.card_region}` : ""}
+                            </p>
+                          </div>
+                        </div>
+                        {item.intro_text ? (
+                          <p className="mt-2 rounded-md bg-white/80 p-2 text-xs text-neutral-700 whitespace-pre-wrap break-words">
+                            자기소개: {item.intro_text}
+                          </p>
+                        ) : null}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
           {adminManageTab === "open_cards" && (
           <div className="space-y-3">
             {!adminOpenCardsLoaded ? (
@@ -10800,89 +10963,6 @@ export default function MyPage() {
                   </select>
                 )}
               </div>
-            </div>
-
-            <div className="rounded-xl border border-emerald-200 bg-white p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <p className="text-sm font-semibold text-emerald-900">
-                    최근 7일 수락된 지원 {adminAcceptedRecentApplications.length}건
-                  </p>
-                  <p className="mt-1 text-xs text-neutral-500">
-                    오픈카드와 36시간 카드에서 최근 수락된 지원서와 지원한 카드를 함께 표시합니다.
-                  </p>
-                </div>
-                {adminAcceptedRecentFallback ? (
-                  <span className="rounded-full bg-amber-50 px-2 py-1 text-[11px] font-medium text-amber-700">
-                    accepted_at 적용 전 데이터는 지원일 기준
-                  </span>
-                ) : null}
-              </div>
-              {adminAcceptedRecentApplications.length === 0 ? (
-                <p className="mt-3 text-xs text-neutral-500">최근 7일 수락된 지원이 없습니다.</p>
-              ) : (
-                <div className="mt-3 space-y-2">
-                  {adminAcceptedRecentApplications.map((item) => (
-                    <div
-                      key={`${item.source_kind}-${item.application_id}`}
-                      className="rounded-lg border border-emerald-100 bg-emerald-50/30 p-3"
-                    >
-                      <div className="flex flex-wrap items-start justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-semibold text-neutral-900">
-                            {item.source_kind === "open_card" ? "오픈카드" : "36시간 카드"} 지원서{" "}
-                            {item.application_id.slice(0, 8)}...
-                          </p>
-                          <p className="mt-1 text-xs text-neutral-600">
-                            수락 시각:{" "}
-                            {item.accepted_at
-                              ? new Date(item.accepted_at).toLocaleString("ko-KR")
-                              : "수락 시각 기록 전"}
-                          </p>
-                        </div>
-                        <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-emerald-700">
-                          accepted
-                        </span>
-                      </div>
-                      <div className="mt-2 grid gap-2 text-xs text-neutral-700 sm:grid-cols-2">
-                        <div className="rounded-md bg-white/80 p-2">
-                          <p className="font-semibold text-neutral-900">지원자</p>
-                          <p className="mt-1">
-                            {item.applicant_nickname ?? item.applicant_display_nickname ?? item.applicant_user_id.slice(0, 8)}
-                          </p>
-                          <p className="mt-1">
-                            {item.age ?? "-"}세 · {item.height_cm ?? "-"}cm · {item.region ?? "지역 없음"}
-                          </p>
-                          <p className="mt-1">
-                            {item.job ?? "직업 없음"} · 운동 {item.training_years ?? "-"}년
-                          </p>
-                          <p className="mt-1 font-medium text-emerald-700">
-                            인스타: {item.instagram_id ? `@${item.instagram_id}` : "-"}
-                          </p>
-                        </div>
-                        <div className="rounded-md bg-white/80 p-2">
-                          <p className="font-semibold text-neutral-900">지원한 카드</p>
-                          <p className="mt-1">
-                            {item.card_display_name ?? item.card_id.slice(0, 8)}{" "}
-                            {item.card_sex_label ? `/ ${item.card_sex_label}` : ""}
-                          </p>
-                          <p className="mt-1">
-                            작성자: {item.card_owner_nickname ?? item.card_owner_user_id?.slice(0, 8) ?? "-"}
-                          </p>
-                          <p className="mt-1">
-                            상태 {item.card_status ?? "-"} {item.card_region ? `· 지역 ${item.card_region}` : ""}
-                          </p>
-                        </div>
-                      </div>
-                      {item.intro_text ? (
-                        <p className="mt-2 rounded-md bg-white/80 p-2 text-xs text-neutral-700 whitespace-pre-wrap break-words">
-                          자기소개: {item.intro_text}
-                        </p>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              )}
             </div>
 
             {adminDataView === "cards" ? (

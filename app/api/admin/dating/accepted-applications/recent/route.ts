@@ -53,6 +53,13 @@ function getErrorCode(error: unknown) {
   return String((error as { code?: unknown }).code ?? "");
 }
 
+function isMissingAcceptedAtError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const code = getErrorCode(error);
+  const message = String((error as { message?: unknown }).message ?? "");
+  return code === "42703" || code === "PGRST204" || message.includes("accepted_at");
+}
+
 function compactIds(ids: Array<string | null | undefined>) {
   return [...new Set(ids.map((id) => String(id ?? "").trim()).filter(Boolean))];
 }
@@ -78,7 +85,7 @@ async function fetchProfiles(admin: ReturnType<typeof createAdminClient>, userId
 }
 
 async function fetchOpenApplications(admin: ReturnType<typeof createAdminClient>, sinceIso: string) {
-  const res = await admin
+  const acceptedAtRes = await admin
     .from("dating_card_applications")
     .select(
       "id,card_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,intro_text,instagram_id,status,created_at,accepted_at"
@@ -88,7 +95,7 @@ async function fetchOpenApplications(admin: ReturnType<typeof createAdminClient>
     .order("accepted_at", { ascending: false })
     .limit(500);
 
-  if (res.error && getErrorCode(res.error) === "42703") {
+  if (acceptedAtRes.error && isMissingAcceptedAtError(acceptedAtRes.error)) {
     const fallbackRes = await admin
       .from("dating_card_applications")
       .select(
@@ -109,11 +116,38 @@ async function fetchOpenApplications(admin: ReturnType<typeof createAdminClient>
     };
   }
 
-  return { data: (res.data ?? []) as AcceptedOpenApplicationRow[], error: res.error, fallback: false };
+  if (acceptedAtRes.error) {
+    return { data: [], error: acceptedAtRes.error, fallback: false };
+  }
+
+  const nullAcceptedAtRes = await admin
+    .from("dating_card_applications")
+    .select(
+      "id,card_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,intro_text,instagram_id,status,created_at,accepted_at"
+    )
+    .eq("status", "accepted")
+    .is("accepted_at", null)
+    .gte("created_at", sinceIso)
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  if (nullAcceptedAtRes.error) {
+    return { data: acceptedAtRes.data as AcceptedOpenApplicationRow[], error: nullAcceptedAtRes.error, fallback: false };
+  }
+
+  const byId = new Map<string, AcceptedOpenApplicationRow>();
+  for (const row of (acceptedAtRes.data ?? []) as AcceptedOpenApplicationRow[]) byId.set(row.id, row);
+  for (const row of (nullAcceptedAtRes.data ?? []) as AcceptedOpenApplicationRow[]) byId.set(row.id, row);
+
+  return {
+    data: [...byId.values()],
+    error: null,
+    fallback: (nullAcceptedAtRes.data ?? []).length > 0,
+  };
 }
 
 async function fetchPaidApplications(admin: ReturnType<typeof createAdminClient>, sinceIso: string) {
-  const res = await admin
+  const acceptedAtRes = await admin
     .from("dating_paid_card_applications")
     .select(
       "id,paid_card_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,intro_text,instagram_id,status,created_at,accepted_at"
@@ -123,7 +157,7 @@ async function fetchPaidApplications(admin: ReturnType<typeof createAdminClient>
     .order("accepted_at", { ascending: false })
     .limit(500);
 
-  if (res.error && getErrorCode(res.error) === "42703") {
+  if (acceptedAtRes.error && isMissingAcceptedAtError(acceptedAtRes.error)) {
     const fallbackRes = await admin
       .from("dating_paid_card_applications")
       .select(
@@ -144,7 +178,34 @@ async function fetchPaidApplications(admin: ReturnType<typeof createAdminClient>
     };
   }
 
-  return { data: (res.data ?? []) as AcceptedPaidApplicationRow[], error: res.error, fallback: false };
+  if (acceptedAtRes.error) {
+    return { data: [], error: acceptedAtRes.error, fallback: false };
+  }
+
+  const nullAcceptedAtRes = await admin
+    .from("dating_paid_card_applications")
+    .select(
+      "id,paid_card_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,intro_text,instagram_id,status,created_at,accepted_at"
+    )
+    .eq("status", "accepted")
+    .is("accepted_at", null)
+    .gte("created_at", sinceIso)
+    .order("created_at", { ascending: false })
+    .limit(500);
+
+  if (nullAcceptedAtRes.error) {
+    return { data: acceptedAtRes.data as AcceptedPaidApplicationRow[], error: nullAcceptedAtRes.error, fallback: false };
+  }
+
+  const byId = new Map<string, AcceptedPaidApplicationRow>();
+  for (const row of (acceptedAtRes.data ?? []) as AcceptedPaidApplicationRow[]) byId.set(row.id, row);
+  for (const row of (nullAcceptedAtRes.data ?? []) as AcceptedPaidApplicationRow[]) byId.set(row.id, row);
+
+  return {
+    data: [...byId.values()],
+    error: null,
+    fallback: (nullAcceptedAtRes.data ?? []).length > 0,
+  };
 }
 
 export async function GET(req: Request) {
