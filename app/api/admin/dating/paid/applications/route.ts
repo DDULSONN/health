@@ -57,7 +57,13 @@ type PaidApplicationRow = {
   photo_paths: string[] | null;
   status: "submitted" | "accepted" | "rejected" | "canceled";
   created_at: string;
+  accepted_at?: string | null;
 };
+
+function getErrorCode(error: unknown) {
+  if (!error || typeof error !== "object") return "";
+  return String((error as { code?: unknown }).code ?? "");
+}
 
 export async function GET() {
   const requestId = crypto.randomUUID();
@@ -76,15 +82,32 @@ export async function GET() {
     }
 
     const admin = createAdminClient();
-    const appsRes = await fetchAllRows<PaidApplicationRow>((from, to) =>
+    let appsRes = await fetchAllRows<PaidApplicationRow>((from, to) =>
       admin
         .from("dating_paid_card_applications")
         .select(
-          "id,paid_card_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,intro_text,instagram_id,photo_paths,status,created_at"
+          "id,paid_card_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,intro_text,instagram_id,photo_paths,status,created_at,accepted_at"
         )
         .order("created_at", { ascending: false })
         .range(from, to)
     );
+
+    if (appsRes.error && getErrorCode(appsRes.error) === "42703") {
+      const fallbackAppsRes = await fetchAllRows<PaidApplicationRow>((from, to) =>
+        admin
+          .from("dating_paid_card_applications")
+          .select(
+            "id,paid_card_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,intro_text,instagram_id,photo_paths,status,created_at"
+          )
+          .order("created_at", { ascending: false })
+          .range(from, to)
+      );
+
+      appsRes = {
+        ...fallbackAppsRes,
+        data: (fallbackAppsRes.data ?? []).map((app) => ({ ...app, accepted_at: null })),
+      };
+    }
 
     if (appsRes.error) {
       console.error("[GET /api/admin/dating/paid/applications] apps failed", appsRes.error);
@@ -137,6 +160,7 @@ export async function GET() {
         photo_paths: Array.isArray(app.photo_paths) ? app.photo_paths : [],
         status: app.status,
         created_at: app.created_at,
+        accepted_at: app.accepted_at ?? null,
         card_owner_user_id: card?.user_id ?? null,
         card_owner_nickname: card?.user_id ? nicknameByUserId[card.user_id] ?? null : null,
         card_nickname: card?.nickname ?? null,

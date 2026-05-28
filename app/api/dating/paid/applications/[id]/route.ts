@@ -58,13 +58,18 @@ export async function PATCH(
     return NextResponse.json({ error: "처리 권한이 없습니다." }, { status: 403 });
   }
 
-  const { error: updateError } = await admin
+  const acceptedAt = status === "accepted" ? new Date().toISOString() : null;
+  let updateRes = await admin
     .from("dating_paid_card_applications")
-    .update({ status })
+    .update({ status, accepted_at: acceptedAt })
     .eq("id", id);
 
-  if (updateError) {
-    console.error("[PATCH /api/dating/paid/applications/[id]] failed", updateError);
+  if (updateRes.error && updateRes.error.code === "42703") {
+    updateRes = await admin.from("dating_paid_card_applications").update({ status }).eq("id", id);
+  }
+
+  if (updateRes.error) {
+    console.error("[PATCH /api/dating/paid/applications/[id]] failed", updateRes.error);
     return NextResponse.json({ error: "상태 변경에 실패했습니다." }, { status: 500 });
   }
 

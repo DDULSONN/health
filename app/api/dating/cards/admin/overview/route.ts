@@ -63,6 +63,7 @@ type DatingCardApplicationRow = {
   photo_paths: string[] | null;
   status: "submitted" | "accepted" | "rejected" | "canceled";
   created_at: string;
+  accepted_at?: string | null;
 };
 
 type DatingCardApplicationFallbackRow = {
@@ -179,31 +180,52 @@ export async function GET(req: Request) {
     adminClient
       .from("dating_card_applications")
       .select(
-        "id, card_id, applicant_user_id, applicant_display_nickname, age, height_cm, region, job, training_years, intro_text, instagram_id, photo_paths, status, created_at"
+        "id, card_id, applicant_user_id, applicant_display_nickname, age, height_cm, region, job, training_years, intro_text, instagram_id, photo_paths, status, created_at, accepted_at"
       )
       .order("created_at", { ascending: false })
       .range(from, to)
   );
 
   if (appsRes.error && getErrorCode(appsRes.error) === "42703") {
-    const fallbackAppsRes = await fetchAllRows<DatingCardApplicationFallbackRow>((from, to) =>
+    const fallbackAppsRes = await fetchAllRows<DatingCardApplicationRow>((from, to) =>
       adminClient
         .from("dating_card_applications")
         .select(
-          "id, card_id, applicant_user_id, age, height_cm, region, job, training_years, intro_text, instagram_id, photo_urls, status, created_at"
+          "id, card_id, applicant_user_id, applicant_display_nickname, age, height_cm, region, job, training_years, intro_text, instagram_id, photo_paths, status, created_at"
         )
         .order("created_at", { ascending: false })
         .range(from, to)
     );
 
-    appsRes = {
-      ...fallbackAppsRes,
-      data: (fallbackAppsRes.data ?? []).map((app) => ({
-        ...app,
-        applicant_display_nickname: null,
-        photo_paths: app.photo_urls ?? [],
-      })),
-    };
+    if (fallbackAppsRes.error && getErrorCode(fallbackAppsRes.error) === "42703") {
+      const legacyAppsRes = await fetchAllRows<DatingCardApplicationFallbackRow>((from, to) =>
+        adminClient
+          .from("dating_card_applications")
+          .select(
+            "id, card_id, applicant_user_id, age, height_cm, region, job, training_years, intro_text, instagram_id, photo_urls, status, created_at"
+          )
+          .order("created_at", { ascending: false })
+          .range(from, to)
+      );
+
+      appsRes = {
+        ...legacyAppsRes,
+        data: (legacyAppsRes.data ?? []).map((app) => ({
+          ...app,
+          applicant_display_nickname: null,
+          photo_paths: app.photo_urls ?? [],
+          accepted_at: null,
+        })),
+      };
+    } else {
+      appsRes = {
+        ...fallbackAppsRes,
+        data: (fallbackAppsRes.data ?? []).map((app) => ({
+          ...app,
+          accepted_at: null,
+        })),
+      };
+    }
   }
 
   if (cardsRes.error || appsRes.error) {
