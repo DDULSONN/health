@@ -157,11 +157,11 @@ export function pickPreviewImage(row: SwipePreviewRow): string | null {
       const litePath = toLitePath(rawPath);
       const thumbPath = toThumbPath(rawPath);
       return (
-        buildSignedImageUrlAllowRaw("dating-card-photos", rawPath) ||
-        buildSignedImageUrl("dating-card-lite", thumbPath) ||
-        buildSignedImageUrl("dating-card-lite", litePath) ||
         buildPublicLiteImageUrl("dating-card-lite", thumbPath) ||
         buildPublicLiteImageUrl("dating-card-lite", litePath) ||
+        buildSignedImageUrl("dating-card-lite", thumbPath) ||
+        buildSignedImageUrl("dating-card-lite", litePath) ||
+        buildSignedImageUrlAllowRaw("dating-card-photos", rawPath) ||
         null
       );
     }
@@ -173,9 +173,9 @@ export function pickPreviewImage(row: SwipePreviewRow): string | null {
   if (blurPath) {
     const blurWebp = toBlurWebpPath(blurPath);
     return (
-      buildSignedImageUrl("dating-card-photos", blurPath) ||
-      buildSignedImageUrl("dating-card-lite", blurWebp) ||
       buildPublicLiteImageUrl("dating-card-lite", blurWebp) ||
+      buildSignedImageUrl("dating-card-lite", blurWebp) ||
+      buildSignedImageUrl("dating-card-photos", blurPath) ||
       null
     );
   }
@@ -184,9 +184,9 @@ export function pickPreviewImage(row: SwipePreviewRow): string | null {
   if (blurThumb) {
     const blurWebp = toBlurWebpPath(blurThumb);
     return (
-      buildSignedImageUrl("dating-card-photos", blurThumb) ||
-      buildSignedImageUrl("dating-card-lite", blurWebp) ||
       buildPublicLiteImageUrl("dating-card-lite", blurWebp) ||
+      buildSignedImageUrl("dating-card-lite", blurWebp) ||
+      buildSignedImageUrl("dating-card-photos", blurThumb) ||
       null
     );
   }
