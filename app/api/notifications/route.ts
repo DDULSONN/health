@@ -24,6 +24,11 @@ function getNotificationApplicationId(item: NotificationRow): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function getNotificationReminderKind(item: NotificationRow): string {
+  const value = item.meta_json?.reminder_kind;
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function buildNotificationPresentation(
   item: NotificationRow,
   actorNickname: string | null,
@@ -52,6 +57,17 @@ function buildNotificationPresentation(
       return {
         title: "거절한 지원입니다",
         body: actorNickname ? `${actorNickname}님 지원을 거절한 상태입니다.` : "거절한 지원입니다.",
+        link: "/mypage#open-card-received",
+      };
+    }
+
+    const reminderKind = getNotificationReminderKind(item);
+    if (reminderKind === "pending_24h") {
+      return {
+        title: "지원 답변이 기다리고 있어요",
+        body: actorNickname
+          ? `${actorNickname}님 지원이 아직 대기 중이에요. 수락하거나 패스해 주세요.`
+          : "아직 대기 중인 오픈카드 지원이 있어요. 수락하거나 패스해 주세요.",
         link: "/mypage#open-card-received",
       };
     }

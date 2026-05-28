@@ -20,6 +20,10 @@
     {
       "path": "/api/cron/dating-apply-photo-backups-cleanup",
       "schedule": "43 18 * * *"
+    },
+    {
+      "path": "/api/cron/dating-application-reminders",
+      "schedule": "8 * * * *"
     }
   ]
 }

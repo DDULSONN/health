@@ -8,6 +8,7 @@ import { getKstDayRangeUtc } from "@/lib/dating-open";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
 import { createAdminClient } from "@/lib/supabase/server";
+import { appendEmailUnsubscribeFooter, fetchMarketingUnsubscribedUserIds } from "@/lib/marketing-email";
 
 export const SWIPE_BASE_DAILY_LIMIT = 5;
 export const SWIPE_PREMIUM_DAILY_LIMIT = 15;
@@ -569,7 +570,23 @@ export async function sendDatingEmailNotification(
   const to = userRes?.data?.user?.email?.trim();
   if (!to) return false;
 
-  return sendDatingEmailToAddress(to, subject, text);
+  const unsubscribed = await fetchMarketingUnsubscribedUserIds(adminClient, [userId], "dating_notifications").catch(
+    (error) => {
+      console.error("[dating-email] unsubscribe check failed", error);
+      return new Set<string>();
+    }
+  );
+  if (unsubscribed.has(userId)) return false;
+
+  const textWithFooter = appendEmailUnsubscribeFooter({
+    body: text,
+    userId,
+    email: to,
+    campaignKey: "dating_notifications",
+    label: "오픈카드·1:1 소개팅 알림 메일을 더 이상 받고 싶지 않다면 아래 링크에서 수신거부할 수 있습니다.",
+  });
+
+  return sendDatingEmailToAddress(to, subject, textWithFooter);
 }
 
 export type DatingEmailSendResult = {

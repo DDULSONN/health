@@ -4,7 +4,7 @@ import {
 } from "@/lib/marketing-email";
 import { createAdminClient } from "@/lib/supabase/server";
 
-const VALID_CAMPAIGNS = new Set(["open_card_outreach", "one_on_one_outreach", "all"]);
+const VALID_CAMPAIGNS = new Set(["open_card_outreach", "one_on_one_outreach", "dating_notifications", "all"]);
 
 function html(message: string, status = 200) {
   return new NextResponse(
