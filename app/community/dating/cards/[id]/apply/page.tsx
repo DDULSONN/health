@@ -43,6 +43,8 @@ const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const HEIC_TYPES = ["image/heic", "image/heif"];
 const MAX_FILE_SIZE = 10 * 1024 * 1024;
 const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
+const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
+  "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
 
 function normalizeInstagramId(value: string) {
   return value.trim().replace(/^@+/, "").replace(/\s+/g, "").slice(0, 30);
@@ -56,6 +58,10 @@ function validInstagramId(value: string) {
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString("ko-KR");
+}
+
+function withPaymentCardNotice(message: string) {
+  return `${message}\n${PAYMENT_CARD_UNAVAILABLE_MESSAGE}`;
 }
 
 export default function DatingCardApplyPage() {
@@ -311,16 +317,16 @@ export default function DatingCardApplyPage() {
         checkoutUrl?: string;
       };
       if (!res.ok) {
-        setError(body.message ?? "결제 요청에 실패했습니다.");
+        setError(withPaymentCardNotice(body.message ?? "결제 요청에 실패했습니다."));
         return;
       }
       if (!body.checkoutUrl) {
-        setError(body.message ?? "결제창을 불러오지 못했습니다.");
+        setError(withPaymentCardNotice(body.message ?? "결제창을 불러오지 못했습니다."));
         return;
       }
       window.location.href = body.checkoutUrl;
     } catch {
-      setError("결제 요청 처리 중 오류가 발생했습니다.");
+      setError(withPaymentCardNotice("결제 요청 처리 중 오류가 발생했습니다."));
     } finally {
       setCreditRequesting(false);
     }

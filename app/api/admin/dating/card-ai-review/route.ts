@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { requireAdminRoute } from "@/lib/admin-route";
+import { recordAdminAuditEvent } from "@/lib/admin-audit";
+import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
+import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
 import { buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { createAdminClient } from "@/lib/supabase/server";
 
@@ -13,6 +16,16 @@ type ReviewPayload = {
   limit?: unknown;
   includeClear?: unknown;
   mode?: unknown;
+};
+
+type ReviewActionPayload = {
+  action?: unknown;
+  sourceType?: unknown;
+  source_type?: unknown;
+  cardId?: unknown;
+  card_id?: unknown;
+  summary?: unknown;
+  flags?: unknown;
 };
 
 type CandidateCard = {
@@ -37,6 +50,15 @@ type CardReview = {
   photoFlags: string[];
   textFlags: string[];
   raw: Record<string, unknown>;
+};
+
+type ActionCard = {
+  sourceType: SourceType;
+  cardId: string;
+  userId: string;
+  status: string | null;
+  displayName: string | null;
+  sex: "male" | "female" | null;
 };
 
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models";
@@ -75,9 +97,24 @@ function normalizeMode(value: unknown): ReviewMode {
   return cleanText(value, 20) === "rules" ? "rules" : "ai";
 }
 
+function normalizeAction(value: unknown) {
+  const action = cleanText(value, 40);
+  return action === "delete_card" || action === "send_warning_email" ? action : "";
+}
+
 function cleanArray(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value.map((item) => cleanText(item, 80)).filter(Boolean).slice(0, 8);
+}
+
+function getSiteUrl() {
+  return (process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "https://helchang.com").replace(/\/+$/, "");
+}
+
+function getCardEditPath(sourceType: SourceType, cardId: string) {
+  if (sourceType === "open_card") return `/dating/card/new?editId=${encodeURIComponent(cardId)}`;
+  if (sourceType === "paid_card") return `/dating/paid?editId=${encodeURIComponent(cardId)}`;
+  return `/dating/1on1?editId=${encodeURIComponent(cardId)}`;
 }
 
 function normalizePhotoPath(raw: unknown, buckets: string[]) {
@@ -409,6 +446,111 @@ async function saveReview(admin: AdminClient, adminUserId: string, card: Candida
   if (error) throw error;
 }
 
+async function loadActionCard(admin: AdminClient, sourceType: SourceType, cardId: string): Promise<ActionCard | null> {
+  if (sourceType === "open_card") {
+    const { data, error } = await admin
+      .from("dating_cards")
+      .select("id,owner_user_id,status,display_nickname,sex")
+      .eq("id", cardId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    return {
+      sourceType,
+      cardId: String(data.id),
+      userId: String(data.owner_user_id ?? ""),
+      status: data.status ?? null,
+      displayName: data.display_nickname ?? null,
+      sex: data.sex === "female" ? "female" : data.sex === "male" ? "male" : null,
+    };
+  }
+
+  if (sourceType === "paid_card") {
+    const { data, error } = await admin
+      .from("dating_paid_cards")
+      .select("id,user_id,status,nickname")
+      .eq("id", cardId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    return {
+      sourceType,
+      cardId: String(data.id),
+      userId: String(data.user_id ?? ""),
+      status: data.status ?? null,
+      displayName: data.nickname ?? null,
+      sex: null,
+    };
+  }
+
+  const { data, error } = await admin
+    .from("dating_1on1_cards")
+    .select("id,user_id,status,name,sex")
+    .eq("id", cardId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  return {
+    sourceType,
+    cardId: String(data.id),
+    userId: String(data.user_id ?? ""),
+    status: data.status ?? null,
+    displayName: data.name ?? null,
+    sex: data.sex === "female" ? "female" : data.sex === "male" ? "male" : null,
+  };
+}
+
+async function deleteActionCard(admin: AdminClient, card: ActionCard) {
+  if (card.sourceType === "open_card") {
+    const { error } = await admin.from("dating_cards").delete().eq("id", card.cardId);
+    if (error) throw error;
+    if (card.status === "public" && card.sex) {
+      await promotePendingCardsBySex(admin, card.sex).catch((error) => {
+        console.error("[admin card review] promote pending after delete failed", error);
+      });
+    }
+    return;
+  }
+
+  if (card.sourceType === "paid_card") {
+    const { error } = await admin.from("dating_paid_cards").delete().eq("id", card.cardId);
+    if (error) throw error;
+    return;
+  }
+
+  const { error } = await admin.from("dating_1on1_cards").delete().eq("id", card.cardId);
+  if (error) throw error;
+}
+
+async function sendCardWarningEmail(admin: AdminClient, card: ActionCard, summary: string, flags: string[]) {
+  const userRes = await admin.auth.admin.getUserById(card.userId).catch(() => null);
+  const email = userRes?.data?.user?.email?.trim();
+  if (!email) return { ok: false, error: "회원 이메일을 찾지 못했습니다." };
+
+  const editUrl = `${getSiteUrl()}${getCardEditPath(card.sourceType, card.cardId)}`;
+  const flagText = flags.length > 0 ? `\n확인된 항목: ${flags.slice(0, 5).join(", ")}` : "";
+  const subject = "[짐툴] 카드 수정이 필요합니다";
+  const text = [
+    "안녕하세요, 짐툴입니다.",
+    "",
+    "등록하신 카드에서 운영 기준상 확인이 필요한 내용이 발견되어 수정 요청드립니다.",
+    "사진, 소개글, 외부 연락 유도, 광고성 문구, 부적절한 표현 등이 없는지 확인 후 수정해 주세요.",
+    summary ? `검수 요약: ${summary}` : "",
+    flagText.trim(),
+    "",
+    `수정하기: ${editUrl}`,
+    "",
+    "수정이 어렵거나 문의가 필요하면 짐툴 고객지원으로 연락해 주세요.",
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  const result = await sendDatingEmailToAddressDetailed(email, subject, text, {
+    idempotencyKey: `card-review-warning:${card.sourceType}:${card.cardId}:${Date.now()}`,
+  });
+  return result.ok ? { ok: true, email } : { ok: false, error: result.error ?? "메일 발송에 실패했습니다." };
+}
+
 export async function GET() {
   const guard = await requireAdminRoute();
   if (!guard.ok) return guard.response;
@@ -425,6 +567,80 @@ export async function GET() {
   }
 
   return NextResponse.json({ ok: true, items: data ?? [] });
+}
+
+export async function PATCH(req: Request) {
+  const guard = await requireAdminRoute();
+  if (!guard.ok) return guard.response;
+
+  const body = (await req.json().catch(() => ({}))) as ReviewActionPayload;
+  const action = normalizeAction(body.action);
+  const sourceType = normalizeSource(body.sourceType ?? body.source_type);
+  const cardId = cleanText(body.cardId ?? body.card_id, 100);
+
+  if (!action || sourceType === "all" || !cardId) {
+    return NextResponse.json({ ok: false, message: "처리할 카드와 작업을 확인해 주세요." }, { status: 400 });
+  }
+
+  try {
+    const card = await loadActionCard(guard.admin, sourceType, cardId);
+    if (!card || !card.userId) {
+      return NextResponse.json({ ok: false, message: "카드를 찾지 못했습니다." }, { status: 404 });
+    }
+
+    if (action === "delete_card") {
+      await deleteActionCard(guard.admin, card);
+      await guard.admin
+        .from("admin_dating_card_ai_reviews")
+        .update({ card_status: "deleted", scanned_at: new Date().toISOString() })
+        .eq("source_type", sourceType)
+        .eq("card_id", cardId)
+        .then(({ error }) => {
+          if (error && error.code !== "42P01" && error.code !== "PGRST205") {
+            console.warn("[admin card review] review status update failed", error.message);
+          }
+        });
+      await recordAdminAuditEvent({
+        admin: guard.admin,
+        adminUser: guard.user,
+        request: req,
+        action: "dating_card_review_delete",
+        targetType: sourceType,
+        targetId: cardId,
+        metadata: { status: card.status, displayName: card.displayName },
+      });
+      return NextResponse.json({ ok: true, action, deleted: true, sourceType, cardId });
+    }
+
+    const mailResult = await sendCardWarningEmail(
+      guard.admin,
+      card,
+      cleanText(body.summary, 500),
+      cleanArray(body.flags)
+    );
+    await recordAdminAuditEvent({
+      admin: guard.admin,
+      adminUser: guard.user,
+      request: req,
+      action: "dating_card_review_warning_email",
+      targetType: sourceType,
+      targetId: cardId,
+      status: mailResult.ok ? "success" : "failure",
+      metadata: { status: card.status, error: mailResult.ok ? null : mailResult.error },
+    });
+
+    if (!mailResult.ok) {
+      return NextResponse.json({ ok: false, message: mailResult.error ?? "메일 발송에 실패했습니다." }, { status: 500 });
+    }
+
+    return NextResponse.json({ ok: true, action, emailed: true, sourceType, cardId });
+  } catch (error) {
+    console.error("[admin card review] action failed", error);
+    return NextResponse.json(
+      { ok: false, message: "검수 카드 처리에 실패했습니다.", detail: error instanceof Error ? error.message : "unknown" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(req: Request) {

@@ -25,6 +25,12 @@ type MoreViewCard = {
 };
 
 const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
+const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
+  "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
+
+function withPaymentCardNotice(message: string) {
+  return `${message}\n${PAYMENT_CARD_UNAVAILABLE_MESSAGE}`;
+}
 
 function MoreViewCardTile({ card }: { card: MoreViewCard }) {
   const imageUrl = card.image_urls[0] ?? null;
@@ -138,7 +144,7 @@ export default function MoreViewPage() {
         };
 
         if (!res.ok) {
-          alert(body.message ?? "결제 요청에 실패했습니다.");
+          alert(withPaymentCardNotice(body.message ?? "결제 요청에 실패했습니다."));
           return;
         }
 
@@ -149,13 +155,13 @@ export default function MoreViewPage() {
         }
 
         if (!body.checkoutUrl) {
-          alert(body.message ?? "결제창을 불러오지 못했습니다.");
+          alert(withPaymentCardNotice(body.message ?? "결제창을 불러오지 못했습니다."));
           return;
         }
 
         window.location.href = body.checkoutUrl;
       } catch {
-        alert("결제 요청 처리 중 오류가 발생했습니다.");
+        alert(withPaymentCardNotice("결제 요청 처리 중 오류가 발생했습니다."));
       } finally {
         setSubmitting(null);
       }

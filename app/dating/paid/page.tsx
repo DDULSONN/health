@@ -11,6 +11,8 @@ import PaidPolicyNotice from "@/components/PaidPolicyNotice";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
+  "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
 
 type PaidItem = {
   id: string;
@@ -62,6 +64,10 @@ function createClientAssetId() {
     return crypto.randomUUID();
   }
   return `asset-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
+function withPaymentCardNotice(message: string) {
+  return `${message}\n${PAYMENT_CARD_UNAVAILABLE_MESSAGE}`;
 }
 
 async function createBlurThumbnailFile(source: File): Promise<File> {
@@ -439,7 +445,9 @@ export default function DatingPaidPage() {
         await fetch(`/api/dating/paid/create?id=${encodeURIComponent(createBody.paidCardId)}`, {
           method: "DELETE",
         }).catch(() => null);
-        setError(tossCreateBody.message ?? "결제창을 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+        setError(
+          withPaymentCardNotice(tossCreateBody.message ?? "결제창을 준비하지 못했습니다. 잠시 후 다시 시도해 주세요.")
+        );
         setSubmitting(false);
         return;
       }

@@ -17,6 +17,8 @@ type ApplyCreditsStatusResponse = {
 const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
 const PACK_SIZE = 3;
 const PACK_AMOUNT = 5000;
+const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
+  "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
 
 const TEXT = {
   openCards: "\uC624\uD508\uCE74\uB4DC",
@@ -44,6 +46,10 @@ const TEXT = {
   checkoutFail: "\uACB0\uC81C\uCC3D\uC744 \uBD88\uB7EC\uC624\uC9C0 \uBABB\uD588\uC2B5\uB2C8\uB2E4.",
   networkFail: "\uACB0\uC81C \uC694\uCCAD \uCC98\uB9AC \uC911 \uC624\uB958\uAC00 \uBC1C\uC0DD\uD588\uC2B5\uB2C8\uB2E4.",
 } as const;
+
+function withPaymentCardNotice(message: string) {
+  return `${message}\n${PAYMENT_CARD_UNAVAILABLE_MESSAGE}`;
+}
 
 export default function ApplyCreditsPage() {
   const supabase = useMemo(() => createClient(), []);
@@ -113,18 +119,18 @@ export default function ApplyCreditsPage() {
       };
 
       if (!res.ok) {
-        alert(body.message ?? TEXT.createFail);
+        alert(withPaymentCardNotice(body.message ?? TEXT.createFail));
         return;
       }
 
       if (!body.checkoutUrl) {
-        alert(body.message ?? TEXT.checkoutFail);
+        alert(withPaymentCardNotice(body.message ?? TEXT.checkoutFail));
         return;
       }
 
       window.location.href = body.checkoutUrl;
     } catch {
-      alert(TEXT.networkFail);
+      alert(withPaymentCardNotice(TEXT.networkFail));
     } finally {
       setSubmitting(false);
     }

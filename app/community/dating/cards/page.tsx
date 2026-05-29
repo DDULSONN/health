@@ -241,6 +241,8 @@ type OneOnOneHomeState = {
 const PAGE_SIZE = 20;
 const OPEN_CARDS_CACHE_KEY = "community-dating-open-cards:v1";
 const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
+const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
+  "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
 
 const HOME_FEATURE_TABS: Array<{ key: HomeFeatureTab; label: string; body: string }> = [
   { key: "open_cards", label: "오픈카드", body: "카드 목록" },
@@ -385,6 +387,10 @@ function writeOpenCardsSnapshot(snapshot: OpenCardsSnapshot) {
   } catch {
     // ignore cache write errors
   }
+}
+
+function withPaymentCardNotice(message: string) {
+  return `${message}\n${PAYMENT_CARD_UNAVAILABLE_MESSAGE}`;
 }
 
 function maskIdealTypeForPreview(value: string | null): string {
@@ -799,11 +805,11 @@ function AdminLoveFortunePanel() {
       });
       const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; checkoutUrl?: string };
       if (!res.ok || !body.checkoutUrl) {
-        throw new Error(body.message ?? "연애운 결제를 시작하지 못했습니다.");
+        throw new Error(withPaymentCardNotice(body.message ?? "연애운 결제를 시작하지 못했습니다."));
       }
       window.location.href = body.checkoutUrl;
     } catch (error) {
-      setCheckoutError(error instanceof Error ? error.message : "연애운 결제를 시작하지 못했습니다.");
+      setCheckoutError(error instanceof Error ? error.message : withPaymentCardNotice("연애운 결제를 시작하지 못했습니다."));
     } finally {
       setCheckoutLoading(false);
     }
@@ -2245,14 +2251,14 @@ export default function OpenCardsPage() {
         checkoutUrl?: string;
       };
       if (!res.ok || !body.ok) {
-        throw new Error(body.message ?? body.error ?? "빠른매칭 플러스 결제를 시작하지 못했습니다.");
+        throw new Error(withPaymentCardNotice(body.message ?? body.error ?? "빠른매칭 플러스 결제를 시작하지 못했습니다."));
       }
       if (!body.checkoutUrl) {
-        throw new Error("결제창을 열지 못했습니다.");
+        throw new Error(withPaymentCardNotice("결제창을 열지 못했습니다."));
       }
       window.location.href = body.checkoutUrl;
     } catch (error) {
-      setSwipeMessage(error instanceof Error ? error.message : "빠른매칭 플러스 결제를 시작하지 못했습니다.");
+      setSwipeMessage(error instanceof Error ? error.message : withPaymentCardNotice("빠른매칭 플러스 결제를 시작하지 못했습니다."));
     } finally {
       setSwipeSubscriptionSubmitting(false);
     }
@@ -2305,14 +2311,14 @@ export default function OpenCardsPage() {
           checkoutUrl?: string;
         };
         if (!res.ok || !body.ok) {
-          throw new Error(body.message ?? body.error ?? "번호 교환 결제를 시작하지 못했습니다.");
+          throw new Error(withPaymentCardNotice(body.message ?? body.error ?? "번호 교환 결제를 시작하지 못했습니다."));
         }
         if (!body.checkoutUrl) {
-          throw new Error("결제창을 열지 못했습니다.");
+          throw new Error(withPaymentCardNotice("결제창을 열지 못했습니다."));
         }
         window.location.href = body.checkoutUrl;
       } catch (error) {
-        alert(error instanceof Error ? error.message : "번호 교환 결제를 시작하지 못했습니다.");
+        alert(error instanceof Error ? error.message : withPaymentCardNotice("번호 교환 결제를 시작하지 못했습니다."));
       } finally {
         setProcessingOneOnOneContactIds((prev) => prev.filter((id) => id !== matchId));
       }

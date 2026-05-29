@@ -50,6 +50,12 @@ type ScanResponse = {
   detail?: string;
 };
 
+type ActionResponse = {
+  ok?: boolean;
+  message?: string;
+  detail?: string;
+};
+
 const SOURCE_LABEL: Record<string, string> = {
   open_card: "오픈카드",
   paid_card: "유료카드",
@@ -110,6 +116,7 @@ export default function AdminDatingCardAiReviewPanel() {
   const [limit, setLimit] = useState("50");
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [loadingMode, setLoadingMode] = useState<ReviewMode | null>(null);
+  const [processingKey, setProcessingKey] = useState("");
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
 
@@ -152,6 +159,51 @@ export default function AdminDatingCardAiReviewPanel() {
       setError(err instanceof Error ? err.message : "카드 검수에 실패했습니다.");
     } finally {
       setLoadingMode(null);
+    }
+  };
+
+  const handleAction = async (item: ReviewItem, action: "delete_card" | "send_warning_email") => {
+    const sourceType = itemSource(item);
+    const cardId = itemCardId(item);
+    const review = itemReview(item);
+    if (!cardId) return;
+
+    if (action === "delete_card" && !window.confirm("이 의심 카드를 삭제할까요? 삭제 후 복구가 어렵습니다.")) {
+      return;
+    }
+
+    const key = `${action}:${sourceType}:${cardId}`;
+    setProcessingKey(key);
+    setError("");
+    setInfo("");
+
+    try {
+      const res = await fetch("/api/admin/dating/card-ai-review", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          sourceType,
+          cardId,
+          summary: review.summary,
+          flags: review.flags,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as ActionResponse;
+      if (!res.ok || body.ok === false) {
+        throw new Error([body.message, body.detail].filter(Boolean).join(" ") || "처리에 실패했습니다.");
+      }
+
+      if (action === "delete_card") {
+        setItems((prev) => prev.filter((candidate) => `${itemSource(candidate)}:${itemCardId(candidate)}` !== `${sourceType}:${cardId}`));
+        setInfo("카드를 삭제했습니다.");
+      } else {
+        setInfo("수정 경고 메일을 보냈습니다.");
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "처리에 실패했습니다.");
+    } finally {
+      setProcessingKey("");
     }
   };
 
@@ -229,6 +281,8 @@ export default function AdminDatingCardAiReviewPanel() {
             const review = itemReview(item);
             const sourceType = itemSource(item);
             const cardId = itemCardId(item);
+            const warningKey = `send_warning_email:${sourceType}:${cardId}`;
+            const deleteKey = `delete_card:${sourceType}:${cardId}`;
             return (
               <div key={`${sourceType}-${cardId}`} className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
                 <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
@@ -264,6 +318,25 @@ export default function AdminDatingCardAiReviewPanel() {
                       ))}
                     </div>
                   ) : null}
+                </div>
+
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => void handleAction(item, "send_warning_email")}
+                    disabled={processingKey !== "" || !itemUserId(item)}
+                    className="h-9 rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {processingKey === warningKey ? "메일 발송 중..." : "수정 경고 메일"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void handleAction(item, "delete_card")}
+                    disabled={processingKey !== ""}
+                    className="h-9 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {processingKey === deleteKey ? "삭제 중..." : "카드 삭제"}
+                  </button>
                 </div>
 
                 <p className="mt-3 rounded-xl bg-neutral-50 px-3 py-2 text-sm text-neutral-700">

@@ -9,6 +9,9 @@ type TestPaymentPageClientProps = {
   email: string;
 };
 
+const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
+  "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
+
 const PRODUCTS: Array<{
   productType: ProductType;
   title: string;
@@ -33,6 +36,10 @@ function formatAmount(amount: number) {
   return `${amount.toLocaleString("ko-KR")}원`;
 }
 
+function withPaymentCardNotice(message: string) {
+  return `${message}\n${PAYMENT_CARD_UNAVAILABLE_MESSAGE}`;
+}
+
 export default function TestPaymentPageClient({ nickname, email }: TestPaymentPageClientProps) {
   const [loadingProduct, setLoadingProduct] = useState<ProductType | null>(null);
   const [error, setError] = useState("");
@@ -45,7 +52,7 @@ export default function TestPaymentPageClient({ nickname, email }: TestPaymentPa
     setError("");
 
     try {
-      const res = await fetch("/api/payments/toss/test/create", {
+      const res = await fetch("/api/payments/toss/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ productType }),
@@ -58,14 +65,14 @@ export default function TestPaymentPageClient({ nickname, email }: TestPaymentPa
       };
 
       if (!res.ok || !body.ok || !body.checkoutUrl || !body.orderId) {
-        setError(body.message ?? "결제 페이지를 준비하지 못했습니다.");
+        setError(withPaymentCardNotice(body.message ?? "결제 페이지를 준비하지 못했습니다."));
         return;
       }
 
       setLastOrderId(body.orderId);
       window.location.href = body.checkoutUrl;
     } catch {
-      setError("결제 요청 중 네트워크 오류가 발생했습니다.");
+      setError(withPaymentCardNotice("결제 요청 중 네트워크 오류가 발생했습니다."));
     } finally {
       setLoadingProduct(null);
     }

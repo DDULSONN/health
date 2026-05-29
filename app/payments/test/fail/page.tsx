@@ -20,6 +20,10 @@ function PaymentFailContent() {
           <p className="mt-1">주문번호: {orderId}</p>
         </div>
 
+        <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.
+        </p>
+
         <div className="mt-6 flex flex-wrap gap-3">
           <Link
             href="/payments/test"
