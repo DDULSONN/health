@@ -3,11 +3,12 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useState } from "react";
+import type { ReactNode } from "react";
 
 type TabItem = {
   href: string;
   label: string;
-  icon: React.ReactNode;
+  icon: ReactNode;
 };
 
 type ChatBadgeState = {
@@ -15,6 +16,7 @@ type ChatBadgeState = {
   availableCount: number;
 };
 
+const TOOL_PATHS = ["/tools", "/flirting-generator", "/lifts", "/1rm", "/certify"];
 const CHAT_BADGE_CACHE_TTL_MS = 30_000;
 let chatBadgeCache: { value: ChatBadgeState; expiresAt: number } | null = null;
 
@@ -47,11 +49,11 @@ const TABS: TabItem[] = [
     ),
   },
   {
-    href: "/community",
-    label: "커뮤니티",
+    href: "/tools",
+    label: "도구",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" className="h-5 w-5">
-        <path strokeLinecap="round" strokeLinejoin="round" d="M4 7h16M4 12h10M4 17h7" />
+        <path strokeLinecap="round" strokeLinejoin="round" d="M4 4h7v7H4V4Zm9 0h7v7h-7V4ZM4 13h7v7H4v-7Zm9 0h7v7h-7v-7Z" />
       </svg>
     ),
   },
@@ -67,6 +69,9 @@ const TABS: TabItem[] = [
 ];
 
 function isActive(pathname: string, href: string) {
+  if (href === "/tools") {
+    return TOOL_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
+  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 
@@ -137,8 +142,7 @@ export default function MobileBottomTabBar() {
       <div className="grid h-[76px] grid-cols-5 px-2 pb-[max(10px,env(safe-area-inset-bottom))] pt-1.5">
         {TABS.map((tab) => {
           const active = isActive(pathname, tab.href);
-          const chatBadgeCount =
-            tab.href === "/chat" ? chatBadge.unreadCount + chatBadge.availableCount : 0;
+          const chatBadgeCount = tab.href === "/chat" ? chatBadge.unreadCount + chatBadge.availableCount : 0;
           return (
             <Link
               key={tab.href}

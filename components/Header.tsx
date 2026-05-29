@@ -15,25 +15,16 @@ const NAV_ITEMS = [
   { href: "/community/dating/cards", label: "오픈카드" },
   { href: "/chat", label: "채팅" },
   { href: "/dating/1on1", label: "1:1" },
-  { href: "/community", label: "커뮤니티" },
+  { href: "/tools", label: "도구" },
 ];
 
-const TOOL_ITEMS = [
-  { href: "/flirting-generator", label: "헬스장 플러팅 대사" },
-  { href: "/lifts", label: "3대 합계 계산기" },
-  { href: "/1rm", label: "1RM 계산기" },
-  { href: "/certify", label: "3대 인증 신청" },
-];
+const TOOL_PATHS = ["/tools", "/flirting-generator", "/lifts", "/1rm", "/certify"];
 
 function isActive(pathname: string, href: string) {
-  if (href === "/community" && pathname.startsWith("/community/dating/cards")) {
-    return false;
+  if (href === "/tools") {
+    return TOOL_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
   }
   return pathname === href || pathname.startsWith(`${href}/`);
-}
-
-function isToolActive(pathname: string) {
-  return TOOL_ITEMS.some((item) => isActive(pathname, item.href));
 }
 
 export default function Header() {
@@ -76,34 +67,6 @@ export default function Header() {
             );
           })}
 
-          <div className="group relative">
-            <Link
-              href="/lifts"
-              className={`inline-flex min-h-[42px] items-center rounded-full px-4 text-sm font-semibold transition ${
-                isToolActive(pathname)
-                  ? "bg-neutral-950 text-white shadow-[0_8px_22px_rgba(17,24,39,0.12)]"
-                  : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
-              }`}
-            >
-              도구
-            </Link>
-            <div className="invisible absolute left-1/2 top-full z-50 mt-2 w-52 -translate-x-1/2 rounded-2xl border border-black/5 bg-white p-2 opacity-0 shadow-[0_16px_38px_rgba(15,23,42,0.14)] transition group-hover:visible group-hover:opacity-100 group-focus-within:visible group-focus-within:opacity-100">
-              {TOOL_ITEMS.map((item) => (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  className={`block rounded-xl px-3 py-2 text-sm font-semibold transition ${
-                    isActive(pathname, item.href)
-                      ? "bg-neutral-950 text-white"
-                      : "text-neutral-700 hover:bg-neutral-100"
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              ))}
-            </div>
-          </div>
-
           <HeaderUserMenu pathname={pathname} />
         </nav>
 
@@ -143,27 +106,6 @@ export default function Header() {
                 </Link>
               );
             })}
-
-            <div className="rounded-2xl border border-black/5 bg-neutral-50 p-2">
-              <div className="px-2 pb-2 text-xs font-black text-neutral-400">도구</div>
-              <div className="grid gap-2">
-                {TOOL_ITEMS.map((item) => {
-                  const active = isActive(pathname, item.href);
-                  return (
-                    <Link
-                      key={item.href}
-                      href={item.href}
-                      onClick={() => setMobileOpen(false)}
-                      className={`inline-flex min-h-[44px] items-center rounded-xl px-3 text-sm font-semibold transition ${
-                        active ? "bg-neutral-950 text-white" : "bg-white text-neutral-700 hover:bg-neutral-100"
-                      }`}
-                    >
-                      {item.label}
-                    </Link>
-                  );
-                })}
-              </div>
-            </div>
           </div>
 
           <div className="mt-3 border-t border-black/5 pt-3">

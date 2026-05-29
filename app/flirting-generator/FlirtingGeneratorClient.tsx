@@ -104,10 +104,9 @@ export default function FlirtingGeneratorClient() {
         <div>
           <span className="inline-flex rounded-full bg-rose-50 px-3 py-1 text-xs font-black text-rose-600">도구</span>
           <h1 className="mt-3 text-2xl font-black tracking-tight text-neutral-950">헬스장 플러팅 대사</h1>
-          <p className="mt-2 text-sm leading-6 text-neutral-500">정치, 종교, 성적 표현 없이 가벼운 헬스장 농담만 뽑아요.</p>
         </div>
 
-        <div className="mt-5 space-y-4">
+        <div className="mt-6 space-y-4">
           <SimplePicker title="톤">
             {TONES.map((item) => (
               <button
