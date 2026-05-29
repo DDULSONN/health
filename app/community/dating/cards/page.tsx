@@ -329,6 +329,17 @@ function getCardVisualTheme(seed: string) {
   return CARD_VISUAL_THEMES[hash % CARD_VISUAL_THEMES.length];
 }
 
+function isGoldLiftCard(card: { sex: "male" | "female"; total_3lift: number | null; is_3lift_verified: boolean }) {
+  if (!card.is_3lift_verified || card.total_3lift == null) return false;
+  return (card.sex === "male" && card.total_3lift >= 500) || (card.sex === "female" && card.total_3lift >= 300);
+}
+
+function openCardBorderClass(card: { sex: "male" | "female"; total_3lift: number | null; is_3lift_verified: boolean }) {
+  return isGoldLiftCard(card)
+    ? "border-amber-300 shadow-[0_0_0_1px_rgba(251,191,36,0.35),0_14px_34px_rgba(180,83,9,0.10)]"
+    : "border-black/5 shadow-[0_12px_30px_rgba(15,23,42,0.05)]";
+}
+
 function getOneOnOneDisplayName(card?: OneOnOneCardPreview | null) {
   return card?.name || card?.display_nickname || card?.nickname || "1:1 후보";
 }
@@ -3693,7 +3704,7 @@ function CardRow({ card, viewerLoggedIn }: { card: PublicCard; viewerLoggedIn: b
   }, []);
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-[28px] border border-black/5 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
+    <div className={`flex h-full flex-col overflow-hidden rounded-[28px] border bg-white ${openCardBorderClass(card)}`}>
       <div className={`relative min-h-[220px] overflow-hidden bg-gradient-to-br ${theme.shell} p-3`}>
         <div className={`absolute inset-0 bg-gradient-to-b ${theme.overlay}`} aria-hidden />
         <div className="absolute -left-10 bottom-[-30px] h-36 w-36 rounded-full bg-white/10" aria-hidden />
@@ -3753,7 +3764,7 @@ function CardRow({ card, viewerLoggedIn }: { card: PublicCard; viewerLoggedIn: b
           {card.training_years != null ? (
             <span className="rounded-full bg-neutral-100 px-3 py-1 text-xs font-semibold text-neutral-500">운동 {card.training_years}년</span>
           ) : null}
-          {card.sex === "male" && card.total_3lift != null ? (
+          {card.total_3lift != null ? (
             <span className="rounded-full bg-rose-50 px-3 py-1 text-xs font-semibold text-rose-700">3대 {card.total_3lift}kg</span>
           ) : null}
         </div>

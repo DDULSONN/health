@@ -29,6 +29,11 @@ type CardDetail = {
   owner_user_id?: string;
 };
 
+function isGoldLiftCard(card: Pick<CardDetail, "sex" | "total_3lift" | "is_3lift_verified">) {
+  if (!card.is_3lift_verified || card.total_3lift == null) return false;
+  return (card.sex === "male" && card.total_3lift >= 500) || (card.sex === "female" && card.total_3lift >= 300);
+}
+
 export default function OpenCardDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -120,7 +125,13 @@ export default function OpenCardDetailPage() {
         뒤로가기
       </Link>
 
-      <div className="mt-4 rounded-2xl border border-neutral-200 bg-white p-5">
+      <div
+        className={`mt-4 rounded-2xl border bg-white p-5 ${
+          isGoldLiftCard(card)
+            ? "border-amber-300 shadow-[0_0_0_1px_rgba(251,191,36,0.35),0_14px_34px_rgba(180,83,9,0.10)]"
+            : "border-neutral-200"
+        }`}
+      >
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
             <h1 className="text-xl font-bold text-neutral-900">{card.display_nickname}</h1>
@@ -166,7 +177,7 @@ export default function OpenCardDetailPage() {
           )}
         </div>
 
-        {card.sex === "male" && card.total_3lift != null ? (
+        {card.total_3lift != null ? (
           <div className="mt-2 flex flex-wrap gap-2">
             <span className="rounded-full bg-rose-100 px-2 py-0.5 text-xs font-medium text-rose-700">3대 {card.total_3lift}kg</span>
           </div>

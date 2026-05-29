@@ -72,7 +72,7 @@ export async function PATCH(
   const { data: card, error: cardError } = await adminClient
     .from("dating_cards")
     .select(
-      "id, sex, status, display_nickname, age, region, height_cm, job, training_years, strengths_text, ideal_type, instagram_id, total_3lift, percent_all"
+      "id, owner_user_id, sex, status, display_nickname, age, region, height_cm, job, training_years, strengths_text, ideal_type, instagram_id, total_3lift, percent_all, is_3lift_verified"
     )
     .eq("id", id)
     .single();
@@ -147,6 +147,7 @@ export async function PATCH(
     instagram_id?: string | null;
     total_3lift?: number | null;
     percent_all?: number | null;
+    is_3lift_verified?: boolean;
     published_at?: string | null;
     expires_at?: string | null;
   } = {};
@@ -205,6 +206,28 @@ export async function PATCH(
     const now = new Date();
     updatePayload.published_at = now.toISOString();
     updatePayload.expires_at = new Date(now.getTime() + OPEN_CARD_EXPIRE_HOURS * 60 * 60 * 1000).toISOString();
+
+    if (card.owner_user_id) {
+      const certRes = await adminClient
+        .from("cert_requests")
+        .select("id,total")
+        .eq("user_id", card.owner_user_id)
+        .eq("status", "approved")
+        .order("reviewed_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (certRes.error) {
+        console.warn("[PATCH /api/admin/dating/cards/[id]] cert sync skipped", certRes.error);
+      } else {
+        const verifiedTotal3Lift = toInt((certRes.data as { total?: unknown } | null)?.total);
+        updatePayload.is_3lift_verified = Boolean(certRes.data);
+        if (verifiedTotal3Lift != null) {
+          updatePayload.total_3lift = verifiedTotal3Lift;
+        }
+      }
+    }
   } else if (status === "pending") {
     updatePayload.published_at = null;
     updatePayload.expires_at = null;

@@ -40,6 +40,13 @@ function isUuidLike(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
 }
 
+function isMissingColumnError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || message.includes("column") || message.includes("schema cache");
+}
+
 async function safeMaybeSingle<T>(
   query: PromiseLike<{ data: T | null; error: { message?: string } | null }>
 ): Promise<T | null> {
@@ -291,7 +298,7 @@ export async function POST(req: Request) {
     resolved.targetCardId
   );
 
-  const { error } = await admin.from("dating_user_reports").insert({
+  const reportPayload = {
     reporter_user_id: user.id,
     reported_user_id: resolved.reportedUserId,
     target_type: targetType,
@@ -300,7 +307,22 @@ export async function POST(req: Request) {
     reason,
     evidence_snapshot: evidenceSnapshot,
     evidence_preserved_at: evidenceSnapshot.captured_at,
-  });
+  };
+
+  let { error } = await admin.from("dating_user_reports").insert(reportPayload);
+
+  if (error && isMissingColumnError(error)) {
+    const legacyPayload = {
+      reporter_user_id: reportPayload.reporter_user_id,
+      reported_user_id: reportPayload.reported_user_id,
+      target_type: reportPayload.target_type,
+      target_id: reportPayload.target_id,
+      target_card_id: reportPayload.target_card_id,
+      reason: reportPayload.reason,
+    };
+    const legacyRes = await admin.from("dating_user_reports").insert(legacyPayload);
+    error = legacyRes.error;
+  }
 
   if (error) {
     if (error.code === "23505") {

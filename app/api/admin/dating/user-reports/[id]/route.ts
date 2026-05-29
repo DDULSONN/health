@@ -33,6 +33,13 @@ function isActionType(value: string): value is ActionType {
   );
 }
 
+function isMissingColumnError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || message.includes("column") || message.includes("schema cache");
+}
+
 async function refreshEvidenceSnapshot(admin: ReturnType<typeof createAdminClient>, report: ReportRow) {
   let card: unknown = null;
   let target: unknown = null;
@@ -86,11 +93,19 @@ export async function PATCH(req: Request, { params }: Params) {
   }
 
   const admin = createAdminClient();
-  const reportRes = await admin
+  let reportRes = await admin
     .from("dating_user_reports")
     .select("id,target_type,target_id,target_card_id,evidence_snapshot")
     .eq("id", reportId)
     .maybeSingle();
+
+  if (reportRes.error && isMissingColumnError(reportRes.error)) {
+    reportRes = await admin
+      .from("dating_user_reports")
+      .select("id,target_type,target_id,target_card_id")
+      .eq("id", reportId)
+      .maybeSingle();
+  }
 
   if (reportRes.error || !reportRes.data) {
     if (reportRes.error) console.error("[PATCH /api/admin/dating/user-reports/[id]] load failed", reportRes.error);
@@ -116,7 +131,16 @@ export async function PATCH(req: Request, { params }: Params) {
     patch.evidence_preserved_at = new Date().toISOString();
   }
 
-  const { error } = await admin.from("dating_user_reports").update(patch).eq("id", reportId);
+  let { error } = await admin.from("dating_user_reports").update(patch).eq("id", reportId);
+
+  if (error && isMissingColumnError(error)) {
+    const legacyPatch: Record<string, unknown> = {};
+    if (status) legacyPatch.status = status;
+    if (Object.keys(legacyPatch).length > 0) {
+      const legacyRes = await admin.from("dating_user_reports").update(legacyPatch).eq("id", reportId);
+      error = legacyRes.error;
+    }
+  }
 
   if (error) {
     console.error("[PATCH /api/admin/dating/user-reports/[id]] failed", error);

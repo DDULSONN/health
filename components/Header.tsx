@@ -19,12 +19,16 @@ const NAV_ITEMS = [
 ];
 
 const TOOL_ITEMS = [
+  { href: "/health-fortune", label: "오늘의 헬스 운세" },
   { href: "/lifts", label: "3대 합계 계산기" },
   { href: "/1rm", label: "1RM 계산기" },
   { href: "/certify", label: "3대 인증 신청" },
 ];
 
 function isActive(pathname: string, href: string) {
+  if (href === "/community" && pathname.startsWith("/community/dating/cards")) {
+    return false;
+  }
   return pathname === href || pathname.startsWith(`${href}/`);
 }
 

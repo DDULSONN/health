@@ -366,7 +366,7 @@ export default function NewDatingCardPage() {
         photo_paths: nextRawPaths,
         blur_thumb_path: nextBlurThumbPath,
         blur_paths: nextBlurPaths,
-        total_3lift: sex === "male" && total3Lift ? Number(total3Lift) : null,
+        total_3lift: total3Lift ? Number(total3Lift) : null,
       };
 
       const res = await fetch("/api/dating/cards/my", {
@@ -440,11 +440,7 @@ export default function NewDatingCardPage() {
           </span>
         </label>
 
-        {sex === "male" && (
-          <>
-            <Field label="3대 합계(kg)"><input className="input" type="number" min={0} value={total3Lift} onChange={(e) => setTotal3Lift(e.target.value)} /></Field>
-          </>
-        )}
+        <Field label="3대 합계(kg)"><input className="input" type="number" min={0} value={total3Lift} onChange={(e) => setTotal3Lift(e.target.value)} /></Field>
 
         <Field label="오픈카드 사진 1" required>
           <input type="file" accept="image/jpeg,image/png,image/webp" required={!isEditMode} onChange={(e) => setPhotos((prev) => [e.target.files?.[0] ?? null, prev[1]])} />

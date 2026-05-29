@@ -201,9 +201,11 @@ export async function POST(req: Request) {
 
   const certRes = await adminClient
     .from("cert_requests")
-    .select("id")
+    .select("id,total")
     .eq("user_id", user.id)
     .eq("status", "approved")
+    .order("reviewed_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -212,6 +214,8 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "3대 인증 상태를 확인하지 못했습니다." }, { status: 500 });
   }
   const is3LiftVerified = Boolean(certRes.data);
+  const verifiedTotal3Lift = toInt((certRes.data as { total?: unknown } | null)?.total);
+  const cardTotal3Lift = is3LiftVerified && verifiedTotal3Lift ? verifiedTotal3Lift : total3Lift;
 
   const publishedAt = null;
   const expiresAt = null;
@@ -232,7 +236,7 @@ export async function POST(req: Request) {
     photo_paths: photoPaths,
     blur_thumb_path: blurThumbPath,
     blur_paths: blurPaths,
-    total_3lift: sex === "male" ? total3Lift : null,
+    total_3lift: cardTotal3Lift,
     percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
     is_3lift_verified: is3LiftVerified,
     status: "pending" as const,
@@ -251,7 +255,7 @@ export async function POST(req: Request) {
     ideal_type: idealType || null,
     strengths_text: strengthsText || null,
       photo_visibility: photoVisibility,
-      total_3lift: sex === "male" ? total3Lift : null,
+      total_3lift: cardTotal3Lift,
       percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
       is_3lift_verified: is3LiftVerified,
       status: "pending" as const,
@@ -290,7 +294,7 @@ export async function POST(req: Request) {
       photo_urls: photoPaths,
       strengths_text: strengthsText || null,
       photo_visibility: photoVisibility,
-      total_3lift: sex === "male" ? total3Lift : null,
+      total_3lift: cardTotal3Lift,
       percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
       is_3lift_verified: is3LiftVerified,
     },
@@ -431,7 +435,7 @@ export async function PATCH(req: Request) {
   if (cardRes.error || !cardRes.data || cardRes.data.owner_user_id !== user.id) {
     return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
   }
-  if (cardRes.data.status !== "pending") {
+  if (!["pending", "public", "expired", "hidden"].includes(String(cardRes.data.status ?? ""))) {
     return NextResponse.json({ error: "대기중 카드만 수정할 수 있습니다." }, { status: 400 });
   }
 
@@ -452,9 +456,11 @@ export async function PATCH(req: Request) {
 
   const certRes = await adminClient
     .from("cert_requests")
-    .select("id")
+    .select("id,total")
     .eq("user_id", user.id)
     .eq("status", "approved")
+    .order("reviewed_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
     .limit(1)
     .maybeSingle();
 
@@ -463,6 +469,8 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "3대 인증 상태를 확인하지 못했습니다." }, { status: 500 });
   }
   const is3LiftVerified = Boolean(certRes.data);
+  const verifiedTotal3Lift = toInt((certRes.data as { total?: unknown } | null)?.total);
+  const cardTotal3Lift = is3LiftVerified && verifiedTotal3Lift ? verifiedTotal3Lift : total3Lift;
 
   const updateCandidates: Record<string, unknown>[] = [
     {
@@ -480,7 +488,7 @@ export async function PATCH(req: Request) {
       photo_paths: photoPaths,
       blur_thumb_path: blurThumbPath,
       blur_paths: blurPaths,
-      total_3lift: sex === "male" ? total3Lift : null,
+      total_3lift: cardTotal3Lift,
       percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
       is_3lift_verified: is3LiftVerified,
       status: "pending" as const,
@@ -499,7 +507,7 @@ export async function PATCH(req: Request) {
       photo_visibility: photoVisibility,
       instagram_id: instagramId,
       photo_urls: photoPaths,
-      total_3lift: sex === "male" ? total3Lift : null,
+      total_3lift: cardTotal3Lift,
       percent_all: sex === "male" && Number.isFinite(percentAll) ? percentAll : null,
       is_3lift_verified: is3LiftVerified,
       status: "pending" as const,
@@ -564,7 +572,7 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
   }
 
-  if (cardRes.data.status !== "pending") {
+  if (!["pending", "public", "expired", "hidden"].includes(String(cardRes.data.status ?? ""))) {
     return NextResponse.json({ error: "대기중 카드만 삭제할 수 있습니다." }, { status: 400 });
   }
 
@@ -572,8 +580,7 @@ export async function DELETE(req: Request) {
     .from("dating_cards")
     .delete()
     .eq("id", cardId)
-    .eq("owner_user_id", user.id)
-    .eq("status", "pending");
+    .eq("owner_user_id", user.id);
 
   if (deleteRes.error) {
     console.error("[DELETE /api/dating/cards/my] failed", deleteRes.error);

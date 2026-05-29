@@ -29,6 +29,40 @@ type ProfileRow = {
   banned_reason: string | null;
 };
 
+const FULL_REPORT_SELECT =
+  "id,reporter_user_id,reported_user_id,target_type,target_id,target_card_id,reason,evidence_snapshot,evidence_preserved_at,admin_note,action_type,action_note,actioned_at,status,created_at,reviewed_at,reviewed_by_user_id";
+const LEGACY_REPORT_SELECT =
+  "id,reporter_user_id,reported_user_id,target_type,target_id,target_card_id,reason,status,created_at,reviewed_at,reviewed_by_user_id";
+
+function isMissingColumnError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || message.includes("column") || message.includes("schema cache");
+}
+
+function normalizeLegacyReport(row: Partial<DatingUserReportRow>): DatingUserReportRow {
+  return {
+    id: String(row.id ?? ""),
+    reporter_user_id: String(row.reporter_user_id ?? ""),
+    reported_user_id: String(row.reported_user_id ?? ""),
+    target_type: row.target_type as DatingUserReportRow["target_type"],
+    target_id: String(row.target_id ?? ""),
+    target_card_id: row.target_card_id ?? null,
+    reason: String(row.reason ?? ""),
+    evidence_snapshot: row.evidence_snapshot ?? null,
+    evidence_preserved_at: row.evidence_preserved_at ?? null,
+    admin_note: row.admin_note ?? null,
+    action_type: row.action_type ?? "none",
+    action_note: row.action_note ?? null,
+    actioned_at: row.actioned_at ?? null,
+    status: row.status ?? "open",
+    created_at: String(row.created_at ?? ""),
+    reviewed_at: row.reviewed_at ?? null,
+    reviewed_by_user_id: row.reviewed_by_user_id ?? null,
+  };
+}
+
 export async function GET(req: Request) {
   const supabase = await createClient();
   const {
@@ -43,25 +77,28 @@ export async function GET(req: Request) {
   const status = (searchParams.get("status") ?? "").trim();
   const admin = createAdminClient();
 
-  let query = admin
-    .from("dating_user_reports")
-    .select(
-      "id,reporter_user_id,reported_user_id,target_type,target_id,target_card_id,reason,evidence_snapshot,evidence_preserved_at,admin_note,action_type,action_note,actioned_at,status,created_at,reviewed_at,reviewed_by_user_id"
-    )
-    .order("created_at", { ascending: false })
-    .limit(500);
+  const buildQuery = (select: string) => {
+    let query = admin.from("dating_user_reports").select(select).order("created_at", { ascending: false }).limit(500);
 
-  if (status === "open" || status === "resolved" || status === "dismissed") {
-    query = query.eq("status", status);
+    if (status === "open" || status === "resolved" || status === "dismissed") {
+      query = query.eq("status", status);
+    }
+
+    return query;
+  };
+
+  let { data, error } = await buildQuery(FULL_REPORT_SELECT);
+  if (error && isMissingColumnError(error)) {
+    const legacyRes = await buildQuery(LEGACY_REPORT_SELECT);
+    data = legacyRes.data;
+    error = legacyRes.error;
   }
-
-  const { data, error } = await query;
   if (error) {
     console.error("[GET /api/admin/dating/user-reports] failed", error);
     return NextResponse.json({ error: "지원/1:1 신고 목록을 불러오지 못했습니다." }, { status: 500 });
   }
 
-  const reports = (data ?? []) as DatingUserReportRow[];
+  const reports = ((data ?? []) as Partial<DatingUserReportRow>[]).map(normalizeLegacyReport);
   const profileIds = [
     ...new Set(
       reports
