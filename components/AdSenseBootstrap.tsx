@@ -13,6 +13,7 @@ function isAllowedAdRoute(pathname: string): boolean {
     "/community/dating/cards",
     "/protein",
     "/1rm",
+    "/flirting-generator",
     "/lifts",
   ]);
   if (exact.has(pathname)) return true;

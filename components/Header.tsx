@@ -19,6 +19,7 @@ const NAV_ITEMS = [
 ];
 
 const TOOL_ITEMS = [
+  { href: "/flirting-generator", label: "헬스장 플러팅 대사" },
   { href: "/lifts", label: "3대 합계 계산기" },
   { href: "/1rm", label: "1RM 계산기" },
   { href: "/certify", label: "3대 인증 신청" },
