@@ -4,7 +4,6 @@ import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import AdSlot from "@/components/AdSlot";
-import ShareToCommBtn from "@/components/ShareToCommBtn";
 import { createClient } from "@/lib/supabase/client";
 import { calculateLifts, buildLiftsShareUrl, type LiftInput } from "@/lib/lifts";
 import { getClassBasedPercentile, getPercentiles, type Sex } from "@/lib/percentile";
@@ -522,22 +521,6 @@ function LiftsContent() {
           >
             내 3대 성장 그래프 보기
           </Link>
-
-          <ShareToCommBtn
-            type="lifts"
-            title={`3대 합계 ${result.totalKg}kg`}
-            payload={{
-              squat: s,
-              bench: b,
-              deadlift: d,
-              totalKg: result.totalKg,
-              sex: hasSex ? sex : null,
-              allKrTop: percentiles?.allKrTop ?? null,
-              gymKrTop: percentiles?.gymKrTop ?? null,
-              classTop: classPercentile?.topPercent ?? null,
-              classLabel: classPercentile?.classLabel ?? null,
-            }}
-          />
 
           <p className="pt-1 text-center text-xs text-neutral-500">
             짐툴 공식 3대 인증 서비스 준비중 (영상 검증 + QR 인증서)
