@@ -771,6 +771,7 @@ type AdminManageTab =
   | "card_ai_review"
   | "user_activity"
   | "open_cards"
+  | "tools_patch_note"
   | "accepted_applications"
   | "mail_center"
   | "one_on_one_contact"
@@ -1371,6 +1372,12 @@ type ToolsPatchNoteResponse = {
 
 const DEFAULT_OPEN_CARD_HOME_SUBTITLE = "둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.";
 const DEFAULT_TOOLS_PATCH_NOTE_TEXT = "오늘의 개선 내용을 한 줄로 적어주세요.";
+const TOOLS_PATCH_NOTE_PRESETS = [
+  "1:1 번호교환 승인 목록을 더 잘 보이게 개선했어요.",
+  "도구 탭에서 새 소식을 확인할 수 있어요.",
+  "오픈카드와 1:1 이용 흐름을 더 안정적으로 다듬었어요.",
+  "빠른매칭 후보 노출과 사진 로딩을 점검했어요.",
+];
 
 export default function MyPage() {
   const router = useRouter();
@@ -4367,6 +4374,26 @@ export default function MyPage() {
     } finally {
       setToolsPatchNoteSaving(false);
     }
+  };
+
+  const applyToolsPatchNotePreset = (text: string) => {
+    setToolsPatchNoteEnabled(true);
+    setToolsPatchNoteText(text.slice(0, 100));
+    setToolsPatchNoteError("");
+    setToolsPatchNoteInfo("");
+  };
+
+  const prependTodayToToolsPatchNote = () => {
+    const todayLabel = new Date()
+      .toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" })
+      .replace(/\.$/, "");
+    const currentText = toolsPatchNoteText.trim();
+    const nextText = `${todayLabel} 업데이트: ${currentText || "오늘의 개선 내용을 확인해보세요."}`;
+
+    setToolsPatchNoteEnabled(true);
+    setToolsPatchNoteText(nextText.slice(0, 100));
+    setToolsPatchNoteError("");
+    setToolsPatchNoteInfo("");
   };
 
   const handleAdminSaveAdInquiry = async () => {
@@ -8062,6 +8089,8 @@ export default function MyPage() {
                   ? "1:1 번호 공개 관리 (관리자)"
                   : adminManageTab === "payment_center"
                     ? "결제 운영 (관리자)"
+                    : adminManageTab === "tools_patch_note"
+                      ? "도구 패치노트 (관리자)"
                     : adminManageTab === "accepted_applications"
                       ? "최근 수락 지원 (관리자)"
                     : "오픈카드 전체 내용 (관리자)"}
@@ -8084,6 +8113,8 @@ export default function MyPage() {
                     :
                   adminManageTab === "open_cards"
                     ? adminOpenCardsLoading
+                    : adminManageTab === "tools_patch_note"
+                    ? toolsPatchNoteSaving
                     : adminManageTab === "accepted_applications"
                     ? adminAcceptedRecentLoading
                     : adminManageTab === "one_on_one_contact"
@@ -8097,6 +8128,8 @@ export default function MyPage() {
                     ? loadAdminOpenCardOutreachPreview()
                     : adminManageTab === "open_cards"
                     ? refreshAdminOpenCardData(true)
+                    : adminManageTab === "tools_patch_note"
+                    ? handleAdminSaveToolsPatchNote()
                     : adminManageTab === "accepted_applications"
                     ? refreshAdminAcceptedRecentApplications(true)
                     : adminManageTab === "one_on_one_contact"
@@ -8113,6 +8146,10 @@ export default function MyPage() {
                     ? adminAcceptedRecentLoading
                       ? "불러오는 중..."
                       : "최근 수락 새로고침"
+                  : adminManageTab === "tools_patch_note"
+                    ? toolsPatchNoteSaving
+                      ? "저장 중..."
+                      : "패치노트 저장"
                   : adminManageTab === "payment_center"
                     ? adminPaymentCenterLoading
                       ? "불러오는 중..."
@@ -8179,6 +8216,15 @@ export default function MyPage() {
               }`}
             >
               오픈카드
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdminManageTab("tools_patch_note")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "tools_patch_note" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              도구 패치노트
             </button>
             <button
               type="button"
@@ -9139,6 +9185,85 @@ export default function MyPage() {
             </div>
           )}
 
+          {adminManageTab === "tools_patch_note" && (
+          <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-semibold text-violet-800">도구 탭 패치노트</p>
+                <p className="mt-1 text-[11px] text-neutral-500">
+                  도구 페이지 카드 아래에 오늘 바뀐 점을 한 줄로 보여줍니다.
+                </p>
+              </div>
+              <Link href="/tools" className="h-8 rounded-md border border-violet-200 bg-white px-3 py-1.5 text-xs font-medium text-violet-800">
+                도구 페이지 보기
+              </Link>
+            </div>
+            <label className="mt-3 flex items-center gap-2 text-xs font-medium text-neutral-700">
+              <input
+                type="checkbox"
+                checked={toolsPatchNoteEnabled}
+                onChange={(e) => setToolsPatchNoteEnabled(e.target.checked)}
+              />
+              도구 탭에 노출
+            </label>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {TOOLS_PATCH_NOTE_PRESETS.map((preset) => (
+                <button
+                  key={preset}
+                  type="button"
+                  onClick={() => applyToolsPatchNotePreset(preset)}
+                  className="rounded-full border border-violet-100 bg-violet-50 px-3 py-1.5 text-[11px] font-medium text-violet-800"
+                >
+                  {preset}
+                </button>
+              ))}
+            </div>
+            <input
+              value={toolsPatchNoteText}
+              onChange={(e) => setToolsPatchNoteText(e.target.value)}
+              maxLength={100}
+              placeholder={DEFAULT_TOOLS_PATCH_NOTE_TEXT}
+              className="mt-3 h-10 w-full rounded-lg border border-violet-200 px-3 text-sm"
+            />
+            <div className="mt-2 rounded-lg border border-rose-100 bg-rose-50/60 px-3 py-2 text-sm font-bold leading-6 text-rose-800">
+              <span className="mr-2 inline-flex rounded-full bg-white px-2 py-0.5 text-[11px] font-black text-rose-600">패치노트</span>
+              {toolsPatchNoteText.trim() || DEFAULT_TOOLS_PATCH_NOTE_TEXT}
+            </div>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => void handleAdminSaveToolsPatchNote()}
+                disabled={toolsPatchNoteSaving}
+                className="h-9 rounded-lg bg-violet-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+              >
+                {toolsPatchNoteSaving ? "저장 중..." : "패치노트 저장"}
+              </button>
+              <button
+                type="button"
+                onClick={prependTodayToToolsPatchNote}
+                disabled={toolsPatchNoteSaving}
+                className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 disabled:opacity-50"
+              >
+                오늘 날짜 붙이기
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setToolsPatchNoteEnabled(false);
+                  setToolsPatchNoteText("");
+                }}
+                disabled={toolsPatchNoteSaving}
+                className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 disabled:opacity-50"
+              >
+                숨기기
+              </button>
+              <span className="text-[11px] text-neutral-500">{toolsPatchNoteText.length}/100</span>
+            </div>
+            {toolsPatchNoteError && <p className="mt-2 text-xs text-rose-600">{toolsPatchNoteError}</p>}
+            {toolsPatchNoteInfo && <p className="mt-2 text-xs text-emerald-700">{toolsPatchNoteInfo}</p>}
+          </div>
+          )}
+
           {adminManageTab === "open_cards" && (
           <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
             <p className="text-xs font-semibold text-violet-800">오픈카드 작성 버튼</p>
@@ -9196,51 +9321,6 @@ export default function MyPage() {
               </div>
               {openCardHomeCopyError && <p className="mt-2 text-xs text-rose-600">{openCardHomeCopyError}</p>}
               {openCardHomeCopyInfo && <p className="mt-2 text-xs text-emerald-700">{openCardHomeCopyInfo}</p>}
-            </div>
-            <div className="mt-4 border-t border-violet-100 pt-3">
-              <p className="text-xs font-semibold text-violet-800">도구 탭 패치노트</p>
-              <p className="mt-1 text-[11px] text-neutral-500">
-                도구 페이지 카드 아래에 오늘 바뀐 점을 한 줄로 보여줍니다.
-              </p>
-              <label className="mt-2 flex items-center gap-2 text-xs font-medium text-neutral-700">
-                <input
-                  type="checkbox"
-                  checked={toolsPatchNoteEnabled}
-                  onChange={(e) => setToolsPatchNoteEnabled(e.target.checked)}
-                />
-                도구 탭에 노출
-              </label>
-              <input
-                value={toolsPatchNoteText}
-                onChange={(e) => setToolsPatchNoteText(e.target.value)}
-                maxLength={100}
-                placeholder={DEFAULT_TOOLS_PATCH_NOTE_TEXT}
-                className="mt-2 h-10 w-full rounded-lg border border-violet-200 px-3 text-sm"
-              />
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => void handleAdminSaveToolsPatchNote()}
-                  disabled={toolsPatchNoteSaving}
-                  className="h-9 rounded-lg bg-violet-600 px-3 text-xs font-medium text-white disabled:opacity-50"
-                >
-                  {toolsPatchNoteSaving ? "저장 중..." : "패치노트 저장"}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setToolsPatchNoteEnabled(false);
-                    setToolsPatchNoteText("");
-                  }}
-                  disabled={toolsPatchNoteSaving}
-                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 disabled:opacity-50"
-                >
-                  숨기기
-                </button>
-                <span className="text-[11px] text-neutral-500">{toolsPatchNoteText.length}/100</span>
-              </div>
-              {toolsPatchNoteError && <p className="mt-2 text-xs text-rose-600">{toolsPatchNoteError}</p>}
-              {toolsPatchNoteInfo && <p className="mt-2 text-xs text-emerald-700">{toolsPatchNoteInfo}</p>}
             </div>
           </div>
           )}
