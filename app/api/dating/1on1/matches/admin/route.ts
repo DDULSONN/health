@@ -116,6 +116,7 @@ async function fetchAllAdminMatches(
       let query = admin
         .from("dating_1on1_match_proposals")
         .select(selectColumns)
+        .order("updated_at", { ascending: false })
         .order("created_at", { ascending: false })
         .range(from, from + MATCH_BATCH_SIZE - 1);
 

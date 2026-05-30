@@ -892,7 +892,7 @@ type AdminOneOnOneContactExchangeRequest = {
   state: "mutual_accepted";
   source_user_id: string;
   candidate_user_id: string;
-  contact_exchange_status: "awaiting_applicant_payment" | "payment_pending_admin";
+  contact_exchange_status: "none" | "awaiting_applicant_payment" | "payment_pending_admin";
   contact_exchange_requested_at: string | null;
   contact_exchange_paid_at: string | null;
   source_phone_share_consented_at: string | null;
@@ -1412,7 +1412,7 @@ export default function MyPage() {
   const [adminOpenCardsLoaded, setAdminOpenCardsLoaded] = useState(false);
   const [adminOpenCardsLoading, setAdminOpenCardsLoading] = useState(false);
   const [adminOneOnOneContactRequests, setAdminOneOnOneContactRequests] = useState<AdminOneOnOneContactExchangeRequest[]>([]);
-  const [adminOneOnOneContactLoaded, setAdminOneOnOneContactLoaded] = useState(false);
+  const [, setAdminOneOnOneContactLoaded] = useState(false);
   const [adminOneOnOneContactLoading, setAdminOneOnOneContactLoading] = useState(false);
   const [adminOneOnOneContactSearch, setAdminOneOnOneContactSearch] = useState("");
   const [adminOpenCardOutreachScope, setAdminOpenCardOutreachScope] = useState<AdminOpenCardOutreachScope>("combined");
@@ -3079,15 +3079,13 @@ export default function MyPage() {
   }, [adminManageTab, isAdmin, loadAdminOpenCardOutreachPreview]);
 
   useEffect(() => {
-    if (!isAdmin || adminManageTab !== "one_on_one_contact" || adminOneOnOneContactLoaded || adminOneOnOneContactLoading) {
+    if (!isAdmin || adminManageTab !== "one_on_one_contact") {
       return;
     }
 
     void refreshAdminOneOnOneContactData(true);
   }, [
     adminManageTab,
-    adminOneOnOneContactLoaded,
-    adminOneOnOneContactLoading,
     isAdmin,
     refreshAdminOneOnOneContactData,
   ]);

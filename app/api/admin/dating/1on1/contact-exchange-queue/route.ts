@@ -38,8 +38,9 @@ async function fetchPendingContactExchangeMatches(admin: ReturnType<typeof creat
       .from("dating_1on1_match_proposals")
       .select(FULL_QUEUE_SELECT)
       .eq("state", "mutual_accepted")
-      .in("contact_exchange_status", ["payment_pending_admin", "awaiting_applicant_payment"])
+      .in("contact_exchange_status", ["payment_pending_admin", "awaiting_applicant_payment", "none"])
       .order("contact_exchange_paid_at", { ascending: false, nullsFirst: false })
+      .order("updated_at", { ascending: false })
       .order("created_at", { ascending: false })
       .range(from, from + BATCH_SIZE - 1);
 
