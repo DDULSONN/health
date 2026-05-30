@@ -1,4 +1,7 @@
 import Link from "next/link";
+import { readToolsPatchNote } from "@/lib/tools-patch-note";
+
+export const dynamic = "force-dynamic";
 
 const TOOLS = [
   {
@@ -43,7 +46,9 @@ const TOOLS = [
   },
 ];
 
-export default function ToolsPage() {
+export default async function ToolsPage() {
+  const patchNote = await readToolsPatchNote();
+
   return (
     <main className="mx-auto max-w-5xl px-4 py-8 md:py-12">
       <section className="rounded-[30px] border border-black/5 bg-white p-5 shadow-[0_18px_50px_rgba(15,23,42,0.06)] md:p-8">
@@ -67,6 +72,15 @@ export default function ToolsPage() {
             </Link>
           ))}
         </div>
+
+        {patchNote.enabled && patchNote.text ? (
+          <div className="mt-5 rounded-2xl border border-rose-100 bg-rose-50/60 px-4 py-3">
+            <p className="text-sm font-bold leading-6 text-rose-800">
+              <span className="mr-2 inline-flex rounded-full bg-white px-2 py-0.5 text-[11px] font-black text-rose-600">패치노트</span>
+              {patchNote.text}
+            </p>
+          </div>
+        ) : null}
       </section>
     </main>
   );

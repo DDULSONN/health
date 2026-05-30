@@ -620,6 +620,8 @@ type MyOneOnOneAutoRecommendationGroup = {
   next_refresh_at?: string | null;
   can_refresh?: boolean;
   recommendations: MyOneOnOneMatchCard[];
+  admin_recommendation_date?: string | null;
+  admin_recommendations?: MyOneOnOneMatchCard[];
 };
 
 type MyOneOnOnePhoneBlock = {
@@ -1354,7 +1356,13 @@ type OpenCardHomeCopyResponse = {
   subtitle?: string;
 };
 
+type ToolsPatchNoteResponse = {
+  enabled?: boolean;
+  text?: string;
+};
+
 const DEFAULT_OPEN_CARD_HOME_SUBTITLE = "둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.";
+const DEFAULT_TOOLS_PATCH_NOTE_TEXT = "오늘의 개선 내용을 한 줄로 적어주세요.";
 
 export default function MyPage() {
   const router = useRouter();
@@ -1512,6 +1520,11 @@ export default function MyPage() {
   const [adInquirySaving, setAdInquirySaving] = useState(false);
   const [adInquiryError, setAdInquiryError] = useState("");
   const [adInquiryInfo, setAdInquiryInfo] = useState("");
+  const [toolsPatchNoteEnabled, setToolsPatchNoteEnabled] = useState(false);
+  const [toolsPatchNoteText, setToolsPatchNoteText] = useState("");
+  const [toolsPatchNoteSaving, setToolsPatchNoteSaving] = useState(false);
+  const [toolsPatchNoteError, setToolsPatchNoteError] = useState("");
+  const [toolsPatchNoteInfo, setToolsPatchNoteInfo] = useState("");
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState<MyPageTab>("my_cert");
   const [pageSectionTab, setPageSectionTab] = useState<MyPageSectionTab>("profile");
@@ -2725,6 +2738,7 @@ export default function MyPage() {
           applyCreditsStatusRes,
           adInquiryRes,
           openCardHomeCopyRes,
+          toolsPatchNoteRes,
         ] = await Promise.all([
           fetch("/api/mypage/summary", { cache: "no-store" }),
           fetch("/api/cert-requests", { cache: "no-store" }),
@@ -2745,6 +2759,7 @@ export default function MyPage() {
           fetch("/api/dating/apply-credits/status", { cache: "no-store" }),
           fetch("/api/admin/site/ad-inquiry", { cache: "no-store" }),
           fetch("/api/admin/dating/cards/home-copy", { cache: "no-store" }),
+          fetch("/api/admin/tools/patch-note", { cache: "no-store" }),
         ]);
 
         const summaryBody = (await summaryRes.json().catch(() => ({}))) as SummaryResponse & {
@@ -2811,6 +2826,7 @@ export default function MyPage() {
         const applyCreditsBody = (await applyCreditsStatusRes.json().catch(() => ({}))) as ApplyCreditsStatusResponse;
         const adInquiryBody = (await adInquiryRes.json().catch(() => ({}))) as AdInquirySettingsResponse;
         const openCardHomeCopyBody = (await openCardHomeCopyRes.json().catch(() => ({}))) as OpenCardHomeCopyResponse;
+        const toolsPatchNoteBody = (await toolsPatchNoteRes.json().catch(() => ({}))) as ToolsPatchNoteResponse;
 
         if (!summaryRes.ok) {
           throw new Error(summaryBody.error ?? "마이페이지 정보를 불러오지 못했습니다.");
@@ -2891,6 +2907,8 @@ export default function MyPage() {
           setAdInquiryLinkUrl(adInquiryBody.linkUrl ?? "");
           setAdInquiryBadge(adInquiryBody.badge ?? "AD SLOT");
           setAdInquiryTheme(adInquiryBody.theme ?? "emerald");
+          setToolsPatchNoteEnabled(toolsPatchNoteBody.enabled === true);
+          setToolsPatchNoteText(toolsPatchNoteBody.text?.trim() ?? "");
           setError("");
 
           if (adminFlag) {
@@ -4312,6 +4330,36 @@ export default function MyPage() {
       setOpenCardHomeCopyError(e instanceof Error ? e.message : "오픈카드 홈 문구 저장에 실패했습니다.");
     } finally {
       setOpenCardHomeCopySaving(false);
+    }
+  };
+
+  const handleAdminSaveToolsPatchNote = async () => {
+    setToolsPatchNoteSaving(true);
+    setToolsPatchNoteError("");
+    setToolsPatchNoteInfo("");
+    try {
+      const res = await fetch("/api/admin/tools/patch-note", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: toolsPatchNoteEnabled, text: toolsPatchNoteText }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        setting?: ToolsPatchNoteResponse;
+      };
+      if (!res.ok || !body.ok || !body.setting) {
+        setToolsPatchNoteError(body.error ?? "도구 패치노트 저장에 실패했습니다.");
+        return;
+      }
+
+      setToolsPatchNoteEnabled(body.setting.enabled === true);
+      setToolsPatchNoteText(body.setting.text?.trim() ?? "");
+      setToolsPatchNoteInfo("도구 패치노트를 저장했습니다.");
+    } catch (e) {
+      setToolsPatchNoteError(e instanceof Error ? e.message : "도구 패치노트 저장에 실패했습니다.");
+    } finally {
+      setToolsPatchNoteSaving(false);
     }
   };
 
@@ -6930,6 +6978,7 @@ export default function MyPage() {
               const relatedMatches = myOneOnOneMatchesByCardId.get(item.id) ?? [];
               const autoRecommendationGroup = myOneOnOneAutoRecommendationsByCardId.get(item.id) ?? null;
               const autoRecommendations = autoRecommendationGroup?.recommendations ?? [];
+              const adminAutoRecommendations = autoRecommendationGroup?.admin_recommendations ?? [];
               const canRefreshAutoRecommendations = autoRecommendationGroup?.can_refresh === true;
               const autoRecommendationRefreshUsed = autoRecommendationGroup?.refresh_used === true;
               const autoRecommendationNextRefreshAt = autoRecommendationGroup?.next_refresh_at ?? null;
@@ -7030,7 +7079,7 @@ export default function MyPage() {
                           </button>
                         </div>
                         <p className="mt-1 text-xs text-pink-700">
-                          이 리스트 외에도 운영자가 따로 후보를 보내드릴 수 있어요. 마음에 드는 후보는 여러 명 선택할 수 있고, 선택된 사람마다 수락 요청이 전달됩니다.
+                          이 리스트 외에도 추가 후보를 확인할 수 있어요. 마음에 드는 후보는 여러 명 선택할 수 있고, 선택된 사람마다 수락 요청이 전달됩니다.
                         </p>
                         {autoRecommendationRefreshUsed && (
                           <p className="mt-1 text-xs text-pink-700">
@@ -7041,7 +7090,7 @@ export default function MyPage() {
                                 : "이 카드는 최근에 추천 새로고침을 사용했어요."}
                           </p>
                         )}
-                        {autoRecommendations.length === 0 ? (
+                        {autoRecommendations.length === 0 && adminAutoRecommendations.length === 0 ? (
                         <div className="mt-3 rounded-lg border border-dashed border-pink-200 bg-white p-3 text-sm text-neutral-500">
                           지금 바로 보여줄 자동 추천 후보가 없어요. 이미 진행 중인 매칭이 있거나, 조건에 맞는 후보가 새로 잡히면 여기서 보여드릴게요.
                         </div>
@@ -7106,6 +7155,75 @@ export default function MyPage() {
                               </div>
                             );
                           })}
+                          {adminAutoRecommendations.length > 0 && (
+                            <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3">
+                              <p className="text-sm font-semibold text-emerald-900">오늘의 추가 후보 3명</p>
+                              <p className="mt-1 text-xs text-emerald-700">
+                                기본 추천 10명과 겹치지 않는 나이대 맞춤 후보예요. 매일 자동으로 바뀝니다.
+                              </p>
+                              <div className="mt-3 space-y-2">
+                                {adminAutoRecommendations.map((card) => {
+                                  const actionKey = `${item.id}:${card.id}`;
+                                  const processing = processingOneOnOneAutoKeys.includes(actionKey);
+                                  return (
+                                    <div key={`${item.id}-admin-${card.id}`} className="rounded-lg border border-emerald-200 bg-white p-3">
+                                      <div className="flex items-center justify-between gap-2">
+                                        <p className="text-sm font-medium text-neutral-900">
+                                          {card.name} / {card.age ?? "-"}세 / {card.region}
+                                        </p>
+                                        <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                                          추가 후보
+                                        </span>
+                                      </div>
+                                      <p className="mt-1 text-xs text-neutral-600">
+                                        {card.height_cm}cm / {card.job}
+                                      </p>
+                                      <p className="mt-2 text-xs text-neutral-700 whitespace-pre-wrap break-words">{card.intro_text}</p>
+                                      <p className="mt-2 text-xs text-neutral-700">장점: {card.strengths_text}</p>
+                                      <p className="mt-1 text-xs text-neutral-700">원하는 점: {card.preferred_partner_text}</p>
+                                      {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
+                                        <div className="mt-2 grid grid-cols-2 gap-2">
+                                          {card.photo_signed_urls.map((url, idx) => (
+                                            <a
+                                              key={`${item.id}-admin-${card.id}-${idx}`}
+                                              href={url}
+                                              target="_blank"
+                                              rel="noreferrer"
+                                              className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
+                                            >
+                                              <div className="flex h-24 w-full items-center justify-center bg-neutral-50">
+                                                <img
+                                                  src={url}
+                                                  alt={`추가 후보 사진 ${idx + 1}`}
+                                                  loading="lazy"
+                                                  decoding="async"
+                                                  className="max-h-full max-w-full object-contain"
+                                                />
+                                              </div>
+                                            </a>
+                                          ))}
+                                        </div>
+                                      )}
+                                      <div className="mt-3 flex flex-wrap gap-2">
+                                        <button
+                                          type="button"
+                                          disabled={processing}
+                                          onClick={() => void handleOneOnOneAutoRecommendationSelect(item.id, card.id)}
+                                          className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                                        >
+                                          {processing ? "처리 중..." : "이 후보 선택"}
+                                        </button>
+                                        <SmallDatingReportButton
+                                          disabled={reportingDatingTargetKeys.includes(`one_on_one_card:${card.id}`)}
+                                          onClick={() => void handleDatingUserReport("one_on_one_card", card.id, "1:1 추가 후보")}
+                                        />
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>
@@ -7113,7 +7231,7 @@ export default function MyPage() {
 
                   {incomingCandidates.length > 0 && (
                     <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/50 p-3">
-                      <p className="text-sm font-semibold text-sky-900">운영자가 보낸 후보</p>
+                      <p className="text-sm font-semibold text-sky-900">추가 후보</p>
                       <p className="mt-1 text-xs text-sky-700">원하는 후보를 여러 명 선택할 수 있고, 선택된 사람마다 수락 요청이 전달됩니다.</p>
                       <div className="mt-3 space-y-2">
                         {incomingCandidates.map((match) => {
@@ -9072,6 +9190,51 @@ export default function MyPage() {
               </div>
               {openCardHomeCopyError && <p className="mt-2 text-xs text-rose-600">{openCardHomeCopyError}</p>}
               {openCardHomeCopyInfo && <p className="mt-2 text-xs text-emerald-700">{openCardHomeCopyInfo}</p>}
+            </div>
+            <div className="mt-4 border-t border-violet-100 pt-3">
+              <p className="text-xs font-semibold text-violet-800">도구 탭 패치노트</p>
+              <p className="mt-1 text-[11px] text-neutral-500">
+                도구 페이지 카드 아래에 오늘 바뀐 점을 한 줄로 보여줍니다.
+              </p>
+              <label className="mt-2 flex items-center gap-2 text-xs font-medium text-neutral-700">
+                <input
+                  type="checkbox"
+                  checked={toolsPatchNoteEnabled}
+                  onChange={(e) => setToolsPatchNoteEnabled(e.target.checked)}
+                />
+                도구 탭에 노출
+              </label>
+              <input
+                value={toolsPatchNoteText}
+                onChange={(e) => setToolsPatchNoteText(e.target.value)}
+                maxLength={100}
+                placeholder={DEFAULT_TOOLS_PATCH_NOTE_TEXT}
+                className="mt-2 h-10 w-full rounded-lg border border-violet-200 px-3 text-sm"
+              />
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleAdminSaveToolsPatchNote()}
+                  disabled={toolsPatchNoteSaving}
+                  className="h-9 rounded-lg bg-violet-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                >
+                  {toolsPatchNoteSaving ? "저장 중..." : "패치노트 저장"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setToolsPatchNoteEnabled(false);
+                    setToolsPatchNoteText("");
+                  }}
+                  disabled={toolsPatchNoteSaving}
+                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 disabled:opacity-50"
+                >
+                  숨기기
+                </button>
+                <span className="text-[11px] text-neutral-500">{toolsPatchNoteText.length}/100</span>
+              </div>
+              {toolsPatchNoteError && <p className="mt-2 text-xs text-rose-600">{toolsPatchNoteError}</p>}
+              {toolsPatchNoteInfo && <p className="mt-2 text-xs text-emerald-700">{toolsPatchNoteInfo}</p>}
             </div>
           </div>
           )}

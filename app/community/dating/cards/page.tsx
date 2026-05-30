@@ -218,6 +218,8 @@ type OneOnOneRecommendationGroup = {
   next_refresh_at?: string | null;
   can_refresh?: boolean;
   recommendations?: OneOnOneCardPreview[];
+  admin_recommendation_date?: string | null;
+  admin_recommendations?: OneOnOneCardPreview[];
 };
 
 type OneOnOneMatchPreview = {
@@ -3027,7 +3029,10 @@ function OneOnOneHomePanel({
   const myCards = data?.myCards ?? [];
   const matches = data?.matches ?? [];
   const recommendationGroups = data?.recommendations ?? [];
-  const recommendationCount = recommendationGroups.reduce((sum, group) => sum + (group.recommendations?.length ?? 0), 0);
+  const recommendationCount = recommendationGroups.reduce(
+    (sum, group) => sum + (group.recommendations?.length ?? 0) + (group.admin_recommendations?.length ?? 0),
+    0
+  );
   const activeCards = myCards.filter((card) => card.status !== "rejected");
   const hasOneOnOneCard = activeCards.length > 0;
   const actionRequiredCount = matches.filter((match) => {
@@ -3205,6 +3210,7 @@ function OneOnOneHomePanel({
                     const sourceCardId = String(group.source_card_id ?? "");
                     const sourceCard = activeCards.find((card) => card.id === sourceCardId);
                     const recommendations = group.recommendations ?? [];
+                    const adminRecommendations = group.admin_recommendations ?? [];
                     const refreshing = refreshingRecommendationIds.includes(sourceCardId);
                     const canRefresh = Boolean(sourceCardId && group.can_refresh);
                     const nextRefreshLabel = group.next_refresh_at ? new Date(group.next_refresh_at).toLocaleString("ko-KR") : "";
@@ -3253,6 +3259,41 @@ function OneOnOneHomePanel({
                               </OneOnOneCandidateCard>
                             );
                           })}
+                          {adminRecommendations.length > 0 ? (
+                            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3">
+                              <div className="mb-3">
+                                <p className="text-sm font-black text-emerald-950">오늘의 추가 후보</p>
+                                <p className="mt-1 text-xs leading-5 text-emerald-700">
+                                  기본 추천 10명과 겹치지 않는 나이대 맞춤 후보예요. 매일 자동으로 바뀝니다.
+                                </p>
+                              </div>
+                              <div className="space-y-3">
+                                {adminRecommendations.map((candidate) => {
+                                  const candidateId = String(candidate.id ?? "");
+                                  const actionKey = `${sourceCardId}:${candidateId}`;
+                                  const canSelect = Boolean(sourceCardId && candidateId);
+                                  return (
+                                    <OneOnOneCandidateCard
+                                      key={`${sourceCardId}:admin:${candidateId || getOneOnOneDisplayName(candidate)}`}
+                                      card={candidate}
+                                      badge="추가 후보"
+                                      badgeClassName="bg-emerald-100 text-emerald-700"
+                                      note="선택하면 상대에게 수락 요청이 전달됩니다."
+                                    >
+                                      <button
+                                        type="button"
+                                        disabled={!canSelect || processingAutoKeys.includes(actionKey)}
+                                        onClick={() => onAutoSelect(sourceCardId, candidateId)}
+                                        className="mt-3 inline-flex min-h-[40px] w-full items-center justify-center rounded-xl bg-emerald-600 px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-emerald-700"
+                                      >
+                                        {processingAutoKeys.includes(actionKey) ? "선택 중..." : "이 후보 선택"}
+                                      </button>
+                                    </OneOnOneCandidateCard>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          ) : null}
                         </div>
                       </div>
                     );

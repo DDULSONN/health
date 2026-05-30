@@ -10,9 +10,11 @@ import {
 import { getRegionDistanceMeta } from "@/lib/region-distance";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
+import { getKstDateString } from "@/lib/weekly";
 import { NextResponse } from "next/server";
 
 const RECOMMENDATION_LIMIT = 10;
+const ADMIN_RECOMMENDATION_LIMIT = 3;
 const CARD_BATCH_SIZE = 1000;
 const RECOMMENDATION_REFRESH_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 
@@ -64,6 +66,19 @@ function getAgeGap(sourceAge: number | null, candidateAge: number | null): numbe
   return Math.abs(sourceAge - candidateAge);
 }
 
+function isCandidateInSourceAgeRange(sourceCard: RecommendationCard, candidateCard: RecommendationCard) {
+  const sourceAgeRange = getAgeRange(sourceCard);
+  if (
+    sourceAgeRange.minAge == null ||
+    sourceAgeRange.maxAge == null ||
+    candidateCard.age == null ||
+    !Number.isFinite(candidateCard.age)
+  ) {
+    return false;
+  }
+  return candidateCard.age >= sourceAgeRange.minAge && candidateCard.age <= sourceAgeRange.maxAge;
+}
+
 function getDistanceRank(sourceRegion: string | null, candidateRegion: string | null) {
   const meta = getRegionDistanceMeta(sourceRegion, candidateRegion);
 
@@ -81,19 +96,6 @@ function sortCandidatesForSource(
   candidates: RecommendationCard[],
   seedSuffix: string
 ) {
-  const sourceAgeRange = getAgeRange(sourceCard);
-  const inAgeRange = (candidateCard: (typeof candidates)[number]) => {
-    if (
-      sourceAgeRange.minAge == null ||
-      sourceAgeRange.maxAge == null ||
-      candidateCard.age == null ||
-      !Number.isFinite(candidateCard.age)
-    ) {
-      return false;
-    }
-    return candidateCard.age >= sourceAgeRange.minAge && candidateCard.age <= sourceAgeRange.maxAge;
-  };
-
   return [...candidates].sort((a, b) => {
     const aDistanceRank = getDistanceRank(sourceCard.region, a.region);
     const bDistanceRank = getDistanceRank(sourceCard.region, b.region);
@@ -111,8 +113,8 @@ function sortCandidatesForSource(
       return aDistanceRank.distanceRank - bDistanceRank.distanceRank;
     }
 
-    const aInAgeRange = inAgeRange(a);
-    const bInAgeRange = inAgeRange(b);
+    const aInAgeRange = isCandidateInSourceAgeRange(sourceCard, a);
+    const bInAgeRange = isCandidateInSourceAgeRange(sourceCard, b);
     if (aInAgeRange !== bInAgeRange) {
       return aInAgeRange ? -1 : 1;
     }
@@ -260,6 +262,7 @@ export async function GET(req: Request) {
   }
 
   const sourceCardIds = mySourceCards.map((card) => card.id);
+  const adminRecommendationDate = getKstDateString();
 
   const [existingPairRes, blockedCandidateRes, phoneBlockMap] = await Promise.all([
     admin
@@ -330,6 +333,17 @@ export async function GET(req: Request) {
         )
       : defaultRecommendations;
     const refreshAvailability = getRefreshAvailability(sourceCard.recommendation_refresh_used_at);
+    const recommendationIds = new Set(recommendations.map((candidate) => candidate.id));
+    const adminRecommendations = takeRecommendations(
+      sortCandidatesForSource(
+        sourceCard,
+        candidates.filter((candidate) => isCandidateInSourceAgeRange(sourceCard, candidate)),
+        `${adminRecommendationDate}:admin-extra`
+      ),
+      ADMIN_RECOMMENDATION_LIMIT,
+      recommendationIds,
+      `${sourceCard.id}:${adminRecommendationDate}:admin-extra`
+    );
 
     return {
       source_card_id: sourceCard.id,
@@ -339,6 +353,8 @@ export async function GET(req: Request) {
       next_refresh_at: refreshAvailability.nextRefreshAt,
       can_refresh: refreshAvailability.canRefreshNow && candidates.length > RECOMMENDATION_LIMIT,
       recommendations: recommendations.map(stripInternalPhone),
+      admin_recommendation_date: adminRecommendationDate,
+      admin_recommendations: adminRecommendations.map(stripInternalPhone),
     };
   });
 
