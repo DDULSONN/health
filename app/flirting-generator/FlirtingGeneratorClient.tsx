@@ -1,95 +1,57 @@
 "use client";
 
 import { useState } from "react";
-import type { ReactNode } from "react";
 
-type Tone = "soft" | "plain" | "fun";
-type Scene = "back" | "leg" | "cardio" | "protein";
-
-const TONES: Array<{ key: Tone; label: string }> = [
-  { key: "soft", label: "귀엽게" },
-  { key: "plain", label: "담백하게" },
-  { key: "fun", label: "장난스럽게" },
+const LINES = [
+  "혹시 오늘 등 하는 날이에요? 제 마음도 같이 당겨졌는데요.",
+  "레그프레스 무게보다 말 걸 용기가 더 무겁네요.",
+  "유산소는 그쪽이 하는데 왜 제 심박수가 올라가죠?",
+  "보충제는 챙기셨나요? 저는 용기 보충하고 왔어요.",
+  "랫풀다운 하시는 줄 알았는데 제 시선까지 같이 당겨졌네요.",
+  "스쿼트보다 어려운 게 말 걸기였는데, 방금 성공한 것 같아요.",
+  "러닝머신은 제자리인데 저는 한 걸음 다가왔네요.",
+  "프로틴보다 필요한 건 용기였는데 방금 충전됐어요.",
+  "오늘 운동 루틴 좋아 보여요. 저도 살짝 자극받고 갑니다.",
+  "풀업은 못 해도 인사는 할 수 있을 것 같아서 왔어요.",
+  "오늘 운동 열심히 하시는 거 보고 제 핑계가 사라졌어요.",
+  "심박수 체크하다가 제 긴장감까지 같이 체크됐어요.",
+  "프로틴 쉐이크처럼 대화도 가볍게 섞어봐도 될까요?",
+  "운동은 혼자 왔는데, 인사는 같이 해도 될 것 같아서요.",
+  "오늘 루틴 보니까 제 운동 의지도 같이 올라왔어요.",
+  "덤벨은 내려놓았는데 호감은 아직 못 내려놨어요.",
+  "세트 사이 쉬는 시간인가요? 저는 말 걸 타이밍만 기다렸어요.",
+  "운동 자세가 너무 좋아서 제 집중력이 잠깐 흔들렸어요.",
+  "헬스장에서는 무게보다 타이밍이 어렵네요. 지금 괜찮을까요?",
+  "오늘은 단백질보다 인사 타이밍을 챙겨봤어요.",
+  "운동 끝나고 나가려다가 용기 한 세트만 더 하고 왔어요.",
+  "기구 사용법보다 지금 이 인사가 더 어렵네요.",
+  "오늘 컨디션 좋아 보이세요. 저도 덕분에 한 세트 더 할 힘이 났어요.",
+  "러닝머신 속도보다 제 심박수가 더 빨라진 것 같아요.",
+  "운동 루틴은 모르겠고, 멋있다는 말은 해야 할 것 같았어요.",
+  "바벨은 무거워도 참겠는데, 말 안 걸고 지나가는 건 더 어렵네요.",
+  "오늘 헬스장 온 보람이 방금 생긴 것 같아요.",
+  "운동 기록보다 오늘 이 인사가 더 기억에 남을 것 같아요.",
+  "스트레칭보다 먼저 긴장부터 풀고 인사드릴게요.",
+  "운동 잘하시는 분 보면 배우고 싶은데, 오늘은 이름도 궁금하네요.",
+  "쉬는 시간 방해라면 죄송해요. 그래도 인사는 놓치기 아쉬웠어요.",
+  "오늘 루틴이 빡세 보여서요. 저는 용기 루틴만 겨우 성공했습니다.",
+  "거울 보다가 운동 자세 말고 그쪽이 눈에 들어왔어요.",
+  "운동은 꾸준함이 중요하다는데, 저도 꾸준히 인사해도 될까요?",
+  "기구 대기 중인데, 사실 제일 기다린 건 말 걸 타이밍이었어요.",
+  "운동 끝나기 전에 인사라도 해야 오늘 루틴이 완성될 것 같았어요.",
 ];
 
-const SCENES: Array<{ key: Scene; label: string }> = [
-  { key: "back", label: "등" },
-  { key: "leg", label: "하체" },
-  { key: "cardio", label: "유산소" },
-  { key: "protein", label: "프로틴" },
-];
-
-const LINES: Record<Tone, Record<Scene, string[]>> = {
-  soft: {
-    back: [
-      "혹시 오늘 등 하는 날이에요? 제 마음도 같이 당겨졌는데요.",
-      "등 운동 루틴이 궁금해서요. 잠깐 물어봐도 괜찮을까요?",
-    ],
-    leg: [
-      "오늘 하체 하세요? 저는 방금 말 걸 용기까지 스쿼트하고 왔어요.",
-      "하체 루틴 멋있네요. 저도 한 걸음 다가가도 될까요?",
-    ],
-    cardio: [
-      "유산소 중이신데 죄송해요. 제 마음도 같이 뛰어서요.",
-      "오늘 페이스 좋아 보여요. 짧게 인사드려도 될까요?",
-    ],
-    protein: [
-      "혹시 프로틴 뭐 드세요? 저는 오늘 용기 한 스쿱 먹고 왔어요.",
-      "프로틴보다 궁금한 게 생겼는데, 이름 물어봐도 될까요?",
-    ],
-  },
-  plain: {
-    back: [
-      "등 운동 자세가 좋아 보여서요. 루틴 하나만 물어봐도 될까요?",
-      "운동 되게 꾸준히 하시는 느낌이에요. 보기 좋네요.",
-    ],
-    leg: [
-      "하체 운동 열심히 하시네요. 루틴이 깔끔해 보여요.",
-      "자세가 좋아 보여서 눈에 들어왔어요. 팁 하나만 물어봐도 될까요?",
-    ],
-    cardio: [
-      "페이스가 안정적이시네요. 운동 자주 오시나 봐요.",
-      "유산소 루틴 좋아 보여요. 몇 분 정도 타시는지 궁금했어요.",
-    ],
-    protein: [
-      "프로틴 추천 괜찮으세요? 고르다가 계속 실패해서요.",
-      "운동 후에 뭐 챙겨 드시는지 궁금했어요.",
-    ],
-  },
-  fun: {
-    back: [
-      "오늘 등 운동이세요? 저는 방금 호감이 풀업됐어요.",
-      "랫풀다운 하시는 줄 알았는데 제 시선까지 같이 당겨졌네요.",
-    ],
-    leg: [
-      "레그프레스 무게보다 말 걸 용기가 더 무겁네요.",
-      "스쿼트보다 어려운 게 말 걸기였는데, 방금 성공한 것 같아요.",
-    ],
-    cardio: [
-      "유산소는 그쪽이 하는데 왜 제 심박수가 올라가죠?",
-      "러닝머신 속도보다 제 심박수가 더 빨라진 것 같아요.",
-    ],
-    protein: [
-      "보충제는 챙기셨나요? 저는 용기 보충하고 왔어요.",
-      "프로틴 맛 추천 하나랑, 괜찮으면 대화 한 번만 얻어가도 될까요?",
-    ],
-  },
-};
-
-function pickLine(tone: Tone, scene: Scene) {
-  const list = LINES[tone][scene];
-  return list[Math.floor(Math.random() * list.length)];
+function pickLine() {
+  return LINES[Math.floor(Math.random() * LINES.length)];
 }
 
 export default function FlirtingGeneratorClient() {
-  const [tone, setTone] = useState<Tone>("soft");
-  const [scene, setScene] = useState<Scene>("back");
-  const [line, setLine] = useState(() => LINES.soft.back[0]);
+  const [line, setLine] = useState(() => LINES[0]);
   const [copied, setCopied] = useState(false);
 
   const generate = () => {
     setCopied(false);
-    setLine(pickLine(tone, scene));
+    setLine(pickLine());
   };
 
   const copy = async () => {
@@ -106,39 +68,7 @@ export default function FlirtingGeneratorClient() {
           <h1 className="mt-3 text-2xl font-black tracking-tight text-neutral-950">헬스장 플러팅 대사</h1>
         </div>
 
-        <div className="mt-6 space-y-4">
-          <SimplePicker title="톤">
-            {TONES.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => setTone(item.key)}
-                className={`min-h-[40px] rounded-full border px-4 text-sm font-bold transition ${
-                  tone === item.key ? "border-neutral-950 bg-neutral-950 text-white" : "border-black/5 bg-neutral-50 text-neutral-600"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </SimplePicker>
-
-          <SimplePicker title="상황">
-            {SCENES.map((item) => (
-              <button
-                key={item.key}
-                type="button"
-                onClick={() => setScene(item.key)}
-                className={`min-h-[40px] rounded-full border px-4 text-sm font-bold transition ${
-                  scene === item.key ? "border-rose-600 bg-rose-600 text-white" : "border-black/5 bg-neutral-50 text-neutral-600"
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </SimplePicker>
-        </div>
-
-        <div className="mt-5 rounded-3xl bg-neutral-50 p-5">
+        <div className="mt-6 rounded-3xl bg-neutral-50 p-5">
           <p className="text-lg font-black leading-8 text-neutral-950">{line}</p>
         </div>
 
@@ -152,14 +82,5 @@ export default function FlirtingGeneratorClient() {
         </div>
       </section>
     </main>
-  );
-}
-
-function SimplePicker({ title, children }: { title: string; children: ReactNode }) {
-  return (
-    <div>
-      <p className="mb-2 text-sm font-black text-neutral-900">{title}</p>
-      <div className="flex flex-wrap gap-2">{children}</div>
-    </div>
   );
 }
