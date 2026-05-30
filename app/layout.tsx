@@ -19,9 +19,9 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const siteTitle = "짐툴 GymTools - 운동하는 사람들의 소개팅";
+const siteTitle = "짐툴 GymTools - 운동과 소개팅을 자연스럽게";
 const siteDescription =
-  "짐툴은 오픈카드, 빠른매칭, 1:1 소개팅으로 운동하는 사람들이 더 자연스럽게 연결되는 소개팅 서비스입니다.";
+  "짐툴은 오픈카드, 빠른매칭, 1:1 소개팅과 운동 도구를 함께 제공하는 서비스입니다. 부담 없이 둘러보고 자연스럽게 연결을 시작해보세요.";
 
 export const metadata: Metadata = {
   title: {
@@ -31,7 +31,7 @@ export const metadata: Metadata = {
   description: siteDescription,
   applicationName: "짐툴",
   manifest: "/manifest.webmanifest",
-  keywords: ["짐툴", "GymTools", "운동 소개팅", "헬스 소개팅", "오픈카드", "빠른매칭", "1:1 소개팅"],
+  keywords: ["짐툴", "GymTools", "소개팅", "소개팅 앱", "운동 소개팅", "헬스 소개팅", "오픈카드", "빠른매칭", "1:1 소개팅", "1RM 계산기", "3대 계산기"],
   icons: {
     shortcut: "/favicon.ico",
     apple: "/apple-touch-icon.png",
@@ -53,7 +53,7 @@ export const metadata: Metadata = {
   },
   openGraph: {
     title: siteTitle,
-    description: "오픈카드로 바로 지원하고, 빠른매칭과 1:1 소개팅으로 운동 취향이 맞는 사람을 만나보세요.",
+    description: "오픈카드로 바로 지원하고, 빠른매칭과 1:1 소개팅으로 원하는 방식의 만남을 시작해보세요.",
     siteName: "짐툴 GymTools",
     type: "website",
     locale: "ko_KR",
@@ -61,7 +61,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary",
     title: siteTitle,
-    description: "오픈카드, 빠른매칭, 1:1 소개팅으로 운동하는 사람들과 자연스럽게 연결돼요.",
+    description: "오픈카드, 빠른매칭, 1:1 소개팅으로 부담 없이 둘러보고 자연스럽게 연결을 시작해보세요.",
   },
 };
 
@@ -80,7 +80,7 @@ export default function RootLayout({
     "@context": "https://schema.org",
     "@type": "WebSite",
     name: "짐툴 GymTools",
-    alternateName: ["GymTools", "짐툴", "운동 소개팅"],
+    alternateName: ["GymTools", "짐툴", "운동 소개팅", "헬스 소개팅"],
     description: siteDescription,
     url: "https://helchang.com",
   };
