@@ -152,6 +152,7 @@ type MyDatingCard = {
   display_nickname: string;
   age: number | null;
   region: string | null;
+  photo_visibility?: "blur" | "public" | null;
   status: "pending" | "public" | "expired" | "hidden";
   queue_position?: number | null;
   published_at: string | null;
@@ -1401,6 +1402,7 @@ export default function MyPage() {
   const [oneOnOneBlockLabelInput, setOneOnOneBlockLabelInput] = useState("");
   const [oneOnOnePhoneBlockSubmitting, setOneOnOnePhoneBlockSubmitting] = useState(false);
   const [deletingOneOnOnePhoneBlockIds, setDeletingOneOnOnePhoneBlockIds] = useState<string[]>([]);
+  const [savingOpenCardVisibilityIds, setSavingOpenCardVisibilityIds] = useState<string[]>([]);
   const [datingConnections, setDatingConnections] = useState<DatingConnection[]>([]);
   const [swipeStatusSummary, setSwipeStatusSummary] = useState<SwipeStatusResponse["summary"] | null>(null);
   const [myOutgoingSwipeLikes, setMyOutgoingSwipeLikes] = useState<SwipeStatusItem[]>([]);
@@ -4464,6 +4466,37 @@ export default function MyPage() {
       alert(body.message ?? "오픈카드를 삭제했습니다.");
     } finally {
       setDeletingOpenCardIds((prev) => prev.filter((id) => id !== cardId));
+    }
+  };
+
+  const handleToggleMyOpenCardPhotoVisibility = async (
+    cardId: string,
+    nextVisibility: "blur" | "public"
+  ) => {
+    if (savingOpenCardVisibilityIds.includes(cardId)) return;
+
+    setSavingOpenCardVisibilityIds((prev) => [...prev, cardId]);
+    try {
+      const res = await fetch(`/api/dating/cards/my/${encodeURIComponent(cardId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ photo_visibility: nextVisibility }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        message?: string;
+        photo_visibility?: "blur" | "public";
+      };
+      if (!res.ok || !body.photo_visibility) {
+        alert(body.error ?? "사진 공개 설정 변경에 실패했습니다.");
+        return;
+      }
+      setMyDatingCards((prev) =>
+        prev.map((card) => (card.id === cardId ? { ...card, photo_visibility: body.photo_visibility } : card))
+      );
+      alert(body.message ?? "사진 공개 설정을 변경했습니다.");
+    } finally {
+      setSavingOpenCardVisibilityIds((prev) => prev.filter((id) => id !== cardId));
     }
   };
 
@@ -7793,6 +7826,11 @@ export default function MyPage() {
                     공개 종료까지 남은 시간 {formatRemainingToKorean(card.expires_at)}
                   </p>
                 )}
+                {card.status === "public" && (
+                  <p className="mt-1 text-xs font-medium text-neutral-500">
+                    사진 공개: {card.photo_visibility === "public" ? "블러 없이 공개중" : "블러 처리중"}
+                  </p>
+                )}
                 <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm text-neutral-600">
                     {card.status === "pending"
@@ -7811,6 +7849,25 @@ export default function MyPage() {
                       >
                         내용 수정
                       </Link>
+                    ) : null}
+                    {card.status === "public" ? (
+                      <button
+                        type="button"
+                        disabled={savingOpenCardVisibilityIds.includes(card.id)}
+                        onClick={() =>
+                          void handleToggleMyOpenCardPhotoVisibility(
+                            card.id,
+                            card.photo_visibility === "public" ? "blur" : "public"
+                          )
+                        }
+                        className="inline-flex h-8 items-center rounded-md border border-sky-300 bg-white px-3 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                      >
+                        {savingOpenCardVisibilityIds.includes(card.id)
+                          ? "변경 중..."
+                          : card.photo_visibility === "public"
+                            ? "사진 블러 처리"
+                            : "사진 원본 공개"}
+                      </button>
                     ) : null}
                     <button
                       type="button"

@@ -14,6 +14,7 @@ type CardRow = {
   display_nickname: string | null;
   age: number | null;
   region: string | null;
+  photo_visibility?: "blur" | "public" | null;
   expires_at: string | null;
   created_at: string;
   status: string;
@@ -105,7 +106,7 @@ async function getPendingQueuePosition(
 async function fetchOwnedCards(adminClient: ReturnType<typeof createAdminClient>, userId: string) {
   let { data, error } = await adminClient
     .from("dating_cards")
-    .select("id, sex, display_nickname, age, region, expires_at, created_at, status, applications_last_viewed_at")
+    .select("id, sex, display_nickname, age, region, photo_visibility, expires_at, created_at, status, applications_last_viewed_at")
     .eq("owner_user_id", userId)
     .order("created_at", { ascending: false });
 
@@ -119,6 +120,7 @@ async function fetchOwnedCards(adminClient: ReturnType<typeof createAdminClient>
     error = fallback.error;
     data = (fallback.data ?? []).map((row) => ({
       ...row,
+      photo_visibility: "blur",
       applications_last_viewed_at: null,
     }));
   }
