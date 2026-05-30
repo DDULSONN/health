@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const LINES = [
   "혹시 오늘 등 하는 날이에요? 제 마음도 같이 당겨졌는데요.",
@@ -41,6 +41,14 @@ const LINES = [
   "운동 끝나기 전에 인사라도 해야 오늘 루틴이 완성될 것 같았어요.",
 ];
 
+type Idea = {
+  id: string;
+  content: string;
+  created_at: string;
+  nickname: string;
+  canDelete: boolean;
+};
+
 function pickLine() {
   return LINES[Math.floor(Math.random() * LINES.length)];
 }
@@ -48,6 +56,31 @@ function pickLine() {
 export default function FlirtingGeneratorClient() {
   const [line, setLine] = useState(() => LINES[0]);
   const [copied, setCopied] = useState(false);
+  const [ideas, setIdeas] = useState<Idea[]>([]);
+  const [ideaText, setIdeaText] = useState("");
+  const [ideaMessage, setIdeaMessage] = useState("");
+  const [isLoadingIdeas, setIsLoadingIdeas] = useState(true);
+  const [isSubmittingIdea, setIsSubmittingIdea] = useState(false);
+
+  useEffect(() => {
+    let alive = true;
+    const loadIdeas = async () => {
+      try {
+        const response = await fetch("/api/flirting-generator/ideas", { cache: "no-store" });
+        const body = (await response.json().catch(() => ({}))) as { ideas?: Idea[] };
+        if (alive) setIdeas(body.ideas ?? []);
+      } catch {
+        if (alive) setIdeaMessage("아이디어를 불러오지 못했습니다.");
+      } finally {
+        if (alive) setIsLoadingIdeas(false);
+      }
+    };
+
+    void loadIdeas();
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const generate = () => {
     setCopied(false);
@@ -58,6 +91,49 @@ export default function FlirtingGeneratorClient() {
     await navigator.clipboard.writeText(line);
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1200);
+  };
+
+  const submitIdea = async () => {
+    const content = ideaText.trim();
+    if (!content) {
+      setIdeaMessage("대사 아이디어를 적어주세요.");
+      return;
+    }
+
+    setIsSubmittingIdea(true);
+    setIdeaMessage("");
+    try {
+      const response = await fetch("/api/flirting-generator/ideas", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ content }),
+      });
+      const body = (await response.json().catch(() => ({}))) as { idea?: Idea; error?: string };
+      if (!response.ok || !body.idea) {
+        setIdeaMessage(body.error ?? "저장에 실패했습니다.");
+        return;
+      }
+
+      setIdeas((prev) => [body.idea as Idea, ...prev]);
+      setIdeaText("");
+      setIdeaMessage("저장됐어요.");
+    } catch {
+      setIdeaMessage("저장에 실패했습니다.");
+    } finally {
+      setIsSubmittingIdea(false);
+    }
+  };
+
+  const deleteIdea = async (id: string) => {
+    setIdeaMessage("");
+    const response = await fetch(`/api/flirting-generator/ideas/${id}`, { method: "DELETE" });
+    if (!response.ok) {
+      const body = (await response.json().catch(() => ({}))) as { error?: string };
+      setIdeaMessage(body.error ?? "삭제에 실패했습니다.");
+      return;
+    }
+
+    setIdeas((prev) => prev.filter((idea) => idea.id !== id));
   };
 
   return (
@@ -79,6 +155,63 @@ export default function FlirtingGeneratorClient() {
           <button type="button" onClick={() => void copy()} className="min-h-[48px] rounded-2xl border border-neutral-200 px-4 text-sm font-black text-neutral-700">
             {copied ? "복사됨" : "복사"}
           </button>
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-[28px] border border-black/5 bg-white p-5 shadow-[0_14px_40px_rgba(15,23,42,0.06)]">
+        <div>
+          <h2 className="text-lg font-black text-neutral-950">대사 아이디어 적기</h2>
+          <p className="mt-1 text-sm font-semibold text-neutral-500">재밌는 헬스장 멘트를 같이 모아봐요.</p>
+        </div>
+
+        <div className="mt-4 space-y-2">
+          <textarea
+            value={ideaText}
+            onChange={(event) => setIdeaText(event.target.value.slice(0, 120))}
+            placeholder="예: 덤벨은 내려놨는데 호감은 못 내려놨어요."
+            rows={3}
+            className="w-full resize-none rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm font-semibold text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-neutral-950"
+          />
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-xs font-bold text-neutral-400">{ideaText.trim().length}/120</p>
+            <button
+              type="button"
+              onClick={() => void submitIdea()}
+              disabled={isSubmittingIdea}
+              className="min-h-[40px] rounded-2xl bg-rose-600 px-4 text-sm font-black text-white disabled:cursor-not-allowed disabled:bg-neutral-300"
+            >
+              {isSubmittingIdea ? "저장 중" : "올리기"}
+            </button>
+          </div>
+          {ideaMessage ? <p className="text-sm font-bold text-neutral-500">{ideaMessage}</p> : null}
+        </div>
+
+        <div className="mt-5 space-y-2">
+          {isLoadingIdeas ? (
+            <p className="rounded-2xl bg-neutral-50 px-4 py-3 text-sm font-bold text-neutral-500">불러오는 중</p>
+          ) : ideas.length > 0 ? (
+            ideas.map((idea) => (
+              <div key={idea.id} className="rounded-2xl bg-neutral-50 px-4 py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-black text-neutral-950">{idea.content}</p>
+                    <p className="mt-2 text-xs font-bold text-neutral-400">{idea.nickname}</p>
+                  </div>
+                  {idea.canDelete ? (
+                    <button
+                      type="button"
+                      onClick={() => void deleteIdea(idea.id)}
+                      className="shrink-0 rounded-full border border-neutral-200 px-3 py-1 text-xs font-black text-neutral-500"
+                    >
+                      삭제
+                    </button>
+                  ) : null}
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="rounded-2xl bg-neutral-50 px-4 py-3 text-sm font-bold text-neutral-500">아직 올라온 아이디어가 없어요.</p>
+          )}
         </div>
       </section>
     </main>
