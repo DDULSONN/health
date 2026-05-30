@@ -37,8 +37,12 @@ function stripAdminSuffix(value: string): string {
   return value.replace(/(특별자치시|특별자치도|특별시|광역시|자치시|자치도|시|군|구|읍|면|동|리)$/u, "");
 }
 
+function normalizeDivisionProvince(province: string, city: string): string {
+  return extractProvinceFromRegion(province) ?? extractProvinceFromRegion(city) ?? province;
+}
+
 const DIVISION_ROWS: DivisionRow[] = KOREA_ADMIN_DIVISION_COORDS.map(([province, city, longitude, latitude]) => ({
-  province,
+  province: normalizeDivisionProvince(province, city),
   city,
   longitude,
   latitude,

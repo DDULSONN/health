@@ -104,6 +104,13 @@ function sortCandidatesForSource(
       return aDistanceRank.sameProvinceRank - bDistanceRank.sameProvinceRank;
     }
 
+    if (aDistanceRank.distanceBandRank !== bDistanceRank.distanceBandRank) {
+      return aDistanceRank.distanceBandRank - bDistanceRank.distanceBandRank;
+    }
+    if (aDistanceRank.distanceRank !== bDistanceRank.distanceRank) {
+      return aDistanceRank.distanceRank - bDistanceRank.distanceRank;
+    }
+
     const aInAgeRange = inAgeRange(a);
     const bInAgeRange = inAgeRange(b);
     if (aInAgeRange !== bInAgeRange) {
@@ -114,13 +121,6 @@ function sortCandidatesForSource(
     const bAgeGap = getAgeGap(sourceCard.age, b.age);
     if (aAgeGap !== bAgeGap) {
       return aAgeGap - bAgeGap;
-    }
-
-    if (aDistanceRank.distanceBandRank !== bDistanceRank.distanceBandRank) {
-      return aDistanceRank.distanceBandRank - bDistanceRank.distanceBandRank;
-    }
-    if (aDistanceRank.distanceRank !== bDistanceRank.distanceRank) {
-      return aDistanceRank.distanceRank - bDistanceRank.distanceRank;
     }
 
     const aHash = hashSeed(`${sourceCard.id}:${seedSuffix}:${a.id}`);
@@ -200,8 +200,9 @@ function getRefreshAvailability(refreshUsedAt?: string | null) {
 }
 
 function stripInternalPhone(card: RecommendationCard) {
-  const { phone: _phone, ...publicCard } = card;
-  return publicCard;
+  return Object.fromEntries(
+    Object.entries(card).filter(([key]) => key !== "phone")
+  ) as Omit<RecommendationCard, "phone">;
 }
 
 async function fetchAllActiveCards(admin: ReturnType<typeof createAdminClient>) {
