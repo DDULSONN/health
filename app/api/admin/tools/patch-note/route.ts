@@ -39,8 +39,10 @@ export async function PATCH(req: Request) {
     ? (body as { enabled?: boolean }).enabled
     : DEFAULT_TOOLS_PATCH_NOTE.enabled;
   const text = normalizeToolsPatchNoteText((body as { text?: unknown }).text);
-  const nextItems =
-    text && current.items[0]?.text !== text
+  const requestedItems = (body as { items?: unknown }).items;
+  const nextItems = Array.isArray(requestedItems)
+    ? requestedItems
+    : text && current.items[0]?.text !== text
       ? [{ id: crypto.randomUUID(), text, createdAt: new Date().toISOString() }, ...current.items].slice(0, 20)
       : current.items;
   const setting = normalizeToolsPatchNote({

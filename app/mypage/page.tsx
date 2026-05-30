@@ -1545,6 +1545,8 @@ export default function MyPage() {
   const [toolsPatchNoteEnabled, setToolsPatchNoteEnabled] = useState(false);
   const [toolsPatchNoteText, setToolsPatchNoteText] = useState("");
   const [toolsPatchNoteItems, setToolsPatchNoteItems] = useState<ToolsPatchNoteResponse["items"]>([]);
+  const [editingToolsPatchNoteId, setEditingToolsPatchNoteId] = useState("");
+  const [editingToolsPatchNoteText, setEditingToolsPatchNoteText] = useState("");
   const [toolsPatchNoteSaving, setToolsPatchNoteSaving] = useState(false);
   const [toolsPatchNoteError, setToolsPatchNoteError] = useState("");
   const [toolsPatchNoteInfo, setToolsPatchNoteInfo] = useState("");
@@ -4378,9 +4380,53 @@ export default function MyPage() {
       setToolsPatchNoteEnabled(body.setting.enabled === true);
       setToolsPatchNoteText(body.setting.text?.trim() ?? "");
       setToolsPatchNoteItems(Array.isArray(body.setting.items) ? body.setting.items : []);
+      setEditingToolsPatchNoteId("");
+      setEditingToolsPatchNoteText("");
       setToolsPatchNoteInfo("도구 패치노트를 추가했습니다.");
     } catch (e) {
       setToolsPatchNoteError(e instanceof Error ? e.message : "도구 패치노트 저장에 실패했습니다.");
+    } finally {
+      setToolsPatchNoteSaving(false);
+    }
+  };
+
+  const handleAdminUpdateToolsPatchNoteItem = async (itemId: string) => {
+    const nextText = editingToolsPatchNoteText.trim().replace(/\s{2,}/g, " ").slice(0, 120);
+    if (!nextText) {
+      setToolsPatchNoteError("수정할 패치노트 내용을 입력해 주세요.");
+      return;
+    }
+
+    const nextItems = (toolsPatchNoteItems ?? []).map((item) =>
+      item.id === itemId ? { ...item, text: nextText } : item
+    );
+    setToolsPatchNoteSaving(true);
+    setToolsPatchNoteError("");
+    setToolsPatchNoteInfo("");
+    try {
+      const res = await fetch("/api/admin/tools/patch-note", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: toolsPatchNoteEnabled, items: nextItems }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        setting?: ToolsPatchNoteResponse;
+      };
+      if (!res.ok || !body.ok || !body.setting) {
+        setToolsPatchNoteError(body.error ?? "도구 패치노트 수정에 실패했습니다.");
+        return;
+      }
+
+      setToolsPatchNoteEnabled(body.setting.enabled === true);
+      setToolsPatchNoteText(body.setting.text?.trim() ?? "");
+      setToolsPatchNoteItems(Array.isArray(body.setting.items) ? body.setting.items : []);
+      setEditingToolsPatchNoteId("");
+      setEditingToolsPatchNoteText("");
+      setToolsPatchNoteInfo("도구 패치노트를 수정했습니다.");
+    } catch (e) {
+      setToolsPatchNoteError(e instanceof Error ? e.message : "도구 패치노트 수정에 실패했습니다.");
     } finally {
       setToolsPatchNoteSaving(false);
     }
@@ -9298,18 +9344,56 @@ export default function MyPage() {
               <div className="mt-2 rounded-lg border border-violet-100 bg-violet-50/50 p-3">
                 <p className="text-[11px] font-semibold text-violet-800">누적된 패치노트</p>
                 <div className="mt-2 space-y-1.5">
-                  {toolsPatchNoteItems.slice(0, 10).map((item) => (
-                    <p key={item.id} className="text-xs leading-5 text-neutral-700">
-                      <span className="mr-2 font-semibold text-violet-700">
-                        {new Date(item.createdAt).toLocaleDateString("ko-KR", {
-                          timeZone: "Asia/Seoul",
-                          month: "numeric",
-                          day: "numeric",
-                        })}
-                      </span>
-                      {item.text}
-                    </p>
-                  ))}
+                  {toolsPatchNoteItems.slice(0, 10).map((item) => {
+                    const editing = editingToolsPatchNoteId === item.id;
+                    return (
+                      <div key={item.id} className="rounded-md border border-violet-100 bg-white/70 p-2">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <p className="text-xs leading-5 text-neutral-700">
+                            <span className="mr-2 font-semibold text-violet-700">
+                              {new Date(item.createdAt).toLocaleDateString("ko-KR", {
+                                timeZone: "Asia/Seoul",
+                                month: "numeric",
+                                day: "numeric",
+                              })}
+                            </span>
+                            {item.text}
+                          </p>
+                          <button
+                            type="button"
+                            disabled={toolsPatchNoteSaving}
+                            onClick={() => {
+                              setEditingToolsPatchNoteId(editing ? "" : item.id);
+                              setEditingToolsPatchNoteText(editing ? "" : item.text);
+                              setToolsPatchNoteError("");
+                              setToolsPatchNoteInfo("");
+                            }}
+                            className="h-7 rounded-md border border-violet-200 bg-white px-2 text-[11px] font-medium text-violet-800 disabled:opacity-50"
+                          >
+                            {editing ? "닫기" : "수정"}
+                          </button>
+                        </div>
+                        {editing ? (
+                          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                            <input
+                              value={editingToolsPatchNoteText}
+                              onChange={(e) => setEditingToolsPatchNoteText(e.target.value)}
+                              maxLength={120}
+                              className="min-h-9 flex-1 rounded-md border border-violet-200 px-2 text-xs"
+                            />
+                            <button
+                              type="button"
+                              disabled={toolsPatchNoteSaving}
+                              onClick={() => void handleAdminUpdateToolsPatchNoteItem(item.id)}
+                              className="h-9 rounded-md bg-violet-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                            >
+                              수정 저장
+                            </button>
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
             ) : null}
