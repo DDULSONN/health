@@ -60,7 +60,15 @@ function oneOnOneContactDisplayName(
   profile: { nickname?: string | null; email?: string | null } | null | undefined,
   userId: string | null | undefined
 ) {
-  return card?.name?.trim() || profile?.nickname?.trim() || profile?.email?.trim() || (userId ? `회원 ${userId.slice(0, 8)}` : "-");
+  const cardName = card?.name?.trim() ?? "";
+  const nickname = profile?.nickname?.trim() ?? "";
+  const fallback = profile?.email?.trim() || (userId ? `회원 ${userId.slice(0, 8)}` : "-");
+
+  if (cardName && nickname && cardName !== nickname) {
+    return `${cardName} (닉네임: ${nickname})`;
+  }
+
+  return cardName || nickname || fallback;
 }
 
 type DatingUserReportTargetType =
