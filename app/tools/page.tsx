@@ -46,8 +46,15 @@ const TOOLS = [
   },
 ];
 
+function formatPatchDate(value: string) {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "";
+  return date.toLocaleDateString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric" }).replace(/\.$/, "");
+}
+
 export default async function ToolsPage() {
   const patchNote = await readToolsPatchNote();
+  const patchItems = patchNote.enabled ? patchNote.items.slice(0, 5) : [];
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-8 md:py-12">
@@ -73,12 +80,20 @@ export default async function ToolsPage() {
           ))}
         </div>
 
-        {patchNote.enabled && patchNote.text ? (
+        {patchItems.length > 0 ? (
           <div className="mt-5 rounded-2xl border border-rose-100 bg-rose-50/60 px-4 py-3">
-            <p className="text-sm font-bold leading-6 text-rose-800">
-              <span className="mr-2 inline-flex rounded-full bg-white px-2 py-0.5 text-[11px] font-black text-rose-600">패치노트</span>
-              {patchNote.text}
-            </p>
+            <div className="mb-2 flex items-center gap-2">
+              <span className="inline-flex rounded-full bg-white px-2 py-0.5 text-[11px] font-black text-rose-600">패치노트</span>
+              <span className="text-xs font-semibold text-rose-700">최근 개선사항</span>
+            </div>
+            <ul className="space-y-1.5">
+              {patchItems.map((item) => (
+                <li key={item.id} className="flex gap-2 text-sm font-bold leading-6 text-rose-900">
+                  <span className="shrink-0 text-[11px] font-black text-rose-500">{formatPatchDate(item.createdAt)}</span>
+                  <span>{item.text}</span>
+                </li>
+              ))}
+            </ul>
           </div>
         ) : null}
       </section>

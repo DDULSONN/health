@@ -1369,6 +1369,11 @@ type OpenCardHomeCopyResponse = {
 type ToolsPatchNoteResponse = {
   enabled?: boolean;
   text?: string;
+  items?: Array<{
+    id: string;
+    text: string;
+    createdAt: string;
+  }>;
 };
 
 const DEFAULT_OPEN_CARD_HOME_SUBTITLE = "둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.";
@@ -1539,6 +1544,7 @@ export default function MyPage() {
   const [adInquiryInfo, setAdInquiryInfo] = useState("");
   const [toolsPatchNoteEnabled, setToolsPatchNoteEnabled] = useState(false);
   const [toolsPatchNoteText, setToolsPatchNoteText] = useState("");
+  const [toolsPatchNoteItems, setToolsPatchNoteItems] = useState<ToolsPatchNoteResponse["items"]>([]);
   const [toolsPatchNoteSaving, setToolsPatchNoteSaving] = useState(false);
   const [toolsPatchNoteError, setToolsPatchNoteError] = useState("");
   const [toolsPatchNoteInfo, setToolsPatchNoteInfo] = useState("");
@@ -2926,6 +2932,7 @@ export default function MyPage() {
           setAdInquiryTheme(adInquiryBody.theme ?? "emerald");
           setToolsPatchNoteEnabled(toolsPatchNoteBody.enabled === true);
           setToolsPatchNoteText(toolsPatchNoteBody.text?.trim() ?? "");
+          setToolsPatchNoteItems(Array.isArray(toolsPatchNoteBody.items) ? toolsPatchNoteBody.items : []);
           setError("");
 
           if (adminFlag) {
@@ -4370,7 +4377,8 @@ export default function MyPage() {
 
       setToolsPatchNoteEnabled(body.setting.enabled === true);
       setToolsPatchNoteText(body.setting.text?.trim() ?? "");
-      setToolsPatchNoteInfo("도구 패치노트를 저장했습니다.");
+      setToolsPatchNoteItems(Array.isArray(body.setting.items) ? body.setting.items : []);
+      setToolsPatchNoteInfo("도구 패치노트를 추가했습니다.");
     } catch (e) {
       setToolsPatchNoteError(e instanceof Error ? e.message : "도구 패치노트 저장에 실패했습니다.");
     } finally {
@@ -9248,7 +9256,7 @@ export default function MyPage() {
               <div>
                 <p className="text-xs font-semibold text-violet-800">도구 탭 패치노트</p>
                 <p className="mt-1 text-[11px] text-neutral-500">
-                  도구 페이지 카드 아래에 오늘 바뀐 점을 한 줄로 보여줍니다.
+                  도구 페이지 카드 아래에 최근 개선사항을 누적해서 보여줍니다.
                 </p>
               </div>
               <Link href="/tools" className="h-8 rounded-md border border-violet-200 bg-white px-3 py-1.5 text-xs font-medium text-violet-800">
@@ -9286,6 +9294,25 @@ export default function MyPage() {
               <span className="mr-2 inline-flex rounded-full bg-white px-2 py-0.5 text-[11px] font-black text-rose-600">패치노트</span>
               {toolsPatchNoteText.trim() || DEFAULT_TOOLS_PATCH_NOTE_TEXT}
             </div>
+            {toolsPatchNoteItems && toolsPatchNoteItems.length > 0 ? (
+              <div className="mt-2 rounded-lg border border-violet-100 bg-violet-50/50 p-3">
+                <p className="text-[11px] font-semibold text-violet-800">누적된 패치노트</p>
+                <div className="mt-2 space-y-1.5">
+                  {toolsPatchNoteItems.slice(0, 10).map((item) => (
+                    <p key={item.id} className="text-xs leading-5 text-neutral-700">
+                      <span className="mr-2 font-semibold text-violet-700">
+                        {new Date(item.createdAt).toLocaleDateString("ko-KR", {
+                          timeZone: "Asia/Seoul",
+                          month: "numeric",
+                          day: "numeric",
+                        })}
+                      </span>
+                      {item.text}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            ) : null}
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <button
                 type="button"

@@ -3,6 +3,7 @@ import { isAllowedAdminUser } from "@/lib/admin";
 import {
   DEFAULT_TOOLS_PATCH_NOTE,
   TOOLS_PATCH_NOTE_SETTING_KEY,
+  normalizeToolsPatchNoteText,
   normalizeToolsPatchNote,
   readToolsPatchNote,
 } from "@/lib/tools-patch-note";
@@ -33,9 +34,19 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "설정 값이 올바르지 않습니다." }, { status: 400 });
   }
 
+  const current = await readToolsPatchNote();
+  const enabled = typeof (body as { enabled?: unknown }).enabled === "boolean"
+    ? (body as { enabled?: boolean }).enabled
+    : DEFAULT_TOOLS_PATCH_NOTE.enabled;
+  const text = normalizeToolsPatchNoteText((body as { text?: unknown }).text);
+  const nextItems =
+    text && current.items[0]?.text !== text
+      ? [{ id: crypto.randomUUID(), text, createdAt: new Date().toISOString() }, ...current.items].slice(0, 20)
+      : current.items;
   const setting = normalizeToolsPatchNote({
-    enabled: (body as { enabled?: unknown }).enabled ?? DEFAULT_TOOLS_PATCH_NOTE.enabled,
-    text: (body as { text?: unknown }).text,
+    enabled,
+    text: nextItems[0]?.text ?? "",
+    items: nextItems,
   });
 
   const adminClient = createAdminClient();
