@@ -4432,6 +4432,43 @@ export default function MyPage() {
     }
   };
 
+  const handleAdminDeleteToolsPatchNoteItem = async (itemId: string) => {
+    if (toolsPatchNoteSaving) return;
+    if (!confirm("이 패치노트를 삭제할까요?")) return;
+
+    const nextItems = (toolsPatchNoteItems ?? []).filter((item) => item.id !== itemId);
+    setToolsPatchNoteSaving(true);
+    setToolsPatchNoteError("");
+    setToolsPatchNoteInfo("");
+    try {
+      const res = await fetch("/api/admin/tools/patch-note", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: toolsPatchNoteEnabled, items: nextItems }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        setting?: ToolsPatchNoteResponse;
+      };
+      if (!res.ok || !body.ok || !body.setting) {
+        setToolsPatchNoteError(body.error ?? "도구 패치노트 삭제에 실패했습니다.");
+        return;
+      }
+
+      setToolsPatchNoteEnabled(body.setting.enabled === true);
+      setToolsPatchNoteText(body.setting.text?.trim() ?? "");
+      setToolsPatchNoteItems(Array.isArray(body.setting.items) ? body.setting.items : []);
+      setEditingToolsPatchNoteId("");
+      setEditingToolsPatchNoteText("");
+      setToolsPatchNoteInfo("도구 패치노트를 삭제했습니다.");
+    } catch (e) {
+      setToolsPatchNoteError(e instanceof Error ? e.message : "도구 패치노트 삭제에 실패했습니다.");
+    } finally {
+      setToolsPatchNoteSaving(false);
+    }
+  };
+
   const applyToolsPatchNotePreset = (text: string) => {
     setToolsPatchNoteEnabled(true);
     setToolsPatchNoteText(text.slice(0, 100));
@@ -9359,19 +9396,29 @@ export default function MyPage() {
                             </span>
                             {item.text}
                           </p>
-                          <button
-                            type="button"
-                            disabled={toolsPatchNoteSaving}
-                            onClick={() => {
-                              setEditingToolsPatchNoteId(editing ? "" : item.id);
-                              setEditingToolsPatchNoteText(editing ? "" : item.text);
-                              setToolsPatchNoteError("");
-                              setToolsPatchNoteInfo("");
-                            }}
-                            className="h-7 rounded-md border border-violet-200 bg-white px-2 text-[11px] font-medium text-violet-800 disabled:opacity-50"
-                          >
-                            {editing ? "닫기" : "수정"}
-                          </button>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              disabled={toolsPatchNoteSaving}
+                              onClick={() => {
+                                setEditingToolsPatchNoteId(editing ? "" : item.id);
+                                setEditingToolsPatchNoteText(editing ? "" : item.text);
+                                setToolsPatchNoteError("");
+                                setToolsPatchNoteInfo("");
+                              }}
+                              className="h-7 rounded-md border border-violet-200 bg-white px-2 text-[11px] font-medium text-violet-800 disabled:opacity-50"
+                            >
+                              {editing ? "닫기" : "수정"}
+                            </button>
+                            <button
+                              type="button"
+                              disabled={toolsPatchNoteSaving}
+                              onClick={() => void handleAdminDeleteToolsPatchNoteItem(item.id)}
+                              className="h-7 rounded-md border border-rose-200 bg-white px-2 text-[11px] font-medium text-rose-700 disabled:opacity-50"
+                            >
+                              삭제
+                            </button>
+                          </div>
                         </div>
                         {editing ? (
                           <div className="mt-2 flex flex-col gap-2 sm:flex-row">
