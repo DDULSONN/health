@@ -1376,6 +1376,18 @@ type ToolsPatchNoteResponse = {
   }>;
 };
 
+type AdminEmailUnsubscribeItem = {
+  id: string;
+  user_id: string;
+  email: string | null;
+  nickname: string | null;
+  campaign_key: string;
+  source: string | null;
+  reason: string | null;
+  unsubscribed_at: string;
+  created_at: string | null;
+};
+
 const DEFAULT_OPEN_CARD_HOME_SUBTITLE = "둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.";
 const DEFAULT_TOOLS_PATCH_NOTE_TEXT = "오늘의 개선 내용을 한 줄로 적어주세요.";
 const TOOLS_PATCH_NOTE_PRESETS = [
@@ -1550,6 +1562,12 @@ export default function MyPage() {
   const [toolsPatchNoteSaving, setToolsPatchNoteSaving] = useState(false);
   const [toolsPatchNoteError, setToolsPatchNoteError] = useState("");
   const [toolsPatchNoteInfo, setToolsPatchNoteInfo] = useState("");
+  const [adminEmailUnsubscribeQuery, setAdminEmailUnsubscribeQuery] = useState("");
+  const [adminEmailUnsubscribeItems, setAdminEmailUnsubscribeItems] = useState<AdminEmailUnsubscribeItem[]>([]);
+  const [adminEmailUnsubscribeLoading, setAdminEmailUnsubscribeLoading] = useState(false);
+  const [adminEmailUnsubscribeError, setAdminEmailUnsubscribeError] = useState("");
+  const [adminEmailUnsubscribeInfo, setAdminEmailUnsubscribeInfo] = useState("");
+  const [adminEmailUnsubscribeDeletingIds, setAdminEmailUnsubscribeDeletingIds] = useState<string[]>([]);
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState<MyPageTab>("my_cert");
   const [pageSectionTab, setPageSectionTab] = useState<MyPageSectionTab>("profile");
@@ -4466,6 +4484,66 @@ export default function MyPage() {
       setToolsPatchNoteError(e instanceof Error ? e.message : "도구 패치노트 삭제에 실패했습니다.");
     } finally {
       setToolsPatchNoteSaving(false);
+    }
+  };
+
+  const handleAdminSearchEmailUnsubscribes = async () => {
+    const query = adminEmailUnsubscribeQuery.trim();
+    if (query.length < 2) {
+      setAdminEmailUnsubscribeError("이메일 또는 사용자 ID를 2글자 이상 입력해 주세요.");
+      return;
+    }
+
+    setAdminEmailUnsubscribeLoading(true);
+    setAdminEmailUnsubscribeError("");
+    setAdminEmailUnsubscribeInfo("");
+    try {
+      const res = await fetch(`/api/admin/email-unsubscribes?query=${encodeURIComponent(query)}`, {
+        cache: "no-store",
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        items?: AdminEmailUnsubscribeItem[];
+      };
+      if (!res.ok) {
+        setAdminEmailUnsubscribeError(body.error ?? "수신거부 목록을 불러오지 못했습니다.");
+        return;
+      }
+      const items = Array.isArray(body.items) ? body.items : [];
+      setAdminEmailUnsubscribeItems(items);
+      setAdminEmailUnsubscribeInfo(items.length > 0 ? `${items.length}건을 찾았습니다.` : "수신거부 기록이 없습니다.");
+    } catch (e) {
+      setAdminEmailUnsubscribeError(e instanceof Error ? e.message : "수신거부 목록을 불러오지 못했습니다.");
+    } finally {
+      setAdminEmailUnsubscribeLoading(false);
+    }
+  };
+
+  const handleAdminDeleteEmailUnsubscribe = async (item: AdminEmailUnsubscribeItem) => {
+    if (adminEmailUnsubscribeDeletingIds.includes(item.id)) return;
+    const label = item.email || item.nickname || item.user_id.slice(0, 8);
+    if (!confirm(`${label}님의 ${item.campaign_key} 수신거부를 해제할까요?`)) return;
+
+    setAdminEmailUnsubscribeDeletingIds((prev) => [...prev, item.id]);
+    setAdminEmailUnsubscribeError("");
+    setAdminEmailUnsubscribeInfo("");
+    try {
+      const res = await fetch("/api/admin/email-unsubscribes", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: item.id }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean };
+      if (!res.ok || !body.ok) {
+        setAdminEmailUnsubscribeError(body.error ?? "수신거부 해제에 실패했습니다.");
+        return;
+      }
+      setAdminEmailUnsubscribeItems((prev) => prev.filter((row) => row.id !== item.id));
+      setAdminEmailUnsubscribeInfo("수신거부를 해제했습니다.");
+    } catch (e) {
+      setAdminEmailUnsubscribeError(e instanceof Error ? e.message : "수신거부 해제에 실패했습니다.");
+    } finally {
+      setAdminEmailUnsubscribeDeletingIds((prev) => prev.filter((id) => id !== item.id));
     }
   };
 
@@ -9537,6 +9615,70 @@ export default function MyPage() {
               {openCardHomeCopyError && <p className="mt-2 text-xs text-rose-600">{openCardHomeCopyError}</p>}
               {openCardHomeCopyInfo && <p className="mt-2 text-xs text-emerald-700">{openCardHomeCopyInfo}</p>}
             </div>
+          </div>
+          )}
+
+          {adminManageTab === "mail_center" && (
+          <div className="mb-3 rounded-xl border border-rose-200 bg-white p-3">
+            <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+              <div>
+                <p className="text-xs font-semibold text-rose-800">메일 수신거부 해제</p>
+                <p className="mt-1 text-[11px] text-neutral-500">
+                  실수로 수신거부를 누른 회원을 이메일 또는 사용자 ID로 찾아 캠페인별로 해제합니다.
+                </p>
+              </div>
+              <div className="flex w-full flex-col gap-2 md:max-w-xl">
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    value={adminEmailUnsubscribeQuery}
+                    onChange={(e) => setAdminEmailUnsubscribeQuery(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") void handleAdminSearchEmailUnsubscribes();
+                    }}
+                    placeholder="이메일 또는 사용자 ID"
+                    className="min-h-9 flex-1 rounded-lg border border-rose-200 px-3 text-xs"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void handleAdminSearchEmailUnsubscribes()}
+                    disabled={adminEmailUnsubscribeLoading}
+                    className="h-9 rounded-lg bg-rose-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                  >
+                    {adminEmailUnsubscribeLoading ? "조회 중..." : "조회"}
+                  </button>
+                </div>
+                {adminEmailUnsubscribeError && <p className="text-xs text-rose-600">{adminEmailUnsubscribeError}</p>}
+                {adminEmailUnsubscribeInfo && <p className="text-xs text-emerald-700">{adminEmailUnsubscribeInfo}</p>}
+              </div>
+            </div>
+            {adminEmailUnsubscribeItems.length > 0 ? (
+              <div className="mt-3 space-y-2">
+                {adminEmailUnsubscribeItems.map((item) => {
+                  const deleting = adminEmailUnsubscribeDeletingIds.includes(item.id);
+                  return (
+                    <div key={item.id} className="flex flex-col gap-2 rounded-lg border border-rose-100 bg-rose-50/40 p-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="min-w-0 text-xs text-neutral-700">
+                        <p className="font-semibold text-neutral-900">
+                          {item.email || "(이메일 없음)"} {item.nickname ? `· ${item.nickname}` : ""}
+                        </p>
+                        <p className="mt-1 break-all text-[11px] text-neutral-500">
+                          {item.campaign_key} · {new Date(item.unsubscribed_at).toLocaleString("ko-KR")}
+                        </p>
+                        <p className="mt-1 break-all text-[11px] text-neutral-400">{item.user_id}</p>
+                      </div>
+                      <button
+                        type="button"
+                        disabled={deleting}
+                        onClick={() => void handleAdminDeleteEmailUnsubscribe(item)}
+                        className="h-8 rounded-md border border-rose-300 bg-white px-3 text-xs font-medium text-rose-700 disabled:opacity-50"
+                      >
+                        {deleting ? "해제 중..." : "수신거부 해제"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : null}
           </div>
           )}
 
