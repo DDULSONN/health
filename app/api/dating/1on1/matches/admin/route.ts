@@ -300,13 +300,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Failed to load candidate cards." }, { status: 500 });
   }
 
-  const candidateRows = (candidatesRes.data ?? []).filter(
-    (row) => row.user_id !== sourceRes.data?.user_id && row.sex !== sourceRes.data?.sex
-  );
+  const candidateRows = (candidatesRes.data ?? []).filter((row) => row.user_id !== sourceRes.data?.user_id);
 
   if (candidateRows.length === 0) {
     return NextResponse.json(
-      { error: "선택 가능한 후보 카드가 없습니다. 본인 카드 제외, 다른 성별 카드만 보낼 수 있습니다." },
+      { error: "선택 가능한 후보 카드가 없습니다. 본인 계정 카드는 후보로 보낼 수 없습니다." },
       { status: 409 }
     );
   }

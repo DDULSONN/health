@@ -669,19 +669,16 @@ export default function AdminDatingOneOnOnePage() {
     }
     return next;
   }, [matchItems, selectedSourceCardId]);
-  const availableCandidateCards = useMemo(
+  const selectableCandidateCards = useMemo(
     () =>
       selectedSourceCard
         ? items.filter(
             (item) =>
               item.id !== selectedSourceCard.id &&
-              item.user_id !== selectedSourceCard.user_id &&
-              item.sex !== selectedSourceCard.sex &&
-              !candidateBlockedByTrackIds.has(item.id) &&
-              !candidateBlockedForSourceIds.has(item.id)
+              item.user_id !== selectedSourceCard.user_id
           )
         : [],
-    [candidateBlockedByTrackIds, candidateBlockedForSourceIds, items, selectedSourceCard]
+    [items, selectedSourceCard]
   );
   const unavailableCandidateCount = useMemo(() => {
     if (!selectedSourceCard) return 0;
@@ -689,14 +686,9 @@ export default function AdminDatingOneOnOnePage() {
       (item) =>
         item.id !== selectedSourceCard.id &&
         item.user_id !== selectedSourceCard.user_id &&
-        item.sex !== selectedSourceCard.sex &&
         (candidateBlockedByTrackIds.has(item.id) || candidateBlockedForSourceIds.has(item.id))
     ).length;
   }, [candidateBlockedByTrackIds, candidateBlockedForSourceIds, items, selectedSourceCard]);
-  const selectableCandidateCards = useMemo(
-    () => availableCandidateCards,
-    [availableCandidateCards]
-  );
   const autoCandidateRange = selectedSourceCard ? getAutoCandidateRange(selectedSourceCard) : null;
   const autoRecommendedCandidates = useMemo(() => {
     if (!selectedSourceCard || selectableCandidateCards.length === 0) {
@@ -989,7 +981,7 @@ export default function AdminDatingOneOnOnePage() {
         <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div>
             <h2 className="text-lg font-semibold text-sky-900">1:1 후보 보내기</h2>
-            <p className="text-xs text-sky-700">기준 카드 나이와 지역을 함께 반영해 자동 추천 10명을 먼저 보여주고, 이미 진행 중인 후보나 같은 카드로 보낸 후보는 목록에서 자동 제외합니다.</p>
+            <p className="text-xs text-sky-700">관리자는 기준 카드 본인 계정만 제외하고 전체 후보에서 직접 선택할 수 있습니다.</p>
           </div>
           <button
             type="button"
@@ -1201,7 +1193,7 @@ export default function AdminDatingOneOnOnePage() {
                               <div className="min-w-0">
                                 <div className="flex flex-wrap items-center gap-2">
                                   <p className="text-sm font-medium text-neutral-900">
-                                    {card.name} / {card.age ?? "-"}세 / {card.region}
+                                    {card.name} / {sexLabel(card.sex)} / {card.age ?? "-"}세 / {card.region}
                                   </p>
                                   <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${statusBadgeClass(card.status)}`}>
                                     {statusLabel(card.status)}
@@ -1271,11 +1263,11 @@ export default function AdminDatingOneOnOnePage() {
                   </select>
                 </div>
                 <p className="mb-2 text-xs text-neutral-500">
-                  {selectedSourceCard.name} 님에게 보낼 수 있는 반대 성별 후보 {selectableCandidateCards.length}명 중 {filteredCandidateCards.length}명 표시 중
+                  {selectedSourceCard.name} 님에게 보낼 수 있는 전체 후보 {selectableCandidateCards.length}명 중 {filteredCandidateCards.length}명 표시 중
                 </p>
                 {unavailableCandidateCount > 0 && (
                   <p className="mb-2 text-[11px] text-neutral-500">
-                    이미 진행 중이거나 같은 기준 카드로 보낸 후보 {unavailableCandidateCount}명은 자동 제외됐습니다.
+                    이미 진행 중이거나 같은 기준 카드로 보낸 후보 {unavailableCandidateCount}명도 목록에는 보입니다. 발송 시 중복은 자동으로 건너뜁니다.
                   </p>
                 )}
                 {filteredCandidateCards.length === 0 ? (
@@ -1302,7 +1294,7 @@ export default function AdminDatingOneOnOnePage() {
                         />
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-neutral-900">
-                            {card.name} / {card.age ?? "-"}세 / {card.region}
+                            {card.name} / {sexLabel(card.sex)} / {card.age ?? "-"}세 / {card.region}
                           </p>
                           <div className="mt-1 flex items-center gap-2 text-xs">
                             <span className={`inline-flex rounded-full px-2 py-0.5 font-medium ${statusBadgeClass(card.status)}`}>
