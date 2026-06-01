@@ -13,6 +13,7 @@ type WriteStatusResponse = {
   writeStatus: "approved" | "paused";
   canWrite: boolean;
   reason: string | null;
+  activeRequestStatus?: "submitted" | "reviewing" | "approved" | null;
   totalApplications?: number;
 };
 
@@ -131,6 +132,25 @@ function DatingOneOnOnePageContent() {
   const allConsented = consentFakeInfo && consentNoShow && consentFee && consentPrivacy;
   const canSubmitForm = isEditMode ? true : Boolean(status?.canWrite);
   const selectedPhotos = [photoSlotOne, photoSlotTwo].filter((file): file is File => Boolean(file));
+  const writeBlockedMessage = useMemo(() => {
+    if (isEditMode || !status || status.canWrite) return "";
+    if (!status.phoneVerified || status.reason === "PHONE_NOT_VERIFIED") {
+      return "휴대폰 인증이 완료된 계정만 신청할 수 있습니다.";
+    }
+    if (status.activeRequestStatus || status.reason === "ACTIVE_REQUEST_EXISTS") {
+      return "이미 진행 중인 1:1 신청서가 있어요. 마이페이지 매칭탭에서 확인해주세요.";
+    }
+    if (status.writeStatus !== "approved" || status.reason === "WRITE_PAUSED") {
+      return "현재 이 신청 작성은 일시 중지되어 있습니다.";
+    }
+    return "현재 신청 권한을 확인할 수 없습니다. 잠시 후 다시 시도해주세요.";
+  }, [isEditMode, status]);
+  const submitDisabledReason = useMemo(() => {
+    if (submitting) return "";
+    if (!canSubmitForm) return writeBlockedMessage;
+    if (!allConsented) return "이용 전 확인 항목을 모두 체크하면 신청할 수 있습니다.";
+    return "";
+  }, [allConsented, canSubmitForm, submitting, writeBlockedMessage]);
 
   useEffect(() => {
     let mounted = true;
@@ -301,7 +321,11 @@ function DatingOneOnOnePageContent() {
         throw new Error(body.error ?? "신청 저장에 실패했습니다.");
       }
 
-      setInfo(isEditMode ? "신청서가 수정되었습니다." : "신청서가 등록되었습니다.");
+      setInfo(
+        isEditMode
+          ? "신청서가 수정되었습니다. 진행 상황은 마이페이지 매칭탭에서 확인할 수 있어요."
+          : "신청서가 등록되었습니다. 후보 확인과 진행 상황은 마이페이지 매칭탭에서 확인해 주세요.",
+      );
       setName("");
       setSex("male");
       setBirthYear("");
@@ -386,7 +410,7 @@ function DatingOneOnOnePageContent() {
           </div>
         </div>
         <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-neutral-600">
-          <span>신청 후 진행 문의는 오픈카톡으로 남겨주세요.</span>
+          <span>신청 후 진행 상황은 마이페이지 매칭탭에서 확인할 수 있어요. 별도 문의가 필요하면 오픈카톡으로 남겨주세요.</span>
           <a
             href={OPEN_KAKAO_URL}
             target="_blank"
@@ -406,10 +430,10 @@ function DatingOneOnOnePageContent() {
           </div>
           <div className="flex flex-wrap gap-2">
             <Link
-              href="/mypage"
+              href="/mypage?section=matching"
               className="inline-flex h-11 items-center justify-center rounded-lg border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-800 hover:bg-neutral-50"
             >
-              마이페이지에서 확인
+              마이페이지 매칭탭 보기
             </Link>
           </div>
         </div>
@@ -451,14 +475,18 @@ function DatingOneOnOnePageContent() {
             <p>3. 번호 교환이 확인되면 상대 연락처를 확인할 수 있습니다.</p>
           </div>
         </details>
-        {!isEditMode && !status.phoneVerified && (
-          <p className="mt-2 text-xs font-medium text-amber-700">휴대폰 인증이 완료된 계정만 신청할 수 있습니다.</p>
-        )}
-        {!isEditMode && status.writeStatus !== "approved" && (
-          <p className="mt-2 text-xs font-medium text-amber-700">현재 이 신청 작성은 일시 중지되어 있습니다.</p>
+        {!isEditMode && writeBlockedMessage && (
+          <p className="mt-2 text-xs font-medium text-amber-700">{writeBlockedMessage}</p>
         )}
         {error && <p className="mt-2 text-sm text-red-600">{error}</p>}
-        {info && <p className="mt-2 text-sm text-emerald-700">{info}</p>}
+        {info && (
+          <div className="mt-2 rounded-xl border border-emerald-100 bg-emerald-50 px-3 py-3">
+            <p className="text-sm font-semibold text-emerald-800">{info}</p>
+            <Link href="/mypage?section=matching" className="mt-2 inline-flex text-xs font-bold text-emerald-700 underline">
+              마이페이지 매칭탭으로 이동
+            </Link>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="mt-4 space-y-3">
           <select value={sex} onChange={(e) => setSex(e.target.value as "male" | "female")} className="h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-900">
@@ -545,6 +573,16 @@ function DatingOneOnOnePageContent() {
           <button type="submit" disabled={!allConsented || !canSubmitForm || submitting} className="h-11 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
             {submitting ? "처리 중..." : isEditMode ? "수정 저장" : "글 쓰기"}
           </button>
+          {submitDisabledReason && (
+            <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
+              <p>{submitDisabledReason}</p>
+              {!isEditMode && (status.activeRequestStatus || status.reason === "ACTIVE_REQUEST_EXISTS") && (
+                <Link href="/mypage?section=matching" className="mt-1 inline-flex font-bold underline">
+                  마이페이지 매칭탭 보기
+                </Link>
+              )}
+            </div>
+          )}
         </form>
       </section>
 
