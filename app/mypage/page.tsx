@@ -1609,6 +1609,10 @@ export default function MyPage() {
   const [adminUserActivityLoading, setAdminUserActivityLoading] = useState(false);
   const [adminUserActivityError, setAdminUserActivityError] = useState("");
   const [adminUserActivityResult, setAdminUserActivityResult] = useState<AdminUserActivityResult | null>(null);
+  const [adminNicknameDraft, setAdminNicknameDraft] = useState("");
+  const [adminNicknameSaving, setAdminNicknameSaving] = useState(false);
+  const [adminNicknameError, setAdminNicknameError] = useState("");
+  const [adminNicknameInfo, setAdminNicknameInfo] = useState("");
   const [adminRefundOrderId, setAdminRefundOrderId] = useState("");
   const [adminRefundReasonByOrderId, setAdminRefundReasonByOrderId] = useState<Record<string, string>>({});
   const [adminRefundAmountByOrderId, setAdminRefundAmountByOrderId] = useState<Record<string, string>>({});
@@ -5251,6 +5255,9 @@ export default function MyPage() {
       }
 
       setAdminUserActivityResult(body);
+      setAdminNicknameDraft(body.user?.profile?.nickname ?? "");
+      setAdminNicknameError("");
+      setAdminNicknameInfo("");
       const pendingOpenCard = body.details?.open_cards?.find((item) => item.status === "pending");
       if (pendingOpenCard?.id) {
         setAdminQueueMoveCardId(String(pendingOpenCard.id));
@@ -5264,6 +5271,76 @@ export default function MyPage() {
       setAdminUserActivityError(err instanceof Error ? err.message : "회원 기록을 불러오지 못했습니다.");
     } finally {
       setAdminUserActivityLoading(false);
+    }
+  };
+
+  const handleAdminSaveUserNickname = async () => {
+    const userId = adminUserActivityResult?.user?.id ?? "";
+    const previousNickname = adminUserActivityResult?.user?.profile?.nickname ?? "";
+    const normalized = normalizeNickname(adminNicknameDraft);
+    const validationMessage = validateNickname(normalized);
+
+    setAdminNicknameError("");
+    setAdminNicknameInfo("");
+
+    if (!userId) {
+      setAdminNicknameError("먼저 회원을 조회해주세요.");
+      return;
+    }
+    if (validationMessage) {
+      setAdminNicknameError(validationMessage);
+      return;
+    }
+    if (previousNickname.trim().toLowerCase() === normalized.toLowerCase()) {
+      setAdminNicknameInfo("현재 닉네임과 같습니다.");
+      return;
+    }
+    if (!confirm(`${previousNickname || userId.slice(0, 8)} 님의 닉네임을 ${normalized}(으)로 변경할까요?`)) {
+      return;
+    }
+
+    setAdminNicknameSaving(true);
+    try {
+      const res = await fetch("/api/admin/users/nickname", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          identifier: userId,
+          nickname: normalized,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        nickname?: string;
+        previous_nickname?: string | null;
+      };
+
+      if (!res.ok || body.ok === false) {
+        throw new Error(body.error ?? "닉네임 변경에 실패했습니다.");
+      }
+
+      const nextNickname = body.nickname ?? normalized;
+      setAdminNicknameDraft(nextNickname);
+      setAdminUserActivityResult((prev) =>
+        prev?.user
+          ? {
+              ...prev,
+              user: {
+                ...prev.user,
+                profile: {
+                  ...(prev.user.profile ?? {}),
+                  nickname: nextNickname,
+                },
+              },
+            }
+          : prev
+      );
+      setAdminNicknameInfo(`${body.previous_nickname ?? (previousNickname || "기존 닉네임")} -> ${nextNickname} 변경 완료`);
+    } catch (err) {
+      setAdminNicknameError(err instanceof Error ? err.message : "닉네임 변경에 실패했습니다.");
+    } finally {
+      setAdminNicknameSaving(false);
     }
   };
 
@@ -10322,15 +10399,39 @@ export default function MyPage() {
                   <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-3">
                     <p className="text-xs font-semibold text-violet-900">회원 기본 정보</p>
                     {adminUserActivityResult.user ? (
-                      <div className="mt-2 grid gap-2 text-xs text-neutral-700 sm:grid-cols-2">
-                        <p>닉네임: {adminUserActivityResult.user.profile?.nickname ?? "-"}</p>
-                        <p>이메일: {adminUserActivityResult.user.email ?? "-"}</p>
-                        <p>사용자 ID: {adminUserActivityResult.user.id}</p>
-                        <p>역할: {adminUserActivityResult.user.profile?.role ?? "user"}</p>
-                        <p>가입일: {adminUserActivityResult.user.created_at ? new Date(adminUserActivityResult.user.created_at).toLocaleString("ko-KR") : "-"}</p>
-                        <p>최근 로그인: {adminUserActivityResult.user.last_sign_in_at ? new Date(adminUserActivityResult.user.last_sign_in_at).toLocaleString("ko-KR") : "-"}</p>
-                        <p>휴대폰 인증: {adminUserActivityResult.user.profile?.phone_verified ? "완료" : "미완료"}</p>
-                        <p>빠른매칭 노출: {adminUserActivityResult.user.profile?.swipe_profile_visible === false ? "숨김" : "노출"}</p>
+                      <div className="mt-2 space-y-3">
+                        <div className="grid gap-2 text-xs text-neutral-700 sm:grid-cols-2">
+                          <p>닉네임: {adminUserActivityResult.user.profile?.nickname ?? "-"}</p>
+                          <p>이메일: {adminUserActivityResult.user.email ?? "-"}</p>
+                          <p>사용자 ID: {adminUserActivityResult.user.id}</p>
+                          <p>역할: {adminUserActivityResult.user.profile?.role ?? "user"}</p>
+                          <p>가입일: {adminUserActivityResult.user.created_at ? new Date(adminUserActivityResult.user.created_at).toLocaleString("ko-KR") : "-"}</p>
+                          <p>최근 로그인: {adminUserActivityResult.user.last_sign_in_at ? new Date(adminUserActivityResult.user.last_sign_in_at).toLocaleString("ko-KR") : "-"}</p>
+                          <p>휴대폰 인증: {adminUserActivityResult.user.profile?.phone_verified ? "완료" : "미완료"}</p>
+                          <p>빠른매칭 노출: {adminUserActivityResult.user.profile?.swipe_profile_visible === false ? "숨김" : "노출"}</p>
+                        </div>
+                        <div className="rounded-lg border border-violet-100 bg-white p-3">
+                          <p className="text-xs font-semibold text-violet-900">관리자 닉네임 변경</p>
+                          <div className="mt-2 flex flex-col gap-2 sm:flex-row">
+                            <input
+                              value={adminNicknameDraft}
+                              onChange={(e) => setAdminNicknameDraft(e.target.value)}
+                              placeholder="새 닉네임"
+                              className="h-9 flex-1 rounded-lg border border-violet-200 bg-white px-3 text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void handleAdminSaveUserNickname()}
+                              disabled={adminNicknameSaving}
+                              className="h-9 rounded-lg bg-violet-600 px-3 text-xs font-semibold text-white disabled:opacity-60"
+                            >
+                              {adminNicknameSaving ? "변경 중..." : "닉네임 변경"}
+                            </button>
+                          </div>
+                          <p className="mt-1 text-[11px] text-neutral-500">회원 변경 횟수와 상관없이 관리자 권한으로 바로 변경합니다.</p>
+                          {adminNicknameError ? <p className="mt-2 text-xs text-red-600">{adminNicknameError}</p> : null}
+                          {adminNicknameInfo ? <p className="mt-2 text-xs text-emerald-700">{adminNicknameInfo}</p> : null}
+                        </div>
                       </div>
                     ) : (
                       <p className="mt-2 text-xs text-neutral-500">현재 활성 회원을 찾지 못했습니다.</p>
