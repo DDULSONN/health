@@ -17,6 +17,9 @@ const RECOMMENDATION_LIMIT = 10;
 const ADMIN_RECOMMENDATION_LIMIT = 3;
 const CARD_BATCH_SIZE = 1000;
 const RECOMMENDATION_REFRESH_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+const AGE_MATCH_MIN_QUOTA = 6;
+const NEAR_AGE_GAP = 2;
+const CLOSE_REGION_MAX_KM = 90;
 
 type CardRow = {
   id: string;
@@ -175,6 +178,52 @@ function takeRecommendations(
   return picked;
 }
 
+function takeBalancedRecommendations(
+  sourceCard: RecommendationCard,
+  sortedCandidates: RecommendationCard[],
+  limit: number,
+  preferredExcludeIds: Set<string> | null = null,
+  rotationSeed: string | null = null
+) {
+  const excludeIds = preferredExcludeIds ?? new Set<string>();
+  const picked: RecommendationCard[] = [];
+  const pickedIds = new Set<string>();
+
+  const rotateIfUseful = (items: RecommendationCard[], suffix: string) =>
+    rotationSeed && items.length > 1 ? rotateCandidates(items, hashSeed(`${rotationSeed}:${suffix}`) % items.length) : items;
+
+  const addFrom = (items: RecommendationCard[], targetCount: number, avoidExcluded: boolean) => {
+    for (const candidate of items) {
+      if (picked.length >= limit || picked.length >= targetCount) return;
+      if (pickedIds.has(candidate.id)) continue;
+      if (avoidExcluded && excludeIds.has(candidate.id)) continue;
+      picked.push(candidate);
+      pickedIds.add(candidate.id);
+    }
+  };
+
+  const ageMatched = sortedCandidates.filter((candidate) => isCandidateInSourceAgeRange(sourceCard, candidate));
+  const nearAge = sortedCandidates.filter((candidate) => getAgeGap(sourceCard.age, candidate.age) <= NEAR_AGE_GAP);
+  const closeRegion = sortedCandidates.filter((candidate) => {
+    const distance = getRegionDistanceMeta(sourceCard.region, candidate.region).distanceKm;
+    return distance != null && distance <= CLOSE_REGION_MAX_KM;
+  });
+
+  addFrom(rotateIfUseful(ageMatched, "age-match"), Math.min(limit, AGE_MATCH_MIN_QUOTA), true);
+  addFrom(rotateIfUseful(nearAge, "near-age"), Math.min(limit, Math.max(AGE_MATCH_MIN_QUOTA, 7)), true);
+  addFrom(rotateIfUseful(closeRegion, "close-region"), Math.min(limit, Math.max(picked.length, 8)), true);
+  addFrom(rotateIfUseful(sortedCandidates, "balanced-rest"), limit, true);
+
+  if (picked.length < limit) {
+    addFrom(rotateIfUseful(ageMatched, "age-match-fallback"), Math.min(limit, AGE_MATCH_MIN_QUOTA), false);
+    addFrom(rotateIfUseful(nearAge, "near-age-fallback"), Math.min(limit, Math.max(AGE_MATCH_MIN_QUOTA, 7)), false);
+    addFrom(rotateIfUseful(closeRegion, "close-region-fallback"), Math.min(limit, Math.max(picked.length, 8)), false);
+    addFrom(rotateIfUseful(sortedCandidates, "balanced-rest-fallback"), limit, false);
+  }
+
+  return picked;
+}
+
 function getRefreshAvailability(refreshUsedAt?: string | null) {
   if (!refreshUsedAt) {
     return {
@@ -323,9 +372,16 @@ export async function GET(req: Request) {
     });
 
     const defaultSortedCandidates = sortCandidatesForSource(sourceCard, candidates, "default");
-    const defaultRecommendations = takeRecommendations(defaultSortedCandidates, RECOMMENDATION_LIMIT);
+    const defaultRecommendations = takeBalancedRecommendations(
+      sourceCard,
+      defaultSortedCandidates,
+      RECOMMENDATION_LIMIT,
+      null,
+      null
+    );
     const recommendations = sourceCard.recommendation_refresh_used_at
-      ? takeRecommendations(
+      ? takeBalancedRecommendations(
+          sourceCard,
           sortCandidatesForSource(sourceCard, candidates, sourceCard.recommendation_refresh_used_at),
           RECOMMENDATION_LIMIT,
           new Set(defaultRecommendations.map((candidate) => candidate.id)),
