@@ -3526,7 +3526,7 @@ function OneOnOneMatchActions({
             onClick={() => onContactCheckout(match.id)}
             className="inline-flex min-h-[34px] items-center rounded-xl bg-emerald-600 px-3 text-xs font-black text-white disabled:opacity-50"
           >
-            {contactProcessing ? "결제 준비 중..." : "번호교환 결제"}
+            {contactProcessing ? "결제 준비 중..." : "연락처 교환 진행하기"}
           </button>
           <Link href="/mypage?section=matching" className="inline-flex min-h-[34px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold text-neutral-600">
             상세 보기

@@ -7833,7 +7833,7 @@ export default function MyPage() {
                                         onClick={() => void handleRequestOneOnOneContactExchange(match.id)}
                                         className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                                       >
-                                        {contactProcessing ? "결제 준비 중..." : "즉시 번호교환 결제"}
+                                        {contactProcessing ? "결제 준비 중..." : "연락처 교환 진행하기"}
                                       </button>
                                     </div>
                                   </>
