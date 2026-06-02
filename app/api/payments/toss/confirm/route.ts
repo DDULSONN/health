@@ -12,6 +12,7 @@ import {
   SWIPE_PREMIUM_DAILY_LIMIT,
   SWIPE_PREMIUM_DURATION_DAYS,
 } from "@/lib/dating-swipe";
+import { OPEN_CARD_EXPIRE_HOURS } from "@/lib/dating-open";
 import { isAllowedAdminUser } from "@/lib/admin";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -37,6 +38,7 @@ type TossOrderRow = {
     | "love_fortune_detail";
   product_ref_id: string | null;
   product_meta: Record<string, unknown> | null;
+  order_name: string | null;
   toss_order_id: string;
   amount: number;
   status: "ready" | "paid" | "failed" | "canceled";
@@ -379,6 +381,89 @@ async function ensurePaidCardFulfilled(
     throw new Error("PAID_CARD_ID_MISSING");
   }
 
+  if (order.product_meta?.source === "open_card_reopen") {
+    const openCardId =
+      (typeof order.product_meta.openCardId === "string" ? order.product_meta.openCardId.trim() : "") ||
+      paidCardId;
+    if (!openCardId) {
+      throw new Error("OPEN_CARD_REOPEN_ID_MISSING");
+    }
+
+    const cardRes = await admin
+      .from("dating_cards")
+      .select("id,owner_user_id,status,published_at,expires_at,auto_requeue_count")
+      .eq("id", openCardId)
+      .maybeSingle();
+    if (cardRes.error) {
+      throw cardRes.error;
+    }
+    if (!cardRes.data) {
+      throw new Error("OPEN_CARD_REOPEN_NOT_FOUND");
+    }
+    if (cardRes.data.owner_user_id !== order.user_id) {
+      throw new Error("OPEN_CARD_REOPEN_FORBIDDEN");
+    }
+    if (cardRes.data.status === "public") {
+      const currentExpiresAt = cardRes.data.expires_at ? new Date(cardRes.data.expires_at).getTime() : 0;
+      if (Number.isFinite(currentExpiresAt) && currentExpiresAt > Date.now()) {
+        return { alreadyApproved: true };
+      }
+    }
+    if (!["pending", "hidden", "expired", "public"].includes(String(cardRes.data.status ?? ""))) {
+      throw new Error("OPEN_CARD_REOPEN_STATUS_INVALID");
+    }
+
+    const appCountRes = await admin
+      .from("dating_card_applications")
+      .select("id", { count: "exact", head: true })
+      .eq("card_id", openCardId)
+      .neq("status", "canceled");
+    if (appCountRes.error) {
+      throw appCountRes.error;
+    }
+    if (Number(appCountRes.count ?? 0) > 2) {
+      throw new Error("OPEN_CARD_REOPEN_TOO_MANY_APPLICATIONS");
+    }
+
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + OPEN_CARD_EXPIRE_HOURS * 60 * 60 * 1000).toISOString();
+    const updateRes = await admin
+      .from("dating_cards")
+      .update({
+        status: "public",
+        published_at: now.toISOString(),
+        expires_at: expiresAt,
+        created_at: now.toISOString(),
+      })
+      .eq("id", openCardId)
+      .eq("owner_user_id", order.user_id)
+      .in("status", ["pending", "hidden", "expired", "public"])
+      .select("id")
+      .maybeSingle();
+
+    if (updateRes.error) {
+      throw updateRes.error;
+    }
+    if (!updateRes.data) {
+      const reopenedAgain = await admin
+        .from("dating_cards")
+        .select("status,expires_at")
+        .eq("id", openCardId)
+        .eq("owner_user_id", order.user_id)
+        .maybeSingle();
+      if (reopenedAgain.error) {
+        throw reopenedAgain.error;
+      }
+      const reopenedExpiresAt = reopenedAgain.data?.expires_at ? new Date(reopenedAgain.data.expires_at).getTime() : 0;
+      if (reopenedAgain.data?.status === "public" && Number.isFinite(reopenedExpiresAt) && reopenedExpiresAt > Date.now()) {
+        return { alreadyApproved: true };
+      }
+      throw new Error("OPEN_CARD_REOPEN_FAILED");
+    }
+
+    return { alreadyApproved: false };
+  }
+
   const paidCardRes = await admin
     .from("dating_paid_cards")
     .select("id,user_id,status,display_mode")
@@ -537,7 +622,7 @@ export async function POST(req: Request) {
     const admin = createAdminClient();
     const orderRes = await admin
       .from("toss_test_payment_orders")
-      .select("id,user_id,product_type,product_ref_id,product_meta,toss_order_id,amount,status")
+      .select("id,user_id,product_type,product_ref_id,product_meta,order_name,toss_order_id,amount,status")
       .eq("toss_order_id", orderId)
       .eq("user_id", user.id)
       .maybeSingle();
@@ -569,6 +654,7 @@ export async function POST(req: Request) {
         requestId,
         alreadyConfirmed: true,
         productType: order.product_type,
+        orderName: order.order_name,
         readingId: order.product_type === "love_fortune_detail" ? order.product_ref_id : undefined,
         orderId,
         addedCredits: fulfillment.addedCredits,
@@ -609,6 +695,7 @@ export async function POST(req: Request) {
       orderId,
       paymentKey,
       productType: order.product_type,
+      orderName: order.order_name,
       readingId: order.product_type === "love_fortune_detail" ? order.product_ref_id : undefined,
       amount,
       method: payment.method ?? null,
@@ -663,6 +750,17 @@ export async function POST(req: Request) {
         code: "ONE_ON_ONE_CANCELED",
         requestId,
         message: "취소된 매칭은 번호 교환 결제를 진행할 수 없습니다.",
+      });
+    }
+    if (error instanceof Error && error.message.startsWith("OPEN_CARD_REOPEN_")) {
+      const tooMany = error.message === "OPEN_CARD_REOPEN_TOO_MANY_APPLICATIONS";
+      return json(tooMany ? 409 : 500, {
+        ok: false,
+        code: error.message,
+        requestId,
+        message: tooMany
+          ? "받은 지원이 2개 이하인 오픈카드만 다시 노출할 수 있습니다."
+          : "오픈카드 재노출 처리에 실패했습니다. 마이페이지에서 상태를 확인해주세요.",
       });
     }
     return json(500, {

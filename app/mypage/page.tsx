@@ -155,6 +155,8 @@ type MyDatingCard = {
   photo_visibility?: "blur" | "public" | null;
   status: "pending" | "public" | "expired" | "hidden";
   queue_position?: number | null;
+  applicant_count?: number;
+  auto_requeue_count?: number | null;
   published_at: string | null;
   expires_at: string | null;
   created_at: string;
@@ -362,7 +364,9 @@ const SUPPORT_STATUS_LABELS: Record<SupportInquiry["status"], string> = {
 
 function formatPaymentProductLabel(order: MyPaymentCenterOrder) {
   if (order.product_type === "apply_credits") return "오픈카드 지원권";
-  if (order.product_type === "paid_card") return "대기 없이 등록";
+  if (order.product_type === "paid_card") {
+    return String(order.order_name ?? "").includes("다시 노출") ? "오픈카드 다시 노출" : "대기 없이 등록";
+  }
   if (order.product_type === "more_view") {
     const sex = order.product_meta?.sex;
     return sex === "female" ? "이상형 더보기 · 여자 카드" : sex === "male" ? "이상형 더보기 · 남자 카드" : "이상형 더보기";
@@ -391,7 +395,9 @@ function formatPaymentResultLabel(order: MyPaymentCenterOrder) {
   if (order.status === "ready") return "결제 대기";
   if (order.status !== "paid") return "상태 확인 필요";
   if (order.product_type === "apply_credits") return "지원권 지급 완료";
-  if (order.product_type === "paid_card") return "유료 등록 결제 확인 완료";
+  if (order.product_type === "paid_card") {
+    return String(order.order_name ?? "").includes("다시 노출") ? "오픈카드 재노출 완료" : "유료 등록 결제 확인 완료";
+  }
   if (order.product_type === "more_view") return "이상형 더보기 권한 반영 완료";
   if (order.product_type === "city_view") return "가까운 이상형 보기 권한 반영 완료";
   if (order.product_type === "one_on_one_contact_exchange") return "상대 연락처 공개 완료";
@@ -1532,6 +1538,7 @@ export default function MyPage() {
   const [reportingDatingTargetKeys, setReportingDatingTargetKeys] = useState<string[]>([]);
   const [deletingOneOnOneMatchIds, setDeletingOneOnOneMatchIds] = useState<string[]>([]);
   const [processingSwipeLikeBackIds, setProcessingSwipeLikeBackIds] = useState<string[]>([]);
+  const [reopeningOpenCardIds, setReopeningOpenCardIds] = useState<string[]>([]);
   const [deletingSwipeLikeIds, setDeletingSwipeLikeIds] = useState<string[]>([]);
   const [deletingConnectionIds, setDeletingConnectionIds] = useState<string[]>([]);
   const [cancelingAppliedIds, setCancelingAppliedIds] = useState<string[]>([]);
@@ -1574,6 +1581,7 @@ export default function MyPage() {
   const [error, setError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
+  const [accountDeleteConfirmOpen, setAccountDeleteConfirmOpen] = useState(false);
   const [deletingAppliedIds, setDeletingAppliedIds] = useState<string[]>([]);
   const [deletingPaidAppliedIds, setDeletingPaidAppliedIds] = useState<string[]>([]);
   const [deletingOneOnOneIds, setDeletingOneOnOneIds] = useState<string[]>([]);
@@ -3545,9 +3553,8 @@ export default function MyPage() {
 
   const handleDeleteAccount = async () => {
     if (deletingAccount) return;
-    if (!confirm("정말 탈퇴하시겠습니까? 탈퇴 후 계정 복구는 불가능합니다.")) return;
-    if (!confirm("마지막 확인: 탈퇴 시 데이터가 삭제되고 복구할 수 없습니다.")) return;
 
+    setAccountDeleteConfirmOpen(false);
     setDeletingAccount(true);
     try {
       const res = await fetch("/api/mypage/account", { method: "DELETE" });
@@ -3570,6 +3577,9 @@ export default function MyPage() {
       alert(body.message ?? "회원 탈퇴가 처리되었습니다.");
       router.replace("/");
       router.refresh();
+    } catch (error) {
+      console.error("[mypage] account deletion failed", error);
+      alert(error instanceof Error ? error.message : "회원 탈퇴에 실패했습니다.");
     } finally {
       setDeletingAccount(false);
     }
@@ -4613,6 +4623,50 @@ export default function MyPage() {
       setAdInquiryError(e instanceof Error ? e.message : "광고 문의 설정 저장에 실패했습니다.");
     } finally {
       setAdInquirySaving(false);
+    }
+  };
+
+  const handleReopenMyOpenCard = async (card: MyDatingCard) => {
+    if (reopeningOpenCardIds.includes(card.id)) return;
+    if (Number(card.applicant_count ?? 0) > 2) {
+      alert("받은 지원이 2개 이하인 오픈카드만 다시 노출할 수 있습니다.");
+      return;
+    }
+    if (card.status === "public") {
+      alert("이미 공개중인 오픈카드입니다.");
+      return;
+    }
+    if (!confirm("오픈카드를 5,000원으로 대기 없이 다시 노출할까요?")) return;
+
+    setReopeningOpenCardIds((prev) => [...prev, card.id]);
+    try {
+      const res = await fetch("/api/payments/toss/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productType: "paid_card",
+          openCardId: card.id,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        error?: string;
+        checkoutUrl?: string;
+      };
+      if (!res.ok || !body.ok) {
+        alert(withPaymentCardNotice(body.message ?? body.error ?? "오픈카드 재노출 결제를 시작하지 못했습니다."));
+        return;
+      }
+      if (!body.checkoutUrl) {
+        alert(withPaymentCardNotice("결제창을 열지 못했습니다."));
+        return;
+      }
+      window.location.href = body.checkoutUrl;
+    } catch (e) {
+      alert(e instanceof Error ? e.message : withPaymentCardNotice("오픈카드 재노출 결제를 시작하지 못했습니다."));
+    } finally {
+      setReopeningOpenCardIds((prev) => prev.filter((id) => id !== card.id));
     }
   };
 
@@ -5821,6 +5875,35 @@ export default function MyPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 pt-8 pb-[calc(120px+env(safe-area-inset-bottom))] md:pb-10">
+      {accountDeleteConfirmOpen && (
+        <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/40 px-4 py-6 sm:items-center">
+          <section className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
+            <p className="text-lg font-bold text-neutral-950">회원 탈퇴</p>
+            <p className="mt-3 text-sm leading-6 text-neutral-600">
+              탈퇴 후 계정 복구는 불가능합니다. 작성한 데이터가 삭제되거나 비공개 처리될 수 있고, 법령상 필요한 기록은 일정 기간 보관될 수 있습니다.
+            </p>
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setAccountDeleteConfirmOpen(false)}
+                disabled={deletingAccount}
+                className="min-h-[44px] rounded-xl border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-60"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleDeleteAccount()}
+                disabled={deletingAccount}
+                className="min-h-[44px] rounded-xl bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {deletingAccount ? "처리 중..." : "탈퇴하기"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       <section className="mb-4 rounded-2xl border border-neutral-200/80 bg-white p-1.5 shadow-[0_10px_30px_rgba(17,24,39,0.04)]">
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
           {([
@@ -6480,7 +6563,7 @@ export default function MyPage() {
           </button>
           <button
             type="button"
-            onClick={() => void handleDeleteAccount()}
+            onClick={() => setAccountDeleteConfirmOpen(true)}
             disabled={deletingAccount}
             className="min-h-[44px] rounded-xl border border-red-300 bg-white px-4 text-sm font-medium text-red-700 hover:bg-red-50 disabled:opacity-60"
           >
@@ -8054,7 +8137,19 @@ export default function MyPage() {
           <p className="text-sm text-neutral-500">등록된 오픈카드가 없습니다.</p>
         ) : (
           <div className="space-y-3">
-            {myDatingCards.map((card) => (
+            {myDatingCards.map((card) => {
+              const applicantCount = Number(card.applicant_count ?? 0);
+              const hasPublishedBefore =
+                Boolean(card.published_at) ||
+                Boolean(card.expires_at) ||
+                Number(card.auto_requeue_count ?? 0) > 0;
+              const canShowReopen =
+                ["pending", "hidden", "expired"].includes(card.status) &&
+                applicantCount <= 2 &&
+                hasPublishedBefore &&
+                (!hasActiveOpenCard || card.status === "pending");
+              const reopening = reopeningOpenCardIds.includes(card.id);
+              return (
               <div key={card.id} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
                 <div className="flex items-center justify-between gap-2">
                   <p className="text-sm font-medium text-neutral-900">
@@ -8067,6 +8162,7 @@ export default function MyPage() {
                 <p className="text-xs text-neutral-500 mt-1">
                   생성일 {new Date(card.created_at).toLocaleDateString("ko-KR")}
                 </p>
+                <p className="mt-1 text-xs text-neutral-500">받은 지원 {applicantCount.toLocaleString("ko-KR")}개</p>
                 {card.status === "public" && card.expires_at && (
                   <p className="text-sm text-amber-700 font-medium mt-1">
                     공개 종료까지 남은 시간 {formatRemainingToKorean(card.expires_at)}
@@ -8115,6 +8211,16 @@ export default function MyPage() {
                             : "사진 원본 공개"}
                       </button>
                     ) : null}
+                    {canShowReopen ? (
+                      <button
+                        type="button"
+                        disabled={reopening}
+                        onClick={() => void handleReopenMyOpenCard(card)}
+                        className="inline-flex h-8 items-center rounded-md border border-emerald-300 bg-white px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                      >
+                        {reopening ? "결제 준비 중..." : "5,000원 대기없이 다시 노출"}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       disabled={deletingOpenCardIds.includes(card.id)}
@@ -8125,8 +8231,13 @@ export default function MyPage() {
                     </button>
                   </div>
                 </div>
+                {canShowReopen ? (
+                  <p className="mt-2 rounded-lg border border-emerald-100 bg-white px-3 py-2 text-[11px] leading-5 text-emerald-800">
+                    받은 지원이 적었던 카드라 대기 없이 24시간 다시 노출할 수 있어요.
+                  </p>
+                ) : null}
               </div>
-            ))}
+            )})}
           </div>
         )}
         {hasActiveOpenCard && (

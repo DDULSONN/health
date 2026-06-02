@@ -10,6 +10,7 @@ type ConfirmResponse = {
   orderId?: string;
   paymentKey?: string;
   productType?: string;
+  orderName?: string | null;
   readingId?: string | null;
   amount?: number;
   method?: string | null;
@@ -116,9 +117,13 @@ const ELEMENT_META = {
   수: { label: "수", tone: "감정과 대화", color: "bg-blue-500", text: "text-blue-700", soft: "bg-blue-50" },
 } as const;
 
-function formatProductType(productType?: string) {
+function isOpenCardReopenOrder(orderName?: string | null) {
+  return String(orderName ?? "").includes("다시 노출");
+}
+
+function formatProductType(productType?: string, orderName?: string | null) {
   if (productType === "apply_credits") return "오픈카드 지원권";
-  if (productType === "paid_card") return "대기 없이 등록";
+  if (productType === "paid_card") return isOpenCardReopenOrder(orderName) ? "오픈카드 다시 노출" : "대기 없이 등록";
   if (productType === "more_view") return "이상형 더보기";
   if (productType === "city_view") return "가까운 이상형 보기";
   if (productType === "one_on_one_contact_exchange") return "1:1 번호 즉시 교환";
@@ -127,8 +132,12 @@ function formatProductType(productType?: string) {
   return "-";
 }
 
-function getPrimaryAction(productType?: string) {
-  if (productType === "paid_card") return { href: "/dating/paid", label: "대기 없이 등록으로 돌아가기" };
+function getPrimaryAction(productType?: string, orderName?: string | null) {
+  if (productType === "paid_card") {
+    return isOpenCardReopenOrder(orderName)
+      ? { href: "/mypage?section=matching", label: "마이페이지에서 확인하기" }
+      : { href: "/dating/paid", label: "대기 없이 등록으로 돌아가기" };
+  }
   if (productType === "one_on_one_contact_exchange") return { href: "/mypage", label: "마이페이지로 돌아가기" };
   if (productType === "swipe_premium_30d") return { href: "/community/dating/cards", label: "빠른매칭으로 돌아가기" };
   if (productType === "city_view") return { href: "/dating/nearby-view", label: "가까운 이상형 보기로 돌아가기" };
@@ -675,7 +684,7 @@ function PaymentSuccessContent() {
     return () => window.clearInterval(timer);
   }, [fortuneLoading]);
 
-  const primaryAction = getPrimaryAction(result?.productType);
+  const primaryAction = getPrimaryAction(result?.productType, result?.orderName);
   const isLoveFortune = result?.productType === "love_fortune_detail";
   const activeFortuneLoadingStep = LOVE_FORTUNE_LOADING_STEPS[fortuneLoadingStep] ?? LOVE_FORTUNE_LOADING_STEPS[0];
   const fortuneLoadingProgress = Math.min(
@@ -708,7 +717,7 @@ function PaymentSuccessContent() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
                 <p className="text-xs font-medium text-neutral-500">상품</p>
-                <p className="mt-1 font-semibold text-neutral-900">{formatProductType(result.productType)}</p>
+                <p className="mt-1 font-semibold text-neutral-900">{formatProductType(result.productType, result.orderName)}</p>
               </div>
               <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
                 <p className="text-xs font-medium text-neutral-500">결제 금액</p>
@@ -726,7 +735,9 @@ function PaymentSuccessContent() {
                   {typeof result.addedCredits === "number" && result.addedCredits > 0
                     ? `지원권 +${result.addedCredits}장 / 현재 ${result.creditsAfter ?? 0}장`
                     : result.productType === "paid_card"
-                      ? "대기 없이 등록 결제가 반영됐어요"
+                      ? isOpenCardReopenOrder(result.orderName)
+                        ? "오픈카드가 다시 노출됐어요"
+                        : "대기 없이 등록 결제가 반영됐어요"
                       : result.productType === "one_on_one_contact_exchange"
                         ? "상대 연락처 즉시 공개"
                         : result.productType === "swipe_premium_30d"

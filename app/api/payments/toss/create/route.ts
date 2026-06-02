@@ -9,6 +9,7 @@ import {
   getSwipeLimitInfo,
 } from "@/lib/dating-swipe";
 import { isAllowedAdminUser } from "@/lib/admin";
+import { OPEN_CARD_EXPIRE_HOURS } from "@/lib/dating-open";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { createTossPayment, getMissingTossConfigKeys, isTossConfigured } from "@/lib/toss-payments";
@@ -29,6 +30,7 @@ type CreateBody = {
   province?: unknown;
   matchId?: unknown;
   paidCardId?: unknown;
+  openCardId?: unknown;
   birthDate?: unknown;
   birthTime?: unknown;
   birthTimeCertainty?: unknown;
@@ -91,6 +93,8 @@ const PRODUCT_CONFIG: Record<ProductType, { amount: number; orderName: string }>
     orderName: "연애운 상세 분석",
   },
 };
+
+const OPEN_CARD_REOPEN_AMOUNT_KRW = 5000;
 
 function json(status: number, payload: Record<string, unknown>) {
   return NextResponse.json(payload, { status });
@@ -269,6 +273,8 @@ export async function POST(req: Request) {
     }
 
     const config = PRODUCT_CONFIG[productType];
+    let paymentAmount = config.amount;
+    let orderNameOverride: string | null = null;
     const admin = createAdminClient();
     let productRefId: string | null = null;
     let productMeta: Record<string, unknown> = {};
@@ -685,6 +691,135 @@ export async function POST(req: Request) {
     }
 
     if (productType === "paid_card") {
+      const openCardId = typeof body.openCardId === "string" ? body.openCardId.trim() : "";
+      if (openCardId) {
+        const cardRes = await admin
+          .from("dating_cards")
+          .select("id,owner_user_id,sex,status,display_nickname,published_at,expires_at,auto_requeue_count")
+          .eq("id", openCardId)
+          .eq("owner_user_id", user.id)
+          .maybeSingle();
+
+        if (cardRes.error) {
+          console.error("[toss-create] open card reopen lookup failed", cardRes.error);
+          return json(500, {
+            ok: false,
+            code: "OPEN_CARD_LOOKUP_FAILED",
+            requestId,
+            message: "오픈카드 재노출 상태를 확인하지 못했습니다.",
+          });
+        }
+        if (!cardRes.data) {
+          return json(404, {
+            ok: false,
+            code: "OPEN_CARD_NOT_FOUND",
+            requestId,
+            message: "재노출할 오픈카드를 찾지 못했습니다.",
+          });
+        }
+        if (!["pending", "hidden", "expired"].includes(String(cardRes.data.status ?? ""))) {
+          return json(409, {
+            ok: false,
+            code: "OPEN_CARD_REOPEN_NOT_AVAILABLE",
+            requestId,
+            message: "현재 재노출할 수 없는 오픈카드입니다.",
+          });
+        }
+        const wasPublished =
+          Boolean(cardRes.data.published_at) ||
+          Boolean(cardRes.data.expires_at) ||
+          Number(cardRes.data.auto_requeue_count ?? 0) > 0;
+        if (!wasPublished) {
+          return json(409, {
+            ok: false,
+            code: "OPEN_CARD_NOT_PREVIOUSLY_PUBLIC",
+            requestId,
+            message: "공개된 이력이 있는 오픈카드만 다시 노출할 수 있습니다.",
+          });
+        }
+
+        const activeCardRes = await admin
+          .from("dating_cards")
+          .select("id,status")
+          .eq("owner_user_id", user.id)
+          .in("status", ["pending", "public"]);
+        if (activeCardRes.error) {
+          console.error("[toss-create] open card active lookup failed", activeCardRes.error);
+          return json(500, {
+            ok: false,
+            code: "OPEN_CARD_ACTIVE_LOOKUP_FAILED",
+            requestId,
+            message: "현재 오픈카드 상태를 확인하지 못했습니다.",
+          });
+        }
+        const activeOtherCard = (activeCardRes.data ?? []).find((row) => row.id !== openCardId);
+        if (activeOtherCard) {
+          return json(409, {
+            ok: false,
+            code: "ACTIVE_OPEN_CARD_EXISTS",
+            requestId,
+            message: "이미 대기중이거나 공개중인 다른 오픈카드가 있습니다.",
+          });
+        }
+
+        const appCountRes = await admin
+          .from("dating_card_applications")
+          .select("id", { count: "exact", head: true })
+          .eq("card_id", openCardId)
+          .neq("status", "canceled");
+        if (appCountRes.error) {
+          console.error("[toss-create] open card reopen app count failed", appCountRes.error);
+          return json(500, {
+            ok: false,
+            code: "OPEN_CARD_APPLICATION_COUNT_FAILED",
+            requestId,
+            message: "지원 수를 확인하지 못했습니다.",
+          });
+        }
+        const applicantCount = Number(appCountRes.count ?? 0);
+        if (applicantCount > 2) {
+          return json(409, {
+            ok: false,
+            code: "OPEN_CARD_REOPEN_TOO_MANY_APPLICATIONS",
+            requestId,
+            message: "받은 지원이 2개 이하인 오픈카드만 다시 노출할 수 있습니다.",
+          });
+        }
+
+        const duplicateOrderRes = await admin
+          .from("toss_test_payment_orders")
+          .select("id,status,created_at")
+          .eq("product_type", "paid_card")
+          .eq("product_ref_id", openCardId)
+          .contains("product_meta", { source: "open_card_reopen" })
+          .eq("status", "ready")
+          .order("created_at", { ascending: false })
+          .limit(5);
+        if (duplicateOrderRes.error) {
+          console.error("[toss-create] open card reopen duplicate order lookup failed", duplicateOrderRes.error);
+          return json(500, {
+            ok: false,
+            code: "ORDER_LOOKUP_FAILED",
+            requestId,
+            message: "기존 결제 진행 상태를 확인하지 못했습니다.",
+          });
+        }
+        const duplicateOrders = duplicateOrderRes.data ?? [];
+        await cancelReadyOrders(
+          admin,
+          duplicateOrders.map((row) => row.id)
+        );
+
+        productRefId = openCardId;
+        paymentAmount = OPEN_CARD_REOPEN_AMOUNT_KRW;
+        orderNameOverride = "오픈카드 다시 노출";
+        productMeta = {
+          source: "open_card_reopen",
+          openCardId,
+          applicantCount,
+          durationHours: OPEN_CARD_EXPIRE_HOURS,
+        };
+      } else {
       const paidCardId = typeof body.paidCardId === "string" ? body.paidCardId.trim() : "";
       if (!paidCardId) {
         return json(400, {
@@ -762,6 +897,7 @@ export async function POST(req: Request) {
       productMeta = {
         displayMode: paidCardRes.data.display_mode === "instant_public" ? "instant_public" : "priority_24h",
       };
+      }
     }
 
     if (productType === "love_fortune_detail") {
@@ -814,7 +950,7 @@ export async function POST(req: Request) {
           partner_birth_date: input.partnerBirthDate,
           partner_birth_time: input.partnerBirthTime,
           partner_relation: input.partnerRelation || null,
-          amount: config.amount,
+          amount: paymentAmount,
         })
         .select("id")
         .single();
@@ -852,7 +988,7 @@ export async function POST(req: Request) {
         ? `${config.orderName} (${productMeta.sex === "female" ? "?ъ옄 移대뱶" : "?⑥옄 移대뱶"})`
         : productType === "city_view"
           ? `${config.orderName} (${String(productMeta.province ?? "-")})`
-          : config.orderName;
+          : orderNameOverride ?? config.orderName;
 
     const saveOrderRes = await admin
       .from("toss_test_payment_orders")
@@ -863,7 +999,7 @@ export async function POST(req: Request) {
         product_meta: productMeta,
         toss_order_id: tossOrderId,
         order_name: orderName,
-        amount: config.amount,
+        amount: paymentAmount,
         status: "ready",
       })
       .select("id")
@@ -896,7 +1032,7 @@ export async function POST(req: Request) {
 
     const payment = await createTossPayment({
       method: "CARD",
-      amount: config.amount,
+      amount: paymentAmount,
       orderId: tossOrderId,
       orderName,
       successUrl: successUrl.toString(),
@@ -932,7 +1068,7 @@ export async function POST(req: Request) {
       requestId,
       productType,
       orderId: tossOrderId,
-      amount: config.amount,
+      amount: paymentAmount,
       checkoutUrl,
     });
   } catch (error) {

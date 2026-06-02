@@ -18,6 +18,8 @@ type CardRow = {
   expires_at: string | null;
   created_at: string;
   status: string;
+  published_at?: string | null;
+  auto_requeue_count?: number | null;
   applications_last_viewed_at?: string | null;
 };
 
@@ -106,14 +108,14 @@ async function getPendingQueuePosition(
 async function fetchOwnedCards(adminClient: ReturnType<typeof createAdminClient>, userId: string) {
   let { data, error } = await adminClient
     .from("dating_cards")
-    .select("id, sex, display_nickname, age, region, photo_visibility, expires_at, created_at, status, applications_last_viewed_at")
+    .select("id, sex, display_nickname, age, region, photo_visibility, expires_at, published_at, auto_requeue_count, created_at, status, applications_last_viewed_at")
     .eq("owner_user_id", userId)
     .order("created_at", { ascending: false });
 
   if (error && error.code === "42703") {
     const fallback = await adminClient
       .from("dating_cards")
-      .select("id, sex, display_nickname, age, region, expires_at, created_at, status")
+      .select("id, sex, display_nickname, age, region, expires_at, published_at, created_at, status")
       .eq("owner_user_id", userId)
       .order("created_at", { ascending: false });
 
@@ -121,6 +123,7 @@ async function fetchOwnedCards(adminClient: ReturnType<typeof createAdminClient>
     data = (fallback.data ?? []).map((row) => ({
       ...row,
       photo_visibility: "blur",
+      auto_requeue_count: null,
       applications_last_viewed_at: null,
     }));
   }
