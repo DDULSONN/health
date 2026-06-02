@@ -95,7 +95,18 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: profileRes.error.message }, { status: 500 });
   }
 
-  const profile = profileRes.data;
+  let profile = profileRes.data;
+  const profileExists = Boolean(profile?.user_id);
+  if (!profile?.user_id && lookupUserId) {
+    const authUserRes = await auth.admin.auth.admin.getUserById(lookupUserId).catch(() => null);
+    if (authUserRes?.data?.user?.id) {
+      profile = {
+        user_id: lookupUserId,
+        nickname: null,
+      };
+    }
+  }
+
   if (!profile?.user_id) {
     await recordAdminAuditEvent({
       admin: auth.admin,
@@ -148,7 +159,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "이미 사용 중인 닉네임입니다." }, { status: 409 });
   }
 
-  const { error: updateError } = await auth.admin.from("profiles").update({ nickname }).eq("user_id", userId);
+  const updateResult = profileExists
+    ? await auth.admin.from("profiles").update({ nickname }).eq("user_id", userId)
+    : await auth.admin.from("profiles").upsert({ user_id: userId, nickname }, { onConflict: "user_id" });
+  const updateError = updateResult.error;
   if (updateError) {
     await recordAdminAuditEvent({
       admin: auth.admin,
