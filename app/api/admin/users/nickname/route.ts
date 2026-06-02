@@ -4,7 +4,7 @@ import { requireAdminRoute } from "@/lib/admin-route";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
 
 function isUuid(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{12}$/i.test(value);
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
 function isDuplicateNicknameError(error: { code?: string; message?: string } | null | undefined) {
@@ -26,6 +26,14 @@ async function findAuthUserIdByEmail(auth: Awaited<ReturnType<typeof requireAdmi
     if (data.users.length < 1000) break;
   }
   return null;
+}
+
+async function findAuthUserIdById(auth: Awaited<ReturnType<typeof requireAdminRoute>>, userId: string) {
+  if (!auth.ok) return null;
+  const trimmed = userId.trim();
+  if (!trimmed || trimmed.length < 8) return null;
+  const res = await auth.admin.auth.admin.getUserById(trimmed).catch(() => null);
+  return res?.data?.user?.id ?? null;
 }
 
 export async function POST(request: Request) {
@@ -72,6 +80,9 @@ export async function POST(request: Request) {
   }
 
   let lookupUserId = isUuid(identifier) ? identifier : "";
+  if (!lookupUserId && !identifier.includes("@")) {
+    lookupUserId = (await findAuthUserIdById(auth, identifier)) ?? "";
+  }
   if (!lookupUserId && identifier.includes("@")) {
     lookupUserId = (await findAuthUserIdByEmail(auth, identifier)) ?? "";
   }
