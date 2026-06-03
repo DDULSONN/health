@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import dynamic from "next/dynamic";
 import { Geist, Geist_Mono } from "next/font/google";
+import Script from "next/script";
 import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
@@ -8,6 +9,7 @@ import MobileBottomTabBar from "@/components/MobileBottomTabBar";
 import SiteGuideBubble from "@/components/SiteGuideBubble";
 
 const DeferredAdSenseBootstrap = dynamic(() => import("@/components/AdSenseBootstrap"), {});
+const googleAnalyticsId = "G-QTWFQ6S6C5";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -95,6 +97,18 @@ export default function RootLayout({
         <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }} />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased flex flex-col min-h-dvh`}>
+        <Script
+          src={`https://www.googletagmanager.com/gtag/js?id=${googleAnalyticsId}`}
+          strategy="afterInteractive"
+        />
+        <Script id="google-analytics" strategy="afterInteractive">
+          {`
+            window.dataLayer = window.dataLayer || [];
+            function gtag(){window.dataLayer.push(arguments);}
+            gtag('js', new Date());
+            gtag('config', '${googleAnalyticsId}');
+          `}
+        </Script>
         <DeferredAdSenseBootstrap />
         <Header />
         <SiteGuideBubble />
