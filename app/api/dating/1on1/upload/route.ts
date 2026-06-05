@@ -9,6 +9,15 @@ export const runtime = "nodejs";
 const BUCKET = "dating-1on1-photos";
 const MAX_FILE_SIZE = 12 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const ALLOWED_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp"]);
+const UNSUPPORTED_IPHONE_PHOTO_TYPES = new Set(["image/heic", "image/heif"]);
+const UNSUPPORTED_IPHONE_PHOTO_EXTENSIONS = new Set(["heic", "heif"]);
+
+function getFileExtension(fileName: string) {
+  const normalized = fileName.trim().toLowerCase();
+  const idx = normalized.lastIndexOf(".");
+  return idx >= 0 ? normalized.slice(idx + 1) : "";
+}
 
 async function ensureBucket(adminClient: ReturnType<typeof createAdminClient>) {
   const { error } = await adminClient.storage.createBucket(BUCKET, {
@@ -36,22 +45,47 @@ export async function POST(req: Request) {
   const form = await req.formData().catch(() => null);
   const file = form?.get("file");
   if (!(file instanceof File)) {
-    return NextResponse.json({ error: "File is required." }, { status: 400 });
+    return NextResponse.json({ error: "사진 파일이 필요합니다." }, { status: 400 });
   }
 
-  if (!ALLOWED_TYPES.has(file.type)) {
-    return NextResponse.json({ error: "Only JPG/PNG/WebP is allowed." }, { status: 400 });
+  const fileType = file.type.toLowerCase();
+  const fileExtension = getFileExtension(file.name);
+
+  if (UNSUPPORTED_IPHONE_PHOTO_TYPES.has(fileType) || UNSUPPORTED_IPHONE_PHOTO_EXTENSIONS.has(fileExtension)) {
+    return NextResponse.json(
+      { error: "HEIC 사진은 지원하지 않아요. 사진을 캡처해서 다시 올리거나 JPG/PNG/WebP로 선택해 주세요." },
+      { status: 400 }
+    );
+  }
+
+  if (!ALLOWED_TYPES.has(fileType) && !ALLOWED_EXTENSIONS.has(fileExtension)) {
+    return NextResponse.json(
+      { error: "JPG, PNG, WebP 사진만 업로드할 수 있어요. 안 되면 사진을 캡처해서 다시 올려주세요." },
+      { status: 400 }
+    );
   }
 
   if (file.size > MAX_FILE_SIZE) {
-    return NextResponse.json({ error: "File size must be 12MB or less." }, { status: 400 });
+    return NextResponse.json(
+      { error: "사진은 12MB 이하만 업로드할 수 있어요. 캡처해서 올리면 보통 해결됩니다." },
+      { status: 400 }
+    );
   }
 
-  const webpBytes = await sharp(Buffer.from(await file.arrayBuffer()))
-    .rotate()
-    .resize({ width: 1200, withoutEnlargement: true, fit: "inside" })
-    .webp({ quality: 72 })
-    .toBuffer();
+  let webpBytes: Buffer;
+  try {
+    webpBytes = await sharp(Buffer.from(await file.arrayBuffer()))
+      .rotate()
+      .resize({ width: 1200, withoutEnlargement: true, fit: "inside" })
+      .webp({ quality: 72 })
+      .toBuffer();
+  } catch (error) {
+    console.error("[POST /api/dating/1on1/upload] image processing failed", error);
+    return NextResponse.json(
+      { error: "사진을 처리하지 못했습니다. 다른 사진이나 캡처한 사진으로 다시 올려주세요." },
+      { status: 400 }
+    );
+  }
 
   const path = `cards/${user.id}/${Date.now()}-${crypto.randomUUID()}.webp`;
   const admin = createAdminClient();
@@ -76,7 +110,7 @@ export async function POST(req: Request) {
 
   if (uploadRes.error) {
     console.error("[POST /api/dating/1on1/upload] upload failed", uploadRes.error);
-    return NextResponse.json({ error: "Failed to upload image." }, { status: 500 });
+    return NextResponse.json({ error: "사진 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });
   }
 
   return NextResponse.json({ path }, { status: 201 });

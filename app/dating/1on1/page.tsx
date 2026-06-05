@@ -43,6 +43,12 @@ const SMOKING_OPTIONS = [
 ] as const;
 
 const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
+const PHOTO_MAX_FILE_SIZE = 12 * 1024 * 1024;
+const PHOTO_MAX_FILE_SIZE_MB = PHOTO_MAX_FILE_SIZE / (1024 * 1024);
+const ALLOWED_PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const ALLOWED_PHOTO_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp"]);
+const UNSUPPORTED_IPHONE_PHOTO_EXTENSIONS = new Set(["heic", "heif"]);
+const UNSUPPORTED_IPHONE_PHOTO_TYPES = new Set(["image/heic", "image/heif"]);
 
 const WORKOUT_OPTIONS = [
   { value: "", label: "선택 안함" },
@@ -64,6 +70,28 @@ function workoutLabel(value: CardItem["workout_frequency"]): string {
   if (value === "3_4") return "주 3-4회";
   if (value === "5_plus") return "주 5회 이상";
   return "-";
+}
+
+function getFileExtension(fileName: string) {
+  const normalized = fileName.trim().toLowerCase();
+  const idx = normalized.lastIndexOf(".");
+  return idx >= 0 ? normalized.slice(idx + 1) : "";
+}
+
+function getOneOnOnePhotoError(file: File) {
+  const ext = getFileExtension(file.name);
+  const type = file.type.toLowerCase();
+
+  if (UNSUPPORTED_IPHONE_PHOTO_TYPES.has(type) || UNSUPPORTED_IPHONE_PHOTO_EXTENSIONS.has(ext)) {
+    return "HEIC 사진은 지원하지 않아요. 사진을 캡처해서 다시 올리거나 JPG/PNG/WebP로 선택해 주세요.";
+  }
+  if (file.size > PHOTO_MAX_FILE_SIZE) {
+    return `사진은 ${PHOTO_MAX_FILE_SIZE_MB}MB 이하만 업로드할 수 있어요. 캡처해서 올리면 보통 해결됩니다.`;
+  }
+  if (!ALLOWED_PHOTO_TYPES.has(type) && !ALLOWED_PHOTO_EXTENSIONS.has(ext)) {
+    return "JPG, PNG, WebP 사진만 업로드할 수 있어요. 안 되면 사진을 캡처해서 다시 올려주세요.";
+  }
+  return "";
 }
 
 async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
@@ -231,6 +259,19 @@ function DatingOneOnOnePageContent() {
 
   const handleSlotChange = (slot: 1 | 2, files: FileList | null) => {
     const picked = files?.[0] ?? null;
+    if (picked) {
+      const photoError = getOneOnOnePhotoError(picked);
+      if (photoError) {
+        setError(`사진 ${slot}: ${photoError}`);
+        if (slot === 1) {
+          setPhotoSlotOne(null);
+        } else {
+          setPhotoSlotTwo(null);
+        }
+        return;
+      }
+      setError("");
+    }
     if (slot === 1) {
       setPhotoSlotOne(picked);
       return;
@@ -260,6 +301,14 @@ function DatingOneOnOnePageContent() {
     setError("");
     setInfo("");
 
+    for (const [index, file] of selectedPhotos.entries()) {
+      const photoError = getOneOnOnePhotoError(file);
+      if (photoError) {
+        setError(`사진 ${index + 1}: ${photoError}`);
+        return;
+      }
+    }
+
     if (!isEditMode && !status?.canWrite) {
       setError("현재 신청 권한이 없습니다.");
       return;
@@ -277,7 +326,7 @@ function DatingOneOnOnePageContent() {
     try {
       const uploadedPaths: string[] = [];
       if (selectedPhotos.length > 0) {
-        for (const file of selectedPhotos) {
+        for (const [index, file] of selectedPhotos.entries()) {
           const fd = new FormData();
           fd.append("file", file);
           const uploadRes = await fetchWithTimeout("/api/dating/1on1/upload", {
@@ -286,7 +335,7 @@ function DatingOneOnOnePageContent() {
           }, 45000);
           const uploadBody = (await uploadRes.json().catch(() => ({}))) as { path?: string; error?: string };
           if (!uploadRes.ok || !uploadBody.path) {
-            throw new Error(uploadBody.error ?? "사진 업로드에 실패했습니다.");
+            throw new Error(`사진 ${index + 1}: ${uploadBody.error ?? "사진 업로드에 실패했습니다. 캡처해서 다시 올려주세요."}`);
           }
           uploadedPaths.push(uploadBody.path);
         }
@@ -484,8 +533,11 @@ function DatingOneOnOnePageContent() {
                 <p className="text-sm font-medium text-neutral-800">사진 1</p>
                 <input
                   type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={(e) => handleSlotChange(1, e.target.files)}
+                  accept="image/*"
+                  onChange={(e) => {
+                    handleSlotChange(1, e.target.files);
+                    if (e.target.files?.[0] && getOneOnOnePhotoError(e.target.files[0])) e.currentTarget.value = "";
+                  }}
                   className="mt-2 block w-full text-sm"
                 />
                 <p className="mt-2 text-xs text-neutral-500">{photoSlotOne ? photoSlotOne.name : "아직 선택하지 않았습니다."}</p>
@@ -499,8 +551,11 @@ function DatingOneOnOnePageContent() {
                 <p className="text-sm font-medium text-neutral-800">사진 2</p>
                 <input
                   type="file"
-                  accept="image/jpeg,image/png,image/webp"
-                  onChange={(e) => handleSlotChange(2, e.target.files)}
+                  accept="image/*"
+                  onChange={(e) => {
+                    handleSlotChange(2, e.target.files);
+                    if (e.target.files?.[0] && getOneOnOnePhotoError(e.target.files[0])) e.currentTarget.value = "";
+                  }}
                   className="mt-2 block w-full text-sm"
                 />
                 <p className="mt-2 text-xs text-neutral-500">{photoSlotTwo ? photoSlotTwo.name : "아직 선택하지 않았습니다."}</p>
@@ -511,7 +566,10 @@ function DatingOneOnOnePageContent() {
                 )}
               </div>
             </div>
-            <p className="mt-2 text-xs text-neutral-500">두 장 모두 업로드해야 신청할 수 있습니다. 업로드 시 WebP로 최적화됩니다.</p>
+            <p className="mt-2 text-xs text-neutral-500">
+              두 장 모두 업로드해야 신청할 수 있습니다. JPG, PNG, WebP / 사진당 12MB 이하만 가능해요.
+            </p>
+            <p className="mt-1 text-xs text-amber-700">아이폰 HEIC 사진이 안 올라가면 사진을 캡처해서 다시 올려주세요.</p>
             {isEditMode && existingPhotoUrls.length > 0 && (
               <div className="mt-3">
                 <p className="text-xs text-neutral-500">수정 시 사진을 바꾸지 않으면 기존 사진 2장이 유지됩니다. 바꾸려면 사진 1과 사진 2를 모두 새로 선택해주세요.</p>
