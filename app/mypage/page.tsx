@@ -6168,7 +6168,7 @@ export default function MyPage() {
               {phoneOtpPending && (
                 <div className="space-y-2">
                   <p className="text-[11px] text-neutral-500">
-                    인증번호가 오지 않으면 1분 정도 기다린 뒤 재발송해주세요. 계속 실패하면 오픈카톡으로 닉네임과 번호를 보내주시면 수동 확인해드릴게요.
+                    인증번호가 오지 않으면 1분 뒤 재발송해주세요. 계속 안 오면 사이트 하단 연락처 번호로 닉네임과 휴대폰 번호를 보내주시면 수동 인증해드릴게요.
                   </p>
                   <input
                     type="text"
