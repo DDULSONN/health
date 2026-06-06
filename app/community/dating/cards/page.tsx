@@ -3111,33 +3111,28 @@ export default function OpenCardsPage() {
       ) : null}
 
       {showOpenCardSection && (reelsListings.length > 0 || reelsListingsLoading) ? (
-        <section className="mb-4 rounded-[20px] border border-rose-100 bg-white p-3 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
-          <div className="flex items-center justify-between gap-3">
-            <div>
-              <p className="text-sm font-black text-neutral-950">릴스 매물 지원</p>
-              <p className="mt-0.5 text-xs font-medium text-neutral-500">릴스에서 본 매물에 바로 지원할 수 있어요.</p>
-            </div>
-          </div>
+        <section className="mb-3 flex items-center gap-2 overflow-x-auto pb-1">
+          <span className="shrink-0 rounded-full bg-rose-50 px-3 py-2 text-xs font-black text-rose-600">
+            릴스 매물
+          </span>
           {reelsListingsLoading && reelsListings.length === 0 ? (
-            <p className="mt-3 text-xs text-neutral-400">불러오는 중...</p>
+            <span className="shrink-0 rounded-full border border-neutral-200 bg-white px-3 py-2 text-xs font-bold text-neutral-400">
+              불러오는 중...
+            </span>
           ) : (
-            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+            <>
               {reelsListings.map((listing) => (
                 <button
                   key={listing.id}
                   type="button"
                   onClick={() => openReelsApply(listing)}
-                  className="min-w-[230px] rounded-[16px] border border-rose-100 bg-rose-50/50 px-3 py-3 text-left transition hover:border-rose-200 hover:bg-rose-50"
+                  className="shrink-0 rounded-full border border-neutral-200 bg-white px-3 py-2 text-left text-xs font-bold text-neutral-800 shadow-[0_4px_12px_rgba(15,23,42,0.04)] transition hover:border-rose-200 hover:text-rose-600"
+                  aria-label={`${listing.title} 지원하기`}
                 >
-                  <span className="inline-flex rounded-full bg-white px-2 py-1 text-[11px] font-black text-rose-600">릴스</span>
-                  <p className="mt-2 line-clamp-2 text-sm font-black leading-5 text-neutral-950">{listing.title}</p>
-                  {listing.description ? (
-                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-neutral-500">{listing.description}</p>
-                  ) : null}
-                  <p className="mt-2 text-xs font-black text-rose-600">바로 지원하기</p>
+                  {listing.title}
                 </button>
               ))}
-            </div>
+            </>
           )}
         </section>
       ) : null}
@@ -3257,7 +3252,7 @@ export default function OpenCardsPage() {
             />
             <div className="mt-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
               <p className="text-xs font-black text-neutral-700">사진 첨부</p>
-              <p className="mt-1 text-xs text-neutral-500">선택사항입니다. 올리면 WebP로 가볍게 저장됩니다.</p>
+              <p className="mt-1 text-xs text-neutral-500">사진은 선택사항입니다.</p>
               <input
                 type="file"
                 accept="image/*"
