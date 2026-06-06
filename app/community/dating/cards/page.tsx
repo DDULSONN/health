@@ -240,6 +240,15 @@ type OneOnOneHomeState = {
   recommendations: OneOnOneRecommendationGroup[];
 };
 
+type ReelsDatingListing = {
+  id: string;
+  title: string;
+  description: string | null;
+  status: "active" | "hidden";
+  sort_order: number | null;
+  created_at: string;
+};
+
 const PAGE_SIZE = 20;
 const OPEN_CARDS_CACHE_KEY = "community-dating-open-cards:v1";
 const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
@@ -272,6 +281,14 @@ type OpenCardsSnapshot = {
 
 function buildLoginRedirect(path: string) {
   return `/login?redirect=${encodeURIComponent(path)}`;
+}
+
+function normalizeReelsInstagramId(value: string) {
+  return value.trim().replace(/^@+/, "").replace(/\s+/g, "").slice(0, 30);
+}
+
+function validReelsInstagramId(value: string) {
+  return /^[A-Za-z0-9._]{1,30}$/.test(value);
 }
 
 type CardVisualTheme = {
@@ -1639,6 +1656,7 @@ export default function OpenCardsPage() {
   const swipeCacheRef = useRef<Partial<Record<"male" | "female", SwipeState>>>({});
   const swipeRequestIdRef = useRef({ male: 0, female: 0 });
   const [viewerLoggedIn, setViewerLoggedIn] = useState(false);
+  const [viewerPhoneVerified, setViewerPhoneVerified] = useState(false);
   const [swipeSubscriptionStatus, setSwipeSubscriptionStatus] = useState<SwipeSubscriptionStatus | null>(null);
   const [swipeSubscriptionLoading, setSwipeSubscriptionLoading] = useState(false);
   const [swipeSubscriptionSubmitting, setSwipeSubscriptionSubmitting] = useState(false);
@@ -1647,6 +1665,22 @@ export default function OpenCardsPage() {
   const [homeAdLink, setHomeAdLink] = useState<HomeAdLinkSetting | null>(null);
   const [openCardHomeCopy, setOpenCardHomeCopy] = useState<OpenCardHomeCopySetting>({
     subtitle: DEFAULT_OPEN_CARD_HOME_SUBTITLE,
+  });
+  const [reelsListings, setReelsListings] = useState<ReelsDatingListing[]>([]);
+  const [reelsListingsLoading, setReelsListingsLoading] = useState(false);
+  const [selectedReelsListing, setSelectedReelsListing] = useState<ReelsDatingListing | null>(null);
+  const [reelsApplySubmitting, setReelsApplySubmitting] = useState(false);
+  const [reelsApplyError, setReelsApplyError] = useState("");
+  const [reelsApplyDone, setReelsApplyDone] = useState("");
+  const [reelsApplyForm, setReelsApplyForm] = useState({
+    age: "",
+    height_cm: "",
+    region: "",
+    job: "",
+    training_years: "",
+    instagram_id: "",
+    intro_text: "",
+    consent: false,
   });
   const [homeFeatureTab, setHomeFeatureTab] = useState<HomeFeatureTab>("open_cards");
   const [isAdminPreviewUser, setIsAdminPreviewUser] = useState(false);
@@ -1741,6 +1775,27 @@ export default function OpenCardsPage() {
 
   useEffect(() => {
     let cancelled = false;
+    setReelsListingsLoading(true);
+
+    fetch("/api/dating/reels/listings", { cache: "no-store" })
+      .then((res) => res.json())
+      .then((data: { items?: ReelsDatingListing[] }) => {
+        if (!cancelled) setReelsListings(Array.isArray(data.items) ? data.items : []);
+      })
+      .catch(() => {
+        if (!cancelled) setReelsListings([]);
+      })
+      .finally(() => {
+        if (!cancelled) setReelsListingsLoading(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
 
     fetch("/api/site/ad-inquiry")
       .then((res) => res.json())
@@ -1777,6 +1832,18 @@ export default function OpenCardsPage() {
         data: { user },
       } = await supabase.auth.getUser();
       setViewerLoggedIn(Boolean(user));
+      if (!user) {
+        setViewerPhoneVerified(false);
+        return;
+      }
+
+      const summaryRes = await fetch("/api/mypage/summary", { cache: "no-store" }).catch(() => null);
+      if (!summaryRes?.ok) {
+        setViewerPhoneVerified(false);
+        return;
+      }
+      const summaryBody = (await summaryRes.json().catch(() => ({}))) as { profile?: { phone_verified?: boolean } };
+      setViewerPhoneVerified(summaryBody.profile?.phone_verified === true);
     });
   }, [supabase]);
 
@@ -2391,6 +2458,80 @@ export default function OpenCardsPage() {
     [refreshingOneOnOneRecommendationIds, reloadOneOnOneHome]
   );
 
+  const openReelsApply = useCallback(
+    (listing: ReelsDatingListing) => {
+      if (!viewerLoggedIn) {
+        window.location.href = buildLoginRedirect("/community/dating/cards");
+        return;
+      }
+      setSelectedReelsListing(listing);
+      setReelsApplyError(viewerPhoneVerified ? "" : "휴대폰 번호 인증 후 지원할 수 있습니다.");
+      setReelsApplyDone("");
+    },
+    [viewerLoggedIn, viewerPhoneVerified]
+  );
+
+  const handleReelsApplySubmit = useCallback(async () => {
+    if (!selectedReelsListing || reelsApplySubmitting) return;
+
+    if (!viewerPhoneVerified) {
+      setReelsApplyError("휴대폰 번호 인증 후 지원할 수 있습니다.");
+      return;
+    }
+
+    const instagramId = normalizeReelsInstagramId(reelsApplyForm.instagram_id);
+    if (!validReelsInstagramId(instagramId)) {
+      setReelsApplyError("인스타 아이디를 @ 없이 입력해 주세요.");
+      return;
+    }
+    if (!reelsApplyForm.consent) {
+      setReelsApplyError("개인정보 제공 동의가 필요합니다.");
+      return;
+    }
+
+    setReelsApplySubmitting(true);
+    setReelsApplyError("");
+    setReelsApplyDone("");
+
+    try {
+      const res = await fetch("/api/dating/reels/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          listing_id: selectedReelsListing.id,
+          age: reelsApplyForm.age,
+          height_cm: reelsApplyForm.height_cm,
+          region: reelsApplyForm.region,
+          job: reelsApplyForm.job,
+          training_years: reelsApplyForm.training_years,
+          instagram_id: instagramId,
+          intro_text: reelsApplyForm.intro_text,
+          consent: reelsApplyForm.consent,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        setReelsApplyError(body.error ?? "지원 저장에 실패했습니다.");
+        return;
+      }
+      setReelsApplyDone("지원이 저장되었습니다.");
+      setReelsApplyForm({
+        age: "",
+        height_cm: "",
+        region: "",
+        job: "",
+        training_years: "",
+        instagram_id: "",
+        intro_text: "",
+        consent: false,
+      });
+    } catch {
+      setReelsApplyError("네트워크 오류가 발생했습니다.");
+    } finally {
+      setReelsApplySubmitting(false);
+    }
+  }, [reelsApplyForm, reelsApplySubmitting, selectedReelsListing, viewerPhoneVerified]);
+
   const nowLabel = useMemo(() => tick, [tick]);
   void nowLabel;
   const malePaidItems = useMemo(() => paidItems.filter((item) => item.gender === "M"), [paidItems]);
@@ -2952,6 +3093,38 @@ export default function OpenCardsPage() {
       </section>
       ) : null}
 
+      {showOpenCardSection && (reelsListings.length > 0 || reelsListingsLoading) ? (
+        <section className="mb-4 rounded-[20px] border border-rose-100 bg-white p-3 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-black text-neutral-950">릴스 매물 지원</p>
+              <p className="mt-0.5 text-xs font-medium text-neutral-500">릴스에서 본 매물에 바로 지원할 수 있어요.</p>
+            </div>
+          </div>
+          {reelsListingsLoading && reelsListings.length === 0 ? (
+            <p className="mt-3 text-xs text-neutral-400">불러오는 중...</p>
+          ) : (
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
+              {reelsListings.map((listing) => (
+                <button
+                  key={listing.id}
+                  type="button"
+                  onClick={() => openReelsApply(listing)}
+                  className="min-w-[230px] rounded-[16px] border border-rose-100 bg-rose-50/50 px-3 py-3 text-left transition hover:border-rose-200 hover:bg-rose-50"
+                >
+                  <span className="inline-flex rounded-full bg-white px-2 py-1 text-[11px] font-black text-rose-600">릴스</span>
+                  <p className="mt-2 line-clamp-2 text-sm font-black leading-5 text-neutral-950">{listing.title}</p>
+                  {listing.description ? (
+                    <p className="mt-1 line-clamp-2 text-xs leading-5 text-neutral-500">{listing.description}</p>
+                  ) : null}
+                  <p className="mt-2 text-xs font-black text-rose-600">바로 지원하기</p>
+                </button>
+              ))}
+            </div>
+          )}
+        </section>
+      ) : null}
+
       {showOpenCardSection ? (
         <div className="mb-4 grid grid-cols-2 gap-2 rounded-[18px] border border-neutral-200/80 bg-white p-1.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
           <button
@@ -2991,6 +3164,109 @@ export default function OpenCardsPage() {
           onMore={activeSex === "male" ? loadMoreMale : loadMoreFemale}
           viewerLoggedIn={viewerLoggedIn}
         />
+      ) : null}
+
+      {selectedReelsListing ? (
+        <div className="fixed inset-0 z-[80] overflow-y-auto bg-black/45 px-4 py-6 backdrop-blur-sm">
+          <div className="mx-auto max-w-md rounded-[24px] bg-white p-5 shadow-[0_24px_60px_rgba(15,23,42,0.22)]">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <p className="text-xs font-black text-rose-600">릴스 매물 지원</p>
+                <h2 className="mt-1 text-xl font-black tracking-tight text-neutral-950">{selectedReelsListing.title}</h2>
+                {selectedReelsListing.description ? (
+                  <p className="mt-2 text-sm leading-6 text-neutral-500">{selectedReelsListing.description}</p>
+                ) : null}
+                <p className="mt-2 text-xs font-semibold text-neutral-500">가입 후 휴대폰 번호 인증을 완료한 회원만 지원할 수 있습니다.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedReelsListing(null)}
+                className="h-9 w-9 shrink-0 rounded-full border border-neutral-200 bg-white text-sm font-black text-neutral-500"
+                aria-label="닫기"
+              >
+                ×
+              </button>
+            </div>
+
+            <div className="mt-4 grid gap-2 sm:grid-cols-2">
+              <input
+                type="number"
+                inputMode="numeric"
+                value={reelsApplyForm.age}
+                onChange={(e) => setReelsApplyForm((prev) => ({ ...prev, age: e.target.value }))}
+                placeholder="나이"
+                className="h-11 rounded-xl border border-neutral-200 px-3 text-sm outline-none focus:border-rose-300"
+              />
+              <input
+                type="number"
+                inputMode="numeric"
+                value={reelsApplyForm.height_cm}
+                onChange={(e) => setReelsApplyForm((prev) => ({ ...prev, height_cm: e.target.value }))}
+                placeholder="키"
+                className="h-11 rounded-xl border border-neutral-200 px-3 text-sm outline-none focus:border-rose-300"
+              />
+              <input
+                value={reelsApplyForm.region}
+                onChange={(e) => setReelsApplyForm((prev) => ({ ...prev, region: e.target.value }))}
+                placeholder="지역"
+                className="h-11 rounded-xl border border-neutral-200 px-3 text-sm outline-none focus:border-rose-300"
+              />
+              <input
+                value={reelsApplyForm.job}
+                onChange={(e) => setReelsApplyForm((prev) => ({ ...prev, job: e.target.value }))}
+                placeholder="직업"
+                className="h-11 rounded-xl border border-neutral-200 px-3 text-sm outline-none focus:border-rose-300"
+              />
+              <input
+                type="number"
+                inputMode="numeric"
+                value={reelsApplyForm.training_years}
+                onChange={(e) => setReelsApplyForm((prev) => ({ ...prev, training_years: e.target.value }))}
+                placeholder="운동 경력"
+                className="h-11 rounded-xl border border-neutral-200 px-3 text-sm outline-none focus:border-rose-300"
+              />
+              <input
+                value={reelsApplyForm.instagram_id}
+                onChange={(e) => setReelsApplyForm((prev) => ({ ...prev, instagram_id: e.target.value }))}
+                placeholder="인스타 ID (@ 없이)"
+                className="h-11 rounded-xl border border-neutral-200 px-3 text-sm outline-none focus:border-rose-300"
+              />
+            </div>
+            <textarea
+              value={reelsApplyForm.intro_text}
+              onChange={(e) => setReelsApplyForm((prev) => ({ ...prev, intro_text: e.target.value }))}
+              placeholder="간단한 소개"
+              className="mt-2 min-h-[110px] w-full rounded-xl border border-neutral-200 px-3 py-3 text-sm outline-none focus:border-rose-300"
+            />
+            <label className="mt-3 flex items-start gap-2 text-xs leading-5 text-neutral-500">
+              <input
+                type="checkbox"
+                checked={reelsApplyForm.consent}
+                onChange={(e) => setReelsApplyForm((prev) => ({ ...prev, consent: e.target.checked }))}
+                className="mt-1"
+              />
+              릴스 매물 지원 확인을 위해 입력한 정보가 관리자에게 전달되는 것에 동의합니다.
+            </label>
+            {!viewerPhoneVerified ? (
+              <Link
+                href="/mypage"
+                className="mt-3 flex h-11 items-center justify-center rounded-xl border border-rose-200 bg-rose-50 text-sm font-black text-rose-700"
+              >
+                마이페이지에서 휴대폰 인증하기
+              </Link>
+            ) : null}
+            {reelsApplyError ? <p className="mt-3 text-xs font-semibold text-rose-600">{reelsApplyError}</p> : null}
+            {reelsApplyDone ? <p className="mt-3 text-xs font-semibold text-emerald-700">{reelsApplyDone}</p> : null}
+            <button
+              type="button"
+              onClick={() => void handleReelsApplySubmit()}
+              disabled={reelsApplySubmitting || Boolean(reelsApplyDone) || !viewerPhoneVerified}
+              className="mt-4 h-12 w-full rounded-2xl bg-rose-600 text-sm font-black text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {!viewerPhoneVerified ? "번호 인증 후 지원 가능" : reelsApplySubmitting ? "저장 중..." : reelsApplyDone ? "지원 완료" : "지원하기"}
+            </button>
+          </div>
+        </div>
       ) : null}
     </main>
   );

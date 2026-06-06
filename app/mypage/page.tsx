@@ -778,6 +778,7 @@ type AdminManageTab =
   | "card_ai_review"
   | "user_activity"
   | "open_cards"
+  | "reels_dating"
   | "tools_patch_note"
   | "accepted_applications"
   | "mail_center"
@@ -1394,6 +1395,32 @@ type AdminEmailUnsubscribeItem = {
   created_at: string | null;
 };
 
+type AdminReelsDatingListing = {
+  id: string;
+  title: string;
+  description: string | null;
+  status: "active" | "hidden";
+  sort_order: number | null;
+  created_at: string;
+  updated_at: string | null;
+};
+
+type AdminReelsDatingApplication = {
+  id: string;
+  listing_id: string;
+  applicant_user_id: string;
+  applicant_display_nickname: string | null;
+  age: number | null;
+  height_cm: number | null;
+  region: string | null;
+  job: string | null;
+  training_years: number | null;
+  instagram_id: string | null;
+  intro_text: string | null;
+  status: "submitted" | "reviewed" | "archived";
+  created_at: string;
+};
+
 const DEFAULT_OPEN_CARD_HOME_SUBTITLE = "둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.";
 const DEFAULT_TOOLS_PATCH_NOTE_TEXT = "오늘의 개선 내용을 한 줄로 적어주세요.";
 const TOOLS_PATCH_NOTE_PRESETS = [
@@ -1484,6 +1511,20 @@ export default function MyPage() {
   const [adminApplicationSort, setAdminApplicationSort] = useState<AdminApplicationSort>("newest");
   const [adminDataView, setAdminDataView] = useState<AdminDataView>("cards");
   const [adminManageTab, setAdminManageTab] = useState<AdminManageTab>("site_dashboard");
+  const [adminReelsDatingListings, setAdminReelsDatingListings] = useState<AdminReelsDatingListing[]>([]);
+  const [adminReelsDatingApplications, setAdminReelsDatingApplications] = useState<AdminReelsDatingApplication[]>([]);
+  const [adminReelsDatingLoaded, setAdminReelsDatingLoaded] = useState(false);
+  const [adminReelsDatingLoading, setAdminReelsDatingLoading] = useState(false);
+  const [adminReelsDatingSaving, setAdminReelsDatingSaving] = useState(false);
+  const [adminReelsDatingEditingId, setAdminReelsDatingEditingId] = useState("");
+  const [adminReelsDatingDraft, setAdminReelsDatingDraft] = useState({
+    title: "",
+    description: "",
+    status: "active" as "active" | "hidden",
+    sort_order: "0",
+  });
+  const [adminReelsDatingError, setAdminReelsDatingError] = useState("");
+  const [adminReelsDatingInfo, setAdminReelsDatingInfo] = useState("");
   const [adminApplyCreditOrders, setAdminApplyCreditOrders] = useState<AdminApplyCreditOrder[]>([]);
   const [adminSwipeSubscriptionRequests, setAdminSwipeSubscriptionRequests] = useState<AdminSwipeSubscriptionRequest[]>([]);
   const [adminMoreViewRequests, setAdminMoreViewRequests] = useState<AdminMoreViewRequest[]>([]);
@@ -2699,6 +2740,33 @@ export default function MyPage() {
     [isAdmin]
   );
 
+  const refreshAdminReelsDatingData = useMemo(
+    () =>
+      async (showLoading = true) => {
+        if (!isAdmin) return;
+        if (showLoading) setAdminReelsDatingLoading(true);
+        setAdminReelsDatingError("");
+
+        try {
+          const res = await fetch("/api/admin/dating/reels", { cache: "no-store" });
+          const body = (await res.json().catch(() => ({}))) as {
+            error?: string;
+            items?: AdminReelsDatingListing[];
+            applications?: AdminReelsDatingApplication[];
+          };
+          if (!res.ok) throw new Error(body.error ?? "릴스 매물 목록을 불러오지 못했습니다.");
+          setAdminReelsDatingListings(body.items ?? []);
+          setAdminReelsDatingApplications(body.applications ?? []);
+          setAdminReelsDatingLoaded(true);
+        } catch (error) {
+          setAdminReelsDatingError(error instanceof Error ? error.message : "릴스 매물 목록을 불러오지 못했습니다.");
+        } finally {
+          if (showLoading) setAdminReelsDatingLoading(false);
+        }
+      },
+    [isAdmin]
+  );
+
   const refreshAdminSiteDashboard = useMemo(
     () =>
       async (showLoading = true) => {
@@ -3098,6 +3166,20 @@ export default function MyPage() {
 
     void refreshAdminOpenCardData(true);
   }, [adminManageTab, adminOpenCardsLoaded, adminOpenCardsLoading, isAdmin, refreshAdminOpenCardData]);
+
+  useEffect(() => {
+    if (!isAdmin || adminManageTab !== "reels_dating" || adminReelsDatingLoaded || adminReelsDatingLoading) {
+      return;
+    }
+
+    void refreshAdminReelsDatingData(true);
+  }, [
+    adminManageTab,
+    adminReelsDatingLoaded,
+    adminReelsDatingLoading,
+    isAdmin,
+    refreshAdminReelsDatingData,
+  ]);
 
   useEffect(() => {
     if (
@@ -4498,6 +4580,73 @@ export default function MyPage() {
       setToolsPatchNoteError(e instanceof Error ? e.message : "도구 패치노트 삭제에 실패했습니다.");
     } finally {
       setToolsPatchNoteSaving(false);
+    }
+  };
+
+  const resetAdminReelsDatingDraft = () => {
+    setAdminReelsDatingEditingId("");
+    setAdminReelsDatingDraft({ title: "", description: "", status: "active", sort_order: "0" });
+  };
+
+  const handleAdminEditReelsDatingListing = (item: AdminReelsDatingListing) => {
+    setAdminReelsDatingEditingId(item.id);
+    setAdminReelsDatingDraft({
+      title: item.title ?? "",
+      description: item.description ?? "",
+      status: item.status === "hidden" ? "hidden" : "active",
+      sort_order: String(item.sort_order ?? 0),
+    });
+    setAdminReelsDatingInfo("");
+    setAdminReelsDatingError("");
+  };
+
+  const handleAdminSaveReelsDatingListing = async () => {
+    if (adminReelsDatingSaving) return;
+    setAdminReelsDatingSaving(true);
+    setAdminReelsDatingError("");
+    setAdminReelsDatingInfo("");
+
+    try {
+      const payload = {
+        title: adminReelsDatingDraft.title.trim(),
+        description: adminReelsDatingDraft.description.trim(),
+        status: adminReelsDatingDraft.status,
+        sort_order: Number(adminReelsDatingDraft.sort_order) || 0,
+      };
+      const url = adminReelsDatingEditingId
+        ? `/api/admin/dating/reels/${encodeURIComponent(adminReelsDatingEditingId)}`
+        : "/api/admin/dating/reels";
+      const res = await fetch(url, {
+        method: adminReelsDatingEditingId ? "PATCH" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(body.error ?? "릴스 매물 저장에 실패했습니다.");
+      setAdminReelsDatingInfo(adminReelsDatingEditingId ? "릴스 매물을 수정했습니다." : "릴스 매물을 추가했습니다.");
+      resetAdminReelsDatingDraft();
+      await refreshAdminReelsDatingData(false);
+    } catch (e) {
+      setAdminReelsDatingError(e instanceof Error ? e.message : "릴스 매물 저장에 실패했습니다.");
+    } finally {
+      setAdminReelsDatingSaving(false);
+    }
+  };
+
+  const handleAdminDeleteReelsDatingListing = async (itemId: string) => {
+    if (!confirm("이 릴스 매물과 지원서를 삭제할까요?")) return;
+    setAdminReelsDatingError("");
+    setAdminReelsDatingInfo("");
+
+    try {
+      const res = await fetch(`/api/admin/dating/reels/${encodeURIComponent(itemId)}`, { method: "DELETE" });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(body.error ?? "릴스 매물 삭제에 실패했습니다.");
+      setAdminReelsDatingInfo("릴스 매물을 삭제했습니다.");
+      if (adminReelsDatingEditingId === itemId) resetAdminReelsDatingDraft();
+      await refreshAdminReelsDatingData(false);
+    } catch (e) {
+      setAdminReelsDatingError(e instanceof Error ? e.message : "릴스 매물 삭제에 실패했습니다.");
     }
   };
 
@@ -8501,6 +8650,8 @@ export default function MyPage() {
                 ? "회원 메일 발송 (관리자)"
                 : adminManageTab === "one_on_one_contact"
                   ? "1:1 번호 공개 관리 (관리자)"
+                : adminManageTab === "reels_dating"
+                  ? "릴스 매물 지원 (관리자)"
                   : adminManageTab === "payment_center"
                     ? "결제 운영 (관리자)"
                     : adminManageTab === "tools_patch_note"
@@ -8522,6 +8673,9 @@ export default function MyPage() {
                   adminManageTab === "payment_center"
                     ? adminPaymentCenterLoading
                     :
+                  adminManageTab === "reels_dating"
+                    ? adminReelsDatingLoading || adminReelsDatingSaving
+                    :
                   adminManageTab === "mail_center"
                     ? adminOpenCardOutreachLoading
                     :
@@ -8538,6 +8692,8 @@ export default function MyPage() {
                 onClick={() =>
                   void (adminManageTab === "payment_center"
                     ? refreshAdminPaymentCenter(true)
+                    : adminManageTab === "reels_dating"
+                    ? refreshAdminReelsDatingData(true)
                     : adminManageTab === "mail_center"
                     ? loadAdminOpenCardOutreachPreview()
                     : adminManageTab === "open_cards"
@@ -8564,6 +8720,10 @@ export default function MyPage() {
                     ? toolsPatchNoteSaving
                       ? "저장 중..."
                       : "패치노트 저장"
+                  : adminManageTab === "reels_dating"
+                    ? adminReelsDatingLoading || adminReelsDatingSaving
+                      ? "처리 중..."
+                      : "릴스 매물 새로고침"
                   : adminManageTab === "payment_center"
                     ? adminPaymentCenterLoading
                       ? "불러오는 중..."
@@ -8630,6 +8790,15 @@ export default function MyPage() {
               }`}
             >
               오픈카드
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdminManageTab("reels_dating")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "reels_dating" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              릴스 매물
             </button>
             <button
               type="button"
@@ -9742,6 +9911,140 @@ export default function MyPage() {
             </div>
             {toolsPatchNoteError && <p className="mt-2 text-xs text-rose-600">{toolsPatchNoteError}</p>}
             {toolsPatchNoteInfo && <p className="mt-2 text-xs text-emerald-700">{toolsPatchNoteInfo}</p>}
+          </div>
+          )}
+
+          {adminManageTab === "reels_dating" && (
+          <div className="space-y-3">
+            <div className="rounded-xl border border-violet-200 bg-white p-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-violet-900">
+                    {adminReelsDatingEditingId ? "릴스 매물 수정" : "릴스 매물 추가"}
+                  </p>
+                  <p className="mt-1 text-xs text-neutral-500">
+                    예: 릴스 매물 지원(33세 대기업 운동남). 노출 상태인 글만 오픈카드 홈에 표시됩니다.
+                  </p>
+                </div>
+                {adminReelsDatingEditingId ? (
+                  <button
+                    type="button"
+                    onClick={resetAdminReelsDatingDraft}
+                    className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800"
+                  >
+                    새 글로 전환
+                  </button>
+                ) : null}
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_120px_120px]">
+                <input
+                  value={adminReelsDatingDraft.title}
+                  onChange={(e) => setAdminReelsDatingDraft((prev) => ({ ...prev, title: e.target.value }))}
+                  placeholder="제목"
+                  className="h-10 rounded-lg border border-violet-200 bg-white px-3 text-sm outline-none"
+                />
+                <input
+                  type="number"
+                  value={adminReelsDatingDraft.sort_order}
+                  onChange={(e) => setAdminReelsDatingDraft((prev) => ({ ...prev, sort_order: e.target.value }))}
+                  placeholder="정렬"
+                  className="h-10 rounded-lg border border-violet-200 bg-white px-3 text-sm outline-none"
+                />
+                <select
+                  value={adminReelsDatingDraft.status}
+                  onChange={(e) =>
+                    setAdminReelsDatingDraft((prev) => ({
+                      ...prev,
+                      status: e.target.value === "hidden" ? "hidden" : "active",
+                    }))
+                  }
+                  className="h-10 rounded-lg border border-violet-200 bg-white px-3 text-sm outline-none"
+                >
+                  <option value="active">노출</option>
+                  <option value="hidden">숨김</option>
+                </select>
+              </div>
+              <textarea
+                value={adminReelsDatingDraft.description}
+                onChange={(e) => setAdminReelsDatingDraft((prev) => ({ ...prev, description: e.target.value }))}
+                placeholder="짧은 설명"
+                className="mt-2 min-h-[82px] w-full rounded-lg border border-violet-200 bg-white px-3 py-2 text-sm outline-none"
+              />
+              <button
+                type="button"
+                onClick={() => void handleAdminSaveReelsDatingListing()}
+                disabled={adminReelsDatingSaving}
+                className="mt-3 h-9 rounded-lg bg-violet-600 px-3 text-xs font-semibold text-white disabled:opacity-60"
+              >
+                {adminReelsDatingSaving ? "저장 중..." : adminReelsDatingEditingId ? "수정 저장" : "릴스 매물 추가"}
+              </button>
+              {adminReelsDatingError ? <p className="mt-2 text-xs text-rose-600">{adminReelsDatingError}</p> : null}
+              {adminReelsDatingInfo ? <p className="mt-2 text-xs text-emerald-700">{adminReelsDatingInfo}</p> : null}
+            </div>
+
+            <div className="rounded-xl border border-violet-200 bg-white p-4">
+              <p className="text-sm font-semibold text-violet-900">등록된 릴스 매물 {adminReelsDatingListings.length}건</p>
+              {!adminReelsDatingLoaded && adminReelsDatingLoading ? (
+                <p className="mt-3 text-xs text-neutral-500">불러오는 중...</p>
+              ) : adminReelsDatingListings.length === 0 ? (
+                <p className="mt-3 text-xs text-neutral-500">등록된 릴스 매물이 없습니다.</p>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {adminReelsDatingListings.map((item) => {
+                    const applications = adminReelsDatingApplications.filter((app) => app.listing_id === item.id);
+                    return (
+                      <div key={item.id} className="rounded-lg border border-violet-100 bg-violet-50/30 p-3">
+                        <div className="flex flex-wrap items-start justify-between gap-2">
+                          <div>
+                            <p className="text-sm font-semibold text-neutral-900">{item.title}</p>
+                            <p className="mt-1 text-xs text-neutral-500">
+                              {item.status === "active" ? "노출중" : "숨김"} · 정렬 {item.sort_order ?? 0} · 지원 {applications.length}건
+                            </p>
+                            {item.description ? <p className="mt-1 text-xs text-neutral-600">{item.description}</p> : null}
+                          </div>
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => handleAdminEditReelsDatingListing(item)}
+                              className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800"
+                            >
+                              수정
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleAdminDeleteReelsDatingListing(item.id)}
+                              className="h-8 rounded-md border border-rose-200 bg-white px-3 text-xs font-medium text-rose-700"
+                            >
+                              삭제
+                            </button>
+                          </div>
+                        </div>
+                        {applications.length > 0 ? (
+                          <div className="mt-3 space-y-2">
+                            {applications.map((app) => (
+                              <div key={app.id} className="rounded-lg bg-white px-3 py-2 text-xs text-neutral-700">
+                                <div className="flex flex-wrap items-center justify-between gap-2">
+                                  <p className="font-semibold text-neutral-900">
+                                    {app.applicant_display_nickname || app.applicant_user_id.slice(0, 8)} · {app.age ?? "-"}세 ·{" "}
+                                    {app.region || "지역 없음"}
+                                  </p>
+                                  <p className="text-neutral-400">{new Date(app.created_at).toLocaleString("ko-KR")}</p>
+                                </div>
+                                <p className="mt-1">
+                                  {app.height_cm ?? "-"}cm · {app.job || "직업 없음"} · 운동 {app.training_years ?? "-"}년
+                                </p>
+                                <p className="mt-1 font-medium text-violet-700">인스타: {app.instagram_id ? `@${app.instagram_id}` : "-"}</p>
+                                {app.intro_text ? <p className="mt-1 whitespace-pre-wrap break-words">{app.intro_text}</p> : null}
+                              </div>
+                            ))}
+                          </div>
+                        ) : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           </div>
           )}
 
