@@ -400,7 +400,7 @@ export default function NewDatingCardPage() {
       <h1 className="text-2xl font-bold text-neutral-900 mt-3">오픈카드 작성</h1>
       {isEditMode && <p className="text-sm text-amber-700 mt-1">대기중 오픈카드 수정 모드</p>}
       <p className="text-sm text-neutral-500 mt-1">공개 카드 슬롯 상황에 따라 즉시 공개 또는 대기열로 등록됩니다.</p>
-      <p className="text-sm text-neutral-500 mt-1">닉네임은 가입 시 설정한 프로필 닉네임이 자동으로 반영됩니다.</p>
+      <p className="text-sm text-neutral-500 mt-1">대기열은 등록 후 마이페이지에서 확인할 수 있습니다.</p>
       {!writeSettingLoading && !writeEnabled && (
         <p className="mt-2 text-sm font-medium text-red-600">현재 오픈카드 작성이 일시 중단되었습니다.</p>
       )}

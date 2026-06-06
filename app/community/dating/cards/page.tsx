@@ -2608,7 +2608,6 @@ export default function OpenCardsPage() {
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-rose-50 px-3 py-1.5 text-xs font-black text-rose-600">오픈카드</span>
-            <span className="text-sm font-semibold text-neutral-400">24시간 공개 · 미연결 시 1회 재대기</span>
           </div>
 
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -2664,28 +2663,18 @@ export default function OpenCardsPage() {
                   </div>
                   <p className="self-center text-[22px] font-black leading-none text-rose-600">{fixedPaidCount}명</p>
                 </div>
-                <div className="grid grid-cols-[1fr_auto] gap-4 p-4">
-                  <div>
-                    <p className="text-sm font-bold text-neutral-500">현재 공개중</p>
-                    <p className="mt-1 text-xs font-medium text-neutral-400">대기열은 오픈카드 등록 후 마이페이지에서 확인</p>
-                  </div>
-                  <p className="self-center whitespace-nowrap text-[22px] font-black leading-none text-neutral-950">
-                    남 <span className="text-rose-600">{queueStats?.male.public_count ?? males.length}</span> · 여{" "}
-                    <span className="text-rose-600">{queueStats?.female.public_count ?? females.length}</span>
-                  </p>
-                </div>
                 <div className="p-4">
                   <div className="grid grid-cols-[1fr_auto] gap-4">
                     <div>
-                      <p className="text-sm font-bold text-neutral-500">누적 매칭</p>
-                      <p className="mt-1 text-xs font-medium text-neutral-400">현재까지 연결</p>
+                      <p className="text-sm font-bold text-neutral-500">오늘 새 지원·좋아요</p>
+                      <p className="mt-1 text-xs font-medium text-neutral-400">오늘 들어온 반응</p>
                     </div>
                     <p className="self-center text-[22px] font-black leading-none text-rose-600">
-                      {(queueStats?.accepted_matches_count ?? 0).toLocaleString("ko-KR")}명
+                      {todayDatingReactionCount.toLocaleString("ko-KR")}건
                     </p>
                   </div>
                   <p className="mt-3 text-right text-xs font-semibold leading-5 text-neutral-500">
-                    오늘 새 지원·좋아요 {todayDatingReactionCount.toLocaleString("ko-KR")}건, 반응이 계속 들어오고 있어요.
+                    반응이 계속 들어오고 있어요.
                   </p>
                 </div>
                 <div className="grid grid-cols-2 divide-x divide-neutral-100">
@@ -2717,6 +2706,33 @@ export default function OpenCardsPage() {
                   1:1 후보 보기
                 </button>
               </div>
+
+              {reelsListings.length > 0 || reelsListingsLoading ? (
+                <section className="mt-3 flex items-center gap-2 rounded-[20px] border border-rose-100 bg-white p-2 shadow-[0_8px_22px_rgba(15,23,42,0.05)]">
+                  <span className="shrink-0 rounded-[16px] bg-rose-50 px-3.5 py-3 text-sm font-black text-rose-600">
+                    릴스 매물
+                  </span>
+                  {reelsListingsLoading && reelsListings.length === 0 ? (
+                    <span className="min-w-0 flex-1 rounded-[16px] bg-neutral-50 px-4 py-3 text-sm font-bold text-neutral-400">
+                      불러오는 중...
+                    </span>
+                  ) : (
+                    <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto">
+                      {reelsListings.map((listing) => (
+                        <button
+                          key={listing.id}
+                          type="button"
+                          onClick={() => openReelsApply(listing)}
+                          className="min-w-[210px] flex-1 rounded-[16px] bg-neutral-50 px-4 py-3 text-left text-sm font-black text-neutral-950 transition hover:bg-rose-50 hover:text-rose-600"
+                          aria-label={`${listing.title} 지원하기`}
+                        >
+                          <span className="block truncate">{listing.title}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              ) : null}
             </div>
 
             <div className="w-full lg:w-[270px]">
@@ -3108,33 +3124,6 @@ export default function OpenCardsPage() {
           </div>
         )}
       </section>
-      ) : null}
-
-      {showOpenCardSection && (reelsListings.length > 0 || reelsListingsLoading) ? (
-        <section className="mb-4 flex items-center gap-2 rounded-[20px] border border-rose-100 bg-white p-2 shadow-[0_8px_22px_rgba(15,23,42,0.05)]">
-          <span className="shrink-0 rounded-[16px] bg-rose-50 px-3.5 py-3 text-sm font-black text-rose-600">
-            릴스 매물
-          </span>
-          {reelsListingsLoading && reelsListings.length === 0 ? (
-            <span className="min-w-0 flex-1 rounded-[16px] bg-neutral-50 px-4 py-3 text-sm font-bold text-neutral-400">
-              불러오는 중...
-            </span>
-          ) : (
-            <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto">
-              {reelsListings.map((listing) => (
-                <button
-                  key={listing.id}
-                  type="button"
-                  onClick={() => openReelsApply(listing)}
-                  className="min-w-[210px] flex-1 rounded-[16px] bg-neutral-50 px-4 py-3 text-left text-sm font-black text-neutral-950 transition hover:bg-rose-50 hover:text-rose-600"
-                  aria-label={`${listing.title} 지원하기`}
-                >
-                  <span className="block truncate">{listing.title}</span>
-                </button>
-              ))}
-            </div>
-          )}
-        </section>
       ) : null}
 
       {showOpenCardSection ? (
