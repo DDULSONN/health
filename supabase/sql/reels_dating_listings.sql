@@ -23,9 +23,23 @@ create table if not exists public.reels_dating_applications (
   training_years integer null,
   instagram_id text not null default '',
   intro_text text not null default '',
+  photo_path text null,
   status text not null default 'submitted' check (status in ('submitted', 'reviewed', 'archived')),
   created_at timestamptz not null default now()
 );
+
+alter table public.reels_dating_applications
+  add column if not exists photo_path text null;
+
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'reels-dating-application-photos',
+  'reels-dating-application-photos',
+  false,
+  12582912,
+  array['image/webp']
+)
+on conflict (id) do nothing;
 
 create index if not exists idx_reels_dating_listings_status_sort
   on public.reels_dating_listings (status, sort_order desc, created_at desc);

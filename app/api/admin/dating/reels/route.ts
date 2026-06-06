@@ -1,4 +1,5 @@
 import { isAllowedAdminUser } from "@/lib/admin";
+import { buildSignedImageUrl } from "@/lib/images";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -15,6 +16,13 @@ function toSortOrder(value: unknown) {
   return Number.isFinite(n) ? Math.round(n) : 0;
 }
 
+function isMissingColumnError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || message.includes("could not find") || message.includes("column");
+}
+
 async function requireAdmin() {
   const supabase = await createClient();
   const {
@@ -28,7 +36,7 @@ export async function GET() {
   if (!ok) return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
 
   const admin = createAdminClient();
-  const [listingsRes, appsRes] = await Promise.all([
+  const [listingsRes, initialAppsRes] = await Promise.all([
     admin
       .from("reels_dating_listings")
       .select("id,title,description,status,sort_order,created_at,updated_at")
@@ -38,11 +46,25 @@ export async function GET() {
     admin
       .from("reels_dating_applications")
       .select(
-        "id,listing_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,instagram_id,intro_text,status,created_at"
+        "id,listing_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,instagram_id,intro_text,photo_path,status,created_at"
       )
       .order("created_at", { ascending: false })
       .limit(300),
   ]);
+  let appsRes: {
+    data: Array<Record<string, unknown>> | null;
+    error: { code?: string | null; message?: string | null } | null;
+  } = initialAppsRes;
+
+  if (appsRes.error && isMissingColumnError(appsRes.error)) {
+    appsRes = await admin
+      .from("reels_dating_applications")
+      .select(
+        "id,listing_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,instagram_id,intro_text,status,created_at"
+      )
+      .order("created_at", { ascending: false })
+      .limit(300);
+  }
 
   if (listingsRes.error) {
     if (listingsRes.error.code === "42P01") return NextResponse.json({ items: [], applications: [] });
@@ -55,7 +77,15 @@ export async function GET() {
     return NextResponse.json({ error: "릴스 지원서를 불러오지 못했습니다." }, { status: 500 });
   }
 
-  return NextResponse.json({ items: listingsRes.data ?? [], applications: appsRes.data ?? [] });
+  const applications = (appsRes.data ?? []).map((app) => ({
+    ...app,
+    photo_signed_url:
+      typeof app.photo_path === "string" && app.photo_path
+        ? buildSignedImageUrl("reels-dating-application-photos", app.photo_path)
+        : null,
+  }));
+
+  return NextResponse.json({ items: listingsRes.data ?? [], applications });
 }
 
 export async function POST(req: Request) {

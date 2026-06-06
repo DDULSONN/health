@@ -1417,6 +1417,8 @@ type AdminReelsDatingApplication = {
   training_years: number | null;
   instagram_id: string | null;
   intro_text: string | null;
+  photo_path?: string | null;
+  photo_signed_url?: string | null;
   status: "submitted" | "reviewed" | "archived";
   created_at: string;
 };
@@ -9947,7 +9949,7 @@ export default function MyPage() {
                   type="number"
                   value={adminReelsDatingDraft.sort_order}
                   onChange={(e) => setAdminReelsDatingDraft((prev) => ({ ...prev, sort_order: e.target.value }))}
-                  placeholder="정렬"
+                  placeholder="노출 순서"
                   className="h-10 rounded-lg border border-violet-200 bg-white px-3 text-sm outline-none"
                 />
                 <select
@@ -10035,6 +10037,23 @@ export default function MyPage() {
                                 </p>
                                 <p className="mt-1 font-medium text-violet-700">인스타: {app.instagram_id ? `@${app.instagram_id}` : "-"}</p>
                                 {app.intro_text ? <p className="mt-1 whitespace-pre-wrap break-words">{app.intro_text}</p> : null}
+                                {app.photo_signed_url ? (
+                                  <a
+                                    href={app.photo_signed_url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                    className="mt-2 inline-flex h-28 w-28 items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50"
+                                  >
+                                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                                    <img
+                                      src={app.photo_signed_url}
+                                      alt="릴스 지원 사진"
+                                      loading="lazy"
+                                      decoding="async"
+                                      className="max-h-full max-w-full object-contain"
+                                    />
+                                  </a>
+                                ) : null}
                               </div>
                             ))}
                           </div>

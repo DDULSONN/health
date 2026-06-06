@@ -49,6 +49,7 @@ export async function POST(req: Request) {
   const job = sanitizeText(body?.job, 40);
   const introText = sanitizeText(body?.intro_text, 600);
   const instagramId = normalizeInstagramId(body?.instagram_id);
+  const photoPath = sanitizeText(body?.photo_path, 300);
   const consent = body?.consent === true;
 
   if (!listingId) return NextResponse.json({ error: "지원할 릴스 매물을 선택해 주세요." }, { status: 400 });
@@ -61,6 +62,9 @@ export async function POST(req: Request) {
   }
   if (!validInstagramId(instagramId)) {
     return NextResponse.json({ error: "인스타 아이디를 확인해 주세요. @ 없이 입력하면 됩니다." }, { status: 400 });
+  }
+  if (photoPath && !photoPath.startsWith(`applications/${user.id}/`)) {
+    return NextResponse.json({ error: "사진 업로드 정보가 올바르지 않습니다." }, { status: 400 });
   }
   if (!consent) {
     return NextResponse.json({ error: "개인정보 제공 동의가 필요합니다." }, { status: 400 });
@@ -111,23 +115,43 @@ export async function POST(req: Request) {
 
   const nickname = typeof profileRes.data?.nickname === "string" ? profileRes.data.nickname.trim() : "";
 
-  const insertRes = await admin
+  const insertPayload = {
+    listing_id: listingId,
+    applicant_user_id: user.id,
+    applicant_display_nickname: nickname,
+    age,
+    height_cm: heightCm,
+    region,
+    job,
+    training_years: trainingYears,
+    instagram_id: instagramId,
+    intro_text: introText,
+    photo_path: photoPath || null,
+    status: "submitted",
+  };
+
+  let insertRes = await admin
     .from("reels_dating_applications")
-    .insert({
-      listing_id: listingId,
-      applicant_user_id: user.id,
-      applicant_display_nickname: nickname,
-      age,
-      height_cm: heightCm,
-      region,
-      job,
-      training_years: trainingYears,
-      instagram_id: instagramId,
-      intro_text: introText,
-      status: "submitted",
-    })
+    .insert(insertPayload)
     .select("id")
     .single();
+
+  if (insertRes.error && isMissingColumnError(insertRes.error) && !photoPath) {
+    const fallbackPayload: Omit<typeof insertPayload, "photo_path"> = {
+      listing_id: insertPayload.listing_id,
+      applicant_user_id: insertPayload.applicant_user_id,
+      applicant_display_nickname: insertPayload.applicant_display_nickname,
+      age: insertPayload.age,
+      height_cm: insertPayload.height_cm,
+      region: insertPayload.region,
+      job: insertPayload.job,
+      training_years: insertPayload.training_years,
+      instagram_id: insertPayload.instagram_id,
+      intro_text: insertPayload.intro_text,
+      status: insertPayload.status,
+    };
+    insertRes = await admin.from("reels_dating_applications").insert(fallbackPayload).select("id").single();
+  }
 
   if (insertRes.error) {
     if (insertRes.error.code === "23505") {

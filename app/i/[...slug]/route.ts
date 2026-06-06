@@ -11,7 +11,12 @@ export const runtime = "nodejs";
 const SIGNED_TTL_SEC = 3600;
 const OPTIMIZED_BUCKETS = new Set(["community", "dating-apply-photos"]);
 const PUBLIC_SIGNED_BUCKETS = new Set(["community", "dating-card-lite"]);
-const SENSITIVE_SIGNED_BUCKETS = new Set(["dating-card-photos", "dating-apply-photos", "dating-1on1-photos"]);
+const SENSITIVE_SIGNED_BUCKETS = new Set([
+  "dating-card-photos",
+  "dating-apply-photos",
+  "dating-1on1-photos",
+  "reels-dating-application-photos",
+]);
 const BLOCKED_SIGNED_PREFIXES: Record<string, string[]> = {
   "dating-apply-photos": ["admin-application-backups/"],
 };
@@ -57,6 +62,11 @@ function applicantFromApplyPath(objectPath: string): string {
     return parts[1];
   }
   return "";
+}
+
+function applicantFromReelsApplyPath(objectPath: string): string {
+  const parts = objectPath.split("/");
+  return parts[0] === "applications" && parts.length >= 2 ? parts[1] : "";
 }
 
 function toBlurWebpPath(path: string): string {
@@ -279,6 +289,12 @@ async function canReadOneOnOnePhoto(
   });
 }
 
+async function canReadReelsApplicationPhoto(objectPath: string, userId: string | null, isAdmin: boolean): Promise<boolean> {
+  if (isAdmin) return true;
+  const applicantId = applicantFromReelsApplyPath(objectPath);
+  return Boolean(userId && applicantId && userId === applicantId);
+}
+
 async function canReadSignedObject(req: Request, bucket: string, objectPath: string): Promise<boolean> {
   if (PUBLIC_SIGNED_BUCKETS.has(bucket)) return true;
   if (!SENSITIVE_SIGNED_BUCKETS.has(bucket)) return false;
@@ -296,6 +312,9 @@ async function canReadSignedObject(req: Request, bucket: string, objectPath: str
   }
   if (bucket === "dating-1on1-photos") {
     return canReadOneOnOnePhoto(admin, objectPath, userId, isAdmin);
+  }
+  if (bucket === "reels-dating-application-photos") {
+    return canReadReelsApplicationPhoto(objectPath, userId, isAdmin);
   }
 
   return false;

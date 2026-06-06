@@ -1672,6 +1672,7 @@ export default function OpenCardsPage() {
   const [reelsApplySubmitting, setReelsApplySubmitting] = useState(false);
   const [reelsApplyError, setReelsApplyError] = useState("");
   const [reelsApplyDone, setReelsApplyDone] = useState("");
+  const [reelsApplyPhoto, setReelsApplyPhoto] = useState<File | null>(null);
   const [reelsApplyForm, setReelsApplyForm] = useState({
     age: "",
     height_cm: "",
@@ -2464,9 +2465,10 @@ export default function OpenCardsPage() {
         window.location.href = buildLoginRedirect("/community/dating/cards");
         return;
       }
-      setSelectedReelsListing(listing);
-      setReelsApplyError(viewerPhoneVerified ? "" : "휴대폰 번호 인증 후 지원할 수 있습니다.");
-      setReelsApplyDone("");
+    setSelectedReelsListing(listing);
+    setReelsApplyError(viewerPhoneVerified ? "" : "휴대폰 번호 인증 후 지원할 수 있습니다.");
+    setReelsApplyDone("");
+    setReelsApplyPhoto(null);
     },
     [viewerLoggedIn, viewerPhoneVerified]
   );
@@ -2494,6 +2496,19 @@ export default function OpenCardsPage() {
     setReelsApplyDone("");
 
     try {
+      let photoPath = "";
+      if (reelsApplyPhoto) {
+        const fd = new FormData();
+        fd.append("file", reelsApplyPhoto);
+        const uploadRes = await fetch("/api/dating/reels/upload", { method: "POST", body: fd });
+        const uploadBody = (await uploadRes.json().catch(() => ({}))) as { path?: string; error?: string };
+        if (!uploadRes.ok || !uploadBody.path) {
+          setReelsApplyError(uploadBody.error ?? "사진 업로드에 실패했습니다.");
+          return;
+        }
+        photoPath = uploadBody.path;
+      }
+
       const res = await fetch("/api/dating/reels/apply", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -2506,6 +2521,7 @@ export default function OpenCardsPage() {
           training_years: reelsApplyForm.training_years,
           instagram_id: instagramId,
           intro_text: reelsApplyForm.intro_text,
+          photo_path: photoPath,
           consent: reelsApplyForm.consent,
         }),
       });
@@ -2525,12 +2541,13 @@ export default function OpenCardsPage() {
         intro_text: "",
         consent: false,
       });
+      setReelsApplyPhoto(null);
     } catch {
       setReelsApplyError("네트워크 오류가 발생했습니다.");
     } finally {
       setReelsApplySubmitting(false);
     }
-  }, [reelsApplyForm, reelsApplySubmitting, selectedReelsListing, viewerPhoneVerified]);
+  }, [reelsApplyForm, reelsApplyPhoto, reelsApplySubmitting, selectedReelsListing, viewerPhoneVerified]);
 
   const nowLabel = useMemo(() => tick, [tick]);
   void nowLabel;
@@ -3238,6 +3255,25 @@ export default function OpenCardsPage() {
               placeholder="간단한 소개"
               className="mt-2 min-h-[110px] w-full rounded-xl border border-neutral-200 px-3 py-3 text-sm outline-none focus:border-rose-300"
             />
+            <div className="mt-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
+              <p className="text-xs font-black text-neutral-700">사진 첨부</p>
+              <p className="mt-1 text-xs text-neutral-500">선택사항입니다. 올리면 WebP로 가볍게 저장됩니다.</p>
+              <input
+                type="file"
+                accept="image/*"
+                onChange={(e) => setReelsApplyPhoto(e.target.files?.[0] ?? null)}
+                className="mt-2 block w-full text-xs text-neutral-600"
+              />
+              {reelsApplyPhoto ? (
+                <button
+                  type="button"
+                  onClick={() => setReelsApplyPhoto(null)}
+                  className="mt-2 text-xs font-semibold text-neutral-500 underline"
+                >
+                  {reelsApplyPhoto.name} 선택 취소
+                </button>
+              ) : null}
+            </div>
             <label className="mt-3 flex items-start gap-2 text-xs leading-5 text-neutral-500">
               <input
                 type="checkbox"
