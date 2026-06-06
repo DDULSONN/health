@@ -1,8 +1,10 @@
-import { createAdminClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { buildPublicLiteImageUrl, buildSignedImageUrl, buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { kvGetString, kvSetString } from "@/lib/edge-kv";
 import { ensureBlurThumbFromRaw } from "@/lib/dating-blur-thumb";
+import { hasDatingBlockBetween } from "@/lib/dating-blocks";
+import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
 import { NextResponse } from "next/server";
 
 function normalizeDatingPhotoPath(raw: unknown): string {
@@ -98,6 +100,10 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
 
   const { id } = await params;
   const admin = createAdminClient();
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
   const signCalls = 0;
   const cacheHit = 0;
   let cacheMiss = 0;
@@ -105,7 +111,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const { data, error } = await admin
     .from("dating_paid_cards")
     .select(
-      "id,user_id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,photo_visibility,blur_thumb_path,photo_paths,status,expires_at,paid_at,created_at"
+      "id,user_id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,photo_visibility,blur_thumb_path,photo_paths,status,expires_at,paid_at,created_at"
     )
     .eq("id", id)
     .single();
@@ -117,6 +123,17 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   const now = Date.now();
   if (data.status !== "approved" || !data.expires_at || new Date(data.expires_at).getTime() <= now) {
     return NextResponse.json({ error: "지원 가능한 카드가 아닙니다." }, { status: 403 });
+  }
+
+  if (user?.id) {
+    const ownerUserId = String(data.user_id ?? "");
+    const blocked = await hasDatingBlockBetween(admin, user.id, ownerUserId);
+    const contactBlocked = await hasDatingContactBlockBetween(admin, user.id, ownerUserId, {
+      userBInstagramIds: [data.instagram_id],
+    });
+    if (blocked || contactBlocked) {
+      return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
+    }
   }
 
   const rawPaths = Array.isArray(data.photo_paths)

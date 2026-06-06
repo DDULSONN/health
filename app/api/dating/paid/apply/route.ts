@@ -1,5 +1,7 @@
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
+import { hasDatingBlockBetween } from "@/lib/dating-blocks";
+import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
 import { NextResponse } from "next/server";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
@@ -80,6 +82,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, code: "UNAUTHORIZED", requestId, message: "로그인이 필요합니다." }, { status: 401 });
     }
 
+    const adminClient = createAdminClient();
+
     const body = await req.json().catch(() => null);
     if (!body) {
       return NextResponse.json({ ok: false, code: "VALIDATION_ERROR", requestId, message: "잘못된 요청입니다." }, { status: 400 });
@@ -123,9 +127,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ ok: false, code: "NICKNAME_REQUIRED", requestId, message: "닉네임 설정 후 이용 가능합니다.", profile_edit_url: "/mypage" }, { status: 400 });
     }
 
-    const cardRes = await supabase
+    const cardRes = await adminClient
       .from("dating_paid_cards")
-      .select("id,user_id,status,expires_at")
+      .select("id,user_id,status,expires_at,instagram_id")
       .eq("id", paidCardId)
       .single();
     if (cardRes.error || !cardRes.data) {
@@ -135,6 +139,14 @@ export async function POST(req: Request) {
     const card = cardRes.data;
     if (card.user_id === user.id) {
       return NextResponse.json({ ok: false, code: "FORBIDDEN", requestId, message: "본인 카드에는 지원할 수 없습니다." }, { status: 403 });
+    }
+    const blocked = await hasDatingBlockBetween(adminClient, user.id, String(card.user_id ?? ""));
+    const contactBlocked = await hasDatingContactBlockBetween(adminClient, user.id, String(card.user_id ?? ""), {
+      userAInstagramIds: [instagramId],
+      userBInstagramIds: [card.instagram_id],
+    });
+    if (blocked || contactBlocked) {
+      return NextResponse.json({ ok: false, code: "FORBIDDEN", requestId, message: "차단된 상대에게는 지원할 수 없습니다." }, { status: 403 });
     }
     if (card.status !== "approved" || !card.expires_at || new Date(card.expires_at).getTime() <= Date.now()) {
       return NextResponse.json({ ok: false, code: "CARD_EXPIRED", requestId, message: "카드가 만료되었거나 비공개입니다." }, { status: 410 });

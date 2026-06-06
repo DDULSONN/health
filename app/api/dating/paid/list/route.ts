@@ -1,4 +1,6 @@
-import { createAdminClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
 import { publicCachedJson } from "@/lib/http-cache";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
@@ -141,6 +143,10 @@ export async function GET(req: Request) {
     if (!rateLimit.allowed) {
       return jsonNoStore(429, { ok: false, code: "RATE_LIMIT", requestId, message: "Too many requests" });
     }
+    const supabase = await createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
     const counters: SignCounters = { signCalls: 0, cacheHit: 0, cacheMiss: 0, rawSigned: 0, blurSigned: 0 };
     const nowIso = new Date().toISOString();
 
@@ -159,7 +165,7 @@ export async function GET(req: Request) {
     const queryRes = await admin
       .from("dating_paid_cards")
       .select(
-        "id,user_id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,is_3lift_verified,photo_visibility,display_mode,blur_thumb_path,photo_paths,expires_at,paid_at,created_at"
+        "id,user_id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,is_3lift_verified,photo_visibility,display_mode,blur_thumb_path,photo_paths,expires_at,paid_at,created_at"
       )
       .eq("status", "approved")
       .gt("expires_at", nowIso);
@@ -171,7 +177,7 @@ export async function GET(req: Request) {
       const legacy = await admin
         .from("dating_paid_cards")
         .select(
-          "id,user_id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,is_3lift_verified,photo_visibility,blur_thumb_path,photo_paths,expires_at,paid_at,created_at"
+          "id,user_id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,is_3lift_verified,photo_visibility,blur_thumb_path,photo_paths,expires_at,paid_at,created_at"
         )
         .eq("status", "approved")
         .gt("expires_at", nowIso);
@@ -192,7 +198,7 @@ export async function GET(req: Request) {
       return jsonNoStore(500, { ok: false, code: "LIST_FAILED", requestId, message: "목록을 불러오지 못했습니다." });
     }
 
-    const rows = (rowsData ?? []).sort((a, b) => {
+    let rows = (rowsData ?? []).sort((a, b) => {
       const aMode = a.display_mode === "instant_public" ? "instant_public" : "priority_24h";
       const bMode = b.display_mode === "instant_public" ? "instant_public" : "priority_24h";
       const aRank = aMode === "priority_24h" ? 0 : 1;
@@ -212,6 +218,19 @@ export async function GET(req: Request) {
       const bCreated = toTimeMs(b.created_at);
       return bCreated - aCreated;
     });
+    if (user?.id) {
+      const blockedUserIds = await getDatingBlockedUserIds(admin, user.id);
+      rows = rows.filter((row) => !blockedUserIds.has(String(row.user_id ?? "")));
+      rows = await filterDatingCardsByContactBlocks(
+        admin,
+        user.id,
+        rows.map((row) => ({
+          ...row,
+          owner_user_id: String(row.user_id ?? ""),
+          instagram_id: typeof row.instagram_id === "string" ? row.instagram_id : null,
+        }))
+      );
+    }
     const ownerIds = [...new Set(rows.map((row) => String(row.user_id ?? "")).filter((id) => id.length > 0))];
     const phoneVerifiedByOwner = new Map<string, boolean>();
     if (ownerIds.length > 0) {
