@@ -3111,12 +3111,12 @@ export default function OpenCardsPage() {
       ) : null}
 
       {showOpenCardSection && (reelsListings.length > 0 || reelsListingsLoading) ? (
-        <section className="mb-3 flex items-center gap-2 rounded-[18px] border border-neutral-200/80 bg-white p-1.5 shadow-[0_6px_18px_rgba(15,23,42,0.04)]">
-          <span className="shrink-0 rounded-[14px] bg-rose-50 px-3 py-2.5 text-xs font-black text-rose-600">
+        <section className="mb-4 flex items-center gap-2 rounded-[20px] border border-rose-100 bg-white p-2 shadow-[0_8px_22px_rgba(15,23,42,0.05)]">
+          <span className="shrink-0 rounded-[16px] bg-rose-50 px-3.5 py-3 text-sm font-black text-rose-600">
             릴스 매물
           </span>
           {reelsListingsLoading && reelsListings.length === 0 ? (
-            <span className="min-w-0 flex-1 rounded-[14px] bg-neutral-50 px-3 py-2.5 text-xs font-bold text-neutral-400">
+            <span className="min-w-0 flex-1 rounded-[16px] bg-neutral-50 px-4 py-3 text-sm font-bold text-neutral-400">
               불러오는 중...
             </span>
           ) : (
@@ -3126,7 +3126,7 @@ export default function OpenCardsPage() {
                   key={listing.id}
                   type="button"
                   onClick={() => openReelsApply(listing)}
-                  className="min-w-[180px] flex-1 rounded-[14px] bg-neutral-50 px-3 py-2.5 text-left text-xs font-bold text-neutral-900 transition hover:bg-rose-50 hover:text-rose-600"
+                  className="min-w-[210px] flex-1 rounded-[16px] bg-neutral-50 px-4 py-3 text-left text-sm font-black text-neutral-950 transition hover:bg-rose-50 hover:text-rose-600"
                   aria-label={`${listing.title} 지원하기`}
                 >
                   <span className="block truncate">{listing.title}</span>
