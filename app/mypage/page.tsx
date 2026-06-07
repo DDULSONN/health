@@ -55,6 +55,48 @@ function withPaymentCardNotice(message: string) {
   return `${message}\n${PAYMENT_CARD_UNAVAILABLE_MESSAGE}`;
 }
 
+function instagramProfileUrl(value: string | null | undefined) {
+  const normalized = (value ?? "")
+    .trim()
+    .replace(/^@+/, "")
+    .replace(/^https?:\/\/(www\.)?instagram\.com\//i, "")
+    .split(/[/?#]/)[0]
+    .trim();
+
+  return normalized ? `https://www.instagram.com/${encodeURIComponent(normalized)}/` : null;
+}
+
+function InstagramProfileLine({
+  label,
+  username,
+  className = "mt-2 text-sm font-medium text-emerald-700",
+}: {
+  label: string;
+  username: string;
+  className?: string;
+}) {
+  const profileUrl = instagramProfileUrl(username);
+  const displayUsername = (username ?? "").trim().replace(/^@+/, "") || username;
+
+  return (
+    <div className={`${className} flex flex-wrap items-center gap-x-2 gap-y-1`}>
+      <span>
+        {label}: @{displayUsername}
+      </span>
+      {profileUrl && (
+        <a
+          href={profileUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex h-7 items-center rounded-full border border-emerald-200 bg-white px-2.5 text-[11px] font-semibold text-emerald-700 hover:border-emerald-300 hover:bg-emerald-50"
+        >
+          인스타 열기
+        </a>
+      )}
+    </div>
+  );
+}
+
 function oneOnOneContactDisplayName(
   card: { name?: string | null } | null,
   profile: { nickname?: string | null; email?: string | null } | null | undefined,
@@ -6409,7 +6451,7 @@ export default function MyPage() {
                           매칭일 {new Date(item.created_at).toLocaleString("ko-KR")}
                         </p>
                         {item.other_instagram_id ? (
-                          <p className="mt-2 text-sm font-medium text-emerald-700">상대 인스타: @{item.other_instagram_id}</p>
+                          <InstagramProfileLine label="상대 인스타" username={item.other_instagram_id} />
                         ) : (
                           <p className="mt-2 text-xs text-neutral-500">상대 인스타 정보는 연결 목록에서 다시 확인할 수 있어요.</p>
                         )}
@@ -7333,7 +7375,7 @@ export default function MyPage() {
                     </div>
                   )}
                   {app.status === "accepted" && app.instagram_id && (
-                    <p className="mt-2 text-sm text-emerald-700 font-medium">지원자 인스타: @{app.instagram_id}</p>
+                    <InstagramProfileLine label="지원자 인스타" username={app.instagram_id} />
                   )}
                   <div className="mt-3 flex flex-wrap gap-2">
                     {app.status === "submitted" && (
@@ -8481,7 +8523,7 @@ export default function MyPage() {
                   )}
 
                   {app.status === "accepted" && app.instagram_id && (
-                    <p className="mt-2 text-sm text-emerald-700 font-medium">지원자 인스타: @{app.instagram_id}</p>
+                    <InstagramProfileLine label="지원자 인스타" username={app.instagram_id} />
                   )}
 
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -8593,9 +8635,11 @@ export default function MyPage() {
                   <p className="text-sm text-neutral-700 mt-2">내 인스타: @{item.my_instagram_id}</p>
                 )}
                 {item.other_instagram_id && (
-                  <p className="text-sm text-emerald-700 font-medium mt-1">
-                    상대 인스타: @{item.other_instagram_id}
-                  </p>
+                  <InstagramProfileLine
+                    label="상대 인스타"
+                    username={item.other_instagram_id}
+                    className="mt-1 text-sm font-medium text-emerald-700"
+                  />
                 )}
                 {item.matched_card && (
                   <div className="mt-3 rounded-lg border border-emerald-200 bg-white p-3">
