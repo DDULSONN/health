@@ -1399,6 +1399,7 @@ type AdminReelsDatingListing = {
   id: string;
   title: string;
   description: string | null;
+  instagram_url?: string | null;
   status: "active" | "hidden";
   sort_order: number | null;
   created_at: string;
@@ -1522,6 +1523,7 @@ export default function MyPage() {
   const [adminReelsDatingDraft, setAdminReelsDatingDraft] = useState({
     title: "",
     description: "",
+    instagram_url: "",
     status: "active" as "active" | "hidden",
     sort_order: "0",
   });
@@ -4587,7 +4589,7 @@ export default function MyPage() {
 
   const resetAdminReelsDatingDraft = () => {
     setAdminReelsDatingEditingId("");
-    setAdminReelsDatingDraft({ title: "", description: "", status: "active", sort_order: "0" });
+    setAdminReelsDatingDraft({ title: "", description: "", instagram_url: "", status: "active", sort_order: "0" });
   };
 
   const handleAdminEditReelsDatingListing = (item: AdminReelsDatingListing) => {
@@ -4595,6 +4597,7 @@ export default function MyPage() {
     setAdminReelsDatingDraft({
       title: item.title ?? "",
       description: item.description ?? "",
+      instagram_url: item.instagram_url ?? "",
       status: item.status === "hidden" ? "hidden" : "active",
       sort_order: String(item.sort_order ?? 0),
     });
@@ -4612,6 +4615,7 @@ export default function MyPage() {
       const payload = {
         title: adminReelsDatingDraft.title.trim(),
         description: adminReelsDatingDraft.description.trim(),
+        instagram_url: adminReelsDatingDraft.instagram_url.trim(),
         status: adminReelsDatingDraft.status,
         sort_order: Number(adminReelsDatingDraft.sort_order) || 0,
       };
@@ -9966,6 +9970,12 @@ export default function MyPage() {
                   <option value="hidden">숨김</option>
                 </select>
               </div>
+              <input
+                value={adminReelsDatingDraft.instagram_url}
+                onChange={(e) => setAdminReelsDatingDraft((prev) => ({ ...prev, instagram_url: e.target.value }))}
+                placeholder="인스타 릴스 링크 (선택)"
+                className="mt-2 h-10 w-full rounded-lg border border-violet-200 bg-white px-3 text-sm outline-none"
+              />
               <textarea
                 value={adminReelsDatingDraft.description}
                 onChange={(e) => setAdminReelsDatingDraft((prev) => ({ ...prev, description: e.target.value }))}
@@ -10002,6 +10012,16 @@ export default function MyPage() {
                             <p className="mt-1 text-xs text-neutral-500">
                               {item.status === "active" ? "노출중" : "숨김"} · 정렬 {item.sort_order ?? 0} · 지원 {applications.length}건
                             </p>
+                            {item.instagram_url ? (
+                              <a
+                                href={item.instagram_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="mt-1 inline-flex text-xs font-semibold text-violet-700 underline underline-offset-2"
+                              >
+                                인스타 링크 열기
+                              </a>
+                            ) : null}
                             {item.description ? <p className="mt-1 text-xs text-neutral-600">{item.description}</p> : null}
                           </div>
                           <div className="flex gap-2">

@@ -4,6 +4,7 @@ create table if not exists public.reels_dating_listings (
   id uuid primary key default gen_random_uuid(),
   title text not null,
   description text not null default '',
+  instagram_url text not null default '',
   status text not null default 'active' check (status in ('active', 'hidden')),
   sort_order integer not null default 0,
   created_by_user_id uuid null references auth.users(id) on delete set null,
@@ -30,6 +31,9 @@ create table if not exists public.reels_dating_applications (
 
 alter table public.reels_dating_applications
   add column if not exists photo_path text null;
+
+alter table public.reels_dating_listings
+  add column if not exists instagram_url text not null default '';
 
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (

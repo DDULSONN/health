@@ -10,6 +10,27 @@ function sanitizeText(value: unknown, maxLength: number) {
   return value.trim().slice(0, maxLength);
 }
 
+function sanitizeInstagramUrl(value: unknown) {
+  const raw = sanitizeText(value, 300);
+  if (!raw) return "";
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const url = new URL(withScheme);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (host !== "instagram.com") return "";
+    return url.toString().slice(0, 300);
+  } catch {
+    return "";
+  }
+}
+
+function isMissingColumnError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || message.includes("column") || message.includes("instagram_url");
+}
+
 function toSortOrder(value: unknown) {
   const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : 0;
   return Number.isFinite(n) ? Math.round(n) : 0;
@@ -32,23 +53,42 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const title = sanitizeText(body?.title, 80);
   const description = sanitizeText(body?.description, 300);
+  const instagramUrl = sanitizeInstagramUrl(body?.instagram_url);
   const status = body?.status === "hidden" ? "hidden" : "active";
   const sortOrder = toSortOrder(body?.sort_order);
 
   if (!title) return NextResponse.json({ error: "제목을 입력해 주세요." }, { status: 400 });
 
-  const res = await createAdminClient()
+  const admin = createAdminClient();
+  let res = await admin
     .from("reels_dating_listings")
     .update({
       title,
       description,
+      instagram_url: instagramUrl,
       status,
       sort_order: sortOrder,
       updated_at: new Date().toISOString(),
     })
     .eq("id", id)
-    .select("id,title,description,status,sort_order,created_at,updated_at")
+    .select("id,title,description,instagram_url,status,sort_order,created_at,updated_at")
     .single();
+
+  if (res.error && isMissingColumnError(res.error)) {
+    res = await admin
+      .from("reels_dating_listings")
+      .update({
+        title,
+        description,
+        status,
+        sort_order: sortOrder,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", id)
+      .select("id,title,description,status,sort_order,created_at,updated_at")
+      .single();
+    if (res.data) res.data = { ...res.data, instagram_url: "" };
+  }
 
   if (res.error) {
     console.error("[PATCH /api/admin/dating/reels/[id]] failed", res.error);

@@ -11,6 +11,20 @@ function sanitizeText(value: unknown, maxLength: number) {
   return value.trim().slice(0, maxLength);
 }
 
+function sanitizeInstagramUrl(value: unknown) {
+  const raw = sanitizeText(value, 300);
+  if (!raw) return "";
+  const withScheme = /^https?:\/\//i.test(raw) ? raw : `https://${raw}`;
+  try {
+    const url = new URL(withScheme);
+    const host = url.hostname.toLowerCase().replace(/^www\./, "");
+    if (host !== "instagram.com") return "";
+    return url.toString().slice(0, 300);
+  } catch {
+    return "";
+  }
+}
+
 function toSortOrder(value: unknown) {
   const n = typeof value === "number" ? value : typeof value === "string" ? Number(value) : 0;
   return Number.isFinite(n) ? Math.round(n) : 0;
@@ -36,10 +50,10 @@ export async function GET() {
   if (!ok) return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
 
   const admin = createAdminClient();
-  const [listingsRes, initialAppsRes] = await Promise.all([
+  const [initialListingsRes, initialAppsRes] = await Promise.all([
     admin
       .from("reels_dating_listings")
-      .select("id,title,description,status,sort_order,created_at,updated_at")
+      .select("id,title,description,instagram_url,status,sort_order,created_at,updated_at")
       .order("sort_order", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(100),
@@ -51,6 +65,22 @@ export async function GET() {
       .order("created_at", { ascending: false })
       .limit(300),
   ]);
+  let listingsRes: {
+    data: Array<Record<string, unknown>> | null;
+    error: { code?: string | null; message?: string | null } | null;
+  } = initialListingsRes;
+  if (listingsRes.error && isMissingColumnError(listingsRes.error)) {
+    const fallback = await admin
+      .from("reels_dating_listings")
+      .select("id,title,description,status,sort_order,created_at,updated_at")
+      .order("sort_order", { ascending: false })
+      .order("created_at", { ascending: false })
+      .limit(100);
+    listingsRes = {
+      data: (fallback.data ?? []).map((item) => ({ ...item, instagram_url: "" })),
+      error: fallback.error,
+    };
+  }
   let appsRes: {
     data: Array<Record<string, unknown>> | null;
     error: { code?: string | null; message?: string | null } | null;
@@ -98,23 +128,40 @@ export async function POST(req: Request) {
   const body = (await req.json().catch(() => null)) as Record<string, unknown> | null;
   const title = sanitizeText(body?.title, 80);
   const description = sanitizeText(body?.description, 300);
+  const instagramUrl = sanitizeInstagramUrl(body?.instagram_url);
   const status = body?.status === "hidden" ? "hidden" : "active";
   const sortOrder = toSortOrder(body?.sort_order);
 
   if (!title) return NextResponse.json({ error: "제목을 입력해 주세요." }, { status: 400 });
 
   const admin = createAdminClient();
-  const res = await admin
+  let res = await admin
     .from("reels_dating_listings")
     .insert({
       title,
       description,
+      instagram_url: instagramUrl,
       status,
       sort_order: sortOrder,
       created_by_user_id: user?.id ?? null,
     })
-    .select("id,title,description,status,sort_order,created_at,updated_at")
+    .select("id,title,description,instagram_url,status,sort_order,created_at,updated_at")
     .single();
+
+  if (res.error && isMissingColumnError(res.error)) {
+    res = await admin
+      .from("reels_dating_listings")
+      .insert({
+        title,
+        description,
+        status,
+        sort_order: sortOrder,
+        created_by_user_id: user?.id ?? null,
+      })
+      .select("id,title,description,status,sort_order,created_at,updated_at")
+      .single();
+    if (res.data) res.data = { ...res.data, instagram_url: "" };
+  }
 
   if (res.error) {
     console.error("[POST /api/admin/dating/reels] failed", res.error);

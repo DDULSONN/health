@@ -244,6 +244,7 @@ type ReelsDatingListing = {
   id: string;
   title: string;
   description: string | null;
+  instagram_url?: string | null;
   status: "active" | "hidden";
   sort_order: number | null;
   created_at: string;
@@ -2719,15 +2720,29 @@ export default function OpenCardsPage() {
                   ) : (
                     <div className="flex min-w-0 flex-1 gap-2 overflow-x-auto">
                       {reelsListings.map((listing) => (
-                        <button
+                        <div
                           key={listing.id}
-                          type="button"
-                          onClick={() => openReelsApply(listing)}
-                          className="min-w-[210px] flex-1 rounded-[16px] bg-neutral-50 px-4 py-3 text-left text-sm font-black text-neutral-950 transition hover:bg-rose-50 hover:text-rose-600"
-                          aria-label={`${listing.title} 지원하기`}
+                          className="flex min-w-[240px] flex-1 items-center gap-2 rounded-[16px] bg-neutral-50 px-2 py-2"
                         >
-                          <span className="block truncate">{listing.title}</span>
-                        </button>
+                          <button
+                            type="button"
+                            onClick={() => openReelsApply(listing)}
+                            className="min-w-0 flex-1 px-2 py-1 text-left text-sm font-black text-neutral-950 transition hover:text-rose-600"
+                            aria-label={`${listing.title} 지원하기`}
+                          >
+                            <span className="block truncate">{listing.title}</span>
+                          </button>
+                          {listing.instagram_url ? (
+                            <a
+                              href={listing.instagram_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="shrink-0 rounded-[12px] bg-white px-2.5 py-2 text-xs font-black text-rose-600 shadow-sm transition hover:bg-rose-50"
+                            >
+                              인스타
+                            </a>
+                          ) : null}
+                        </div>
                       ))}
                     </div>
                   )}
