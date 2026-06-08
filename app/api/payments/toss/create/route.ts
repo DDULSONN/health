@@ -777,12 +777,12 @@ export async function POST(req: Request) {
           });
         }
         const applicantCount = Number(appCountRes.count ?? 0);
-        if (applicantCount > 2) {
+        if (applicantCount > 3) {
           return json(409, {
             ok: false,
             code: "OPEN_CARD_REOPEN_TOO_MANY_APPLICATIONS",
             requestId,
-            message: "받은 지원이 2개 이하인 오픈카드만 다시 노출할 수 있습니다.",
+            message: "받은 지원이 3개 이하인 오픈카드만 다시 노출할 수 있습니다.",
           });
         }
 

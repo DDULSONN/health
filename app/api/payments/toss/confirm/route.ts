@@ -421,7 +421,7 @@ async function ensurePaidCardFulfilled(
     if (appCountRes.error) {
       throw appCountRes.error;
     }
-    if (Number(appCountRes.count ?? 0) > 2) {
+    if (Number(appCountRes.count ?? 0) > 3) {
       throw new Error("OPEN_CARD_REOPEN_TOO_MANY_APPLICATIONS");
     }
 
@@ -759,7 +759,7 @@ export async function POST(req: Request) {
         code: error.message,
         requestId,
         message: tooMany
-          ? "받은 지원이 2개 이하인 오픈카드만 다시 노출할 수 있습니다."
+          ? "받은 지원이 3개 이하인 오픈카드만 다시 노출할 수 있습니다."
           : "오픈카드 재노출 처리에 실패했습니다. 마이페이지에서 상태를 확인해주세요.",
       });
     }

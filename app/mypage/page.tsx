@@ -4825,8 +4825,8 @@ export default function MyPage() {
 
   const handleReopenMyOpenCard = async (card: MyDatingCard) => {
     if (reopeningOpenCardIds.includes(card.id)) return;
-    if (Number(card.applicant_count ?? 0) > 2) {
-      alert("받은 지원이 2개 이하인 오픈카드만 다시 노출할 수 있습니다.");
+    if (Number(card.applicant_count ?? 0) > 3) {
+      alert("받은 지원이 3개 이하인 오픈카드만 다시 노출할 수 있습니다.");
       return;
     }
     if (card.status === "public") {
@@ -8342,7 +8342,7 @@ export default function MyPage() {
                 Number(card.auto_requeue_count ?? 0) > 0;
               const canShowReopen =
                 ["pending", "hidden", "expired"].includes(card.status) &&
-                applicantCount <= 2 &&
+                applicantCount <= 3 &&
                 hasPublishedBefore &&
                 (!hasActiveOpenCard || card.status === "pending");
               const reopening = reopeningOpenCardIds.includes(card.id);
