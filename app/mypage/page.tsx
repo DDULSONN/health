@@ -418,6 +418,7 @@ function formatPaymentProductLabel(order: MyPaymentCenterOrder) {
     return province ? `가까운 이상형 보기 · ${province}` : "가까운 이상형 보기";
   }
   if (order.product_type === "one_on_one_contact_exchange") return "1:1 번호 즉시 교환";
+  if (order.product_type === "one_on_one_priority_24h") return "1:1 우선 추천권";
   if (order.product_type === "swipe_premium_30d") return "빠른매칭 플러스";
   if (order.product_type === "love_fortune_detail") return "연애운 상세 분석";
   return order.order_name ?? order.product_type;
@@ -443,6 +444,7 @@ function formatPaymentResultLabel(order: MyPaymentCenterOrder) {
   if (order.product_type === "more_view") return "이상형 더보기 권한 반영 완료";
   if (order.product_type === "city_view") return "가까운 이상형 보기 권한 반영 완료";
   if (order.product_type === "one_on_one_contact_exchange") return "상대 연락처 공개 완료";
+  if (order.product_type === "one_on_one_priority_24h") return "1:1 우선 추천 적용 완료";
   if (order.product_type === "swipe_premium_30d") return "빠른매칭 플러스 적용 완료";
   if (order.product_type === "love_fortune_detail") return "연애운 상세 분석 이용권 반영 완료";
   return "결제 완료";
@@ -607,6 +609,7 @@ type MyOneOnOneCard = {
   admin_tags?: string[] | null;
   reviewed_at?: string | null;
   created_at: string;
+  priority_boost_expires_at?: string | null;
   photo_signed_urls?: string[];
 };
 
@@ -1729,6 +1732,8 @@ export default function MyPage() {
   const [swipeSubscriptionSubmitting, setSwipeSubscriptionSubmitting] = useState(false);
   const [swipeSubscriptionError, setSwipeSubscriptionError] = useState("");
   const [swipeSubscriptionInfo, setSwipeSubscriptionInfo] = useState("");
+  const [oneOnOnePrioritySubmittingIds, setOneOnOnePrioritySubmittingIds] = useState<string[]>([]);
+  const [oneOnOnePriorityDetailCardId, setOneOnOnePriorityDetailCardId] = useState<string | null>(null);
   const [swipeSubscriptionPanelOpen, setSwipeSubscriptionPanelOpen] = useState(false);
   const [supportItems, setSupportItems] = useState<SupportInquiry[]>([]);
   const [supportLoading, setSupportLoading] = useState(false);
@@ -4485,6 +4490,38 @@ export default function MyPage() {
       setOpenCardWriteEnabled(body.enabled !== false);
     } finally {
       setOpenCardWriteSaving(false);
+    }
+  };
+
+  const handleRequestOneOnOnePriority = async (cardId: string) => {
+    if (oneOnOnePrioritySubmittingIds.includes(cardId)) return;
+    setOneOnOnePrioritySubmittingIds((prev) => [...prev, cardId]);
+    try {
+      const res = await fetch("/api/payments/toss/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          productType: "one_on_one_priority_24h",
+          cardId,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        message?: string;
+        checkoutUrl?: string;
+      };
+      if (!res.ok || body.ok === false) {
+        throw new Error(withPaymentCardNotice(body.message ?? body.error ?? "1:1 우선 추천권 결제를 시작하지 못했습니다."));
+      }
+      if (!body.checkoutUrl) {
+        throw new Error(withPaymentCardNotice("결제창을 열지 못했습니다."));
+      }
+      window.location.href = body.checkoutUrl;
+    } catch (error) {
+      alert(error instanceof Error ? error.message : withPaymentCardNotice("1:1 우선 추천권 결제를 시작하지 못했습니다."));
+    } finally {
+      setOneOnOnePrioritySubmittingIds((prev) => prev.filter((id) => id !== cardId));
     }
   };
 
@@ -7589,6 +7626,13 @@ export default function MyPage() {
               const closedMatches = relatedMatches.filter((match) =>
                 ["source_skipped", "candidate_rejected", "source_declined", "admin_canceled"].includes(match.state)
               );
+              const priorityBoostExpiresAtMs = item.priority_boost_expires_at
+                ? new Date(item.priority_boost_expires_at).getTime()
+                : Number.NaN;
+              const priorityBoostActive = Number.isFinite(priorityBoostExpiresAtMs) && priorityBoostExpiresAtMs > Date.now();
+              const priorityBoostSubmitting = oneOnOnePrioritySubmittingIds.includes(item.id);
+              const canBuyPriorityBoost = ["submitted", "reviewing", "approved"].includes(item.status);
+              const priorityBoostDetailOpen = oneOnOnePriorityDetailCardId === item.id;
 
               return (
                 <div key={item.id} className="rounded-xl border border-sky-200 bg-white p-3">
@@ -7645,6 +7689,56 @@ export default function MyPage() {
                           </div>
                         </a>
                       ))}
+                    </div>
+                  )}
+
+                  {canBuyPriorityBoost && (
+                    <div className="mt-3 rounded-xl border border-pink-100 bg-pink-50/50 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold text-pink-900">1:1 우선 추천</p>
+                          {priorityBoostActive && item.priority_boost_expires_at && (
+                            <p className="mt-1 text-xs font-medium text-pink-700">
+                              부스트중 · {new Date(item.priority_boost_expires_at).toLocaleString("ko-KR")}까지
+                            </p>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          disabled={priorityBoostActive || priorityBoostSubmitting}
+                          onClick={() => setOneOnOnePriorityDetailCardId((prev) => (prev === item.id ? null : item.id))}
+                          className="h-9 rounded-full bg-neutral-900 px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500"
+                        >
+                          {priorityBoostSubmitting ? "결제 준비 중..." : priorityBoostActive ? "부스트중" : "1:1 우선 추천"}
+                        </button>
+                      </div>
+                      {!priorityBoostActive && priorityBoostDetailOpen && (
+                        <div className="mt-3 rounded-lg border border-pink-100 bg-white p-3">
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div>
+                              <p className="text-sm font-semibold text-neutral-900">1:1 우선 추천권</p>
+                              <p className="mt-1 text-xs leading-5 text-neutral-600">
+                                3일 동안 1:1 후보 목록에서 더 먼저 소개될 수 있어요.
+                              </p>
+                              <p className="mt-1 text-[11px] leading-5 text-neutral-500">
+                                매칭을 보장하지는 않으며, 성별/차단/진행중 후보 제외 기준은 그대로 적용됩니다.
+                              </p>
+                            </div>
+                            <div className="text-right">
+                              <p className="text-base font-bold text-pink-600">10,000원</p>
+                              <p className="mt-0.5 text-[11px] text-neutral-500">3일</p>
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            disabled={priorityBoostSubmitting}
+                            onClick={() => void handleRequestOneOnOnePriority(item.id)}
+                            className="mt-3 h-10 w-full rounded-lg bg-pink-600 text-sm font-semibold text-white hover:bg-pink-700 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500"
+                          >
+                            {priorityBoostSubmitting ? "결제 준비 중..." : "우선 추천권 구매하기"}
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
 

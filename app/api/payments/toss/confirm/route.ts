@@ -34,6 +34,7 @@ type TossOrderRow = {
     | "more_view"
     | "city_view"
     | "one_on_one_contact_exchange"
+    | "one_on_one_priority_24h"
     | "swipe_premium_30d"
     | "love_fortune_detail";
   product_ref_id: string | null;
@@ -329,6 +330,67 @@ async function ensureOneOnOneExchangeFulfilled(
   return { matchId, alreadyApproved: false };
 }
 
+async function ensureOneOnOnePriorityFulfilled(
+  admin: ReturnType<typeof createAdminClient>,
+  order: TossOrderRow
+) {
+  const cardId =
+    (typeof order.product_meta?.cardId === "string" ? order.product_meta.cardId.trim() : "") ||
+    order.product_ref_id?.trim() ||
+    "";
+
+  if (!cardId) {
+    throw new Error("ONE_ON_ONE_PRIORITY_CARD_ID_MISSING");
+  }
+
+  const cardRes = await admin
+    .from("dating_1on1_cards")
+    .select("id,user_id,status,priority_boost_expires_at")
+    .eq("id", cardId)
+    .maybeSingle();
+
+  if (cardRes.error) {
+    throw cardRes.error;
+  }
+  if (!cardRes.data || cardRes.data.user_id !== order.user_id) {
+    throw new Error("ONE_ON_ONE_PRIORITY_CARD_NOT_FOUND");
+  }
+  if (!["submitted", "reviewing", "approved"].includes(String(cardRes.data.status ?? ""))) {
+    throw new Error("ONE_ON_ONE_PRIORITY_CARD_INACTIVE");
+  }
+
+  const now = Date.now();
+  const currentExpiresAt = cardRes.data.priority_boost_expires_at
+    ? new Date(cardRes.data.priority_boost_expires_at).getTime()
+    : Number.NaN;
+  if (Number.isFinite(currentExpiresAt) && currentExpiresAt > now) {
+    return { cardId, alreadyActive: true, expiresAt: cardRes.data.priority_boost_expires_at };
+  }
+
+  const durationHours =
+    typeof order.product_meta?.durationHours === "number" && Number.isFinite(order.product_meta.durationHours)
+      ? Math.max(1, Number(order.product_meta.durationHours))
+      : 72;
+  const expiresAt = new Date(now + durationHours * 60 * 60 * 1000).toISOString();
+  const updateRes = await admin
+    .from("dating_1on1_cards")
+    .update({ priority_boost_expires_at: expiresAt })
+    .eq("id", cardId)
+    .eq("user_id", order.user_id)
+    .in("status", ["submitted", "reviewing", "approved"])
+    .select("id,priority_boost_expires_at")
+    .maybeSingle();
+
+  if (updateRes.error) {
+    throw updateRes.error;
+  }
+  if (!updateRes.data?.id) {
+    throw new Error("ONE_ON_ONE_PRIORITY_UPDATE_FAILED");
+  }
+
+  return { cardId, alreadyActive: false, expiresAt: updateRes.data.priority_boost_expires_at ?? expiresAt };
+}
+
 async function ensureSwipePremiumFulfilled(
   admin: ReturnType<typeof createAdminClient>,
   order: TossOrderRow
@@ -534,6 +596,10 @@ async function ensureOrderFulfilled(
 
   if (order.product_type === "one_on_one_contact_exchange") {
     await ensureOneOnOneExchangeFulfilled(admin, order);
+  }
+
+  if (order.product_type === "one_on_one_priority_24h") {
+    await ensureOneOnOnePriorityFulfilled(admin, order);
   }
 
   if (order.product_type === "swipe_premium_30d") {

@@ -127,6 +127,7 @@ function formatProductType(productType?: string, orderName?: string | null) {
   if (productType === "more_view") return "이상형 더보기";
   if (productType === "city_view") return "가까운 이상형 보기";
   if (productType === "one_on_one_contact_exchange") return "1:1 번호 즉시 교환";
+  if (productType === "one_on_one_priority_24h") return "1:1 우선 추천권";
   if (productType === "swipe_premium_30d") return "빠른매칭 플러스";
   if (productType === "love_fortune_detail") return "연애운 상세 풀이";
   return "-";
@@ -139,6 +140,7 @@ function getPrimaryAction(productType?: string, orderName?: string | null) {
       : { href: "/dating/paid", label: "대기 없이 등록으로 돌아가기" };
   }
   if (productType === "one_on_one_contact_exchange") return { href: "/mypage", label: "마이페이지로 돌아가기" };
+  if (productType === "one_on_one_priority_24h") return { href: "/mypage?section=matching", label: "1:1 매칭으로 돌아가기" };
   if (productType === "swipe_premium_30d") return { href: "/community/dating/cards", label: "빠른매칭으로 돌아가기" };
   if (productType === "city_view") return { href: "/dating/nearby-view", label: "가까운 이상형 보기로 돌아가기" };
   if (productType === "love_fortune_detail") return { href: "/mypage?loveFortune=1#love-fortune", label: "저장된 풀이 보기" };

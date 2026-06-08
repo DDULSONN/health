@@ -21,6 +21,7 @@ type ProductType =
   | "more_view"
   | "city_view"
   | "one_on_one_contact_exchange"
+  | "one_on_one_priority_24h"
   | "swipe_premium_30d"
   | "love_fortune_detail";
 
@@ -29,6 +30,7 @@ type CreateBody = {
   sex?: unknown;
   province?: unknown;
   matchId?: unknown;
+  cardId?: unknown;
   paidCardId?: unknown;
   openCardId?: unknown;
   birthDate?: unknown;
@@ -84,6 +86,10 @@ const PRODUCT_CONFIG: Record<ProductType, { amount: number; orderName: string }>
     amount: 20000,
     orderName: "1:1 번호 교환",
   },
+  one_on_one_priority_24h: {
+    amount: 10000,
+    orderName: "1:1 우선 추천권",
+  },
   swipe_premium_30d: {
     amount: SWIPE_PREMIUM_PRICE_KRW,
     orderName: "빠른매칭 플러스",
@@ -111,6 +117,7 @@ function parseProductType(raw: unknown): ProductType | "" {
     raw === "more_view" ||
     raw === "city_view" ||
     raw === "one_on_one_contact_exchange" ||
+    raw === "one_on_one_priority_24h" ||
     raw === "swipe_premium_30d" ||
     raw === "love_fortune_detail"
   ) {
@@ -690,6 +697,98 @@ export async function POST(req: Request) {
       };
     }
 
+    if (productType === "one_on_one_priority_24h") {
+      const cardId = typeof body.cardId === "string" ? body.cardId.trim() : "";
+      let cardQuery = admin
+        .from("dating_1on1_cards")
+        .select("id,user_id,status,priority_boost_expires_at,created_at")
+        .eq("user_id", user.id)
+        .in("status", ["submitted", "reviewing", "approved"])
+        .order("created_at", { ascending: false })
+        .limit(1);
+
+      if (cardId) {
+        cardQuery = admin
+          .from("dating_1on1_cards")
+          .select("id,user_id,status,priority_boost_expires_at,created_at")
+          .eq("id", cardId)
+          .eq("user_id", user.id)
+          .in("status", ["submitted", "reviewing", "approved"])
+          .limit(1);
+      }
+
+      const cardRes = await cardQuery.maybeSingle();
+      if (cardRes.error && String(cardRes.error.message ?? "").includes("priority_boost_expires_at")) {
+        return json(500, {
+          ok: false,
+          code: "PAYMENT_SCHEMA_OUTDATED",
+          requestId,
+          message: "1:1 우선 추천권 설정 업데이트가 아직 적용되지 않았습니다. 관리자에게 문의해주세요.",
+        });
+      }
+
+      if (cardRes.error) {
+        console.error("[toss-create] 1on1 priority card lookup failed", cardRes.error);
+        return json(500, {
+          ok: false,
+          code: "ONE_ON_ONE_PRIORITY_LOOKUP_FAILED",
+          requestId,
+          message: "1:1 우선 추천 상태를 확인하지 못했습니다.",
+        });
+      }
+      if (!cardRes.data?.id) {
+        return json(403, {
+          ok: false,
+          code: "ONE_ON_ONE_CARD_REQUIRED",
+          requestId,
+          message: "활성화된 1:1 소개팅 카드가 있어야 이용할 수 있습니다.",
+        });
+      }
+
+      const activeBoostMs = cardRes.data.priority_boost_expires_at
+        ? new Date(cardRes.data.priority_boost_expires_at).getTime()
+        : Number.NaN;
+      if (Number.isFinite(activeBoostMs) && activeBoostMs > Date.now()) {
+        return json(409, {
+          ok: false,
+          code: "ALREADY_ACTIVE",
+          requestId,
+          message: "이미 1:1 우선 추천권이 적용 중입니다.",
+        });
+      }
+
+      const duplicateOrderRes = await admin
+        .from("toss_test_payment_orders")
+        .select("id,status,created_at")
+        .eq("product_type", "one_on_one_priority_24h")
+        .eq("product_ref_id", cardRes.data.id)
+        .eq("status", "ready")
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      if (duplicateOrderRes.error) {
+        console.error("[toss-create] 1on1 priority duplicate order lookup failed", duplicateOrderRes.error);
+        return json(500, {
+          ok: false,
+          code: "ORDER_LOOKUP_FAILED",
+          requestId,
+          message: "기존 결제 진행 상태를 확인하지 못했습니다.",
+        });
+      }
+
+      const duplicateOrders = duplicateOrderRes.data ?? [];
+      await cancelReadyOrders(
+        admin,
+        duplicateOrders.map((row) => row.id)
+      );
+
+      productRefId = cardRes.data.id;
+      productMeta = {
+        cardId: cardRes.data.id,
+        durationHours: 72,
+      };
+    }
+
     if (productType === "paid_card") {
       const openCardId = typeof body.openCardId === "string" ? body.openCardId.trim() : "";
       if (openCardId) {
@@ -1044,6 +1143,7 @@ export async function POST(req: Request) {
       productType === "more_view" ||
       productType === "city_view" ||
       productType === "one_on_one_contact_exchange" ||
+      productType === "one_on_one_priority_24h" ||
       productType === "swipe_premium_30d" ||
       productType === "love_fortune_detail"
         ? {

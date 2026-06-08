@@ -18,6 +18,7 @@ const ADMIN_RECOMMENDATION_LIMIT = 3;
 const CARD_BATCH_SIZE = 1000;
 const RECOMMENDATION_REFRESH_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const AGE_MATCH_MIN_QUOTA = 6;
+const PRIORITY_BOOST_MIN_QUOTA = 2;
 const NEAR_AGE_GAP = 2;
 const CLOSE_REGION_MAX_KM = 90;
 
@@ -38,10 +39,14 @@ type CardRow = {
   status: "submitted" | "reviewing" | "approved" | "rejected";
   created_at: string;
   recommendation_refresh_used_at?: string | null;
+  priority_boost_expires_at?: string | null;
   photo_paths: unknown;
   phone: string | null;
 };
-type RecommendationCard = ReturnType<typeof toDatingOneOnOneCardDetail> & { phone: string | null };
+type RecommendationCard = ReturnType<typeof toDatingOneOnOneCardDetail> & {
+  phone: string | null;
+  priority_boost_expires_at?: string | null;
+};
 
 function getAgeRange(card: { sex: "male" | "female"; age: number | null }) {
   if (card.age == null || !Number.isFinite(card.age)) {
@@ -94,6 +99,12 @@ function getDistanceRank(sourceRegion: string | null, candidateRegion: string | 
   };
 }
 
+function isPriorityBoostActive(card: { priority_boost_expires_at?: string | null }) {
+  if (!card.priority_boost_expires_at) return false;
+  const expiresAtMs = new Date(card.priority_boost_expires_at).getTime();
+  return Number.isFinite(expiresAtMs) && expiresAtMs > Date.now();
+}
+
 function sortCandidatesForSource(
   sourceCard: RecommendationCard,
   candidates: RecommendationCard[],
@@ -114,6 +125,12 @@ function sortCandidatesForSource(
     }
     if (aDistanceRank.distanceRank !== bDistanceRank.distanceRank) {
       return aDistanceRank.distanceRank - bDistanceRank.distanceRank;
+    }
+
+    const aBoostActive = isPriorityBoostActive(a);
+    const bBoostActive = isPriorityBoostActive(b);
+    if (aBoostActive !== bBoostActive) {
+      return aBoostActive ? -1 : 1;
     }
 
     const aInAgeRange = isCandidateInSourceAgeRange(sourceCard, a);
@@ -208,13 +225,16 @@ function takeBalancedRecommendations(
     const distance = getRegionDistanceMeta(sourceCard.region, candidate.region).distanceKm;
     return distance != null && distance <= CLOSE_REGION_MAX_KM;
   });
+  const boosted = sortedCandidates.filter((candidate) => isPriorityBoostActive(candidate));
 
+  addFrom(rotateIfUseful(boosted, "priority-boost"), Math.min(limit, PRIORITY_BOOST_MIN_QUOTA), true);
   addFrom(rotateIfUseful(ageMatched, "age-match"), Math.min(limit, AGE_MATCH_MIN_QUOTA), true);
   addFrom(rotateIfUseful(nearAge, "near-age"), Math.min(limit, Math.max(AGE_MATCH_MIN_QUOTA, 7)), true);
   addFrom(rotateIfUseful(closeRegion, "close-region"), Math.min(limit, Math.max(picked.length, 8)), true);
   addFrom(rotateIfUseful(sortedCandidates, "balanced-rest"), limit, true);
 
   if (picked.length < limit) {
+    addFrom(rotateIfUseful(boosted, "priority-boost-fallback"), Math.min(limit, PRIORITY_BOOST_MIN_QUOTA), false);
     addFrom(rotateIfUseful(ageMatched, "age-match-fallback"), Math.min(limit, AGE_MATCH_MIN_QUOTA), false);
     addFrom(rotateIfUseful(nearAge, "near-age-fallback"), Math.min(limit, Math.max(AGE_MATCH_MIN_QUOTA, 7)), false);
     addFrom(rotateIfUseful(closeRegion, "close-region-fallback"), Math.min(limit, Math.max(picked.length, 8)), false);
@@ -252,8 +272,8 @@ function getRefreshAvailability(refreshUsedAt?: string | null) {
 
 function stripInternalPhone(card: RecommendationCard) {
   return Object.fromEntries(
-    Object.entries(card).filter(([key]) => key !== "phone")
-  ) as Omit<RecommendationCard, "phone">;
+    Object.entries(card).filter(([key]) => key !== "phone" && key !== "priority_boost_expires_at")
+  ) as Omit<RecommendationCard, "phone" | "priority_boost_expires_at">;
 }
 
 async function fetchAllActiveCards(admin: ReturnType<typeof createAdminClient>) {
@@ -264,13 +284,32 @@ async function fetchAllActiveCards(admin: ReturnType<typeof createAdminClient>) 
     const { data, error } = await admin
       .from("dating_1on1_cards")
       .select(
-        "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,recommendation_refresh_used_at,photo_paths,phone"
+        "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,recommendation_refresh_used_at,priority_boost_expires_at,photo_paths,phone"
       )
       .in("status", [...DATING_ONE_ON_ONE_ACTIVE_STATUSES])
       .order("created_at", { ascending: false })
       .range(from, from + CARD_BATCH_SIZE - 1);
 
-    if (error) throw error;
+    if (error) {
+      const message = String(error.message ?? "");
+      if (message.includes("priority_boost_expires_at")) {
+        const legacyRes = await admin
+          .from("dating_1on1_cards")
+          .select(
+            "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,recommendation_refresh_used_at,photo_paths,phone"
+          )
+          .in("status", [...DATING_ONE_ON_ONE_ACTIVE_STATUSES])
+          .order("created_at", { ascending: false })
+          .range(from, from + CARD_BATCH_SIZE - 1);
+        if (legacyRes.error) throw legacyRes.error;
+        const legacyBatch = (legacyRes.data ?? []).map((row) => ({ ...row, priority_boost_expires_at: null })) as CardRow[];
+        rows.push(...legacyBatch);
+        if (legacyBatch.length < CARD_BATCH_SIZE) break;
+        from += CARD_BATCH_SIZE;
+        continue;
+      }
+      throw error;
+    }
 
     const batch = (data ?? []) as CardRow[];
     rows.push(...batch);
@@ -300,6 +339,7 @@ export async function GET(req: Request) {
   const normalizedCards = activeCards.map((row) => ({
     ...toDatingOneOnOneCardDetail(row),
     phone: row.phone ?? null,
+    priority_boost_expires_at: row.priority_boost_expires_at ?? null,
   }));
   const myCards = normalizedCards.filter((card) => card.user_id === user.id);
   const mySourceCards = myCards.filter(

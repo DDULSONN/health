@@ -65,11 +65,44 @@ export async function GET(req: Request) {
   const { data, error } = await admin
     .from("dating_1on1_cards")
     .select(
-      "id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,photo_paths,admin_note,admin_tags,reviewed_at,created_at"
+      "id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,photo_paths,admin_note,admin_tags,reviewed_at,created_at,priority_boost_expires_at"
     )
     .eq("user_id", user.id)
     .order("created_at", { ascending: false })
     .limit(20);
+
+  if (error && String(error.message ?? "").includes("priority_boost_expires_at")) {
+    const legacyRes = await admin
+      .from("dating_1on1_cards")
+      .select(
+        "id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,photo_paths,admin_note,admin_tags,reviewed_at,created_at"
+      )
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(20);
+    if (legacyRes.error) {
+      console.error("[GET /api/dating/1on1/my] legacy failed", legacyRes.error);
+      return NextResponse.json({ error: "Failed to load 1:1 requests." }, { status: 500 });
+    }
+    const legacyItems = (legacyRes.data ?? []).map((row) => ({ ...row, priority_boost_expires_at: null }));
+    const items = legacyItems.map((row) => {
+      const paths = Array.isArray(row.photo_paths)
+        ? row.photo_paths
+            .map((path) => normalizePath(path))
+            .filter((path): path is string => typeof path === "string" && path.length > 0)
+        : [];
+      const photo_signed_urls = paths
+        .map((path) => buildSignedImageUrl("dating-1on1-photos", path))
+        .filter((url) => url.length > 0);
+
+      return {
+        ...row,
+        age: toCurrentAge(row.birth_year),
+        photo_signed_urls,
+      };
+    });
+    return NextResponse.json({ items });
+  }
 
   if (error) {
     console.error("[GET /api/dating/1on1/my] failed", error);
