@@ -101,6 +101,7 @@ const PRODUCT_CONFIG: Record<ProductType, { amount: number; orderName: string }>
 };
 
 const OPEN_CARD_REOPEN_AMOUNT_KRW = 5000;
+const PAYMENT_CARD_UNAVAILABLE_MESSAGE = "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
 
 function json(status: number, payload: Record<string, unknown>) {
   return NextResponse.json(payload, { status });
@@ -1177,7 +1178,7 @@ export async function POST(req: Request) {
       ok: false,
       code: "INTERNAL_SERVER_ERROR",
       requestId,
-      message: "서버 오류가 발생했습니다.",
+      message: `결제를 시작하지 못했습니다. ${PAYMENT_CARD_UNAVAILABLE_MESSAGE}`,
     });
   }
 }

@@ -4,6 +4,8 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
+const PAYMENT_CARD_UNAVAILABLE_MESSAGE = "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
+
 function getPrimaryAction(productType?: string | null) {
   if (productType === "paid_card") {
     return { href: "/dating/paid", label: "대기 없이 등록으로 돌아가기" };
@@ -18,9 +20,9 @@ function getPrimaryAction(productType?: string | null) {
     return { href: "/dating/nearby-view", label: "가까운 이상형 보기로 돌아가기" };
   }
   if (productType === "love_fortune_detail") {
-    return { href: "/community/dating/cards", label: "연애운으로 돌아가기" };
+    return { href: "/community/dating/cards", label: "오픈카드로 돌아가기" };
   }
-  if (productType === "one_on_one_contact_exchange") {
+  if (productType === "one_on_one_contact_exchange" || productType === "one_on_one_priority_24h") {
     return { href: "/mypage", label: "마이페이지로 돌아가기" };
   }
   return { href: "/mypage", label: "마이페이지로 돌아가기" };
@@ -29,7 +31,7 @@ function getPrimaryAction(productType?: string | null) {
 function PaymentFailContent() {
   const searchParams = useSearchParams();
   const code = searchParams.get("code") ?? "-";
-  const message = searchParams.get("message") ?? "결제가 취소됐거나 정상적으로 완료되지 않았습니다.";
+  const message = searchParams.get("message") ?? "결제가 취소되었거나 정상적으로 완료되지 않았습니다.";
   const orderId = searchParams.get("orderId") ?? "-";
   const productType = searchParams.get("productType");
   const primaryAction = getPrimaryAction(productType);
@@ -46,9 +48,7 @@ function PaymentFailContent() {
 
         <div className="mt-4 space-y-2 text-sm leading-6 text-neutral-500">
           <p>카카오페이로 다시 시도해 보시고, 같은 문제가 이어지면 오픈카톡으로 문의해 주세요.</p>
-          <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">
-            현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.
-          </p>
+          <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">{PAYMENT_CARD_UNAVAILABLE_MESSAGE}</p>
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
@@ -59,10 +59,10 @@ function PaymentFailContent() {
             {primaryAction.label}
           </Link>
           <Link
-            href={productType === "one_on_one_contact_exchange" ? "/dating/1on1" : "/mypage"}
+            href={productType === "one_on_one_contact_exchange" || productType === "one_on_one_priority_24h" ? "/dating/1on1" : "/mypage"}
             className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
           >
-            {productType === "one_on_one_contact_exchange" ? "1:1 소개팅 보기" : "마이페이지"}
+            {productType === "one_on_one_contact_exchange" || productType === "one_on_one_priority_24h" ? "1:1 소개팅 보기" : "마이페이지"}
           </Link>
         </div>
       </section>
