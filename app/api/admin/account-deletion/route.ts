@@ -13,10 +13,7 @@ type TargetUser = {
   nickname: string | null;
 };
 
-async function resolveTargetUser(
-  admin: SupabaseClient,
-  identifier: string
-): Promise<TargetUser | null> {
+async function resolveTargetUser(admin: SupabaseClient, identifier: string): Promise<TargetUser | null> {
   const trimmed = identifier.trim();
   if (!trimmed) return null;
 
@@ -38,11 +35,7 @@ async function resolveTargetUser(
     const authUserRes = await admin.schema("auth").from("users").select("id,email").ilike("email", trimmed).maybeSingle();
     if (authUserRes.error || !authUserRes.data) return null;
 
-    const profileRes = await admin
-      .from("profiles")
-      .select("user_id,nickname")
-      .eq("user_id", String(authUserRes.data.id))
-      .maybeSingle();
+    const profileRes = await admin.from("profiles").select("user_id,nickname").eq("user_id", String(authUserRes.data.id)).maybeSingle();
 
     return {
       id: String(authUserRes.data.id),

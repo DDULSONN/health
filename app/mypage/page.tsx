@@ -1342,6 +1342,13 @@ type AdminAccountDeletionAudit = {
   retention_until: string;
 };
 
+type AdminAccountDeletionAuditsResponse = {
+  ok?: boolean;
+  error?: string;
+  fallbackUsed?: boolean;
+  items?: AdminAccountDeletionAudit[];
+};
+
 type MyCertificate = {
   id: string;
   certificate_no: string;
@@ -1598,6 +1605,7 @@ export default function MyPage() {
   const [adminPaymentCenterLoading, setAdminPaymentCenterLoading] = useState(false);
   const [adminPaymentCenterError, setAdminPaymentCenterError] = useState("");
   const [adminAccountDeletionAudits, setAdminAccountDeletionAudits] = useState<AdminAccountDeletionAudit[]>([]);
+  const [adminAccountDeletionAuditError, setAdminAccountDeletionAuditError] = useState("");
   const [adminCityViewSearch, setAdminCityViewSearch] = useState("");
   const [adminMoreViewGrantQuery, setAdminMoreViewGrantQuery] = useState("");
   const [adminMoreViewGrantSex, setAdminMoreViewGrantSex] = useState<"male" | "female">("male");
@@ -3121,10 +3129,7 @@ export default function MyPage() {
               error?: string;
               items?: AdminCityViewRequest[];
             };
-            const accountDeletionAuditsBody = (await accountDeletionAuditsRes.json().catch(() => ({}))) as {
-              error?: string;
-              items?: AdminAccountDeletionAudit[];
-            };
+            const accountDeletionAuditsBody = (await accountDeletionAuditsRes.json().catch(() => ({}))) as AdminAccountDeletionAuditsResponse;
             if (!datingStatsRes.ok) {
               console.error("[mypage] admin dating stats load failed", datingStatsBody);
             }
@@ -3154,9 +3159,8 @@ export default function MyPage() {
               setAdminApplyCreditOrders(ordersRes.ok ? ordersBody.items ?? [] : []);
               setAdminMoreViewRequests(moreViewRes.ok ? moreViewBody.items ?? [] : []);
               setAdminCityViewRequests(cityViewRes.ok ? cityViewBody.items ?? [] : []);
-              setAdminAccountDeletionAudits(
-                accountDeletionAuditsRes.ok ? accountDeletionAuditsBody.items ?? [] : []
-              );
+              setAdminAccountDeletionAudits(accountDeletionAuditsRes.ok ? accountDeletionAuditsBody.items ?? [] : []);
+              setAdminAccountDeletionAuditError(accountDeletionAuditsRes.ok ? "" : accountDeletionAuditsBody.error ?? "탈퇴 기록을 불러오지 못했습니다.");
             }
           } else {
             setAdminDatingStats(null);
@@ -3176,6 +3180,7 @@ export default function MyPage() {
             setAdminMoreViewRequests([]);
             setAdminCityViewRequests([]);
             setAdminAccountDeletionAudits([]);
+            setAdminAccountDeletionAuditError("");
           }
         }
       } catch (e) {
@@ -5756,11 +5761,12 @@ export default function MyPage() {
       setAdminDeleteIdentifier("");
 
       const auditsRes = await fetch("/api/admin/account-deletion-audits", { cache: "no-store" });
-      const auditsBody = (await auditsRes.json().catch(() => ({}))) as {
-        items?: AdminAccountDeletionAudit[];
-      };
+      const auditsBody = (await auditsRes.json().catch(() => ({}))) as AdminAccountDeletionAuditsResponse;
       if (auditsRes.ok) {
         setAdminAccountDeletionAudits(auditsBody.items ?? []);
+        setAdminAccountDeletionAuditError("");
+      } else {
+        setAdminAccountDeletionAuditError(auditsBody.error ?? "탈퇴 기록을 다시 불러오지 못했습니다.");
       }
     } catch (err) {
       setAdminDeleteError(err instanceof Error ? err.message : "관리자 탈퇴 처리에 실패했습니다.");
@@ -11958,7 +11964,7 @@ export default function MyPage() {
             <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
               <p className="text-xs font-semibold text-violet-800">최근 회원 탈퇴 기록 {adminAccountDeletionAudits.length}건</p>
               <p className="mt-1 text-[11px] text-neutral-500">
-                관리자만 볼 수 있는 최소 감사기록입니다. 최근 100건만 표시되며, 기본 보관 기간은 90일입니다.
+                관리자만 볼 수 있는 최소 감사기록입니다. 최근 100건만 표시되며, 기본 보관 기간은 30일입니다.
               </p>
               <div className="mt-3 rounded-lg border border-violet-100 bg-violet-50/40 p-3">
                 <p className="text-xs font-semibold text-violet-800">관리자 수동 탈퇴</p>
@@ -11985,6 +11991,11 @@ export default function MyPage() {
                 {adminDeleteError && <p className="mt-2 text-xs text-rose-600">{adminDeleteError}</p>}
                 {adminDeleteInfo && <p className="mt-2 text-xs text-emerald-700">{adminDeleteInfo}</p>}
               </div>
+              {adminAccountDeletionAuditError && (
+                <p className="mt-3 rounded-lg border border-rose-100 bg-rose-50 px-3 py-2 text-xs text-rose-700">
+                  {adminAccountDeletionAuditError}
+                </p>
+              )}
               {adminAccountDeletionAudits.length === 0 ? (
                 <p className="mt-3 text-xs text-neutral-500">최근 탈퇴 기록이 없습니다.</p>
               ) : (

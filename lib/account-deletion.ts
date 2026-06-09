@@ -31,12 +31,7 @@ export function getRequestIp(req: Request) {
     if (firstIp) return firstIp;
   }
 
-  return (
-    req.headers.get("cf-connecting-ip") ??
-    req.headers.get("x-real-ip") ??
-    req.headers.get("x-vercel-forwarded-for") ??
-    null
-  );
+  return req.headers.get("cf-connecting-ip") ?? req.headers.get("x-real-ip") ?? req.headers.get("x-vercel-forwarded-for") ?? null;
 }
 
 export function getAccountDeletionConfigError() {
@@ -80,9 +75,7 @@ async function insertDeletionAudit(
     user_agent: payload.user_agent ?? null,
     deletion_mode: payload.deletion_mode,
     initiated_by_user_id:
-      payload.initiated_by_user_id && payload.initiated_by_user_id !== payload.auth_user_id
-        ? payload.initiated_by_user_id
-        : null,
+      payload.initiated_by_user_id && payload.initiated_by_user_id !== payload.auth_user_id ? payload.initiated_by_user_id : null,
     initiated_by_role: payload.initiated_by_role ?? "self",
   });
 
@@ -101,16 +94,7 @@ export async function performAccountDeletion(params: {
   initiatedByUserId?: string | null;
   initiatedByRole?: InitiatedByRole;
 }) {
-  const {
-    admin,
-    userId,
-    email,
-    nickname: nicknameInput,
-    ipAddress,
-    userAgent,
-    initiatedByUserId,
-    initiatedByRole = "self",
-  } = params;
+  const { admin, userId, email, nickname: nicknameInput, ipAddress, userAgent, initiatedByUserId, initiatedByRole = "self" } = params;
 
   let nickname = nicknameInput ?? null;
 
