@@ -3,7 +3,7 @@ export const OPEN_CARD_LIMIT_FEMALE = 30;
 export const OPEN_CARD_SATURDAY_LIMIT_MALE = 30;
 export const OPEN_CARD_SATURDAY_LIMIT_FEMALE = 30;
 export const OPEN_CARD_EXPIRE_HOURS = 24;
-export const OPEN_CARD_AUTO_REQUEUE_LIMIT = 1;
+export const OPEN_CARD_AUTO_REQUEUE_LIMIT = 2;
 
 const KST_OFFSET_MS = 9 * 60 * 60 * 1000;
 

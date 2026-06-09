@@ -249,7 +249,6 @@ async function requeueExpiredCardsOnce(
     };
   }
 
-  const cardIds = rows.map((row) => row.id);
   const requeueIdSet = new Set(
     rows
       .filter((row) => Number(row.auto_requeue_count ?? 0) < OPEN_CARD_AUTO_REQUEUE_LIMIT)
