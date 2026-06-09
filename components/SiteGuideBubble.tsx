@@ -56,40 +56,24 @@ function buildSuggestions(input: {
   hasOneOnOneActive: boolean;
   canApplyOneOnOne: boolean;
 }) {
-  const {
-    pathname,
-    loggedIn,
-    phoneVerified,
-    swipeVisible,
-    hasAnyOpenCard,
-    hasPendingOpenCard,
-    hasPublicOpenCard,
-    hasOneOnOneActive,
-    canApplyOneOnOne,
-  } = input;
+  const { pathname, loggedIn, phoneVerified, swipeVisible, hasAnyOpenCard, hasPendingOpenCard, hasPublicOpenCard, hasOneOnOneActive, canApplyOneOnOne } =
+    input;
 
   if (loggedIn === false) {
     return [
       {
         id: "guest-open-card",
-        title: "처음 오셨다면 오픈카드부터 열어보세요",
-        body: "짐냥이가 보기엔 여기서 시작하는 게 제일 편해요. 먼저 둘러보면 전체 흐름이 금방 잡혀요.",
+        title: "처음이라면 오픈카드부터 둘러보세요",
+        body: "지원하거나 내 카드를 공개하는 흐름을 가장 빨리 볼 수 있어요.",
         href: "/community/dating/cards",
         cta: "오픈카드 보기",
       },
       {
-        id: "guest-browse",
-        title: "가볍게 둘러보다가 마음에 들면 시작해도 늦지 않아요",
-        body: "빠른매칭, 1:1 소개팅, 이상형 더보기까지 어떤 느낌인지 먼저 보고 감을 잡아보세요.",
-        href: "/community/dating/cards",
-        cta: "먼저 둘러보기",
-      },
-      {
-        id: "guest-bodycheck",
-        title: "커뮤니티 몸평 설문도 한 번 참여해보세요",
-        body: "운동하는 사람들 분위기를 가볍게 느끼고 싶다면 몸평 피드부터 보는 것도 꽤 재밌어요.",
-        href: "/community/bodycheck",
-        cta: "몸평 보러가기",
+        id: "guest-1on1",
+        title: "1:1 소개팅은 후보를 보고 시작할 수 있어요",
+        body: "마음에 드는 후보에게 신청하고, 서로 수락되면 연결돼요.",
+        href: "/dating/1on1",
+        cta: "1:1 보기",
       },
     ] satisfies GuideSuggestion[];
   }
@@ -97,29 +81,13 @@ function buildSuggestions(input: {
   const suggestions: GuideSuggestion[] = [];
 
   if (!hasAnyOpenCard) {
-    suggestions.push(
-      {
-        id: "open-card-first",
-        title: "오픈카드부터 열어두면 시작이 훨씬 쉬워져요",
-        body: "카드를 먼저 만들어두면 먼저 지원을 받을 수도 있고, 직접 둘러보며 연결을 시작하기도 편해져요.",
-        href: "/community/dating/cards/new",
-        cta: "오픈카드 작성",
-      },
-      {
-        id: "open-card-benefit",
-        title: "처음 시작은 오픈카드가 제일 무난해요",
-        body: "오픈카드를 등록·유지하면 매주 원하는 지역 1곳을 무료로 열어볼 수 있어서 가까운 이상형 보기에도 좋아요.",
-        href: "/community/dating/cards/new",
-        cta: "지금 등록하기",
-      },
-      {
-        id: "open-card-romance",
-        title: "운동이라는 공통점으로 시작하면 대화가 더 자연스러워요",
-        body: "가볍게 연결을 열어두고 싶다면 오픈카드가 가장 부담 없는 시작점이 될 수 있어요.",
-        href: "/community/dating/cards/new",
-        cta: "가볍게 시작하기",
-      }
-    );
+    suggestions.push({
+      id: "open-card-first",
+      title: "오픈카드를 만들면 지원받고 직접 지원할 수 있어요",
+      body: "사진 블러도 선택할 수 있어서 부담을 줄이고 시작하기 좋아요.",
+      href: "/community/dating/cards/new",
+      cta: "오픈카드 작성",
+    });
   }
 
   if (hasPendingOpenCard) {
@@ -127,30 +95,16 @@ function buildSuggestions(input: {
       {
         id: "pending-card",
         title: "오픈카드가 준비 중이에요",
-        body: "공개 전까지 조금만 기다려주세요. 그 사이 빠른매칭이나 1:1 소개팅을 같이 둘러보면 더 감이 빨리 와요.",
-        href: "/community/dating/cards",
-        cta: "빠른매칭 보기",
-      },
-      {
-        id: "pending-mypage",
-        title: "지금 상태는 마이페이지에서 가장 빨리 보여요",
-        body: "대기 중인 카드와 들어온 반응은 마이페이지에서 한 번에 볼 수 있어요. 흐름 정리할 때 제일 편해요.",
+        body: "공개 상태와 들어온 반응은 마이페이지에서 가장 빨리 확인할 수 있어요.",
         href: "/mypage",
-        cta: "마이페이지 가기",
+        cta: "상태 확인",
       },
       {
-        id: "pending-paid-fast",
-        title: "짐냥이가 보기엔 빨리 공개하고 싶다면 대기 없이 등록이 잘 맞아요",
-        body: "심사 대기 없이 바로 공개하고 싶을 때는 유료 카드 쪽이 훨씬 시원하게 이어져요.",
+        id: "pending-paid",
+        title: "바로 공개하고 싶다면 대기 없이 등록할 수 있어요",
+        body: "지금 공개 타이밍을 놓치고 싶지 않을 때만 선택하면 돼요.",
         href: "/dating/paid",
-        cta: "대기 없이 등록 보기",
-      },
-      {
-        id: "pending-paid-top",
-        title: "기다리는 동안 고민된다면 상단 고정도 같이 볼 만해요",
-        body: "그냥 기다리기보다 더 잘 보이게 올리는 쪽이 지금 타이밍엔 더 잘 맞을 수도 있어요.",
-        href: "/dating/paid",
-        cta: "유료 카드 보기",
+        cta: "대기 없이 등록",
       }
     );
   }
@@ -159,52 +113,17 @@ function buildSuggestions(input: {
     suggestions.push(
       {
         id: "public-card-status",
-        title: "지금 카드가 공개 중이에요",
-        body: "들어온 지원이 있는지 먼저 확인해보세요. 기다리기만 하지 말고 직접 둘러보는 것도 꽤 좋아요.",
+        title: "오픈카드가 공개 중이에요",
+        body: "들어온 지원은 오래 두기보다 수락 또는 거절해두면 상대도 흐름을 알기 쉬워요.",
         href: "/mypage",
-        cta: "지원 확인하기",
+        cta: "지원 확인",
       },
       {
-        id: "public-card-fastmatch",
-        title: "이제 빠른매칭도 같이 보는 타이밍이에요",
-        body: "오픈카드가 열려 있다면 빠른매칭을 함께 쓰는 게 연결 기회를 넓히는 데 도움이 돼요.",
-        href: "/community/dating/cards",
-        cta: "빠른매칭 보기",
-      },
-      {
-        id: "public-card-more-view",
-        title: "더 넓게 보고 싶다면 이상형 더보기도 괜찮아요",
-        body: "지금 보이는 카드가 조금 아쉽다면 더 넓게 둘러보면서 마음에 드는 사람을 찾기 쉬워져요.",
-        href: "/dating/more-view",
-        cta: "이상형 더보기",
-      },
-      {
-        id: "public-card-nearby",
-        title: "가까운 지역부터 보면 실제 연결까지 이어지기 더 편해요",
-        body: "생활권이 비슷한 사람부터 보는 게 의외로 잘 맞을 때가 많아요. 가까운 이상형도 함께 열어보세요.",
-        href: "/dating/nearby-view",
-        cta: "가까운 이상형 보기",
-      },
-      {
-        id: "public-card-paid",
-        title: "노출을 더 강하게 올리고 싶다면 유료 카드도 있어요",
-        body: "대기 없이 등록하거나 상단 고정으로 올리면 일반 카드보다 눈에 띄기 쉬워요.",
+        id: "public-card-reopen",
+        title: "반응이 적었다면 다시 노출도 확인해보세요",
+        body: "지원이 적게 들어온 카드는 마이페이지에서 재노출 안내가 뜰 수 있어요.",
         href: "/dating/paid",
-        cta: "유료 카드 보기",
-      },
-      {
-        id: "public-card-credits",
-        title: "마음에 드는 사람에게 더 자주 지원하고 싶다면 지원권도 챙겨보세요",
-        body: "기본 지원 횟수 외에 조금 더 적극적으로 보고 싶을 때 꽤 유용해요.",
-        href: "/dating/apply-credits",
-        cta: "지원권 보기",
-      },
-      {
-        id: "public-card-bodycheck",
-        title: "커뮤니티 몸평 설문도 가끔 들러보세요",
-        body: "운동하는 사람들 분위기를 익히고 싶거나 가볍게 참여하고 싶다면 몸평 피드가 생각보다 재밌어요.",
-        href: "/community/bodycheck",
-        cta: "몸평 보러가기",
+        cta: "노출 옵션 보기",
       }
     );
   }
@@ -220,51 +139,33 @@ function buildSuggestions(input: {
   }
 
   if (hasPublicOpenCard && swipeVisible) {
-    suggestions.push(
-      {
-        id: "swipe-plus",
-        title: "오늘 더 넉넉하게 보고 싶다면 빠른매칭 플러스도 있어요",
-        body: "기본보다 더 많이 보고 싶을 때 선택지만 넓혀주는 느낌이라, 필요한 날에만 열어도 충분해요.",
-        href: "/community/dating/cards",
-        cta: "플러스 보기",
-      },
-      {
-        id: "swipe-bodycheck",
-        title: "빠른매칭만 보지 말고 몸평 설문도 한 번 참여해보세요",
-        body: "분위기 환기용으로 가볍게 보기 좋고, 커뮤니티 쪽 온도도 같이 느껴볼 수 있어요.",
-        href: "/community/bodycheck",
-        cta: "설문 참여하기",
-      }
-    );
+    suggestions.push({
+      id: "swipe-plus",
+      title: "빠른매칭은 오늘 후보를 더 볼 때 좋아요",
+      body: "오픈카드가 공개 중이면 빠른매칭과 함께 쓰기 편해요.",
+      href: "/community/dating/cards",
+      cta: "빠른매칭 보기",
+    });
   }
 
   if (!phoneVerified) {
     suggestions.push({
       id: "phone-verify",
-      title: "휴대폰 인증은 미리 해두면 편해요",
-      body: "1:1 소개팅이나 다른 연결 기능을 쓸 때 훨씬 자연스럽게 이어져요. 필요할 때 급하게 하지 않아도 돼요.",
+      title: "지원 전에 휴대폰 인증을 해두면 좋아요",
+      body: "오픈카드 지원과 1:1 소개팅을 더 매끄럽게 이용할 수 있어요.",
       href: "/mypage",
-      cta: "인증하러 가기",
+      cta: "인증하기",
     });
   }
 
-  if (hasPublicOpenCard && !hasOneOnOneActive && canApplyOneOnOne) {
-    suggestions.push(
-      {
-        id: "try-1on1",
-        title: "조금 더 진지하게 보고 싶다면 1:1 소개팅도 잘 맞아요",
-        body: "후보를 보고 신청한 뒤 서로 수락되면 연결이 이어져요. 오픈카드와는 다른 흐름이라 같이 쓰는 분들도 많아요.",
-        href: "/dating/1on1",
-        cta: "1:1 소개팅 보기",
-      },
-      {
-        id: "try-1on1-flow",
-        title: "차분하게 보고 결정하고 싶을 땐 1:1이 편해요",
-        body: "후보를 보고 판단하는 쪽이 더 맞다면 이 방식이 마음에 들 수 있어요.",
-        href: "/dating/1on1",
-        cta: "후보 흐름 보기",
-      }
-    );
+  if (!hasOneOnOneActive && canApplyOneOnOne) {
+    suggestions.push({
+      id: "try-1on1",
+      title: "1:1 소개팅은 기다림 없이 후보부터 볼 수 있어요",
+      body: "마음에 드는 후보를 고르고, 서로 수락되면 연결이 진행돼요.",
+      href: "/dating/1on1",
+      cta: "1:1 후보 보기",
+    });
   }
 
   if (hasOneOnOneActive) {
@@ -272,16 +173,16 @@ function buildSuggestions(input: {
       {
         id: "1on1-active",
         title: "진행 중인 1:1 소개팅이 있어요",
-        body: "후보 확인, 수락, 번호 교환 상태는 마이페이지에서 가장 빨리 확인할 수 있어요.",
+        body: "후보 확인, 수락, 번호 교환 상태는 마이페이지에서 바로 볼 수 있어요.",
         href: "/mypage",
         cta: "진행 상황 보기",
       },
       {
-        id: "1on1-payment",
-        title: "좋은 분위기라면 즉시 번호 교환으로 이어질 수도 있어요",
-        body: "쌍방 매칭이 되면 필요한 순간 바로 교환 흐름으로 넘어갈 수 있어요.",
+        id: "1on1-boost",
+        title: "더 먼저 보이고 싶다면 1:1 우선 추천도 있어요",
+        body: "필요한 기간에만 켜두는 방식이라 마이페이지에서 간단히 확인할 수 있어요.",
         href: "/mypage",
-        cta: "번호 교환 확인",
+        cta: "우선 추천 보기",
       }
     );
   }
@@ -289,35 +190,35 @@ function buildSuggestions(input: {
   if (pathname.startsWith("/community/bodycheck")) {
     suggestions.unshift({
       id: "route-bodycheck",
-      title: "몸평 피드는 가볍게 참여하기 좋은 커뮤니티예요",
-      body: "사진 보고 바로 투표하거나, 마음에 들면 직접 글도 올려보세요. 분위기 파악용으로도 좋아요.",
-      href: "/community/bodycheck/write",
-      cta: "몸평글 쓰기",
+      title: "연결 기능은 오픈카드와 1:1에서 시작할 수 있어요",
+      body: "커뮤니티는 가볍게 보고, 실제 매칭은 오픈카드와 1:1에서 이어가면 돼요.",
+      href: "/community/dating/cards",
+      cta: "오픈카드 보기",
     });
   } else if (pathname.startsWith("/community/write")) {
     suggestions.unshift({
       id: "route-community-write",
-      title: "몸평글을 올리면 더 많은 반응을 받을 수 있어요",
-      body: "가볍게 참여해도 좋고, 몸평 설문에 꾸준히 보이는 사람은 커뮤니티에서 존재감이 생겨요.",
-      href: "/community/bodycheck",
-      cta: "몸평 피드 보기",
+      title: "작성 후에는 오픈카드도 같이 열어두면 좋아요",
+      body: "커뮤니티 반응과 매칭 흐름을 함께 만들 수 있어요.",
+      href: "/community/dating/cards/new",
+      cta: "오픈카드 작성",
     });
   } else if (pathname.startsWith("/community/dating/cards")) {
     suggestions.unshift(
       hasAnyOpenCard
         ? {
             id: "route-cards-live",
-            title: "여기는 카드 둘러보기와 빠른매칭을 같이 보기 좋은 곳이에요",
-            body: "내 카드 관리나 지원 확인은 마이페이지에서, 새 연결 찾기는 여기서 이어보면 흐름이 편해요.",
+            title: "오픈카드 반응은 마이페이지에서 확인하면 빨라요",
+            body: "여기서는 둘러보고, 들어온 지원 처리는 마이페이지에서 이어가면 돼요.",
             href: "/mypage",
-            cta: "내 상태 확인",
+            cta: "지원 확인",
           }
         : {
             id: "route-cards-start",
-            title: "여기서 오픈카드부터 시작하면 가장 편해요",
-            body: "카드를 먼저 열어두면 다른 기능도 이어붙이기 쉬워요. 짐냥이는 이 순서를 제일 추천할게요.",
+            title: "오픈카드를 만들면 바로 지원 흐름을 시작할 수 있어요",
+            body: "사진 블러 선택도 가능해서 부담을 줄이고 공개할 수 있어요.",
             href: "/community/dating/cards/new",
-            cta: "카드 만들기",
+            cta: "오픈카드 작성",
           }
     );
   } else if (pathname.startsWith("/dating/1on1")) {
@@ -325,17 +226,17 @@ function buildSuggestions(input: {
       hasOneOnOneActive
         ? {
             id: "route-1on1-active",
-            title: "1:1 진행 상태는 마이페이지에서 보는 게 제일 빨라요",
-            body: "여기서는 흐름을 보고, 실제 수락이나 번호 교환 상태는 마이페이지에서 확인하면 편해요.",
+            title: "1:1 진행 상태는 마이페이지에서 확인하세요",
+            body: "수락, 번호 교환, 우선 추천 상태까지 한 번에 볼 수 있어요.",
             href: "/mypage",
-            cta: "마이페이지로 가기",
+            cta: "진행 상황 보기",
           }
         : {
             id: "route-1on1-intro",
-            title: "1:1은 후보를 보고 천천히 결정하는 방식이에요",
-            body: "서로 수락되면 연결이 이어져요. 생각보다 복잡하지 않아서 천천히 보기 좋아요.",
+            title: "1:1은 기다림 없이 후보를 보고 시작해요",
+            body: "마음에 드는 후보에게 신청하고 서로 수락되면 연결돼요.",
             href: "/dating/1on1",
-            cta: "안내 더 보기",
+            cta: "후보 보기",
           }
     );
   } else if (pathname.startsWith("/dating/more-view")) {
@@ -357,22 +258,22 @@ function buildSuggestions(input: {
   } else if (pathname.startsWith("/dating/paid")) {
     suggestions.unshift({
       id: "route-paid",
-      title: "유료 카드는 노출을 더 강하게 올리고 싶을 때 쓰면 돼요",
-      body: "상단 고정이나 대기 없이 등록처럼 눈에 띄는 방식이 필요할 때 꽤 확실해요.",
+      title: "필요할 때만 노출 옵션을 쓰면 돼요",
+      body: "대기 없이 등록, 상단 고정, 재노출처럼 상황에 맞게 고를 수 있어요.",
       href: "/dating/paid",
-      cta: "유료 카드 보기",
+      cta: "옵션 보기",
     });
   } else if (pathname.startsWith("/mypage")) {
     suggestions.unshift({
       id: "route-mypage",
-      title: "지금 필요한 건 마이페이지에 모여 있어요",
-      body: "지원, 매칭, 결제 내역까지 여기서 가장 빠르게 확인할 수 있어요.",
+      title: "지원과 1:1 진행 상태는 여기서 확인하면 돼요",
+      body: "수락할 지원이 있거나 진행 중인 매칭이 있으면 먼저 확인해보세요.",
       href: "/mypage",
-      cta: "여기서 확인하기",
+      cta: "상태 확인",
     });
   }
 
-  return suggestions.slice(0, 16);
+  return suggestions.slice(0, 3);
 }
 
 export default function SiteGuideBubble() {
@@ -573,7 +474,7 @@ export default function SiteGuideBubble() {
 
             <p className="mt-2 text-[12px] leading-5 text-neutral-700">
               {loading
-                ? "오픈카드, 빠른매칭, 1:1 소개팅, 커뮤니티 중에서 지금 가장 잘 맞는 다음 행동을 골라드릴게요."
+                ? "오픈카드와 1:1 소개팅 중에서 지금 가장 자연스러운 다음 행동을 골라드릴게요."
                 : activeSuggestion?.body}
             </p>
 
