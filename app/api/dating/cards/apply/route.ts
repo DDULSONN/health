@@ -10,6 +10,7 @@ import { sendExpoPushToUser } from "@/lib/expo-push";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
+import { getUserBanResponse } from "@/lib/user-ban-guard";
 import { NextResponse } from "next/server";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
@@ -243,6 +244,10 @@ export async function POST(req: Request) {
       return jsonResponse(401, "UNAUTHORIZED", requestId, "????癲???饔낅떽???????깃묄???????獄쏅챶留????轅붽틓??????");
     }
 
+    const adminClient = createAdminClient();
+    const banResponse = await getUserBanResponse(adminClient, userId);
+    if (banResponse) return banResponse;
+
     body = await req.json().catch(() => null);
     console.log(`[apply] ${requestId} L3 body.received`, {
       userId,
@@ -315,7 +320,6 @@ export async function POST(req: Request) {
       });
     }
 
-    const adminClient = createAdminClient();
     const cardRes = await adminClient
       .from("dating_cards")
       .select("id, owner_user_id, status, expires_at, sex, region, instagram_id")
@@ -740,7 +744,6 @@ export async function POST(req: Request) {
     return jsonResponse(500, "INTERNAL_SERVER_ERROR", requestId, "?耀붾굝????????耀붾굝????鶯ㅺ동??筌믡룓愿???????????쇨덫??????ル뒌?? ?????밸븶筌믩끃???ル봿留싷┼??돘????????????????곸죩.", undefined, dbError);
   }
 }
-
 
 
 

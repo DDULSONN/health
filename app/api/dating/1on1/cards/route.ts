@@ -8,6 +8,7 @@ import {
 } from "@/lib/dating-1on1";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
+import { getUserBanResponse } from "@/lib/user-ban-guard";
 import { NextResponse } from "next/server";
 
 type InputPayload = {
@@ -220,6 +221,9 @@ export async function POST(req: Request) {
   }
 
   const admin = createAdminClient();
+  const banResponse = await getUserBanResponse(admin, user.id);
+  if (banResponse) return banResponse;
+
   const writeStatus = await getDatingOneOnOneWriteStatus(admin);
   if (writeStatus !== "approved") {
     return NextResponse.json({ error: "Writing is paused." }, { status: 403 });

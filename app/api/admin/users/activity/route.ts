@@ -96,7 +96,7 @@ async function findAuthUserByPhone(admin: AdminClient, phone: string) {
 async function fetchProfile(admin: AdminClient, userId: string) {
   const res = await admin
     .from("profiles")
-    .select("user_id,nickname,role,phone_verified,phone_e164,phone_verified_at,swipe_profile_visible,created_at")
+    .select("user_id,nickname,role,phone_verified,phone_e164,phone_verified_at,swipe_profile_visible,is_banned,banned_reason,banned_at,created_at")
     .eq("user_id", userId)
     .maybeSingle();
   return res.data ?? null;
@@ -132,7 +132,7 @@ async function findUserCandidatesByNickname(admin: AdminClient, query: string) {
   const profileRows = await listSafe<Record<string, unknown>>(
     admin
       .from("profiles")
-      .select("user_id,nickname,role,phone_verified,phone_e164,phone_verified_at,swipe_profile_visible,created_at")
+      .select("user_id,nickname,role,phone_verified,phone_e164,phone_verified_at,swipe_profile_visible,is_banned,banned_reason,banned_at,created_at")
       .ilike("nickname", pattern)
       .limit(10)
   );
@@ -249,7 +249,7 @@ async function findUserCandidateByProfilePhone(admin: AdminClient, phone: string
   const rows = await listSafe<Record<string, unknown>>(
     admin
       .from("profiles")
-      .select("user_id,nickname,role,phone_verified,phone_e164,phone_verified_at,swipe_profile_visible,created_at")
+      .select("user_id,nickname,role,phone_verified,phone_e164,phone_verified_at,swipe_profile_visible,is_banned,banned_reason,banned_at,created_at")
       .ilike("phone_e164", ilikePattern(normalizedPhone))
       .limit(1)
   );

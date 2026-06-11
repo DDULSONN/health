@@ -1,6 +1,7 @@
 ﻿import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { ensureBlurThumbFromRaw } from "@/lib/dating-blur-thumb";
+import { getUserBanResponse } from "@/lib/user-ban-guard";
 import { NextResponse } from "next/server";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 type CreateBody = {
@@ -178,6 +179,10 @@ export async function POST(req: Request) {
       return json(401, { ok: false, code: "UNAUTHORIZED", requestId, message: "로그인이 필요합니다." });
     }
 
+    const adminClient = createAdminClient();
+    const banResponse = await getUserBanResponse(adminClient, user.id);
+    if (banResponse) return banResponse;
+
     const body = ((await req.json().catch(() => null)) ?? {}) as CreateBody;
     const parsed = parsePayload(body);
     const {
@@ -208,7 +213,6 @@ export async function POST(req: Request) {
       return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "사진 경로가 올바르지 않습니다." });
     }
 
-    const adminClient = createAdminClient();
     const profileRes = await adminClient
       .from("profiles")
       .select("nickname")

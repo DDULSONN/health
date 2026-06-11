@@ -28,6 +28,12 @@ type OneOnOneStatusResponse = {
   activeRequestStatus?: string | null;
 };
 
+type SiteGuideMascotResponse = {
+  selected?: {
+    src?: string;
+  };
+};
+
 type GuideSuggestion = {
   id: string;
   title: string;
@@ -39,6 +45,7 @@ type GuideSuggestion = {
 const HIDDEN_PATH_PREFIXES = ["/payments/success", "/payments/fail", "/account-deletion", "/login", "/signup", "/auth"];
 const COLLAPSE_STORAGE_KEY = "site-guide-collapsed";
 const POSITION_STORAGE_KEY = "site-guide-position";
+const DEFAULT_MASCOT_SRC = "/mascot/jimnyang-guide-v2.png";
 
 type GuidePosition = {
   x: number;
@@ -296,6 +303,7 @@ export default function SiteGuideBubble() {
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [openCards, setOpenCards] = useState<OpenCardItem[]>([]);
   const [oneOnOne, setOneOnOne] = useState<OneOnOneStatusResponse | null>(null);
+  const [mascotSrc, setMascotSrc] = useState(DEFAULT_MASCOT_SRC);
 
   useEffect(() => {
     try {
@@ -368,6 +376,28 @@ export default function SiteGuideBubble() {
       cancelled = true;
     };
   }, [pathname]);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    async function loadMascot() {
+      try {
+        const res = await fetch("/api/site-guide/mascot", { cache: "no-store" });
+        const body = (await res.json().catch(() => ({}))) as SiteGuideMascotResponse;
+        const nextSrc = body.selected?.src;
+        if (!cancelled && res.ok && typeof nextSrc === "string" && nextSrc.startsWith("/mascot/")) {
+          setMascotSrc(nextSrc);
+        }
+      } catch {
+        if (!cancelled) setMascotSrc(DEFAULT_MASCOT_SRC);
+      }
+    }
+
+    void loadMascot();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const suggestions = useMemo(() => {
     const safePathname = pathname ?? "";
@@ -527,7 +557,7 @@ export default function SiteGuideBubble() {
             <div className="absolute inset-x-6 bottom-1 h-5 rounded-full bg-black/10 blur-md" />
             <div className="absolute inset-0 overflow-hidden rounded-[32px]">
               <Image
-                src="/mascot/jimnyang-guide-v2.png"
+                src={mascotSrc}
                 alt="짐냥이"
                 fill
                 className="object-cover object-center"

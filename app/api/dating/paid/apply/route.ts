@@ -4,6 +4,7 @@ import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
 import { NextResponse } from "next/server";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
+import { getUserBanResponse } from "@/lib/user-ban-guard";
 
 function normalizeInstagramId(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -83,6 +84,8 @@ export async function POST(req: Request) {
     }
 
     const adminClient = createAdminClient();
+    const banResponse = await getUserBanResponse(adminClient, user.id);
+    if (banResponse) return banResponse;
 
     const body = await req.json().catch(() => null);
     if (!body) {

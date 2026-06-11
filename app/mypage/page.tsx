@@ -861,6 +861,9 @@ type AdminUserActivityResult = {
       phone_e164?: string | null;
       phone_verified_at?: string | null;
       swipe_profile_visible?: boolean | null;
+      is_banned?: boolean | null;
+      banned_reason?: string | null;
+      banned_at?: string | null;
     } | null;
   } | null;
   deleted_audits: Array<{
@@ -1435,6 +1438,18 @@ type ToolsPatchNoteResponse = {
   }>;
 };
 
+type SiteGuideMascotOption = {
+  id: string;
+  label: string;
+  src: string;
+};
+
+type SiteGuideMascotResponse = {
+  selectedId?: string;
+  selected?: SiteGuideMascotOption;
+  options?: SiteGuideMascotOption[];
+};
+
 type AdminEmailUnsubscribeItem = {
   id: string;
   user_id: string;
@@ -1478,6 +1493,10 @@ type AdminReelsDatingApplication = {
 
 const DEFAULT_OPEN_CARD_HOME_SUBTITLE = "둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.";
 const DEFAULT_TOOLS_PATCH_NOTE_TEXT = "오늘의 개선 내용을 한 줄로 적어주세요.";
+const DEFAULT_SITE_GUIDE_MASCOT_OPTIONS: SiteGuideMascotOption[] = [
+  { id: "default", label: "기본 짐냥이", src: DEFAULT_JIMNYANG_MASCOT_SRC },
+  { id: "summer", label: "여름 짐냥이", src: "/mascot/jimnyang-summer.webp" },
+];
 const TOOLS_PATCH_NOTE_PRESETS = [
   "1:1 번호교환 승인 목록을 더 잘 보이게 개선했어요.",
   "도구 탭에서 새 소식을 확인할 수 있어요.",
@@ -1667,6 +1686,13 @@ export default function MyPage() {
   const [toolsPatchNoteSaving, setToolsPatchNoteSaving] = useState(false);
   const [toolsPatchNoteError, setToolsPatchNoteError] = useState("");
   const [toolsPatchNoteInfo, setToolsPatchNoteInfo] = useState("");
+  const [siteGuideMascotId, setSiteGuideMascotId] = useState("default");
+  const [siteGuideMascotOptions, setSiteGuideMascotOptions] = useState<SiteGuideMascotOption[]>(
+    DEFAULT_SITE_GUIDE_MASCOT_OPTIONS
+  );
+  const [siteGuideMascotSaving, setSiteGuideMascotSaving] = useState(false);
+  const [siteGuideMascotError, setSiteGuideMascotError] = useState("");
+  const [siteGuideMascotInfo, setSiteGuideMascotInfo] = useState("");
   const [adminEmailUnsubscribeQuery, setAdminEmailUnsubscribeQuery] = useState("");
   const [adminEmailUnsubscribeItems, setAdminEmailUnsubscribeItems] = useState<AdminEmailUnsubscribeItem[]>([]);
   const [adminEmailUnsubscribeLoading, setAdminEmailUnsubscribeLoading] = useState(false);
@@ -1719,6 +1745,10 @@ export default function MyPage() {
   const [adminNicknameSaving, setAdminNicknameSaving] = useState(false);
   const [adminNicknameError, setAdminNicknameError] = useState("");
   const [adminNicknameInfo, setAdminNicknameInfo] = useState("");
+  const [adminBanReason, setAdminBanReason] = useState("운영정책 위반");
+  const [adminBanSaving, setAdminBanSaving] = useState(false);
+  const [adminBanError, setAdminBanError] = useState("");
+  const [adminBanInfo, setAdminBanInfo] = useState("");
   const [adminRefundOrderId, setAdminRefundOrderId] = useState("");
   const [adminRefundReasonByOrderId, setAdminRefundReasonByOrderId] = useState<Record<string, string>>({});
   const [adminRefundAmountByOrderId, setAdminRefundAmountByOrderId] = useState<Record<string, string>>({});
@@ -2921,6 +2951,7 @@ export default function MyPage() {
           adInquiryRes,
           openCardHomeCopyRes,
           toolsPatchNoteRes,
+          siteGuideMascotRes,
         ] = await Promise.all([
           fetch("/api/mypage/summary", { cache: "no-store" }),
           fetch("/api/cert-requests", { cache: "no-store" }),
@@ -2942,6 +2973,7 @@ export default function MyPage() {
           fetch("/api/admin/site/ad-inquiry", { cache: "no-store" }),
           fetch("/api/admin/dating/cards/home-copy", { cache: "no-store" }),
           fetch("/api/admin/tools/patch-note", { cache: "no-store" }),
+          fetch("/api/admin/site-guide/mascot", { cache: "no-store" }),
         ]);
 
         const summaryBody = (await summaryRes.json().catch(() => ({}))) as SummaryResponse & {
@@ -3009,6 +3041,7 @@ export default function MyPage() {
         const adInquiryBody = (await adInquiryRes.json().catch(() => ({}))) as AdInquirySettingsResponse;
         const openCardHomeCopyBody = (await openCardHomeCopyRes.json().catch(() => ({}))) as OpenCardHomeCopyResponse;
         const toolsPatchNoteBody = (await toolsPatchNoteRes.json().catch(() => ({}))) as ToolsPatchNoteResponse;
+        const siteGuideMascotBody = (await siteGuideMascotRes.json().catch(() => ({}))) as SiteGuideMascotResponse;
 
         if (!summaryRes.ok) {
           throw new Error(summaryBody.error ?? "마이페이지 정보를 불러오지 못했습니다.");
@@ -3092,6 +3125,12 @@ export default function MyPage() {
           setToolsPatchNoteEnabled(toolsPatchNoteBody.enabled === true);
           setToolsPatchNoteText(toolsPatchNoteBody.text?.trim() ?? "");
           setToolsPatchNoteItems(Array.isArray(toolsPatchNoteBody.items) ? toolsPatchNoteBody.items : []);
+          setSiteGuideMascotId(siteGuideMascotBody.selectedId ?? "default");
+          setSiteGuideMascotOptions(
+            Array.isArray(siteGuideMascotBody.options) && siteGuideMascotBody.options.length > 0
+              ? siteGuideMascotBody.options
+              : DEFAULT_SITE_GUIDE_MASCOT_OPTIONS
+          );
           setError("");
 
           if (adminFlag) {
@@ -4671,6 +4710,40 @@ export default function MyPage() {
     }
   };
 
+  const handleAdminSaveSiteGuideMascot = async () => {
+    setSiteGuideMascotSaving(true);
+    setSiteGuideMascotError("");
+    setSiteGuideMascotInfo("");
+    try {
+      const res = await fetch("/api/admin/site-guide/mascot", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ selectedId: siteGuideMascotId }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        setting?: SiteGuideMascotResponse;
+      };
+      if (!res.ok || !body.ok || !body.setting) {
+        setSiteGuideMascotError(body.error ?? "짐냥이 설정 저장에 실패했습니다.");
+        return;
+      }
+
+      setSiteGuideMascotId(body.setting.selectedId ?? siteGuideMascotId);
+      setSiteGuideMascotOptions(
+        Array.isArray(body.setting.options) && body.setting.options.length > 0
+          ? body.setting.options
+          : siteGuideMascotOptions
+      );
+      setSiteGuideMascotInfo("짐냥이 이미지를 저장했습니다.");
+    } catch (e) {
+      setSiteGuideMascotError(e instanceof Error ? e.message : "짐냥이 설정 저장에 실패했습니다.");
+    } finally {
+      setSiteGuideMascotSaving(false);
+    }
+  };
+
   const resetAdminReelsDatingDraft = () => {
     setAdminReelsDatingEditingId("");
     setAdminReelsDatingDraft({ title: "", description: "", instagram_url: "", status: "active", sort_order: "0" });
@@ -5551,6 +5624,9 @@ export default function MyPage() {
       setAdminNicknameDraft(body.user?.profile?.nickname ?? "");
       setAdminNicknameError("");
       setAdminNicknameInfo("");
+      setAdminBanReason(body.user?.profile?.banned_reason?.trim() || "운영정책 위반");
+      setAdminBanError("");
+      setAdminBanInfo("");
       const pendingOpenCard = body.details?.open_cards?.find((item) => item.status === "pending");
       if (pendingOpenCard?.id) {
         setAdminQueueMoveCardId(String(pendingOpenCard.id));
@@ -5634,6 +5710,80 @@ export default function MyPage() {
       setAdminNicknameError(err instanceof Error ? err.message : "닉네임 변경에 실패했습니다.");
     } finally {
       setAdminNicknameSaving(false);
+    }
+  };
+
+  const handleAdminSetUserBan = async (banned: boolean) => {
+    const userId = adminUserActivityResult?.user?.id ?? "";
+    const nickname = adminUserActivityResult?.user?.profile?.nickname?.trim() || userId.slice(0, 8);
+    const reason = adminBanReason.trim().replace(/\s{2,}/g, " ");
+
+    setAdminBanError("");
+    setAdminBanInfo("");
+
+    if (!userId) {
+      setAdminBanError("먼저 회원을 조회해주세요.");
+      return;
+    }
+    if (banned && !reason) {
+      setAdminBanError("벤 사유를 입력해주세요.");
+      return;
+    }
+
+    const confirmMessage = banned
+      ? `${nickname} 계정을 벤 처리할까요? 공개/대기 중인 오픈카드와 유료카드는 비노출 처리됩니다.`
+      : `${nickname} 계정의 벤을 해제할까요? 비노출 처리된 카드는 자동 복구되지 않습니다.`;
+    if (!confirm(confirmMessage)) return;
+
+    setAdminBanSaving(true);
+    try {
+      const res = await fetch("/api/admin/users/ban", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, banned, reason }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        profile?: {
+          is_banned?: boolean | null;
+          banned_reason?: string | null;
+          banned_at?: string | null;
+        };
+        hiddenOpenCards?: number;
+        hiddenPaidCards?: number;
+      };
+
+      if (!res.ok || body.ok === false || !body.profile) {
+        throw new Error(body.error ?? "벤 상태 저장에 실패했습니다.");
+      }
+
+      setAdminUserActivityResult((prev) =>
+        prev?.user
+          ? {
+              ...prev,
+              user: {
+                ...prev.user,
+                profile: {
+                  ...(prev.user.profile ?? {}),
+                  is_banned: body.profile?.is_banned === true,
+                  banned_reason: body.profile?.banned_reason ?? null,
+                  banned_at: body.profile?.banned_at ?? null,
+                },
+              },
+            }
+          : prev
+      );
+      setAdminBanReason(body.profile.banned_reason?.trim() || "운영정책 위반");
+      setAdminBanInfo(
+        banned
+          ? `벤 처리 완료 · 오픈카드 ${Number(body.hiddenOpenCards ?? 0)}건, 유료카드 ${Number(body.hiddenPaidCards ?? 0)}건 비노출`
+          : "벤 해제 완료"
+      );
+    } catch (err) {
+      setAdminBanError(err instanceof Error ? err.message : "벤 상태 저장에 실패했습니다.");
+    } finally {
+      setAdminBanSaving(false);
     }
   };
 
@@ -10061,6 +10211,58 @@ export default function MyPage() {
             </div>
             {toolsPatchNoteError && <p className="mt-2 text-xs text-rose-600">{toolsPatchNoteError}</p>}
             {toolsPatchNoteInfo && <p className="mt-2 text-xs text-emerald-700">{toolsPatchNoteInfo}</p>}
+
+            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold text-amber-900">짐냥이 이미지</p>
+                  <p className="mt-1 text-[11px] text-neutral-500">
+                    사이트 우측 안내 말풍선에 뜨는 짐냥이를 선택합니다.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => void handleAdminSaveSiteGuideMascot()}
+                  disabled={siteGuideMascotSaving}
+                  className="h-8 rounded-lg bg-amber-500 px-3 text-xs font-bold text-white disabled:opacity-50"
+                >
+                  {siteGuideMascotSaving ? "저장 중..." : "짐냥이 저장"}
+                </button>
+              </div>
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                {siteGuideMascotOptions.map((option) => {
+                  const selected = siteGuideMascotId === option.id;
+                  return (
+                    <button
+                      key={option.id}
+                      type="button"
+                      onClick={() => {
+                        setSiteGuideMascotId(option.id);
+                        setSiteGuideMascotError("");
+                        setSiteGuideMascotInfo("");
+                      }}
+                      className={`flex items-center gap-3 rounded-xl border bg-white p-2 text-left transition ${
+                        selected ? "border-amber-500 ring-2 ring-amber-200" : "border-amber-100 hover:border-amber-300"
+                      }`}
+                    >
+                      <span
+                        aria-hidden="true"
+                        className="h-16 w-14 shrink-0 rounded-2xl border border-amber-100 bg-cover bg-center"
+                        style={{ backgroundImage: `url(${option.src})` }}
+                      />
+                      <span>
+                        <span className="block text-sm font-bold text-neutral-900">{option.label}</span>
+                        <span className="mt-1 block text-[11px] text-neutral-500">
+                          {selected ? "현재 선택됨" : "클릭해서 선택"}
+                        </span>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              {siteGuideMascotError && <p className="mt-2 text-xs text-rose-600">{siteGuideMascotError}</p>}
+              {siteGuideMascotInfo && <p className="mt-2 text-xs text-emerald-700">{siteGuideMascotInfo}</p>}
+            </div>
           </div>
           )}
 
@@ -11028,6 +11230,58 @@ export default function MyPage() {
                           <p className="mt-1 text-[11px] text-neutral-500">회원 변경 횟수와 상관없이 관리자 권한으로 바로 변경합니다.</p>
                           {adminNicknameError ? <p className="mt-2 text-xs text-red-600">{adminNicknameError}</p> : null}
                           {adminNicknameInfo ? <p className="mt-2 text-xs text-emerald-700">{adminNicknameInfo}</p> : null}
+                        </div>
+
+                        <div className="rounded-lg border border-rose-100 bg-white p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-xs font-semibold text-rose-900">관리자 벤</p>
+                              <p className="mt-1 text-[11px] text-neutral-500">
+                                벤 처리 시 공개/대기 중인 오픈카드와 유료카드는 비노출됩니다.
+                              </p>
+                            </div>
+                            <span
+                              className={`rounded-full px-2 py-1 text-[11px] font-bold ${
+                                adminUserActivityResult.user.profile?.is_banned
+                                  ? "bg-rose-100 text-rose-700"
+                                  : "bg-emerald-100 text-emerald-700"
+                              }`}
+                            >
+                              {adminUserActivityResult.user.profile?.is_banned ? "벤 상태" : "정상"}
+                            </span>
+                          </div>
+                          <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+                            <input
+                              value={adminBanReason}
+                              onChange={(e) => setAdminBanReason(e.target.value)}
+                              maxLength={300}
+                              placeholder="벤 사유"
+                              className="h-9 rounded-lg border border-rose-200 bg-white px-3 text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void handleAdminSetUserBan(true)}
+                              disabled={adminBanSaving || adminUserActivityResult.user.profile?.is_banned === true}
+                              className="h-9 rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white disabled:opacity-60"
+                            >
+                              {adminBanSaving ? "처리 중..." : "벤 처리"}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleAdminSetUserBan(false)}
+                              disabled={adminBanSaving || adminUserActivityResult.user.profile?.is_banned !== true}
+                              className="h-9 rounded-lg border border-rose-200 bg-white px-3 text-xs font-semibold text-rose-700 disabled:opacity-50"
+                            >
+                              벤 해제
+                            </button>
+                          </div>
+                          {adminUserActivityResult.user.profile?.banned_at ? (
+                            <p className="mt-1 text-[11px] text-neutral-500">
+                              벤 처리일 {new Date(adminUserActivityResult.user.profile.banned_at).toLocaleString("ko-KR")}
+                            </p>
+                          ) : null}
+                          {adminBanError ? <p className="mt-2 text-xs text-red-600">{adminBanError}</p> : null}
+                          {adminBanInfo ? <p className="mt-2 text-xs text-emerald-700">{adminBanInfo}</p> : null}
                         </div>
                       </div>
                     ) : (

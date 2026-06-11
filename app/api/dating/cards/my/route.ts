@@ -3,6 +3,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
+import { getUserBanResponse } from "@/lib/user-ban-guard";
 
 function normalizeInstagramId(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -72,14 +73,19 @@ export async function POST(req: Request) {
   const { user } = await getRequestAuthContext(req);
   if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
-  const body = await req.json().catch(() => null);
-  if (!body) return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
   if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return NextResponse.json(
       { error: "서버 설정 오류입니다. 관리자에게 문의해주세요. (SUPABASE_SERVICE_ROLE_KEY)" },
       { status: 500 }
     );
   }
+
+  const adminClient = createAdminClient();
+  const banResponse = await getUserBanResponse(adminClient, user.id);
+  if (banResponse) return banResponse;
+
+  const body = await req.json().catch(() => null);
+  if (!body) return NextResponse.json({ error: "잘못된 요청입니다." }, { status: 400 });
 
   const sex = (body as { sex?: unknown }).sex;
   if (sex !== "male" && sex !== "female") {
@@ -147,7 +153,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "블러 이미지 경로가 올바르지 않습니다." }, { status: 400 });
   }
 
-  const adminClient = createAdminClient();
   const writeSettingRes = await adminClient
     .from("site_settings")
     .select("value_json")
