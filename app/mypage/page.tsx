@@ -825,6 +825,7 @@ type AdminManageTab =
   | "open_cards"
   | "reels_dating"
   | "tools_patch_note"
+  | "site_mascot"
   | "accepted_applications"
   | "mail_center"
   | "one_on_one_contact"
@@ -3700,6 +3701,31 @@ export default function MyPage() {
           return;
         }
         setMyAppliedPaidApplications((prev) =>
+          prev.map((app) => (app.id === applicationId ? { ...app, status: "canceled" } : app))
+        );
+        await reloadOpenDatingConnections();
+      } finally {
+        setCancelingPaidAppliedIds((prev) => prev.filter((id) => id !== applicationId));
+      }
+    };
+
+    const handleCancelReceivedPaidApplication = async (applicationId: string) => {
+      if (cancelingPaidAppliedIds.includes(applicationId)) return;
+      if (!confirm("이 유료오픈카드 매칭을 취소할까요? 인스타 교환 목록에서도 빠집니다.")) return;
+
+      setCancelingPaidAppliedIds((prev) => [...prev, applicationId]);
+      try {
+        const res = await fetch(`/api/dating/paid/applications/${applicationId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "canceled" }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean; status?: string };
+        if (!res.ok || !body.ok) {
+          alert(body.error ?? "매칭 취소에 실패했습니다.");
+          return;
+        }
+        setReceivedPaidApplications((prev) =>
           prev.map((app) => (app.id === applicationId ? { ...app, status: "canceled" } : app))
         );
         await reloadOpenDatingConnections();
@@ -7677,6 +7703,16 @@ export default function MyPage() {
                       </button>
                       </>
                     )}
+                    {app.status === "accepted" && (
+                      <button
+                        type="button"
+                        disabled={cancelingPaidAppliedIds.includes(app.id)}
+                        onClick={() => void handleCancelReceivedPaidApplication(app.id)}
+                        className="h-9 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                      >
+                        {cancelingPaidAppliedIds.includes(app.id) ? "취소 중..." : "매칭 취소"}
+                      </button>
+                    )}
                     <SmallDatingReportButton
                       disabled={reportingDatingTargetKeys.includes(`paid_card_application:${app.id}`)}
                       onClick={() => void handleDatingUserReport("paid_card_application", app.id, "유료카드 지원자")}
@@ -9209,6 +9245,15 @@ export default function MyPage() {
             </button>
             <button
               type="button"
+              onClick={() => setAdminManageTab("site_mascot")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "site_mascot" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              짐냥이
+            </button>
+            <button
+              type="button"
               onClick={() => setAdminManageTab("accepted_applications")}
               className={`h-8 rounded-md border px-3 text-xs font-medium ${
                 adminManageTab === "accepted_applications"
@@ -10310,10 +10355,15 @@ export default function MyPage() {
             {toolsPatchNoteError && <p className="mt-2 text-xs text-rose-600">{toolsPatchNoteError}</p>}
             {toolsPatchNoteInfo && <p className="mt-2 text-xs text-emerald-700">{toolsPatchNoteInfo}</p>}
 
-            <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+          </div>
+          )}
+
+          {adminManageTab === "site_mascot" && (
+          <div className="space-y-3">
+            <div className="rounded-xl border border-amber-200 bg-amber-50/60 p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
                 <div>
-                  <p className="text-xs font-semibold text-amber-900">짐냥이 이미지</p>
+                  <p className="text-sm font-semibold text-amber-900">짐냥이 이미지</p>
                   <p className="mt-1 text-[11px] text-neutral-500">
                     사이트 우측 안내 말풍선에 뜨는 짐냥이를 선택합니다.
                   </p>
