@@ -1,4 +1,5 @@
 import { isAdminEmail } from "@/lib/admin";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -6,6 +7,9 @@ export async function PATCH(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
+
   const { id } = await params;
   const supabase = await createClient();
   const {

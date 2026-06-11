@@ -1708,6 +1708,7 @@ export default function MyPage() {
   const [accountDeleteConfirmOpen, setAccountDeleteConfirmOpen] = useState(false);
   const [deletingAppliedIds, setDeletingAppliedIds] = useState<string[]>([]);
   const [deletingPaidAppliedIds, setDeletingPaidAppliedIds] = useState<string[]>([]);
+  const [cancelingPaidAppliedIds, setCancelingPaidAppliedIds] = useState<string[]>([]);
   const [deletingOneOnOneIds, setDeletingOneOnOneIds] = useState<string[]>([]);
   const [deletingOpenCardIds, setDeletingOpenCardIds] = useState<string[]>([]);
   const [deletingPaidCardIds, setDeletingPaidCardIds] = useState<string[]>([]);
@@ -3676,6 +3677,31 @@ export default function MyPage() {
         await reloadOpenDatingConnections();
       } finally {
         setDeletingPaidAppliedIds((prev) => prev.filter((id) => id !== applicationId));
+      }
+    };
+
+    const handleCancelMyAppliedPaidApplication = async (applicationId: string) => {
+      if (cancelingPaidAppliedIds.includes(applicationId)) return;
+      if (!confirm("이 유료오픈카드 매칭을 취소할까요? 수락된 상태였다면 인스타 교환 목록에서도 빠집니다.")) return;
+
+      setCancelingPaidAppliedIds((prev) => [...prev, applicationId]);
+      try {
+        const res = await fetch(`/api/dating/paid/applications/${applicationId}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "canceled" }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean; status?: string };
+        if (!res.ok || !body.ok) {
+          alert(body.error ?? "매칭 취소에 실패했습니다.");
+          return;
+        }
+        setMyAppliedPaidApplications((prev) =>
+          prev.map((app) => (app.id === applicationId ? { ...app, status: "canceled" } : app))
+        );
+        await reloadOpenDatingConnections();
+      } finally {
+        setCancelingPaidAppliedIds((prev) => prev.filter((id) => id !== applicationId));
       }
     };
 
@@ -7631,6 +7657,16 @@ export default function MyPage() {
                 )}
                 <div className="mt-3">
                   <div className="flex flex-wrap gap-2">
+                    {(app.status === "submitted" || app.status === "accepted") && (
+                      <button
+                        type="button"
+                        disabled={cancelingPaidAppliedIds.includes(app.id)}
+                        onClick={() => void handleCancelMyAppliedPaidApplication(app.id)}
+                        className="h-8 rounded-md border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                      >
+                        {cancelingPaidAppliedIds.includes(app.id) ? "취소 중..." : app.status === "accepted" ? "매칭 취소" : "지원 취소"}
+                      </button>
+                    )}
                     <button
                       type="button"
                       disabled={deletingPaidAppliedIds.includes(app.id)}
@@ -7641,7 +7677,7 @@ export default function MyPage() {
                     </button>
                   </div>
                   {app.status === "accepted" && (
-                    <p className="mt-2 text-xs text-neutral-500">수락된 상태여도 삭제하면 내 지원 이력과 연결 목록에서 함께 빠집니다.</p>
+                    <p className="mt-2 text-xs text-neutral-500">수락 후 인스타가 공개된 상태여도 매칭 취소하거나 삭제할 수 있습니다.</p>
                   )}
                 </div>
               </div>
