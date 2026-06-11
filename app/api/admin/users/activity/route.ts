@@ -471,7 +471,7 @@ export async function GET(request: Request) {
           .limit(50)
       ),
       listSafe<Record<string, unknown>>(
-        auth.admin.from("dating_1on1_cards").select("id,sex,name,region,phone,status,admin_note,reviewed_at,created_at,updated_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(50)
+        auth.admin.from("dating_1on1_cards").select("id,sex,name,region,phone,status,admin_note,reviewed_at,priority_boost_expires_at,created_at,updated_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(50)
       ),
       listSafe<Record<string, unknown>>(
         auth.admin

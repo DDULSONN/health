@@ -1750,6 +1750,9 @@ export default function MyPage() {
   const [adminBanSaving, setAdminBanSaving] = useState(false);
   const [adminBanError, setAdminBanError] = useState("");
   const [adminBanInfo, setAdminBanInfo] = useState("");
+  const [adminOneOnOnePriorityGrantingIds, setAdminOneOnOnePriorityGrantingIds] = useState<string[]>([]);
+  const [adminOneOnOnePriorityGrantError, setAdminOneOnOnePriorityGrantError] = useState("");
+  const [adminOneOnOnePriorityGrantInfo, setAdminOneOnOnePriorityGrantInfo] = useState("");
   const [adminRefundOrderId, setAdminRefundOrderId] = useState("");
   const [adminRefundReasonByOrderId, setAdminRefundReasonByOrderId] = useState<Record<string, string>>({});
   const [adminRefundAmountByOrderId, setAdminRefundAmountByOrderId] = useState<Record<string, string>>({});
@@ -5653,6 +5656,8 @@ export default function MyPage() {
       setAdminBanReason(body.user?.profile?.banned_reason?.trim() || "운영정책 위반");
       setAdminBanError("");
       setAdminBanInfo("");
+      setAdminOneOnOnePriorityGrantError("");
+      setAdminOneOnOnePriorityGrantInfo("");
       const pendingOpenCard = body.details?.open_cards?.find((item) => item.status === "pending");
       if (pendingOpenCard?.id) {
         setAdminQueueMoveCardId(String(pendingOpenCard.id));
@@ -5810,6 +5815,63 @@ export default function MyPage() {
       setAdminBanError(err instanceof Error ? err.message : "벤 상태 저장에 실패했습니다.");
     } finally {
       setAdminBanSaving(false);
+    }
+  };
+
+  const handleAdminGrantOneOnOnePriorityBoost = async (card: Record<string, unknown>) => {
+    const userId = adminUserActivityResult?.user?.id ?? "";
+    const cardId = String(card.id ?? "").trim();
+    const cardName = String(card.name ?? "1:1 신청").trim() || "1:1 신청";
+    if (!userId || !cardId) {
+      setAdminOneOnOnePriorityGrantError("회원 또는 1:1 신청 정보를 찾지 못했습니다.");
+      return;
+    }
+    if (adminOneOnOnePriorityGrantingIds.includes(cardId)) return;
+    if (!confirm(`${cardName}에 1:1 우선 추천권 3일을 지급할까요? 이미 부스트중이면 3일 연장됩니다.`)) return;
+
+    setAdminOneOnOnePriorityGrantingIds((prev) => [...prev, cardId]);
+    setAdminOneOnOnePriorityGrantError("");
+    setAdminOneOnOnePriorityGrantInfo("");
+    try {
+      const res = await fetch("/api/admin/dating/1on1/priority-boost/grant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, cardId, durationDays: 3 }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        card?: {
+          id?: string;
+          priority_boost_expires_at?: string | null;
+        };
+        expiresAt?: string | null;
+      };
+      if (!res.ok || !body.ok || !body.card?.id) {
+        throw new Error(body.error ?? "1:1 우선 추천권 지급에 실패했습니다.");
+      }
+
+      const expiresAt = body.card.priority_boost_expires_at ?? body.expiresAt ?? null;
+      setAdminUserActivityResult((prev) =>
+        prev
+          ? {
+              ...prev,
+              details: {
+                ...(prev.details ?? {}),
+                one_on_one_cards: (prev.details?.one_on_one_cards ?? []).map((item) =>
+                  String(item.id ?? "") === body.card?.id ? { ...item, priority_boost_expires_at: expiresAt } : item
+                ),
+              },
+            }
+          : prev
+      );
+      setAdminOneOnOnePriorityGrantInfo(
+        expiresAt ? `1:1 우선 추천권 지급 완료 · ${new Date(expiresAt).toLocaleString("ko-KR")}까지` : "1:1 우선 추천권을 지급했습니다."
+      );
+    } catch (err) {
+      setAdminOneOnOnePriorityGrantError(err instanceof Error ? err.message : "1:1 우선 추천권 지급에 실패했습니다.");
+    } finally {
+      setAdminOneOnOnePriorityGrantingIds((prev) => prev.filter((id) => id !== cardId));
     }
   };
 
@@ -11318,6 +11380,65 @@ export default function MyPage() {
                           ) : null}
                           {adminBanError ? <p className="mt-2 text-xs text-red-600">{adminBanError}</p> : null}
                           {adminBanInfo ? <p className="mt-2 text-xs text-emerald-700">{adminBanInfo}</p> : null}
+                        </div>
+
+                        <div className="rounded-lg border border-pink-100 bg-white p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-xs font-semibold text-pink-900">1:1 우선 추천권 지급</p>
+                              <p className="mt-1 text-[11px] text-neutral-500">
+                                활성 1:1 신청에 3일 우선 추천을 바로 지급합니다.
+                              </p>
+                            </div>
+                          </div>
+                          {(() => {
+                            const activeCards = (adminUserActivityResult.details?.one_on_one_cards ?? []).filter((card) =>
+                              ["submitted", "reviewing", "approved"].includes(String(card.status ?? ""))
+                            );
+                            return activeCards.length > 0 ? (
+                              <div className="mt-2 space-y-2">
+                                {activeCards.slice(0, 5).map((card) => {
+                                  const cardId = String(card.id ?? "");
+                                  const expiresAtRaw = typeof card.priority_boost_expires_at === "string" ? card.priority_boost_expires_at : "";
+                                  const expiresAtMs = expiresAtRaw ? new Date(expiresAtRaw).getTime() : Number.NaN;
+                                  const activeBoost = Number.isFinite(expiresAtMs) && expiresAtMs > Date.now();
+                                  const granting = adminOneOnOnePriorityGrantingIds.includes(cardId);
+                                  return (
+                                    <div key={`admin-1on1-priority-${cardId}`} className="rounded-lg border border-pink-100 bg-pink-50/40 px-3 py-2">
+                                      <div className="flex flex-wrap items-center justify-between gap-2">
+                                        <div className="min-w-0">
+                                          <p className="text-xs font-semibold text-neutral-900">
+                                            {String(card.name ?? "1:1 신청")} · {String(card.status ?? "-")}
+                                          </p>
+                                          <p className="mt-1 text-[11px] text-neutral-500">
+                                            {activeBoost && expiresAtRaw
+                                              ? `부스트중 · ${new Date(expiresAtRaw).toLocaleString("ko-KR")}까지`
+                                              : "우선 추천권 없음"}
+                                          </p>
+                                        </div>
+                                        <button
+                                          type="button"
+                                          onClick={() => void handleAdminGrantOneOnOnePriorityBoost(card)}
+                                          disabled={granting}
+                                          className="h-8 rounded-lg bg-pink-600 px-3 text-xs font-semibold text-white disabled:opacity-60"
+                                        >
+                                          {granting ? "지급 중..." : activeBoost ? "3일 연장" : "3일 지급"}
+                                        </button>
+                                      </div>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            ) : (
+                              <p className="mt-2 text-xs text-neutral-500">우선 추천권을 지급할 활성 1:1 신청이 없습니다.</p>
+                            );
+                          })()}
+                          {adminOneOnOnePriorityGrantError ? (
+                            <p className="mt-2 text-xs text-red-600">{adminOneOnOnePriorityGrantError}</p>
+                          ) : null}
+                          {adminOneOnOnePriorityGrantInfo ? (
+                            <p className="mt-2 text-xs text-emerald-700">{adminOneOnOnePriorityGrantInfo}</p>
+                          ) : null}
                         </div>
                       </div>
                     ) : (
