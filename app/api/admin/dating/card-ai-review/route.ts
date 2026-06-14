@@ -6,7 +6,13 @@ import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
 import { buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { createAdminClient } from "@/lib/supabase/server";
 
-type SourceType = "open_card" | "paid_card" | "one_on_one";
+type SourceType =
+  | "open_card"
+  | "paid_card"
+  | "one_on_one"
+  | "open_card_application"
+  | "paid_card_application"
+  | "one_on_one_application";
 type ReviewMode = "rules" | "ai";
 type SuspicionLevel = "clear" | "low" | "medium" | "high";
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -62,7 +68,14 @@ type ActionCard = {
 };
 
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models";
-const SOURCE_TYPES: SourceType[] = ["open_card", "paid_card", "one_on_one"];
+const SOURCE_TYPES: SourceType[] = [
+  "open_card",
+  "paid_card",
+  "one_on_one",
+  "open_card_application",
+  "paid_card_application",
+  "one_on_one_application",
+];
 const SUSPICIOUS_LEVELS = new Set<SuspicionLevel>(["medium", "high"]);
 const TEST_TEXT_PATTERNS = [/테스트|test|asdf|qwer|ㄹㄹ|ㅁㄴㅇ|ㅇㅇㅇ/i];
 const EXTERNAL_CONTACT_PATTERNS = [
@@ -131,7 +144,10 @@ function pathsFromUnknown(raw: unknown, buckets: string[]) {
 function sourceLabel(value: SourceType) {
   if (value === "open_card") return "오픈카드";
   if (value === "paid_card") return "유료카드";
-  return "1대1 카드";
+  if (value === "one_on_one") return "1대1 카드";
+  if (value === "open_card_application") return "오픈카드 지원";
+  if (value === "paid_card_application") return "유료카드 지원";
+  return "1대1 지원";
 }
 
 function likelyTextFlags(texts: Record<string, string>) {
@@ -414,13 +430,98 @@ async function fetchOneOnOneCards(admin: AdminClient, limit: number): Promise<Ca
   });
 }
 
+async function fetchOpenCardApplications(admin: AdminClient, limit: number): Promise<CandidateCard[]> {
+  const { data, error } = await admin
+    .from("dating_card_applications")
+    .select("id,card_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,intro_text,instagram_id,photo_paths,status,created_at")
+    .in("status", ["submitted", "accepted"])
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => {
+    const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-card-photos", "dating-photos"]);
+    return {
+      sourceType: "open_card_application",
+      cardId: cleanText(row.id, 80),
+      userId: cleanText(row.applicant_user_id, 80) || null,
+      status: cleanText(row.status, 40) || null,
+      displayName: cleanText(row.applicant_display_nickname, 80),
+      age: typeof row.age === "number" ? row.age : null,
+      region: cleanText(row.region, 80) || null,
+      texts: {
+        targetCardId: cleanText(row.card_id, 80),
+        job: cleanText(row.job, 80),
+        height: cleanText(row.height_cm, 20),
+        trainingYears: cleanText(row.training_years, 20),
+        intro: cleanText(row.intro_text, 500),
+        instagramId: cleanText(row.instagram_id, 80),
+      },
+      photoPaths,
+      bucket: "dating-card-photos",
+      previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-card-photos", path)),
+      createdAt: cleanText(row.created_at, 80) || null,
+    };
+  });
+}
+
+async function fetchPaidCardApplications(admin: AdminClient, limit: number): Promise<CandidateCard[]> {
+  const { data, error } = await admin
+    .from("dating_paid_card_applications")
+    .select("id,paid_card_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,intro_text,instagram_id,photo_paths,status,created_at")
+    .in("status", ["submitted", "accepted"])
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => {
+    const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-card-photos", "dating-photos"]);
+    return {
+      sourceType: "paid_card_application",
+      cardId: cleanText(row.id, 80),
+      userId: cleanText(row.applicant_user_id, 80) || null,
+      status: cleanText(row.status, 40) || null,
+      displayName: cleanText(row.applicant_display_nickname, 80),
+      age: typeof row.age === "number" ? row.age : null,
+      region: cleanText(row.region, 80) || null,
+      texts: {
+        targetCardId: cleanText(row.paid_card_id, 80),
+        job: cleanText(row.job, 80),
+        height: cleanText(row.height_cm, 20),
+        trainingYears: cleanText(row.training_years, 20),
+        intro: cleanText(row.intro_text, 500),
+        instagramId: cleanText(row.instagram_id, 80),
+      },
+      photoPaths,
+      bucket: "dating-card-photos",
+      previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-card-photos", path)),
+      createdAt: cleanText(row.created_at, 80) || null,
+    };
+  });
+}
+
+async function fetchOneOnOneApplications(admin: AdminClient, limit: number): Promise<CandidateCard[]> {
+  const cards = await fetchOneOnOneCards(admin, limit);
+  return cards.map((card) => ({ ...card, sourceType: "one_on_one_application" }));
+}
+
 async function fetchCandidates(admin: AdminClient, source: SourceType | "all", limit: number) {
   if (source === "open_card") return fetchOpenCards(admin, limit);
   if (source === "paid_card") return fetchPaidCards(admin, limit);
   if (source === "one_on_one") return fetchOneOnOneCards(admin, limit);
+  if (source === "open_card_application") return fetchOpenCardApplications(admin, limit);
+  if (source === "paid_card_application") return fetchPaidCardApplications(admin, limit);
+  if (source === "one_on_one_application") return fetchOneOnOneApplications(admin, limit);
 
-  const eachLimit = Math.max(3, Math.ceil(limit / 3));
-  const rows = await Promise.all([fetchOpenCards(admin, eachLimit), fetchPaidCards(admin, eachLimit), fetchOneOnOneCards(admin, eachLimit)]);
+  const eachLimit = Math.max(3, Math.ceil(limit / 6));
+  const rows = await Promise.all([
+    fetchOpenCards(admin, eachLimit),
+    fetchPaidCards(admin, eachLimit),
+    fetchOneOnOneCards(admin, eachLimit),
+    fetchOpenCardApplications(admin, eachLimit),
+    fetchPaidCardApplications(admin, eachLimit),
+    fetchOneOnOneApplications(admin, eachLimit),
+  ]);
   return rows.flat().sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""))).slice(0, limit);
 }
 
@@ -447,6 +548,42 @@ async function saveReview(admin: AdminClient, adminUserId: string, card: Candida
 }
 
 async function loadActionCard(admin: AdminClient, sourceType: SourceType, cardId: string): Promise<ActionCard | null> {
+  if (sourceType === "open_card_application") {
+    const { data, error } = await admin
+      .from("dating_card_applications")
+      .select("id,applicant_user_id,status,applicant_display_nickname")
+      .eq("id", cardId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    return {
+      sourceType,
+      cardId: String(data.id),
+      userId: String(data.applicant_user_id ?? ""),
+      status: data.status ?? null,
+      displayName: data.applicant_display_nickname ?? null,
+      sex: null,
+    };
+  }
+
+  if (sourceType === "paid_card_application") {
+    const { data, error } = await admin
+      .from("dating_paid_card_applications")
+      .select("id,applicant_user_id,status,applicant_display_nickname")
+      .eq("id", cardId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    return {
+      sourceType,
+      cardId: String(data.id),
+      userId: String(data.applicant_user_id ?? ""),
+      status: data.status ?? null,
+      displayName: data.applicant_display_nickname ?? null,
+      sex: null,
+    };
+  }
+
   if (sourceType === "open_card") {
     const { data, error } = await admin
       .from("dating_cards")
@@ -501,6 +638,20 @@ async function loadActionCard(admin: AdminClient, sourceType: SourceType, cardId
 }
 
 async function deleteActionCard(admin: AdminClient, card: ActionCard) {
+  if (card.sourceType === "open_card_application") {
+    const { error } = await admin.from("dating_card_applications").delete().eq("id", card.cardId);
+    if (error) throw error;
+    await admin.from("dating_chat_threads").delete().eq("source_kind", "open").eq("source_id", card.cardId);
+    return;
+  }
+
+  if (card.sourceType === "paid_card_application") {
+    const { error } = await admin.from("dating_paid_card_applications").delete().eq("id", card.cardId);
+    if (error) throw error;
+    await admin.from("dating_chat_threads").delete().eq("source_kind", "paid").eq("source_id", card.cardId);
+    return;
+  }
+
   if (card.sourceType === "open_card") {
     const { error } = await admin.from("dating_cards").delete().eq("id", card.cardId);
     if (error) throw error;

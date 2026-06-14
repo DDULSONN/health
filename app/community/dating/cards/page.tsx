@@ -227,11 +227,21 @@ type OneOnOneMatchPreview = {
   role?: "source" | "candidate";
   state?: string;
   contact_exchange_status?: string;
+  contact_exchange_approved_at?: string | null;
   action_required?: boolean;
   counterparty_card?: OneOnOneCardPreview | null;
   counterparty_phone?: string | null;
   created_at?: string | null;
 };
+
+const ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS = 48 * 60 * 60 * 1000;
+
+function canCancelOneOnOneMatchPreview(match: OneOnOneMatchPreview) {
+  if (match.state !== "mutual_accepted" && match.state !== "candidate_accepted") return false;
+  if (match.contact_exchange_status !== "approved") return true;
+  const approvedMs = Date.parse(match.contact_exchange_approved_at ?? "");
+  return Number.isFinite(approvedMs) && Date.now() - approvedMs >= ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS;
+}
 
 type OneOnOneHomeState = {
   status: { canWrite?: boolean; totalApplications?: number; phoneVerified?: boolean; reason?: string | null } | null;
@@ -3816,10 +3826,28 @@ function OneOnOneMatchActions({
 
   if (match.state === "mutual_accepted") {
     if (match.contact_exchange_status === "approved") {
+      const canCancelMatch = canCancelOneOnOneMatchPreview(match);
       return (
-        <p className="mt-3 rounded-xl border border-emerald-100 bg-white px-3 py-2 text-xs font-semibold text-emerald-700">
-          번호 교환이 완료됐어요. 공개된 연락처는 안전하게 이용해주세요.
-        </p>
+        <div className="mt-3 rounded-xl border border-emerald-100 bg-white px-3 py-2">
+          <p className="text-xs font-semibold text-emerald-700">
+            번호 교환이 완료됐어요. 공개된 연락처는 안전하게 이용해주세요.
+          </p>
+          {canCancelMatch ? (
+            <div className="mt-2 flex flex-wrap gap-2">
+              <button
+                type="button"
+                disabled={processing}
+                onClick={() => onMatchAction(match.id, "cancel_mutual")}
+                className="inline-flex min-h-[34px] items-center rounded-xl border border-rose-200 bg-white px-3 text-xs font-bold text-rose-700 disabled:opacity-50"
+              >
+                {processing ? "취소 중..." : "매칭 취소"}
+              </button>
+              <Link href="/mypage?section=matching" className="inline-flex min-h-[34px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold text-neutral-600">
+                상세 보기
+              </Link>
+            </div>
+          ) : null}
+        </div>
       );
     }
 

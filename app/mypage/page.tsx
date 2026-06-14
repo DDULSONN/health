@@ -672,6 +672,15 @@ type MyOneOnOneMatch = {
   counterparty_phone: string | null;
 };
 
+const ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS = 48 * 60 * 60 * 1000;
+
+function canCancelOneOnOneMatch(match: Pick<MyOneOnOneMatch, "state" | "contact_exchange_status" | "contact_exchange_approved_at">) {
+  if (match.state !== "mutual_accepted" && match.state !== "candidate_accepted") return false;
+  if (match.contact_exchange_status !== "approved") return true;
+  const approvedMs = Date.parse(match.contact_exchange_approved_at ?? "");
+  return Number.isFinite(approvedMs) && Date.now() - approvedMs >= ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS;
+}
+
 type MyOneOnOneAutoRecommendationGroup = {
   source_card_id: string;
   source_card_status?: "submitted" | "reviewing" | "approved" | "rejected";
@@ -1654,7 +1663,6 @@ export default function MyPage() {
   const [processingOneOnOneContactExchangeIds, setProcessingOneOnOneContactExchangeIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
   const [reportingDatingTargetKeys, setReportingDatingTargetKeys] = useState<string[]>([]);
-  const [deletingOneOnOneMatchIds, setDeletingOneOnOneMatchIds] = useState<string[]>([]);
   const [processingSwipeLikeBackIds, setProcessingSwipeLikeBackIds] = useState<string[]>([]);
   const [reopeningOpenCardIds, setReopeningOpenCardIds] = useState<string[]>([]);
   const [deletingSwipeLikeIds, setDeletingSwipeLikeIds] = useState<string[]>([]);
@@ -4073,31 +4081,6 @@ export default function MyPage() {
       alert(e instanceof Error ? e.message : "오픈카드 지인 차단 삭제에 실패했습니다.");
     } finally {
       setDeletingDatingContactBlockIds((prev) => prev.filter((blockId) => blockId !== id));
-    }
-  };
-
-  const handleDeleteOneOnOneClosedMatch = async (id: string) => {
-    if (deletingOneOnOneMatchIds.includes(id)) return;
-    if (!confirm("이 내역을 내 목록에서 지울까요? 결제 및 운영 기록은 보관되며, 내 화면에서만 사라집니다.")) return;
-
-    setDeletingOneOnOneMatchIds((prev) => [...prev, id]);
-    try {
-      const res = await fetch("/api/dating/1on1/matches/my", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-      if (!res.ok || body.ok === false) {
-        alert(body.error ?? "내 목록에서 지우지 못했습니다.");
-        return;
-      }
-      setMyOneOnOneMatches((prev) => prev.filter((match) => match.id !== id));
-      alert("내 목록에서 지웠습니다.");
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "내 목록에서 지우지 못했습니다.");
-    } finally {
-      setDeletingOneOnOneMatchIds((prev) => prev.filter((matchId) => matchId !== id));
     }
   };
 
@@ -8442,6 +8425,7 @@ export default function MyPage() {
                           const card = match.counterparty_card;
                           if (!card) return null;
                           const contactProcessing = processingOneOnOneContactExchangeIds.includes(match.id);
+                          const canCancelMatch = canCancelOneOnOneMatch(match);
                           return (
                             <div key={match.id} className="rounded-lg border border-emerald-200 bg-white p-3">
                               <div className="flex items-center justify-between gap-2">
@@ -8513,19 +8497,21 @@ export default function MyPage() {
                                       외부 공유, 무단 저장, 불쾌한 연락은 제재 대상입니다.
                                     </p>
                                     <div className="mt-2 flex justify-end">
-                                      <button
-                                        type="button"
-                                        disabled={deletingOneOnOneMatchIds.includes(match.id)}
-                                        onClick={() => void handleDeleteOneOnOneClosedMatch(match.id)}
-                                        className="inline-flex h-8 items-center rounded-md border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50"
-                                      >
-                                        {deletingOneOnOneMatchIds.includes(match.id) ? "처리 중..." : "내 목록에서 지우기"}
-                                      </button>
+                                      {canCancelMatch ? (
+                                        <button
+                                          type="button"
+                                          disabled={processingOneOnOneMatchIds.includes(match.id)}
+                                          onClick={() => void handleOneOnOneMatchAction(match.id, "cancel_mutual")}
+                                          className="inline-flex h-8 items-center rounded-md border border-rose-300 bg-white px-3 text-xs font-medium text-rose-700 disabled:opacity-50"
+                                        >
+                                          {processingOneOnOneMatchIds.includes(match.id) ? "취소 중..." : "매칭 취소"}
+                                        </button>
+                                      ) : null}
                                     </div>
                                   </>
                                 ) : null}
                               </div>
-                              {match.contact_exchange_status !== "approved" && (
+                              {canCancelMatch && match.contact_exchange_status !== "approved" && (
                                 <div className="mt-2 flex justify-end">
                                   <button
                                     type="button"
@@ -8582,7 +8568,6 @@ export default function MyPage() {
                       <div className="mt-2 space-y-2">
                         {closedMatches.map((match) => {
                           const card = match.counterparty_card;
-                          const deleting = deletingOneOnOneMatchIds.includes(match.id);
                           if (!card) return null;
                           return (
                             <div key={match.id} className="flex items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2">
@@ -8593,14 +8578,6 @@ export default function MyPage() {
                                 <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${oneOnOneMatchStateColor[match.state]}`}>
                                   {oneOnOneMatchStateText[match.state]}
                                 </span>
-                                <button
-                                  type="button"
-                                  disabled={deleting}
-                                  onClick={() => void handleDeleteOneOnOneClosedMatch(match.id)}
-                                  className="rounded-full border border-neutral-200 px-2 py-0.5 text-[11px] font-medium text-neutral-500 disabled:opacity-50"
-                                >
-                                  {deleting ? "처리 중" : "내 목록에서 지우기"}
-                                </button>
                                 <SmallDatingReportButton
                                   disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}
                                   onClick={() => void handleDatingUserReport("one_on_one_match", match.id, "지난 1:1 매칭 상대")}
