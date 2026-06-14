@@ -12,6 +12,7 @@ const MY_MATCH_BATCH_SIZE = 500;
 const CLOSED_MATCH_LIMIT = 80;
 const ACTIVE_MATCH_STATES = ["proposed", "source_selected", "candidate_accepted", "mutual_accepted"];
 const CLOSED_MATCH_STATES = ["source_skipped", "candidate_rejected", "source_declined", "admin_canceled"];
+const REMOVABLE_COMPLETED_CONTACT_STATUS = "approved";
 
 function isMissingMatchHidesTableError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -164,13 +165,13 @@ export async function DELETE(req: Request) {
   const body = (await req.json().catch(() => null)) as { id?: unknown } | null;
   const id = typeof body?.id === "string" ? body.id.trim() : "";
   if (!id) {
-    return NextResponse.json({ error: "숨길 매칭 기록을 찾지 못했습니다." }, { status: 400 });
+    return NextResponse.json({ error: "지울 매칭 기록을 찾지 못했습니다." }, { status: 400 });
   }
 
   const admin = createAdminClient();
   const { data: match, error: matchError } = await admin
     .from("dating_1on1_match_proposals")
-    .select("id,source_user_id,candidate_user_id,state")
+    .select("id,source_user_id,candidate_user_id,state,contact_exchange_status")
     .eq("id", id)
     .maybeSingle();
 
@@ -181,8 +182,11 @@ export async function DELETE(req: Request) {
   if (!match || (match.source_user_id !== user.id && match.candidate_user_id !== user.id)) {
     return NextResponse.json({ error: "매칭 기록을 찾을 수 없습니다." }, { status: 404 });
   }
-  if (!CLOSED_MATCH_STATES.includes(String(match.state ?? ""))) {
-    return NextResponse.json({ error: "종료된 매칭 기록만 삭제할 수 있습니다." }, { status: 409 });
+  const isClosedMatch = CLOSED_MATCH_STATES.includes(String(match.state ?? ""));
+  const isCompletedContactExchange =
+    match.state === "mutual_accepted" && match.contact_exchange_status === REMOVABLE_COMPLETED_CONTACT_STATUS;
+  if (!isClosedMatch && !isCompletedContactExchange) {
+    return NextResponse.json({ error: "종료되었거나 번호교환이 완료된 매칭만 내 목록에서 지울 수 있습니다." }, { status: 409 });
   }
 
   const { error } = await admin
@@ -193,7 +197,7 @@ export async function DELETE(req: Request) {
     console.error("[DELETE /api/dating/1on1/matches/my] hide failed", error);
     const message = isMissingMatchHidesTableError(error)
       ? "매칭 기록 숨김 테이블이 아직 적용되지 않았습니다. 관리자에게 문의해주세요."
-      : "매칭 기록 삭제에 실패했습니다.";
+      : "매칭 기록을 내 목록에서 지우지 못했습니다.";
     return NextResponse.json({ error: message }, { status: 500 });
   }
 

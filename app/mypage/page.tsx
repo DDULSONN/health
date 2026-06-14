@@ -4078,7 +4078,7 @@ export default function MyPage() {
 
   const handleDeleteOneOnOneClosedMatch = async (id: string) => {
     if (deletingOneOnOneMatchIds.includes(id)) return;
-    if (!confirm("이 지난 매칭 기록을 내 목록에서 삭제할까요?")) return;
+    if (!confirm("이 내역을 내 목록에서 지울까요? 결제 및 운영 기록은 보관되며, 내 화면에서만 사라집니다.")) return;
 
     setDeletingOneOnOneMatchIds((prev) => [...prev, id]);
     try {
@@ -4089,12 +4089,13 @@ export default function MyPage() {
       });
       const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok || body.ok === false) {
-        alert(body.error ?? "지난 매칭 기록 삭제에 실패했습니다.");
+        alert(body.error ?? "내 목록에서 지우지 못했습니다.");
         return;
       }
       setMyOneOnOneMatches((prev) => prev.filter((match) => match.id !== id));
+      alert("내 목록에서 지웠습니다.");
     } catch (e) {
-      alert(e instanceof Error ? e.message : "지난 매칭 기록 삭제에 실패했습니다.");
+      alert(e instanceof Error ? e.message : "내 목록에서 지우지 못했습니다.");
     } finally {
       setDeletingOneOnOneMatchIds((prev) => prev.filter((matchId) => matchId !== id));
     }
@@ -8511,6 +8512,16 @@ export default function MyPage() {
                                     <p className="mt-1 text-[11px] text-neutral-500">
                                       외부 공유, 무단 저장, 불쾌한 연락은 제재 대상입니다.
                                     </p>
+                                    <div className="mt-2 flex justify-end">
+                                      <button
+                                        type="button"
+                                        disabled={deletingOneOnOneMatchIds.includes(match.id)}
+                                        onClick={() => void handleDeleteOneOnOneClosedMatch(match.id)}
+                                        className="inline-flex h-8 items-center rounded-md border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50"
+                                      >
+                                        {deletingOneOnOneMatchIds.includes(match.id) ? "처리 중..." : "내 목록에서 지우기"}
+                                      </button>
+                                    </div>
                                   </>
                                 ) : null}
                               </div>
@@ -8588,7 +8599,7 @@ export default function MyPage() {
                                   onClick={() => void handleDeleteOneOnOneClosedMatch(match.id)}
                                   className="rounded-full border border-neutral-200 px-2 py-0.5 text-[11px] font-medium text-neutral-500 disabled:opacity-50"
                                 >
-                                  {deleting ? "삭제 중" : "삭제"}
+                                  {deleting ? "처리 중" : "내 목록에서 지우기"}
                                 </button>
                                 <SmallDatingReportButton
                                   disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}
