@@ -5,43 +5,12 @@ import {
 } from "@/lib/dating-1on1";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
-import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { NextResponse } from "next/server";
 
 const MY_MATCH_BATCH_SIZE = 500;
 const CLOSED_MATCH_LIMIT = 80;
 const ACTIVE_MATCH_STATES = ["proposed", "source_selected", "candidate_accepted", "mutual_accepted"];
 const CLOSED_MATCH_STATES = ["source_skipped", "candidate_rejected", "source_declined", "admin_canceled"];
-const REMOVABLE_COMPLETED_CONTACT_STATUS = "approved";
-
-function isMissingMatchHidesTableError(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const code = String((error as { code?: unknown }).code ?? "");
-  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
-  return (
-    code === "42P01" ||
-    code === "PGRST205" ||
-    message.includes("dating_1on1_match_hides") ||
-    message.includes("could not find the table") ||
-    message.includes("does not exist") ||
-    message.includes("schema cache")
-  );
-}
-
-async function fetchHiddenMatchIds(admin: ReturnType<typeof createAdminClient>, userId: string) {
-  const { data, error } = await admin
-    .from("dating_1on1_match_hides")
-    .select("match_id")
-    .eq("user_id", userId)
-    .limit(5000);
-
-  if (error) {
-    if (isMissingMatchHidesTableError(error)) return new Set<string>();
-    throw error;
-  }
-
-  return new Set((data ?? []).map((row) => String((row as { match_id?: string }).match_id ?? "")).filter(Boolean));
-}
 
 async function fetchMyMatchesByStates(
   admin: ReturnType<typeof createAdminClient>,
@@ -82,14 +51,12 @@ async function fetchMyMatchesByStates(
 }
 
 async function fetchAllMyMatches(admin: ReturnType<typeof createAdminClient>, userId: string) {
-  const [hiddenIds, activeRows, closedRows] = await Promise.all([
-    fetchHiddenMatchIds(admin, userId),
+  const [activeRows, closedRows] = await Promise.all([
     fetchMyMatchesByStates(admin, userId, ACTIVE_MATCH_STATES),
     fetchMyMatchesByStates(admin, userId, CLOSED_MATCH_STATES, CLOSED_MATCH_LIMIT),
   ]);
 
   return [...activeRows, ...closedRows]
-    .filter((row) => !hiddenIds.has(row.id))
     .sort((a, b) => String(b.created_at ?? "").localeCompare(String(a.created_at ?? "")));
 }
 
@@ -151,55 +118,4 @@ export async function GET(req: Request) {
       };
     }),
   });
-}
-
-export async function DELETE(req: Request) {
-  const originError = ensureAllowedMutationOrigin(req);
-  if (originError) return originError;
-
-  const { user } = await getRequestAuthContext(req);
-  if (!user) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
-
-  const body = (await req.json().catch(() => null)) as { id?: unknown } | null;
-  const id = typeof body?.id === "string" ? body.id.trim() : "";
-  if (!id) {
-    return NextResponse.json({ error: "지울 매칭 기록을 찾지 못했습니다." }, { status: 400 });
-  }
-
-  const admin = createAdminClient();
-  const { data: match, error: matchError } = await admin
-    .from("dating_1on1_match_proposals")
-    .select("id,source_user_id,candidate_user_id,state,contact_exchange_status")
-    .eq("id", id)
-    .maybeSingle();
-
-  if (matchError) {
-    console.error("[DELETE /api/dating/1on1/matches/my] match lookup failed", matchError);
-    return NextResponse.json({ error: "매칭 기록을 확인하지 못했습니다." }, { status: 500 });
-  }
-  if (!match || (match.source_user_id !== user.id && match.candidate_user_id !== user.id)) {
-    return NextResponse.json({ error: "매칭 기록을 찾을 수 없습니다." }, { status: 404 });
-  }
-  const isClosedMatch = CLOSED_MATCH_STATES.includes(String(match.state ?? ""));
-  const isCompletedContactExchange =
-    match.state === "mutual_accepted" && match.contact_exchange_status === REMOVABLE_COMPLETED_CONTACT_STATUS;
-  if (!isClosedMatch && !isCompletedContactExchange) {
-    return NextResponse.json({ error: "종료되었거나 번호교환이 완료된 매칭만 내 목록에서 지울 수 있습니다." }, { status: 409 });
-  }
-
-  const { error } = await admin
-    .from("dating_1on1_match_hides")
-    .upsert({ user_id: user.id, match_id: id }, { onConflict: "user_id,match_id" });
-
-  if (error) {
-    console.error("[DELETE /api/dating/1on1/matches/my] hide failed", error);
-    const message = isMissingMatchHidesTableError(error)
-      ? "매칭 기록 숨김 테이블이 아직 적용되지 않았습니다. 관리자에게 문의해주세요."
-      : "매칭 기록을 내 목록에서 지우지 못했습니다.";
-    return NextResponse.json({ error: message }, { status: 500 });
-  }
-
-  return NextResponse.json({ ok: true, id });
 }
