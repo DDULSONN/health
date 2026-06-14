@@ -244,6 +244,43 @@ function takeBalancedRecommendations(
   return picked;
 }
 
+function isFreshStrongCandidateForRefresh(
+  sourceCard: RecommendationCard,
+  candidateCard: RecommendationCard,
+  refreshUsedAt: string | null | undefined
+) {
+  if (!refreshUsedAt) return false;
+
+  const refreshMs = Date.parse(refreshUsedAt);
+  const candidateCreatedMs = Date.parse(candidateCard.created_at);
+  if (!Number.isFinite(refreshMs) || !Number.isFinite(candidateCreatedMs) || candidateCreatedMs <= refreshMs) {
+    return false;
+  }
+
+  const distance = getRegionDistanceMeta(sourceCard.region, candidateCard.region).distanceKm;
+  const closeRegion = distance != null && distance <= CLOSE_REGION_MAX_KM;
+  const ageMatched = isCandidateInSourceAgeRange(sourceCard, candidateCard);
+  const nearAge = getAgeGap(sourceCard.age, candidateCard.age) <= NEAR_AGE_GAP;
+
+  return closeRegion || ageMatched || nearAge;
+}
+
+function getRefreshExcludeIds(
+  sourceCard: RecommendationCard,
+  defaultRecommendations: RecommendationCard[],
+  refreshUsedAt: string | null | undefined
+) {
+  const excludeIds = new Set(defaultRecommendations.map((candidate) => candidate.id));
+
+  for (const candidate of defaultRecommendations) {
+    if (isFreshStrongCandidateForRefresh(sourceCard, candidate, refreshUsedAt)) {
+      excludeIds.delete(candidate.id);
+    }
+  }
+
+  return excludeIds;
+}
+
 function getRefreshAvailability(refreshUsedAt?: string | null) {
   if (!refreshUsedAt) {
     return {
@@ -424,7 +461,7 @@ export async function GET(req: Request) {
           sourceCard,
           sortCandidatesForSource(sourceCard, candidates, sourceCard.recommendation_refresh_used_at),
           RECOMMENDATION_LIMIT,
-          new Set(defaultRecommendations.map((candidate) => candidate.id)),
+          getRefreshExcludeIds(sourceCard, defaultRecommendations, sourceCard.recommendation_refresh_used_at),
           `${sourceCard.id}:${sourceCard.recommendation_refresh_used_at}:refresh`
         )
       : defaultRecommendations;
