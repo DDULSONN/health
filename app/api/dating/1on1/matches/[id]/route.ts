@@ -33,6 +33,13 @@ const ACTIONS = new Set<MatchAction>([
   "source_reject",
   "cancel_mutual",
 ]);
+const CONTACT_EXCHANGE_CANCEL_DELAY_MS = 48 * 60 * 60 * 1000;
+
+function canCancelApprovedContactExchange(row: DatingOneOnOneMatchRow, nowMs: number) {
+  if (row.contact_exchange_status !== "approved") return true;
+  const approvedMs = Date.parse(row.contact_exchange_approved_at ?? "");
+  return Number.isFinite(approvedMs) && nowMs - approvedMs >= CONTACT_EXCHANGE_CANCEL_DELAY_MS;
+}
 
 async function getMatchRow(admin: ReturnType<typeof createAdminClient>, matchId: string) {
   const res = await admin
@@ -101,6 +108,7 @@ export async function POST(
   }
 
   const nowIso = new Date().toISOString();
+  const nowMs = Date.parse(nowIso);
 
   if (body.action === "select_candidate") {
     if (row.source_user_id !== user.id) {
@@ -215,8 +223,8 @@ export async function POST(
     if (!["mutual_accepted", "candidate_accepted"].includes(row.state)) {
       return NextResponse.json({ error: "Only accepted matches can be canceled." }, { status: 409 });
     }
-    if (row.contact_exchange_status === "approved") {
-      return NextResponse.json({ error: "Phone exchange is already approved. Please contact admin if you need more help." }, { status: 409 });
+    if (!canCancelApprovedContactExchange(row, nowMs)) {
+      return NextResponse.json({ error: "현재는 매칭을 취소할 수 없습니다." }, { status: 409 });
     }
 
     const updateRes = await admin

@@ -1,14 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 
-type SourceType = "all" | "open_card" | "paid_card" | "one_on_one";
+type SourceType =
+  | "all"
+  | "open_card"
+  | "paid_card"
+  | "one_on_one"
+  | "open_card_application"
+  | "paid_card_application"
+  | "one_on_one_application";
 type ReviewMode = "rules" | "ai";
 type SuspicionLevel = "clear" | "low" | "medium" | "high";
 
 type ReviewItem = {
-  sourceType?: "open_card" | "paid_card" | "one_on_one";
-  source_type?: "open_card" | "paid_card" | "one_on_one";
+  sourceType?: Exclude<SourceType, "all">;
+  source_type?: Exclude<SourceType, "all">;
   cardId?: string;
   card_id?: string;
   userId?: string | null;
@@ -59,7 +66,10 @@ type ActionResponse = {
 const SOURCE_LABEL: Record<string, string> = {
   open_card: "오픈카드",
   paid_card: "유료카드",
-  one_on_one: "1대1",
+  one_on_one: "1대1 카드",
+  open_card_application: "오픈카드 지원",
+  paid_card_application: "유료카드 지원",
+  one_on_one_application: "1대1 지원",
 };
 
 const LEVEL_LABEL: Record<SuspicionLevel, string> = {
@@ -71,6 +81,10 @@ const LEVEL_LABEL: Record<SuspicionLevel, string> = {
 
 function itemSource(item: ReviewItem) {
   return item.sourceType ?? item.source_type ?? "open_card";
+}
+
+function isApplicationSource(sourceType: string) {
+  return sourceType === "open_card_application" || sourceType === "paid_card_application" || sourceType === "one_on_one_application";
 }
 
 function itemCardId(item: ReviewItem) {
@@ -114,27 +128,30 @@ function modeLabel(mode: ReviewMode) {
 export default function AdminDatingCardAiReviewPanel() {
   const [source, setSource] = useState<SourceType>("all");
   const [limit, setLimit] = useState("50");
+  const [includeClear, setIncludeClear] = useState(false);
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [loadingMode, setLoadingMode] = useState<ReviewMode | null>(null);
   const [processingKey, setProcessingKey] = useState("");
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
 
-  const loadLatest = async () => {
+  const loadLatest = useCallback(async () => {
     setError("");
     try {
-      const res = await fetch("/api/admin/dating/card-ai-review", { cache: "no-store" });
+      const query = new URLSearchParams();
+      if (source !== "all") query.set("source", source);
+      const res = await fetch(`/api/admin/dating/card-ai-review${query.size ? `?${query.toString()}` : ""}`, { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as ScanResponse;
       if (!res.ok || body.ok === false) throw new Error(body.message || "최근 검수 목록을 불러오지 못했습니다.");
       setItems(body.items ?? []);
     } catch (err) {
       setError(err instanceof Error ? err.message : "최근 검수 목록을 불러오지 못했습니다.");
     }
-  };
+  }, [source]);
 
   useEffect(() => {
     void loadLatest();
-  }, []);
+  }, [loadLatest]);
 
   const runScan = async (mode: ReviewMode) => {
     setLoadingMode(mode);
@@ -144,7 +161,12 @@ export default function AdminDatingCardAiReviewPanel() {
       const res = await fetch("/api/admin/dating/card-ai-review", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source, limit: Number(limit) || 50, mode }),
+        body: JSON.stringify({
+          source,
+          limit: Number(limit) || 50,
+          mode,
+          includeClear: includeClear || isApplicationSource(source),
+        }),
       });
       const body = (await res.json().catch(() => ({}))) as ScanResponse;
       if (!res.ok || body.ok === false) {
@@ -168,7 +190,8 @@ export default function AdminDatingCardAiReviewPanel() {
     const review = itemReview(item);
     if (!cardId) return;
 
-    if (action === "delete_card" && !window.confirm("이 의심 카드를 삭제할까요? 삭제 후 복구가 어렵습니다.")) {
+    const targetLabel = isApplicationSource(sourceType) ? "지원 내역" : "카드";
+    if (action === "delete_card" && !window.confirm(`이 의심 ${targetLabel}을 삭제할까요? 삭제 후 복구가 어렵습니다.`)) {
       return;
     }
 
@@ -196,7 +219,7 @@ export default function AdminDatingCardAiReviewPanel() {
 
       if (action === "delete_card") {
         setItems((prev) => prev.filter((candidate) => `${itemSource(candidate)}:${itemCardId(candidate)}` !== `${sourceType}:${cardId}`));
-        setInfo("카드를 삭제했습니다.");
+        setInfo(`${targetLabel}을 삭제했습니다.`);
       } else {
         setInfo("수정 경고 메일을 보냈습니다.");
       }
@@ -212,9 +235,9 @@ export default function AdminDatingCardAiReviewPanel() {
       <div className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="text-sm font-semibold text-violet-900">카드 검수</p>
+            <p className="text-sm font-semibold text-violet-900">카드/지원 내역 검수</p>
             <p className="mt-1 text-xs text-neutral-500">
-              일반 검수는 글자수·특정 문장·금칙어만 빠르게 보고, AI 검수는 사진까지 확인합니다. 둘 다 자동 조치는 하지 않습니다.
+              일반 검수는 글자수·특정 문장·금칙어만 빠르게 보고, AI 검수는 사진까지 확인합니다. 카드와 지원 내역 모두 자동 조치는 하지 않습니다.
             </p>
           </div>
           <button
@@ -232,10 +255,13 @@ export default function AdminDatingCardAiReviewPanel() {
             onChange={(event) => setSource(event.target.value as SourceType)}
             className="h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm"
           >
-            <option value="all">전체: 오픈/유료/1대1</option>
+            <option value="all">전체: 카드/지원 내역</option>
             <option value="open_card">오픈카드</option>
             <option value="paid_card">유료카드</option>
             <option value="one_on_one">1대1 카드</option>
+            <option value="open_card_application">오픈카드 지원</option>
+            <option value="paid_card_application">유료카드 지원</option>
+            <option value="one_on_one_application">1대1 지원</option>
           </select>
           <input
             value={limit}
@@ -264,6 +290,19 @@ export default function AdminDatingCardAiReviewPanel() {
           </div>
         </div>
 
+        <label className="mt-3 flex items-center gap-2 text-xs font-semibold text-neutral-600">
+          <input
+            type="checkbox"
+            checked={includeClear}
+            onChange={(event) => setIncludeClear(event.target.checked)}
+            className="h-4 w-4 rounded border-neutral-300"
+          />
+          정상/낮음 결과도 표시
+        </label>
+        {isApplicationSource(source) ? (
+          <p className="mt-1 text-[11px] text-neutral-500">지원 내역 필터는 검수 실행 시 정상/낮음 결과도 함께 표시합니다.</p>
+        ) : null}
+
         <p className="mt-2 text-[11px] text-neutral-500">
           일반 검수는 비용 없이 빠르게 돌릴 수 있고, AI 검수는 사진/이미지 성격까지 보고 싶을 때만 쓰면 됩니다.
         </p>
@@ -273,7 +312,7 @@ export default function AdminDatingCardAiReviewPanel() {
 
       {items.length === 0 ? (
         <div className="rounded-2xl border border-neutral-200 bg-white p-6 text-center text-sm text-neutral-500">
-          표시할 의심 카드가 없습니다.
+          표시할 의심 카드/지원 내역이 없습니다.
         </div>
       ) : (
         <div className="grid gap-3">
@@ -283,6 +322,7 @@ export default function AdminDatingCardAiReviewPanel() {
             const cardId = itemCardId(item);
             const warningKey = `send_warning_email:${sourceType}:${cardId}`;
             const deleteKey = `delete_card:${sourceType}:${cardId}`;
+            const targetLabel = isApplicationSource(sourceType) ? "지원 삭제" : "카드 삭제";
             return (
               <div key={`${sourceType}-${cardId}`} className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
                 <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
@@ -335,7 +375,7 @@ export default function AdminDatingCardAiReviewPanel() {
                     disabled={processingKey !== ""}
                     className="h-9 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
-                    {processingKey === deleteKey ? "삭제 중..." : "카드 삭제"}
+                    {processingKey === deleteKey ? "삭제 중..." : targetLabel}
                   </button>
                 </div>
 
