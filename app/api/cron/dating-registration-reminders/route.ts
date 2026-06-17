@@ -8,6 +8,7 @@ import { NextResponse } from "next/server";
 const USER_PAGE_SIZE = 200;
 const CHUNK_SIZE = 500;
 const MAX_SEND_PER_RUN = 120;
+const LOOKBACK_DAYS = 30;
 const CAMPAIGN_KEY = "dating_registration_reminder";
 const MAIL_LOG_TABLE = "admin_open_card_outreach_mail_logs";
 
@@ -45,6 +46,7 @@ type ReminderRecipient = {
   subject: string;
   body: string;
   meta: Record<string, unknown>;
+  dedupeMeta: Record<string, unknown>;
 };
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -155,22 +157,34 @@ async function fetchOneOnOneUserIds(admin: AdminClient, userIds: string[]) {
   return oneOnOneUserIds;
 }
 
-async function hasSuccessfulLog(admin: AdminClient, userId: string, reason: ReminderReason, meta: Record<string, unknown>) {
+async function hasSuccessfulLog(admin: AdminClient, userId: string, reason: ReminderReason, dedupeMeta: Record<string, unknown>) {
   const res = await admin
     .from(MAIL_LOG_TABLE)
     .select("id")
     .eq("campaign_key", CAMPAIGN_KEY)
     .eq("user_id", userId)
     .eq("success", true)
-    .contains("meta", { reason, ...meta })
+    .contains("meta", { reason, ...dedupeMeta })
     .limit(1);
 
   if (res.error) {
-    if (isMissingLogTableError(res.error)) return false;
+    if (isMissingLogTableError(res.error)) {
+      throw new Error(`${MAIL_LOG_TABLE} 테이블이 없어 중복 발송 여부를 확인할 수 없습니다.`);
+    }
     throw res.error;
   }
 
   return (res.data ?? []).length > 0;
+}
+
+async function ensureMailLogTableAvailable(admin: AdminClient) {
+  const res = await admin.from(MAIL_LOG_TABLE).select("id").limit(1);
+  if (res.error) {
+    if (isMissingLogTableError(res.error)) {
+      throw new Error(`${MAIL_LOG_TABLE} 테이블이 없어 등록 알림 메일을 발송하지 않았습니다.`);
+    }
+    throw res.error;
+  }
 }
 
 async function logSendResult(
@@ -253,7 +267,7 @@ function buildNewUserRecipients(input: {
   oneOnOneUserIds: Set<string>;
   nowMs: number;
 }) {
-  const minCreatedAt = isoHoursAgo(input.nowMs, 72);
+  const minCreatedAt = isoHoursAgo(input.nowMs, LOOKBACK_DAYS * 24);
   const maxCreatedAt = isoHoursAgo(input.nowMs, 48);
   const recipients: ReminderRecipient[] = [];
 
@@ -286,6 +300,7 @@ function buildNewUserRecipients(input: {
         missing_one_on_one: missingOneOnOne,
         signup_created_at: createdAt,
       },
+      dedupeMeta: {},
     });
   }
 
@@ -298,7 +313,7 @@ async function fetchRecentlyFinalExpiredOpenCards(admin: AdminClient, nowMs: num
     .select("id,owner_user_id,status,expires_at,auto_requeue_count")
     .eq("status", "expired")
     .gte("auto_requeue_count", OPEN_CARD_AUTO_REQUEUE_LIMIT)
-    .gte("expires_at", isoHoursAgo(nowMs, 24))
+    .gte("expires_at", isoHoursAgo(nowMs, LOOKBACK_DAYS * 24))
     .lte("expires_at", new Date(nowMs).toISOString())
     .order("expires_at", { ascending: false })
     .limit(1000);
@@ -346,6 +361,9 @@ function buildExpiredCardRecipients(input: {
         expired_at: card.expires_at,
         auto_requeue_count: Number(card.auto_requeue_count ?? 0),
       },
+      dedupeMeta: {
+        card_id: card.id,
+      },
     });
   }
 
@@ -358,6 +376,7 @@ export async function GET(request: Request) {
 
   const admin = createAdminClient();
   const nowMs = Date.now();
+  await ensureMailLogTableAvailable(admin);
   const users = await fetchAllAuthUsers(admin);
   const usersById = new Map(users.map((user) => [user.id, user]));
   const userIds = users.map((user) => user.id);
@@ -403,7 +422,7 @@ export async function GET(request: Request) {
 
   for (const recipient of candidates.slice(0, MAX_SEND_PER_RUN)) {
     try {
-      if (await hasSuccessfulLog(admin, recipient.userId, recipient.reason, recipient.meta)) {
+      if (await hasSuccessfulLog(admin, recipient.userId, recipient.reason, recipient.dedupeMeta)) {
         results.skipped += 1;
         results.by_reason[recipient.reason].skipped += 1;
         continue;
