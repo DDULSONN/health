@@ -152,6 +152,49 @@ function sortCandidatesForSource(
   });
 }
 
+function sortRefreshCandidatesForSource(
+  sourceCard: RecommendationCard,
+  candidates: RecommendationCard[],
+  seedSuffix: string,
+  preferredExcludeIds: Set<string>
+) {
+  return [...candidates].sort((a, b) => {
+    const aExcluded = preferredExcludeIds.has(a.id);
+    const bExcluded = preferredExcludeIds.has(b.id);
+    if (aExcluded !== bExcluded) return aExcluded ? 1 : -1;
+
+    const aBoostActive = isPriorityBoostActive(a);
+    const bBoostActive = isPriorityBoostActive(b);
+    if (aBoostActive !== bBoostActive) return aBoostActive ? -1 : 1;
+
+    const aInAgeRange = isCandidateInSourceAgeRange(sourceCard, a);
+    const bInAgeRange = isCandidateInSourceAgeRange(sourceCard, b);
+    if (aInAgeRange !== bInAgeRange) return aInAgeRange ? -1 : 1;
+
+    const aDistanceRank = getDistanceRank(sourceCard.region, a.region);
+    const bDistanceRank = getDistanceRank(sourceCard.region, b.region);
+    const aIsNearby = aDistanceRank.distanceBandRank <= 2;
+    const bIsNearby = bDistanceRank.distanceBandRank <= 2;
+    if (aIsNearby !== bIsNearby) return aIsNearby ? -1 : 1;
+
+    const aAgeGap = getAgeGap(sourceCard.age, a.age);
+    const bAgeGap = getAgeGap(sourceCard.age, b.age);
+    const aNearAge = aAgeGap <= NEAR_AGE_GAP;
+    const bNearAge = bAgeGap <= NEAR_AGE_GAP;
+    if (aNearAge !== bNearAge) return aNearAge ? -1 : 1;
+
+    const aHash = hashSeed(`${sourceCard.id}:${seedSuffix}:explore:${a.id}`);
+    const bHash = hashSeed(`${sourceCard.id}:${seedSuffix}:explore:${b.id}`);
+    if (aHash !== bHash) return aHash - bHash;
+
+    if (aDistanceRank.distanceBandRank !== bDistanceRank.distanceBandRank) {
+      return aDistanceRank.distanceBandRank - bDistanceRank.distanceBandRank;
+    }
+    if (aAgeGap !== bAgeGap) return aAgeGap - bAgeGap;
+    return a.id.localeCompare(b.id);
+  });
+}
+
 function rotateCandidates<T>(items: T[], offset: number) {
   if (items.length <= 1) return items;
   const normalizedOffset = offset % items.length;
@@ -456,12 +499,22 @@ export async function GET(req: Request) {
       null,
       null
     );
+    const refreshExcludeIds = getRefreshExcludeIds(
+      sourceCard,
+      defaultRecommendations,
+      sourceCard.recommendation_refresh_used_at
+    );
     const recommendations = sourceCard.recommendation_refresh_used_at
       ? takeBalancedRecommendations(
           sourceCard,
-          sortCandidatesForSource(sourceCard, candidates, sourceCard.recommendation_refresh_used_at),
+          sortRefreshCandidatesForSource(
+            sourceCard,
+            candidates,
+            sourceCard.recommendation_refresh_used_at,
+            refreshExcludeIds
+          ),
           RECOMMENDATION_LIMIT,
-          getRefreshExcludeIds(sourceCard, defaultRecommendations, sourceCard.recommendation_refresh_used_at),
+          refreshExcludeIds,
           `${sourceCard.id}:${sourceCard.recommendation_refresh_used_at}:refresh`
         )
       : defaultRecommendations;
