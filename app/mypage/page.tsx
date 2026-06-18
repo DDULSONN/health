@@ -1665,6 +1665,7 @@ export default function MyPage() {
   const [reportingDatingTargetKeys, setReportingDatingTargetKeys] = useState<string[]>([]);
   const [processingSwipeLikeBackIds, setProcessingSwipeLikeBackIds] = useState<string[]>([]);
   const [reopeningOpenCardIds, setReopeningOpenCardIds] = useState<string[]>([]);
+  const [reactivatingOpenCardIds, setReactivatingOpenCardIds] = useState<string[]>([]);
   const [deletingSwipeLikeIds, setDeletingSwipeLikeIds] = useState<string[]>([]);
   const [deletingConnectionIds, setDeletingConnectionIds] = useState<string[]>([]);
   const [cancelingAppliedIds, setCancelingAppliedIds] = useState<string[]>([]);
@@ -5018,6 +5019,41 @@ export default function MyPage() {
       alert(e instanceof Error ? e.message : withPaymentCardNotice("오픈카드 재노출 결제를 시작하지 못했습니다."));
     } finally {
       setReopeningOpenCardIds((prev) => prev.filter((id) => id !== card.id));
+    }
+  };
+
+  const handleReactivateMyOpenCard = async (card: MyDatingCard) => {
+    if (reactivatingOpenCardIds.includes(card.id)) return;
+    if (card.status !== "expired" && card.status !== "hidden") {
+      alert("만료되었거나 내려간 오픈카드만 다시 대기 등록할 수 있습니다.");
+      return;
+    }
+    if (hasActiveOpenCard) {
+      alert("이미 대기중이거나 공개중인 오픈카드가 있습니다.");
+      return;
+    }
+    if (!confirm("기존 오픈카드 내용을 그대로 다시 대기열에 등록할까요?")) return;
+
+    setReactivatingOpenCardIds((prev) => [...prev, card.id]);
+    try {
+      const res = await fetch(`/api/dating/cards/my/${encodeURIComponent(card.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reactivate" }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+      if (!res.ok) {
+        alert(body.error ?? "오픈카드를 다시 대기 등록하지 못했습니다.");
+        return;
+      }
+      await Promise.all([
+        reloadOpenAppliedApplications(),
+        reloadOpenDatingConnections(),
+        reloadSwipeStatus().catch(() => undefined),
+      ]);
+      alert(body.message ?? "기존 오픈카드를 다시 대기열에 등록했습니다.");
+    } finally {
+      setReactivatingOpenCardIds((prev) => prev.filter((id) => id !== card.id));
     }
   };
 
@@ -8717,7 +8753,12 @@ export default function MyPage() {
                 applicantCount <= 3 &&
                 hasPublishedBefore &&
                 (!hasActiveOpenCard || card.status === "pending");
+              const canReactivate =
+                (card.status === "hidden" || card.status === "expired") &&
+                !hasActiveOpenCard &&
+                hasPublishedBefore;
               const reopening = reopeningOpenCardIds.includes(card.id);
+              const reactivating = reactivatingOpenCardIds.includes(card.id);
               return (
               <div key={card.id} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
                 <div className="flex items-center justify-between gap-2">
@@ -8790,6 +8831,16 @@ export default function MyPage() {
                         {reopening ? "결제 준비 중..." : "5,000원 대기없이 다시 노출"}
                       </button>
                     ) : null}
+                    {canReactivate ? (
+                      <button
+                        type="button"
+                        disabled={reactivating}
+                        onClick={() => void handleReactivateMyOpenCard(card)}
+                        className="inline-flex h-8 items-center rounded-md border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                      >
+                        {reactivating ? "등록 중..." : "대기열에 다시 등록"}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       disabled={deletingOpenCardIds.includes(card.id)}
@@ -8803,6 +8854,11 @@ export default function MyPage() {
                 {canShowReopen ? (
                   <p className="mt-2 rounded-lg border border-emerald-100 bg-white px-3 py-2 text-[11px] leading-5 text-emerald-800">
                     받은 지원이 적었던 카드라 대기 없이 24시간 다시 노출할 수 있어요.
+                  </p>
+                ) : null}
+                {canReactivate ? (
+                  <p className="mt-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-[11px] leading-5 text-neutral-600">
+                    기존 내용을 그대로 다시 대기열에 올릴 수 있어요. 공개되면 자동 재등록 횟수도 새로 시작됩니다.
                   </p>
                 ) : null}
               </div>
