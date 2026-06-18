@@ -135,6 +135,13 @@ type PaidCard = {
   display_mode?: "priority_24h" | "instant_public";
 };
 
+type MyOpenCard = {
+  id: string;
+  status: "pending" | "public" | "expired" | "hidden";
+  display_nickname?: string | null;
+  created_at?: string | null;
+};
+
 type SwipeCandidate = {
   user_id: string;
   card_id: string;
@@ -1668,6 +1675,8 @@ export default function OpenCardsPage() {
   const swipeRequestIdRef = useRef({ male: 0, female: 0 });
   const [viewerLoggedIn, setViewerLoggedIn] = useState(false);
   const [viewerPhoneVerified, setViewerPhoneVerified] = useState(false);
+  const [myOpenCards, setMyOpenCards] = useState<MyOpenCard[]>([]);
+  const [reactivatingHomeOpenCardId, setReactivatingHomeOpenCardId] = useState("");
   const [swipeSubscriptionStatus, setSwipeSubscriptionStatus] = useState<SwipeSubscriptionStatus | null>(null);
   const [swipeSubscriptionLoading, setSwipeSubscriptionLoading] = useState(false);
   const [swipeSubscriptionSubmitting, setSwipeSubscriptionSubmitting] = useState(false);
@@ -1858,6 +1867,25 @@ export default function OpenCardsPage() {
       setViewerPhoneVerified(summaryBody.profile?.phone_verified === true);
     });
   }, [supabase]);
+
+  const reloadMyOpenCards = useCallback(async () => {
+    if (!viewerLoggedIn) {
+      setMyOpenCards([]);
+      return;
+    }
+
+    const res = await fetch("/api/dating/cards/my", { cache: "no-store" }).catch(() => null);
+    if (!res?.ok) {
+      setMyOpenCards([]);
+      return;
+    }
+    const body = (await res.json().catch(() => ({}))) as { items?: MyOpenCard[] };
+    setMyOpenCards(Array.isArray(body.items) ? body.items : []);
+  }, [viewerLoggedIn]);
+
+  useEffect(() => {
+    void reloadMyOpenCards();
+  }, [reloadMyOpenCards]);
 
   useEffect(() => {
     if (!viewerLoggedIn) {
@@ -2111,6 +2139,30 @@ export default function OpenCardsPage() {
       setLoading(false);
     }
   }, [refreshSecondary]);
+
+  const handleReactivateHomeOpenCard = useCallback(
+    async (cardId: string) => {
+      if (!cardId || reactivatingHomeOpenCardId) return;
+      setReactivatingHomeOpenCardId(cardId);
+      try {
+        const res = await fetch(`/api/dating/cards/my/${encodeURIComponent(cardId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "reactivate" }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+        if (!res.ok) {
+          alert(body.error ?? "기존 오픈카드를 다시 등록하지 못했습니다.");
+          return;
+        }
+        await Promise.all([reloadMyOpenCards(), refreshSecondary(), loadInitial({ silent: true })]);
+        alert(body.message ?? "기존 오픈카드를 다시 대기열에 등록했습니다.");
+      } finally {
+        setReactivatingHomeOpenCardId("");
+      }
+    },
+    [loadInitial, reactivatingHomeOpenCardId, refreshSecondary, reloadMyOpenCards]
+  );
 
   useEffect(() => {
     if (!snapshotReady) return;
@@ -2585,6 +2637,8 @@ export default function OpenCardsPage() {
   const showGuideSection = homeFeatureTab === "open_cards";
   const showOneOnOneSection = homeFeatureTab === "one_on_one";
   const showLoveFortuneSection = isAdminPreviewUser && homeFeatureTab === "love_fortune";
+  const hasActiveMyOpenCard = myOpenCards.some((card) => card.status === "pending" || card.status === "public");
+  const reactivatableHiddenOpenCard = !hasActiveMyOpenCard ? myOpenCards.find((card) => card.status === "hidden") ?? null : null;
   const visibleHomeFeatureTabs = useMemo(
     () => HOME_FEATURE_TABS.filter((tab) => tab.key !== "love_fortune" || isAdminPreviewUser),
     [isAdminPreviewUser]
@@ -2771,6 +2825,16 @@ export default function OpenCardsPage() {
                 >
                   오픈카드 작성
                 </Link>
+                {reactivatableHiddenOpenCard ? (
+                  <button
+                    type="button"
+                    disabled={reactivatingHomeOpenCardId === reactivatableHiddenOpenCard.id}
+                    onClick={() => void handleReactivateHomeOpenCard(reactivatableHiddenOpenCard.id)}
+                    className="inline-flex min-h-[42px] items-center justify-center rounded-[16px] border border-rose-100 bg-rose-50 px-4 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {reactivatingHomeOpenCardId === reactivatableHiddenOpenCard.id ? "등록 중..." : "기존 카드 자동 등록"}
+                  </button>
+                ) : null}
                 <Link
                   href="/dating/paid?apply=1"
                   className="inline-flex min-h-[58px] items-center justify-center gap-2 rounded-[22px] border border-neutral-200 bg-white px-5 text-base font-bold text-neutral-800 shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:-translate-y-0.5 hover:bg-neutral-50"
