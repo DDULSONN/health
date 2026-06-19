@@ -244,10 +244,6 @@ const ACTIVE_PAIR_STATES = new Set<AdminMatchItem["state"]>([
   "candidate_accepted",
   "mutual_accepted",
 ]);
-const CANDIDATE_SINGLE_TRACK_STATES = new Set<AdminMatchItem["state"]>([
-  "source_selected",
-  "candidate_accepted",
-]);
 
 function getAutoCandidateRange(card: Pick<CardItem, "sex" | "age">): AutoCandidateRange {
   if (card.age == null || !Number.isFinite(card.age)) {
@@ -650,15 +646,6 @@ export default function AdminDatingOneOnOnePage() {
     () => items.find((item) => item.id === selectedSourceCardId) ?? null,
     [items, selectedSourceCardId]
   );
-  const candidateBlockedByTrackIds = useMemo(() => {
-    const next = new Set<string>();
-    for (const match of matchItems) {
-      if (CANDIDATE_SINGLE_TRACK_STATES.has(match.state)) {
-        next.add(match.candidate_card_id);
-      }
-    }
-    return next;
-  }, [matchItems]);
   const candidateBlockedForSourceIds = useMemo(() => {
     const next = new Set<string>();
     if (!selectedSourceCardId) return next;
@@ -686,9 +673,9 @@ export default function AdminDatingOneOnOnePage() {
       (item) =>
         item.id !== selectedSourceCard.id &&
         item.user_id !== selectedSourceCard.user_id &&
-        (candidateBlockedByTrackIds.has(item.id) || candidateBlockedForSourceIds.has(item.id))
+        candidateBlockedForSourceIds.has(item.id)
     ).length;
-  }, [candidateBlockedByTrackIds, candidateBlockedForSourceIds, items, selectedSourceCard]);
+  }, [candidateBlockedForSourceIds, items, selectedSourceCard]);
   const autoCandidateRange = selectedSourceCard ? getAutoCandidateRange(selectedSourceCard) : null;
   const autoRecommendedCandidates = useMemo(() => {
     if (!selectedSourceCard || selectableCandidateCards.length === 0) {
@@ -810,11 +797,11 @@ export default function AdminDatingOneOnOnePage() {
       const skippedCount = body.skipped_count ?? 0;
       let successMessage = "";
       if (insertedCount > 0 && skippedCount > 0) {
-        successMessage = `${insertedCount}명 후보를 보냈습니다. ${skippedCount}명은 이미 진행 중이거나 기존 발송 이력이 있어 자동 제외됐습니다.`;
+        successMessage = `${insertedCount}명 후보를 보냈습니다. ${skippedCount}명은 이미 같은 기준 카드에 떠 있거나 차단 관계라 자동 제외됐습니다.`;
       } else if (insertedCount > 0) {
         successMessage = `${insertedCount}명 후보를 보냈습니다.`;
       } else if (skippedCount > 0) {
-        successMessage = `새로 보낸 후보는 없고, ${skippedCount}명은 이미 진행 중이거나 기존 발송 이력이 있어 자동 제외됐습니다.`;
+        successMessage = `새로 보낸 후보는 없고, ${skippedCount}명은 이미 같은 기준 카드에 떠 있거나 차단 관계라 자동 제외됐습니다.`;
       } else {
         successMessage = "후보 발송이 완료되었습니다.";
       }
@@ -1267,7 +1254,7 @@ export default function AdminDatingOneOnOnePage() {
                 </p>
                 {unavailableCandidateCount > 0 && (
                   <p className="mb-2 text-[11px] text-neutral-500">
-                    이미 진행 중이거나 같은 기준 카드로 보낸 후보 {unavailableCandidateCount}명도 목록에는 보입니다. 발송 시 중복은 자동으로 건너뜁니다.
+                    이미 같은 기준 카드에 떠 있는 후보 {unavailableCandidateCount}명도 목록에는 보입니다. 발송 시 중복은 자동으로 건너뜁니다.
                   </p>
                 )}
                 {filteredCandidateCards.length === 0 ? (
