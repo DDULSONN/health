@@ -2676,6 +2676,11 @@ export default function OpenCardsPage() {
         <div className="flex flex-col gap-4">
           <div className="flex flex-wrap items-center gap-2">
             <span className="rounded-full bg-rose-50 px-3 py-1.5 text-xs font-black text-rose-600">오픈카드</span>
+            {showWeekendApplyCreditBenefit ? (
+              <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700">
+                주말 지원권 추가
+              </span>
+            ) : null}
           </div>
 
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -2693,16 +2698,6 @@ export default function OpenCardsPage() {
                   </p>
                 </div>
               </div>
-              {showWeekendApplyCreditBenefit && (
-                <div className="mt-2 overflow-hidden rounded-[14px] bg-emerald-50 px-2.5 py-3 sm:px-4">
-                  <div className="flex items-center gap-3">
-                    <span className="shrink-0 text-[11px] font-black text-emerald-700 sm:text-xs">주말</span>
-                    <p className="min-w-0 flex-1 whitespace-nowrap text-[clamp(9px,2.58vw,14px)] font-black leading-5 text-emerald-900">
-                      주말에는 기본 지원권이 3장으로 늘어나요.
-                    </p>
-                  </div>
-                </div>
-              )}
               {homeAdLink ? (
                 (() => {
                   const theme = homeAdLinkThemeClass[homeAdLink.theme ?? "emerald"];
