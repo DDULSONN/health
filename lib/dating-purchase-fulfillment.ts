@@ -841,6 +841,154 @@ export async function grantOneOnOneContactExchange(admin: AdminClient, options: 
 
   return approveRes.data;
 }
+
+type GrantOneOnOnePriorityBoostOptions = {
+  cardId: string;
+  userId: string;
+  durationDays?: number;
+  note?: string | null;
+};
+
+export async function grantOneOnOnePriorityBoost(admin: AdminClient, options: GrantOneOnOnePriorityBoostOptions) {
+  const cardId = options.cardId.trim();
+  if (!cardId) {
+    throw new Error("dating_1on1_card_id 값이 필요합니다.");
+  }
+
+  const cardRes = await admin
+    .from("dating_1on1_cards")
+    .select("id,user_id,status,priority_boost_expires_at")
+    .eq("id", cardId)
+    .maybeSingle();
+
+  if (cardRes.error) {
+    throw cardRes.error;
+  }
+  if (!cardRes.data || cardRes.data.user_id !== options.userId) {
+    throw new Error("1:1 매칭 부스트 대상 신청서를 찾지 못했습니다.");
+  }
+  if (!["submitted", "reviewing", "approved"].includes(String(cardRes.data.status ?? ""))) {
+    throw new Error("진행 중인 1:1 신청서만 매칭 부스트를 사용할 수 있습니다.");
+  }
+
+  const now = Date.now();
+  const durationDays = Math.max(1, Number(options.durationDays ?? 3));
+  const currentExpiresAt = cardRes.data.priority_boost_expires_at
+    ? new Date(cardRes.data.priority_boost_expires_at).getTime()
+    : Number.NaN;
+  const baseMs = Number.isFinite(currentExpiresAt) && currentExpiresAt > now ? currentExpiresAt : now;
+  const expiresAt = new Date(baseMs + durationDays * 24 * 60 * 60 * 1000).toISOString();
+
+  const updateRes = await admin
+    .from("dating_1on1_cards")
+    .update({ priority_boost_expires_at: expiresAt })
+    .eq("id", cardId)
+    .eq("user_id", options.userId)
+    .in("status", ["submitted", "reviewing", "approved"])
+    .select("id,user_id,status,priority_boost_expires_at")
+    .maybeSingle();
+
+  if (updateRes.error) {
+    throw updateRes.error;
+  }
+  if (!updateRes.data?.id) {
+    throw new Error("1:1 매칭 부스트 반영에 실패했습니다.");
+  }
+
+  return {
+    ...updateRes.data,
+    durationDays,
+    note: options.note ?? null,
+  };
+}
+
+type GrantOpenCardRepostOptions = {
+  cardId: string;
+  userId: string;
+  note?: string | null;
+};
+
+export async function grantOpenCardRepost(admin: AdminClient, options: GrantOpenCardRepostOptions) {
+  const cardId = options.cardId.trim();
+  if (!cardId) {
+    throw new Error("dating_open_card_id 값이 필요합니다.");
+  }
+
+  const cardRes = await admin
+    .from("dating_cards")
+    .select("id,owner_user_id,status")
+    .eq("id", cardId)
+    .maybeSingle();
+
+  if (cardRes.error) {
+    throw cardRes.error;
+  }
+  if (!cardRes.data || cardRes.data.owner_user_id !== options.userId) {
+    throw new Error("오픈카드 재등록 대상 카드를 찾지 못했습니다.");
+  }
+  if (!["expired", "hidden"].includes(String(cardRes.data.status ?? ""))) {
+    throw new Error("만료되었거나 숨김 처리된 오픈카드만 재등록할 수 있습니다.");
+  }
+
+  const activeCardRes = await admin
+    .from("dating_cards")
+    .select("id")
+    .eq("owner_user_id", options.userId)
+    .in("status", ["pending", "public"])
+    .neq("id", cardId)
+    .limit(1)
+    .maybeSingle();
+
+  if (activeCardRes.error) {
+    throw activeCardRes.error;
+  }
+  if (activeCardRes.data?.id) {
+    throw new Error("이미 대기 중이거나 공개 중인 오픈카드가 있습니다.");
+  }
+
+  const nowIso = new Date().toISOString();
+  let updateRes = await admin
+    .from("dating_cards")
+    .update({
+      status: "pending",
+      published_at: null,
+      expires_at: null,
+      queue_priority_at: nowIso,
+      auto_requeue_count: 0,
+    })
+    .eq("id", cardId)
+    .eq("owner_user_id", options.userId)
+    .in("status", ["expired", "hidden"])
+    .select("id,owner_user_id,status")
+    .maybeSingle();
+
+  if (updateRes.error && isMissingColumnError(updateRes.error)) {
+    updateRes = await admin
+      .from("dating_cards")
+      .update({
+        status: "pending",
+        published_at: null,
+        expires_at: null,
+      })
+      .eq("id", cardId)
+      .eq("owner_user_id", options.userId)
+      .in("status", ["expired", "hidden"])
+      .select("id,owner_user_id,status")
+      .maybeSingle();
+  }
+
+  if (updateRes.error) {
+    throw updateRes.error;
+  }
+  if (!updateRes.data?.id) {
+    throw new Error("오픈카드 재등록 반영에 실패했습니다.");
+  }
+
+  return {
+    ...updateRes.data,
+    note: options.note ?? null,
+  };
+}
 type ApprovePaidCardOptions = {
   paidCardId: string;
   displayMode?: "priority_24h" | "instant_public";
