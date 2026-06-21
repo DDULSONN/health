@@ -6,6 +6,8 @@ import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
 import { buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { createAdminClient } from "@/lib/supabase/server";
 
+export const maxDuration = 60;
+
 type SourceType =
   | "open_card"
   | "paid_card"
@@ -58,6 +60,8 @@ type CardReview = {
   textFlags: string[];
   raw: Record<string, unknown>;
 };
+
+type ReviewedCandidateCard = CandidateCard & { review: CardReview };
 
 type ActionCard = {
   sourceType: SourceType;
@@ -568,7 +572,7 @@ async function fetchCandidates(admin: AdminClient, source: SourceType | "all", l
   if (source === "one_on_one_application") return fetchOneOnOneApplications(admin, limit);
 
   const eachLimit = Math.max(3, Math.ceil(limit / 6));
-  const rows = await Promise.all([
+  const results = await Promise.allSettled([
     fetchOpenCards(admin, eachLimit),
     fetchPaidCards(admin, eachLimit),
     fetchOneOnOneCards(admin, eachLimit),
@@ -576,7 +580,12 @@ async function fetchCandidates(admin: AdminClient, source: SourceType | "all", l
     fetchPaidCardApplications(admin, eachLimit),
     fetchOneOnOneApplications(admin, eachLimit),
   ]);
-  return rows.flat().sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""))).slice(0, limit);
+  const rows = results.flatMap((result, index) => {
+    if (result.status === "fulfilled") return result.value;
+    console.warn("[admin card review] source fetch failed", { index, error: result.reason });
+    return [];
+  });
+  return rows.sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""))).slice(0, limit);
 }
 
 async function loadCandidateById(admin: AdminClient, sourceType: SourceType, cardId: string): Promise<CandidateCard | null> {
@@ -782,26 +791,33 @@ async function hydrateReviewRows(admin: AdminClient, rows: Record<string, unknow
   );
 }
 
-async function saveReview(admin: AdminClient, adminUserId: string, card: CandidateCard, review: CardReview) {
-  const { error } = await admin.from("admin_dating_card_ai_reviews").upsert(
-    {
+function buildReviewRows(adminUserId: string, cards: ReviewedCandidateCard[]) {
+  const scannedAt = new Date().toISOString();
+  return cards.map((card) => ({
       source_type: card.sourceType,
       card_id: card.cardId,
       user_id: card.userId,
       card_status: card.status,
       display_name: card.displayName,
-      suspicion_level: review.suspicionLevel,
-      flags: review.flags,
-      summary: review.summary,
-      photo_flags: review.photoFlags,
-      text_flags: review.textFlags,
-      raw_result: review.raw,
-      scanned_at: new Date().toISOString(),
+      suspicion_level: card.review.suspicionLevel,
+      flags: card.review.flags,
+      summary: card.review.summary,
+      photo_flags: card.review.photoFlags,
+      text_flags: card.review.textFlags,
+      raw_result: card.review.raw,
+      scanned_at: scannedAt,
       admin_user_id: adminUserId,
-    },
-    { onConflict: "source_type,card_id" }
-  );
-  if (error) throw error;
+    }));
+}
+
+async function saveReviews(admin: AdminClient, adminUserId: string, cards: ReviewedCandidateCard[]) {
+  const rows = buildReviewRows(adminUserId, cards);
+  const chunkSize = 500;
+  for (let index = 0; index < rows.length; index += chunkSize) {
+    const chunk = rows.slice(index, index + chunkSize);
+    const { error } = await admin.from("admin_dating_card_ai_reviews").upsert(chunk, { onConflict: "source_type,card_id" });
+    if (error) throw error;
+  }
 }
 
 async function loadActionCard(admin: AdminClient, sourceType: SourceType, cardId: string): Promise<ActionCard | null> {
@@ -1189,15 +1205,16 @@ export async function POST(req: Request) {
 
   try {
     const candidates = await fetchCandidates(guard.admin, source, limit);
-    const scanned = [];
+    const scanned: ReviewedCandidateCard[] = [];
 
     for (const card of candidates) {
       const review = mode === "rules" ? ruleReview(card) : await analyzeWithGemini(guard.admin, apiKey ?? "", model, card);
-      await saveReview(guard.admin, guard.user.id, card, review).catch((saveError) => {
-        console.warn("[admin card review] save failed; returning transient result", saveError);
-      });
       scanned.push({ ...card, review });
     }
+
+    await saveReviews(guard.admin, guard.user.id, scanned).catch((saveError) => {
+      console.warn("[admin card review] bulk save failed; returning transient result", saveError);
+    });
 
     const items = scanned
       .filter((item) => includeClear || SUSPICIOUS_LEVELS.has(item.review.suspicionLevel))
