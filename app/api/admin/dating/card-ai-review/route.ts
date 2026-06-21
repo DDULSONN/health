@@ -32,6 +32,7 @@ type ReviewActionPayload = {
   card_id?: unknown;
   summary?: unknown;
   flags?: unknown;
+  fields?: unknown;
 };
 
 type CandidateCard = {
@@ -82,6 +83,17 @@ const EXTERNAL_CONTACT_PATTERNS = [
   /https?:\/\/|www\.|open\.kakao|t\.me|instagram\.com|bit\.ly|linktr\.ee/i,
   /오픈\s*카톡|오픈\s*채팅|카카오톡|카톡\s*(아이디|id|문의|주세요|ㄱ)|디엠|dm\s*(주세요|문의|ㄱ)|텔레그램|telegram|라인\s*(id|아이디)?|line\s*(id)?/i,
 ];
+const DIRECT_CONTACT_PATTERNS = [
+  /(?:010|011|016|017|018|019)[-\s.)]*(?:\d[-\s.]*){7,8}/,
+  /\b01[016789][^\d]{0,3}\d{3,4}[^\d]{0,3}\d{4}\b/,
+  /(카카오톡|카톡|오픈카톡|오픈채팅|kakao|kakaotalk).{0,18}(아이디|id|검색|추가|친추|연락|주세요|주세용|보내|남겨)/i,
+  /(카카오톡|카톡|kakao|kakaotalk)\s*[:：]?\s*[A-Za-z0-9._-]{2,}/i,
+  /(인스타|instagram|insta|ig|디엠|dm).{0,18}(아이디|id|계정|검색|팔로우|연락|주세요|주세용|보내|남겨)/i,
+  /(^|[^A-Za-z0-9._])@[A-Za-z0-9._]{3,}/i,
+  /(라인|line|텔레그램|telegram|텔레)\s*[:：]?\s*[A-Za-z0-9._-]{2,}/i,
+  /(연락처|연락|번호|전화|문자).{0,16}(주세요|주세용|가능|해요|할게|남겨|교환|010|카톡|카카오|인스타|dm|디엠)/i,
+];
+
 const COMMERCIAL_PATTERNS = [
   /(광고|홍보|협찬|제휴|업체)\s*(문의|가능|환영|주세요|받아요)/i,
   /(부업|수익|투자|코인|토토|바카라|카지노|대출|리딩방|공구)\s*(문의|모집|가능|추천|링크)?/i,
@@ -112,12 +124,27 @@ function normalizeMode(value: unknown): ReviewMode {
 
 function normalizeAction(value: unknown) {
   const action = cleanText(value, 40);
-  return action === "delete_card" || action === "send_warning_email" ? action : "";
+  return action === "delete_card" || action === "send_warning_email" || action === "update_fields" ? action : "";
 }
 
 function cleanArray(value: unknown) {
   if (!Array.isArray(value)) return [];
   return value.map((item) => cleanText(item, 80)).filter(Boolean).slice(0, 8);
+}
+
+function cleanEditableFields(value: unknown) {
+  if (!value || typeof value !== "object") return {};
+  const raw = value as Record<string, unknown>;
+  return {
+    displayName: cleanText(raw.displayName, 80),
+    job: cleanText(raw.job, 80),
+    region: cleanText(raw.region, 80),
+    intro: cleanText(raw.intro, 2000),
+    strengths: cleanText(raw.strengths, 1000),
+    ideal: cleanText(raw.ideal, 1000),
+    preferredPartner: cleanText(raw.preferredPartner, 1000),
+    instagramId: cleanText(raw.instagramId, 80),
+  };
 }
 
 function getSiteUrl() {
@@ -164,6 +191,7 @@ function likelyTextFlags(texts: Record<string, string>) {
   }
   if (/([가-힣A-Za-z0-9])\1{4,}/u.test(merged)) flags.push("반복 문자 과다");
   if (/010[-\s]?\d{3,4}[-\s]?\d{4}/.test(merged)) flags.push("전화번호 직접 노출 의심");
+  if (DIRECT_CONTACT_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("연락처/외부 계정 선노출 의심");
   if (EXTERNAL_CONTACT_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("외부 연락/링크 유도 의심");
   if (COMMERCIAL_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("광고/상업성 문구 의심");
   if (UNSAFE_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("부적절/위험 키워드");
@@ -190,7 +218,9 @@ function ruleReview(card: CandidateCard): CardReview {
 
   flags.push(...photoFlags, ...textFlags);
   const uniqueFlags = Array.from(new Set(flags)).slice(0, 10);
-  const hasSeriousFlag = uniqueFlags.some((flag) => /부적절|위험|광고|상업|전화번호|외부 연락|링크/.test(flag));
+  const hasSeriousFlag = uniqueFlags.some((flag) =>
+    ["연락처", "외부 계정", "광고", "상업", "전화번호", "링크"].some((keyword) => flag.includes(keyword))
+  );
   const suspicionLevel: SuspicionLevel =
     hasSeriousFlag || uniqueFlags.length >= 4
       ? "high"
@@ -275,6 +305,7 @@ async function analyzeWithGemini(admin: AdminClient, apiKey: string, model: stri
   ).filter(Boolean);
   const heuristic = ruleReview(card);
   const prompt = [
+    "특히 1:1 매칭 신청서에 휴대폰 번호, 카카오톡/카톡 ID, 오픈채팅 링크, 인스타/IG 계정, DM 요청, 라인/텔레그램 ID 등 앱 밖 연락처를 적거나 유도하면 high로 판단한다.",
     "너는 소개팅 서비스의 관리자 검수 보조 AI다.",
     "절대 삭제, 거절, 유저 제재를 결정하지 말고 관리자에게 보여줄 의심 사유만 판단한다.",
     "검수 기준: 빈 사진/흰 화면/검은 화면/캡처/광고/로고/텍스트만 있는 이미지/사람 사진이 아닌 이미지/장난식 소개글/광고성 문구/외부 연락 유도/소개글 비어있음.",
@@ -673,6 +704,75 @@ async function deleteActionCard(admin: AdminClient, card: ActionCard) {
   if (error) throw error;
 }
 
+async function updateActionCardFields(admin: AdminClient, card: ActionCard, fields: ReturnType<typeof cleanEditableFields>) {
+  if (card.sourceType === "open_card") {
+    const payload = {
+      display_nickname: fields.displayName || null,
+      job: fields.job || null,
+      region: fields.region || null,
+      strengths_text: fields.strengths ? fields.strengths.slice(0, 150) : null,
+      ideal_type: fields.ideal || null,
+      instagram_id: fields.instagramId || null,
+    };
+    const { error } = await admin.from("dating_cards").update(payload).eq("id", card.cardId);
+    if (error) throw error;
+    return { displayName: payload.display_nickname };
+  }
+
+  if (card.sourceType === "paid_card") {
+    const payload = {
+      nickname: fields.displayName || null,
+      job: fields.job || null,
+      region: fields.region || null,
+      strengths_text: fields.strengths || null,
+      ideal_text: fields.ideal || null,
+      intro_text: fields.intro || null,
+      instagram_id: fields.instagramId || null,
+    };
+    const { error } = await admin.from("dating_paid_cards").update(payload).eq("id", card.cardId);
+    if (error) throw error;
+    return { displayName: payload.nickname };
+  }
+
+  if (card.sourceType === "open_card_application") {
+    const payload = {
+      applicant_display_nickname: fields.displayName || "",
+      job: fields.job || null,
+      region: fields.region || null,
+      intro_text: fields.intro || "",
+      instagram_id: fields.instagramId || null,
+    };
+    const { error } = await admin.from("dating_card_applications").update(payload).eq("id", card.cardId);
+    if (error) throw error;
+    return { displayName: payload.applicant_display_nickname };
+  }
+
+  if (card.sourceType === "paid_card_application") {
+    const payload = {
+      applicant_display_nickname: fields.displayName || "",
+      job: fields.job || null,
+      region: fields.region || null,
+      intro_text: fields.intro || "",
+      instagram_id: fields.instagramId || null,
+    };
+    const { error } = await admin.from("dating_paid_card_applications").update(payload).eq("id", card.cardId);
+    if (error) throw error;
+    return { displayName: payload.applicant_display_nickname };
+  }
+
+  const payload = {
+    name: fields.displayName || "",
+    job: fields.job || "",
+    region: fields.region || "",
+    intro_text: fields.intro || "",
+    strengths_text: fields.strengths || "",
+    preferred_partner_text: fields.preferredPartner || fields.ideal || "",
+  };
+  const { error } = await admin.from("dating_1on1_cards").update(payload).eq("id", card.cardId);
+  if (error) throw error;
+  return { displayName: payload.name };
+}
+
 async function sendCardWarningEmail(admin: AdminClient, card: ActionCard, summary: string, flags: string[]) {
   const userRes = await admin.auth.admin.getUserById(card.userId).catch(() => null);
   const email = userRes?.data?.user?.email?.trim();
@@ -772,6 +872,41 @@ export async function PATCH(req: Request) {
         metadata: { status: card.status, displayName: card.displayName },
       });
       return NextResponse.json({ ok: true, action, deleted: true, sourceType, cardId });
+    }
+
+    if (action === "update_fields") {
+      const fields = cleanEditableFields(body.fields);
+      const updated = await updateActionCardFields(guard.admin, card, fields);
+      await guard.admin
+        .from("admin_dating_card_ai_reviews")
+        .update({
+          display_name: updated.displayName,
+          raw_result: {
+            admin_edit: {
+              edited_at: new Date().toISOString(),
+              edited_by_user_id: guard.user.id,
+              fields,
+            },
+          },
+          scanned_at: new Date().toISOString(),
+        })
+        .eq("source_type", sourceType)
+        .eq("card_id", cardId)
+        .then(({ error }) => {
+          if (error && error.code !== "42P01" && error.code !== "PGRST205") {
+            console.warn("[admin card review] review edit marker failed", error.message);
+          }
+        });
+      await recordAdminAuditEvent({
+        admin: guard.admin,
+        adminUser: guard.user,
+        request: req,
+        action: "dating_card_review_update_fields",
+        targetType: sourceType,
+        targetId: cardId,
+        metadata: { status: card.status, displayName: updated.displayName, fields },
+      });
+      return NextResponse.json({ ok: true, action, sourceType, cardId, displayName: updated.displayName });
     }
 
     const mailResult = await sendCardWarningEmail(

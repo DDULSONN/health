@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DATING_CHAT_REPORT_REASONS } from "@/lib/dating-chat-report-reasons";
 import { createClient } from "@/lib/supabase/client";
 
@@ -119,7 +119,7 @@ export default function ChatPage() {
   const [threadDetail, setThreadDetail] = useState<ThreadDetail | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
   const [compose, setCompose] = useState("");
-  const [sending, setSending] = useState(false);
+  const [pendingSendCount, setPendingSendCount] = useState(0);
   const [leaving, setLeaving] = useState(false);
   const [reporting, setReporting] = useState(false);
   const [reportPanelOpen, setReportPanelOpen] = useState(false);
@@ -127,6 +127,9 @@ export default function ChatPage() {
     DATING_CHAT_REPORT_REASONS[0]
   );
   const [reportDetails, setReportDetails] = useState("");
+  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+
+  const sending = pendingSendCount > 0;
 
   const markThreadReadSilently = useCallback((threadId: string) => {
     void fetch("/api/dating/chat/read", {
@@ -242,7 +245,16 @@ export default function ChatPage() {
       if (prevLastId === nextLastId && prevCount === nextCount) {
         return prev;
       }
-      return body;
+      const remoteIds = new Set(body.messages.map((message) => message.id));
+      const pendingLocalMessages = prev.messages.filter((message) => message.optimistic && !remoteIds.has(message.id));
+      return pendingLocalMessages.length > 0
+        ? {
+            ...body,
+            messages: [...body.messages, ...pendingLocalMessages].sort(
+              (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+            ),
+          }
+        : body;
     });
 
     if (latestMessage) {
@@ -339,6 +351,21 @@ export default function ChatPage() {
           setThreadDetail((prev) => {
             if (!prev || prev.thread.id !== threadId) return prev;
             if (prev.messages.some((message) => message.id === newMessage.id)) return prev;
+            const optimisticIndex = prev.messages.findIndex(
+              (message) =>
+                message.optimistic &&
+                message.sender_id === newMessage.sender_id &&
+                message.content === newMessage.content &&
+                Math.abs(new Date(message.created_at).getTime() - new Date(newMessage.created_at).getTime()) < 30_000
+            );
+            if (optimisticIndex >= 0) {
+              return {
+                ...prev,
+                messages: prev.messages.map((message, index) =>
+                  index === optimisticIndex ? { ...newMessage, optimistic: false } : message
+                ),
+              };
+            }
             return {
               ...prev,
               messages: [...prev.messages, newMessage],
@@ -462,6 +489,10 @@ export default function ChatPage() {
     };
   }, [loadInboxAndAvailable, selected, syncThreadSilently]);
 
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ block: "end" });
+  }, [selected, threadDetail?.messages.length]);
+
   const availableWithoutThread = useMemo(() => {
     const existing = new Set(inbox.map((item) => `${item.source_kind}:${item.source_id}`));
     return available.filter((item) => !existing.has(`${item.sourceKind}:${item.sourceId}`));
@@ -480,7 +511,7 @@ export default function ChatPage() {
 
   const handleSend = async () => {
     const content = compose.trim();
-    if (!content || sending || !selected) return;
+    if (!content || !selected || (selected.kind === "available" && sending)) return;
 
     const previousCompose = compose;
     const baseCreatedAt = new Date().toISOString();
@@ -527,7 +558,7 @@ export default function ChatPage() {
       });
     }
 
-    setSending(true);
+    setPendingSendCount((prev) => prev + 1);
     try {
       const payload =
         selected.kind === "thread"
@@ -671,7 +702,7 @@ export default function ChatPage() {
         setCompose(previousCompose);
       }
     } finally {
-      setSending(false);
+      setPendingSendCount((prev) => Math.max(0, prev - 1));
     }
   };
 
@@ -946,6 +977,7 @@ export default function ChatPage() {
                       );
                     })
                   )}
+                  <div ref={messagesEndRef} />
                 </div>
 
                 <div className="shrink-0 border-t border-neutral-100 pt-3">
@@ -958,6 +990,12 @@ export default function ChatPage() {
                     <textarea
                       value={compose}
                       onChange={(e) => setCompose(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                          e.preventDefault();
+                          void handleSend();
+                        }
+                      }}
                       rows={2}
                       placeholder="메시지를 입력해 주세요"
                       disabled={!!isClosedThread}
@@ -965,7 +1003,7 @@ export default function ChatPage() {
                     />
                     <button
                       type="button"
-                      disabled={sending || !compose.trim() || !!isClosedThread}
+                      disabled={!compose.trim() || !!isClosedThread || (selected.kind === "available" && sending)}
                       onClick={() => void handleSend()}
                       className="min-w-[92px] rounded-[18px] bg-rose-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                     >

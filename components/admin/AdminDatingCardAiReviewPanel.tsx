@@ -61,6 +61,18 @@ type ActionResponse = {
   ok?: boolean;
   message?: string;
   detail?: string;
+  displayName?: string | null;
+};
+
+type EditableFields = {
+  displayName: string;
+  job: string;
+  region: string;
+  intro: string;
+  strengths: string;
+  ideal: string;
+  preferredPartner: string;
+  instagramId: string;
 };
 
 const SOURCE_LABEL: Record<string, string> = {
@@ -114,6 +126,43 @@ function itemReview(item: ReviewItem) {
   };
 }
 
+function itemKey(item: ReviewItem) {
+  return `${itemSource(item)}:${itemCardId(item)}`;
+}
+
+function editableFieldsFromItem(item: ReviewItem): EditableFields {
+  const texts = item.texts ?? {};
+  return {
+    displayName: itemDisplayName(item) === "?대쫫 ?놁쓬" ? "" : itemDisplayName(item),
+    job: texts.job ?? "",
+    region: item.region ?? "",
+    intro: texts.intro ?? "",
+    strengths: texts.strengths ?? "",
+    ideal: texts.ideal ?? texts.idealType ?? "",
+    preferredPartner: texts.preferredPartner ?? "",
+    instagramId: texts.instagramId ?? "",
+  };
+}
+
+function updateItemWithFields(item: ReviewItem, fields: EditableFields, displayName?: string | null): ReviewItem {
+  const nextTexts = { ...(item.texts ?? {}) };
+  if ("job" in nextTexts || fields.job) nextTexts.job = fields.job;
+  if ("intro" in nextTexts || fields.intro) nextTexts.intro = fields.intro;
+  if ("strengths" in nextTexts || fields.strengths) nextTexts.strengths = fields.strengths;
+  if ("ideal" in nextTexts || fields.ideal) nextTexts.ideal = fields.ideal;
+  if ("idealType" in nextTexts || fields.ideal) nextTexts.idealType = fields.ideal;
+  if ("preferredPartner" in nextTexts || fields.preferredPartner) nextTexts.preferredPartner = fields.preferredPartner;
+  if ("instagramId" in nextTexts || fields.instagramId) nextTexts.instagramId = fields.instagramId;
+
+  return {
+    ...item,
+    displayName: displayName ?? fields.displayName,
+    display_name: displayName ?? fields.displayName,
+    region: fields.region,
+    texts: nextTexts,
+  };
+}
+
 function levelClass(level: SuspicionLevel) {
   if (level === "high") return "border-red-200 bg-red-50 text-red-700";
   if (level === "medium") return "border-amber-200 bg-amber-50 text-amber-700";
@@ -132,6 +181,8 @@ export default function AdminDatingCardAiReviewPanel() {
   const [items, setItems] = useState<ReviewItem[]>([]);
   const [loadingMode, setLoadingMode] = useState<ReviewMode | null>(null);
   const [processingKey, setProcessingKey] = useState("");
+  const [editingKey, setEditingKey] = useState("");
+  const [editDrafts, setEditDrafts] = useState<Record<string, EditableFields>>({});
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
 
@@ -230,6 +281,70 @@ export default function AdminDatingCardAiReviewPanel() {
     }
   };
 
+  const startEdit = (item: ReviewItem) => {
+    const key = itemKey(item);
+    setEditingKey(key);
+    setEditDrafts((prev) => ({ ...prev, [key]: prev[key] ?? editableFieldsFromItem(item) }));
+    setError("");
+    setInfo("");
+  };
+
+  const updateDraft = (key: string, field: keyof EditableFields, value: string) => {
+    setEditDrafts((prev) => ({
+      ...prev,
+      [key]: {
+        ...(prev[key] ?? {
+          displayName: "",
+          job: "",
+          region: "",
+          intro: "",
+          strengths: "",
+          ideal: "",
+          preferredPartner: "",
+          instagramId: "",
+        }),
+        [field]: value,
+      },
+    }));
+  };
+
+  const saveEdit = async (item: ReviewItem) => {
+    const sourceType = itemSource(item);
+    const cardId = itemCardId(item);
+    const key = itemKey(item);
+    const fields = editDrafts[key] ?? editableFieldsFromItem(item);
+    if (!cardId) return;
+
+    setProcessingKey(`update_fields:${key}`);
+    setError("");
+    setInfo("");
+    try {
+      const res = await fetch("/api/admin/dating/card-ai-review", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "update_fields",
+          sourceType,
+          cardId,
+          fields,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as ActionResponse;
+      if (!res.ok || body.ok === false) {
+        throw new Error([body.message, body.detail].filter(Boolean).join(" ") || "수정 저장에 실패했습니다.");
+      }
+      setItems((prev) =>
+        prev.map((candidate) => (itemKey(candidate) === key ? updateItemWithFields(candidate, fields, body.displayName) : candidate))
+      );
+      setEditingKey("");
+      setInfo("검수 항목 내용을 수정했습니다.");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "수정 저장에 실패했습니다.");
+    } finally {
+      setProcessingKey("");
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
@@ -320,9 +435,12 @@ export default function AdminDatingCardAiReviewPanel() {
             const review = itemReview(item);
             const sourceType = itemSource(item);
             const cardId = itemCardId(item);
+            const key = itemKey(item);
             const warningKey = `send_warning_email:${sourceType}:${cardId}`;
             const deleteKey = `delete_card:${sourceType}:${cardId}`;
+            const updateKey = `update_fields:${key}`;
             const targetLabel = isApplicationSource(sourceType) ? "지원 삭제" : "카드 삭제";
+            const draft = editDrafts[key] ?? editableFieldsFromItem(item);
             return (
               <div key={`${sourceType}-${cardId}`} className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-sm">
                 <div className="flex flex-col gap-3 sm:flex-row sm:justify-between">
@@ -377,7 +495,104 @@ export default function AdminDatingCardAiReviewPanel() {
                   >
                     {processingKey === deleteKey ? "삭제 중..." : targetLabel}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => (editingKey === key ? setEditingKey("") : startEdit(item))}
+                    disabled={processingKey !== ""}
+                    className="h-9 rounded-xl border border-violet-200 bg-violet-50 px-3 text-xs font-semibold text-violet-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {editingKey === key ? "수정 닫기" : "내용 수정"}
+                  </button>
                 </div>
+
+                {editingKey === key ? (
+                  <div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/50 p-3">
+                    <div className="grid gap-2 sm:grid-cols-2">
+                      <label className="text-[11px] font-semibold text-violet-900">
+                        이름/닉네임
+                        <input
+                          value={draft.displayName}
+                          onChange={(event) => updateDraft(key, "displayName", event.target.value)}
+                          className="mt-1 h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none"
+                        />
+                      </label>
+                      <label className="text-[11px] font-semibold text-violet-900">
+                        직업
+                        <input
+                          value={draft.job}
+                          onChange={(event) => updateDraft(key, "job", event.target.value)}
+                          className="mt-1 h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none"
+                        />
+                      </label>
+                      <label className="text-[11px] font-semibold text-violet-900">
+                        지역
+                        <input
+                          value={draft.region}
+                          onChange={(event) => updateDraft(key, "region", event.target.value)}
+                          className="mt-1 h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none"
+                        />
+                      </label>
+                      <label className="text-[11px] font-semibold text-violet-900">
+                        인스타
+                        <input
+                          value={draft.instagramId}
+                          onChange={(event) => updateDraft(key, "instagramId", event.target.value)}
+                          className="mt-1 h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none"
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-2 grid gap-2">
+                      <label className="text-[11px] font-semibold text-violet-900">
+                        소개
+                        <textarea
+                          value={draft.intro}
+                          onChange={(event) => updateDraft(key, "intro", event.target.value)}
+                          className="mt-1 min-h-[72px] w-full rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs text-neutral-900 outline-none"
+                        />
+                      </label>
+                      <label className="text-[11px] font-semibold text-violet-900">
+                        강점
+                        <textarea
+                          value={draft.strengths}
+                          onChange={(event) => updateDraft(key, "strengths", event.target.value)}
+                          className="mt-1 min-h-[72px] w-full rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs text-neutral-900 outline-none"
+                        />
+                      </label>
+                      <label className="text-[11px] font-semibold text-violet-900">
+                        원하는 상대/이상형
+                        <textarea
+                          value={draft.preferredPartner || draft.ideal}
+                          onChange={(event) => {
+                            updateDraft(key, "preferredPartner", event.target.value);
+                            updateDraft(key, "ideal", event.target.value);
+                          }}
+                          className="mt-1 min-h-[72px] w-full rounded-lg border border-violet-200 bg-white px-3 py-2 text-xs text-neutral-900 outline-none"
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-3 flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => void saveEdit(item)}
+                        disabled={processingKey !== ""}
+                        className="h-9 rounded-xl bg-violet-600 px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {processingKey === updateKey ? "저장 중..." : "수정 저장"}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setEditDrafts((prev) => ({ ...prev, [key]: editableFieldsFromItem(item) }));
+                          setEditingKey("");
+                        }}
+                        disabled={processingKey !== ""}
+                        className="h-9 rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-700 disabled:opacity-50"
+                      >
+                        취소
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
 
                 <p className="mt-3 rounded-xl bg-neutral-50 px-3 py-2 text-sm text-neutral-700">
                   {review.summary || "요약 없음"}

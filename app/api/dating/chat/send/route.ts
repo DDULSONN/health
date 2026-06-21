@@ -22,6 +22,10 @@ function isSourceKind(value: string): value is DatingChatSourceKind {
   return value === "open" || value === "paid" || value === "swipe";
 }
 
+function isUniqueViolation(error: unknown) {
+  return !!error && typeof error === "object" && String((error as { code?: unknown }).code ?? "") === "23505";
+}
+
 export async function POST(req: Request) {
   const { user } = await getRequestAuthContext(req);
 
@@ -96,9 +100,24 @@ export async function POST(req: Request) {
           .single();
 
         if (insertThreadRes.error) {
-          throw insertThreadRes.error;
+          if (!isUniqueViolation(insertThreadRes.error)) {
+            throw insertThreadRes.error;
+          }
+
+          const retryThreadRes = await admin
+            .from("dating_chat_threads")
+            .select("id")
+            .eq("source_kind", connection.sourceKind)
+            .eq("source_id", connection.sourceId)
+            .maybeSingle();
+
+          if (retryThreadRes.error || !retryThreadRes.data?.id) {
+            throw retryThreadRes.error ?? insertThreadRes.error;
+          }
+          resolvedThreadId = String(retryThreadRes.data.id);
+        } else {
+          resolvedThreadId = String(insertThreadRes.data.id);
         }
-        resolvedThreadId = String(insertThreadRes.data.id);
       }
     }
 
