@@ -119,9 +119,8 @@ function cleanText(value: unknown, max = 500) {
 function parseLimit(value: unknown, mode: ReviewMode) {
   const num = Number(value);
   const fallback = mode === "rules" ? 50 : 12;
-  const max = mode === "rules" ? 200 : 25;
   if (!Number.isFinite(num)) return fallback;
-  return Math.min(Math.max(Math.floor(num), 1), max);
+  return Math.max(Math.floor(num), 1);
 }
 
 function normalizeSource(value: unknown): SourceType | "all" {

@@ -32,6 +32,10 @@
     {
       "path": "/api/cron/dating-registration-reminders",
       "schedule": "28 * * * *"
+    },
+    {
+      "path": "/api/cron/dating-1on1-card-review",
+      "schedule": "0 15 * * *"
     }
   ]
 }
