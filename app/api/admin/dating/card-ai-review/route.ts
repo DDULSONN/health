@@ -68,6 +68,17 @@ type ActionCard = {
   sex: "male" | "female" | null;
 };
 
+type EditableFields = {
+  displayName: string;
+  job: string;
+  region: string;
+  intro: string;
+  strengths: string;
+  ideal: string;
+  preferredPartner: string;
+  instagramId: string;
+};
+
 const GEMINI_API_URL = "https://generativelanguage.googleapis.com/v1beta/models";
 const SOURCE_TYPES: SourceType[] = [
   "open_card",
@@ -132,8 +143,21 @@ function cleanArray(value: unknown) {
   return value.map((item) => cleanText(item, 80)).filter(Boolean).slice(0, 8);
 }
 
-function cleanEditableFields(value: unknown) {
-  if (!value || typeof value !== "object") return {};
+function emptyEditableFields(): EditableFields {
+  return {
+    displayName: "",
+    job: "",
+    region: "",
+    intro: "",
+    strengths: "",
+    ideal: "",
+    preferredPartner: "",
+    instagramId: "",
+  };
+}
+
+function cleanEditableFields(value: unknown): EditableFields {
+  if (!value || typeof value !== "object") return emptyEditableFields();
   const raw = value as Record<string, unknown>;
   return {
     displayName: cleanText(raw.displayName, 80),
@@ -556,6 +580,209 @@ async function fetchCandidates(admin: AdminClient, source: SourceType | "all", l
   return rows.flat().sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? ""))).slice(0, limit);
 }
 
+async function loadCandidateById(admin: AdminClient, sourceType: SourceType, cardId: string): Promise<CandidateCard | null> {
+  if (sourceType === "open_card") {
+    const { data, error } = await admin
+      .from("dating_cards")
+      .select("id,owner_user_id,status,display_nickname,age,region,job,ideal_type,strengths_text,instagram_id,photo_paths,created_at")
+      .eq("id", cardId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    const row = data as Record<string, unknown>;
+    const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-card-photos", "dating-photos"]);
+    return {
+      sourceType,
+      cardId: cleanText(row.id, 80),
+      userId: cleanText(row.owner_user_id, 80) || null,
+      status: cleanText(row.status, 40) || null,
+      displayName: cleanText(row.display_nickname, 80),
+      age: typeof row.age === "number" ? row.age : null,
+      region: cleanText(row.region, 80) || null,
+      texts: {
+        job: cleanText(row.job, 80),
+        idealType: cleanText(row.ideal_type, 500),
+        strengths: cleanText(row.strengths_text, 500),
+        instagramId: cleanText(row.instagram_id, 80),
+      },
+      photoPaths,
+      bucket: "dating-card-photos",
+      previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-card-photos", path)),
+      createdAt: cleanText(row.created_at, 80) || null,
+    };
+  }
+
+  if (sourceType === "paid_card") {
+    const { data, error } = await admin
+      .from("dating_paid_cards")
+      .select("id,user_id,status,nickname,age,region,job,strengths_text,ideal_text,intro_text,instagram_id,photo_paths,created_at")
+      .eq("id", cardId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    const row = data as Record<string, unknown>;
+    const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-card-photos", "dating-photos"]);
+    return {
+      sourceType,
+      cardId: cleanText(row.id, 80),
+      userId: cleanText(row.user_id, 80) || null,
+      status: cleanText(row.status, 40) || null,
+      displayName: cleanText(row.nickname, 80),
+      age: typeof row.age === "number" ? row.age : null,
+      region: cleanText(row.region, 80) || null,
+      texts: {
+        job: cleanText(row.job, 80),
+        strengths: cleanText(row.strengths_text, 500),
+        ideal: cleanText(row.ideal_text, 500),
+        intro: cleanText(row.intro_text, 500),
+        instagramId: cleanText(row.instagram_id, 80),
+      },
+      photoPaths,
+      bucket: "dating-card-photos",
+      previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-card-photos", path)),
+      createdAt: cleanText(row.created_at, 80) || null,
+    };
+  }
+
+  if (sourceType === "open_card_application") {
+    const { data, error } = await admin
+      .from("dating_card_applications")
+      .select("id,card_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,intro_text,instagram_id,photo_paths,status,created_at")
+      .eq("id", cardId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    const row = data as Record<string, unknown>;
+    const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-card-photos", "dating-photos"]);
+    return {
+      sourceType,
+      cardId: cleanText(row.id, 80),
+      userId: cleanText(row.applicant_user_id, 80) || null,
+      status: cleanText(row.status, 40) || null,
+      displayName: cleanText(row.applicant_display_nickname, 80),
+      age: typeof row.age === "number" ? row.age : null,
+      region: cleanText(row.region, 80) || null,
+      texts: {
+        targetCardId: cleanText(row.card_id, 80),
+        job: cleanText(row.job, 80),
+        height: cleanText(row.height_cm, 20),
+        trainingYears: cleanText(row.training_years, 20),
+        intro: cleanText(row.intro_text, 500),
+        instagramId: cleanText(row.instagram_id, 80),
+      },
+      photoPaths,
+      bucket: "dating-card-photos",
+      previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-card-photos", path)),
+      createdAt: cleanText(row.created_at, 80) || null,
+    };
+  }
+
+  if (sourceType === "paid_card_application") {
+    const { data, error } = await admin
+      .from("dating_paid_card_applications")
+      .select("id,paid_card_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,intro_text,instagram_id,photo_paths,status,created_at")
+      .eq("id", cardId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) return null;
+    const row = data as Record<string, unknown>;
+    const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-card-photos", "dating-photos"]);
+    return {
+      sourceType,
+      cardId: cleanText(row.id, 80),
+      userId: cleanText(row.applicant_user_id, 80) || null,
+      status: cleanText(row.status, 40) || null,
+      displayName: cleanText(row.applicant_display_nickname, 80),
+      age: typeof row.age === "number" ? row.age : null,
+      region: cleanText(row.region, 80) || null,
+      texts: {
+        targetCardId: cleanText(row.paid_card_id, 80),
+        job: cleanText(row.job, 80),
+        height: cleanText(row.height_cm, 20),
+        trainingYears: cleanText(row.training_years, 20),
+        intro: cleanText(row.intro_text, 500),
+        instagramId: cleanText(row.instagram_id, 80),
+      },
+      photoPaths,
+      bucket: "dating-card-photos",
+      previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-card-photos", path)),
+      createdAt: cleanText(row.created_at, 80) || null,
+    };
+  }
+
+  const { data, error } = await admin
+    .from("dating_1on1_cards")
+    .select("id,user_id,status,name,birth_year,region,job,intro_text,strengths_text,preferred_partner_text,photo_paths,created_at")
+    .eq("id", cardId)
+    .maybeSingle();
+  if (error) throw error;
+  if (!data) return null;
+  const row = data as Record<string, unknown>;
+  const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-1on1-photos"]);
+  const currentYear = new Date().getFullYear();
+  return {
+    sourceType,
+    cardId: cleanText(row.id, 80),
+    userId: cleanText(row.user_id, 80) || null,
+    status: cleanText(row.status, 40) || null,
+    displayName: cleanText(row.name, 80),
+    age: typeof row.birth_year === "number" ? currentYear - row.birth_year + 1 : null,
+    region: cleanText(row.region, 80) || null,
+    texts: {
+      job: cleanText(row.job, 80),
+      intro: cleanText(row.intro_text, 500),
+      strengths: cleanText(row.strengths_text, 500),
+      preferredPartner: cleanText(row.preferred_partner_text, 500),
+    },
+    photoPaths,
+    bucket: "dating-1on1-photos",
+    previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-1on1-photos", path)),
+    createdAt: cleanText(row.created_at, 80) || null,
+  };
+}
+
+function editableFieldsFromCandidate(card: CandidateCard | null): EditableFields {
+  if (!card) return emptyEditableFields();
+  return {
+    displayName: card.displayName,
+    job: card.texts.job ?? "",
+    region: card.region ?? "",
+    intro: card.texts.intro ?? "",
+    strengths: card.texts.strengths ?? "",
+    ideal: card.texts.ideal ?? card.texts.idealType ?? "",
+    preferredPartner: card.texts.preferredPartner ?? "",
+    instagramId: card.texts.instagramId ?? "",
+  };
+}
+
+function requiredText(value: string, fallback: string) {
+  return value.trim() || fallback.trim();
+}
+
+async function hydrateReviewRows(admin: AdminClient, rows: Record<string, unknown>[]) {
+  return Promise.all(
+    rows.map(async (row) => {
+      const sourceType = normalizeSource(row.source_type);
+      const cardId = cleanText(row.card_id, 100);
+      const current = sourceType === "all" || !cardId ? null : await loadCandidateById(admin, sourceType, cardId).catch(() => null);
+      return {
+        ...row,
+        sourceType: sourceType === "all" ? row.source_type : sourceType,
+        cardId,
+        userId: current?.userId ?? (cleanText(row.user_id, 100) || null),
+        status: current?.status ?? (cleanText(row.card_status, 40) || null),
+        displayName: current?.displayName ?? cleanText(row.display_name, 80),
+        age: current?.age ?? null,
+        region: current?.region ?? null,
+        previewUrls: current?.previewUrls ?? [],
+        texts: current?.texts ?? {},
+        editableFields: editableFieldsFromCandidate(current),
+        createdAt: current?.createdAt ?? null,
+      };
+    })
+  );
+}
+
 async function saveReview(admin: AdminClient, adminUserId: string, card: CandidateCard, review: CardReview) {
   const { error } = await admin.from("admin_dating_card_ai_reviews").upsert(
     {
@@ -704,15 +931,19 @@ async function deleteActionCard(admin: AdminClient, card: ActionCard) {
   if (error) throw error;
 }
 
-async function updateActionCardFields(admin: AdminClient, card: ActionCard, fields: ReturnType<typeof cleanEditableFields>) {
+async function updateActionCardFields(admin: AdminClient, card: ActionCard, fields: EditableFields) {
+  const current = await loadCandidateById(admin, card.sourceType, card.cardId);
+  const existing = editableFieldsFromCandidate(current);
+  const merged = { ...existing, ...fields };
+
   if (card.sourceType === "open_card") {
     const payload = {
-      display_nickname: fields.displayName || null,
-      job: fields.job || null,
-      region: fields.region || null,
-      strengths_text: fields.strengths ? fields.strengths.slice(0, 150) : null,
-      ideal_type: fields.ideal || null,
-      instagram_id: fields.instagramId || null,
+      display_nickname: merged.displayName || null,
+      job: merged.job || null,
+      region: merged.region || null,
+      strengths_text: merged.strengths ? merged.strengths.slice(0, 150) : null,
+      ideal_type: merged.ideal || null,
+      instagram_id: merged.instagramId || null,
     };
     const { error } = await admin.from("dating_cards").update(payload).eq("id", card.cardId);
     if (error) throw error;
@@ -721,13 +952,13 @@ async function updateActionCardFields(admin: AdminClient, card: ActionCard, fiel
 
   if (card.sourceType === "paid_card") {
     const payload = {
-      nickname: fields.displayName || null,
-      job: fields.job || null,
-      region: fields.region || null,
-      strengths_text: fields.strengths || null,
-      ideal_text: fields.ideal || null,
-      intro_text: fields.intro || null,
-      instagram_id: fields.instagramId || null,
+      nickname: merged.displayName || null,
+      job: merged.job || null,
+      region: merged.region || null,
+      strengths_text: merged.strengths || null,
+      ideal_text: merged.ideal || null,
+      intro_text: merged.intro || null,
+      instagram_id: merged.instagramId || null,
     };
     const { error } = await admin.from("dating_paid_cards").update(payload).eq("id", card.cardId);
     if (error) throw error;
@@ -736,11 +967,11 @@ async function updateActionCardFields(admin: AdminClient, card: ActionCard, fiel
 
   if (card.sourceType === "open_card_application") {
     const payload = {
-      applicant_display_nickname: fields.displayName || "",
-      job: fields.job || null,
-      region: fields.region || null,
-      intro_text: fields.intro || "",
-      instagram_id: fields.instagramId || null,
+      applicant_display_nickname: requiredText(merged.displayName, existing.displayName),
+      job: merged.job || null,
+      region: merged.region || null,
+      intro_text: requiredText(merged.intro, existing.intro),
+      instagram_id: merged.instagramId || null,
     };
     const { error } = await admin.from("dating_card_applications").update(payload).eq("id", card.cardId);
     if (error) throw error;
@@ -749,11 +980,11 @@ async function updateActionCardFields(admin: AdminClient, card: ActionCard, fiel
 
   if (card.sourceType === "paid_card_application") {
     const payload = {
-      applicant_display_nickname: fields.displayName || "",
-      job: fields.job || null,
-      region: fields.region || null,
-      intro_text: fields.intro || "",
-      instagram_id: fields.instagramId || null,
+      applicant_display_nickname: requiredText(merged.displayName, existing.displayName),
+      job: merged.job || null,
+      region: merged.region || null,
+      intro_text: requiredText(merged.intro, existing.intro),
+      instagram_id: merged.instagramId || null,
     };
     const { error } = await admin.from("dating_paid_card_applications").update(payload).eq("id", card.cardId);
     if (error) throw error;
@@ -761,12 +992,12 @@ async function updateActionCardFields(admin: AdminClient, card: ActionCard, fiel
   }
 
   const payload = {
-    name: fields.displayName || "",
-    job: fields.job || "",
-    region: fields.region || "",
-    intro_text: fields.intro || "",
-    strengths_text: fields.strengths || "",
-    preferred_partner_text: fields.preferredPartner || fields.ideal || "",
+    name: requiredText(merged.displayName, existing.displayName),
+    job: requiredText(merged.job, existing.job),
+    region: requiredText(merged.region, existing.region),
+    intro_text: requiredText(merged.intro, existing.intro),
+    strengths_text: requiredText(merged.strengths, existing.strengths),
+    preferred_partner_text: requiredText(merged.preferredPartner || merged.ideal, existing.preferredPartner || existing.ideal),
   };
   const { error } = await admin.from("dating_1on1_cards").update(payload).eq("id", card.cardId);
   if (error) throw error;
@@ -828,7 +1059,8 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, message: "검수 목록을 불러오지 못했습니다.", detail: error.message }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, items: data ?? [] });
+  const items = await hydrateReviewRows(guard.admin, ((data ?? []) as Record<string, unknown>[]));
+  return NextResponse.json({ ok: true, items });
 }
 
 export async function PATCH(req: Request) {
@@ -980,6 +1212,7 @@ export async function POST(req: Request) {
         region: item.region,
         previewUrls: item.previewUrls,
         texts: item.texts,
+        editableFields: editableFieldsFromCandidate(item),
         createdAt: item.createdAt,
         review: item.review,
       }));

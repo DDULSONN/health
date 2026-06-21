@@ -28,6 +28,7 @@ type ReviewItem = {
   region?: string | null;
   previewUrls?: string[];
   texts?: Record<string, string>;
+  editableFields?: Partial<EditableFields>;
   createdAt?: string | null;
   scanned_at?: string | null;
   raw_result?: { provider?: string; [key: string]: unknown };
@@ -131,16 +132,18 @@ function itemKey(item: ReviewItem) {
 }
 
 function editableFieldsFromItem(item: ReviewItem): EditableFields {
+  const editable = item.editableFields ?? {};
   const texts = item.texts ?? {};
+  const displayName = item.displayName ?? item.display_name ?? "";
   return {
-    displayName: itemDisplayName(item) === "?대쫫 ?놁쓬" ? "" : itemDisplayName(item),
-    job: texts.job ?? "",
-    region: item.region ?? "",
-    intro: texts.intro ?? "",
-    strengths: texts.strengths ?? "",
-    ideal: texts.ideal ?? texts.idealType ?? "",
-    preferredPartner: texts.preferredPartner ?? "",
-    instagramId: texts.instagramId ?? "",
+    displayName: editable.displayName ?? displayName,
+    job: editable.job ?? texts.job ?? "",
+    region: editable.region ?? item.region ?? "",
+    intro: editable.intro ?? texts.intro ?? "",
+    strengths: editable.strengths ?? texts.strengths ?? "",
+    ideal: editable.ideal ?? texts.ideal ?? texts.idealType ?? "",
+    preferredPartner: editable.preferredPartner ?? texts.preferredPartner ?? "",
+    instagramId: editable.instagramId ?? texts.instagramId ?? "",
   };
 }
 
@@ -160,6 +163,7 @@ function updateItemWithFields(item: ReviewItem, fields: EditableFields, displayN
     display_name: displayName ?? fields.displayName,
     region: fields.region,
     texts: nextTexts,
+    editableFields: fields,
   };
 }
 
