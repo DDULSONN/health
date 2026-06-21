@@ -29,12 +29,12 @@ const DIRECT_CONTACT_PATTERNS: Array<{ label: string; level: SuspicionLevel; pat
   {
     label: "카카오톡/카톡 ID 기재 의심",
     level: "high",
-    pattern: /(카카오톡|카톡|카카오|kakao|kakaotalk|오픈채팅|open\s*kakao).{0,24}(아이디|id|검색|추가|친추|연락|주세요|주세용|보내|dm|디엠|@|[A-Za-z0-9._-]{3,})/i,
+    pattern: /(카\s*톡|카\s*카\s*오|ㅋ\s*ㅌ|오\s*픈\s*(카\s*톡|채\s*팅)|오카|옾챗|오픈채팅|open\s*(kakao|chat)|kakao|kakaotalk).{0,24}(아이디|id|검색|추가|친추|연락|주세요|주세용|보내|dm|디엠|@|[A-Za-z0-9._-]{3,})/i,
   },
   {
     label: "인스타 계정/DM 유도 의심",
     level: "high",
-    pattern: /(인스타|instagram|insta|ig|디엠|dm).{0,24}(아이디|id|계정|검색|팔로우|연락|주세요|주세용|보내|@|[A-Za-z0-9._-]{3,})/i,
+    pattern: /(인\s*스\s*타|인별|instagram|insta|ig|디엠|dm).{0,24}(아이디|id|계정|검색|팔로우|연락|주세요|주세용|보내|@|[A-Za-z0-9._-]{3,})/i,
   },
   {
     label: "외부 메신저 ID 기재 의심",
@@ -55,6 +55,26 @@ const DIRECT_CONTACT_PATTERNS: Array<{ label: string; level: SuspicionLevel; pat
     label: "앱 밖 연락 유도 문구 의심",
     level: "medium",
     pattern: /(연락처|연락|번호|전화|문자|카톡|카카오|인스타|dm|디엠).{0,18}(주세요|주세용|가능|해요|할게|남겨|교환|보내|알려)/i,
+  },
+  {
+    label: "외부 계정 ID 직접 기재 의심",
+    level: "high",
+    pattern: /(아이디|id|계정)\s*(은|는|:|：|=)?\s*[A-Za-z0-9._-]{3,}/i,
+  },
+  {
+    label: "핸들로 외부 연락 유도 의심",
+    level: "high",
+    pattern: /[A-Za-z0-9][A-Za-z0-9._-]{2,}\s*(으로|로|여기로|쪽으로).{0,12}(연락|dm|디엠|보내|주세요|주세용)/i,
+  },
+  {
+    label: "DM/디엠 요청 의심",
+    level: "medium",
+    pattern: /(dm|디엠|메시지|쪽지).{0,16}(주세요|주세용|보내|가능|환영|해요|해주)/i,
+  },
+  {
+    label: "우회 표기 외부 계정 의심",
+    level: "high",
+    pattern: /(카\s*톡|카\s*카\s*오|ㅋ\s*ㅌ|오카|옾챗|인\s*스\s*타|인별|insta|instagram|ig)\s*[A-Za-z0-9._-]{3,}/i,
   },
 ];
 
@@ -118,10 +138,10 @@ export async function GET(req: Request) {
 
   const cards = ((data ?? []) as OneOnOneCardRow[]).filter((card) => cleanText(card.id));
   const now = new Date().toISOString();
-  const rows = cards.map((card) => {
+  const rows = cards.flatMap((card) => {
     const review = reviewCard(card);
-    return {
-      source_type: "one_on_one",
+    return ["one_on_one", "one_on_one_application"].map((sourceType) => ({
+      source_type: sourceType,
       card_id: card.id,
       user_id: card.user_id,
       card_status: card.status,
@@ -134,7 +154,7 @@ export async function GET(req: Request) {
       raw_result: review.raw,
       scanned_at: now,
       admin_user_id: null,
-    };
+    }));
   });
 
   if (rows.length === 0) {
@@ -153,7 +173,8 @@ export async function GET(req: Request) {
   const suspicious = rows.filter((row) => row.suspicion_level === "medium" || row.suspicion_level === "high").length;
   return NextResponse.json({
     ok: true,
-    scanned: rows.length,
+    scanned: cards.length,
+    reviewRows: rows.length,
     suspicious,
     scannedAt: now,
   });

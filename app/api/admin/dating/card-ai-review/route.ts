@@ -101,12 +101,18 @@ const EXTERNAL_CONTACT_PATTERNS = [
 const DIRECT_CONTACT_PATTERNS = [
   /(?:010|011|016|017|018|019)[-\s.)]*(?:\d[-\s.]*){7,8}/,
   /\b01[016789][^\d]{0,3}\d{3,4}[^\d]{0,3}\d{4}\b/,
-  /(카카오톡|카톡|오픈카톡|오픈채팅|kakao|kakaotalk).{0,18}(아이디|id|검색|추가|친추|연락|주세요|주세용|보내|남겨)/i,
-  /(카카오톡|카톡|kakao|kakaotalk)\s*[:：]?\s*[A-Za-z0-9._-]{2,}/i,
-  /(인스타|instagram|insta|ig|디엠|dm).{0,18}(아이디|id|계정|검색|팔로우|연락|주세요|주세용|보내|남겨)/i,
+  /(카\s*톡|카\s*카\s*오|ㅋ\s*ㅌ|오\s*픈\s*(카\s*톡|채\s*팅)|오카|옾챗|오픈카톡|오픈채팅|open\s*(kakao|chat)|kakao|kakaotalk).{0,24}(아이디|id|검색|추가|친추|연락|주세요|주세용|보내|남겨|디엠|dm|@|[A-Za-z0-9._-]{3,})/i,
+  /(카\s*톡|카\s*카\s*오|ㅋ\s*ㅌ|kakao|kakaotalk)\s*[:：=은는]?\s*[A-Za-z0-9._-]{2,}/i,
+  /(인\s*스\s*타|인별|instagram|insta|ig|디엠|dm).{0,24}(아이디|id|계정|검색|팔로우|연락|주세요|주세용|보내|남겨|@|[A-Za-z0-9._-]{3,})/i,
   /(^|[^A-Za-z0-9._])@[A-Za-z0-9._]{3,}/i,
   /(라인|line|텔레그램|telegram|텔레)\s*[:：]?\s*[A-Za-z0-9._-]{2,}/i,
   /(연락처|연락|번호|전화|문자).{0,16}(주세요|주세용|가능|해요|할게|남겨|교환|010|카톡|카카오|인스타|dm|디엠)/i,
+];
+const ONE_ON_ONE_DIRECT_CONTACT_PATTERNS = [
+  /(아이디|id|계정)\s*(은|는|:|：|=)?\s*[A-Za-z0-9._-]{3,}/i,
+  /[A-Za-z0-9][A-Za-z0-9._-]{2,}\s*(으로|로|여기로|쪽으로).{0,12}(연락|dm|디엠|보내|주세요|주세용)/i,
+  /(dm|디엠|메시지|쪽지).{0,16}(주세요|주세용|보내|가능|환영|해요|해주)/i,
+  /(카\s*톡|카\s*카\s*오|ㅋ\s*ㅌ|오카|옾챗|인\s*스\s*타|인별|insta|instagram|ig)\s*[A-Za-z0-9._-]{3,}/i,
 ];
 
 const COMMERCIAL_PATTERNS = [
@@ -204,7 +210,7 @@ function sourceLabel(value: SourceType) {
   return "1대1 지원";
 }
 
-function likelyTextFlags(texts: Record<string, string>) {
+function likelyTextFlags(texts: Record<string, string>, sourceType?: SourceType) {
   const reviewTexts = Object.entries(texts)
     .filter(([key]) => !/instagram|job/i.test(key))
     .map(([, value]) => value.trim())
@@ -219,6 +225,12 @@ function likelyTextFlags(texts: Record<string, string>) {
   if (/([가-힣A-Za-z0-9])\1{4,}/u.test(merged)) flags.push("반복 문자 과다");
   if (/010[-\s]?\d{3,4}[-\s]?\d{4}/.test(merged)) flags.push("전화번호 직접 노출 의심");
   if (DIRECT_CONTACT_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("연락처/외부 계정 선노출 의심");
+  if (
+    (sourceType === "one_on_one" || sourceType === "one_on_one_application") &&
+    ONE_ON_ONE_DIRECT_CONTACT_PATTERNS.some((pattern) => pattern.test(merged))
+  ) {
+    flags.push("1대1 신청서 외부 계정 기재 의심");
+  }
   if (EXTERNAL_CONTACT_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("외부 연락/링크 유도 의심");
   if (COMMERCIAL_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("광고/상업성 문구 의심");
   if (UNSAFE_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("부적절/위험 키워드");
@@ -228,7 +240,7 @@ function likelyTextFlags(texts: Record<string, string>) {
 
 function ruleReview(card: CandidateCard): CardReview {
   const photoFlags: string[] = [];
-  const textFlags = likelyTextFlags(card.texts);
+  const textFlags = likelyTextFlags(card.texts, card.sourceType);
   const flags: string[] = [];
   const requiredTextFields = Object.entries(card.texts).filter(([key]) => !/instagram|job/i.test(key));
 
