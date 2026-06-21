@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
-import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 function normalizePhotoVisibility(value: unknown): "blur" | "public" | null {
   return value === "blur" || value === "public" ? value : null;
@@ -15,6 +15,90 @@ function hasTwoStoredPhotos(value: unknown): boolean {
 function hasBlurPreview(value: unknown, fallbackThumb: unknown): boolean {
   if (hasTwoStoredPhotos(value)) return true;
   return typeof fallbackThumb === "string" && fallbackThumb.trim().length > 0;
+}
+
+function isMissingColumnError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const code = "code" in error ? String(error.code ?? "") : "";
+  return code === "42703" || code === "PGRST204";
+}
+
+async function reactivateOpenCard(cardId: string, userId: string) {
+  const adminClient = createAdminClient();
+  const cardRes = await adminClient
+    .from("dating_cards")
+    .select("id,owner_user_id,status")
+    .eq("id", cardId)
+    .maybeSingle();
+
+  if (cardRes.error || !cardRes.data || cardRes.data.owner_user_id !== userId) {
+    return NextResponse.json({ error: "오픈카드를 찾을 수 없습니다." }, { status: 404 });
+  }
+
+  const currentStatus = String(cardRes.data.status ?? "");
+  if (currentStatus !== "expired" && currentStatus !== "hidden") {
+    return NextResponse.json({ error: "만료되었거나 내려간 오픈카드만 다시 대기 등록할 수 있습니다." }, { status: 400 });
+  }
+
+  const activeCardRes = await adminClient
+    .from("dating_cards")
+    .select("id")
+    .eq("owner_user_id", userId)
+    .in("status", ["pending", "public"])
+    .neq("id", cardId)
+    .limit(1)
+    .maybeSingle();
+
+  if (activeCardRes.error) {
+    console.error("[PATCH /api/dating/cards/my/[id]] active card check failed", activeCardRes.error);
+    return NextResponse.json({ error: "기존 오픈카드 상태를 확인하지 못했습니다." }, { status: 500 });
+  }
+  if (activeCardRes.data) {
+    return NextResponse.json({ error: "이미 대기중이거나 공개중인 오픈카드가 있습니다." }, { status: 409 });
+  }
+
+  const nowIso = new Date().toISOString();
+  let updateRes = await adminClient
+    .from("dating_cards")
+    .update({
+      status: "pending",
+      published_at: null,
+      expires_at: null,
+      queue_priority_at: nowIso,
+      auto_requeue_count: 0,
+    })
+    .eq("id", cardId)
+    .eq("owner_user_id", userId)
+    .in("status", ["expired", "hidden"])
+    .select("id,status")
+    .maybeSingle();
+
+  if (updateRes.error && isMissingColumnError(updateRes.error)) {
+    updateRes = await adminClient
+      .from("dating_cards")
+      .update({
+        status: "pending",
+        published_at: null,
+        expires_at: null,
+      })
+      .eq("id", cardId)
+      .eq("owner_user_id", userId)
+      .in("status", ["expired", "hidden"])
+      .select("id,status")
+      .maybeSingle();
+  }
+
+  if (updateRes.error || !updateRes.data) {
+    console.error("[PATCH /api/dating/cards/my/[id]] reactivate failed", updateRes.error);
+    return NextResponse.json({ error: "오픈카드를 다시 대기 등록하지 못했습니다." }, { status: 500 });
+  }
+
+  return NextResponse.json({
+    ok: true,
+    id: updateRes.data.id,
+    status: updateRes.data.status,
+    message: "기존 오픈카드를 다시 대기열에 등록했습니다.",
+  });
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -33,6 +117,10 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const body = await req.json().catch(() => null);
+  if ((body as { action?: unknown } | null)?.action === "reactivate") {
+    return reactivateOpenCard(cardId, user.id);
+  }
+
   const photoVisibility = normalizePhotoVisibility((body as { photo_visibility?: unknown } | null)?.photo_visibility);
   if (!photoVisibility) {
     return NextResponse.json({ error: "사진 공개 설정을 확인해 주세요." }, { status: 400 });

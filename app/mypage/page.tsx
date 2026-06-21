@@ -672,6 +672,15 @@ type MyOneOnOneMatch = {
   counterparty_phone: string | null;
 };
 
+const ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS = 48 * 60 * 60 * 1000;
+
+function canCancelOneOnOneMatch(match: Pick<MyOneOnOneMatch, "state" | "contact_exchange_status" | "contact_exchange_approved_at">) {
+  if (match.state !== "mutual_accepted" && match.state !== "candidate_accepted") return false;
+  if (match.contact_exchange_status !== "approved") return true;
+  const approvedMs = Date.parse(match.contact_exchange_approved_at ?? "");
+  return Number.isFinite(approvedMs) && Date.now() - approvedMs >= ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS;
+}
+
 type MyOneOnOneAutoRecommendationGroup = {
   source_card_id: string;
   source_card_status?: "submitted" | "reviewing" | "approved" | "rejected";
@@ -1654,9 +1663,9 @@ export default function MyPage() {
   const [processingOneOnOneContactExchangeIds, setProcessingOneOnOneContactExchangeIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
   const [reportingDatingTargetKeys, setReportingDatingTargetKeys] = useState<string[]>([]);
-  const [deletingOneOnOneMatchIds, setDeletingOneOnOneMatchIds] = useState<string[]>([]);
   const [processingSwipeLikeBackIds, setProcessingSwipeLikeBackIds] = useState<string[]>([]);
   const [reopeningOpenCardIds, setReopeningOpenCardIds] = useState<string[]>([]);
+  const [reactivatingOpenCardIds, setReactivatingOpenCardIds] = useState<string[]>([]);
   const [deletingSwipeLikeIds, setDeletingSwipeLikeIds] = useState<string[]>([]);
   const [deletingConnectionIds, setDeletingConnectionIds] = useState<string[]>([]);
   const [cancelingAppliedIds, setCancelingAppliedIds] = useState<string[]>([]);
@@ -4076,31 +4085,6 @@ export default function MyPage() {
     }
   };
 
-  const handleDeleteOneOnOneClosedMatch = async (id: string) => {
-    if (deletingOneOnOneMatchIds.includes(id)) return;
-    if (!confirm("이 내역을 내 목록에서 지울까요? 결제 및 운영 기록은 보관되며, 내 화면에서만 사라집니다.")) return;
-
-    setDeletingOneOnOneMatchIds((prev) => [...prev, id]);
-    try {
-      const res = await fetch("/api/dating/1on1/matches/my", {
-        method: "DELETE",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ id }),
-      });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
-      if (!res.ok || body.ok === false) {
-        alert(body.error ?? "내 목록에서 지우지 못했습니다.");
-        return;
-      }
-      setMyOneOnOneMatches((prev) => prev.filter((match) => match.id !== id));
-      alert("내 목록에서 지웠습니다.");
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "내 목록에서 지우지 못했습니다.");
-    } finally {
-      setDeletingOneOnOneMatchIds((prev) => prev.filter((matchId) => matchId !== id));
-    }
-  };
-
   const handleDatingUserReport = async (
     targetType: DatingUserReportTargetType,
     targetId: string,
@@ -5035,6 +5019,41 @@ export default function MyPage() {
       alert(e instanceof Error ? e.message : withPaymentCardNotice("오픈카드 재노출 결제를 시작하지 못했습니다."));
     } finally {
       setReopeningOpenCardIds((prev) => prev.filter((id) => id !== card.id));
+    }
+  };
+
+  const handleReactivateMyOpenCard = async (card: MyDatingCard) => {
+    if (reactivatingOpenCardIds.includes(card.id)) return;
+    if (card.status !== "expired" && card.status !== "hidden") {
+      alert("만료되었거나 내려간 오픈카드만 다시 대기 등록할 수 있습니다.");
+      return;
+    }
+    if (hasActiveOpenCard) {
+      alert("이미 대기중이거나 공개중인 오픈카드가 있습니다.");
+      return;
+    }
+    if (!confirm("기존 오픈카드 내용을 그대로 다시 대기열에 등록할까요?")) return;
+
+    setReactivatingOpenCardIds((prev) => [...prev, card.id]);
+    try {
+      const res = await fetch(`/api/dating/cards/my/${encodeURIComponent(card.id)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reactivate" }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+      if (!res.ok) {
+        alert(body.error ?? "오픈카드를 다시 대기 등록하지 못했습니다.");
+        return;
+      }
+      await Promise.all([
+        reloadOpenAppliedApplications(),
+        reloadOpenDatingConnections(),
+        reloadSwipeStatus().catch(() => undefined),
+      ]);
+      alert(body.message ?? "기존 오픈카드를 다시 대기열에 등록했습니다.");
+    } finally {
+      setReactivatingOpenCardIds((prev) => prev.filter((id) => id !== card.id));
     }
   };
 
@@ -8442,6 +8461,7 @@ export default function MyPage() {
                           const card = match.counterparty_card;
                           if (!card) return null;
                           const contactProcessing = processingOneOnOneContactExchangeIds.includes(match.id);
+                          const canCancelMatch = canCancelOneOnOneMatch(match);
                           return (
                             <div key={match.id} className="rounded-lg border border-emerald-200 bg-white p-3">
                               <div className="flex items-center justify-between gap-2">
@@ -8513,19 +8533,21 @@ export default function MyPage() {
                                       외부 공유, 무단 저장, 불쾌한 연락은 제재 대상입니다.
                                     </p>
                                     <div className="mt-2 flex justify-end">
-                                      <button
-                                        type="button"
-                                        disabled={deletingOneOnOneMatchIds.includes(match.id)}
-                                        onClick={() => void handleDeleteOneOnOneClosedMatch(match.id)}
-                                        className="inline-flex h-8 items-center rounded-md border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50"
-                                      >
-                                        {deletingOneOnOneMatchIds.includes(match.id) ? "처리 중..." : "내 목록에서 지우기"}
-                                      </button>
+                                      {canCancelMatch ? (
+                                        <button
+                                          type="button"
+                                          disabled={processingOneOnOneMatchIds.includes(match.id)}
+                                          onClick={() => void handleOneOnOneMatchAction(match.id, "cancel_mutual")}
+                                          className="inline-flex h-8 items-center rounded-md border border-rose-300 bg-white px-3 text-xs font-medium text-rose-700 disabled:opacity-50"
+                                        >
+                                          {processingOneOnOneMatchIds.includes(match.id) ? "취소 중..." : "매칭 취소"}
+                                        </button>
+                                      ) : null}
                                     </div>
                                   </>
                                 ) : null}
                               </div>
-                              {match.contact_exchange_status !== "approved" && (
+                              {canCancelMatch && match.contact_exchange_status !== "approved" && (
                                 <div className="mt-2 flex justify-end">
                                   <button
                                     type="button"
@@ -8582,7 +8604,6 @@ export default function MyPage() {
                       <div className="mt-2 space-y-2">
                         {closedMatches.map((match) => {
                           const card = match.counterparty_card;
-                          const deleting = deletingOneOnOneMatchIds.includes(match.id);
                           if (!card) return null;
                           return (
                             <div key={match.id} className="flex items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2">
@@ -8593,14 +8614,6 @@ export default function MyPage() {
                                 <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${oneOnOneMatchStateColor[match.state]}`}>
                                   {oneOnOneMatchStateText[match.state]}
                                 </span>
-                                <button
-                                  type="button"
-                                  disabled={deleting}
-                                  onClick={() => void handleDeleteOneOnOneClosedMatch(match.id)}
-                                  className="rounded-full border border-neutral-200 px-2 py-0.5 text-[11px] font-medium text-neutral-500 disabled:opacity-50"
-                                >
-                                  {deleting ? "처리 중" : "내 목록에서 지우기"}
-                                </button>
                                 <SmallDatingReportButton
                                   disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}
                                   onClick={() => void handleDatingUserReport("one_on_one_match", match.id, "지난 1:1 매칭 상대")}
@@ -8740,7 +8753,12 @@ export default function MyPage() {
                 applicantCount <= 3 &&
                 hasPublishedBefore &&
                 (!hasActiveOpenCard || card.status === "pending");
+              const canReactivate =
+                (card.status === "hidden" || card.status === "expired") &&
+                !hasActiveOpenCard &&
+                hasPublishedBefore;
               const reopening = reopeningOpenCardIds.includes(card.id);
+              const reactivating = reactivatingOpenCardIds.includes(card.id);
               return (
               <div key={card.id} className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
                 <div className="flex items-center justify-between gap-2">
@@ -8813,6 +8831,16 @@ export default function MyPage() {
                         {reopening ? "결제 준비 중..." : "5,000원 대기없이 다시 노출"}
                       </button>
                     ) : null}
+                    {canReactivate ? (
+                      <button
+                        type="button"
+                        disabled={reactivating}
+                        onClick={() => void handleReactivateMyOpenCard(card)}
+                        className="inline-flex h-8 items-center rounded-md border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                      >
+                        {reactivating ? "등록 중..." : "대기열에 다시 등록"}
+                      </button>
+                    ) : null}
                     <button
                       type="button"
                       disabled={deletingOpenCardIds.includes(card.id)}
@@ -8826,6 +8854,11 @@ export default function MyPage() {
                 {canShowReopen ? (
                   <p className="mt-2 rounded-lg border border-emerald-100 bg-white px-3 py-2 text-[11px] leading-5 text-emerald-800">
                     받은 지원이 적었던 카드라 대기 없이 24시간 다시 노출할 수 있어요.
+                  </p>
+                ) : null}
+                {canReactivate ? (
+                  <p className="mt-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-[11px] leading-5 text-neutral-600">
+                    기존 내용을 그대로 다시 대기열에 올릴 수 있어요. 공개되면 자동 재등록 횟수도 새로 시작됩니다.
                   </p>
                 ) : null}
               </div>

@@ -21,6 +21,8 @@ const AGE_MATCH_MIN_QUOTA = 6;
 const PRIORITY_BOOST_MIN_QUOTA = 2;
 const NEAR_AGE_GAP = 2;
 const CLOSE_REGION_MAX_KM = 90;
+const RECENT_CANDIDATE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
+const REFRESH_RECENT_NEARBY_MIN_QUOTA = 4;
 
 type CardRow = {
   id: string;
@@ -105,6 +107,25 @@ function isPriorityBoostActive(card: { priority_boost_expires_at?: string | null
   return Number.isFinite(expiresAtMs) && expiresAtMs > Date.now();
 }
 
+function isRecentlyCreated(card: { created_at: string }, nowMs = Date.now()) {
+  const createdAtMs = Date.parse(card.created_at);
+  return Number.isFinite(createdAtMs) && nowMs - createdAtMs <= RECENT_CANDIDATE_WINDOW_MS;
+}
+
+function getCreatedAtRank(card: { created_at: string }) {
+  const createdAtMs = Date.parse(card.created_at);
+  return Number.isFinite(createdAtMs) ? -createdAtMs : Number.POSITIVE_INFINITY;
+}
+
+function isCloseRegionCandidate(sourceCard: RecommendationCard, candidateCard: RecommendationCard) {
+  const distance = getRegionDistanceMeta(sourceCard.region, candidateCard.region).distanceKm;
+  return distance != null && distance <= CLOSE_REGION_MAX_KM;
+}
+
+function isRecentNearbyCandidate(sourceCard: RecommendationCard, candidateCard: RecommendationCard) {
+  return isRecentlyCreated(candidateCard) && (isCloseRegionCandidate(sourceCard, candidateCard) || isCandidateInSourceAgeRange(sourceCard, candidateCard));
+}
+
 function sortCandidatesForSource(
   sourceCard: RecommendationCard,
   candidates: RecommendationCard[],
@@ -148,6 +169,60 @@ function sortCandidatesForSource(
     const aHash = hashSeed(`${sourceCard.id}:${seedSuffix}:${a.id}`);
     const bHash = hashSeed(`${sourceCard.id}:${seedSuffix}:${b.id}`);
     if (aHash !== bHash) return aHash - bHash;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+function sortRefreshCandidatesForSource(
+  sourceCard: RecommendationCard,
+  candidates: RecommendationCard[],
+  seedSuffix: string,
+  preferredExcludeIds: Set<string>
+) {
+  return [...candidates].sort((a, b) => {
+    const aExcluded = preferredExcludeIds.has(a.id);
+    const bExcluded = preferredExcludeIds.has(b.id);
+    if (aExcluded !== bExcluded) return aExcluded ? 1 : -1;
+
+    const aRecentNearby = isRecentNearbyCandidate(sourceCard, a);
+    const bRecentNearby = isRecentNearbyCandidate(sourceCard, b);
+    if (aRecentNearby !== bRecentNearby) return aRecentNearby ? -1 : 1;
+
+    const aRecent = isRecentlyCreated(a);
+    const bRecent = isRecentlyCreated(b);
+    if (aRecent !== bRecent) return aRecent ? -1 : 1;
+
+    const aBoostActive = isPriorityBoostActive(a);
+    const bBoostActive = isPriorityBoostActive(b);
+    if (aBoostActive !== bBoostActive) return aBoostActive ? -1 : 1;
+
+    const aInAgeRange = isCandidateInSourceAgeRange(sourceCard, a);
+    const bInAgeRange = isCandidateInSourceAgeRange(sourceCard, b);
+    if (aInAgeRange !== bInAgeRange) return aInAgeRange ? -1 : 1;
+
+    const aDistanceRank = getDistanceRank(sourceCard.region, a.region);
+    const bDistanceRank = getDistanceRank(sourceCard.region, b.region);
+    const aIsNearby = aDistanceRank.distanceBandRank <= 2;
+    const bIsNearby = bDistanceRank.distanceBandRank <= 2;
+    if (aIsNearby !== bIsNearby) return aIsNearby ? -1 : 1;
+
+    const aAgeGap = getAgeGap(sourceCard.age, a.age);
+    const bAgeGap = getAgeGap(sourceCard.age, b.age);
+    const aNearAge = aAgeGap <= NEAR_AGE_GAP;
+    const bNearAge = bAgeGap <= NEAR_AGE_GAP;
+    if (aNearAge !== bNearAge) return aNearAge ? -1 : 1;
+
+    const aHash = hashSeed(`${sourceCard.id}:${seedSuffix}:explore:${a.id}`);
+    const bHash = hashSeed(`${sourceCard.id}:${seedSuffix}:explore:${b.id}`);
+    if (aHash !== bHash) return aHash - bHash;
+
+    if (aDistanceRank.distanceBandRank !== bDistanceRank.distanceBandRank) {
+      return aDistanceRank.distanceBandRank - bDistanceRank.distanceBandRank;
+    }
+    if (aAgeGap !== bAgeGap) return aAgeGap - bAgeGap;
+    const aCreatedAtRank = getCreatedAtRank(a);
+    const bCreatedAtRank = getCreatedAtRank(b);
+    if (aCreatedAtRank !== bCreatedAtRank) return aCreatedAtRank - bCreatedAtRank;
     return a.id.localeCompare(b.id);
   });
 }
@@ -222,12 +297,13 @@ function takeBalancedRecommendations(
   const ageMatched = sortedCandidates.filter((candidate) => isCandidateInSourceAgeRange(sourceCard, candidate));
   const nearAge = sortedCandidates.filter((candidate) => getAgeGap(sourceCard.age, candidate.age) <= NEAR_AGE_GAP);
   const closeRegion = sortedCandidates.filter((candidate) => {
-    const distance = getRegionDistanceMeta(sourceCard.region, candidate.region).distanceKm;
-    return distance != null && distance <= CLOSE_REGION_MAX_KM;
+    return isCloseRegionCandidate(sourceCard, candidate);
   });
+  const recentNearby = sortedCandidates.filter((candidate) => isRecentNearbyCandidate(sourceCard, candidate));
   const boosted = sortedCandidates.filter((candidate) => isPriorityBoostActive(candidate));
 
   addFrom(rotateIfUseful(boosted, "priority-boost"), Math.min(limit, PRIORITY_BOOST_MIN_QUOTA), true);
+  addFrom(rotateIfUseful(recentNearby, "recent-nearby"), Math.min(limit, REFRESH_RECENT_NEARBY_MIN_QUOTA), true);
   addFrom(rotateIfUseful(ageMatched, "age-match"), Math.min(limit, AGE_MATCH_MIN_QUOTA), true);
   addFrom(rotateIfUseful(nearAge, "near-age"), Math.min(limit, Math.max(AGE_MATCH_MIN_QUOTA, 7)), true);
   addFrom(rotateIfUseful(closeRegion, "close-region"), Math.min(limit, Math.max(picked.length, 8)), true);
@@ -235,6 +311,7 @@ function takeBalancedRecommendations(
 
   if (picked.length < limit) {
     addFrom(rotateIfUseful(boosted, "priority-boost-fallback"), Math.min(limit, PRIORITY_BOOST_MIN_QUOTA), false);
+    addFrom(rotateIfUseful(recentNearby, "recent-nearby-fallback"), Math.min(limit, REFRESH_RECENT_NEARBY_MIN_QUOTA), false);
     addFrom(rotateIfUseful(ageMatched, "age-match-fallback"), Math.min(limit, AGE_MATCH_MIN_QUOTA), false);
     addFrom(rotateIfUseful(nearAge, "near-age-fallback"), Math.min(limit, Math.max(AGE_MATCH_MIN_QUOTA, 7)), false);
     addFrom(rotateIfUseful(closeRegion, "close-region-fallback"), Math.min(limit, Math.max(picked.length, 8)), false);
@@ -273,7 +350,7 @@ function getRefreshExcludeIds(
   const excludeIds = new Set(defaultRecommendations.map((candidate) => candidate.id));
 
   for (const candidate of defaultRecommendations) {
-    if (isFreshStrongCandidateForRefresh(sourceCard, candidate, refreshUsedAt)) {
+    if (isRecentNearbyCandidate(sourceCard, candidate) || isFreshStrongCandidateForRefresh(sourceCard, candidate, refreshUsedAt)) {
       excludeIds.delete(candidate.id);
     }
   }
@@ -456,12 +533,22 @@ export async function GET(req: Request) {
       null,
       null
     );
+    const refreshExcludeIds = getRefreshExcludeIds(
+      sourceCard,
+      defaultRecommendations,
+      sourceCard.recommendation_refresh_used_at
+    );
     const recommendations = sourceCard.recommendation_refresh_used_at
       ? takeBalancedRecommendations(
           sourceCard,
-          sortCandidatesForSource(sourceCard, candidates, sourceCard.recommendation_refresh_used_at),
+          sortRefreshCandidatesForSource(
+            sourceCard,
+            candidates,
+            sourceCard.recommendation_refresh_used_at,
+            refreshExcludeIds
+          ),
           RECOMMENDATION_LIMIT,
-          getRefreshExcludeIds(sourceCard, defaultRecommendations, sourceCard.recommendation_refresh_used_at),
+          refreshExcludeIds,
           `${sourceCard.id}:${sourceCard.recommendation_refresh_used_at}:refresh`
         )
       : defaultRecommendations;

@@ -31,7 +31,7 @@ export async function GET(req: Request) {
       listDatingChatConnections(admin, user.id),
       admin
         .from("dating_chat_threads")
-        .select("id,source_kind,source_id,user_a_id,user_b_id,user_a_hidden_at,user_b_hidden_at")
+        .select("id,source_kind,source_id,user_a_id,user_b_id,status,user_a_hidden_at,user_b_hidden_at")
         .or(`user_a_id.eq.${user.id},user_b_id.eq.${user.id}`),
     ]);
 

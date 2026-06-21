@@ -28,6 +28,10 @@
     {
       "path": "/api/cron/dating-1on1-match-reminders",
       "schedule": "18 * * * *"
+    },
+    {
+      "path": "/api/cron/dating-registration-reminders",
+      "schedule": "28 * * * *"
     }
   ]
 }

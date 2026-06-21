@@ -121,10 +121,22 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Failed to validate candidate state." }, { status: 500 });
   }
   if (existingPairRes.data) {
-    return NextResponse.json({ error: "This candidate has already been handled for your card." }, { status: 409 });
+    return NextResponse.json(
+      {
+        error: "이미 확인한 후보입니다. 새 후보 목록을 다시 불러올게요.",
+        code: "CANDIDATE_ALREADY_HANDLED",
+      },
+      { status: 409 }
+    );
   }
   if (candidateTrackRes.data) {
-    return NextResponse.json({ error: "This candidate is already in another active matching flow." }, { status: 409 });
+    return NextResponse.json(
+      {
+        error: "방금 다른 매칭에서 먼저 진행된 후보입니다. 새 후보 목록을 다시 불러올게요.",
+        code: "CANDIDATE_ALREADY_IN_ACTIVE_FLOW",
+      },
+      { status: 409 }
+    );
   }
 
   const nowIso = new Date().toISOString();

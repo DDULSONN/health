@@ -1,7 +1,6 @@
 import { isAllowedAdminUser } from "@/lib/admin";
 import {
   DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES,
-  DATING_ONE_ON_ONE_MATCH_CANDIDATE_SINGLE_TRACK_STATES,
   type DatingOneOnOneMatchRow,
   getDatingOneOnOneCardsByIds,
 } from "@/lib/dating-1on1";
@@ -333,22 +332,6 @@ export async function POST(req: Request) {
       .map((row) => row.id)
   );
 
-  const candidateTrackRes = await admin
-    .from("dating_1on1_match_proposals")
-    .select("candidate_card_id")
-    .in(
-      "candidate_card_id",
-      candidateRows.map((row) => row.id)
-    )
-    .in("state", [...DATING_ONE_ON_ONE_MATCH_CANDIDATE_SINGLE_TRACK_STATES]);
-
-  if (candidateTrackRes.error) {
-    console.error("[POST /api/dating/1on1/matches/admin] candidate track check failed", candidateTrackRes.error);
-    return NextResponse.json({ error: "Failed to validate candidate state." }, { status: 500 });
-  }
-
-  const blockedCandidateIds = new Set((candidateTrackRes.data ?? []).map((row) => row.candidate_card_id));
-
   const existingPairRes = await admin
     .from("dating_1on1_match_proposals")
     .select("candidate_card_id")
@@ -367,10 +350,10 @@ export async function POST(req: Request) {
   const existingPairIds = new Set((existingPairRes.data ?? []).map((row) => row.candidate_card_id));
   const skippedCandidateCardIds = candidateRows
     .map((row) => row.id)
-    .filter((id) => blockedCandidateIds.has(id) || existingPairIds.has(id) || phoneBlockedCandidateIds.has(id));
+    .filter((id) => existingPairIds.has(id) || phoneBlockedCandidateIds.has(id));
 
   const insertRows = candidateRows
-    .filter((row) => !blockedCandidateIds.has(row.id) && !existingPairIds.has(row.id) && !phoneBlockedCandidateIds.has(row.id))
+    .filter((row) => !existingPairIds.has(row.id) && !phoneBlockedCandidateIds.has(row.id))
     .map((row) => ({
       source_card_id: sourceRes.data!.id,
       source_user_id: sourceRes.data!.user_id,

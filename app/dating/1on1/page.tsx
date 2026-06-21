@@ -428,64 +428,130 @@ function DatingOneOnOnePageContent() {
   }
 
   return (
-    <main className="mx-auto max-w-3xl px-4 py-8">
-      <section className="rounded-2xl border border-neutral-200 bg-white p-5">
-        <span className="inline-flex rounded-full bg-rose-50 px-3 py-1 text-[11px] font-bold text-rose-600">
-          기다림 없이 바로 이용 가능
-        </span>
-        <h1 className="mt-3 text-2xl font-bold text-neutral-900">
-          {isEditMode ? "1:1 소개팅 신청서 수정" : "1:1 소개팅"}
-        </h1>
-        <p className="mt-2 text-sm text-neutral-700">
-          신청은 무료예요. 프로필을 작성하면 바로 후보 확인과 매칭 진행을 시작할 수 있습니다.
-        </p>
-        <p className="text-sm text-neutral-700">서로 수락된 뒤 번호 교환 단계에서만 매칭비가 발생합니다.</p>
-        <p className="mt-2 text-sm font-medium text-emerald-700">
-          지금까지 {Number(status?.totalApplications ?? 0).toLocaleString("ko-KR")}명이 1:1 소개팅을 신청했습니다.
-        </p>
-        <p className="mt-2 text-xs text-neutral-500">
-          신청 내용은 외부에 공개되지 않고, 전화번호는 번호 교환 전까지 상대에게 공개되지 않습니다.
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-neutral-600">
-          <span>진행 상황은 마이페이지 매칭탭에서 확인할 수 있어요.</span>
+    <main className="min-h-screen bg-[#fff8f8] px-4 py-6">
+      <div className="mx-auto max-w-3xl">
+        <div className="mb-5 flex items-center justify-between">
+          <button
+            type="button"
+            onClick={() => router.back()}
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-2xl font-light text-neutral-950 shadow-sm"
+            aria-label="뒤로가기"
+          >
+            ‹
+          </button>
+          <h1 className="text-xl font-black tracking-tight text-neutral-950">
+            {isEditMode ? "1:1 신청 수정" : "1:1 신청 작성"}
+          </h1>
+          <Link
+            href="/mypage?section=matching"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-[11px] font-black text-neutral-500 shadow-sm"
+            aria-label="매칭탭 보기"
+          >
+            MY
+          </Link>
+        </div>
+
+        <section className="rounded-[28px] border border-rose-100 bg-white px-5 py-6 shadow-sm">
+          <p className="text-xs font-black text-rose-500">1:1 소개팅</p>
+          <h2 className="mt-2 text-2xl font-black leading-snug tracking-tight text-neutral-950">
+            운영자가 후보를 연결하고,
+            <br />
+            서로 수락되면 번호 교환까지 이어집니다.
+          </h2>
+          <p className="mt-3 text-sm leading-6 text-neutral-600">
+            신청은 무료이고, 최종 번호 교환 단계에서만 매칭비가 발생합니다.
+          </p>
+          <div className="mt-4 rounded-2xl bg-rose-50/70 px-4 py-3 text-xs leading-5 text-neutral-700">
+            <p className="font-black text-neutral-950">개인정보 안내</p>
+            <p className="mt-1">
+              신청 내용은 1:1 매칭 운영과 안전 관리 목적으로만 사용되며 외부 목록에 공개되지 않습니다. 전화번호는 번호 교환 전까지 상대에게 공개되지 않습니다.
+            </p>
+          </div>
+        </section>
+
+        <section className="mt-4 rounded-[28px] border border-neutral-200 bg-white px-5 py-5 shadow-sm">
+          <div className="flex items-center justify-between gap-3">
+            <span className="rounded-full bg-emerald-50 px-4 py-2 text-sm font-black text-emerald-700">신청 가능</span>
+            <p className="text-sm font-black text-neutral-500">
+              누적 신청 {Number(status?.totalApplications ?? 0).toLocaleString("ko-KR")}명
+            </p>
+          </div>
+          <p className="mt-4 text-sm leading-6 text-neutral-600">
+            신청서를 올리면 운영자가 검토 후 추천 후보와 진행 상태를 알려드립니다.
+          </p>
           <a
             href={OPEN_KAKAO_URL}
             target="_blank"
             rel="noreferrer"
-            className="inline-flex h-8 items-center rounded-full border border-neutral-300 bg-white px-3 font-medium text-neutral-800 hover:bg-neutral-50"
+            className="mt-4 inline-flex min-h-10 items-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-black text-neutral-800 hover:bg-neutral-50"
           >
             오픈카톡 문의
           </a>
-        </div>
-      </section>
+        </section>
+
+        <section className="mt-4 rounded-[28px] border border-rose-100 bg-white px-5 py-5 shadow-sm">
+          <h2 className="text-lg font-black text-neutral-950">1:1 진행 방식</h2>
+          <div className="mt-4 space-y-4">
+            {[
+              ["1", "신청서 작성", "사진 2장과 소개를 등록하면 운영자가 먼저 검토합니다."],
+              ["2", "후보 전달 · 수락", "추천 후보를 고르고 서로 수락되면 번호 교환 단계가 열립니다."],
+              ["3", "앱 결제로 번호 공개", "쌍방 수락 후 결제가 완료되면 연락처가 공개됩니다."],
+            ].map(([step, title, body]) => (
+              <div key={step} className="flex gap-4">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-rose-50 text-base font-black text-rose-500">
+                  {step}
+                </span>
+                <div>
+                  <p className="text-base font-black text-neutral-950">{title}</p>
+                  <p className="mt-1 text-sm leading-5 text-neutral-500">{body}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
 
       <DatingAdultNotice />
 
-      <section className="mt-4 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h2 className="text-lg font-semibold text-neutral-900">이용 전 확인</h2>
-        <div className="mt-3 space-y-2 text-sm text-neutral-700">
-          <label className="flex items-start gap-2">
-            <input type="checkbox" checked={consentFakeInfo} onChange={(e) => setConsentFakeInfo(e.target.checked)} className="mt-1" />
-            허위 정보 작성 시 이용이 제한될 수 있어요.
+      <section className="mt-4 rounded-[28px] border border-neutral-200 bg-white px-5 py-5 shadow-sm">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-black text-neutral-950">필수 확인</h2>
+            <p className="mt-1 text-xs text-neutral-500">신청 전 동의가 필요합니다.</p>
+          </div>
+          <span className={`rounded-full px-3 py-1 text-xs font-black ${allConsented ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"}`}>
+            {allConsented ? "확인 완료" : "필수 확인"}
+          </span>
+        </div>
+        <div className="mt-4 grid gap-2">
+          <label className="flex min-h-[52px] cursor-pointer items-start gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
+            <input type="checkbox" checked={consentFakeInfo} onChange={(e) => setConsentFakeInfo(e.target.checked)} className="mt-1 accent-rose-500" />
+            <span>허위 정보 작성 시 이용이 제한될 수 있어요.</span>
           </label>
-          <label className="flex items-start gap-2">
-            <input type="checkbox" checked={consentNoShow} onChange={(e) => setConsentNoShow(e.target.checked)} className="mt-1" />
-            노쇼나 무단 취소 시 재이용이 제한될 수 있어요.
+          <label className="flex min-h-[52px] cursor-pointer items-start gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
+            <input type="checkbox" checked={consentNoShow} onChange={(e) => setConsentNoShow(e.target.checked)} className="mt-1 accent-rose-500" />
+            <span>노쇼나 무단 취소 시 재이용이 제한될 수 있어요.</span>
           </label>
-          <label className="flex items-start gap-2">
-            <input type="checkbox" checked={consentFee} onChange={(e) => setConsentFee(e.target.checked)} className="mt-1" />
-            번호 교환 시 매칭비가 발생하고 연락처가 공개돼요.
+          <label className="flex min-h-[52px] cursor-pointer items-start gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
+            <input type="checkbox" checked={consentFee} onChange={(e) => setConsentFee(e.target.checked)} className="mt-1 accent-rose-500" />
+            <span>번호 교환 시 매칭비가 발생하고 연락처가 공개돼요.</span>
           </label>
-          <label className="flex items-start gap-2">
-            <input type="checkbox" checked={consentPrivacy} onChange={(e) => setConsentPrivacy(e.target.checked)} className="mt-1" />
-            개인정보는 매칭 진행 목적으로만 사용돼요.
+          <label className="flex min-h-[52px] cursor-pointer items-start gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
+            <input type="checkbox" checked={consentPrivacy} onChange={(e) => setConsentPrivacy(e.target.checked)} className="mt-1 accent-rose-500" />
+            <span>개인정보는 1:1 매칭 진행, 운영 확인, 안전 관리 목적으로만 사용돼요.</span>
           </label>
         </div>
       </section>
 
-      <section className="mt-4 rounded-2xl border border-neutral-200 bg-white p-5">
-        <h2 className="text-lg font-semibold text-neutral-900">{isEditMode ? "신청서 수정" : "신청 작성"}</h2>
-        <p className="mt-1 text-xs text-neutral-500">로그인 + 휴대폰 인증 + 작성 권한 승인 상태에서만 신청이 가능합니다.</p>
+      <section className="mt-4 rounded-[28px] border border-neutral-200 bg-white px-5 py-5 shadow-sm">
+        <div className="flex flex-wrap items-end justify-between gap-2">
+          <div>
+            <h2 className="text-lg font-black text-neutral-950">{isEditMode ? "신청서 수정" : "신청 작성"}</h2>
+            <p className="mt-1 text-xs text-neutral-500">인증과 작성 권한이 확인된 계정만 신청할 수 있습니다.</p>
+          </div>
+          <Link href="/mypage?section=matching" className="inline-flex min-h-9 items-center rounded-full border border-neutral-200 bg-white px-3 text-xs font-black text-neutral-700 hover:bg-neutral-50">
+            매칭탭 보기
+          </Link>
+        </div>
         {isEditMode && <p className="mt-1 text-xs text-neutral-500">접수중 상태일 때만 본인 신청서를 수정할 수 있습니다.</p>}
         {!isEditMode && writeBlockedMessage && (
           <p className="mt-2 text-xs font-medium text-amber-700">{writeBlockedMessage}</p>
@@ -500,37 +566,88 @@ function DatingOneOnOnePageContent() {
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="mt-4 space-y-3">
-          <select value={sex} onChange={(e) => setSex(e.target.value as "male" | "female")} className="h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-900">
-            <option value="male">성별: 남자</option>
-            <option value="female">성별: 여자</option>
-          </select>
-          <input value={name} onChange={(e) => setName(e.target.value)} placeholder="이름 (실명 또는 활동명)" className="h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-900 placeholder:text-neutral-500" required />
-          <input value={birthYear} onChange={(e) => setBirthYear(e.target.value)} placeholder="나이 (출생연도 권장, 예: 1996)" className="h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-900 placeholder:text-neutral-500" inputMode="numeric" required />
-          <input value={heightCm} onChange={(e) => setHeightCm(e.target.value)} placeholder="키(cm)" className="h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-900 placeholder:text-neutral-500" inputMode="numeric" required />
-          <input value={job} onChange={(e) => setJob(e.target.value)} placeholder="직업" className="h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-900 placeholder:text-neutral-500" required />
-          <input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="지역 (시군구 기준)" className="h-11 w-full rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-900 placeholder:text-neutral-500" required />
-          <textarea value={introText} onChange={(e) => setIntroText(e.target.value)} placeholder="자기소개" className="min-h-24 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-500" required />
-          <textarea value={strengthsText} onChange={(e) => setStrengthsText(e.target.value)} placeholder="자기 장점" className="min-h-20 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-500" required />
-          <textarea value={preferredPartnerText} onChange={(e) => setPreferredPartnerText(e.target.value)} placeholder="상대방에게 원하는 점" className="min-h-20 w-full rounded-lg border border-neutral-300 bg-white px-3 py-2 text-sm text-neutral-900 placeholder:text-neutral-500" required />
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <select value={smoking} onChange={(e) => setSmoking(e.target.value as "non_smoker" | "occasional" | "smoker")} className="h-11 rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-900">
-              {SMOKING_OPTIONS.map((item) => (
-                <option key={item.value} value={item.value}>흡연 여부: {item.label}</option>
+        <form onSubmit={handleSubmit} className="mt-5 space-y-7">
+          <div>
+            <p className="mb-3 text-base font-black text-neutral-950">성별</p>
+            <div className="grid grid-cols-2 overflow-hidden rounded-full border border-neutral-200 bg-white">
+              {[
+                ["male", "남자"],
+                ["female", "여자"],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setSex(value as "male" | "female")}
+                  className={`h-12 text-sm font-black transition ${sex === value ? "bg-rose-100 text-neutral-950" : "bg-white text-neutral-500"}`}
+                >
+                  {label}
+                </button>
               ))}
-            </select>
-            <select value={workoutFrequency} onChange={(e) => setWorkoutFrequency(e.target.value)} className="h-11 rounded-lg border border-neutral-300 bg-white px-3 text-sm text-neutral-900">
-              {WORKOUT_OPTIONS.map((item) => (
-                <option key={item.value || "empty"} value={item.value}>운동 빈도: {item.label}</option>
-              ))}
-            </select>
+            </div>
           </div>
 
           <div>
-            <label className="mb-2 block text-sm font-medium text-neutral-700">사진 업로드</label>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
-                <p className="text-sm font-medium text-neutral-800">사진 1</p>
+            <p className="mb-3 text-base font-black text-neutral-950">기본 정보</p>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <input value={name} onChange={(e) => setName(e.target.value)} placeholder="이름" className="h-14 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-base text-neutral-900 placeholder:text-neutral-500 sm:col-span-2" required />
+              <input value={birthYear} onChange={(e) => setBirthYear(e.target.value)} placeholder="출생연도" className="h-14 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-base text-neutral-900 placeholder:text-neutral-500" inputMode="numeric" required />
+              <input value={heightCm} onChange={(e) => setHeightCm(e.target.value)} placeholder="키(cm)" className="h-14 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-base text-neutral-900 placeholder:text-neutral-500" inputMode="numeric" required />
+              <input value={job} onChange={(e) => setJob(e.target.value)} placeholder="직업" className="h-14 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-base text-neutral-900 placeholder:text-neutral-500 sm:col-span-2" required />
+              <input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="지역" className="h-14 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-base text-neutral-900 placeholder:text-neutral-500 sm:col-span-2" required />
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-3 text-base font-black text-neutral-950">소개 내용</p>
+            <div className="grid gap-3">
+              <textarea value={introText} onChange={(e) => setIntroText(e.target.value)} placeholder="자기소개" className="min-h-20 w-full rounded-2xl border border-neutral-200 bg-white px-4 py-4 text-base text-neutral-900 placeholder:text-neutral-500" required />
+              <textarea value={strengthsText} onChange={(e) => setStrengthsText(e.target.value)} placeholder="내 강점" className="min-h-20 w-full rounded-2xl border border-neutral-200 bg-white px-4 py-4 text-base text-neutral-900 placeholder:text-neutral-500" required />
+              <textarea value={preferredPartnerText} onChange={(e) => setPreferredPartnerText(e.target.value)} placeholder="원하는 상대" className="min-h-20 w-full rounded-2xl border border-neutral-200 bg-white px-4 py-4 text-base text-neutral-900 placeholder:text-neutral-500" required />
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-3 text-base font-black text-neutral-950">생활 정보</p>
+            <div className="flex flex-wrap gap-2">
+              {SMOKING_OPTIONS.map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => setSmoking(item.value)}
+                  className={`h-11 rounded-full border px-5 text-sm font-black transition ${smoking === item.value ? "border-rose-500 bg-rose-50 text-rose-700" : "border-neutral-200 bg-white text-neutral-600"}`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {WORKOUT_OPTIONS.map((item) => (
+                <button
+                  key={item.value || "empty"}
+                  type="button"
+                  onClick={() => setWorkoutFrequency(item.value)}
+                  className={`h-11 rounded-full border px-5 text-sm font-black transition ${workoutFrequency === item.value ? "border-rose-500 bg-rose-50 text-rose-700" : "border-neutral-200 bg-white text-neutral-600"}`}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div>
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <label className="block text-base font-black text-neutral-950">사진 2장</label>
+              <span className="rounded-full bg-white px-3 py-1 text-xs font-black text-neutral-600">
+                {selectedPhotos.length}/2 선택
+              </span>
+            </div>
+            <p className="mt-2 text-sm leading-6 text-neutral-500">
+              정면이 잘 보이는 사진 2장을 넣어주세요. 수정 시 사진을 바꾸지 않으면 기존 사진이 유지됩니다.
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-3">
+              <label className="flex aspect-[4/5] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-200 bg-white px-3 text-center text-neutral-400">
+                <span className="text-sm font-black text-neutral-500">사진 1</span>
+                <span className="mt-2 text-xs leading-5">{photoSlotOne ? photoSlotOne.name : "눌러서 선택"}</span>
                 <input
                   type="file"
                   accept="image/*"
@@ -538,17 +655,17 @@ function DatingOneOnOnePageContent() {
                     handleSlotChange(1, e.target.files);
                     if (e.target.files?.[0] && getOneOnOnePhotoError(e.target.files[0])) e.currentTarget.value = "";
                   }}
-                  className="mt-2 block w-full text-sm"
+                  className="sr-only"
                 />
-                <p className="mt-2 text-xs text-neutral-500">{photoSlotOne ? photoSlotOne.name : "아직 선택하지 않았습니다."}</p>
                 {photoSlotOne && (
-                  <button type="button" onClick={() => clearSlot(1)} className="mt-2 text-xs font-medium text-neutral-600 underline">
-                    사진 1 선택 취소
+                  <button type="button" onClick={(e) => { e.preventDefault(); clearSlot(1); }} className="mt-3 text-xs font-black text-rose-600 underline">
+                    선택 취소
                   </button>
                 )}
-              </div>
-              <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
-                <p className="text-sm font-medium text-neutral-800">사진 2</p>
+              </label>
+              <label className="flex aspect-[4/5] cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-200 bg-white px-3 text-center text-neutral-400">
+                <span className="text-sm font-black text-neutral-500">사진 2</span>
+                <span className="mt-2 text-xs leading-5">{photoSlotTwo ? photoSlotTwo.name : "눌러서 선택"}</span>
                 <input
                   type="file"
                   accept="image/*"
@@ -556,17 +673,16 @@ function DatingOneOnOnePageContent() {
                     handleSlotChange(2, e.target.files);
                     if (e.target.files?.[0] && getOneOnOnePhotoError(e.target.files[0])) e.currentTarget.value = "";
                   }}
-                  className="mt-2 block w-full text-sm"
+                  className="sr-only"
                 />
-                <p className="mt-2 text-xs text-neutral-500">{photoSlotTwo ? photoSlotTwo.name : "아직 선택하지 않았습니다."}</p>
                 {photoSlotTwo && (
-                  <button type="button" onClick={() => clearSlot(2)} className="mt-2 text-xs font-medium text-neutral-600 underline">
-                    사진 2 선택 취소
+                  <button type="button" onClick={(e) => { e.preventDefault(); clearSlot(2); }} className="mt-3 text-xs font-black text-rose-600 underline">
+                    선택 취소
                   </button>
                 )}
-              </div>
+              </label>
             </div>
-            <p className="mt-2 text-xs text-neutral-500">
+            <p className="mt-3 text-xs text-neutral-500">
               두 장 모두 업로드해야 신청할 수 있습니다. JPG, PNG, WebP / 사진당 12MB 이하만 가능해요.
             </p>
             <p className="mt-1 text-xs text-amber-700">아이폰 HEIC 사진이 안 올라가면 사진을 캡처해서 다시 올려주세요.</p>
@@ -591,8 +707,8 @@ function DatingOneOnOnePageContent() {
             )}
           </div>
 
-          <button type="submit" disabled={!allConsented || !canSubmitForm || submitting} className="h-11 rounded-lg bg-neutral-900 px-4 text-sm font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
-            {submitting ? "처리 중..." : isEditMode ? "수정 저장" : "글 쓰기"}
+          <button type="submit" disabled={!allConsented || !canSubmitForm || submitting} className="h-14 w-full rounded-full bg-rose-500 px-4 text-base font-black text-white shadow-lg shadow-rose-200 disabled:cursor-not-allowed disabled:opacity-50">
+            {submitting ? "처리 중..." : isEditMode ? "수정 저장" : "신청서 제출"}
           </button>
           {submitDisabledReason && (
             <div className="rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-medium text-amber-800">
@@ -648,6 +764,7 @@ function DatingOneOnOnePageContent() {
           )}
         </section>
       )}
+      </div>
     </main>
   );
 }
