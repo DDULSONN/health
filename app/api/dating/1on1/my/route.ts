@@ -22,6 +22,7 @@ type InputPayload = {
   consent_no_show?: boolean;
   consent_fee?: boolean;
   consent_privacy?: boolean;
+  consent_no_direct_contact?: boolean;
 };
 
 const SEX_VALUES = new Set(["male", "female"]);
@@ -223,6 +224,15 @@ export async function PATCH(req: Request) {
   }
   if (workoutFrequency && !WORKOUT_VALUES.has(workoutFrequency)) {
     return NextResponse.json({ error: "Workout frequency value is invalid." }, { status: 400 });
+  }
+  if (
+    body.consent_fake_info !== true ||
+    body.consent_no_show !== true ||
+    body.consent_fee !== true ||
+    body.consent_privacy !== true ||
+    body.consent_no_direct_contact !== true
+  ) {
+    return NextResponse.json({ error: "All consent checkboxes are required." }, { status: 400 });
   }
 
   const nextPhotoPathsRaw = Array.isArray(body.photo_paths) ? body.photo_paths : null;

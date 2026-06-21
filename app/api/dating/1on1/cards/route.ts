@@ -29,6 +29,7 @@ type InputPayload = {
   consent_no_show?: boolean;
   consent_fee?: boolean;
   consent_privacy?: boolean;
+  consent_no_direct_contact?: boolean;
 };
 
 type AdminCardRow = {
@@ -279,6 +280,7 @@ export async function POST(req: Request) {
   const noShowConsent = body.consent_no_show === true;
   const feeConsent = body.consent_fee === true;
   const privacyConsent = body.consent_privacy === true;
+  const noDirectContactConsent = body.consent_no_direct_contact === true;
 
   if (!SEX_VALUES.has(sex)) {
     return NextResponse.json({ error: "Sex value is invalid." }, { status: 400 });
@@ -313,7 +315,7 @@ export async function POST(req: Request) {
   if (workoutFrequency && !WORKOUT_VALUES.has(workoutFrequency)) {
     return NextResponse.json({ error: "Workout frequency value is invalid." }, { status: 400 });
   }
-  if (!fakeInfoConsent || !noShowConsent || !feeConsent || !privacyConsent) {
+  if (!fakeInfoConsent || !noShowConsent || !feeConsent || !privacyConsent || !noDirectContactConsent) {
     return NextResponse.json({ error: "All consent checkboxes are required." }, { status: 400 });
   }
 

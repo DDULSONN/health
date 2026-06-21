@@ -94,7 +94,29 @@ function getOneOnOnePhotoError(file: File) {
   return "";
 }
 
-async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, timeoutMs: number) {
+function delay(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isRetryableStatus(status: number) {
+  return status === 408 || status === 425 || status === 429 || status >= 500;
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+function friendlySubmitError(error: unknown) {
+  if (isAbortError(error)) {
+    return "요청 시간이 초과되었습니다. 네트워크 상태를 확인한 뒤 다시 시도해주세요.";
+  }
+  if (error instanceof TypeError) {
+    return "네트워크 연결이 불안정합니다. 잠시 후 다시 시도해주세요.";
+  }
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit = {}, timeoutMs: number) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
@@ -106,6 +128,23 @@ async function fetchWithTimeout(input: RequestInfo | URL, init: RequestInit, tim
   } finally {
     clearTimeout(timer);
   }
+}
+
+async function fetchWithRetry(input: RequestInfo | URL, init: RequestInit, timeoutMs: number, retries: number) {
+  let lastError: unknown = null;
+  for (let attempt = 0; attempt <= retries; attempt += 1) {
+    try {
+      const res = await fetchWithTimeout(input, init, timeoutMs);
+      if (!isRetryableStatus(res.status) || attempt === retries) return res;
+      lastError = new Error(`Retryable response: ${res.status}`);
+    } catch (error) {
+      lastError = error;
+      if (!isAbortError(error) && !(error instanceof TypeError)) throw error;
+      if (attempt === retries) throw error;
+    }
+    await delay(700 * (attempt + 1));
+  }
+  throw lastError instanceof Error ? lastError : new Error("요청에 실패했습니다.");
 }
 
 export default function DatingOneOnOnePage() {
@@ -152,12 +191,13 @@ function DatingOneOnOnePageContent() {
   const [consentNoShow, setConsentNoShow] = useState(false);
   const [consentFee, setConsentFee] = useState(false);
   const [consentPrivacy, setConsentPrivacy] = useState(false);
+  const [consentNoDirectContact, setConsentNoDirectContact] = useState(false);
 
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
 
-  const allConsented = consentFakeInfo && consentNoShow && consentFee && consentPrivacy;
+  const allConsented = consentFakeInfo && consentNoShow && consentFee && consentPrivacy && consentNoDirectContact;
   const canSubmitForm = isEditMode ? true : Boolean(status?.canWrite);
   const selectedPhotos = [photoSlotOne, photoSlotTwo].filter((file): file is File => Boolean(file));
   const writeBlockedMessage = useMemo(() => {
@@ -243,6 +283,7 @@ function DatingOneOnOnePageContent() {
           setConsentNoShow(true);
           setConsentFee(true);
           setConsentPrivacy(true);
+          setConsentNoDirectContact(true);
         }
       } catch (e) {
         if (!mounted) return;
@@ -298,6 +339,7 @@ function DatingOneOnOnePageContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting) return;
     setError("");
     setInfo("");
 
@@ -327,12 +369,13 @@ function DatingOneOnOnePageContent() {
       const uploadedPaths: string[] = [];
       if (selectedPhotos.length > 0) {
         for (const [index, file] of selectedPhotos.entries()) {
+          setInfo(`사진 ${index + 1} 업로드 중...`);
           const fd = new FormData();
           fd.append("file", file);
-          const uploadRes = await fetchWithTimeout("/api/dating/1on1/upload", {
+          const uploadRes = await fetchWithRetry("/api/dating/1on1/upload", {
             method: "POST",
             body: fd,
-          }, 45000);
+          }, 60000, 1);
           const uploadBody = (await uploadRes.json().catch(() => ({}))) as { path?: string; error?: string };
           if (!uploadRes.ok || !uploadBody.path) {
             throw new Error(`사진 ${index + 1}: ${uploadBody.error ?? "사진 업로드에 실패했습니다. 캡처해서 다시 올려주세요."}`);
@@ -358,13 +401,15 @@ function DatingOneOnOnePageContent() {
         consent_no_show: consentNoShow,
         consent_fee: consentFee,
         consent_privacy: consentPrivacy,
+        consent_no_direct_contact: consentNoDirectContact,
       };
 
+      setInfo(isEditMode ? "신청서 수정 중..." : "신청서 등록 중...");
       const res = await fetchWithTimeout(isEditMode ? "/api/dating/1on1/my" : "/api/dating/1on1/cards", {
         method: isEditMode ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(isEditMode ? { id: editId, ...payload } : payload),
-      }, 45000);
+      }, 60000);
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
         throw new Error(body.error ?? "신청 저장에 실패했습니다.");
@@ -393,19 +438,19 @@ function DatingOneOnOnePageContent() {
       setConsentNoShow(false);
       setConsentFee(false);
       setConsentPrivacy(false);
+      setConsentNoDirectContact(false);
 
       if (status?.isAdmin) {
-        await reloadCards();
+        reloadCards().catch((reloadError) => {
+          console.error("[dating/1on1] reload after submit failed", reloadError);
+        });
       }
       if (isEditMode) {
         router.replace("/mypage");
       }
     } catch (e) {
-      if (e instanceof DOMException && e.name === "AbortError") {
-        setError("요청 시간이 초과되었습니다. 잠시 후 다시 시도해주세요.");
-        return;
-      }
-      setError(e instanceof Error ? e.message : String(e));
+      setInfo("");
+      setError(friendlySubmitError(e));
     } finally {
       setSubmitting(false);
     }
@@ -534,6 +579,10 @@ function DatingOneOnOnePageContent() {
           <label className="flex min-h-[52px] cursor-pointer items-start gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
             <input type="checkbox" checked={consentFee} onChange={(e) => setConsentFee(e.target.checked)} className="mt-1 accent-rose-500" />
             <span>번호 교환 시 매칭비가 발생하고 연락처가 공개돼요.</span>
+          </label>
+          <label className="flex min-h-[52px] cursor-pointer items-start gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
+            <input type="checkbox" checked={consentNoDirectContact} onChange={(e) => setConsentNoDirectContact(e.target.checked)} className="mt-1 accent-rose-500" />
+            <span>신청서에는 휴대폰 번호, 카카오톡 ID, 인스타 계정, 오픈채팅 링크 등 외부 연락처를 적지 않습니다.</span>
           </label>
           <label className="flex min-h-[52px] cursor-pointer items-start gap-3 rounded-2xl border border-neutral-200 bg-neutral-50 px-4 py-3 text-sm text-neutral-700">
             <input type="checkbox" checked={consentPrivacy} onChange={(e) => setConsentPrivacy(e.target.checked)} className="mt-1 accent-rose-500" />

@@ -90,27 +90,32 @@ export async function POST(req: Request) {
   const path = `cards/${user.id}/${Date.now()}-${crypto.randomUUID()}.webp`;
   const admin = createAdminClient();
 
-  let uploadRes = await admin.storage.from(BUCKET).upload(path, webpBytes, {
-    contentType: "image/webp",
-    upsert: false,
-    cacheControl: "1200",
-  });
+  try {
+    let uploadRes = await admin.storage.from(BUCKET).upload(path, webpBytes, {
+      contentType: "image/webp",
+      upsert: false,
+      cacheControl: "1200",
+    });
 
-  if (uploadRes.error) {
-    const lower = (uploadRes.error.message ?? "").toLowerCase();
-    if (lower.includes("bucket") && lower.includes("not")) {
-      await ensureBucket(admin);
-      uploadRes = await admin.storage.from(BUCKET).upload(path, webpBytes, {
-        contentType: "image/webp",
-        upsert: false,
-        cacheControl: "1200",
-      });
+    if (uploadRes.error) {
+      const lower = (uploadRes.error.message ?? "").toLowerCase();
+      if (lower.includes("bucket") && lower.includes("not")) {
+        await ensureBucket(admin);
+        uploadRes = await admin.storage.from(BUCKET).upload(path, webpBytes, {
+          contentType: "image/webp",
+          upsert: false,
+          cacheControl: "1200",
+        });
+      }
     }
-  }
 
-  if (uploadRes.error) {
-    console.error("[POST /api/dating/1on1/upload] upload failed", uploadRes.error);
-    return NextResponse.json({ error: "사진 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });
+    if (uploadRes.error) {
+      console.error("[POST /api/dating/1on1/upload] upload failed", uploadRes.error);
+      return NextResponse.json({ error: "사진 업로드에 실패했습니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });
+    }
+  } catch (error) {
+    console.error("[POST /api/dating/1on1/upload] upload threw", error);
+    return NextResponse.json({ error: "사진 업로드가 지연되고 있습니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });
   }
 
   return NextResponse.json({ path }, { status: 201 });
