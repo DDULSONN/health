@@ -493,19 +493,19 @@ export default function AdminDatingCardAiReviewPanel() {
                   </button>
                   <button
                     type="button"
+                    onClick={() => (editingKey === key ? setEditingKey("") : startEdit(item))}
+                    disabled={processingKey !== ""}
+                    className="h-9 rounded-xl border border-violet-200 bg-violet-50 px-3 text-xs font-semibold text-violet-800 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {editingKey === key ? "수정 닫기" : "카드 내용 수정"}
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => void handleAction(item, "delete_card")}
                     disabled={processingKey !== ""}
                     className="h-9 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {processingKey === deleteKey ? "삭제 중..." : targetLabel}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => (editingKey === key ? setEditingKey("") : startEdit(item))}
-                    disabled={processingKey !== ""}
-                    className="h-9 rounded-xl border border-violet-200 bg-violet-50 px-3 text-xs font-semibold text-violet-800 disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {editingKey === key ? "수정 닫기" : "내용 수정"}
                   </button>
                 </div>
 
