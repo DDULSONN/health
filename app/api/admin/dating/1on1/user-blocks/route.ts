@@ -25,6 +25,7 @@ type CardCandidateRow = {
   name: string | null;
   sex: "male" | "female" | null;
   age: number | null;
+  birth_year?: number | null;
   region: string | null;
   job: string | null;
   status: string | null;
@@ -47,6 +48,28 @@ type BlockRow = {
 
 function normalizeUserPair(userAId: string, userBId: string) {
   return [userAId, userBId].map((id) => id.trim()).sort();
+}
+
+function getCurrentKstYear() {
+  return Number(
+    new Intl.DateTimeFormat("en-US", {
+      timeZone: "Asia/Seoul",
+      year: "numeric",
+    }).format(new Date())
+  );
+}
+
+function normalizeCardCandidateRow(row: Omit<CardCandidateRow, "age"> & { age?: number | null }) {
+  const birthYear = Number(row.birth_year ?? 0);
+  const age = Number.isFinite(Number(row.age))
+    ? Number(row.age)
+    : birthYear > 0
+    ? getCurrentKstYear() - birthYear + 1
+    : null;
+  return {
+    ...row,
+    age,
+  } satisfies CardCandidateRow;
 }
 
 async function assertAdmin(req: Request) {
@@ -81,7 +104,7 @@ async function fetchLatestCardsByUserId(admin: ReturnType<typeof createAdminClie
   if (!uniqueUserIds.length) return new Map<string, CardCandidateRow>();
   const { data, error } = await admin
     .from("dating_1on1_cards")
-    .select("id,user_id,name,sex,age,region,job,status,created_at")
+    .select("id,user_id,name,sex,birth_year,region,job,status,created_at")
     .in("user_id", uniqueUserIds)
     .order("created_at", { ascending: false });
   if (error) {
@@ -89,7 +112,8 @@ async function fetchLatestCardsByUserId(admin: ReturnType<typeof createAdminClie
     return new Map<string, CardCandidateRow>();
   }
   const map = new Map<string, CardCandidateRow>();
-  for (const row of (data ?? []) as CardCandidateRow[]) {
+  for (const rawRow of (data ?? []) as Array<Omit<CardCandidateRow, "age">>) {
+    const row = normalizeCardCandidateRow(rawRow);
     const userId = String(row.user_id ?? "").trim();
     if (userId && !map.has(userId)) map.set(userId, row);
   }
@@ -100,7 +124,7 @@ async function searchCandidates(admin: ReturnType<typeof createAdminClient>, q: 
   const needle = q.trim();
   const cardQuery = admin
     .from("dating_1on1_cards")
-    .select("id,user_id,name,sex,age,region,job,status,created_at")
+    .select("id,user_id,name,sex,birth_year,region,job,status,created_at")
     .order("created_at", { ascending: false })
     .limit(80);
 
@@ -130,7 +154,10 @@ async function searchCandidates(admin: ReturnType<typeof createAdminClient>, q: 
   const userIds = new Set<string>(profileUserIds);
   const cardByUserId = new Map<string, CardCandidateRow>();
 
-  for (const row of [...((cardsRes.data ?? []) as CardCandidateRow[]), ...profileCardMap.values()]) {
+  for (const row of [
+    ...((cardsRes.data ?? []) as Array<Omit<CardCandidateRow, "age">>).map(normalizeCardCandidateRow),
+    ...profileCardMap.values(),
+  ]) {
     const userId = String(row.user_id ?? "").trim();
     if (!userId) continue;
     userIds.add(userId);
