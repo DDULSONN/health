@@ -9347,6 +9347,12 @@ export default function MyPage() {
             >
               1:1 번호 공개
             </button>
+            <Link
+              href="/admin/dating/1on1"
+              className="inline-flex h-8 items-center rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 hover:bg-violet-50"
+            >
+              1:1 지인 차단
+            </Link>
               <button
                 type="button"
                 onClick={() => setAdminManageTab("apply_credits")}
