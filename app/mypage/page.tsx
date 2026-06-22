@@ -1760,6 +1760,10 @@ export default function MyPage() {
   const [adminBanSaving, setAdminBanSaving] = useState(false);
   const [adminBanError, setAdminBanError] = useState("");
   const [adminBanInfo, setAdminBanInfo] = useState("");
+  const [adminOneOnOneBlockQuery, setAdminOneOnOneBlockQuery] = useState("");
+  const [adminOneOnOneBlockSaving, setAdminOneOnOneBlockSaving] = useState(false);
+  const [adminOneOnOneBlockError, setAdminOneOnOneBlockError] = useState("");
+  const [adminOneOnOneBlockInfo, setAdminOneOnOneBlockInfo] = useState("");
   const [adminOneOnOnePriorityGrantingIds, setAdminOneOnOnePriorityGrantingIds] = useState<string[]>([]);
   const [adminOneOnOnePriorityGrantError, setAdminOneOnOnePriorityGrantError] = useState("");
   const [adminOneOnOnePriorityGrantInfo, setAdminOneOnOnePriorityGrantInfo] = useState("");
@@ -5702,6 +5706,9 @@ export default function MyPage() {
       setAdminBanReason(body.user?.profile?.banned_reason?.trim() || "운영정책 위반");
       setAdminBanError("");
       setAdminBanInfo("");
+      setAdminOneOnOneBlockQuery("");
+      setAdminOneOnOneBlockError("");
+      setAdminOneOnOneBlockInfo("");
       setAdminOneOnOnePriorityGrantError("");
       setAdminOneOnOnePriorityGrantInfo("");
       const pendingOpenCard = body.details?.open_cards?.find((item) => item.status === "pending");
@@ -5861,6 +5868,58 @@ export default function MyPage() {
       setAdminBanError(err instanceof Error ? err.message : "벤 상태 저장에 실패했습니다.");
     } finally {
       setAdminBanSaving(false);
+    }
+  };
+
+  const handleAdminSaveOneOnOneUserBlock = async () => {
+    const userId = adminUserActivityResult?.user?.id ?? "";
+    const nickname = adminUserActivityResult?.user?.profile?.nickname?.trim() || userId.slice(0, 8);
+    const targetQuery = adminOneOnOneBlockQuery.trim();
+
+    setAdminOneOnOneBlockError("");
+    setAdminOneOnOneBlockInfo("");
+
+    if (!userId) {
+      setAdminOneOnOneBlockError("먼저 회원을 조회해주세요.");
+      return;
+    }
+    if (targetQuery.length < 2) {
+      setAdminOneOnOneBlockError("상대 이름 또는 닉네임을 2글자 이상 입력해주세요.");
+      return;
+    }
+    if (!confirm(`${nickname} 님과 ${targetQuery} 님을 1:1 후보에서 서로 안 보이게 할까요?`)) return;
+
+    setAdminOneOnOneBlockSaving(true);
+    try {
+      const res = await fetch("/api/admin/dating/1on1/user-blocks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_a_id: userId,
+          user_b_query: targetQuery,
+          note: `회원관리에서 ${nickname} 기준으로 등록`,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        candidates?: Array<{ user_id: string; profile?: { nickname?: string | null } | null; latest_card?: { name?: string | null; age?: number | null; region?: string | null } | null }>;
+      };
+      if (!res.ok || !body.ok) {
+        const candidateHint = Array.isArray(body.candidates) && body.candidates.length > 0
+          ? ` 후보: ${body.candidates
+              .slice(0, 5)
+              .map((item) => item.latest_card?.name || item.profile?.nickname || item.user_id.slice(0, 8))
+              .join(", ")}`
+          : "";
+        throw new Error(`${body.error ?? "1:1 지인 차단 저장에 실패했습니다."}${candidateHint}`);
+      }
+      setAdminOneOnOneBlockQuery("");
+      setAdminOneOnOneBlockInfo(`${nickname} 님과 ${targetQuery} 님이 1:1 후보에서 서로 안 보이게 저장됐습니다.`);
+    } catch (err) {
+      setAdminOneOnOneBlockError(err instanceof Error ? err.message : "1:1 지인 차단 저장에 실패했습니다.");
+    } finally {
+      setAdminOneOnOneBlockSaving(false);
     }
   };
 
@@ -9347,12 +9406,6 @@ export default function MyPage() {
             >
               1:1 번호 공개
             </button>
-            <Link
-              href="/admin/dating/1on1"
-              className="inline-flex h-8 items-center rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 hover:bg-violet-50"
-            >
-              1:1 지인 차단
-            </Link>
               <button
                 type="button"
                 onClick={() => setAdminManageTab("apply_credits")}
@@ -11480,6 +11533,37 @@ export default function MyPage() {
                           ) : null}
                           {adminBanError ? <p className="mt-2 text-xs text-red-600">{adminBanError}</p> : null}
                           {adminBanInfo ? <p className="mt-2 text-xs text-emerald-700">{adminBanInfo}</p> : null}
+                        </div>
+
+                        <div className="rounded-lg border border-rose-100 bg-white p-3">
+                          <p className="text-xs font-semibold text-rose-900">1:1 후보 지인 차단</p>
+                          <p className="mt-1 text-[11px] text-neutral-500">
+                            현재 조회한 회원과 서로 1:1 후보에 안 뜰 사람의 이름 또는 닉네임을 입력합니다.
+                          </p>
+                          <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto]">
+                            <input
+                              value={adminOneOnOneBlockQuery}
+                              onChange={(e) => setAdminOneOnOneBlockQuery(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  void handleAdminSaveOneOnOneUserBlock();
+                                }
+                              }}
+                              placeholder="상대 이름 또는 닉네임"
+                              className="h-9 rounded-lg border border-rose-200 bg-white px-3 text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => void handleAdminSaveOneOnOneUserBlock()}
+                              disabled={adminOneOnOneBlockSaving}
+                              className="h-9 rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white disabled:opacity-60"
+                            >
+                              {adminOneOnOneBlockSaving ? "저장 중..." : "서로 안 보이게"}
+                            </button>
+                          </div>
+                          {adminOneOnOneBlockError ? <p className="mt-2 text-xs text-red-600">{adminOneOnOneBlockError}</p> : null}
+                          {adminOneOnOneBlockInfo ? <p className="mt-2 text-xs text-emerald-700">{adminOneOnOneBlockInfo}</p> : null}
                         </div>
 
                         <div className="rounded-lg border border-pink-100 bg-white p-3">
