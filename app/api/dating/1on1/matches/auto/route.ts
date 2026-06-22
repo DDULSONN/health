@@ -6,6 +6,10 @@ import {
   getOneOnOnePhoneBlockMapForUsers,
   isOneOnOnePhoneBlockedPair,
 } from "@/lib/dating-1on1-phone-blocks";
+import {
+  getOneOnOneAdminUserBlockPairSetForUsers,
+  isOneOnOneAdminUserBlockedPair,
+} from "@/lib/dating-1on1-admin-user-blocks";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
@@ -80,6 +84,16 @@ export async function POST(req: Request) {
     console.error("[POST /api/dating/1on1/matches/auto] phone block lookup failed", error);
     return null;
   });
+  const adminUserBlockPairSet = await getOneOnOneAdminUserBlockPairSetForUsers(admin, [
+    sourceRes.data.user_id,
+    candidateRes.data.user_id,
+  ]).catch((error) => {
+    console.error("[POST /api/dating/1on1/matches/auto] admin user block lookup failed", error);
+    return null;
+  });
+  if (!adminUserBlockPairSet) {
+    return NextResponse.json({ error: "관리자 지인 차단 설정을 확인하지 못했습니다." }, { status: 500 });
+  }
   if (!phoneBlockMap) {
     return NextResponse.json({ error: "차단 번호 설정을 확인하지 못했습니다." }, { status: 500 });
   }
@@ -93,6 +107,16 @@ export async function POST(req: Request) {
     })
   ) {
     return NextResponse.json({ error: "차단한 번호와는 1:1 매칭을 진행할 수 없습니다." }, { status: 409 });
+  }
+
+  if (
+    isOneOnOneAdminUserBlockedPair({
+      sourceUserId: sourceRes.data.user_id,
+      candidateUserId: candidateRes.data.user_id,
+      pairSet: adminUserBlockPairSet,
+    })
+  ) {
+    return NextResponse.json({ error: "지인 차단된 상대와는 1:1 매칭을 진행할 수 없습니다." }, { status: 409 });
   }
 
   const [existingPairRes, candidateTrackRes] = await Promise.all([

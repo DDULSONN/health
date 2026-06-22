@@ -131,6 +131,25 @@ type OneOnOneNoticeSendResult = {
   failed: number;
 };
 
+type AdminOneOnOneUserBlockCandidate = {
+  user_id: string;
+  profile: MatchProfile | null;
+  latest_card: MatchCard | null;
+};
+
+type AdminOneOnOneUserBlockItem = {
+  id: string;
+  user_a_id: string | null;
+  user_b_id: string | null;
+  note: string | null;
+  created_by_user_id: string | null;
+  created_at: string | null;
+  user_a_profile: MatchProfile | null;
+  user_b_profile: MatchProfile | null;
+  user_a_card: MatchCard | null;
+  user_b_card: MatchCard | null;
+};
+
 function noticeScopeLabel(scope: NoticeScope): string {
   if (scope === "all_applicants") return "전체 신청자";
   if (scope === "legacy_mutual") return "기존 쌍방 수락만";
@@ -152,6 +171,14 @@ function matchDisplayName(
   }
 
   return cardName || nickname || fallback;
+}
+
+function adminUserBlockDisplayName(candidate: {
+  latest_card?: MatchCard | null;
+  profile?: MatchProfile | null;
+  user_id?: string | null;
+}) {
+  return matchDisplayName(candidate.latest_card ?? null, candidate.profile ?? null, candidate.user_id);
 }
 
 type AutoCandidateRange = {
@@ -383,6 +410,16 @@ export default function AdminDatingOneOnOnePage() {
   const [noticeScope, setNoticeScope] = useState<NoticeScope>("mutual_only");
   const [noticeSubject, setNoticeSubject] = useState("");
   const [noticeBody, setNoticeBody] = useState("");
+  const [adminUserBlockItems, setAdminUserBlockItems] = useState<AdminOneOnOneUserBlockItem[]>([]);
+  const [adminUserBlockCandidates, setAdminUserBlockCandidates] = useState<AdminOneOnOneUserBlockCandidate[]>([]);
+  const [adminUserBlockTableReady, setAdminUserBlockTableReady] = useState(true);
+  const [adminUserBlockSearch, setAdminUserBlockSearch] = useState("");
+  const [adminUserBlockUserAId, setAdminUserBlockUserAId] = useState("");
+  const [adminUserBlockUserBId, setAdminUserBlockUserBId] = useState("");
+  const [adminUserBlockNote, setAdminUserBlockNote] = useState("");
+  const [adminUserBlockLoading, setAdminUserBlockLoading] = useState(false);
+  const [adminUserBlockSaving, setAdminUserBlockSaving] = useState(false);
+  const [deletingAdminUserBlockIds, setDeletingAdminUserBlockIds] = useState<string[]>([]);
 
   const buildQuery = () => {
     const qs = new URLSearchParams();
@@ -484,6 +521,29 @@ export default function AdminDatingOneOnOnePage() {
     }
   };
 
+  const loadAdminUserBlocks = async (query = adminUserBlockSearch) => {
+    setAdminUserBlockLoading(true);
+    try {
+      const qs = new URLSearchParams();
+      if (query.trim()) qs.set("q", query.trim());
+      const res = await fetch(`/api/admin/dating/1on1/user-blocks?${qs.toString()}`, { cache: "no-store" });
+      const body = (await res.json().catch(() => ({}))) as {
+        table_ready?: boolean;
+        items?: AdminOneOnOneUserBlockItem[];
+        candidates?: AdminOneOnOneUserBlockCandidate[];
+        error?: string;
+      };
+      if (!res.ok) {
+        throw new Error(body.error ?? "1:1 지인 차단 목록을 불러오지 못했습니다.");
+      }
+      setAdminUserBlockTableReady(body.table_ready !== false);
+      setAdminUserBlockItems(body.items ?? []);
+      setAdminUserBlockCandidates(body.candidates ?? []);
+    } finally {
+      setAdminUserBlockLoading(false);
+    }
+  };
+
   useEffect(() => {
     let mounted = true;
     (async () => {
@@ -503,7 +563,7 @@ export default function AdminDatingOneOnOnePage() {
           return;
         }
 
-        await Promise.all([load(), loadNoticePreview()]);
+        await Promise.all([load(), loadNoticePreview(), loadAdminUserBlocks("")]);
       } catch (e) {
         if (!mounted) return;
         setError(e instanceof Error ? e.message : String(e));
@@ -592,6 +652,72 @@ export default function AdminDatingOneOnOnePage() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setNoticeSending(false);
+    }
+  };
+
+  const handleSaveAdminUserBlock = async () => {
+    if (adminUserBlockSaving) return;
+    if (!adminUserBlockUserAId || !adminUserBlockUserBId) {
+      setError("서로 안 보이게 할 회원 두 명을 선택해주세요.");
+      return;
+    }
+    if (adminUserBlockUserAId === adminUserBlockUserBId) {
+      setError("같은 회원끼리는 지인 차단할 수 없습니다.");
+      return;
+    }
+
+    setAdminUserBlockSaving(true);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/dating/1on1/user-blocks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_a_id: adminUserBlockUserAId,
+          user_b_id: adminUserBlockUserBId,
+          note: adminUserBlockNote,
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) {
+        throw new Error(body.error ?? "1:1 지인 차단 저장에 실패했습니다.");
+      }
+      setAdminUserBlockUserAId("");
+      setAdminUserBlockUserBId("");
+      setAdminUserBlockNote("");
+      await loadAdminUserBlocks();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "1:1 지인 차단 저장에 실패했습니다.");
+    } finally {
+      setAdminUserBlockSaving(false);
+    }
+  };
+
+  const handleDeleteAdminUserBlock = async (block: AdminOneOnOneUserBlockItem) => {
+    if (deletingAdminUserBlockIds.includes(block.id)) return;
+    const nameA = matchDisplayName(block.user_a_card, block.user_a_profile, block.user_a_id);
+    const nameB = matchDisplayName(block.user_b_card, block.user_b_profile, block.user_b_id);
+    if (!confirm(`${nameA} ↔ ${nameB} 지인 차단을 삭제할까요?`)) {
+      return;
+    }
+
+    setDeletingAdminUserBlockIds((prev) => [...prev, block.id]);
+    setError("");
+    try {
+      const res = await fetch("/api/admin/dating/1on1/user-blocks", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: block.id }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) {
+        throw new Error(body.error ?? "1:1 지인 차단 삭제에 실패했습니다.");
+      }
+      await loadAdminUserBlocks();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "1:1 지인 차단 삭제에 실패했습니다.");
+    } finally {
+      setDeletingAdminUserBlockIds((prev) => prev.filter((id) => id !== block.id));
     }
   };
 
@@ -979,6 +1105,160 @@ export default function AdminDatingOneOnOnePage() {
             발송 완료: {noticeScopeLabel(noticeSendResult.scope ?? noticeScope)} 요청 {noticeSendResult.requested}명 / 성공 {noticeSendResult.sent}명 / 실패 {noticeSendResult.failed}명
           </p>
         ) : null}
+      </section>
+
+      <section className="mb-4 rounded-2xl border border-rose-200 bg-rose-50/40 p-4">
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <h2 className="text-lg font-semibold text-rose-900">1:1 지인 차단 관리</h2>
+            <p className="text-xs text-rose-700">
+              이름이나 닉네임으로 회원을 찾아 서로 1:1 후보에 뜨지 않게 막습니다.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => void loadAdminUserBlocks(adminUserBlockSearch)}
+            disabled={adminUserBlockLoading}
+            className="h-9 rounded-lg border border-rose-200 bg-white px-3 text-sm font-medium text-rose-900 disabled:opacity-60"
+          >
+            {adminUserBlockLoading ? "불러오는 중..." : "새로고침"}
+          </button>
+        </div>
+
+        {!adminUserBlockTableReady ? (
+          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-3 text-sm text-amber-800">
+            1:1 지인 차단 테이블이 아직 DB에 적용되지 않았습니다. `supabase/sql/dating_1on1_admin_user_blocks.sql`을 먼저 적용해주세요.
+          </div>
+        ) : null}
+
+        <div className="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="rounded-xl border border-rose-100 bg-white p-3">
+            <div className="flex gap-2">
+              <input
+                value={adminUserBlockSearch}
+                onChange={(e) => setAdminUserBlockSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") void loadAdminUserBlocks(adminUserBlockSearch);
+                }}
+                placeholder="이름 또는 닉네임 검색"
+                className="h-10 min-w-0 flex-1 rounded-lg border border-rose-100 px-3 text-sm outline-none focus:border-rose-300"
+              />
+              <button
+                type="button"
+                onClick={() => void loadAdminUserBlocks(adminUserBlockSearch)}
+                disabled={adminUserBlockLoading}
+                className="h-10 rounded-lg bg-rose-600 px-4 text-sm font-medium text-white disabled:opacity-60"
+              >
+                검색
+              </button>
+            </div>
+
+            <div className="mt-3 grid gap-2 md:grid-cols-2">
+              <select
+                value={adminUserBlockUserAId}
+                onChange={(e) => setAdminUserBlockUserAId(e.target.value)}
+                className="h-10 rounded-lg border border-rose-100 px-2 text-sm"
+              >
+                <option value="">회원 A 선택</option>
+                {adminUserBlockCandidates.map((candidate) => (
+                  <option key={`a-${candidate.user_id}`} value={candidate.user_id}>
+                    {adminUserBlockDisplayName(candidate)} / {candidate.latest_card?.age ?? "-"}세 / {candidate.latest_card?.region ?? "-"}
+                  </option>
+                ))}
+              </select>
+              <select
+                value={adminUserBlockUserBId}
+                onChange={(e) => setAdminUserBlockUserBId(e.target.value)}
+                className="h-10 rounded-lg border border-rose-100 px-2 text-sm"
+              >
+                <option value="">회원 B 선택</option>
+                {adminUserBlockCandidates.map((candidate) => (
+                  <option key={`b-${candidate.user_id}`} value={candidate.user_id}>
+                    {adminUserBlockDisplayName(candidate)} / {candidate.latest_card?.age ?? "-"}세 / {candidate.latest_card?.region ?? "-"}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <textarea
+              value={adminUserBlockNote}
+              onChange={(e) => setAdminUserBlockNote(e.target.value)}
+              placeholder="메모(선택)"
+              rows={2}
+              className="mt-2 w-full rounded-lg border border-rose-100 px-3 py-2 text-sm outline-none focus:border-rose-300"
+            />
+            <button
+              type="button"
+              onClick={() => void handleSaveAdminUserBlock()}
+              disabled={adminUserBlockSaving || !adminUserBlockTableReady}
+              className="mt-2 h-10 rounded-lg bg-rose-600 px-4 text-sm font-medium text-white disabled:opacity-60"
+            >
+              {adminUserBlockSaving ? "저장 중..." : "서로 안 보이게 저장"}
+            </button>
+
+            <div className="mt-3 max-h-56 space-y-2 overflow-y-auto pr-1">
+              {adminUserBlockCandidates.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-rose-100 bg-rose-50 px-3 py-4 text-sm text-neutral-500">
+                  검색 결과가 없습니다.
+                </p>
+              ) : (
+                adminUserBlockCandidates.map((candidate) => (
+                  <button
+                    key={candidate.user_id}
+                    type="button"
+                    onClick={() => {
+                      if (!adminUserBlockUserAId) setAdminUserBlockUserAId(candidate.user_id);
+                      else if (adminUserBlockUserAId !== candidate.user_id) setAdminUserBlockUserBId(candidate.user_id);
+                    }}
+                    className="w-full rounded-xl border border-rose-100 bg-rose-50/50 px-3 py-2 text-left hover:border-rose-300"
+                  >
+                    <p className="text-sm font-semibold text-neutral-900">{adminUserBlockDisplayName(candidate)}</p>
+                    <p className="mt-1 text-xs text-neutral-600">
+                      {candidate.latest_card?.sex ? sexLabel(candidate.latest_card.sex) : "-"} / {candidate.latest_card?.age ?? "-"}세 / {candidate.latest_card?.region ?? "-"} / {candidate.latest_card?.job ?? "-"}
+                    </p>
+                    <p className="mt-1 text-[11px] text-neutral-400">{candidate.user_id}</p>
+                  </button>
+                ))
+              )}
+            </div>
+          </div>
+
+          <div className="rounded-xl border border-rose-100 bg-white p-3">
+            <p className="text-xs font-semibold text-rose-900">등록된 차단 {adminUserBlockItems.length}건</p>
+            <div className="mt-3 max-h-96 space-y-2 overflow-y-auto pr-1">
+              {adminUserBlockItems.length === 0 ? (
+                <p className="rounded-xl border border-dashed border-rose-100 bg-rose-50 px-3 py-4 text-sm text-neutral-500">
+                  등록된 1:1 지인 차단이 없습니다.
+                </p>
+              ) : (
+                adminUserBlockItems.map((block) => {
+                  const deleting = deletingAdminUserBlockIds.includes(block.id);
+                  const nameA = matchDisplayName(block.user_a_card, block.user_a_profile, block.user_a_id);
+                  const nameB = matchDisplayName(block.user_b_card, block.user_b_profile, block.user_b_id);
+                  return (
+                    <div key={block.id} className="rounded-xl border border-rose-100 bg-rose-50/50 p-3">
+                      <p className="text-sm font-semibold text-neutral-900">
+                        {nameA} ↔ {nameB}
+                      </p>
+                      {block.note ? <p className="mt-1 text-xs text-neutral-600">{block.note}</p> : null}
+                      <p className="mt-1 text-[11px] text-neutral-400">
+                        등록 {block.created_at ? new Date(block.created_at).toLocaleString("ko-KR") : "-"}
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteAdminUserBlock(block)}
+                        disabled={deleting}
+                        className="mt-2 h-8 rounded-md border border-rose-200 bg-white px-3 text-xs font-medium text-rose-700 disabled:opacity-60"
+                      >
+                        {deleting ? "삭제 중..." : "삭제"}
+                      </button>
+                    </div>
+                  );
+                })
+              )}
+            </div>
+          </div>
+        </div>
       </section>
 
       <section className="mb-4 rounded-2xl border border-neutral-200 bg-white p-4">

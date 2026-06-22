@@ -7,6 +7,10 @@ import {
   getOneOnOnePhoneBlockMapForUsers,
   isOneOnOnePhoneBlockedPair,
 } from "@/lib/dating-1on1-phone-blocks";
+import {
+  getOneOnOneAdminUserBlockPairSetForUsers,
+  isOneOnOneAdminUserBlockedPair,
+} from "@/lib/dating-1on1-admin-user-blocks";
 import { getRegionDistanceMeta } from "@/lib/region-distance";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -467,7 +471,8 @@ export async function GET(req: Request) {
   const sourceCardIds = mySourceCards.map((card) => card.id);
   const adminRecommendationDate = getKstDateString();
 
-  const [existingPairRes, blockedCandidateRes, phoneBlockMap] = await Promise.all([
+  const allCandidateUserIds = normalizedCards.map((card) => card.user_id);
+  const [existingPairRes, blockedCandidateRes, phoneBlockMap, adminUserBlockPairSet] = await Promise.all([
     admin
       .from("dating_1on1_match_proposals")
       .select("source_card_id,candidate_card_id")
@@ -476,10 +481,8 @@ export async function GET(req: Request) {
       .from("dating_1on1_match_proposals")
       .select("candidate_card_id")
       .in("state", [...DATING_ONE_ON_ONE_MATCH_CANDIDATE_SINGLE_TRACK_STATES]),
-    getOneOnOnePhoneBlockMapForUsers(
-      admin,
-      normalizedCards.map((card) => card.user_id)
-    ),
+    getOneOnOnePhoneBlockMapForUsers(admin, allCandidateUserIds),
+    getOneOnOneAdminUserBlockPairSetForUsers(admin, allCandidateUserIds),
   ]);
 
   if (existingPairRes.error) {
@@ -514,6 +517,15 @@ export async function GET(req: Request) {
           candidateUserId: candidateCard.user_id,
           candidatePhone: candidateCard.phone,
           blockMap: phoneBlockMap,
+        })
+      ) {
+        return false;
+      }
+      if (
+        isOneOnOneAdminUserBlockedPair({
+          sourceUserId: sourceCard.user_id,
+          candidateUserId: candidateCard.user_id,
+          pairSet: adminUserBlockPairSet,
         })
       ) {
         return false;
