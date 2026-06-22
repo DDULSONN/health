@@ -10,6 +10,8 @@ import { NextResponse } from "next/server";
 type BlockPayload = {
   user_a_id?: unknown;
   user_b_id?: unknown;
+  user_a_query?: unknown;
+  user_b_query?: unknown;
   note?: unknown;
 };
 
@@ -153,6 +155,46 @@ async function searchCandidates(admin: ReturnType<typeof createAdminClient>, q: 
   }));
 }
 
+function normalizeSearchName(value: string) {
+  return value.trim().toLocaleLowerCase("ko-KR").replace(/\s+/g, "");
+}
+
+async function resolveUserIdFromQuery(
+  admin: ReturnType<typeof createAdminClient>,
+  explicitUserId: string,
+  rawQuery: string,
+  label: string
+) {
+  if (explicitUserId) return { userId: explicitUserId, error: "", candidates: [] as Awaited<ReturnType<typeof searchCandidates>> };
+
+  const query = rawQuery.trim();
+  if (!query) {
+    return { userId: "", error: `${label} 이름 또는 닉네임을 입력해주세요.`, candidates: [] as Awaited<ReturnType<typeof searchCandidates>> };
+  }
+
+  const candidates = await searchCandidates(admin, query);
+  const normalizedQuery = normalizeSearchName(query);
+  const exactCandidates = candidates.filter((candidate) => {
+    const cardName = normalizeSearchName(candidate.latest_card?.name ?? "");
+    const nickname = normalizeSearchName(candidate.profile?.nickname ?? "");
+    return cardName === normalizedQuery || nickname === normalizedQuery;
+  });
+  const resolvedCandidates = exactCandidates.length > 0 ? exactCandidates : candidates;
+
+  if (resolvedCandidates.length === 0) {
+    return { userId: "", error: `${label}에 해당하는 회원을 찾지 못했습니다.`, candidates };
+  }
+  if (resolvedCandidates.length > 1) {
+    return {
+      userId: "",
+      error: `${label} 검색 결과가 여러 명입니다. 아래 검색 결과에서 정확한 회원을 선택해주세요.`,
+      candidates: resolvedCandidates,
+    };
+  }
+
+  return { userId: resolvedCandidates[0].user_id, error: "", candidates: resolvedCandidates };
+}
+
 function serializeBlock(
   row: BlockRow,
   profileMap: Map<string, ProfileRow>,
@@ -216,9 +258,32 @@ export async function POST(req: Request) {
   const user = adminCheck.user!;
 
   const body = (await req.json().catch(() => null)) as BlockPayload | null;
-  const rawUserAId = String(body?.user_a_id ?? "").trim();
-  const rawUserBId = String(body?.user_b_id ?? "").trim();
+  let rawUserAId = String(body?.user_a_id ?? "").trim();
+  let rawUserBId = String(body?.user_b_id ?? "").trim();
   const note = String(body?.note ?? "").trim().slice(0, 500) || null;
+  const rawUserAQuery = String(body?.user_a_query ?? "").trim();
+  const rawUserBQuery = String(body?.user_b_query ?? "").trim();
+  const admin = createAdminClient();
+  try {
+    const [resolvedA, resolvedB] = await Promise.all([
+      resolveUserIdFromQuery(admin, rawUserAId, rawUserAQuery, "회원 A"),
+      resolveUserIdFromQuery(admin, rawUserBId, rawUserBQuery, "회원 B"),
+    ]);
+    if (resolvedA.error || resolvedB.error) {
+      return NextResponse.json(
+        {
+          error: resolvedA.error || resolvedB.error,
+          candidates: [...resolvedA.candidates, ...resolvedB.candidates],
+        },
+        { status: 409 }
+      );
+    }
+    rawUserAId = resolvedA.userId;
+    rawUserBId = resolvedB.userId;
+  } catch (error) {
+    console.error("[POST /api/admin/dating/1on1/user-blocks] resolve failed", error);
+    return NextResponse.json({ error: "회원 검색에 실패했습니다." }, { status: 500 });
+  }
   if (!rawUserAId || !rawUserBId) {
     return NextResponse.json({ error: "차단할 두 회원을 선택해주세요." }, { status: 400 });
   }
@@ -231,7 +296,6 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "회원 정보가 올바르지 않습니다." }, { status: 400 });
   }
 
-  const admin = createAdminClient();
   const upsertRes = await admin
     .from("dating_1on1_admin_user_blocks")
     .upsert(

@@ -414,6 +414,8 @@ export default function AdminDatingOneOnOnePage() {
   const [adminUserBlockCandidates, setAdminUserBlockCandidates] = useState<AdminOneOnOneUserBlockCandidate[]>([]);
   const [adminUserBlockTableReady, setAdminUserBlockTableReady] = useState(true);
   const [adminUserBlockSearch, setAdminUserBlockSearch] = useState("");
+  const [adminUserBlockUserAQuery, setAdminUserBlockUserAQuery] = useState("");
+  const [adminUserBlockUserBQuery, setAdminUserBlockUserBQuery] = useState("");
   const [adminUserBlockUserAId, setAdminUserBlockUserAId] = useState("");
   const [adminUserBlockUserBId, setAdminUserBlockUserBId] = useState("");
   const [adminUserBlockNote, setAdminUserBlockNote] = useState("");
@@ -657,11 +659,11 @@ export default function AdminDatingOneOnOnePage() {
 
   const handleSaveAdminUserBlock = async () => {
     if (adminUserBlockSaving) return;
-    if (!adminUserBlockUserAId || !adminUserBlockUserBId) {
-      setError("서로 안 보이게 할 회원 두 명을 선택해주세요.");
+    if ((!adminUserBlockUserAId && !adminUserBlockUserAQuery.trim()) || (!adminUserBlockUserBId && !adminUserBlockUserBQuery.trim())) {
+      setError("서로 안 보이게 할 회원 이름 또는 닉네임을 두 명 모두 입력해주세요.");
       return;
     }
-    if (adminUserBlockUserAId === adminUserBlockUserBId) {
+    if (adminUserBlockUserAId && adminUserBlockUserAId === adminUserBlockUserBId) {
       setError("같은 회원끼리는 지인 차단할 수 없습니다.");
       return;
     }
@@ -675,15 +677,26 @@ export default function AdminDatingOneOnOnePage() {
         body: JSON.stringify({
           user_a_id: adminUserBlockUserAId,
           user_b_id: adminUserBlockUserBId,
+          user_a_query: adminUserBlockUserAQuery,
+          user_b_query: adminUserBlockUserBQuery,
           note: adminUserBlockNote,
         }),
       });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        candidates?: AdminOneOnOneUserBlockCandidate[];
+      };
       if (!res.ok || !body.ok) {
+        if (Array.isArray(body.candidates) && body.candidates.length > 0) {
+          setAdminUserBlockCandidates(body.candidates);
+        }
         throw new Error(body.error ?? "1:1 지인 차단 저장에 실패했습니다.");
       }
       setAdminUserBlockUserAId("");
       setAdminUserBlockUserBId("");
+      setAdminUserBlockUserAQuery("");
+      setAdminUserBlockUserBQuery("");
       setAdminUserBlockNote("");
       await loadAdminUserBlocks();
     } catch (e) {
@@ -1154,12 +1167,35 @@ export default function AdminDatingOneOnOnePage() {
             </div>
 
             <div className="mt-3 grid gap-2 md:grid-cols-2">
+              <input
+                value={adminUserBlockUserAQuery}
+                onChange={(e) => {
+                  setAdminUserBlockUserAQuery(e.target.value);
+                  setAdminUserBlockUserAId("");
+                }}
+                placeholder="회원 A 이름/닉네임 직접 입력"
+                className="h-10 rounded-lg border border-rose-100 px-3 text-sm outline-none focus:border-rose-300"
+              />
+              <input
+                value={adminUserBlockUserBQuery}
+                onChange={(e) => {
+                  setAdminUserBlockUserBQuery(e.target.value);
+                  setAdminUserBlockUserBId("");
+                }}
+                placeholder="회원 B 이름/닉네임 직접 입력"
+                className="h-10 rounded-lg border border-rose-100 px-3 text-sm outline-none focus:border-rose-300"
+              />
               <select
                 value={adminUserBlockUserAId}
-                onChange={(e) => setAdminUserBlockUserAId(e.target.value)}
+                onChange={(e) => {
+                  const userId = e.target.value;
+                  setAdminUserBlockUserAId(userId);
+                  const candidate = adminUserBlockCandidates.find((item) => item.user_id === userId);
+                  if (candidate) setAdminUserBlockUserAQuery(adminUserBlockDisplayName(candidate));
+                }}
                 className="h-10 rounded-lg border border-rose-100 px-2 text-sm"
               >
-                <option value="">회원 A 선택</option>
+                <option value="">회원 A 검색결과 선택(선택)</option>
                 {adminUserBlockCandidates.map((candidate) => (
                   <option key={`a-${candidate.user_id}`} value={candidate.user_id}>
                     {adminUserBlockDisplayName(candidate)} / {candidate.latest_card?.age ?? "-"}세 / {candidate.latest_card?.region ?? "-"}
@@ -1168,10 +1204,15 @@ export default function AdminDatingOneOnOnePage() {
               </select>
               <select
                 value={adminUserBlockUserBId}
-                onChange={(e) => setAdminUserBlockUserBId(e.target.value)}
+                onChange={(e) => {
+                  const userId = e.target.value;
+                  setAdminUserBlockUserBId(userId);
+                  const candidate = adminUserBlockCandidates.find((item) => item.user_id === userId);
+                  if (candidate) setAdminUserBlockUserBQuery(adminUserBlockDisplayName(candidate));
+                }}
                 className="h-10 rounded-lg border border-rose-100 px-2 text-sm"
               >
-                <option value="">회원 B 선택</option>
+                <option value="">회원 B 검색결과 선택(선택)</option>
                 {adminUserBlockCandidates.map((candidate) => (
                   <option key={`b-${candidate.user_id}`} value={candidate.user_id}>
                     {adminUserBlockDisplayName(candidate)} / {candidate.latest_card?.age ?? "-"}세 / {candidate.latest_card?.region ?? "-"}
@@ -1207,8 +1248,14 @@ export default function AdminDatingOneOnOnePage() {
                     key={candidate.user_id}
                     type="button"
                     onClick={() => {
-                      if (!adminUserBlockUserAId) setAdminUserBlockUserAId(candidate.user_id);
-                      else if (adminUserBlockUserAId !== candidate.user_id) setAdminUserBlockUserBId(candidate.user_id);
+                      const displayName = adminUserBlockDisplayName(candidate);
+                      if (!adminUserBlockUserAId && !adminUserBlockUserAQuery.trim()) {
+                        setAdminUserBlockUserAId(candidate.user_id);
+                        setAdminUserBlockUserAQuery(displayName);
+                      } else if (adminUserBlockUserAId !== candidate.user_id) {
+                        setAdminUserBlockUserBId(candidate.user_id);
+                        setAdminUserBlockUserBQuery(displayName);
+                      }
                     }}
                     className="w-full rounded-xl border border-rose-100 bg-rose-50/50 px-3 py-2 text-left hover:border-rose-300"
                   >
