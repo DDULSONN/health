@@ -43,6 +43,7 @@ const MATCH_STATES = new Set([
   "mutual_accepted",
 ]);
 
+const ADMIN_SENT_DELETABLE_STATES = new Set(["proposed", "source_skipped", "admin_canceled"]);
 const MATCH_BATCH_SIZE = 1000;
 const FULL_MATCH_SELECT =
   "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,contact_exchange_status,contact_exchange_requested_at,contact_exchange_paid_at,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_approved_by_user_id,contact_exchange_note,source_phone_share_consented_at,candidate_phone_share_consented_at,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at";
@@ -390,4 +391,52 @@ export async function POST(req: Request) {
   };
 
   return NextResponse.json(response);
+}
+
+export async function DELETE(req: Request) {
+  const { user } = await getRequestAuthContext(req);
+
+  if (!user) {
+    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+  if (!isAllowedAdminUser(user.id, user.email)) {
+    return NextResponse.json({ error: "Admin only" }, { status: 403 });
+  }
+
+  const { searchParams } = new URL(req.url);
+  const matchId = (searchParams.get("id") ?? "").trim();
+  if (!matchId) {
+    return NextResponse.json({ error: "Match id is required." }, { status: 400 });
+  }
+
+  const admin = createAdminClient();
+  const matchRes = await admin
+    .from("dating_1on1_match_proposals")
+    .select("id,state,admin_sent_by_user_id")
+    .eq("id", matchId)
+    .maybeSingle();
+
+  if (matchRes.error) {
+    console.error("[DELETE /api/dating/1on1/matches/admin] fetch failed", matchRes.error);
+    return NextResponse.json({ error: "Failed to load match." }, { status: 500 });
+  }
+  if (!matchRes.data) {
+    return NextResponse.json({ error: "Match not found." }, { status: 404 });
+  }
+
+  const row = matchRes.data as { id: string; state: string | null; admin_sent_by_user_id: string | null };
+  if (!row.admin_sent_by_user_id) {
+    return NextResponse.json({ error: "관리자가 보낸 후보만 삭제할 수 있습니다." }, { status: 409 });
+  }
+  if (!ADMIN_SENT_DELETABLE_STATES.has(String(row.state ?? ""))) {
+    return NextResponse.json({ error: "이미 진행된 매칭은 삭제할 수 없습니다." }, { status: 409 });
+  }
+
+  const deleteRes = await admin.from("dating_1on1_match_proposals").delete().eq("id", matchId);
+  if (deleteRes.error) {
+    console.error("[DELETE /api/dating/1on1/matches/admin] delete failed", deleteRes.error);
+    return NextResponse.json({ error: "Failed to delete match." }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, deleted: true, id: matchId });
 }

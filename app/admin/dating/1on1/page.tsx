@@ -244,6 +244,15 @@ const ACTIVE_PAIR_STATES = new Set<AdminMatchItem["state"]>([
   "candidate_accepted",
   "mutual_accepted",
 ]);
+const ADMIN_SENT_DELETABLE_STATES = new Set<AdminMatchItem["state"]>([
+  "proposed",
+  "source_skipped",
+  "admin_canceled",
+]);
+
+function canDeleteAdminSentMatch(match: AdminMatchItem): boolean {
+  return Boolean(match.admin_sent_by_user_id) && ADMIN_SENT_DELETABLE_STATES.has(match.state);
+}
 
 function getAutoCandidateRange(card: Pick<CardItem, "sex" | "age">): AutoCandidateRange {
   if (card.age == null || !Number.isFinite(card.age)) {
@@ -347,6 +356,7 @@ export default function AdminDatingOneOnOnePage() {
   const [autoCandidateSeed, setAutoCandidateSeed] = useState(() => Date.now());
   const [sendingCandidates, setSendingCandidates] = useState(false);
   const [processingContactExchangeIds, setProcessingContactExchangeIds] = useState<string[]>([]);
+  const [deletingMatchIds, setDeletingMatchIds] = useState<string[]>([]);
   const [matchStateFilter, setMatchStateFilter] = useState<
     "" | AdminMatchItem["state"] | "mutual_only" | "mutual_pending_exchange"
   >("mutual_only");
@@ -817,6 +827,32 @@ export default function AdminDatingOneOnOnePage() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setSendingCandidates(false);
+    }
+  };
+
+  const handleDeleteAdminMatch = async (match: AdminMatchItem) => {
+    if (!canDeleteAdminSentMatch(match) || deletingMatchIds.includes(match.id)) return;
+    const sourceName = matchDisplayName(match.source_card, match.source_profile, match.source_user_id);
+    const candidateName = matchDisplayName(match.candidate_card, match.candidate_profile, match.candidate_user_id);
+    if (!confirm(`${sourceName}에게 보낸 ${candidateName} 후보를 삭제할까요?`)) {
+      return;
+    }
+
+    setDeletingMatchIds((prev) => [...prev, match.id]);
+    setError("");
+    try {
+      const res = await fetch(`/api/dating/1on1/matches/admin?id=${encodeURIComponent(match.id)}`, {
+        method: "DELETE",
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) {
+        throw new Error(body.error ?? "후보 삭제에 실패했습니다.");
+      }
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "후보 삭제에 실패했습니다.");
+    } finally {
+      setDeletingMatchIds((prev) => prev.filter((id) => id !== match.id));
     }
   };
 
@@ -1335,6 +1371,8 @@ export default function AdminDatingOneOnOnePage() {
             visibleMatches.map((match) => {
               const sourceName = matchDisplayName(match.source_card, match.source_profile, match.source_user_id);
               const candidateName = matchDisplayName(match.candidate_card, match.candidate_profile, match.candidate_user_id);
+              const canDeleteMatch = canDeleteAdminSentMatch(match);
+              const deletingMatch = deletingMatchIds.includes(match.id);
               return (
               <div key={match.id} className="rounded-xl border border-emerald-200 bg-white p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1368,6 +1406,18 @@ export default function AdminDatingOneOnOnePage() {
                   {match.candidate_responded_at ? ` / 후보응답 ${new Date(match.candidate_responded_at).toLocaleString("ko-KR")}` : ""}
                   {match.source_final_responded_at ? ` / 최종응답 ${new Date(match.source_final_responded_at).toLocaleString("ko-KR")}` : ""}
                 </p>
+                {canDeleteMatch ? (
+                  <div className="mt-2">
+                    <button
+                      type="button"
+                      disabled={deletingMatch}
+                      onClick={() => void handleDeleteAdminMatch(match)}
+                      className="h-8 rounded-md border border-rose-200 bg-white px-3 text-xs font-medium text-rose-700 disabled:opacity-50"
+                    >
+                      {deletingMatch ? "삭제 중..." : "후보 삭제"}
+                    </button>
+                  </div>
+                ) : null}
                 {match.state === "mutual_accepted" && (
                   <div className="mt-2 rounded-lg border border-emerald-100 bg-emerald-50/40 p-3">
                     {isDatingOneOnOneLegacyPhoneShareMatch(match) ? (
@@ -1657,6 +1707,8 @@ export default function AdminDatingOneOnOnePage() {
                             const isSelected =
                               match.state !== "proposed" && match.state !== "source_skipped" && match.state !== "admin_canceled";
                             const isAutoMatch = !match.admin_sent_by_user_id;
+                            const canDeleteMatch = canDeleteAdminSentMatch(match);
+                            const deletingMatch = deletingMatchIds.includes(match.id);
                             return (
                               <div key={`${item.id}-${match.id}`} className="rounded-xl border border-sky-200 bg-white p-3">
                                 <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
@@ -1685,13 +1737,25 @@ export default function AdminDatingOneOnOnePage() {
                                       </p>
                                     )}
                                   </div>
-                                  <p className="text-xs text-neutral-500">
-                                    발송 {new Date(match.created_at).toLocaleString("ko-KR")}
-                                    {match.source_selected_at ? ` / 선택 ${new Date(match.source_selected_at).toLocaleString("ko-KR")}` : ""}
-                                    {match.candidate_responded_at
-                                      ? ` / 응답 ${new Date(match.candidate_responded_at).toLocaleString("ko-KR")}`
-                                      : ""}
-                                  </p>
+                                  <div className="flex flex-col items-start gap-2 md:items-end">
+                                    <p className="text-xs text-neutral-500">
+                                      발송 {new Date(match.created_at).toLocaleString("ko-KR")}
+                                      {match.source_selected_at ? ` / 선택 ${new Date(match.source_selected_at).toLocaleString("ko-KR")}` : ""}
+                                      {match.candidate_responded_at
+                                        ? ` / 응답 ${new Date(match.candidate_responded_at).toLocaleString("ko-KR")}`
+                                        : ""}
+                                    </p>
+                                    {canDeleteMatch ? (
+                                      <button
+                                        type="button"
+                                        disabled={deletingMatch}
+                                        onClick={() => void handleDeleteAdminMatch(match)}
+                                        className="h-8 rounded-md border border-rose-200 bg-white px-3 text-xs font-medium text-rose-700 disabled:opacity-50"
+                                      >
+                                        {deletingMatch ? "삭제 중..." : "후보 삭제"}
+                                      </button>
+                                    ) : null}
+                                  </div>
                                 </div>
                               </div>
                             );
