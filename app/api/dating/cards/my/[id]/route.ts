@@ -117,6 +117,46 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
   }
 
   const body = await req.json().catch(() => null);
+  if ((body as { action?: unknown } | null)?.action === "hide") {
+    const adminClient = createAdminClient();
+    const cardRes = await adminClient
+      .from("dating_cards")
+      .select("id,owner_user_id,status")
+      .eq("id", cardId)
+      .maybeSingle();
+
+    if (cardRes.error || !cardRes.data || cardRes.data.owner_user_id !== user.id) {
+      return NextResponse.json({ error: "오픈카드를 찾을 수 없습니다." }, { status: 404 });
+    }
+
+    if (String(cardRes.data.status ?? "") !== "public") {
+      return NextResponse.json({ error: "공개 중인 오픈카드만 내릴 수 있습니다." }, { status: 400 });
+    }
+
+    const nowIso = new Date().toISOString();
+    const updateRes = await adminClient
+      .from("dating_cards")
+      .update({ status: "hidden", expires_at: nowIso })
+      .eq("id", cardId)
+      .eq("owner_user_id", user.id)
+      .eq("status", "public")
+      .select("id,status,expires_at")
+      .maybeSingle();
+
+    if (updateRes.error || !updateRes.data) {
+      console.error("[PATCH /api/dating/cards/my/[id]] hide failed", updateRes.error);
+      return NextResponse.json({ error: "오픈카드 내리기에 실패했습니다." }, { status: 500 });
+    }
+
+    return NextResponse.json({
+      ok: true,
+      id: updateRes.data.id,
+      status: updateRes.data.status,
+      expires_at: updateRes.data.expires_at,
+      message: "오픈카드를 내렸습니다. 필요하면 재등록권으로 다시 올릴 수 있습니다.",
+    });
+  }
+
   if ((body as { action?: unknown } | null)?.action === "reactivate") {
     return reactivateOpenCard(cardId, user.id);
   }
