@@ -6326,24 +6326,71 @@ export default function MyPage() {
   const oneOnOneActiveCount = myOneOnOneMatches.filter(
     (item) => item.state !== "admin_canceled" && item.state !== "source_declined" && item.state !== "candidate_rejected" && item.state !== "source_skipped",
   ).length;
+  const scrollToMyPageTarget = (section: MyPageSectionTab, id: string) => {
+    setPageSectionTab(section);
+    let attempts = 0;
+    const scrollWhenReady = () => {
+      const target = document.getElementById(id);
+      if (target) {
+        target.scrollIntoView({ behavior: "smooth", block: "start" });
+        return;
+      }
+      attempts += 1;
+      if (attempts < 10) {
+        window.setTimeout(scrollWhenReady, 80);
+      }
+    };
+    window.setTimeout(scrollWhenReady, 80);
+  };
   const applicationOverviewItems = [
     {
       label: "받은 지원 대기",
       value: receivedOpenPendingCount + receivedPaidPendingCount,
       detail: `오픈 ${receivedOpenPendingCount} · 유료 ${receivedPaidPendingCount}`,
       tone: "border-rose-100 bg-rose-50/60 text-rose-700",
+      onClick: () =>
+        scrollToMyPageTarget(
+          receivedOpenPendingCount > 0 || receivedPaidPendingCount === 0 ? "profile" : "matching",
+          receivedOpenPendingCount > 0 || receivedPaidPendingCount === 0 ? "open-card-received" : "paid-card-received",
+        ),
+      actions: [
+        {
+          label: `오픈 ${receivedOpenPendingCount}`,
+          onClick: () => scrollToMyPageTarget("profile", "open-card-received"),
+        },
+        {
+          label: `유료 ${receivedPaidPendingCount}`,
+          onClick: () => scrollToMyPageTarget("matching", "paid-card-received"),
+        },
+      ],
     },
     {
       label: "내 지원 진행",
       value: appliedOpenActiveCount + appliedPaidActiveCount,
       detail: `오픈 ${appliedOpenActiveCount} · 유료 ${appliedPaidActiveCount}`,
       tone: "border-sky-100 bg-sky-50/70 text-sky-700",
+      onClick: () =>
+        scrollToMyPageTarget(
+          appliedOpenActiveCount > 0 || appliedPaidActiveCount === 0 ? "profile" : "matching",
+          appliedOpenActiveCount > 0 || appliedPaidActiveCount === 0 ? "open-card-applied" : "paid-card-applied",
+        ),
+      actions: [
+        {
+          label: `오픈 ${appliedOpenActiveCount}`,
+          onClick: () => scrollToMyPageTarget("profile", "open-card-applied"),
+        },
+        {
+          label: `유료 ${appliedPaidActiveCount}`,
+          onClick: () => scrollToMyPageTarget("matching", "paid-card-applied"),
+        },
+      ],
     },
     {
       label: "1:1 진행",
       value: oneOnOneActiveCount,
       detail: oneOnOneActionCount > 0 ? `확인 필요 ${oneOnOneActionCount}` : "확인 필요 없음",
       tone: "border-violet-100 bg-violet-50/70 text-violet-700",
+      onClick: () => scrollToMyPageTarget("matching", "one-on-one-status"),
     },
     {
       label: "빠른매칭",
@@ -6352,6 +6399,12 @@ export default function MyPage() {
         ? `받은 ${swipeStatusSummary?.incoming_pending ?? 0} · 보낸 ${swipeStatusSummary?.outgoing_pending ?? 0}`
         : "필요 시 불러오기",
       tone: "border-emerald-100 bg-emerald-50/70 text-emerald-700",
+      onClick: () => {
+        if (!swipeStatusPanelOpen) {
+          void handleToggleSwipeStatusPanel();
+        }
+        scrollToMyPageTarget("profile", "swipe-status-panel");
+      },
     },
   ];
   const statusRankPublicFirst: Record<AdminOpenCard["status"], number> = {
@@ -6492,7 +6545,28 @@ export default function MyPage() {
       <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <span className="inline-flex rounded-full bg-rose-50 px-3 py-1 text-[11px] font-semibold text-rose-600">마이</span>
+            <div className="inline-grid grid-cols-2 rounded-full border border-neutral-200 bg-neutral-50 p-0.5">
+              <button
+                type="button"
+                onClick={() => void handleToggleSwipeVisibility(true)}
+                disabled={savingSwipeVisibility || swipeProfileVisible}
+                className={`h-6 rounded-full px-3 text-[10px] font-bold transition disabled:cursor-not-allowed ${
+                  swipeProfileVisible ? "bg-neutral-950 text-white" : "text-neutral-500 hover:bg-white"
+                } ${savingSwipeVisibility ? "opacity-60" : ""}`}
+              >
+                ON
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleToggleSwipeVisibility(false)}
+                disabled={savingSwipeVisibility || !swipeProfileVisible}
+                className={`h-6 rounded-full px-3 text-[10px] font-bold transition disabled:cursor-not-allowed ${
+                  !swipeProfileVisible ? "bg-neutral-950 text-white" : "text-neutral-500 hover:bg-white"
+                } ${savingSwipeVisibility ? "opacity-60" : ""}`}
+              >
+                OFF
+              </button>
+            </div>
             <h1 className="mt-3 text-2xl font-bold text-neutral-950">마이페이지</h1>
             <p className="mt-1 text-sm text-neutral-500">{nickname}</p>
           </div>
@@ -6504,17 +6578,10 @@ export default function MyPage() {
             >
               {phoneVerified ? "휴대폰 인증 완료" : "휴대폰 미인증"}
             </span>
-            <span
-              className={`inline-flex h-7 items-center rounded-full px-2.5 text-[11px] font-semibold ${
-                swipeProfileVisible ? "bg-emerald-50 text-emerald-700" : "bg-neutral-100 text-neutral-600"
-              }`}
-            >
-              빠른매칭 {swipeProfileVisible ? "ON" : "OFF"}
-            </span>
           </div>
         </div>
 
-        <div className="mt-4 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-stretch">
+        <div className="mt-4">
           <div className="rounded-xl border border-neutral-200/80 bg-[#fbfaf8] p-3">
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -6548,40 +6615,34 @@ export default function MyPage() {
             )}
             {nicknameInfo && <p className="mt-2 text-xs text-emerald-700">{nicknameInfo}</p>}
           </div>
-
-          <div className="rounded-xl border border-neutral-200/80 bg-white p-3 sm:w-44">
-            <p className="text-[11px] font-semibold text-neutral-500">빠른매칭 노출</p>
-            <div className="mt-2 grid grid-cols-2 rounded-lg border border-neutral-200 bg-neutral-50 p-1">
-              <button
-                type="button"
-                onClick={() => void handleToggleSwipeVisibility(true)}
-                disabled={savingSwipeVisibility || swipeProfileVisible}
-                className={`h-8 rounded-md text-xs font-semibold transition disabled:cursor-not-allowed ${
-                  swipeProfileVisible ? "bg-neutral-950 text-white" : "text-neutral-500 hover:bg-white"
-                } ${savingSwipeVisibility ? "opacity-60" : ""}`}
-              >
-                ON
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleToggleSwipeVisibility(false)}
-                disabled={savingSwipeVisibility || !swipeProfileVisible}
-                className={`h-8 rounded-md text-xs font-semibold transition disabled:cursor-not-allowed ${
-                  !swipeProfileVisible ? "bg-neutral-950 text-white" : "text-neutral-500 hover:bg-white"
-                } ${savingSwipeVisibility ? "opacity-60" : ""}`}
-              >
-                OFF
-              </button>
-            </div>
-          </div>
         </div>
 
         <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
           {applicationOverviewItems.map((item) => (
             <div key={item.label} className={`rounded-xl border p-3 ${item.tone}`}>
-              <p className="text-[11px] font-semibold">{item.label}</p>
-              <p className="mt-1 text-xl font-bold text-neutral-950">{item.value}</p>
-              <p className="mt-1 truncate text-[11px] font-medium text-neutral-500">{item.detail}</p>
+              <button
+                type="button"
+                onClick={item.onClick}
+                className="block w-full text-left transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-neutral-200"
+              >
+                <p className="text-[11px] font-semibold">{item.label}</p>
+                <p className="mt-1 text-xl font-bold text-neutral-950">{item.value}</p>
+                <p className="mt-1 truncate text-[11px] font-medium text-neutral-500">{item.detail}</p>
+              </button>
+              {"actions" in item && Array.isArray(item.actions) ? (
+                <div className="mt-2 grid grid-cols-2 gap-1">
+                  {item.actions.map((action) => (
+                    <button
+                      key={`${item.label}-${action.label}`}
+                      type="button"
+                      onClick={action.onClick}
+                      className="h-7 rounded-lg border border-white/70 bg-white/70 px-2 text-[11px] font-semibold text-neutral-600 hover:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-200"
+                    >
+                      {action.label}
+                    </button>
+                  ))}
+                </div>
+              ) : null}
             </div>
           ))}
         </div>
@@ -6650,7 +6711,7 @@ export default function MyPage() {
         </div>
         )}
 
-          <div className="mt-4 rounded-xl border border-rose-100 bg-rose-50/40 p-4">
+          <div id="swipe-status-panel" className="mt-4 rounded-xl border border-rose-100 bg-rose-50/40 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-neutral-900">빠른매칭 진행 상황</p>
@@ -7662,7 +7723,7 @@ export default function MyPage() {
 
       {showMatchingSection && (
       <>
-      <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
+      <section id="paid-card-received" className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
         <h2 className="text-lg font-bold text-neutral-950 mb-3">내 유료카드 지원자</h2>
         {myPaidCards.length === 0 ? (
           <p className="text-sm text-neutral-500">등록된 유료카드가 없습니다.</p>
@@ -7792,7 +7853,7 @@ export default function MyPage() {
         )}
       </section>
 
-      <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
+      <section id="paid-card-applied" className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
         <h2 className="text-lg font-bold text-neutral-950 mb-3">내 36시간 고정카드 지원 이력</h2>
         {myAppliedPaidApplications.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 지원한 내역이 없습니다.</p>
@@ -7889,7 +7950,7 @@ export default function MyPage() {
         </div>
       </section>
 
-      <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
+      <section id="one-on-one-status" className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
         <h2 className="text-lg font-bold text-neutral-950 mb-3">내 1:1 소개팅 신청 내역</h2>
         <div className="mb-3 rounded-xl border border-neutral-200 bg-[#fbfaf8] px-3 py-3">
           <p className="text-xs font-semibold text-neutral-900">1:1 이용 안내</p>
