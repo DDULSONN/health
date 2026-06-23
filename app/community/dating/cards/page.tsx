@@ -2624,8 +2624,8 @@ export default function OpenCardsPage() {
                     : "text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900"
                 }`}
               >
-                <span className="block text-sm font-black leading-tight">{tab.label}</span>
-                <span className={`mt-0.5 block text-[10px] font-semibold ${active ? "text-white/70" : "text-neutral-400"}`}>
+                <span className="block text-sm font-extrabold leading-tight">{tab.label}</span>
+                <span className={`mt-0.5 block text-[10px] font-medium ${active ? "text-white/70" : "text-neutral-400"}`}>
                   {tab.body}
                 </span>
               </button>
@@ -2645,7 +2645,7 @@ export default function OpenCardsPage() {
                     href={homeAdLink.linkUrl}
                     target={homeAdLink.linkUrl.startsWith("/") ? undefined : "_blank"}
                     rel={homeAdLink.linkUrl.startsWith("/") ? undefined : "noreferrer"}
-                    className="inline-flex max-w-full items-center gap-2 rounded-full bg-sky-50 px-3 py-1.5 text-xs font-black text-sky-700 transition hover:bg-sky-100"
+                    className="inline-flex max-w-full items-center gap-2 rounded-full bg-sky-50 px-3 py-1.5 text-xs font-extrabold text-sky-700 transition hover:bg-sky-100"
                     title={homeAdLink.description || homeAdLink.title}
                   >
                     <span className="min-w-0 truncate">{homeAdLink.title}</span>
@@ -2653,13 +2653,13 @@ export default function OpenCardsPage() {
                   </a>
                 ) : null}
                 {showWeekendApplyCreditBenefit ? (
-                  <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700">
+                  <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-extrabold text-emerald-700">
                     주말 지원권 추가
                   </span>
                 ) : null}
               </div>
-              <h1 className="text-[30px] font-black tracking-tight text-neutral-950 md:text-[38px]">오픈카드</h1>
-              <p className="mt-2 max-w-xl text-[15px] leading-7 text-neutral-600 md:text-base">
+              <h1 className="text-[30px] font-extrabold tracking-normal text-neutral-950 md:text-[38px]">오픈카드</h1>
+              <p className="mt-2 max-w-xl text-[15px] font-medium leading-7 text-neutral-600 md:text-base">
                 {openCardHomeCopy.subtitle}
               </p>
 
@@ -2668,11 +2668,11 @@ export default function OpenCardsPage() {
                 className="mt-4 block overflow-hidden rounded-[14px] bg-emerald-50 px-2.5 py-3 transition hover:bg-emerald-100 sm:px-4"
               >
                 <div className="flex items-center gap-3">
-                  <span className="shrink-0 text-[11px] font-black text-emerald-700 sm:text-xs">혜택</span>
-                  <p className="min-w-0 flex-1 whitespace-nowrap text-[clamp(9px,2.58vw,14px)] font-black leading-5 text-emerald-900">
+                  <span className="shrink-0 text-[11px] font-extrabold text-emerald-700 sm:text-xs">혜택</span>
+                  <p className="min-w-0 flex-1 whitespace-nowrap text-[clamp(9px,2.58vw,14px)] font-extrabold leading-5 text-emerald-900">
                     오픈카드 등록 시 가까운 이상형 무료
                   </p>
-                  <span className="shrink-0 text-[11px] font-black text-emerald-700">보기</span>
+                  <span className="shrink-0 text-[11px] font-extrabold text-emerald-700">보기</span>
                 </div>
               </Link>
 
@@ -2683,7 +2683,7 @@ export default function OpenCardsPage() {
                       <p className="text-sm font-bold text-neutral-500">오늘 새 지원·좋아요</p>
                       <p className="mt-1 text-xs font-medium text-neutral-400">오늘 들어온 반응</p>
                     </div>
-                    <p className="self-center text-[22px] font-black leading-none text-rose-600">
+                    <p className="self-center text-[22px] font-extrabold leading-none text-rose-600">
                       {todayDatingReactionCount.toLocaleString("ko-KR")}건
                     </p>
                   </div>
@@ -2694,13 +2694,13 @@ export default function OpenCardsPage() {
                 <div className="grid grid-cols-2 divide-x divide-neutral-100">
                   <div className="p-4">
                     <p className="text-sm font-bold text-neutral-500">1:1 신청</p>
-                    <p className="mt-2 text-[20px] font-black text-neutral-950">
+                    <p className="mt-2 text-[20px] font-extrabold text-neutral-950">
                       {Number(queueStats?.one_on_one_applicants_count ?? 0).toLocaleString("ko-KR")}명
                     </p>
                   </div>
                   <div className="p-4">
                     <p className="text-sm font-bold text-neutral-500">1:1 매칭</p>
-                    <p className="mt-2 text-[20px] font-black text-neutral-950">
+                    <p className="mt-2 text-[20px] font-extrabold text-neutral-950">
                       {Number(queueStats?.one_on_one_matches_count ?? 0).toLocaleString("ko-KR")}건
                     </p>
                   </div>
@@ -2709,13 +2709,13 @@ export default function OpenCardsPage() {
 
               <div className="mt-3 flex items-center gap-2 rounded-[18px] border border-sky-100 bg-sky-50/60 px-3 py-3 pr-5">
                 <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-black tracking-tight text-neutral-950 sm:text-sm">1:1 신청서도 같이 등록해두기</p>
-                  <p className="mt-0.5 truncate text-[11px] font-bold text-sky-700 sm:text-xs">후보 추천 받고 마음에 들면 바로 지원</p>
+                  <p className="truncate text-[13px] font-extrabold tracking-normal text-neutral-950 sm:text-sm">1:1 신청서도 같이 등록해두기</p>
+                  <p className="mt-0.5 truncate text-[11px] font-semibold text-sky-700 sm:text-xs">후보 추천 받고 마음에 들면 바로 지원</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setHomeFeatureTab("one_on_one")}
-                  className="inline-flex min-h-[34px] shrink-0 items-center justify-center rounded-full bg-neutral-950 px-3.5 text-xs font-black text-white hover:bg-neutral-800"
+                  className="inline-flex min-h-[34px] shrink-0 items-center justify-center rounded-full bg-neutral-950 px-3.5 text-xs font-extrabold text-white hover:bg-neutral-800"
                 >
                   1:1 열기
                 </button>
