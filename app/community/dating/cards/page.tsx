@@ -83,39 +83,6 @@ type OpenCardHomeCopySetting = {
 
 const DEFAULT_OPEN_CARD_HOME_SUBTITLE = "둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.";
 
-const homeAdLinkThemeClass: Record<NonNullable<HomeAdLinkSetting["theme"]>, { wrap: string; text: string; cta: string }> = {
-  emerald: {
-    wrap: "border-emerald-200 bg-emerald-50 hover:border-emerald-300 hover:bg-emerald-100",
-    text: "text-emerald-900",
-    cta: "text-emerald-700",
-  },
-  rose: {
-    wrap: "border-rose-200 bg-rose-50 hover:border-rose-300 hover:bg-rose-100",
-    text: "text-rose-900",
-    cta: "text-rose-700",
-  },
-  violet: {
-    wrap: "border-violet-200 bg-violet-50 hover:border-violet-300 hover:bg-violet-100",
-    text: "text-violet-900",
-    cta: "text-violet-700",
-  },
-  sky: {
-    wrap: "border-sky-200 bg-sky-50 hover:border-sky-300 hover:bg-sky-100",
-    text: "text-sky-900",
-    cta: "text-sky-700",
-  },
-  amber: {
-    wrap: "border-amber-200 bg-amber-50 hover:border-amber-300 hover:bg-amber-100",
-    text: "text-amber-900",
-    cta: "text-amber-700",
-  },
-  neutral: {
-    wrap: "border-neutral-200 bg-neutral-50 hover:border-neutral-300 hover:bg-neutral-100",
-    text: "text-neutral-900",
-    cta: "text-neutral-700",
-  },
-};
-
 type PaidCard = {
   id: string;
   nickname: string;
@@ -2619,10 +2586,6 @@ export default function OpenCardsPage() {
   void nowLabel;
   const malePaidItems = useMemo(() => paidItems.filter((item) => item.gender === "M"), [paidItems]);
   const femalePaidItems = useMemo(() => paidItems.filter((item) => item.gender === "F"), [paidItems]);
-  const fixedPaidCount = useMemo(
-    () => paidItems.filter((item) => item.display_mode !== "instant_public").length,
-    [paidItems]
-  );
   const activeOpenItems = activeSex === "male" ? males : females;
   const activePaidItems = activeSex === "male" ? malePaidItems : femalePaidItems;
   const activeHasMore = activeSex === "male" ? maleHasMore : femaleHasMore;
@@ -2674,17 +2637,27 @@ export default function OpenCardsPage() {
       {showOpenCardSection ? (
       <section className="mb-4 rounded-[24px] border border-neutral-200/80 bg-white p-5 shadow-[0_12px_34px_rgba(15,23,42,0.06)] md:p-6">
         <div className="flex flex-col gap-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-full bg-rose-50 px-3 py-1.5 text-xs font-black text-rose-600">오픈카드</span>
-            {showWeekendApplyCreditBenefit ? (
-              <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700">
-                주말 지원권 추가
-              </span>
-            ) : null}
-          </div>
-
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 flex-1">
+              <div className="mb-2 flex flex-wrap items-center gap-2">
+                {homeAdLink ? (
+                  <a
+                    href={homeAdLink.linkUrl}
+                    target={homeAdLink.linkUrl.startsWith("/") ? undefined : "_blank"}
+                    rel={homeAdLink.linkUrl.startsWith("/") ? undefined : "noreferrer"}
+                    className="inline-flex max-w-full items-center gap-2 rounded-full bg-sky-50 px-3 py-1.5 text-xs font-black text-sky-700 transition hover:bg-sky-100"
+                    title={homeAdLink.description || homeAdLink.title}
+                  >
+                    <span className="min-w-0 truncate">{homeAdLink.title}</span>
+                    <span className="shrink-0 text-[11px] text-sky-600">바로가기</span>
+                  </a>
+                ) : null}
+                {showWeekendApplyCreditBenefit ? (
+                  <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-black text-emerald-700">
+                    주말 지원권 추가
+                  </span>
+                ) : null}
+              </div>
               <h1 className="text-[30px] font-black tracking-tight text-neutral-950 md:text-[38px]">오픈카드</h1>
               <p className="mt-2 max-w-xl text-[15px] leading-7 text-neutral-600 md:text-base">
                 {openCardHomeCopy.subtitle}
@@ -2698,34 +2671,8 @@ export default function OpenCardsPage() {
                   </p>
                 </div>
               </div>
-              {homeAdLink ? (
-                (() => {
-                  const theme = homeAdLinkThemeClass[homeAdLink.theme ?? "emerald"];
-                  return (
-                    <a
-                      href={homeAdLink.linkUrl}
-                      target={homeAdLink.linkUrl.startsWith("/") ? undefined : "_blank"}
-                      rel={homeAdLink.linkUrl.startsWith("/") ? undefined : "noreferrer"}
-                      className={`mt-3 flex w-full items-center gap-3 rounded-[14px] border px-3 py-3 transition sm:inline-flex sm:w-auto sm:px-4 ${theme.wrap}`}
-                      title={homeAdLink.description || homeAdLink.title}
-                    >
-                      <p className={`min-w-0 flex-1 break-keep text-[clamp(13px,3.7vw,14px)] font-semibold leading-6 sm:flex-none ${theme.text}`}>
-                        {homeAdLink.title}
-                      </p>
-                      <span className={`shrink-0 text-xs font-black ${theme.cta}`}>바로가기</span>
-                    </a>
-                  );
-                })()
-              ) : null}
 
               <div className="mt-4 divide-y divide-neutral-100 rounded-[18px] border border-neutral-200 bg-white">
-                <div className="grid grid-cols-[1fr_auto] gap-4 p-4">
-                  <div>
-                    <p className="text-sm font-bold text-neutral-500">고정 노출</p>
-                    <p className="mt-1 text-xs font-medium text-neutral-400">상단 우선 공개</p>
-                  </div>
-                  <p className="self-center text-[22px] font-black leading-none text-rose-600">{fixedPaidCount}명</p>
-                </div>
                 <div className="p-4">
                   <div className="grid grid-cols-[1fr_auto] gap-4">
                     <div>
@@ -2841,24 +2788,23 @@ export default function OpenCardsPage() {
             </div>
           </div>
 
-          <div className="border-t border-neutral-100 pt-4">
-            <div className="flex flex-wrap gap-2">
-              <span className="inline-flex min-h-[42px] items-center rounded-full bg-neutral-950 px-4 text-sm font-bold text-white">전체</span>
+          <div className="border-t border-neutral-100 pt-3">
+            <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <Link
                 href="/dating/apply-credits"
-                className="inline-flex min-h-[42px] items-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
+                className="inline-flex min-h-[42px] shrink-0 items-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
               >
                 지원권 구매
               </Link>
               <Link
                 href="/dating/more-view"
-                className="inline-flex min-h-[42px] items-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
+                className="inline-flex min-h-[42px] shrink-0 items-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
               >
                 이상형 더보기
               </Link>
               <Link
                 href="/dating/nearby-view"
-                className="inline-flex min-h-[42px] items-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
+                className="inline-flex min-h-[42px] shrink-0 items-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
               >
                 내 가까운 이상형
               </Link>
