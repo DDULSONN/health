@@ -6604,27 +6604,30 @@ export default function MyPage() {
       <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="inline-grid grid-cols-2 rounded-full border border-neutral-200 bg-neutral-50 p-0.5">
-              <button
-                type="button"
-                onClick={() => void handleToggleSwipeVisibility(true)}
-                disabled={savingSwipeVisibility || swipeProfileVisible}
-                className={`h-6 rounded-full px-3 text-[10px] font-bold transition disabled:cursor-not-allowed ${
-                  swipeProfileVisible ? "bg-neutral-950 text-white" : "text-neutral-500 hover:bg-white"
-                } ${savingSwipeVisibility ? "opacity-60" : ""}`}
-              >
-                ON
-              </button>
-              <button
-                type="button"
-                onClick={() => void handleToggleSwipeVisibility(false)}
-                disabled={savingSwipeVisibility || !swipeProfileVisible}
-                className={`h-6 rounded-full px-3 text-[10px] font-bold transition disabled:cursor-not-allowed ${
-                  !swipeProfileVisible ? "bg-neutral-950 text-white" : "text-neutral-500 hover:bg-white"
-                } ${savingSwipeVisibility ? "opacity-60" : ""}`}
-              >
-                OFF
-              </button>
+            <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 p-0.5 pr-1.5">
+              <span className="pl-2 text-[11px] font-bold text-neutral-700">빠른매칭</span>
+              <div className="grid grid-cols-2 rounded-full bg-white/70 p-0.5">
+                <button
+                  type="button"
+                  onClick={() => void handleToggleSwipeVisibility(true)}
+                  disabled={savingSwipeVisibility || swipeProfileVisible}
+                  className={`h-6 rounded-full px-2.5 text-[10px] font-bold transition disabled:cursor-not-allowed ${
+                    swipeProfileVisible ? "bg-neutral-950 text-white" : "text-neutral-500 hover:bg-neutral-100"
+                  } ${savingSwipeVisibility ? "opacity-60" : ""}`}
+                >
+                  ON
+                </button>
+                <button
+                  type="button"
+                  onClick={() => void handleToggleSwipeVisibility(false)}
+                  disabled={savingSwipeVisibility || !swipeProfileVisible}
+                  className={`h-6 rounded-full px-2.5 text-[10px] font-bold transition disabled:cursor-not-allowed ${
+                    !swipeProfileVisible ? "bg-neutral-950 text-white" : "text-neutral-500 hover:bg-neutral-100"
+                  } ${savingSwipeVisibility ? "opacity-60" : ""}`}
+                >
+                  OFF
+                </button>
+              </div>
             </div>
             <h1 className="mt-3 text-2xl font-bold text-neutral-950">마이페이지</h1>
             <p className="mt-1 text-sm text-neutral-500">{nickname}</p>
