@@ -440,6 +440,27 @@ export async function PATCH(req: Request) {
   if (cardRes.error || !cardRes.data || cardRes.data.owner_user_id !== user.id) {
     return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
   }
+  const currentStatus = String(cardRes.data.status ?? "");
+  if (!["pending", "expired", "hidden"].includes(currentStatus)) {
+    return NextResponse.json({ error: "Only pending, expired, or hidden open cards can be edited." }, { status: 400 });
+  }
+  if (currentStatus !== "pending") {
+    const activeCardRes = await adminClient
+      .from("dating_cards")
+      .select("id")
+      .eq("owner_user_id", user.id)
+      .in("status", ["pending", "public"])
+      .neq("id", cardId)
+      .limit(1)
+      .maybeSingle();
+    if (activeCardRes.error) {
+      console.error("[PATCH /api/dating/cards/my] active card check failed", activeCardRes.error);
+      return NextResponse.json({ error: "Could not check existing open card status." }, { status: 500 });
+    }
+    if (activeCardRes.data) {
+      return NextResponse.json({ error: "You already have a pending or public open card." }, { status: 409 });
+    }
+  }
   if (!["pending", "public", "expired", "hidden"].includes(String(cardRes.data.status ?? ""))) {
     return NextResponse.json({ error: "대기중 카드만 수정할 수 있습니다." }, { status: 400 });
   }
@@ -526,7 +547,7 @@ export async function PATCH(req: Request) {
       .update(candidate)
       .eq("id", cardId)
       .eq("owner_user_id", user.id)
-      .eq("status", "pending")
+      .in("status", ["pending", "expired", "hidden"])
       .select("id,status")
       .maybeSingle();
     updateRes = {

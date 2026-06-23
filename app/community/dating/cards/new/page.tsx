@@ -187,8 +187,8 @@ export default function NewDatingCardPage() {
           return;
         }
         const item = (body.items ?? []).find((card) => card.id === editId);
-        if (!item || item.status !== "pending") {
-          if (!cancelled) setError("대기중 오픈카드만 수정할 수 있습니다.");
+        if (!item || !["pending", "hidden", "expired"].includes(item.status)) {
+          if (!cancelled) setError("대기중이거나 내려간 오픈카드만 수정할 수 있습니다.");
           return;
         }
         if (cancelled) return;
