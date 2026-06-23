@@ -517,7 +517,7 @@ async function fetchOpenCardApplications(admin: AdminClient, limit: number): Pro
   );
 
   return ((data ?? []) as Record<string, unknown>[]).map((row) => {
-    const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-card-photos", "dating-photos"]);
+    const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-apply-photos", "dating-card-photos", "dating-photos"]);
     return {
       sourceType: "open_card_application",
       cardId: cleanText(row.id, 80),
@@ -535,8 +535,8 @@ async function fetchOpenCardApplications(admin: AdminClient, limit: number): Pro
         instagramId: cleanText(row.instagram_id, 80),
       },
       photoPaths,
-      bucket: "dating-card-photos",
-      previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-card-photos", path)),
+      bucket: "dating-apply-photos",
+      previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-apply-photos", path)),
       createdAt: cleanText(row.created_at, 80) || null,
     };
   });
@@ -553,7 +553,7 @@ async function fetchPaidCardApplications(admin: AdminClient, limit: number): Pro
   );
 
   return ((data ?? []) as Record<string, unknown>[]).map((row) => {
-    const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-card-photos", "dating-photos"]);
+    const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-apply-photos", "dating-card-photos", "dating-photos"]);
     return {
       sourceType: "paid_card_application",
       cardId: cleanText(row.id, 80),
@@ -571,8 +571,8 @@ async function fetchPaidCardApplications(admin: AdminClient, limit: number): Pro
         instagramId: cleanText(row.instagram_id, 80),
       },
       photoPaths,
-      bucket: "dating-card-photos",
-      previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-card-photos", path)),
+      bucket: "dating-apply-photos",
+      previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-apply-photos", path)),
       createdAt: cleanText(row.created_at, 80) || null,
     };
   });

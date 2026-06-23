@@ -2601,7 +2601,9 @@ export default function OpenCardsPage() {
   const showOneOnOneSection = homeFeatureTab === "one_on_one";
   const showLoveFortuneSection = isAdminPreviewUser && homeFeatureTab === "love_fortune";
   const hasActiveMyOpenCard = myOpenCards.some((card) => card.status === "pending" || card.status === "public");
-  const reactivatableHiddenOpenCard = !hasActiveMyOpenCard ? myOpenCards.find((card) => card.status === "hidden") ?? null : null;
+  const reactivatableOpenCard = !hasActiveMyOpenCard
+    ? myOpenCards.find((card) => card.status === "hidden" || card.status === "expired") ?? null
+    : null;
   const visibleHomeFeatureTabs = useMemo(
     () => HOME_FEATURE_TABS.filter((tab) => tab.key !== "love_fortune" || isAdminPreviewUser),
     [isAdminPreviewUser]
@@ -2771,14 +2773,14 @@ export default function OpenCardsPage() {
                 >
                   오픈카드 작성
                 </Link>
-                {reactivatableHiddenOpenCard ? (
+                {reactivatableOpenCard ? (
                   <button
                     type="button"
-                    disabled={reactivatingHomeOpenCardId === reactivatableHiddenOpenCard.id}
-                    onClick={() => void handleReactivateHomeOpenCard(reactivatableHiddenOpenCard.id)}
+                    disabled={reactivatingHomeOpenCardId === reactivatableOpenCard.id}
+                    onClick={() => void handleReactivateHomeOpenCard(reactivatableOpenCard.id)}
                     className="inline-flex min-h-[42px] items-center justify-center rounded-[16px] border border-rose-100 bg-rose-50 px-4 text-xs font-black text-rose-700 transition hover:bg-rose-100 disabled:cursor-not-allowed disabled:opacity-60"
                   >
-                    {reactivatingHomeOpenCardId === reactivatableHiddenOpenCard.id ? "등록 중..." : "기존 카드 자동 등록"}
+                    {reactivatingHomeOpenCardId === reactivatableOpenCard.id ? "등록 중..." : "기존 카드 자동 등록"}
                   </button>
                 ) : null}
                 <Link

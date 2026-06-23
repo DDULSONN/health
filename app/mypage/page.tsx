@@ -8905,12 +8905,12 @@ export default function MyPage() {
                           : "숨김 처리된 오픈카드입니다."}
                   </p>
                   <div className="flex items-center gap-2">
-                    {card.status === "pending" ? (
+                    {card.status === "pending" || card.status === "hidden" || card.status === "expired" ? (
                       <Link
                         href={`/dating/card/new?editId=${card.id}`}
                         className="inline-flex h-8 items-center rounded-md border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700 hover:bg-pink-50"
                       >
-                        내용 수정
+                        {card.status === "pending" ? "내용 수정" : "내용 확인/수정"}
                       </Link>
                     ) : null}
                     {card.status === "public" ? (
