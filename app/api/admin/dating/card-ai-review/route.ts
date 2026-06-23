@@ -16,6 +16,7 @@ type SourceType =
 type ReviewMode = "rules" | "ai";
 type SuspicionLevel = "clear" | "low" | "medium" | "high";
 type AdminClient = ReturnType<typeof createAdminClient>;
+const REVIEW_PAGE_SIZE = 1000;
 
 type ReviewPayload = {
   source?: unknown;
@@ -116,10 +117,27 @@ function cleanText(value: unknown, max = 500) {
   return String(value ?? "").trim().slice(0, max);
 }
 
+async function fetchPagedRows<T extends Record<string, unknown>>(
+  limit: number,
+  createQuery: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>
+) {
+  const rows: T[] = [];
+  while (rows.length < limit) {
+    const from = rows.length;
+    const to = Math.min(from + REVIEW_PAGE_SIZE, limit) - 1;
+    const { data, error } = await createQuery(from, to);
+    if (error) throw error;
+    const page = data ?? [];
+    rows.push(...page);
+    if (page.length < to - from + 1) break;
+  }
+  return rows.slice(0, limit);
+}
+
 function parseLimit(value: unknown, mode: ReviewMode) {
   const num = Number(value);
   const fallback = mode === "rules" ? 50 : 12;
-  const max = mode === "rules" ? 200 : 25;
+  const max = mode === "rules" ? 5000 : 25;
   if (!Number.isFinite(num)) return fallback;
   return Math.min(Math.max(Math.floor(num), 1), max);
 }
@@ -385,13 +403,14 @@ async function analyzeWithGemini(admin: AdminClient, apiKey: string, model: stri
 }
 
 async function fetchOpenCards(admin: AdminClient, limit: number): Promise<CandidateCard[]> {
-  const { data, error } = await admin
-    .from("dating_cards")
-    .select("id,owner_user_id,status,display_nickname,age,region,job,ideal_type,strengths_text,instagram_id,photo_paths,created_at")
-    .in("status", ["pending", "public"])
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) throw error;
+  const data = await fetchPagedRows(limit, (from, to) =>
+    admin
+      .from("dating_cards")
+      .select("id,owner_user_id,status,display_nickname,age,region,job,ideal_type,strengths_text,instagram_id,photo_paths,created_at")
+      .in("status", ["pending", "public"])
+      .order("created_at", { ascending: false })
+      .range(from, to)
+  );
 
   return ((data ?? []) as Record<string, unknown>[]).map((row) => {
     const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-card-photos", "dating-photos"]);
@@ -418,13 +437,14 @@ async function fetchOpenCards(admin: AdminClient, limit: number): Promise<Candid
 }
 
 async function fetchPaidCards(admin: AdminClient, limit: number): Promise<CandidateCard[]> {
-  const { data, error } = await admin
-    .from("dating_paid_cards")
-    .select("id,user_id,status,nickname,age,region,job,strengths_text,ideal_text,intro_text,instagram_id,photo_paths,created_at")
-    .in("status", ["pending", "approved"])
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) throw error;
+  const data = await fetchPagedRows(limit, (from, to) =>
+    admin
+      .from("dating_paid_cards")
+      .select("id,user_id,status,nickname,age,region,job,strengths_text,ideal_text,intro_text,instagram_id,photo_paths,created_at")
+      .in("status", ["pending", "approved"])
+      .order("created_at", { ascending: false })
+      .range(from, to)
+  );
 
   return ((data ?? []) as Record<string, unknown>[]).map((row) => {
     const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-card-photos", "dating-photos"]);
@@ -452,13 +472,14 @@ async function fetchPaidCards(admin: AdminClient, limit: number): Promise<Candid
 }
 
 async function fetchOneOnOneCards(admin: AdminClient, limit: number): Promise<CandidateCard[]> {
-  const { data, error } = await admin
-    .from("dating_1on1_cards")
-    .select("id,user_id,status,name,birth_year,region,job,intro_text,strengths_text,preferred_partner_text,photo_paths,created_at")
-    .in("status", ["submitted", "reviewing", "approved"])
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) throw error;
+  const data = await fetchPagedRows(limit, (from, to) =>
+    admin
+      .from("dating_1on1_cards")
+      .select("id,user_id,status,name,birth_year,region,job,intro_text,strengths_text,preferred_partner_text,photo_paths,created_at")
+      .in("status", ["submitted", "reviewing", "approved"])
+      .order("created_at", { ascending: false })
+      .range(from, to)
+  );
 
   const currentYear = new Date().getFullYear();
   return ((data ?? []) as Record<string, unknown>[]).map((row) => {
@@ -486,13 +507,14 @@ async function fetchOneOnOneCards(admin: AdminClient, limit: number): Promise<Ca
 }
 
 async function fetchOpenCardApplications(admin: AdminClient, limit: number): Promise<CandidateCard[]> {
-  const { data, error } = await admin
-    .from("dating_card_applications")
-    .select("id,card_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,intro_text,instagram_id,photo_paths,status,created_at")
-    .in("status", ["submitted", "accepted"])
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) throw error;
+  const data = await fetchPagedRows(limit, (from, to) =>
+    admin
+      .from("dating_card_applications")
+      .select("id,card_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,intro_text,instagram_id,photo_paths,status,created_at")
+      .in("status", ["submitted", "accepted"])
+      .order("created_at", { ascending: false })
+      .range(from, to)
+  );
 
   return ((data ?? []) as Record<string, unknown>[]).map((row) => {
     const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-card-photos", "dating-photos"]);
@@ -521,13 +543,14 @@ async function fetchOpenCardApplications(admin: AdminClient, limit: number): Pro
 }
 
 async function fetchPaidCardApplications(admin: AdminClient, limit: number): Promise<CandidateCard[]> {
-  const { data, error } = await admin
-    .from("dating_paid_card_applications")
-    .select("id,paid_card_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,intro_text,instagram_id,photo_paths,status,created_at")
-    .in("status", ["submitted", "accepted"])
-    .order("created_at", { ascending: false })
-    .limit(limit);
-  if (error) throw error;
+  const data = await fetchPagedRows(limit, (from, to) =>
+    admin
+      .from("dating_paid_card_applications")
+      .select("id,paid_card_id,applicant_user_id,applicant_display_nickname,age,height_cm,region,job,training_years,intro_text,instagram_id,photo_paths,status,created_at")
+      .in("status", ["submitted", "accepted"])
+      .order("created_at", { ascending: false })
+      .range(from, to)
+  );
 
   return ((data ?? []) as Record<string, unknown>[]).map((row) => {
     const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-card-photos", "dating-photos"]);
