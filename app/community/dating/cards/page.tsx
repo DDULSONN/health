@@ -242,8 +242,8 @@ const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
 
 const HOME_FEATURE_TABS: Array<{ key: HomeFeatureTab; label: string; body: string }> = [
   { key: "open_cards", label: "오픈카드", body: "카드 목록" },
-  { key: "quick_match", label: "빠른매칭", body: "랜덤 후보" },
   { key: "one_on_one", label: "1대1매칭", body: "후보 확인" },
+  { key: "quick_match", label: "빠른매칭", body: "랜덤 후보" },
   { key: "love_fortune", label: "연애운", body: "ADMIN" },
 ];
 
@@ -2663,14 +2663,18 @@ export default function OpenCardsPage() {
                 {openCardHomeCopy.subtitle}
               </p>
 
-              <div className="mt-4 overflow-hidden rounded-[14px] bg-emerald-50 px-2.5 py-3 sm:px-4">
+              <Link
+                href="/dating/nearby-view"
+                className="mt-4 block overflow-hidden rounded-[14px] bg-emerald-50 px-2.5 py-3 transition hover:bg-emerald-100 sm:px-4"
+              >
                 <div className="flex items-center gap-3">
                   <span className="shrink-0 text-[11px] font-black text-emerald-700 sm:text-xs">혜택</span>
                   <p className="min-w-0 flex-1 whitespace-nowrap text-[clamp(9px,2.58vw,14px)] font-black leading-5 text-emerald-900">
-                    오픈카드 등록하면 매주 원하는 지역 1곳 무료 오픈
+                    오픈카드 등록 시 가까운 이상형 무료
                   </p>
+                  <span className="shrink-0 text-[11px] font-black text-emerald-700">보기</span>
                 </div>
-              </div>
+              </Link>
 
               <div className="mt-4 divide-y divide-neutral-100 rounded-[18px] border border-neutral-200 bg-white">
                 <div className="p-4">
@@ -2703,17 +2707,17 @@ export default function OpenCardsPage() {
                 </div>
               </div>
 
-              <div className="mt-3 flex flex-col gap-3 rounded-[22px] border border-neutral-200/70 bg-white p-4 shadow-[0_8px_22px_rgba(15,23,42,0.03)] sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <p className="text-[15px] font-black tracking-tight text-neutral-900">후보를 보고 지원하는 1:1 소개팅도 함께 이용할 수 있어요.</p>
-                  <p className="mt-1 text-sm text-neutral-500">마음에 드는 후보에 지원하고, 서로 수락되면 번호 교환이 진행됩니다.</p>
+              <div className="mt-3 flex items-center gap-2 rounded-[18px] border border-sky-100 bg-sky-50/60 px-3 py-3 pr-5">
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-[13px] font-black tracking-tight text-neutral-950 sm:text-sm">1:1 신청서도 같이 등록해두기</p>
+                  <p className="mt-0.5 truncate text-[11px] font-bold text-sky-700 sm:text-xs">후보 추천 받고 마음에 들면 바로 지원</p>
                 </div>
                 <button
                   type="button"
                   onClick={() => setHomeFeatureTab("one_on_one")}
-                  className="inline-flex min-h-[40px] shrink-0 items-center justify-center rounded-full border border-neutral-200 bg-neutral-50 px-4 text-sm font-semibold text-neutral-700 hover:bg-neutral-100"
+                  className="inline-flex min-h-[34px] shrink-0 items-center justify-center rounded-full bg-neutral-950 px-3.5 text-xs font-black text-white hover:bg-neutral-800"
                 >
-                  1:1 후보 보기
+                  1:1 열기
                 </button>
               </div>
 
