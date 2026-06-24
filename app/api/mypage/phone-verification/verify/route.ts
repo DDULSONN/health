@@ -1,11 +1,13 @@
 import { kvIncrWindow } from "@/lib/edge-kv";
 import { getPhoneValidationMessage, hashForOperationalLog, normalizePhoneToE164 } from "@/lib/phone-verification";
 import { extractClientIp } from "@/lib/request-rate-limit";
+import { hashSolapiOtp } from "@/lib/solapi-phone-verification";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 const ATTEMPT_LOG_TABLE = "profile_phone_verification_attempts";
+const SOLAPI_OTP_TABLE = "profile_phone_verification_solapi_otps";
 
 function mapVerifyErrorToUserMessage(message: string): string {
   const lower = message.toLowerCase();
@@ -27,6 +29,7 @@ async function logPhoneVerificationAttempt(input: {
   ip: string;
   providerError?: string | null;
   retryAfterSec?: number | null;
+  provider?: "supabase_auth" | "solapi";
   meta?: Record<string, unknown>;
 }) {
   try {
@@ -37,7 +40,7 @@ async function logPhoneVerificationAttempt(input: {
       phone_hash: input.phoneE164 ? hashForOperationalLog(input.phoneE164) : null,
       action: "verify",
       status: input.status,
-      provider: "supabase_auth",
+      provider: input.provider ?? "supabase_auth",
       provider_error: input.providerError ?? null,
       request_id: input.requestId,
       ip_hash: hashForOperationalLog(input.ip),
@@ -141,6 +144,83 @@ export async function POST(req: Request) {
         ip,
         providerError: verifyError.message,
       });
+      const admin = createAdminClient();
+      const solapiCodeHash = hashSolapiOtp({ phoneE164, userId: user.id, code: token });
+      const solapiOtpRes = await admin
+        .from(SOLAPI_OTP_TABLE)
+        .select("id,code_hash,expires_at")
+        .eq("user_id", user.id)
+        .eq("phone_hash", hashForOperationalLog(phoneE164))
+        .is("consumed_at", null)
+        .gt("expires_at", new Date().toISOString())
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (!solapiOtpRes.error && solapiOtpRes.data && solapiOtpRes.data.code_hash === solapiCodeHash) {
+        const nowIso = new Date().toISOString();
+        const consumeRes = await admin
+          .from(SOLAPI_OTP_TABLE)
+          .update({ consumed_at: nowIso })
+          .eq("id", solapiOtpRes.data.id)
+          .is("consumed_at", null);
+        if (consumeRes.error) {
+          await logPhoneVerificationAttempt({
+            userId: user.id,
+            phoneE164,
+            status: "fail",
+            requestId,
+            ip,
+            provider: "solapi",
+            providerError: consumeRes.error.message,
+            meta: { stage: "consume_otp" },
+          });
+          return NextResponse.json({ error: "인증번호 확인에 실패했습니다. 다시 시도해주세요." }, { status: 500 });
+        }
+
+        const { error: profileError } = await supabase
+          .from("profiles")
+          .update({
+            phone_verified: true,
+            phone_e164: phoneE164,
+            phone_verified_at: nowIso,
+          })
+          .eq("user_id", user.id);
+
+        if (profileError) {
+          await logPhoneVerificationAttempt({
+            userId: user.id,
+            phoneE164,
+            status: "fail",
+            requestId,
+            ip,
+            provider: "solapi",
+            providerError: profileError.message,
+            meta: { stage: "profile_sync" },
+          });
+          return NextResponse.json({ error: "인증은 완료됐지만 프로필 반영에 실패했습니다. 잠시 후 다시 확인해주세요." }, { status: 500 });
+        }
+
+        await logPhoneVerificationAttempt({
+          userId: user.id,
+          phoneE164,
+          status: "success",
+          requestId,
+          ip,
+          provider: "solapi",
+        });
+
+        return NextResponse.json({
+          ok: true,
+          phone_verified: true,
+          phone_e164: phoneE164,
+          phone_verified_at: nowIso,
+          provider: "solapi",
+        });
+      }
+      if (solapiOtpRes.error && solapiOtpRes.error.code !== "42P01") {
+        console.warn("[phone-otp-verify] solapi_otp_lookup_failed", { requestId, error: solapiOtpRes.error.message });
+      }
       return NextResponse.json({ error: mapVerifyErrorToUserMessage(verifyError.message), code: "VERIFY_FAILED" }, { status: 400 });
     }
 
