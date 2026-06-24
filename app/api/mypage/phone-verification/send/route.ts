@@ -1,11 +1,18 @@
 import { kvIncrWindow } from "@/lib/edge-kv";
 import { getPhoneValidationMessage, hashForOperationalLog, normalizePhoneToE164 } from "@/lib/phone-verification";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
+import {
+  createSolapiOtp,
+  isSolapiPhoneOtpConfigured,
+  sendSolapiPhoneOtp,
+  shouldFallbackToSolapiPhoneOtp,
+} from "@/lib/solapi-phone-verification";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 const ATTEMPT_LOG_TABLE = "profile_phone_verification_attempts";
+const SOLAPI_OTP_TABLE = "profile_phone_verification_solapi_otps";
 
 function mapAuthErrorToUserMessage(message: string): string {
   const lower = message.toLowerCase();
@@ -38,6 +45,7 @@ async function logPhoneVerificationAttempt(input: {
   ip: string;
   providerError?: string | null;
   retryAfterSec?: number | null;
+  provider?: "supabase_auth" | "solapi";
   meta?: Record<string, unknown>;
 }) {
   try {
@@ -48,7 +56,7 @@ async function logPhoneVerificationAttempt(input: {
       phone_hash: input.phoneE164 ? hashForOperationalLog(input.phoneE164) : null,
       action: input.action,
       status: input.status,
-      provider: "supabase_auth",
+      provider: input.provider ?? "supabase_auth",
       provider_error: input.providerError ?? null,
       request_id: input.requestId,
       ip_hash: hashForOperationalLog(input.ip),
@@ -162,7 +170,57 @@ export async function POST(req: Request) {
         ip,
         providerError: error.message,
       });
-      return NextResponse.json({ error: mapAuthErrorToUserMessage(error.message), code: "SUPABASE_AUTH_ERROR" }, { status: 400 });
+      if (!shouldFallbackToSolapiPhoneOtp(error.message) || !isSolapiPhoneOtpConfigured()) {
+        return NextResponse.json({ error: mapAuthErrorToUserMessage(error.message), code: "SUPABASE_AUTH_ERROR" }, { status: 400 });
+      }
+
+      try {
+        const admin = createAdminClient();
+        const otp = createSolapiOtp(phoneE164, user.id);
+        const insertRes = await admin.from(SOLAPI_OTP_TABLE).insert({
+          user_id: user.id,
+          phone_e164: phoneE164,
+          phone_hash: hashForOperationalLog(phoneE164),
+          code_hash: otp.codeHash,
+          expires_at: otp.expiresAt,
+          request_id: requestId,
+        });
+        if (insertRes.error) {
+          throw new Error(insertRes.error.message);
+        }
+        await sendSolapiPhoneOtp({ phoneE164, code: otp.code });
+        await logPhoneVerificationAttempt({
+          userId: user.id,
+          phoneE164,
+          action: "send",
+          status: "queued",
+          requestId,
+          ip,
+          provider: "solapi",
+          meta: { fallbackFrom: "supabase_auth", expiresAt: otp.expiresAt },
+        });
+        return NextResponse.json({
+          ok: true,
+          pendingPhone: phoneE164,
+          provider: "solapi",
+          message: "인증번호를 문자로 발송했습니다. 받은 코드를 입력해주세요.",
+          resendAfterSec: 60,
+        });
+      } catch (fallbackError) {
+        console.error("[phone-otp-send] solapi_fallback_failed", { requestId, error: fallbackError });
+        await logPhoneVerificationAttempt({
+          userId: user.id,
+          phoneE164,
+          action: "send",
+          status: "fail",
+          requestId,
+          ip,
+          provider: "solapi",
+          providerError: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+          meta: { fallbackFrom: "supabase_auth" },
+        });
+        return NextResponse.json({ error: mapAuthErrorToUserMessage(error.message), code: "SUPABASE_AUTH_ERROR" }, { status: 400 });
+      }
     }
 
     console.info(
