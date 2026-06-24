@@ -1,7 +1,7 @@
 import { kvIncrWindow } from "@/lib/edge-kv";
 import { getPhoneValidationMessage, hashForOperationalLog, normalizePhoneToE164 } from "@/lib/phone-verification";
 import { extractClientIp } from "@/lib/request-rate-limit";
-import { hashSolapiOtp } from "@/lib/solapi-phone-verification";
+import { hashPhoneForVerificationStorage, hashSolapiOtp } from "@/lib/solapi-phone-verification";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
@@ -52,8 +52,8 @@ async function logPhoneVerificationAttempt(input: {
     const admin = createAdminClient();
     const res = await admin.from(ATTEMPT_LOG_TABLE).insert({
       user_id: input.userId,
-      phone_e164: input.phoneE164,
-      phone_hash: input.phoneE164 ? hashForOperationalLog(input.phoneE164) : null,
+      phone_e164: null,
+      phone_hash: input.phoneE164 ? hashPhoneForVerificationStorage(input.phoneE164) : null,
       action: "verify",
       status: input.status,
       provider: input.provider ?? "supabase_auth",
@@ -130,7 +130,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "\uC774\uBBF8 \uB2E4\uB978 \uACC4\uC815\uC5D0 \uB4F1\uB85D\uB41C \uBC88\uD638\uC785\uB2C8\uB2E4.", code: "PHONE_ALREADY_USED" }, { status: 400 });
     }
 
-    const attemptKey = `phone-otp-verify:user:${user.id}:phone:${hashForOperationalLog(phoneE164)}:600`;
+    const attemptKey = `phone-otp-verify:user:${user.id}:phone:${hashPhoneForVerificationStorage(phoneE164)}:600`;
     const attempt = await kvIncrWindow(attemptKey, 600);
     if (attempt.count > 8) {
       await logPhoneVerificationAttempt({
@@ -159,7 +159,7 @@ export async function POST(req: Request) {
       .from(SOLAPI_OTP_TABLE)
       .select("id,code_hash,expires_at")
       .eq("user_id", user.id)
-      .eq("phone_hash", hashForOperationalLog(phoneE164))
+      .eq("phone_hash", hashPhoneForVerificationStorage(phoneE164))
       .is("consumed_at", null)
       .gt("expires_at", new Date().toISOString())
       .order("created_at", { ascending: false })
@@ -240,7 +240,7 @@ export async function POST(req: Request) {
 
     if (verifyError) {
       console.warn(
-        `[phone-otp-verify] supabase_auth_error requestId=${requestId} user=${user.id} phoneHash=${hashForOperationalLog(phoneE164)} message=${JSON.stringify(
+        `[phone-otp-verify] supabase_auth_error requestId=${requestId} user=${user.id} phoneHash=${hashPhoneForVerificationStorage(phoneE164)} message=${JSON.stringify(
           verifyError.message
         )}`
       );
@@ -258,7 +258,7 @@ export async function POST(req: Request) {
         .from(SOLAPI_OTP_TABLE)
         .select("id,code_hash,expires_at")
         .eq("user_id", user.id)
-        .eq("phone_hash", hashForOperationalLog(phoneE164))
+        .eq("phone_hash", hashPhoneForVerificationStorage(phoneE164))
         .is("consumed_at", null)
         .gt("expires_at", new Date().toISOString())
         .order("created_at", { ascending: false })

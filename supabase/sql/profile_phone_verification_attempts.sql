@@ -25,6 +25,9 @@ create index if not exists idx_profile_phone_verification_attempts_phone_hash_cr
 create index if not exists idx_profile_phone_verification_attempts_action_status_created_at
   on public.profile_phone_verification_attempts(action, status, created_at desc);
 
+alter table public.profile_phone_verification_attempts enable row level security;
+revoke all on public.profile_phone_verification_attempts from anon, authenticated;
+
 commit;
 
 notify pgrst, 'reload schema';

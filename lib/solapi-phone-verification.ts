@@ -55,6 +55,10 @@ export function hashSolapiOtp(input: { phoneE164: string; userId: string; code: 
     .digest("hex");
 }
 
+export function hashPhoneForVerificationStorage(phoneE164: string) {
+  return createHmac("sha256", getOtpHashSecret()).update(`phone:${phoneE164}`).digest("hex");
+}
+
 export async function sendSolapiPhoneOtp(input: { phoneE164: string; code: string }) {
   const apiKey = process.env.SOLAPI_API_KEY?.trim();
   const apiSecret = process.env.SOLAPI_API_SECRET?.trim();

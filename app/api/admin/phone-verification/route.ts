@@ -1,9 +1,16 @@
 import { NextResponse } from "next/server";
 import { recordAdminAuditEvent } from "@/lib/admin-audit";
 import { requireAdminRoute } from "@/lib/admin-route";
-import { getPhoneValidationMessage, hashForOperationalLog, normalizePhoneToE164 } from "@/lib/phone-verification";
+import { getPhoneValidationMessage, normalizePhoneToE164 } from "@/lib/phone-verification";
+import { hashPhoneForVerificationStorage } from "@/lib/solapi-phone-verification";
 
 const ATTEMPT_LOG_TABLE = "profile_phone_verification_attempts";
+
+function maskPhoneNumber(value: string) {
+  const digits = value.replace(/\D/g, "");
+  if (digits.length < 7) return value;
+  return `${digits.slice(0, 3)}****${digits.slice(-4)}`;
+}
 
 function isUuid(value: string): boolean {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(value);
@@ -47,7 +54,7 @@ export async function POST(request: Request) {
       targetId: identifier,
       requestId,
       status: "failure",
-      metadata: { reason: "invalid_phone", phone_hash: hashForOperationalLog(phoneE164) },
+      metadata: { reason: "invalid_phone", phone_hash: hashPhoneForVerificationStorage(phoneE164) },
     });
     return NextResponse.json({ error: validationMessage }, { status: 400 });
   }
@@ -71,7 +78,7 @@ export async function POST(request: Request) {
       targetId: identifier,
       requestId,
       status: "failure",
-      metadata: { reason: "profile_not_found", phone_hash: hashForOperationalLog(phoneE164) },
+      metadata: { reason: "profile_not_found", phone_hash: hashPhoneForVerificationStorage(phoneE164) },
     });
     return NextResponse.json({ error: "해당 닉네임 또는 사용자 계정을 찾지 못했습니다." }, { status: 404 });
   }
@@ -102,7 +109,7 @@ export async function POST(request: Request) {
       targetId: userId,
       requestId,
       status: "failure",
-      metadata: { reason: "update_failed", phone_hash: hashForOperationalLog(phoneE164), message: updateError.message },
+      metadata: { reason: "update_failed", phone_hash: hashPhoneForVerificationStorage(phoneE164), message: updateError.message },
     });
     return NextResponse.json({ error: updateError.message }, { status: 500 });
   }
@@ -111,8 +118,8 @@ export async function POST(request: Request) {
     .from(ATTEMPT_LOG_TABLE)
     .insert({
       user_id: userId,
-      phone_e164: phoneE164,
-      phone_hash: hashForOperationalLog(phoneE164),
+      phone_e164: null,
+      phone_hash: hashPhoneForVerificationStorage(phoneE164),
       action: "manual",
       status: "success",
       provider: "admin_manual",
@@ -138,14 +145,14 @@ export async function POST(request: Request) {
     targetType: "profile",
     targetId: userId,
     requestId,
-    metadata: { identifier, phone_hash: hashForOperationalLog(phoneE164) },
+    metadata: { identifier, phone_hash: hashPhoneForVerificationStorage(phoneE164) },
   });
 
   return NextResponse.json({
     ok: true,
     user_id: userId,
     nickname: profile.nickname ?? null,
-    phone_e164: phoneE164,
+    phone_e164: maskPhoneNumber(phoneE164),
     phone_verified: true,
     phone_verified_at: phoneVerifiedAt,
   });
