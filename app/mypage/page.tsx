@@ -3342,12 +3342,12 @@ export default function MyPage() {
   }, [adminManageTab, adminPaymentCenter, adminPaymentCenterLoading, isAdmin, refreshAdminPaymentCenter]);
 
   useEffect(() => {
-    if (loading || activeTab !== "request_status" || swipeSubscriptionStatus || swipeSubscriptionLoading) return;
+    if (loading || swipeSubscriptionStatus || swipeSubscriptionLoading) return;
 
     queueMicrotask(async () => {
       await reloadSwipeSubscriptionStatus();
     });
-  }, [loading, activeTab, swipeSubscriptionStatus, swipeSubscriptionLoading, reloadSwipeSubscriptionStatus]);
+  }, [loading, swipeSubscriptionStatus, swipeSubscriptionLoading, reloadSwipeSubscriptionStatus]);
 
   useEffect(() => {
     if (!paymentCenterOpen || paymentCenterLoaded || paymentCenterLoading) return;
@@ -4128,7 +4128,7 @@ export default function MyPage() {
     }
   };
 
-  const reloadSwipeStatus = async () => {
+  const reloadSwipeStatus = useCallback(async () => {
     setSwipeStatusLoading(true);
     try {
       const res = await fetch("/api/dating/cards/my/swipe-status", { cache: "no-store" });
@@ -4145,7 +4145,14 @@ export default function MyPage() {
     } finally {
       setSwipeStatusLoading(false);
     }
-  };
+  }, []);
+
+  useEffect(() => {
+    if (loading || swipeStatusLoaded || swipeStatusLoading) return;
+    void reloadSwipeStatus().catch((error) => {
+      console.error("[mypage] initial swipe status load failed", error);
+    });
+  }, [loading, reloadSwipeStatus, swipeStatusLoaded, swipeStatusLoading]);
 
   const handleToggleSwipeStatusPanel = async () => {
     const nextOpen = !swipeStatusPanelOpen;
@@ -6454,9 +6461,11 @@ export default function MyPage() {
     {
       label: "빠른매칭",
       value: visibleSwipeMatchCount,
-      detail: swipeStatusLoaded
-        ? `받은 ${swipeStatusSummary?.incoming_pending ?? 0} · 보낸 ${swipeStatusSummary?.outgoing_pending ?? 0}`
-        : "필요 시 불러오기",
+      detail: swipeStatusLoading
+        ? "불러오는 중"
+        : swipeStatusLoaded
+          ? `받은 ${swipeStatusSummary?.incoming_pending ?? 0} · 보낸 ${swipeStatusSummary?.outgoing_pending ?? 0}`
+          : "상태 확인",
       tone: "border-emerald-100 bg-emerald-50/70 text-emerald-700",
       onClick: () => {
         if (!swipeStatusPanelOpen) {
