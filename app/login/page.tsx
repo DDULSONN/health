@@ -29,6 +29,12 @@ function buildCanonicalCallbackUrl(next: string): string {
   return url.toString();
 }
 
+function withPhoneVerificationGate(next: string): string {
+  const safeNext = safeNextPath(next);
+  if (safeNext.startsWith("/phone-verification")) return safeNext;
+  return `/phone-verification?next=${encodeURIComponent(safeNext)}`;
+}
+
 function mapPasswordLoginError(message: string): { text: string; unconfirmed: boolean } {
   const lower = message.toLowerCase();
   if (lower.includes("invalid login credentials")) {
@@ -72,7 +78,8 @@ function LoginContent() {
   const [sessionChecking, setSessionChecking] = useState(true);
   const [canResendConfirm, setCanResendConfirm] = useState(false);
 
-  const callbackUrl = useMemo(() => buildCanonicalCallbackUrl(next), [next]);
+  const gatedNext = useMemo(() => withPhoneVerificationGate(next), [next]);
+  const callbackUrl = useMemo(() => buildCanonicalCallbackUrl(gatedNext), [gatedNext]);
 
   const isOtpExpired = errorCode === "otp_expired";
   const isFlowStateMissing = errorCode === "flow_state_missing";
@@ -103,7 +110,7 @@ function LoginContent() {
         if (session?.user && isEmailConfirmed(session.user)) {
           setError(null);
           setSuccess("이미 로그인되어 있습니다. 이동 중...");
-          setTimeout(() => router.replace(next || "/"), 700);
+          setTimeout(() => router.replace(gatedNext), 700);
           return;
         }
 
@@ -117,7 +124,7 @@ function LoginContent() {
         setSessionChecking(false);
       }
     })();
-  }, [initialErrorMessage, next, router]);
+  }, [gatedNext, initialErrorMessage, next, router]);
 
   useEffect(() => {
     if (tabParam === "password") setMode("password");
@@ -211,7 +218,7 @@ function LoginContent() {
 
       window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
       setSuccess("로그인되었습니다. 이동 중...");
-      setTimeout(() => router.replace(next || "/"), 700);
+      setTimeout(() => router.replace(gatedNext), 700);
     } catch (e) {
       setError(e instanceof Error ? e.message : "비밀번호 로그인에 실패했습니다.");
     } finally {
@@ -236,7 +243,7 @@ function LoginContent() {
         type: "signup",
         email: normalized,
         options: {
-          emailRedirectTo: buildCanonicalCallbackUrl("/"),
+          emailRedirectTo: buildCanonicalCallbackUrl(gatedNext),
         },
       });
 

@@ -28,6 +28,27 @@ function toDigits(value: string): string {
   return value.replace(/\D/g, "");
 }
 
+function maskPhoneNumber(value: unknown): unknown {
+  if (typeof value !== "string") return value;
+  const digits = toDigits(value);
+  if (digits.length < 7) return value;
+  return `${digits.slice(0, 3)}****${digits.slice(-4)}`;
+}
+
+function maskSensitivePhoneFields<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((item) => maskSensitivePhoneFields(item)) as T;
+  }
+  if (!value || typeof value !== "object") return value;
+
+  const sensitiveKeys = new Set(["phone", "phone_e164", "contact_phone", "counterparty_phone"]);
+  const output: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value as Record<string, unknown>)) {
+    output[key] = sensitiveKeys.has(key) ? maskPhoneNumber(item) : maskSensitivePhoneFields(item);
+  }
+  return output as T;
+}
+
 function safeSearchTerm(value: string): string {
   return value.trim().replace(/[,%]/g, " ");
 }
@@ -615,14 +636,14 @@ export async function GET(request: Request) {
         email: resolved.authUser?.email ?? null,
         created_at: resolved.authUser?.created_at ?? null,
         last_sign_in_at: resolved.authUser?.last_sign_in_at ?? null,
-        phone: resolved.authUser?.phone ?? null,
+        phone: maskPhoneNumber(resolved.authUser?.phone ?? null),
         phone_confirmed_at: resolved.authUser?.phone_confirmed_at ?? null,
-        profile: resolved.profile,
+        profile: maskSensitivePhoneFields(resolved.profile),
       },
       deleted_audits: deletedAudits,
       counts,
-      details,
-      activities: activities.slice(0, 180),
+      details: maskSensitivePhoneFields(details),
+      activities: maskSensitivePhoneFields(activities.slice(0, 180)),
     });
   } catch (error) {
     console.error("[GET /api/admin/users/activity] failed", error);

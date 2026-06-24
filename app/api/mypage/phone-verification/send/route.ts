@@ -3,6 +3,7 @@ import { getPhoneValidationMessage, hashForOperationalLog, normalizePhoneToE164 
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import {
   createSolapiOtp,
+  hashPhoneForVerificationStorage,
   isSolapiPhoneOtpConfigured,
   sendSolapiPhoneOtp,
   shouldFallbackToSolapiPhoneOtp,
@@ -68,8 +69,8 @@ async function logPhoneVerificationAttempt(input: {
     const admin = createAdminClient();
     const res = await admin.from(ATTEMPT_LOG_TABLE).insert({
       user_id: input.userId,
-      phone_e164: input.phoneE164,
-      phone_hash: input.phoneE164 ? hashForOperationalLog(input.phoneE164) : null,
+      phone_e164: null,
+      phone_hash: input.phoneE164 ? hashPhoneForVerificationStorage(input.phoneE164) : null,
       action: input.action,
       status: input.status,
       provider: input.provider ?? "supabase_auth",
@@ -161,7 +162,7 @@ export async function POST(req: Request) {
       const blocked = checks[blockedIndex];
       const rule = windowRules[blockedIndex];
       console.warn(
-        `[phone-otp-send] blocked requestId=${requestId} user=${user.id} ipHash=${hashForOperationalLog(ip)} phoneHash=${hashForOperationalLog(phoneE164)} rule=${rule.label} count=${blocked.count}/${rule.limit} provider=${blocked.provider}`
+        `[phone-otp-send] blocked requestId=${requestId} user=${user.id} ipHash=${hashForOperationalLog(ip)} phoneHash=${hashPhoneForVerificationStorage(phoneE164)} rule=${rule.label} count=${blocked.count}/${rule.limit} provider=${blocked.provider}`
       );
       await logPhoneVerificationAttempt({
         userId: user.id,
@@ -191,8 +192,8 @@ export async function POST(req: Request) {
         const otp = createSolapiOtp(phoneE164, user.id);
         const insertRes = await admin.from(SOLAPI_OTP_TABLE).insert({
           user_id: user.id,
-          phone_e164: phoneE164,
-          phone_hash: hashForOperationalLog(phoneE164),
+          phone_e164: null,
+          phone_hash: hashPhoneForVerificationStorage(phoneE164),
           code_hash: otp.codeHash,
           expires_at: otp.expiresAt,
           request_id: requestId,
@@ -238,7 +239,7 @@ export async function POST(req: Request) {
     const { error } = await supabase.auth.updateUser({ phone: phoneE164 });
     if (error) {
       console.warn(
-        `[phone-otp-send] supabase_auth_error requestId=${requestId} user=${user.id} ipHash=${hashForOperationalLog(ip)} phoneHash=${hashForOperationalLog(phoneE164)} message=${JSON.stringify(
+        `[phone-otp-send] supabase_auth_error requestId=${requestId} user=${user.id} ipHash=${hashForOperationalLog(ip)} phoneHash=${hashPhoneForVerificationStorage(phoneE164)} message=${JSON.stringify(
           error.message
         )}`
       );
@@ -260,8 +261,8 @@ export async function POST(req: Request) {
         const otp = createSolapiOtp(phoneE164, user.id);
         const insertRes = await admin.from(SOLAPI_OTP_TABLE).insert({
           user_id: user.id,
-          phone_e164: phoneE164,
-          phone_hash: hashForOperationalLog(phoneE164),
+          phone_e164: null,
+          phone_hash: hashPhoneForVerificationStorage(phoneE164),
           code_hash: otp.codeHash,
           expires_at: otp.expiresAt,
           request_id: requestId,
@@ -305,7 +306,7 @@ export async function POST(req: Request) {
     }
 
     console.info(
-      `[phone-otp-send] queued requestId=${requestId} user=${user.id} ipHash=${hashForOperationalLog(ip)} phoneHash=${hashForOperationalLog(phoneE164)}`
+      `[phone-otp-send] queued requestId=${requestId} user=${user.id} ipHash=${hashForOperationalLog(ip)} phoneHash=${hashPhoneForVerificationStorage(phoneE164)}`
     );
     await logPhoneVerificationAttempt({
       userId: user.id,

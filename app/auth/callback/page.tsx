@@ -35,6 +35,12 @@ function safeNextPath(input: string | null): string {
   return input;
 }
 
+function withPhoneVerificationGate(next: string): string {
+  const safeNext = safeNextPath(next);
+  if (safeNext.startsWith("/phone-verification")) return safeNext;
+  return `/phone-verification?next=${encodeURIComponent(safeNext)}`;
+}
+
 function normalizeEmail(input: string | null): string {
   return (input ?? "").trim().toLowerCase();
 }
@@ -103,14 +109,15 @@ export default function AuthCallbackPage() {
     (async () => {
       const supabase = createClient();
       const next = parsed.next || "/";
+      const gatedNext = withPhoneVerificationGate(next);
 
       const finalizeSuccess = async () => {
         const {
           data: { session },
         } = await supabase.auth.getSession();
 
-        if (session && next !== "/") {
-          router.replace(next);
+        if (session) {
+          router.replace(gatedNext);
           return;
         }
 
@@ -133,7 +140,7 @@ export default function AuthCallbackPage() {
       }
 
       if (await hasConfirmedUser()) {
-        setViewState({ kind: "success" });
+        await finalizeSuccess();
         return;
       }
 
@@ -189,15 +196,17 @@ export default function AuthCallbackPage() {
     })();
   }, [router]);
 
+  const gatedNext = withPhoneVerificationGate(state?.next ?? "/");
+
   const recoveryMessage = useMemo(() => {
     if (!state || viewState.kind !== "recovery") return "";
 
     if (viewState.detail === "otp_expired" || viewState.detail === "access_denied") {
-      return "링크가 만료되었을 수 있지만, 계정은 정상 생성되었을 수 있어요. 로그인해 보세요.";
+      return "인증 링크가 만료됐거나 이미 사용됐어요. 계정은 만들어졌을 수 있으니 로그인해 주세요.";
     }
 
     if (state.errorDescription) return state.errorDescription;
-    return "인증 링크를 확인할 수 없지만, 계정은 이미 준비되었을 수 있어요. 로그인해 보세요.";
+    return "인증 링크를 확인하지 못했어요. 계정이 이미 준비됐을 수 있으니 로그인해 주세요.";
   }, [state, viewState]);
 
   const handleResend = async () => {
@@ -212,7 +221,7 @@ export default function AuthCallbackPage() {
 
     try {
       const supabase = createClient();
-      const callbackUrl = buildCanonicalCallbackUrl(state?.next ?? "/");
+      const callbackUrl = buildCanonicalCallbackUrl(gatedNext);
       const isSignupLink = state?.otpType === "signup";
       const { error } = isSignupLink
         ? await supabase.auth.resend({
@@ -235,7 +244,7 @@ export default function AuthCallbackPage() {
       }
 
       window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
-      setMessage("인증 메일을 보냈어요. 인앱 브라우저에서는 실패할 수 있어 Safari/Chrome으로 열어주세요.");
+      setMessage("인증 메일을 보냈어요. 인앱 브라우저에서 실패하면 Safari/Chrome으로 열어주세요.");
     } catch (e) {
       setMessage(e instanceof Error ? e.message : "인증 메일 전송에 실패했어요.");
     } finally {
@@ -278,11 +287,11 @@ export default function AuthCallbackPage() {
       <main className="max-w-sm mx-auto px-4 py-16">
         <div className="rounded-xl border border-emerald-300 bg-emerald-50 p-4">
           <h1 className="text-base font-semibold text-emerald-900">이메일 인증 완료!</h1>
-          <p className="mt-1 text-sm text-emerald-800">이제 로그인해서 계속 진행해 주세요.</p>
+          <p className="mt-1 text-sm text-emerald-800">로그인 후 휴대폰 인증까지 완료하면 바로 이용할 수 있어요.</p>
 
           <div className="mt-4 grid grid-cols-1 gap-2">
             <Link
-              href={buildLoginHref(state.next || "/", email)}
+              href={buildLoginHref(gatedNext, email)}
               className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-emerald-600 text-white text-sm font-medium"
             >
               로그인하러 가기
@@ -307,7 +316,7 @@ export default function AuthCallbackPage() {
 
         <div className="mt-3 grid grid-cols-1 gap-2">
           <Link
-            href={buildLoginHref(state.next || "/", email)}
+            href={buildLoginHref(gatedNext, email)}
             className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-amber-600 text-white text-sm font-medium"
           >
             로그인하러 가기

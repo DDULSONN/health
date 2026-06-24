@@ -9,6 +9,7 @@ import { normalizeNickname, validateNickname } from "@/lib/nickname";
 const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
 const STORED_EMAIL_KEY = "recent_login_email";
 const NICKNAME_MAX = 12;
+const PHONE_VERIFICATION_NEXT = "/phone-verification?next=/";
 
 type SignupStep = "form" | "pending_verify" | "existing_account";
 
@@ -78,7 +79,7 @@ export default function SignupPage() {
         password,
         options: {
           data: { nickname: cleanNickname },
-          emailRedirectTo: buildCanonicalCallbackUrl("/"),
+          emailRedirectTo: buildCanonicalCallbackUrl(PHONE_VERIFICATION_NEXT),
         },
       });
 
@@ -129,7 +130,7 @@ export default function SignupPage() {
         type: "signup",
         email: targetEmail,
         options: {
-          emailRedirectTo: buildCanonicalCallbackUrl("/"),
+          emailRedirectTo: buildCanonicalCallbackUrl(PHONE_VERIFICATION_NEXT),
         },
       });
 
@@ -144,6 +145,29 @@ export default function SignupPage() {
       setError(e instanceof Error ? e.message : "인증 메일 재발송에 실패했습니다.");
     } finally {
       setResending(false);
+    }
+  };
+
+  const handleGoogleSignup = async () => {
+    setLoading(true);
+    setError(null);
+    setInfo(null);
+
+    try {
+      const supabase = createClient();
+      const { error: authError } = await supabase.auth.signInWithOAuth({
+        provider: "google",
+        options: {
+          redirectTo: buildCanonicalCallbackUrl(PHONE_VERIFICATION_NEXT),
+        },
+      });
+      if (authError) {
+        setError(authError.message);
+        setLoading(false);
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Google 회원가입 중 오류가 발생했습니다.");
+      setLoading(false);
     }
   };
 
@@ -228,6 +252,14 @@ export default function SignupPage() {
           >
             {loading ? "가입 요청 중..." : "이메일로 회원가입"}
           </button>
+          <button
+            type="button"
+            onClick={handleGoogleSignup}
+            disabled={loading}
+            className="w-full min-h-[52px] rounded-xl border border-neutral-300 bg-white text-neutral-900 font-medium disabled:opacity-50"
+          >
+            Google로 회원가입
+          </button>
         </div>
       )}
 
@@ -235,7 +267,7 @@ export default function SignupPage() {
         <div className="space-y-2">
           <button
             type="button"
-            onClick={() => router.replace("/login?tab=password&next=/")}
+            onClick={() => router.replace(`/login?tab=password&next=${encodeURIComponent(PHONE_VERIFICATION_NEXT)}`)}
             className="w-full min-h-[48px] rounded-xl bg-emerald-600 text-white font-medium"
           >
             로그인으로 이동
@@ -255,14 +287,14 @@ export default function SignupPage() {
         <div className="space-y-2">
           <button
             type="button"
-            onClick={() => router.replace("/login?tab=password&next=/")}
+            onClick={() => router.replace(`/login?tab=password&next=${encodeURIComponent(PHONE_VERIFICATION_NEXT)}`)}
             className="w-full min-h-[48px] rounded-xl bg-emerald-600 text-white font-medium"
           >
             로그인하러 가기
           </button>
           <button
             type="button"
-            onClick={() => router.replace("/login?tab=password&reset=1&next=/")}
+            onClick={() => router.replace(`/login?tab=password&reset=1&next=${encodeURIComponent(PHONE_VERIFICATION_NEXT)}`)}
             className="w-full min-h-[48px] rounded-xl border border-neutral-300 text-neutral-700 font-medium"
           >
             비밀번호 찾기
@@ -272,7 +304,7 @@ export default function SignupPage() {
 
       <p className="mt-6 text-sm text-neutral-600">
         이미 계정이 있나요?{" "}
-        <Link href="/login?tab=password&next=/" className="text-emerald-700 underline">
+        <Link href={`/login?tab=password&next=${encodeURIComponent(PHONE_VERIFICATION_NEXT)}`} className="text-emerald-700 underline">
           로그인
         </Link>
       </p>
