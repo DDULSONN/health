@@ -77,12 +77,6 @@ type HomeAdLinkSetting = {
   theme?: "emerald" | "rose" | "violet" | "sky" | "amber" | "neutral";
 };
 
-type OpenCardHomeCopySetting = {
-  subtitle: string;
-};
-
-const DEFAULT_OPEN_CARD_HOME_SUBTITLE = "둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.";
-
 type PaidCard = {
   id: string;
   nickname: string;
@@ -1600,7 +1594,7 @@ export default function OpenCardsPage() {
   const [restoredSnapshot, setRestoredSnapshot] = useState<OpenCardsSnapshot | null>(null);
   const [snapshotReady, setSnapshotReady] = useState(false);
   const [activeSex, setActiveSex] = useState<"male" | "female">("female");
-  const [guideOpen, setGuideOpen] = useState(false);
+  const [guideTopic, setGuideTopic] = useState<"open_card" | "one_on_one" | null>(null);
   const [males, setMales] = useState<PublicCard[]>([]);
   const [females, setFemales] = useState<PublicCard[]>([]);
   const [maleCursorCreatedAt, setMaleCursorCreatedAt] = useState<string | null>(null);
@@ -1650,9 +1644,6 @@ export default function OpenCardsPage() {
   const [swipePremiumGuideOpen, setSwipePremiumGuideOpen] = useState(false);
   const [showWeekendApplyCreditBenefit, setShowWeekendApplyCreditBenefit] = useState(false);
   const [homeAdLink, setHomeAdLink] = useState<HomeAdLinkSetting | null>(null);
-  const [openCardHomeCopy, setOpenCardHomeCopy] = useState<OpenCardHomeCopySetting>({
-    subtitle: DEFAULT_OPEN_CARD_HOME_SUBTITLE,
-  });
   const [reelsListings, setReelsListings] = useState<ReelsDatingListing[]>([]);
   const [reelsListingsLoading, setReelsListingsLoading] = useState(false);
   const [selectedReelsListing, setSelectedReelsListing] = useState<ReelsDatingListing | null>(null);
@@ -1742,24 +1733,6 @@ export default function OpenCardsPage() {
       setHomeFeatureTab("open_cards");
     }
   }, [homeFeatureTab, isAdminPreviewUser]);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    fetch("/api/dating/cards/home-copy")
-      .then((res) => res.json())
-      .then((data: Partial<OpenCardHomeCopySetting>) => {
-        if (cancelled) return;
-        setOpenCardHomeCopy({ subtitle: data.subtitle?.trim() || DEFAULT_OPEN_CARD_HOME_SUBTITLE });
-      })
-      .catch(() => {
-        if (!cancelled) setOpenCardHomeCopy({ subtitle: DEFAULT_OPEN_CARD_HOME_SUBTITLE });
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -2597,7 +2570,6 @@ export default function OpenCardsPage() {
   const swipeTheme = getCardVisualTheme(swipeState.candidate?.card_id ?? activeSex);
   const showOpenCardSection = homeFeatureTab === "open_cards";
   const showQuickMatchSection = homeFeatureTab === "quick_match";
-  const showGuideSection = homeFeatureTab === "open_cards";
   const showOneOnOneSection = homeFeatureTab === "one_on_one";
   const showLoveFortuneSection = isAdminPreviewUser && homeFeatureTab === "love_fortune";
   const hasActiveMyOpenCard = myOpenCards.some((card) => card.status === "pending" || card.status === "public");
@@ -2647,11 +2619,11 @@ export default function OpenCardsPage() {
                     href={homeAdLink.linkUrl}
                     target={homeAdLink.linkUrl.startsWith("/") ? undefined : "_blank"}
                     rel={homeAdLink.linkUrl.startsWith("/") ? undefined : "noreferrer"}
-                    className="inline-flex max-w-full items-center gap-2 rounded-full bg-sky-50 px-3 py-1.5 text-xs font-extrabold text-sky-700 transition hover:bg-sky-100"
+                    className="inline-flex max-w-full items-center gap-2 rounded-full border border-sky-100 bg-sky-50/70 px-3 py-1.5 text-xs font-extrabold text-sky-800 transition hover:bg-sky-50"
                     title={homeAdLink.description || homeAdLink.title}
                   >
                     <span className="min-w-0 truncate">{homeAdLink.title}</span>
-                    <span className="shrink-0 text-[11px] text-sky-600">바로가기</span>
+                    <span className="shrink-0 text-[11px] text-sky-600">보기</span>
                   </a>
                 ) : null}
                 {showWeekendApplyCreditBenefit ? (
@@ -2660,21 +2632,102 @@ export default function OpenCardsPage() {
                   </span>
                 ) : null}
               </div>
-              <h1 className="text-[30px] font-extrabold tracking-normal text-neutral-950 md:text-[38px]">오픈카드</h1>
-              <p className="mt-2 max-w-xl text-[15px] font-medium leading-7 text-neutral-600 md:text-base">
-                {openCardHomeCopy.subtitle}
-              </p>
+              <div className="grid gap-2 sm:grid-cols-2">
+                <button
+                  type="button"
+                  onClick={() => setGuideTopic((prev) => (prev === "open_card" ? null : "open_card"))}
+                  className={`flex items-center gap-3 rounded-[14px] border px-3 py-2.5 text-left transition ${
+                    guideTopic === "open_card"
+                      ? "border-rose-200 bg-rose-50/80 shadow-[0_8px_18px_rgba(225,29,72,0.07)]"
+                      : "border-rose-100 bg-white hover:bg-rose-50/50"
+                  }`}
+                >
+                  <span className="h-6 w-1 shrink-0 rounded-full bg-rose-400" aria-hidden />
+                  <span className="shrink-0 rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-extrabold text-rose-700">오픈카드</span>
+                  <span className="min-w-0 flex-1 text-xs font-bold leading-5 text-neutral-900">공개하고 지원 받기</span>
+                  <span className="shrink-0 text-[11px] font-black text-rose-500">{guideTopic === "open_card" ? "닫기" : "보기"}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setGuideTopic((prev) => (prev === "one_on_one" ? null : "one_on_one"))}
+                  className={`flex items-center gap-3 rounded-[14px] border px-3 py-2.5 text-left transition ${
+                    guideTopic === "one_on_one"
+                      ? "border-sky-200 bg-sky-50/80 shadow-[0_8px_18px_rgba(2,132,199,0.07)]"
+                      : "border-sky-100 bg-white hover:bg-sky-50/50"
+                  }`}
+                >
+                  <span className="h-6 w-1 shrink-0 rounded-full bg-sky-400" aria-hidden />
+                  <span className="shrink-0 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-extrabold text-sky-700">1대1 매칭</span>
+                  <span className="min-w-0 flex-1 text-xs font-bold leading-5 text-neutral-900">후보 보고 지원</span>
+                  <span className="shrink-0 text-[11px] font-black text-sky-600">{guideTopic === "one_on_one" ? "닫기" : "보기"}</span>
+                </button>
+              </div>
+
+              {guideTopic ? (
+                <div className={`mt-3 rounded-[18px] border p-3.5 ${
+                  guideTopic === "open_card" ? "border-rose-100 bg-rose-50/60" : "border-sky-100 bg-sky-50/60"
+                }`}>
+                  {guideTopic === "open_card" ? (
+                    <>
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <div className="rounded-[14px] bg-white p-3 shadow-sm shadow-rose-100/40">
+                          <p className="text-sm font-black text-neutral-950">1. 카드 작성</p>
+                          <p className="mt-1.5 text-xs font-semibold leading-5 text-neutral-600">사진과 소개를 올려두면 공개 대기열에 들어가요.</p>
+                        </div>
+                        <div className="rounded-[14px] bg-white p-3 shadow-sm shadow-rose-100/40">
+                          <p className="text-sm font-black text-neutral-950">2. 카드 공개</p>
+                          <p className="mt-1.5 text-xs font-semibold leading-5 text-neutral-600">순서가 오면 다른 사람들이 내 카드를 보고 지원해요.</p>
+                        </div>
+                        <div className="rounded-[14px] bg-white p-3 shadow-sm shadow-rose-100/40">
+                          <p className="text-sm font-black text-neutral-950">3. 지원 수락</p>
+                          <p className="mt-1.5 text-xs font-semibold leading-5 text-neutral-600">마음에 드는 지원을 고르면 진행 상태가 열려요.</p>
+                        </div>
+                      </div>
+                      <Link
+                        href="/dating/card/new"
+                        className="mt-3 flex min-h-[42px] items-center justify-center rounded-[14px] bg-neutral-950 px-4 text-sm font-black text-white transition hover:bg-neutral-800"
+                      >
+                        오픈카드 작성하기
+                      </Link>
+                    </>
+                  ) : (
+                    <>
+                      <div className="grid gap-2 sm:grid-cols-3">
+                        <div className="rounded-[14px] bg-white p-3 shadow-sm shadow-sky-100/40">
+                          <p className="text-sm font-black text-neutral-950">1. 신청서 작성</p>
+                          <p className="mt-1.5 text-xs font-semibold leading-5 text-neutral-600">내 소개와 기본 정보를 등록하면 후보 추천이 시작돼요.</p>
+                        </div>
+                        <div className="rounded-[14px] bg-white p-3 shadow-sm shadow-sky-100/40">
+                          <p className="text-sm font-black text-neutral-950">2. 후보 확인</p>
+                          <p className="mt-1.5 text-xs font-semibold leading-5 text-neutral-600">추천 후보를 보고 마음에 드는 사람을 골라요.</p>
+                        </div>
+                        <div className="rounded-[14px] bg-white p-3 shadow-sm shadow-sky-100/40">
+                          <p className="text-sm font-black text-neutral-950">3. 바로 지원</p>
+                          <p className="mt-1.5 text-xs font-semibold leading-5 text-neutral-600">서로 수락되면 마이페이지에서 진행 상태를 확인해요.</p>
+                        </div>
+                      </div>
+                      <Link
+                        href="/dating/1on1"
+                        className="mt-3 flex min-h-[42px] items-center justify-center rounded-[14px] bg-neutral-950 px-4 text-sm font-black text-white transition hover:bg-neutral-800"
+                      >
+                        1대1 신청서 작성하기
+                      </Link>
+                    </>
+                  )}
+                </div>
+              ) : null}
 
               <Link
                 href="/dating/nearby-view"
-                className="mt-4 block overflow-hidden rounded-[14px] bg-emerald-50 px-2.5 py-3 transition hover:bg-emerald-100 sm:px-4"
+                className="mt-2 block overflow-hidden rounded-[14px] border border-neutral-200 bg-white px-3 py-2.5 transition hover:bg-neutral-50 sm:px-4"
               >
                 <div className="flex items-center gap-3">
-                  <span className="shrink-0 text-[11px] font-extrabold text-emerald-700 sm:text-xs">혜택</span>
-                  <p className="min-w-0 flex-1 whitespace-nowrap text-[clamp(9px,2.58vw,14px)] font-extrabold leading-5 text-emerald-900">
-                    오픈카드 등록 시 가까운 이상형 무료
+                  <span className="h-6 w-1 shrink-0 rounded-full bg-emerald-400" aria-hidden />
+                  <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-extrabold text-emerald-700">혜택</span>
+                  <p className="min-w-0 flex-1 whitespace-nowrap text-[clamp(9px,2.58vw,13px)] font-bold leading-5 text-neutral-900">
+                    가까운 이상형 무료 보기
                   </p>
-                  <span className="shrink-0 text-[11px] font-extrabold text-emerald-700">보기</span>
+                  <span className="shrink-0 text-[11px] font-black text-emerald-600">보기</span>
                 </div>
               </Link>
 
@@ -3128,41 +3181,6 @@ export default function OpenCardsPage() {
           onAutoSelect={handleOneOnOneAutoSelect}
           onRefreshRecommendations={handleOneOnOneRecommendationRefresh}
         />
-      ) : null}
-
-      {showGuideSection ? (
-      <section className="mb-5 rounded-[26px] border border-black/5 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
-        <button
-          type="button"
-          onClick={() => setGuideOpen((prev) => !prev)}
-          className="flex w-full items-center justify-between gap-3 text-left"
-        >
-          <div>
-            <p className="text-xl font-black tracking-tight text-neutral-950">이용 흐름 한 번에 보기</p>
-            <p className="mt-1 text-sm text-neutral-500">등록, 지원, 수락, 재대기만 쉽게 정리했어요.</p>
-          </div>
-          <span className="inline-flex min-h-[42px] items-center rounded-full border border-neutral-200 px-4 text-sm font-bold text-neutral-600">
-            {guideOpen ? "설명 접기" : "설명 보기"}
-          </span>
-        </button>
-
-        {guideOpen && (
-          <div className="mt-4 grid gap-3 md:grid-cols-3">
-            <div className="rounded-[22px] bg-neutral-50 p-4">
-              <p className="text-sm font-black text-neutral-900">1. 카드 공개</p>
-              <p className="mt-2 text-sm leading-6 text-neutral-500">오픈카드를 만들면 대기열에 들어가고, 공개되면 24시간 동안 보여져요.</p>
-            </div>
-            <div className="rounded-[22px] bg-neutral-50 p-4">
-              <p className="text-sm font-black text-neutral-900">2. 지원과 수락</p>
-              <p className="mt-2 text-sm leading-6 text-neutral-500">마음에 드는 카드에 지원하고, 카드 주인이 수락하면 연결이 성사돼요.</p>
-            </div>
-            <div className="rounded-[22px] bg-neutral-50 p-4">
-              <p className="text-sm font-black text-neutral-900">3. 종료 후 처리</p>
-              <p className="mt-2 text-sm leading-6 text-neutral-500">연결이 없으면 1회 다시 대기열로 들어가고, 수락되면 마이페이지에서 인스타가 공개돼요.</p>
-            </div>
-          </div>
-        )}
-      </section>
       ) : null}
 
       {showOpenCardSection ? (
