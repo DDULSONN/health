@@ -2746,34 +2746,23 @@ export default function OpenCardsPage() {
                     반응이 계속 들어오고 있어요.
                   </p>
                 </div>
-                <div className="grid grid-cols-2 divide-x divide-neutral-100">
-                  <div className="p-4">
-                    <p className="text-sm font-bold text-neutral-500">1:1 신청</p>
-                    <p className="mt-2 text-[20px] font-extrabold text-neutral-950">
-                      {Number(queueStats?.one_on_one_applicants_count ?? 0).toLocaleString("ko-KR")}명
-                    </p>
-                  </div>
-                  <div className="p-4">
-                    <p className="text-sm font-bold text-neutral-500">1:1 매칭</p>
-                    <p className="mt-2 text-[20px] font-extrabold text-neutral-950">
+                <div className="flex items-center gap-3 p-4">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-bold text-neutral-500">1:1 후보 추천</p>
+                    <p className="mt-1 text-xs font-medium text-neutral-400">신청서 등록 후 후보 확인</p>
+                    <p className="mt-3 truncate text-xs font-semibold leading-5 text-neutral-500">
+                      신청 {Number(queueStats?.one_on_one_applicants_count ?? 0).toLocaleString("ko-KR")}명 · 매칭{" "}
                       {Number(queueStats?.one_on_one_matches_count ?? 0).toLocaleString("ko-KR")}건
                     </p>
                   </div>
+                  <button
+                    type="button"
+                    onClick={() => setHomeFeatureTab("one_on_one")}
+                    className="inline-flex min-h-[34px] shrink-0 items-center justify-center rounded-full bg-neutral-950 px-3.5 text-xs font-extrabold text-white hover:bg-neutral-800"
+                  >
+                    1:1 열기
+                  </button>
                 </div>
-              </div>
-
-              <div className="mt-3 flex items-center gap-2 rounded-[18px] border border-sky-100 bg-sky-50/60 px-3 py-3 pr-5">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-[13px] font-extrabold tracking-normal text-neutral-950 sm:text-sm">1:1 신청서도 같이 등록해두기</p>
-                  <p className="mt-0.5 truncate text-[11px] font-semibold text-sky-700 sm:text-xs">후보 추천 받고 마음에 들면 바로 지원</p>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => setHomeFeatureTab("one_on_one")}
-                  className="inline-flex min-h-[34px] shrink-0 items-center justify-center rounded-full bg-neutral-950 px-3.5 text-xs font-extrabold text-white hover:bg-neutral-800"
-                >
-                  1:1 열기
-                </button>
               </div>
 
               {reelsListings.length > 0 || reelsListingsLoading ? (
