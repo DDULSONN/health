@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
 
 type SummaryResponse = {
   profile?: {
@@ -472,10 +472,20 @@ export default function SiteGuideBubble() {
   const handleMascotPointerUp = (event: ReactPointerEvent<HTMLDivElement>) => {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
+    const shouldToggle = !drag.moved;
     dragRef.current = null;
     try {
       event.currentTarget.releasePointerCapture(event.pointerId);
     } catch {}
+    if (shouldToggle) {
+      setCollapsed((prev) => !prev);
+    }
+  };
+
+  const handleMascotKeyDown = (event: ReactKeyboardEvent<HTMLDivElement>) => {
+    if (event.key !== "Enter" && event.key !== " ") return;
+    event.preventDefault();
+    setCollapsed((prev) => !prev);
   };
 
   return (
@@ -488,27 +498,18 @@ export default function SiteGuideBubble() {
     >
       <div className="relative flex flex-col items-end">
         {!collapsed ? (
-          <div className="pointer-events-auto relative mb-[-8px] mr-6 w-[min(210px,calc(100vw-118px))] rounded-[22px] border border-amber-200/80 bg-white/95 px-3 py-3 shadow-[0_14px_30px_rgba(15,23,42,0.14)] backdrop-blur-sm">
-            <button
-              type="button"
-              onClick={() => setCollapsed(true)}
-              className="absolute right-2 top-2 inline-flex h-7 min-w-[42px] items-center justify-center rounded-full bg-neutral-100 px-2 text-[11px] font-semibold text-neutral-600 hover:bg-neutral-200 hover:text-neutral-900"
-              aria-label="짐냥이 접기"
-            >
-              접기
-            </button>
-
-            <p className="pr-11 text-[13px] font-bold leading-5 text-neutral-950">
+          <div className="pointer-events-auto relative mb-[-6px] mr-5 w-[min(196px,calc(100vw-112px))] rounded-[20px] border border-amber-200/80 bg-white/95 px-3 py-2.5 shadow-[0_12px_26px_rgba(15,23,42,0.12)] backdrop-blur-sm">
+            <p className="text-[12px] font-extrabold leading-[18px] text-neutral-950">
               {loading ? "짐냥이가 지금 상황에 맞는 안내를 고르는 중이에요." : activeSuggestion?.title}
             </p>
 
-            <p className="mt-2 text-[12px] leading-5 text-neutral-700">
+            <p className="mt-1.5 text-[11px] font-medium leading-[18px] text-neutral-600">
               {loading
                 ? "오픈카드와 1:1 소개팅 중에서 지금 가장 자연스러운 다음 행동을 골라드릴게요."
                 : activeSuggestion?.body}
             </p>
 
-            <div className="mt-3 flex items-center justify-between gap-2">
+            <div className="mt-2.5 flex items-center justify-between gap-2">
               <div className="flex items-center gap-1.5">
                 {suggestions.slice(0, 16).map((item, tipIndex) => (
                   <button
@@ -523,39 +524,37 @@ export default function SiteGuideBubble() {
               {activeSuggestion ? (
                 <Link
                   href={activeSuggestion.href}
-                  className="inline-flex min-h-[34px] items-center rounded-full bg-neutral-950 px-3 text-[12px] font-bold text-white hover:bg-neutral-800"
+                  className="inline-flex min-h-[32px] items-center rounded-full bg-neutral-950 px-3 text-[11px] font-extrabold text-white hover:bg-neutral-800"
                 >
                   {activeSuggestion.cta}
                 </Link>
               ) : null}
             </div>
 
-            <div className="absolute bottom-[-8px] right-12 h-4 w-4 rotate-45 rounded-[4px] border-b border-r border-amber-200/80 bg-white/95" />
+            <div className="absolute bottom-[-7px] right-11 h-3.5 w-3.5 rotate-45 rounded-[4px] border-b border-r border-amber-200/80 bg-white/95" />
           </div>
-        ) : (
-          <button
-            type="button"
-            onClick={() => setCollapsed(false)}
-            className="pointer-events-auto mb-1 mr-6 inline-flex items-center rounded-full border border-amber-200 bg-white/95 px-3 py-1.5 text-[11px] font-semibold text-neutral-700 shadow-sm hover:bg-amber-50"
-            aria-label="짐냥이 펼치기"
-          >
-            짐냥이 열기
-          </button>
-        )}
+        ) : null}
 
         <div
           onPointerDown={handleMascotPointerDown}
           onPointerMove={handleMascotPointerMove}
           onPointerUp={handleMascotPointerUp}
           onPointerCancel={handleMascotPointerUp}
-          className={`pointer-events-auto relative z-10 shrink-0 cursor-grab touch-none select-none transition-all duration-300 active:cursor-grabbing ${
-            collapsed ? "translate-y-0 scale-[0.72] origin-top-right" : "-translate-y-1 scale-100"
+          onKeyDown={handleMascotKeyDown}
+          role="button"
+          tabIndex={0}
+          aria-label={collapsed ? "짐냥이 안내 열기" : "짐냥이 안내 접기"}
+          className={`pointer-events-auto relative z-10 shrink-0 touch-none select-none outline-none transition-all duration-300 focus-visible:ring-4 focus-visible:ring-amber-200/80 ${
+            collapsed
+              ? "origin-top-right translate-y-0 scale-[0.64] cursor-pointer hover:-translate-y-1 active:translate-y-0 active:scale-[0.59]"
+              : "-translate-y-1 scale-100 cursor-grab active:cursor-grabbing active:scale-[0.97]"
           }`}
-          title="꾹 눌러 원하는 위치로 옮길 수 있어요."
+          title={collapsed ? "짐냥이를 누르면 안내가 열려요." : "짐냥이를 누르면 안내가 접혀요. 꾹 누르면 위치를 옮길 수 있어요."}
         >
-          <div className={`relative transition-all duration-300 ${collapsed ? "h-[132px] w-[118px]" : "h-[190px] w-[170px]"}`}>
-            <div className="absolute inset-x-6 bottom-1 h-5 rounded-full bg-black/10 blur-md" />
-            <div className="absolute inset-0 overflow-hidden rounded-[32px]">
+          <div className={`relative transition-all duration-300 ${collapsed ? "h-[120px] w-[108px]" : "h-[158px] w-[142px]"}`}>
+            <div className="absolute inset-x-6 bottom-1 h-4 rounded-full bg-black/10 blur-md" />
+            {collapsed ? <div className="absolute inset-3 rounded-[28px] bg-amber-200/30 blur-xl transition-transform duration-200 group-active:scale-90" /> : null}
+            <div className="absolute inset-0 overflow-hidden rounded-[32px] shadow-[0_10px_24px_rgba(15,23,42,0.12)] transition-transform duration-150 active:scale-95">
               <Image
                 src={mascotSrc}
                 alt="짐냥이"
