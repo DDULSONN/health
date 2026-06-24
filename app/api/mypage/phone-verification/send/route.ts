@@ -14,6 +14,22 @@ import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 const ATTEMPT_LOG_TABLE = "profile_phone_verification_attempts";
 const SOLAPI_OTP_TABLE = "profile_phone_verification_solapi_otps";
 
+async function findVerifiedPhoneOwner(phoneE164: string, currentUserId: string) {
+  const admin = createAdminClient();
+  const res = await admin
+    .from("profiles")
+    .select("user_id")
+    .eq("phone_e164", phoneE164)
+    .eq("phone_verified", true)
+    .neq("user_id", currentUserId)
+    .limit(1)
+    .maybeSingle();
+  if (res.error && res.error.code !== "PGRST116") {
+    throw new Error(res.error.message);
+  }
+  return res.data?.user_id ? String(res.data.user_id) : null;
+}
+
 function mapAuthErrorToUserMessage(message: string): string {
   const lower = message.toLowerCase();
   if (lower.includes("already") && lower.includes("phone")) {
@@ -119,6 +135,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: validationMessage, code: "INVALID_PHONE_FORMAT" }, { status: 400 });
     }
 
+    const verifiedPhoneOwner = await findVerifiedPhoneOwner(phoneE164, user.id);
+    if (verifiedPhoneOwner) {
+      await logPhoneVerificationAttempt({
+        userId: user.id,
+        phoneE164,
+        action: "send",
+        status: "fail",
+        requestId,
+        ip,
+        providerError: "PHONE_ALREADY_VERIFIED_BY_ANOTHER_USER",
+      });
+      return NextResponse.json({ error: "\uC774\uBBF8 \uB2E4\uB978 \uACC4\uC815\uC5D0 \uB4F1\uB85D\uB41C \uBC88\uD638\uC785\uB2C8\uB2E4.", code: "PHONE_ALREADY_USED" }, { status: 400 });
+    }
+
     const windowRules = [
       { key: `phone-otp-send:user:${user.id}:60`, windowSec: 60, limit: 1, label: "user_60s" },
       { key: `phone-otp-send:user:${user.id}:600`, windowSec: 600, limit: 5, label: "user_10m" },
@@ -154,6 +184,57 @@ export async function POST(req: Request) {
       );
     }
 
+    let solapiPrimaryFailed = false;
+    if (isSolapiPhoneOtpConfigured()) {
+      try {
+        const admin = createAdminClient();
+        const otp = createSolapiOtp(phoneE164, user.id);
+        const insertRes = await admin.from(SOLAPI_OTP_TABLE).insert({
+          user_id: user.id,
+          phone_e164: phoneE164,
+          phone_hash: hashForOperationalLog(phoneE164),
+          code_hash: otp.codeHash,
+          expires_at: otp.expiresAt,
+          request_id: requestId,
+        });
+        if (insertRes.error) {
+          throw new Error(insertRes.error.message);
+        }
+        await sendSolapiPhoneOtp({ phoneE164, code: otp.code });
+        await logPhoneVerificationAttempt({
+          userId: user.id,
+          phoneE164,
+          action: "send",
+          status: "queued",
+          requestId,
+          ip,
+          provider: "solapi",
+          meta: { primary: true, expiresAt: otp.expiresAt },
+        });
+        return NextResponse.json({
+          ok: true,
+          pendingPhone: phoneE164,
+          provider: "solapi",
+          message: "\uC778\uC99D\uBC88\uD638\uB97C \uBB38\uC790\uB85C \uBC1C\uC1A1\uD588\uC2B5\uB2C8\uB2E4. \uBC1B\uC740 \uCF54\uB4DC\uB97C \uC785\uB825\uD574\uC8FC\uC138\uC694.",
+          resendAfterSec: 60,
+        });
+      } catch (solapiError) {
+        solapiPrimaryFailed = true;
+        console.warn("[phone-otp-send] solapi_primary_failed_fallback_to_supabase", { requestId, error: solapiError });
+        await logPhoneVerificationAttempt({
+          userId: user.id,
+          phoneE164,
+          action: "send",
+          status: "fail",
+          requestId,
+          ip,
+          provider: "solapi",
+          providerError: solapiError instanceof Error ? solapiError.message : String(solapiError),
+          meta: { fallbackTo: "supabase_auth" },
+        });
+      }
+    }
+
     const { error } = await supabase.auth.updateUser({ phone: phoneE164 });
     if (error) {
       console.warn(
@@ -170,7 +251,7 @@ export async function POST(req: Request) {
         ip,
         providerError: error.message,
       });
-      if (!shouldFallbackToSolapiPhoneOtp(error.message) || !isSolapiPhoneOtpConfigured()) {
+      if (solapiPrimaryFailed || !shouldFallbackToSolapiPhoneOtp(error.message) || !isSolapiPhoneOtpConfigured()) {
         return NextResponse.json({ error: mapAuthErrorToUserMessage(error.message), code: "SUPABASE_AUTH_ERROR" }, { status: 400 });
       }
 
