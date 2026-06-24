@@ -68,6 +68,6 @@ export async function sendSolapiPhoneOtp(input: { phoneE164: string; code: strin
   await messageService.send({
     to,
     from: sender,
-    text: `[짐틀] 휴대폰 인증번호는 ${input.code} 입니다. 10분 안에 입력해주세요.`,
+    text: `[\uC9D0\uD234] \uD734\uB300\uD3F0 \uC778\uC99D\uBC88\uD638\uB294 ${input.code} \uC785\uB2C8\uB2E4. 10\uBD84 \uC548\uC5D0 \uC785\uB825\uD574\uC8FC\uC138\uC694.`,
   });
 }

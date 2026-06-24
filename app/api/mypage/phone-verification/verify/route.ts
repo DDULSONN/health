@@ -9,6 +9,22 @@ import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 const ATTEMPT_LOG_TABLE = "profile_phone_verification_attempts";
 const SOLAPI_OTP_TABLE = "profile_phone_verification_solapi_otps";
 
+async function findVerifiedPhoneOwner(phoneE164: string, currentUserId: string) {
+  const admin = createAdminClient();
+  const res = await admin
+    .from("profiles")
+    .select("user_id")
+    .eq("phone_e164", phoneE164)
+    .eq("phone_verified", true)
+    .neq("user_id", currentUserId)
+    .limit(1)
+    .maybeSingle();
+  if (res.error && res.error.code !== "PGRST116") {
+    throw new Error(res.error.message);
+  }
+  return res.data?.user_id ? String(res.data.user_id) : null;
+}
+
 function mapVerifyErrorToUserMessage(message: string): string {
   const lower = message.toLowerCase();
   if (lower.includes("expired")) return "인증번호가 만료되었습니다. 다시 발송해 주세요.";
@@ -101,6 +117,19 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "문자로 받은 인증번호를 숫자로 입력해 주세요.", code: "INVALID_TOKEN_FORMAT" }, { status: 400 });
     }
 
+    const verifiedPhoneOwner = await findVerifiedPhoneOwner(phoneE164, user.id);
+    if (verifiedPhoneOwner) {
+      await logPhoneVerificationAttempt({
+        userId: user.id,
+        phoneE164,
+        status: "fail",
+        requestId,
+        ip,
+        providerError: "PHONE_ALREADY_VERIFIED_BY_ANOTHER_USER",
+      });
+      return NextResponse.json({ error: "\uC774\uBBF8 \uB2E4\uB978 \uACC4\uC815\uC5D0 \uB4F1\uB85D\uB41C \uBC88\uD638\uC785\uB2C8\uB2E4.", code: "PHONE_ALREADY_USED" }, { status: 400 });
+    }
+
     const attemptKey = `phone-otp-verify:user:${user.id}:phone:${hashForOperationalLog(phoneE164)}:600`;
     const attempt = await kvIncrWindow(attemptKey, 600);
     if (attempt.count > 8) {
@@ -122,6 +151,85 @@ export async function POST(req: Request) {
         },
         { status: 429, headers: { "Retry-After": String(attempt.ttlRemainingSec) } }
       );
+    }
+
+    const adminForSolapi = createAdminClient();
+    const solapiCodeHashForPrimary = hashSolapiOtp({ phoneE164, userId: user.id, code: token });
+    const primarySolapiOtpRes = await adminForSolapi
+      .from(SOLAPI_OTP_TABLE)
+      .select("id,code_hash,expires_at")
+      .eq("user_id", user.id)
+      .eq("phone_hash", hashForOperationalLog(phoneE164))
+      .is("consumed_at", null)
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    if (!primarySolapiOtpRes.error && primarySolapiOtpRes.data?.code_hash === solapiCodeHashForPrimary) {
+      const nowIso = new Date().toISOString();
+      const consumeRes = await adminForSolapi
+        .from(SOLAPI_OTP_TABLE)
+        .update({ consumed_at: nowIso })
+        .eq("id", primarySolapiOtpRes.data.id)
+        .is("consumed_at", null);
+      if (consumeRes.error) {
+        await logPhoneVerificationAttempt({
+          userId: user.id,
+          phoneE164,
+          status: "fail",
+          requestId,
+          ip,
+          provider: "solapi",
+          providerError: consumeRes.error.message,
+          meta: { stage: "consume_otp", primary: true },
+        });
+        return NextResponse.json({ error: "\uC778\uC99D\uBC88\uD638 \uD655\uC778\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. \uB2E4\uC2DC \uC2DC\uB3C4\uD574\uC8FC\uC138\uC694." }, { status: 500 });
+      }
+
+      const { error: profileError } = await supabase
+        .from("profiles")
+        .update({
+          phone_verified: true,
+          phone_e164: phoneE164,
+          phone_verified_at: nowIso,
+        })
+        .eq("user_id", user.id);
+
+      if (profileError) {
+        await logPhoneVerificationAttempt({
+          userId: user.id,
+          phoneE164,
+          status: "fail",
+          requestId,
+          ip,
+          provider: "solapi",
+          providerError: profileError.message,
+          meta: { stage: "profile_sync", primary: true },
+        });
+        return NextResponse.json({ error: "\uC778\uC99D\uC740 \uC644\uB8CC\uB410\uC9C0\uB9CC \uD504\uB85C\uD544 \uBC18\uC601\uC5D0 \uC2E4\uD328\uD588\uC2B5\uB2C8\uB2E4. \uC7A0\uC2DC \uD6C4 \uB2E4\uC2DC \uD655\uC778\uD574\uC8FC\uC138\uC694." }, { status: 500 });
+      }
+
+      await logPhoneVerificationAttempt({
+        userId: user.id,
+        phoneE164,
+        status: "success",
+        requestId,
+        ip,
+        provider: "solapi",
+        meta: { primary: true },
+      });
+
+      return NextResponse.json({
+        ok: true,
+        phone_verified: true,
+        phone_e164: phoneE164,
+        phone_verified_at: nowIso,
+        provider: "solapi",
+      });
+    }
+    if (primarySolapiOtpRes.error && primarySolapiOtpRes.error.code !== "42P01") {
+      console.warn("[phone-otp-verify] solapi_primary_otp_lookup_failed", { requestId, error: primarySolapiOtpRes.error.message });
     }
 
     const { error: verifyError } = await supabase.auth.verifyOtp({
