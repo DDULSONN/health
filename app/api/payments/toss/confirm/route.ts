@@ -477,18 +477,6 @@ async function ensurePaidCardFulfilled(
       throw new Error("OPEN_CARD_REOPEN_STATUS_INVALID");
     }
 
-    const appCountRes = await admin
-      .from("dating_card_applications")
-      .select("id", { count: "exact", head: true })
-      .eq("card_id", openCardId)
-      .neq("status", "canceled");
-    if (appCountRes.error) {
-      throw appCountRes.error;
-    }
-    if (Number(appCountRes.count ?? 0) > 3) {
-      throw new Error("OPEN_CARD_REOPEN_TOO_MANY_APPLICATIONS");
-    }
-
     const now = new Date();
     const expiresAt = new Date(now.getTime() + OPEN_CARD_EXPIRE_HOURS * 60 * 60 * 1000).toISOString();
     const updateRes = await admin
@@ -821,14 +809,11 @@ export async function POST(req: Request) {
       });
     }
     if (error instanceof Error && error.message.startsWith("OPEN_CARD_REOPEN_")) {
-      const tooMany = error.message === "OPEN_CARD_REOPEN_TOO_MANY_APPLICATIONS";
-      return json(tooMany ? 409 : 500, {
+      return json(500, {
         ok: false,
         code: error.message,
         requestId,
-        message: tooMany
-          ? "받은 지원이 3개 이하인 오픈카드만 다시 노출할 수 있습니다."
-          : "오픈카드 재노출 처리에 실패했습니다. 마이페이지에서 상태를 확인해주세요.",
+        message: "오픈카드 재노출 처리에 실패했습니다. 마이페이지에서 상태를 확인해주세요.",
       });
     }
     return json(500, {

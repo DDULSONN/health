@@ -1713,6 +1713,9 @@ export default function MyPage() {
   const [activeTab, setActiveTab] = useState<MyPageTab>("my_cert");
   const [pageSectionTab, setPageSectionTab] = useState<MyPageSectionTab>("profile");
   const [error, setError] = useState("");
+  const [marketingOptedOut, setMarketingOptedOut] = useState<boolean | null>(null);
+  const [marketingConsentLoading, setMarketingConsentLoading] = useState(false);
+  const [marketingConsentMessage, setMarketingConsentMessage] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
   const [deletingAccount, setDeletingAccount] = useState(false);
   const [accountDeleteConfirmOpen, setAccountDeleteConfirmOpen] = useState(false);
@@ -3449,6 +3452,27 @@ export default function MyPage() {
   }, [summary?.profile.email, supportContactEmail]);
 
   useEffect(() => {
+    if (loading || !summary) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch("/api/mypage/marketing-consent", { cache: "no-store" });
+        const body = (await res.json().catch(() => ({}))) as { opted_out?: boolean };
+        if (!cancelled && res.ok) {
+          setMarketingOptedOut(body.opted_out === true);
+        }
+      } catch (error) {
+        console.error("[mypage] marketing consent load failed", error);
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, summary]);
+
+  useEffect(() => {
     if (phoneOtpResendAfterSec <= 0) return;
     const timer = window.setInterval(() => {
       setPhoneOtpResendAfterSec((prev) => Math.max(0, prev - 1));
@@ -4584,6 +4608,35 @@ export default function MyPage() {
     }
   };
 
+  const handleToggleMarketingConsent = async () => {
+    if (marketingConsentLoading) return;
+    const nextOptedOut = marketingOptedOut !== true;
+
+    setMarketingConsentLoading(true);
+    setMarketingConsentMessage("");
+
+    try {
+      const res = await fetch("/api/mypage/marketing-consent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ opted_out: nextOptedOut }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; opted_out?: boolean };
+      if (!res.ok) {
+        setMarketingConsentMessage(body.error ?? "수신 설정을 저장하지 못했습니다.");
+        return;
+      }
+
+      const optedOut = body.opted_out === true;
+      setMarketingOptedOut(optedOut);
+      setMarketingConsentMessage(optedOut ? "안내 메일/문자 수신을 거부했습니다." : "안내 메일/문자 수신거부를 해제했습니다.");
+    } catch (error) {
+      setMarketingConsentMessage(error instanceof Error ? error.message : "수신 설정을 저장하지 못했습니다.");
+    } finally {
+      setMarketingConsentLoading(false);
+    }
+  };
+
   const handleRequestOneOnOnePriority = async (cardId: string) => {
     if (oneOnOnePrioritySubmittingIds.includes(cardId)) return;
     setOneOnOnePrioritySubmittingIds((prev) => [...prev, cardId]);
@@ -4987,10 +5040,6 @@ export default function MyPage() {
 
   const handleReopenMyOpenCard = async (card: MyDatingCard) => {
     if (reopeningOpenCardIds.includes(card.id)) return;
-    if (Number(card.applicant_count ?? 0) > 3) {
-      alert("받은 지원이 3개 이하인 오픈카드만 다시 노출할 수 있습니다.");
-      return;
-    }
     if (card.status === "public") {
       alert("이미 공개중인 오픈카드입니다.");
       return;
@@ -8870,7 +8919,6 @@ export default function MyPage() {
                 Number(card.auto_requeue_count ?? 0) > 0;
               const canShowReopen =
                 ["pending", "hidden", "expired"].includes(card.status) &&
-                applicantCount <= 3 &&
                 hasPublishedBefore &&
                 (!hasActiveOpenCard || card.status === "pending");
               const canReactivate =
@@ -8973,7 +9021,7 @@ export default function MyPage() {
                 </div>
                 {canShowReopen ? (
                   <p className="mt-2 rounded-lg border border-emerald-100 bg-white px-3 py-2 text-[11px] leading-5 text-emerald-800">
-                    받은 지원이 적었던 카드라 대기 없이 24시간 다시 노출할 수 있어요.
+                    대기 없이 24시간 다시 노출할 수 있어요.
                   </p>
                 ) : null}
                 {canReactivate ? (
@@ -13395,6 +13443,34 @@ export default function MyPage() {
 
       </>
       )}
+
+      <section className="mb-6 rounded-xl border border-neutral-200 bg-white/70 px-4 py-3 text-xs text-neutral-500">
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <p className="font-medium text-neutral-700">안내 수신 설정</p>
+            <p className="mt-1 leading-5">
+              오픈카드 재등록, 1:1 매칭 등 서비스 안내 메일/문자를 받고 싶지 않으면 수신거부할 수 있습니다.
+            </p>
+            {marketingConsentMessage ? (
+              <p className={`mt-1 ${marketingConsentMessage.includes("못했습니다") || marketingConsentMessage.includes("실패") ? "text-rose-600" : "text-emerald-700"}`}>
+                {marketingConsentMessage}
+              </p>
+            ) : null}
+          </div>
+          <button
+            type="button"
+            onClick={() => void handleToggleMarketingConsent()}
+            disabled={marketingConsentLoading || marketingOptedOut === null}
+            className="h-8 shrink-0 rounded-lg border border-neutral-300 bg-white px-3 text-[11px] font-medium text-neutral-700 disabled:opacity-50"
+          >
+            {marketingConsentLoading
+              ? "저장 중..."
+              : marketingOptedOut === true
+                ? "수신거부 해제"
+                : "수신거부"}
+          </button>
+        </div>
+      </section>
 
       {nicknameOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-[max(16px,env(safe-area-inset-bottom))]">
