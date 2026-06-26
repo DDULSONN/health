@@ -9,9 +9,10 @@ import { normalizeNickname, validateNickname } from "@/lib/nickname";
 const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
 const STORED_EMAIL_KEY = "recent_login_email";
 const NICKNAME_MAX = 12;
-const PHONE_VERIFICATION_NEXT = "/phone-verification?next=/";
+const SIGNUP_NEXT = "/";
 
 type SignupStep = "form" | "pending_verify" | "existing_account";
+type SocialProvider = "google" | "apple";
 
 function buildCanonicalCallbackUrl(next: string): string {
   const url = new URL("/auth/callback", CANONICAL_SITE_URL);
@@ -26,6 +27,14 @@ function isAlreadyRegisteredError(message: string) {
     lower.includes("already exists") ||
     lower.includes("user already registered")
   );
+}
+
+function mapSocialAuthError(providerLabel: string, message: string) {
+  const lower = message.toLowerCase();
+  if (lower.includes("provider") || lower.includes("unsupported") || lower.includes("not enabled")) {
+    return `${providerLabel} 로그인이 아직 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.`;
+  }
+  return message;
 }
 
 export default function SignupPage() {
@@ -79,7 +88,7 @@ export default function SignupPage() {
         password,
         options: {
           data: { nickname: cleanNickname },
-          emailRedirectTo: buildCanonicalCallbackUrl(PHONE_VERIFICATION_NEXT),
+          emailRedirectTo: buildCanonicalCallbackUrl(SIGNUP_NEXT),
         },
       });
 
@@ -130,7 +139,7 @@ export default function SignupPage() {
         type: "signup",
         email: targetEmail,
         options: {
-          emailRedirectTo: buildCanonicalCallbackUrl(PHONE_VERIFICATION_NEXT),
+          emailRedirectTo: buildCanonicalCallbackUrl(SIGNUP_NEXT),
         },
       });
 
@@ -148,7 +157,8 @@ export default function SignupPage() {
     }
   };
 
-  const handleGoogleSignup = async () => {
+  const handleSocialSignup = async (provider: SocialProvider) => {
+    const providerLabel = provider === "apple" ? "Apple" : "Google";
     setLoading(true);
     setError(null);
     setInfo(null);
@@ -156,17 +166,17 @@ export default function SignupPage() {
     try {
       const supabase = createClient();
       const { error: authError } = await supabase.auth.signInWithOAuth({
-        provider: "google",
+        provider,
         options: {
-          redirectTo: buildCanonicalCallbackUrl(PHONE_VERIFICATION_NEXT),
+          redirectTo: buildCanonicalCallbackUrl(SIGNUP_NEXT),
         },
       });
       if (authError) {
-        setError(authError.message);
+        setError(mapSocialAuthError(providerLabel, authError.message));
         setLoading(false);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Google 회원가입 중 오류가 발생했습니다.");
+      setError(e instanceof Error ? e.message : `${providerLabel} 회원가입 중 오류가 발생했습니다.`);
       setLoading(false);
     }
   };
@@ -254,11 +264,19 @@ export default function SignupPage() {
           </button>
           <button
             type="button"
-            onClick={handleGoogleSignup}
+            onClick={() => handleSocialSignup("google")}
             disabled={loading}
             className="w-full min-h-[52px] rounded-xl border border-neutral-300 bg-white text-neutral-900 font-medium disabled:opacity-50"
           >
             Google로 회원가입
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSocialSignup("apple")}
+            disabled={loading}
+            className="w-full min-h-[52px] rounded-xl border border-neutral-900 bg-neutral-950 text-white font-medium disabled:opacity-50"
+          >
+            Apple로 회원가입
           </button>
         </div>
       )}
@@ -267,7 +285,7 @@ export default function SignupPage() {
         <div className="space-y-2">
           <button
             type="button"
-            onClick={() => router.replace(`/login?tab=password&next=${encodeURIComponent(PHONE_VERIFICATION_NEXT)}`)}
+            onClick={() => router.replace(`/login?tab=password&next=${encodeURIComponent(SIGNUP_NEXT)}`)}
             className="w-full min-h-[48px] rounded-xl bg-emerald-600 text-white font-medium"
           >
             로그인으로 이동
@@ -287,14 +305,14 @@ export default function SignupPage() {
         <div className="space-y-2">
           <button
             type="button"
-            onClick={() => router.replace(`/login?tab=password&next=${encodeURIComponent(PHONE_VERIFICATION_NEXT)}`)}
+            onClick={() => router.replace(`/login?tab=password&next=${encodeURIComponent(SIGNUP_NEXT)}`)}
             className="w-full min-h-[48px] rounded-xl bg-emerald-600 text-white font-medium"
           >
             로그인하러 가기
           </button>
           <button
             type="button"
-            onClick={() => router.replace(`/login?tab=password&reset=1&next=${encodeURIComponent(PHONE_VERIFICATION_NEXT)}`)}
+            onClick={() => router.replace(`/login?tab=password&reset=1&next=${encodeURIComponent(SIGNUP_NEXT)}`)}
             className="w-full min-h-[48px] rounded-xl border border-neutral-300 text-neutral-700 font-medium"
           >
             비밀번호 찾기
@@ -304,7 +322,7 @@ export default function SignupPage() {
 
       <p className="mt-6 text-sm text-neutral-600">
         이미 계정이 있나요?{" "}
-        <Link href={`/login?tab=password&next=${encodeURIComponent(PHONE_VERIFICATION_NEXT)}`} className="text-emerald-700 underline">
+        <Link href={`/login?tab=password&next=${encodeURIComponent(SIGNUP_NEXT)}`} className="text-emerald-700 underline">
           로그인
         </Link>
       </p>
