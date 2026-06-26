@@ -59,6 +59,7 @@ const SEX_VALUES = new Set(["male", "female"]);
 const SMOKING_VALUES = new Set(["non_smoker", "occasional", "smoker"]);
 const WORKOUT_VALUES = new Set(["none", "1_2", "3_4", "5_plus"]);
 const ADMIN_CARD_BATCH_SIZE = 1000;
+const BIRTH_YEAR_ERROR_MESSAGE = "나이가 아니라 출생연도 4자리를 입력해 주세요. 예: 1996";
 
 function toInt(value: number | string | undefined): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return Math.round(value);
@@ -287,7 +288,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Name must be 1-30 characters." }, { status: 400 });
   }
   if (birthYear == null || birthYear < 1960 || birthYear > 2010) {
-    return NextResponse.json({ error: "Birth year must be between 1960 and 2010." }, { status: 400 });
+    return NextResponse.json({ error: BIRTH_YEAR_ERROR_MESSAGE }, { status: 400 });
   }
   if (heightCm == null || heightCm < 120 || heightCm > 230) {
     return NextResponse.json({ error: "Height must be between 120 and 230 cm." }, { status: 400 });
