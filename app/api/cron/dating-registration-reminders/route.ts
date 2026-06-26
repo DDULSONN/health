@@ -2,6 +2,7 @@ import { ensureCronAuthorized } from "@/lib/cron-auth";
 import { OPEN_CARD_AUTO_REQUEUE_LIMIT } from "@/lib/dating-open";
 import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
 import { appendMarketingEmailFooter, fetchMarketingUnsubscribedUserIds } from "@/lib/marketing-email";
+import { isSolapiPhoneOtpConfigured, sendSolapiTextMessage } from "@/lib/solapi-phone-verification";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -11,8 +12,10 @@ const MAX_SEND_PER_RUN = 120;
 const LOOKBACK_DAYS = 30;
 const CAMPAIGN_KEY = "dating_registration_reminder";
 const MAIL_LOG_TABLE = "admin_open_card_outreach_mail_logs";
+const SMS_REMINDER_DELAY_HOURS = 24;
 
 type ReminderReason = "new_user_missing_registration" | "open_card_final_expired";
+type SmsReminderReason = "open_card_final_expired_sms";
 
 type AuthUserLite = {
   id: string;
@@ -24,6 +27,8 @@ type ProfileLite = {
   user_id: string | null;
   nickname: string | null;
   role?: string | null;
+  phone_verified?: boolean | null;
+  phone_e164?: string | null;
 };
 
 type OpenCardLite = {
@@ -45,6 +50,15 @@ type ReminderRecipient = {
   reason: ReminderReason;
   subject: string;
   body: string;
+  meta: Record<string, unknown>;
+  dedupeMeta: Record<string, unknown>;
+};
+
+type SmsReminderRecipient = {
+  userId: string;
+  phoneE164: string;
+  reason: SmsReminderReason;
+  text: string;
   meta: Record<string, unknown>;
   dedupeMeta: Record<string, unknown>;
 };
@@ -103,7 +117,7 @@ async function fetchProfilesByUserIds(admin: AdminClient, userIds: string[]) {
 
   for (let start = 0; start < userIds.length; start += CHUNK_SIZE) {
     const chunk = userIds.slice(start, start + CHUNK_SIZE);
-    const res = await admin.from("profiles").select("user_id,nickname,role").in("user_id", chunk);
+    const res = await admin.from("profiles").select("user_id,nickname,role,phone_verified,phone_e164").in("user_id", chunk);
     if (res.error) throw new Error(`프로필을 불러오지 못했습니다. ${res.error.message}`);
 
     for (const row of (res.data ?? []) as ProfileLite[]) {
@@ -177,6 +191,35 @@ async function hasSuccessfulLog(admin: AdminClient, userId: string, reason: Remi
   return (res.data ?? []).length > 0;
 }
 
+async function hasSuccessfulLogBefore(
+  admin: AdminClient,
+  userId: string,
+  reason: ReminderReason | SmsReminderReason,
+  dedupeMeta: Record<string, unknown>,
+  beforeIso?: string
+) {
+  let query = admin
+    .from(MAIL_LOG_TABLE)
+    .select("id")
+    .eq("campaign_key", CAMPAIGN_KEY)
+    .eq("user_id", userId)
+    .eq("success", true)
+    .contains("meta", { reason, ...dedupeMeta })
+    .limit(1);
+
+  if (beforeIso) query = query.lte("sent_at", beforeIso);
+
+  const res = await query;
+  if (res.error) {
+    if (isMissingLogTableError(res.error)) {
+      throw new Error(`${MAIL_LOG_TABLE} 테이블이 없어 중복 발송 여부를 확인할 수 없습니다.`);
+    }
+    throw res.error;
+  }
+
+  return (res.data ?? []).length > 0;
+}
+
 async function ensureMailLogTableAvailable(admin: AdminClient) {
   const res = await admin.from(MAIL_LOG_TABLE).select("id").limit(1);
   if (res.error) {
@@ -213,6 +256,34 @@ async function logSendResult(
 
   if (res.error && !isMissingLogTableError(res.error)) {
     console.error("[cron dating-registration-reminders] log insert failed", res.error);
+  }
+}
+
+async function logSmsSendResult(
+  admin: AdminClient,
+  input: {
+    recipient: SmsReminderRecipient;
+    success: boolean;
+    providerError: string | null;
+  }
+) {
+  const res = await admin.from(MAIL_LOG_TABLE).insert({
+    campaign_key: CAMPAIGN_KEY,
+    user_id: input.recipient.userId,
+    email: null,
+    subject: "오픈카드 재등록 문자",
+    success: input.success,
+    provider: "solapi_sms",
+    provider_status: null,
+    provider_error: input.providerError,
+    meta: {
+      reason: input.recipient.reason,
+      ...input.recipient.meta,
+    },
+  });
+
+  if (res.error && !isMissingLogTableError(res.error)) {
+    console.error("[cron dating-registration-reminders] sms log insert failed", res.error);
   }
 }
 
@@ -370,6 +441,81 @@ function buildExpiredCardRecipients(input: {
   return recipients;
 }
 
+function buildExpiredOpenCardSmsText() {
+  const siteUrl = getSiteUrl();
+  return [
+    "[짐툴] 이전 오픈카드를 그대로 다시 대기 등록할 수 있어요.",
+    `${siteUrl}/community/dating/cards`,
+    "무료수신거부: gymtools.kr@gmail.com",
+  ].join("\n");
+}
+
+async function buildExpiredCardSmsRecipients(input: {
+  admin: AdminClient;
+  expiredCards: OpenCardLite[];
+  profilesByUserId: Map<string, ProfileLite>;
+  openCardsByUserId: Map<string, OpenCardLite[]>;
+  unsubscribedUserIds: Set<string>;
+  nowMs: number;
+}) {
+  const recipients: SmsReminderRecipient[] = [];
+  const seenUserIds = new Set<string>();
+  const emailSentBeforeIso = isoHoursAgo(input.nowMs, SMS_REMINDER_DELAY_HOURS);
+
+  for (const card of input.expiredCards) {
+    const userId = String(card.owner_user_id ?? "").trim();
+    if (!userId || seenUserIds.has(userId) || input.unsubscribedUserIds.has(userId)) continue;
+
+    const profile = input.profilesByUserId.get(userId);
+    if (profile?.role === "admin") continue;
+    if (profile?.phone_verified !== true) continue;
+
+    const phoneE164 = String(profile.phone_e164 ?? "").trim();
+    if (!phoneE164) continue;
+
+    const hasActiveOpenCard = (input.openCardsByUserId.get(userId) ?? []).some((row) => {
+      const status = String(row.status ?? "").trim();
+      return status === "pending" || status === "public";
+    });
+    if (hasActiveOpenCard) continue;
+
+    const dedupeMeta = { card_id: card.id };
+    const emailSent = await hasSuccessfulLogBefore(
+      input.admin,
+      userId,
+      "open_card_final_expired",
+      dedupeMeta,
+      emailSentBeforeIso
+    );
+    if (!emailSent) continue;
+
+    const smsAlreadySent = await hasSuccessfulLogBefore(
+      input.admin,
+      userId,
+      "open_card_final_expired_sms",
+      dedupeMeta
+    );
+    if (smsAlreadySent) continue;
+
+    seenUserIds.add(userId);
+    recipients.push({
+      userId,
+      phoneE164,
+      reason: "open_card_final_expired_sms",
+      text: buildExpiredOpenCardSmsText(),
+      meta: {
+        card_id: card.id,
+        expired_at: card.expires_at,
+        auto_requeue_count: Number(card.auto_requeue_count ?? 0),
+        email_delay_hours: SMS_REMINDER_DELAY_HOURS,
+      },
+      dedupeMeta,
+    });
+  }
+
+  return recipients;
+}
+
 export async function GET(request: Request) {
   const authResponse = ensureCronAuthorized(request);
   if (authResponse) return authResponse;
@@ -405,11 +551,26 @@ export async function GET(request: Request) {
     }),
   ].filter((recipient) => !unsubscribedUserIds.has(recipient.userId));
 
+  const smsCandidates = await buildExpiredCardSmsRecipients({
+    admin,
+    expiredCards,
+    profilesByUserId,
+    openCardsByUserId,
+    unsubscribedUserIds,
+    nowMs,
+  });
+
   const results = {
     candidates: candidates.length,
     sent: 0,
     skipped: 0,
     failed: 0,
+    sms: {
+      candidates: smsCandidates.length,
+      sent: 0,
+      skipped: 0,
+      failed: 0,
+    },
     by_reason: {
       new_user_missing_registration: { candidates: 0, sent: 0, skipped: 0, failed: 0 },
       open_card_final_expired: { candidates: 0, sent: 0, skipped: 0, failed: 0 },
@@ -471,6 +632,48 @@ export async function GET(request: Request) {
 
   if (candidates.length > MAX_SEND_PER_RUN) {
     results.skipped += candidates.length - MAX_SEND_PER_RUN;
+  }
+
+  for (const recipient of smsCandidates.slice(0, MAX_SEND_PER_RUN)) {
+    if (!isSolapiPhoneOtpConfigured()) {
+      results.sms.skipped += 1;
+      continue;
+    }
+
+    try {
+      if (await hasSuccessfulLogBefore(admin, recipient.userId, recipient.reason, recipient.dedupeMeta)) {
+        results.sms.skipped += 1;
+        continue;
+      }
+
+      await sendSolapiTextMessage({
+        phoneE164: recipient.phoneE164,
+        text: recipient.text,
+      });
+
+      await logSmsSendResult(admin, {
+        recipient,
+        success: true,
+        providerError: null,
+      });
+      results.sms.sent += 1;
+    } catch (error) {
+      await logSmsSendResult(admin, {
+        recipient,
+        success: false,
+        providerError: error instanceof Error ? error.message : "UNKNOWN_ERROR",
+      });
+      console.error("[cron dating-registration-reminders] sms send failed", {
+        userId: recipient.userId,
+        reason: recipient.reason,
+        error,
+      });
+      results.sms.failed += 1;
+    }
+  }
+
+  if (smsCandidates.length > MAX_SEND_PER_RUN) {
+    results.sms.skipped += smsCandidates.length - MAX_SEND_PER_RUN;
   }
 
   return NextResponse.json({ ok: true, results });

@@ -75,3 +75,25 @@ export async function sendSolapiPhoneOtp(input: { phoneE164: string; code: strin
     text: `[\uC9D0\uD234] \uD734\uB300\uD3F0 \uC778\uC99D\uBC88\uD638\uB294 ${input.code} \uC785\uB2C8\uB2E4. 10\uBD84 \uC548\uC5D0 \uC785\uB825\uD574\uC8FC\uC138\uC694.`,
   });
 }
+
+export async function sendSolapiTextMessage(input: { phoneE164: string; text: string }) {
+  const apiKey = process.env.SOLAPI_API_KEY?.trim();
+  const apiSecret = process.env.SOLAPI_API_SECRET?.trim();
+  const sender = normalizeSolapiKoreanPhoneNumber(process.env.SOLAPI_SENDER_NUMBER ?? "");
+  if (!apiKey || !apiSecret || !sender) {
+    throw new Error("SOLAPI_NOT_CONFIGURED");
+  }
+
+  const to = normalizeSolapiKoreanPhoneNumber(input.phoneE164);
+  const text = String(input.text ?? "").trim();
+  if (!to || !text) {
+    throw new Error("SOLAPI_INVALID_MESSAGE");
+  }
+
+  const messageService = new SolapiMessageService(apiKey, apiSecret);
+  await messageService.send({
+    to,
+    from: sender,
+    text,
+  });
+}
