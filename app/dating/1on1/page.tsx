@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
@@ -57,6 +57,8 @@ const WORKOUT_OPTIONS = [
   { value: "3_4", label: "주 3-4회" },
   { value: "5_plus", label: "주 5회 이상" },
 ] as const;
+
+const BIRTH_YEAR_HELP_MESSAGE = "나이가 아니라 출생연도 4자리를 입력해 주세요. 예: 1996";
 
 function smokingLabel(value: CardItem["smoking"]): string {
   if (value === "non_smoker") return "비흡연";
@@ -196,6 +198,7 @@ function DatingOneOnOnePageContent() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const birthYearInputRef = useRef<HTMLInputElement | null>(null);
 
   const allConsented = consentFakeInfo && consentNoShow && consentFee && consentPrivacy && consentNoDirectContact;
   const canSubmitForm = isEditMode ? true : Boolean(status?.canWrite);
@@ -219,6 +222,15 @@ function DatingOneOnOnePageContent() {
     if (!allConsented) return "이용 전 확인 항목을 모두 체크하면 신청할 수 있습니다.";
     return "";
   }, [allConsented, canSubmitForm, submitting, writeBlockedMessage]);
+
+  const focusBirthYearInput = () => {
+    const target = birthYearInputRef.current;
+    if (!target) return;
+    target.scrollIntoView({ behavior: "smooth", block: "center" });
+    window.setTimeout(() => {
+      target.focus({ preventScroll: true });
+    }, 220);
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -343,6 +355,13 @@ function DatingOneOnOnePageContent() {
     setError("");
     setInfo("");
 
+    const parsedBirthYear = Number(birthYear);
+    if (!Number.isInteger(parsedBirthYear) || parsedBirthYear < 1960 || parsedBirthYear > 2010) {
+      setError(BIRTH_YEAR_HELP_MESSAGE);
+      focusBirthYearInput();
+      return;
+    }
+
     for (const [index, file] of selectedPhotos.entries()) {
       const photoError = getOneOnOnePhotoError(file);
       if (photoError) {
@@ -387,7 +406,7 @@ function DatingOneOnOnePageContent() {
       const payload = {
         sex,
         name: name.trim(),
-        birth_year: Number(birthYear),
+        birth_year: parsedBirthYear,
         height_cm: Number(heightCm),
         job: job.trim(),
         region: region.trim(),
@@ -412,7 +431,13 @@ function DatingOneOnOnePageContent() {
       }, 60000);
       const body = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) {
-        throw new Error(body.error ?? "신청 저장에 실패했습니다.");
+        const message = body.error ?? "신청 저장에 실패했습니다.";
+        if (message.includes("출생연도")) {
+          setError(message);
+          focusBirthYearInput();
+          return;
+        }
+        throw new Error(message);
       }
 
       setInfo(
@@ -639,7 +664,15 @@ function DatingOneOnOnePageContent() {
             <p className="mb-3 text-base font-black text-neutral-950">기본 정보</p>
             <div className="grid gap-3 sm:grid-cols-2">
               <input value={name} onChange={(e) => setName(e.target.value)} placeholder="이름" className="h-14 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-base text-neutral-900 placeholder:text-neutral-500 sm:col-span-2" required />
-              <input value={birthYear} onChange={(e) => setBirthYear(e.target.value)} placeholder="출생연도" className="h-14 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-base text-neutral-900 placeholder:text-neutral-500" inputMode="numeric" required />
+              <input
+                ref={birthYearInputRef}
+                value={birthYear}
+                onChange={(e) => setBirthYear(e.target.value.replace(/\D/g, "").slice(0, 4))}
+                placeholder="출생연도 (예: 1996)"
+                className="h-14 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-base text-neutral-900 placeholder:text-neutral-500"
+                inputMode="numeric"
+                required
+              />
               <input value={heightCm} onChange={(e) => setHeightCm(e.target.value)} placeholder="키(cm)" className="h-14 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-base text-neutral-900 placeholder:text-neutral-500" inputMode="numeric" required />
               <input value={job} onChange={(e) => setJob(e.target.value)} placeholder="직업" className="h-14 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-base text-neutral-900 placeholder:text-neutral-500 sm:col-span-2" required />
               <input value={region} onChange={(e) => setRegion(e.target.value)} placeholder="지역" className="h-14 w-full rounded-2xl border border-neutral-200 bg-white px-4 text-base text-neutral-900 placeholder:text-neutral-500 sm:col-span-2" required />
