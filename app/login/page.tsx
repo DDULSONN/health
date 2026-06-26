@@ -10,7 +10,8 @@ const STORED_EMAIL_KEY = "recent_login_email";
 const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
 const IN_APP_UA_PATTERNS = ["kakaotalk", "instagram", "naver", "fban", "fbav", "line"];
 
-type AuthMode = "google" | "password" | "otp";
+type AuthMode = "social" | "password" | "otp";
+type SocialProvider = "google" | "apple";
 
 function safeNextPath(input: string | null): string {
   if (!input || !input.startsWith("/")) return "/";
@@ -29,12 +30,6 @@ function buildCanonicalCallbackUrl(next: string): string {
   return url.toString();
 }
 
-function withPhoneVerificationGate(next: string): string {
-  const safeNext = safeNextPath(next);
-  if (safeNext.startsWith("/phone-verification")) return safeNext;
-  return `/phone-verification?next=${encodeURIComponent(safeNext)}`;
-}
-
 function mapPasswordLoginError(message: string): { text: string; unconfirmed: boolean } {
   const lower = message.toLowerCase();
   if (lower.includes("invalid login credentials")) {
@@ -49,6 +44,14 @@ function mapPasswordLoginError(message: string): { text: string; unconfirmed: bo
   return { text: message, unconfirmed: false };
 }
 
+function mapSocialAuthError(providerLabel: string, message: string) {
+  const lower = message.toLowerCase();
+  if (lower.includes("provider") || lower.includes("unsupported") || lower.includes("not enabled")) {
+    return `${providerLabel} 로그인이 아직 준비되지 않았습니다. 잠시 후 다시 시도해 주세요.`;
+  }
+  return message;
+}
+
 function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -61,7 +64,7 @@ function LoginContent() {
   const errorDescription = searchParams.get("error_description");
 
   const [mode, setMode] = useState<AuthMode>(
-    tabParam === "password" ? "password" : tabParam === "otp" ? "otp" : "google"
+    tabParam === "password" ? "password" : tabParam === "otp" ? "otp" : "social"
   );
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
@@ -69,7 +72,7 @@ function LoginContent() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
 
-  const [googleLoading, setGoogleLoading] = useState(false);
+  const [socialLoading, setSocialLoading] = useState<SocialProvider | null>(null);
   const [otpLoading, setOtpLoading] = useState(false);
   const [passwordLoading, setPasswordLoading] = useState(false);
   const [resendConfirmLoading, setResendConfirmLoading] = useState(false);
@@ -78,8 +81,7 @@ function LoginContent() {
   const [sessionChecking, setSessionChecking] = useState(true);
   const [canResendConfirm, setCanResendConfirm] = useState(false);
 
-  const gatedNext = useMemo(() => withPhoneVerificationGate(next), [next]);
-  const callbackUrl = useMemo(() => buildCanonicalCallbackUrl(gatedNext), [gatedNext]);
+  const callbackUrl = useMemo(() => buildCanonicalCallbackUrl(next), [next]);
 
   const isOtpExpired = errorCode === "otp_expired";
   const isFlowStateMissing = errorCode === "flow_state_missing";
@@ -110,7 +112,7 @@ function LoginContent() {
         if (session?.user && isEmailConfirmed(session.user)) {
           setError(null);
           setSuccess("이미 로그인되어 있습니다. 이동 중...");
-          setTimeout(() => router.replace(gatedNext), 700);
+          setTimeout(() => router.replace(next || "/"), 700);
           return;
         }
 
@@ -124,12 +126,12 @@ function LoginContent() {
         setSessionChecking(false);
       }
     })();
-  }, [gatedNext, initialErrorMessage, next, router]);
+  }, [initialErrorMessage, next, router]);
 
   useEffect(() => {
     if (tabParam === "password") setMode("password");
     if (tabParam === "otp") setMode("otp");
-    if (tabParam === "google") setMode("google");
+    if (tabParam === "google" || tabParam === "apple" || tabParam === "social") setMode("social");
   }, [tabParam]);
 
   const sendMagicLink = async () => {
@@ -166,27 +168,28 @@ function LoginContent() {
     }
   };
 
-  const handleGoogleLogin = async () => {
+  const handleSocialLogin = async (provider: SocialProvider) => {
     if (inAppBrowser) return;
-    setGoogleLoading(true);
+    const providerLabel = provider === "apple" ? "Apple" : "Google";
+    setSocialLoading(provider);
     setError(null);
     setSuccess(null);
 
     try {
       const supabase = createClient();
       const { error: authError } = await supabase.auth.signInWithOAuth({
-        provider: "google",
+        provider,
         options: {
           redirectTo: callbackUrl,
         },
       });
       if (authError) {
-        setError(authError.message);
-        setGoogleLoading(false);
+        setError(mapSocialAuthError(providerLabel, authError.message));
+        setSocialLoading(null);
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Google 로그인 중 오류가 발생했습니다.");
-      setGoogleLoading(false);
+      setError(e instanceof Error ? e.message : `${providerLabel} 로그인 중 오류가 발생했습니다.`);
+      setSocialLoading(null);
     }
   };
 
@@ -218,7 +221,7 @@ function LoginContent() {
 
       window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
       setSuccess("로그인되었습니다. 이동 중...");
-      setTimeout(() => router.replace(gatedNext), 700);
+      setTimeout(() => router.replace(next || "/"), 700);
     } catch (e) {
       setError(e instanceof Error ? e.message : "비밀번호 로그인에 실패했습니다.");
     } finally {
@@ -243,7 +246,7 @@ function LoginContent() {
         type: "signup",
         email: normalized,
         options: {
-          emailRedirectTo: buildCanonicalCallbackUrl(gatedNext),
+          emailRedirectTo: buildCanonicalCallbackUrl(next || "/"),
         },
       });
 
@@ -304,7 +307,7 @@ function LoginContent() {
 
       {inAppBrowser && (
         <div className="w-full mb-4 rounded-xl border border-amber-300 bg-amber-50 p-3">
-          <p className="text-sm text-amber-900 font-medium">인앱 브라우저에서는 Google 로그인이 실패할 수 있어요. Chrome/Safari에서 열어주세요.</p>
+          <p className="text-sm text-amber-900 font-medium">인앱 브라우저에서는 소셜 로그인이 실패할 수 있어요. Chrome/Safari에서 열어주세요.</p>
           <button
             type="button"
             onClick={handleOpenExternal}
@@ -327,13 +330,13 @@ function LoginContent() {
       )}
 
       <div className="w-full grid grid-cols-3 rounded-xl border border-neutral-200 overflow-hidden mb-2">
-        <button type="button" onClick={() => setMode("google")} className={`min-h-[46px] text-xs font-medium ${mode === "google" ? "bg-emerald-600 text-white" : "bg-white text-neutral-700"}`}>Google</button>
+        <button type="button" onClick={() => setMode("social")} className={`min-h-[46px] text-xs font-medium ${mode === "social" ? "bg-emerald-600 text-white" : "bg-white text-neutral-700"}`}>소셜 로그인</button>
         <button type="button" onClick={() => setMode("password")} className={`min-h-[46px] text-xs font-medium ${mode === "password" ? "bg-emerald-600 text-white" : "bg-white text-neutral-700"}`}>이메일/비밀번호</button>
         <button type="button" onClick={() => setMode("otp")} className={`min-h-[46px] text-xs font-medium ${mode === "otp" ? "bg-emerald-600 text-white" : "bg-white text-neutral-700"}`}>이메일 링크</button>
       </div>
 
       <p className="w-full text-[11px] text-neutral-500 mb-4 text-left">
-        {mode === "google" && "Google: 가장 빠름(인앱 브라우저에선 실패할 수 있음)"}
+        {mode === "social" && "Google 또는 Apple 계정으로 빠르게 로그인"}
         {mode === "password" && "이메일/비밀번호: 가장 일반적인 로그인"}
         {mode === "otp" && "이메일 링크: 비밀번호 없이 메일로 로그인(가끔 만료됨)"}
       </p>
@@ -354,15 +357,25 @@ function LoginContent() {
           </>
         )}
 
-        {mode === "google" && (
-          <button
-            type="button"
-            onClick={handleGoogleLogin}
-            disabled={googleLoading || inAppBrowser}
-            className="w-full min-h-[52px] rounded-xl border-2 border-neutral-200 bg-white text-neutral-800 font-medium disabled:opacity-50"
-          >
-            {inAppBrowser ? "인앱에서는 Google 로그인 제한" : googleLoading ? "Google 로그인 중..." : "Google로 로그인"}
-          </button>
+        {mode === "social" && (
+          <>
+            <button
+              type="button"
+              onClick={() => handleSocialLogin("google")}
+              disabled={Boolean(socialLoading) || inAppBrowser}
+              className="w-full min-h-[52px] rounded-xl border-2 border-neutral-200 bg-white text-neutral-800 font-medium disabled:opacity-50"
+            >
+              {inAppBrowser ? "인앱에서는 소셜 로그인 제한" : socialLoading === "google" ? "Google 로그인 중..." : "Google로 로그인"}
+            </button>
+            <button
+              type="button"
+              onClick={() => handleSocialLogin("apple")}
+              disabled={Boolean(socialLoading) || inAppBrowser}
+              className="w-full min-h-[52px] rounded-xl bg-neutral-950 text-white font-medium disabled:opacity-50"
+            >
+              {inAppBrowser ? "Chrome/Safari에서 이용" : socialLoading === "apple" ? "Apple 로그인 중..." : "Apple로 로그인"}
+            </button>
+          </>
         )}
 
         {mode === "password" && (
