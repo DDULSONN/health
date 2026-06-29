@@ -10,7 +10,7 @@ import DatingAdultNotice from "@/components/DatingAdultNotice";
 import PaidPolicyNotice from "@/components/PaidPolicyNotice";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_FILE_SIZE = 12 * 1024 * 1024;
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
   "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
 
@@ -134,6 +134,7 @@ export default function DatingPaidPage() {
   const [displayMode, setDisplayMode] = useState<"priority_24h" | "instant_public">("priority_24h");
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
   const [previewUrls, setPreviewUrls] = useState<(string | null)[]>([null, null]);
+  const [previewFailed, setPreviewFailed] = useState<boolean[]>([false, false]);
   const [existingRawPaths, setExistingRawPaths] = useState<string[]>([]);
   const [existingBlurThumbPath, setExistingBlurThumbPath] = useState("");
   const [editingPaidCardStatus, setEditingPaidCardStatus] = useState<"pending" | "approved" | "">("");
@@ -168,12 +169,26 @@ export default function DatingPaidPage() {
   useEffect(() => {
     const urls = photos.map((file) => (file ? URL.createObjectURL(file) : null));
     setPreviewUrls(urls);
+    setPreviewFailed(photos.map(() => false));
     return () => {
       urls.forEach((url) => {
         if (url) URL.revokeObjectURL(url);
       });
     };
   }, [photos]);
+
+  const handlePhotoChange = (index: 0 | 1, file: File | null) => {
+    setPhotos((prev) => {
+      const next = [...prev] as (File | null)[];
+      next[index] = file;
+      return next;
+    });
+    setPreviewFailed((prev) => {
+      const next = [...prev];
+      next[index] = false;
+      return next;
+    });
+  };
 
   useEffect(() => {
     const timer = window.setInterval(() => setTick((v) => v + 1), 60_000);
@@ -287,63 +302,63 @@ export default function DatingPaidPage() {
         }
         nextRawPaths[i] = body.path;
 
-        const imageUrl = URL.createObjectURL(photo);
         try {
-          const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-            const el = new Image();
-            el.onload = () => resolve(el);
-            el.onerror = () => reject(new Error("image-load-failed"));
-            el.src = imageUrl;
-          });
-          const maxEdge = 1200;
-          const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
-          const width = Math.max(1, Math.round(img.width * scale));
-          const height = Math.max(1, Math.round(img.height * scale));
-          const canvas = document.createElement("canvas");
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext("2d");
-          if (!ctx) throw new Error("canvas-context-missing");
-          ctx.drawImage(img, 0, 0, width, height);
-          const liteBlob = await new Promise<Blob>((resolve, reject) => {
-            canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("lite-generate-failed"))), "image/webp", 0.78);
-          });
-          const liteFd = new FormData();
-          liteFd.append("file", new File([liteBlob], "lite.webp", { type: "image/webp" }));
-          liteFd.append("kind", "lite");
-          liteFd.append("asset_id", assetId);
-          liteFd.append("index", String(i));
-          const liteRes = await fetch("/api/dating/cards/upload-card", { method: "POST", body: liteFd });
-          if (!liteRes.ok) {
-            setError("라이트 이미지 업로드에 실패했습니다.");
-            setSubmitting(false);
-            return;
+          const imageUrl = URL.createObjectURL(photo);
+          try {
+            const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+              const el = new Image();
+              el.onload = () => resolve(el);
+              el.onerror = () => reject(new Error("image-load-failed"));
+              el.src = imageUrl;
+            });
+            const maxEdge = 1200;
+            const scale = Math.min(1, maxEdge / Math.max(img.width, img.height));
+            const width = Math.max(1, Math.round(img.width * scale));
+            const height = Math.max(1, Math.round(img.height * scale));
+            const canvas = document.createElement("canvas");
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext("2d");
+            if (!ctx) throw new Error("canvas-context-missing");
+            ctx.drawImage(img, 0, 0, width, height);
+            const liteBlob = await new Promise<Blob>((resolve, reject) => {
+              canvas.toBlob((b) => (b ? resolve(b) : reject(new Error("lite-generate-failed"))), "image/webp", 0.78);
+            });
+            const liteFd = new FormData();
+            liteFd.append("file", new File([liteBlob], "lite.webp", { type: "image/webp" }));
+            liteFd.append("kind", "lite");
+            liteFd.append("asset_id", assetId);
+            liteFd.append("index", String(i));
+            const liteRes = await fetch("/api/dating/cards/upload-card", { method: "POST", body: liteFd });
+            if (!liteRes.ok) {
+              console.warn("[dating-paid] lite image upload skipped", { index: i, status: liteRes.status });
+            }
+          } finally {
+            URL.revokeObjectURL(imageUrl);
           }
-        } finally {
-          URL.revokeObjectURL(imageUrl);
+        } catch (liteError) {
+          console.warn("[dating-paid] lite image generation skipped", liteError);
         }
       }
 
       let blurThumbPath = existingBlurThumbPath;
       if (photoVisibility === "blur" && photos[0]) {
-        const blurFile = await createBlurThumbnailFile(photos[0]);
-        const blurFd = new FormData();
-        blurFd.append("file", blurFile);
-        blurFd.append("kind", "blur");
-        blurFd.append("index", "0");
-        const blurRes = await fetch("/api/dating/cards/upload-card", { method: "POST", body: blurFd });
-        const blurBody = (await blurRes.json().catch(() => ({}))) as { path?: string; error?: string };
-        if (!blurRes.ok || !blurBody.path) {
-          setError(blurBody.error ?? "블러 썸네일 업로드에 실패했습니다.");
-          setSubmitting(false);
-          return;
+        try {
+          const blurFile = await createBlurThumbnailFile(photos[0]);
+          const blurFd = new FormData();
+          blurFd.append("file", blurFile);
+          blurFd.append("kind", "blur");
+          blurFd.append("index", "0");
+          const blurRes = await fetch("/api/dating/cards/upload-card", { method: "POST", body: blurFd });
+          const blurBody = (await blurRes.json().catch(() => ({}))) as { path?: string; error?: string };
+          if (blurRes.ok && blurBody.path) {
+            blurThumbPath = blurBody.path;
+          } else {
+            console.warn("[dating-paid] blur thumb upload skipped", { status: blurRes.status, error: blurBody.error ?? null });
+          }
+        } catch (blurError) {
+          console.warn("[dating-paid] blur thumb generation skipped", blurError);
         }
-        blurThumbPath = blurBody.path;
-      }
-      if (photoVisibility === "blur" && !blurThumbPath) {
-        setError("블러 썸네일 경로가 필요합니다.");
-        setSubmitting(false);
-        return;
       }
       const filteredRawPaths = nextRawPaths.filter((path): path is string => typeof path === "string" && path.length > 0);
       if (filteredRawPaths.length < 1) {
@@ -630,21 +645,41 @@ export default function DatingPaidPage() {
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm text-neutral-700">사진 1 (필수)</label>
-                <input type="file" accept="image/jpeg,image/png,image/webp" required={!isEditMode} onChange={(e) => setPhotos((prev) => [e.target.files?.[0] ?? null, prev[1]])} />
+                <input type="file" accept="image/jpeg,image/png,image/webp" required={!isEditMode} onChange={(e) => handlePhotoChange(0, e.target.files?.[0] ?? null)} />
                 {previewUrls[0] && (
-                  <div className="mt-2 h-36 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={previewUrls[0]} alt="" decoding="async" className="h-full w-full object-contain" />
+                  <div className="mt-2 flex h-36 items-center justify-center overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 text-center text-xs font-semibold text-neutral-500">
+                    {previewFailed[0] ? (
+                      <span className="px-3">파일은 선택됐어요. 미리보기 없이도 등록할 수 있습니다.</span>
+                    ) : (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={previewUrls[0]}
+                        alt=""
+                        decoding="async"
+                        className="h-full w-full object-contain"
+                        onError={() => setPreviewFailed((prev) => [true, prev[1] ?? false])}
+                      />
+                    )}
                   </div>
                 )}
               </div>
               <div>
                 <label className="mb-1 block text-sm text-neutral-700">사진 2 (선택)</label>
-                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => setPhotos((prev) => [prev[0], e.target.files?.[0] ?? null])} />
+                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => handlePhotoChange(1, e.target.files?.[0] ?? null)} />
                 {previewUrls[1] && (
-                  <div className="mt-2 h-36 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={previewUrls[1]} alt="" decoding="async" className="h-full w-full object-contain" />
+                  <div className="mt-2 flex h-36 items-center justify-center overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 text-center text-xs font-semibold text-neutral-500">
+                    {previewFailed[1] ? (
+                      <span className="px-3">파일은 선택됐어요. 미리보기 없이도 등록할 수 있습니다.</span>
+                    ) : (
+                      /* eslint-disable-next-line @next/next/no-img-element */
+                      <img
+                        src={previewUrls[1]}
+                        alt=""
+                        decoding="async"
+                        className="h-full w-full object-contain"
+                        onError={() => setPreviewFailed((prev) => [prev[0] ?? false, true])}
+                      />
+                    )}
                   </div>
                 )}
               </div>
