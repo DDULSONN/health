@@ -1,7 +1,7 @@
 import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
-import { buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
+import { buildPublicLiteImageUrl, buildSignedImageUrl, buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { kvGetString, kvSetString } from "@/lib/edge-kv";
@@ -155,6 +155,13 @@ async function createSignedImageUrls(
       if (thumbPublicUrl) {
         rawUrls.push(thumbPublicUrl);
         counters.rawCount += 1;
+        continue;
+      }
+      const rawSignedUrl = buildSignedImageUrlAllowRaw("dating-card-photos", rawPath);
+      if (rawSignedUrl) {
+        rawUrls.push(rawSignedUrl);
+        counters.rawCount += 1;
+        counters.cacheMiss += 1;
       }
     }
     if (rawUrls.length > 0 && !counters.rawGuardExceeded) return rawUrls;

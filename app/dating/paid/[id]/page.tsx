@@ -28,6 +28,7 @@ type PaidCardDetail = {
 type PaidListItem = {
   id: string;
   thumbUrl: string;
+  image_urls?: string[];
 };
 
 export default function PaidCardDetailPage() {
@@ -58,8 +59,14 @@ export default function PaidCardDetailPage() {
             if (listRes.ok) {
               const listBody = (await listRes.json().catch(() => ({}))) as { items?: PaidListItem[] };
               const matched = Array.isArray(listBody.items) ? listBody.items.find((item) => item.id === id) : undefined;
-              if (matched?.thumbUrl) {
-                nextCard = { ...nextCard, image_urls: [matched.thumbUrl] };
+              const fallbackImages =
+                Array.isArray(matched?.image_urls) && matched.image_urls.length > 0
+                  ? matched.image_urls
+                  : matched?.thumbUrl
+                    ? [matched.thumbUrl]
+                    : [];
+              if (fallbackImages.length > 0) {
+                nextCard = { ...nextCard, image_urls: fallbackImages };
               }
             }
           } catch {

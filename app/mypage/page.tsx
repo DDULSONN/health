@@ -571,6 +571,7 @@ type MyPaidCard = {
   paid_at: string | null;
   expires_at: string | null;
   created_at: string;
+  photo_signed_urls?: string[];
 };
 
 type ReceivedPaidApplication = {
@@ -7866,6 +7867,22 @@ export default function MyPage() {
                   <p className="mt-1 text-sm font-medium text-amber-700">
                     노출 종료까지 남은 시간 {formatRemainingToKorean(card.expires_at)}
                   </p>
+                )}
+                {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    {card.photo_signed_urls.map((url, idx) => (
+                      <a key={`${card.id}-photo-${idx}`} href={url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50">
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt={`유료카드 사진 ${idx + 1}`}
+                          loading="lazy"
+                          decoding="async"
+                          className="h-32 w-full object-cover"
+                        />
+                      </a>
+                    ))}
+                  </div>
                 )}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
                   {card.status === "approved" ? (

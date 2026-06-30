@@ -252,19 +252,21 @@ export async function GET(req: Request) {
           : [];
 
         let thumbUrl = "";
+        const imageUrls: string[] = [];
         if (row.photo_visibility === "public" && rawPaths.length > 0) {
           for (const rawPath of rawPaths) {
             const litePath = toLitePath(rawPath);
-            thumbUrl = await getLitePublicUrlIfAvailable(admin, litePath);
-            if (!thumbUrl) {
+            let imageUrl = await getLitePublicUrlIfAvailable(admin, litePath);
+            if (!imageUrl) {
               const thumbPath = toThumbPath(rawPath);
-              thumbUrl = await getLitePublicUrlIfAvailable(admin, thumbPath);
+              imageUrl = await getLitePublicUrlIfAvailable(admin, thumbPath);
             }
-            if (!thumbUrl) {
-              thumbUrl = await createSignedUrl(admin, requestId, rawPath, counters);
+            if (!imageUrl) {
+              imageUrl = await createSignedUrl(admin, requestId, rawPath, counters);
             }
-            if (thumbUrl) break;
+            if (imageUrl) imageUrls.push(imageUrl);
           }
+          thumbUrl = imageUrls[0] ?? "";
           if (thumbUrl) counters.rawSigned += 1;
         } else {
           let blurThumbPath = normalizeDatingPhotoPath(row.blur_thumb_path);
@@ -277,6 +279,7 @@ export async function GET(req: Request) {
             if (!thumbUrl) {
               thumbUrl = await createSignedUrl(admin, requestId, blurThumbPath, counters);
             }
+            if (thumbUrl) imageUrls.push(thumbUrl);
           }
           if (thumbUrl) counters.blurSigned += 1;
         }
@@ -297,6 +300,7 @@ export async function GET(req: Request) {
           intro_text: row.intro_text,
           photo_visibility: row.photo_visibility === "public" ? "public" : "blur",
           thumbUrl,
+          image_urls: imageUrls,
           expires_at: row.expires_at,
           paid_at: row.paid_at,
           created_at: row.created_at,
