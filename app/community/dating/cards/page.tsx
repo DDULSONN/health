@@ -2564,10 +2564,6 @@ export default function OpenCardsPage() {
   const activePaidItems = activeSex === "male" ? malePaidItems : femalePaidItems;
   const activeHasMore = activeSex === "male" ? maleHasMore : femaleHasMore;
   const activeCurrentCount = activeSex === "male" ? (queueStats?.male.public_count ?? males.length) : (queueStats?.female.public_count ?? females.length);
-  const todayDatingReactionCount = Math.max(
-    0,
-    Number(queueStats?.today_dating_reactions_count ?? queueStats?.recent_open_card_applications_24h_count ?? 0)
-  );
   const swipeTheme = getCardVisualTheme(swipeState.candidate?.card_id ?? activeSex);
   const showOpenCardSection = homeFeatureTab === "open_cards";
   const showQuickMatchSection = homeFeatureTab === "quick_match";
@@ -2614,56 +2610,62 @@ export default function OpenCardsPage() {
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 flex-1">
-              <div className="mb-2 flex flex-wrap items-center gap-2">
+              <div className="mb-3 space-y-2">
                 {homeAdLink ? (
                   <a
                     href={homeAdLink.linkUrl}
                     target={homeAdLink.linkUrl.startsWith("/") ? undefined : "_blank"}
                     rel={homeAdLink.linkUrl.startsWith("/") ? undefined : "noreferrer"}
-                    className="inline-flex max-w-full items-center gap-2 rounded-full border border-sky-100 bg-sky-50/70 px-3 py-1.5 text-xs font-extrabold text-sky-800 transition hover:bg-sky-50"
+                    className="flex min-h-[38px] items-center gap-2 rounded-[16px] bg-blue-50 px-4 text-xs font-extrabold text-blue-700 transition hover:bg-blue-100/70"
                     title={homeAdLink.description || homeAdLink.title}
                   >
+                    <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" aria-hidden />
                     <span className="min-w-0 truncate">{homeAdLink.title}</span>
-                    <span className="shrink-0 text-[11px] text-sky-600">보기</span>
+                    <span className="ml-auto shrink-0 text-[11px] text-blue-600">보기 &rsaquo;</span>
                   </a>
                 ) : null}
-                {showWeekendApplyCreditBenefit ? (
-                  <span className="rounded-full bg-emerald-50 px-3 py-1.5 text-xs font-extrabold text-emerald-700">
-                    주말 지원권 추가
-                  </span>
-                ) : null}
               </div>
-              <div className="grid gap-2 sm:grid-cols-2">
+              <div className="mb-3 overflow-hidden rounded-[18px] border border-neutral-200 bg-white">
                 <button
                   type="button"
                   onClick={() => setGuideTopic((prev) => (prev === "open_card" ? null : "open_card"))}
-                  className={`flex items-center gap-3 rounded-[14px] border px-3 py-2.5 text-left transition ${
+                  className={`flex min-h-[52px] w-full items-center gap-3 border-b border-neutral-100 px-4 text-left transition ${
                     guideTopic === "open_card"
-                      ? "border-rose-200 bg-rose-50/80 shadow-[0_8px_18px_rgba(225,29,72,0.07)]"
-                      : "border-rose-100 bg-white hover:bg-rose-50/50"
+                      ? "bg-rose-50/70"
+                      : "bg-white hover:bg-neutral-50"
                   }`}
                 >
-                  <span className="h-6 w-1 shrink-0 rounded-full bg-rose-400" aria-hidden />
                   <span className="shrink-0 rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-extrabold text-rose-700">오픈카드</span>
-                  <span className="min-w-0 flex-1 text-xs font-bold leading-5 text-neutral-900">공개하고 지원 받기</span>
-                  <span className="shrink-0 text-[11px] font-black text-rose-500">{guideTopic === "open_card" ? "닫기" : "보기"}</span>
+                  <span className="min-w-0 flex-1 text-sm font-extrabold leading-5 text-neutral-900">공개하고 지원 받기</span>
+                  <span className="shrink-0 text-[11px] font-black text-neutral-400">{guideTopic === "open_card" ? "닫기" : "보기"} &rsaquo;</span>
                 </button>
                 <button
                   type="button"
                   onClick={() => setGuideTopic((prev) => (prev === "one_on_one" ? null : "one_on_one"))}
-                  className={`flex items-center gap-3 rounded-[14px] border px-3 py-2.5 text-left transition ${
+                  className={`flex min-h-[52px] w-full items-center gap-3 border-b border-neutral-100 px-4 text-left transition ${
                     guideTopic === "one_on_one"
-                      ? "border-sky-200 bg-sky-50/80 shadow-[0_8px_18px_rgba(2,132,199,0.07)]"
-                      : "border-sky-100 bg-white hover:bg-sky-50/50"
+                      ? "bg-sky-50/80"
+                      : "bg-white hover:bg-neutral-50"
                   }`}
                 >
-                  <span className="h-6 w-1 shrink-0 rounded-full bg-sky-400" aria-hidden />
                   <span className="shrink-0 rounded-full bg-sky-50 px-2.5 py-1 text-[11px] font-extrabold text-sky-700">1대1 매칭</span>
-                  <span className="min-w-0 flex-1 text-xs font-bold leading-5 text-neutral-900">후보 보고 지원</span>
-                  <span className="shrink-0 text-[11px] font-black text-sky-600">{guideTopic === "one_on_one" ? "닫기" : "보기"}</span>
+                  <span className="min-w-0 flex-1 text-sm font-extrabold leading-5 text-neutral-900">후보 보고 지원</span>
+                  <span className="shrink-0 text-[11px] font-black text-neutral-400">{guideTopic === "one_on_one" ? "닫기" : "보기"} &rsaquo;</span>
                 </button>
+                <Link
+                  href="/dating/nearby-view"
+                  className="flex min-h-[52px] items-center gap-3 px-4 transition hover:bg-neutral-50"
+                >
+                  <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-extrabold text-emerald-700">혜택</span>
+                  <span className="min-w-0 flex-1 text-sm font-extrabold leading-5 text-neutral-900">
+                    가까운 이상형 무료 보기
+                    {showWeekendApplyCreditBenefit ? (
+                      <span className="ml-1 align-middle text-[10px] font-black text-emerald-600">주말 추가</span>
+                    ) : null}
+                  </span>
+                  <span className="shrink-0 text-[11px] font-black text-neutral-400">보기 &rsaquo;</span>
+                </Link>
               </div>
-
               {guideTopic ? (
                 <div className={`mt-3 rounded-[18px] border p-3.5 ${
                   guideTopic === "open_card" ? "border-rose-100 bg-rose-50/60" : "border-sky-100 bg-sky-50/60"
@@ -2717,51 +2719,21 @@ export default function OpenCardsPage() {
                   )}
                 </div>
               ) : null}
-
-              <Link
-                href="/dating/nearby-view"
-                className="mt-2 block overflow-hidden rounded-[14px] border border-neutral-200 bg-white px-3 py-2.5 transition hover:bg-neutral-50 sm:px-4"
-              >
-                <div className="flex items-center gap-3">
-                  <span className="h-6 w-1 shrink-0 rounded-full bg-emerald-400" aria-hidden />
-                  <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-extrabold text-emerald-700">혜택</span>
-                  <p className="min-w-0 flex-1 whitespace-nowrap text-[clamp(9px,2.58vw,13px)] font-bold leading-5 text-neutral-900">
-                    가까운 이상형 무료 보기
-                  </p>
-                  <span className="shrink-0 text-[11px] font-black text-emerald-600">보기</span>
-                </div>
-              </Link>
-
-              <div className="mt-4 divide-y divide-neutral-100 rounded-[18px] border border-neutral-200 bg-white">
-                <div className="p-4">
-                  <div className="grid grid-cols-[1fr_auto] gap-4">
-                    <div>
-                      <p className="text-sm font-bold text-neutral-500">오늘 새 지원·좋아요</p>
-                      <p className="mt-1 text-xs font-medium text-neutral-400">오늘 들어온 반응</p>
-                    </div>
-                    <p className="self-center text-[22px] font-extrabold leading-none text-rose-600">
-                      {todayDatingReactionCount.toLocaleString("ko-KR")}건
-                    </p>
-                  </div>
-                  <p className="mt-3 text-right text-xs font-semibold leading-5 text-neutral-500">
-                    반응이 계속 들어오고 있어요.
-                  </p>
-                </div>
-                <div className="flex items-center gap-3 p-4">
+              <div className="mt-3 rounded-[18px] border border-neutral-200 bg-white">
+                <div className="flex items-center gap-3 px-4 py-3.5">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-bold text-neutral-500">1:1 후보 추천</p>
-                    <p className="mt-1 text-xs font-medium text-neutral-400">신청서 등록 후 후보 확인</p>
-                    <p className="mt-3 truncate text-xs font-semibold leading-5 text-neutral-500">
-                      신청 {Number(queueStats?.one_on_one_applicants_count ?? 0).toLocaleString("ko-KR")}명 · 매칭{" "}
-                      {Number(queueStats?.one_on_one_matches_count ?? 0).toLocaleString("ko-KR")}건
+                    <p className="text-sm font-extrabold text-neutral-900">1:1 후보도 같이 보기</p>
+                    <p className="mt-1 text-xs font-medium text-neutral-400">신청서만 등록하면 바로 후보를 볼 수 있어요</p>
+                    <p className="mt-2 truncate text-xs font-bold leading-5 text-sky-700">
+                      누적 신청 {Number(queueStats?.one_on_one_applicants_count ?? 0).toLocaleString("ko-KR")}명
                     </p>
                   </div>
                   <button
                     type="button"
                     onClick={() => setHomeFeatureTab("one_on_one")}
-                    className="inline-flex min-h-[34px] shrink-0 items-center justify-center rounded-full bg-neutral-950 px-3.5 text-xs font-extrabold text-white hover:bg-neutral-800"
+                    className="inline-flex min-h-[36px] shrink-0 items-center justify-center rounded-full bg-neutral-950 px-4 text-sm font-bold text-white transition hover:bg-neutral-800"
                   >
-                    1:1 열기
+                    후보 보기
                   </button>
                 </div>
               </div>

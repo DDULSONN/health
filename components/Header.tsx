@@ -4,7 +4,7 @@ import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 const HeaderUserMenu = dynamic(() => import("@/components/HeaderUserMenu"), {
   ssr: false,
@@ -30,24 +30,60 @@ function isActive(pathname: string, href: string) {
 export default function Header() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [datingReactionCount, setDatingReactionCount] = useState<number | null>(null);
+  const showDatingReactionBadge = pathname.startsWith("/community/dating/cards");
+
+  useEffect(() => {
+    let cancelled = false;
+
+    if (!showDatingReactionBadge) {
+      return;
+    }
+
+    fetch("/api/dating/cards/queue-stats", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body) => {
+        if (cancelled || !body) return;
+        const count = Math.max(
+          0,
+          Number(body.today_dating_reactions_count ?? body.recent_open_card_applications_24h_count ?? 0)
+        );
+        setDatingReactionCount(count);
+      })
+      .catch(() => {
+        if (!cancelled) setDatingReactionCount(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showDatingReactionBadge]);
 
   return (
     <header className="sticky top-0 z-50 border-b border-black/5 bg-white/92 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 md:h-[74px] md:px-6">
-        <Link
-          href="/community/dating/cards"
-          className="inline-flex items-center gap-2.5 text-[18px] font-black tracking-tight text-neutral-950 md:text-[19px]"
-        >
-          <Image
-            src="/icon-192x192.png"
-            alt=""
-            width={30}
-            height={30}
-            className="h-7 w-7 rounded-lg shadow-[0_5px_14px_rgba(244,63,94,0.18)] md:h-8 md:w-8"
-            priority
-          />
-          <span>짐툴</span>
-        </Link>
+        <div className="flex min-w-0 items-center gap-2.5">
+          <Link
+            href="/community/dating/cards"
+            className="inline-flex min-w-0 items-center gap-2.5 text-[18px] font-black tracking-tight text-neutral-950 md:text-[19px]"
+          >
+            <Image
+              src="/icon-192x192.png"
+              alt=""
+              width={30}
+              height={30}
+              className="h-7 w-7 rounded-lg shadow-[0_5px_14px_rgba(244,63,94,0.18)] md:h-8 md:w-8"
+              priority
+            />
+            <span>짐툴</span>
+          </Link>
+          {showDatingReactionBadge && datingReactionCount !== null ? (
+            <span className="inline-flex max-w-[112px] items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-extrabold text-rose-600">
+              <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-rose-500" aria-hidden />
+              <span className="truncate">오늘 {datingReactionCount.toLocaleString("ko-KR")}건</span>
+            </span>
+          ) : null}
+        </div>
 
         <nav className="hidden items-center gap-2 md:flex">
           {NAV_ITEMS.map((item) => {
