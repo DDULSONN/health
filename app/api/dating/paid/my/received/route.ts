@@ -1,6 +1,6 @@
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
-import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
+import { buildSignedImageUrl, buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { NextResponse } from "next/server";
 
 type SignCounters = { signCalls: number; cacheHit: number; cacheMiss: number };
@@ -15,6 +15,13 @@ function normalizeApplyPhotoPath(raw: unknown): string {
   );
 }
 
+function normalizePaidCardPhotoPath(raw: unknown): string {
+  if (typeof raw !== "string") return "";
+  const value = raw.trim();
+  if (!value) return "";
+  return extractStorageObjectPathFromBuckets(value, ["dating-card-photos", "dating-photos"]) ?? value;
+}
+
 async function createApplyPhotoSignedUrl(
   _adminClient: ReturnType<typeof createAdminClient>,
   path: string,
@@ -22,6 +29,17 @@ async function createApplyPhotoSignedUrl(
   counters: SignCounters
 ) {
   const proxy = buildSignedImageUrl("dating-apply-photos", path);
+  if (proxy) counters.cacheMiss += 1;
+  return proxy;
+}
+
+async function createPaidCardPhotoSignedUrl(
+  _adminClient: ReturnType<typeof createAdminClient>,
+  path: string,
+  _requestId: string,
+  counters: SignCounters
+) {
+  const proxy = buildSignedImageUrlAllowRaw("dating-card-photos", path);
   if (proxy) counters.cacheMiss += 1;
   return proxy;
 }
@@ -56,7 +74,7 @@ export async function GET(req: Request) {
   const admin = createAdminClient();
   const { data: cards, error: cardsError } = await admin
     .from("dating_paid_cards")
-    .select("id,nickname,gender,age,region,display_mode,paid_at,expires_at,created_at,status")
+    .select("id,nickname,gender,age,region,display_mode,paid_at,expires_at,created_at,status,photo_paths")
     .eq("user_id", user.id)
     .order("created_at", { ascending: false });
 
@@ -90,6 +108,24 @@ export async function GET(req: Request) {
   }
 
   let rawSignedCount = 0;
+  const safeCards = await Promise.all(
+    (cards ?? []).map(async (card) => {
+      const rawPaths = Array.isArray(card.photo_paths)
+        ? card.photo_paths
+            .map((item) => normalizePaidCardPhotoPath(item))
+            .filter((item): item is string => typeof item === "string" && item.length > 0)
+            .slice(0, 2)
+        : [];
+      const signed = await Promise.all(rawPaths.map((p) => createPaidCardPhotoSignedUrl(admin, p, requestId, counters)));
+      const filtered = signed.filter((u) => u.length > 0);
+      rawSignedCount += filtered.length;
+      return {
+        ...card,
+        photo_signed_urls: filtered,
+      };
+    })
+  );
+
   const safeApps = await Promise.all(
     (apps ?? []).map(async (app) => {
       const rawPaths = Array.isArray(app.photo_paths)
@@ -112,8 +148,8 @@ export async function GET(req: Request) {
   const signedTotal = counters.cacheHit + counters.cacheMiss;
   const cacheHitRatePct = signedTotal > 0 ? Math.round((counters.cacheHit / signedTotal) * 1000) / 10 : 0;
   console.log(
-    `[list.metrics] requestId=${requestId} path=/api/dating/paid/my/received cards=${(cards ?? []).length} rawSigned=${rawSignedCount} blurSigned=0 cacheHitRatePct=${cacheHitRatePct} signCalls=${counters.signCalls}`
+    `[list.metrics] requestId=${requestId} path=/api/dating/paid/my/received cards=${safeCards.length} rawSigned=${rawSignedCount} blurSigned=0 cacheHitRatePct=${cacheHitRatePct} signCalls=${counters.signCalls}`
   );
 
-  return NextResponse.json({ cards: cards ?? [], applications: safeApps });
+  return NextResponse.json({ cards: safeCards, applications: safeApps });
 }

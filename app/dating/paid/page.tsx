@@ -30,6 +30,7 @@ type PaidItem = {
   intro_text: string | null;
   photo_visibility: "blur" | "public";
   thumbUrl: string;
+  image_urls?: string[];
   expires_at: string | null;
   paid_at: string | null;
   display_mode?: "priority_24h" | "instant_public";
