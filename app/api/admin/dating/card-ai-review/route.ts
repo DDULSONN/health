@@ -117,6 +117,30 @@ function cleanText(value: unknown, max = 500) {
   return String(value ?? "").trim().slice(0, max);
 }
 
+function formatOneOnOneDisplayName(name: unknown, nickname: unknown) {
+  const cleanName = cleanText(name, 80);
+  const cleanNickname = cleanText(nickname, 80);
+  if (cleanName && cleanNickname && cleanName !== cleanNickname) return `${cleanName} (닉네임: ${cleanNickname})`;
+  return cleanName || cleanNickname;
+}
+
+async function fetchProfileNicknames(admin: AdminClient, userIds: string[]) {
+  const ids = [...new Set(userIds.map((id) => cleanText(id, 80)).filter(Boolean))];
+  if (ids.length === 0) return new Map<string, string>();
+
+  const { data, error } = await admin.from("profiles").select("user_id,nickname").in("user_id", ids);
+  if (error) {
+    console.error("[admin card-ai-review] profile nickname lookup failed", error);
+    return new Map<string, string>();
+  }
+
+  return new Map(
+    ((data ?? []) as Record<string, unknown>[])
+      .map((row) => [cleanText(row.user_id, 80), cleanText(row.nickname, 80)] as const)
+      .filter(([userId, nickname]) => userId && nickname)
+  );
+}
+
 async function fetchPagedRows<T extends Record<string, unknown>>(
   limit: number,
   createQuery: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>
@@ -482,14 +506,20 @@ async function fetchOneOnOneCards(admin: AdminClient, limit: number): Promise<Ca
   );
 
   const currentYear = new Date().getFullYear();
-  return ((data ?? []) as Record<string, unknown>[]).map((row) => {
+  const rows = (data ?? []) as Record<string, unknown>[];
+  const nicknamesByUserId = await fetchProfileNicknames(
+    admin,
+    rows.map((row) => cleanText(row.user_id, 80))
+  );
+  return rows.map((row) => {
     const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-1on1-photos"]);
+    const userId = cleanText(row.user_id, 80) || null;
     return {
       sourceType: "one_on_one",
       cardId: cleanText(row.id, 80),
-      userId: cleanText(row.user_id, 80) || null,
+      userId,
       status: cleanText(row.status, 40) || null,
-      displayName: cleanText(row.name, 80),
+      displayName: formatOneOnOneDisplayName(row.name, userId ? nicknamesByUserId.get(userId) : null),
       age: typeof row.birth_year === "number" ? currentYear - row.birth_year + 1 : null,
       region: cleanText(row.region, 80) || null,
       texts: {
@@ -743,12 +773,14 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
   const row = data as Record<string, unknown>;
   const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-1on1-photos"]);
   const currentYear = new Date().getFullYear();
+  const userId = cleanText(row.user_id, 80) || null;
+  const nicknamesByUserId = await fetchProfileNicknames(admin, userId ? [userId] : []);
   return {
     sourceType,
     cardId: cleanText(row.id, 80),
-    userId: cleanText(row.user_id, 80) || null,
+    userId,
     status: cleanText(row.status, 40) || null,
-    displayName: cleanText(row.name, 80),
+    displayName: formatOneOnOneDisplayName(row.name, userId ? nicknamesByUserId.get(userId) : null),
     age: typeof row.birth_year === "number" ? currentYear - row.birth_year + 1 : null,
     region: cleanText(row.region, 80) || null,
     texts: {
@@ -908,12 +940,14 @@ async function loadActionCard(admin: AdminClient, sourceType: SourceType, cardId
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
+  const userId = String(data.user_id ?? "");
+  const nicknamesByUserId = await fetchProfileNicknames(admin, userId ? [userId] : []);
   return {
     sourceType,
     cardId: String(data.id),
-    userId: String(data.user_id ?? ""),
+    userId,
     status: data.status ?? null,
-    displayName: data.name ?? null,
+    displayName: formatOneOnOneDisplayName(data.name, userId ? nicknamesByUserId.get(userId) : null) || null,
     sex: data.sex === "female" ? "female" : data.sex === "male" ? "male" : null,
   };
 }
