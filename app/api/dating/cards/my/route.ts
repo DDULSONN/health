@@ -35,6 +35,13 @@ function isMissingColumnError(error: unknown): boolean {
   return code === "42703" || code === "PGRST204" || message.includes("could not find") || message.includes("column");
 }
 
+function isMissingBoostTableError(error: unknown): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return code === "42P01" || code === "PGRST205" || message.includes("dating_open_card_first_queue_boosts");
+}
+
 type CardMutationData = {
   id: string;
   status: "pending" | "public" | "expired" | "hidden";
@@ -63,7 +70,28 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "내 카드를 불러오지 못했습니다." }, { status: 500 });
   }
 
-  return NextResponse.json({ items: data ?? [] });
+  const items = data ?? [];
+  let firstQueueBoostUsed = false;
+  const boostRes = await adminClient
+    .from("dating_open_card_first_queue_boosts")
+    .select("user_id")
+    .eq("user_id", user.id)
+    .maybeSingle();
+
+  if (boostRes.error && !isMissingBoostTableError(boostRes.error)) {
+    console.error("[GET /api/dating/cards/my] boost status failed", boostRes.error);
+  } else {
+    firstQueueBoostUsed = Boolean(boostRes.data);
+  }
+
+  const canShowFirstQueueBoost = !firstQueueBoostUsed && items.length === 1;
+  const enrichedItems = items.map((item) => ({
+    ...item,
+    can_first_queue_boost: canShowFirstQueueBoost && item.status === "pending",
+    first_queue_boost_used: firstQueueBoostUsed,
+  }));
+
+  return NextResponse.json({ items: enrichedItems, first_queue_boost_used: firstQueueBoostUsed });
 }
 
 export async function POST(req: Request) {

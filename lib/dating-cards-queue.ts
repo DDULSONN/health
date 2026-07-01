@@ -1,4 +1,4 @@
-import { OPEN_CARD_AUTO_REQUEUE_LIMIT, OPEN_CARD_EXPIRE_HOURS, getOpenCardLimitBySex } from "@/lib/dating-open";
+import { OPEN_CARD_EXPIRE_HOURS, getOpenCardLimitBySex } from "@/lib/dating-open";
 import { createAdminClient } from "@/lib/supabase/server";
 
 type CardSex = "male" | "female";
@@ -238,7 +238,7 @@ async function expireCardsWithFallback(
   return (expireRes.data ?? []).map((row) => row.id);
 }
 
-async function requeueExpiredCardsOnce(
+async function requeueExpiredCards(
   adminClient: ReturnType<typeof createAdminClient>,
   rows: ExpiringCardRow[]
 ) {
@@ -249,18 +249,8 @@ async function requeueExpiredCardsOnce(
     };
   }
 
-  const requeueIdSet = new Set(
-    rows
-      .filter((row) => Number(row.auto_requeue_count ?? 0) < OPEN_CARD_AUTO_REQUEUE_LIMIT)
-      .map((row) => row.id)
-  );
-  const requeueRows = rows.filter(
-    (row) => requeueIdSet.has(row.id)
-  );
-  const expireRows = rows.filter((row) => !requeueIdSet.has(row.id));
-
   const requeuedIds: string[] = [];
-  for (const row of requeueRows) {
+  for (const row of rows) {
     const updateRes = await adminClient
       .from("dating_cards")
       .update({
@@ -276,12 +266,7 @@ async function requeueExpiredCardsOnce(
     requeuedIds.push(row.id);
   }
 
-  const expiredIds = await expireCardsWithFallback(
-    adminClient,
-    expireRows.map((row) => row.id)
-  );
-
-  return { expiredIds, requeuedIds };
+  return { expiredIds: [] as string[], requeuedIds };
 }
 
 export async function promotePendingCardsBySex(
@@ -312,7 +297,7 @@ export async function syncOpenCardQueue(
   if (expiringCards.missingAutoRequeueColumn) {
     expiredIds = await expireCardsWithFallback(adminClient, await fetchLegacyExpiredCardIds(adminClient));
   } else {
-    const syncResult = await requeueExpiredCardsOnce(adminClient, expiringCards.rows ?? []);
+    const syncResult = await requeueExpiredCards(adminClient, expiringCards.rows ?? []);
     expiredIds = syncResult.expiredIds;
     requeuedIds = syncResult.requeuedIds;
   }
