@@ -9043,7 +9043,7 @@ export default function MyPage() {
                 ) : null}
                 {canReactivate ? (
                   <p className="mt-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-[11px] leading-5 text-neutral-600">
-                    기존 내용을 그대로 다시 대기열에 올릴 수 있어요. 공개되면 자동 재등록 횟수도 새로 시작됩니다.
+                    기존 내용을 그대로 다시 대기열에 올릴 수 있어요. 공개 기간이 끝나면 다시 대기열로 돌아갑니다.
                   </p>
                 ) : null}
               </div>

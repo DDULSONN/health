@@ -102,6 +102,8 @@ type MyOpenCard = {
   status: "pending" | "public" | "expired" | "hidden";
   display_nickname?: string | null;
   created_at?: string | null;
+  can_first_queue_boost?: boolean;
+  first_queue_boost_used?: boolean;
 };
 
 type SwipeCandidate = {
@@ -1639,6 +1641,7 @@ export default function OpenCardsPage() {
   const [viewerPhoneVerified, setViewerPhoneVerified] = useState(false);
   const [myOpenCards, setMyOpenCards] = useState<MyOpenCard[]>([]);
   const [reactivatingHomeOpenCardId, setReactivatingHomeOpenCardId] = useState("");
+  const [boostingFirstQueueCardId, setBoostingFirstQueueCardId] = useState("");
   const [swipeSubscriptionStatus, setSwipeSubscriptionStatus] = useState<SwipeSubscriptionStatus | null>(null);
   const [swipeSubscriptionLoading, setSwipeSubscriptionLoading] = useState(false);
   const [swipeSubscriptionSubmitting, setSwipeSubscriptionSubmitting] = useState(false);
@@ -2103,6 +2106,28 @@ export default function OpenCardsPage() {
       }
     },
     [loadInitial, reactivatingHomeOpenCardId, refreshSecondary, reloadMyOpenCards]
+  );
+
+  const handleFirstQueueBoost = useCallback(
+    async (cardId: string) => {
+      if (!cardId || boostingFirstQueueCardId) return;
+      setBoostingFirstQueueCardId(cardId);
+      try {
+        const res = await fetch(`/api/dating/cards/my/${encodeURIComponent(cardId)}/first-queue-boost`, {
+          method: "POST",
+        });
+        const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
+        if (!res.ok) {
+          alert(body.error ?? "순번을 앞당기지 못했습니다.");
+          return;
+        }
+        await Promise.all([reloadMyOpenCards(), refreshSecondary(), loadInitial({ silent: true })]);
+        alert(body.message ?? "오픈카드 순번을 30명 앞당겼습니다.");
+      } finally {
+        setBoostingFirstQueueCardId("");
+      }
+    },
+    [boostingFirstQueueCardId, loadInitial, refreshSecondary, reloadMyOpenCards]
   );
 
   useEffect(() => {
@@ -2570,6 +2595,7 @@ export default function OpenCardsPage() {
   const showOneOnOneSection = homeFeatureTab === "one_on_one";
   const showLoveFortuneSection = isAdminPreviewUser && homeFeatureTab === "love_fortune";
   const hasActiveMyOpenCard = myOpenCards.some((card) => card.status === "pending" || card.status === "public");
+  const firstQueueBoostCard = myOpenCards.find((card) => card.can_first_queue_boost) ?? null;
   const reactivatableOpenCard = !hasActiveMyOpenCard
     ? myOpenCards.find((card) => card.status === "hidden" || card.status === "expired") ?? null
     : null;
@@ -2788,6 +2814,16 @@ export default function OpenCardsPage() {
                 >
                   오픈카드 작성
                 </Link>
+                {firstQueueBoostCard ? (
+                  <button
+                    type="button"
+                    disabled={boostingFirstQueueCardId === firstQueueBoostCard.id}
+                    onClick={() => void handleFirstQueueBoost(firstQueueBoostCard.id)}
+                    className="inline-flex min-h-[42px] items-center justify-center rounded-[16px] border border-sky-100 bg-sky-50 px-4 text-xs font-black text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {boostingFirstQueueCardId === firstQueueBoostCard.id ? "앞당기는 중..." : "첫 카드 순번 30명 앞당기기"}
+                  </button>
+                ) : null}
                 {reactivatableOpenCard ? (
                   <button
                     type="button"
