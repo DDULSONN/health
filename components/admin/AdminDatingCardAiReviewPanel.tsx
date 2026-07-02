@@ -45,6 +45,8 @@ type ReviewItem = {
   summary?: string;
   photo_flags?: string[];
   text_flags?: string[];
+  editLocked?: boolean;
+  edit_locked?: boolean;
 };
 
 type ScanResponse = {
@@ -63,6 +65,7 @@ type ActionResponse = {
   message?: string;
   detail?: string;
   displayName?: string | null;
+  editLocked?: boolean;
 };
 
 type EditableFields = {
@@ -110,6 +113,10 @@ function itemUserId(item: ReviewItem) {
 
 function itemStatus(item: ReviewItem) {
   return item.status ?? item.card_status ?? "";
+}
+
+function itemEditLocked(item: ReviewItem) {
+  return item.editLocked ?? item.edit_locked ?? false;
 }
 
 function itemDisplayName(item: ReviewItem) {
@@ -239,10 +246,11 @@ export default function AdminDatingCardAiReviewPanel() {
     }
   };
 
-  const handleAction = async (item: ReviewItem, action: "delete_card" | "send_warning_email") => {
+  const handleAction = async (item: ReviewItem, action: "delete_card" | "send_warning_email" | "set_one_on_one_edit_lock") => {
     const sourceType = itemSource(item);
     const cardId = itemCardId(item);
     const review = itemReview(item);
+    const nextEditLocked = !itemEditLocked(item);
     if (!cardId) return;
 
     const targetLabel = isApplicationSource(sourceType) ? "지원 내역" : "카드";
@@ -265,6 +273,7 @@ export default function AdminDatingCardAiReviewPanel() {
           cardId,
           summary: review.summary,
           flags: review.flags,
+          locked: action === "set_one_on_one_edit_lock" ? nextEditLocked : undefined,
         }),
       });
       const body = (await res.json().catch(() => ({}))) as ActionResponse;
@@ -275,6 +284,16 @@ export default function AdminDatingCardAiReviewPanel() {
       if (action === "delete_card") {
         setItems((prev) => prev.filter((candidate) => `${itemSource(candidate)}:${itemCardId(candidate)}` !== `${sourceType}:${cardId}`));
         setInfo(`${targetLabel}을 삭제했습니다.`);
+      } else if (action === "set_one_on_one_edit_lock") {
+        const locked = body.editLocked ?? nextEditLocked;
+        setItems((prev) =>
+          prev.map((candidate) =>
+            `${itemSource(candidate)}:${itemCardId(candidate)}` === `${sourceType}:${cardId}`
+              ? { ...candidate, editLocked: locked, edit_locked: locked }
+              : candidate
+          )
+        );
+        setInfo(locked ? "1대1 카드 사용자 수정을 잠갔습니다." : "1대1 카드 사용자 수정 잠금을 해제했습니다.");
       } else {
         setInfo("수정 경고 메일을 보냈습니다.");
       }
@@ -443,6 +462,8 @@ export default function AdminDatingCardAiReviewPanel() {
             const warningKey = `send_warning_email:${sourceType}:${cardId}`;
             const deleteKey = `delete_card:${sourceType}:${cardId}`;
             const updateKey = `update_fields:${key}`;
+            const editLockKey = `set_one_on_one_edit_lock:${sourceType}:${cardId}`;
+            const editLocked = itemEditLocked(item);
             const targetLabel = isApplicationSource(sourceType) ? "지원 삭제" : "카드 삭제";
             const draft = editDrafts[key] ?? editableFieldsFromItem(item);
             return (
@@ -460,6 +481,9 @@ export default function AdminDatingCardAiReviewPanel() {
                         <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] text-neutral-500">{review.provider}</span>
                       ) : null}
                       <span className="text-xs text-neutral-500">{itemStatus(item)}</span>
+                      {sourceType === "one_on_one" && editLocked ? (
+                        <span className="rounded-full bg-red-50 px-2.5 py-1 text-[11px] font-semibold text-red-700">수정잠금</span>
+                      ) : null}
                     </div>
                     <p className="mt-2 text-sm font-semibold text-neutral-900">
                       {itemDisplayName(item)} {item.age ? `/ ${item.age}세` : ""} {item.region ? `/ ${item.region}` : ""}
@@ -499,6 +523,20 @@ export default function AdminDatingCardAiReviewPanel() {
                   >
                     {editingKey === key ? "수정 닫기" : "카드 내용 수정"}
                   </button>
+                  {sourceType === "one_on_one" ? (
+                    <button
+                      type="button"
+                      onClick={() => void handleAction(item, "set_one_on_one_edit_lock")}
+                      disabled={processingKey !== ""}
+                      className={`h-9 rounded-xl border px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+                        editLocked
+                          ? "border-neutral-200 bg-white text-neutral-700"
+                          : "border-red-200 bg-red-50 text-red-700"
+                      }`}
+                    >
+                      {processingKey === editLockKey ? "처리 중..." : editLocked ? "수정 잠금 해제" : "수정 잠금"}
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     onClick={() => void handleAction(item, "delete_card")}

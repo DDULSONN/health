@@ -34,6 +34,7 @@ type ReviewActionPayload = {
   summary?: unknown;
   flags?: unknown;
   fields?: unknown;
+  locked?: unknown;
 };
 
 type CandidateCard = {
@@ -49,6 +50,7 @@ type CandidateCard = {
   bucket: string;
   previewUrls: string[];
   createdAt: string | null;
+  editLocked?: boolean;
 };
 
 type CardReview = {
@@ -67,6 +69,8 @@ type ActionCard = {
   status: string | null;
   displayName: string | null;
   sex: "male" | "female" | null;
+  adminTags: string[];
+  editLocked: boolean;
 };
 
 type EditableFields = {
@@ -90,6 +94,7 @@ const SOURCE_TYPES: SourceType[] = [
   "one_on_one_application",
 ];
 const SUSPICIOUS_LEVELS = new Set<SuspicionLevel>(["medium", "high"]);
+const ONE_ON_ONE_EDIT_LOCK_TAG = "one_on_one_edit_locked";
 const TEST_TEXT_PATTERNS = [/테스트|test|asdf|qwer|ㄹㄹ|ㅁㄴㅇ|ㅇㅇㅇ/i];
 const EXTERNAL_CONTACT_PATTERNS = [
   /https?:\/\/|www\.|open\.kakao|t\.me|instagram\.com|bit\.ly|linktr\.ee/i,
@@ -177,7 +182,18 @@ function normalizeMode(value: unknown): ReviewMode {
 
 function normalizeAction(value: unknown) {
   const action = cleanText(value, 40);
-  return action === "delete_card" || action === "send_warning_email" || action === "update_fields" ? action : "";
+  return action === "delete_card" || action === "send_warning_email" || action === "update_fields" || action === "set_one_on_one_edit_lock"
+    ? action
+    : "";
+}
+
+function cleanTags(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return Array.from(new Set(value.map((item) => cleanText(item, 80)).filter(Boolean))).slice(0, 30);
+}
+
+function isOneOnOneEditLocked(tags: unknown) {
+  return cleanTags(tags).includes(ONE_ON_ONE_EDIT_LOCK_TAG);
 }
 
 function cleanArray(value: unknown) {
@@ -499,7 +515,7 @@ async function fetchOneOnOneCards(admin: AdminClient, limit: number): Promise<Ca
   const data = await fetchPagedRows(limit, (from, to) =>
     admin
       .from("dating_1on1_cards")
-      .select("id,user_id,status,name,birth_year,region,job,intro_text,strengths_text,preferred_partner_text,photo_paths,created_at")
+      .select("id,user_id,status,name,birth_year,region,job,intro_text,strengths_text,preferred_partner_text,photo_paths,admin_tags,created_at")
       .in("status", ["submitted", "reviewing", "approved"])
       .order("created_at", { ascending: false })
       .range(from, to)
@@ -532,6 +548,7 @@ async function fetchOneOnOneCards(admin: AdminClient, limit: number): Promise<Ca
       bucket: "dating-1on1-photos",
       previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-1on1-photos", path)),
       createdAt: cleanText(row.created_at, 80) || null,
+      editLocked: isOneOnOneEditLocked(row.admin_tags),
     };
   });
 }
@@ -765,7 +782,7 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
 
   const { data, error } = await admin
     .from("dating_1on1_cards")
-    .select("id,user_id,status,name,birth_year,region,job,intro_text,strengths_text,preferred_partner_text,photo_paths,created_at")
+    .select("id,user_id,status,name,birth_year,region,job,intro_text,strengths_text,preferred_partner_text,photo_paths,admin_tags,created_at")
     .eq("id", cardId)
     .maybeSingle();
   if (error) throw error;
@@ -793,6 +810,7 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
     bucket: "dating-1on1-photos",
     previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-1on1-photos", path)),
     createdAt: cleanText(row.created_at, 80) || null,
+    editLocked: isOneOnOneEditLocked(row.admin_tags),
   };
 }
 
@@ -833,6 +851,7 @@ async function hydrateReviewRows(admin: AdminClient, rows: Record<string, unknow
         texts: current?.texts ?? {},
         editableFields: editableFieldsFromCandidate(current),
         createdAt: current?.createdAt ?? null,
+        editLocked: current?.editLocked ?? false,
       };
     })
   );
@@ -876,6 +895,8 @@ async function loadActionCard(admin: AdminClient, sourceType: SourceType, cardId
       status: data.status ?? null,
       displayName: data.applicant_display_nickname ?? null,
       sex: null,
+      adminTags: [],
+      editLocked: false,
     };
   }
 
@@ -894,6 +915,8 @@ async function loadActionCard(admin: AdminClient, sourceType: SourceType, cardId
       status: data.status ?? null,
       displayName: data.applicant_display_nickname ?? null,
       sex: null,
+      adminTags: [],
+      editLocked: false,
     };
   }
 
@@ -912,6 +935,8 @@ async function loadActionCard(admin: AdminClient, sourceType: SourceType, cardId
       status: data.status ?? null,
       displayName: data.display_nickname ?? null,
       sex: data.sex === "female" ? "female" : data.sex === "male" ? "male" : null,
+      adminTags: [],
+      editLocked: false,
     };
   }
 
@@ -930,18 +955,21 @@ async function loadActionCard(admin: AdminClient, sourceType: SourceType, cardId
       status: data.status ?? null,
       displayName: data.nickname ?? null,
       sex: null,
+      adminTags: [],
+      editLocked: false,
     };
   }
 
   const { data, error } = await admin
     .from("dating_1on1_cards")
-    .select("id,user_id,status,name,sex")
+    .select("id,user_id,status,name,sex,admin_tags")
     .eq("id", cardId)
     .maybeSingle();
   if (error) throw error;
   if (!data) return null;
   const userId = String(data.user_id ?? "");
   const nicknamesByUserId = await fetchProfileNicknames(admin, userId ? [userId] : []);
+  const adminTags = cleanTags(data.admin_tags);
   return {
     sourceType,
     cardId: String(data.id),
@@ -949,6 +977,8 @@ async function loadActionCard(admin: AdminClient, sourceType: SourceType, cardId
     status: data.status ?? null,
     displayName: formatOneOnOneDisplayName(data.name, userId ? nicknamesByUserId.get(userId) : null) || null,
     sex: data.sex === "female" ? "female" : data.sex === "male" ? "male" : null,
+    adminTags,
+    editLocked: adminTags.includes(ONE_ON_ONE_EDIT_LOCK_TAG),
   };
 }
 
@@ -986,6 +1016,18 @@ async function deleteActionCard(admin: AdminClient, card: ActionCard) {
 
   const { error } = await admin.from("dating_1on1_cards").delete().eq("id", card.cardId);
   if (error) throw error;
+}
+
+async function setOneOnOneEditLock(admin: AdminClient, card: ActionCard, locked: boolean) {
+  if (card.sourceType !== "one_on_one") {
+    throw new Error("Only 1:1 cards can be edit-locked.");
+  }
+  const tags = locked
+    ? Array.from(new Set([...card.adminTags, ONE_ON_ONE_EDIT_LOCK_TAG]))
+    : card.adminTags.filter((tag) => tag !== ONE_ON_ONE_EDIT_LOCK_TAG);
+  const { error } = await admin.from("dating_1on1_cards").update({ admin_tags: tags }).eq("id", card.cardId);
+  if (error) throw error;
+  return { editLocked: locked, adminTags: tags };
 }
 
 async function updateActionCardFields(admin: AdminClient, card: ActionCard, fields: EditableFields) {
@@ -1163,6 +1205,40 @@ export async function PATCH(req: Request) {
       return NextResponse.json({ ok: true, action, deleted: true, sourceType, cardId });
     }
 
+    if (action === "set_one_on_one_edit_lock") {
+      const locked = body.locked === true;
+      const updated = await setOneOnOneEditLock(guard.admin, card, locked);
+      await guard.admin
+        .from("admin_dating_card_ai_reviews")
+        .update({
+          raw_result: {
+            admin_edit_lock: {
+              locked,
+              updated_at: new Date().toISOString(),
+              updated_by_user_id: guard.user.id,
+            },
+          },
+          scanned_at: new Date().toISOString(),
+        })
+        .eq("source_type", sourceType)
+        .eq("card_id", cardId)
+        .then(({ error }) => {
+          if (error && error.code !== "42P01" && error.code !== "PGRST205") {
+            console.warn("[admin card review] edit lock marker failed", error.message);
+          }
+        });
+      await recordAdminAuditEvent({
+        admin: guard.admin,
+        adminUser: guard.user,
+        request: req,
+        action: locked ? "dating_1on1_card_edit_lock" : "dating_1on1_card_edit_unlock",
+        targetType: sourceType,
+        targetId: cardId,
+        metadata: { status: card.status, displayName: card.displayName, adminTags: updated.adminTags },
+      });
+      return NextResponse.json({ ok: true, action, sourceType, cardId, editLocked: updated.editLocked });
+    }
+
     if (action === "update_fields") {
       const fields = cleanEditableFields(body.fields);
       const updated = await updateActionCardFields(guard.admin, card, fields);
@@ -1271,6 +1347,7 @@ export async function POST(req: Request) {
         texts: item.texts,
         editableFields: editableFieldsFromCandidate(item),
         createdAt: item.createdAt,
+        editLocked: item.editLocked ?? false,
         review: item.review,
       }));
 
