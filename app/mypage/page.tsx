@@ -10727,6 +10727,7 @@ export default function MyPage() {
                 <div className="mt-3 space-y-2">
                   {adminReelsDatingListings.map((item) => {
                     const applications = adminReelsDatingApplications.filter((app) => app.listing_id === item.id);
+                    const latestApplication = applications[0] ?? null;
                     return (
                       <div key={item.id} className="rounded-lg border border-violet-100 bg-violet-50/30 p-3">
                         <div className="flex flex-wrap items-start justify-between gap-2">
@@ -10765,41 +10766,70 @@ export default function MyPage() {
                           </div>
                         </div>
                         {applications.length > 0 ? (
-                          <div className="mt-3 space-y-2">
-                            {applications.map((app) => (
-                              <div key={app.id} className="rounded-lg bg-white px-3 py-2 text-xs text-neutral-700">
-                                <div className="flex flex-wrap items-center justify-between gap-2">
-                                  <p className="font-semibold text-neutral-900">
-                                    {app.applicant_display_nickname || app.applicant_user_id.slice(0, 8)} · {app.age ?? "-"}세 ·{" "}
-                                    {app.region || "지역 없음"}
+                          <details className="mt-3 rounded-lg border border-violet-100 bg-white">
+                            <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs">
+                              <div className="min-w-0">
+                                <p className="font-semibold text-neutral-900">지원 {applications.length}건 보기</p>
+                                {latestApplication ? (
+                                  <p className="mt-0.5 truncate text-neutral-500">
+                                    최근 {latestApplication.applicant_display_nickname || latestApplication.applicant_user_id.slice(0, 8)} ·{" "}
+                                    {new Date(latestApplication.created_at).toLocaleString("ko-KR")}
                                   </p>
-                                  <p className="text-neutral-400">{new Date(app.created_at).toLocaleString("ko-KR")}</p>
-                                </div>
-                                <p className="mt-1">
-                                  {app.height_cm ?? "-"}cm · {app.job || "직업 없음"} · 운동 {app.training_years ?? "-"}년
-                                </p>
-                                <p className="mt-1 font-medium text-violet-700">인스타: {app.instagram_id ? `@${app.instagram_id}` : "-"}</p>
-                                {app.intro_text ? <p className="mt-1 whitespace-pre-wrap break-words">{app.intro_text}</p> : null}
-                                {app.photo_signed_url ? (
-                                  <a
-                                    href={app.photo_signed_url}
-                                    target="_blank"
-                                    rel="noreferrer"
-                                    className="mt-2 inline-flex h-28 w-28 items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50"
-                                  >
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img
-                                      src={app.photo_signed_url}
-                                      alt="릴스 지원 사진"
-                                      loading="lazy"
-                                      decoding="async"
-                                      className="max-h-full max-w-full object-contain"
-                                    />
-                                  </a>
                                 ) : null}
                               </div>
-                            ))}
-                          </div>
+                              <span className="shrink-0 rounded-full bg-violet-50 px-2.5 py-1 font-semibold text-violet-700">펼치기</span>
+                            </summary>
+                            <div className="border-t border-violet-50">
+                              {applications.map((app) => (
+                                <details key={app.id} className="group border-b border-neutral-100 last:border-b-0">
+                                  <summary className="grid cursor-pointer list-none gap-2 px-3 py-2 text-xs sm:grid-cols-[1fr_auto] sm:items-center">
+                                    <div className="min-w-0">
+                                      <p className="truncate font-semibold text-neutral-900">
+                                        {app.applicant_display_nickname || app.applicant_user_id.slice(0, 8)} · {app.age ?? "-"}세 ·{" "}
+                                        {app.region || "지역 없음"}
+                                      </p>
+                                      <p className="mt-0.5 truncate text-neutral-500">
+                                        {app.height_cm ?? "-"}cm · {app.job || "직업 없음"} · 운동 {app.training_years ?? "-"}년 · 인스타{" "}
+                                        {app.instagram_id ? `@${app.instagram_id}` : "-"}
+                                      </p>
+                                    </div>
+                                    <div className="flex items-center gap-2 text-neutral-400">
+                                      <span>{new Date(app.created_at).toLocaleString("ko-KR")}</span>
+                                      <span className="rounded-full bg-neutral-100 px-2 py-0.5 font-semibold text-neutral-500 group-open:hidden">
+                                        상세
+                                      </span>
+                                      <span className="hidden rounded-full bg-neutral-900 px-2 py-0.5 font-semibold text-white group-open:inline-flex">
+                                        닫기
+                                      </span>
+                                    </div>
+                                  </summary>
+                                  <div className="px-3 pb-3 text-xs text-neutral-700">
+                                    <div className="rounded-lg bg-neutral-50 p-3">
+                                      <p className="font-medium text-violet-700">인스타: {app.instagram_id ? `@${app.instagram_id}` : "-"}</p>
+                                      {app.intro_text ? <p className="mt-2 whitespace-pre-wrap break-words">{app.intro_text}</p> : null}
+                                      {app.photo_signed_url ? (
+                                        <a
+                                          href={app.photo_signed_url}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="mt-3 inline-flex h-24 w-24 items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-white"
+                                        >
+                                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                                          <img
+                                            src={app.photo_signed_url}
+                                            alt="릴스 지원 사진"
+                                            loading="lazy"
+                                            decoding="async"
+                                            className="max-h-full max-w-full object-contain"
+                                          />
+                                        </a>
+                                      ) : null}
+                                    </div>
+                                  </div>
+                                </details>
+                              ))}
+                            </div>
+                          </details>
                         ) : null}
                       </div>
                     );
