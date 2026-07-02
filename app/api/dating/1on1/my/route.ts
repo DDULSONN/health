@@ -28,6 +28,7 @@ type InputPayload = {
 const SEX_VALUES = new Set(["male", "female"]);
 const SMOKING_VALUES = new Set(["non_smoker", "occasional", "smoker"]);
 const WORKOUT_VALUES = new Set(["none", "1_2", "3_4", "5_plus"]);
+const ONE_ON_ONE_EDIT_LOCK_TAG = "one_on_one_edit_locked";
 const BIRTH_YEAR_ERROR_MESSAGE = "나이가 아니라 출생연도 4자리를 입력해 주세요. 예: 1996";
 
 function normalizePath(raw: unknown): string {
@@ -54,6 +55,10 @@ function toInt(value: number | string | undefined): number | null {
     if (Number.isFinite(n)) return Math.round(n);
   }
   return null;
+}
+
+function isAdminEditLocked(value: unknown) {
+  return Array.isArray(value) && value.map((item) => String(item ?? "").trim()).includes(ONE_ON_ONE_EDIT_LOCK_TAG);
 }
 
 export async function GET(req: Request) {
@@ -161,7 +166,7 @@ export async function PATCH(req: Request) {
 
   const currentRes = await admin
     .from("dating_1on1_cards")
-    .select("id,status,photo_paths")
+    .select("id,status,photo_paths,admin_tags")
     .eq("id", cardId)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -175,6 +180,9 @@ export async function PATCH(req: Request) {
   }
   if (currentRes.data.status !== "submitted") {
     return NextResponse.json({ error: "Only submitted requests can be edited." }, { status: 409 });
+  }
+  if (isAdminEditLocked(currentRes.data.admin_tags)) {
+    return NextResponse.json({ error: "관리자 검수로 인해 현재 1:1 신청서 수정이 제한되었습니다. 고객지원으로 문의해 주세요." }, { status: 409 });
   }
 
   const sex = (body.sex ?? "").trim();
