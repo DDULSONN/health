@@ -49,16 +49,16 @@ export const DATING_STORE_PRODUCT_CATALOG = {
   },
   [DATING_STORE_PRODUCT_IDS.swipePremium15d]: {
     kind: "swipe_premium_15d",
-    dailyLimit: 15,
-    durationDays: 15,
-    amountKrw: 10000,
+    dailyLimit: 30,
+    durationDays: 30,
+    amountKrw: 30000,
     storeType: "in-app",
   },
   [DATING_STORE_PRODUCT_IDS.swipePremium30d]: {
     kind: "swipe_premium_30d",
-    dailyLimit: 15,
+    dailyLimit: 30,
     durationDays: 30,
-    amountKrw: 10000,
+    amountKrw: 30000,
     storeType: "subs",
   },
 } as const;

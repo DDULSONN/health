@@ -2926,9 +2926,9 @@ export default function MyPage() {
         status: "none",
         dailyLimit: 5,
         baseLimit: 5,
-        premiumLimit: 15,
-        priceKrw: 10000,
-        durationDays: 15,
+        premiumLimit: 30,
+        priceKrw: 30000,
+        durationDays: 30,
       });
       setSwipeSubscriptionError(
         error instanceof Error ? error.message : "빠른매칭 라이크 구매 상태를 불러오지 못했습니다."
@@ -6886,7 +6886,7 @@ export default function MyPage() {
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800">
-                  1만원 · 15일 · 하루 {swipeSubscriptionStatus?.premiumLimit ?? 15}회
+                  3만원 · 30일 · 하루 {swipeSubscriptionStatus?.premiumLimit ?? 30}회
                 </span>
                 <button
                   type="button"
@@ -6911,8 +6911,8 @@ export default function MyPage() {
             {swipeSubscriptionPanelOpen && (
               <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50/40 p-3">
                 <p className="text-xs text-amber-800">
-                  기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 5}회예요. 추가 이용을 신청하면 15일 동안 하루{" "}
-                  {swipeSubscriptionStatus?.premiumLimit ?? 15}회까지 사용할 수 있어요.
+                  기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 5}회예요. 추가 이용을 신청하면 30일 동안 하루{" "}
+                  {swipeSubscriptionStatus?.premiumLimit ?? 30}회까지 사용할 수 있어요.
                 </p>
                 <p className="mt-2 text-[11px] text-amber-700">현재는 카카오페이 간편결제로만 결제할 수 있어요.</p>
                 <p className="mt-1 text-[11px] text-amber-700">그 밖의 문의는 오픈카톡으로 부탁드려요.</p>
@@ -6937,7 +6937,7 @@ export default function MyPage() {
                     {swipeSubscriptionSubmitting
                       ? "이동 중..."
                       : swipeSubscriptionStatus?.status === "active"
-                        ? "15일 더 연장"
+                        ? "30일 더 연장"
                         : "카카오페이로 시작"}
                   </button>
                 </div>
@@ -12256,7 +12256,7 @@ export default function MyPage() {
               <div>
                 <p className="text-xs font-semibold text-violet-900">유저에게 빠른매칭 플러스 직접 적용</p>
                 <p className="mt-1 text-[11px] text-violet-800">
-                  닉네임이나 이메일로 유저를 찾은 뒤, 플러스 15일/하루 15회를 바로 적용할 수 있어요.
+                  닉네임이나 이메일로 유저를 찾은 뒤, 플러스 30일/하루 30회를 바로 적용할 수 있어요.
                 </p>
               </div>
               <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
@@ -12308,7 +12308,7 @@ export default function MyPage() {
                           onClick={() => void handleAdminGrantSwipeSubscriptionToUser(item.userId)}
                           className="h-8 rounded-md bg-violet-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                         >
-                          {isGranting ? "적용 중..." : "플러스 15일 적용"}
+                          {isGranting ? "적용 중..." : "플러스 30일 적용"}
                         </button>
                       </div>
                     );

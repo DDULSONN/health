@@ -11,9 +11,9 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { appendEmailUnsubscribeFooter, fetchMarketingUnsubscribedUserIds } from "@/lib/marketing-email";
 
 export const SWIPE_BASE_DAILY_LIMIT = 5;
-export const SWIPE_PREMIUM_DAILY_LIMIT = 15;
-export const SWIPE_PREMIUM_PRICE_KRW = 10000;
-export const SWIPE_PREMIUM_DURATION_DAYS = 15;
+export const SWIPE_PREMIUM_DAILY_LIMIT = 30;
+export const SWIPE_PREMIUM_PRICE_KRW = 30000;
+export const SWIPE_PREMIUM_DURATION_DAYS = 30;
 export const SWIPE_DAILY_LIMIT = SWIPE_BASE_DAILY_LIMIT;
 export const SWIPE_LIKE_EXPIRY_HOURS = 30;
 export const SWIPE_LIKE_EXPIRY_ROLLOUT_AT_ISO = "2026-04-16T13:14:34.410Z";

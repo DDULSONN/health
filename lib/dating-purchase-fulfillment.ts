@@ -1,6 +1,11 @@
 ﻿import { createAdminClient } from "@/lib/supabase/server";
 import { DATING_PAID_FIXED_MS } from "@/lib/dating-paid";
 import { extractProvinceFromRegion } from "@/lib/region-city";
+import {
+  SWIPE_PREMIUM_DAILY_LIMIT,
+  SWIPE_PREMIUM_DURATION_DAYS,
+  SWIPE_PREMIUM_PRICE_KRW,
+} from "@/lib/dating-swipe";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -565,9 +570,9 @@ type GrantSwipeSubscriptionOptions = {
 
 export async function grantSwipeSubscription(admin: AdminClient, options: GrantSwipeSubscriptionOptions) {
   const now = new Date();
-  const amount = Math.max(0, Number(options.amount ?? 10000));
-  const dailyLimit = Math.max(1, Number(options.dailyLimit ?? 15));
-  const durationDays = Math.max(1, Number(options.durationDays ?? 30));
+  const amount = Math.max(0, Number(options.amount ?? SWIPE_PREMIUM_PRICE_KRW));
+  const dailyLimit = Math.max(1, Number(options.dailyLimit ?? SWIPE_PREMIUM_DAILY_LIMIT));
+  const durationDays = Math.max(1, Number(options.durationDays ?? SWIPE_PREMIUM_DURATION_DAYS));
   const nowIso = now.toISOString();
   const explicitExpiresAtMs = options.expiresAt ? new Date(options.expiresAt).getTime() : Number.NaN;
   const hasExplicitExpiresAt = Number.isFinite(explicitExpiresAtMs) && explicitExpiresAtMs > now.getTime();
