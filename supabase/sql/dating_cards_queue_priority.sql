@@ -30,12 +30,14 @@ as $$
 declare
   v_card record;
   v_ordered_ids uuid[];
-  v_new_ids uuid[];
   v_old_position int;
   v_target int;
   v_total int;
-  v_index int;
-  v_base timestamptz := timezone('utc', now());
+  v_before_id uuid;
+  v_after_id uuid;
+  v_before_priority timestamptz;
+  v_after_priority timestamptz;
+  v_target_priority timestamptz;
 begin
   select dc.id, dc.sex, dc.status
     into v_card
@@ -67,21 +69,38 @@ begin
   where item.id = p_card_id;
 
   v_target := least(greatest(coalesce(p_target_position, v_total), 1), v_total);
-  v_new_ids := array_remove(v_ordered_ids, p_card_id);
 
-  if v_target <= 1 then
-    v_new_ids := array[p_card_id] || v_new_ids;
-  elsif v_target > coalesce(array_length(v_new_ids, 1), 0) then
-    v_new_ids := v_new_ids || p_card_id;
-  else
-    v_new_ids := v_new_ids[1:v_target - 1] || p_card_id || v_new_ids[v_target:array_length(v_new_ids, 1)];
+  v_ordered_ids := array_remove(v_ordered_ids, p_card_id);
+  if v_target > 1 then
+    v_before_id := v_ordered_ids[v_target - 1];
+  end if;
+  v_after_id := v_ordered_ids[v_target];
+
+  if v_before_id is not null then
+    select dc.queue_priority_at into v_before_priority
+    from public.dating_cards dc
+    where dc.id = v_before_id;
   end if;
 
-  for v_index in 1..array_length(v_new_ids, 1) loop
-    update public.dating_cards dc
-    set queue_priority_at = v_base + make_interval(secs => v_index)
-    where dc.id = v_new_ids[v_index];
-  end loop;
+  if v_after_id is not null then
+    select dc.queue_priority_at into v_after_priority
+    from public.dating_cards dc
+    where dc.id = v_after_id;
+  end if;
+
+  if v_before_priority is not null and v_after_priority is not null and v_after_priority - v_before_priority > interval '2 milliseconds' then
+    v_target_priority := v_before_priority + ((v_after_priority - v_before_priority) / 2);
+  elsif v_before_priority is not null then
+    v_target_priority := v_before_priority + interval '1 millisecond';
+  elsif v_after_priority is not null then
+    v_target_priority := v_after_priority - interval '1 millisecond';
+  else
+    v_target_priority := timezone('utc', now());
+  end if;
+
+  update public.dating_cards dc
+  set queue_priority_at = v_target_priority
+  where dc.id = p_card_id;
 
   return query select p_card_id, v_card.sex, v_old_position, v_target, v_total;
 end;
