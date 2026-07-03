@@ -138,25 +138,32 @@ async function trimPublicOverflowBySex(
   const overflowIds = rows.slice(slotLimit).map((row) => row.id).filter(Boolean);
   if (overflowIds.length === 0) return [];
 
-  let updateRes = await adminClient
-    .from("dating_cards")
-    .update({
-      status: "pending",
-      published_at: null,
-      expires_at: null,
-    })
-    .in("id", overflowIds)
-    .eq("status", "public");
-
-  if (updateRes.error && isMissingColumnError(updateRes.error)) {
-    updateRes = await adminClient
+  let updateError: unknown = null;
+  for (let index = 0; index < overflowIds.length; index += 1) {
+    const updateRes = await adminClient
       .from("dating_cards")
-      .update({ status: "pending" })
-      .in("id", overflowIds)
+      .update({
+        status: "pending",
+        published_at: null,
+        expires_at: null,
+        queue_priority_at: new Date(Date.now() + index).toISOString(),
+      })
+      .eq("id", overflowIds[index])
       .eq("status", "public");
+
+    if (updateRes.error) {
+      updateError = updateRes.error;
+      break;
+    }
   }
 
-  if (updateRes.error) throw updateRes.error;
+  if (updateError && isMissingColumnError(updateError)) {
+    const fallbackRes = await adminClient.from("dating_cards").update({ status: "pending" }).in("id", overflowIds).eq("status", "public");
+    if (fallbackRes.error) throw fallbackRes.error;
+  } else if (updateError) {
+    throw updateError;
+  }
+
   return overflowIds;
 }
 
@@ -258,6 +265,7 @@ async function requeueExpiredCards(
         published_at: null,
         expires_at: null,
         auto_requeue_count: Number(row.auto_requeue_count ?? 0) + 1,
+        queue_priority_at: new Date(Date.now() + requeuedIds.length).toISOString(),
       })
       .eq("id", row.id)
       .eq("status", "public");

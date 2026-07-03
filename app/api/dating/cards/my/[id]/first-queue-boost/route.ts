@@ -28,7 +28,7 @@ function isMissingQueueFeatureError(error: unknown) {
 async function moveCardAhead(admin: AdminClient, cardId: string, sex: "male" | "female") {
   const queueRes = await admin
     .from("dating_cards")
-    .select("id")
+    .select("id,queue_priority_at,created_at")
     .eq("sex", sex)
     .eq("status", "pending")
     .order("queue_priority_at", { ascending: true })
@@ -38,13 +38,16 @@ async function moveCardAhead(admin: AdminClient, cardId: string, sex: "male" | "
 
   if (queueRes.error) throw queueRes.error;
 
-  const orderedIds = (queueRes.data ?? []).map((row) => String(row.id));
-  const oldIndex = orderedIds.indexOf(cardId);
+  const rows = (queueRes.data ?? []).map((row) => ({
+    id: String(row.id),
+    queuePriorityAt: String(row.queue_priority_at ?? row.created_at ?? new Date().toISOString()),
+  }));
+  const oldIndex = rows.findIndex((row) => row.id === cardId);
   if (oldIndex < 0) {
     return {
       oldPosition: null,
       newPosition: null,
-      totalPending: orderedIds.length,
+      totalPending: rows.length,
     };
   }
 
@@ -53,27 +56,36 @@ async function moveCardAhead(admin: AdminClient, cardId: string, sex: "male" | "
     return {
       oldPosition: oldIndex + 1,
       newPosition: oldIndex + 1,
-      totalPending: orderedIds.length,
+      totalPending: rows.length,
     };
   }
 
-  const reorderedIds = orderedIds.filter((id) => id !== cardId);
-  reorderedIds.splice(newIndex, 0, cardId);
+  const rowsWithoutTarget = rows.filter((row) => row.id !== cardId);
+  const before = newIndex > 0 ? rowsWithoutTarget[newIndex - 1] : null;
+  const after = rowsWithoutTarget[newIndex] ?? null;
+  const beforeMs = before ? Date.parse(before.queuePriorityAt) : null;
+  const afterMs = after ? Date.parse(after.queuePriorityAt) : null;
+  const targetMs =
+    beforeMs != null && afterMs != null && Number.isFinite(beforeMs) && Number.isFinite(afterMs) && afterMs - beforeMs > 2
+      ? beforeMs + Math.floor((afterMs - beforeMs) / 2)
+      : beforeMs != null && Number.isFinite(beforeMs)
+        ? beforeMs + 1
+        : afterMs != null && Number.isFinite(afterMs)
+          ? afterMs - 1
+          : Date.now();
 
-  const baseMs = Date.now();
-  for (let index = 0; index < reorderedIds.length; index += 1) {
-    const updateRes = await admin
-      .from("dating_cards")
-      .update({ queue_priority_at: new Date(baseMs + (index + 1) * 1000).toISOString() })
-      .eq("id", reorderedIds[index]);
+  const updateRes = await admin
+    .from("dating_cards")
+    .update({ queue_priority_at: new Date(targetMs).toISOString() })
+    .eq("id", cardId)
+    .eq("status", "pending");
 
-    if (updateRes.error) throw updateRes.error;
-  }
+  if (updateRes.error) throw updateRes.error;
 
   return {
     oldPosition: oldIndex + 1,
     newPosition: newIndex + 1,
-    totalPending: orderedIds.length,
+    totalPending: rows.length,
   };
 }
 
