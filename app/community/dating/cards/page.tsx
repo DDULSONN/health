@@ -1855,9 +1855,9 @@ export default function OpenCardsPage() {
             body.status === "active" || body.status === "pending" || body.status === "none" ? body.status : "none",
           dailyLimit: Math.max(1, Number(body.dailyLimit ?? 5)),
           baseLimit: Math.max(1, Number(body.baseLimit ?? 5)),
-          premiumLimit: Math.max(1, Number(body.premiumLimit ?? 15)),
-          priceKrw: Math.max(0, Number(body.priceKrw ?? 10000)),
-          durationDays: Math.max(1, Number(body.durationDays ?? 15)),
+          premiumLimit: Math.max(1, Number(body.premiumLimit ?? SWIPE_PREMIUM_DAILY_LIMIT)),
+          priceKrw: Math.max(0, Number(body.priceKrw ?? SWIPE_PREMIUM_PRICE_KRW)),
+          durationDays: Math.max(1, Number(body.durationDays ?? SWIPE_PREMIUM_DURATION_DAYS)),
           activeSubscription: body.activeSubscription ?? null,
           pendingSubscription: body.pendingSubscription ?? null,
         });
@@ -3146,7 +3146,7 @@ export default function OpenCardsPage() {
                 className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-2xl bg-amber-500 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-amber-600"
               >
                 {swipeSubscriptionStatus?.status === "active"
-                  ? "15일 더 연장하기"
+                  ? "30일 더 연장하기"
                   : swipeSubscriptionSubmitting
                     ? "이동 중..."
                     : "카카오페이로 시작"}

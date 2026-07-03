@@ -471,9 +471,9 @@ export async function fulfillDatingStorePurchase(
 
     return grantSwipeSubscription(admin, {
       userId: input.userId,
-      amount: 10000,
-      dailyLimit: 15,
-      durationDays: 30,
+      amount: DATING_STORE_PRODUCT_CATALOG[input.productId].amountKrw,
+      dailyLimit: DATING_STORE_PRODUCT_CATALOG[input.productId].dailyLimit,
+      durationDays: DATING_STORE_PRODUCT_CATALOG[input.productId].durationDays,
       expiresAt,
       note,
     });
