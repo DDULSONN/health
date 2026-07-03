@@ -7,7 +7,7 @@ begin;
 create table if not exists public.user_daily_apply_usage (
   user_id uuid not null references auth.users(id) on delete cascade,
   kst_date date not null,
-  base_used int not null default 0 check (base_used >= 0 and base_used <= 3),
+  base_used int not null default 0 check (base_used >= 0 and base_used <= 2),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   primary key (user_id, kst_date)
@@ -18,7 +18,7 @@ alter table public.user_daily_apply_usage
 
 alter table public.user_daily_apply_usage
   add constraint user_daily_apply_usage_base_used_check
-  check (base_used >= 0 and base_used <= 3);
+  check (base_used >= 0 and base_used <= 2);
 
 create table if not exists public.user_apply_credits (
   user_id uuid primary key references auth.users(id) on delete cascade,
@@ -106,10 +106,7 @@ language sql
 stable
 set search_path = public
 as $$
-  select case
-    when extract(isodow from p_kst_date) in (6, 7) then 3
-    else 2
-  end;
+  select 2;
 $$;
 
 create or replace function public.consume_apply_token(p_user_id uuid)

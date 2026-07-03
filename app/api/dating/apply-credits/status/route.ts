@@ -1,4 +1,4 @@
-import { getDailyBaseApplyLimit, getKstDateString, isKoreanWeekend } from "@/lib/dating-apply-limits";
+import { getDailyBaseApplyLimit, getKstDateString } from "@/lib/dating-apply-limits";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
@@ -19,7 +19,7 @@ export async function GET(req: Request) {
         requestId,
         loggedIn: false,
         baseLimit,
-        weekendBenefitActive: isKoreanWeekend(),
+        weekendBenefitActive: false,
         baseUsed: 0,
         baseRemaining: 0,
         creditsRemaining: 0,
@@ -59,7 +59,7 @@ export async function GET(req: Request) {
       loggedIn: true,
       kstDate,
       baseLimit,
-      weekendBenefitActive: isKoreanWeekend(),
+      weekendBenefitActive: false,
       baseUsed,
       baseRemaining,
       creditsRemaining,
