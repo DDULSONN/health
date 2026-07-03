@@ -1,5 +1,5 @@
--- Open-card apply base limit.
--- Base applies: 2 per KST day.
+-- Weekend open-card apply benefit.
+-- Base applies: 2 per KST weekday, 3 per KST Saturday/Sunday.
 
 begin;
 
@@ -8,7 +8,7 @@ alter table public.user_daily_apply_usage
 
 alter table public.user_daily_apply_usage
   add constraint user_daily_apply_usage_base_used_check
-  check (base_used >= 0 and base_used <= 2);
+  check (base_used >= 0 and base_used <= 3);
 
 create or replace function public.get_daily_apply_base_limit(p_kst_date date default (timezone('Asia/Seoul', now()))::date)
 returns int
@@ -16,7 +16,10 @@ language sql
 stable
 set search_path = public
 as $$
-  select 2;
+  select case
+    when extract(isodow from p_kst_date) in (6, 7) then 3
+    else 2
+  end;
 $$;
 
 create or replace function public.consume_apply_token(p_user_id uuid)
