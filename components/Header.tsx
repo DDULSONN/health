@@ -19,6 +19,7 @@ const NAV_ITEMS = [
 ];
 
 const TOOL_PATHS = ["/tools", "/flirting-generator", "/lifts", "/1rm", "/certify"];
+const DATING_REACTION_COUNT_EVENT = "dating-reaction-count";
 
 function isActive(pathname: string, href: string) {
   if (href === "/tools") {
@@ -36,9 +37,16 @@ export default function Header() {
   useEffect(() => {
     let cancelled = false;
 
-    if (!showDatingReactionBadge) {
-      return;
-    }
+    if (!showDatingReactionBadge) return;
+
+    const handleDatingReactionCount = (event: Event) => {
+      const count = Number((event as CustomEvent<{ count?: number }>).detail?.count ?? NaN);
+      if (Number.isFinite(count)) {
+        setDatingReactionCount(Math.max(0, count));
+      }
+    };
+
+    window.addEventListener(DATING_REACTION_COUNT_EVENT, handleDatingReactionCount);
 
     fetch("/api/dating/cards/queue-stats", { cache: "no-store" })
       .then((res) => (res.ok ? res.json() : null))
@@ -56,6 +64,7 @@ export default function Header() {
 
     return () => {
       cancelled = true;
+      window.removeEventListener(DATING_REACTION_COUNT_EVENT, handleDatingReactionCount);
     };
   }, [showDatingReactionBadge]);
 

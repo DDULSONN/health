@@ -1,5 +1,5 @@
 import { getMoreViewStatusBySex } from "@/lib/dating-more-view";
-import { getDailyBaseApplyLimit, getKstDateString, isKoreanWeekend } from "@/lib/dating-apply-limits";
+import { getDailyBaseApplyLimit, getKstDateString } from "@/lib/dating-apply-limits";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -76,7 +76,7 @@ export async function GET(req: Request) {
         creditsRemaining,
         baseLimit,
         baseRemaining,
-        weekendBenefitActive: isKoreanWeekend(),
+        weekendBenefitActive: false,
         moreViewMale: moreViewStatus.male,
         moreViewFemale: moreViewStatus.female,
       },

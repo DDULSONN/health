@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
-import { isKoreanWeekend } from "@/lib/dating-apply-limits";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import {
   SWIPE_PREMIUM_DAILY_LIMIT,
@@ -236,6 +235,7 @@ const OPEN_CARDS_CACHE_KEY = "community-dating-open-cards:v1";
 const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
   "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
+const DATING_REACTION_COUNT_EVENT = "dating-reaction-count";
 
 const HOME_FEATURE_TABS: Array<{ key: HomeFeatureTab; label: string; body: string }> = [
   { key: "open_cards", label: "오픈카드", body: "카드 목록" },
@@ -1646,7 +1646,6 @@ export default function OpenCardsPage() {
   const [swipeSubscriptionLoading, setSwipeSubscriptionLoading] = useState(false);
   const [swipeSubscriptionSubmitting, setSwipeSubscriptionSubmitting] = useState(false);
   const [swipePremiumGuideOpen, setSwipePremiumGuideOpen] = useState(false);
-  const [showWeekendApplyCreditBenefit, setShowWeekendApplyCreditBenefit] = useState(false);
   const [homeAdLink, setHomeAdLink] = useState<HomeAdLinkSetting | null>(null);
   const [reelsListings, setReelsListings] = useState<ReelsDatingListing[]>([]);
   const [reelsListingsLoading, setReelsListingsLoading] = useState(false);
@@ -1709,11 +1708,15 @@ export default function OpenCardsPage() {
   }, []);
 
   useEffect(() => {
-    const updateWeekendBenefit = () => setShowWeekendApplyCreditBenefit(isKoreanWeekend());
-    updateWeekendBenefit();
-    const timer = window.setInterval(updateWeekendBenefit, 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
+    if (!queueStats) return;
+    window.dispatchEvent(
+      new CustomEvent(DATING_REACTION_COUNT_EVENT, {
+        detail: {
+          count: Number(queueStats.today_dating_reactions_count ?? queueStats.recent_open_card_applications_24h_count ?? 0),
+        },
+      })
+    );
+  }, [queueStats]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2685,9 +2688,6 @@ export default function OpenCardsPage() {
                   <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-extrabold text-emerald-700">혜택</span>
                   <span className="min-w-0 flex-1 text-sm font-extrabold leading-5 text-neutral-900">
                     가까운 이상형 무료 보기
-                    {showWeekendApplyCreditBenefit ? (
-                      <span className="ml-1 align-middle text-[10px] font-black text-emerald-600">주말 추가</span>
-                    ) : null}
                   </span>
                   <span className="shrink-0 text-[11px] font-black text-neutral-400">보기 &rsaquo;</span>
                 </Link>

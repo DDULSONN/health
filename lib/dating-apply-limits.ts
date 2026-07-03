@@ -1,5 +1,5 @@
 export const WEEKDAY_BASE_APPLY_LIMIT = 2;
-export const WEEKEND_BASE_APPLY_LIMIT = 3;
+export const WEEKEND_BASE_APPLY_LIMIT = 2;
 
 export function getKstDateString(now = new Date()): string {
   const kstMs = now.getTime() + 9 * 60 * 60 * 1000;
@@ -15,5 +15,6 @@ export function isKoreanWeekend(now = new Date()): boolean {
 }
 
 export function getDailyBaseApplyLimit(now = new Date()): number {
-  return isKoreanWeekend(now) ? WEEKEND_BASE_APPLY_LIMIT : WEEKDAY_BASE_APPLY_LIMIT;
+  void now;
+  return WEEKDAY_BASE_APPLY_LIMIT;
 }
