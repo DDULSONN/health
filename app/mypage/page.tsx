@@ -8977,7 +8977,7 @@ export default function MyPage() {
       <section className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-5">
         <h2 className="text-lg font-bold text-emerald-900 mb-2">지원권 현황</h2>
         <p className="text-sm text-emerald-900">
-          매일 기본 2장 / 추가 지원권 <span className="font-semibold">{applyCreditsRemaining}장</span>
+          평일 기본 2장 · 주말 기본 3장 / 추가 지원권 <span className="font-semibold">{applyCreditsRemaining}장</span>
         </p>
       </section>
 
