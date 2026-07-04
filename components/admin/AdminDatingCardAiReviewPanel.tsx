@@ -202,6 +202,7 @@ export default function AdminDatingCardAiReviewPanel() {
     try {
       const query = new URLSearchParams();
       if (source !== "all") query.set("source", source);
+      if (includeClear) query.set("includeClear", "true");
       const res = await fetch(`/api/admin/dating/card-ai-review${query.size ? `?${query.toString()}` : ""}`, { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as ScanResponse;
       if (!res.ok || body.ok === false) throw new Error(body.message || "최근 검수 목록을 불러오지 못했습니다.");
@@ -209,7 +210,7 @@ export default function AdminDatingCardAiReviewPanel() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "최근 검수 목록을 불러오지 못했습니다.");
     }
-  }, [source]);
+  }, [includeClear, source]);
 
   useEffect(() => {
     void loadLatest();
@@ -227,7 +228,7 @@ export default function AdminDatingCardAiReviewPanel() {
           source,
           limit: Number(limit) || 50,
           mode,
-          includeClear: includeClear || isApplicationSource(source),
+          includeClear,
         }),
       });
       const body = (await res.json().catch(() => ({}))) as ScanResponse;
@@ -437,10 +438,6 @@ export default function AdminDatingCardAiReviewPanel() {
           />
           정상/낮음 결과도 표시
         </label>
-        {isApplicationSource(source) ? (
-          <p className="mt-1 text-[11px] text-neutral-500">지원 내역 필터는 검수 실행 시 정상/낮음 결과도 함께 표시합니다.</p>
-        ) : null}
-
         <p className="mt-2 text-[11px] text-neutral-500">
           일반 검수는 비용 없이 빠르게 돌릴 수 있고, AI 검수는 사진/이미지 성격까지 보고 싶을 때만 쓰면 됩니다.
         </p>

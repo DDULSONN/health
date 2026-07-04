@@ -614,6 +614,12 @@ type MyOneOnOneCard = {
   photo_signed_urls?: string[];
 };
 
+const ONE_ON_ONE_USER_EDIT_USED_TAG = "one_on_one_user_edit_used";
+
+function hasOneOnOneUserEditBeenUsed(card: Pick<MyOneOnOneCard, "admin_tags">) {
+  return Array.isArray(card.admin_tags) && card.admin_tags.includes(ONE_ON_ONE_USER_EDIT_USED_TAG);
+}
+
 type MyOneOnOneMatchCard = {
   id: string;
   sex: "male" | "female";
@@ -8819,7 +8825,7 @@ export default function MyPage() {
                     >
                       1:1 소개팅 페이지
                     </Link>
-                    {item.status === "submitted" && (
+                    {item.status === "submitted" && !hasOneOnOneUserEditBeenUsed(item) && (
                       <Link
                         href={`/dating/1on1?editId=${item.id}`}
                         className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 hover:bg-amber-50"

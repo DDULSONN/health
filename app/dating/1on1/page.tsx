@@ -32,6 +32,7 @@ type CardItem = {
   smoking: "non_smoker" | "occasional" | "smoker";
   workout_frequency: "none" | "1_2" | "3_4" | "5_plus" | null;
   status: "submitted" | "reviewing" | "approved" | "rejected";
+  admin_tags?: string[] | null;
   created_at: string;
   photo_signed_urls: string[];
 };
@@ -59,6 +60,11 @@ const WORKOUT_OPTIONS = [
 ] as const;
 
 const BIRTH_YEAR_HELP_MESSAGE = "나이가 아니라 출생연도 4자리를 입력해 주세요. 예: 1996";
+const ONE_ON_ONE_USER_EDIT_USED_TAG = "one_on_one_user_edit_used";
+
+function hasOneOnOneUserEditBeenUsed(card: Pick<CardItem, "admin_tags">) {
+  return Array.isArray(card.admin_tags) && card.admin_tags.includes(ONE_ON_ONE_USER_EDIT_USED_TAG);
+}
 
 function smokingLabel(value: CardItem["smoking"]): string {
   if (value === "non_smoker") return "비흡연";
@@ -236,6 +242,9 @@ function DatingOneOnOnePageContent() {
           }
           if (editTarget.status !== "submitted") {
             throw new Error("접수중 상태일 때만 수정할 수 있습니다.");
+          }
+          if (hasOneOnOneUserEditBeenUsed(editTarget)) {
+            throw new Error("1:1 신청서는 한 번만 수정할 수 있습니다.");
           }
 
           if (!mounted) return;
@@ -486,6 +495,11 @@ function DatingOneOnOnePageContent() {
           <p className="mt-3 text-sm leading-6 text-neutral-600">
             신청은 무료이고, 최종 번호 교환 단계에서만 매칭비가 발생합니다.
           </p>
+          {isEditMode ? (
+            <p className="mt-3 rounded-2xl bg-amber-50 px-4 py-3 text-xs font-bold leading-5 text-amber-800">
+              신청서 수정은 한 번만 가능합니다. 저장 전 내용을 다시 확인해 주세요.
+            </p>
+          ) : null}
           <div className="mt-4 rounded-2xl bg-rose-50/70 px-4 py-3 text-xs leading-5 text-neutral-700">
             <p className="font-black text-neutral-950">개인정보 안내</p>
             <p className="mt-1">

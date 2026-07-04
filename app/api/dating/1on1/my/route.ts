@@ -28,6 +28,7 @@ const SEX_VALUES = new Set(["male", "female"]);
 const SMOKING_VALUES = new Set(["non_smoker", "occasional", "smoker"]);
 const WORKOUT_VALUES = new Set(["none", "1_2", "3_4", "5_plus"]);
 const ONE_ON_ONE_EDIT_LOCK_TAG = "one_on_one_edit_locked";
+const ONE_ON_ONE_USER_EDIT_USED_TAG = "one_on_one_user_edit_used";
 const BIRTH_YEAR_ERROR_MESSAGE = "나이가 아니라 출생연도 4자리를 입력해 주세요. 예: 1996";
 
 function normalizePath(raw: unknown): string {
@@ -58,6 +59,17 @@ function toInt(value: number | string | undefined): number | null {
 
 function isAdminEditLocked(value: unknown) {
   return Array.isArray(value) && value.map((item) => String(item ?? "").trim()).includes(ONE_ON_ONE_EDIT_LOCK_TAG);
+}
+
+function hasUserEditBeenUsed(value: unknown) {
+  return Array.isArray(value) && value.map((item) => String(item ?? "").trim()).includes(ONE_ON_ONE_USER_EDIT_USED_TAG);
+}
+
+function appendAdminTag(value: unknown, tag: string) {
+  const tags = Array.isArray(value)
+    ? value.map((item) => String(item ?? "").trim()).filter((item) => item.length > 0)
+    : [];
+  return Array.from(new Set([...tags, tag])).slice(0, 20);
 }
 
 export async function GET(req: Request) {
@@ -184,6 +196,10 @@ export async function PATCH(req: Request) {
     return NextResponse.json({ error: "관리자 검수로 인해 현재 1:1 신청서 수정이 제한되었습니다. 고객지원으로 문의해 주세요." }, { status: 409 });
   }
 
+  if (hasUserEditBeenUsed(currentRes.data.admin_tags)) {
+    return NextResponse.json({ error: "1:1 신청서는 한 번만 수정할 수 있습니다." }, { status: 409 });
+  }
+
   const sex = (body.sex ?? "").trim();
   const name = (body.name ?? "").trim();
   const birthYear = toInt(body.birth_year);
@@ -278,6 +294,7 @@ export async function PATCH(req: Request) {
     consent_no_show: body.consent_no_show === true,
     consent_fee: body.consent_fee === true,
     consent_privacy: body.consent_privacy === true,
+    admin_tags: appendAdminTag(currentRes.data.admin_tags, ONE_ON_ONE_USER_EDIT_USED_TAG),
   };
 
   const { error } = await admin
