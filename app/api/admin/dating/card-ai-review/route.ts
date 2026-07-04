@@ -1166,7 +1166,7 @@ export async function GET(req: Request) {
 
   const url = new URL(req.url);
   const source = normalizeSource(url.searchParams.get("source"));
-  const includeClear = source !== "all" && String(source).endsWith("_application");
+  const includeClear = url.searchParams.get("includeClear") === "true";
   let query = guard.admin
     .from("admin_dating_card_ai_reviews")
     .select("id,source_type,card_id,user_id,card_status,display_name,suspicion_level,flags,summary,photo_flags,text_flags,raw_result,scanned_at")
