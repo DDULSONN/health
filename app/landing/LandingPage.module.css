@@ -1,0 +1,693 @@
+.page {
+  min-height: 100dvh;
+  overflow-x: hidden;
+  background: #ffffff;
+  color: #151518;
+}
+
+.stage {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(255, 255, 255, 0.12), transparent 13rem),
+    linear-gradient(180deg, #050506 0%, #111115 100%);
+  animation: stageExit 3.2s cubic-bezier(0.2, 0.9, 0.2, 1) forwards;
+}
+
+.stage .cardRail {
+  position: absolute;
+  inset-inline: -12rem;
+  top: 50%;
+  opacity: 0.22;
+  transform: translateY(-50%) rotate(-7deg) scale(1.08);
+  filter: blur(0.2px) saturate(0.8);
+}
+
+.pulseRing {
+  position: absolute;
+  width: 9rem;
+  aspect-ratio: 1;
+  border: 1px solid rgba(255, 255, 255, 0.38);
+  border-radius: 999px;
+  animation: ringBoom 1.55s cubic-bezier(0.18, 1, 0.22, 1) forwards;
+}
+
+.introMark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 7rem;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 1.9rem;
+  background: rgba(255, 248, 246, 0.96);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08), 0 3rem 7rem rgba(255, 64, 105, 0.26);
+  animation: markBoom 1.8s cubic-bezier(0.18, 1, 0.22, 1) forwards;
+}
+
+.introMark::after {
+  position: absolute;
+  inset: -30%;
+  content: "";
+  background: linear-gradient(115deg, transparent 35%, rgba(255, 255, 255, 0.88), transparent 58%);
+  transform: translateX(-80%);
+  animation: shine 1.2s 0.42s ease-out forwards;
+}
+
+.introIcon {
+  width: 5.15rem;
+  height: 5.15rem;
+  object-fit: contain;
+  animation: iconSettle 1.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.introText {
+  position: absolute;
+  top: calc(50% + 5.9rem);
+  display: grid;
+  justify-items: center;
+  gap: 0.35rem;
+  color: rgba(255, 255, 255, 0.92);
+  animation: textFlash 2s ease forwards;
+}
+
+.introText strong {
+  font-size: 1.15rem;
+  font-weight: 950;
+}
+
+.introText span {
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.shell {
+  min-height: 100dvh;
+  display: grid;
+  justify-items: center;
+  gap: 0;
+  padding: 0 1.25rem 1.5rem;
+}
+
+.hero {
+  width: min(100%, 64rem);
+  display: grid;
+  gap: 1.35rem;
+  align-self: end;
+  padding: clamp(1.35rem, 4vw, 3.1rem) 0 clamp(1.5rem, 4vw, 3rem);
+  border-bottom: 1px solid rgba(20, 20, 24, 0.09);
+  border-radius: 0;
+  background: #ffffff;
+  box-shadow: none;
+  animation: contentRise 0.9s 2.2s ease both;
+}
+
+.revealBlock {
+  opacity: 1;
+  transform: none;
+}
+
+.heroTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.brandRow {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  color: #101014;
+  font-size: 1.08rem;
+  font-weight: 950;
+}
+
+.brandIcon {
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 0.6rem;
+  box-shadow: 0 0.8rem 1.6rem rgba(244, 63, 94, 0.14);
+}
+
+.brandNote {
+  margin: 0;
+  color: #74747b;
+  font-size: 0.78rem;
+  font-weight: 850;
+  line-height: 1.35;
+  text-align: right;
+}
+
+.heroBody {
+  display: grid;
+  grid-template-columns: minmax(0, 0.86fr) minmax(17rem, 0.68fr);
+  gap: clamp(1.5rem, 5vw, 3.4rem);
+  align-items: center;
+}
+
+.copyBlock {
+  max-width: 32rem;
+}
+
+.heroDifference {
+  display: grid;
+  gap: 0.9rem;
+  opacity: 0;
+  transform: translateY(0.45rem);
+  animation: phraseRise 0.62s 2.58s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.heroKicker {
+  margin: 0;
+  color: #ef4356;
+  font-size: 0.78rem;
+  font-weight: 900;
+}
+
+.heroDifferenceList {
+  display: grid;
+  border-top: 1px solid rgba(20, 20, 24, 0.1);
+}
+
+.heroDifferenceItem {
+  display: grid;
+  grid-template-columns: 2.35rem minmax(0, 1fr);
+  gap: 0.85rem;
+  padding: 1rem 0;
+  border-bottom: 1px solid rgba(20, 20, 24, 0.1);
+}
+
+.heroDifferenceItem > span {
+  color: #ef4356;
+  font-size: 0.75rem;
+  font-weight: 900;
+  line-height: 1.8;
+}
+
+.heroDifferenceItem strong {
+  display: block;
+  color: #151518;
+  font-size: 1.03rem;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.heroDifferenceItem p {
+  margin: 0.28rem 0 0;
+  color: #6d6d74;
+  font-size: 0.88rem;
+  font-weight: 650;
+  line-height: 1.55;
+}
+
+.ctaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.7rem;
+  margin-top: 1.7rem;
+}
+
+.primaryCta,
+.secondaryCta {
+  display: inline-flex;
+  min-height: 3.15rem;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.72rem;
+  padding: 0 1.15rem;
+  font-size: 0.95rem;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.primaryCta {
+  background: #111116;
+  color: #ffffff;
+  box-shadow: none;
+}
+
+.secondaryCta {
+  border: 1px solid rgba(17, 17, 22, 0.14);
+  color: #232329;
+  background: #ffffff;
+}
+
+.visualPanel {
+  position: relative;
+  min-height: 19.5rem;
+  overflow: hidden;
+  border-radius: 0.85rem;
+  background:
+    radial-gradient(circle at 50% 44%, rgba(255, 255, 255, 0.9), transparent 12rem),
+    #fff7f4;
+}
+
+.visualPoster {
+  position: absolute;
+  inset: 0;
+  opacity: 0.32;
+}
+
+.visualPoster::after,
+.visualPanel::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08), rgba(255, 255, 255, 0.92));
+}
+
+.heroPoster {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 27.5rem;
+  max-width: none;
+  height: auto;
+  filter: saturate(0.85);
+  transform: translate(-50%, -44%) scale(1.08);
+}
+
+.visualPanel .cardRail {
+  position: absolute;
+  inset-inline: 0;
+  bottom: 1.7rem;
+  z-index: 2;
+}
+
+.cardRail {
+  overflow: hidden;
+}
+
+.cardTrack {
+  display: flex;
+  width: max-content;
+  gap: 0.9rem;
+  animation: cardsDrift 18s linear infinite;
+}
+
+.previewCard {
+  width: 8.2rem;
+  height: 11rem;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  border: 1px solid rgba(20, 20, 24, 0.08);
+  border-radius: 0.82rem;
+  background: #ffffff;
+  padding: 0.75rem;
+  box-shadow: 0 1.1rem 2rem rgba(18, 18, 22, 0.1);
+}
+
+.photoShape {
+  position: relative;
+  height: 5.4rem;
+  overflow: hidden;
+  border-radius: 0.58rem;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.08)),
+    repeating-linear-gradient(-45deg, rgba(255, 255, 255, 0.2) 0 0.5rem, rgba(255, 255, 255, 0) 0.5rem 1rem);
+  background-position: center;
+  background-size: cover;
+}
+
+.hasPhoto {
+  filter: blur(7px) saturate(0.95);
+  transform: scale(1.08);
+}
+
+.photoShape::after {
+  position: absolute;
+  inset: 0;
+  content: "";
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.28));
+}
+
+.cardLines {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.cardLines span {
+  display: block;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: rgba(17, 17, 22, 0.1);
+}
+
+.cardLines span:last-child {
+  width: 68%;
+}
+
+.cardFoot {
+  display: grid;
+  gap: 0.15rem;
+}
+
+.cardFoot strong {
+  color: #151518;
+  font-size: 0.8rem;
+  font-style: normal;
+  font-weight: 950;
+}
+
+.cardFoot em {
+  color: #85858c;
+  font-size: 0.68rem;
+  font-style: normal;
+  font-weight: 800;
+}
+
+.femaleCard .photoShape {
+  background-color: #ffe8ee;
+}
+
+.maleCard .photoShape {
+  background-color: #e7f3ff;
+}
+
+.reviewSection {
+  display: grid;
+  gap: 0.62rem;
+  overflow: hidden;
+}
+
+.reviewHeader {
+  display: flex;
+  align-items: center;
+  color: #111116;
+}
+
+.reviewHeader strong {
+  color: #707078;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.reviewRail {
+  position: relative;
+  overflow: hidden;
+  margin-inline: -0.12rem;
+  padding: 0.08rem 0.12rem 0.18rem;
+}
+
+.reviewRail::before,
+.reviewRail::after {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 2;
+  width: 2.4rem;
+  content: "";
+  pointer-events: none;
+}
+
+.reviewRail::before {
+  left: 0;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.98), transparent);
+}
+
+.reviewRail::after {
+  right: 0;
+  background: linear-gradient(270deg, rgba(255, 255, 255, 0.98), transparent);
+}
+
+.reviewTrack {
+  display: flex;
+  width: max-content;
+  gap: 0.7rem;
+  animation: reviewsDrift 34s linear infinite;
+}
+
+.reviewSpacer {
+  width: 0.65rem;
+  flex: 0 0 auto;
+}
+
+.reviewCard {
+  width: clamp(16rem, 34vw, 22rem);
+  height: clamp(7.6rem, 16vw, 10.5rem);
+  flex: 0 0 auto;
+  display: grid;
+  align-items: center;
+  justify-items: center;
+  overflow: hidden;
+  border: 1px solid rgba(20, 20, 24, 0.1);
+  border-radius: 0.72rem;
+  background: #f8f8f9;
+  padding: 0.45rem;
+  box-shadow: 0 0.8rem 1.7rem rgba(18, 18, 22, 0.07);
+}
+
+.reviewImage {
+  width: 100%;
+  height: 100%;
+  border-radius: 0.48rem;
+  object-fit: contain;
+  filter: saturate(0.95);
+}
+
+.reviewNote {
+  max-width: 38rem;
+  margin: 0;
+  color: #8a8a91;
+  font-size: 0.74rem;
+  font-weight: 650;
+  line-height: 1.55;
+}
+
+@keyframes stageExit {
+  0%,
+  72% {
+    opacity: 1;
+  }
+  100% {
+    visibility: hidden;
+    opacity: 0;
+  }
+}
+
+@keyframes ringBoom {
+  0% {
+    opacity: 0;
+    transform: scale(0.15);
+  }
+  24% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(7.5);
+  }
+}
+
+@keyframes markBoom {
+  0% {
+    opacity: 0;
+    transform: scale(0.2);
+  }
+  28% {
+    opacity: 1;
+    transform: scale(1.16);
+  }
+  42% {
+    transform: scale(0.92);
+  }
+  58% {
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes iconSettle {
+  0% {
+    opacity: 0;
+    transform: scale(0.72);
+  }
+  38%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+@keyframes shine {
+  to {
+    transform: translateX(82%);
+  }
+}
+
+@keyframes textFlash {
+  0%,
+  18% {
+    opacity: 0;
+    transform: translateY(0.8rem);
+  }
+  44%,
+  78% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-0.2rem);
+  }
+}
+
+@keyframes contentRise {
+  from {
+    opacity: 0;
+    transform: translateY(1.3rem) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes phraseRise {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes cardsDrift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-50% - 0.45rem));
+  }
+}
+
+@keyframes reviewsDrift {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(calc(-50% - 0.35rem));
+  }
+}
+
+@keyframes scrollReveal {
+  from {
+    opacity: 0;
+    transform: translateY(2.2rem) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@supports (animation-timeline: view()) {
+  .revealBlock {
+    opacity: 0;
+    transform: translateY(2.2rem) scale(0.985);
+    animation: scrollReveal linear both;
+    animation-timeline: view();
+    animation-range: entry 0% cover 14%;
+  }
+}
+
+@media (max-width: 820px) {
+  .shell {
+    align-items: flex-start;
+    padding: 0 1rem 1rem;
+  }
+
+  .hero {
+    align-self: stretch;
+    padding: 1.25rem 0 1.45rem;
+    border-radius: 0;
+  }
+
+  .heroDifferenceItem {
+    grid-template-columns: 2rem minmax(0, 1fr);
+    gap: 0.75rem;
+    padding: 0.95rem 0;
+  }
+
+  .heroBody {
+    grid-template-columns: 1fr;
+    gap: 1.05rem;
+  }
+
+  .visualPanel {
+    min-height: 15.8rem;
+    order: -1;
+  }
+
+  .heroPoster {
+    width: 25rem;
+    transform: translate(-50%, -46%) scale(1.04);
+  }
+
+  .previewCard {
+    width: 7.4rem;
+    height: 9.8rem;
+  }
+
+  .photoShape {
+    height: 4.55rem;
+  }
+
+  .heroDifferenceItem p {
+    font-size: 0.84rem;
+  }
+
+  .brandNote {
+    font-size: 0.74rem;
+  }
+
+  .primaryCta,
+  .secondaryCta {
+    flex: 1 1 10rem;
+  }
+
+  .reviewCard {
+    width: 74vw;
+    height: 8.7rem;
+  }
+
+  .reviewNote {
+    font-size: 0.72rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage {
+    display: none;
+  }
+
+  .hero,
+  .introMark,
+  .introIcon,
+  .introText,
+  .pulseRing,
+  .heroDifference,
+  .revealBlock,
+  .cardTrack,
+  .reviewTrack {
+    animation: none;
+  }
+
+  .heroDifference,
+  .revealBlock,
+  .heroDifferenceItem {
+    opacity: 1;
+    transform: none;
+  }
+}

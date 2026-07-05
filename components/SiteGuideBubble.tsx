@@ -42,7 +42,7 @@ type GuideSuggestion = {
   cta: string;
 };
 
-const HIDDEN_PATH_PREFIXES = ["/payments/success", "/payments/fail", "/account-deletion", "/login", "/signup", "/auth"];
+const HIDDEN_PATH_PREFIXES = ["/payments/success", "/payments/fail", "/account-deletion", "/login", "/signup", "/auth", "/landing"];
 const COLLAPSE_STORAGE_KEY = "site-guide-collapsed";
 const POSITION_STORAGE_KEY = "site-guide-position";
 const DEFAULT_MASCOT_SRC = "/mascot/jimnyang-guide-v2.png";
@@ -426,7 +426,7 @@ export default function SiteGuideBubble() {
     return () => window.clearInterval(timer);
   }, [collapsed, suggestions.length]);
 
-  if (HIDDEN_PATH_PREFIXES.some((prefix) => pathname?.startsWith(prefix))) {
+  if (pathname === "/" || HIDDEN_PATH_PREFIXES.some((prefix) => pathname?.startsWith(prefix))) {
     return null;
   }
 

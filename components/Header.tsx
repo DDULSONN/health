@@ -68,6 +68,8 @@ export default function Header() {
     };
   }, [showDatingReactionBadge]);
 
+  if (pathname === "/" || pathname.startsWith("/landing")) return null;
+
   return (
     <header className="sticky top-0 z-50 border-b border-black/5 bg-white/92 backdrop-blur-md">
       <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-5 md:h-[74px] md:px-6">

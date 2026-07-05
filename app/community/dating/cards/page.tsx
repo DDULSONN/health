@@ -1,5 +1,6 @@
 ﻿"use client";
 
+import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
@@ -1592,6 +1593,87 @@ async function fetchBySex(
   };
 }
 
+function OpenCardDailySplash() {
+  const [visible, setVisible] = useState(false);
+
+  useEffect(() => {
+    const todayKey = new Date().toISOString().slice(0, 10);
+    const storageKey = "jimtool_open_cards_splash_date";
+    const referrer = document.referrer;
+    const skipReferrers = ["/login", "/auth/", "/phone-verification", "/payments"];
+
+    try {
+      if (window.localStorage.getItem(storageKey) === todayKey) return;
+      window.localStorage.setItem(storageKey, todayKey);
+    } catch {
+      return;
+    }
+
+    if (skipReferrers.some((path) => referrer.includes(path))) return;
+
+    const showTimer = window.setTimeout(() => setVisible(true), 0);
+    const hideTimer = window.setTimeout(() => setVisible(false), 3200);
+    return () => {
+      window.clearTimeout(showTimer);
+      window.clearTimeout(hideTimer);
+    };
+  }, []);
+
+  if (!visible) return null;
+
+  return (
+    <div className="fixed inset-0 z-[999] grid place-items-center overflow-hidden bg-neutral-950 text-white">
+      <style>{`
+        @keyframes openCardSplashIcon {
+          0% { opacity: 0; transform: scale(0.3); }
+          36% { opacity: 1; transform: scale(1.16); }
+          54% { transform: scale(0.94); }
+          72%, 100% { opacity: 1; transform: scale(1); }
+        }
+        @keyframes openCardSplashText {
+          0%, 20% { opacity: 0; transform: translateY(10px); }
+          48%, 82% { opacity: 1; transform: translateY(0); }
+          100% { opacity: 0; transform: translateY(-4px); }
+        }
+        @keyframes openCardSplashFade {
+          0%, 72% { opacity: 1; }
+          100% { opacity: 0; }
+        }
+      `}</style>
+      <div
+        className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.13),transparent_12rem)]"
+        style={{ animation: "openCardSplashFade 3.2s cubic-bezier(0.2,0.9,0.2,1) forwards" }}
+      />
+      <div
+        className="absolute inset-x-[-12rem] top-1/2 opacity-20 blur-[0.2px] saturate-75"
+        style={{ transform: "translateY(-50%) rotate(-7deg) scale(1.08)", animation: "openCardSplashFade 3.2s cubic-bezier(0.2,0.9,0.2,1) forwards" }}
+        aria-hidden="true"
+      >
+        <div className="flex w-max gap-4">
+          {[0, 1, 2, 3, 4, 5].map((item) => (
+            <div key={item} className="h-44 w-32 rounded-2xl border border-white/10 bg-white/12 shadow-2xl" />
+          ))}
+        </div>
+      </div>
+      <div
+        className="relative grid justify-items-center gap-3"
+        style={{ animation: "openCardSplashFade 3.2s cubic-bezier(0.2,0.9,0.2,1) forwards" }}
+      >
+        <div
+          className="grid h-20 w-20 place-items-center overflow-hidden rounded-[24px] bg-[#fff8f6] shadow-[0_32px_80px_rgba(244,63,94,0.26)]"
+          style={{ animation: "openCardSplashIcon 1.8s cubic-bezier(0.18,1,0.22,1) both" }}
+        >
+          <Image src="/icon-192x192.png" alt="" width={64} height={64} className="h-16 w-16 object-contain" />
+        </div>
+        <div className="grid justify-items-center gap-1" style={{ animation: "openCardSplashText 2s ease both" }}>
+          <strong className="text-lg font-black tracking-normal">짐툴</strong>
+          <span className="text-xs font-bold text-white/58">운동하는 사람 많은 소개팅</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function OpenCardsPage() {
   const supabase = useMemo(() => createClient(), []);
   const [restoredSnapshot, setRestoredSnapshot] = useState<OpenCardsSnapshot | null>(null);
@@ -2608,6 +2690,7 @@ export default function OpenCardsPage() {
   );
   return (
     <main className="mx-auto max-w-5xl px-4 py-5 md:px-6 md:py-8">
+      <OpenCardDailySplash />
       <DatingAdultNotice />
       <section className="sticky top-[64px] z-30 mb-4 rounded-[24px] border border-black/5 bg-white/95 p-1.5 shadow-[0_10px_28px_rgba(15,23,42,0.07)] backdrop-blur">
         <div className={`grid gap-1 ${visibleHomeFeatureTabs.length >= 4 ? "grid-cols-4" : "grid-cols-3"}`}>
