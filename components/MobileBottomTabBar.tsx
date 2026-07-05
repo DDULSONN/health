@@ -137,6 +137,8 @@ export default function MobileBottomTabBar() {
     };
   }, [loadChatBadge]);
 
+  if (pathname === "/" || pathname.startsWith("/landing")) return null;
+
   return (
     <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-black/5 bg-white/95 shadow-[0_-10px_30px_rgba(15,23,42,0.06)] backdrop-blur-md md:hidden">
       <div className="grid h-[76px] grid-cols-5 px-2 pb-[max(10px,env(safe-area-inset-bottom))] pt-1.5">
