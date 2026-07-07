@@ -1445,6 +1445,21 @@ type OpenCardHomeCopyResponse = {
   subtitle?: string;
 };
 
+type OpenCardPublicSlotsSetting = {
+  maleExtra?: number;
+  femaleExtra?: number;
+  maleBaseLimit?: number;
+  femaleBaseLimit?: number;
+  maleEffectiveLimit?: number;
+  femaleEffectiveLimit?: number;
+};
+
+type OpenCardPublicSlotsResponse = OpenCardPublicSlotsSetting & {
+  ok?: boolean;
+  error?: string;
+  setting?: OpenCardPublicSlotsSetting;
+};
+
 type ToolsPatchNoteResponse = {
   enabled?: boolean;
   text?: string;
@@ -1685,6 +1700,13 @@ export default function MyPage() {
   const [openCardHomeCopySaving, setOpenCardHomeCopySaving] = useState(false);
   const [openCardHomeCopyError, setOpenCardHomeCopyError] = useState("");
   const [openCardHomeCopyInfo, setOpenCardHomeCopyInfo] = useState("");
+  const [openCardPublicMaleExtra, setOpenCardPublicMaleExtra] = useState("0");
+  const [openCardPublicFemaleExtra, setOpenCardPublicFemaleExtra] = useState("0");
+  const [openCardPublicMaleEffectiveLimit, setOpenCardPublicMaleEffectiveLimit] = useState(30);
+  const [openCardPublicFemaleEffectiveLimit, setOpenCardPublicFemaleEffectiveLimit] = useState(30);
+  const [openCardPublicSlotsSaving, setOpenCardPublicSlotsSaving] = useState(false);
+  const [openCardPublicSlotsError, setOpenCardPublicSlotsError] = useState("");
+  const [openCardPublicSlotsInfo, setOpenCardPublicSlotsInfo] = useState("");
   const [adInquiryEnabled, setAdInquiryEnabled] = useState(true);
   const [adInquiryTitle, setAdInquiryTitle] = useState("");
   const [adInquiryDescription, setAdInquiryDescription] = useState("");
@@ -2974,6 +2996,7 @@ export default function MyPage() {
           applyCreditsStatusRes,
           adInquiryRes,
           openCardHomeCopyRes,
+          openCardPublicSlotsRes,
           toolsPatchNoteRes,
           siteGuideMascotRes,
         ] = await Promise.all([
@@ -2996,6 +3019,7 @@ export default function MyPage() {
           fetch("/api/dating/apply-credits/status", { cache: "no-store" }),
           fetch("/api/admin/site/ad-inquiry", { cache: "no-store" }),
           fetch("/api/admin/dating/cards/home-copy", { cache: "no-store" }),
+          fetch("/api/admin/dating/cards/public-slots", { cache: "no-store" }),
           fetch("/api/admin/tools/patch-note", { cache: "no-store" }),
           fetch("/api/admin/site-guide/mascot", { cache: "no-store" }),
         ]);
@@ -3064,6 +3088,7 @@ export default function MyPage() {
         const applyCreditsBody = (await applyCreditsStatusRes.json().catch(() => ({}))) as ApplyCreditsStatusResponse;
         const adInquiryBody = (await adInquiryRes.json().catch(() => ({}))) as AdInquirySettingsResponse;
         const openCardHomeCopyBody = (await openCardHomeCopyRes.json().catch(() => ({}))) as OpenCardHomeCopyResponse;
+        const openCardPublicSlotsBody = (await openCardPublicSlotsRes.json().catch(() => ({}))) as OpenCardPublicSlotsResponse;
         const toolsPatchNoteBody = (await toolsPatchNoteRes.json().catch(() => ({}))) as ToolsPatchNoteResponse;
         const siteGuideMascotBody = (await siteGuideMascotRes.json().catch(() => ({}))) as SiteGuideMascotResponse;
 
@@ -3136,6 +3161,10 @@ export default function MyPage() {
           ]);
           setOpenCardWriteEnabled(writeSettingBody.enabled !== false);
           setOpenCardHomeSubtitle(openCardHomeCopyBody.subtitle?.trim() || DEFAULT_OPEN_CARD_HOME_SUBTITLE);
+          setOpenCardPublicMaleExtra(String(Math.max(0, Number(openCardPublicSlotsBody.maleExtra ?? 0))));
+          setOpenCardPublicFemaleExtra(String(Math.max(0, Number(openCardPublicSlotsBody.femaleExtra ?? 0))));
+          setOpenCardPublicMaleEffectiveLimit(Math.max(0, Number(openCardPublicSlotsBody.maleEffectiveLimit ?? 30)));
+          setOpenCardPublicFemaleEffectiveLimit(Math.max(0, Number(openCardPublicSlotsBody.femaleEffectiveLimit ?? 30)));
           setApplyCreditsRemaining(Math.max(0, Number(applyCreditsBody.creditsRemaining ?? 0)));
           setAdInquiryEnabled(adInquiryBody.enabled !== false);
           setAdInquiryTitle(adInquiryBody.title ?? "(광고) 문의 주세요");
@@ -4702,6 +4731,44 @@ export default function MyPage() {
       setOpenCardHomeCopyError(e instanceof Error ? e.message : "오픈카드 홈 문구 저장에 실패했습니다.");
     } finally {
       setOpenCardHomeCopySaving(false);
+    }
+  };
+
+  const handleAdminSaveOpenCardPublicSlots = async () => {
+    setOpenCardPublicSlotsSaving(true);
+    setOpenCardPublicSlotsError("");
+    setOpenCardPublicSlotsInfo("");
+    try {
+      const maleExtra = Math.max(0, Math.floor(Number(openCardPublicMaleExtra || 0)));
+      const femaleExtra = Math.max(0, Math.floor(Number(openCardPublicFemaleExtra || 0)));
+      const res = await fetch("/api/admin/dating/cards/public-slots", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maleExtra, femaleExtra }),
+      });
+      const body = (await res.json().catch(() => ({}))) as OpenCardPublicSlotsResponse;
+      const setting = body.setting ?? body;
+      if (!res.ok || body.ok === false) {
+        setOpenCardPublicSlotsError(body.error ?? "오픈카드 공개 수 저장에 실패했습니다.");
+        if (setting) {
+          setOpenCardPublicMaleExtra(String(Math.max(0, Number(setting.maleExtra ?? maleExtra))));
+          setOpenCardPublicFemaleExtra(String(Math.max(0, Number(setting.femaleExtra ?? femaleExtra))));
+          setOpenCardPublicMaleEffectiveLimit(Math.max(0, Number(setting.maleEffectiveLimit ?? 30 + maleExtra)));
+          setOpenCardPublicFemaleEffectiveLimit(Math.max(0, Number(setting.femaleEffectiveLimit ?? 30 + femaleExtra)));
+        }
+        return;
+      }
+
+      setOpenCardPublicMaleExtra(String(Math.max(0, Number(setting.maleExtra ?? maleExtra))));
+      setOpenCardPublicFemaleExtra(String(Math.max(0, Number(setting.femaleExtra ?? femaleExtra))));
+      setOpenCardPublicMaleEffectiveLimit(Math.max(0, Number(setting.maleEffectiveLimit ?? 30 + maleExtra)));
+      setOpenCardPublicFemaleEffectiveLimit(Math.max(0, Number(setting.femaleEffectiveLimit ?? 30 + femaleExtra)));
+      setOpenCardPublicSlotsInfo("오픈카드 공개 수를 저장하고 대기열을 동기화했습니다.");
+      await refreshAdminSiteDashboard(true);
+    } catch (e) {
+      setOpenCardPublicSlotsError(e instanceof Error ? e.message : "오픈카드 공개 수 저장에 실패했습니다.");
+    } finally {
+      setOpenCardPublicSlotsSaving(false);
     }
   };
 
@@ -10869,6 +10936,65 @@ export default function MyPage() {
               <span className="text-xs text-neutral-600">
                 현재: {openCardWriteEnabled ? "작성 가능" : "작성 중단"}
               </span>
+            </div>
+            <div className="mt-4 border-t border-violet-100 pt-3">
+              <p className="text-xs font-semibold text-violet-800">오픈카드 추가 공개</p>
+              <p className="mt-1 text-[11px] text-neutral-500">
+                기본 공개 30명에 더해 남/녀별로 몇 명을 추가 공개할지 정합니다. 저장하면 대기열 앞 순번부터 바로 순차 공개됩니다.
+              </p>
+              <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                <label className="rounded-lg border border-violet-100 bg-violet-50/40 p-3">
+                  <span className="text-[11px] font-semibold text-violet-800">남자 카드 추가 공개</span>
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={200}
+                      value={openCardPublicMaleExtra}
+                      onChange={(e) => setOpenCardPublicMaleExtra(e.target.value)}
+                      className="h-9 w-24 rounded-lg border border-violet-200 bg-white px-3 text-sm font-semibold text-neutral-900"
+                    />
+                    <span className="text-xs text-neutral-600">현재 상한 {openCardPublicMaleEffectiveLimit.toLocaleString("ko-KR")}명</span>
+                  </div>
+                </label>
+                <label className="rounded-lg border border-violet-100 bg-violet-50/40 p-3">
+                  <span className="text-[11px] font-semibold text-violet-800">여자 카드 추가 공개</span>
+                  <div className="mt-2 flex items-center gap-2">
+                    <input
+                      type="number"
+                      min={0}
+                      max={200}
+                      value={openCardPublicFemaleExtra}
+                      onChange={(e) => setOpenCardPublicFemaleExtra(e.target.value)}
+                      className="h-9 w-24 rounded-lg border border-violet-200 bg-white px-3 text-sm font-semibold text-neutral-900"
+                    />
+                    <span className="text-xs text-neutral-600">현재 상한 {openCardPublicFemaleEffectiveLimit.toLocaleString("ko-KR")}명</span>
+                  </div>
+                </label>
+              </div>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleAdminSaveOpenCardPublicSlots()}
+                  disabled={openCardPublicSlotsSaving}
+                  className="h-9 rounded-lg bg-neutral-900 px-3 text-xs font-medium text-white disabled:opacity-50"
+                >
+                  {openCardPublicSlotsSaving ? "적용 중..." : "추가 공개 적용"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setOpenCardPublicMaleExtra("0");
+                    setOpenCardPublicFemaleExtra("0");
+                  }}
+                  disabled={openCardPublicSlotsSaving}
+                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 disabled:opacity-50"
+                >
+                  추가 공개 0명
+                </button>
+              </div>
+              {openCardPublicSlotsError && <p className="mt-2 text-xs text-rose-600">{openCardPublicSlotsError}</p>}
+              {openCardPublicSlotsInfo && <p className="mt-2 text-xs text-emerald-700">{openCardPublicSlotsInfo}</p>}
             </div>
             <div className="mt-4 border-t border-violet-100 pt-3">
               <p className="text-xs font-semibold text-violet-800">오픈카드 홈 소개 문구</p>
