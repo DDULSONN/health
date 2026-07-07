@@ -1,4 +1,4 @@
-import { OPEN_CARD_EXPIRE_HOURS, getOpenCardLimitBySex } from "@/lib/dating-open";
+import { OPEN_CARD_EXPIRE_HOURS, getOpenCardEffectiveLimitBySex } from "@/lib/dating-open";
 import { createAdminClient } from "@/lib/supabase/server";
 
 type CardSex = "male" | "female";
@@ -105,7 +105,7 @@ async function trimPublicOverflowBySex(
   adminClient: ReturnType<typeof createAdminClient>,
   sex: CardSex
 ) {
-  const slotLimit = getOpenCardLimitBySex(sex);
+  const slotLimit = await getOpenCardEffectiveLimitBySex(adminClient, sex);
 
   let { data, error } = await adminClient
     .from("dating_cards")
@@ -283,7 +283,7 @@ export async function promotePendingCardsBySex(
 ) {
   const promotedIds: string[] = [];
   let publicCount = await getPublicCount(adminClient, sex);
-  const slotLimit = getOpenCardLimitBySex(sex);
+  const slotLimit = await getOpenCardEffectiveLimitBySex(adminClient, sex);
 
   while (publicCount < slotLimit) {
     const promotedId = await promoteOnePending(adminClient, sex);

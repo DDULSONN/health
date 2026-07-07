@@ -1,7 +1,12 @@
 import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
 import { countCumulativeOneOnOneApplicants, countCumulativeOneOnOneMatches } from "@/lib/dating-1on1-metrics";
 import { countCumulativeTotalDatingMatches } from "@/lib/dating-match-metrics";
-import { getKstDayRangeUtc, getOpenCardLimitBySex } from "@/lib/dating-open";
+import {
+  getKstDayRangeUtc,
+  getOpenCardEffectiveLimitBySex,
+  getOpenCardLimitBySex,
+  readOpenCardPublicSlotSetting,
+} from "@/lib/dating-open";
 import { extractCityFromRegion } from "@/lib/region-city";
 import { createAdminClient } from "@/lib/supabase/server";
 import { publicCachedJson } from "@/lib/http-cache";
@@ -173,6 +178,9 @@ export async function GET() {
       oneOnOneApplicants,
       oneOnOneMatches,
       todayDatingReactions,
+      publicSlotSetting,
+      maleSlotLimit,
+      femaleSlotLimit,
     ] = await Promise.all([
       safeCount("malePublic", () => countPublic(adminClient, "male")),
       safeCount("femalePublic", () => countPublic(adminClient, "female")),
@@ -193,6 +201,9 @@ export async function GET() {
         console.error("[GET /api/dating/cards/queue-stats] count failed", { requestId, label: "todayDatingReactions", error });
         return { total: 0, openCardApplications: 0, paidCardApplications: 0, swipeLikes: 0, oneOnOneMutualMatches: 0 };
       }),
+      readOpenCardPublicSlotSetting(adminClient),
+      getOpenCardEffectiveLimitBySex(adminClient, "male"),
+      getOpenCardEffectiveLimitBySex(adminClient, "female"),
     ]);
 
     return publicCachedJson(
@@ -200,13 +211,17 @@ export async function GET() {
         male: {
           public_count: malePublic,
           pending_count: malePending,
-          slot_limit: getOpenCardLimitBySex("male"),
+          slot_limit: maleSlotLimit,
+          base_slot_limit: getOpenCardLimitBySex("male"),
+          extra_public_slots: publicSlotSetting.maleExtra,
           pending_regions: malePendingRegions,
         },
         female: {
           public_count: femalePublic,
           pending_count: femalePending,
-          slot_limit: getOpenCardLimitBySex("female"),
+          slot_limit: femaleSlotLimit,
+          base_slot_limit: getOpenCardLimitBySex("female"),
+          extra_public_slots: publicSlotSetting.femaleExtra,
           pending_regions: femalePendingRegions,
         },
         accepted_matches_count: acceptedMatches,
