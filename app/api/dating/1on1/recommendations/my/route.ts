@@ -1,6 +1,5 @@
 import {
   DATING_ONE_ON_ONE_ACTIVE_STATUSES,
-  DATING_ONE_ON_ONE_MATCH_CANDIDATE_SINGLE_TRACK_STATES,
   toDatingOneOnOneCardDetail,
 } from "@/lib/dating-1on1";
 import {
@@ -467,15 +466,11 @@ export async function GET(req: Request) {
   const sourceCardIds = mySourceCards.map((card) => card.id);
   const adminRecommendationDate = getKstDateString();
 
-  const [existingPairRes, blockedCandidateRes, phoneBlockMap] = await Promise.all([
+  const [existingPairRes, phoneBlockMap] = await Promise.all([
     admin
       .from("dating_1on1_match_proposals")
       .select("source_card_id,candidate_card_id")
       .in("source_card_id", sourceCardIds),
-    admin
-      .from("dating_1on1_match_proposals")
-      .select("candidate_card_id")
-      .in("state", [...DATING_ONE_ON_ONE_MATCH_CANDIDATE_SINGLE_TRACK_STATES]),
     getOneOnOnePhoneBlockMapForUsers(
       admin,
       normalizedCards.map((card) => card.user_id)
@@ -486,10 +481,6 @@ export async function GET(req: Request) {
     console.error("[GET /api/dating/1on1/recommendations/my] pair lookup failed", existingPairRes.error);
     return NextResponse.json({ error: "Failed to load existing match pairs." }, { status: 500 });
   }
-  if (blockedCandidateRes.error) {
-    console.error("[GET /api/dating/1on1/recommendations/my] blocked candidates failed", blockedCandidateRes.error);
-    return NextResponse.json({ error: "Failed to load blocked candidates." }, { status: 500 });
-  }
 
   const existingPairMap = new Map<string, Set<string>>();
   for (const row of existingPairRes.data ?? []) {
@@ -497,7 +488,6 @@ export async function GET(req: Request) {
     bucket.add(row.candidate_card_id);
     existingPairMap.set(row.source_card_id, bucket);
   }
-  const blockedCandidateIds = new Set((blockedCandidateRes.data ?? []).map((row) => row.candidate_card_id));
 
   const items = mySourceCards.map((sourceCard) => {
     const excludedIds = existingPairMap.get(sourceCard.id) ?? new Set<string>();
@@ -505,7 +495,6 @@ export async function GET(req: Request) {
       if (candidateCard.id === sourceCard.id) return false;
       if (candidateCard.user_id === sourceCard.user_id) return false;
       if (candidateCard.sex === sourceCard.sex) return false;
-      if (blockedCandidateIds.has(candidateCard.id)) return false;
       if (excludedIds.has(candidateCard.id)) return false;
       if (
         isOneOnOnePhoneBlockedPair({
