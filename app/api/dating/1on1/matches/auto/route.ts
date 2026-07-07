@@ -1,7 +1,4 @@
-import {
-  DATING_ONE_ON_ONE_ACTIVE_STATUSES,
-  DATING_ONE_ON_ONE_MATCH_CANDIDATE_SINGLE_TRACK_STATES,
-} from "@/lib/dating-1on1";
+import { DATING_ONE_ON_ONE_ACTIVE_STATUSES } from "@/lib/dating-1on1";
 import {
   getOneOnOnePhoneBlockMapForUsers,
   isOneOnOnePhoneBlockedPair,
@@ -119,45 +116,23 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "지인 차단된 상대와는 1:1 매칭을 진행할 수 없습니다." }, { status: 409 });
   }
 
-  const [existingPairRes, candidateTrackRes] = await Promise.all([
-    admin
-      .from("dating_1on1_match_proposals")
-      .select("id,state")
-      .eq("source_card_id", sourceCardId)
-      .eq("candidate_card_id", candidateCardId)
-      .limit(1)
-      .maybeSingle(),
-    admin
-      .from("dating_1on1_match_proposals")
-      .select("id")
-      .eq("candidate_card_id", candidateCardId)
-      .in("state", [...DATING_ONE_ON_ONE_MATCH_CANDIDATE_SINGLE_TRACK_STATES])
-      .limit(1)
-      .maybeSingle(),
-  ]);
+  const existingPairRes = await admin
+    .from("dating_1on1_match_proposals")
+    .select("id,state")
+    .eq("source_card_id", sourceCardId)
+    .eq("candidate_card_id", candidateCardId)
+    .limit(1)
+    .maybeSingle();
 
   if (existingPairRes.error) {
     console.error("[POST /api/dating/1on1/matches/auto] existing pair check failed", existingPairRes.error);
     return NextResponse.json({ error: "Failed to validate existing pair." }, { status: 500 });
   }
-  if (candidateTrackRes.error) {
-    console.error("[POST /api/dating/1on1/matches/auto] candidate track check failed", candidateTrackRes.error);
-    return NextResponse.json({ error: "Failed to validate candidate state." }, { status: 500 });
-  }
   if (existingPairRes.data) {
     return NextResponse.json(
       {
-        error: "이미 확인한 후보입니다. 새 후보 목록을 다시 불러올게요.",
+        error: "이미 확인한 후보입니다. 후보 목록을 다시 불러와 주세요.",
         code: "CANDIDATE_ALREADY_HANDLED",
-      },
-      { status: 409 }
-    );
-  }
-  if (candidateTrackRes.data) {
-    return NextResponse.json(
-      {
-        error: "방금 다른 매칭에서 먼저 진행된 후보입니다. 새 후보 목록을 다시 불러올게요.",
-        code: "CANDIDATE_ALREADY_IN_ACTIVE_FLOW",
       },
       { status: 409 }
     );
