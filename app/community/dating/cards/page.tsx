@@ -2831,8 +2831,8 @@ export default function OpenCardsPage() {
               <div className="mt-3 rounded-[18px] border border-neutral-200 bg-white">
                 <div className="flex items-center gap-3 px-4 py-3.5">
                   <div className="min-w-0 flex-1">
-                    <p className="text-sm font-extrabold text-neutral-900">1:1 후보도 같이 보기</p>
-                    <p className="mt-1 text-xs font-medium text-neutral-400">신청서만 등록하면 바로 후보를 볼 수 있어요</p>
+                    <p className="text-sm font-extrabold text-neutral-900">오픈카드 기다리는 동안 1:1도 함께</p>
+                    <p className="mt-1 text-xs font-medium text-neutral-400">신청서만 등록하면 추천 후보를 볼 수 있어요</p>
                     <p className="mt-2 truncate text-xs font-bold leading-5 text-sky-700">
                       누적 신청 {Number(queueStats?.one_on_one_applicants_count ?? 0).toLocaleString("ko-KR")}명
                     </p>
