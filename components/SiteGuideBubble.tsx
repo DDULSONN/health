@@ -46,6 +46,8 @@ const HIDDEN_PATH_PREFIXES = ["/payments/success", "/payments/fail", "/account-d
 const COLLAPSE_STORAGE_KEY = "site-guide-collapsed";
 const POSITION_STORAGE_KEY = "site-guide-position";
 const DEFAULT_MASCOT_SRC = "/mascot/jimnyang-guide-v2.png";
+const isAllowedMascotSrc = (src: string) =>
+  src.startsWith("/mascot/") || src.startsWith("/i/public-lite/community/site-guide-mascots/");
 
 type GuidePosition = {
   x: number;
@@ -385,7 +387,7 @@ export default function SiteGuideBubble() {
         const res = await fetch("/api/site-guide/mascot", { cache: "no-store" });
         const body = (await res.json().catch(() => ({}))) as SiteGuideMascotResponse;
         const nextSrc = body.selected?.src;
-        if (!cancelled && res.ok && typeof nextSrc === "string" && nextSrc.startsWith("/mascot/")) {
+        if (!cancelled && res.ok && typeof nextSrc === "string" && isAllowedMascotSrc(nextSrc)) {
           setMascotSrc(nextSrc);
         }
       } catch {

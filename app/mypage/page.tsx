@@ -1528,6 +1528,7 @@ const DEFAULT_TOOLS_PATCH_NOTE_TEXT = "오늘의 개선 내용을 한 줄로 적
 const DEFAULT_SITE_GUIDE_MASCOT_OPTIONS: SiteGuideMascotOption[] = [
   { id: "default", label: "기본 짐냥이", src: DEFAULT_JIMNYANG_MASCOT_SRC },
   { id: "summer", label: "여름 짐냥이", src: "/mascot/jimnyang-summer.webp" },
+  { id: "rain", label: "비 오는 짐냥이", src: "/mascot/jimnyang-rain.webp" },
 ];
 const TOOLS_PATCH_NOTE_PRESETS = [
   "1:1 번호교환 승인 목록을 더 잘 보이게 개선했어요.",
@@ -1730,6 +1731,7 @@ export default function MyPage() {
     DEFAULT_SITE_GUIDE_MASCOT_OPTIONS
   );
   const [siteGuideMascotSaving, setSiteGuideMascotSaving] = useState(false);
+  const [siteGuideMascotUploading, setSiteGuideMascotUploading] = useState(false);
   const [siteGuideMascotError, setSiteGuideMascotError] = useState("");
   const [siteGuideMascotInfo, setSiteGuideMascotInfo] = useState("");
   const [adminEmailUnsubscribeQuery, setAdminEmailUnsubscribeQuery] = useState("");
@@ -4919,6 +4921,43 @@ export default function MyPage() {
       setSiteGuideMascotError(e instanceof Error ? e.message : "짐냥이 설정 저장에 실패했습니다.");
     } finally {
       setSiteGuideMascotSaving(false);
+    }
+  };
+
+  const handleAdminUploadSiteGuideMascot = async (file: File | null | undefined) => {
+    if (!file) return;
+
+    setSiteGuideMascotUploading(true);
+    setSiteGuideMascotError("");
+    setSiteGuideMascotInfo("");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/admin/site-guide/mascot", {
+        method: "POST",
+        body: form,
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        setting?: SiteGuideMascotResponse;
+      };
+      if (!res.ok || !body.ok || !body.setting) {
+        setSiteGuideMascotError(body.error ?? "짐냥이 이미지 업로드에 실패했습니다.");
+        return;
+      }
+
+      setSiteGuideMascotId(body.setting.selectedId ?? siteGuideMascotId);
+      setSiteGuideMascotOptions(
+        Array.isArray(body.setting.options) && body.setting.options.length > 0
+          ? body.setting.options
+          : siteGuideMascotOptions
+      );
+      setSiteGuideMascotInfo("업로드한 짐냥이를 저장했습니다.");
+    } catch (e) {
+      setSiteGuideMascotError(e instanceof Error ? e.message : "짐냥이 이미지 업로드에 실패했습니다.");
+    } finally {
+      setSiteGuideMascotUploading(false);
     }
   };
 
@@ -10726,17 +10765,33 @@ export default function MyPage() {
                 <div>
                   <p className="text-sm font-semibold text-amber-900">짐냥이 이미지</p>
                   <p className="mt-1 text-[11px] text-neutral-500">
-                    사이트 우측 안내 말풍선에 뜨는 짐냥이를 선택합니다.
+                    사이트 우측 안내 말풍선에 뜨는 짐냥이를 선택하거나 직접 올립니다.
                   </p>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => void handleAdminSaveSiteGuideMascot()}
-                  disabled={siteGuideMascotSaving}
-                  className="h-8 rounded-lg bg-amber-500 px-3 text-xs font-bold text-white disabled:opacity-50"
-                >
-                  {siteGuideMascotSaving ? "저장 중..." : "짐냥이 저장"}
-                </button>
+                <div className="flex flex-wrap gap-2">
+                  <label className="inline-flex h-8 cursor-pointer items-center rounded-lg border border-amber-200 bg-white px-3 text-xs font-bold text-amber-800">
+                    {siteGuideMascotUploading ? "업로드 중..." : "사진 업로드"}
+                    <input
+                      type="file"
+                      accept="image/jpeg,image/png,image/webp"
+                      className="sr-only"
+                      disabled={siteGuideMascotUploading}
+                      onChange={(event) => {
+                        const file = event.currentTarget.files?.[0] ?? null;
+                        event.currentTarget.value = "";
+                        void handleAdminUploadSiteGuideMascot(file);
+                      }}
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => void handleAdminSaveSiteGuideMascot()}
+                    disabled={siteGuideMascotSaving || siteGuideMascotUploading}
+                    className="h-8 rounded-lg bg-amber-500 px-3 text-xs font-bold text-white disabled:opacity-50"
+                  >
+                    {siteGuideMascotSaving ? "저장 중..." : "짐냥이 저장"}
+                  </button>
+                </div>
               </div>
               <div className="mt-3 grid gap-2 sm:grid-cols-2">
                 {siteGuideMascotOptions.map((option) => {
