@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { CITY_VIEW_ACCESS_HOURS } from "@/lib/dating-city-view";
 import { getActiveMoreViewGrant, normalizeCardSex } from "@/lib/dating-more-view";
 import {
   approvePaidCard,
@@ -203,7 +204,15 @@ async function ensureCityViewFulfilled(
   });
 
   if (hasActiveGrant) {
-    return { province, alreadyGranted: true };
+    await grantCityViewAccess(admin, {
+      userId: order.user_id,
+      city: province,
+      accessHours: CITY_VIEW_ACCESS_HOURS,
+      note: `toss payment ${order.toss_order_id} | next 30 cards`,
+      bonusCredits: 1,
+    });
+
+    return { province, alreadyGranted: false };
   }
 
   const pendingRes = await admin
@@ -225,7 +234,7 @@ async function ensureCityViewFulfilled(
       requestId: pendingRes.data.id,
       reviewedByUserId: null,
       note: `toss payment ${order.toss_order_id} | auto-approved`,
-      accessHours: 3,
+      accessHours: CITY_VIEW_ACCESS_HOURS,
       bonusCredits: 1,
     });
 
@@ -235,7 +244,7 @@ async function ensureCityViewFulfilled(
   await grantCityViewAccess(admin, {
     userId: order.user_id,
     city: province,
-    accessHours: 3,
+    accessHours: CITY_VIEW_ACCESS_HOURS,
     note: `toss payment ${order.toss_order_id} | auto-approved`,
     bonusCredits: 1,
   });

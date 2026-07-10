@@ -1,4 +1,5 @@
 import { isAllowedAdminUser } from "@/lib/admin";
+import { CITY_VIEW_ACCESS_HOURS } from "@/lib/dating-city-view";
 import { grantCityViewAccess } from "@/lib/dating-purchase-fulfillment";
 import { PROVINCE_ORDER } from "@/lib/region-city";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -183,7 +184,7 @@ export async function POST(req: Request) {
   const grant = await grantCityViewAccess(admin, {
     userId,
     city: province,
-    accessHours: 3,
+    accessHours: CITY_VIEW_ACCESS_HOURS,
     note: `admin manual grant by ${adminUser.email ?? adminUser.id}`,
     bonusCredits: 0,
   }).catch((error) => {

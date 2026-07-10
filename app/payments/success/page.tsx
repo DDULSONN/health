@@ -125,7 +125,7 @@ function formatProductType(productType?: string, orderName?: string | null) {
   if (productType === "apply_credits") return "오픈카드 지원권";
   if (productType === "paid_card") return isOpenCardReopenOrder(orderName) ? "오픈카드 다시 노출" : "대기 없이 등록";
   if (productType === "more_view") return "이상형 더보기";
-  if (productType === "city_view") return "가까운 이상형 보기";
+  if (productType === "city_view") return "가까운 후보 30명 보기";
   if (productType === "one_on_one_contact_exchange") return "1:1 번호 즉시 교환";
   if (productType === "one_on_one_priority_24h") return "1:1 우선 추천권";
   if (productType === "swipe_premium_30d") return "빠른매칭 플러스";
@@ -142,7 +142,7 @@ function getPrimaryAction(productType?: string, orderName?: string | null) {
   if (productType === "one_on_one_contact_exchange") return { href: "/mypage", label: "마이페이지로 돌아가기" };
   if (productType === "one_on_one_priority_24h") return { href: "/mypage?section=matching", label: "1:1 매칭으로 돌아가기" };
   if (productType === "swipe_premium_30d") return { href: "/community/dating/cards", label: "빠른매칭으로 돌아가기" };
-  if (productType === "city_view") return { href: "/dating/nearby-view", label: "가까운 이상형 보기로 돌아가기" };
+  if (productType === "city_view") return { href: "/dating/nearby-view", label: "가까운 후보 30명 보러가기" };
   if (productType === "love_fortune_detail") return { href: "/mypage?loveFortune=1#love-fortune", label: "저장된 풀이 보기" };
   return { href: "/dating/more-view", label: "이상형 더보기로 돌아가기" };
 }
@@ -745,7 +745,7 @@ function PaymentSuccessContent() {
                         : result.productType === "swipe_premium_30d"
                           ? "빠른매칭 플러스 적용 완료"
                           : result.productType === "city_view"
-                            ? "가까운 이상형 보기 권한 반영 완료"
+                            ? "가까운 후보 30명 열람권 반영 완료"
                             : result.productType === "love_fortune_detail"
                               ? "연애운 상세 풀이 생성 준비 완료"
                               : "결제 반영 완료"}

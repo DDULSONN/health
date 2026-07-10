@@ -1,4 +1,4 @@
-﻿import { getActiveApprovedCities } from "@/lib/dating-city-view";
+import { CITY_VIEW_CARD_LIMIT, getActiveCityViewGrant } from "@/lib/dating-city-view";
 import { extractProvinceFromRegion } from "@/lib/region-city";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -62,9 +62,9 @@ export async function GET(req: Request) {
 
   const admin = createAdminClient();
   const blockedUserIds = await getDatingBlockedUserIds(admin, user.id);
-  const activeCities = await getActiveApprovedCities(admin, user.id);
-  if (!activeCities.includes(province)) {
-    return NextResponse.json({ error: "해당 도/광역시는 승인 후 이용 가능합니다." }, { status: 403 });
+  const activeGrant = await getActiveCityViewGrant(admin, user.id, province);
+  if (!activeGrant) {
+    return NextResponse.json({ error: "해당 도/광역시는 구매 또는 무료 열람 후 이용 가능합니다." }, { status: 403 });
   }
 
   const selectColumns =
@@ -90,11 +90,34 @@ export async function GET(req: Request) {
     ...(!publicCardsRes.error && Array.isArray(publicCardsRes.data) ? publicCardsRes.data : []),
   ];
   const now = Date.now();
-  let selected = rows
+  const eligibleRows = rows
     .filter((row) => row.status === "pending" || (row.status === "public" && row.expires_at && new Date(row.expires_at).getTime() > now))
     .filter((row) => extractProvinceFromRegion(row.region) === province)
-    .filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")))
-    .slice(0, 500);
+    .filter((row) => String(row.owner_user_id ?? "") !== user.id)
+    .filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")));
+
+  const rowById = new Map(
+    eligibleRows
+      .map((row) => [String((row as { id?: string }).id ?? ""), row] as const)
+      .filter(([id]) => id.length > 0)
+  );
+  let selectedCardIds = activeGrant.snapshotCardIds.filter((id) => rowById.has(id)).slice(0, CITY_VIEW_CARD_LIMIT);
+  if (selectedCardIds.length < CITY_VIEW_CARD_LIMIT) {
+    const selectedSet = new Set(selectedCardIds);
+    const fillers = [...rowById.keys()].filter((id) => !selectedSet.has(id)).slice(0, CITY_VIEW_CARD_LIMIT - selectedCardIds.length);
+    selectedCardIds = [...selectedCardIds, ...fillers];
+    if (selectedCardIds.length > 0) {
+      await admin
+        .from("dating_city_view_requests")
+        .update({ snapshot_card_ids: selectedCardIds })
+        .eq("id", activeGrant.requestId)
+        .eq("status", "approved");
+    }
+  }
+
+  let selected = selectedCardIds
+    .map((id) => rowById.get(id))
+    .filter((row): row is NonNullable<typeof row> => Boolean(row));
   selected = await filterDatingCardsByContactBlocks(admin, user.id, selected);
   const ownerIds = [...new Set(selected.map((row) => String(row.owner_user_id ?? "")).filter((id) => id.length > 0))];
   const phoneVerifiedByOwner = new Map<string, boolean>();
@@ -131,7 +154,7 @@ export async function GET(req: Request) {
     };
   });
 
-  return NextResponse.json({ items, province });
+  return NextResponse.json({ items, province, limit: CITY_VIEW_CARD_LIMIT, expiresAt: activeGrant.accessExpiresAt });
 }
 
 

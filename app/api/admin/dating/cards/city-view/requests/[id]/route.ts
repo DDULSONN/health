@@ -1,4 +1,5 @@
 import { isAdminEmail } from "@/lib/admin";
+import { CITY_VIEW_ACCESS_HOURS } from "@/lib/dating-city-view";
 import { approveCityViewRequest, rejectCityViewRequest } from "@/lib/dating-purchase-fulfillment";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -51,7 +52,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
             requestId: id,
             reviewedByUserId: user.id,
             note,
-            accessHours: 3,
+            accessHours: CITY_VIEW_ACCESS_HOURS,
             bonusCredits: 1,
           })
         : await rejectCityViewRequest(admin, {

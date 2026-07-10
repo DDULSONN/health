@@ -1,6 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { normalizeCardSex } from "@/lib/dating-more-view";
-import { approveMoreViewRequest, grantCityViewAccess, grantMoreViewAccess } from "@/lib/dating-purchase-fulfillment";
+import { approveMoreViewRequest, grantMoreViewAccess } from "@/lib/dating-purchase-fulfillment";
 import {
   SWIPE_PREMIUM_DAILY_LIMIT,
   SWIPE_PREMIUM_DURATION_DAYS,
@@ -80,7 +80,7 @@ const PRODUCT_CONFIG: Record<ProductType, { amount: number; orderName: string }>
   },
   city_view: {
     amount: 5000,
-    orderName: "가까운 이상형",
+    orderName: "가까운 후보 30명 보기",
   },
   one_on_one_contact_exchange: {
     amount: 20000,
@@ -446,40 +446,6 @@ export async function POST(req: Request) {
         });
       }
 
-      const activeRes = await admin
-        .from("dating_city_view_requests")
-        .select("id,access_expires_at")
-        .eq("user_id", user.id)
-        .eq("city", province)
-        .eq("status", "approved")
-        .order("reviewed_at", { ascending: false, nullsFirst: false })
-        .order("created_at", { ascending: false })
-        .limit(10);
-
-      if (activeRes.error) {
-        console.error("[toss-create] city view active lookup failed", activeRes.error);
-        return json(500, {
-          ok: false,
-          code: "CITY_VIEW_LOOKUP_FAILED",
-          requestId,
-          message: "가까운 이상형 이용 상태를 확인하지 못했습니다.",
-        });
-      }
-
-      const hasActiveGrant = (activeRes.data ?? []).some((row) => {
-        const expiresAt = row.access_expires_at ? new Date(row.access_expires_at).getTime() : Number.NaN;
-        return Number.isFinite(expiresAt) && expiresAt > Date.now();
-      });
-
-      if (hasActiveGrant) {
-        return json(409, {
-          ok: false,
-          code: "ALREADY_APPROVED",
-          requestId,
-          message: "이미 이용 가능한 가까운 이상형 권한이 있습니다.",
-        });
-      }
-
       const duplicateOrderRes = await admin
         .from("toss_test_payment_orders")
         .select("id,status,created_at")
@@ -501,40 +467,6 @@ export async function POST(req: Request) {
       }
 
       const duplicateOrders = duplicateOrderRes.data ?? [];
-      const paidOrder = duplicateOrders.find((row) => row.status === "paid");
-      if (paidOrder) {
-        const paidAt = new Date(paidOrder.created_at).getTime();
-        const expiresAt = Number.isFinite(paidAt) ? paidAt + 3 * 60 * 60 * 1000 : 0;
-        const remainingHours = Math.max((expiresAt - Date.now()) / (60 * 60 * 1000), 0);
-
-        if (remainingHours > 0) {
-          try {
-            await grantCityViewAccess(admin, {
-              userId: user.id,
-              city: province,
-              accessHours: remainingHours,
-              note: `recovered from paid toss order ${paidOrder.id}`,
-              bonusCredits: 1,
-            });
-
-            return json(200, {
-              ok: true,
-              recovered: true,
-              code: "ALREADY_PAID_RECOVERED",
-              requestId,
-              message: "이전 결제를 확인해 가까운 이상형 권한을 바로 복구했습니다.",
-            });
-          } catch (error) {
-            console.error("[toss-create] city view paid order recovery failed", error);
-            return json(409, {
-              ok: false,
-              code: "ALREADY_PAID_RECOVERY_FAILED",
-              requestId,
-              message: "이미 결제가 완료된 지역 열람입니다. 권한 복구에 실패해 오픈카톡으로 문의해주세요.",
-            });
-          }
-        }
-      }
 
       const readyOrderIds = duplicateOrders.filter((row) => row.status === "ready").map((row) => row.id);
       await cancelReadyOrders(admin, readyOrderIds);
