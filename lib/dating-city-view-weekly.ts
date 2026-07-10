@@ -1,4 +1,5 @@
 import { extractProvinceFromRegion } from "@/lib/region-city";
+import { CITY_VIEW_ACCESS_HOURS } from "@/lib/dating-city-view";
 import { grantCityViewAccess } from "@/lib/dating-purchase-fulfillment";
 import { getKstWeekId } from "@/lib/weekly";
 import type { createAdminClient } from "@/lib/supabase/server";
@@ -111,7 +112,7 @@ export async function claimCityViewWeeklyBenefit(
     const granted = await grantCityViewAccess(admin, {
       userId: options.userId,
       city: province,
-      accessHours: 3,
+      accessHours: CITY_VIEW_ACCESS_HOURS,
       note: "weekly open card benefit",
       bonusCredits: 0,
     });

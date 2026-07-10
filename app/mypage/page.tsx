@@ -444,7 +444,7 @@ function formatPaymentProductLabel(order: MyPaymentCenterOrder) {
   }
   if (order.product_type === "city_view") {
     const province = typeof order.product_meta?.province === "string" ? order.product_meta.province : null;
-    return province ? `가까운 이상형 보기 · ${province}` : "가까운 이상형 보기";
+    return province ? `가까운 후보 30명 보기 · ${province}` : "가까운 후보 30명 보기";
   }
   if (order.product_type === "one_on_one_contact_exchange") return "1:1 번호 즉시 교환";
   if (order.product_type === "one_on_one_priority_24h") return "1:1 우선 추천권";
@@ -471,7 +471,7 @@ function formatPaymentResultLabel(order: MyPaymentCenterOrder) {
     return String(order.order_name ?? "").includes("다시 노출") ? "오픈카드 재노출 완료" : "유료 등록 결제 확인 완료";
   }
   if (order.product_type === "more_view") return "이상형 더보기 권한 반영 완료";
-  if (order.product_type === "city_view") return "가까운 이상형 보기 권한 반영 완료";
+  if (order.product_type === "city_view") return "가까운 후보 30명 열람권 반영 완료";
   if (order.product_type === "one_on_one_contact_exchange") return "상대 연락처 공개 완료";
   if (order.product_type === "one_on_one_priority_24h") return "1:1 우선 추천 적용 완료";
   if (order.product_type === "swipe_premium_30d") return "빠른매칭 플러스 적용 완료";

@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { google } from "googleapis";
 import { decodeJwt, importPKCS8, SignJWT } from "jose";
+import { CITY_VIEW_ACCESS_HOURS } from "@/lib/dating-city-view";
 import {
   approvePaidCard,
   grantApplyCredits,
@@ -366,7 +367,7 @@ export async function fulfillDatingStorePurchase(
     return grantCityViewAccess(admin, {
       userId: input.userId,
       city: province,
-      accessHours: 3,
+      accessHours: CITY_VIEW_ACCESS_HOURS,
       bonusCredits: 1,
       note,
     });

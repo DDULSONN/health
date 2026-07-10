@@ -7,9 +7,17 @@ create table if not exists public.dating_city_view_requests (
   note text,
   reviewed_by_user_id uuid null references auth.users(id) on delete set null,
   access_expires_at timestamptz null,
+  snapshot_card_ids uuid[] not null default '{}',
+  snapshot_seen_card_ids uuid[] not null default '{}',
   created_at timestamptz not null default now(),
   reviewed_at timestamptz null
 );
+
+alter table public.dating_city_view_requests
+  add column if not exists snapshot_card_ids uuid[] not null default '{}';
+
+alter table public.dating_city_view_requests
+  add column if not exists snapshot_seen_card_ids uuid[] not null default '{}';
 
 create index if not exists idx_city_view_requests_user_created
   on public.dating_city_view_requests (user_id, created_at desc);

@@ -1,4 +1,7 @@
 ﻿import { createAdminClient } from "@/lib/supabase/server";
+import { CITY_VIEW_ACCESS_HOURS, CITY_VIEW_CARD_LIMIT } from "@/lib/dating-city-view";
+import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
 import { DATING_PAID_FIXED_MS } from "@/lib/dating-paid";
 import { extractProvinceFromRegion } from "@/lib/region-city";
 import {
@@ -321,12 +324,103 @@ type ApproveCityViewRequestOptions = {
   bonusCredits?: number;
 };
 
+function parseSnapshotCardIds(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
+}
+
+function mergeCardIds(...groups: string[][]): string[] {
+  return [...new Set(groups.flat().filter((id) => id.trim().length > 0))];
+}
+
+async function getPreviousCityViewSnapshotIds(admin: AdminClient, userId: string, city: string) {
+  const res = await admin
+    .from("dating_city_view_requests")
+    .select("snapshot_card_ids,snapshot_seen_card_ids")
+    .eq("user_id", userId)
+    .eq("city", city)
+    .eq("status", "approved")
+    .order("reviewed_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(100);
+
+  if (res.error) {
+    if (isMissingColumnError(res.error)) return new Set<string>();
+    throw res.error;
+  }
+
+  const ids = new Set<string>();
+  for (const row of (res.data ?? []) as Array<{ snapshot_card_ids?: unknown; snapshot_seen_card_ids?: unknown }>) {
+    for (const id of parseSnapshotCardIds(row.snapshot_card_ids)) {
+      ids.add(id);
+    }
+    for (const id of parseSnapshotCardIds(row.snapshot_seen_card_ids)) {
+      ids.add(id);
+    }
+  }
+  return ids;
+}
+
+async function buildCityViewSnapshotCardIds(admin: AdminClient, userId: string, city: string) {
+  const province = normalizeCityProvince(city);
+  if (!province) return [];
+
+  const usedIds = await getPreviousCityViewSnapshotIds(admin, userId, province);
+  const selectColumns = "id,owner_user_id,region,status,expires_at,created_at";
+  const nowIso = new Date().toISOString();
+  const [pendingRes, publicRes, blockedUserIds] = await Promise.all([
+    admin.from("dating_cards").select(selectColumns).eq("status", "pending").order("created_at", { ascending: false }).limit(5000),
+    admin
+      .from("dating_cards")
+      .select(selectColumns)
+      .eq("status", "public")
+      .gt("expires_at", nowIso)
+      .order("created_at", { ascending: false })
+      .limit(5000),
+    getDatingBlockedUserIds(admin, userId),
+  ]);
+
+  if (pendingRes.error && publicRes.error) {
+    throw pendingRes.error ?? publicRes.error;
+  }
+
+  const rows = [
+    ...(!pendingRes.error && Array.isArray(pendingRes.data) ? pendingRes.data : []),
+    ...(!publicRes.error && Array.isArray(publicRes.data) ? publicRes.data : []),
+  ] as Array<{ id: string; owner_user_id: string | null; region: string | null; status: string | null; expires_at: string | null }>;
+
+  const now = Date.now();
+  let eligibleRows = rows
+    .filter((row) => String(row.owner_user_id ?? "") !== userId)
+    .filter((row) => row.status === "pending" || (row.status === "public" && row.expires_at && new Date(row.expires_at).getTime() > now))
+    .filter((row) => normalizeCityProvince(row.region) === province)
+    .filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")));
+
+  eligibleRows = await filterDatingCardsByContactBlocks(admin, userId, eligibleRows);
+
+  const freshIds = eligibleRows.map((row) => row.id).filter((id) => !usedIds.has(id));
+  const fallbackIds = eligibleRows.map((row) => row.id).filter((id) => usedIds.has(id));
+  return [...freshIds, ...fallbackIds].slice(0, CITY_VIEW_CARD_LIMIT);
+}
+
 export async function approveCityViewRequest(admin: AdminClient, options: ApproveCityViewRequestOptions) {
-  const accessHours = options.accessHours ?? 3;
+  const accessHours = options.accessHours ?? CITY_VIEW_ACCESS_HOURS;
   const bonusCredits = options.bonusCredits ?? 1;
   const reviewedAt = new Date().toISOString();
   const accessExpiresAt = new Date(Date.now() + accessHours * 60 * 60 * 1000).toISOString();
-  const updateRes = await admin
+  const pendingRes = await admin
+    .from("dating_city_view_requests")
+    .select("id,user_id,city")
+    .eq("id", options.requestId)
+    .eq("status", "pending")
+    .maybeSingle();
+
+  if (pendingRes.error) {
+    throw pendingRes.error;
+  }
+
+  const snapshotCardIds = pendingRes.data ? await buildCityViewSnapshotCardIds(admin, pendingRes.data.user_id, pendingRes.data.city) : [];
+  let updateRes = await admin
     .from("dating_city_view_requests")
     .update({
       status: "approved",
@@ -334,13 +428,60 @@ export async function approveCityViewRequest(admin: AdminClient, options: Approv
       reviewed_at: reviewedAt,
       reviewed_by_user_id: options.reviewedByUserId,
       access_expires_at: accessExpiresAt,
+      snapshot_card_ids: snapshotCardIds,
+      snapshot_seen_card_ids: snapshotCardIds,
     })
     .eq("id", options.requestId)
     .eq("status", "pending")
     .select("id,user_id,city,status,access_expires_at")
     .maybeSingle();
 
+  if (updateRes.error && isMissingColumnError(updateRes.error)) {
+    updateRes = await admin
+      .from("dating_city_view_requests")
+      .update({
+        status: "approved",
+        note: options.note ?? null,
+        reviewed_at: reviewedAt,
+        reviewed_by_user_id: options.reviewedByUserId,
+        access_expires_at: accessExpiresAt,
+      })
+      .eq("id", options.requestId)
+      .eq("status", "pending")
+      .select("id,user_id,city,status,access_expires_at")
+      .maybeSingle();
+  }
+
   if (updateRes.error) {
+    const errorCode = String((updateRes.error as { code?: unknown }).code ?? "");
+    if (errorCode === "23505" && pendingRes.data) {
+      const grant = await grantCityViewAccess(admin, {
+        userId: pendingRes.data.user_id,
+        city: pendingRes.data.city,
+        accessHours,
+        note: options.note ?? "approved with active grant refresh",
+        bonusCredits,
+      });
+      await admin
+        .from("dating_city_view_requests")
+        .update({
+          status: "rejected",
+          note: options.note ?? "replaced by active city view refresh",
+          reviewed_at: reviewedAt,
+          reviewed_by_user_id: options.reviewedByUserId,
+          access_expires_at: null,
+        })
+        .eq("id", options.requestId)
+        .eq("status", "pending");
+      return {
+        id: grant.requestId,
+        user_id: grant.userId,
+        city: grant.city,
+        status: "approved",
+        access_expires_at: grant.accessExpiresAt,
+        bonusCreditsGranted: grant.bonusCreditsGranted,
+      };
+    }
     throw updateRes.error;
   }
   if (!updateRes.data) {
@@ -474,12 +615,12 @@ type GrantCityViewAccessOptions = {
 };
 
 export async function grantCityViewAccess(admin: AdminClient, options: GrantCityViewAccessOptions) {
-  const accessHours = options.accessHours ?? 3;
+  const accessHours = options.accessHours ?? CITY_VIEW_ACCESS_HOURS;
   const bonusCredits = options.bonusCredits ?? 1;
   const now = Date.now();
   const activeRes = await admin
     .from("dating_city_view_requests")
-    .select("id,access_expires_at")
+    .select("id,access_expires_at,snapshot_card_ids,snapshot_seen_card_ids")
     .eq("user_id", options.userId)
     .eq("city", options.city)
     .eq("status", "approved")
@@ -498,20 +639,39 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
     return Number.isFinite(expiresAt) && expiresAt > now;
   });
 
-  const baseTime = activeRow?.access_expires_at ? Math.max(new Date(activeRow.access_expires_at).getTime(), now) : now;
-  const accessExpiresAt = new Date(baseTime + accessHours * 60 * 60 * 1000).toISOString();
+  const accessExpiresAt = new Date(now + accessHours * 60 * 60 * 1000).toISOString();
+  const snapshotCardIds = await buildCityViewSnapshotCardIds(admin, options.userId, options.city);
+  const snapshotSeenCardIds = mergeCardIds(
+    parseSnapshotCardIds((activeRow as { snapshot_seen_card_ids?: unknown } | undefined)?.snapshot_seen_card_ids),
+    parseSnapshotCardIds((activeRow as { snapshot_card_ids?: unknown } | undefined)?.snapshot_card_ids),
+    snapshotCardIds
+  );
 
   if (activeRow?.id) {
-    const updateRes = await admin
+    let updateRes = await admin
       .from("dating_city_view_requests")
       .update({
         access_expires_at: accessExpiresAt,
         note: options.note ?? null,
         reviewed_at: new Date().toISOString(),
+        snapshot_card_ids: snapshotCardIds,
+        snapshot_seen_card_ids: snapshotSeenCardIds,
       })
       .eq("id", activeRow.id)
       .select("id,user_id,city,status,access_expires_at")
       .single();
+    if (updateRes.error && isMissingColumnError(updateRes.error)) {
+      updateRes = await admin
+        .from("dating_city_view_requests")
+        .update({
+          access_expires_at: accessExpiresAt,
+          note: options.note ?? null,
+          reviewed_at: new Date().toISOString(),
+        })
+        .eq("id", activeRow.id)
+        .select("id,user_id,city,status,access_expires_at")
+        .single();
+    }
     if (updateRes.error) {
       throw updateRes.error;
     }
@@ -525,7 +685,7 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
     };
   }
 
-  const insertRes = await admin
+  let insertRes = await admin
     .from("dating_city_view_requests")
     .insert({
       user_id: options.userId,
@@ -535,9 +695,27 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
       reviewed_by_user_id: null,
       reviewed_at: new Date().toISOString(),
       access_expires_at: accessExpiresAt,
+      snapshot_card_ids: snapshotCardIds,
+      snapshot_seen_card_ids: snapshotCardIds,
     })
     .select("id,user_id,city,status,access_expires_at")
     .single();
+
+  if (insertRes.error && isMissingColumnError(insertRes.error)) {
+    insertRes = await admin
+      .from("dating_city_view_requests")
+      .insert({
+        user_id: options.userId,
+        city: options.city,
+        status: "approved",
+        note: options.note ?? null,
+        reviewed_by_user_id: null,
+        reviewed_at: new Date().toISOString(),
+        access_expires_at: accessExpiresAt,
+      })
+      .select("id,user_id,city,status,access_expires_at")
+      .single();
+  }
 
   if (insertRes.error) {
     throw insertRes.error;

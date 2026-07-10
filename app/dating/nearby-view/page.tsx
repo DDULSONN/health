@@ -96,12 +96,6 @@ export default function NearbyViewPage() {
   const [activeSex, setActiveSex] = useState<"male" | "female">(initialSnapshot?.activeSex ?? "male");
   const [items, setItems] = useState<CardItem[]>(initialSnapshot?.items ?? []);
   const [loading, setLoading] = useState(() => !(initialSnapshot?.items?.length));
-  const [tick, setTick] = useState(0);
-
-  useEffect(() => {
-    const timer = window.setInterval(() => setTick((v) => v + 1), 60_000);
-    return () => window.clearInterval(timer);
-  }, []);
 
   useEffect(() => {
     if (!initialSnapshot) return;
@@ -250,11 +244,6 @@ export default function NearbyViewPage() {
 
   const maleItems = useMemo(() => items.filter((i) => i.sex === "male"), [items]);
   const femaleItems = useMemo(() => items.filter((i) => i.sex === "female"), [items]);
-  const selectedExpiresAt = useMemo(
-    () => (status.activeCityDetails ?? []).find((v) => v.province === selectedProvince)?.expiresAt ?? null,
-    [selectedProvince, status.activeCityDetails]
-  );
-  void tick;
 
   return (
     <main className="mx-auto max-w-5xl px-4 py-6">
@@ -269,10 +258,11 @@ export default function NearbyViewPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-2xl">
             <h1 className="text-[28px] font-black tracking-tight text-neutral-950">가까운 이상형 보기</h1>
-            <p className="mt-2 text-sm text-neutral-600">지역별 인원을 먼저 보고, 원하는 지역만 열어 바로 살펴볼 수 있어요.</p>
+            <p className="mt-2 text-sm text-neutral-600">원하는 지역의 가까운 후보를 30명씩 열어볼 수 있어요.</p>
             <div className="mt-4 flex flex-wrap gap-2">
-              <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">지역당 5,000원</span>
-              <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">3시간 이용</span>
+              <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">지역 후보 30명</span>
+              <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">24시간 확인</span>
+              <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">5,000원</span>
               <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">지원권 1장 추가</span>
             </div>
             <p className="mt-3 text-xs text-neutral-500">현재는 카카오페이 간편결제로만 결제 가능해요. 그 밖의 결제 문의는 오픈카톡으로 부탁드려요.</p>
@@ -280,10 +270,10 @@ export default function NearbyViewPage() {
 
           <div className="w-full rounded-[24px] border border-neutral-200 bg-neutral-50 p-4 lg:max-w-sm">
             <p className="text-sm font-semibold text-neutral-800">오픈카드 유지 혜택</p>
-            <p className="mt-1 text-sm text-neutral-600">오픈카드를 공개 중이거나 대기 중으로 유지하면, 매주 지역 1곳을 무료로 열어볼 수 있어요.</p>
+            <p className="mt-1 text-sm text-neutral-600">오픈카드를 공개 중이거나 대기 중으로 유지하면, 매주 지역 1곳의 후보 30명을 무료로 열어볼 수 있어요.</p>
             {status.weeklyBenefit?.eligible ? (
               status.weeklyBenefit.canClaim ? (
-                <p className="mt-2 text-xs font-medium text-emerald-700">이번 주 무료 열람 1회가 남아 있어요.</p>
+                <p className="mt-2 text-xs font-medium text-emerald-700">이번 주 무료 30명 열람 1회가 남아 있어요.</p>
               ) : (
                 <p className="mt-2 text-xs font-medium text-neutral-600">이번 주 무료 열람은 {status.weeklyBenefit.claimedProvince ?? "-"}에서 사용했어요.</p>
               )
@@ -333,7 +323,15 @@ export default function NearbyViewPage() {
                       >
                         바로 보기
                       </button>
-                      <span className="text-xs font-medium text-emerald-700">{formatRemaining(selectedExpiresAtFor(status.activeCityDetails ?? [], stat.province))}</span>
+                      <button
+                        type="button"
+                        onClick={() => void requestCheckout(stat.province)}
+                        disabled={!status.loggedIn || Boolean(checkoutProvince)}
+                        className="inline-flex min-h-[36px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        {checkoutProvince === stat.province ? "결제창 준비 중..." : "다음 30명 보기"}
+                      </button>
+                      <span className="text-xs font-medium text-emerald-700">24시간 열람중</span>
                     </>
                   ) : (
                     <>
@@ -344,7 +342,7 @@ export default function NearbyViewPage() {
                           disabled={!status.loggedIn || Boolean(submittingProvince)}
                           className="inline-flex min-h-[36px] items-center rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {submittingProvince === stat.province ? "처리 중..." : "주간 무료 열람"}
+                          {submittingProvince === stat.province ? "처리 중..." : "무료 30명 보기"}
                         </button>
                       ) : null}
                       <button
@@ -353,7 +351,7 @@ export default function NearbyViewPage() {
                         disabled={!status.loggedIn || Boolean(checkoutProvince)}
                         className="inline-flex min-h-[36px] items-center rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {checkoutProvince === stat.province ? "결제창 준비 중..." : "카카오페이로 결제"}
+                        {checkoutProvince === stat.province ? "결제창 준비 중..." : "30명 보기 5,000원"}
                       </button>
                       {isPending ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-700">기존 요청 대기</span> : null}
                     </>
@@ -374,7 +372,7 @@ export default function NearbyViewPage() {
           <div className="space-y-5">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-neutral-800">{selectedProvince} 카드</h2>
-              <span className="text-xs font-medium text-emerald-700">남은 시간 {formatRemaining(selectedExpiresAt)}</span>
+              <span className="text-xs font-medium text-emerald-700">24시간 · 최대 30명</span>
             </div>
             <div className="flex gap-2">
               <button
@@ -416,20 +414,6 @@ export default function NearbyViewPage() {
       <PaidPolicyNotice />
     </main>
   );
-}
-
-function selectedExpiresAtFor(details: Array<{ province: string; expiresAt: string }>, province: string): string | null {
-  return details.find((v) => v.province === province)?.expiresAt ?? null;
-}
-
-function formatRemaining(expiresAt: string | null): string {
-  if (!expiresAt) return "-";
-  const ms = new Date(expiresAt).getTime() - Date.now();
-  if (!Number.isFinite(ms) || ms <= 0) return "만료";
-  const totalMin = Math.floor(ms / 60_000);
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return `${h}시간 ${m}분`;
 }
 
 function CardSection({

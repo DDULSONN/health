@@ -4,6 +4,7 @@ import {
   grantCityViewAccess,
   grantMoreViewAccess,
 } from "@/lib/dating-purchase-fulfillment";
+import { CITY_VIEW_ACCESS_HOURS } from "@/lib/dating-city-view";
 import { DATING_STORE_PRODUCT_CATALOG, DATING_STORE_PRODUCT_IDS } from "@/lib/dating-store-products";
 import { extractProvinceFromRegion } from "@/lib/region-city";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -210,7 +211,7 @@ export async function POST(req: Request) {
       const result = await grantCityViewAccess(admin, {
         userId: appUserId,
         city: province,
-        accessHours: 3,
+        accessHours: CITY_VIEW_ACCESS_HOURS,
         note,
         bonusCredits: 1,
       });
