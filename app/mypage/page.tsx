@@ -5398,14 +5398,14 @@ export default function MyPage() {
   const handleAdminGrantApplyCredits = async () => {
     const nickname = adminApplyCreditGrantNickname.trim();
     if (!nickname || adminApplyCreditGrantLoading) return;
-    if (!confirm(`${nickname} 닉네임에게 지원권 3장을 바로 지급할까요?`)) return;
+    if (!confirm(`${nickname} 닉네임에게 지원권 5장을 바로 지급할까요?`)) return;
 
     setAdminApplyCreditGrantLoading(true);
     try {
       const res = await fetch("/api/admin/dating/apply-credits/grant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ nickname, credits: 3 }),
+        body: JSON.stringify({ nickname, credits: 5 }),
       });
       const body = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -12561,8 +12561,8 @@ export default function MyPage() {
               지원권 주문 승인 대기 {adminApplyCreditOrders.length}건
             </p>
             <div className="mt-3 rounded-lg border border-violet-100 bg-violet-50/40 p-3">
-              <p className="text-xs font-semibold text-violet-900">닉네임으로 지원권 3장 직접 지급</p>
-              <p className="mt-1 text-[11px] text-violet-700">주문 없이 바로 3장을 지급하고, 이력은 0원 승인 기록으로 남깁니다.</p>
+              <p className="text-xs font-semibold text-violet-900">닉네임으로 지원권 5장 직접 지급</p>
+              <p className="mt-1 text-[11px] text-violet-700">주문 없이 바로 5장을 지급하고, 이력은 0원 승인 기록으로 남깁니다.</p>
               <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
                 <input
                   type="text"

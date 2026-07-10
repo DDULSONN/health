@@ -292,7 +292,7 @@ export async function POST(req: Request) {
         .from("apply_credit_orders")
         .insert({
           user_id: user.id,
-          pack_size: 3,
+          pack_size: 5,
           amount: config.amount,
           status: "pending",
           memo: "toss payment",
