@@ -18,7 +18,7 @@ type ConfirmResponse = {
 };
 
 function formatProductType(productType?: string) {
-  if (productType === "apply_credits") return "지원권 3장 구매";
+  if (productType === "apply_credits") return "지원권 5장 구매";
   if (productType === "paid_card") return "유료카드 등록 결제";
   return "-";
 }

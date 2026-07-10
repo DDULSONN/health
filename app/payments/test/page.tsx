@@ -174,7 +174,7 @@ export default async function TestPaymentPage({
           <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
             <p className="text-sm font-semibold text-neutral-900">상품 및 문의</p>
             <ul className="mt-2 space-y-1 text-xs leading-5 text-neutral-600">
-              <li>지원권 3장 구매</li>
+              <li>지원권 5장 구매</li>
               <li>오픈카드 유료 등록 결제</li>
               <li>문의: gymtools.kr@gmail.com / 010-8693-0657</li>
             </ul>

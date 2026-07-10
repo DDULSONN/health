@@ -15,7 +15,7 @@ type ApplyCreditsStatusResponse = {
 };
 
 const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
-const PACK_SIZE = 3;
+const PACK_SIZE = 5;
 const PACK_AMOUNT = 5000;
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
   "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
@@ -35,7 +35,7 @@ const TEXT = {
   extraCredits: "\uCD94\uAC00 \uC9C0\uC6D0\uAD8C",
   purchaseGuide: "\uAD6C\uB9E4 \uC548\uB0B4",
   productName: "\uC0C1\uD488\uBA85: \uC624\uD508\uCE74\uB4DC \uC9C0\uC6D0\uAD8C",
-  composition: "\uAD6C\uC131: 3\uC7A5",
+  composition: "\uAD6C\uC131: 5\uC7A5",
   amount: "\uAE08\uC561: 5,000\uC6D0",
   reflected: "\uACB0\uC81C \uC644\uB8CC \uD6C4 \uBC14\uB85C \uC794\uC5EC \uC9C0\uC6D0\uAD8C\uC5D0 \uBC18\uC601\uB429\uB2C8\uB2E4.",
   preparing: "\uACB0\uC81C\uCC3D \uC900\uBE44 \uC911...",
@@ -167,10 +167,10 @@ export default function ApplyCreditsPage() {
             <p className="text-sm font-semibold text-emerald-900">{TEXT.currentStatus}</p>
             <ul className="mt-2 space-y-1 text-xs leading-5 text-emerald-800">
               <li>
-                {TEXT.todayBase}: {baseRemaining}\uC7A5
+                {TEXT.todayBase}: {baseRemaining}장
               </li>
               <li>
-                {TEXT.extraCredits}: {creditsRemaining}\uC7A5
+                {TEXT.extraCredits}: {creditsRemaining}장
               </li>
             </ul>
           </div>

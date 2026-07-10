@@ -1,7 +1,7 @@
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
-const PACK_SIZE = 3;
+const PACK_SIZE = 5;
 const PACK_AMOUNT = 5000;
 
 function json(status: number, payload: Record<string, unknown>) {

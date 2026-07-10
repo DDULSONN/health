@@ -12,7 +12,7 @@ type CreateBody = {
 const PRODUCT_CONFIG = {
   apply_credits: {
     amount: 5000,
-    orderName: "지원권 3장 구매",
+    orderName: "지원권 5장 구매",
   },
   paid_card: {
     amount: 10000,
@@ -66,7 +66,7 @@ export async function POST(req: Request) {
         .from("apply_credit_orders")
         .insert({
           user_id: user.id,
-          pack_size: 3,
+          pack_size: 5,
           amount: config.amount,
           status: "pending",
           memo: "toss test payment",

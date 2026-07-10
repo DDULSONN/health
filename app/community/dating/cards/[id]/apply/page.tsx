@@ -475,7 +475,7 @@ export default function DatingCardApplyPage() {
             {errorCode === "DAILY_APPLY_LIMIT" && (
               <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
                 <p className="text-xs text-amber-800">
-                  지원권 3장 5,000원이며 현재는 카카오페이 간편결제로만 결제 가능해요. 그 밖의 결제 문의는 오픈카톡으로 부탁드려요.
+                  지원권 5장 5,000원이며 현재는 카카오페이 간편결제로만 결제 가능해요. 그 밖의 결제 문의는 오픈카톡으로 부탁드려요.
                 </p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button

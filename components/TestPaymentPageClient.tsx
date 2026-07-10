@@ -20,7 +20,7 @@ const PRODUCTS: Array<{
 }> = [
   {
     productType: "apply_credits",
-    title: "지원권 3장 구매",
+    title: "지원권 5장 구매",
     amount: 5000,
     description: "결제 완료 후 지원권 지급 결과와 승인 흐름을 바로 확인할 수 있습니다.",
   },
