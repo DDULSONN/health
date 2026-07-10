@@ -400,6 +400,119 @@ async function addOpenCardQueuePositions(
   }));
 }
 
+function compactOneOnOneCard(row: Record<string, unknown> | undefined) {
+  if (!row) return null;
+  const birthYear = Number(row.birth_year ?? 0);
+  const age = birthYear > 0 ? new Date().getFullYear() - birthYear + 1 : null;
+  return {
+    id: row.id ?? null,
+    user_id: row.user_id ?? null,
+    name: row.name ?? null,
+    sex: row.sex ?? null,
+    age,
+    birth_year: row.birth_year ?? null,
+    height_cm: row.height_cm ?? null,
+    job: row.job ?? null,
+    region: row.region ?? null,
+    phone: row.phone ?? null,
+    intro_text: row.intro_text ?? null,
+    strengths_text: row.strengths_text ?? null,
+    preferred_partner_text: row.preferred_partner_text ?? null,
+    smoking: row.smoking ?? null,
+    workout_frequency: row.workout_frequency ?? null,
+    status: row.status ?? null,
+    admin_note: row.admin_note ?? null,
+    admin_tags: row.admin_tags ?? null,
+    priority_boost_expires_at: row.priority_boost_expires_at ?? null,
+    created_at: row.created_at ?? null,
+    updated_at: row.updated_at ?? null,
+    reviewed_at: row.reviewed_at ?? null,
+  };
+}
+
+function compactProfile(row: Record<string, unknown> | undefined) {
+  if (!row) return null;
+  return {
+    user_id: row.user_id ?? null,
+    nickname: row.nickname ?? null,
+    role: row.role ?? null,
+    phone_verified: row.phone_verified ?? null,
+    phone_e164: row.phone_e164 ?? null,
+    phone_verified_at: row.phone_verified_at ?? null,
+    is_banned: row.is_banned ?? null,
+  };
+}
+
+async function enrichOneOnOneMatches(
+  admin: AdminClient,
+  userId: string,
+  matches: Array<Record<string, unknown>>
+) {
+  if (matches.length === 0) return [];
+
+  const cardIds = [
+    ...new Set(
+      matches
+        .flatMap((match) => [match.source_card_id, match.candidate_card_id])
+        .map((id) => String(id ?? ""))
+        .filter(Boolean)
+    ),
+  ];
+  const userIds = [
+    ...new Set(
+      matches
+        .flatMap((match) => [match.source_user_id, match.candidate_user_id])
+        .map((id) => String(id ?? ""))
+        .filter(Boolean)
+    ),
+  ];
+
+  const [cards, profiles] = await Promise.all([
+    cardIds.length
+      ? listSafe<Record<string, unknown>>(
+          admin
+            .from("dating_1on1_cards")
+            .select(
+              "id,user_id,sex,name,birth_year,height_cm,job,region,phone,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,admin_note,admin_tags,priority_boost_expires_at,created_at,updated_at,reviewed_at"
+            )
+            .in("id", cardIds)
+        )
+      : Promise.resolve([]),
+    userIds.length
+      ? listSafe<Record<string, unknown>>(
+          admin
+            .from("profiles")
+            .select("user_id,nickname,role,phone_verified,phone_e164,phone_verified_at,is_banned")
+            .in("user_id", userIds)
+        )
+      : Promise.resolve([]),
+  ]);
+
+  const cardById = new Map(cards.map((card) => [String(card.id), card]));
+  const profileByUserId = new Map(profiles.map((profile) => [String(profile.user_id), profile]));
+
+  return matches.map((match) => {
+    const sourceUserId = String(match.source_user_id ?? "");
+    const candidateUserId = String(match.candidate_user_id ?? "");
+    const role = sourceUserId === userId ? "source" : candidateUserId === userId ? "candidate" : "unknown";
+    const counterpartUserId = role === "source" ? candidateUserId : sourceUserId;
+    const ownCardId = role === "source" ? String(match.source_card_id ?? "") : String(match.candidate_card_id ?? "");
+    const counterpartCardId = role === "source" ? String(match.candidate_card_id ?? "") : String(match.source_card_id ?? "");
+    return {
+      ...match,
+      role,
+      counterpart_user_id: counterpartUserId || null,
+      own_card: compactOneOnOneCard(cardById.get(ownCardId)),
+      counterpart_card: compactOneOnOneCard(cardById.get(counterpartCardId)),
+      counterpart_profile: compactProfile(profileByUserId.get(counterpartUserId)),
+      source_card: compactOneOnOneCard(cardById.get(String(match.source_card_id ?? ""))),
+      candidate_card: compactOneOnOneCard(cardById.get(String(match.candidate_card_id ?? ""))),
+      source_profile: compactProfile(profileByUserId.get(sourceUserId)),
+      candidate_profile: compactProfile(profileByUserId.get(candidateUserId)),
+    };
+  });
+}
+
 export async function GET(request: Request) {
   const auth = await requireAdminRoute();
   if (!auth.ok) return auth.response;
@@ -435,6 +548,7 @@ export async function GET(request: Request) {
       paidApplications,
       oneOnOneCards,
       oneOnOneMatches,
+      oneOnOneProfileHistory,
       payments,
       support,
       phoneAttempts,
@@ -492,7 +606,14 @@ export async function GET(request: Request) {
           .limit(50)
       ),
       listSafe<Record<string, unknown>>(
-        auth.admin.from("dating_1on1_cards").select("id,sex,name,region,phone,status,admin_note,reviewed_at,priority_boost_expires_at,created_at,updated_at").eq("user_id", userId).order("created_at", { ascending: false }).limit(50)
+        auth.admin
+          .from("dating_1on1_cards")
+          .select(
+            "id,user_id,sex,name,birth_year,height_cm,job,region,phone,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,photo_paths,status,admin_note,admin_tags,reviewed_at,priority_boost_expires_at,created_at,updated_at"
+          )
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(50)
       ),
       listSafe<Record<string, unknown>>(
         auth.admin
@@ -501,6 +622,14 @@ export async function GET(request: Request) {
           .or(`source_user_id.eq.${userId},candidate_user_id.eq.${userId}`)
           .order("updated_at", { ascending: false })
           .limit(50)
+      ),
+      listSafe<Record<string, unknown>>(
+        auth.admin
+          .from("dating_1on1_card_profile_history")
+          .select("id,card_id,user_id,event_type,snapshot,created_at")
+          .eq("user_id", userId)
+          .order("created_at", { ascending: false })
+          .limit(100)
       ),
       listSafe<Record<string, unknown>>(
         auth.admin
@@ -564,6 +693,7 @@ export async function GET(request: Request) {
             .limit(100)
         )
       : [];
+    const enrichedOneOnOneMatches = await enrichOneOnOneMatches(auth.admin, userId, oneOnOneMatches);
 
     const counts = {
       posts: await countSafe(auth.admin.from("posts").select("id", { count: "exact", head: true }).eq("user_id", userId)),
@@ -573,7 +703,7 @@ export async function GET(request: Request) {
       open_card_received_applications: receivedOpenApplications.length,
       open_card_sent_applications: await countSafe(auth.admin.from("dating_card_applications").select("id", { count: "exact", head: true }).eq("applicant_user_id", userId)),
       one_on_one_cards: await countSafe(auth.admin.from("dating_1on1_cards").select("id", { count: "exact", head: true }).eq("user_id", userId)),
-      one_on_one_matches: oneOnOneMatches.length,
+      one_on_one_matches: enrichedOneOnOneMatches.length,
       payments: await countSafe(auth.admin.from("toss_test_payment_orders").select("id", { count: "exact", head: true }).eq("user_id", userId)),
       support: await countSafe(auth.admin.from("support_inquiries").select("id", { count: "exact", head: true }).eq("user_id", userId)),
     };
@@ -585,7 +715,8 @@ export async function GET(request: Request) {
       paid_cards: paidCards,
       paid_card_applications: paidApplications,
       one_on_one_cards: oneOnOneCards,
-      one_on_one_matches: oneOnOneMatches,
+      one_on_one_matches: enrichedOneOnOneMatches,
+      one_on_one_profile_history: oneOnOneProfileHistory,
       community_posts: posts,
       community_comments: comments,
       bodycheck_votes: votes,
@@ -614,7 +745,8 @@ export async function GET(request: Request) {
     addRows(activities, "paid_card", "유료 오픈카드", paidCards);
     addRows(activities, "paid_application", "유료카드 지원", paidApplications);
     addRows(activities, "one_on_one_card", "1:1 카드", oneOnOneCards);
-    addRows(activities, "one_on_one_match", "1:1 매칭", oneOnOneMatches, "updated_at");
+    addRows(activities, "one_on_one_match", "1:1 매칭", enrichedOneOnOneMatches, "updated_at");
+    addRows(activities, "one_on_one_profile_history", "1:1 프로필 기록", oneOnOneProfileHistory);
     addRows(activities, "payment", "결제", payments);
     addRows(activities, "support", "문의", support);
     addRows(activities, "phone_verification", "휴대폰 인증", phoneAttempts);

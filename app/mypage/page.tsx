@@ -113,6 +113,35 @@ function oneOnOneContactDisplayName(
   return cardName || nickname || fallback;
 }
 
+function adminString(value: unknown, fallback = "-") {
+  return typeof value === "string" && value.trim() ? value.trim() : fallback;
+}
+
+function adminDateTime(value: unknown) {
+  return typeof value === "string" && value ? new Date(value).toLocaleString("ko-KR") : "-";
+}
+
+function oneOnOneMatchStateLabel(value: unknown) {
+  const state = String(value ?? "");
+  if (state === "proposed") return "후보 전달";
+  if (state === "source_selected") return "신청자 선택";
+  if (state === "candidate_accepted") return "상대 수락";
+  if (state === "mutual_accepted") return "쌍방 수락";
+  if (state === "source_skipped") return "신청자 스킵";
+  if (state === "candidate_rejected") return "상대 거절";
+  if (state === "source_declined") return "최종 거절";
+  if (state === "admin_canceled") return "관리자 취소";
+  return state || "-";
+}
+
+function oneOnOneHistoryEventLabel(value: unknown) {
+  const eventType = String(value ?? "");
+  if (eventType === "created") return "작성";
+  if (eventType === "updated") return "수정";
+  if (eventType === "deleted") return "삭제";
+  return eventType || "-";
+}
+
 type DatingUserReportTargetType =
   | "open_card_application"
   | "paid_card_application"
@@ -11966,6 +11995,174 @@ export default function MyPage() {
                         <p className="mt-1 text-lg font-black text-neutral-900">{Number(value ?? 0).toLocaleString("ko-KR")}</p>
                       </div>
                     ))}
+                  </div>
+
+                  <div className="rounded-xl border border-sky-100 bg-white p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold text-sky-900">1:1 매칭 기록</p>
+                        <p className="mt-1 text-[11px] text-neutral-500">
+                          이 회원이 후보를 받거나 선택한 1:1 매칭과 상대방 정보를 모아봅니다.
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-sky-50 px-2 py-1 text-[11px] font-bold text-sky-700">
+                        {(adminUserActivityResult.details?.one_on_one_matches?.length ?? 0).toLocaleString("ko-KR")}건
+                      </span>
+                    </div>
+                    {adminUserActivityResult.details?.one_on_one_matches?.length ? (
+                      <div className="mt-3 space-y-2">
+                        {adminUserActivityResult.details.one_on_one_matches.slice(0, 30).map((match, index) => {
+                          const sourceCard =
+                            match.source_card && typeof match.source_card === "object" ? (match.source_card as Record<string, unknown>) : {};
+                          const candidateCard =
+                            match.candidate_card && typeof match.candidate_card === "object"
+                              ? (match.candidate_card as Record<string, unknown>)
+                              : {};
+                          const sourceProfile =
+                            match.source_profile && typeof match.source_profile === "object"
+                              ? (match.source_profile as Record<string, unknown>)
+                              : {};
+                          const candidateProfile =
+                            match.candidate_profile && typeof match.candidate_profile === "object"
+                              ? (match.candidate_profile as Record<string, unknown>)
+                              : {};
+                          const counterpartCard =
+                            match.counterpart_card && typeof match.counterpart_card === "object"
+                              ? (match.counterpart_card as Record<string, unknown>)
+                              : {};
+                          const counterpartProfile =
+                            match.counterpart_profile && typeof match.counterpart_profile === "object"
+                              ? (match.counterpart_profile as Record<string, unknown>)
+                              : {};
+                          const ownCard =
+                            match.own_card && typeof match.own_card === "object" ? (match.own_card as Record<string, unknown>) : {};
+                        return (
+                            <details
+                              key={`admin-user-1on1-match-${String(match.id ?? index)}`}
+                              className="rounded-lg border border-sky-100 bg-sky-50/40 px-3 py-2"
+                            >
+                              <summary className="cursor-pointer list-none">
+                                <div className="flex flex-wrap items-start justify-between gap-2">
+                                  <div className="min-w-0">
+                                    <p className="text-xs font-bold text-neutral-950">
+                                      상대: 1:1 이름 {adminString(counterpartCard.name, "상대 정보 없음")}
+                                      {adminString(counterpartProfile.nickname, "") ? ` · 닉네임 ${adminString(counterpartProfile.nickname)}` : ""}
+                                    </p>
+                                    <p className="mt-1 text-[11px] text-neutral-500">
+                                      내 역할 {match.role === "source" ? "신청자" : match.role === "candidate" ? "후보" : "-"} · 상태{" "}
+                                      {oneOnOneMatchStateLabel(match.state)} · {adminDateTime(match.updated_at ?? match.created_at)}
+                                    </p>
+                                  </div>
+                                  <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-sky-700">
+                                    {adminString(match.contact_exchange_status, "번호교환 전")}
+                                  </span>
+                                </div>
+                              </summary>
+                              <div className="mt-2 grid gap-2 text-[11px] text-neutral-700 sm:grid-cols-2">
+                                <div className="rounded-md bg-white p-2">
+                                  <p className="font-bold text-neutral-900">내 1:1 프로필</p>
+                                  <p className="mt-1">
+                                    1:1 이름 {adminString(ownCard.name)} / {adminString(ownCard.region)} / {adminString(ownCard.job)}
+                                  </p>
+                                  <p className="mt-1">키 {adminString(ownCard.height_cm)}cm · 나이 {adminString(ownCard.age)}세</p>
+                                </div>
+                                <div className="rounded-md bg-white p-2">
+                                  <p className="font-bold text-neutral-900">상대 1:1 프로필</p>
+                                  <p className="mt-1">
+                                    1:1 이름 {adminString(counterpartCard.name)} / 닉네임 {adminString(counterpartProfile.nickname)}
+                                  </p>
+                                  <p className="mt-1">{adminString(counterpartCard.region)} / {adminString(counterpartCard.job)}</p>
+                                  <p className="mt-1">키 {adminString(counterpartCard.height_cm)}cm · 나이 {adminString(counterpartCard.age)}세</p>
+                                  <p className="mt-1 break-all">상대 user {adminString(match.counterpart_user_id)}</p>
+                                </div>
+                              </div>
+                              <div className="mt-2 rounded-md bg-white p-2 text-[11px] leading-5 text-neutral-700">
+                                <p className="font-bold text-neutral-900">매칭 양쪽 정보</p>
+                                <p className="mt-1">
+                                  신청자: 1:1 이름 {adminString(sourceCard.name)} · 닉네임 {adminString(sourceProfile.nickname)}
+                                </p>
+                                <p className="mt-1">
+                                  후보: 1:1 이름 {adminString(candidateCard.name)} · 닉네임 {adminString(candidateProfile.nickname)}
+                                </p>
+                              </div>
+                            </details>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-xs text-neutral-500">이 회원의 1:1 매칭 기록이 없습니다.</p>
+                    )}
+                  </div>
+
+                  <div className="rounded-xl border border-indigo-100 bg-white p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div>
+                        <p className="text-xs font-semibold text-indigo-900">1:1 프로필 기록</p>
+                        <p className="mt-1 text-[11px] text-neutral-500">
+                          현재 1:1 신청서와 SQL 적용 후 쌓이는 작성/수정/삭제 스냅샷을 확인합니다.
+                        </p>
+                      </div>
+                      <span className="rounded-full bg-indigo-50 px-2 py-1 text-[11px] font-bold text-indigo-700">
+                        현재 {(adminUserActivityResult.details?.one_on_one_cards?.length ?? 0).toLocaleString("ko-KR")}건 · 기록{" "}
+                        {(adminUserActivityResult.details?.one_on_one_profile_history?.length ?? 0).toLocaleString("ko-KR")}건
+                      </span>
+                    </div>
+                    {adminUserActivityResult.details?.one_on_one_cards?.length ? (
+                      <div className="mt-3 space-y-2">
+                        {adminUserActivityResult.details.one_on_one_cards.slice(0, 10).map((card, index) => (
+                          <div key={`admin-user-1on1-card-${String(card.id ?? index)}`} className="rounded-lg border border-indigo-100 bg-indigo-50/30 px-3 py-2">
+                            <div className="flex flex-wrap items-start justify-between gap-2">
+                              <div>
+                                <p className="text-xs font-bold text-neutral-950">
+                                  {adminString(card.name)} · {adminString(card.status)} · {adminString(card.region)}
+                                </p>
+                                <p className="mt-1 text-[11px] text-neutral-500">
+                                  작성 {adminDateTime(card.created_at)} · 수정 {adminDateTime(card.updated_at)}
+                                </p>
+                              </div>
+                              <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-indigo-700">
+                                {adminString(card.sex) === "female" ? "여성" : "남성"}
+                              </span>
+                            </div>
+                            <p className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-5 text-neutral-700">
+                              소개: {adminString(card.intro_text)}
+                            </p>
+                            <p className="mt-1 whitespace-pre-wrap break-words text-[11px] leading-5 text-neutral-600">
+                              장점: {adminString(card.strengths_text)}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-xs text-neutral-500">현재 남아있는 1:1 신청서가 없습니다.</p>
+                    )}
+                    {adminUserActivityResult.details?.one_on_one_profile_history?.length ? (
+                      <div className="mt-3 space-y-2">
+                        {adminUserActivityResult.details.one_on_one_profile_history.slice(0, 20).map((history, index) => {
+                          const snapshot =
+                            history.snapshot && typeof history.snapshot === "object" ? (history.snapshot as Record<string, unknown>) : {};
+                          return (
+                            <details
+                              key={`admin-user-1on1-history-${String(history.id ?? index)}`}
+                              className="rounded-lg border border-neutral-100 bg-neutral-50 px-3 py-2"
+                            >
+                              <summary className="cursor-pointer text-xs font-semibold text-neutral-800">
+                                {oneOnOneHistoryEventLabel(history.event_type)} · {adminString(snapshot.name)} · {adminDateTime(history.created_at)}
+                              </summary>
+                              <div className="mt-2 rounded-md bg-white p-2 text-[11px] leading-5 text-neutral-700">
+                                <p>
+                                  {adminString(snapshot.region)} / {adminString(snapshot.job)} / {adminString(snapshot.height_cm)}cm
+                                </p>
+                                <p className="mt-1 whitespace-pre-wrap break-words">소개: {adminString(snapshot.intro_text)}</p>
+                                <p className="mt-1 whitespace-pre-wrap break-words">원하는 점: {adminString(snapshot.preferred_partner_text)}</p>
+                              </div>
+                            </details>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-xs text-neutral-500">아직 저장된 1:1 프로필 변경 기록이 없습니다. SQL 적용 후부터 자동으로 쌓입니다.</p>
+                    )}
                   </div>
 
                   <div className="rounded-xl border border-rose-100 bg-white p-3">
