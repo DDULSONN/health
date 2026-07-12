@@ -65,6 +65,7 @@ type CardReview = {
 type ActionCard = {
   sourceType: SourceType;
   cardId: string;
+  linkedCardId?: string | null;
   userId: string;
   status: string | null;
   displayName: string | null;
@@ -626,8 +627,73 @@ async function fetchPaidCardApplications(admin: AdminClient, limit: number): Pro
 }
 
 async function fetchOneOnOneApplications(admin: AdminClient, limit: number): Promise<CandidateCard[]> {
-  const cards = await fetchOneOnOneCards(admin, limit);
-  return cards.map((card) => ({ ...card, sourceType: "one_on_one_application" }));
+  const proposals = await fetchPagedRows(limit, (from, to) =>
+    admin
+      .from("dating_1on1_match_proposals")
+      .select("id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,source_selected_at,candidate_responded_at,created_at")
+      .in("state", ["source_selected", "candidate_accepted", "mutual_accepted"])
+      .order("created_at", { ascending: false })
+      .range(from, to)
+  );
+
+  const proposalRows = (proposals ?? []) as Record<string, unknown>[];
+  const sourceCardIds = [...new Set(proposalRows.map((row) => cleanText(row.source_card_id, 80)).filter(Boolean))];
+  const candidateCardIds = [...new Set(proposalRows.map((row) => cleanText(row.candidate_card_id, 80)).filter(Boolean))];
+  const allCardIds = [...new Set([...sourceCardIds, ...candidateCardIds])];
+  if (allCardIds.length === 0) return [];
+
+  const cardsRes = await admin
+    .from("dating_1on1_cards")
+    .select("id,user_id,status,name,birth_year,region,job,intro_text,strengths_text,preferred_partner_text,photo_paths,admin_tags,created_at")
+    .in("id", allCardIds);
+  if (cardsRes.error) throw cardsRes.error;
+
+  const cardRows = ((cardsRes.data ?? []) as Record<string, unknown>[]);
+  const cardById = new Map(cardRows.map((row) => [cleanText(row.id, 80), row]));
+  const nicknamesByUserId = await fetchProfileNicknames(
+    admin,
+    cardRows.map((row) => cleanText(row.user_id, 80))
+  );
+  const currentYear = new Date().getFullYear();
+
+  return proposalRows
+    .map((proposal): CandidateCard | null => {
+      const sourceCardId = cleanText(proposal.source_card_id, 80);
+      const candidateCardId = cleanText(proposal.candidate_card_id, 80);
+      const row = cardById.get(sourceCardId);
+      if (!row) return null;
+      const candidateRow = cardById.get(candidateCardId);
+      const userId = cleanText(row.user_id, 80) || cleanText(proposal.source_user_id, 80) || null;
+      const candidateUserId = cleanText(proposal.candidate_user_id, 80);
+      const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-1on1-photos"]);
+      return {
+        sourceType: "one_on_one_application" as const,
+        cardId: cleanText(proposal.id, 80),
+        userId,
+        status: cleanText(proposal.state, 40) || null,
+        displayName: formatOneOnOneDisplayName(row.name, userId ? nicknamesByUserId.get(userId) : null),
+        age: typeof row.birth_year === "number" ? currentYear - row.birth_year + 1 : null,
+        region: cleanText(row.region, 80) || null,
+        texts: {
+          matchId: cleanText(proposal.id, 80),
+          sourceCardId,
+          candidateCardId,
+          candidateUserId,
+          candidateName: formatOneOnOneDisplayName(candidateRow?.name, candidateUserId ? nicknamesByUserId.get(candidateUserId) : null),
+          candidateRegion: cleanText(candidateRow?.region, 80),
+          job: cleanText(row.job, 80),
+          intro: cleanText(row.intro_text, 500),
+          strengths: cleanText(row.strengths_text, 500),
+          preferredPartner: cleanText(row.preferred_partner_text, 500),
+        },
+        photoPaths,
+        bucket: "dating-1on1-photos",
+        previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-1on1-photos", path)),
+        createdAt: cleanText(proposal.source_selected_at, 80) || cleanText(proposal.created_at, 80) || null,
+        editLocked: isOneOnOneEditLocked(row.admin_tags),
+      };
+    })
+    .filter((item): item is CandidateCard => Boolean(item));
 }
 
 async function fetchCandidates(admin: AdminClient, source: SourceType | "all", limit: number) {
@@ -780,6 +846,72 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
     };
   }
 
+  if (sourceType === "one_on_one_application") {
+    const { data: proposalData, error: proposalError } = await admin
+      .from("dating_1on1_match_proposals")
+      .select("id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,source_selected_at,candidate_responded_at,created_at")
+      .eq("id", cardId)
+      .maybeSingle();
+    if (proposalError) throw proposalError;
+    if (!proposalData) return null;
+
+    const proposal = proposalData as Record<string, unknown>;
+    const sourceCardId = cleanText(proposal.source_card_id, 80);
+    const candidateCardId = cleanText(proposal.candidate_card_id, 80);
+    const cardIds = [sourceCardId, candidateCardId].filter(Boolean);
+    if (cardIds.length === 0) return null;
+
+    const { data: cardsData, error: cardsError } = await admin
+      .from("dating_1on1_cards")
+      .select("id,user_id,status,name,birth_year,region,job,intro_text,strengths_text,preferred_partner_text,photo_paths,admin_tags,created_at")
+      .in("id", cardIds);
+    if (cardsError) throw cardsError;
+
+    const cardRows = ((cardsData ?? []) as Record<string, unknown>[]);
+    const cardById = new Map(cardRows.map((row) => [cleanText(row.id, 80), row]));
+    const row = cardById.get(sourceCardId);
+    if (!row) return null;
+
+    const candidateRow = cardById.get(candidateCardId);
+    const userId = cleanText(row.user_id, 80) || cleanText(proposal.source_user_id, 80) || null;
+    const candidateUserId = cleanText(proposal.candidate_user_id, 80);
+    const nicknamesByUserId = await fetchProfileNicknames(
+      admin,
+      [userId ?? "", candidateUserId, cleanText(candidateRow?.user_id, 80)].filter(Boolean)
+    );
+    const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-1on1-photos"]);
+    const currentYear = new Date().getFullYear();
+    return {
+      sourceType,
+      cardId: cleanText(proposal.id, 80),
+      userId,
+      status: cleanText(proposal.state, 40) || null,
+      displayName: formatOneOnOneDisplayName(row.name, userId ? nicknamesByUserId.get(userId) : null),
+      age: typeof row.birth_year === "number" ? currentYear - row.birth_year + 1 : null,
+      region: cleanText(row.region, 80) || null,
+      texts: {
+        matchId: cleanText(proposal.id, 80),
+        sourceCardId,
+        candidateCardId,
+        candidateUserId,
+        candidateName: formatOneOnOneDisplayName(
+          candidateRow?.name,
+          candidateUserId ? nicknamesByUserId.get(candidateUserId) : null
+        ),
+        candidateRegion: cleanText(candidateRow?.region, 80),
+        job: cleanText(row.job, 80),
+        intro: cleanText(row.intro_text, 500),
+        strengths: cleanText(row.strengths_text, 500),
+        preferredPartner: cleanText(row.preferred_partner_text, 500),
+      },
+      photoPaths,
+      bucket: "dating-1on1-photos",
+      previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-1on1-photos", path)),
+      createdAt: cleanText(proposal.source_selected_at, 80) || cleanText(proposal.created_at, 80) || null,
+      editLocked: isOneOnOneEditLocked(row.admin_tags),
+    };
+  }
+
   const { data, error } = await admin
     .from("dating_1on1_cards")
     .select("id,user_id,status,name,birth_year,region,job,intro_text,strengths_text,preferred_partner_text,photo_paths,admin_tags,created_at")
@@ -920,6 +1052,42 @@ async function loadActionCard(admin: AdminClient, sourceType: SourceType, cardId
     };
   }
 
+  if (sourceType === "one_on_one_application") {
+    const { data: proposalData, error: proposalError } = await admin
+      .from("dating_1on1_match_proposals")
+      .select("id,source_card_id,source_user_id,state")
+      .eq("id", cardId)
+      .maybeSingle();
+    if (proposalError) throw proposalError;
+    if (!proposalData) return null;
+
+    const proposal = proposalData as Record<string, unknown>;
+    const sourceCardId = cleanText(proposal.source_card_id, 80);
+    const { data: cardData, error: cardError } = await admin
+      .from("dating_1on1_cards")
+      .select("id,user_id,status,name,sex,admin_tags")
+      .eq("id", sourceCardId)
+      .maybeSingle();
+    if (cardError) throw cardError;
+    if (!cardData) return null;
+
+    const sourceCard = cardData as Record<string, unknown>;
+    const userId = cleanText(sourceCard.user_id, 80) || cleanText(proposal.source_user_id, 80);
+    const nicknamesByUserId = await fetchProfileNicknames(admin, userId ? [userId] : []);
+    const adminTags = cleanTags(sourceCard.admin_tags);
+    return {
+      sourceType,
+      cardId: cleanText(proposal.id, 80),
+      linkedCardId: sourceCardId,
+      userId,
+      status: cleanText(proposal.state, 40) || null,
+      displayName: formatOneOnOneDisplayName(sourceCard.name, userId ? nicknamesByUserId.get(userId) : null) || null,
+      sex: sourceCard.sex === "female" ? "female" : sourceCard.sex === "male" ? "male" : null,
+      adminTags,
+      editLocked: adminTags.includes(ONE_ON_ONE_EDIT_LOCK_TAG),
+    };
+  }
+
   if (sourceType === "open_card") {
     const { data, error } = await admin
       .from("dating_cards")
@@ -994,6 +1162,12 @@ async function deleteActionCard(admin: AdminClient, card: ActionCard) {
     const { error } = await admin.from("dating_paid_card_applications").delete().eq("id", card.cardId);
     if (error) throw error;
     await admin.from("dating_chat_threads").delete().eq("source_kind", "paid").eq("source_id", card.cardId);
+    return;
+  }
+
+  if (card.sourceType === "one_on_one_application") {
+    const { error } = await admin.from("dating_1on1_match_proposals").delete().eq("id", card.cardId);
+    if (error) throw error;
     return;
   }
 
@@ -1090,6 +1264,22 @@ async function updateActionCardFields(admin: AdminClient, card: ActionCard, fiel
     return { displayName: payload.applicant_display_nickname };
   }
 
+  if (card.sourceType === "one_on_one_application") {
+    const sourceCardId = card.linkedCardId;
+    if (!sourceCardId) throw new Error("1:1 source card was not found.");
+    const payload = {
+      name: requiredText(merged.displayName, existing.displayName),
+      job: requiredText(merged.job, existing.job),
+      region: requiredText(merged.region, existing.region),
+      intro_text: requiredText(merged.intro, existing.intro),
+      strengths_text: requiredText(merged.strengths, existing.strengths),
+      preferred_partner_text: requiredText(merged.preferredPartner || merged.ideal, existing.preferredPartner || existing.ideal),
+    };
+    const { error } = await admin.from("dating_1on1_cards").update(payload).eq("id", sourceCardId);
+    if (error) throw error;
+    return { displayName: payload.name };
+  }
+
   const payload = {
     name: requiredText(merged.displayName, existing.displayName),
     job: requiredText(merged.job, existing.job),
@@ -1108,7 +1298,9 @@ async function sendCardWarningEmail(admin: AdminClient, card: ActionCard, summar
   const email = userRes?.data?.user?.email?.trim();
   if (!email) return { ok: false, error: "회원 이메일을 찾지 못했습니다." };
 
-  const editUrl = `${getSiteUrl()}${getCardEditPath(card.sourceType, card.cardId)}`;
+  const editSourceType = card.sourceType === "one_on_one_application" ? "one_on_one" : card.sourceType;
+  const editCardId = card.sourceType === "one_on_one_application" && card.linkedCardId ? card.linkedCardId : card.cardId;
+  const editUrl = `${getSiteUrl()}${getCardEditPath(editSourceType, editCardId)}`;
   const flagText = flags.length > 0 ? `\n확인된 항목: ${flags.slice(0, 5).join(", ")}` : "";
   const subject = "[짐툴] 카드 수정이 필요합니다";
   const text = [
