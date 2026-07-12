@@ -26,6 +26,7 @@ function normalizeProvince(value: string | null | undefined) {
 }
 
 function isWeeklyBenefitStoreUnavailable(error: unknown) {
+  if (typeof error === "string") return error.toLowerCase().includes("bad request");
   if (!error || typeof error !== "object") return false;
   const code = String((error as { code?: unknown }).code ?? "");
   const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
@@ -49,6 +50,7 @@ async function hasEligibleOpenCard(admin: AdminClient, userId: string) {
     .in("status", ["pending", "public", "hidden", "expired"]);
 
   if (res.error) {
+    if (isWeeklyBenefitStoreUnavailable(res.error)) return true;
     throw res.error;
   }
 
