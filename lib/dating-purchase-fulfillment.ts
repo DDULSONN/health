@@ -19,8 +19,10 @@ function isMissingColumnError(error: unknown): boolean {
   const code = String((error as { code?: unknown }).code ?? "");
   const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
   return (
+    code === "42P01" ||
     code === "42703" ||
     code === "PGRST204" ||
+    code === "PGRST205" ||
     message.includes("bad request") ||
     message.includes("schema cache") ||
     message.includes("could not find") ||
@@ -426,6 +428,19 @@ async function buildCityViewSnapshotCardIds(admin: AdminClient, userId: string, 
   return [...freshIds, ...fallbackIds].slice(0, CITY_VIEW_CARD_LIMIT);
 }
 
+async function safeBuildCityViewSnapshotCardIds(admin: AdminClient, userId: string, city: string) {
+  try {
+    return await buildCityViewSnapshotCardIds(admin, userId, city);
+  } catch (error) {
+    console.error("[city-view] snapshot build failed; granting access without snapshot", {
+      userId,
+      city,
+      error,
+    });
+    return [];
+  }
+}
+
 export async function approveCityViewRequest(admin: AdminClient, options: ApproveCityViewRequestOptions) {
   const accessHours = options.accessHours ?? CITY_VIEW_ACCESS_HOURS;
   const bonusCredits = options.bonusCredits ?? 1;
@@ -442,7 +457,7 @@ export async function approveCityViewRequest(admin: AdminClient, options: Approv
     throw pendingRes.error;
   }
 
-  const snapshotCardIds = pendingRes.data ? await buildCityViewSnapshotCardIds(admin, pendingRes.data.user_id, pendingRes.data.city) : [];
+  const snapshotCardIds = pendingRes.data ? await safeBuildCityViewSnapshotCardIds(admin, pendingRes.data.user_id, pendingRes.data.city) : [];
   let updateRes = await admin
     .from("dating_city_view_requests")
     .update({
@@ -695,7 +710,7 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
   }
 
   const accessExpiresAt = new Date(now + accessHours * 60 * 60 * 1000).toISOString();
-  const snapshotCardIds = await buildCityViewSnapshotCardIds(admin, options.userId, options.city);
+  const snapshotCardIds = await safeBuildCityViewSnapshotCardIds(admin, options.userId, options.city);
   const snapshotSeenCardIds = mergeCardIds(
     parseSnapshotCardIds((activeRow as { snapshot_seen_card_ids?: unknown } | undefined)?.snapshot_seen_card_ids),
     parseSnapshotCardIds((activeRow as { snapshot_card_ids?: unknown } | undefined)?.snapshot_card_ids),
