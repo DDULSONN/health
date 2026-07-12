@@ -18,7 +18,15 @@ function isMissingColumnError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const code = String((error as { code?: unknown }).code ?? "");
   const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
-  return code === "42703" || code === "PGRST204" || message.includes("column");
+  return (
+    code === "42703" ||
+    code === "PGRST204" ||
+    message.includes("bad request") ||
+    message.includes("schema cache") ||
+    message.includes("could not find") ||
+    message.includes("does not exist") ||
+    message.includes("column")
+  );
 }
 
 async function incrementApplyCredits(admin: AdminClient, userId: string, creditsToAdd: number) {
