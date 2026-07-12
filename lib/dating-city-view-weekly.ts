@@ -24,7 +24,7 @@ async function hasEligibleOpenCard(admin: AdminClient, userId: string) {
     .from("dating_cards")
     .select("id", { count: "exact", head: true })
     .eq("owner_user_id", userId)
-    .in("status", ["pending", "public"]);
+    .in("status", ["pending", "public", "hidden", "expired"]);
 
   if (res.error) {
     throw res.error;
