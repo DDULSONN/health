@@ -1,7 +1,7 @@
 import { extractProvinceFromRegion } from "@/lib/region-city";
 import { CITY_VIEW_ACCESS_HOURS } from "@/lib/dating-city-view";
 import { grantCityViewAccess } from "@/lib/dating-purchase-fulfillment";
-import { getKstWeekId } from "@/lib/weekly";
+import { getKstWeekId, getKstWeekRange } from "@/lib/weekly";
 import type { createAdminClient } from "@/lib/supabase/server";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -14,9 +14,31 @@ export type CityViewWeeklyBenefitStatus = {
   claimedAt: string | null;
 };
 
+type WeeklyClaimRow = {
+  id: string;
+  province: string;
+  created_at: string;
+};
+
 function normalizeProvince(value: string | null | undefined) {
   const raw = typeof value === "string" ? value.trim() : "";
   return extractProvinceFromRegion(raw) ?? raw;
+}
+
+function isWeeklyBenefitStoreUnavailable(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return (
+    code === "42P01" ||
+    code === "PGRST204" ||
+    code === "PGRST205" ||
+    message.includes("bad request") ||
+    message.includes("dating_city_view_weekly_benefits") ||
+    message.includes("schema cache") ||
+    message.includes("could not find") ||
+    message.includes("does not exist")
+  );
 }
 
 async function hasEligibleOpenCard(admin: AdminClient, userId: string) {
@@ -33,7 +55,33 @@ async function hasEligibleOpenCard(admin: AdminClient, userId: string) {
   return Number(res.count ?? 0) > 0;
 }
 
-async function getWeeklyClaimRow(admin: AdminClient, userId: string, weekId: string) {
+async function getFallbackWeeklyClaimRow(admin: AdminClient, userId: string): Promise<WeeklyClaimRow | null> {
+  const range = getKstWeekRange();
+  const res = await admin
+    .from("dating_city_view_requests")
+    .select("id,city,reviewed_at,created_at")
+    .eq("user_id", userId)
+    .eq("status", "approved")
+    .eq("note", "weekly open card benefit")
+    .gte("reviewed_at", range.startUtcIso)
+    .lt("reviewed_at", range.endUtcIso)
+    .order("reviewed_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (res.error) {
+    throw res.error;
+  }
+  if (!res.data) return null;
+  return {
+    id: String(res.data.id ?? ""),
+    province: normalizeProvince(String(res.data.city ?? "")),
+    created_at: String(res.data.reviewed_at ?? res.data.created_at ?? ""),
+  };
+}
+
+async function getWeeklyClaimRow(admin: AdminClient, userId: string, weekId: string): Promise<WeeklyClaimRow | null> {
   const res = await admin
     .from("dating_city_view_weekly_benefits")
     .select("id,province,created_at")
@@ -42,10 +90,13 @@ async function getWeeklyClaimRow(admin: AdminClient, userId: string, weekId: str
     .maybeSingle();
 
   if (res.error) {
+    if (isWeeklyBenefitStoreUnavailable(res.error)) {
+      return getFallbackWeeklyClaimRow(admin, userId);
+    }
     throw res.error;
   }
 
-  return res.data as { id: string; province: string; created_at: string } | null;
+  return res.data as WeeklyClaimRow | null;
 }
 
 export async function getCityViewWeeklyBenefitStatus(
@@ -85,7 +136,7 @@ export async function claimCityViewWeeklyBenefit(
   const weekId = getKstWeekId();
   const status = await getCityViewWeeklyBenefitStatus(admin, options.userId);
   if (!status.eligible) {
-    throw new Error("오픈카드를 유지 중인 회원만 주간 무료 열람을 사용할 수 있습니다.");
+    throw new Error("오픈카드를 보유한 회원만 주간 무료 열람을 사용할 수 있습니다.");
   }
   if (!status.canClaim) {
     throw new Error("이번 주 무료 열람은 이미 사용했습니다.");
@@ -104,6 +155,20 @@ export async function claimCityViewWeeklyBenefit(
   if (claimInsertRes.error) {
     if (String(claimInsertRes.error.code ?? "") === "23505") {
       throw new Error("이번 주 무료 열람은 이미 사용했습니다.");
+    }
+    if (isWeeklyBenefitStoreUnavailable(claimInsertRes.error)) {
+      const granted = await grantCityViewAccess(admin, {
+        userId: options.userId,
+        city: province,
+        accessHours: CITY_VIEW_ACCESS_HOURS,
+        note: "weekly open card benefit",
+        bonusCredits: 0,
+      });
+      return {
+        province,
+        accessExpiresAt: granted.accessExpiresAt,
+        requestId: granted.requestId,
+      };
     }
     throw claimInsertRes.error;
   }
