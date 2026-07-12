@@ -324,6 +324,13 @@ type ApproveCityViewRequestOptions = {
   bonusCredits?: number;
 };
 
+type CityViewGrantRow = {
+  id?: string | null;
+  access_expires_at?: string | null;
+  snapshot_card_ids?: unknown;
+  snapshot_seen_card_ids?: unknown;
+};
+
 function parseSnapshotCardIds(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
@@ -626,7 +633,7 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
   const accessHours = options.accessHours ?? CITY_VIEW_ACCESS_HOURS;
   const bonusCredits = options.bonusCredits ?? 1;
   const now = Date.now();
-  const activeRes = await admin
+  let activeRes: { data: CityViewGrantRow[] | null; error: unknown } = await admin
     .from("dating_city_view_requests")
     .select("id,access_expires_at,snapshot_card_ids,snapshot_seen_card_ids")
     .eq("user_id", options.userId)
@@ -636,16 +643,48 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
     .order("created_at", { ascending: false })
     .limit(10);
 
+  if (activeRes.error && isMissingColumnError(activeRes.error)) {
+    activeRes = await admin
+      .from("dating_city_view_requests")
+      .select("id,access_expires_at")
+      .eq("user_id", options.userId)
+      .eq("city", options.city)
+      .eq("status", "approved")
+      .order("reviewed_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .limit(10);
+  }
+
   if (activeRes.error) {
     throw activeRes.error;
   }
 
-  const activeRows = Array.isArray(activeRes.data) ? activeRes.data : [];
-  const activeRow = activeRows.find((row: { access_expires_at?: string | null }) => {
+  const activeRows = (Array.isArray(activeRes.data) ? activeRes.data : []) as CityViewGrantRow[];
+  const liveActiveRows = activeRows.filter((row) => {
     if (!row.access_expires_at) return false;
     const expiresAt = new Date(row.access_expires_at).getTime();
     return Number.isFinite(expiresAt) && expiresAt > now;
   });
+  const activeRow = liveActiveRows[0];
+  const duplicateActiveIds = liveActiveRows
+    .slice(1)
+    .map((row) => row.id)
+    .filter((id): id is string => Boolean(id));
+
+  if (duplicateActiveIds.length > 0) {
+    const cleanupRes = await admin
+      .from("dating_city_view_requests")
+      .update({
+        status: "rejected",
+        note: options.note ?? "duplicate active city view cleanup",
+        reviewed_at: new Date().toISOString(),
+        access_expires_at: null,
+      })
+      .in("id", duplicateActiveIds);
+    if (cleanupRes.error) {
+      throw cleanupRes.error;
+    }
+  }
 
   const accessExpiresAt = new Date(now + accessHours * 60 * 60 * 1000).toISOString();
   const snapshotCardIds = await buildCityViewSnapshotCardIds(admin, options.userId, options.city);
@@ -726,6 +765,74 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
   }
 
   if (insertRes.error) {
+    const errorCode = String((insertRes.error as { code?: unknown }).code ?? "");
+    if (errorCode === "23505") {
+      let duplicateRes: { data: CityViewGrantRow | null; error: unknown } = await admin
+        .from("dating_city_view_requests")
+        .select("id,access_expires_at,snapshot_card_ids,snapshot_seen_card_ids")
+        .eq("user_id", options.userId)
+        .eq("city", options.city)
+        .eq("status", "approved")
+        .gt("access_expires_at", new Date().toISOString())
+        .order("reviewed_at", { ascending: false, nullsFirst: false })
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (duplicateRes.error && isMissingColumnError(duplicateRes.error)) {
+        duplicateRes = await admin
+          .from("dating_city_view_requests")
+          .select("id,access_expires_at")
+          .eq("user_id", options.userId)
+          .eq("city", options.city)
+          .eq("status", "approved")
+          .gt("access_expires_at", new Date().toISOString())
+          .order("reviewed_at", { ascending: false, nullsFirst: false })
+          .order("created_at", { ascending: false })
+          .limit(1)
+          .maybeSingle();
+      }
+      if (duplicateRes.error) throw duplicateRes.error;
+      if (duplicateRes.data?.id) {
+        const retrySnapshotSeenCardIds = mergeCardIds(
+          parseSnapshotCardIds((duplicateRes.data as CityViewGrantRow).snapshot_seen_card_ids),
+          parseSnapshotCardIds((duplicateRes.data as CityViewGrantRow).snapshot_card_ids),
+          snapshotCardIds
+        );
+        let retryUpdateRes = await admin
+          .from("dating_city_view_requests")
+          .update({
+            access_expires_at: accessExpiresAt,
+            note: options.note ?? null,
+            reviewed_at: new Date().toISOString(),
+            snapshot_card_ids: snapshotCardIds,
+            snapshot_seen_card_ids: retrySnapshotSeenCardIds,
+          })
+          .eq("id", duplicateRes.data.id)
+          .select("id,user_id,city,status,access_expires_at")
+          .single();
+        if (retryUpdateRes.error && isMissingColumnError(retryUpdateRes.error)) {
+          retryUpdateRes = await admin
+            .from("dating_city_view_requests")
+            .update({
+              access_expires_at: accessExpiresAt,
+              note: options.note ?? null,
+              reviewed_at: new Date().toISOString(),
+            })
+            .eq("id", duplicateRes.data.id)
+            .select("id,user_id,city,status,access_expires_at")
+            .single();
+        }
+        if (retryUpdateRes.error) throw retryUpdateRes.error;
+        const creditGrant = bonusCredits > 0 ? await grantApplyCredits(admin, options.userId, bonusCredits) : null;
+        return {
+          requestId: duplicateRes.data.id,
+          userId: options.userId,
+          city: options.city,
+          accessExpiresAt,
+          bonusCreditsGranted: creditGrant?.addedCredits ?? 0,
+        };
+      }
+    }
     throw insertRes.error;
   }
 

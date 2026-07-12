@@ -54,6 +54,15 @@ function hasLivePendingRow(rows: CityViewRequestRow[]): boolean {
   });
 }
 
+function getErrorMessage(error: unknown, fallback: string) {
+  if (error instanceof Error && error.message) return error.message;
+  if (error && typeof error === "object" && "message" in error) {
+    const message = String((error as { message?: unknown }).message ?? "").trim();
+    if (message) return message;
+  }
+  return fallback;
+}
+
 export async function POST(req: Request) {
   const { user } = await getRequestAuthContext(req);
 
@@ -86,7 +95,8 @@ export async function POST(req: Request) {
         message: "오픈카드 유지 혜택으로 이번 주 무료 열람이 바로 열렸습니다.",
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : "주간 무료 열람 처리에 실패했습니다.";
+      console.error("[city-view weekly benefit] claim failed", error);
+      const message = getErrorMessage(error, "주간 무료 열람 처리에 실패했습니다.");
       const statusCode =
         message.includes("이미 사용") || message.includes("오픈카드를 유지") || message.includes("도/광역시명을 확인")
           ? 400
