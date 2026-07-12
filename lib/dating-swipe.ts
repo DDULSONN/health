@@ -14,6 +14,7 @@ export const SWIPE_BASE_DAILY_LIMIT = 5;
 export const SWIPE_PREMIUM_DAILY_LIMIT = 30;
 export const SWIPE_PREMIUM_PRICE_KRW = 30000;
 export const SWIPE_PREMIUM_DURATION_DAYS = 30;
+export const SWIPE_PREMIUM_EXPOSURE_RANK_MULTIPLIER = 0.35;
 export const SWIPE_DAILY_LIMIT = SWIPE_BASE_DAILY_LIMIT;
 export const SWIPE_LIKE_EXPIRY_HOURS = 30;
 export const SWIPE_LIKE_EXPIRY_ROLLOUT_AT_ISO = "2026-04-16T13:14:34.410Z";
@@ -214,6 +215,35 @@ function getDeterministicCandidateRank(actorUserId: string, dayKey: string, owne
   return hash >>> 0;
 }
 
+function getSwipeCandidateRank(actorUserId: string, dayKey: string, ownerId: string, cardId: string, premiumExposure: boolean): number {
+  const baseRank = getDeterministicCandidateRank(actorUserId, dayKey, ownerId, cardId);
+  return premiumExposure ? Math.floor(baseRank * SWIPE_PREMIUM_EXPOSURE_RANK_MULTIPLIER) : baseRank;
+}
+
+async function getActiveSwipePremiumUserIds(adminClient: AdminClient, userIds: string[], now = new Date()): Promise<Set<string>> {
+  const uniqueUserIds = [...new Set(userIds.filter((id) => id.trim().length > 0))];
+  if (uniqueUserIds.length === 0) return new Set();
+
+  const res = await adminClient
+    .from("dating_swipe_subscription_requests")
+    .select("user_id")
+    .in("user_id", uniqueUserIds)
+    .eq("status", "approved")
+    .gt("expires_at", now.toISOString())
+    .limit(5000);
+
+  if (res.error) {
+    if (isMissingRelationError(res.error)) return new Set();
+    throw res.error;
+  }
+
+  return new Set(
+    (res.data ?? [])
+      .map((row) => String((row as { user_id?: unknown }).user_id ?? "").trim())
+      .filter((id) => id.length > 0)
+  );
+}
+
 export async function getSwipeDailyUsage(adminClient: AdminClient, actorUserId: string): Promise<number> {
   const { startUtcIso, endUtcIso } = getSwipeDayRangeUtc();
   const res = await adminClient
@@ -382,6 +412,7 @@ export async function getSwipeCandidate(
     )
   );
   const visibilityByUserId = new Map<string, boolean>();
+  const premiumExposureUserIds = await getActiveSwipePremiumUserIds(adminClient, ownerIds);
   if (ownerIds.length > 0) {
     const profilesRes = await adminClient
       .from("profiles")
@@ -437,7 +468,7 @@ export async function getSwipeCandidate(
     seenOwners.add(ownerId);
 
     candidates.push({
-      rank: getDeterministicCandidateRank(actorUserId, dayKey, ownerId, row.id),
+      rank: getSwipeCandidateRank(actorUserId, dayKey, ownerId, row.id, premiumExposureUserIds.has(ownerId)),
       candidate: {
         user_id: ownerId,
         card_id: row.id,
@@ -492,6 +523,7 @@ export async function getGuestSwipePreviewCandidate(
     new Set(rows.map((row) => String(row.owner_user_id ?? "").trim()).filter((value) => value.length > 0))
   );
   const visibilityByUserId = new Map<string, boolean>();
+  const premiumExposureUserIds = await getActiveSwipePremiumUserIds(adminClient, ownerIds);
 
   if (ownerIds.length > 0) {
     const profilesRes = await adminClient
@@ -527,7 +559,7 @@ export async function getGuestSwipePreviewCandidate(
     seenOwners.add(ownerId);
 
     candidates.push({
-      rank: getDeterministicCandidateRank("guest-preview", dayKey, ownerId, row.id),
+      rank: getSwipeCandidateRank("guest-preview", dayKey, ownerId, row.id, premiumExposureUserIds.has(ownerId)),
       candidate: {
         user_id: ownerId,
         card_id: row.id,
