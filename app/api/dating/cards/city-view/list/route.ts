@@ -1,4 +1,4 @@
-import { CITY_VIEW_CARD_LIMIT, getActiveCityViewGrant } from "@/lib/dating-city-view";
+import { CITY_VIEW_CARD_LIMIT, getActiveCityViewGrant, getCityViewTargetSex } from "@/lib/dating-city-view";
 import { extractProvinceFromRegion, getNearbyProvinceFallbackOrder } from "@/lib/region-city";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -61,8 +61,11 @@ export async function GET(req: Request) {
   }
 
   const admin = createAdminClient();
-  const blockedUserIds = await getDatingBlockedUserIds(admin, user.id);
-  const activeGrant = await getActiveCityViewGrant(admin, user.id, province);
+  const [blockedUserIds, activeGrant, targetSex] = await Promise.all([
+    getDatingBlockedUserIds(admin, user.id),
+    getActiveCityViewGrant(admin, user.id, province),
+    getCityViewTargetSex(admin, user.id),
+  ]);
   if (!activeGrant) {
     return NextResponse.json({ error: "해당 도/광역시는 구매 또는 무료 열람 후 이용 가능합니다." }, { status: 403 });
   }
@@ -94,6 +97,7 @@ export async function GET(req: Request) {
   const now = Date.now();
   const eligibleRows = rows
     .filter((row) => row.status === "pending" || (row.status === "public" && row.expires_at && new Date(row.expires_at).getTime() > now))
+    .filter((row) => !targetSex || row.sex === targetSex)
     .filter((row) => provincePriority.has(extractProvinceFromRegion(row.region) ?? ""))
     .filter((row) => String(row.owner_user_id ?? "") !== user.id)
     .filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")))
@@ -164,7 +168,7 @@ export async function GET(req: Request) {
 
   const includedProvinces = [...new Set(items.map((item) => extractProvinceFromRegion(item.region) ?? "").filter(Boolean))];
 
-  return NextResponse.json({ items, province, includedProvinces, limit: CITY_VIEW_CARD_LIMIT, expiresAt: activeGrant.accessExpiresAt });
+  return NextResponse.json({ items, province, includedProvinces, limit: CITY_VIEW_CARD_LIMIT, expiresAt: activeGrant.accessExpiresAt, targetSex });
 }
 
 

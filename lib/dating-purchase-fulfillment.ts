@@ -1,5 +1,5 @@
 ﻿import { createAdminClient } from "@/lib/supabase/server";
-import { CITY_VIEW_ACCESS_HOURS, CITY_VIEW_CARD_LIMIT } from "@/lib/dating-city-view";
+import { CITY_VIEW_ACCESS_HOURS, CITY_VIEW_CARD_LIMIT, getCityViewTargetSex } from "@/lib/dating-city-view";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
 import { DATING_PAID_FIXED_MS } from "@/lib/dating-paid";
@@ -385,7 +385,8 @@ async function buildCityViewSnapshotCardIds(admin: AdminClient, userId: string, 
   const usedIds = await getPreviousCityViewSnapshotIds(admin, userId, province);
   const provinceOrder = getNearbyProvinceFallbackOrder(province);
   const provincePriority = new Map(provinceOrder.map((value, index) => [value, index]));
-  const selectColumns = "id,owner_user_id,region,status,expires_at,created_at";
+  const targetSex = await getCityViewTargetSex(admin, userId);
+  const selectColumns = "id,owner_user_id,sex,region,status,expires_at,created_at";
   const nowIso = new Date().toISOString();
   const [pendingRes, publicRes, blockedUserIds] = await Promise.all([
     admin.from("dating_cards").select(selectColumns).eq("status", "pending").order("created_at", { ascending: false }).limit(5000),
@@ -406,11 +407,12 @@ async function buildCityViewSnapshotCardIds(admin: AdminClient, userId: string, 
   const rows = [
     ...(!pendingRes.error && Array.isArray(pendingRes.data) ? pendingRes.data : []),
     ...(!publicRes.error && Array.isArray(publicRes.data) ? publicRes.data : []),
-  ] as Array<{ id: string; owner_user_id: string | null; region: string | null; status: string | null; expires_at: string | null; created_at: string | null }>;
+  ] as Array<{ id: string; owner_user_id: string | null; sex: string | null; region: string | null; status: string | null; expires_at: string | null; created_at: string | null }>;
 
   const now = Date.now();
   let eligibleRows = rows
     .filter((row) => String(row.owner_user_id ?? "") !== userId)
+    .filter((row) => !targetSex || row.sex === targetSex)
     .filter((row) => row.status === "pending" || (row.status === "public" && row.expires_at && new Date(row.expires_at).getTime() > now))
     .filter((row) => provincePriority.has(normalizeCityProvince(row.region) ?? ""))
     .filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")));
