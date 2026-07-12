@@ -1,5 +1,5 @@
 import { CITY_VIEW_CARD_LIMIT, getActiveCityViewGrant } from "@/lib/dating-city-view";
-import { extractProvinceFromRegion } from "@/lib/region-city";
+import { extractProvinceFromRegion, getNearbyProvinceFallbackOrder } from "@/lib/region-city";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -89,12 +89,20 @@ export async function GET(req: Request) {
     ...(!pendingCardsRes.error && Array.isArray(pendingCardsRes.data) ? pendingCardsRes.data : []),
     ...(!publicCardsRes.error && Array.isArray(publicCardsRes.data) ? publicCardsRes.data : []),
   ];
+  const provinceOrder = getNearbyProvinceFallbackOrder(province);
+  const provincePriority = new Map(provinceOrder.map((value, index) => [value, index]));
   const now = Date.now();
   const eligibleRows = rows
     .filter((row) => row.status === "pending" || (row.status === "public" && row.expires_at && new Date(row.expires_at).getTime() > now))
-    .filter((row) => extractProvinceFromRegion(row.region) === province)
+    .filter((row) => provincePriority.has(extractProvinceFromRegion(row.region) ?? ""))
     .filter((row) => String(row.owner_user_id ?? "") !== user.id)
-    .filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")));
+    .filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")))
+    .sort((a, b) => {
+      const priorityA = provincePriority.get(extractProvinceFromRegion(a.region) ?? "") ?? Number.MAX_SAFE_INTEGER;
+      const priorityB = provincePriority.get(extractProvinceFromRegion(b.region) ?? "") ?? Number.MAX_SAFE_INTEGER;
+      if (priorityA !== priorityB) return priorityA - priorityB;
+      return String(b.created_at ?? "").localeCompare(String(a.created_at ?? ""));
+    });
 
   const rowById = new Map(
     eligibleRows
@@ -154,7 +162,9 @@ export async function GET(req: Request) {
     };
   });
 
-  return NextResponse.json({ items, province, limit: CITY_VIEW_CARD_LIMIT, expiresAt: activeGrant.accessExpiresAt });
+  const includedProvinces = [...new Set(items.map((item) => extractProvinceFromRegion(item.region) ?? "").filter(Boolean))];
+
+  return NextResponse.json({ items, province, includedProvinces, limit: CITY_VIEW_CARD_LIMIT, expiresAt: activeGrant.accessExpiresAt });
 }
 
 
