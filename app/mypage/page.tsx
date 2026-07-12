@@ -7027,7 +7027,7 @@ export default function MyPage() {
               </div>
               <div className="flex flex-wrap items-center gap-2">
                 <span className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-[11px] font-semibold text-amber-800">
-                  3만원 · 30일 · 하루 {swipeSubscriptionStatus?.premiumLimit ?? 30}회
+                  3만원 · 30일 · 하루 {swipeSubscriptionStatus?.premiumLimit ?? 30}회 · 노출 강화
                 </span>
                 <button
                   type="button"
@@ -7053,7 +7053,7 @@ export default function MyPage() {
               <div className="mt-3 rounded-lg border border-amber-100 bg-amber-50/40 p-3">
                 <p className="text-xs text-amber-800">
                   기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 5}회예요. 추가 이용을 신청하면 30일 동안 하루{" "}
-                  {swipeSubscriptionStatus?.premiumLimit ?? 30}회까지 사용할 수 있어요.
+                  {swipeSubscriptionStatus?.premiumLimit ?? 30}회까지 사용할 수 있고, 내 프로필도 빠른매칭에서 더 잘 보이게 돼요.
                 </p>
                 <p className="mt-2 text-[11px] text-amber-700">현재는 카카오페이 간편결제로만 결제할 수 있어요.</p>
                 <p className="mt-1 text-[11px] text-amber-700">그 밖의 문의는 오픈카톡으로 부탁드려요.</p>
@@ -12640,7 +12640,7 @@ export default function MyPage() {
               <div>
                 <p className="text-xs font-semibold text-violet-900">유저에게 빠른매칭 플러스 직접 적용</p>
                 <p className="mt-1 text-[11px] text-violet-800">
-                  닉네임이나 이메일로 유저를 찾은 뒤, 플러스 30일/하루 30회를 바로 적용할 수 있어요.
+                  닉네임이나 이메일로 유저를 찾은 뒤, 플러스 30일/하루 30회와 빠른매칭 노출 강화를 바로 적용할 수 있어요.
                 </p>
               </div>
               <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">

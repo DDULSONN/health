@@ -2998,8 +2998,8 @@ export default function OpenCardsPage() {
           </button>
           <p className="text-xs text-neutral-500">
             {swipeSubscriptionStatus?.status === "active"
-              ? "현재 빠른매칭 플러스를 이용 중이에요."
-              : `기본 ${swipeSubscriptionStatus?.baseLimit ?? 5}회 · 플러스 ${swipeSubscriptionStatus?.premiumLimit ?? SWIPE_PREMIUM_DAILY_LIMIT}회`}
+              ? "플러스 이용 중 · 노출 강화 적용"
+              : `기본 ${swipeSubscriptionStatus?.baseLimit ?? 5}회 · 플러스 ${swipeSubscriptionStatus?.premiumLimit ?? SWIPE_PREMIUM_DAILY_LIMIT}회 · 노출 강화`}
           </p>
         </div>
 
@@ -3201,7 +3201,7 @@ export default function OpenCardsPage() {
                 <p className="text-lg font-black text-neutral-950">빠른매칭 플러스</p>
                 <p className="mt-1 text-sm leading-6 text-neutral-600">
                   기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 5}회예요. 플러스를 시작하면 {SWIPE_PREMIUM_DURATION_DAYS}일 동안 하루{" "}
-                  {swipeSubscriptionStatus?.premiumLimit ?? SWIPE_PREMIUM_DAILY_LIMIT}회까지 더 넉넉하게 확인할 수 있어요.
+                  {swipeSubscriptionStatus?.premiumLimit ?? SWIPE_PREMIUM_DAILY_LIMIT}회까지 보고, 내 프로필도 빠른매칭에서 더 잘 보이게 돼요.
                 </p>
               </div>
               <button
@@ -3218,7 +3218,7 @@ export default function OpenCardsPage() {
                 {SWIPE_PREMIUM_PRICE_KRW.toLocaleString("ko-KR")}원 · {SWIPE_PREMIUM_DURATION_DAYS}일 이용
               </p>
               <p className="mt-1 text-xs leading-5 text-amber-900/80">
-                현재는 카카오페이 간편결제로만 결제 가능해요. 그 밖의 결제 문의는 오픈카톡으로 부탁드려요.
+                더 많은 후보 확인과 프로필 노출 강화가 함께 적용돼요. 현재는 카카오페이 간편결제로만 결제 가능해요.
               </p>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
