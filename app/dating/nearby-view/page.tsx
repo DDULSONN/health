@@ -258,9 +258,10 @@ export default function NearbyViewPage() {
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div className="max-w-2xl">
             <h1 className="text-[28px] font-black tracking-tight text-neutral-950">가까운 이상형 보기</h1>
-            <p className="mt-2 text-sm text-neutral-600">원하는 지역의 가까운 후보를 30명씩 열어볼 수 있어요.</p>
+            <p className="mt-2 text-sm text-neutral-600">원하는 지역을 먼저 보여주고, 부족하면 가까운 지역까지 포함해 30명씩 열어볼 수 있어요.</p>
             <div className="mt-4 flex flex-wrap gap-2">
-              <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">지역 후보 30명</span>
+              <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">가까운 후보 30명</span>
+              <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">인접 지역 포함</span>
               <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">24시간 확인</span>
               <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">5,000원</span>
               <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">지원권 1장 추가</span>
@@ -372,7 +373,7 @@ export default function NearbyViewPage() {
           <div className="space-y-5">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-neutral-800">{selectedProvince} 카드</h2>
-              <span className="text-xs font-medium text-emerald-700">24시간 · 최대 30명</span>
+              <span className="text-xs font-medium text-emerald-700">24시간 · 가까운 후보 최대 30명</span>
             </div>
             <div className="flex gap-2">
               <button

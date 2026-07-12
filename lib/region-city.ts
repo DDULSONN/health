@@ -68,6 +68,26 @@ export const PROVINCE_ORDER = [
 
 const CANONICAL_PROVINCES = new Set<string>(PROVINCE_ORDER);
 
+const NEARBY_PROVINCE_FALLBACKS: Record<string, string[]> = {
+  서울: ["서울", "경기", "인천", "강원", "충북"],
+  부산: ["부산", "경남", "울산", "대구", "경북"],
+  대구: ["대구", "경북", "경남", "부산", "울산"],
+  인천: ["인천", "경기", "서울", "충남"],
+  광주: ["광주", "전남", "전북"],
+  대전: ["대전", "세종", "충남", "충북", "전북"],
+  울산: ["울산", "부산", "경남", "경북", "대구"],
+  세종: ["세종", "대전", "충남", "충북", "경기"],
+  경기: ["경기", "서울", "인천", "강원", "충북", "충남"],
+  강원: ["강원", "경기", "서울", "충북", "경북"],
+  충북: ["충북", "대전", "세종", "충남", "경기", "강원", "경북"],
+  충남: ["충남", "세종", "대전", "충북", "경기", "전북"],
+  전북: ["전북", "전남", "광주", "충남", "대전", "경북"],
+  전남: ["전남", "광주", "전북", "경남", "제주"],
+  경북: ["경북", "대구", "울산", "경남", "충북", "강원", "전북"],
+  경남: ["경남", "부산", "울산", "대구", "경북", "전남"],
+  제주: ["제주", "전남", "광주", "부산"],
+};
+
 const METRO_PROVINCES = new Set(["서울", "부산", "대구", "인천", "광주", "대전", "울산", "세종", "제주"]);
 
 const CITY_ALIASES: Record<string, string> = {
@@ -482,6 +502,12 @@ export function extractProvinceFromRegion(region: string | null): string | null 
   }
 
   return null;
+}
+
+export function getNearbyProvinceFallbackOrder(provinceInput: string | null): string[] {
+  const province = extractProvinceFromRegion(provinceInput) ?? provinceInput?.trim() ?? "";
+  const baseOrder = NEARBY_PROVINCE_FALLBACKS[province] ?? (CANONICAL_PROVINCES.has(province) ? [province] : []);
+  return [...new Set([...baseOrder, ...PROVINCE_ORDER])];
 }
 
 export function extractCityFromRegion(region: string | null): string | null {

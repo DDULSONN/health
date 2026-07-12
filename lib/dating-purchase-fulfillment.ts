@@ -3,7 +3,7 @@ import { CITY_VIEW_ACCESS_HOURS, CITY_VIEW_CARD_LIMIT } from "@/lib/dating-city-
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
 import { DATING_PAID_FIXED_MS } from "@/lib/dating-paid";
-import { extractProvinceFromRegion } from "@/lib/region-city";
+import { extractProvinceFromRegion, getNearbyProvinceFallbackOrder } from "@/lib/region-city";
 import {
   SWIPE_PREMIUM_DAILY_LIMIT,
   SWIPE_PREMIUM_DURATION_DAYS,
@@ -366,6 +366,8 @@ async function buildCityViewSnapshotCardIds(admin: AdminClient, userId: string, 
   if (!province) return [];
 
   const usedIds = await getPreviousCityViewSnapshotIds(admin, userId, province);
+  const provinceOrder = getNearbyProvinceFallbackOrder(province);
+  const provincePriority = new Map(provinceOrder.map((value, index) => [value, index]));
   const selectColumns = "id,owner_user_id,region,status,expires_at,created_at";
   const nowIso = new Date().toISOString();
   const [pendingRes, publicRes, blockedUserIds] = await Promise.all([
@@ -387,16 +389,22 @@ async function buildCityViewSnapshotCardIds(admin: AdminClient, userId: string, 
   const rows = [
     ...(!pendingRes.error && Array.isArray(pendingRes.data) ? pendingRes.data : []),
     ...(!publicRes.error && Array.isArray(publicRes.data) ? publicRes.data : []),
-  ] as Array<{ id: string; owner_user_id: string | null; region: string | null; status: string | null; expires_at: string | null }>;
+  ] as Array<{ id: string; owner_user_id: string | null; region: string | null; status: string | null; expires_at: string | null; created_at: string | null }>;
 
   const now = Date.now();
   let eligibleRows = rows
     .filter((row) => String(row.owner_user_id ?? "") !== userId)
     .filter((row) => row.status === "pending" || (row.status === "public" && row.expires_at && new Date(row.expires_at).getTime() > now))
-    .filter((row) => normalizeCityProvince(row.region) === province)
+    .filter((row) => provincePriority.has(normalizeCityProvince(row.region) ?? ""))
     .filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")));
 
   eligibleRows = await filterDatingCardsByContactBlocks(admin, userId, eligibleRows);
+  eligibleRows.sort((a, b) => {
+    const priorityA = provincePriority.get(normalizeCityProvince(a.region) ?? "") ?? Number.MAX_SAFE_INTEGER;
+    const priorityB = provincePriority.get(normalizeCityProvince(b.region) ?? "") ?? Number.MAX_SAFE_INTEGER;
+    if (priorityA !== priorityB) return priorityA - priorityB;
+    return String(b.created_at ?? "").localeCompare(String(a.created_at ?? ""));
+  });
 
   const freshIds = eligibleRows.map((row) => row.id).filter((id) => !usedIds.has(id));
   const fallbackIds = eligibleRows.map((row) => row.id).filter((id) => usedIds.has(id));
