@@ -41,6 +41,11 @@ type CardItem = {
   image_urls: string[];
 };
 
+type CityViewListResponse = {
+  items?: CardItem[];
+  targetSex?: "male" | "female" | null;
+};
+
 const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
 const NEARBY_VIEW_CACHE_KEY = "dating-nearby-view:v1";
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
@@ -165,8 +170,11 @@ export default function NearbyViewPage() {
         setItems([]);
         return;
       }
-      const body = (await res.json()) as { items?: CardItem[] };
+      const body = (await res.json()) as CityViewListResponse;
       setItems(Array.isArray(body.items) ? body.items : []);
+      if (body.targetSex === "male" || body.targetSex === "female") {
+        setActiveSex(body.targetSex);
+      }
     } finally {
       setLoading(false);
     }

@@ -4,12 +4,44 @@ import type { createAdminClient } from "@/lib/supabase/server";
 export const CITY_VIEW_CARD_LIMIT = 30;
 export const CITY_VIEW_ACCESS_HOURS = 24;
 
+export type DatingCityViewSex = "male" | "female";
+
 type ActiveCityViewGrant = {
   requestId: string;
   province: string;
   accessExpiresAt: string;
   snapshotCardIds: string[];
 };
+
+export function getOppositeDatingSex(sex: string | null | undefined): DatingCityViewSex | null {
+  if (sex === "male") return "female";
+  if (sex === "female") return "male";
+  return null;
+}
+
+export async function getUserOpenCardSex(
+  adminClient: ReturnType<typeof createAdminClient>,
+  userId: string
+): Promise<DatingCityViewSex | null> {
+  const res = await adminClient
+    .from("dating_cards")
+    .select("sex")
+    .eq("owner_user_id", userId)
+    .in("status", ["pending", "public", "hidden", "expired"])
+    .order("created_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (res.error) return null;
+  return res.data?.sex === "male" || res.data?.sex === "female" ? res.data.sex : null;
+}
+
+export async function getCityViewTargetSex(
+  adminClient: ReturnType<typeof createAdminClient>,
+  userId: string
+): Promise<DatingCityViewSex | null> {
+  return getOppositeDatingSex(await getUserOpenCardSex(adminClient, userId));
+}
 
 function normalizeIsoDate(value: unknown): string | null {
   if (typeof value !== "string" || !value.trim()) return null;
