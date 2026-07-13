@@ -2,6 +2,7 @@ import { getCachedSignedUrlWithBucket } from "@/lib/signed-url-cache";
 import { hasCityViewAccess } from "@/lib/dating-city-view";
 import { hasMoreViewAccess, normalizeCardSex } from "@/lib/dating-more-view";
 import { isAllowedAdminUser } from "@/lib/admin";
+import { extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import sharp from "sharp";
@@ -283,10 +284,45 @@ async function canReadOneOnOnePhoto(
     .limit(100);
   if (cardRes.error || !Array.isArray(cardRes.data)) return false;
 
-  return cardRes.data.some((row) => {
-    const status = String(row.status ?? "");
-    return ["submitted", "approved", "active"].includes(status) && pathList(row.photo_paths).includes(objectPath);
+  const matchingCards = cardRes.data.filter((row) => {
+    const normalizedPaths = pathList(row.photo_paths)
+      .map((path) => extractStorageObjectPathFromBuckets(path, ["dating-1on1-photos"]) ?? path);
+    return normalizedPaths.includes(objectPath);
   });
+  if (matchingCards.length === 0) return false;
+
+  const hasActiveCard = matchingCards.some((row) => {
+    const status = String(row.status ?? "");
+    return ["submitted", "reviewing", "approved", "active"].includes(status);
+  });
+  if (hasActiveCard) return true;
+
+  const cardIds = matchingCards
+    .map((row) => String(row.id ?? "").trim())
+    .filter(Boolean);
+  if (cardIds.length === 0) return false;
+
+  const [sourceMatchRes, candidateMatchRes] = await Promise.all([
+    admin
+      .from("dating_1on1_match_proposals")
+      .select("id")
+      .eq("source_user_id", userId)
+      .eq("candidate_user_id", ownerId)
+      .in("candidate_card_id", cardIds)
+      .limit(1),
+    admin
+      .from("dating_1on1_match_proposals")
+      .select("id")
+      .eq("candidate_user_id", userId)
+      .eq("source_user_id", ownerId)
+      .in("source_card_id", cardIds)
+      .limit(1),
+  ]);
+
+  const hasSourceMatch = !sourceMatchRes.error && Array.isArray(sourceMatchRes.data) && sourceMatchRes.data.length > 0;
+  const hasCandidateMatch =
+    !candidateMatchRes.error && Array.isArray(candidateMatchRes.data) && candidateMatchRes.data.length > 0;
+  return hasSourceMatch || hasCandidateMatch;
 }
 
 async function canReadReelsApplicationPhoto(objectPath: string, userId: string | null, isAdmin: boolean): Promise<boolean> {
@@ -530,7 +566,12 @@ async function handler(req: Request, params: Promise<{ slug: string[] }>) {
   }
   if (mode === "signed") {
     const allowed = await canReadSignedObject(req, bucket, objectPath);
-    if (!allowed) return new Response("Not Found", { status: 404 });
+    if (!allowed) {
+      return new Response("Not Found", {
+        status: 404,
+        headers: { "Cache-Control": "no-store" },
+      });
+    }
     if (OPTIMIZED_BUCKETS.has(bucket)) {
       return optimizeSignedImageResponse(req, bucket, objectPath, req.method, requestId);
     }

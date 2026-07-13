@@ -1,5 +1,6 @@
 const FORBIDDEN_IMAGE_URL_PATTERN = /(supabase\.co|\/storage\/v1\/|\/render\/image\/)/i;
 const PUBLIC_LITE_URL_VERSION = "20260221-1";
+const ONE_ON_ONE_SIGNED_URL_VERSION = "20260713-1";
 const DIRECT_PUBLIC_LITE_BUCKETS = new Set(["dating-card-lite"]);
 
 type ImageTransformOptions = {
@@ -117,7 +118,8 @@ export function buildSignedImageUrl(bucket: string, objectPath: string): string 
     return "";
   }
 
-  return `/i/signed/${encodePath(safeBucket)}/${encodePath(safePath)}`;
+  const versionQuery = safeBucket === "dating-1on1-photos" ? `?v=${ONE_ON_ONE_SIGNED_URL_VERSION}` : "";
+  return `/i/signed/${encodePath(safeBucket)}/${encodePath(safePath)}${versionQuery}`;
 }
 
 export function buildSignedImageUrlAllowRaw(bucket: string, objectPath: string): string {
