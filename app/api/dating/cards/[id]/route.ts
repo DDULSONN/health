@@ -2,7 +2,7 @@
 import { hasMoreViewAccess } from "@/lib/dating-more-view";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
-import { hasCityViewAccess } from "@/lib/dating-city-view";
+import { hasCityViewCardAccess } from "@/lib/dating-city-view";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { kvGetString, kvSetString } from "@/lib/edge-kv";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -275,7 +275,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   let canReadPending = false;
   if (!isPublicAvailable && data.status === "pending" && user?.id) {
     const byMoreView = await hasMoreViewAccess(adminClient, user.id, data.sex);
-    const byCityView = await hasCityViewAccess(adminClient, user.id, data.region ?? null);
+    const byCityView = await hasCityViewCardAccess(adminClient, user.id, String(data.id ?? id), data.region ?? null);
     canReadPending = byMoreView || byCityView;
   }
 
