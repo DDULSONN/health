@@ -1,5 +1,5 @@
 import { getCachedSignedUrlWithBucket } from "@/lib/signed-url-cache";
-import { hasCityViewAccess } from "@/lib/dating-city-view";
+import { hasCityViewCardAccess } from "@/lib/dating-city-view";
 import { hasMoreViewAccess, normalizeCardSex } from "@/lib/dating-more-view";
 import { isAllowedAdminUser } from "@/lib/admin";
 import { extractStorageObjectPathFromBuckets } from "@/lib/images";
@@ -191,7 +191,12 @@ async function canReadDatingCardPhoto(
 
       const sex = normalizeCardSex(row.sex);
       const byMoreView = sex ? await hasMoreViewAccess(admin, userId, sex) : false;
-      const byCityView = await hasCityViewAccess(admin, userId, typeof row.region === "string" ? row.region : null);
+      const byCityView = await hasCityViewCardAccess(
+        admin,
+        userId,
+        rowCardId,
+        typeof row.region === "string" ? row.region : null
+      );
       return byMoreView || byCityView;
     }
   }

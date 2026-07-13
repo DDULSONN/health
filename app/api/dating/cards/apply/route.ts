@@ -1,7 +1,7 @@
 import { getKstDayRangeUtc } from "@/lib/dating-open";
 import { getDailyBaseApplyLimit } from "@/lib/dating-apply-limits";
 import { hasMoreViewAccess } from "@/lib/dating-more-view";
-import { hasCityViewAccess } from "@/lib/dating-city-view";
+import { hasCityViewCardAccess } from "@/lib/dating-city-view";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
 import { buildDatingApplicationReceivedNotification } from "@/lib/dating-email-templates";
@@ -364,7 +364,7 @@ export async function POST(req: Request) {
     let allowedByCityView = false;
     if (card.status === "pending") {
       allowedByMoreView = await hasMoreViewAccess(adminClient, userId, card.sex);
-      allowedByCityView = await hasCityViewAccess(adminClient, userId, card.region ?? null);
+      allowedByCityView = await hasCityViewCardAccess(adminClient, userId, String(card.id ?? cardId), card.region ?? null);
     }
     if (card.status !== "public" && !allowedByMoreView && !allowedByCityView) {
       return jsonResponse(403, "FORBIDDEN", requestId, "?轅붽틓????????ル봿????μ떝?롳쭗?????ㅳ늾??????猷붾읁? ?????밸븶?癲??????낆젵.");

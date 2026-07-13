@@ -1,6 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { hasMoreViewAccess } from "@/lib/dating-more-view";
-import { hasCityViewAccess } from "@/lib/dating-city-view";
+import { hasCityViewCardAccess } from "@/lib/dating-city-view";
 import { NextResponse } from "next/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
@@ -98,7 +98,7 @@ export async function POST(req: Request) {
   let allowedByCityView = false;
   if (card.status === "pending") {
     allowedByMoreView = await hasMoreViewAccess(adminClient, user.id, card.sex);
-    allowedByCityView = await hasCityViewAccess(adminClient, user.id, card.region ?? null);
+    allowedByCityView = await hasCityViewCardAccess(adminClient, user.id, String(card.id ?? cardId), card.region ?? null);
   }
 
   if (card.status !== "public" && !allowedByMoreView && !allowedByCityView) {

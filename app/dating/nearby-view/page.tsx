@@ -456,7 +456,7 @@ function CardSection({
               {card.ideal_type ? <p className="mt-1 truncate text-xs text-emerald-700">이상형 {card.ideal_type}</p> : null}
               <div className="mt-3 flex flex-wrap gap-2">
                 <Link
-                  href={`/community/dating/cards/${card.id}`}
+                  href={`/community/dating/cards/${card.id}?from=nearby`}
                   onClick={onNavigateAway}
                   onTouchStart={onNavigateAway}
                   className="inline-flex min-h-[36px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-100"
@@ -464,7 +464,7 @@ function CardSection({
                   상세보기
                 </Link>
                 <Link
-                  href={`/community/dating/cards/${card.id}/apply`}
+                  href={`/community/dating/cards/${card.id}/apply?from=nearby`}
                   onClick={onNavigateAway}
                   onTouchStart={onNavigateAway}
                   className="inline-flex min-h-[36px] items-center rounded-xl bg-rose-600 px-3 text-xs font-semibold text-white hover:bg-rose-700"

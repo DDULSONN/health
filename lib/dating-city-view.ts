@@ -133,6 +133,45 @@ export async function hasCityViewAccess(
   return Boolean(await getActiveCityViewGrant(adminClient, userId, province));
 }
 
+export async function hasCityViewCardAccess(
+  adminClient: ReturnType<typeof createAdminClient>,
+  userId: string,
+  cardId: string,
+  region: string | null
+): Promise<boolean> {
+  const normalizedCardId = cardId.trim();
+  if (!normalizedCardId) return false;
+
+  const res = await adminClient
+    .from("dating_city_view_requests")
+    .select("city,access_expires_at,snapshot_card_ids")
+    .eq("user_id", userId)
+    .eq("status", "approved")
+    .order("reviewed_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false })
+    .limit(200);
+
+  if (res.error) {
+    return isMissingColumnError(res.error) ? hasCityViewAccess(adminClient, userId, region) : false;
+  }
+
+  const cardProvince = extractProvinceFromRegion(region);
+  const rows = Array.isArray(res.data) ? res.data : [];
+  for (const row of rows as Array<{ city: string; access_expires_at: string | null; snapshot_card_ids?: unknown }>) {
+    const expiresAtIso = normalizeIsoDate(row.access_expires_at);
+    if (!expiresAtIso || new Date(expiresAtIso).getTime() <= Date.now()) continue;
+
+    const snapshotCardIds = parseSnapshotCardIds(row.snapshot_card_ids);
+    if (snapshotCardIds.includes(normalizedCardId)) return true;
+
+    // Same-province access remains valid even if a snapshot refresh is still being persisted.
+    const grantProvince = extractProvinceFromRegion(row.city) ?? row.city;
+    if (cardProvince && grantProvince === cardProvince) return true;
+  }
+
+  return false;
+}
+
 export async function getActiveApprovedCities(
   adminClient: ReturnType<typeof createAdminClient>,
   userId: string

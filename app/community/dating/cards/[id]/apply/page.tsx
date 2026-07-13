@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
@@ -67,6 +67,11 @@ function withPaymentCardNotice(message: string) {
 export default function DatingCardApplyPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const fromNearby = searchParams.get("from") === "nearby";
+  const listHref = fromNearby ? "/dating/nearby-view" : "/community/dating/cards";
+  const detailHref = `/community/dating/cards/${id}${fromNearby ? "?from=nearby" : ""}`;
+  const applyHref = `/community/dating/cards/${id}/apply${fromNearby ? "?from=nearby" : ""}`;
   const supabase = useMemo(() => createClient(), []);
 
   const [card, setCard] = useState<CardDetail | null>(null);
@@ -113,7 +118,7 @@ export default function DatingCardApplyPage() {
       } = await supabase.auth.getUser();
 
       if (!user) {
-        router.replace(`/login?redirect=/community/dating/cards/${id}/apply`);
+        router.replace(`/login?redirect=${encodeURIComponent(applyHref)}`);
         return;
       }
 
@@ -124,13 +129,13 @@ export default function DatingCardApplyPage() {
         ]);
 
         if (!cardRes.ok) {
-          router.replace("/community/dating/cards");
+          router.replace(listHref);
           return;
         }
 
         const cardBody = (await cardRes.json()) as { card?: CardDetail };
         if (!cardBody.card) {
-          router.replace("/community/dating/cards");
+          router.replace(listHref);
           return;
         }
 
@@ -145,7 +150,7 @@ export default function DatingCardApplyPage() {
           }
         }
       } catch {
-        router.replace("/community/dating/cards");
+        router.replace(listHref);
         return;
       }
 
@@ -159,7 +164,7 @@ export default function DatingCardApplyPage() {
     return () => {
       active = false;
     };
-  }, [id, router, supabase]);
+  }, [applyHref, id, listHref, router, supabase]);
 
   const handlePhotoChange = (index: number, file: File | null) => {
     const next = [...photos];
@@ -342,7 +347,7 @@ export default function DatingCardApplyPage() {
 
   return (
     <main className="mx-auto max-w-lg px-4 py-8">
-      <Link href="/community/dating/cards" className="text-sm text-neutral-500 hover:text-neutral-700">
+      <Link href={detailHref} className="text-sm text-neutral-500 hover:text-neutral-700">
         뒤로가기
       </Link>
 

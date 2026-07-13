@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import { DATING_CARD_REPORT_REASON_OPTIONS, type DatingCardReportReasonCode } from "@/lib/dating-report-reasons";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
@@ -37,6 +37,10 @@ function isGoldLiftCard(card: Pick<CardDetail, "sex" | "total_3lift" | "is_3lift
 export default function OpenCardDetailPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+  const searchParams = useSearchParams();
+  const fromNearby = searchParams.get("from") === "nearby";
+  const listHref = fromNearby ? "/dating/nearby-view" : "/community/dating/cards";
+  const detailHref = `/community/dating/cards/${id}${fromNearby ? "?from=nearby" : ""}`;
   const supabase = useMemo(() => createClient(), []);
   const [card, setCard] = useState<CardDetail | null>(() => readOpenCardDetail<CardDetail>(id));
   const [loading, setLoading] = useState(() => !readOpenCardDetail<CardDetail>(id));
@@ -53,30 +57,30 @@ export default function OpenCardDetailPage() {
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) {
-          router.replace(`/login?redirect=${encodeURIComponent(`/community/dating/cards/${id}`)}`);
+          router.replace(`/login?redirect=${encodeURIComponent(detailHref)}`);
           return;
         }
         const res = await fetch(`/api/dating/cards/${id}`);
         if (!res.ok) {
           if (res.status === 401) {
-            router.replace(`/login?redirect=${encodeURIComponent(`/community/dating/cards/${id}`)}`);
+            router.replace(`/login?redirect=${encodeURIComponent(detailHref)}`);
             return;
           }
-          router.replace("/community/dating/cards");
+          router.replace(listHref);
           return;
         }
         const data = (await res.json()) as { card?: CardDetail };
         if (!data.card) {
-          router.replace("/community/dating/cards");
+          router.replace(listHref);
           return;
         }
         setCard(data.card);
       } catch {
-        router.replace("/community/dating/cards");
+        router.replace(listHref);
       }
       setLoading(false);
     });
-  }, [id, router, supabase]);
+  }, [detailHref, id, listHref, router, supabase]);
 
   if (loading && !card) {
     return (
@@ -121,7 +125,7 @@ export default function OpenCardDetailPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <Link href="/community/dating/cards" className="text-sm text-neutral-500 hover:text-neutral-700">
+      <Link href={listHref} className="text-sm text-neutral-500 hover:text-neutral-700">
         뒤로가기
       </Link>
 
@@ -200,7 +204,7 @@ export default function OpenCardDetailPage() {
         <div className="mt-4">
           <div className="flex flex-wrap gap-2">
             <Link
-              href={`/community/dating/cards/${card.id}/apply`}
+              href={`/community/dating/cards/${card.id}/apply${fromNearby ? "?from=nearby" : ""}`}
               className="inline-flex min-h-[44px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
             >
               지원하기
