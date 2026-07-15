@@ -4126,10 +4126,13 @@ function Section({
 
   return (
     <section>
-      <div className="mb-4 flex items-end justify-between gap-3">
+      <div className="mb-4">
         <h2 className="text-[28px] font-black tracking-tight text-neutral-950">
           {title} <span className="text-lg font-semibold text-neutral-400">{currentCount}명 공개중</span>
         </h2>
+        <p className="mt-1 text-xs font-semibold text-emerald-700">
+          대기 없이 등록 카드는 지원권 차감 없이 지원할 수 있어요.
+        </p>
       </div>
       {!hasAnyItems ? (
         <p className="rounded-[26px] border border-black/5 bg-white p-5 text-sm text-neutral-500 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
