@@ -5,6 +5,7 @@ export const DATING_STORE_PRODUCT_IDS = {
   moreView3h: "more_view_3h",
   oneOnOneContactExchange: "one_on_one_contact_exchange",
   oneOnOnePriorityRecommendation: "one_on_one_priority_recommendation",
+  oneOnOnePlus30d: "one_on_one_plus_30d",
   openCardRepost: "open_card_repost",
   swipePremium15d: "swipe_premium_15d",
   swipePremium30d: "swipe_premium_30d",
@@ -40,6 +41,12 @@ export const DATING_STORE_PRODUCT_CATALOG = {
     kind: "one_on_one_priority_recommendation",
     amountKrw: 5000,
     durationDays: 3,
+    storeType: "in-app",
+  },
+  [DATING_STORE_PRODUCT_IDS.oneOnOnePlus30d]: {
+    kind: "one_on_one_plus_30d",
+    amountKrw: 99000,
+    durationDays: 30,
     storeType: "in-app",
   },
   [DATING_STORE_PRODUCT_IDS.openCardRepost]: {

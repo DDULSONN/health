@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { ONE_ON_ONE_PLUS_DURATION_DAYS, grantOneOnOnePlus } from "@/lib/dating-1on1-plus";
 import { CITY_VIEW_ACCESS_HOURS } from "@/lib/dating-city-view";
 import { getActiveMoreViewGrant, normalizeCardSex } from "@/lib/dating-more-view";
 import {
@@ -36,6 +37,7 @@ type TossOrderRow = {
     | "city_view"
     | "one_on_one_contact_exchange"
     | "one_on_one_priority_24h"
+    | "one_on_one_plus_30d"
     | "swipe_premium_30d"
     | "love_fortune_detail";
   product_ref_id: string | null;
@@ -402,6 +404,21 @@ async function ensureOneOnOnePriorityFulfilled(
   return { cardId, alreadyActive: false, expiresAt: updateRes.data.priority_boost_expires_at ?? expiresAt };
 }
 
+async function ensureOneOnOnePlusFulfilled(
+  admin: ReturnType<typeof createAdminClient>,
+  order: TossOrderRow
+) {
+  const durationDays =
+    typeof order.product_meta?.durationDays === "number" && Number.isFinite(order.product_meta.durationDays)
+      ? Math.max(1, Math.round(order.product_meta.durationDays))
+      : ONE_ON_ONE_PLUS_DURATION_DAYS;
+  return grantOneOnOnePlus(admin, {
+    userId: order.user_id,
+    grantKey: `toss:${order.toss_order_id}`,
+    durationDays,
+  });
+}
+
 async function ensureSwipePremiumFulfilled(
   admin: ReturnType<typeof createAdminClient>,
   order: TossOrderRow
@@ -599,6 +616,10 @@ async function ensureOrderFulfilled(
 
   if (order.product_type === "one_on_one_priority_24h") {
     await ensureOneOnOnePriorityFulfilled(admin, order);
+  }
+
+  if (order.product_type === "one_on_one_plus_30d") {
+    await ensureOneOnOnePlusFulfilled(admin, order);
   }
 
   if (order.product_type === "swipe_premium_30d") {

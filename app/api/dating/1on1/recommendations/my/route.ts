@@ -14,10 +14,15 @@ import { getRegionDistanceMeta } from "@/lib/region-distance";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { getKstDateString } from "@/lib/weekly";
+import {
+  ONE_ON_ONE_FREE_EXTRA_CANDIDATES,
+  ONE_ON_ONE_FREE_REFRESH_LIMIT,
+  ONE_ON_ONE_PLUS_REFRESH_LIMIT,
+  getActiveOneOnOnePlusByUserIds,
+} from "@/lib/dating-1on1-plus";
 import { NextResponse } from "next/server";
 
 const RECOMMENDATION_LIMIT = 10;
-const ADMIN_RECOMMENDATION_LIMIT = 3;
 const CARD_BATCH_SIZE = 1000;
 const RECOMMENDATION_REFRESH_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const AGE_MATCH_MIN_QUOTA = 6;
@@ -45,12 +50,18 @@ type CardRow = {
   created_at: string;
   recommendation_refresh_used_at?: string | null;
   priority_boost_expires_at?: string | null;
+  plus_expires_at?: string | null;
   photo_paths: unknown;
   phone: string | null;
 };
 type RecommendationCard = ReturnType<typeof toDatingOneOnOneCardDetail> & {
   phone: string | null;
   priority_boost_expires_at?: string | null;
+  plus_expires_at?: string | null;
+};
+type RefreshEventRow = {
+  card_id: string;
+  refreshed_at: string;
 };
 
 function getAgeRange(card: { sex: "male" | "female"; age: number | null }) {
@@ -104,10 +115,12 @@ function getDistanceRank(sourceRegion: string | null, candidateRegion: string | 
   };
 }
 
-function isPriorityBoostActive(card: { priority_boost_expires_at?: string | null }) {
-  if (!card.priority_boost_expires_at) return false;
-  const expiresAtMs = new Date(card.priority_boost_expires_at).getTime();
-  return Number.isFinite(expiresAtMs) && expiresAtMs > Date.now();
+function isPriorityBoostActive(card: { priority_boost_expires_at?: string | null; plus_expires_at?: string | null }) {
+  return [card.priority_boost_expires_at, card.plus_expires_at].some((value) => {
+    if (!value) return false;
+    const expiresAtMs = new Date(value).getTime();
+    return Number.isFinite(expiresAtMs) && expiresAtMs > Date.now();
+  });
 }
 
 function isRecentlyCreated(card: { created_at: string }, nowMs = Date.now()) {
@@ -361,36 +374,51 @@ function getRefreshExcludeIds(
   return excludeIds;
 }
 
-function getRefreshAvailability(refreshUsedAt?: string | null) {
-  if (!refreshUsedAt) {
-    return {
-      refreshUsed: false,
-      canRefreshNow: true,
-      nextRefreshAt: null as string | null,
-    };
+function getRefreshAvailability(
+  refreshEvents: string[],
+  legacyRefreshUsedAt: string | null | undefined,
+  refreshLimit: number
+) {
+  const nowMs = Date.now();
+  const windowStartMs = nowMs - RECOMMENDATION_REFRESH_COOLDOWN_MS;
+  const refreshTimes = refreshEvents
+    .map((value) => Date.parse(value))
+    .filter((value) => Number.isFinite(value) && value > windowStartMs)
+    .sort((a, b) => a - b);
+
+  if (refreshTimes.length === 0 && legacyRefreshUsedAt) {
+    const legacyRefreshMs = Date.parse(legacyRefreshUsedAt);
+    if (Number.isFinite(legacyRefreshMs) && legacyRefreshMs > windowStartMs) {
+      refreshTimes.push(legacyRefreshMs);
+    }
   }
 
-  const refreshMs = Date.parse(refreshUsedAt);
-  if (!Number.isFinite(refreshMs)) {
-    return {
-      refreshUsed: false,
-      canRefreshNow: true,
-      nextRefreshAt: null as string | null,
-    };
-  }
-
-  const nextRefreshMs = refreshMs + RECOMMENDATION_REFRESH_COOLDOWN_MS;
+  const usedCount = refreshTimes.length;
+  const remainingCount = Math.max(refreshLimit - usedCount, 0);
+  const nextRefreshMs = remainingCount === 0 && refreshTimes[0]
+    ? refreshTimes[0] + RECOMMENDATION_REFRESH_COOLDOWN_MS
+    : null;
   return {
-    refreshUsed: true,
-    canRefreshNow: nextRefreshMs <= Date.now(),
-    nextRefreshAt: new Date(nextRefreshMs).toISOString(),
+    refreshUsed: usedCount > 0,
+    refreshUsedCount: usedCount,
+    refreshRemaining: remainingCount,
+    refreshLimit,
+    canRefreshNow: remainingCount > 0,
+    nextRefreshAt: nextRefreshMs ? new Date(nextRefreshMs).toISOString() : null,
   };
+}
+
+function isMissingRefreshEventSchema(error: unknown) {
+  const message = String((error as { message?: unknown } | null)?.message ?? error ?? "").toLowerCase();
+  return message.includes("dating_1on1_recommendation_refresh_events") || message.includes("schema cache");
 }
 
 function stripInternalPhone(card: RecommendationCard) {
   return Object.fromEntries(
-    Object.entries(card).filter(([key]) => key !== "phone" && key !== "priority_boost_expires_at")
-  ) as Omit<RecommendationCard, "phone" | "priority_boost_expires_at">;
+    Object.entries(card).filter(
+      ([key]) => key !== "phone" && key !== "priority_boost_expires_at" && key !== "plus_expires_at"
+    )
+  ) as Omit<RecommendationCard, "phone" | "priority_boost_expires_at" | "plus_expires_at">;
 }
 
 async function fetchAllActiveCards(admin: ReturnType<typeof createAdminClient>) {
@@ -453,10 +481,15 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Failed to load active cards." }, { status: 500 });
   }
 
+  const plusByUserId = await getActiveOneOnOnePlusByUserIds(
+    admin,
+    activeCards.map((row) => row.user_id)
+  );
   const normalizedCards = activeCards.map((row) => ({
     ...toDatingOneOnOneCardDetail(row),
     phone: row.phone ?? null,
     priority_boost_expires_at: row.priority_boost_expires_at ?? null,
+    plus_expires_at: plusByUserId.get(row.user_id)?.expires_at ?? null,
   }));
   const myCards = normalizedCards.filter((card) => card.user_id === user.id);
   const mySourceCards = myCards.filter(
@@ -469,6 +502,23 @@ export async function GET(req: Request) {
 
   const sourceCardIds = mySourceCards.map((card) => card.id);
   const adminRecommendationDate = getKstDateString();
+  const refreshEventsByCardId = new Map<string, string[]>();
+
+  const refreshEventsRes = await admin
+    .from("dating_1on1_recommendation_refresh_events")
+    .select("card_id,refreshed_at")
+    .in("card_id", sourceCardIds)
+    .gt("refreshed_at", new Date(Date.now() - RECOMMENDATION_REFRESH_COOLDOWN_MS).toISOString())
+    .order("refreshed_at", { ascending: true });
+  if (refreshEventsRes.error && !isMissingRefreshEventSchema(refreshEventsRes.error)) {
+    console.error("[GET /api/dating/1on1/recommendations/my] refresh events failed", refreshEventsRes.error);
+    return NextResponse.json({ error: "Failed to load recommendation refresh usage." }, { status: 500 });
+  }
+  for (const row of (refreshEventsRes.data ?? []) as RefreshEventRow[]) {
+    const events = refreshEventsByCardId.get(row.card_id) ?? [];
+    events.push(row.refreshed_at);
+    refreshEventsByCardId.set(row.card_id, events);
+  }
 
   const allCandidateUserIds = normalizedCards.map((card) => card.user_id);
   const [existingPairRes, phoneBlockMap, adminUserBlockPairSet] = await Promise.all([
@@ -553,7 +603,13 @@ export async function GET(req: Request) {
           `${sourceCard.id}:${sourceCard.recommendation_refresh_used_at}:refresh`
         )
       : defaultRecommendations;
-    const refreshAvailability = getRefreshAvailability(sourceCard.recommendation_refresh_used_at);
+    const sourcePlus = plusByUserId.get(sourceCard.user_id) ?? null;
+    const refreshLimit = sourcePlus ? ONE_ON_ONE_PLUS_REFRESH_LIMIT : ONE_ON_ONE_FREE_REFRESH_LIMIT;
+    const refreshAvailability = getRefreshAvailability(
+      refreshEventsByCardId.get(sourceCard.id) ?? [],
+      sourceCard.recommendation_refresh_used_at,
+      refreshLimit
+    );
     const recommendationIds = new Set(recommendations.map((candidate) => candidate.id));
     const adminRecommendations = takeRecommendations(
       sortCandidatesForSource(
@@ -561,7 +617,7 @@ export async function GET(req: Request) {
         candidates.filter((candidate) => isCandidateInSourceAgeRange(sourceCard, candidate)),
         `${adminRecommendationDate}:admin-extra`
       ),
-      ADMIN_RECOMMENDATION_LIMIT,
+      ONE_ON_ONE_FREE_EXTRA_CANDIDATES,
       recommendationIds,
       `${sourceCard.id}:${adminRecommendationDate}:admin-extra`
     );
@@ -571,11 +627,16 @@ export async function GET(req: Request) {
       source_card_status: sourceCard.status,
       refresh_used: refreshAvailability.refreshUsed,
       refresh_used_at: sourceCard.recommendation_refresh_used_at ?? null,
+      refresh_used_count: refreshAvailability.refreshUsedCount,
+      refresh_remaining: refreshAvailability.refreshRemaining,
+      refresh_limit: refreshAvailability.refreshLimit,
       next_refresh_at: refreshAvailability.nextRefreshAt,
       can_refresh: refreshAvailability.canRefreshNow && candidates.length > RECOMMENDATION_LIMIT,
+      plus: sourcePlus,
       recommendations: recommendations.map(stripInternalPhone),
       admin_recommendation_date: adminRecommendationDate,
       admin_recommendations: adminRecommendations.map(stripInternalPhone),
+      admin_recommendation_limit: ONE_ON_ONE_FREE_EXTRA_CANDIDATES,
     };
   });
 

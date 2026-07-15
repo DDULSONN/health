@@ -186,11 +186,15 @@ type OneOnOneRecommendationGroup = {
   source_card_status?: string;
   refresh_used?: boolean;
   refresh_used_at?: string | null;
+  refresh_used_count?: number;
+  refresh_remaining?: number;
+  refresh_limit?: number;
   next_refresh_at?: string | null;
   can_refresh?: boolean;
   recommendations?: OneOnOneCardPreview[];
   admin_recommendation_date?: string | null;
   admin_recommendations?: OneOnOneCardPreview[];
+  admin_recommendation_limit?: number;
 };
 
 type OneOnOneMatchPreview = {
@@ -219,6 +223,7 @@ type OneOnOneHomeState = {
   myCards: OneOnOneCardPreview[];
   matches: OneOnOneMatchPreview[];
   recommendations: OneOnOneRecommendationGroup[];
+  plus: { expires_at?: string | null } | null;
 };
 
 type ReelsDatingListing = {
@@ -1988,6 +1993,7 @@ export default function OpenCardsPage() {
         myCards: Array.isArray(myCardsBody.items) ? myCardsBody.items : [],
         matches: matchesRes.ok && Array.isArray(matchesBody.items) ? matchesBody.items : [],
         recommendations: recommendationsRes.ok && Array.isArray(recommendationsBody.items) ? recommendationsBody.items : [],
+        plus: myCardsBody.plus && typeof myCardsBody.plus === "object" ? myCardsBody.plus : null,
       });
     } catch (error) {
       setOneOnOneHomeError(error instanceof Error ? error.message : "1:1 정보를 불러오지 못했습니다.");
@@ -2504,9 +2510,15 @@ export default function OpenCardsPage() {
           error?: string;
           message?: string;
           checkoutUrl?: string;
+          fulfilledWithoutPayment?: boolean;
         };
         if (!res.ok || !body.ok) {
           throw new Error(withPaymentCardNotice(body.message ?? body.error ?? "번호 교환 결제를 시작하지 못했습니다."));
+        }
+        if (body.fulfilledWithoutPayment) {
+          await reloadOneOnOneHome();
+          alert(body.message ?? "1:1 매칭 플러스로 번호교환이 완료되었습니다.");
+          return;
         }
         if (!body.checkoutUrl) {
           throw new Error(withPaymentCardNotice("결제창을 열지 못했습니다."));
@@ -2518,7 +2530,7 @@ export default function OpenCardsPage() {
         setProcessingOneOnOneContactIds((prev) => prev.filter((id) => id !== matchId));
       }
     },
-    [processingOneOnOneContactIds]
+    [processingOneOnOneContactIds, reloadOneOnOneHome]
   );
 
   const handleOneOnOneAutoSelect = useCallback(
@@ -3460,9 +3472,12 @@ function OneOnOneHomePanel({
   onAutoSelect: (sourceCardId: string, candidateCardId: string) => void;
   onRefreshRecommendations: (sourceCardId: string) => void;
 }) {
+  const [plusGuideOpen, setPlusGuideOpen] = useState(false);
+  const [plusSubmitting, setPlusSubmitting] = useState(false);
   const myCards = data?.myCards ?? [];
   const matches = data?.matches ?? [];
   const recommendationGroups = data?.recommendations ?? [];
+  const plusActive = Boolean(data?.plus?.expires_at);
   const recommendationCount = recommendationGroups.reduce(
     (sum, group) => sum + (group.recommendations?.length ?? 0) + (group.admin_recommendations?.length ?? 0),
     0
@@ -3483,6 +3498,31 @@ function OneOnOneHomePanel({
     if (aImportant !== bImportant) return bImportant - aImportant;
     return String(b.created_at ?? "").localeCompare(String(a.created_at ?? ""));
   });
+  const handlePlusCheckout = async () => {
+    const cardId = String(activeCards[0]?.id ?? "");
+    if (!cardId || plusSubmitting) return;
+    setPlusSubmitting(true);
+    try {
+      const res = await fetch("/api/payments/toss/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productType: "one_on_one_plus_30d", cardId }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        message?: string;
+        checkoutUrl?: string;
+      };
+      if (!res.ok || body.ok === false || !body.checkoutUrl) {
+        throw new Error(body.message ?? body.error ?? "1:1 매칭 플러스 결제창을 열지 못했습니다.");
+      }
+      window.location.href = body.checkoutUrl;
+    } catch (checkoutError) {
+      alert(checkoutError instanceof Error ? checkoutError.message : "1:1 매칭 플러스 결제를 시작하지 못했습니다.");
+      setPlusSubmitting(false);
+    }
+  };
 
   return (
     <section className="mb-5 rounded-[30px] border border-black/5 bg-white p-4 shadow-[0_14px_40px_rgba(15,23,42,0.05)] md:p-6">
@@ -3593,6 +3633,61 @@ function OneOnOneHomePanel({
               </div>
             </details>
 
+            <div className="relative overflow-hidden rounded-[22px] border border-amber-300 bg-[#fffaf0] p-4 shadow-[0_10px_30px_rgba(161,111,18,0.14)]">
+              <div aria-hidden="true" className="absolute inset-x-10 top-0 h-px bg-amber-200" />
+              <div className="relative flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-bold text-amber-800">PLUS</span>
+                    <p className="text-sm font-black text-neutral-950">1:1 매칭 플러스</p>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-neutral-600">
+                    번호교환 무제한 · 후보 새로고침 하루 2회 · 프로필 우선 노출
+                  </p>
+                  {plusActive && data?.plus?.expires_at ? (
+                    <p className="mt-1 text-[11px] font-semibold text-amber-800">
+                      {new Date(data.plus.expires_at).toLocaleString("ko-KR")}까지 이용 가능
+                    </p>
+                  ) : null}
+                </div>
+                {plusActive ? (
+                  <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-amber-300 bg-white px-3 text-xs font-bold text-amber-800 shadow-sm">
+                    적용 중
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setPlusGuideOpen((open) => !open)}
+                    className="h-9 shrink-0 rounded-full bg-[#8a5d0a] px-4 text-xs font-bold text-white shadow-[0_6px_18px_rgba(138,93,10,0.25)] transition hover:bg-[#704a06]"
+                  >
+                    {plusGuideOpen ? "닫기" : "혜택 보기"}
+                  </button>
+                )}
+              </div>
+              {!plusActive && plusGuideOpen ? (
+                <div className="relative mt-4 border-t border-amber-200 pt-4">
+                  <div className="flex items-end justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-black text-neutral-950">30일 동안 더 넓게 만나보세요</p>
+                      <p className="mt-1 text-xs leading-5 text-neutral-600">후보를 한 번 더 새로 보고, 수락 후 번호교환은 추가 결제 없이 진행합니다.</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-lg font-black text-[#8a5d0a]">99,000원</p>
+                      <p className="text-[10px] text-neutral-500">30일 이용권</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={plusSubmitting}
+                    onClick={() => void handlePlusCheckout()}
+                    className="mt-4 h-11 w-full rounded-lg bg-[#8a5d0a] text-sm font-bold text-white shadow-[0_8px_22px_rgba(138,93,10,0.28)] transition hover:bg-[#704a06] disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:shadow-none"
+                  >
+                    {plusSubmitting ? "결제 준비 중..." : "30일 플러스 시작하기"}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+
             <div className="rounded-[26px] border border-black/5 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
               <div className="flex items-center justify-between gap-3">
                 <div>
@@ -3616,6 +3711,7 @@ function OneOnOneHomePanel({
                       {match.counterparty_phone ? <p className="mt-2 text-sm font-black text-emerald-700">{match.counterparty_phone}</p> : null}
                       <OneOnOneMatchActions
                         match={match}
+                        plusActive={plusActive}
                         processing={processingMatchIds.includes(match.id)}
                         contactProcessing={processingContactIds.includes(match.id)}
                         onMatchAction={onMatchAction}
@@ -3631,7 +3727,9 @@ function OneOnOneHomePanel({
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-base font-black text-sky-950">추천 후보</p>
-                  <p className="mt-1 text-xs leading-5 text-sky-700">프로필 기준으로 먼저 보여드리는 후보예요. 하루 1회 새로 섞을 수 있어요.</p>
+                  <p className="mt-1 text-xs leading-5 text-sky-700">
+                    프로필 기준으로 먼저 보여드리는 후보예요. 최근 24시간 동안 {plusActive ? "2회" : "1회"} 새로 섞을 수 있어요.
+                  </p>
                 </div>
                 <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-sky-700">{recommendationCount}명</span>
               </div>
@@ -3647,6 +3745,8 @@ function OneOnOneHomePanel({
                     const adminRecommendations = group.admin_recommendations ?? [];
                     const refreshing = refreshingRecommendationIds.includes(sourceCardId);
                     const canRefresh = Boolean(sourceCardId && group.can_refresh);
+                    const refreshRemaining = group.refresh_remaining ?? (canRefresh ? 1 : 0);
+                    const refreshLimit = group.refresh_limit ?? (plusActive ? 2 : 1);
                     const nextRefreshLabel = group.next_refresh_at ? new Date(group.next_refresh_at).toLocaleString("ko-KR") : "";
 
                     return (
@@ -3657,7 +3757,11 @@ function OneOnOneHomePanel({
                               {sourceCard ? `${getOneOnOneDisplayName(sourceCard)} 기준 후보` : "추천 후보"}
                             </p>
                             <p className="mt-1 text-[11px] font-semibold text-neutral-500">
-                              {canRefresh ? "새 후보로 한 번 더 섞을 수 있어요." : nextRefreshLabel ? `다음 새로고침: ${nextRefreshLabel}` : "추천 상태를 확인 중입니다."}
+                              {canRefresh
+                                ? `최근 24시간 ${refreshLimit}회 중 ${refreshRemaining}회 남았어요.`
+                                : nextRefreshLabel
+                                  ? `다음 새로고침: ${nextRefreshLabel}`
+                                  : "추천 상태를 확인 중입니다."}
                             </p>
                           </div>
                           <button
@@ -3666,7 +3770,7 @@ function OneOnOneHomePanel({
                             onClick={() => onRefreshRecommendations(sourceCardId)}
                             className="inline-flex min-h-[36px] items-center rounded-xl border border-sky-200 bg-sky-50 px-3 text-xs font-black text-sky-700 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-sky-100"
                           >
-                            {refreshing ? "새로고침 중..." : "후보 새로고침"}
+                            {refreshing ? "새로고침 중..." : canRefresh ? `후보 새로고침 · ${refreshRemaining}회` : "24시간 이용 완료"}
                           </button>
                         </div>
                         <div className="mt-3 space-y-3">
@@ -3851,12 +3955,14 @@ function OneOnOneCandidateCard({
 
 function OneOnOneMatchActions({
   match,
+  plusActive,
   processing,
   contactProcessing,
   onMatchAction,
   onContactCheckout,
 }: {
   match: OneOnOneMatchPreview;
+  plusActive: boolean;
   processing: boolean;
   contactProcessing: boolean;
   onMatchAction: (
@@ -3966,11 +4072,15 @@ function OneOnOneMatchActions({
 
     return (
       <div className="mt-3 rounded-2xl border border-emerald-100 bg-white p-3">
-        <p className="text-xs font-black text-neutral-900">번호 교환 가능</p>
+        <p className="text-xs font-black text-neutral-900">{plusActive ? "플러스 무료 번호교환" : "번호 교환 가능"}</p>
         <p className="mt-1 text-xs leading-5 text-neutral-600">
-          결제 전 금액과 내용을 확인한 뒤 진행되며, 완료되면 상대 연락처가 바로 공개됩니다.
+          {plusActive
+            ? "플러스 적용 중이라 추가 결제 없이 상대 연락처가 바로 공개됩니다."
+            : "결제 전 금액과 내용을 확인한 뒤 진행되며, 완료되면 상대 연락처가 바로 공개됩니다."}
         </p>
-        <p className="mt-1 text-[11px] leading-5 text-neutral-400">결제 오류나 미반영은 마이페이지 결제 내역 또는 오픈카톡으로 확인 요청해주세요.</p>
+        {!plusActive ? (
+          <p className="mt-1 text-[11px] leading-5 text-neutral-400">결제 오류나 미반영은 마이페이지 결제 내역 또는 오픈카톡으로 확인 요청해주세요.</p>
+        ) : null}
         <div className="mt-2 flex flex-wrap gap-2">
           <button
             type="button"
@@ -3978,7 +4088,9 @@ function OneOnOneMatchActions({
             onClick={() => onContactCheckout(match.id)}
             className="inline-flex min-h-[34px] items-center rounded-xl bg-emerald-600 px-3 text-xs font-black text-white disabled:opacity-50"
           >
-            {contactProcessing ? "결제 준비 중..." : "연락처 교환 진행하기"}
+            {contactProcessing
+              ? plusActive ? "교환 중..." : "결제 준비 중..."
+              : plusActive ? "무료로 번호교환" : "연락처 교환 진행하기"}
           </button>
           <Link href="/mypage?section=matching" className="inline-flex min-h-[34px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold text-neutral-600">
             상세 보기

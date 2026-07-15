@@ -448,6 +448,7 @@ function formatPaymentProductLabel(order: MyPaymentCenterOrder) {
   }
   if (order.product_type === "one_on_one_contact_exchange") return "1:1 번호 즉시 교환";
   if (order.product_type === "one_on_one_priority_24h") return "1:1 우선 추천권";
+  if (order.product_type === "one_on_one_plus_30d") return "1:1 매칭 플러스 30일";
   if (order.product_type === "swipe_premium_30d") return "빠른매칭 플러스";
   if (order.product_type === "love_fortune_detail") return "연애운 상세 분석";
   return order.order_name ?? order.product_type;
@@ -474,6 +475,7 @@ function formatPaymentResultLabel(order: MyPaymentCenterOrder) {
   if (order.product_type === "city_view") return "가까운 후보 30명 열람권 반영 완료";
   if (order.product_type === "one_on_one_contact_exchange") return "상대 연락처 공개 완료";
   if (order.product_type === "one_on_one_priority_24h") return "1:1 우선 추천 적용 완료";
+  if (order.product_type === "one_on_one_plus_30d") return "1:1 매칭 플러스 적용 완료";
   if (order.product_type === "swipe_premium_30d") return "빠른매칭 플러스 적용 완료";
   if (order.product_type === "love_fortune_detail") return "연애운 상세 분석 이용권 반영 완료";
   return "결제 완료";
@@ -640,6 +642,7 @@ type MyOneOnOneCard = {
   reviewed_at?: string | null;
   created_at: string;
   priority_boost_expires_at?: string | null;
+  plus_expires_at?: string | null;
   photo_signed_urls?: string[];
 };
 
@@ -722,11 +725,15 @@ type MyOneOnOneAutoRecommendationGroup = {
   source_card_status?: "submitted" | "reviewing" | "approved" | "rejected";
   refresh_used?: boolean;
   refresh_used_at?: string | null;
+  refresh_used_count?: number;
+  refresh_remaining?: number;
+  refresh_limit?: number;
   next_refresh_at?: string | null;
   can_refresh?: boolean;
   recommendations: MyOneOnOneMatchCard[];
   admin_recommendation_date?: string | null;
   admin_recommendations?: MyOneOnOneMatchCard[];
+  admin_recommendation_limit?: number;
 };
 
 type MyOneOnOnePhoneBlock = {
@@ -4506,9 +4513,15 @@ export default function MyPage() {
         error?: string;
         message?: string;
         checkoutUrl?: string;
+        fulfilledWithoutPayment?: boolean;
       };
       if (!res.ok || !body.ok) {
         alert(withPaymentCardNotice(body.message ?? body.error ?? "번호 교환 결제를 시작하지 못했습니다."));
+        return;
+      }
+      if (body.fulfilledWithoutPayment) {
+        await Promise.all([reloadOneOnOneMatches(), reloadOneOnOneRecommendations()]);
+        alert(body.message ?? "1:1 매칭 플러스로 번호교환이 완료되었습니다.");
         return;
       }
       if (!body.checkoutUrl) {
@@ -4551,7 +4564,10 @@ export default function MyPage() {
 
   const handleRefreshOneOnOneRecommendations = async (sourceCardId: string) => {
     if (refreshingOneOnOneRecommendationIds.includes(sourceCardId)) return;
-    if (!confirm("자동 추천 후보 10명을 새로 불러올까요? 1일에 한 번 새로고침할 수 있습니다.")) return;
+    const recommendationGroup = myOneOnOneAutoRecommendations.find((group) => group.source_card_id === sourceCardId);
+    const refreshLimit = recommendationGroup?.refresh_limit ?? 1;
+    const refreshRemaining = recommendationGroup?.refresh_remaining ?? (recommendationGroup?.can_refresh ? 1 : 0);
+    if (!confirm(`자동 추천 후보 10명을 새로 불러올까요? 최근 24시간 기준 ${refreshLimit}회 중 ${refreshRemaining}회 남았습니다.`)) return;
 
     setRefreshingOneOnOneRecommendationIds((prev) => [...prev, sourceCardId]);
     try {
@@ -4560,14 +4576,22 @@ export default function MyPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source_card_id: sourceCardId }),
       });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        refresh_remaining?: number;
+      };
       if (!res.ok || !body.ok) {
         alert(body.error ?? "자동 추천 후보를 새로고침하지 못했습니다.");
         return;
       }
 
       await reloadOneOnOneRecommendations();
-      alert("자동 추천 후보 10명을 새로 섞어드렸습니다. 다음 새로고침은 1일 뒤에 가능합니다.");
+      alert(
+        body.refresh_remaining && body.refresh_remaining > 0
+          ? `새 후보를 불러왔습니다. 최근 24시간 기준 ${body.refresh_remaining}회 더 새로고침할 수 있습니다.`
+          : "새 후보를 불러왔습니다. 다음 이용 가능 시각은 화면에서 확인할 수 있습니다."
+      );
     } catch (e) {
       alert(e instanceof Error ? e.message : "자동 추천 후보를 새로고침하지 못했습니다.");
     } finally {
@@ -4716,7 +4740,7 @@ export default function MyPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          productType: "one_on_one_priority_24h",
+          productType: "one_on_one_plus_30d",
           cardId,
         }),
       });
@@ -4727,14 +4751,14 @@ export default function MyPage() {
         checkoutUrl?: string;
       };
       if (!res.ok || body.ok === false) {
-        throw new Error(withPaymentCardNotice(body.message ?? body.error ?? "1:1 우선 추천권 결제를 시작하지 못했습니다."));
+        throw new Error(withPaymentCardNotice(body.message ?? body.error ?? "1:1 매칭 플러스 결제를 시작하지 못했습니다."));
       }
       if (!body.checkoutUrl) {
         throw new Error(withPaymentCardNotice("결제창을 열지 못했습니다."));
       }
       window.location.href = body.checkoutUrl;
     } catch (error) {
-      alert(error instanceof Error ? error.message : withPaymentCardNotice("1:1 우선 추천권 결제를 시작하지 못했습니다."));
+      alert(error instanceof Error ? error.message : withPaymentCardNotice("1:1 매칭 플러스 결제를 시작하지 못했습니다."));
     } finally {
       setOneOnOnePrioritySubmittingIds((prev) => prev.filter((id) => id !== cardId));
     }
@@ -6130,7 +6154,7 @@ export default function MyPage() {
       return;
     }
     if (adminOneOnOnePriorityGrantingIds.includes(cardId)) return;
-    if (!confirm(`${cardName}에 1:1 우선 추천권 3일을 지급할까요? 이미 부스트중이면 3일 연장됩니다.`)) return;
+    if (!confirm(`${cardName} 회원에게 1:1 매칭 플러스 30일을 지급할까요? 이용 중이면 30일 연장됩니다.`)) return;
 
     setAdminOneOnOnePriorityGrantingIds((prev) => [...prev, cardId]);
     setAdminOneOnOnePriorityGrantError("");
@@ -6139,22 +6163,22 @@ export default function MyPage() {
       const res = await fetch("/api/admin/dating/1on1/priority-boost/grant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, cardId, durationDays: 3 }),
+        body: JSON.stringify({ userId, cardId }),
       });
       const body = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
         card?: {
           id?: string;
-          priority_boost_expires_at?: string | null;
+          plus_expires_at?: string | null;
         };
         expiresAt?: string | null;
       };
       if (!res.ok || !body.ok || !body.card?.id) {
-        throw new Error(body.error ?? "1:1 우선 추천권 지급에 실패했습니다.");
+        throw new Error(body.error ?? "1:1 매칭 플러스 지급에 실패했습니다.");
       }
 
-      const expiresAt = body.card.priority_boost_expires_at ?? body.expiresAt ?? null;
+      const expiresAt = body.card.plus_expires_at ?? body.expiresAt ?? null;
       setAdminUserActivityResult((prev) =>
         prev
           ? {
@@ -6162,17 +6186,17 @@ export default function MyPage() {
               details: {
                 ...(prev.details ?? {}),
                 one_on_one_cards: (prev.details?.one_on_one_cards ?? []).map((item) =>
-                  String(item.id ?? "") === body.card?.id ? { ...item, priority_boost_expires_at: expiresAt } : item
+                  String(item.id ?? "") === body.card?.id ? { ...item, plus_expires_at: expiresAt } : item
                 ),
               },
             }
           : prev
       );
       setAdminOneOnOnePriorityGrantInfo(
-        expiresAt ? `1:1 우선 추천권 지급 완료 · ${new Date(expiresAt).toLocaleString("ko-KR")}까지` : "1:1 우선 추천권을 지급했습니다."
+        expiresAt ? `1:1 매칭 플러스 지급 완료 · ${new Date(expiresAt).toLocaleString("ko-KR")}까지` : "1:1 매칭 플러스를 지급했습니다."
       );
     } catch (err) {
-      setAdminOneOnOnePriorityGrantError(err instanceof Error ? err.message : "1:1 우선 추천권 지급에 실패했습니다.");
+      setAdminOneOnOnePriorityGrantError(err instanceof Error ? err.message : "1:1 매칭 플러스 지급에 실패했습니다.");
     } finally {
       setAdminOneOnOnePriorityGrantingIds((prev) => prev.filter((id) => id !== cardId));
     }
@@ -8306,6 +8330,8 @@ export default function MyPage() {
               const adminAutoRecommendations = autoRecommendationGroup?.admin_recommendations ?? [];
               const canRefreshAutoRecommendations = autoRecommendationGroup?.can_refresh === true;
               const autoRecommendationRefreshUsed = autoRecommendationGroup?.refresh_used === true;
+              const autoRecommendationRefreshLimit = autoRecommendationGroup?.refresh_limit ?? 1;
+              const autoRecommendationRefreshRemaining = autoRecommendationGroup?.refresh_remaining ?? (canRefreshAutoRecommendations ? 1 : 0);
               const autoRecommendationNextRefreshAt = autoRecommendationGroup?.next_refresh_at ?? null;
               const refreshingAutoRecommendations = refreshingOneOnOneRecommendationIds.includes(item.id);
               const incomingCandidates = relatedMatches.filter((match) => match.role === "source" && match.state === "proposed");
@@ -8322,8 +8348,8 @@ export default function MyPage() {
               const closedMatches = relatedMatches.filter((match) =>
                 ["source_skipped", "candidate_rejected", "source_declined", "admin_canceled"].includes(match.state)
               );
-              const priorityBoostExpiresAtMs = item.priority_boost_expires_at
-                ? new Date(item.priority_boost_expires_at).getTime()
+              const priorityBoostExpiresAtMs = item.plus_expires_at
+                ? new Date(item.plus_expires_at).getTime()
                 : Number.NaN;
               const priorityBoostActive = Number.isFinite(priorityBoostExpiresAtMs) && priorityBoostExpiresAtMs > Date.now();
               const priorityBoostSubmitting = oneOnOnePrioritySubmittingIds.includes(item.id);
@@ -8389,49 +8415,64 @@ export default function MyPage() {
                   )}
 
                   {canBuyPriorityBoost && (
-                    <div className="mt-3 rounded-xl border border-pink-100 bg-pink-50/50 p-3">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div>
-                          <p className="text-sm font-semibold text-pink-900">1:1 우선 추천</p>
-                          {priorityBoostActive && item.priority_boost_expires_at && (
-                            <p className="mt-1 text-xs font-medium text-pink-700">
-                              부스트중 · {new Date(item.priority_boost_expires_at).toLocaleString("ko-KR")}까지
+                    <div className="relative mt-3 overflow-hidden rounded-xl border border-amber-300 bg-[#fffaf0] p-4 shadow-[0_10px_30px_rgba(161,111,18,0.14)]">
+                      <div aria-hidden="true" className="absolute inset-x-10 top-0 h-px bg-amber-200" />
+                      <div className="relative flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-bold text-amber-800">PLUS</span>
+                            <p className="text-sm font-bold text-neutral-950">1:1 매칭 플러스</p>
+                          </div>
+                          <p className="mt-2 text-xs leading-5 text-neutral-600">
+                            번호교환 무제한 · 후보 새로고침 하루 2회 · 프로필 우선 노출
+                          </p>
+                          {priorityBoostActive && item.plus_expires_at ? (
+                            <p className="mt-1 text-[11px] font-medium text-amber-800">
+                              {new Date(item.plus_expires_at).toLocaleString("ko-KR")}까지 이용 가능
                             </p>
-                          )}
+                          ) : null}
                         </div>
-                        <button
-                          type="button"
-                          disabled={priorityBoostActive || priorityBoostSubmitting}
-                          onClick={() => setOneOnOnePriorityDetailCardId((prev) => (prev === item.id ? null : item.id))}
-                          className="h-9 rounded-full bg-neutral-900 px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500"
-                        >
-                          {priorityBoostSubmitting ? "결제 준비 중..." : priorityBoostActive ? "부스트중" : "1:1 우선 추천"}
-                        </button>
+                        {priorityBoostActive ? (
+                          <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-amber-300 bg-white px-3 text-xs font-bold text-amber-800 shadow-sm">
+                            플러스 적용 중
+                          </span>
+                        ) : (
+                          <button
+                            type="button"
+                            disabled={priorityBoostSubmitting}
+                            onClick={() => setOneOnOnePriorityDetailCardId((prev) => (prev === item.id ? null : item.id))}
+                            className="h-9 shrink-0 rounded-full bg-[#8a5d0a] px-4 text-xs font-bold text-white shadow-[0_6px_18px_rgba(138,93,10,0.25)] transition hover:bg-[#704a06] disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500 disabled:shadow-none"
+                          >
+                            {priorityBoostSubmitting ? "결제 준비 중..." : priorityBoostDetailOpen ? "혜택 닫기" : "혜택 보기"}
+                          </button>
+                        )}
                       </div>
                       {!priorityBoostActive && priorityBoostDetailOpen && (
-                        <div className="mt-3 rounded-lg border border-pink-100 bg-white p-3">
+                        <div className="relative mt-4 border-t border-amber-200 pt-4">
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div>
-                              <p className="text-sm font-semibold text-neutral-900">1:1 우선 추천권</p>
-                              <p className="mt-1 text-xs leading-5 text-neutral-600">
-                                3일 동안 1:1 후보 목록에서 더 먼저 소개될 수 있어요.
-                              </p>
+                              <p className="text-sm font-bold text-neutral-950">30일 동안 매칭 기회를 넓혀보세요</p>
+                              <ul className="mt-2 space-y-2 text-xs leading-5 text-neutral-700">
+                                <li><strong className="text-neutral-950">번호교환 무제한</strong> · 쌍방 수락 후 추가 결제 없이</li>
+                                <li><strong className="text-neutral-950">후보 새로고침 하루 2회</strong> · 기본보다 한 번 더</li>
+                                <li><strong className="text-neutral-950">프로필 우선 노출</strong> · 추천 후보에서 더 잘 보이게</li>
+                              </ul>
                               <p className="mt-1 text-[11px] leading-5 text-neutral-500">
-                                매칭을 보장하지는 않으며, 성별/차단/진행중 후보 제외 기준은 그대로 적용됩니다.
+                                매칭을 보장하지 않으며 차단·성별·진행 상태 기준은 그대로 적용됩니다.
                               </p>
                             </div>
                             <div className="text-right">
-                              <p className="text-base font-bold text-pink-600">10,000원</p>
-                              <p className="mt-0.5 text-[11px] text-neutral-500">3일</p>
+                              <p className="text-lg font-black text-[#8a5d0a]">99,000원</p>
+                              <p className="mt-0.5 text-[11px] text-neutral-500">30일 일시 이용권</p>
                             </div>
                           </div>
                           <button
                             type="button"
                             disabled={priorityBoostSubmitting}
                             onClick={() => void handleRequestOneOnOnePriority(item.id)}
-                            className="mt-3 h-10 w-full rounded-lg bg-pink-600 text-sm font-semibold text-white hover:bg-pink-700 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500"
+                            className="mt-4 h-11 w-full rounded-lg bg-[#8a5d0a] text-sm font-bold text-white shadow-[0_8px_22px_rgba(138,93,10,0.28)] transition hover:bg-[#704a06] disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500 disabled:shadow-none"
                           >
-                            {priorityBoostSubmitting ? "결제 준비 중..." : "우선 추천권 구매하기"}
+                            {priorityBoostSubmitting ? "결제 준비 중..." : "30일 플러스 시작하기"}
                           </button>
                         </div>
                       )}
@@ -8456,8 +8497,8 @@ export default function MyPage() {
                             {refreshingAutoRecommendations
                               ? "새로고침 중..."
                               : canRefreshAutoRecommendations
-                                ? "추천 새로고침"
-                                : "1일 쿨다운"}
+                                ? `추천 새로고침 · ${autoRecommendationRefreshRemaining}회`
+                                : "24시간 이용 완료"}
                           </button>
                         </div>
                         <p className="mt-1 text-xs text-pink-700">
@@ -8466,7 +8507,7 @@ export default function MyPage() {
                         {autoRecommendationRefreshUsed && (
                           <p className="mt-1 text-xs text-pink-700">
                             {canRefreshAutoRecommendations
-                              ? "이 카드는 지금 다시 새로고침할 수 있어요."
+                              ? `최근 24시간 기준 ${autoRecommendationRefreshLimit}회 중 ${autoRecommendationRefreshRemaining}회 남았어요.`
                               : autoRecommendationNextRefreshAt
                                 ? `다음 새로고침 가능 시각: ${new Date(autoRecommendationNextRefreshAt).toLocaleString("ko-KR")}`
                                 : "이 카드는 최근에 추천 새로고침을 사용했어요."}
@@ -8539,7 +8580,9 @@ export default function MyPage() {
                           })}
                           {adminAutoRecommendations.length > 0 && (
                             <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3">
-                              <p className="text-sm font-semibold text-emerald-900">오늘의 추가 후보 3명</p>
+                              <p className="text-sm font-semibold text-emerald-900">
+                                오늘의 추가 후보 {adminAutoRecommendations.length}명
+                              </p>
                               <p className="mt-1 text-xs text-emerald-700">
                                 기본 추천 10명과 겹치지 않는 나이대 맞춤 후보예요. 매일 자동으로 바뀝니다.
                               </p>
@@ -8879,32 +8922,44 @@ export default function MyPage() {
                                   match.contact_exchange_status === "awaiting_applicant_payment" ||
                                   match.contact_exchange_status === "payment_pending_admin") ? (
                                   <>
-                                    <p className="text-xs font-semibold text-neutral-900">번호 즉시 교환</p>
+                                    <p className="text-xs font-semibold text-neutral-900">
+                                      {priorityBoostActive ? "플러스 무료 번호교환" : "번호 즉시 교환"}
+                                    </p>
                                     <p className="mt-1 text-xs text-neutral-700">
-                                      기존 쌍방 매칭도 지금 결제하면 상대 연락처가 바로 교환됩니다.
+                                      {priorityBoostActive
+                                        ? "플러스 적용 중이라 추가 결제 없이 상대 연락처가 바로 공개됩니다."
+                                        : "기존 쌍방 매칭도 지금 결제하면 상대 연락처가 바로 교환됩니다."}
                                     </p>
-                                    <p className="mt-2 text-[11px] text-neutral-500">
-                                      현재는 카카오페이 간편결제로 바로 번호 교환이 가능해요.
-                                    </p>
-                                    <p className="mt-1 text-[11px] text-neutral-500">
-                                      다른 방식은 오픈카톡으로 입금해주시면 관리자가 수동으로 승인해드려요. 매칭 ID {match.id}
-                                    </p>
+                                    {!priorityBoostActive ? (
+                                      <>
+                                        <p className="mt-2 text-[11px] text-neutral-500">
+                                          현재는 카카오페이 간편결제로 바로 번호 교환이 가능해요.
+                                        </p>
+                                        <p className="mt-1 text-[11px] text-neutral-500">
+                                          다른 방식은 오픈카톡으로 입금해주시면 관리자가 수동으로 승인해드려요. 매칭 ID {match.id}
+                                        </p>
+                                      </>
+                                    ) : null}
                                     <div className="mt-2 flex flex-wrap gap-2">
-                                      <a
-                                        href={OPEN_KAKAO_URL}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 hover:bg-amber-50"
-                                      >
-                                        오픈카톡 문의
-                                      </a>
+                                      {!priorityBoostActive ? (
+                                        <a
+                                          href={OPEN_KAKAO_URL}
+                                          target="_blank"
+                                          rel="noreferrer"
+                                          className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 hover:bg-amber-50"
+                                        >
+                                          오픈카톡 문의
+                                        </a>
+                                      ) : null}
                                       <button
                                         type="button"
                                         disabled={contactProcessing}
                                         onClick={() => void handleRequestOneOnOneContactExchange(match.id)}
                                         className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                                       >
-                                        {contactProcessing ? "결제 준비 중..." : "연락처 교환 진행하기"}
+                                        {contactProcessing
+                                          ? priorityBoostActive ? "교환 중..." : "결제 준비 중..."
+                                          : priorityBoostActive ? "무료로 번호교환" : "연락처 교환 진행하기"}
                                       </button>
                                     </div>
                                   </>
@@ -10221,6 +10276,8 @@ export default function MyPage() {
                                       ? "가까운 이상형"
                                     : order.product_type === "one_on_one_contact_exchange"
                                       ? "1:1 번호교환"
+                                      : order.product_type === "one_on_one_plus_30d"
+                                        ? "1:1 매칭 플러스"
                                       : order.product_type === "swipe_premium_30d"
                                         ? "빠른매칭 플러스"
                                     : order.product_type}
@@ -12000,9 +12057,9 @@ export default function MyPage() {
                         <div className="rounded-lg border border-pink-100 bg-white p-3">
                           <div className="flex flex-wrap items-center justify-between gap-2">
                             <div>
-                              <p className="text-xs font-semibold text-pink-900">1:1 우선 추천권 지급</p>
+                              <p className="text-xs font-semibold text-pink-900">1:1 매칭 플러스 지급</p>
                               <p className="mt-1 text-[11px] text-neutral-500">
-                                활성 1:1 신청에 3일 우선 추천을 바로 지급합니다.
+                                활성 1:1 신청 회원에게 플러스 30일을 바로 지급합니다.
                               </p>
                             </div>
                           </div>
@@ -12014,7 +12071,7 @@ export default function MyPage() {
                               <div className="mt-2 space-y-2">
                                 {activeCards.slice(0, 5).map((card) => {
                                   const cardId = String(card.id ?? "");
-                                  const expiresAtRaw = typeof card.priority_boost_expires_at === "string" ? card.priority_boost_expires_at : "";
+                                  const expiresAtRaw = typeof card.plus_expires_at === "string" ? card.plus_expires_at : "";
                                   const expiresAtMs = expiresAtRaw ? new Date(expiresAtRaw).getTime() : Number.NaN;
                                   const activeBoost = Number.isFinite(expiresAtMs) && expiresAtMs > Date.now();
                                   const granting = adminOneOnOnePriorityGrantingIds.includes(cardId);
@@ -12027,8 +12084,8 @@ export default function MyPage() {
                                           </p>
                                           <p className="mt-1 text-[11px] text-neutral-500">
                                             {activeBoost && expiresAtRaw
-                                              ? `부스트중 · ${new Date(expiresAtRaw).toLocaleString("ko-KR")}까지`
-                                              : "우선 추천권 없음"}
+                                              ? `이용 중 · ${new Date(expiresAtRaw).toLocaleString("ko-KR")}까지`
+                                              : "플러스 미이용"}
                                           </p>
                                         </div>
                                         <button
@@ -12037,7 +12094,7 @@ export default function MyPage() {
                                           disabled={granting}
                                           className="h-8 rounded-lg bg-pink-600 px-3 text-xs font-semibold text-white disabled:opacity-60"
                                         >
-                                          {granting ? "지급 중..." : activeBoost ? "3일 연장" : "3일 지급"}
+                                          {granting ? "지급 중..." : activeBoost ? "30일 연장" : "30일 지급"}
                                         </button>
                                       </div>
                                     </div>
@@ -12045,7 +12102,7 @@ export default function MyPage() {
                                 })}
                               </div>
                             ) : (
-                              <p className="mt-2 text-xs text-neutral-500">우선 추천권을 지급할 활성 1:1 신청이 없습니다.</p>
+                              <p className="mt-2 text-xs text-neutral-500">플러스를 지급할 활성 1:1 신청이 없습니다.</p>
                             );
                           })()}
                           {adminOneOnOnePriorityGrantError ? (

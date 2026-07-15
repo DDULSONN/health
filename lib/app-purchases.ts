@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { google } from "googleapis";
 import { decodeJwt, importPKCS8, SignJWT } from "jose";
 import { CITY_VIEW_ACCESS_HOURS } from "@/lib/dating-city-view";
+import { grantOneOnOnePlus } from "@/lib/dating-1on1-plus";
 import {
   approvePaidCard,
   grantApplyCredits,
@@ -435,6 +436,14 @@ export async function fulfillDatingStorePurchase(
       userId: input.userId,
       durationDays: DATING_STORE_PRODUCT_CATALOG[input.productId].durationDays,
       note,
+    });
+  }
+
+  if (input.productId === DATING_STORE_PRODUCT_IDS.oneOnOnePlus30d) {
+    return grantOneOnOnePlus(admin, {
+      userId: input.userId,
+      grantKey: `direct-store:${input.eventKey}`,
+      durationDays: DATING_STORE_PRODUCT_CATALOG[input.productId].durationDays,
     });
   }
 

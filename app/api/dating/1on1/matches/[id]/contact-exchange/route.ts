@@ -1,6 +1,8 @@
 import {
   type DatingOneOnOneMatchRow,
 } from "@/lib/dating-1on1";
+import { getActiveOneOnOnePlus } from "@/lib/dating-1on1-plus";
+import { grantOneOnOneContactExchange } from "@/lib/dating-purchase-fulfillment";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
@@ -67,6 +69,17 @@ export async function POST(
   if (!["none", "awaiting_applicant_payment"].includes(row.contact_exchange_status)) {
     return NextResponse.json({ error: "Phone exchange cannot be requested right now." }, { status: 409 });
   }
+
+  const activePlus = await getActiveOneOnOnePlus(admin, user.id);
+  if (activePlus) {
+    const item = await grantOneOnOneContactExchange(admin, {
+      matchId,
+      userId: user.id,
+      note: `1:1 matching Plus until ${activePlus.expires_at}`,
+    });
+    return NextResponse.json({ ok: true, coveredByPlus: true, item });
+  }
+
   const updateRes = await admin
     .from("dating_1on1_match_proposals")
     .update({

@@ -1,6 +1,12 @@
 ﻿import { NextResponse } from "next/server";
 import { normalizeCardSex } from "@/lib/dating-more-view";
-import { approveMoreViewRequest, grantMoreViewAccess } from "@/lib/dating-purchase-fulfillment";
+import { approveMoreViewRequest, grantMoreViewAccess, grantOneOnOneContactExchange } from "@/lib/dating-purchase-fulfillment";
+import {
+  ONE_ON_ONE_PLUS_DURATION_DAYS,
+  ONE_ON_ONE_PLUS_PRICE_KRW,
+  assertOneOnOnePlusSchemaReady,
+  getActiveOneOnOnePlus,
+} from "@/lib/dating-1on1-plus";
 import {
   SWIPE_PREMIUM_DAILY_LIMIT,
   SWIPE_PREMIUM_DURATION_DAYS,
@@ -22,6 +28,7 @@ type ProductType =
   | "city_view"
   | "one_on_one_contact_exchange"
   | "one_on_one_priority_24h"
+  | "one_on_one_plus_30d"
   | "swipe_premium_30d"
   | "love_fortune_detail";
 
@@ -90,6 +97,10 @@ const PRODUCT_CONFIG: Record<ProductType, { amount: number; orderName: string }>
     amount: 10000,
     orderName: "1:1 우선 추천권",
   },
+  one_on_one_plus_30d: {
+    amount: ONE_ON_ONE_PLUS_PRICE_KRW,
+    orderName: "1:1 매칭 플러스 30일",
+  },
   swipe_premium_30d: {
     amount: SWIPE_PREMIUM_PRICE_KRW,
     orderName: "빠른매칭 플러스",
@@ -118,7 +129,7 @@ function parseProductType(raw: unknown): ProductType | "" {
     raw === "more_view" ||
     raw === "city_view" ||
     raw === "one_on_one_contact_exchange" ||
-    raw === "one_on_one_priority_24h" ||
+    raw === "one_on_one_plus_30d" ||
     raw === "swipe_premium_30d" ||
     raw === "love_fortune_detail"
   ) {
@@ -549,6 +560,23 @@ export async function POST(req: Request) {
         });
       }
 
+      const activePlus = await getActiveOneOnOnePlus(admin, user.id);
+      if (activePlus) {
+        const fulfilled = await grantOneOnOneContactExchange(admin, {
+          matchId,
+          userId: user.id,
+          note: `1:1 matching Plus until ${activePlus.expires_at}`,
+        });
+        return json(200, {
+          ok: true,
+          fulfilledWithoutPayment: true,
+          coveredByPlus: true,
+          paymentRequired: false,
+          item: fulfilled,
+          message: "1:1 매칭 플러스로 번호교환이 완료되었습니다.",
+        });
+      }
+
       const duplicateOrderRes = await admin
         .from("toss_test_payment_orders")
         .select("id,status,created_at")
@@ -630,11 +658,21 @@ export async function POST(req: Request) {
       };
     }
 
-    if (productType === "one_on_one_priority_24h") {
+    if (productType === "one_on_one_plus_30d") {
+      try {
+        await assertOneOnOnePlusSchemaReady(admin);
+      } catch (error) {
+        return json(503, {
+          ok: false,
+          code: "PAYMENT_SCHEMA_OUTDATED",
+          requestId,
+          message: error instanceof Error ? error.message : "1:1 매칭 플러스 설정을 확인하지 못했습니다.",
+        });
+      }
       const cardId = typeof body.cardId === "string" ? body.cardId.trim() : "";
       let cardQuery = admin
         .from("dating_1on1_cards")
-        .select("id,user_id,status,priority_boost_expires_at,created_at")
+        .select("id,user_id,status,created_at")
         .eq("user_id", user.id)
         .in("status", ["submitted", "reviewing", "approved"])
         .order("created_at", { ascending: false })
@@ -643,7 +681,7 @@ export async function POST(req: Request) {
       if (cardId) {
         cardQuery = admin
           .from("dating_1on1_cards")
-          .select("id,user_id,status,priority_boost_expires_at,created_at")
+          .select("id,user_id,status,created_at")
           .eq("id", cardId)
           .eq("user_id", user.id)
           .in("status", ["submitted", "reviewing", "approved"])
@@ -651,22 +689,13 @@ export async function POST(req: Request) {
       }
 
       const cardRes = await cardQuery.maybeSingle();
-      if (cardRes.error && String(cardRes.error.message ?? "").includes("priority_boost_expires_at")) {
-        return json(500, {
-          ok: false,
-          code: "PAYMENT_SCHEMA_OUTDATED",
-          requestId,
-          message: "1:1 우선 추천권 설정 업데이트가 아직 적용되지 않았습니다. 관리자에게 문의해주세요.",
-        });
-      }
-
       if (cardRes.error) {
-        console.error("[toss-create] 1on1 priority card lookup failed", cardRes.error);
+        console.error("[toss-create] 1on1 plus card lookup failed", cardRes.error);
         return json(500, {
           ok: false,
-          code: "ONE_ON_ONE_PRIORITY_LOOKUP_FAILED",
+          code: "ONE_ON_ONE_PLUS_LOOKUP_FAILED",
           requestId,
-          message: "1:1 우선 추천 상태를 확인하지 못했습니다.",
+          message: "1:1 매칭 플러스 이용 상태를 확인하지 못했습니다.",
         });
       }
       if (!cardRes.data?.id) {
@@ -678,29 +707,17 @@ export async function POST(req: Request) {
         });
       }
 
-      const activeBoostMs = cardRes.data.priority_boost_expires_at
-        ? new Date(cardRes.data.priority_boost_expires_at).getTime()
-        : Number.NaN;
-      if (Number.isFinite(activeBoostMs) && activeBoostMs > Date.now()) {
-        return json(409, {
-          ok: false,
-          code: "ALREADY_ACTIVE",
-          requestId,
-          message: "이미 1:1 우선 추천권이 적용 중입니다.",
-        });
-      }
-
       const duplicateOrderRes = await admin
         .from("toss_test_payment_orders")
         .select("id,status,created_at")
-        .eq("product_type", "one_on_one_priority_24h")
-        .eq("product_ref_id", cardRes.data.id)
+        .eq("product_type", "one_on_one_plus_30d")
+        .eq("user_id", user.id)
         .eq("status", "ready")
         .order("created_at", { ascending: false })
         .limit(5);
 
       if (duplicateOrderRes.error) {
-        console.error("[toss-create] 1on1 priority duplicate order lookup failed", duplicateOrderRes.error);
+        console.error("[toss-create] 1on1 plus duplicate order lookup failed", duplicateOrderRes.error);
         return json(500, {
           ok: false,
           code: "ORDER_LOOKUP_FAILED",
@@ -718,7 +735,7 @@ export async function POST(req: Request) {
       productRefId = cardRes.data.id;
       productMeta = {
         cardId: cardRes.data.id,
-        durationHours: 72,
+        durationDays: ONE_ON_ONE_PLUS_DURATION_DAYS,
       };
     }
 
@@ -1067,7 +1084,7 @@ export async function POST(req: Request) {
       productType === "more_view" ||
       productType === "city_view" ||
       productType === "one_on_one_contact_exchange" ||
-      productType === "one_on_one_priority_24h" ||
+      productType === "one_on_one_plus_30d" ||
       productType === "swipe_premium_30d" ||
       productType === "love_fortune_detail"
         ? {

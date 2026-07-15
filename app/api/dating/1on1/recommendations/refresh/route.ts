@@ -1,4 +1,9 @@
 import { DATING_ONE_ON_ONE_ACTIVE_STATUSES } from "@/lib/dating-1on1";
+import {
+  ONE_ON_ONE_FREE_REFRESH_LIMIT,
+  ONE_ON_ONE_PLUS_REFRESH_LIMIT,
+  getActiveOneOnOnePlus,
+} from "@/lib/dating-1on1-plus";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -9,6 +14,23 @@ type RefreshRecommendationPayload = {
 };
 
 const RECOMMENDATION_REFRESH_COOLDOWN_MS = 24 * 60 * 60 * 1000;
+
+type RefreshConsumptionRow = {
+  allowed?: boolean;
+  used_count?: number;
+  remaining_count?: number;
+  refreshed_at?: string | null;
+  next_refresh_at?: string | null;
+};
+
+function isMissingRefreshSchema(error: unknown) {
+  const message = String((error as { message?: unknown } | null)?.message ?? error ?? "").toLowerCase();
+  return (
+    message.includes("consume_dating_1on1_recommendation_refresh") ||
+    message.includes("dating_1on1_recommendation_refresh_events") ||
+    message.includes("schema cache")
+  );
+}
 
 export async function POST(req: Request) {
   const originError = ensureAllowedMutationOrigin(req);
@@ -46,49 +68,96 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Source card is no longer active." }, { status: 409 });
   }
 
-  const lastRefreshAt = cardRes.data.recommendation_refresh_used_at;
-  if (lastRefreshAt) {
-    const lastRefreshMs = Date.parse(lastRefreshAt);
-    if (Number.isFinite(lastRefreshMs)) {
-      const nextRefreshMs = lastRefreshMs + RECOMMENDATION_REFRESH_COOLDOWN_MS;
-      if (nextRefreshMs > Date.now()) {
-        return NextResponse.json(
-          {
-            error: "후보 새로고침은 1일에 1번만 가능합니다.",
-            next_refresh_at: new Date(nextRefreshMs).toISOString(),
-          },
-          { status: 409 }
-        );
-      }
+  let activePlus: Awaited<ReturnType<typeof getActiveOneOnOnePlus>>;
+  try {
+    activePlus = await getActiveOneOnOnePlus(admin, user.id);
+  } catch (error) {
+    console.error("[POST /api/dating/1on1/recommendations/refresh] plus lookup failed", error);
+    return NextResponse.json({ error: "플러스 이용 상태를 확인하지 못했습니다." }, { status: 500 });
+  }
+  const refreshLimit = activePlus ? ONE_ON_ONE_PLUS_REFRESH_LIMIT : ONE_ON_ONE_FREE_REFRESH_LIMIT;
+  const consumeRes = await admin.rpc("consume_dating_1on1_recommendation_refresh", {
+    p_card_id: sourceCardId,
+    p_user_id: user.id,
+    p_limit: refreshLimit,
+  });
+
+  if (!consumeRes.error) {
+    const row = (Array.isArray(consumeRes.data) ? consumeRes.data[0] : consumeRes.data) as RefreshConsumptionRow | null;
+    if (!row?.allowed) {
+      return NextResponse.json(
+        {
+          error: `후보 새로고침은 최근 24시간 동안 ${refreshLimit}회까지 가능합니다.`,
+          refresh_limit: refreshLimit,
+          refresh_used_count: Number(row?.used_count ?? refreshLimit),
+          refresh_remaining: 0,
+          next_refresh_at: row?.next_refresh_at ?? null,
+        },
+        { status: 409 }
+      );
     }
+
+    return NextResponse.json({
+      ok: true,
+      source_card_id: sourceCardId,
+      refresh_used_at: row.refreshed_at ?? new Date().toISOString(),
+      refresh_limit: refreshLimit,
+      refresh_used_count: Number(row.used_count ?? 1),
+      refresh_remaining: Number(row.remaining_count ?? Math.max(refreshLimit - 1, 0)),
+      next_refresh_at: row.next_refresh_at ?? null,
+      plus_active: Boolean(activePlus),
+    });
+  }
+
+  if (!isMissingRefreshSchema(consumeRes.error)) {
+    console.error("[POST /api/dating/1on1/recommendations/refresh] consume failed", consumeRes.error);
+    return NextResponse.json({ error: "후보 새로고침 처리에 실패했습니다." }, { status: 500 });
+  }
+  if (activePlus) {
+    return NextResponse.json(
+      { error: "플러스 새로고침 기능을 준비 중입니다. 잠시 후 다시 시도해 주세요." },
+      { status: 503 }
+    );
+  }
+
+  // Keep the original one-refresh behavior available during a rolling deployment.
+  const lastRefreshAt = cardRes.data.recommendation_refresh_used_at;
+  const lastRefreshMs = lastRefreshAt ? Date.parse(lastRefreshAt) : Number.NaN;
+  const nextRefreshMs = lastRefreshMs + RECOMMENDATION_REFRESH_COOLDOWN_MS;
+  if (Number.isFinite(lastRefreshMs) && nextRefreshMs > Date.now()) {
+    return NextResponse.json(
+      {
+        error: "후보 새로고침은 최근 24시간 동안 1회까지 가능합니다.",
+        refresh_limit: ONE_ON_ONE_FREE_REFRESH_LIMIT,
+        refresh_used_count: 1,
+        refresh_remaining: 0,
+        next_refresh_at: new Date(nextRefreshMs).toISOString(),
+      },
+      { status: 409 }
+    );
   }
 
   const nowIso = new Date().toISOString();
   const updateRes = await admin
     .from("dating_1on1_cards")
-    .update({
-      recommendation_refresh_used_at: nowIso,
-      updated_at: nowIso,
-    })
+    .update({ recommendation_refresh_used_at: nowIso, updated_at: nowIso })
     .eq("id", sourceCardId)
     .eq("user_id", user.id)
     .select("id,recommendation_refresh_used_at")
     .maybeSingle();
-
-  if (updateRes.error) {
-    console.error("[POST /api/dating/1on1/recommendations/refresh] update failed", updateRes.error);
-    return NextResponse.json({ error: "Failed to refresh recommendations." }, { status: 500 });
-  }
-  if (!updateRes.data) {
-    return NextResponse.json(
-      { error: "후보 새로고침 처리에 실패했습니다. 잠시 후 다시 시도해 주세요." },
-      { status: 409 }
-    );
+  if (updateRes.error || !updateRes.data) {
+    console.error("[POST /api/dating/1on1/recommendations/refresh] legacy update failed", updateRes.error);
+    return NextResponse.json({ error: "후보 새로고침 처리에 실패했습니다." }, { status: 500 });
   }
 
   return NextResponse.json({
     ok: true,
     source_card_id: sourceCardId,
     refresh_used_at: updateRes.data.recommendation_refresh_used_at ?? nowIso,
+    refresh_limit: ONE_ON_ONE_FREE_REFRESH_LIMIT,
+    refresh_used_count: 1,
+    refresh_remaining: 0,
+    next_refresh_at: new Date(Date.parse(nowIso) + RECOMMENDATION_REFRESH_COOLDOWN_MS).toISOString(),
+    plus_active: false,
   });
 }

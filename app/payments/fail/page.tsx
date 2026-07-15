@@ -22,7 +22,7 @@ function getPrimaryAction(productType?: string | null) {
   if (productType === "love_fortune_detail") {
     return { href: "/community/dating/cards", label: "오픈카드로 돌아가기" };
   }
-  if (productType === "one_on_one_contact_exchange" || productType === "one_on_one_priority_24h") {
+  if (productType === "one_on_one_contact_exchange" || productType === "one_on_one_priority_24h" || productType === "one_on_one_plus_30d") {
     return { href: "/mypage", label: "마이페이지로 돌아가기" };
   }
   return { href: "/mypage", label: "마이페이지로 돌아가기" };
@@ -59,10 +59,10 @@ function PaymentFailContent() {
             {primaryAction.label}
           </Link>
           <Link
-            href={productType === "one_on_one_contact_exchange" || productType === "one_on_one_priority_24h" ? "/dating/1on1" : "/mypage"}
+            href={productType === "one_on_one_contact_exchange" || productType === "one_on_one_priority_24h" || productType === "one_on_one_plus_30d" ? "/dating/1on1" : "/mypage"}
             className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
           >
-            {productType === "one_on_one_contact_exchange" || productType === "one_on_one_priority_24h" ? "1:1 소개팅 보기" : "마이페이지"}
+            {productType === "one_on_one_contact_exchange" || productType === "one_on_one_priority_24h" || productType === "one_on_one_plus_30d" ? "1:1 소개팅 보기" : "마이페이지"}
           </Link>
         </div>
       </section>

@@ -3,6 +3,7 @@ import { getDatingOneOnOneWriteStatus, getProfilePhoneVerification } from "@/lib
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
+import { getActiveOneOnOnePlus } from "@/lib/dating-1on1-plus";
 
 type InputPayload = {
   id?: string;
@@ -81,6 +82,7 @@ export async function GET(req: Request) {
   }
 
   const admin = createAdminClient();
+  const activePlus = await getActiveOneOnOnePlus(admin, user.id);
   const { data, error } = await admin
     .from("dating_1on1_cards")
     .select(
@@ -116,11 +118,12 @@ export async function GET(req: Request) {
 
       return {
         ...row,
+        plus_expires_at: activePlus?.expires_at ?? null,
         age: toCurrentAge(row.birth_year),
         photo_signed_urls,
       };
     });
-    return NextResponse.json({ items });
+    return NextResponse.json({ items, plus: activePlus });
   }
 
   if (error) {
@@ -140,12 +143,13 @@ export async function GET(req: Request) {
 
     return {
       ...row,
+      plus_expires_at: activePlus?.expires_at ?? null,
       age: toCurrentAge(row.birth_year),
       photo_signed_urls,
     };
   });
 
-  return NextResponse.json({ items });
+  return NextResponse.json({ items, plus: activePlus });
 }
 
 export async function PATCH(req: Request) {

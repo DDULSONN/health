@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { getActiveOneOnOnePlus } from "@/lib/dating-1on1-plus";
 import { hashEmail } from "@/lib/account-deletion";
 import { requireAdminRoute } from "@/lib/admin-route";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -694,6 +695,11 @@ export async function GET(request: Request) {
         )
       : [];
     const enrichedOneOnOneMatches = await enrichOneOnOneMatches(auth.admin, userId, oneOnOneMatches);
+    const activeOneOnOnePlus = await getActiveOneOnOnePlus(auth.admin, userId);
+    const oneOnOneCardsWithPlus = oneOnOneCards.map((card) => ({
+      ...card,
+      plus_expires_at: activeOneOnOnePlus?.expires_at ?? null,
+    }));
 
     const counts = {
       posts: await countSafe(auth.admin.from("posts").select("id", { count: "exact", head: true }).eq("user_id", userId)),
@@ -714,7 +720,7 @@ export async function GET(request: Request) {
       open_card_sent_applications: sentOpenApplications,
       paid_cards: paidCards,
       paid_card_applications: paidApplications,
-      one_on_one_cards: oneOnOneCards,
+      one_on_one_cards: oneOnOneCardsWithPlus,
       one_on_one_matches: enrichedOneOnOneMatches,
       one_on_one_profile_history: oneOnOneProfileHistory,
       community_posts: posts,

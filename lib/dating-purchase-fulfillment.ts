@@ -1118,6 +1118,19 @@ export async function grantOneOnOneContactExchange(admin: AdminClient, options: 
   if (!["mutual_accepted", "candidate_accepted"].includes(matchRes.data.state)) {
     throw new Error("쌍방 수락이 완료된 매칭만 번호교환 결제를 진행할 수 있습니다.");
   }
+  if (matchRes.data.contact_exchange_status === "canceled") {
+    throw new Error("취소된 1:1 매칭은 번호교환 결제를 진행할 수 없습니다.");
+  }
+
+  const cancelReadyOrdersRes = await admin
+    .from("toss_test_payment_orders")
+    .update({ status: "canceled", updated_at: new Date().toISOString() })
+    .eq("product_type", "one_on_one_contact_exchange")
+    .eq("product_ref_id", matchId)
+    .eq("status", "ready");
+  if (cancelReadyOrdersRes.error && matchRes.data.contact_exchange_status !== "approved") {
+    throw cancelReadyOrdersRes.error;
+  }
   if (matchRes.data.contact_exchange_status === "approved") {
     return {
       id: matchRes.data.id,
@@ -1125,9 +1138,6 @@ export async function grantOneOnOneContactExchange(admin: AdminClient, options: 
       contact_exchange_status: matchRes.data.contact_exchange_status,
       alreadyApproved: true,
     };
-  }
-  if (matchRes.data.contact_exchange_status === "canceled") {
-    throw new Error("취소된 1:1 매칭은 번호교환 결제를 진행할 수 없습니다.");
   }
 
   const nowIso = new Date().toISOString();
