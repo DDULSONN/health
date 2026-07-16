@@ -3735,7 +3735,7 @@ function OneOnOneHomePanel({
                 <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-sky-700">{recommendationCount}명</span>
               </div>
 
-              {recommendationGroups.length === 0 || recommendationCount === 0 ? (
+              {recommendationGroups.length === 0 ? (
                 <p className="mt-3 rounded-2xl bg-white/80 p-4 text-sm leading-6 text-sky-800">현재 보여줄 추천 후보가 없어요. 조건에 맞는 후보가 생기면 여기서 바로 볼 수 있습니다.</p>
               ) : (
                 <div className="mt-3 space-y-4">

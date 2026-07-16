@@ -637,6 +637,7 @@ type MyOneOnOneCard = {
   smoking: "non_smoker" | "occasional" | "smoker";
   workout_frequency: "none" | "1_2" | "3_4" | "5_plus" | null;
   status: "submitted" | "reviewing" | "approved" | "rejected";
+  archived?: boolean;
   admin_note?: string | null;
   admin_tags?: string[] | null;
   reviewed_at?: string | null;
@@ -5368,7 +5369,7 @@ export default function MyPage() {
 
   const handleDeleteMyOneOnOneCard = async (cardId: string) => {
     if (deletingOneOnOneIds.includes(cardId)) return;
-    if (!confirm("1:1 소개팅 프로필을 삭제할까요? 연결된 후보/매칭 기록도 함께 정리될 수 있습니다.")) return;
+    if (!confirm("1:1 프로필을 내릴까요? 추천 노출은 종료되지만 기존 매칭과 번호교환 기록은 유지됩니다.")) return;
 
     setDeletingOneOnOneIds((prev) => [...prev, cardId]);
     try {
@@ -5381,12 +5382,11 @@ export default function MyPage() {
         return;
       }
 
-      setMyOneOnOneCards((prev) => prev.filter((item) => item.id !== cardId));
-      setMyOneOnOneMatches((prev) =>
-        prev.filter((match) => match.source_card_id !== cardId && match.candidate_card_id !== cardId)
+      setMyOneOnOneCards((prev) =>
+        prev.map((item) => (item.id === cardId ? { ...item, status: "rejected", archived: true } : item))
       );
       setMyOneOnOneAutoRecommendations((prev) => prev.filter((group) => group.source_card_id !== cardId));
-      alert("1:1 소개팅 프로필을 삭제했습니다.");
+      alert("1:1 프로필을 내렸습니다. 기존 매칭 기록은 그대로 유지됩니다.");
     } finally {
       setDeletingOneOnOneIds((prev) => prev.filter((id) => id !== cardId));
     }
@@ -8326,6 +8326,7 @@ export default function MyPage() {
         ) : (
           <div className="space-y-3">
             {myOneOnOneCards.map((item) => {
+              const isArchivedOneOnOneCard = item.archived === true;
               const relatedMatches = myOneOnOneMatchesByCardId.get(item.id) ?? [];
               const autoRecommendationGroup = myOneOnOneAutoRecommendationsByCardId.get(item.id) ?? null;
               const autoRecommendations = autoRecommendationGroup?.recommendations ?? [];
@@ -8369,9 +8370,14 @@ export default function MyPage() {
                         datingStatusColor[item.status] ?? "bg-neutral-100 text-neutral-700"
                       }`}
                     >
-                      {item.status}
+                      {isArchivedOneOnOneCard ? "노출 종료" : item.status}
                     </span>
                   </div>
+                  {isArchivedOneOnOneCard ? (
+                    <p className="mt-2 rounded-lg bg-neutral-100 px-3 py-2 text-xs leading-5 text-neutral-600">
+                      프로필 노출은 종료됐습니다. 기존 매칭과 번호교환 기록은 아래에서 계속 확인할 수 있어요.
+                    </p>
+                  ) : null}
                   <p className="mt-1 text-xs text-neutral-500">
                     신청일 {new Date(item.created_at).toLocaleString("ko-KR")}
                     {item.reviewed_at ? ` / 최근 검토 ${new Date(item.reviewed_at).toLocaleString("ko-KR")}` : ""}
@@ -9084,14 +9090,16 @@ export default function MyPage() {
                         신청서 수정
                       </Link>
                     )}
-                    <button
-                      type="button"
-                      onClick={() => void handleDeleteMyOneOnOneCard(item.id)}
-                      disabled={deletingOneOnOneIds.includes(item.id)}
-                      className="inline-flex h-8 items-center rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-                    >
-                      {deletingOneOnOneIds.includes(item.id) ? "삭제 중..." : "프로필 삭제"}
-                    </button>
+                    {!isArchivedOneOnOneCard ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleDeleteMyOneOnOneCard(item.id)}
+                        disabled={deletingOneOnOneIds.includes(item.id)}
+                        className="inline-flex h-8 items-center rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {deletingOneOnOneIds.includes(item.id) ? "처리 중..." : "프로필 내리기"}
+                      </button>
+                    ) : null}
                   </div>
                 </div>
               );

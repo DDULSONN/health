@@ -31,6 +31,7 @@ const SMOKING_VALUES = new Set(["non_smoker", "occasional", "smoker"]);
 const WORKOUT_VALUES = new Set(["none", "1_2", "3_4", "5_plus"]);
 const ONE_ON_ONE_EDIT_LOCK_TAG = "one_on_one_edit_locked";
 const ONE_ON_ONE_USER_EDIT_USED_TAG = "one_on_one_user_edit_used";
+const ONE_ON_ONE_USER_DELETED_TAG = "one_on_one_user_deleted";
 const BIRTH_YEAR_ERROR_MESSAGE = "나이가 아니라 출생연도 4자리를 입력해 주세요. 예: 1996";
 
 function normalizePath(raw: unknown): string {
@@ -118,6 +119,7 @@ export async function GET(req: Request) {
 
       return {
         ...row,
+        archived: Array.isArray(row.admin_tags) && row.admin_tags.includes(ONE_ON_ONE_USER_DELETED_TAG),
         plus_expires_at: activePlus?.expires_at ?? null,
         age: toCurrentAge(row.birth_year),
         photo_signed_urls,
@@ -143,6 +145,7 @@ export async function GET(req: Request) {
 
     return {
       ...row,
+      archived: Array.isArray(row.admin_tags) && row.admin_tags.includes(ONE_ON_ONE_USER_DELETED_TAG),
       plus_expires_at: activePlus?.expires_at ?? null,
       age: toCurrentAge(row.birth_year),
       photo_signed_urls,
@@ -342,7 +345,7 @@ export async function DELETE(req: Request) {
   const admin = createAdminClient();
   const currentRes = await admin
     .from("dating_1on1_cards")
-    .select("id")
+    .select("id,status,admin_tags")
     .eq("id", cardId)
     .eq("user_id", user.id)
     .maybeSingle();
@@ -355,16 +358,23 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: "Request not found." }, { status: 404 });
   }
 
+  const nowIso = new Date().toISOString();
   const deleteRes = await admin
     .from("dating_1on1_cards")
-    .delete()
+    .update({
+      status: "rejected",
+      admin_tags: appendAdminTag(currentRes.data.admin_tags, ONE_ON_ONE_USER_DELETED_TAG),
+      updated_at: nowIso,
+    })
     .eq("id", cardId)
-    .eq("user_id", user.id);
+    .eq("user_id", user.id)
+    .select("id")
+    .maybeSingle();
 
-  if (deleteRes.error) {
-    console.error("[DELETE /api/dating/1on1/my] delete failed", deleteRes.error);
-    return NextResponse.json({ error: "Failed to delete request." }, { status: 500 });
+  if (deleteRes.error || !deleteRes.data) {
+    console.error("[DELETE /api/dating/1on1/my] archive failed", deleteRes.error);
+    return NextResponse.json({ error: "Failed to archive request." }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, id: cardId, deleted: true });
+  return NextResponse.json({ ok: true, id: cardId, deleted: true, archived: true });
 }
