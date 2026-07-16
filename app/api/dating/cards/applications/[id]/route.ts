@@ -82,13 +82,22 @@ export async function PATCH(
   let updateRes = await adminClient
     .from("dating_card_applications")
     .update({ status, accepted_at: acceptedAt })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("status", app.status)
+    .select("id,status")
+    .maybeSingle();
 
   if (updateRes.error && updateRes.error.code === "42703") {
-    updateRes = await adminClient.from("dating_card_applications").update({ status }).eq("id", id);
+    updateRes = await adminClient
+      .from("dating_card_applications")
+      .update({ status })
+      .eq("id", id)
+      .eq("status", app.status)
+      .select("id,status")
+      .maybeSingle();
   }
 
-  if (updateRes.error) {
+  if (updateRes.error || !updateRes.data || updateRes.data.id !== id) {
     console.error("[PATCH /api/dating/cards/applications/[id]] failed", updateRes.error);
     return NextResponse.json({ error: "상태 변경에 실패했습니다." }, { status: 500 });
   }
@@ -182,6 +191,7 @@ export async function PATCH(
 
   return NextResponse.json({
     ok: true,
+    application_id: id,
     status,
     // Open cards stay public after acceptance so owners can accept more than one applicant.
     card_hidden: cardHidden,

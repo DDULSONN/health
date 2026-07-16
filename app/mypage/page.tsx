@@ -3769,7 +3769,9 @@ export default function MyPage() {
         return;
       }
       setMyAppliedCardApplications((prev) => prev.filter((app) => app.id !== applicationId));
-      await reloadOpenDatingConnections();
+      setDatingConnections((prev) =>
+        prev.filter((item) => !(item.source === "open" && item.application_id === applicationId))
+      );
     } finally {
       setDeletingAppliedIds((prev) => prev.filter((id) => id !== applicationId));
       }
@@ -3790,7 +3792,9 @@ export default function MyPage() {
           return;
         }
         setMyAppliedPaidApplications((prev) => prev.filter((app) => app.id !== applicationId));
-        await reloadOpenDatingConnections();
+        setDatingConnections((prev) =>
+          prev.filter((item) => !(item.source === "paid" && item.application_id === applicationId))
+        );
       } finally {
         setDeletingPaidAppliedIds((prev) => prev.filter((id) => id !== applicationId));
       }
@@ -3807,15 +3811,22 @@ export default function MyPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: "canceled" }),
         });
-        const body = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean; status?: string };
-        if (!res.ok || !body.ok) {
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          ok?: boolean;
+          status?: string;
+          application_id?: string;
+        };
+        if (!res.ok || !body.ok || (body.application_id && body.application_id !== applicationId)) {
           alert(body.error ?? "매칭 취소에 실패했습니다.");
           return;
         }
         setMyAppliedPaidApplications((prev) =>
           prev.map((app) => (app.id === applicationId ? { ...app, status: "canceled" } : app))
         );
-        await reloadOpenDatingConnections();
+        setDatingConnections((prev) =>
+          prev.filter((item) => !(item.source === "paid" && item.application_id === applicationId))
+        );
       } finally {
         setCancelingPaidAppliedIds((prev) => prev.filter((id) => id !== applicationId));
       }
@@ -3832,15 +3843,22 @@ export default function MyPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ status: "canceled" }),
         });
-        const body = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean; status?: string };
-        if (!res.ok || !body.ok) {
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          ok?: boolean;
+          status?: string;
+          application_id?: string;
+        };
+        if (!res.ok || !body.ok || (body.application_id && body.application_id !== applicationId)) {
           alert(body.error ?? "매칭 취소에 실패했습니다.");
           return;
         }
         setReceivedPaidApplications((prev) =>
           prev.map((app) => (app.id === applicationId ? { ...app, status: "canceled" } : app))
         );
-        await reloadOpenDatingConnections();
+        setDatingConnections((prev) =>
+          prev.filter((item) => !(item.source === "paid" && item.application_id === applicationId))
+        );
       } finally {
         setCancelingPaidAppliedIds((prev) => prev.filter((id) => id !== applicationId));
       }
@@ -3857,15 +3875,22 @@ export default function MyPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "canceled" }),
       });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean; status?: string };
-      if (!res.ok || !body.ok) {
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        ok?: boolean;
+        status?: string;
+        application_id?: string;
+      };
+      if (!res.ok || !body.ok || (body.application_id && body.application_id !== applicationId)) {
         alert(body.error ?? "지원 취소에 실패했습니다.");
         return;
       }
       setMyAppliedCardApplications((prev) =>
         prev.map((app) => (app.id === applicationId ? { ...app, status: "canceled" } : app))
       );
-      await reloadOpenDatingConnections();
+      setDatingConnections((prev) =>
+        prev.filter((item) => !(item.source === "open" && item.application_id === applicationId))
+      );
     } finally {
       setCancelingAppliedIds((prev) => prev.filter((id) => id !== applicationId));
     }
@@ -4398,18 +4423,37 @@ export default function MyPage() {
         });
       }
 
-      const body = (await res.json().catch(() => ({}))) as { error?: string; ok?: boolean; message?: string };
-      if (!res.ok || body.ok === false) {
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        ok?: boolean;
+        message?: string;
+        application_id?: string;
+      };
+      if (
+        !res.ok ||
+        body.ok === false ||
+        (item.source !== "swipe" && body.application_id && body.application_id !== item.application_id)
+      ) {
         alert(body.error ?? body.message ?? "연결 삭제에 실패했습니다.");
         return;
       }
 
+      setDatingConnections((prev) =>
+        prev.filter(
+          (connection) =>
+            !(
+              (connection.source ?? "open") === (item.source ?? "open") &&
+              connection.application_id === item.application_id
+            )
+        )
+      );
+
       if (item.source === "swipe") {
-        await Promise.all([reloadSwipeStatus(), reloadOpenDatingConnections()]);
+        await reloadSwipeStatus();
       } else if (item.source === "paid") {
-        await Promise.all([reloadPaidAppliedApplications(), reloadOpenDatingConnections()]);
+        await reloadPaidAppliedApplications();
       } else {
-        await Promise.all([reloadOpenAppliedApplications(), reloadOpenDatingConnections()]);
+        await reloadOpenAppliedApplications();
       }
 
       alert(body.message ?? "연결을 삭제했습니다.");

@@ -51,6 +51,10 @@ export async function PATCH(
   const isApplicant = app.applicant_user_id === user.id;
   const isAdmin = isAdminEmail(user.email);
 
+  if (status === app.status) {
+    return NextResponse.json({ ok: true, application_id: id, status, unchanged: true });
+  }
+
   if (status === "canceled") {
     if (!isApplicant && !isOwner && !isAdmin) {
       return NextResponse.json({ error: "취소 권한이 없습니다." }, { status: 403 });
@@ -66,13 +70,22 @@ export async function PATCH(
   let updateRes = await admin
     .from("dating_paid_card_applications")
     .update({ status, accepted_at: acceptedAt })
-    .eq("id", id);
+    .eq("id", id)
+    .eq("status", app.status)
+    .select("id,status")
+    .maybeSingle();
 
   if (updateRes.error && updateRes.error.code === "42703") {
-    updateRes = await admin.from("dating_paid_card_applications").update({ status }).eq("id", id);
+    updateRes = await admin
+      .from("dating_paid_card_applications")
+      .update({ status })
+      .eq("id", id)
+      .eq("status", app.status)
+      .select("id,status")
+      .maybeSingle();
   }
 
-  if (updateRes.error) {
+  if (updateRes.error || !updateRes.data || updateRes.data.id !== id) {
     console.error("[PATCH /api/dating/paid/applications/[id]] failed", updateRes.error);
     return NextResponse.json({ error: "상태 변경에 실패했습니다." }, { status: 500 });
   }
@@ -91,5 +104,5 @@ export async function PATCH(
   }
 
   // Paid card stays public even when accepted because multiple accepts are allowed.
-  return NextResponse.json({ ok: true, status });
+  return NextResponse.json({ ok: true, application_id: id, status });
 }
