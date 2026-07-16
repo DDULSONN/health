@@ -4580,9 +4580,11 @@ export default function MyPage() {
         ok?: boolean;
         error?: string;
         refresh_remaining?: number;
+        request_id?: string;
       };
       if (!res.ok || !body.ok) {
-        alert(body.error ?? "자동 추천 후보를 새로고침하지 못했습니다.");
+        const message = body.error ?? "자동 추천 후보를 새로고침하지 못했습니다.";
+        alert(body.request_id ? `${message}\n문의 코드: ${body.request_id}` : message);
         return;
       }
 

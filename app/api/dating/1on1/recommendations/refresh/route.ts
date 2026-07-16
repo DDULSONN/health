@@ -33,6 +33,7 @@ function isMissingRefreshSchema(error: unknown) {
 }
 
 export async function POST(req: Request) {
+  const requestId = crypto.randomUUID();
   const originError = ensureAllowedMutationOrigin(req);
   if (originError) return originError;
 
@@ -55,8 +56,15 @@ export async function POST(req: Request) {
     .maybeSingle();
 
   if (cardRes.error) {
-    console.error("[POST /api/dating/1on1/recommendations/refresh] card fetch failed", cardRes.error);
-    return NextResponse.json({ error: "Failed to load source card." }, { status: 500 });
+    console.error("[POST /api/dating/1on1/recommendations/refresh] card fetch failed", {
+      requestId,
+      code: cardRes.error.code,
+      message: cardRes.error.message,
+    });
+    return NextResponse.json(
+      { error: "1:1 신청서를 불러오지 못했습니다.", code: "SOURCE_CARD_LOAD_FAILED", request_id: requestId },
+      { status: 500 }
+    );
   }
   if (!cardRes.data) {
     return NextResponse.json({ error: "Card not found." }, { status: 404 });
@@ -72,8 +80,11 @@ export async function POST(req: Request) {
   try {
     activePlus = await getActiveOneOnOnePlus(admin, user.id);
   } catch (error) {
-    console.error("[POST /api/dating/1on1/recommendations/refresh] plus lookup failed", error);
-    return NextResponse.json({ error: "플러스 이용 상태를 확인하지 못했습니다." }, { status: 500 });
+    console.error("[POST /api/dating/1on1/recommendations/refresh] plus lookup failed", { requestId, error });
+    return NextResponse.json(
+      { error: "플러스 이용 상태를 확인하지 못했습니다.", code: "PLUS_LOOKUP_FAILED", request_id: requestId },
+      { status: 500 }
+    );
   }
   const refreshLimit = activePlus ? ONE_ON_ONE_PLUS_REFRESH_LIMIT : ONE_ON_ONE_FREE_REFRESH_LIMIT;
   const consumeRes = await admin.rpc("consume_dating_1on1_recommendation_refresh", {
@@ -110,8 +121,17 @@ export async function POST(req: Request) {
   }
 
   if (!isMissingRefreshSchema(consumeRes.error)) {
-    console.error("[POST /api/dating/1on1/recommendations/refresh] consume failed", consumeRes.error);
-    return NextResponse.json({ error: "후보 새로고침 처리에 실패했습니다." }, { status: 500 });
+    console.error("[POST /api/dating/1on1/recommendations/refresh] consume failed", {
+      requestId,
+      code: consumeRes.error.code,
+      message: consumeRes.error.message,
+      details: consumeRes.error.details,
+      hint: consumeRes.error.hint,
+    });
+    return NextResponse.json(
+      { error: "후보 새로고침 처리에 실패했습니다.", code: "REFRESH_CONSUME_FAILED", request_id: requestId },
+      { status: 500 }
+    );
   }
   if (activePlus) {
     return NextResponse.json(
@@ -146,8 +166,15 @@ export async function POST(req: Request) {
     .select("id,recommendation_refresh_used_at")
     .maybeSingle();
   if (updateRes.error || !updateRes.data) {
-    console.error("[POST /api/dating/1on1/recommendations/refresh] legacy update failed", updateRes.error);
-    return NextResponse.json({ error: "후보 새로고침 처리에 실패했습니다." }, { status: 500 });
+    console.error("[POST /api/dating/1on1/recommendations/refresh] legacy update failed", {
+      requestId,
+      code: updateRes.error?.code,
+      message: updateRes.error?.message,
+    });
+    return NextResponse.json(
+      { error: "후보 새로고침 처리에 실패했습니다.", code: "LEGACY_REFRESH_FAILED", request_id: requestId },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({

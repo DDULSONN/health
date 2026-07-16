@@ -145,9 +145,9 @@ begin
     raise exception '1:1 card is not active';
   end if;
 
-  delete from public.dating_1on1_recommendation_refresh_events
-  where card_id = p_card_id
-    and refreshed_at < v_now - interval '7 days';
+  delete from public.dating_1on1_recommendation_refresh_events as refresh_event
+  where refresh_event.card_id = p_card_id
+    and refresh_event.refreshed_at < v_now - interval '7 days';
 
   select count(*)::integer, min(event.refreshed_at)
   into v_used_count, v_oldest_refresh

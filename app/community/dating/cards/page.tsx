@@ -2574,9 +2574,10 @@ export default function OpenCardsPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ source_card_id: sourceCardId }),
         });
-        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; request_id?: string };
         if (!res.ok || !body.ok) {
-          throw new Error(body.error ?? "추천 후보를 새로고침하지 못했습니다.");
+          const message = body.error ?? "추천 후보를 새로고침하지 못했습니다.";
+          throw new Error(body.request_id ? `${message}\n문의 코드: ${body.request_id}` : message);
         }
         await reloadOneOnOneHome();
       } catch (error) {
