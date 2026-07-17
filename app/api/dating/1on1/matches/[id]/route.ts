@@ -8,6 +8,7 @@ import {
   buildOneOnOneSelectionReceivedNotification,
 } from "@/lib/dating-email-templates";
 import { recordOneOnOneMetricEvent } from "@/lib/dating-1on1-metrics";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { sendDatingEmailNotification } from "@/lib/dating-swipe";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -77,6 +78,9 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
+
   const { user } = await getRequestAuthContext(req);
 
   if (!user) {

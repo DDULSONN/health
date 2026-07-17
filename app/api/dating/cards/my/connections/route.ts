@@ -90,7 +90,7 @@ export async function GET(req: Request) {
       ownedCardsError: ownedCardsRes.error,
       myAppliedError: myAppliedRes.error,
     });
-    return NextResponse.json({ error: "?곌껐 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??" }, { status: 500 });
+    return NextResponse.json({ error: "연결 정보를 불러오지 못했습니다." }, { status: 500 });
   }
 
   const ownedCardIds = (ownedCardsRes.data ?? []).map((card) => card.id);
@@ -108,7 +108,7 @@ export async function GET(req: Request) {
 
   if (ownerAcceptedRes.error) {
     console.error("[GET /api/dating/cards/my/connections] owner accepted failed", ownerAcceptedRes.error);
-    return NextResponse.json({ error: "?곌껐 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??" }, { status: 500 });
+    return NextResponse.json({ error: "연결 정보를 불러오지 못했습니다." }, { status: 500 });
   }
 
   let swipeMatches: SwipeMatch[] = [];
@@ -125,7 +125,7 @@ export async function GET(req: Request) {
       console.warn("[GET /api/dating/cards/my/connections] swipe table missing, skipping");
     } else {
       console.error("[GET /api/dating/cards/my/connections] swipe matches failed", swipeMatchesRes.error);
-      return NextResponse.json({ error: "?곌껐 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??" }, { status: 500 });
+      return NextResponse.json({ error: "연결 정보를 불러오지 못했습니다." }, { status: 500 });
     }
   } else {
     swipeMatches = (swipeMatchesRes.data ?? []) as SwipeMatch[];
@@ -186,7 +186,7 @@ export async function GET(req: Request) {
 
   if (cardsError) {
     console.error("[GET /api/dating/cards/my/connections] cards failed", cardsError);
-    return NextResponse.json({ error: "?곌껐 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??" }, { status: 500 });
+    return NextResponse.json({ error: "연결 정보를 불러오지 못했습니다." }, { status: 500 });
   }
 
   const cardsById = new Map(cardsData.map((card) => [card.id, card]));
@@ -201,7 +201,7 @@ export async function GET(req: Request) {
 
   if (profilesRes.error) {
     console.error("[GET /api/dating/cards/my/connections] profiles failed", profilesRes.error);
-    return NextResponse.json({ error: "?곌껐 ?뺣낫瑜?遺덈윭?ㅼ? 紐삵뻽?듬땲??" }, { status: 500 });
+    return NextResponse.json({ error: "연결 정보를 불러오지 못했습니다." }, { status: 500 });
   }
 
   const profileMap = new Map(((profilesRes.data ?? []) as ProfileRow[]).map((p) => [p.user_id, p.nickname]));
@@ -213,7 +213,7 @@ export async function GET(req: Request) {
       const isOwnerView = card.owner_user_id === user.id;
       const otherUserId = isOwnerView ? app.applicant_user_id : card.owner_user_id;
       if (blockedUserIds.has(otherUserId)) return null;
-      const otherNickname = String(profileMap.get(otherUserId) ?? "?듬챸").trim() || "?듬챸";
+      const otherNickname = String(profileMap.get(otherUserId) ?? "회원").trim() || "회원";
       const myInstagram = isOwnerView ? card.instagram_id ?? null : app.instagram_id;
       const otherInstagram = isOwnerView ? app.instagram_id : card.instagram_id ?? null;
       return {

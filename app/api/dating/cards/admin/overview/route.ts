@@ -135,7 +135,7 @@ export async function GET(req: Request) {
   const { user } = await getRequestAuthContext(req);
 
   if (!user || !isAllowedAdminUser(user.id, user.email)) {
-    return NextResponse.json({ error: "沅뚰븳???놁뒿?덈떎." }, { status: 403 });
+    return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
   }
 
   const adminClient = createAdminClient();
@@ -233,7 +233,7 @@ export async function GET(req: Request) {
       cardsError: cardsRes.error,
       appsError: appsRes.error,
     });
-    return NextResponse.json({ error: "愿由ъ옄 ?곗씠?곕? 遺덈윭?ㅼ? 紐삵뻽?듬땲??" }, { status: 500 });
+    return NextResponse.json({ error: "관리자 데이터를 불러오지 못했습니다." }, { status: 500 });
   }
 
   const userIds = [

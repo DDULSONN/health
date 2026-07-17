@@ -435,14 +435,30 @@ async function ensureSwipePremiumFulfilled(
     typeof order.product_meta?.dailyLimit === "number" && Number.isFinite(order.product_meta.dailyLimit)
       ? Math.max(SWIPE_PREMIUM_DAILY_LIMIT, Number(order.product_meta.dailyLimit))
       : SWIPE_PREMIUM_DAILY_LIMIT;
+  const grantNote = `toss payment ${order.toss_order_id} | auto-approved`;
 
-  await grantSwipeSubscription(admin, {
-    userId: order.user_id,
-    amount: order.amount,
-    dailyLimit,
-    durationDays,
-    note: `toss payment ${order.toss_order_id} | auto-approved`,
-  });
+  const existingGrantRes = await admin
+    .from("dating_swipe_subscription_requests")
+    .select("id")
+    .eq("user_id", order.user_id)
+    .eq("status", "approved")
+    .eq("note", grantNote)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingGrantRes.error) {
+    throw existingGrantRes.error;
+  }
+
+  if (!existingGrantRes.data?.id) {
+    await grantSwipeSubscription(admin, {
+      userId: order.user_id,
+      amount: order.amount,
+      dailyLimit,
+      durationDays,
+      note: grantNote,
+    });
+  }
 
   const metaUpdateRes = await admin
     .from("toss_test_payment_orders")
@@ -459,7 +475,7 @@ async function ensureSwipePremiumFulfilled(
     throw metaUpdateRes.error;
   }
 
-  return { fulfilled: true };
+  return { fulfilled: true, alreadyFulfilled: Boolean(existingGrantRes.data?.id) };
 }
 
 async function ensurePaidCardFulfilled(

@@ -1025,7 +1025,7 @@ export async function POST(req: Request) {
     const tossOrderId = crypto.randomUUID().replace(/-/g, "");
     const orderName =
       productType === "more_view"
-        ? `${config.orderName} (${productMeta.sex === "female" ? "?ъ옄 移대뱶" : "?⑥옄 移대뱶"})`
+        ? `${config.orderName} (${productMeta.sex === "female" ? "여자 카드" : "남자 카드"})`
         : productType === "city_view"
           ? `${config.orderName} (${String(productMeta.province ?? "-")})`
           : orderNameOverride ?? config.orderName;

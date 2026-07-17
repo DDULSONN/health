@@ -258,7 +258,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   if (error || !data) {
-    return NextResponse.json({ error: "燁삳?諭띄몴?筌≪뼚??????곷뮸??덈뼄." }, { status: 404 });
+    return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
   }
 
   if (user?.id) {
@@ -280,7 +280,7 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   if (!isPublicAvailable && !canReadPending) {
-    return NextResponse.json({ error: "?⑤벀而?餓λ쵐??燁삳?諭뜹첎? ?袁⑤뻸??덈뼄." }, { status: 403 });
+    return NextResponse.json({ error: "현재 열람할 수 없는 카드입니다." }, { status: 403 });
   }
 
   const photoVisibility = data.photo_visibility === "public" ? "public" : "blur";

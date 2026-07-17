@@ -3,6 +3,7 @@ import {
 } from "@/lib/dating-1on1";
 import { getActiveOneOnOnePlus } from "@/lib/dating-1on1-plus";
 import { grantOneOnOneContactExchange } from "@/lib/dating-purchase-fulfillment";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
@@ -27,6 +28,9 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
+
   const { user } = await getRequestAuthContext(req);
 
   if (!user) {

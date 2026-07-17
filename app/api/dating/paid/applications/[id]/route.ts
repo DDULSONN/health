@@ -51,19 +51,25 @@ export async function PATCH(
   const isApplicant = app.applicant_user_id === user.id;
   const isAdmin = isAdminEmail(user.email);
 
-  if (status === app.status) {
-    return NextResponse.json({ ok: true, application_id: id, status, unchanged: true });
-  }
-
   if (status === "canceled") {
     if (!isApplicant && !isOwner && !isAdmin) {
       return NextResponse.json({ error: "취소 권한이 없습니다." }, { status: 403 });
+    }
+    if (status === app.status) {
+      return NextResponse.json({ ok: true, application_id: id, status, unchanged: true });
     }
     if (isOwner && app.status !== "accepted" && !isAdmin) {
       return NextResponse.json({ error: "수락된 연결만 삭제할 수 있습니다." }, { status: 409 });
     }
   } else if (!isOwner && !isAdmin) {
     return NextResponse.json({ error: "처리 권한이 없습니다." }, { status: 403 });
+  } else {
+    if (status === app.status) {
+      return NextResponse.json({ ok: true, application_id: id, status, unchanged: true });
+    }
+    if (app.status !== "submitted" && !isAdmin) {
+      return NextResponse.json({ error: "이미 처리된 지원서입니다." }, { status: 409 });
+    }
   }
 
   const acceptedAt = status === "accepted" ? new Date().toISOString() : null;
