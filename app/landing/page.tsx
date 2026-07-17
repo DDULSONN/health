@@ -14,16 +14,16 @@ export const metadata: Metadata = {
 };
 
 const reviewProofs = [
-  { src: "/landing/reviews/review-01.jpg", width: 935, height: 178 },
-  { src: "/landing/reviews/review-02.jpg", width: 751, height: 397 },
-  { src: "/landing/reviews/review-03.jpg", width: 2956, height: 1092 },
-  { src: "/landing/reviews/review-04.jpg", width: 3136, height: 1240 },
-  { src: "/landing/reviews/review-05.jpg", width: 735, height: 291 },
-  { src: "/landing/reviews/review-06.jpg", width: 1080, height: 263 },
-  { src: "/landing/reviews/review-07.jpg", width: 961, height: 496 },
-  { src: "/landing/reviews/review-08.jpg", width: 946, height: 370 },
-  { src: "/landing/reviews/review-09.jpg", width: 812, height: 585 },
-  { src: "/landing/reviews/review-10.jpg", width: 888, height: 370 },
+  { src: "/landing/reviews/review-01.webp", width: 935, height: 178 },
+  { src: "/landing/reviews/review-02.webp", width: 751, height: 397 },
+  { src: "/landing/reviews/review-03.webp", width: 1440, height: 532 },
+  { src: "/landing/reviews/review-04.webp", width: 1440, height: 569 },
+  { src: "/landing/reviews/review-05.webp", width: 735, height: 291 },
+  { src: "/landing/reviews/review-06.webp", width: 1080, height: 263 },
+  { src: "/landing/reviews/review-07.webp", width: 961, height: 496 },
+  { src: "/landing/reviews/review-08.webp", width: 946, height: 370 },
+  { src: "/landing/reviews/review-09.webp", width: 812, height: 585 },
+  { src: "/landing/reviews/review-10.webp", width: 888, height: 370 },
 ];
 
 const differences = [
@@ -213,10 +213,10 @@ export default async function LandingPage() {
               <div className={styles.visualPoster}>
                 <Image
                   className={styles.heroPoster}
-                  src="/landing/jimtool-store-hero.png"
+                  src="/landing/jimtool-store-hero.webp"
                   alt=""
-                  width={945}
-                  height={2048}
+                  width={1200}
+                  height={2601}
                   priority
                 />
               </div>

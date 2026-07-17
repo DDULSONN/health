@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
@@ -44,6 +44,7 @@ export default function SignupPage() {
   const [nickname, setNickname] = useState("");
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
+  const [emailFormOpen, setEmailFormOpen] = useState(false);
 
   const [loading, setLoading] = useState(false);
   const [resending, setResending] = useState(false);
@@ -56,7 +57,8 @@ export default function SignupPage() {
     if (stored) setEmail(stored);
   }, []);
 
-  const handleSignup = async () => {
+  const handleSignup = async (event?: FormEvent<HTMLFormElement>) => {
+    event?.preventDefault();
     const normalized = email.trim().toLowerCase();
     const cleanNickname = normalizeNickname(nickname);
     if (!normalized) {
@@ -182,102 +184,143 @@ export default function SignupPage() {
   };
 
   return (
-    <main className="max-w-sm mx-auto px-4 py-16">
+    <main className="mx-auto max-w-sm px-4 py-12 sm:py-16">
       <h1 className="text-2xl font-bold text-neutral-900 mb-2">회원가입</h1>
-      <p className="text-sm text-neutral-500 mb-6">이메일 인증 후 로그인할 수 있습니다.</p>
+      <p className="mb-6 text-sm leading-6 text-neutral-500">소셜 계정으로 빠르게 시작하거나 이메일로 가입할 수 있어요.</p>
 
-      {error && <p className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-600">{error}</p>}
-      {info && <p className="mb-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700">{info}</p>}
+      {error && <p role="alert" className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-600">{error}</p>}
+      {info && <p role="status" aria-live="polite" className="mb-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700">{info}</p>}
 
       {step === "form" && (
-        <div className="space-y-2">
-          <label htmlFor="signup-email" className="text-sm font-medium text-neutral-700">
-            이메일
-          </label>
-          <input
-            id="signup-email"
-            type="email"
-            value={email}
-            onChange={(e) => setEmail(e.target.value)}
-            placeholder="you@example.com"
-            className="w-full min-h-[48px] rounded-xl border border-neutral-300 px-3 text-neutral-900"
-          />
-
-          <label htmlFor="signup-nickname" className="text-sm font-medium text-neutral-700">
-            닉네임
-          </label>
-          <input
-            id="signup-nickname"
-            type="text"
-            value={nickname}
-            onChange={(e) => setNickname(e.target.value)}
-            placeholder="헬창닉네임 (예: 벤치왕김OO)"
-            maxLength={NICKNAME_MAX}
-            className="w-full min-h-[48px] rounded-xl border border-neutral-300 px-3 text-neutral-900"
-          />
-
-          <label htmlFor="signup-password" className="text-sm font-medium text-neutral-700">
-            비밀번호
-          </label>
-          <input
-            id="signup-password"
-            type="password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder="8자 이상"
-            className="w-full min-h-[48px] rounded-xl border border-neutral-300 px-3 text-neutral-900"
-          />
-
-          <label htmlFor="signup-password-confirm" className="text-sm font-medium text-neutral-700">
-            비밀번호 확인
-          </label>
-          <input
-            id="signup-password-confirm"
-            type="password"
-            value={passwordConfirm}
-            onChange={(e) => setPasswordConfirm(e.target.value)}
-            placeholder="비밀번호를 다시 입력하세요"
-            className="w-full min-h-[48px] rounded-xl border border-neutral-300 px-3 text-neutral-900"
-          />
-
-          <p className="text-xs text-neutral-500 mt-1">닉네임은 2~12자, 한글/영문/숫자/_만 사용할 수 있습니다.</p>
-          <p className="text-xs text-neutral-500">비밀번호는 8자 이상이어야 합니다.</p>
-          <p className="text-xs text-neutral-400">
-            가입 시{" "}
-            <Link href="/terms" className="underline underline-offset-2">
-              이용약관
-            </Link>
-            {" "}및{" "}
-            <Link href="/privacy" className="underline underline-offset-2">
-              개인정보처리방침
-            </Link>
-            에 동의한 것으로 간주됩니다.
-          </p>
-
-          <button
-            type="button"
-            onClick={handleSignup}
-            disabled={loading}
-            className="w-full min-h-[52px] rounded-xl bg-emerald-600 text-white font-medium disabled:opacity-50 mt-2"
-          >
-            {loading ? "가입 요청 중..." : "이메일로 회원가입"}
-          </button>
+        <div className="space-y-4">
           <button
             type="button"
             onClick={() => handleSocialSignup("google")}
             disabled={loading}
-            className="w-full min-h-[52px] rounded-xl border border-neutral-300 bg-white text-neutral-900 font-medium disabled:opacity-50"
+            className="min-h-[52px] w-full rounded-xl border border-neutral-300 bg-white font-medium text-neutral-900 disabled:opacity-50"
           >
-            Google로 회원가입
+            Google로 계속하기
           </button>
           <button
             type="button"
             onClick={() => handleSocialSignup("apple")}
             disabled={loading}
-            className="w-full min-h-[52px] rounded-xl border border-neutral-900 bg-neutral-950 text-white font-medium disabled:opacity-50"
+            className="min-h-[52px] w-full rounded-xl border border-neutral-900 bg-neutral-950 font-medium text-white disabled:opacity-50"
           >
-            Apple로 회원가입
+            Apple로 계속하기
           </button>
+
+          <div className="flex items-center gap-3 py-1">
+            <span className="h-px flex-1 bg-neutral-200" />
+            <button
+              type="button"
+              aria-expanded={emailFormOpen}
+              aria-controls="email-signup-form"
+              onClick={() => {
+                setEmailFormOpen((open) => !open);
+                setError(null);
+                setInfo(null);
+              }}
+              className="px-1 py-2 text-xs font-medium text-neutral-500 underline-offset-4 hover:text-neutral-800 hover:underline"
+            >
+              {emailFormOpen ? "이메일 가입 접기" : "이메일로 가입하기"}
+            </button>
+            <span className="h-px flex-1 bg-neutral-200" />
+          </div>
+
+          {emailFormOpen ? <form id="email-signup-form" onSubmit={handleSignup} className="space-y-3">
+            <div>
+              <label htmlFor="signup-email" className="text-sm font-medium text-neutral-700">
+                이메일
+              </label>
+              <input
+                id="signup-email"
+                name="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                autoComplete="email"
+                inputMode="email"
+                autoCapitalize="none"
+                spellCheck={false}
+                className="mt-1.5 min-h-[48px] w-full rounded-xl border border-neutral-300 px-3 text-neutral-900"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="signup-nickname" className="text-sm font-medium text-neutral-700">
+                닉네임
+              </label>
+              <input
+                id="signup-nickname"
+                name="nickname"
+                type="text"
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                placeholder="닉네임 (예: 벤치왕김OO)"
+                maxLength={NICKNAME_MAX}
+                autoComplete="nickname"
+                className="mt-1.5 min-h-[48px] w-full rounded-xl border border-neutral-300 px-3 text-neutral-900"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="signup-password" className="text-sm font-medium text-neutral-700">
+                비밀번호
+              </label>
+              <input
+                id="signup-password"
+                name="password"
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="8자 이상"
+                autoComplete="new-password"
+                className="mt-1.5 min-h-[48px] w-full rounded-xl border border-neutral-300 px-3 text-neutral-900"
+              />
+            </div>
+
+            <div>
+              <label htmlFor="signup-password-confirm" className="text-sm font-medium text-neutral-700">
+                비밀번호 확인
+              </label>
+              <input
+                id="signup-password-confirm"
+                name="password-confirm"
+                type="password"
+                value={passwordConfirm}
+                onChange={(e) => setPasswordConfirm(e.target.value)}
+                placeholder="비밀번호를 다시 입력하세요"
+                autoComplete="new-password"
+                className="mt-1.5 min-h-[48px] w-full rounded-xl border border-neutral-300 px-3 text-neutral-900"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <p className="text-xs text-neutral-500">닉네임은 2~12자, 한글/영문/숫자/_만 사용할 수 있습니다.</p>
+              <p className="text-xs text-neutral-500">비밀번호는 8자 이상이어야 합니다.</p>
+              <p className="text-xs leading-5 text-neutral-400">
+                가입 시{" "}
+                <Link href="/terms" className="underline underline-offset-2">
+                  이용약관
+                </Link>
+                {" "}및{" "}
+                <Link href="/privacy" className="underline underline-offset-2">
+                  개인정보처리방침
+                </Link>
+                에 동의한 것으로 간주됩니다.
+              </p>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="min-h-[52px] w-full rounded-xl bg-emerald-600 font-medium text-white disabled:opacity-50"
+            >
+              {loading ? "가입 요청 중..." : "이메일로 회원가입"}
+            </button>
+          </form> : null}
         </div>
       )}
 

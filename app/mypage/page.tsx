@@ -6674,7 +6674,7 @@ export default function MyPage() {
       label: "받은 지원 대기",
       value: receivedOpenPendingCount + receivedPaidPendingCount,
       detail: `오픈 ${receivedOpenPendingCount} · 유료 ${receivedPaidPendingCount}`,
-      tone: "border-rose-100 bg-rose-50/60 text-rose-700",
+      accent: "bg-rose-500",
       onClick: () =>
         scrollToMyPageTarget(
           receivedOpenPendingCount > 0 || receivedPaidPendingCount === 0 ? "profile" : "matching",
@@ -6695,7 +6695,7 @@ export default function MyPage() {
       label: "내 지원 진행",
       value: appliedOpenActiveCount + appliedPaidActiveCount,
       detail: `오픈 ${appliedOpenActiveCount} · 유료 ${appliedPaidActiveCount}`,
-      tone: "border-sky-100 bg-sky-50/70 text-sky-700",
+      accent: "bg-sky-500",
       onClick: () =>
         scrollToMyPageTarget(
           appliedOpenActiveCount > 0 || appliedPaidActiveCount === 0 ? "profile" : "matching",
@@ -6716,7 +6716,7 @@ export default function MyPage() {
       label: "1:1 진행",
       value: oneOnOneActiveCount,
       detail: oneOnOneActionCount > 0 ? `확인 필요 ${oneOnOneActionCount}` : "확인 필요 없음",
-      tone: "border-violet-100 bg-violet-50/70 text-violet-700",
+      accent: "bg-violet-500",
       onClick: () => scrollToMyPageTarget("matching", "one-on-one-status"),
     },
     {
@@ -6727,7 +6727,7 @@ export default function MyPage() {
         : swipeStatusLoaded
           ? `받은 ${swipeStatusSummary?.incoming_pending ?? 0} · 보낸 ${swipeStatusSummary?.outgoing_pending ?? 0}`
           : "상태 확인",
-      tone: "border-emerald-100 bg-emerald-50/70 text-emerald-700",
+      accent: "bg-emerald-500",
       onClick: () => {
         if (!swipeStatusPanelOpen) {
           void handleToggleSwipeStatusPanel();
@@ -6848,7 +6848,7 @@ export default function MyPage() {
       <section className="mb-4 rounded-2xl border border-neutral-200/80 bg-white p-1.5 shadow-[0_10px_30px_rgba(17,24,39,0.04)]">
         <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
           {([
-            { key: "profile", label: "프로필" },
+            { key: "profile", label: "내 정보" },
             { key: "matching", label: "매칭" },
             { key: "payment", label: "결제" },
             ...(isAdmin ? [{ key: "admin", label: "관리" }] : []),
@@ -6871,12 +6871,23 @@ export default function MyPage() {
       </section>
 
       {showProfileSection && (
-      <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
+      <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-4 shadow-[0_14px_40px_rgba(17,24,39,0.05)] sm:p-5">
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
-            <div className="inline-flex max-w-full items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 p-0.5 pr-1.5">
-              <span className="pl-2 text-[11px] font-bold text-neutral-700">빠른매칭</span>
-              <div className="grid grid-cols-2 rounded-full bg-white/70 p-0.5">
+            <h1 className="text-2xl font-bold text-neutral-950">마이페이지</h1>
+            <p className="mt-1 truncate text-sm font-medium text-neutral-500">{nickname}</p>
+          </div>
+          <div className="flex shrink-0 flex-col items-end gap-2">
+            <span
+              className={`inline-flex h-7 items-center rounded-full px-2.5 text-[11px] font-semibold ${
+                phoneVerified ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
+              }`}
+            >
+              {phoneVerified ? "휴대폰 인증 완료" : "휴대폰 미인증"}
+            </span>
+            <div className="inline-flex items-center gap-1.5 rounded-full border border-neutral-200 bg-neutral-50 p-0.5 pl-2.5">
+              <span className="whitespace-nowrap text-[11px] font-bold text-neutral-700">빠른매칭</span>
+              <div className="grid grid-cols-2 rounded-full bg-white p-0.5">
                 <button
                   type="button"
                   onClick={() => void handleToggleSwipeVisibility(true)}
@@ -6898,77 +6909,69 @@ export default function MyPage() {
                   OFF
                 </button>
               </div>
+              </div>
             </div>
-            <h1 className="mt-3 text-2xl font-bold text-neutral-950">마이페이지</h1>
-            <p className="mt-1 text-sm text-neutral-500">{nickname}</p>
           </div>
-          <div className="flex max-w-[54%] flex-wrap justify-end gap-1.5">
-            <span
-              className={`inline-flex h-7 items-center rounded-full px-2.5 text-[11px] font-semibold ${
-                phoneVerified ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
-              }`}
-            >
-              {phoneVerified ? "휴대폰 인증 완료" : "휴대폰 미인증"}
-            </span>
-          </div>
-        </div>
 
-        <div className="mt-4">
-          <div className="rounded-xl border border-neutral-200/80 bg-[#fbfaf8] p-3">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div>
-                <p className="text-sm font-semibold text-neutral-800">닉네임</p>
-                <p className="mt-1 text-xs text-neutral-500">
+        <div className="mt-4 flex items-center justify-between gap-3 border-t border-neutral-100 pt-3">
+          <div className="min-w-0">
+            <p className="text-xs font-medium text-neutral-500">닉네임 설정</p>
+            <p className="mt-0.5 text-[11px] text-neutral-400">
                   {remainingFree > 0
                     ? `무료 변경 ${remainingFree}회 남음`
                     : credits > 0
                     ? `추가 변경권 ${credits}개 보유`
                     : "무료 변경권 소진"}
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => {
-                  setNicknameOpen(true);
-                  setNicknameError("");
-                  setNicknameInfo("");
-                  setNewNickname("");
-                }}
-                disabled={!canChangeNickname}
-                className="min-h-[40px] self-start rounded-lg border border-neutral-200 bg-white px-3 text-sm font-medium text-neutral-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-50 sm:self-auto"
-              >
-                닉네임 변경
-              </button>
-            </div>
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              setNicknameOpen(true);
+              setNicknameError("");
+              setNicknameInfo("");
+              setNewNickname("");
+            }}
+            disabled={!canChangeNickname}
+            className="h-9 shrink-0 rounded-lg border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-700 shadow-sm disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            변경
+          </button>
+        </div>
             {!canChangeNickname && (
-              <p className="mt-2 text-xs text-amber-700">
+              <p className="mt-2 text-[11px] text-amber-700">
                 닉네임 변경은 1회 무료입니다. 추가 변경권 기능은 준비 중입니다.
               </p>
             )}
-            {nicknameInfo && <p className="mt-2 text-xs text-emerald-700">{nicknameInfo}</p>}
+        {nicknameInfo && <p className="mt-2 text-[11px] text-emerald-700">{nicknameInfo}</p>}
+
+        <div className="mt-5 flex items-end justify-between gap-3">
+          <div>
+            <p className="text-sm font-bold text-neutral-900">내 활동</p>
+            <p className="mt-0.5 text-[11px] text-neutral-400">눌러서 진행 내역을 바로 확인하세요.</p>
           </div>
         </div>
-
-        <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+        <div className="mt-2 grid grid-cols-2 overflow-hidden rounded-xl border border-neutral-200 bg-white sm:grid-cols-4">
           {applicationOverviewItems.map((item) => (
-            <div key={item.label} className={`rounded-xl border p-3 ${item.tone}`}>
+            <div key={item.label} className="relative border-b border-r border-neutral-100 p-3 last:border-r-0 sm:border-b-0">
+              <span className={`absolute inset-y-3 left-0 w-0.5 rounded-full ${item.accent}`} aria-hidden="true" />
               <button
                 type="button"
                 onClick={item.onClick}
-                className="block w-full text-left transition hover:-translate-y-0.5 focus:outline-none focus:ring-2 focus:ring-neutral-200"
+                className="block w-full pl-1 text-left transition hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-neutral-200"
               >
-                <p className="text-[11px] font-semibold">{item.label}</p>
-                <p className="mt-1 text-xl font-bold text-neutral-950">{item.value}</p>
-                <p className="mt-1 truncate text-[11px] font-medium text-neutral-500">{item.detail}</p>
+                <p className="text-[11px] font-semibold text-neutral-500">{item.label}</p>
+                <p className="mt-1 text-xl font-bold text-neutral-950">{item.value}<span className="ml-0.5 text-[11px] font-medium text-neutral-400">건</span></p>
+                <p className="mt-1 truncate text-[10px] font-medium text-neutral-400">{item.detail}</p>
               </button>
               {"actions" in item && Array.isArray(item.actions) ? (
-                <div className="mt-2 grid grid-cols-2 gap-1">
+                <div className="mt-2 grid grid-cols-2 gap-1 pl-1">
                   {item.actions.map((action) => (
                     <button
                       key={`${item.label}-${action.label}`}
                       type="button"
                       onClick={action.onClick}
-                      className="h-7 rounded-lg border border-white/70 bg-white/70 px-2 text-[11px] font-semibold text-neutral-600 hover:bg-white focus:outline-none focus:ring-2 focus:ring-neutral-200"
+                      className="h-6 rounded-md bg-neutral-50 px-1 text-[10px] font-semibold text-neutral-500 hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-200"
                     >
                       {action.label}
                     </button>
