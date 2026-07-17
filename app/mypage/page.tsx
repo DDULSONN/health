@@ -168,7 +168,8 @@ function SmallDatingReportButton({
 }
 
 type MyPageTab = "my_cert" | "request_status" | "admin_review";
-type MyPageSectionTab = "profile" | "matching" | "payment" | "admin";
+type MyPageSectionTab = "profile" | "matching" | "payment" | "settings" | "admin";
+type MatchingFilter = "all" | "received" | "applied" | "one_on_one" | "quick";
 
 type BodycheckPost = {
   id: string;
@@ -1780,6 +1781,7 @@ export default function MyPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState<MyPageTab>("my_cert");
   const [pageSectionTab, setPageSectionTab] = useState<MyPageSectionTab>("profile");
+  const [matchingFilter, setMatchingFilter] = useState<MatchingFilter>("all");
   const [error, setError] = useState("");
   const [marketingOptedOut, setMarketingOptedOut] = useState<boolean | null>(null);
   const [marketingConsentLoading, setMarketingConsentLoading] = useState(false);
@@ -3339,7 +3341,7 @@ export default function MyPage() {
 
   useEffect(() => {
     const section = new URLSearchParams(window.location.search).get("section");
-    if (section === "matching" || section === "payment" || section === "profile" || section === "admin") {
+    if (section === "matching" || section === "payment" || section === "profile" || section === "settings" || section === "admin") {
       setPageSectionTab(section);
     }
   }, []);
@@ -6669,55 +6671,31 @@ export default function MyPage() {
     };
     window.setTimeout(scrollWhenReady, 80);
   };
+  const openMatchingFilter = (filter: MatchingFilter) => {
+    setMatchingFilter(filter);
+    scrollToMyPageTarget("matching", "matching-filter-panel");
+  };
   const applicationOverviewItems = [
     {
       label: "받은 지원 대기",
       value: receivedOpenPendingCount + receivedPaidPendingCount,
       detail: `오픈 ${receivedOpenPendingCount} · 유료 ${receivedPaidPendingCount}`,
       accent: "bg-rose-500",
-      onClick: () =>
-        scrollToMyPageTarget(
-          receivedOpenPendingCount > 0 || receivedPaidPendingCount === 0 ? "profile" : "matching",
-          receivedOpenPendingCount > 0 || receivedPaidPendingCount === 0 ? "open-card-received" : "paid-card-received",
-        ),
-      actions: [
-        {
-          label: `오픈 ${receivedOpenPendingCount}`,
-          onClick: () => scrollToMyPageTarget("profile", "open-card-received"),
-        },
-        {
-          label: `유료 ${receivedPaidPendingCount}`,
-          onClick: () => scrollToMyPageTarget("matching", "paid-card-received"),
-        },
-      ],
+      onClick: () => openMatchingFilter("received"),
     },
     {
       label: "내 지원 진행",
       value: appliedOpenActiveCount + appliedPaidActiveCount,
       detail: `오픈 ${appliedOpenActiveCount} · 유료 ${appliedPaidActiveCount}`,
       accent: "bg-sky-500",
-      onClick: () =>
-        scrollToMyPageTarget(
-          appliedOpenActiveCount > 0 || appliedPaidActiveCount === 0 ? "profile" : "matching",
-          appliedOpenActiveCount > 0 || appliedPaidActiveCount === 0 ? "open-card-applied" : "paid-card-applied",
-        ),
-      actions: [
-        {
-          label: `오픈 ${appliedOpenActiveCount}`,
-          onClick: () => scrollToMyPageTarget("profile", "open-card-applied"),
-        },
-        {
-          label: `유료 ${appliedPaidActiveCount}`,
-          onClick: () => scrollToMyPageTarget("matching", "paid-card-applied"),
-        },
-      ],
+      onClick: () => openMatchingFilter("applied"),
     },
     {
       label: "1:1 진행",
       value: oneOnOneActiveCount,
       detail: oneOnOneActionCount > 0 ? `확인 필요 ${oneOnOneActionCount}` : "확인 필요 없음",
       accent: "bg-violet-500",
-      onClick: () => scrollToMyPageTarget("matching", "one-on-one-status"),
+      onClick: () => openMatchingFilter("one_on_one"),
     },
     {
       label: "빠른매칭",
@@ -6732,7 +6710,7 @@ export default function MyPage() {
         if (!swipeStatusPanelOpen) {
           void handleToggleSwipeStatusPanel();
         }
-        scrollToMyPageTarget("profile", "swipe-status-panel");
+        openMatchingFilter("quick");
       },
     },
   ];
@@ -6812,6 +6790,7 @@ export default function MyPage() {
   const showProfileSection = pageSectionTab === "profile";
   const showMatchingSection = pageSectionTab === "matching";
   const showPaymentSection = pageSectionTab === "payment";
+  const showSettingsSection = pageSectionTab === "settings";
   const showAdminSection = pageSectionTab === "admin" && isAdmin;
 
   return (
@@ -6846,11 +6825,12 @@ export default function MyPage() {
       )}
 
       <section className="mb-4 rounded-2xl border border-neutral-200/80 bg-white p-1.5 shadow-[0_10px_30px_rgba(17,24,39,0.04)]">
-        <div className="grid grid-cols-3 gap-2 sm:grid-cols-4">
+        <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5 sm:gap-2">
           {([
             { key: "profile", label: "내 정보" },
             { key: "matching", label: "매칭" },
             { key: "payment", label: "결제" },
+            { key: "settings", label: "설정" },
             ...(isAdmin ? [{ key: "admin", label: "관리" }] : []),
           ] as Array<{ key: MyPageSectionTab; label: string }>).map((tab) => {
             const active = pageSectionTab === tab.key;
@@ -6870,8 +6850,10 @@ export default function MyPage() {
         </div>
       </section>
 
-      {showProfileSection && (
+      {(showProfileSection || showMatchingSection || showSettingsSection) && (
       <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-4 shadow-[0_14px_40px_rgba(17,24,39,0.05)] sm:p-5">
+        {showProfileSection && (
+        <>
         <div className="flex items-start justify-between gap-3">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold text-neutral-950">마이페이지</h1>
@@ -6892,7 +6874,8 @@ export default function MyPage() {
                   type="button"
                   onClick={() => void handleToggleSwipeVisibility(true)}
                   disabled={savingSwipeVisibility || swipeProfileVisible}
-                  className={`h-6 rounded-full px-2.5 text-[10px] font-bold transition disabled:cursor-not-allowed ${
+                  aria-pressed={swipeProfileVisible}
+                  className={`h-9 rounded-full px-3 text-[11px] font-bold transition disabled:cursor-not-allowed ${
                     swipeProfileVisible ? "bg-neutral-950 text-white" : "text-neutral-500 hover:bg-neutral-100"
                   } ${savingSwipeVisibility ? "opacity-60" : ""}`}
                 >
@@ -6902,7 +6885,8 @@ export default function MyPage() {
                   type="button"
                   onClick={() => void handleToggleSwipeVisibility(false)}
                   disabled={savingSwipeVisibility || !swipeProfileVisible}
-                  className={`h-6 rounded-full px-2.5 text-[10px] font-bold transition disabled:cursor-not-allowed ${
+                  aria-pressed={!swipeProfileVisible}
+                  className={`h-9 rounded-full px-3 text-[11px] font-bold transition disabled:cursor-not-allowed ${
                     !swipeProfileVisible ? "bg-neutral-950 text-white" : "text-neutral-500 hover:bg-neutral-100"
                   } ${savingSwipeVisibility ? "opacity-60" : ""}`}
                 >
@@ -6954,30 +6938,16 @@ export default function MyPage() {
         <div className="mt-2 grid grid-cols-2 overflow-hidden rounded-xl border border-neutral-200 bg-white sm:grid-cols-4">
           {applicationOverviewItems.map((item) => (
             <div key={item.label} className="relative border-b border-r border-neutral-100 p-3 last:border-r-0 sm:border-b-0">
-              <span className={`absolute inset-y-3 left-0 w-0.5 rounded-full ${item.accent}`} aria-hidden="true" />
+              <span className={`absolute inset-y-3 left-0 w-0.5 rounded-full ${item.value > 0 ? item.accent : "bg-neutral-200"}`} aria-hidden="true" />
               <button
                 type="button"
                 onClick={item.onClick}
-                className="block w-full pl-1 text-left transition hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-neutral-200"
+                className="block min-h-[64px] w-full rounded-lg pl-1 text-left transition hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-neutral-200"
               >
                 <p className="text-[11px] font-semibold text-neutral-500">{item.label}</p>
                 <p className="mt-1 text-xl font-bold text-neutral-950">{item.value}<span className="ml-0.5 text-[11px] font-medium text-neutral-400">건</span></p>
                 <p className="mt-1 truncate text-[10px] font-medium text-neutral-400">{item.detail}</p>
               </button>
-              {"actions" in item && Array.isArray(item.actions) ? (
-                <div className="mt-2 grid grid-cols-2 gap-1 pl-1">
-                  {item.actions.map((action) => (
-                    <button
-                      key={`${item.label}-${action.label}`}
-                      type="button"
-                      onClick={action.onClick}
-                      className="h-6 rounded-md bg-neutral-50 px-1 text-[10px] font-semibold text-neutral-500 hover:bg-neutral-100 focus:outline-none focus:ring-2 focus:ring-neutral-200"
-                    >
-                      {action.label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
             </div>
           ))}
         </div>
@@ -7045,6 +7015,45 @@ export default function MyPage() {
             </div>
         </div>
         )}
+
+        </>
+        )}
+
+        {showMatchingSection && (
+        <>
+          <div id="matching-filter-panel" className="scroll-mt-24">
+            <div className="flex items-end justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold text-neutral-950">매칭 내역</h2>
+                <p className="mt-1 text-xs text-neutral-500">확인할 내역만 골라 빠르게 볼 수 있어요.</p>
+              </div>
+            </div>
+            <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {([
+                { key: "all", label: "전체" },
+                { key: "received", label: `받은 지원 ${receivedOpenPendingCount + receivedPaidPendingCount}` },
+                { key: "applied", label: `내 지원 ${appliedOpenActiveCount + appliedPaidActiveCount}` },
+                { key: "one_on_one", label: `1:1 ${oneOnOneActiveCount}` },
+                { key: "quick", label: `빠른매칭 ${visibleSwipeMatchCount}` },
+              ] as Array<{ key: MatchingFilter; label: string }>).map((filter) => (
+                <button
+                  key={filter.key}
+                  type="button"
+                  onClick={() => setMatchingFilter(filter.key)}
+                  aria-pressed={matchingFilter === filter.key}
+                  className={`min-h-[40px] shrink-0 rounded-full border px-4 text-xs font-semibold transition ${
+                    matchingFilter === filter.key
+                      ? "border-neutral-950 bg-neutral-950 text-white"
+                      : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"
+                  }`}
+                >
+                  {filter.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+        {(matchingFilter === "all" || matchingFilter === "quick") && (
 
           <div id="swipe-status-panel" className="mt-4 rounded-xl border border-rose-100 bg-rose-50/40 p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -7403,6 +7412,17 @@ export default function MyPage() {
           )}
         </div>
 
+        )}
+        </>
+        )}
+
+        {showSettingsSection && (
+        <>
+        <div className="mb-4">
+          <h2 className="text-lg font-bold text-neutral-950">설정</h2>
+          <p className="mt-1 text-xs text-neutral-500">차단, 인증, 문의와 계정 설정을 관리합니다.</p>
+        </div>
+
         <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50/50 p-3">
           <div className="flex flex-col gap-3">
             <div>
@@ -7537,9 +7557,13 @@ export default function MyPage() {
             {deletingAccount ? "탈퇴 처리 중..." : "회원 탈퇴"}
           </button>
         </div>
+        </>
+        )}
       </section>
       )}
 
+      {(showPaymentSection || showSettingsSection) && (
+      <>
       {showPaymentSection && (
       <>
       <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
@@ -7921,6 +7945,9 @@ export default function MyPage() {
           </div>
         );
       })() : null}
+      </>
+      )}
+      {showSettingsSection && (
       <section className="mb-5 rounded-2xl border border-sky-200 bg-sky-50/40 p-5">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -8053,12 +8080,13 @@ export default function MyPage() {
           </>
         )}
       </section>
+      )}
       </>
       )}
 
       {showMatchingSection && (
       <>
-      <section id="paid-card-received" className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
+      <section id="paid-card-received" className={`${matchingFilter === "all" || matchingFilter === "received" ? "" : "hidden"} mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]`}>
         <h2 className="text-lg font-bold text-neutral-950 mb-3">내 유료카드 지원자</h2>
         {myPaidCards.length === 0 ? (
           <p className="text-sm text-neutral-500">등록된 유료카드가 없습니다.</p>
@@ -8204,7 +8232,7 @@ export default function MyPage() {
         )}
       </section>
 
-      <section id="paid-card-applied" className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
+      <section id="paid-card-applied" className={`${matchingFilter === "all" || matchingFilter === "applied" ? "" : "hidden"} mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]`}>
         <h2 className="text-lg font-bold text-neutral-950 mb-3">내 36시간 고정카드 지원 이력</h2>
         {myAppliedPaidApplications.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 지원한 내역이 없습니다.</p>
@@ -8263,7 +8291,7 @@ export default function MyPage() {
         )}
       </section>
 
-      <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
+      <section className={`${matchingFilter === "all" || matchingFilter === "one_on_one" ? "" : "hidden"} mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]`}>
         <h2 className="text-lg font-bold text-neutral-900 mb-3">소개팅 신청 현황</h2>
         {datingApplication ? (
           <div className="space-y-2 text-sm">
@@ -8301,7 +8329,7 @@ export default function MyPage() {
         </div>
       </section>
 
-      <section id="one-on-one-status" className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]">
+      <section id="one-on-one-status" className={`${matchingFilter === "all" || matchingFilter === "one_on_one" ? "" : "hidden"} mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]`}>
         <h2 className="text-lg font-bold text-neutral-950 mb-3">내 1:1 소개팅 신청 내역</h2>
         <div className="mb-3 rounded-xl border border-neutral-200 bg-[#fbfaf8] px-3 py-3">
           <p className="text-xs font-semibold text-neutral-900">1:1 이용 안내</p>
@@ -9155,7 +9183,7 @@ export default function MyPage() {
         )}
       </section>
 
-      <section className="mb-5 rounded-2xl border border-rose-200 bg-white p-5">
+      <section className="hidden">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
             <h2 className="text-lg font-bold text-rose-900">오픈카드 지인 차단</h2>
@@ -9227,14 +9255,14 @@ export default function MyPage() {
         </div>
       </section>
 
-      <section className="mb-5 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-5">
+      <section className={`${matchingFilter === "all" ? "" : "hidden"} mb-5 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-5`}>
         <h2 className="text-lg font-bold text-emerald-900 mb-2">지원권 현황</h2>
         <p className="text-sm text-emerald-900">
           평일 기본 2장 · 주말 기본 3장 / 추가 지원권 <span className="font-semibold">{applyCreditsRemaining}장</span>
         </p>
       </section>
 
-      <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
+      <section className={`${matchingFilter === "all" ? "" : "hidden"} mb-5 rounded-2xl border border-neutral-200 bg-white p-5`}>
         <h2 className="text-lg font-bold text-neutral-900 mb-3">내 오픈카드 상태</h2>
         {myDatingCards.length === 0 ? (
           <p className="text-sm text-neutral-500">등록된 오픈카드가 없습니다.</p>
@@ -9387,7 +9415,7 @@ export default function MyPage() {
         </div>
       </section>
 
-      <section id="open-card-received" className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
+      <section id="open-card-received" className={`${matchingFilter === "all" || matchingFilter === "received" ? "" : "hidden"} mb-5 rounded-2xl border border-neutral-200 bg-white p-5`}>
         <h2 className="text-lg font-bold text-neutral-900 mb-3">내 카드 지원자</h2>
         {receivedApplications.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 받은 지원서가 없습니다.</p>
@@ -9482,7 +9510,7 @@ export default function MyPage() {
         )}
       </section>
 
-      <section id="open-card-applied" className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
+      <section id="open-card-applied" className={`${matchingFilter === "all" || matchingFilter === "applied" ? "" : "hidden"} mb-5 rounded-2xl border border-neutral-200 bg-white p-5`}>
         <h2 className="text-lg font-bold text-neutral-900 mb-3">내 오픈카드 지원 이력</h2>
         {myAppliedCardApplications.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 지원한 내역이 없습니다.</p>
@@ -9541,7 +9569,7 @@ export default function MyPage() {
         )}
       </section>
 
-      <section id="dating-connections" className="mb-5 rounded-2xl border border-neutral-200 bg-white p-5">
+      <section id="dating-connections" className={`${matchingFilter === "all" ? "" : "hidden"} mb-5 rounded-2xl border border-neutral-200 bg-white p-5`}>
         <h2 className="text-lg font-bold text-neutral-900 mb-3">매칭 인스타 교환</h2>
         {datingConnections.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 수락된 연결이 없습니다.</p>
@@ -13938,7 +13966,7 @@ export default function MyPage() {
         </section>
       )}
 
-      {showProfileSection && (
+      {showSettingsSection && (
       <>
       <section className="mb-5">
         <div className="mb-3 flex flex-wrap gap-2">
@@ -14079,6 +14107,7 @@ export default function MyPage() {
       </>
       )}
 
+      {showSettingsSection && (
       <section className="mb-6 rounded-xl border border-neutral-200 bg-white/70 px-4 py-3 text-xs text-neutral-500">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
           <div>
@@ -14106,6 +14135,7 @@ export default function MyPage() {
           </button>
         </div>
       </section>
+      )}
 
       {nicknameOpen && (
         <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-[max(16px,env(safe-area-inset-bottom))]">
