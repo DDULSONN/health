@@ -8514,7 +8514,7 @@ export default function MyPage() {
                               </p>
                             </div>
                             <div className="text-right">
-                              <p className="text-lg font-black text-[#8a5d0a]">99,000원</p>
+                              <p className="text-lg font-black text-[#8a5d0a]">70,000원</p>
                               <p className="mt-0.5 text-[11px] text-neutral-500">30일 일시 이용권</p>
                             </div>
                           </div>

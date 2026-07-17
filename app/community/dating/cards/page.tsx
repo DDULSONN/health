@@ -3673,7 +3673,7 @@ function OneOnOneHomePanel({
                       <p className="mt-1 text-xs leading-5 text-neutral-600">후보를 한 번 더 새로 보고, 수락 후 번호교환은 추가 결제 없이 진행합니다.</p>
                     </div>
                     <div className="shrink-0 text-right">
-                      <p className="text-lg font-black text-[#8a5d0a]">99,000원</p>
+                      <p className="text-lg font-black text-[#8a5d0a]">70,000원</p>
                       <p className="text-[10px] text-neutral-500">30일 이용권</p>
                     </div>
                   </div>

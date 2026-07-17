@@ -3,7 +3,7 @@ import type { createAdminClient } from "@/lib/supabase/server";
 type AdminClient = ReturnType<typeof createAdminClient>;
 
 export const ONE_ON_ONE_PLUS_PRODUCT_TYPE = "one_on_one_plus_30d";
-export const ONE_ON_ONE_PLUS_PRICE_KRW = 99_000;
+export const ONE_ON_ONE_PLUS_PRICE_KRW = 70_000;
 export const ONE_ON_ONE_PLUS_DURATION_DAYS = 30;
 export const ONE_ON_ONE_FREE_EXTRA_CANDIDATES = 3;
 export const ONE_ON_ONE_FREE_REFRESH_LIMIT = 1;
