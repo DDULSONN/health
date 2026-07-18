@@ -3,6 +3,8 @@ import {
   getOneOnOnePhoneBlockMapForUsers,
   isOneOnOnePhoneBlockedPair,
 } from "@/lib/dating-1on1-phone-blocks";
+import { hasDatingBlockBetween } from "@/lib/dating-blocks";
+import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
 import {
   getOneOnOneAdminUserBlockPairSetForUsers,
   isOneOnOneAdminUserBlockedPair,
@@ -72,6 +74,20 @@ export async function POST(req: Request) {
   }
   if (sourceRes.data.user_id === candidateRes.data.user_id || sourceRes.data.sex === candidateRes.data.sex) {
     return NextResponse.json({ error: "Candidate card is not eligible." }, { status: 409 });
+  }
+
+  const unifiedBlockResult = await Promise.all([
+    hasDatingBlockBetween(admin, sourceRes.data.user_id, candidateRes.data.user_id),
+    hasDatingContactBlockBetween(admin, sourceRes.data.user_id, candidateRes.data.user_id),
+  ]).catch((error) => {
+    console.error("[POST /api/dating/1on1/matches/auto] unified block lookup failed", error);
+    return null;
+  });
+  if (!unifiedBlockResult) {
+    return NextResponse.json({ error: "지인 차단 설정을 확인하지 못했습니다." }, { status: 500 });
+  }
+  if (unifiedBlockResult.some(Boolean)) {
+    return NextResponse.json({ error: "지인 차단된 회원과는 1:1 매칭을 진행할 수 없습니다." }, { status: 409 });
   }
 
   const phoneBlockMap = await getOneOnOnePhoneBlockMapForUsers(admin, [

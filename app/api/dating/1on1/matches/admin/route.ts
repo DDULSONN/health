@@ -8,6 +8,11 @@ import {
   getOneOnOnePhoneBlockMapForUsers,
   isOneOnOnePhoneBlockedPair,
 } from "@/lib/dating-1on1-phone-blocks";
+import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import {
+  getDatingContactBlockMapForUsers,
+  isDatingContactPhoneBlockedPair,
+} from "@/lib/dating-contact-blocks";
 import {
   getOneOnOneAdminUserBlockPairSetForUsers,
   isOneOnOneAdminUserBlockedPair,
@@ -333,6 +338,18 @@ export async function POST(req: Request) {
   if (!adminUserBlockPairSet) {
     return NextResponse.json({ error: "관리자 지인 차단 설정을 확인하지 못했습니다." }, { status: 500 });
   }
+  const candidateUserIds = candidateRows.map((row) => row.user_id);
+  const unifiedBlockResult = await Promise.all([
+    getDatingContactBlockMapForUsers(admin, [sourceRes.data.user_id, ...candidateUserIds]),
+    getDatingBlockedUserIds(admin, sourceRes.data.user_id),
+  ]).catch((error) => {
+    console.error("[POST /api/dating/1on1/matches/admin] unified block lookup failed", error);
+    return null;
+  });
+  if (!unifiedBlockResult) {
+    return NextResponse.json({ error: "지인 차단 설정을 확인하지 못했습니다." }, { status: 500 });
+  }
+  const [contactBlockMap, blockedUserIds] = unifiedBlockResult;
   const phoneBlockedCandidateIds = new Set(
     candidateRows
       .filter((row) =>
@@ -357,6 +374,21 @@ export async function POST(req: Request) {
       )
       .map((row) => row.id)
   );
+  const unifiedBlockedCandidateIds = new Set(
+    candidateRows
+      .filter(
+        (row) =>
+          blockedUserIds.has(row.user_id) ||
+          isDatingContactPhoneBlockedPair({
+            sourceUserId: sourceRes.data!.user_id,
+            sourcePhone: sourceRes.data!.phone ?? null,
+            candidateUserId: row.user_id,
+            candidatePhone: row.phone ?? null,
+            blockMap: contactBlockMap,
+          })
+      )
+      .map((row) => row.id)
+  );
 
   const existingPairRes = await admin
     .from("dating_1on1_match_proposals")
@@ -376,10 +408,22 @@ export async function POST(req: Request) {
   const existingPairIds = new Set((existingPairRes.data ?? []).map((row) => row.candidate_card_id));
   const skippedCandidateCardIds = candidateRows
     .map((row) => row.id)
-    .filter((id) => existingPairIds.has(id) || phoneBlockedCandidateIds.has(id) || adminBlockedCandidateIds.has(id));
+    .filter(
+      (id) =>
+        existingPairIds.has(id) ||
+        phoneBlockedCandidateIds.has(id) ||
+        adminBlockedCandidateIds.has(id) ||
+        unifiedBlockedCandidateIds.has(id)
+    );
 
   const insertRows = candidateRows
-    .filter((row) => !existingPairIds.has(row.id) && !phoneBlockedCandidateIds.has(row.id) && !adminBlockedCandidateIds.has(row.id))
+    .filter(
+      (row) =>
+        !existingPairIds.has(row.id) &&
+        !phoneBlockedCandidateIds.has(row.id) &&
+        !adminBlockedCandidateIds.has(row.id) &&
+        !unifiedBlockedCandidateIds.has(row.id)
+    )
     .map((row) => ({
       source_card_id: sourceRes.data!.id,
       source_user_id: sourceRes.data!.user_id,

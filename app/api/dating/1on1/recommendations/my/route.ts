@@ -6,6 +6,11 @@ import {
   getOneOnOnePhoneBlockMapForUsers,
   isOneOnOnePhoneBlockedPair,
 } from "@/lib/dating-1on1-phone-blocks";
+import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import {
+  getDatingContactBlockMapForUsers,
+  isDatingContactPhoneBlockedPair,
+} from "@/lib/dating-contact-blocks";
 import {
   getOneOnOneAdminUserBlockPairSetForUsers,
   isOneOnOneAdminUserBlockedPair,
@@ -521,13 +526,15 @@ export async function GET(req: Request) {
   }
 
   const allCandidateUserIds = normalizedCards.map((card) => card.user_id);
-  const [existingPairRes, phoneBlockMap, adminUserBlockPairSet] = await Promise.all([
+  const [existingPairRes, phoneBlockMap, adminUserBlockPairSet, contactBlockMap, blockedUserIds] = await Promise.all([
     admin
       .from("dating_1on1_match_proposals")
       .select("source_card_id,candidate_card_id")
       .in("source_card_id", sourceCardIds),
     getOneOnOnePhoneBlockMapForUsers(admin, allCandidateUserIds),
     getOneOnOneAdminUserBlockPairSetForUsers(admin, allCandidateUserIds),
+    getDatingContactBlockMapForUsers(admin, allCandidateUserIds),
+    getDatingBlockedUserIds(admin, user.id),
   ]);
 
   if (existingPairRes.error) {
@@ -548,6 +555,7 @@ export async function GET(req: Request) {
       if (candidateCard.id === sourceCard.id) return false;
       if (candidateCard.user_id === sourceCard.user_id) return false;
       if (candidateCard.sex === sourceCard.sex) return false;
+      if (blockedUserIds.has(candidateCard.user_id)) return false;
       if (excludedIds.has(candidateCard.id)) return false;
       if (
         isOneOnOnePhoneBlockedPair({
@@ -556,6 +564,17 @@ export async function GET(req: Request) {
           candidateUserId: candidateCard.user_id,
           candidatePhone: candidateCard.phone,
           blockMap: phoneBlockMap,
+        })
+      ) {
+        return false;
+      }
+      if (
+        isDatingContactPhoneBlockedPair({
+          sourceUserId: sourceCard.user_id,
+          sourcePhone: sourceCard.phone,
+          candidateUserId: candidateCard.user_id,
+          candidatePhone: candidateCard.phone,
+          blockMap: contactBlockMap,
         })
       ) {
         return false;

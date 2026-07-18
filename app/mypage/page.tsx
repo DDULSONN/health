@@ -762,6 +762,23 @@ type MyDatingContactBlock = {
   created_at: string;
 };
 
+type MyDatingUserBlock = {
+  blocked_user_id: string;
+  reason: string | null;
+  created_at: string;
+  nickname: string | null;
+  latest_card: {
+    display_nickname: string | null;
+    region: string | null;
+  } | null;
+};
+
+type DatingUserBlockSearchResult = {
+  user_id: string;
+  nickname: string | null;
+  already_blocked: boolean;
+};
+
 type AdminOpenCard = {
   id: string;
   owner_user_id: string;
@@ -1602,9 +1619,6 @@ export default function MyPage() {
   const [myOneOnOneMatches, setMyOneOnOneMatches] = useState<MyOneOnOneMatch[]>([]);
   const [myOneOnOneAutoRecommendations, setMyOneOnOneAutoRecommendations] = useState<MyOneOnOneAutoRecommendationGroup[]>([]);
   const [myOneOnOnePhoneBlocks, setMyOneOnOnePhoneBlocks] = useState<MyOneOnOnePhoneBlock[]>([]);
-  const [oneOnOneBlockPhoneInput, setOneOnOneBlockPhoneInput] = useState("");
-  const [oneOnOneBlockLabelInput, setOneOnOneBlockLabelInput] = useState("");
-  const [oneOnOnePhoneBlockSubmitting, setOneOnOnePhoneBlockSubmitting] = useState(false);
   const [deletingOneOnOnePhoneBlockIds, setDeletingOneOnOnePhoneBlockIds] = useState<string[]>([]);
   const [savingOpenCardVisibilityIds, setSavingOpenCardVisibilityIds] = useState<string[]>([]);
   const [datingConnections, setDatingConnections] = useState<DatingConnection[]>([]);
@@ -1806,11 +1820,16 @@ export default function MyPage() {
   const [deletingPaidCardIds, setDeletingPaidCardIds] = useState<string[]>([]);
   const [applyCreditsRemaining, setApplyCreditsRemaining] = useState(0);
   const [myDatingContactBlocks, setMyDatingContactBlocks] = useState<MyDatingContactBlock[]>([]);
-  const [datingContactBlockType, setDatingContactBlockType] = useState<"phone" | "instagram">("phone");
+  const [myDatingUserBlocks, setMyDatingUserBlocks] = useState<MyDatingUserBlock[]>([]);
+  const [datingContactBlockType, setDatingContactBlockType] = useState<"nickname" | "phone" | "instagram">("nickname");
   const [datingContactBlockValue, setDatingContactBlockValue] = useState("");
   const [datingContactBlockLabel, setDatingContactBlockLabel] = useState("");
   const [datingContactBlockSubmitting, setDatingContactBlockSubmitting] = useState(false);
   const [deletingDatingContactBlockIds, setDeletingDatingContactBlockIds] = useState<string[]>([]);
+  const [datingUserBlockSearchResults, setDatingUserBlockSearchResults] = useState<DatingUserBlockSearchResult[]>([]);
+  const [datingUserBlockSearchLoading, setDatingUserBlockSearchLoading] = useState(false);
+  const [blockingDatingUserIds, setBlockingDatingUserIds] = useState<string[]>([]);
+  const [deletingDatingUserBlockIds, setDeletingDatingUserBlockIds] = useState<string[]>([]);
 
   const [nicknameOpen, setNicknameOpen] = useState(false);
   const [newNickname, setNewNickname] = useState("");
@@ -3044,6 +3063,7 @@ export default function MyPage() {
           oneOnOneRecommendationsRes,
           oneOnOnePhoneBlocksRes,
           datingContactBlocksRes,
+          datingUserBlocksRes,
           connectionsRes,
           paidConnectionsRes,
           writeSettingRes,
@@ -3067,6 +3087,7 @@ export default function MyPage() {
           fetch("/api/dating/1on1/recommendations/my", { cache: "no-store" }),
           fetch("/api/dating/1on1/phone-blocks", { cache: "no-store" }),
           fetch("/api/dating/contact-blocks", { cache: "no-store" }),
+          fetch("/api/dating/blocks", { cache: "no-store" }),
           fetch("/api/dating/cards/my/connections", { cache: "no-store" }),
           fetch("/api/dating/paid/my/connections", { cache: "no-store" }),
           fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
@@ -3128,6 +3149,10 @@ export default function MyPage() {
           error?: string;
           items?: MyDatingContactBlock[];
         };
+        const datingUserBlocksBody = (await datingUserBlocksRes.json().catch(() => ({}))) as {
+          error?: string;
+          items?: MyDatingUserBlock[];
+        };
         const connectionsBody = (await connectionsRes.json().catch(() => ({}))) as {
           error?: string;
           items?: DatingConnection[];
@@ -3179,6 +3204,9 @@ export default function MyPage() {
         if (!datingContactBlocksRes.ok) {
           console.error("[mypage] dating contact blocks load failed", datingContactBlocksBody.error ?? "unknown error");
         }
+        if (!datingUserBlocksRes.ok) {
+          console.error("[mypage] dating user blocks load failed", datingUserBlocksBody.error ?? "unknown error");
+        }
         if (!connectionsRes.ok) {
           console.error("[mypage] open connections load failed", connectionsBody.error ?? "unknown error");
         }
@@ -3205,6 +3233,7 @@ export default function MyPage() {
           );
           setMyOneOnOnePhoneBlocks(oneOnOnePhoneBlocksRes.ok ? (oneOnOnePhoneBlocksBody.items ?? []) : []);
           setMyDatingContactBlocks(datingContactBlocksRes.ok ? (datingContactBlocksBody.items ?? []) : []);
+          setMyDatingUserBlocks(datingUserBlocksRes.ok ? (datingUserBlocksBody.items ?? []) : []);
           setSwipeStatusSummary(null);
           setMyOutgoingSwipeLikes([]);
           setMyIncomingSwipeLikes([]);
@@ -4090,44 +4119,6 @@ export default function MyPage() {
     setMyOneOnOnePhoneBlocks(body.items ?? []);
   };
 
-  const handleAddOneOnOnePhoneBlock = async () => {
-    if (oneOnOnePhoneBlockSubmitting) return;
-    const phone = oneOnOneBlockPhoneInput.trim();
-    if (!phone) {
-      alert("차단할 휴대폰 번호를 입력해주세요.");
-      return;
-    }
-
-    setOneOnOnePhoneBlockSubmitting(true);
-    try {
-      const res = await fetch("/api/dating/1on1/phone-blocks", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phone,
-          label: oneOnOneBlockLabelInput.trim() || null,
-        }),
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        item?: MyOneOnOnePhoneBlock | null;
-        error?: string;
-      };
-      if (!res.ok || body.ok === false) {
-        alert(body.error ?? "차단 번호 저장에 실패했습니다.");
-        return;
-      }
-      setOneOnOneBlockPhoneInput("");
-      setOneOnOneBlockLabelInput("");
-      await Promise.all([reloadOneOnOnePhoneBlocks(), reloadOneOnOneRecommendations()]);
-      alert("1:1 후보에서 서로 보이지 않도록 차단했습니다.");
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "차단 번호 저장에 실패했습니다.");
-    } finally {
-      setOneOnOnePhoneBlockSubmitting(false);
-    }
-  };
-
   const handleDeleteOneOnOnePhoneBlock = async (id: string) => {
     if (deletingOneOnOnePhoneBlockIds.includes(id)) return;
     if (!confirm("이 번호 차단을 해제할까요? 이후 1:1 후보로 다시 노출될 수 있습니다.")) return;
@@ -4161,11 +4152,103 @@ export default function MyPage() {
     setMyDatingContactBlocks(body.items ?? []);
   };
 
+  const reloadDatingUserBlocks = async () => {
+    const res = await fetch("/api/dating/blocks", { cache: "no-store" });
+    const body = (await res.json().catch(() => ({}))) as { items?: MyDatingUserBlock[]; error?: string };
+    if (!res.ok) {
+      throw new Error(body.error ?? "지인 차단 목록을 다시 불러오지 못했습니다.");
+    }
+    setMyDatingUserBlocks(body.items ?? []);
+  };
+
+  const handleSearchDatingUserBlock = async () => {
+    const query = datingContactBlockValue.trim();
+    if (query.length < 2) {
+      alert("닉네임을 2자 이상 입력해주세요.");
+      return;
+    }
+
+    setDatingUserBlockSearchLoading(true);
+    try {
+      const res = await fetch(`/api/dating/blocks?q=${encodeURIComponent(query)}`, { cache: "no-store" });
+      const body = (await res.json().catch(() => ({}))) as {
+        results?: DatingUserBlockSearchResult[];
+        error?: string;
+      };
+      if (!res.ok) {
+        alert(body.error ?? "회원 검색에 실패했습니다.");
+        return;
+      }
+      setDatingUserBlockSearchResults(body.results ?? []);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "회원 검색에 실패했습니다.");
+    } finally {
+      setDatingUserBlockSearchLoading(false);
+    }
+  };
+
+  const handleAddDatingUserBlock = async (target: DatingUserBlockSearchResult) => {
+    if (blockingDatingUserIds.includes(target.user_id) || target.already_blocked) return;
+
+    setBlockingDatingUserIds((prev) => [...prev, target.user_id]);
+    try {
+      const res = await fetch("/api/dating/blocks", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ blocked_user_id: target.user_id, reason: "닉네임으로 등록한 지인 차단" }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || body.ok === false) {
+        alert(body.error ?? "지인 차단에 실패했습니다.");
+        return;
+      }
+      setDatingUserBlockSearchResults((prev) =>
+        prev.map((item) => (item.user_id === target.user_id ? { ...item, already_blocked: true } : item))
+      );
+      await Promise.all([reloadDatingUserBlocks(), reloadOneOnOneRecommendations(), reloadSwipeStatus()]);
+      alert("모든 매칭에서 서로 보이지 않도록 차단했습니다.");
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "지인 차단에 실패했습니다.");
+    } finally {
+      setBlockingDatingUserIds((prev) => prev.filter((userId) => userId !== target.user_id));
+    }
+  };
+
+  const handleDeleteDatingUserBlock = async (userId: string) => {
+    if (deletingDatingUserBlockIds.includes(userId)) return;
+    if (!confirm("이 지인 차단을 해제할까요? 이후 매칭 화면에 다시 보일 수 있습니다.")) return;
+
+    setDeletingDatingUserBlockIds((prev) => [...prev, userId]);
+    try {
+      const res = await fetch(`/api/dating/blocks/${encodeURIComponent(userId)}`, { method: "DELETE" });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || body.ok === false) {
+        alert(body.error ?? "지인 차단 해제에 실패했습니다.");
+        return;
+      }
+      await Promise.all([reloadDatingUserBlocks(), reloadOneOnOneRecommendations(), reloadSwipeStatus()]);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "지인 차단 해제에 실패했습니다.");
+    } finally {
+      setDeletingDatingUserBlockIds((prev) => prev.filter((blockedUserId) => blockedUserId !== userId));
+    }
+  };
+
   const handleAddDatingContactBlock = async () => {
     if (datingContactBlockSubmitting) return;
     const value = datingContactBlockValue.trim();
     if (!value) {
-      alert(datingContactBlockType === "phone" ? "차단할 휴대폰 번호를 입력해주세요." : "차단할 인스타 아이디를 입력해주세요.");
+      alert(
+        datingContactBlockType === "nickname"
+          ? "검색할 닉네임을 입력해주세요."
+          : datingContactBlockType === "phone"
+            ? "차단할 휴대폰 번호를 입력해주세요."
+            : "차단할 인스타 아이디를 입력해주세요."
+      );
+      return;
+    }
+    if (datingContactBlockType === "nickname") {
+      await handleSearchDatingUserBlock();
       return;
     }
 
@@ -4191,8 +4274,12 @@ export default function MyPage() {
       }
       setDatingContactBlockValue("");
       setDatingContactBlockLabel("");
-      await Promise.all([reloadDatingContactBlocks(), reloadSwipeStatus()]);
-      alert("오픈카드와 빠른매칭에서 서로 보이지 않도록 차단했습니다.");
+      await Promise.all([reloadDatingContactBlocks(), reloadOneOnOneRecommendations(), reloadSwipeStatus()]);
+      alert(
+        datingContactBlockType === "phone"
+          ? "오픈카드·빠른매칭·1:1에서 서로 보이지 않도록 차단했습니다."
+          : "오픈카드와 빠른매칭에서 서로 보이지 않도록 차단했습니다."
+      );
     } catch (e) {
       alert(e instanceof Error ? e.message : "오픈카드 지인 차단 저장에 실패했습니다.");
     } finally {
@@ -4202,7 +4289,7 @@ export default function MyPage() {
 
   const handleDeleteDatingContactBlock = async (id: string) => {
     if (deletingDatingContactBlockIds.includes(id)) return;
-    if (!confirm("이 지인 차단을 해제할까요? 이후 오픈카드나 빠른매칭에서 다시 보일 수 있습니다.")) return;
+    if (!confirm("이 지인 차단을 해제할까요? 이후 매칭 화면에 다시 보일 수 있습니다.")) return;
 
     setDeletingDatingContactBlockIds((prev) => [...prev, id]);
     try {
@@ -4216,7 +4303,7 @@ export default function MyPage() {
         alert(body.error ?? "오픈카드 지인 차단 삭제에 실패했습니다.");
         return;
       }
-      await Promise.all([reloadDatingContactBlocks(), reloadSwipeStatus()]);
+      await Promise.all([reloadDatingContactBlocks(), reloadOneOnOneRecommendations(), reloadSwipeStatus()]);
     } catch (e) {
       alert(e instanceof Error ? e.message : "오픈카드 지인 차단 삭제에 실패했습니다.");
     } finally {
@@ -7441,18 +7528,24 @@ export default function MyPage() {
         <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50/50 p-3">
           <div className="flex flex-col gap-3">
             <div>
-              <p className="text-sm font-semibold text-rose-900">오픈카드 지인 차단</p>
+              <p className="text-sm font-semibold text-rose-900">지인 차단</p>
               <p className="mt-1 text-xs leading-5 text-neutral-600">
-                휴대폰 번호나 인스타 아이디를 입력하면 오픈카드와 빠른매칭에서 서로 보이지 않게 제외돼요.
+                닉네임이나 휴대폰 번호로 등록하면 오픈카드·빠른매칭·1:1에서 서로 보이지 않아요.
               </p>
-              <p className="mt-1 text-[11px] text-neutral-500">입력값은 원문 그대로 저장하지 않고 안전하게 비교해요.</p>
+              <p className="mt-1 text-[11px] text-neutral-500">인스타 아이디는 오픈카드와 빠른매칭에 적용돼요.</p>
             </div>
             <div className="grid gap-2 sm:grid-cols-[90px_1fr_1fr_auto]">
               <select
                 value={datingContactBlockType}
-                onChange={(event) => setDatingContactBlockType(event.target.value === "instagram" ? "instagram" : "phone")}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setDatingContactBlockType(value === "instagram" ? "instagram" : value === "phone" ? "phone" : "nickname");
+                  setDatingContactBlockValue("");
+                  setDatingUserBlockSearchResults([]);
+                }}
                 className="min-h-[38px] rounded-lg border border-rose-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
               >
+                <option value="nickname">닉네임</option>
                 <option value="phone">휴대폰</option>
                 <option value="instagram">인스타</option>
               </select>
@@ -7460,25 +7553,59 @@ export default function MyPage() {
                 type={datingContactBlockType === "phone" ? "tel" : "text"}
                 value={datingContactBlockValue}
                 onChange={(event) => setDatingContactBlockValue(event.target.value)}
-                placeholder={datingContactBlockType === "phone" ? "01012345678" : "instagram_id"}
+                placeholder={datingContactBlockType === "nickname" ? "닉네임 검색" : datingContactBlockType === "phone" ? "01012345678" : "instagram_id"}
                 className="min-h-[38px] rounded-lg border border-rose-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
               />
-              <input
-                type="text"
-                value={datingContactBlockLabel}
-                onChange={(event) => setDatingContactBlockLabel(event.target.value)}
-                placeholder="메모 선택"
-                className="min-h-[38px] rounded-lg border border-rose-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
-              />
+              {datingContactBlockType !== "nickname" && (
+                <input
+                  type="text"
+                  value={datingContactBlockLabel}
+                  onChange={(event) => setDatingContactBlockLabel(event.target.value)}
+                  placeholder="메모 선택"
+                  className="min-h-[38px] rounded-lg border border-rose-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
+                />
+              )}
               <button
                 type="button"
                 onClick={() => void handleAddDatingContactBlock()}
-                disabled={datingContactBlockSubmitting}
+                disabled={datingContactBlockSubmitting || datingUserBlockSearchLoading}
                 className="inline-flex min-h-[38px] items-center justify-center rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white disabled:opacity-50"
               >
-                {datingContactBlockSubmitting ? "저장 중..." : "차단"}
+                {datingContactBlockType === "nickname"
+                  ? datingUserBlockSearchLoading ? "검색 중..." : "검색"
+                  : datingContactBlockSubmitting ? "저장 중..." : "차단"}
               </button>
             </div>
+            {datingContactBlockType === "nickname" && datingUserBlockSearchResults.length > 0 && (
+              <div className="divide-y divide-rose-100 rounded-lg border border-rose-100 bg-white">
+                {datingUserBlockSearchResults.map((result) => {
+                  const blocking = blockingDatingUserIds.includes(result.user_id);
+                  return (
+                    <div key={`profile-search-${result.user_id}`} className="flex items-center justify-between gap-3 px-3 py-2">
+                      <span className="truncate text-xs font-medium text-neutral-800">{result.nickname ?? "닉네임 없음"}</span>
+                      <button type="button" disabled={result.already_blocked || blocking} onClick={() => void handleAddDatingUserBlock(result)} className="shrink-0 rounded-md border border-rose-200 px-2.5 py-1 text-[11px] font-semibold text-rose-700 disabled:bg-neutral-50 disabled:text-neutral-400">
+                        {result.already_blocked ? "차단됨" : blocking ? "처리 중" : "서로 숨기기"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {myDatingUserBlocks.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {myDatingUserBlocks.map((block) => {
+                  const deleting = deletingDatingUserBlockIds.includes(block.blocked_user_id);
+                  return (
+                    <span key={`profile-user-${block.blocked_user_id}`} className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-white px-3 py-1 text-[11px] text-rose-800">
+                      닉네임 {block.nickname ?? block.latest_card?.display_nickname ?? "회원"}
+                      <button type="button" disabled={deleting} onClick={() => void handleDeleteDatingUserBlock(block.blocked_user_id)} className="font-semibold text-rose-700 disabled:opacity-50">
+                        {deleting ? "삭제 중" : "해제"}
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
             {myDatingContactBlocks.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {myDatingContactBlocks.map((block) => {
@@ -7503,7 +7630,22 @@ export default function MyPage() {
                 })}
               </div>
             ) : (
-              <p className="text-[11px] text-neutral-500">아직 등록한 지인 차단이 없습니다.</p>
+              myDatingUserBlocks.length === 0 && myOneOnOnePhoneBlocks.length === 0 && <p className="text-[11px] text-neutral-500">아직 등록한 지인 차단이 없습니다.</p>
+            )}
+            {myOneOnOnePhoneBlocks.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {myOneOnOnePhoneBlocks.map((block) => {
+                  const deleting = deletingOneOnOnePhoneBlockIds.includes(block.id);
+                  return (
+                    <span key={`profile-legacy-1on1-${block.id}`} className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1 text-[11px] text-neutral-700">
+                      기존 1:1 · 끝자리 {block.phone_last4 ?? "----"}
+                      <button type="button" disabled={deleting} onClick={() => void handleDeleteOneOnOnePhoneBlock(block.id)} className="font-semibold text-rose-700 disabled:opacity-50">
+                        {deleting ? "삭제 중" : "해제"}
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>
@@ -8352,65 +8494,6 @@ export default function MyPage() {
             쌍방 수락 후 기존 매칭을 포함해 결제가 완료되면 상대 연락처가 바로 공개됩니다. 공개된 번호의 외부 공유, 무단 저장, 불쾌한 연락은 제재 대상입니다.
           </p>
         </div>
-        <div className="mb-3 rounded-xl border border-rose-200 bg-white px-3 py-3">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <p className="text-xs font-semibold text-rose-900">지인 번호 차단</p>
-              <p className="mt-1 text-[11px] leading-5 text-neutral-600">
-                아는 사람 번호를 입력하면 1:1 후보에서 서로 보이지 않게 제외됩니다. 입력한 번호는 안전하게 보호돼요.
-              </p>
-            </div>
-            <div className="flex flex-col gap-2 md:min-w-[360px]">
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <input
-                  type="tel"
-                  value={oneOnOneBlockPhoneInput}
-                  onChange={(event) => setOneOnOneBlockPhoneInput(event.target.value)}
-                  placeholder="01012345678"
-                  className="min-h-[38px] flex-1 rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
-                />
-                <input
-                  type="text"
-                  value={oneOnOneBlockLabelInput}
-                  onChange={(event) => setOneOnOneBlockLabelInput(event.target.value)}
-                  placeholder="메모 선택"
-                  className="min-h-[38px] flex-1 rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
-                />
-                <button
-                  type="button"
-                  onClick={() => void handleAddOneOnOnePhoneBlock()}
-                  disabled={oneOnOnePhoneBlockSubmitting}
-                  className="inline-flex min-h-[38px] items-center justify-center rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white disabled:opacity-50"
-                >
-                  {oneOnOnePhoneBlockSubmitting ? "저장 중..." : "차단"}
-                </button>
-              </div>
-              {myOneOnOnePhoneBlocks.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {myOneOnOnePhoneBlocks.map((block) => {
-                    const deleting = deletingOneOnOnePhoneBlockIds.includes(block.id);
-                    return (
-                      <span
-                        key={block.id}
-                        className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] text-rose-800"
-                      >
-                        {block.label ? `${block.label} · ` : ""}끝자리 {block.phone_last4 ?? "----"}
-                        <button
-                          type="button"
-                          disabled={deleting}
-                          onClick={() => void handleDeleteOneOnOnePhoneBlock(block.id)}
-                          className="font-semibold text-rose-700 disabled:opacity-50"
-                        >
-                          {deleting ? "삭제 중" : "해제"}
-                        </button>
-                      </span>
-                    );
-                  })}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
         {myOneOnOneCards.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 신청한 내역이 없습니다.</p>
         ) : (
@@ -9201,19 +9284,25 @@ export default function MyPage() {
       <section className="hidden">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
-            <h2 className="text-lg font-bold text-rose-900">오픈카드 지인 차단</h2>
+            <h2 className="text-lg font-bold text-rose-900">지인 차단</h2>
             <p className="mt-1 text-xs leading-5 text-neutral-600">
-              휴대폰 번호나 인스타 아이디를 입력하면 오픈카드와 빠른매칭에서 서로 보이지 않게 제외돼요.
+              닉네임이나 휴대폰 번호로 등록하면 오픈카드·빠른매칭·1:1에서 서로 보이지 않아요.
             </p>
-            <p className="mt-1 text-[11px] text-neutral-500">입력값은 원문 그대로 저장하지 않고 안전하게 비교해요.</p>
+            <p className="mt-1 text-[11px] text-neutral-500">인스타 아이디는 오픈카드와 빠른매칭에 적용돼요.</p>
           </div>
           <div className="flex flex-col gap-2 md:min-w-[430px]">
             <div className="flex flex-col gap-2 sm:flex-row">
               <select
                 value={datingContactBlockType}
-                onChange={(event) => setDatingContactBlockType(event.target.value === "instagram" ? "instagram" : "phone")}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  setDatingContactBlockType(value === "instagram" ? "instagram" : value === "phone" ? "phone" : "nickname");
+                  setDatingContactBlockValue("");
+                  setDatingUserBlockSearchResults([]);
+                }}
                 className="min-h-[38px] rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
               >
+                <option value="nickname">닉네임</option>
                 <option value="phone">휴대폰</option>
                 <option value="instagram">인스타</option>
               </select>
@@ -9221,25 +9310,51 @@ export default function MyPage() {
                 type={datingContactBlockType === "phone" ? "tel" : "text"}
                 value={datingContactBlockValue}
                 onChange={(event) => setDatingContactBlockValue(event.target.value)}
-                placeholder={datingContactBlockType === "phone" ? "01012345678" : "instagram_id"}
+                placeholder={datingContactBlockType === "nickname" ? "닉네임 검색" : datingContactBlockType === "phone" ? "01012345678" : "instagram_id"}
                 className="min-h-[38px] flex-1 rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
               />
-              <input
-                type="text"
-                value={datingContactBlockLabel}
-                onChange={(event) => setDatingContactBlockLabel(event.target.value)}
-                placeholder="메모 선택"
-                className="min-h-[38px] flex-1 rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-rose-300"
-              />
+              {datingContactBlockType !== "nickname" && (
+                <input type="text" value={datingContactBlockLabel} onChange={(event) => setDatingContactBlockLabel(event.target.value)} placeholder="메모 선택" className="min-h-[38px] flex-1 rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-rose-300" />
+              )}
               <button
                 type="button"
                 onClick={() => void handleAddDatingContactBlock()}
-                disabled={datingContactBlockSubmitting}
+                disabled={datingContactBlockSubmitting || datingUserBlockSearchLoading}
                 className="inline-flex min-h-[38px] items-center justify-center rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white disabled:opacity-50"
               >
-                {datingContactBlockSubmitting ? "저장 중..." : "차단"}
+                {datingContactBlockType === "nickname" ? datingUserBlockSearchLoading ? "검색 중..." : "검색" : datingContactBlockSubmitting ? "저장 중..." : "차단"}
               </button>
             </div>
+            {datingContactBlockType === "nickname" && datingUserBlockSearchResults.length > 0 && (
+              <div className="divide-y divide-rose-100 rounded-lg border border-rose-100 bg-white">
+                {datingUserBlockSearchResults.map((result) => {
+                  const blocking = blockingDatingUserIds.includes(result.user_id);
+                  return (
+                    <div key={`manage-search-${result.user_id}`} className="flex items-center justify-between gap-3 px-3 py-2">
+                      <span className="truncate text-xs font-medium text-neutral-800">{result.nickname ?? "닉네임 없음"}</span>
+                      <button type="button" disabled={result.already_blocked || blocking} onClick={() => void handleAddDatingUserBlock(result)} className="shrink-0 rounded-md border border-rose-200 px-2.5 py-1 text-[11px] font-semibold text-rose-700 disabled:bg-neutral-50 disabled:text-neutral-400">
+                        {result.already_blocked ? "차단됨" : blocking ? "처리 중" : "서로 숨기기"}
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {myDatingUserBlocks.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {myDatingUserBlocks.map((block) => {
+                  const deleting = deletingDatingUserBlockIds.includes(block.blocked_user_id);
+                  return (
+                    <span key={`manage-user-${block.blocked_user_id}`} className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] text-rose-800">
+                      닉네임 {block.nickname ?? block.latest_card?.display_nickname ?? "회원"}
+                      <button type="button" disabled={deleting} onClick={() => void handleDeleteDatingUserBlock(block.blocked_user_id)} className="font-semibold text-rose-700 disabled:opacity-50">
+                        {deleting ? "삭제 중" : "해제"}
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
+            )}
             {myDatingContactBlocks.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {myDatingContactBlocks.map((block) => {
@@ -9264,7 +9379,22 @@ export default function MyPage() {
                 })}
               </div>
             ) : (
-              <p className="text-[11px] text-neutral-500">아직 등록한 오픈카드 지인 차단이 없습니다.</p>
+              myDatingUserBlocks.length === 0 && myOneOnOnePhoneBlocks.length === 0 && <p className="text-[11px] text-neutral-500">아직 등록한 지인 차단이 없습니다.</p>
+            )}
+            {myOneOnOnePhoneBlocks.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {myOneOnOnePhoneBlocks.map((block) => {
+                  const deleting = deletingOneOnOnePhoneBlockIds.includes(block.id);
+                  return (
+                    <span key={`manage-legacy-1on1-${block.id}`} className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1 text-[11px] text-neutral-700">
+                      기존 1:1 · 끝자리 {block.phone_last4 ?? "----"}
+                      <button type="button" disabled={deleting} onClick={() => void handleDeleteOneOnOnePhoneBlock(block.id)} className="font-semibold text-rose-700 disabled:opacity-50">
+                        {deleting ? "삭제 중" : "해제"}
+                      </button>
+                    </span>
+                  );
+                })}
+              </div>
             )}
           </div>
         </div>

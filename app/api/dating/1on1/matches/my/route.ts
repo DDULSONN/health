@@ -5,6 +5,7 @@ import {
 } from "@/lib/dating-1on1";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
+import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { NextResponse } from "next/server";
 
 const MY_MATCH_BATCH_SIZE = 500;
@@ -75,6 +76,17 @@ export async function GET(req: Request) {
     console.error("[GET /api/dating/1on1/matches/my] failed", error);
     return NextResponse.json({ error: "Failed to load match proposals." }, { status: 500 });
   }
+  const blockedUserIds = await getDatingBlockedUserIds(admin, user.id).catch((blockError) => {
+    console.error("[GET /api/dating/1on1/matches/my] member blocks failed", blockError);
+    return null;
+  });
+  if (!blockedUserIds) {
+    return NextResponse.json({ error: "Failed to load member blocks." }, { status: 500 });
+  }
+  rows = rows.filter((row) => {
+    const otherUserId = row.source_user_id === user.id ? row.candidate_user_id : row.source_user_id;
+    return !blockedUserIds.has(otherUserId);
+  });
   const cardMap = await getDatingOneOnOneCardsByIds(
     admin,
     rows.flatMap((row) => [row.source_card_id, row.candidate_card_id])

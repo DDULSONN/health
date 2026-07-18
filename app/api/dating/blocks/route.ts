@@ -1,5 +1,6 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { NextResponse } from "next/server";
 
 type ProfileRow = {
@@ -22,6 +23,38 @@ export async function GET(req: Request) {
   }
 
   const admin = createAdminClient();
+  const searchQuery = new URL(req.url).searchParams.get("q")?.trim() ?? "";
+  if (searchQuery) {
+    if (searchQuery.length < 2 || searchQuery.length > 20 || !/^[0-9A-Za-z가-힣_]+$/.test(searchQuery)) {
+      return NextResponse.json({ error: "닉네임을 2자 이상 정확하게 입력해주세요." }, { status: 400 });
+    }
+
+    const [profilesRes, blockedRes] = await Promise.all([
+      admin
+        .from("profiles")
+        .select("user_id,nickname")
+        .ilike("nickname", `%${searchQuery}%`)
+        .neq("user_id", user.id)
+        .order("nickname", { ascending: true })
+        .limit(10),
+      admin.from("dating_user_blocks").select("blocked_user_id").eq("blocker_user_id", user.id),
+    ]);
+
+    if (profilesRes.error || blockedRes.error) {
+      console.error("[GET /api/dating/blocks] nickname search failed", profilesRes.error ?? blockedRes.error);
+      return NextResponse.json({ error: "회원 검색에 실패했습니다." }, { status: 500 });
+    }
+
+    const blockedIds = new Set((blockedRes.data ?? []).map((row) => String(row.blocked_user_id ?? "")));
+    return NextResponse.json({
+      results: ((profilesRes.data ?? []) as ProfileRow[]).map((profile) => ({
+        user_id: profile.user_id,
+        nickname: profile.nickname,
+        already_blocked: blockedIds.has(profile.user_id),
+      })),
+    });
+  }
+
   const blocksRes = await admin
     .from("dating_user_blocks")
     .select("blocked_user_id, reason, created_at")
@@ -83,6 +116,9 @@ export async function GET(req: Request) {
 }
 
 export async function POST(req: Request) {
+  const originError = ensureAllowedMutationOrigin(req);
+  if (originError) return originError;
+
   const { user } = await getRequestAuthContext(req);
 
   if (!user) {

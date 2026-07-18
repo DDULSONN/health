@@ -30,6 +30,8 @@ export type DatingContactBlockCardLike = {
 
 const CONTACT_BLOCK_BATCH_SIZE = 500;
 
+export type DatingContactBlockMap = Map<string, Set<string>>;
+
 function getContactBlockSecret() {
   return (
     process.env.CONTACT_BLOCK_HASH_SECRET?.trim() ||
@@ -102,7 +104,7 @@ function hasHash(bucket: Map<string, Set<string>>, userId: string, type: DatingC
   return bucket.get(`${userId}:${type}`)?.has(valueHash) === true;
 }
 
-async function getContactBlockMapForUsers(adminClient: SupabaseClient, userIds: string[]) {
+export async function getDatingContactBlockMapForUsers(adminClient: SupabaseClient, userIds: string[]) {
   const uniqueUserIds = [...new Set(userIds.map((id) => String(id ?? "").trim()).filter(Boolean))];
   const blockMap = new Map<string, Set<string>>();
   if (uniqueUserIds.length === 0) return blockMap;
@@ -129,6 +131,40 @@ async function getContactBlockMapForUsers(adminClient: SupabaseClient, userIds: 
   }
 
   return blockMap;
+}
+
+export function isDatingContactPhoneBlockedPair({
+  sourceUserId,
+  sourcePhone,
+  candidateUserId,
+  candidatePhone,
+  blockMap,
+}: {
+  sourceUserId: string;
+  sourcePhone?: string | null;
+  candidateUserId: string;
+  candidatePhone?: string | null;
+  blockMap: DatingContactBlockMap;
+}) {
+  if (!sourceUserId || !candidateUserId || sourceUserId === candidateUserId) return false;
+
+  const sourcePhoneE164 = normalizeDatingContactPhone(String(sourcePhone ?? ""));
+  const candidatePhoneE164 = normalizeDatingContactPhone(String(candidatePhone ?? ""));
+
+  if (
+    candidatePhoneE164 &&
+    hasHash(blockMap, sourceUserId, "phone", hashDatingContactBlockValue("phone", candidatePhoneE164))
+  ) {
+    return true;
+  }
+  if (
+    sourcePhoneE164 &&
+    hasHash(blockMap, candidateUserId, "phone", hashDatingContactBlockValue("phone", sourcePhoneE164))
+  ) {
+    return true;
+  }
+
+  return false;
 }
 
 async function getPhoneByUserId(adminClient: SupabaseClient, userIds: string[]) {
@@ -192,7 +228,7 @@ export async function filterDatingCardsByContactBlocks<T extends DatingContactBl
   if (ownerIds.length === 0) return cards;
 
   const [blockMap, phoneByUserId, instagramIdsByOwner] = await Promise.all([
-    getContactBlockMapForUsers(adminClient, [viewerUserId, ...ownerIds]),
+    getDatingContactBlockMapForUsers(adminClient, [viewerUserId, ...ownerIds]),
     getPhoneByUserId(adminClient, [viewerUserId, ...ownerIds]),
     getLatestInstagramIdsByOwner(adminClient, [viewerUserId]),
   ]);
@@ -246,7 +282,7 @@ export async function hasDatingContactBlockBetween(
   if (!userAId || !userBId || userAId === userBId) return false;
 
   const [blockMap, phoneByUserId, fallbackInstagramIdsByOwner] = await Promise.all([
-    getContactBlockMapForUsers(adminClient, [userAId, userBId]),
+    getDatingContactBlockMapForUsers(adminClient, [userAId, userBId]),
     getPhoneByUserId(adminClient, [userAId, userBId]),
     getLatestInstagramIdsByOwner(adminClient, [userAId, userBId]),
   ]);

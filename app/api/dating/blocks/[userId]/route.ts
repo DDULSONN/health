@@ -1,8 +1,12 @@
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { NextResponse } from "next/server";
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ userId: string }> }) {
+  const originError = ensureAllowedMutationOrigin(req);
+  if (originError) return originError;
+
   const { user } = await getRequestAuthContext(req);
 
   if (!user) {
