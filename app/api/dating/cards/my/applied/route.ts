@@ -65,6 +65,44 @@ function cardPhotoUrls(card: CardRow): string[] {
   return thumbUrl ? [thumbUrl, thumbUrl] : [];
 }
 
+function isMissingColumnError(error: unknown, columnName: string): boolean {
+  if (!error || typeof error !== "object") return false;
+  const code = String((error as { code?: unknown }).code ?? "");
+  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
+  return code === "42703" || (message.includes("column") && message.includes(columnName.toLowerCase()));
+}
+
+async function loadAppliedCards(
+  adminClient: ReturnType<typeof createAdminClient>,
+  cardIds: string[]
+): Promise<{ data: CardRow[]; error: unknown }> {
+  const withIntroRes = await adminClient
+    .from("dating_cards")
+    .select(
+      "id, owner_user_id, sex, display_nickname, instagram_id, age, region, height_cm, job, training_years, ideal_type, strengths_text, intro_text, photo_visibility, photo_paths, blur_paths, blur_thumb_path, status, expires_at, created_at"
+    )
+    .in("id", cardIds);
+
+  if (!withIntroRes.error) {
+    return { data: (withIntroRes.data ?? []) as CardRow[], error: null };
+  }
+  if (!isMissingColumnError(withIntroRes.error, "intro_text")) {
+    return { data: [], error: withIntroRes.error };
+  }
+
+  const fallbackRes = await adminClient
+    .from("dating_cards")
+    .select(
+      "id, owner_user_id, sex, display_nickname, instagram_id, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, photo_paths, blur_paths, blur_thumb_path, status, expires_at, created_at"
+    )
+    .in("id", cardIds);
+
+  return {
+    data: ((fallbackRes.data ?? []) as Omit<CardRow, "intro_text">[]).map((card) => ({ ...card, intro_text: null })),
+    error: fallbackRes.error,
+  };
+}
+
 export async function GET(req: Request) {
   const { user } = await getRequestAuthContext(req);
 
@@ -109,12 +147,7 @@ export async function GET(req: Request) {
     return NextResponse.json({ applications: [] });
   }
 
-  const cardsRes = await adminClient
-    .from("dating_cards")
-    .select(
-      "id, owner_user_id, sex, display_nickname, instagram_id, age, region, height_cm, job, training_years, ideal_type, strengths_text, intro_text, photo_visibility, photo_paths, blur_paths, blur_thumb_path, status, expires_at, created_at"
-    )
-    .in("id", cardIds);
+  const cardsRes = await loadAppliedCards(adminClient, cardIds);
 
   if (cardsRes.error) {
     console.error("[GET /api/dating/cards/my/applied] cards failed", cardsRes.error);
