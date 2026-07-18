@@ -1,7 +1,6 @@
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
-import { publicCachedJson } from "@/lib/http-cache";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { kvGetString, kvSetString } from "@/lib/edge-kv";
@@ -315,7 +314,7 @@ export async function GET(req: Request) {
       `[list.metrics] requestId=${requestId} path=/api/dating/paid/list cards=${items.length} rawSigned=${counters.rawSigned} blurSigned=${counters.blurSigned} cacheHitRatePct=${cacheHitRatePct} signCalls=${counters.signCalls}`
     );
 
-    return publicCachedJson({ ok: true, requestId, items }, { sMaxAge: 30, staleWhileRevalidate: 60 });
+    return jsonNoStore(200, { ok: true, requestId, items });
   } catch (error) {
     console.error(`[dating-paid-list] ${requestId} unhandled`, {
       message: error instanceof Error ? error.message : null,

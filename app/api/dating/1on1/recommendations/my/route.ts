@@ -9,6 +9,7 @@ import {
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import {
   getDatingContactBlockMapForUsers,
+  getDatingProfilePhoneMapForUsers,
   isDatingContactPhoneBlockedPair,
 } from "@/lib/dating-contact-blocks";
 import {
@@ -526,7 +527,7 @@ export async function GET(req: Request) {
   }
 
   const allCandidateUserIds = normalizedCards.map((card) => card.user_id);
-  const [existingPairRes, phoneBlockMap, adminUserBlockPairSet, contactBlockMap, blockedUserIds] = await Promise.all([
+  const [existingPairRes, phoneBlockMap, adminUserBlockPairSet, contactBlockMap, blockedUserIds, profilePhoneMap] = await Promise.all([
     admin
       .from("dating_1on1_match_proposals")
       .select("source_card_id,candidate_card_id")
@@ -535,6 +536,7 @@ export async function GET(req: Request) {
     getOneOnOneAdminUserBlockPairSetForUsers(admin, allCandidateUserIds),
     getDatingContactBlockMapForUsers(admin, allCandidateUserIds),
     getDatingBlockedUserIds(admin, user.id),
+    getDatingProfilePhoneMapForUsers(admin, allCandidateUserIds),
   ]);
 
   if (existingPairRes.error) {
@@ -560,9 +562,9 @@ export async function GET(req: Request) {
       if (
         isOneOnOnePhoneBlockedPair({
           sourceUserId: sourceCard.user_id,
-          sourcePhone: sourceCard.phone,
+          sourcePhone: profilePhoneMap.get(sourceCard.user_id) ?? sourceCard.phone,
           candidateUserId: candidateCard.user_id,
-          candidatePhone: candidateCard.phone,
+          candidatePhone: profilePhoneMap.get(candidateCard.user_id) ?? candidateCard.phone,
           blockMap: phoneBlockMap,
         })
       ) {
@@ -571,9 +573,9 @@ export async function GET(req: Request) {
       if (
         isDatingContactPhoneBlockedPair({
           sourceUserId: sourceCard.user_id,
-          sourcePhone: sourceCard.phone,
+          sourcePhone: profilePhoneMap.get(sourceCard.user_id) ?? sourceCard.phone,
           candidateUserId: candidateCard.user_id,
-          candidatePhone: candidateCard.phone,
+          candidatePhone: profilePhoneMap.get(candidateCard.user_id) ?? candidateCard.phone,
           blockMap: contactBlockMap,
         })
       ) {

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import { getDatingContactBlockedUserIdsForViewer } from "@/lib/dating-contact-blocks";
 import {
   getSwipeLikeExpiresAtIso,
   isSwipeLikeExpiryEligible,
@@ -167,9 +168,25 @@ export async function GET(req: Request) {
 
   const rawOutgoingLikes = (outgoingRes.data ?? []) as SwipeRow[];
   const rawIncomingLikes = (incomingRes.data ?? []) as SwipeRow[];
+  const allSwipeMatches = swipeMatches;
+  const contactBlockedUserIds = await getDatingContactBlockedUserIdsForViewer(admin, user.id, [
+    ...rawOutgoingLikes.map((row) => row.target_user_id),
+    ...rawIncomingLikes.map((row) => row.actor_user_id),
+    ...allSwipeMatches.map((row) => (row.user_a_id === user.id ? row.user_b_id : row.user_a_id)),
+  ]).catch((blockError) => {
+    console.error("[GET /api/dating/cards/my/swipe-status] contact blocks failed", blockError);
+    return null;
+  });
+  if (!contactBlockedUserIds) {
+    return NextResponse.json({ error: "지인 차단 설정을 확인하지 못했습니다." }, { status: 500 });
+  }
+  swipeMatches = allSwipeMatches.filter((row) => {
+    const otherUserId = row.user_a_id === user.id ? row.user_b_id : row.user_a_id;
+    return !blockedUserIds.has(otherUserId) && !contactBlockedUserIds.has(otherUserId);
+  });
   const nowMs = Date.now();
   const expiryCutoffMs = nowMs - SWIPE_LIKE_EXPIRY_HOURS * 60 * 60 * 1000;
-  const matchedPairKeys = new Set(swipeMatches.map((row) => getPairKey(row.user_a_id, row.user_b_id)));
+  const matchedPairKeys = new Set(allSwipeMatches.map((row) => getPairKey(row.user_a_id, row.user_b_id)));
   const expiredLikeIds = new Set(
     [...rawOutgoingLikes, ...rawIncomingLikes]
       .filter((row) => {
@@ -190,10 +207,16 @@ export async function GET(req: Request) {
   }
 
   const outgoingLikes = rawOutgoingLikes.filter(
-    (row) => !expiredLikeIds.has(row.id) && !blockedUserIds.has(row.target_user_id)
+    (row) =>
+      !expiredLikeIds.has(row.id) &&
+      !blockedUserIds.has(row.target_user_id) &&
+      !contactBlockedUserIds.has(row.target_user_id)
   );
   const incomingLikesRaw = rawIncomingLikes.filter(
-    (row) => !expiredLikeIds.has(row.id) && !blockedUserIds.has(row.actor_user_id)
+    (row) =>
+      !expiredLikeIds.has(row.id) &&
+      !blockedUserIds.has(row.actor_user_id) &&
+      !contactBlockedUserIds.has(row.actor_user_id)
   );
 
   const matchedUserIds = new Set<string>();
@@ -243,7 +266,7 @@ export async function GET(req: Request) {
     summary: {
       outgoing_pending: outgoingLikes.filter((row) => !matchedUserIds.has(row.target_user_id)).length,
       incoming_pending: incomingLikes.length,
-      mutual_matches: swipeMatches.filter((row) => !blockedUserIds.has(row.user_a_id === user.id ? row.user_b_id : row.user_a_id)).length,
+      mutual_matches: swipeMatches.length,
     },
     outgoing_likes: outgoingLikes.map((row) => {
       const card = cardsById.get(row.target_card_id) ?? null;

@@ -11,6 +11,7 @@ import {
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import {
   getDatingContactBlockMapForUsers,
+  getDatingProfilePhoneMapForUsers,
   isDatingContactPhoneBlockedPair,
 } from "@/lib/dating-contact-blocks";
 import {
@@ -342,6 +343,7 @@ export async function POST(req: Request) {
   const unifiedBlockResult = await Promise.all([
     getDatingContactBlockMapForUsers(admin, [sourceRes.data.user_id, ...candidateUserIds]),
     getDatingBlockedUserIds(admin, sourceRes.data.user_id),
+    getDatingProfilePhoneMapForUsers(admin, [sourceRes.data.user_id, ...candidateUserIds]),
   ]).catch((error) => {
     console.error("[POST /api/dating/1on1/matches/admin] unified block lookup failed", error);
     return null;
@@ -349,15 +351,15 @@ export async function POST(req: Request) {
   if (!unifiedBlockResult) {
     return NextResponse.json({ error: "지인 차단 설정을 확인하지 못했습니다." }, { status: 500 });
   }
-  const [contactBlockMap, blockedUserIds] = unifiedBlockResult;
+  const [contactBlockMap, blockedUserIds, profilePhoneMap] = unifiedBlockResult;
   const phoneBlockedCandidateIds = new Set(
     candidateRows
       .filter((row) =>
         isOneOnOnePhoneBlockedPair({
           sourceUserId: sourceRes.data!.user_id,
-          sourcePhone: sourceRes.data!.phone ?? null,
+          sourcePhone: profilePhoneMap.get(sourceRes.data!.user_id) ?? sourceRes.data!.phone ?? null,
           candidateUserId: row.user_id,
-          candidatePhone: row.phone ?? null,
+          candidatePhone: profilePhoneMap.get(row.user_id) ?? row.phone ?? null,
           blockMap: phoneBlockMap,
         })
       )
@@ -381,9 +383,9 @@ export async function POST(req: Request) {
           blockedUserIds.has(row.user_id) ||
           isDatingContactPhoneBlockedPair({
             sourceUserId: sourceRes.data!.user_id,
-            sourcePhone: sourceRes.data!.phone ?? null,
+            sourcePhone: profilePhoneMap.get(sourceRes.data!.user_id) ?? sourceRes.data!.phone ?? null,
             candidateUserId: row.user_id,
-            candidatePhone: row.phone ?? null,
+            candidatePhone: profilePhoneMap.get(row.user_id) ?? row.phone ?? null,
             blockMap: contactBlockMap,
           })
       )

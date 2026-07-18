@@ -1,6 +1,7 @@
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
+import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { NextResponse } from "next/server";
 
 type ProfileRow = {
@@ -27,6 +28,22 @@ export async function GET(req: Request) {
   if (searchQuery) {
     if (searchQuery.length < 2 || searchQuery.length > 20 || !/^[0-9A-Za-z가-힣_]+$/.test(searchQuery)) {
       return NextResponse.json({ error: "닉네임을 2자 이상 정확하게 입력해주세요." }, { status: 400 });
+    }
+
+    const rateLimit = await checkRouteRateLimit({
+      requestId: crypto.randomUUID(),
+      scope: "dating-user-block-search",
+      userId: user.id,
+      ip: extractClientIp(req),
+      userLimitPerMin: 30,
+      ipLimitPerMin: 60,
+      path: "/api/dating/blocks",
+    });
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: "검색 요청이 너무 많습니다. 잠시 후 다시 시도해주세요." },
+        { status: 429, headers: { "Retry-After": String(rateLimit.retryAfterSec) } }
+      );
     }
 
     const [profilesRes, blockedRes] = await Promise.all([

@@ -167,26 +167,29 @@ export function isDatingContactPhoneBlockedPair({
   return false;
 }
 
-async function getPhoneByUserId(adminClient: SupabaseClient, userIds: string[]) {
+export async function getDatingProfilePhoneMapForUsers(adminClient: SupabaseClient, userIds: string[]) {
   const uniqueUserIds = [...new Set(userIds.map((id) => String(id ?? "").trim()).filter(Boolean))];
   const phoneByUserId = new Map<string, string>();
   if (uniqueUserIds.length === 0) return phoneByUserId;
 
-  const { data, error } = await adminClient
-    .from("profiles")
-    .select("user_id,phone_e164")
-    .in("user_id", uniqueUserIds);
+  for (let start = 0; start < uniqueUserIds.length; start += CONTACT_BLOCK_BATCH_SIZE) {
+    const chunk = uniqueUserIds.slice(start, start + CONTACT_BLOCK_BATCH_SIZE);
+    const { data, error } = await adminClient
+      .from("profiles")
+      .select("user_id,phone_e164")
+      .in("user_id", chunk);
 
-  if (error) {
-    const message = String(error.message ?? "").toLowerCase();
-    if (message.includes("phone_e164") || message.includes("could not find")) return phoneByUserId;
-    throw error;
-  }
+    if (error) {
+      const message = String(error.message ?? "").toLowerCase();
+      if (message.includes("phone_e164") || message.includes("could not find")) return phoneByUserId;
+      throw error;
+    }
 
-  for (const row of (data ?? []) as ProfilePhoneRow[]) {
-    const userId = String(row.user_id ?? "").trim();
-    const phone = normalizeDatingContactPhone(String(row.phone_e164 ?? ""));
-    if (userId && phone) phoneByUserId.set(userId, phone);
+    for (const row of (data ?? []) as ProfilePhoneRow[]) {
+      const userId = String(row.user_id ?? "").trim();
+      const phone = normalizeDatingContactPhone(String(row.phone_e164 ?? ""));
+      if (userId && phone) phoneByUserId.set(userId, phone);
+    }
   }
   return phoneByUserId;
 }
@@ -229,7 +232,7 @@ export async function filterDatingCardsByContactBlocks<T extends DatingContactBl
 
   const [blockMap, phoneByUserId, instagramIdsByOwner] = await Promise.all([
     getDatingContactBlockMapForUsers(adminClient, [viewerUserId, ...ownerIds]),
-    getPhoneByUserId(adminClient, [viewerUserId, ...ownerIds]),
+    getDatingProfilePhoneMapForUsers(adminClient, [viewerUserId, ...ownerIds]),
     getLatestInstagramIdsByOwner(adminClient, [viewerUserId]),
   ]);
 
@@ -283,7 +286,7 @@ export async function hasDatingContactBlockBetween(
 
   const [blockMap, phoneByUserId, fallbackInstagramIdsByOwner] = await Promise.all([
     getDatingContactBlockMapForUsers(adminClient, [userAId, userBId]),
-    getPhoneByUserId(adminClient, [userAId, userBId]),
+    getDatingProfilePhoneMapForUsers(adminClient, [userAId, userBId]),
     getLatestInstagramIdsByOwner(adminClient, [userAId, userBId]),
   ]);
   if (blockMap.size === 0) return false;
@@ -317,4 +320,79 @@ export async function hasDatingContactBlockBetween(
   }
 
   return false;
+}
+
+export async function hasDatingContactPhoneBlockBetween(
+  adminClient: SupabaseClient,
+  userAId: string,
+  userBId: string
+) {
+  if (!userAId || !userBId || userAId === userBId) return false;
+
+  const [blockMap, phoneByUserId] = await Promise.all([
+    getDatingContactBlockMapForUsers(adminClient, [userAId, userBId]),
+    getDatingProfilePhoneMapForUsers(adminClient, [userAId, userBId]),
+  ]);
+
+  return isDatingContactPhoneBlockedPair({
+    sourceUserId: userAId,
+    sourcePhone: phoneByUserId.get(userAId) ?? null,
+    candidateUserId: userBId,
+    candidatePhone: phoneByUserId.get(userBId) ?? null,
+    blockMap,
+  });
+}
+
+export async function getDatingContactBlockedUserIdsForViewer(
+  adminClient: SupabaseClient,
+  viewerUserId: string,
+  otherUserIds: string[]
+) {
+  const uniqueOtherUserIds = [
+    ...new Set(
+      otherUserIds
+        .map((id) => String(id ?? "").trim())
+        .filter((id) => id && id !== viewerUserId)
+    ),
+  ];
+  const blockedUserIds = new Set<string>();
+  if (!viewerUserId || uniqueOtherUserIds.length === 0) return blockedUserIds;
+
+  const allUserIds = [viewerUserId, ...uniqueOtherUserIds];
+  const [blockMap, phoneByUserId, instagramIdsByOwner] = await Promise.all([
+    getDatingContactBlockMapForUsers(adminClient, allUserIds),
+    getDatingProfilePhoneMapForUsers(adminClient, allUserIds),
+    getLatestInstagramIdsByOwner(adminClient, allUserIds),
+  ]);
+
+  const viewerPhone = phoneByUserId.get(viewerUserId) ?? null;
+  const viewerInstagrams = [...(instagramIdsByOwner.get(viewerUserId) ?? new Set<string>())];
+  for (const otherUserId of uniqueOtherUserIds) {
+    if (
+      isDatingContactPhoneBlockedPair({
+        sourceUserId: viewerUserId,
+        sourcePhone: viewerPhone,
+        candidateUserId: otherUserId,
+        candidatePhone: phoneByUserId.get(otherUserId) ?? null,
+        blockMap,
+      })
+    ) {
+      blockedUserIds.add(otherUserId);
+      continue;
+    }
+
+    const otherInstagrams = [...(instagramIdsByOwner.get(otherUserId) ?? new Set<string>())];
+    if (
+      otherInstagrams.some((instagram) =>
+        hasHash(blockMap, viewerUserId, "instagram", hashDatingContactBlockValue("instagram", instagram))
+      ) ||
+      viewerInstagrams.some((instagram) =>
+        hasHash(blockMap, otherUserId, "instagram", hashDatingContactBlockValue("instagram", instagram))
+      )
+    ) {
+      blockedUserIds.add(otherUserId);
+    }
+  }
+
+  return blockedUserIds;
 }

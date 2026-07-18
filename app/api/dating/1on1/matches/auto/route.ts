@@ -4,7 +4,7 @@ import {
   isOneOnOnePhoneBlockedPair,
 } from "@/lib/dating-1on1-phone-blocks";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
-import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
+import { hasDatingContactPhoneBlockBetween } from "@/lib/dating-contact-blocks";
 import {
   getOneOnOneAdminUserBlockPairSetForUsers,
   isOneOnOneAdminUserBlockedPair,
@@ -78,7 +78,7 @@ export async function POST(req: Request) {
 
   const unifiedBlockResult = await Promise.all([
     hasDatingBlockBetween(admin, sourceRes.data.user_id, candidateRes.data.user_id),
-    hasDatingContactBlockBetween(admin, sourceRes.data.user_id, candidateRes.data.user_id),
+    hasDatingContactPhoneBlockBetween(admin, sourceRes.data.user_id, candidateRes.data.user_id),
   ]).catch((error) => {
     console.error("[POST /api/dating/1on1/matches/auto] unified block lookup failed", error);
     return null;

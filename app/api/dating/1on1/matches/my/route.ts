@@ -6,6 +6,11 @@ import {
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import {
+  getDatingContactBlockMapForUsers,
+  getDatingProfilePhoneMapForUsers,
+  isDatingContactPhoneBlockedPair,
+} from "@/lib/dating-contact-blocks";
 import { NextResponse } from "next/server";
 
 const MY_MATCH_BATCH_SIZE = 500;
@@ -83,9 +88,33 @@ export async function GET(req: Request) {
   if (!blockedUserIds) {
     return NextResponse.json({ error: "Failed to load member blocks." }, { status: 500 });
   }
+  const participantUserIds = [
+    user.id,
+    ...rows.map((row) => (row.source_user_id === user.id ? row.candidate_user_id : row.source_user_id)),
+  ];
+  const contactBlockResult = await Promise.all([
+    getDatingContactBlockMapForUsers(admin, participantUserIds),
+    getDatingProfilePhoneMapForUsers(admin, participantUserIds),
+  ]).catch((blockError) => {
+    console.error("[GET /api/dating/1on1/matches/my] contact blocks failed", blockError);
+    return null;
+  });
+  if (!contactBlockResult) {
+    return NextResponse.json({ error: "Failed to load contact blocks." }, { status: 500 });
+  }
+  const [contactBlockMap, profilePhoneMap] = contactBlockResult;
   rows = rows.filter((row) => {
     const otherUserId = row.source_user_id === user.id ? row.candidate_user_id : row.source_user_id;
-    return !blockedUserIds.has(otherUserId);
+    return (
+      !blockedUserIds.has(otherUserId) &&
+      !isDatingContactPhoneBlockedPair({
+        sourceUserId: user.id,
+        sourcePhone: profilePhoneMap.get(user.id) ?? null,
+        candidateUserId: otherUserId,
+        candidatePhone: profilePhoneMap.get(otherUserId) ?? null,
+        blockMap: contactBlockMap,
+      })
+    );
   });
   const cardMap = await getDatingOneOnOneCardsByIds(
     admin,

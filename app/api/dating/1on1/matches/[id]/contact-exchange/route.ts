@@ -3,6 +3,8 @@ import {
 } from "@/lib/dating-1on1";
 import { getActiveOneOnOnePlus } from "@/lib/dating-1on1-plus";
 import { grantOneOnOneContactExchange } from "@/lib/dating-purchase-fulfillment";
+import { hasDatingBlockBetween } from "@/lib/dating-blocks";
+import { hasDatingContactPhoneBlockBetween } from "@/lib/dating-contact-blocks";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -72,6 +74,19 @@ export async function POST(
   }
   if (!["none", "awaiting_applicant_payment"].includes(row.contact_exchange_status)) {
     return NextResponse.json({ error: "Phone exchange cannot be requested right now." }, { status: 409 });
+  }
+
+  try {
+    const [memberBlocked, phoneBlocked] = await Promise.all([
+      hasDatingBlockBetween(admin, row.source_user_id, row.candidate_user_id),
+      hasDatingContactPhoneBlockBetween(admin, row.source_user_id, row.candidate_user_id),
+    ]);
+    if (memberBlocked || phoneBlocked) {
+      return NextResponse.json({ error: "차단된 상대와는 번호를 교환할 수 없습니다." }, { status: 409 });
+    }
+  } catch (blockError) {
+    console.error("[POST /api/dating/1on1/matches/[id]/contact-exchange] block check failed", blockError);
+    return NextResponse.json({ error: "지인 차단 설정을 확인하지 못했습니다." }, { status: 500 });
   }
 
   const activePlus = await getActiveOneOnOnePlus(admin, user.id);
