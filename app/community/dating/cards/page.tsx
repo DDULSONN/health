@@ -4096,6 +4096,14 @@ function OneOnOneMatchActions({
           <Link href="/mypage?section=matching" className="inline-flex min-h-[34px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold text-neutral-600">
             상세 보기
           </Link>
+          <button
+            type="button"
+            disabled={processing}
+            onClick={() => onMatchAction(match.id, "cancel_mutual")}
+            className="inline-flex min-h-[34px] items-center rounded-xl border border-rose-200 bg-white px-3 text-xs font-bold text-rose-700 disabled:opacity-50"
+          >
+            {processing ? "취소 중..." : "매칭 취소"}
+          </button>
         </div>
       </div>
     );

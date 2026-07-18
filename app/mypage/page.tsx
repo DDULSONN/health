@@ -267,6 +267,15 @@ type MyAppliedCardApplication = {
     id: string;
     sex: "male" | "female";
     display_nickname: string | null;
+    age: number | null;
+    region: string | null;
+    height_cm: number | null;
+    job: string | null;
+    training_years: number | null;
+    ideal_type: string | null;
+    strengths_text: string | null;
+    intro_text: string | null;
+    photo_signed_urls?: string[];
     status: "pending" | "public" | "expired" | "hidden";
     expires_at: string | null;
     created_at: string;
@@ -7238,8 +7247,10 @@ export default function MyPage() {
                           <div className="mt-2 flex flex-wrap gap-2 text-xs text-neutral-600">
                             <span>{item.matched_card.sex === "male" ? "남자" : item.matched_card.sex === "female" ? "여자" : "성별 미기재"}</span>
                             {item.matched_card.age != null && <span>{item.matched_card.age}세</span>}
+                            {item.matched_card.height_cm != null && <span>키 {item.matched_card.height_cm}cm</span>}
                             {item.matched_card.region && <span>{item.matched_card.region}</span>}
                             {item.matched_card.job && <span>{item.matched_card.job}</span>}
+                            {item.matched_card.training_years != null && <span>운동 {item.matched_card.training_years}년</span>}
                           </div>
                         ) : null}
                       </div>
@@ -7281,8 +7292,10 @@ export default function MyPage() {
                               </div>
                               <p className="mt-1 text-xs text-neutral-600">
                                 {item.card?.age != null ? `${item.card.age}세 / ` : ""}
+                                {item.card?.height_cm != null ? `키 ${item.card.height_cm}cm / ` : ""}
                                 {item.card?.region ?? "지역 미기재"}
                                 {item.card?.job ? ` / ${item.card.job}` : ""}
+                                {item.card?.training_years != null ? ` / 운동 ${item.card.training_years}년` : ""}
                               </p>
                               {item.card?.strengths_text && (
                                 <p className="mt-1 text-xs text-emerald-700 whitespace-pre-wrap break-words">강점: {item.card.strengths_text}</p>
@@ -7355,8 +7368,10 @@ export default function MyPage() {
                                 </div>
                                 <p className="mt-1 text-xs text-neutral-600">
                                   {item.card?.age != null ? `${item.card.age}세 / ` : ""}
+                                  {item.card?.height_cm != null ? `키 ${item.card.height_cm}cm / ` : ""}
                                   {item.card?.region ?? "지역 미기재"}
                                   {item.card?.job ? ` / ${item.card.job}` : ""}
+                                  {item.card?.training_years != null ? ` / 운동 ${item.card.training_years}년` : ""}
                                 </p>
                                 {item.card?.strengths_text && (
                                   <p className="mt-1 text-xs text-emerald-700 whitespace-pre-wrap break-words">강점: {item.card.strengths_text}</p>
@@ -9535,8 +9550,49 @@ export default function MyPage() {
                   지원일 {new Date(app.created_at).toLocaleString("ko-KR")}
                   {app.card?.owner_nickname ? ` / 카드 작성자 ${app.card.owner_nickname}` : ""}
                 </p>
+                {app.status === "accepted" && app.card && (
+                  <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3">
+                    <p className="text-xs font-semibold text-emerald-700">수락된 상대 오픈카드</p>
+                    {Array.isArray(app.card.photo_signed_urls) && app.card.photo_signed_urls.length > 0 && (
+                      <div className="mt-2 grid grid-cols-2 gap-2">
+                        {app.card.photo_signed_urls.map((url, idx) => (
+                          <a
+                            key={`${app.id}-matched-card-photo-${idx}`}
+                            href={url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="block overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50"
+                          >
+                            {/* eslint-disable-next-line @next/next/no-img-element */}
+                            <img
+                              src={url}
+                              alt={`수락된 상대 오픈카드 사진 ${idx + 1}`}
+                              loading="lazy"
+                              decoding="async"
+                              className="aspect-[4/5] w-full object-cover"
+                            />
+                          </a>
+                        ))}
+                      </div>
+                    )}
+                    <div className="mt-3 flex flex-wrap gap-2 text-xs text-neutral-600">
+                      {app.card.age != null && <span>나이 {app.card.age}</span>}
+                      {app.card.height_cm != null && <span>키 {app.card.height_cm}cm</span>}
+                      {app.card.region && <span>{app.card.region}</span>}
+                      {app.card.job && <span>{app.card.job}</span>}
+                      {app.card.training_years != null && <span>운동 {app.card.training_years}년</span>}
+                    </div>
+                    {app.card.ideal_type && <p className="mt-2 text-sm text-neutral-700">이상형: {app.card.ideal_type}</p>}
+                    {app.card.strengths_text && (
+                      <p className="mt-1 whitespace-pre-wrap break-words text-sm text-neutral-700">자기소개/장점: {app.card.strengths_text}</p>
+                    )}
+                    {app.card.intro_text && (
+                      <p className="mt-1 whitespace-pre-wrap break-words text-sm text-neutral-700">소개글: {app.card.intro_text}</p>
+                    )}
+                  </div>
+                )}
                 {app.intro_text && (
-                  <p className="mt-2 text-sm text-neutral-700 whitespace-pre-wrap break-words">{app.intro_text}</p>
+                  <p className="mt-2 whitespace-pre-wrap break-words text-sm text-neutral-700">내 지원 소개: {app.intro_text}</p>
                 )}
                 <div className="mt-3">
                   <div className="flex flex-wrap gap-2">

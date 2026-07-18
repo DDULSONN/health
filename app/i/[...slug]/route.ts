@@ -150,6 +150,22 @@ async function canReadSwipeRelatedDatingCardPhoto(
   );
 }
 
+async function canReadAcceptedDatingCardPhoto(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string,
+  cardId: string
+): Promise<boolean> {
+  const acceptedRes = await admin
+    .from("dating_card_applications")
+    .select("id")
+    .eq("applicant_user_id", userId)
+    .eq("card_id", cardId)
+    .eq("status", "accepted")
+    .limit(1);
+
+  return !acceptedRes.error && Array.isArray(acceptedRes.data) && acceptedRes.data.length > 0;
+}
+
 async function canReadDatingCardPhoto(
   admin: ReturnType<typeof createAdminClient>,
   objectPath: string,
@@ -183,6 +199,9 @@ async function canReadDatingCardPhoto(
       const rowOwnerId = typeof row.owner_user_id === "string" ? row.owner_user_id : "";
       const rowCardId = typeof row.id === "string" ? row.id : "";
       if (userId && rowOwnerId && rowCardId) {
+        const acceptedConnection = await canReadAcceptedDatingCardPhoto(admin, userId, rowCardId);
+        if (acceptedConnection) return !isRaw || row.photo_visibility === "public";
+
         const swipeRelated = await canReadSwipeRelatedDatingCardPhoto(admin, userId, rowOwnerId, rowCardId);
         if (swipeRelated) return !isRaw || row.photo_visibility === "public";
       }

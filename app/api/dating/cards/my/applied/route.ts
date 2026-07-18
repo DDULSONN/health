@@ -1,5 +1,6 @@
 ﻿import { createAdminClient } from "@/lib/supabase/server";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import { buildSignedImageUrl, buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
@@ -9,6 +10,18 @@ type CardRow = {
   sex: "male" | "female";
   display_nickname: string | null;
   instagram_id: string | null;
+  age: number | null;
+  region: string | null;
+  height_cm: number | null;
+  job: string | null;
+  training_years: number | null;
+  ideal_type: string | null;
+  strengths_text: string | null;
+  intro_text: string | null;
+  photo_visibility: "public" | "blur" | null;
+  photo_paths: string[] | null;
+  blur_paths: string[] | null;
+  blur_thumb_path: string | null;
   status: "pending" | "public" | "expired" | "hidden";
   expires_at: string | null;
   created_at: string;
@@ -32,6 +45,25 @@ type ApplicationRow = {
   status: string;
   created_at: string;
 };
+
+function normalizeCardPhotoPath(value: unknown): string {
+  return extractStorageObjectPathFromBuckets(value, ["dating-card-photos", "dating-photos"]) ?? "";
+}
+
+function cardPhotoUrls(card: CardRow): string[] {
+  const rawPaths = Array.isArray(card.photo_paths) ? card.photo_paths.map(normalizeCardPhotoPath).filter(Boolean) : [];
+  if (card.photo_visibility === "public") {
+    return rawPaths.map((path) => buildSignedImageUrlAllowRaw("dating-card-photos", path)).filter(Boolean);
+  }
+
+  const blurPaths = Array.isArray(card.blur_paths) ? card.blur_paths.map(normalizeCardPhotoPath).filter(Boolean) : [];
+  const blurred = blurPaths.map((path) => buildSignedImageUrl("dating-card-photos", path)).filter(Boolean);
+  if (blurred.length > 0) return blurred;
+
+  const thumbPath = normalizeCardPhotoPath(card.blur_thumb_path);
+  const thumbUrl = thumbPath ? buildSignedImageUrl("dating-card-photos", thumbPath) : "";
+  return thumbUrl ? [thumbUrl, thumbUrl] : [];
+}
 
 export async function GET(req: Request) {
   const { user } = await getRequestAuthContext(req);
@@ -79,7 +111,9 @@ export async function GET(req: Request) {
 
   const cardsRes = await adminClient
     .from("dating_cards")
-    .select("id, owner_user_id, sex, display_nickname, instagram_id, status, expires_at, created_at")
+    .select(
+      "id, owner_user_id, sex, display_nickname, instagram_id, age, region, height_cm, job, training_years, ideal_type, strengths_text, intro_text, photo_visibility, photo_paths, blur_paths, blur_thumb_path, status, expires_at, created_at"
+    )
     .in("id", cardIds);
 
   if (cardsRes.error) {
@@ -111,6 +145,15 @@ export async function GET(req: Request) {
             id: card.id,
             sex: card.sex,
             display_nickname: card.display_nickname,
+            age: card.age,
+            region: card.region,
+            height_cm: card.height_cm,
+            job: card.job,
+            training_years: card.training_years,
+            ideal_type: card.ideal_type,
+            strengths_text: card.strengths_text,
+            intro_text: card.intro_text,
+            photo_signed_urls: app.status === "accepted" ? cardPhotoUrls(card) : [],
             status: card.status,
             expires_at: card.expires_at,
             created_at: card.created_at,

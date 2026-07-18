@@ -260,7 +260,7 @@ export async function GET(req: Request) {
       const isUserA = match.user_a_id === user.id;
       const otherUserId = isUserA ? match.user_b_id : match.user_a_id;
       const otherCardId = isUserA ? match.user_b_card_id : match.user_a_card_id;
-      const otherNickname = String(profileMap.get(otherUserId) ?? "?듬챸").trim() || "?듬챸";
+      const otherNickname = String(profileMap.get(otherUserId) ?? "회원").trim() || "회원";
       const myInstagram = isUserA ? match.user_a_instagram_id : match.user_b_instagram_id;
       const otherInstagram = isUserA ? match.user_b_instagram_id : match.user_a_instagram_id;
       const otherCard = cardsById.get(otherCardId);
