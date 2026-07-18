@@ -1069,6 +1069,14 @@ export async function POST(req: Request) {
     successUrl.searchParams.set("productType", productType);
     const failUrl = new URL("/payments/fail", baseUrl);
     failUrl.searchParams.set("productType", productType);
+    const cityViewProvince =
+      productType === "city_view" && typeof productMeta.province === "string"
+        ? productMeta.province
+        : null;
+    if (cityViewProvince) {
+      successUrl.searchParams.set("province", cityViewProvince);
+      failUrl.searchParams.set("province", cityViewProvince);
+    }
 
     const payment = await createTossPayment({
       method: "CARD",

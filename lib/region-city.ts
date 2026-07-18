@@ -506,8 +506,29 @@ export function extractProvinceFromRegion(region: string | null): string | null 
 
 export function getNearbyProvinceFallbackOrder(provinceInput: string | null): string[] {
   const province = extractProvinceFromRegion(provinceInput) ?? provinceInput?.trim() ?? "";
-  const baseOrder = NEARBY_PROVINCE_FALLBACKS[province] ?? (CANONICAL_PROVINCES.has(province) ? [province] : []);
-  return [...new Set([...baseOrder, ...PROVINCE_ORDER])];
+  if (!CANONICAL_PROVINCES.has(province)) return [];
+
+  const ordered: string[] = [];
+  const queued = new Set<string>([province]);
+  const queue = [province];
+
+  while (queue.length > 0) {
+    const current = queue.shift();
+    if (!current) continue;
+    ordered.push(current);
+
+    for (const nearbyProvince of NEARBY_PROVINCE_FALLBACKS[current] ?? []) {
+      if (!CANONICAL_PROVINCES.has(nearbyProvince) || queued.has(nearbyProvince)) continue;
+      queued.add(nearbyProvince);
+      queue.push(nearbyProvince);
+    }
+  }
+
+  for (const remainingProvince of PROVINCE_ORDER) {
+    if (!queued.has(remainingProvince)) ordered.push(remainingProvince);
+  }
+
+  return ordered;
 }
 
 export function extractCityFromRegion(region: string | null): string | null {

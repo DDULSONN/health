@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
 import PaidPolicyNotice from "@/components/PaidPolicyNotice";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
@@ -85,6 +85,10 @@ function withPaymentCardNotice(message: string) {
 
 export default function NearbyViewPage() {
   const initialSnapshot = useMemo(() => readNearbyViewSnapshot(), []);
+  const requestedProvince = useMemo(() => {
+    if (typeof window === "undefined") return "";
+    return new URLSearchParams(window.location.search).get("province")?.trim() ?? "";
+  }, []);
   const [submittingProvince, setSubmittingProvince] = useState("");
   const [checkoutProvince, setCheckoutProvince] = useState("");
   const [status, setStatus] = useState<CityStatusResponse>(
@@ -101,6 +105,7 @@ export default function NearbyViewPage() {
   const [activeSex, setActiveSex] = useState<"male" | "female">(initialSnapshot?.activeSex ?? "male");
   const [items, setItems] = useState<CardItem[]>(initialSnapshot?.items ?? []);
   const [loading, setLoading] = useState(() => !(initialSnapshot?.items?.length));
+  const listRequestIdRef = useRef(0);
 
   useEffect(() => {
     if (!initialSnapshot) return;
@@ -156,27 +161,34 @@ export default function NearbyViewPage() {
       weeklyBenefit: body.weeklyBenefit ?? { eligible: false, canClaim: false, weekId: "", claimedProvince: null, claimedAt: null },
     });
 
-    if (!selectedProvince && active.length > 0) {
-      setSelectedProvince(active[0]);
-    }
-  }, [selectedProvince]);
+    setSelectedProvince((currentProvince) => {
+      if (requestedProvince && active.includes(requestedProvince)) return requestedProvince;
+      if (currentProvince && active.includes(currentProvince)) return currentProvince;
+      return active[0] ?? "";
+    });
+  }, [requestedProvince]);
 
   const loadList = useCallback(async (province: string) => {
     if (!province) return;
+    const requestId = ++listRequestIdRef.current;
     setLoading(true);
     try {
       const res = await fetch(`/api/dating/cards/city-view/list?province=${encodeURIComponent(province)}`, { cache: "no-store" });
+      if (requestId !== listRequestIdRef.current) return;
       if (!res.ok) {
         setItems([]);
         return;
       }
       const body = (await res.json()) as CityViewListResponse;
+      if (requestId !== listRequestIdRef.current) return;
       setItems(Array.isArray(body.items) ? body.items : []);
       if (body.targetSex === "male" || body.targetSex === "female") {
         setActiveSex(body.targetSex);
       }
     } finally {
-      setLoading(false);
+      if (requestId === listRequestIdRef.current) {
+        setLoading(false);
+      }
     }
   }, []);
 

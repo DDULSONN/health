@@ -134,7 +134,7 @@ function formatProductType(productType?: string, orderName?: string | null) {
   return "-";
 }
 
-function getPrimaryAction(productType?: string, orderName?: string | null) {
+function getPrimaryAction(productType?: string, orderName?: string | null, province?: string | null) {
   if (productType === "paid_card") {
     return isOpenCardReopenOrder(orderName)
       ? { href: "/mypage?section=matching", label: "마이페이지에서 확인하기" }
@@ -144,7 +144,10 @@ function getPrimaryAction(productType?: string, orderName?: string | null) {
   if (productType === "one_on_one_priority_24h") return { href: "/mypage?section=matching", label: "1:1 매칭으로 돌아가기" };
   if (productType === "one_on_one_plus_30d") return { href: "/mypage?section=matching", label: "1:1 매칭으로 돌아가기" };
   if (productType === "swipe_premium_30d") return { href: "/community/dating/cards", label: "빠른매칭으로 돌아가기" };
-  if (productType === "city_view") return { href: "/dating/nearby-view", label: "가까운 후보 30명 보러가기" };
+  if (productType === "city_view") {
+    const provinceQuery = province ? `?province=${encodeURIComponent(province)}` : "";
+    return { href: `/dating/nearby-view${provinceQuery}`, label: "가까운 후보 30명 보러가기" };
+  }
   if (productType === "love_fortune_detail") return { href: "/mypage?loveFortune=1#love-fortune", label: "저장된 풀이 보기" };
   return { href: "/dating/more-view", label: "이상형 더보기로 돌아가기" };
 }
@@ -688,7 +691,7 @@ function PaymentSuccessContent() {
     return () => window.clearInterval(timer);
   }, [fortuneLoading]);
 
-  const primaryAction = getPrimaryAction(result?.productType, result?.orderName);
+  const primaryAction = getPrimaryAction(result?.productType, result?.orderName, searchParams.get("province"));
   const isLoveFortune = result?.productType === "love_fortune_detail";
   const activeFortuneLoadingStep = LOVE_FORTUNE_LOADING_STEPS[fortuneLoadingStep] ?? LOVE_FORTUNE_LOADING_STEPS[0];
   const fortuneLoadingProgress = Math.min(

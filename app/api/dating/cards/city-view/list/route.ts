@@ -113,18 +113,33 @@ export async function GET(req: Request) {
       .map((row) => [String((row as { id?: string }).id ?? ""), row] as const)
       .filter(([id]) => id.length > 0)
   );
-  let selectedCardIds = activeGrant.snapshotCardIds.filter((id) => rowById.has(id)).slice(0, CITY_VIEW_CARD_LIMIT);
+  const preferredRows = eligibleRows.slice(0, CITY_VIEW_CARD_LIMIT);
+  const cutoffPriority = preferredRows.length > 0
+    ? provincePriority.get(extractProvinceFromRegion(preferredRows.at(-1)?.region ?? null) ?? "") ?? Number.MAX_SAFE_INTEGER
+    : Number.MAX_SAFE_INTEGER;
+  let selectedCardIds = activeGrant.snapshotCardIds
+    .filter((id) => {
+      const row = rowById.get(id);
+      if (!row) return false;
+      const priority = provincePriority.get(extractProvinceFromRegion(row.region) ?? "") ?? Number.MAX_SAFE_INTEGER;
+      return priority <= cutoffPriority;
+    })
+    .slice(0, CITY_VIEW_CARD_LIMIT);
   if (selectedCardIds.length < CITY_VIEW_CARD_LIMIT) {
     const selectedSet = new Set(selectedCardIds);
     const fillers = [...rowById.keys()].filter((id) => !selectedSet.has(id)).slice(0, CITY_VIEW_CARD_LIMIT - selectedCardIds.length);
     selectedCardIds = [...selectedCardIds, ...fillers];
-    if (selectedCardIds.length > 0) {
-      await admin
-        .from("dating_city_view_requests")
-        .update({ snapshot_card_ids: selectedCardIds })
-        .eq("id", activeGrant.requestId)
-        .eq("status", "approved");
-    }
+  }
+  const previousCardIds = activeGrant.snapshotCardIds.slice(0, CITY_VIEW_CARD_LIMIT);
+  const snapshotChanged =
+    selectedCardIds.length !== previousCardIds.length ||
+    selectedCardIds.some((id, index) => id !== previousCardIds[index]);
+  if (snapshotChanged && selectedCardIds.length > 0) {
+    await admin
+      .from("dating_city_view_requests")
+      .update({ snapshot_card_ids: selectedCardIds })
+      .eq("id", activeGrant.requestId)
+      .eq("status", "approved");
   }
 
   let selected = selectedCardIds
