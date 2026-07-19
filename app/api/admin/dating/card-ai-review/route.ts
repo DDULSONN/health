@@ -306,7 +306,7 @@ function ruleReview(card: CandidateCard): CardReview {
 
   if (!card.displayName) flags.push("닉네임/이름 없음");
   if (card.photoPaths.length === 0) photoFlags.push("사진 없음");
-  if (card.photoPaths.length === 1 && card.sourceType !== "paid_card") photoFlags.push("사진 1장만 등록");
+  if (card.photoPaths.length === 1) photoFlags.push("사진 1장만 등록");
 
   for (const [key, value] of requiredTextFields) {
     const trimmed = value.trim();

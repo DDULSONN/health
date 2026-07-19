@@ -92,6 +92,7 @@ type PaidCard = {
   ideal_text: string | null;
   thumbUrl: string;
   image_urls?: string[];
+  photo_visibility: "blur" | "public";
   expires_at: string | null;
   created_at: string;
   display_mode?: "priority_24h" | "instant_public";
@@ -4201,7 +4202,7 @@ function PaidCardRow({ card, viewerLoggedIn }: { card: PaidCard; viewerLoggedIn:
       intro_text: null,
       expires_at: card.expires_at,
       image_urls: Array.isArray(card.image_urls) && card.image_urls.length > 0 ? card.image_urls : card.thumbUrl ? [card.thumbUrl] : [],
-      photo_visibility: "public",
+      photo_visibility: card.photo_visibility,
     });
     router.prefetch(detailHref);
     router.prefetch(applyHref);

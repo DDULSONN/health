@@ -872,7 +872,7 @@ export async function POST(req: Request) {
 
       const paidCardRes = await admin
         .from("dating_paid_cards")
-        .select("id,user_id,status,display_mode")
+        .select("id,user_id,status,display_mode,photo_paths")
         .eq("id", paidCardId)
         .eq("user_id", user.id)
         .maybeSingle();
@@ -911,6 +911,18 @@ export async function POST(req: Request) {
           code: "PAID_CARD_NOT_PENDING",
           requestId,
           message: "대기중 신청만 결제를 진행할 수 있습니다.",
+        });
+      }
+
+      const paidCardPhotoPaths = Array.isArray(paidCardRes.data.photo_paths)
+        ? paidCardRes.data.photo_paths.filter((path): path is string => typeof path === "string" && path.trim().length > 0)
+        : [];
+      if (paidCardPhotoPaths.length !== 2 || new Set(paidCardPhotoPaths).size !== 2) {
+        return json(400, {
+          ok: false,
+          code: "PAID_CARD_PHOTOS_REQUIRED",
+          requestId,
+          message: "사진 2장이 모두 등록되어야 결제를 진행할 수 있습니다.",
         });
       }
 

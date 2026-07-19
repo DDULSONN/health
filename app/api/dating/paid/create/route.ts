@@ -206,8 +206,8 @@ export async function POST(req: Request) {
     if (!instagramId || !/^[A-Za-z0-9._]{1,30}$/.test(instagramId)) {
       return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "인스타그램 아이디 형식을 확인해 주세요." });
     }
-    if (photoPaths.length < 1) {
-      return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "사진은 최소 1장 필요합니다." });
+    if (photoPaths.length !== 2 || new Set(photoPaths).size !== 2) {
+      return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "사진 2장을 모두 등록해 주세요." });
     }
     if (!photoPaths.every((path) => path.startsWith(`cards/${user.id}/raw/`))) {
       return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "사진 경로가 올바르지 않습니다." });
@@ -354,8 +354,8 @@ export async function PATCH(req: Request) {
     if (!instagramId || !/^[A-Za-z0-9._]{1,30}$/.test(instagramId)) {
       return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "인스타그램 아이디 형식을 확인해 주세요." });
     }
-    if (photoPaths.length < 1) {
-      return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "사진은 최소 1장 필요합니다." });
+    if (photoPaths.length !== 2 || new Set(photoPaths).size !== 2) {
+      return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "사진 2장을 모두 등록해 주세요." });
     }
     if (!photoPaths.every((path) => path.startsWith(`cards/${user.id}/raw/`))) {
       return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "사진 경로가 올바르지 않습니다." });

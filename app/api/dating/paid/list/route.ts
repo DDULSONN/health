@@ -2,7 +2,7 @@ import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
-import { buildPublicLiteImageUrl, buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
+import { buildPublicLiteImageUrl, buildSignedImageUrl, buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { kvGetString, kvSetString } from "@/lib/edge-kv";
 import { shouldRunAtMostEvery } from "@/lib/throttled-task";
 import { ensureBlurThumbFromRaw } from "@/lib/dating-blur-thumb";
@@ -116,9 +116,12 @@ async function createSignedUrl(
   _admin: ReturnType<typeof createAdminClient>,
   _requestId: string,
   path: string,
-  counters: SignCounters
+  counters: SignCounters,
+  allowRaw = false
 ) {
-  const proxy = buildSignedImageUrl("dating-card-photos", path);
+  const proxy = allowRaw
+    ? buildSignedImageUrlAllowRaw("dating-card-photos", path)
+    : buildSignedImageUrl("dating-card-photos", path);
   if (proxy) counters.cacheMiss += 1;
   return proxy;
 }
@@ -261,7 +264,7 @@ export async function GET(req: Request) {
               imageUrl = await getLitePublicUrlIfAvailable(admin, thumbPath);
             }
             if (!imageUrl) {
-              imageUrl = await createSignedUrl(admin, requestId, rawPath, counters);
+              imageUrl = await createSignedUrl(admin, requestId, rawPath, counters, true);
             }
             if (imageUrl) imageUrls.push(imageUrl);
           }

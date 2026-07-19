@@ -266,9 +266,12 @@ export default function DatingPaidPage() {
       return;
     }
 
-    const hasAtLeastOnePhoto = photos.some(Boolean) || existingRawPaths.length > 0;
-    if (!hasAtLeastOnePhoto) {
-      setError("사진은 최소 1장 필요합니다.");
+    const combinedPhotoCount = [
+      photos[0] ? "new-0" : existingRawPaths[0],
+      photos[1] ? "new-1" : existingRawPaths[1],
+    ].filter(Boolean).length;
+    if (combinedPhotoCount !== 2) {
+      setError("사진 1과 사진 2를 모두 선택해 주세요.");
       return;
     }
     for (const photo of photos.filter((p): p is File => Boolean(p))) {
@@ -277,7 +280,7 @@ export default function DatingPaidPage() {
         return;
       }
       if (photo.size > MAX_FILE_SIZE) {
-        setError("사진은 장당 5MB 이하만 가능합니다.");
+        setError("사진은 장당 12MB 이하만 가능합니다.");
         return;
       }
     }
@@ -362,8 +365,8 @@ export default function DatingPaidPage() {
         }
       }
       const filteredRawPaths = nextRawPaths.filter((path): path is string => typeof path === "string" && path.length > 0);
-      if (filteredRawPaths.length < 1) {
-        setError("사진은 최소 1장 필요합니다.");
+      if (filteredRawPaths.length !== 2 || new Set(filteredRawPaths).size !== 2) {
+        setError("사진 2장이 모두 업로드되지 않았습니다. 사진을 다시 확인해 주세요.");
         setSubmitting(false);
         return;
       }
@@ -665,8 +668,8 @@ export default function DatingPaidPage() {
                 )}
               </div>
               <div>
-                <label className="mb-1 block text-sm text-neutral-700">사진 2 (선택)</label>
-                <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => handlePhotoChange(1, e.target.files?.[0] ?? null)} />
+                <label className="mb-1 block text-sm text-neutral-700">사진 2 (필수)</label>
+                <input type="file" accept="image/jpeg,image/png,image/webp" required={!isEditMode} onChange={(e) => handlePhotoChange(1, e.target.files?.[0] ?? null)} />
                 {previewUrls[1] && (
                   <div className="mt-2 flex h-36 items-center justify-center overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 text-center text-xs font-semibold text-neutral-500">
                     {previewFailed[1] ? (
@@ -685,6 +688,7 @@ export default function DatingPaidPage() {
                 )}
               </div>
             </div>
+            <p className="text-xs leading-5 text-neutral-500">사진 2장이 모두 선택되고 업로드되어야 결제를 진행할 수 있습니다.</p>
 
             {error && <p className="text-sm text-red-600">{error}</p>}
 
