@@ -41,8 +41,12 @@ export async function middleware(request: NextRequest) {
   const isOpenCardsRoute =
     pathname === "/community/dating/cards" ||
     pathname.startsWith("/community/dating/cards/");
+  const isLocalOneOnOnePreview =
+    process.env.NODE_ENV === "development" &&
+    pathname === "/dating/1on1" &&
+    request.nextUrl.searchParams.get("preview") === "1";
 
-  if (isOpenCardsRoute) {
+  if (isOpenCardsRoute || isLocalOneOnOnePreview) {
     return NextResponse.next({ request });
   }
 
