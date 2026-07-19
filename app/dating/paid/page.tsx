@@ -833,14 +833,23 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
                     decoding="async"
                     className="absolute inset-0 h-full w-full object-cover opacity-30 blur-sm"
                   />
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img
-                    src={item.thumbUrl}
-                    alt=""
-                    loading="lazy"
-                    decoding="async"
-                    className={`relative z-10 max-h-full max-w-full h-auto w-auto object-contain object-center ${item.photo_visibility === "public" ? "" : "blur-[9px]"}`}
-                  />
+                  {item.photo_visibility === "public" && Array.isArray(item.image_urls) && item.image_urls.length >= 2 ? (
+                    <div className="relative z-10 grid h-full w-full grid-cols-2 gap-1 p-1">
+                      {item.image_urls.slice(0, 2).map((url, index) => (
+                        /* eslint-disable-next-line @next/next/no-img-element */
+                        <img key={`${item.id}-list-photo-${index}`} src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-contain object-center" />
+                      ))}
+                    </div>
+                  ) : (
+                    /* eslint-disable-next-line @next/next/no-img-element */
+                    <img
+                      src={item.thumbUrl}
+                      alt=""
+                      loading="lazy"
+                      decoding="async"
+                      className={`relative z-10 max-h-full max-w-full h-auto w-auto object-contain object-center ${item.photo_visibility === "public" ? "" : "blur-[9px]"}`}
+                    />
+                  )}
                 </div>
               ) : (
                 <div className="mt-2 h-44 rounded-xl border border-neutral-100 bg-neutral-50" />

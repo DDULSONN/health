@@ -4226,8 +4226,17 @@ function PaidCardRow({ card, viewerLoggedIn }: { card: PaidCard; viewerLoggedIn:
           <>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={card.thumbUrl} alt="" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-cover opacity-28 blur-sm" />
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={card.thumbUrl} alt="" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-contain px-2 py-2" />
+            {card.photo_visibility === "public" && Array.isArray(card.image_urls) && card.image_urls.length >= 2 ? (
+              <div className="absolute inset-0 grid grid-cols-2 gap-1 px-2 py-2">
+                {card.image_urls.slice(0, 2).map((url, index) => (
+                  /* eslint-disable-next-line @next/next/no-img-element */
+                  <img key={`${card.id}-home-photo-${index}`} src={url} alt="" loading="lazy" decoding="async" className="h-full w-full object-contain" />
+                ))}
+              </div>
+            ) : (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img src={card.thumbUrl} alt="" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-contain px-2 py-2" />
+            )}
           </>
         ) : null}
 
