@@ -350,6 +350,9 @@ export default function DatingPaidPage() {
 
       let blurThumbPath = existingBlurThumbPath;
       if (photoVisibility === "blur" && photos[0]) {
+        // If the first photo changed, never reuse the previous photo's blur thumbnail.
+        // Leaving this empty lets the API regenerate it from the newly uploaded raw image.
+        blurThumbPath = "";
         try {
           const blurFile = await createBlurThumbnailFile(photos[0]);
           const blurFd = new FormData();
@@ -412,6 +415,7 @@ export default function DatingPaidPage() {
         setSuccessWasEdit(true);
         setPhotos([null, null]);
         setExistingRawPaths([]);
+        setExistingPreviewUrls([]);
         setExistingBlurThumbPath("");
         setEditingPaidCardStatus("");
         setFormOpen(false);
@@ -440,6 +444,7 @@ export default function DatingPaidPage() {
         setInstagramId("");
         setDisplayMode("priority_24h");
         setExistingRawPaths([]);
+        setExistingPreviewUrls([]);
         setExistingBlurThumbPath("");
         setEditingPaidCardStatus("");
         setFormOpen(false);
@@ -492,6 +497,7 @@ export default function DatingPaidPage() {
       setInstagramId("");
       setDisplayMode("priority_24h");
       setExistingRawPaths([]);
+      setExistingPreviewUrls([]);
       setExistingBlurThumbPath("");
       setEditingPaidCardStatus("");
       setFormOpen(false);
