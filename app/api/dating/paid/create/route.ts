@@ -4,6 +4,7 @@ import { ensureBlurThumbFromRaw } from "@/lib/dating-blur-thumb";
 import { getUserBanResponse } from "@/lib/user-ban-guard";
 import { NextResponse } from "next/server";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
+import { buildSignedImageUrlAllowRaw } from "@/lib/images";
 type CreateBody = {
   id?: unknown;
   gender?: unknown;
@@ -159,6 +160,11 @@ export async function GET(req: Request) {
       display_mode: rowData.display_mode === "instant_public" ? "instant_public" : "priority_24h",
       blur_thumb_path: typeof rowData.blur_thumb_path === "string" ? rowData.blur_thumb_path : null,
       photo_paths: Array.isArray(rowData.photo_paths) ? (rowData.photo_paths as string[]) : [],
+      photo_preview_urls: Array.isArray(rowData.photo_paths)
+        ? (rowData.photo_paths as string[])
+            .map((path) => buildSignedImageUrlAllowRaw("dating-card-photos", path))
+            .filter(Boolean)
+        : [],
       status: rowData.status === "approved" ? "approved" : "pending",
       paid_at: typeof rowData.paid_at === "string" ? rowData.paid_at : null,
       expires_at: typeof rowData.expires_at === "string" ? rowData.expires_at : null,

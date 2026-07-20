@@ -51,6 +51,7 @@ type EditablePaidCard = {
   display_mode?: "priority_24h" | "instant_public";
   blur_thumb_path: string | null;
   photo_paths: string[];
+  photo_preview_urls?: string[];
   status?: "pending" | "approved";
   paid_at?: string | null;
   expires_at?: string | null;
@@ -137,6 +138,7 @@ export default function DatingPaidPage() {
   const [previewUrls, setPreviewUrls] = useState<(string | null)[]>([null, null]);
   const [previewFailed, setPreviewFailed] = useState<boolean[]>([false, false]);
   const [existingRawPaths, setExistingRawPaths] = useState<string[]>([]);
+  const [existingPreviewUrls, setExistingPreviewUrls] = useState<string[]>([]);
   const [existingBlurThumbPath, setExistingBlurThumbPath] = useState("");
   const [editingPaidCardStatus, setEditingPaidCardStatus] = useState<"pending" | "approved" | "">("");
   const [tick, setTick] = useState(0);
@@ -233,6 +235,7 @@ export default function DatingPaidPage() {
         setPhotoVisibility(body.card.photo_visibility === "public" ? "public" : "blur");
         setDisplayMode(body.card.display_mode === "instant_public" ? "instant_public" : "priority_24h");
         setExistingRawPaths(Array.isArray(body.card.photo_paths) ? body.card.photo_paths : []);
+        setExistingPreviewUrls(Array.isArray(body.card.photo_preview_urls) ? body.card.photo_preview_urls : []);
         setExistingBlurThumbPath(body.card.blur_thumb_path ?? "");
         setEditingPaidCardStatus(body.card.status === "approved" ? "approved" : "pending");
       } catch {
@@ -649,16 +652,16 @@ export default function DatingPaidPage() {
             <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
               <div>
                 <label className="mb-1 block text-sm text-neutral-700">사진 1 (필수)</label>
-                <input type="file" accept="image/jpeg,image/png,image/webp" required={!isEditMode} onChange={(e) => handlePhotoChange(0, e.target.files?.[0] ?? null)} />
-                {previewUrls[0] && (
+                <input type="file" accept="image/jpeg,image/png,image/webp" required={!isEditMode} onChange={(e) => { handlePhotoChange(0, e.target.files?.[0] ?? null); if (isEditMode) e.currentTarget.value = ""; }} />
+                {(previewUrls[0] || existingPreviewUrls[0]) && (
                   <div className="mt-2 flex h-36 items-center justify-center overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 text-center text-xs font-semibold text-neutral-500">
                     {previewFailed[0] ? (
-                      <span className="px-3">파일은 선택됐어요. 미리보기 없이도 등록할 수 있습니다.</span>
+                      <span className="px-3">{previewUrls[0] ? "파일은 선택됐어요. 미리보기 없이도 등록할 수 있습니다." : "기존 사진 미리보기를 불러오지 못했습니다."}</span>
                     ) : (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img
-                        src={previewUrls[0]}
-                        alt=""
+                        src={previewUrls[0] ?? existingPreviewUrls[0]}
+                        alt="유료카드 사진 1 미리보기"
                         decoding="async"
                         className="h-full w-full object-contain"
                         onError={() => setPreviewFailed((prev) => [true, prev[1] ?? false])}
@@ -666,19 +669,25 @@ export default function DatingPaidPage() {
                     )}
                   </div>
                 )}
+                {isEditMode && (
+                  <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                    <span className="font-medium text-neutral-500">{previewUrls[0] ? "새 사진 미리보기" : "기존 사진 유지"}</span>
+                    {photos[0] && <button type="button" onClick={() => handlePhotoChange(0, null)} className="font-semibold text-rose-600 underline">변경 취소</button>}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="mb-1 block text-sm text-neutral-700">사진 2 (필수)</label>
-                <input type="file" accept="image/jpeg,image/png,image/webp" required={!isEditMode} onChange={(e) => handlePhotoChange(1, e.target.files?.[0] ?? null)} />
-                {previewUrls[1] && (
+                <input type="file" accept="image/jpeg,image/png,image/webp" required={!isEditMode} onChange={(e) => { handlePhotoChange(1, e.target.files?.[0] ?? null); if (isEditMode) e.currentTarget.value = ""; }} />
+                {(previewUrls[1] || existingPreviewUrls[1]) && (
                   <div className="mt-2 flex h-36 items-center justify-center overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 text-center text-xs font-semibold text-neutral-500">
                     {previewFailed[1] ? (
-                      <span className="px-3">파일은 선택됐어요. 미리보기 없이도 등록할 수 있습니다.</span>
+                      <span className="px-3">{previewUrls[1] ? "파일은 선택됐어요. 미리보기 없이도 등록할 수 있습니다." : "기존 사진 미리보기를 불러오지 못했습니다."}</span>
                     ) : (
                       /* eslint-disable-next-line @next/next/no-img-element */
                       <img
-                        src={previewUrls[1]}
-                        alt=""
+                        src={previewUrls[1] ?? existingPreviewUrls[1]}
+                        alt="유료카드 사진 2 미리보기"
                         decoding="async"
                         className="h-full w-full object-contain"
                         onError={() => setPreviewFailed((prev) => [prev[0] ?? false, true])}
@@ -686,9 +695,16 @@ export default function DatingPaidPage() {
                     )}
                   </div>
                 )}
+                {isEditMode && (
+                  <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                    <span className="font-medium text-neutral-500">{previewUrls[1] ? "새 사진 미리보기" : "기존 사진 유지"}</span>
+                    {photos[1] && <button type="button" onClick={() => handlePhotoChange(1, null)} className="font-semibold text-rose-600 underline">변경 취소</button>}
+                  </div>
+                )}
               </div>
             </div>
-            <p className="text-xs leading-5 text-neutral-500">사진 2장이 모두 선택되고 업로드되어야 결제를 진행할 수 있습니다.</p>
+            {isEditMode && <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">새 사진을 선택하지 않은 칸은 화면에 보이는 기존 사진 그대로 유지됩니다.</p>}
+            <p className="text-xs leading-5 text-neutral-500">{isEditMode ? "변경하지 않은 사진은 기존 사진으로 저장됩니다." : "사진 2장이 모두 선택되고 업로드되어야 결제를 진행할 수 있습니다."}</p>
 
             {error && <p className="text-sm text-red-600">{error}</p>}
 

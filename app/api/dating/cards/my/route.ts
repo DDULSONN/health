@@ -4,6 +4,7 @@ import { NextResponse } from "next/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { getUserBanResponse } from "@/lib/user-ban-guard";
+import { buildSignedImageUrlAllowRaw } from "@/lib/images";
 
 function normalizeInstagramId(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -87,6 +88,11 @@ export async function GET(req: Request) {
   const canShowFirstQueueBoost = !firstQueueBoostUsed && items.length === 1;
   const enrichedItems = items.map((item) => ({
     ...item,
+    photo_preview_urls: Array.isArray(item.photo_paths)
+      ? item.photo_paths
+          .map((path) => buildSignedImageUrlAllowRaw("dating-card-photos", String(path ?? "")))
+          .filter(Boolean)
+      : [],
     can_first_queue_boost: canShowFirstQueueBoost && item.status === "pending",
     first_queue_boost_used: firstQueueBoostUsed,
   }));
