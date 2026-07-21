@@ -25,7 +25,7 @@ const AdminCertReviewPanel = dynamic(() => import("@/components/AdminCertReviewP
   loading: () => <MyPageWidgetSkeleton className="h-56" />,
 });
 
-const AdminCommunityModerationPanel = dynamic(() => import("@/components/AdminCommunityModerationPanel"), {
+const AdminReportsPanel = dynamic(() => import("@/components/AdminReportsPanel"), {
   loading: () => <MyPageWidgetSkeleton className="h-80" />,
 });
 
@@ -913,7 +913,7 @@ type AdminManageTab =
   | "swipe_subscriptions"
   | "more_view"
   | "city_view"
-  | "community"
+  | "reports"
   | "phone_verify"
   | "account_deletions"
   | "site_ads";
@@ -10098,12 +10098,12 @@ export default function MyPage() {
             </button>
             <button
               type="button"
-              onClick={() => setAdminManageTab("community")}
+              onClick={() => setAdminManageTab("reports")}
               className={`h-8 rounded-md border px-3 text-xs font-medium ${
-                adminManageTab === "community" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+                adminManageTab === "reports" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
               }`}
             >
-              커뮤니티 신고
+              신고 관리
             </button>
               <button
                 type="button"
@@ -13420,9 +13420,9 @@ export default function MyPage() {
           </div>
           )}
 
-          {adminManageTab === "community" && (
+          {adminManageTab === "reports" && (
           <div className="mb-3">
-            <AdminCommunityModerationPanel />
+            <AdminReportsPanel />
           </div>
           )}
 
