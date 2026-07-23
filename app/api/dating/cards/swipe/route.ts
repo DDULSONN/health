@@ -12,6 +12,7 @@ import {
 import { recordDatingMatchEvent } from "@/lib/dating-match-metrics";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
+import { notifyDatingUser } from "@/lib/dating-notifications";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -355,6 +356,18 @@ export async function POST(req: Request) {
           targetUserId,
         });
       }
+      await notifyDatingUser(adminClient, {
+        userId: targetUserId,
+        actorId: user.id,
+        type: "dating_swipe_like_received",
+        title: "빠른매칭 좋아요가 도착했어요",
+        body: `${myNickname}님이 회원님에게 좋아요를 보냈어요.`,
+        route: "/mypage#dating-connections",
+        meta: {
+          actor_card_id: myCard.id,
+          target_card_id: targetCardId,
+        },
+      });
 
       let reverseLike = reverseLikeRes.data;
       if (reverseLike?.id && !pairMatched) {
@@ -439,6 +452,35 @@ export async function POST(req: Request) {
             `${myNickname}님과 빠른매칭 쌍방 매칭이 됐어요.\n사이트 마이페이지에서 상대 인스타그램 정보를 확인해 주세요.`
           ),
         ]);
+
+        if (!pairMatched) {
+          await Promise.all([
+            notifyDatingUser(adminClient, {
+              userId: user.id,
+              actorId: targetUserId,
+              type: "dating_swipe_match_created",
+              title: "빠른매칭이 성사됐어요",
+              body: `${targetNickname}님도 회원님에게 좋아요를 보냈어요.`,
+              route: "/mypage#dating-connections",
+              meta: {
+                match_id: matchInsertRes.data.id,
+                pair_key: pairKey,
+              },
+            }),
+            notifyDatingUser(adminClient, {
+              userId: targetUserId,
+              actorId: user.id,
+              type: "dating_swipe_match_created",
+              title: "빠른매칭이 성사됐어요",
+              body: `${myNickname}님과 쌍방 매칭이 됐어요.`,
+              route: "/mypage#dating-connections",
+              meta: {
+                match_id: matchInsertRes.data.id,
+                pair_key: pairKey,
+              },
+            }),
+          ]);
+        }
       }
     }
 

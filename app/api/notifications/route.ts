@@ -29,11 +29,30 @@ function getNotificationReminderKind(item: NotificationRow): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function getNotificationMetaText(
+  item: NotificationRow,
+  key: "notification_title" | "notification_body" | "notification_route"
+): string {
+  const value = item.meta_json?.[key];
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function buildNotificationPresentation(
   item: NotificationRow,
   actorNickname: string | null,
   applicationState: DatingCardApplicationState | null = null
 ): { title: string; body: string; link: string | null } {
+  const metaTitle = getNotificationMetaText(item, "notification_title");
+  const metaBody = getNotificationMetaText(item, "notification_body");
+  const metaRoute = getNotificationMetaText(item, "notification_route");
+  if (metaTitle && metaBody) {
+    return {
+      title: metaTitle,
+      body: metaBody,
+      link: metaRoute.startsWith("/") ? metaRoute : null,
+    };
+  }
+
   const appStatus = applicationState?.status ?? null;
 
   if (item.type === "dating_application_received") {

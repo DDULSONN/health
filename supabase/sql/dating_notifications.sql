@@ -11,7 +11,19 @@ alter table public.notifications
 
 alter table public.notifications
   add constraint notifications_type_check
-  check (type in ('comment', 'dating_application_received', 'dating_application_accepted', 'dating_application_rejected'));
+  check (
+    type in (
+      'comment',
+      'dating_application_received',
+      'dating_application_accepted',
+      'dating_application_rejected',
+      'dating_swipe_like_received',
+      'dating_swipe_match_created',
+      'dating_1on1_selection_received',
+      'dating_1on1_match_accepted',
+      'dating_1on1_match_canceled'
+    )
+  );
 
 commit;
 

@@ -10,6 +10,7 @@ import {
 import { recordOneOnOneMetricEvent } from "@/lib/dating-1on1-metrics";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { hasDatingContactPhoneBlockBetween } from "@/lib/dating-contact-blocks";
+import { notifyDatingUser } from "@/lib/dating-notifications";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { sendDatingEmailNotification } from "@/lib/dating-swipe";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -163,13 +164,23 @@ export async function POST(
       const cards = await getDatingOneOnOneCardsByIds(admin, [row.source_card_id, row.candidate_card_id]);
       const sourceCard = cards.get(row.source_card_id);
       const candidateCard = cards.get(row.candidate_card_id);
-
-      await sendOneOnOneReminderEmail(admin, row.candidate_user_id, () =>
-        buildOneOnOneSelectionReceivedNotification(
-          sourceCard?.name ?? "상대",
-          candidateCard?.name ?? "내 카드"
-        )
+      const notification = buildOneOnOneSelectionReceivedNotification(
+        sourceCard?.name ?? "상대",
+        candidateCard?.name ?? "내 카드"
       );
+
+      await Promise.all([
+        sendOneOnOneReminderEmail(admin, row.candidate_user_id, () => notification),
+        notifyDatingUser(admin, {
+          userId: row.candidate_user_id,
+          actorId: row.source_user_id,
+          type: "dating_1on1_selection_received",
+          title: notification.pushTitle,
+          body: notification.pushBody,
+          route: "/dating/1on1",
+          meta: { match_id: matchId },
+        }),
+      ]);
     } catch (emailError) {
       console.error("[POST /api/dating/1on1/matches/[id]] select reminder failed", emailError);
     }
@@ -227,10 +238,31 @@ export async function POST(
     try {
       const cards = await getDatingOneOnOneCardsByIds(admin, [row.source_card_id, row.candidate_card_id]);
       const candidateCard = cards.get(row.candidate_card_id);
+      const sourceCard = cards.get(row.source_card_id);
+      const sourceNotification = buildOneOnOneAcceptedNotification(candidateCard?.name ?? "상대");
+      const candidateNotification = buildOneOnOneAcceptedNotification(sourceCard?.name ?? "상대");
 
-      await sendOneOnOneReminderEmail(admin, row.source_user_id, () =>
-        buildOneOnOneAcceptedNotification(candidateCard?.name ?? "상대")
-      );
+      await Promise.all([
+        sendOneOnOneReminderEmail(admin, row.source_user_id, () => sourceNotification),
+        notifyDatingUser(admin, {
+          userId: row.source_user_id,
+          actorId: row.candidate_user_id,
+          type: "dating_1on1_match_accepted",
+          title: sourceNotification.pushTitle,
+          body: sourceNotification.pushBody,
+          route: "/dating/1on1",
+          meta: { match_id: matchId },
+        }),
+        notifyDatingUser(admin, {
+          userId: row.candidate_user_id,
+          actorId: row.source_user_id,
+          type: "dating_1on1_match_accepted",
+          title: candidateNotification.pushTitle,
+          body: candidateNotification.pushBody,
+          route: "/dating/1on1",
+          meta: { match_id: matchId },
+        }),
+      ]);
     } catch (emailError) {
       console.error("[POST /api/dating/1on1/matches/[id]] accept reminder failed", emailError);
     }
@@ -267,6 +299,18 @@ export async function POST(
     if (!updateRes.data) {
       return NextResponse.json({ error: "This match was already handled." }, { status: 409 });
     }
+
+    const otherUserId =
+      row.source_user_id === user.id ? row.candidate_user_id : row.source_user_id;
+    await notifyDatingUser(admin, {
+      userId: otherUserId,
+      actorId: user.id,
+      type: "dating_1on1_match_canceled",
+      title: "1:1 매칭이 취소됐어요",
+      body: "진행 중이던 1:1 매칭이 취소됐습니다.",
+      route: "/dating/1on1",
+      meta: { match_id: matchId },
+    });
   }
 
   if (body.action === "candidate_reject") {
@@ -296,6 +340,16 @@ export async function POST(
     if (!updateRes.data) {
       return NextResponse.json({ error: "This request was already handled." }, { status: 409 });
     }
+
+    await notifyDatingUser(admin, {
+      userId: row.source_user_id,
+      actorId: row.candidate_user_id,
+      type: "dating_1on1_match_canceled",
+      title: "1:1 요청 결과가 도착했어요",
+      body: "선택한 후보가 이번 요청을 진행하지 않기로 했습니다.",
+      route: "/dating/1on1",
+      meta: { match_id: matchId },
+    });
   }
 
   if (body.action === "source_accept") {
@@ -340,6 +394,17 @@ export async function POST(
     if (!updateRes.data) {
       return NextResponse.json({ error: "This request was already handled." }, { status: 409 });
     }
+
+    await notifyDatingUser(admin, {
+      userId: row.candidate_user_id,
+      actorId: row.source_user_id,
+      type: "dating_1on1_match_accepted",
+      title: "1:1 매칭이 성사됐어요",
+      body: "서로 수락해 번호 교환 단계가 열렸습니다.",
+      route: "/dating/1on1",
+      meta: { match_id: matchId },
+    });
+
   }
 
   if (body.action === "source_reject") {
@@ -369,6 +434,16 @@ export async function POST(
     if (!updateRes.data) {
       return NextResponse.json({ error: "This request was already handled." }, { status: 409 });
     }
+
+    await notifyDatingUser(admin, {
+      userId: row.candidate_user_id,
+      actorId: row.source_user_id,
+      type: "dating_1on1_match_canceled",
+      title: "1:1 요청 결과가 도착했어요",
+      body: "진행 중이던 1:1 요청이 종료됐습니다.",
+      route: "/dating/1on1",
+      meta: { match_id: matchId },
+    });
   }
 
   try {

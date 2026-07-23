@@ -11,6 +11,8 @@ type HeaderUserMenuProps = {
   onNavigate?: () => void;
 };
 
+const NOTIFICATION_COUNT_EVENT = "dating-notification-count";
+
 export default function HeaderUserMenu({
   pathname,
   mobile = false,
@@ -29,6 +31,32 @@ export default function HeaderUserMenu({
 
   useEffect(() => {
     let mounted = true;
+    let hasUser = false;
+
+    async function loadUnreadCount() {
+      try {
+        const response = await fetch("/api/notifications?limit=1", {
+          cache: "no-store",
+        });
+        if (!mounted) return;
+        if (!response.ok) {
+          if (response.status === 401) setUnreadCount(0);
+          return;
+        }
+        const body = (await response.json()) as { unread_count?: number };
+        if (mounted) {
+          const nextCount = Number(body.unread_count ?? 0);
+          setUnreadCount(nextCount);
+          window.dispatchEvent(
+            new CustomEvent<number>(NOTIFICATION_COUNT_EVENT, {
+              detail: nextCount,
+            })
+          );
+        }
+      } catch {
+        // Keep the last known count during temporary network failures.
+      }
+    }
 
     async function loadUser() {
       try {
@@ -38,6 +66,7 @@ export default function HeaderUserMenu({
         if (!mounted) return;
 
         if (!user) {
+          hasUser = false;
           setNickname(null);
           setEmail(null);
           setUnreadCount(0);
@@ -45,11 +74,12 @@ export default function HeaderUserMenu({
           return;
         }
 
+        hasUser = true;
         setEmail(user.email ?? null);
 
         const [profileResult, notiResult, adminResult] = await Promise.allSettled([
           supabase.from("profiles").select("nickname").eq("user_id", user.id).maybeSingle(),
-          fetch("/api/notifications?limit=1", { cache: "no-store" }),
+          loadUnreadCount(),
           fetch("/api/admin/me", { cache: "no-store" }),
         ]);
 
@@ -61,13 +91,7 @@ export default function HeaderUserMenu({
           setNickname(null);
         }
 
-        if (notiResult.status === "fulfilled" && notiResult.value.ok) {
-          const noti = (await notiResult.value.json()) as { unread_count?: number };
-          if (!mounted) return;
-          setUnreadCount(Number(noti.unread_count ?? 0));
-        } else {
-          setUnreadCount(0);
-        }
+        if (notiResult.status === "rejected") console.error("[HeaderUserMenu] notification refresh failed");
 
         if (adminResult.status === "fulfilled" && adminResult.value.ok) {
           const admin = (await adminResult.value.json()) as { isAdmin?: boolean };
@@ -86,12 +110,33 @@ export default function HeaderUserMenu({
       void loadUser();
       router.refresh();
     });
+    const refreshVisibleNotifications = () => {
+      if (hasUser && document.visibilityState === "visible") void loadUnreadCount();
+    };
+    const syncNotificationCount = (event: Event) => {
+      const nextCount = (event as CustomEvent<number>).detail;
+      if (Number.isFinite(nextCount)) setUnreadCount(nextCount);
+    };
+    const intervalId = mobile
+      ? null
+      : window.setInterval(refreshVisibleNotifications, 30_000);
+    if (!mobile) {
+      window.addEventListener("focus", refreshVisibleNotifications);
+      document.addEventListener("visibilitychange", refreshVisibleNotifications);
+    }
+    window.addEventListener(NOTIFICATION_COUNT_EVENT, syncNotificationCount);
 
     return () => {
       mounted = false;
+      if (intervalId !== null) window.clearInterval(intervalId);
+      if (!mobile) {
+        window.removeEventListener("focus", refreshVisibleNotifications);
+        document.removeEventListener("visibilitychange", refreshVisibleNotifications);
+      }
+      window.removeEventListener(NOTIFICATION_COUNT_EVENT, syncNotificationCount);
       sub.subscription.unsubscribe();
     };
-  }, [router, supabase]);
+  }, [mobile, router, supabase]);
 
   useEffect(() => {
     setMenuOpen(false);
