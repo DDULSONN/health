@@ -18,6 +18,7 @@ export const SWIPE_PREMIUM_EXPOSURE_RANK_MULTIPLIER = 0.35;
 export const SWIPE_DAILY_LIMIT = SWIPE_BASE_DAILY_LIMIT;
 export const SWIPE_LIKE_EXPIRY_HOURS = 30;
 export const SWIPE_LIKE_EXPIRY_ROLLOUT_AT_ISO = "2026-04-16T13:14:34.410Z";
+const SWIPE_QUERY_ID_BATCH_SIZE = 300;
 
 export function getSwipeLikeExpiryCutoffIso(now = new Date()) {
   return new Date(now.getTime() - SWIPE_LIKE_EXPIRY_HOURS * 60 * 60 * 1000).toISOString();
@@ -224,24 +225,29 @@ async function getActiveSwipePremiumUserIds(adminClient: AdminClient, userIds: s
   const uniqueUserIds = [...new Set(userIds.filter((id) => id.trim().length > 0))];
   if (uniqueUserIds.length === 0) return new Set();
 
-  const res = await adminClient
-    .from("dating_swipe_subscription_requests")
-    .select("user_id")
-    .in("user_id", uniqueUserIds)
-    .eq("status", "approved")
-    .gt("expires_at", now.toISOString())
-    .limit(5000);
+  const activeUserIds = new Set<string>();
+  for (let start = 0; start < uniqueUserIds.length; start += SWIPE_QUERY_ID_BATCH_SIZE) {
+    const chunk = uniqueUserIds.slice(start, start + SWIPE_QUERY_ID_BATCH_SIZE);
+    const res = await adminClient
+      .from("dating_swipe_subscription_requests")
+      .select("user_id")
+      .in("user_id", chunk)
+      .eq("status", "approved")
+      .gt("expires_at", now.toISOString())
+      .limit(Math.max(chunk.length * 5, 500));
 
-  if (res.error) {
-    if (isMissingRelationError(res.error)) return new Set();
-    throw res.error;
+    if (res.error) {
+      if (isMissingRelationError(res.error)) return new Set();
+      throw res.error;
+    }
+
+    for (const row of res.data ?? []) {
+      const userId = String((row as { user_id?: unknown }).user_id ?? "").trim();
+      if (userId) activeUserIds.add(userId);
+    }
   }
 
-  return new Set(
-    (res.data ?? [])
-      .map((row) => String((row as { user_id?: unknown }).user_id ?? "").trim())
-      .filter((id) => id.length > 0)
-  );
+  return activeUserIds;
 }
 
 export async function getSwipeDailyUsage(adminClient: AdminClient, actorUserId: string): Promise<number> {
@@ -380,65 +386,60 @@ export async function getLatestSwipeCardForUser(
 export async function getSwipeCandidate(
   adminClient: AdminClient,
   actorUserId: string,
-  sex: "male" | "female"
+  sex: "male" | "female",
+  options?: {
+    recycleSeenCandidates?: boolean;
+  }
 ): Promise<SwipeCandidate | null> {
-  const [swipesRes, matchesRes, cardsRes, blockedUserIds] = await Promise.all([
-    adminClient.from("dating_card_swipes").select("target_user_id").eq("actor_user_id", actorUserId).limit(5000),
+  const recycleSeenCandidates = options?.recycleSeenCandidates === true;
+  const [swipesRes, matchesRes, blockedUserIds] = await Promise.all([
+    adminClient
+      .from("dating_card_swipes")
+      .select("target_user_id,action,created_at")
+      .eq("actor_user_id", actorUserId)
+      .order("created_at", { ascending: false })
+      .limit(5000),
     adminClient
       .from("dating_card_swipe_matches")
       .select("user_a_id,user_b_id")
       .or(`user_a_id.eq.${actorUserId},user_b_id.eq.${actorUserId}`)
-      .limit(5000),
-    adminClient
-      .from("dating_cards")
-      .select(
-        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, total_3lift, is_3lift_verified, photo_visibility, photo_paths, blur_paths, blur_thumb_path, instagram_id, status, expires_at, created_at"
-      )
-      .eq("sex", sex)
       .order("created_at", { ascending: false })
-      .limit(250),
+      .limit(5000),
     getDatingBlockedUserIds(adminClient, actorUserId),
   ]);
 
   if (swipesRes.error) throw swipesRes.error;
   if (matchesRes.error) throw matchesRes.error;
-  if (cardsRes.error) throw cardsRes.error;
-
-  const ownerIds = Array.from(
-    new Set(
-      ((cardsRes.data ?? []) as DatingCardRow[])
-        .map((row) => String(row.owner_user_id ?? "").trim())
-        .filter((value) => value.length > 0)
-    )
-  );
-  const visibilityByUserId = new Map<string, boolean>();
-  const premiumExposureUserIds = await getActiveSwipePremiumUserIds(adminClient, ownerIds);
-  if (ownerIds.length > 0) {
-    const profilesRes = await adminClient
-      .from("profiles")
-      .select("user_id, swipe_profile_visible")
-      .in("user_id", ownerIds);
-
-    if (profilesRes.error && !profilesRes.error.message?.includes("swipe_profile_visible")) {
-      throw profilesRes.error;
-    }
-
-    const profileRows =
-      profilesRes.error && profilesRes.error.message?.includes("swipe_profile_visible")
-        ? []
-        : ((profilesRes.data ?? []) as ProfileSwipeVisibilityRow[]);
-
-    for (const row of profileRows) {
-      const userId = String(row.user_id ?? "").trim();
-      if (!userId) continue;
-      visibilityByUserId.set(userId, row.swipe_profile_visible !== false);
-    }
-  }
 
   const excludedUserIds = new Set<string>();
+  const { startUtcIso } = getSwipeDayRangeUtc();
+  const todayStartMs = new Date(startUtcIso).getTime();
+  const expiredLikeCutoffMs = Date.now() - SWIPE_LIKE_EXPIRY_HOURS * 60 * 60 * 1000;
   for (const row of swipesRes.data ?? []) {
     const userId = String(row.target_user_id ?? "").trim();
-    if (userId) excludedUserIds.add(userId);
+    if (!userId) continue;
+    if (!recycleSeenCandidates) {
+      excludedUserIds.add(userId);
+      continue;
+    }
+
+    const action = String(row.action ?? "");
+    const createdAt = String(row.created_at ?? "");
+    const createdAtMs = new Date(createdAt).getTime();
+    const isPassFromPreviousDay =
+      action === "pass" &&
+      Number.isFinite(createdAtMs) &&
+      Number.isFinite(todayStartMs) &&
+      createdAtMs < todayStartMs;
+    const isExpiredLike =
+      action === "like" &&
+      isSwipeLikeExpiryEligible(createdAt) &&
+      Number.isFinite(createdAtMs) &&
+      createdAtMs <= expiredLikeCutoffMs;
+
+    if (!isPassFromPreviousDay && !isExpiredLike) {
+      excludedUserIds.add(userId);
+    }
   }
   for (const row of matchesRes.data ?? []) {
     const a = String(row.user_a_id ?? "");
@@ -449,58 +450,106 @@ export async function getSwipeCandidate(
 
   const seenOwners = new Set<string>();
   const dayKey = getSwipeDayKeyKst();
-  const candidates: Array<{ rank: number; candidate: SwipeCandidate }> = [];
+  const pageSize = 1000;
+  const maxPages = 5;
 
-  const contactVisibleCards = await filterDatingCardsByContactBlocks(
-    adminClient,
-    actorUserId,
-    (cardsRes.data ?? []) as DatingCardRow[]
-  );
+  for (let page = 0; page < maxPages; page += 1) {
+    const from = page * pageSize;
+    const cardsRes = await adminClient
+      .from("dating_cards")
+      .select(
+        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, total_3lift, is_3lift_verified, photo_visibility, photo_paths, blur_paths, blur_thumb_path, instagram_id, status, expires_at, created_at"
+      )
+      .eq("sex", sex)
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + pageSize - 1);
+    if (cardsRes.error) throw cardsRes.error;
 
-  for (const row of contactVisibleCards) {
-    const ownerId = String(row.owner_user_id ?? "").trim();
-    if (!ownerId || ownerId === actorUserId) continue;
-    if (seenOwners.has(ownerId)) continue;
-    if (excludedUserIds.has(ownerId)) continue;
-    if (blockedUserIds.has(ownerId)) continue;
-    if (visibilityByUserId.get(ownerId) === false) continue;
-    if (!String(row.instagram_id ?? "").trim()) continue;
-    seenOwners.add(ownerId);
+    const pageCards = (cardsRes.data ?? []) as DatingCardRow[];
+    if (pageCards.length === 0) break;
 
-    candidates.push({
-      rank: getSwipeCandidateRank(actorUserId, dayKey, ownerId, row.id, premiumExposureUserIds.has(ownerId)),
-      candidate: {
-        user_id: ownerId,
-        card_id: row.id,
-        sex: row.sex,
-        display_nickname: String(row.display_nickname ?? "익명").trim() || "익명",
-        age: row.age ?? null,
-        region: row.region ?? null,
-        height_cm: row.height_cm ?? null,
-        job: row.job ?? null,
-        training_years: row.training_years ?? null,
-        ideal_type: row.ideal_type ?? null,
-        strengths_text: row.strengths_text ?? null,
-        total_3lift: row.total_3lift ?? null,
-        is_3lift_verified: row.is_3lift_verified === true,
-        photo_visibility: row.photo_visibility === "public" ? "public" : "blur",
-        image_url: pickPreviewImage(row),
-        source_status: row.status,
-        created_at: row.created_at,
-      },
-    });
+    const ownerIds = Array.from(
+      new Set(
+        pageCards
+          .map((row) => String(row.owner_user_id ?? "").trim())
+          .filter((value) => value.length > 0)
+      )
+    );
+    const visibilityByUserId = new Map<string, boolean>();
+    const premiumExposureUserIds = await getActiveSwipePremiumUserIds(adminClient, ownerIds);
+    if (ownerIds.length > 0) {
+      for (let start = 0; start < ownerIds.length; start += SWIPE_QUERY_ID_BATCH_SIZE) {
+        const chunk = ownerIds.slice(start, start + SWIPE_QUERY_ID_BATCH_SIZE);
+        const profilesRes = await adminClient
+          .from("profiles")
+          .select("user_id, swipe_profile_visible")
+          .in("user_id", chunk);
+
+        if (profilesRes.error?.message?.includes("swipe_profile_visible")) {
+          break;
+        }
+        if (profilesRes.error) {
+          throw profilesRes.error;
+        }
+
+        for (const row of (profilesRes.data ?? []) as ProfileSwipeVisibilityRow[]) {
+          const userId = String(row.user_id ?? "").trim();
+          if (!userId) continue;
+          visibilityByUserId.set(userId, row.swipe_profile_visible !== false);
+        }
+      }
+    }
+
+    const candidates: Array<{ rank: number; candidate: SwipeCandidate }> = [];
+    const contactVisibleCards = await filterDatingCardsByContactBlocks(adminClient, actorUserId, pageCards);
+
+    for (const row of contactVisibleCards) {
+      const ownerId = String(row.owner_user_id ?? "").trim();
+      if (!ownerId || ownerId === actorUserId) continue;
+      if (seenOwners.has(ownerId)) continue;
+      if (excludedUserIds.has(ownerId)) continue;
+      if (blockedUserIds.has(ownerId)) continue;
+      if (visibilityByUserId.get(ownerId) === false) continue;
+      if (!String(row.instagram_id ?? "").trim()) continue;
+      seenOwners.add(ownerId);
+
+      candidates.push({
+        rank: getSwipeCandidateRank(actorUserId, dayKey, ownerId, row.id, premiumExposureUserIds.has(ownerId)),
+        candidate: {
+          user_id: ownerId,
+          card_id: row.id,
+          sex: row.sex,
+          display_nickname: String(row.display_nickname ?? "익명").trim() || "익명",
+          age: row.age ?? null,
+          region: row.region ?? null,
+          height_cm: row.height_cm ?? null,
+          job: row.job ?? null,
+          training_years: row.training_years ?? null,
+          ideal_type: row.ideal_type ?? null,
+          strengths_text: row.strengths_text ?? null,
+          total_3lift: row.total_3lift ?? null,
+          is_3lift_verified: row.is_3lift_verified === true,
+          photo_visibility: row.photo_visibility === "public" ? "public" : "blur",
+          image_url: pickPreviewImage(row),
+          source_status: row.status,
+          created_at: row.created_at,
+        },
+      });
+    }
+
+    if (candidates.length > 0) {
+      candidates.sort((a, b) => {
+        if (a.rank !== b.rank) return a.rank - b.rank;
+        return b.candidate.created_at.localeCompare(a.candidate.created_at);
+      });
+      return candidates[0]?.candidate ?? null;
+    }
+
+    if (pageCards.length < pageSize) break;
   }
 
-  if (candidates.length === 0) {
-    return null;
-  }
-
-  candidates.sort((a, b) => {
-    if (a.rank !== b.rank) return a.rank - b.rank;
-    return b.candidate.created_at.localeCompare(a.candidate.created_at);
-  });
-
-  return candidates[0]?.candidate ?? null;
+  return null;
 }
 
 export async function getGuestSwipePreviewCandidate(
