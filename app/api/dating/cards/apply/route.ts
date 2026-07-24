@@ -664,6 +664,7 @@ export async function POST(req: Request) {
         type: "dating_application_received",
         cardId,
         applicationId,
+        route: "/notifications",
       },
     }).catch((pushError) => {
       console.error(`[apply] ${requestId} L8 expo push failed`, pushError);

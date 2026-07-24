@@ -29,6 +29,11 @@ function getNotificationReminderKind(item: NotificationRow): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function getNotificationApplicationStatus(item: NotificationRow): string {
+  const value = item.meta_json?.application_status;
+  return typeof value === "string" ? value.trim() : "";
+}
+
 function getNotificationMetaText(
   item: NotificationRow,
   key: "notification_title" | "notification_body" | "notification_route"
@@ -40,7 +45,8 @@ function getNotificationMetaText(
 function buildNotificationPresentation(
   item: NotificationRow,
   actorNickname: string | null,
-  applicationState: DatingCardApplicationState | null = null
+  applicationState: DatingCardApplicationState | null = null,
+  applicationMissing = false
 ): { title: string; body: string; link: string | null } {
   const metaTitle = getNotificationMetaText(item, "notification_title");
   const metaBody = getNotificationMetaText(item, "notification_body");
@@ -53,7 +59,10 @@ function buildNotificationPresentation(
     };
   }
 
-  const appStatus = applicationState?.status ?? null;
+  const appStatus =
+    getNotificationApplicationStatus(item) ||
+    applicationState?.status ||
+    (applicationMissing ? "canceled" : null);
 
   if (item.type === "dating_application_received") {
     if (appStatus === "canceled") {
@@ -62,7 +71,7 @@ function buildNotificationPresentation(
         body: actorNickname
           ? `${actorNickname}님이 보낸 지원이 취소되어 현재 지원자 목록에는 보이지 않습니다.`
           : "도착했던 지원이 취소되어 현재 지원자 목록에는 보이지 않습니다.",
-        link: "/mypage#open-card-received",
+        link: null,
       };
     }
     if (appStatus === "accepted") {
@@ -190,6 +199,7 @@ export async function GET(request: Request) {
   }
 
   const applicationStateMap = new Map<string, DatingCardApplicationState>();
+  let applicationStateLookupSucceeded = true;
   if (applicationIds.length > 0) {
     const admin = createAdminClient();
     const { data: apps, error: appsError } = await admin
@@ -202,6 +212,7 @@ export async function GET(request: Request) {
         applicationStateMap.set(app.id, app);
       }
     } else {
+      applicationStateLookupSucceeded = false;
       console.error("[GET /api/notifications] application state load failed", appsError);
     }
   }
@@ -217,10 +228,14 @@ export async function GET(request: Request) {
       const actorNickname = item.actor_id ? profileMap.get(item.actor_id)?.nickname ?? null : null;
       const notification = item as NotificationRow;
       const applicationId = getNotificationApplicationId(notification);
+      const applicationState = applicationId
+        ? applicationStateMap.get(applicationId) ?? null
+        : null;
       const presentation = buildNotificationPresentation(
         notification,
         actorNickname,
-        applicationId ? applicationStateMap.get(applicationId) ?? null : null
+        applicationState,
+        Boolean(applicationId && applicationStateLookupSucceeded && !applicationState)
       );
       return {
         ...item,
