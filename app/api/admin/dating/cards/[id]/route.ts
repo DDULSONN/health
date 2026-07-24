@@ -58,6 +58,10 @@ export async function PATCH(
   }
 
   const body = await req.json().catch(() => null);
+  const expectedOwnerUserId = toText(
+    (body as { expected_owner_user_id?: unknown } | null)?.expected_owner_user_id,
+    100
+  );
   const rawStatus = (body as { status?: string } | null)?.status;
   const status =
     rawStatus === "pending" || rawStatus === "public" || rawStatus === "hidden" || rawStatus === "expired"
@@ -79,6 +83,9 @@ export async function PATCH(
 
   if (cardError || !card) {
     return NextResponse.json({ error: "移대뱶瑜?李얠쓣 ???놁뒿?덈떎." }, { status: 404 });
+  }
+  if (expectedOwnerUserId && card.owner_user_id !== expectedOwnerUserId) {
+    return NextResponse.json({ error: "선택한 회원의 오픈카드가 아닙니다." }, { status: 409 });
   }
 
   const displayNickname = toText((body as { display_nickname?: unknown } | null)?.display_nickname, 20);
@@ -126,7 +133,7 @@ export async function PATCH(
     if (trainingYears != null && (trainingYears < 0 || trainingYears > 50)) {
       return NextResponse.json({ error: "?대룞寃쎈젰???뺤씤?댁＜?몄슂." }, { status: 400 });
     }
-    if (!instagramId || !validInstagramId(instagramId)) {
+    if (instagramId && !validInstagramId(instagramId)) {
       return NextResponse.json(
         { error: "?몄뒪?洹몃옩 ?꾩씠???뺤떇???щ컮瑜댁? ?딆뒿?덈떎. (@ ?쒖쇅, ?곷Ц/?レ옄/._, 理쒕? 30??" },
         { status: 400 }
@@ -270,7 +277,7 @@ export async function PATCH(
 }
 
 export async function DELETE(
-  _req: Request,
+  req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
@@ -284,14 +291,18 @@ export async function DELETE(
   }
 
   const adminClient = createAdminClient();
+  const expectedOwnerUserId = toText(new URL(req.url).searchParams.get("userId"), 100);
   const { data: card, error: cardError } = await adminClient
     .from("dating_cards")
-    .select("id, sex, status")
+    .select("id, owner_user_id, sex, status")
     .eq("id", id)
     .single();
 
   if (cardError || !card) {
     return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
+  }
+  if (expectedOwnerUserId && card.owner_user_id !== expectedOwnerUserId) {
+    return NextResponse.json({ error: "선택한 회원의 오픈카드가 아닙니다." }, { status: 409 });
   }
 
   const { error: deleteError } = await adminClient.from("dating_cards").delete().eq("id", id);

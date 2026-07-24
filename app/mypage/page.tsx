@@ -33,6 +33,10 @@ const AdminDatingCardAiReviewPanel = dynamic(() => import("@/components/admin/Ad
   loading: () => <MyPageWidgetSkeleton className="h-80" />,
 });
 
+const AdminUserDatingCardsPanel = dynamic(() => import("@/components/admin/AdminUserDatingCardsPanel"), {
+  loading: () => <MyPageWidgetSkeleton className="h-64" />,
+});
+
 const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
   "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
@@ -12388,6 +12392,15 @@ export default function MyPage() {
                       <p className="mt-2 text-xs text-neutral-500">현재 활성 회원을 찾지 못했습니다.</p>
                     )}
                   </div>
+
+                  {adminUserActivityResult.user ? (
+                    <AdminUserDatingCardsPanel
+                      userId={adminUserActivityResult.user.id}
+                      openCards={adminUserActivityResult.details?.open_cards ?? []}
+                      oneOnOneCards={adminUserActivityResult.details?.one_on_one_cards ?? []}
+                      onChanged={handleAdminLoadUserActivity}
+                    />
+                  ) : null}
 
                   {adminUserActivityResult.deleted_audits.length > 0 ? (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">

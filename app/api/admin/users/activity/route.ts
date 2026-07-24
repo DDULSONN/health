@@ -582,7 +582,9 @@ export async function GET(request: Request) {
       listSafe<Record<string, unknown>>(
         auth.admin
           .from("dating_cards")
-          .select("id,owner_user_id,display_nickname,sex,age,region,status,published_at,expires_at,queue_priority_at,auto_requeue_count,created_at")
+          .select(
+            "id,owner_user_id,display_nickname,sex,age,region,height_cm,job,training_years,strengths_text,ideal_type,instagram_id,total_3lift,percent_all,photo_paths,status,published_at,expires_at,queue_priority_at,auto_requeue_count,created_at"
+          )
           .eq("owner_user_id", userId)
           .order("created_at", { ascending: false })
           .limit(50)
