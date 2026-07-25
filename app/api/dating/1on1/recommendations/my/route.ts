@@ -1,6 +1,5 @@
 import {
   DATING_ONE_ON_ONE_ACTIVE_STATUSES,
-  isDatingOneOnOnePendingPairExpired,
   toDatingOneOnOneCardDetail,
 } from "@/lib/dating-1on1";
 import {
@@ -31,7 +30,6 @@ import { NextResponse } from "next/server";
 
 const RECOMMENDATION_LIMIT = 10;
 const CARD_BATCH_SIZE = 1000;
-const PAIR_BATCH_SIZE = 1000;
 const RECOMMENDATION_REFRESH_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const AGE_MATCH_MIN_QUOTA = 6;
 const PRIORITY_BOOST_MIN_QUOTA = 2;
@@ -39,8 +37,6 @@ const NEAR_AGE_GAP = 2;
 const CLOSE_REGION_MAX_KM = 90;
 const RECENT_CANDIDATE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const REFRESH_RECENT_NEARBY_MIN_QUOTA = 4;
-const ACTIVE_PAIR_STATES = new Set(["proposed", "source_selected", "candidate_accepted", "mutual_accepted"]);
-const RECYCLABLE_PAIR_STATES = new Set(["source_skipped", "candidate_rejected", "source_declined", "admin_canceled"]);
 
 type CardRow = {
   id: string;
@@ -72,14 +68,6 @@ type RecommendationCard = ReturnType<typeof toDatingOneOnOneCardDetail> & {
 type RefreshEventRow = {
   card_id: string;
   refreshed_at: string;
-};
-type MatchPairRow = {
-  source_card_id: string;
-  candidate_card_id: string;
-  state: string;
-  source_selected_at: string | null;
-  updated_at: string | null;
-  created_at: string;
 };
 
 function getAgeRange(card: { sex: "male" | "female"; age: number | null }) {
@@ -483,33 +471,6 @@ async function fetchAllActiveCards(admin: ReturnType<typeof createAdminClient>) 
   return rows;
 }
 
-async function fetchPairRowsForCards(
-  admin: ReturnType<typeof createAdminClient>,
-  column: "source_card_id" | "candidate_card_id",
-  cardIds: string[]
-) {
-  const rows: MatchPairRow[] = [];
-  let from = 0;
-
-  while (true) {
-    const { data, error } = await admin
-      .from("dating_1on1_match_proposals")
-      .select("source_card_id,candidate_card_id,state,source_selected_at,updated_at,created_at")
-      .in(column, cardIds)
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: false })
-      .range(from, from + PAIR_BATCH_SIZE - 1);
-    if (error) throw error;
-
-    const batch = (data ?? []) as MatchPairRow[];
-    rows.push(...batch);
-    if (batch.length < PAIR_BATCH_SIZE) break;
-    from += PAIR_BATCH_SIZE;
-  }
-
-  return rows;
-}
-
 export async function GET(req: Request) {
   const { user } = await getRequestAuthContext(req);
 
@@ -566,17 +527,11 @@ export async function GET(req: Request) {
   }
 
   const allCandidateUserIds = normalizedCards.map((card) => card.user_id);
-  const [
-    sourcePairRows,
-    reversePairRows,
-    phoneBlockMap,
-    adminUserBlockPairSet,
-    contactBlockMap,
-    blockedUserIds,
-    profilePhoneMap,
-  ] = await Promise.all([
-    fetchPairRowsForCards(admin, "source_card_id", sourceCardIds),
-    fetchPairRowsForCards(admin, "candidate_card_id", sourceCardIds),
+  const [existingPairRes, phoneBlockMap, adminUserBlockPairSet, contactBlockMap, blockedUserIds, profilePhoneMap] = await Promise.all([
+    admin
+      .from("dating_1on1_match_proposals")
+      .select("source_card_id,candidate_card_id")
+      .in("source_card_id", sourceCardIds),
     getOneOnOnePhoneBlockMapForUsers(admin, allCandidateUserIds),
     getOneOnOneAdminUserBlockPairSetForUsers(admin, allCandidateUserIds),
     getDatingContactBlockMapForUsers(admin, allCandidateUserIds),
@@ -584,40 +539,26 @@ export async function GET(req: Request) {
     getDatingProfilePhoneMapForUsers(admin, allCandidateUserIds),
   ]);
 
-  const activePairMap = new Map<string, Set<string>>();
-  const handledPairMap = new Map<string, Set<string>>();
-  const addPairHistory = (row: MatchPairRow, sourceCardId: string, candidateCardId: string) => {
-    if (ACTIVE_PAIR_STATES.has(row.state) && !isDatingOneOnOnePendingPairExpired(row)) {
-      const activeIds = activePairMap.get(sourceCardId) ?? new Set<string>();
-      activeIds.add(candidateCardId);
-      activePairMap.set(sourceCardId, activeIds);
-      handledPairMap.get(sourceCardId)?.delete(candidateCardId);
-      return;
-    }
-    const isRecyclable =
-      RECYCLABLE_PAIR_STATES.has(row.state) || isDatingOneOnOnePendingPairExpired(row);
-    if (!isRecyclable || activePairMap.get(sourceCardId)?.has(candidateCardId)) return;
-    const handledIds = handledPairMap.get(sourceCardId) ?? new Set<string>();
-    handledIds.add(candidateCardId);
-    handledPairMap.set(sourceCardId, handledIds);
-  };
-
-  for (const row of sourcePairRows) {
-    addPairHistory(row, row.source_card_id, row.candidate_card_id);
+  if (existingPairRes.error) {
+    console.error("[GET /api/dating/1on1/recommendations/my] pair lookup failed", existingPairRes.error);
+    return NextResponse.json({ error: "Failed to load existing match pairs." }, { status: 500 });
   }
-  for (const row of reversePairRows) {
-    addPairHistory(row, row.candidate_card_id, row.source_card_id);
+
+  const existingPairMap = new Map<string, Set<string>>();
+  for (const row of existingPairRes.data ?? []) {
+    const bucket = existingPairMap.get(row.source_card_id) ?? new Set<string>();
+    bucket.add(row.candidate_card_id);
+    existingPairMap.set(row.source_card_id, bucket);
   }
 
   const items = mySourceCards.map((sourceCard) => {
-    const activePairIds = activePairMap.get(sourceCard.id) ?? new Set<string>();
-    const handledPairIds = handledPairMap.get(sourceCard.id) ?? new Set<string>();
+    const excludedIds = existingPairMap.get(sourceCard.id) ?? new Set<string>();
     const candidates = normalizedCards.filter((candidateCard) => {
       if (candidateCard.id === sourceCard.id) return false;
       if (candidateCard.user_id === sourceCard.user_id) return false;
       if (candidateCard.sex === sourceCard.sex) return false;
       if (blockedUserIds.has(candidateCard.user_id)) return false;
-      if (activePairIds.has(candidateCard.id)) return false;
+      if (excludedIds.has(candidateCard.id)) return false;
       if (
         isOneOnOnePhoneBlockedPair({
           sourceUserId: sourceCard.user_id,
@@ -661,17 +602,14 @@ export async function GET(req: Request) {
       sourceCard,
       defaultSortedCandidates,
       RECOMMENDATION_LIMIT,
-      handledPairIds,
-      `${sourceCard.id}:${adminRecommendationDate}:default`
+      null,
+      null
     );
     const refreshExcludeIds = getRefreshExcludeIds(
       sourceCard,
       defaultRecommendations,
       sourceCard.recommendation_refresh_used_at
     );
-    for (const handledId of handledPairIds) {
-      refreshExcludeIds.add(handledId);
-    }
     const recommendations = sourceCard.recommendation_refresh_used_at
       ? takeBalancedRecommendations(
           sourceCard,
@@ -694,7 +632,6 @@ export async function GET(req: Request) {
       refreshLimit
     );
     const recommendationIds = new Set(recommendations.map((candidate) => candidate.id));
-    const adminExcludeIds = new Set([...recommendationIds, ...handledPairIds]);
     const adminRecommendations = takeRecommendations(
       sortCandidatesForSource(
         sourceCard,
@@ -702,7 +639,7 @@ export async function GET(req: Request) {
         `${adminRecommendationDate}:admin-extra`
       ),
       ONE_ON_ONE_FREE_EXTRA_CANDIDATES,
-      adminExcludeIds,
+      recommendationIds,
       `${sourceCard.id}:${adminRecommendationDate}:admin-extra`
     );
 

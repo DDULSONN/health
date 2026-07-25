@@ -64,6 +64,7 @@ export async function POST(
     return NextResponse.json({ error: "Phone exchange is already approved." }, { status: 409 });
   }
 
+  const nowIso = new Date().toISOString();
   if (row.contact_exchange_status === "payment_pending_admin") {
     return NextResponse.json({ error: "Payment confirmation is already pending admin review." }, { status: 409 });
   }
@@ -98,12 +99,37 @@ export async function POST(
     return NextResponse.json({ ok: true, coveredByPlus: true, item });
   }
 
-  return NextResponse.json(
-    {
-      error: "번호 교환 결제가 필요합니다.",
-      code: "PAYMENT_REQUIRED",
-      paymentRequired: true,
-    },
-    { status: 402 }
-  );
+  const updateRes = await admin
+    .from("dating_1on1_match_proposals")
+    .update({
+      state: row.state === "candidate_accepted" ? "mutual_accepted" : row.state,
+      contact_exchange_status: "payment_pending_admin",
+      contact_exchange_requested_at: row.contact_exchange_requested_at ?? nowIso,
+      contact_exchange_paid_at: nowIso,
+      contact_exchange_paid_by_user_id: user.id,
+      source_final_responded_at: row.source_final_responded_at ?? nowIso,
+      updated_at: nowIso,
+    })
+    .eq("id", matchId)
+    .in("state", ["mutual_accepted", "candidate_accepted"])
+    .in("contact_exchange_status", ["none", "awaiting_applicant_payment"])
+    .select("id")
+    .maybeSingle();
+
+  if (updateRes.error) {
+    console.error("[POST /api/dating/1on1/matches/[id]/contact-exchange] update failed", updateRes.error);
+    return NextResponse.json({ error: "Failed to request phone exchange approval." }, { status: 500 });
+  }
+  if (!updateRes.data) {
+    return NextResponse.json({ error: "This phone exchange request was already handled." }, { status: 409 });
+  }
+
+  try {
+    row = await getMatchRow(admin, matchId);
+  } catch (error) {
+    console.error("[POST /api/dating/1on1/matches/[id]/contact-exchange] reload failed", error);
+    return NextResponse.json({ error: "Request saved, but reload failed." }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, item: row });
 }
