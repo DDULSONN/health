@@ -1,4 +1,5 @@
 import { ensureCronAuthorized } from "@/lib/cron-auth";
+import { DATING_ONE_ON_ONE_PENDING_PAIR_TTL_MS } from "@/lib/dating-1on1";
 import { sendDatingEmailNotification } from "@/lib/dating-swipe";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -93,8 +94,36 @@ export async function GET(request: Request) {
 
   const admin = createAdminClient();
   const nowMs = Date.now();
+  const nowIso = new Date(nowMs).toISOString();
+  const pendingCutoff = new Date(nowMs - DATING_ONE_ON_ONE_PENDING_PAIR_TTL_MS).toISOString();
   const newerThan = isoHoursAgo(nowMs, 26);
   const olderThan = isoHoursAgo(nowMs, 24);
+
+  const staleCleanupResults = await Promise.all([
+    admin
+      .from("dating_1on1_match_proposals")
+      .update({ state: "admin_canceled", updated_at: nowIso }, { count: "exact" })
+      .eq("state", "proposed")
+      .lt("created_at", pendingCutoff),
+    admin
+      .from("dating_1on1_match_proposals")
+      .update({ state: "admin_canceled", updated_at: nowIso }, { count: "exact" })
+      .eq("state", "source_selected")
+      .lt("source_selected_at", pendingCutoff),
+    admin
+      .from("dating_1on1_match_proposals")
+      .update({ state: "admin_canceled", updated_at: nowIso }, { count: "exact" })
+      .eq("state", "source_selected")
+      .is("source_selected_at", null)
+      .lt("created_at", pendingCutoff),
+  ]);
+
+  const staleCleanupErrors = staleCleanupResults
+    .map((result) => result.error)
+    .filter((error): error is NonNullable<typeof error> => Boolean(error));
+  if (staleCleanupErrors.length > 0) {
+    console.error("[cron dating-1on1-match-reminders] stale pair cleanup failed", staleCleanupErrors);
+  }
 
   const matchesRes = await admin
     .from("dating_1on1_match_proposals")
@@ -173,5 +202,13 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ ok: true, results });
+  return NextResponse.json({
+    ok: staleCleanupErrors.length === 0,
+    stalePairCleanup: {
+      proposed: staleCleanupResults[0].count ?? 0,
+      sourceSelected: (staleCleanupResults[1].count ?? 0) + (staleCleanupResults[2].count ?? 0),
+      failed: staleCleanupErrors.length,
+    },
+    results,
+  });
 }

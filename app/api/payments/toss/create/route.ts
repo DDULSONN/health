@@ -579,7 +579,7 @@ export async function POST(req: Request) {
 
       const duplicateOrderRes = await admin
         .from("toss_test_payment_orders")
-        .select("id,status,created_at")
+        .select("id,user_id,toss_order_id,status,created_at")
         .eq("product_type", "one_on_one_contact_exchange")
         .eq("product_ref_id", matchId)
         .in("status", ["ready", "paid"])
@@ -597,14 +597,35 @@ export async function POST(req: Request) {
       }
 
       const duplicateOrders = duplicateOrderRes.data ?? [];
-      const hasPaidOrder = duplicateOrders.some((row) => row.status === "paid");
-      if (hasPaidOrder) {
-        return json(409, {
-          ok: false,
-          code: "ALREADY_PAID",
-          requestId,
-          message: "이미 결제가 완료된 번호 교환입니다. 마이페이지를 다시 확인해주세요.",
-        });
+      const paidOrder = duplicateOrders.find((row) => row.status === "paid");
+      if (paidOrder) {
+        try {
+          const fulfilled = await grantOneOnOneContactExchange(admin, {
+            matchId,
+            userId: paidOrder.user_id,
+            note: `toss payment ${paidOrder.toss_order_id} | recovered`,
+          });
+          return json(200, {
+            ok: true,
+            fulfilledWithoutPayment: true,
+            recoveredPaidOrder: true,
+            paymentRequired: false,
+            item: fulfilled,
+            message: "기존 번호교환 결제를 확인해 연락처 공개를 복구했습니다.",
+          });
+        } catch (error) {
+          console.error("[toss-create] 1on1 paid order recovery failed", {
+            matchId,
+            paidOrderId: paidOrder.id,
+            error,
+          });
+          return json(500, {
+            ok: false,
+            code: "PAID_ORDER_RECOVERY_FAILED",
+            requestId,
+            message: "결제 완료 내역은 확인됐지만 번호 공개를 복구하지 못했습니다. 관리자에게 문의해주세요.",
+          });
+        }
       }
 
       const readyOrderIds = duplicateOrders.filter((row) => row.status === "ready").map((row) => row.id);

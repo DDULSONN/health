@@ -144,8 +144,11 @@ export async function GET(req: Request) {
     items: rows.map((row) => {
       const role = row.source_user_id === user.id ? "source" : "candidate";
       const counterpartyCardId = role === "source" ? row.candidate_card_id : row.source_card_id;
+      const counterpartyUserId = role === "source" ? row.candidate_user_id : row.source_user_id;
       const counterpartyPhone =
-        row.contact_exchange_status === "approved" ? (phoneMap.get(counterpartyCardId) ?? null) : null;
+        row.contact_exchange_status === "approved"
+          ? (profilePhoneMap.get(counterpartyUserId) ?? phoneMap.get(counterpartyCardId) ?? null)
+          : null;
       return {
         ...row,
         role,
