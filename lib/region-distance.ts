@@ -34,7 +34,7 @@ function normalizeLookupKey(value: string | null): string {
 }
 
 function stripAdminSuffix(value: string): string {
-  return value.replace(/(특별자치시|특별자치도|특별시|광역시|자치시|자치도|시|군|구|읍|면|동|리)$/u, "");
+  return value.replace(/(특별자치시|특별자치도|특별시|광역시|자치시|자치도|시|도|군|구|읍|면|동|리)$/u, "");
 }
 
 function normalizeDivisionProvince(province: string, city: string): string {
@@ -50,6 +50,25 @@ const DIVISION_ROWS: DivisionRow[] = KOREA_ADMIN_DIVISION_COORDS.map(([province,
 
 const DIVISION_LOOKUP = new Map<string, DivisionRow>();
 const PROVINCE_CENTROIDS = new Map<string, RegionCoordinate>();
+const PROVINCE_REFERENCE_COORDS: Record<string, [number, number]> = {
+  서울: [126.978, 37.5665],
+  부산: [129.0756, 35.1796],
+  대구: [128.6014, 35.8714],
+  인천: [126.7052, 37.4563],
+  광주: [126.8526, 35.1595],
+  대전: [127.3845, 36.3504],
+  울산: [129.3114, 35.5384],
+  세종: [127.289, 36.48],
+  경기: [127.0095, 37.2749],
+  강원: [127.7298, 37.8854],
+  충북: [127.4913, 36.6357],
+  충남: [126.6728, 36.6588],
+  전북: [127.1088, 35.8202],
+  전남: [126.4629, 34.8161],
+  경북: [128.5058, 36.576],
+  경남: [128.6918, 35.2383],
+  제주: [126.4983, 33.4889],
+};
 
 for (const row of DIVISION_ROWS) {
   const rawKey = `${row.province}:${normalizeLookupKey(row.city)}`;
@@ -107,6 +126,20 @@ export function getRegionCoordinate(region: string | null): RegionCoordinate | n
 
   const province = extractProvinceFromRegion(raw);
   if (!province) return null;
+
+  const provinceOnly =
+    normalizeLookupKey(stripAdminSuffix(raw)) === normalizeLookupKey(province) ||
+    normalizeLookupKey(raw) === normalizeLookupKey(province);
+  const reference = PROVINCE_REFERENCE_COORDS[province];
+  if (provinceOnly && reference) {
+    return {
+      province,
+      city: null,
+      longitude: reference[0],
+      latitude: reference[1],
+      precision: "province",
+    };
+  }
 
   const candidateKeys = buildCandidateKeys(raw, province);
   for (const key of candidateKeys) {

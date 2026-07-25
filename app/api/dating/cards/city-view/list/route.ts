@@ -1,5 +1,6 @@
 import { CITY_VIEW_CARD_LIMIT, getActiveCityViewGrant, getCityViewTargetSex } from "@/lib/dating-city-view";
-import { extractProvinceFromRegion, getNearbyProvinceFallbackOrder } from "@/lib/region-city";
+import { fetchCityViewCandidateRows, sortCityViewCandidates } from "@/lib/dating-city-view-candidates";
+import { extractProvinceFromRegion } from "@/lib/region-city";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -72,64 +73,25 @@ export async function GET(req: Request) {
 
   const selectColumns =
     "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, instagram_id, expires_at, created_at, status";
-  const nowIso = new Date().toISOString();
-  const [pendingCardsRes, publicCardsRes] = await Promise.all([
-    admin.from("dating_cards").select(selectColumns).eq("status", "pending").order("created_at", { ascending: false }).limit(5000),
-    admin
-      .from("dating_cards")
-      .select(selectColumns)
-      .eq("status", "public")
-      .gt("expires_at", nowIso)
-      .order("created_at", { ascending: false })
-      .limit(5000),
-  ]);
-
-  if (pendingCardsRes.error && publicCardsRes.error) {
+  let rows;
+  try {
+    rows = await fetchCityViewCandidateRows(admin);
+  } catch {
     return NextResponse.json({ error: "목록을 불러오지 못했습니다." }, { status: 500 });
   }
 
-  const rows = [
-    ...(!pendingCardsRes.error && Array.isArray(pendingCardsRes.data) ? pendingCardsRes.data : []),
-    ...(!publicCardsRes.error && Array.isArray(publicCardsRes.data) ? publicCardsRes.data : []),
-  ];
-  const provinceOrder = getNearbyProvinceFallbackOrder(province);
-  const provincePriority = new Map(provinceOrder.map((value, index) => [value, index]));
   const now = Date.now();
-  const eligibleRows = rows
+  let eligibleRows = rows
     .filter((row) => row.status === "pending" || (row.status === "public" && row.expires_at && new Date(row.expires_at).getTime() > now))
     .filter((row) => !targetSex || row.sex === targetSex)
-    .filter((row) => provincePriority.has(extractProvinceFromRegion(row.region) ?? ""))
+    .filter((row) => Boolean(extractProvinceFromRegion(row.region)))
     .filter((row) => String(row.owner_user_id ?? "") !== user.id)
-    .filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")))
-    .sort((a, b) => {
-      const priorityA = provincePriority.get(extractProvinceFromRegion(a.region) ?? "") ?? Number.MAX_SAFE_INTEGER;
-      const priorityB = provincePriority.get(extractProvinceFromRegion(b.region) ?? "") ?? Number.MAX_SAFE_INTEGER;
-      if (priorityA !== priorityB) return priorityA - priorityB;
-      return String(b.created_at ?? "").localeCompare(String(a.created_at ?? ""));
-    });
+    .filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")));
+  eligibleRows = await filterDatingCardsByContactBlocks(admin, user.id, eligibleRows);
+  eligibleRows = sortCityViewCandidates(eligibleRows, province);
 
-  const rowById = new Map(
-    eligibleRows
-      .map((row) => [String((row as { id?: string }).id ?? ""), row] as const)
-      .filter(([id]) => id.length > 0)
-  );
   const preferredRows = eligibleRows.slice(0, CITY_VIEW_CARD_LIMIT);
-  const cutoffPriority = preferredRows.length > 0
-    ? provincePriority.get(extractProvinceFromRegion(preferredRows.at(-1)?.region ?? null) ?? "") ?? Number.MAX_SAFE_INTEGER
-    : Number.MAX_SAFE_INTEGER;
-  let selectedCardIds = activeGrant.snapshotCardIds
-    .filter((id) => {
-      const row = rowById.get(id);
-      if (!row) return false;
-      const priority = provincePriority.get(extractProvinceFromRegion(row.region) ?? "") ?? Number.MAX_SAFE_INTEGER;
-      return priority <= cutoffPriority;
-    })
-    .slice(0, CITY_VIEW_CARD_LIMIT);
-  if (selectedCardIds.length < CITY_VIEW_CARD_LIMIT) {
-    const selectedSet = new Set(selectedCardIds);
-    const fillers = [...rowById.keys()].filter((id) => !selectedSet.has(id)).slice(0, CITY_VIEW_CARD_LIMIT - selectedCardIds.length);
-    selectedCardIds = [...selectedCardIds, ...fillers];
-  }
+  const selectedCardIds = preferredRows.map((row) => row.id);
   const previousCardIds = activeGrant.snapshotCardIds.slice(0, CITY_VIEW_CARD_LIMIT);
   const snapshotChanged =
     selectedCardIds.length !== previousCardIds.length ||
@@ -142,10 +104,22 @@ export async function GET(req: Request) {
       .eq("status", "approved");
   }
 
-  let selected = selectedCardIds
-    .map((id) => rowById.get(id))
+  const selectedCardsRes =
+    selectedCardIds.length > 0
+      ? await admin.from("dating_cards").select(selectColumns).in("id", selectedCardIds)
+      : { data: [], error: null };
+  if (selectedCardsRes.error) {
+    return NextResponse.json({ error: "카드 정보를 불러오지 못했습니다." }, { status: 500 });
+  }
+
+  const selectedById = new Map(
+    (selectedCardsRes.data ?? [])
+      .map((row) => [String(row.id ?? ""), row] as const)
+      .filter(([id]) => id.length > 0)
+  );
+  const selected = selectedCardIds
+    .map((id) => selectedById.get(id))
     .filter((row): row is NonNullable<typeof row> => Boolean(row));
-  selected = await filterDatingCardsByContactBlocks(admin, user.id, selected);
   const ownerIds = [...new Set(selected.map((row) => String(row.owner_user_id ?? "")).filter((id) => id.length > 0))];
   const phoneVerifiedByOwner = new Map<string, boolean>();
   if (ownerIds.length > 0) {

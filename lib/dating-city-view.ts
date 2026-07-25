@@ -164,7 +164,8 @@ export async function hasCityViewCardAccess(
     const snapshotCardIds = parseSnapshotCardIds(row.snapshot_card_ids);
     if (snapshotCardIds.includes(normalizedCardId)) return true;
 
-    // Same-province access remains valid even if a snapshot refresh is still being persisted.
+    // Legacy or temporarily failed grants without a snapshot retain same-province access.
+    if (snapshotCardIds.length > 0) continue;
     const grantProvince = extractProvinceFromRegion(row.city) ?? row.city;
     if (cardProvince && grantProvince === cardProvince) return true;
   }
