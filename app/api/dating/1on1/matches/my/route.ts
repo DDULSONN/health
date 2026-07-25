@@ -130,7 +130,9 @@ export async function GET(req: Request) {
 
   const phoneMap = await getDatingOneOnOneCardPhonesByIds(
     admin,
-    rows.flatMap((row) => [row.source_card_id, row.candidate_card_id])
+    rows
+      .filter((row) => row.contact_exchange_status === "approved")
+      .flatMap((row) => [row.source_card_id, row.candidate_card_id])
   ).catch((phoneError) => {
     console.error("[GET /api/dating/1on1/matches/my] phones failed", phoneError);
     return null;

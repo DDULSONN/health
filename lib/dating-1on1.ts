@@ -144,6 +144,8 @@ type DatingOneOnOneCardPhoneRow = {
   phone: string | null;
 };
 
+const DATING_ONE_ON_ONE_CARD_LOOKUP_BATCH_SIZE = 100;
+
 type SiteSettingRow = {
   value_json: Record<string, unknown> | null;
 };
@@ -268,42 +270,48 @@ export async function getDatingOneOnOneCardsByIds(
   const legacySelect =
     "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,photo_paths";
   const minimalSelect = "id,user_id,sex,name,birth_year,height_cm,job,region,status,created_at";
+  const cardsById = new Map<string, DatingOneOnOneCardDetail>();
 
-  const fullRes = await adminClient
-    .from("dating_1on1_cards")
-    .select(fullSelect)
-    .in("id", uniqueIds);
-
-  let data = fullRes.data as unknown;
-  let error = fullRes.error;
-
-  if (error && String(error.message ?? "").includes("recommendation_refresh_used_at")) {
-    const legacyRes = await adminClient
+  for (let start = 0; start < uniqueIds.length; start += DATING_ONE_ON_ONE_CARD_LOOKUP_BATCH_SIZE) {
+    const chunk = uniqueIds.slice(start, start + DATING_ONE_ON_ONE_CARD_LOOKUP_BATCH_SIZE);
+    const fullRes = await adminClient
       .from("dating_1on1_cards")
-      .select(legacySelect)
-      .in("id", uniqueIds);
-    data = legacyRes.data as unknown;
-    error = legacyRes.error;
-  }
+      .select(fullSelect)
+      .in("id", chunk);
 
-  if (error) {
-    const minimalRes = await adminClient
-      .from("dating_1on1_cards")
-      .select(minimalSelect)
-      .in("id", uniqueIds);
-    if (!minimalRes.error) {
-      const minimalRows = (minimalRes.data ?? []) as unknown as DatingOneOnOneCardMinimalRow[];
-      return new Map(minimalRows.map((row) => [row.id, toDatingOneOnOneCardDetailFromMinimal(row)]));
+    let data = fullRes.data as unknown;
+    let error = fullRes.error;
+
+    if (error && String(error.message ?? "").includes("recommendation_refresh_used_at")) {
+      const legacyRes = await adminClient
+        .from("dating_1on1_cards")
+        .select(legacySelect)
+        .in("id", chunk);
+      data = legacyRes.data as unknown;
+      error = legacyRes.error;
+    }
+
+    if (error) {
+      const minimalRes = await adminClient
+        .from("dating_1on1_cards")
+        .select(minimalSelect)
+        .in("id", chunk);
+      if (minimalRes.error) {
+        throw error;
+      }
+
+      for (const row of (minimalRes.data ?? []) as unknown as DatingOneOnOneCardMinimalRow[]) {
+        cardsById.set(row.id, toDatingOneOnOneCardDetailFromMinimal(row));
+      }
+      continue;
+    }
+
+    for (const row of (data ?? []) as unknown as DatingOneOnOneCardRow[]) {
+      cardsById.set(row.id, toDatingOneOnOneCardDetail(row));
     }
   }
 
-  if (error) {
-    throw error;
-  }
-
-  const rowsRaw = (data ?? []) as unknown as DatingOneOnOneCardRow[];
-
-  return new Map(rowsRaw.map((row) => [row.id, toDatingOneOnOneCardDetail(row)]));
+  return cardsById;
 }
 
 export async function getDatingOneOnOneCardPhonesByIds(
@@ -315,14 +323,23 @@ export async function getDatingOneOnOneCardPhonesByIds(
     return new Map();
   }
 
-  const { data, error } = await adminClient
-    .from("dating_1on1_cards")
-    .select("id,phone")
-    .in("id", uniqueIds);
+  const phonesById = new Map<string, string | null>();
 
-  if (error) {
-    throw error;
+  for (let start = 0; start < uniqueIds.length; start += DATING_ONE_ON_ONE_CARD_LOOKUP_BATCH_SIZE) {
+    const chunk = uniqueIds.slice(start, start + DATING_ONE_ON_ONE_CARD_LOOKUP_BATCH_SIZE);
+    const { data, error } = await adminClient
+      .from("dating_1on1_cards")
+      .select("id,phone")
+      .in("id", chunk);
+
+    if (error) {
+      throw error;
+    }
+
+    for (const row of data ?? []) {
+      phonesById.set(row.id, (row as DatingOneOnOneCardPhoneRow).phone ?? null);
+    }
   }
 
-  return new Map((data ?? []).map((row) => [row.id, (row as DatingOneOnOneCardPhoneRow).phone ?? null]));
+  return phonesById;
 }

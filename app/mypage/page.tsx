@@ -4114,6 +4114,20 @@ export default function MyPage() {
     setMyOneOnOneAutoRecommendations(body.items ?? []);
   };
 
+  const reloadOneOnOneAfterAction = async () => {
+    const results = await Promise.allSettled([
+      reloadOneOnOneMatches(),
+      reloadOneOnOneRecommendations(),
+    ]);
+    const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+    if (failures.length === results.length) {
+      throw failures[0].reason;
+    }
+    for (const failure of failures) {
+      console.error("[mypage] partial 1on1 reload failed", failure.reason);
+    }
+  };
+
   const reloadOneOnOnePhoneBlocks = async () => {
     const res = await fetch("/api/dating/1on1/phone-blocks", { cache: "no-store" });
     const body = (await res.json().catch(() => ({}))) as { items?: MyOneOnOnePhoneBlock[]; error?: string };
@@ -4635,7 +4649,7 @@ export default function MyPage() {
         alert(body.error ?? "1:1 매칭 처리에 실패했습니다.");
         return;
       }
-      await Promise.all([reloadOneOnOneMatches(), reloadOneOnOneRecommendations()]);
+      await reloadOneOnOneAfterAction();
     } catch (e) {
       alert(e instanceof Error ? e.message : "1:1 매칭 처리에 실패했습니다.");
     } finally {
@@ -4667,7 +4681,7 @@ export default function MyPage() {
         return;
       }
       if (body.fulfilledWithoutPayment) {
-        await Promise.all([reloadOneOnOneMatches(), reloadOneOnOneRecommendations()]);
+        await reloadOneOnOneAfterAction();
         alert(body.message ?? "1:1 매칭 플러스로 번호교환이 완료되었습니다.");
         return;
       }
@@ -4701,7 +4715,7 @@ export default function MyPage() {
         alert(body.error ?? "자동 추천 후보 선택에 실패했습니다.");
         return;
       }
-      await Promise.all([reloadOneOnOneMatches(), reloadOneOnOneRecommendations()]);
+      await reloadOneOnOneAfterAction();
     } catch (e) {
       alert(e instanceof Error ? e.message : "자동 추천 후보 선택에 실패했습니다.");
     } finally {
