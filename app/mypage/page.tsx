@@ -152,6 +152,13 @@ type DatingUserReportTargetType =
   | "one_on_one_card"
   | "one_on_one_match";
 
+type DatingUserReportDraft = {
+  targetType: DatingUserReportTargetType;
+  targetId: string;
+  label: string;
+  detail: string;
+};
+
 function SmallDatingReportButton({
   disabled,
   onClick,
@@ -1751,6 +1758,7 @@ export default function MyPage() {
   const [processingOneOnOneContactExchangeIds, setProcessingOneOnOneContactExchangeIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
   const [reportingDatingTargetKeys, setReportingDatingTargetKeys] = useState<string[]>([]);
+  const [datingUserReportDraft, setDatingUserReportDraft] = useState<DatingUserReportDraft | null>(null);
   const [processingSwipeLikeBackIds, setProcessingSwipeLikeBackIds] = useState<string[]>([]);
   const [reopeningOpenCardIds, setReopeningOpenCardIds] = useState<string[]>([]);
   const [reactivatingOpenCardIds, setReactivatingOpenCardIds] = useState<string[]>([]);
@@ -4329,7 +4337,7 @@ export default function MyPage() {
     }
   };
 
-  const handleDatingUserReport = async (
+  const handleDatingUserReport = (
     targetType: DatingUserReportTargetType,
     targetId: string,
     label: string
@@ -4337,11 +4345,15 @@ export default function MyPage() {
     const reportKey = `${targetType}:${targetId}`;
     if (reportingDatingTargetKeys.includes(reportKey)) return;
 
-    const detail = window.prompt(
-      `${label} 신고 사유를 간단히 적어주세요.\n허위 정보, 불쾌한 표현, 광고, 안전 우려 등을 적어주시면 관리자가 확인합니다.`,
-      ""
-    );
-    if (detail === null) return;
+    setDatingUserReportDraft({ targetType, targetId, label, detail: "" });
+  };
+
+  const submitDatingUserReport = async () => {
+    if (!datingUserReportDraft) return;
+
+    const { targetType, targetId, detail } = datingUserReportDraft;
+    const reportKey = `${targetType}:${targetId}`;
+    if (reportingDatingTargetKeys.includes(reportKey)) return;
 
     setReportingDatingTargetKeys((prev) => [...prev, reportKey]);
     try {
@@ -4355,12 +4367,35 @@ export default function MyPage() {
           detail,
         }),
       });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string };
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        blocked?: boolean;
+        message?: string;
+      };
       if (!res.ok || body.ok === false) {
         alert(body.message ?? "신고 접수에 실패했습니다.");
         return;
       }
-      alert("신고가 접수됐습니다. 관리자가 확인할게요.");
+
+      if (targetType === "open_card_application") {
+        setReceivedApplications((prev) => prev.filter((item) => item.id !== targetId));
+      } else if (targetType === "paid_card_application") {
+        setReceivedPaidApplications((prev) => prev.filter((item) => item.id !== targetId));
+      }
+
+      setDatingUserReportDraft(null);
+      const refreshResults = await Promise.allSettled([
+        reloadDatingUserBlocks(),
+        reloadOneOnOneMatches(),
+        reloadOneOnOneRecommendations(),
+        reloadSwipeStatus(),
+      ]);
+      for (const result of refreshResults) {
+        if (result.status === "rejected") {
+          console.error("[mypage] post-report refresh failed", result.reason);
+        }
+      }
+      alert("신고가 접수됐고 해당 회원은 모든 매칭에서 즉시 차단됐습니다.");
     } catch (e) {
       alert(e instanceof Error ? e.message : "신고 접수에 실패했습니다.");
     } finally {
@@ -6917,6 +6952,64 @@ export default function MyPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 pt-8 pb-[calc(120px+env(safe-area-inset-bottom))] md:pb-10">
+      {datingUserReportDraft && (
+        <div className="fixed inset-0 z-[130] flex items-end justify-center bg-black/45 px-4 py-6 sm:items-center">
+          <section
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="dating-report-title"
+            className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl"
+          >
+            <p id="dating-report-title" className="text-lg font-bold text-neutral-950">
+              {datingUserReportDraft.label} 신고
+            </p>
+            <p className="mt-2 text-sm leading-6 text-neutral-600">
+              신고하면 즉시 서로의 오픈카드·빠른매칭·1:1 후보에서 보이지 않으며, 진행 중인 1:1 요청도 종료됩니다.
+            </p>
+            <label className="mt-4 block text-sm font-semibold text-neutral-800" htmlFor="dating-report-detail">
+              신고 사유
+            </label>
+            <textarea
+              id="dating-report-detail"
+              value={datingUserReportDraft.detail}
+              onChange={(event) =>
+                setDatingUserReportDraft((prev) => (prev ? { ...prev, detail: event.target.value.slice(0, 800) } : prev))
+              }
+              rows={4}
+              maxLength={800}
+              placeholder="반복적인 접근, 불쾌한 표현, 허위 정보 등 확인이 필요한 내용을 적어주세요."
+              className="mt-2 w-full resize-none rounded-xl border border-neutral-300 px-3 py-3 text-sm leading-6 text-neutral-900 outline-none transition placeholder:text-neutral-400 focus:border-neutral-900"
+            />
+            <div className="mt-5 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setDatingUserReportDraft(null)}
+                disabled={reportingDatingTargetKeys.includes(
+                  `${datingUserReportDraft.targetType}:${datingUserReportDraft.targetId}`
+                )}
+                className="min-h-[44px] rounded-xl border border-neutral-300 bg-white px-4 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-60"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={() => void submitDatingUserReport()}
+                disabled={reportingDatingTargetKeys.includes(
+                  `${datingUserReportDraft.targetType}:${datingUserReportDraft.targetId}`
+                )}
+                className="min-h-[44px] rounded-xl bg-red-600 px-4 text-sm font-semibold text-white hover:bg-red-700 disabled:opacity-60"
+              >
+                {reportingDatingTargetKeys.includes(
+                  `${datingUserReportDraft.targetType}:${datingUserReportDraft.targetId}`
+                )
+                  ? "처리 중..."
+                  : "신고하고 차단"}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
       {accountDeleteConfirmOpen && (
         <div className="fixed inset-0 z-[120] flex items-end justify-center bg-black/40 px-4 py-6 sm:items-center">
           <section className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">

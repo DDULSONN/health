@@ -3,6 +3,7 @@ import {
   isDatingCardReportReasonCode,
   type DatingCardReportReasonCode,
 } from "@/lib/dating-report-reasons";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -261,6 +262,9 @@ async function buildEvidenceSnapshot(
 }
 
 export async function POST(req: Request) {
+  const originError = ensureAllowedMutationOrigin(req);
+  if (originError) return originError;
+
   const { user } = await getRequestAuthContext(req);
 
   if (!user) {
@@ -309,6 +313,37 @@ export async function POST(req: Request) {
     evidence_preserved_at: evidenceSnapshot.captured_at,
   };
 
+  const blockRes = await admin.from("dating_user_blocks").upsert(
+    {
+      blocker_user_id: user.id,
+      blocked_user_id: resolved.reportedUserId,
+      reason: "신고 접수 자동 차단",
+    },
+    { onConflict: "blocker_user_id,blocked_user_id" }
+  );
+
+  if (blockRes.error) {
+    console.error("[POST /api/dating/user-reports] automatic block failed", blockRes.error);
+    return NextResponse.json(
+      { ok: false, blocked: false, message: "신고 대상 차단에 실패했습니다. 잠시 후 다시 시도해주세요." },
+      { status: 500 }
+    );
+  }
+
+  const nowIso = new Date().toISOString();
+  const cancelPendingRes = await admin
+    .from("dating_1on1_match_proposals")
+    .update({ state: "admin_canceled", updated_at: nowIso })
+    .or(
+      `and(source_user_id.eq.${user.id},candidate_user_id.eq.${resolved.reportedUserId}),and(source_user_id.eq.${resolved.reportedUserId},candidate_user_id.eq.${user.id})`
+    )
+    .in("state", ["proposed", "source_selected", "candidate_accepted"]);
+
+  if (cancelPendingRes.error) {
+    // The universal block already prevents further views or actions between these users.
+    console.error("[POST /api/dating/user-reports] pending 1on1 cancellation failed", cancelPendingRes.error);
+  }
+
   let { error } = await admin.from("dating_user_reports").insert(reportPayload);
 
   if (error && isMissingColumnError(error)) {
@@ -326,14 +361,27 @@ export async function POST(req: Request) {
 
   if (error) {
     if (error.code === "23505") {
-      return NextResponse.json({ ok: false, message: "이미 신고한 대상입니다." }, { status: 409 });
+      return NextResponse.json({
+        ok: true,
+        blocked: true,
+        already_reported: true,
+        pending_matches_canceled: !cancelPendingRes.error,
+      });
     }
     console.error("[POST /api/dating/user-reports] failed", error);
     return NextResponse.json(
-      { ok: false, message: "신고 저장에 실패했습니다. 잠시 후 다시 시도해 주세요." },
+      {
+        ok: false,
+        blocked: true,
+        message: "상대 차단은 완료됐지만 신고 기록 저장에 실패했습니다. 잠시 후 다시 시도해주세요.",
+      },
       { status: 500 }
     );
   }
 
-  return NextResponse.json({ ok: true });
+  return NextResponse.json({
+    ok: true,
+    blocked: true,
+    pending_matches_canceled: !cancelPendingRes.error,
+  });
 }
