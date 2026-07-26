@@ -18,6 +18,7 @@ export const DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES = [
   "candidate_accepted",
   "mutual_accepted",
 ] as const;
+export const DATING_ONE_ON_ONE_PENDING_PAIR_TTL_MS = 48 * 60 * 60 * 1000;
 export type DatingOneOnOneMatchState =
   | "proposed"
   | "source_selected"
@@ -27,6 +28,31 @@ export type DatingOneOnOneMatchState =
   | "source_declined"
   | "admin_canceled"
   | "mutual_accepted";
+
+type DatingOneOnOnePendingPair = {
+  state: string | null;
+  source_selected_at?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
+};
+
+export function isDatingOneOnOnePendingPairExpired(
+  row: DatingOneOnOnePendingPair,
+  nowMs = Date.now()
+): boolean {
+  if (row.state !== "proposed" && row.state !== "source_selected") {
+    return false;
+  }
+
+  const basis =
+    row.state === "source_selected"
+      ? row.source_selected_at ?? row.updated_at ?? row.created_at
+      : row.created_at ?? row.updated_at;
+  if (!basis) return false;
+
+  const basisMs = Date.parse(basis);
+  return Number.isFinite(basisMs) && nowMs - basisMs >= DATING_ONE_ON_ONE_PENDING_PAIR_TTL_MS;
+}
 
 export type DatingOneOnOneContactExchangeStatus =
   | "none"

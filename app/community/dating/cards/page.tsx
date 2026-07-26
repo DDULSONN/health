@@ -2550,8 +2550,13 @@ export default function OpenCardsPage() {
         });
         const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; code?: string };
         if (!res.ok || !body.ok) {
-          if (body.code === "CANDIDATE_ALREADY_HANDLED") {
+          if (
+            body.code === "CANDIDATE_ALREADY_HANDLED" ||
+            body.code === "CANDIDATE_PAIR_ACTIVE" ||
+            body.code === "CANDIDATE_PAIR_CHANGED"
+          ) {
             await reloadOneOnOneHome();
+            return;
           }
           throw new Error(body.error ?? "후보 선택에 실패했습니다.");
         }

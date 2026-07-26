@@ -1,4 +1,8 @@
-import { DATING_ONE_ON_ONE_ACTIVE_STATUSES } from "@/lib/dating-1on1";
+import {
+  DATING_ONE_ON_ONE_ACTIVE_STATUSES,
+  DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES,
+  isDatingOneOnOnePendingPairExpired,
+} from "@/lib/dating-1on1";
 import {
   getOneOnOnePhoneBlockMapForUsers,
   isOneOnOnePhoneBlockedPair,
@@ -132,19 +136,63 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "지인 차단된 상대와는 1:1 매칭을 진행할 수 없습니다." }, { status: 409 });
   }
 
-  const existingPairRes = await admin
-    .from("dating_1on1_match_proposals")
-    .select("id,state")
-    .eq("source_card_id", sourceCardId)
-    .eq("candidate_card_id", candidateCardId)
-    .limit(1)
-    .maybeSingle();
+  const [existingPairRes, reversePairRes] = await Promise.all([
+    admin
+      .from("dating_1on1_match_proposals")
+      .select("id,state,source_selected_at,updated_at,created_at")
+      .eq("source_card_id", sourceCardId)
+      .eq("candidate_card_id", candidateCardId)
+      .in("state", [...DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES])
+      .limit(1)
+      .maybeSingle(),
+    admin
+      .from("dating_1on1_match_proposals")
+      .select("id,state,source_selected_at,updated_at,created_at")
+      .eq("source_card_id", candidateCardId)
+      .eq("candidate_card_id", sourceCardId)
+      .in("state", [...DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES])
+      .limit(1)
+      .maybeSingle(),
+  ]);
 
-  if (existingPairRes.error) {
-    console.error("[POST /api/dating/1on1/matches/auto] existing pair check failed", existingPairRes.error);
+  if (existingPairRes.error || reversePairRes.error) {
+    console.error("[POST /api/dating/1on1/matches/auto] existing pair check failed", {
+      directError: existingPairRes.error,
+      reverseError: reversePairRes.error,
+    });
     return NextResponse.json({ error: "Failed to validate existing pair." }, { status: 500 });
   }
-  if (existingPairRes.data) {
+  const activePairRows = [existingPairRes.data, reversePairRes.data].filter(
+    (row): row is NonNullable<typeof row> => Boolean(row)
+  );
+  const nowIso = new Date().toISOString();
+
+  for (const pairRow of activePairRows) {
+    if (!isDatingOneOnOnePendingPairExpired(pairRow)) continue;
+
+    const expireRes = await admin
+      .from("dating_1on1_match_proposals")
+      .update({ state: "admin_canceled", updated_at: nowIso })
+      .eq("id", pairRow.id)
+      .eq("state", pairRow.state)
+      .select("id")
+      .maybeSingle();
+    if (expireRes.error) {
+      console.error("[POST /api/dating/1on1/matches/auto] stale pair cleanup failed", expireRes.error);
+      return NextResponse.json({ error: "Failed to refresh stale candidate pair." }, { status: 500 });
+    }
+    if (!expireRes.data) {
+      return NextResponse.json(
+        {
+          error: "후보 상태가 변경되었습니다. 목록을 다시 불러와 주세요.",
+          code: "CANDIDATE_PAIR_CHANGED",
+        },
+        { status: 409 }
+      );
+    }
+  }
+
+  if (activePairRows.some((row) => !isDatingOneOnOnePendingPairExpired(row))) {
     return NextResponse.json(
       {
         error: "이미 확인한 후보입니다. 후보 목록을 다시 불러와 주세요.",
@@ -154,7 +202,6 @@ export async function POST(req: Request) {
     );
   }
 
-  const nowIso = new Date().toISOString();
   const insertRes = await admin
     .from("dating_1on1_match_proposals")
     .insert({
@@ -170,6 +217,15 @@ export async function POST(req: Request) {
     .maybeSingle();
 
   if (insertRes.error) {
+    if (insertRes.error.code === "23505") {
+      return NextResponse.json(
+        {
+          error: "이미 진행 중인 상대입니다. 후보 목록을 다시 불러옵니다.",
+          code: "CANDIDATE_PAIR_ACTIVE",
+        },
+        { status: 409 }
+      );
+    }
     console.error("[POST /api/dating/1on1/matches/auto] insert failed", insertRes.error);
     return NextResponse.json({ error: "Failed to send automatic candidate request." }, { status: 500 });
   }

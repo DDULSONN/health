@@ -4710,8 +4710,16 @@ export default function MyPage() {
           candidate_card_id: candidateCardId,
         }),
       });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; code?: string };
       if (!res.ok || !body.ok) {
+        if (
+          body.code === "CANDIDATE_ALREADY_HANDLED" ||
+          body.code === "CANDIDATE_PAIR_ACTIVE" ||
+          body.code === "CANDIDATE_PAIR_CHANGED"
+        ) {
+          await reloadOneOnOneRecommendations();
+          return;
+        }
         alert(body.error ?? "자동 추천 후보 선택에 실패했습니다.");
         return;
       }
