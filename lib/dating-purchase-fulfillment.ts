@@ -399,7 +399,16 @@ async function buildCityViewSnapshotCardIds(admin: AdminClient, userId: string, 
     .filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")));
 
   eligibleRows = await filterDatingCardsByContactBlocks(admin, userId, eligibleRows);
-  return sortCityViewCandidates(eligibleRows, province, usedIds)
+  const freshRows = sortCityViewCandidates(
+    eligibleRows.filter((row) => !usedIds.has(row.id)),
+    province
+  );
+  const fallbackRows = sortCityViewCandidates(
+    eligibleRows.filter((row) => usedIds.has(row.id)),
+    province
+  );
+
+  return [...freshRows, ...fallbackRows]
     .slice(0, CITY_VIEW_CARD_LIMIT)
     .map((row) => row.id);
 }

@@ -90,16 +90,55 @@ export async function GET(req: Request) {
   eligibleRows = await filterDatingCardsByContactBlocks(admin, user.id, eligibleRows);
   eligibleRows = sortCityViewCandidates(eligibleRows, province);
 
-  const preferredRows = eligibleRows.slice(0, CITY_VIEW_CARD_LIMIT);
-  const selectedCardIds = preferredRows.map((row) => row.id);
+  const eligibleById = new Map(eligibleRows.map((row) => [row.id, row] as const));
+  const storedCardIds = activeGrant.snapshotCardIds
+    .filter((id, index, ids) => eligibleById.has(id) && ids.indexOf(id) === index)
+    .slice(0, CITY_VIEW_CARD_LIMIT);
+  const distanceTopCardIds = eligibleRows.slice(0, CITY_VIEW_CARD_LIMIT).map((row) => row.id);
+  const distanceTopSet = new Set(distanceTopCardIds);
+  const storedLooksLikeDistanceTop =
+    storedCardIds.length > 0 && storedCardIds.every((id) => distanceTopSet.has(id));
+  const storedSet = new Set(storedCardIds);
+  const lastStoredSeenIndex = activeGrant.snapshotSeenCardIds.reduce(
+    (max, id, index) => (storedSet.has(id) ? Math.max(max, index) : max),
+    -1
+  );
+  const newerRotatedCardIds = activeGrant.snapshotSeenCardIds.filter(
+    (id, index, ids) =>
+      index > lastStoredSeenIndex &&
+      eligibleById.has(id) &&
+      !storedSet.has(id) &&
+      ids.indexOf(id) === index
+  );
+
+  // Repair grants that the old list route reset to the first distance-ranked page.
+  const selectedCardIds =
+    storedLooksLikeDistanceTop && newerRotatedCardIds.length > 0
+      ? [...newerRotatedCardIds.slice(-CITY_VIEW_CARD_LIMIT), ...storedCardIds].slice(0, CITY_VIEW_CARD_LIMIT)
+      : [...storedCardIds];
+  const selectedSet = new Set(selectedCardIds);
+  const seenSet = new Set(activeGrant.snapshotSeenCardIds);
+  const freshFillers = eligibleRows.filter((row) => !selectedSet.has(row.id) && !seenSet.has(row.id));
+  const fallbackFillers = eligibleRows.filter((row) => !selectedSet.has(row.id) && seenSet.has(row.id));
+
+  for (const row of [...freshFillers, ...fallbackFillers]) {
+    if (selectedCardIds.length >= CITY_VIEW_CARD_LIMIT) break;
+    selectedCardIds.push(row.id);
+    selectedSet.add(row.id);
+  }
+
   const previousCardIds = activeGrant.snapshotCardIds.slice(0, CITY_VIEW_CARD_LIMIT);
   const snapshotChanged =
     selectedCardIds.length !== previousCardIds.length ||
     selectedCardIds.some((id, index) => id !== previousCardIds[index]);
   if (snapshotChanged && selectedCardIds.length > 0) {
+    const snapshotSeenCardIds = [...new Set([...activeGrant.snapshotSeenCardIds, ...selectedCardIds])];
     await admin
       .from("dating_city_view_requests")
-      .update({ snapshot_card_ids: selectedCardIds })
+      .update({
+        snapshot_card_ids: selectedCardIds,
+        snapshot_seen_card_ids: snapshotSeenCardIds,
+      })
       .eq("id", activeGrant.requestId)
       .eq("status", "approved");
   }

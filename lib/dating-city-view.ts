@@ -11,6 +11,7 @@ type ActiveCityViewGrant = {
   province: string;
   accessExpiresAt: string;
   snapshotCardIds: string[];
+  snapshotSeenCardIds: string[];
 };
 
 export function getOppositeDatingSex(sex: string | null | undefined): DatingCityViewSex | null {
@@ -72,7 +73,7 @@ export async function getActiveCityViewGrant(
 
   const res = await adminClient
     .from("dating_city_view_requests")
-    .select("id,city,access_expires_at,snapshot_card_ids,reviewed_at,created_at")
+    .select("id,city,access_expires_at,snapshot_card_ids,snapshot_seen_card_ids,reviewed_at,created_at")
     .eq("user_id", userId)
     .eq("city", province)
     .eq("status", "approved")
@@ -102,6 +103,7 @@ export async function getActiveCityViewGrant(
         province: extractProvinceFromRegion(row.city) ?? row.city,
         accessExpiresAt: expiresAtIso,
         snapshotCardIds: [],
+        snapshotSeenCardIds: [],
       };
     }
 
@@ -109,7 +111,13 @@ export async function getActiveCityViewGrant(
   }
 
   const rows = Array.isArray(res.data) ? res.data : [];
-  for (const row of rows as Array<{ id: string; city: string; access_expires_at: string | null; snapshot_card_ids?: unknown }>) {
+  for (const row of rows as Array<{
+    id: string;
+    city: string;
+    access_expires_at: string | null;
+    snapshot_card_ids?: unknown;
+    snapshot_seen_card_ids?: unknown;
+  }>) {
     const expiresAtIso = normalizeIsoDate(row.access_expires_at);
     if (!expiresAtIso || new Date(expiresAtIso).getTime() <= Date.now()) continue;
     return {
@@ -117,6 +125,7 @@ export async function getActiveCityViewGrant(
       province: extractProvinceFromRegion(row.city) ?? row.city,
       accessExpiresAt: expiresAtIso,
       snapshotCardIds: parseSnapshotCardIds(row.snapshot_card_ids),
+      snapshotSeenCardIds: parseSnapshotCardIds(row.snapshot_seen_card_ids),
     };
   }
 
