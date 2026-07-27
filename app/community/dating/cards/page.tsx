@@ -375,7 +375,7 @@ function oneOnOneStateLabel(state?: string) {
   if (state === "mutual_accepted") return "쌍방 수락";
   if (state === "candidate_rejected") return "상대 거절";
   if (state === "source_declined") return "내 거절";
-  if (state === "source_skipped") return "넘김";
+  if (state === "source_skipped") return "지원 취소";
   if (state === "admin_canceled") return "관리자 종료";
   return "진행 중";
 }
@@ -2469,7 +2469,7 @@ export default function OpenCardsPage() {
   const handleOneOnOneMatchAction = useCallback(
     async (
       matchId: string,
-      action: "select_candidate" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
+      action: "select_candidate" | "source_cancel" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
     ) => {
       if (processingOneOnOneMatchIds.includes(matchId)) return;
       setProcessingOneOnOneMatchIds((prev) => [...prev, matchId]);
@@ -2481,6 +2481,9 @@ export default function OpenCardsPage() {
         });
         const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
         if (!res.ok || !body.ok) {
+          if (action === "source_cancel" && res.status === 409) {
+            await reloadOneOnOneHome();
+          }
           throw new Error(body.error ?? "1:1 매칭 처리에 실패했습니다.");
         }
         await reloadOneOnOneHome();
@@ -3474,7 +3477,7 @@ function OneOnOneHomePanel({
   refreshingRecommendationIds: string[];
   onMatchAction: (
     matchId: string,
-    action: "select_candidate" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
+    action: "select_candidate" | "source_cancel" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
   ) => void;
   onContactCheckout: (matchId: string) => void;
   onAutoSelect: (sourceCardId: string, candidateCardId: string) => void;
@@ -3484,6 +3487,9 @@ function OneOnOneHomePanel({
   const [plusSubmitting, setPlusSubmitting] = useState(false);
   const myCards = data?.myCards ?? [];
   const matches = data?.matches ?? [];
+  const activeMatches = matches.filter((match) =>
+    ["proposed", "source_selected", "candidate_accepted", "mutual_accepted"].includes(String(match.state ?? ""))
+  );
   const recommendationGroups = data?.recommendations ?? [];
   const plusActive = Boolean(data?.plus?.expires_at);
   const recommendationCount = recommendationGroups.reduce(
@@ -3492,7 +3498,7 @@ function OneOnOneHomePanel({
   );
   const activeCards = myCards.filter((card) => card.status !== "rejected");
   const hasOneOnOneCard = activeCards.length > 0;
-  const actionRequiredCount = matches.filter((match) => {
+  const actionRequiredCount = activeMatches.filter((match) => {
     if (match.action_required) return true;
     return (
       (match.role === "source" && match.state === "candidate_accepted") ||
@@ -3500,7 +3506,7 @@ function OneOnOneHomePanel({
       match.contact_exchange_status === "approved"
     );
   }).length;
-  const sortedMatches = [...matches].sort((a, b) => {
+  const sortedMatches = [...activeMatches].sort((a, b) => {
     const aImportant = a.action_required || a.state === "candidate_accepted" || a.state === "mutual_accepted" ? 1 : 0;
     const bImportant = b.action_required || b.state === "candidate_accepted" || b.state === "mutual_accepted" ? 1 : 0;
     if (aImportant !== bImportant) return bImportant - aImportant;
@@ -3702,9 +3708,9 @@ function OneOnOneHomePanel({
                   <p className="text-base font-black text-neutral-950">진행 중인 매칭</p>
                   <p className="mt-1 text-xs leading-5 text-neutral-500">선택, 수락, 번호교환이 필요한 항목을 먼저 보여드려요.</p>
                 </div>
-                <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-bold text-neutral-500">{matches.length}건</span>
+                <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-bold text-neutral-500">{activeMatches.length}건</span>
               </div>
-              {matches.length === 0 ? (
+              {activeMatches.length === 0 ? (
                 <p className="mt-3 rounded-2xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-500">아직 진행 중인 매칭이 없어요. 아래 추천 후보를 확인해보세요.</p>
               ) : (
                 <div className="mt-3 space-y-3">
@@ -3975,7 +3981,7 @@ function OneOnOneMatchActions({
   contactProcessing: boolean;
   onMatchAction: (
     matchId: string,
-    action: "select_candidate" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
+    action: "select_candidate" | "source_cancel" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
   ) => void;
   onContactCheckout: (matchId: string) => void;
 }) {
@@ -4015,6 +4021,25 @@ function OneOnOneMatchActions({
           className="inline-flex min-h-[34px] items-center rounded-xl border border-rose-200 bg-white px-3 text-xs font-bold text-rose-700 disabled:opacity-50"
         >
           거절
+        </button>
+      </div>
+    );
+  }
+
+  if (match.role === "source" && match.state === "source_selected") {
+    return (
+      <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-xs font-semibold text-amber-700">상대의 응답을 기다리고 있어요.</p>
+        <button
+          type="button"
+          disabled={processing}
+          onClick={() => {
+            if (!window.confirm("보낸 1:1 지원을 취소할까요? 상대가 수락하기 전까지만 취소할 수 있습니다.")) return;
+            onMatchAction(match.id, "source_cancel");
+          }}
+          className="inline-flex min-h-[34px] items-center rounded-xl border border-rose-200 bg-white px-3 text-xs font-bold text-rose-700 disabled:opacity-50"
+        >
+          {processing ? "취소 중..." : "지원 취소"}
         </button>
       </div>
     );

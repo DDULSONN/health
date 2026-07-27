@@ -4,6 +4,8 @@ import { useState } from "react";
 
 type CardRecord = Record<string, unknown>;
 type CardKind = "open" | "one_on_one";
+const ONE_ON_ONE_EDIT_LOCK_TAG = "one_on_one_edit_locked";
+const ONE_ON_ONE_USER_EDIT_USED_TAG = "one_on_one_user_edit_used";
 
 type CardDraft = {
   displayName: string;
@@ -246,6 +248,42 @@ export default function AdminUserDatingCardsPanel({
     }
   };
 
+  const grantOneOnOneEdit = async (item: CardRecord) => {
+    const cardId = value(item, "id");
+    const displayName = value(item, "name") || cardId.slice(0, 8);
+    if (!cardId || busyKey) return;
+    if (!window.confirm(`${displayName} 회원에게 1:1 신청서 수정 기회를 1회 추가할까요?`)) return;
+
+    const key = `one_on_one:${cardId}`;
+    setBusyKey(key);
+    setError("");
+    setMessage("");
+    try {
+      const response = await fetch(`/api/admin/dating/1on1/cards/${encodeURIComponent(cardId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          expected_user_id: userId,
+          action: "grant_user_edit",
+        }),
+      });
+      const body = (await response.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+      };
+      if (!response.ok || body.ok === false) {
+        throw new Error(body.error ?? "1:1 신청서 수정 기회를 열지 못했습니다.");
+      }
+
+      setMessage(`${displayName} 회원에게 1:1 신청서 수정 기회를 1회 추가했습니다.`);
+      await onChanged();
+    } catch (grantError) {
+      setError(grantError instanceof Error ? grantError.message : "1:1 신청서 수정 기회를 열지 못했습니다.");
+    } finally {
+      setBusyKey("");
+    }
+  };
+
   const renderCard = (kind: CardKind, item: CardRecord, index: number) => {
     const cardId = value(item, "id");
     const key = `${kind}:${cardId}`;
@@ -255,6 +293,15 @@ export default function AdminUserDatingCardsPanel({
       value(item, kind === "open" ? "display_nickname" : "name") ||
       `${kind === "open" ? "오픈카드" : "1:1 신청서"} ${index + 1}`;
     const photoPaths = Array.isArray(item.photo_paths) ? item.photo_paths : [];
+    const adminTags = Array.isArray(item.admin_tags)
+      ? item.admin_tags.map((tag) => String(tag ?? "").trim())
+      : [];
+    const adminEditLocked = adminTags.includes(ONE_ON_ONE_EDIT_LOCK_TAG);
+    const userEditUsed = adminTags.includes(ONE_ON_ONE_USER_EDIT_USED_TAG);
+    const canGrantUserEdit =
+      kind === "one_on_one" && value(item, "status") === "submitted" && userEditUsed && !adminEditLocked;
+    const userCanEdit =
+      kind === "one_on_one" && value(item, "status") === "submitted" && !userEditUsed && !adminEditLocked;
 
     return (
       <div key={key} className="rounded-lg border border-neutral-200 bg-neutral-50/50 p-3">
@@ -269,7 +316,31 @@ export default function AdminUserDatingCardsPanel({
             </p>
             <p className="mt-1 break-all text-[10px] text-neutral-400">{cardId}</p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex flex-wrap justify-end gap-2">
+            {kind === "one_on_one" ? (
+              <button
+                type="button"
+                onClick={() => void grantOneOnOneEdit(item)}
+                disabled={Boolean(busyKey) || !canGrantUserEdit}
+                className={`h-8 rounded-lg px-3 text-xs font-semibold disabled:cursor-not-allowed ${
+                  canGrantUserEdit
+                    ? "bg-indigo-600 text-white disabled:opacity-50"
+                    : userCanEdit
+                      ? "border border-emerald-200 bg-emerald-50 text-emerald-700"
+                      : "border border-neutral-200 bg-neutral-100 text-neutral-400"
+                }`}
+              >
+                {isBusy
+                  ? "처리 중..."
+                  : canGrantUserEdit
+                    ? "수정 1회 열기"
+                    : adminEditLocked
+                      ? "관리자 수정 잠금"
+                      : userCanEdit
+                        ? "회원 수정 가능"
+                        : "접수중만 가능"}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => {

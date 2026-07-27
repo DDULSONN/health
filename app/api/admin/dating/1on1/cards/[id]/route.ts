@@ -6,6 +6,8 @@ const CARD_STATUSES = new Set(["submitted", "reviewing", "approved", "rejected"]
 const SEX_VALUES = new Set(["male", "female"]);
 const SMOKING_VALUES = new Set(["non_smoker", "occasional", "smoker"]);
 const WORKOUT_VALUES = new Set(["none", "1_2", "3_4", "5_plus"]);
+const ONE_ON_ONE_EDIT_LOCK_TAG = "one_on_one_edit_locked";
+const ONE_ON_ONE_USER_EDIT_USED_TAG = "one_on_one_user_edit_used";
 
 function text(value: unknown, maxLength: number) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
@@ -16,6 +18,18 @@ function nullableInt(value: unknown, min: number, max: number) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < min || parsed > max) return undefined;
   return parsed;
+}
+
+function normalizeAdminTags(value: unknown) {
+  return Array.isArray(value)
+    ? Array.from(
+        new Set(
+          value
+            .map((item) => String(item ?? "").trim())
+            .filter((item) => item.length > 0)
+        )
+      ).slice(0, 20)
+    : [];
 }
 
 export async function PATCH(
@@ -35,7 +49,7 @@ export async function PATCH(
 
   const cardRes = await guard.admin
     .from("dating_1on1_cards")
-    .select("id,user_id,status")
+    .select("id,user_id,status,admin_tags")
     .eq("id", cardId)
     .eq("user_id", expectedUserId)
     .maybeSingle();
@@ -44,6 +58,70 @@ export async function PATCH(
   }
   if (!cardRes.data) {
     return NextResponse.json({ ok: false, error: "해당 회원의 1:1 신청서를 찾지 못했습니다." }, { status: 404 });
+  }
+
+  if (body.action === "grant_user_edit") {
+    if (cardRes.data.status !== "submitted") {
+      return NextResponse.json(
+        { ok: false, error: "접수중 상태의 1:1 신청서만 회원 수정 기회를 열 수 있습니다." },
+        { status: 409 }
+      );
+    }
+
+    const currentTags = normalizeAdminTags(cardRes.data.admin_tags);
+    if (currentTags.includes(ONE_ON_ONE_EDIT_LOCK_TAG)) {
+      return NextResponse.json(
+        { ok: false, error: "관리자 검수에서 수정 잠금된 신청서입니다. 먼저 수정 잠금을 해제해주세요." },
+        { status: 409 }
+      );
+    }
+    if (!currentTags.includes(ONE_ON_ONE_USER_EDIT_USED_TAG)) {
+      return NextResponse.json(
+        { ok: false, error: "이 신청서는 이미 회원이 수정할 수 있는 상태입니다." },
+        { status: 409 }
+      );
+    }
+
+    const nextTags = currentTags.filter((tag) => tag !== ONE_ON_ONE_USER_EDIT_USED_TAG);
+    const updateRes = await guard.admin
+      .from("dating_1on1_cards")
+      .update({
+        admin_tags: nextTags,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", cardId)
+      .eq("user_id", expectedUserId)
+      .eq("status", "submitted")
+      .contains("admin_tags", [ONE_ON_ONE_USER_EDIT_USED_TAG])
+      .select("id,user_id,status,admin_tags,updated_at")
+      .maybeSingle();
+
+    if (updateRes.error) {
+      console.error("[PATCH /api/admin/dating/1on1/cards/[id]] grant user edit failed", updateRes.error);
+      return NextResponse.json({ ok: false, error: "1:1 신청서 수정 기회를 열지 못했습니다." }, { status: 500 });
+    }
+    if (!updateRes.data) {
+      return NextResponse.json(
+        { ok: false, error: "신청서 상태가 변경되었습니다. 회원 정보를 다시 조회해주세요." },
+        { status: 409 }
+      );
+    }
+
+    await recordAdminAuditEvent({
+      admin: guard.admin,
+      adminUser: guard.user,
+      request: req,
+      action: "dating_1on1_user_edit_granted",
+      targetType: "dating_1on1_card",
+      targetId: cardId,
+      metadata: {
+        owner_user_id: expectedUserId,
+        previous_tags: currentTags,
+        next_tags: nextTags,
+      },
+    });
+
+    return NextResponse.json({ ok: true, item: updateRes.data, edit_granted: true });
   }
 
   const name = text(body.name, 30);

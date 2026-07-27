@@ -19,6 +19,7 @@ import { NextResponse } from "next/server";
 
 type MatchAction =
   | "select_candidate"
+  | "source_cancel"
   | "candidate_accept"
   | "candidate_reject"
   | "source_accept"
@@ -31,6 +32,7 @@ type ActionPayload = {
 
 const ACTIONS = new Set<MatchAction>([
   "select_candidate",
+  "source_cancel",
   "candidate_accept",
   "candidate_reject",
   "source_accept",
@@ -183,6 +185,62 @@ export async function POST(
       ]);
     } catch (emailError) {
       console.error("[POST /api/dating/1on1/matches/[id]] select reminder failed", emailError);
+    }
+  }
+
+  if (body.action === "source_cancel") {
+    if (row.source_user_id !== user.id) {
+      return NextResponse.json({ error: "Only the applicant can cancel this request." }, { status: 403 });
+    }
+    if (row.state !== "source_selected") {
+      return NextResponse.json(
+        { error: "상대가 이미 응답했거나 지원 상태가 변경되었습니다. 목록을 다시 확인해주세요." },
+        { status: 409 }
+      );
+    }
+    if (row.contact_exchange_status !== "none") {
+      return NextResponse.json(
+        { error: "번호 교환 절차가 시작된 지원은 이 단계에서 취소할 수 없습니다." },
+        { status: 409 }
+      );
+    }
+
+    const updateRes = await admin
+      .from("dating_1on1_match_proposals")
+      .update({
+        state: "source_skipped",
+        updated_at: nowIso,
+      })
+      .eq("id", matchId)
+      .eq("source_user_id", user.id)
+      .eq("state", "source_selected")
+      .eq("contact_exchange_status", "none")
+      .select("id")
+      .maybeSingle();
+
+    if (updateRes.error) {
+      console.error("[POST /api/dating/1on1/matches/[id]] source cancel failed", updateRes.error);
+      return NextResponse.json({ error: "1:1 지원 취소에 실패했습니다." }, { status: 500 });
+    }
+    if (!updateRes.data) {
+      return NextResponse.json(
+        { error: "상대가 이미 응답했거나 지원 상태가 변경되었습니다. 목록을 다시 확인해주세요." },
+        { status: 409 }
+      );
+    }
+
+    const notificationDeleteRes = await admin
+      .from("notifications")
+      .delete()
+      .eq("user_id", row.candidate_user_id)
+      .eq("actor_id", row.source_user_id)
+      .eq("meta_json->>match_id", matchId)
+      .eq("meta_json->>notification_type", "dating_1on1_selection_received");
+    if (notificationDeleteRes.error) {
+      console.error(
+        "[POST /api/dating/1on1/matches/[id]] source cancel notification cleanup failed",
+        notificationDeleteRes.error
+      );
     }
   }
 

@@ -131,7 +131,7 @@ function oneOnOneMatchStateLabel(value: unknown) {
   if (state === "source_selected") return "신청자 선택";
   if (state === "candidate_accepted") return "상대 수락";
   if (state === "mutual_accepted") return "쌍방 수락";
-  if (state === "source_skipped") return "신청자 스킵";
+  if (state === "source_skipped") return "지원 취소";
   if (state === "candidate_rejected") return "상대 거절";
   if (state === "source_declined") return "최종 거절";
   if (state === "admin_canceled") return "관리자 취소";
@@ -4669,7 +4669,7 @@ export default function MyPage() {
 
   const handleOneOnOneMatchAction = async (
     matchId: string,
-    action: "select_candidate" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
+    action: "select_candidate" | "source_cancel" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
   ) => {
     if (processingOneOnOneMatchIds.includes(matchId)) return;
     setProcessingOneOnOneMatchIds((prev) => [...prev, matchId]);
@@ -4682,6 +4682,9 @@ export default function MyPage() {
       const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
       if (!res.ok || !body.ok) {
         alert(body.error ?? "1:1 매칭 처리에 실패했습니다.");
+        if (action === "source_cancel" && res.status === 409) {
+          await reloadOneOnOneAfterAction();
+        }
         return;
       }
       await reloadOneOnOneAfterAction();
@@ -6648,7 +6651,7 @@ export default function MyPage() {
   const oneOnOneMatchStateText: Record<MyOneOnOneMatch["state"], string> = {
     proposed: "후보 도착",
     source_selected: "상대 응답 대기",
-    source_skipped: "다른 후보 선택",
+    source_skipped: "지원 취소",
     candidate_accepted: "쌍방 수락 완료",
     candidate_rejected: "상대 거절",
     source_declined: "최종 거절",
@@ -9112,6 +9115,7 @@ export default function MyPage() {
                       <p className="text-sm font-semibold text-amber-900">내가 선택한 후보</p>
                       <div className="mt-2 space-y-2">
                         {waitingCandidateResponses.map((match) => {
+                          const processing = processingOneOnOneMatchIds.includes(match.id);
                           const card = match.counterparty_card;
                           if (!card) return null;
                           return (
@@ -9125,7 +9129,18 @@ export default function MyPage() {
                                 </span>
                               </div>
                               <p className="mt-1 text-xs text-neutral-600">상대가 수락하면 바로 카카오페이 번호 교환 단계로 넘어갑니다.</p>
-                              <div className="mt-2 flex justify-end">
+                              <div className="mt-2 flex flex-wrap justify-end gap-2">
+                                <button
+                                  type="button"
+                                  disabled={processing}
+                                  onClick={() => {
+                                    if (!window.confirm("보낸 1:1 지원을 취소할까요? 상대가 수락하기 전까지만 취소할 수 있습니다.")) return;
+                                    void handleOneOnOneMatchAction(match.id, "source_cancel");
+                                  }}
+                                  className="inline-flex h-8 items-center rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-700 disabled:opacity-50"
+                                >
+                                  {processing ? "취소 중..." : "지원 취소"}
+                                </button>
                                 <SmallDatingReportButton
                                   disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}
                                   onClick={() => void handleDatingUserReport("one_on_one_match", match.id, "1:1 후보")}
