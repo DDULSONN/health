@@ -1,5 +1,6 @@
 import {
   DATING_ONE_ON_ONE_ACTIVE_STATUSES,
+  DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES,
   isDatingOneOnOnePendingPairExpired,
   toDatingOneOnOneCardDetail,
 } from "@/lib/dating-1on1";
@@ -40,7 +41,7 @@ const CLOSE_REGION_MAX_KM = 90;
 const RECENT_CANDIDATE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
 const REFRESH_RECENT_NEARBY_MIN_QUOTA = 4;
 const ACTIVE_PAIR_STATES = new Set(["proposed", "source_selected", "candidate_accepted", "mutual_accepted"]);
-const RECYCLABLE_PAIR_STATES = new Set(["source_skipped", "candidate_rejected", "source_declined", "admin_canceled"]);
+const RECYCLABLE_PAIR_STATES = new Set(["source_skipped", "admin_canceled"]);
 
 type CardRow = {
   id: string;
@@ -80,6 +81,10 @@ type MatchPairRow = {
   source_selected_at: string | null;
   updated_at: string | null;
   created_at: string;
+};
+type RejectedPairRow = {
+  source_user_id: string;
+  candidate_user_id: string;
 };
 
 function getAgeRange(card: { sex: "male" | "female"; age: number | null }) {
@@ -510,6 +515,37 @@ async function fetchPairRowsForCards(
   return rows;
 }
 
+async function fetchPermanentlyRejectedUserIds(
+  admin: ReturnType<typeof createAdminClient>,
+  userId: string
+) {
+  const rejectedUserIds = new Set<string>();
+
+  for (const column of ["source_user_id", "candidate_user_id"] as const) {
+    let from = 0;
+    while (true) {
+      const { data, error } = await admin
+        .from("dating_1on1_match_proposals")
+        .select("source_user_id,candidate_user_id")
+        .eq(column, userId)
+        .in("state", [...DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES])
+        .order("created_at", { ascending: false })
+        .range(from, from + PAIR_BATCH_SIZE - 1);
+      if (error) throw error;
+
+      const batch = (data ?? []) as RejectedPairRow[];
+      for (const row of batch) {
+        const otherUserId = row.source_user_id === userId ? row.candidate_user_id : row.source_user_id;
+        if (otherUserId) rejectedUserIds.add(otherUserId);
+      }
+      if (batch.length < PAIR_BATCH_SIZE) break;
+      from += PAIR_BATCH_SIZE;
+    }
+  }
+
+  return rejectedUserIds;
+}
+
 export async function GET(req: Request) {
   const { user } = await getRequestAuthContext(req);
 
@@ -573,6 +609,7 @@ export async function GET(req: Request) {
   let contactBlockMap: Awaited<ReturnType<typeof getDatingContactBlockMapForUsers>>;
   let blockedUserIds: Awaited<ReturnType<typeof getDatingBlockedUserIds>>;
   let profilePhoneMap: Awaited<ReturnType<typeof getDatingProfilePhoneMapForUsers>>;
+  let permanentlyRejectedUserIds: Awaited<ReturnType<typeof fetchPermanentlyRejectedUserIds>>;
   try {
     [
       sourcePairRows,
@@ -582,6 +619,7 @@ export async function GET(req: Request) {
       contactBlockMap,
       blockedUserIds,
       profilePhoneMap,
+      permanentlyRejectedUserIds,
     ] = await Promise.all([
       fetchPairRowsForCards(admin, "source_card_id", sourceCardIds),
       fetchPairRowsForCards(admin, "candidate_card_id", sourceCardIds),
@@ -590,6 +628,7 @@ export async function GET(req: Request) {
       getDatingContactBlockMapForUsers(admin, allCandidateUserIds),
       getDatingBlockedUserIds(admin, user.id),
       getDatingProfilePhoneMapForUsers(admin, allCandidateUserIds),
+      fetchPermanentlyRejectedUserIds(admin, user.id),
     ]);
   } catch (error) {
     console.error("[GET /api/dating/1on1/recommendations/my] recommendation context failed", error);
@@ -629,6 +668,7 @@ export async function GET(req: Request) {
       if (candidateCard.user_id === sourceCard.user_id) return false;
       if (candidateCard.sex === sourceCard.sex) return false;
       if (blockedUserIds.has(candidateCard.user_id)) return false;
+      if (permanentlyRejectedUserIds.has(candidateCard.user_id)) return false;
       if (activePairIds.has(candidateCard.id)) return false;
       if (
         isOneOnOnePhoneBlockedPair({

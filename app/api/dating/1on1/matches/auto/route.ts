@@ -1,6 +1,7 @@
 import {
   DATING_ONE_ON_ONE_ACTIVE_STATUSES,
   DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES,
+  DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES,
   isDatingOneOnOnePendingPairExpired,
 } from "@/lib/dating-1on1";
 import {
@@ -134,6 +135,30 @@ export async function POST(req: Request) {
     })
   ) {
     return NextResponse.json({ error: "지인 차단된 상대와는 1:1 매칭을 진행할 수 없습니다." }, { status: 409 });
+  }
+
+  const rejectedPairRes = await admin
+    .from("dating_1on1_match_proposals")
+    .select("id")
+    .or(
+      `and(source_user_id.eq.${sourceRes.data.user_id},candidate_user_id.eq.${candidateRes.data.user_id}),and(source_user_id.eq.${candidateRes.data.user_id},candidate_user_id.eq.${sourceRes.data.user_id})`
+    )
+    .in("state", [...DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES])
+    .limit(1)
+    .maybeSingle();
+
+  if (rejectedPairRes.error) {
+    console.error("[POST /api/dating/1on1/matches/auto] rejection history check failed", rejectedPairRes.error);
+    return NextResponse.json({ error: "Failed to validate rejection history." }, { status: 500 });
+  }
+  if (rejectedPairRes.data) {
+    return NextResponse.json(
+      {
+        error: "이미 거절 이력이 있는 상대입니다. 다른 후보를 확인해주세요.",
+        code: "CANDIDATE_PREVIOUSLY_REJECTED",
+      },
+      { status: 409 }
+    );
   }
 
   const [existingPairRes, reversePairRes] = await Promise.all([

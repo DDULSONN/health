@@ -1,6 +1,7 @@
 import { isAllowedAdminUser } from "@/lib/admin";
 import {
   DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES,
+  DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES,
   type DatingOneOnOneMatchRow,
   getDatingOneOnOneCardsByIds,
 } from "@/lib/dating-1on1";
@@ -392,27 +393,53 @@ export async function POST(req: Request) {
       .map((row) => row.id)
   );
 
-  const existingPairRes = await admin
-    .from("dating_1on1_match_proposals")
-    .select("candidate_card_id")
-    .eq("source_card_id", sourceCardId)
-    .in(
-      "candidate_card_id",
-      candidateRows.map((row) => row.id)
-    )
-    .in("state", [...DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES]);
+  const [existingPairRes, rejectedDirectRes, rejectedReverseRes] = await Promise.all([
+    admin
+      .from("dating_1on1_match_proposals")
+      .select("candidate_card_id")
+      .eq("source_card_id", sourceCardId)
+      .in(
+        "candidate_card_id",
+        candidateRows.map((row) => row.id)
+      )
+      .in("state", [...DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES]),
+    admin
+      .from("dating_1on1_match_proposals")
+      .select("candidate_user_id")
+      .eq("source_user_id", sourceRes.data.user_id)
+      .in("candidate_user_id", candidateUserIds)
+      .in("state", [...DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES]),
+    admin
+      .from("dating_1on1_match_proposals")
+      .select("source_user_id")
+      .eq("candidate_user_id", sourceRes.data.user_id)
+      .in("source_user_id", candidateUserIds)
+      .in("state", [...DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES]),
+  ]);
 
-  if (existingPairRes.error) {
-    console.error("[POST /api/dating/1on1/matches/admin] pair check failed", existingPairRes.error);
+  if (existingPairRes.error || rejectedDirectRes.error || rejectedReverseRes.error) {
+    console.error("[POST /api/dating/1on1/matches/admin] pair check failed", {
+      activeError: existingPairRes.error,
+      rejectedDirectError: rejectedDirectRes.error,
+      rejectedReverseError: rejectedReverseRes.error,
+    });
     return NextResponse.json({ error: "Failed to validate existing candidate pairs." }, { status: 500 });
   }
 
   const existingPairIds = new Set((existingPairRes.data ?? []).map((row) => row.candidate_card_id));
+  const permanentlyRejectedUserIds = new Set([
+    ...(rejectedDirectRes.data ?? []).map((row) => row.candidate_user_id),
+    ...(rejectedReverseRes.data ?? []).map((row) => row.source_user_id),
+  ]);
+  const permanentlyRejectedCandidateIds = new Set(
+    candidateRows.filter((row) => permanentlyRejectedUserIds.has(row.user_id)).map((row) => row.id)
+  );
   const skippedCandidateCardIds = candidateRows
     .map((row) => row.id)
     .filter(
       (id) =>
         existingPairIds.has(id) ||
+        permanentlyRejectedCandidateIds.has(id) ||
         phoneBlockedCandidateIds.has(id) ||
         adminBlockedCandidateIds.has(id) ||
         unifiedBlockedCandidateIds.has(id)
@@ -422,6 +449,7 @@ export async function POST(req: Request) {
     .filter(
       (row) =>
         !existingPairIds.has(row.id) &&
+        !permanentlyRejectedCandidateIds.has(row.id) &&
         !phoneBlockedCandidateIds.has(row.id) &&
         !adminBlockedCandidateIds.has(row.id) &&
         !unifiedBlockedCandidateIds.has(row.id)

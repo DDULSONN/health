@@ -12,6 +12,10 @@ export const DATING_ONE_ON_ONE_MATCH_TERMINAL_STATES = [
   "admin_canceled",
   "mutual_accepted",
 ] as const;
+export const DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES = [
+  "candidate_rejected",
+  "source_declined",
+] as const;
 export const DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES = [
   "proposed",
   "source_selected",

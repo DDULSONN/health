@@ -4750,7 +4750,8 @@ export default function MyPage() {
         if (
           body.code === "CANDIDATE_ALREADY_HANDLED" ||
           body.code === "CANDIDATE_PAIR_ACTIVE" ||
-          body.code === "CANDIDATE_PAIR_CHANGED"
+          body.code === "CANDIDATE_PAIR_CHANGED" ||
+          body.code === "CANDIDATE_PREVIOUSLY_REJECTED"
         ) {
           await reloadOneOnOneRecommendations();
           return;
