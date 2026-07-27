@@ -186,6 +186,48 @@ async function ensureCityViewFulfilled(
     throw new Error("CITY_VIEW_PROVINCE_MISSING");
   }
 
+  const fulfillmentKey = `toss:${order.toss_order_id}`;
+  if (order.product_meta?.cityViewFulfillmentKey === fulfillmentKey) {
+    return { province, alreadyGranted: true };
+  }
+
+  const existingFulfillmentRes = await admin
+    .from("dating_city_view_requests")
+    .select("id")
+    .eq("user_id", order.user_id)
+    .eq("city", province)
+    .like("note", `toss payment ${order.toss_order_id}%`)
+    .limit(1)
+    .maybeSingle();
+  if (existingFulfillmentRes.error) {
+    throw existingFulfillmentRes.error;
+  }
+
+  const markOrderFulfilled = async () => {
+    const updateRes = await admin
+      .from("toss_test_payment_orders")
+      .update({
+        product_meta: {
+          ...(order.product_meta ?? {}),
+          province,
+          cityViewFulfillmentKey: fulfillmentKey,
+          cityViewFulfilledAt: new Date().toISOString(),
+        },
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", order.id)
+      .select("id")
+      .single();
+    if (updateRes.error) {
+      throw updateRes.error;
+    }
+  };
+
+  if (existingFulfillmentRes.data?.id) {
+    await markOrderFulfilled();
+    return { province, alreadyGranted: true };
+  }
+
   const activeRes = await admin
     .from("dating_city_view_requests")
     .select("id,access_expires_at")
@@ -214,6 +256,7 @@ async function ensureCityViewFulfilled(
       bonusCredits: 1,
     });
 
+    await markOrderFulfilled();
     return { province, alreadyGranted: false };
   }
 
@@ -240,6 +283,7 @@ async function ensureCityViewFulfilled(
       bonusCredits: 1,
     });
 
+    await markOrderFulfilled();
     return { province, alreadyGranted: false };
   }
 
@@ -251,6 +295,7 @@ async function ensureCityViewFulfilled(
     bonusCredits: 1,
   });
 
+  await markOrderFulfilled();
   return { province, alreadyGranted: false };
 }
 

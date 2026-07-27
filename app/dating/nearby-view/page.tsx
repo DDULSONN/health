@@ -393,7 +393,7 @@ export default function NearbyViewPage() {
           <div className="space-y-5">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-neutral-800">{selectedProvince} 카드</h2>
-              <span className="text-xs font-medium text-emerald-700">24시간 · 가까운 후보 최대 30명</span>
+              <span className="text-xs font-medium text-emerald-700">24시간 · 결제할 때마다 30명 추가</span>
             </div>
             <div className="flex gap-2">
               <button

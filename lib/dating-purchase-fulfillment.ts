@@ -696,6 +696,10 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
 
   const accessExpiresAt = new Date(now + accessHours * 60 * 60 * 1000).toISOString();
   const snapshotCardIds = await safeBuildCityViewSnapshotCardIds(admin, options.userId, options.city);
+  const accumulatedSnapshotCardIds = mergeCardIds(
+    parseSnapshotCardIds((activeRow as { snapshot_card_ids?: unknown } | undefined)?.snapshot_card_ids),
+    snapshotCardIds
+  );
   const snapshotSeenCardIds = mergeCardIds(
     parseSnapshotCardIds((activeRow as { snapshot_seen_card_ids?: unknown } | undefined)?.snapshot_seen_card_ids),
     parseSnapshotCardIds((activeRow as { snapshot_card_ids?: unknown } | undefined)?.snapshot_card_ids),
@@ -709,7 +713,7 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
         access_expires_at: accessExpiresAt,
         note: options.note ?? null,
         reviewed_at: new Date().toISOString(),
-        snapshot_card_ids: snapshotCardIds,
+        snapshot_card_ids: accumulatedSnapshotCardIds,
         snapshot_seen_card_ids: snapshotSeenCardIds,
       })
       .eq("id", activeRow.id)
@@ -801,6 +805,10 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
       }
       if (duplicateRes.error) throw duplicateRes.error;
       if (duplicateRes.data?.id) {
+        const retrySnapshotCardIds = mergeCardIds(
+          parseSnapshotCardIds((duplicateRes.data as CityViewGrantRow).snapshot_card_ids),
+          snapshotCardIds
+        );
         const retrySnapshotSeenCardIds = mergeCardIds(
           parseSnapshotCardIds((duplicateRes.data as CityViewGrantRow).snapshot_seen_card_ids),
           parseSnapshotCardIds((duplicateRes.data as CityViewGrantRow).snapshot_card_ids),
@@ -812,7 +820,7 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
             access_expires_at: accessExpiresAt,
             note: options.note ?? null,
             reviewed_at: new Date().toISOString(),
-            snapshot_card_ids: snapshotCardIds,
+            snapshot_card_ids: retrySnapshotCardIds,
             snapshot_seen_card_ids: retrySnapshotSeenCardIds,
           })
           .eq("id", duplicateRes.data.id)

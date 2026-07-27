@@ -92,8 +92,7 @@ export async function GET(req: Request) {
 
   const eligibleById = new Map(eligibleRows.map((row) => [row.id, row] as const));
   const storedCardIds = activeGrant.snapshotCardIds
-    .filter((id, index, ids) => eligibleById.has(id) && ids.indexOf(id) === index)
-    .slice(0, CITY_VIEW_CARD_LIMIT);
+    .filter((id, index, ids) => eligibleById.has(id) && ids.indexOf(id) === index);
   const distanceTopCardIds = eligibleRows.slice(0, CITY_VIEW_CARD_LIMIT).map((row) => row.id);
   const distanceTopSet = new Set(distanceTopCardIds);
   const storedLooksLikeDistanceTop =
@@ -114,20 +113,25 @@ export async function GET(req: Request) {
   // Repair grants that the old list route reset to the first distance-ranked page.
   const selectedCardIds =
     storedLooksLikeDistanceTop && newerRotatedCardIds.length > 0
-      ? [...newerRotatedCardIds.slice(-CITY_VIEW_CARD_LIMIT), ...storedCardIds].slice(0, CITY_VIEW_CARD_LIMIT)
+      ? [...storedCardIds, ...newerRotatedCardIds]
       : [...storedCardIds];
+  const targetCardCount = Math.max(
+    CITY_VIEW_CARD_LIMIT,
+    activeGrant.snapshotCardIds.length,
+    selectedCardIds.length
+  );
   const selectedSet = new Set(selectedCardIds);
   const seenSet = new Set(activeGrant.snapshotSeenCardIds);
   const freshFillers = eligibleRows.filter((row) => !selectedSet.has(row.id) && !seenSet.has(row.id));
   const fallbackFillers = eligibleRows.filter((row) => !selectedSet.has(row.id) && seenSet.has(row.id));
 
   for (const row of [...freshFillers, ...fallbackFillers]) {
-    if (selectedCardIds.length >= CITY_VIEW_CARD_LIMIT) break;
+    if (selectedCardIds.length >= targetCardCount) break;
     selectedCardIds.push(row.id);
     selectedSet.add(row.id);
   }
 
-  const previousCardIds = activeGrant.snapshotCardIds.slice(0, CITY_VIEW_CARD_LIMIT);
+  const previousCardIds = activeGrant.snapshotCardIds;
   const snapshotChanged =
     selectedCardIds.length !== previousCardIds.length ||
     selectedCardIds.some((id, index) => id !== previousCardIds[index]);
@@ -196,7 +200,7 @@ export async function GET(req: Request) {
 
   const includedProvinces = [...new Set(items.map((item) => extractProvinceFromRegion(item.region) ?? "").filter(Boolean))];
 
-  return NextResponse.json({ items, province, includedProvinces, limit: CITY_VIEW_CARD_LIMIT, expiresAt: activeGrant.accessExpiresAt, targetSex });
+  return NextResponse.json({ items, province, includedProvinces, limit: targetCardCount, expiresAt: activeGrant.accessExpiresAt, targetSex });
 }
 
 
