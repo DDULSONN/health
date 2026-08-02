@@ -92,6 +92,12 @@ const METRO_PROVINCES = new Set(["서울", "부산", "대구", "인천", "광주
 
 const CITY_ALIASES: Record<string, string> = {
   동탄: "화성",
+  용인서울: "용인",
+  수도권: "경기",
+  잠실: "서울",
+  신림: "서울",
+  사당: "서울",
+  김포공항: "서울",
   일산: "고양",
   분당: "성남",
   판교: "성남",
@@ -286,6 +292,7 @@ const PROVINCE_BY_CITY: Record<string, string> = {
 
   // 충남
   천안: "충남",
+  천안아산: "충남",
   공주: "충남",
   보령: "충남",
   아산: "충남",
@@ -364,6 +371,7 @@ const PROVINCE_BY_CITY: Record<string, string> = {
   봉화: "경북",
   울진: "경북",
   울릉: "경북",
+  독도: "경북",
 
   // 경남
   창원: "경남",
@@ -412,7 +420,7 @@ function splitByProvincePrefix(token: string): string[] {
 
 function tokenizeRegion(region: string): string[] {
   return region
-    .replace(/[,\-|/|·]/g, " ")
+    .replace(/[,\-|/|·&.]/g, " ")
     .split(/\s+/)
     .map((v) => v.trim())
     .filter(Boolean)
@@ -469,6 +477,7 @@ function normalizeCityToken(token: string, raw: string, provinceHint: string | n
 
   if (PROVINCE_ALIASES[cleaned]) return PROVINCE_ALIASES[cleaned];
   if (CITY_ALIASES[cleaned]) return CITY_ALIASES[cleaned];
+  if (PROVINCE_BY_CITY[cleaned]) return cleaned;
 
   const base = stripAdminSuffix(cleaned);
   if (!base || base.length < 2) return null;

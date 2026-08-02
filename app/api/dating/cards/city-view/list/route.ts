@@ -1,5 +1,9 @@
 import { CITY_VIEW_CARD_LIMIT, getActiveCityViewGrant, getCityViewTargetSex } from "@/lib/dating-city-view";
-import { fetchCityViewCandidateRows, sortCityViewCandidates } from "@/lib/dating-city-view-candidates";
+import {
+  buildRegionFirstCityViewCardIds,
+  fetchCityViewCandidateRows,
+  sortCityViewCandidates,
+} from "@/lib/dating-city-view-candidates";
 import { extractProvinceFromRegion } from "@/lib/region-city";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -93,10 +97,6 @@ export async function GET(req: Request) {
   const eligibleById = new Map(eligibleRows.map((row) => [row.id, row] as const));
   const storedCardIds = activeGrant.snapshotCardIds
     .filter((id, index, ids) => eligibleById.has(id) && ids.indexOf(id) === index);
-  const distanceTopCardIds = eligibleRows.slice(0, CITY_VIEW_CARD_LIMIT).map((row) => row.id);
-  const distanceTopSet = new Set(distanceTopCardIds);
-  const storedLooksLikeDistanceTop =
-    storedCardIds.length > 0 && storedCardIds.every((id) => distanceTopSet.has(id));
   const storedSet = new Set(storedCardIds);
   const lastStoredSeenIndex = activeGrant.snapshotSeenCardIds.reduce(
     (max, id, index) => (storedSet.has(id) ? Math.max(max, index) : max),
@@ -109,54 +109,60 @@ export async function GET(req: Request) {
       !storedSet.has(id) &&
       ids.indexOf(id) === index
   );
-
-  // Repair grants that the old list route reset to the first distance-ranked page.
-  const selectedCardIds =
-    storedLooksLikeDistanceTop && newerRotatedCardIds.length > 0
-      ? [...storedCardIds, ...newerRotatedCardIds]
-      : [...storedCardIds];
+  const grantedCardIds = [...storedCardIds, ...newerRotatedCardIds];
   const targetCardCount = Math.max(
     CITY_VIEW_CARD_LIMIT,
     activeGrant.snapshotCardIds.length,
-    selectedCardIds.length
+    grantedCardIds.length
   );
-  const selectedSet = new Set(selectedCardIds);
-  const seenSet = new Set(activeGrant.snapshotSeenCardIds);
-  const freshFillers = eligibleRows.filter((row) => !selectedSet.has(row.id) && !seenSet.has(row.id));
-  const fallbackFillers = eligibleRows.filter((row) => !selectedSet.has(row.id) && seenSet.has(row.id));
-
-  for (const row of [...freshFillers, ...fallbackFillers]) {
-    if (selectedCardIds.length >= targetCardCount) break;
-    selectedCardIds.push(row.id);
-    selectedSet.add(row.id);
-  }
+  const selectedCardIds = buildRegionFirstCityViewCardIds(
+    eligibleRows,
+    province,
+    grantedCardIds,
+    targetCardCount
+  );
 
   const previousCardIds = activeGrant.snapshotCardIds;
+  const unavailableStoredCardIds = previousCardIds.filter(
+    (id, index, ids) => !eligibleById.has(id) && ids.indexOf(id) === index
+  );
+  const persistedCardIds = [...selectedCardIds, ...unavailableStoredCardIds]
+    .filter((id, index, ids) => ids.indexOf(id) === index)
+    .slice(0, targetCardCount);
   const snapshotChanged =
-    selectedCardIds.length !== previousCardIds.length ||
-    selectedCardIds.some((id, index) => id !== previousCardIds[index]);
-  if (snapshotChanged && selectedCardIds.length > 0) {
-    const snapshotSeenCardIds = [...new Set([...activeGrant.snapshotSeenCardIds, ...selectedCardIds])];
-    await admin
+    persistedCardIds.length !== previousCardIds.length ||
+    persistedCardIds.some((id, index) => id !== previousCardIds[index]);
+  if (snapshotChanged && persistedCardIds.length > 0) {
+    const snapshotSeenCardIds = [...new Set([...activeGrant.snapshotSeenCardIds, ...persistedCardIds])];
+    const snapshotUpdateRes = await admin
       .from("dating_city_view_requests")
       .update({
-        snapshot_card_ids: selectedCardIds,
+        snapshot_card_ids: persistedCardIds,
         snapshot_seen_card_ids: snapshotSeenCardIds,
       })
       .eq("id", activeGrant.requestId)
-      .eq("status", "approved");
+      .eq("status", "approved")
+      .select("id")
+      .maybeSingle();
+    if (snapshotUpdateRes.error || !snapshotUpdateRes.data) {
+      return NextResponse.json({ error: "지역별 후보 목록을 갱신하지 못했습니다. 잠시 후 다시 시도해주세요." }, { status: 500 });
+    }
   }
 
-  const selectedCardsRes =
-    selectedCardIds.length > 0
-      ? await admin.from("dating_cards").select(selectColumns).in("id", selectedCardIds)
-      : { data: [], error: null };
-  if (selectedCardsRes.error) {
+  const selectedIdChunks: string[][] = [];
+  for (let index = 0; index < selectedCardIds.length; index += 100) {
+    selectedIdChunks.push(selectedCardIds.slice(index, index + 100));
+  }
+  const selectedCardsResults = await Promise.all(
+    selectedIdChunks.map((ids) => admin.from("dating_cards").select(selectColumns).in("id", ids))
+  );
+  if (selectedCardsResults.some((result) => Boolean(result.error))) {
     return NextResponse.json({ error: "카드 정보를 불러오지 못했습니다." }, { status: 500 });
   }
+  const selectedCardRows = selectedCardsResults.flatMap((result) => result.data ?? []);
 
   const selectedById = new Map(
-    (selectedCardsRes.data ?? [])
+    selectedCardRows
       .map((row) => [String(row.id ?? ""), row] as const)
       .filter(([id]) => id.length > 0)
   );

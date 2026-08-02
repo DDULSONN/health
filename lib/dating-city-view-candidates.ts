@@ -1,4 +1,5 @@
 import { compareRegionsByDistance } from "@/lib/region-distance";
+import { extractProvinceFromRegion } from "@/lib/region-city";
 import type { createAdminClient } from "@/lib/supabase/server";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -86,4 +87,43 @@ export function sortCityViewCandidates(
     if (createdGap !== 0) return createdGap;
     return a.id.localeCompare(b.id);
   });
+}
+
+export function buildRegionFirstCityViewCardIds(
+  sortedRows: CityViewCandidateRow[],
+  sourceRegion: string,
+  storedCardIds: readonly string[],
+  targetCardCount: number
+) {
+  const sourceProvince = extractProvinceFromRegion(sourceRegion) ?? sourceRegion.trim();
+  const eligibleById = new Map(sortedRows.map((row) => [row.id, row] as const));
+  const storedIds = storedCardIds.filter(
+    (id, index, ids) => eligibleById.has(id) && ids.indexOf(id) === index
+  );
+  const storedSet = new Set(storedIds);
+  const selectedIds: string[] = [];
+  const selectedSet = new Set<string>();
+
+  const append = (id: string) => {
+    if (selectedIds.length >= targetCardCount || selectedSet.has(id)) return;
+    selectedIds.push(id);
+    selectedSet.add(id);
+  };
+  const isSourceProvince = (row: CityViewCandidateRow) =>
+    (extractProvinceFromRegion(row.region) ?? row.region?.trim() ?? "") === sourceProvince;
+
+  // Keep already granted local cards stable, then repair old snapshots by filling
+  // every remaining local slot before adding cards from nearby provinces.
+  for (const row of sortedRows) {
+    if (storedSet.has(row.id) && isSourceProvince(row)) append(row.id);
+  }
+  for (const row of sortedRows) {
+    if (isSourceProvince(row)) append(row.id);
+  }
+  for (const row of sortedRows) {
+    if (storedSet.has(row.id)) append(row.id);
+  }
+  for (const row of sortedRows) append(row.id);
+
+  return selectedIds;
 }
