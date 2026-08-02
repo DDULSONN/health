@@ -53,7 +53,9 @@ export async function GET() {
   const [initialListingsRes, initialAppsRes] = await Promise.all([
     admin
       .from("reels_dating_listings")
-      .select("id,title,description,instagram_url,status,sort_order,created_at,updated_at")
+      .select(
+        "id,title,description,instagram_url,status,sort_order,viewer_user_id,viewer_access_expires_at,created_at,updated_at"
+      )
       .order("sort_order", { ascending: false })
       .order("created_at", { ascending: false })
       .limit(100),
@@ -77,7 +79,12 @@ export async function GET() {
       .order("created_at", { ascending: false })
       .limit(100);
     listingsRes = {
-      data: (fallback.data ?? []).map((item) => ({ ...item, instagram_url: "" })),
+      data: (fallback.data ?? []).map((item) => ({
+        ...item,
+        instagram_url: "",
+        viewer_user_id: null,
+        viewer_access_expires_at: null,
+      })),
       error: fallback.error,
     };
   }
@@ -107,6 +114,29 @@ export async function GET() {
     return NextResponse.json({ error: "릴스 지원서를 불러오지 못했습니다." }, { status: 500 });
   }
 
+  const viewerUserIds = [
+    ...new Set(
+      (listingsRes.data ?? [])
+        .map((item) => (typeof item.viewer_user_id === "string" ? item.viewer_user_id : ""))
+        .filter(Boolean)
+    ),
+  ];
+  const viewerProfilesRes =
+    viewerUserIds.length > 0
+      ? await admin.from("profiles").select("user_id,nickname").in("user_id", viewerUserIds)
+      : { data: [], error: null };
+  if (viewerProfilesRes.error) {
+    console.error("[GET /api/admin/dating/reels] viewer profiles failed", viewerProfilesRes.error);
+  }
+  const viewerNicknameByUserId = new Map(
+    (viewerProfilesRes.data ?? []).map((profile) => [String(profile.user_id), profile.nickname ?? null])
+  );
+  const listings = (listingsRes.data ?? []).map((item) => ({
+    ...item,
+    viewer_nickname:
+      typeof item.viewer_user_id === "string" ? viewerNicknameByUserId.get(item.viewer_user_id) ?? null : null,
+  }));
+
   const applications = (appsRes.data ?? []).map((app) => ({
     ...app,
     photo_signed_url:
@@ -115,7 +145,7 @@ export async function GET() {
         : null,
   }));
 
-  return NextResponse.json({ items: listingsRes.data ?? [], applications });
+  return NextResponse.json({ items: listings, applications });
 }
 
 export async function POST(req: Request) {

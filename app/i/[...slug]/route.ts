@@ -349,10 +349,33 @@ async function canReadOneOnOnePhoto(
   return hasSourceMatch || hasCandidateMatch;
 }
 
-async function canReadReelsApplicationPhoto(objectPath: string, userId: string | null, isAdmin: boolean): Promise<boolean> {
+async function canReadReelsApplicationPhoto(
+  admin: ReturnType<typeof createAdminClient>,
+  objectPath: string,
+  userId: string | null,
+  isAdmin: boolean
+): Promise<boolean> {
   if (isAdmin) return true;
   const applicantId = applicantFromReelsApplyPath(objectPath);
-  return Boolean(userId && applicantId && userId === applicantId);
+  if (!userId || !applicantId) return false;
+  if (userId === applicantId) return true;
+
+  const applicationRes = await admin
+    .from("reels_dating_applications")
+    .select("listing_id")
+    .eq("applicant_user_id", applicantId)
+    .eq("photo_path", objectPath)
+    .maybeSingle();
+  if (applicationRes.error || !applicationRes.data?.listing_id) return false;
+
+  const listingRes = await admin
+    .from("reels_dating_listings")
+    .select("id")
+    .eq("id", applicationRes.data.listing_id)
+    .eq("viewer_user_id", userId)
+    .gt("viewer_access_expires_at", new Date().toISOString())
+    .maybeSingle();
+  return !listingRes.error && Boolean(listingRes.data?.id);
 }
 
 async function canReadSignedObject(req: Request, bucket: string, objectPath: string): Promise<boolean> {
@@ -374,7 +397,7 @@ async function canReadSignedObject(req: Request, bucket: string, objectPath: str
     return canReadOneOnOnePhoto(admin, objectPath, userId, isAdmin);
   }
   if (bucket === "reels-dating-application-photos") {
-    return canReadReelsApplicationPhoto(objectPath, userId, isAdmin);
+    return canReadReelsApplicationPhoto(admin, objectPath, userId, isAdmin);
   }
 
   return false;

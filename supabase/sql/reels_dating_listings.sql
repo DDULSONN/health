@@ -35,6 +35,10 @@ alter table public.reels_dating_applications
 alter table public.reels_dating_listings
   add column if not exists instagram_url text not null default '';
 
+alter table public.reels_dating_listings
+  add column if not exists viewer_user_id uuid null references auth.users(id) on delete set null,
+  add column if not exists viewer_access_expires_at timestamptz null;
+
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
   'reels-dating-application-photos',
@@ -47,6 +51,10 @@ on conflict (id) do nothing;
 
 create index if not exists idx_reels_dating_listings_status_sort
   on public.reels_dating_listings (status, sort_order desc, created_at desc);
+
+create index if not exists idx_reels_dating_listings_viewer_access
+  on public.reels_dating_listings (viewer_user_id, viewer_access_expires_at desc)
+  where viewer_user_id is not null;
 
 create index if not exists idx_reels_dating_applications_listing_created
   on public.reels_dating_applications (listing_id, created_at desc);

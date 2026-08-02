@@ -179,7 +179,7 @@ function SmallDatingReportButton({
 }
 
 type MyPageTab = "my_cert" | "request_status" | "admin_review";
-type MyPageSectionTab = "profile" | "matching" | "payment" | "settings" | "admin";
+type MyPageSectionTab = "profile" | "matching" | "reels_dating" | "payment" | "settings" | "admin";
 type MatchingFilter = "all" | "received" | "applied" | "one_on_one" | "quick";
 
 type BodycheckPost = {
@@ -1576,8 +1576,16 @@ type AdminReelsDatingListing = {
   instagram_url?: string | null;
   status: "active" | "hidden";
   sort_order: number | null;
+  viewer_user_id?: string | null;
+  viewer_nickname?: string | null;
+  viewer_access_expires_at?: string | null;
   created_at: string;
   updated_at: string | null;
+};
+
+type AdminReelsViewerCandidate = {
+  user_id: string;
+  nickname: string | null;
 };
 
 type AdminReelsDatingApplication = {
@@ -1596,6 +1604,20 @@ type AdminReelsDatingApplication = {
   photo_signed_url?: string | null;
   status: "submitted" | "reviewed" | "archived";
   created_at: string;
+};
+
+type MyReelsDatingApplication = Omit<
+  AdminReelsDatingApplication,
+  "listing_id" | "applicant_user_id" | "photo_path"
+>;
+
+type MyReelsDatingAccess = {
+  id: string;
+  title: string;
+  description: string | null;
+  instagram_url: string | null;
+  access_expires_at: string;
+  applications: MyReelsDatingApplication[];
 };
 
 const DEFAULT_OPEN_CARD_HOME_SUBTITLE = "둘러보고 바로 지원하거나, 내 카드도 자연스럽게 공개할 수 있어요.";
@@ -1705,6 +1727,16 @@ export default function MyPage() {
   });
   const [adminReelsDatingError, setAdminReelsDatingError] = useState("");
   const [adminReelsDatingInfo, setAdminReelsDatingInfo] = useState("");
+  const [adminReelsViewerQueries, setAdminReelsViewerQueries] = useState<Record<string, string>>({});
+  const [adminReelsViewerCandidates, setAdminReelsViewerCandidates] = useState<
+    Record<string, AdminReelsViewerCandidate[]>
+  >({});
+  const [adminReelsViewerSearchingId, setAdminReelsViewerSearchingId] = useState("");
+  const [adminReelsViewerSavingId, setAdminReelsViewerSavingId] = useState("");
+  const [myReelsDatingAccess, setMyReelsDatingAccess] = useState<MyReelsDatingAccess[]>([]);
+  const [myReelsDatingAccessLoaded, setMyReelsDatingAccessLoaded] = useState(false);
+  const [myReelsDatingAccessError, setMyReelsDatingAccessError] = useState("");
+  const [reelsAccessNow, setReelsAccessNow] = useState(() => Date.now());
   const [adminApplyCreditOrders, setAdminApplyCreditOrders] = useState<AdminApplyCreditOrder[]>([]);
   const [adminSwipeSubscriptionRequests, setAdminSwipeSubscriptionRequests] = useState<AdminSwipeSubscriptionRequest[]>([]);
   const [adminMoreViewRequests, setAdminMoreViewRequests] = useState<AdminMoreViewRequest[]>([]);
@@ -3085,6 +3117,7 @@ export default function MyPage() {
           openCardPublicSlotsRes,
           toolsPatchNoteRes,
           siteGuideMascotRes,
+          reelsDatingAccessRes,
         ] = await Promise.all([
           fetch("/api/mypage/summary", { cache: "no-store" }),
           fetch("/api/cert-requests", { cache: "no-store" }),
@@ -3109,6 +3142,7 @@ export default function MyPage() {
           fetch("/api/admin/dating/cards/public-slots", { cache: "no-store" }),
           fetch("/api/admin/tools/patch-note", { cache: "no-store" }),
           fetch("/api/admin/site-guide/mascot", { cache: "no-store" }),
+          fetch("/api/dating/reels/my-access", { cache: "no-store" }),
         ]);
 
         const summaryBody = (await summaryRes.json().catch(() => ({}))) as SummaryResponse & {
@@ -3182,6 +3216,10 @@ export default function MyPage() {
         const openCardPublicSlotsBody = (await openCardPublicSlotsRes.json().catch(() => ({}))) as OpenCardPublicSlotsResponse;
         const toolsPatchNoteBody = (await toolsPatchNoteRes.json().catch(() => ({}))) as ToolsPatchNoteResponse;
         const siteGuideMascotBody = (await siteGuideMascotRes.json().catch(() => ({}))) as SiteGuideMascotResponse;
+        const reelsDatingAccessBody = (await reelsDatingAccessRes.json().catch(() => ({}))) as {
+          error?: string;
+          items?: MyReelsDatingAccess[];
+        };
 
         if (!summaryRes.ok) {
           throw new Error(summaryBody.error ?? "마이페이지 정보를 불러오지 못했습니다.");
@@ -3225,6 +3263,9 @@ export default function MyPage() {
         if (!paidConnectionsRes.ok) {
           console.error("[mypage] paid connections load failed", paidConnectionsBody.error ?? "unknown error");
         }
+        if (!reelsDatingAccessRes.ok) {
+          console.error("[mypage] reels dating access load failed", reelsDatingAccessBody.error ?? "unknown error");
+        }
 
         if (isMounted) {
           const adminFlag = Boolean(adminBody.isAdmin);
@@ -3254,6 +3295,9 @@ export default function MyPage() {
             ...(connectionsRes.ok ? (connectionsBody.items ?? []) : []),
             ...(paidConnectionsRes.ok ? (paidConnectionsBody.items ?? []) : []),
           ]);
+          setMyReelsDatingAccess(reelsDatingAccessRes.ok ? reelsDatingAccessBody.items ?? [] : []);
+          setMyReelsDatingAccessLoaded(true);
+          setMyReelsDatingAccessError(reelsDatingAccessRes.ok ? "" : reelsDatingAccessBody.error ?? "릴스 매물 신청 내역을 불러오지 못했습니다.");
           setOpenCardWriteEnabled(writeSettingBody.enabled !== false);
           setOpenCardHomeSubtitle(openCardHomeCopyBody.subtitle?.trim() || DEFAULT_OPEN_CARD_HOME_SUBTITLE);
           setOpenCardPublicMaleExtra(String(Math.max(0, Number(openCardPublicSlotsBody.maleExtra ?? 0))));
@@ -3391,7 +3435,14 @@ export default function MyPage() {
 
   useEffect(() => {
     const section = new URLSearchParams(window.location.search).get("section");
-    if (section === "matching" || section === "payment" || section === "profile" || section === "settings" || section === "admin") {
+    if (
+      section === "matching" ||
+      section === "reels_dating" ||
+      section === "payment" ||
+      section === "profile" ||
+      section === "settings" ||
+      section === "admin"
+    ) {
       setPageSectionTab(section);
     }
   }, []);
@@ -3401,6 +3452,22 @@ export default function MyPage() {
       setPageSectionTab("profile");
     }
   }, [isAdmin, pageSectionTab]);
+
+  useEffect(() => {
+    if (myReelsDatingAccess.length === 0) return;
+    const timer = window.setInterval(() => setReelsAccessNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, [myReelsDatingAccess.length]);
+
+  useEffect(() => {
+    if (!myReelsDatingAccessLoaded) return;
+    const hasActiveAccess = myReelsDatingAccess.some(
+      (item) => new Date(item.access_expires_at).getTime() > reelsAccessNow
+    );
+    if (!hasActiveAccess && pageSectionTab === "reels_dating") {
+      setPageSectionTab("profile");
+    }
+  }, [myReelsDatingAccess, myReelsDatingAccessLoaded, pageSectionTab, reelsAccessNow]);
 
   useEffect(() => {
     if (!isAdmin || adminManageTab !== "open_cards" || adminOpenCardsLoaded || adminOpenCardsLoading) {
@@ -5293,6 +5360,79 @@ export default function MyPage() {
     }
   };
 
+  const handleAdminSearchReelsViewer = async (itemId: string) => {
+    const query = (adminReelsViewerQueries[itemId] ?? "").trim();
+    if (query.length < 2) {
+      setAdminReelsDatingError("열람 회원의 닉네임을 2글자 이상 입력해 주세요.");
+      return;
+    }
+
+    setAdminReelsViewerSearchingId(itemId);
+    setAdminReelsDatingError("");
+    setAdminReelsDatingInfo("");
+    try {
+      const res = await fetch(`/api/admin/dating/reels/viewers?query=${encodeURIComponent(query)}`, {
+        cache: "no-store",
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        items?: AdminReelsViewerCandidate[];
+      };
+      if (!res.ok) throw new Error(body.error ?? "회원을 검색하지 못했습니다.");
+      const items = body.items ?? [];
+      setAdminReelsViewerCandidates((prev) => ({ ...prev, [itemId]: items }));
+      if (items.length === 0) setAdminReelsDatingInfo("검색된 회원이 없습니다.");
+    } catch (error) {
+      setAdminReelsDatingError(error instanceof Error ? error.message : "회원을 검색하지 못했습니다.");
+    } finally {
+      setAdminReelsViewerSearchingId("");
+    }
+  };
+
+  const handleAdminGrantReelsViewer = async (itemId: string, candidate: AdminReelsViewerCandidate) => {
+    if (!confirm(`${candidate.nickname || "선택한 회원"}에게 이 릴스 매물 지원 내역을 72시간 열까요?`)) return;
+    setAdminReelsViewerSavingId(itemId);
+    setAdminReelsDatingError("");
+    setAdminReelsDatingInfo("");
+    try {
+      const res = await fetch(`/api/admin/dating/reels/${encodeURIComponent(itemId)}/viewer`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: candidate.user_id }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(body.error ?? "릴스 매물 열람 권한을 열지 못했습니다.");
+      setAdminReelsDatingInfo(`${candidate.nickname || "선택한 회원"}에게 72시간 열람을 시작했습니다.`);
+      setAdminReelsViewerCandidates((prev) => ({ ...prev, [itemId]: [] }));
+      setAdminReelsViewerQueries((prev) => ({ ...prev, [itemId]: "" }));
+      await refreshAdminReelsDatingData(false);
+    } catch (error) {
+      setAdminReelsDatingError(error instanceof Error ? error.message : "릴스 매물 열람 권한을 열지 못했습니다.");
+    } finally {
+      setAdminReelsViewerSavingId("");
+    }
+  };
+
+  const handleAdminRevokeReelsViewer = async (item: AdminReelsDatingListing) => {
+    if (!confirm(`${item.viewer_nickname || "현재 회원"}의 릴스 매물 열람 권한을 회수할까요?`)) return;
+    setAdminReelsViewerSavingId(item.id);
+    setAdminReelsDatingError("");
+    setAdminReelsDatingInfo("");
+    try {
+      const res = await fetch(`/api/admin/dating/reels/${encodeURIComponent(item.id)}/viewer`, {
+        method: "DELETE",
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) throw new Error(body.error ?? "릴스 매물 열람 권한을 회수하지 못했습니다.");
+      setAdminReelsDatingInfo("릴스 매물 열람 권한을 회수했습니다.");
+      await refreshAdminReelsDatingData(false);
+    } catch (error) {
+      setAdminReelsDatingError(error instanceof Error ? error.message : "릴스 매물 열람 권한을 회수하지 못했습니다.");
+    } finally {
+      setAdminReelsViewerSavingId("");
+    }
+  };
+
   const handleAdminSearchEmailUnsubscribes = async () => {
     const query = adminEmailUnsubscribeQuery.trim();
     if (query.length < 2) {
@@ -6948,8 +7088,13 @@ export default function MyPage() {
     return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
   });
 
+  const activeMyReelsDatingAccess = myReelsDatingAccess.filter(
+    (item) => new Date(item.access_expires_at).getTime() > reelsAccessNow
+  );
+
   const showProfileSection = pageSectionTab === "profile";
   const showMatchingSection = pageSectionTab === "matching";
+  const showReelsDatingSection = pageSectionTab === "reels_dating" && activeMyReelsDatingAccess.length > 0;
   const showPaymentSection = pageSectionTab === "payment";
   const showSettingsSection = pageSectionTab === "settings";
   const showAdminSection = pageSectionTab === "admin" && isAdmin;
@@ -7044,10 +7189,11 @@ export default function MyPage() {
       )}
 
       <section className="mb-4 rounded-2xl border border-neutral-200/80 bg-white p-1.5 shadow-[0_10px_30px_rgba(17,24,39,0.04)]">
-        <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-5 sm:gap-2">
+        <div className="flex gap-1.5 overflow-x-auto sm:gap-2">
           {([
             { key: "profile", label: "내 정보" },
             { key: "matching", label: "매칭" },
+            ...(activeMyReelsDatingAccess.length > 0 ? [{ key: "reels_dating", label: "릴스 매물" }] : []),
             { key: "payment", label: "결제" },
             { key: "settings", label: "설정" },
             ...(isAdmin ? [{ key: "admin", label: "관리" }] : []),
@@ -7058,7 +7204,7 @@ export default function MyPage() {
                 key={`mypage-section-${tab.key}`}
                 type="button"
                 onClick={() => setPageSectionTab(tab.key)}
-                className={`min-h-[44px] rounded-xl text-sm font-semibold transition ${
+                className={`min-h-[44px] min-w-[82px] flex-1 rounded-xl px-3 text-sm font-semibold transition ${
                   active ? "bg-neutral-950 text-white shadow-sm" : "bg-transparent text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800"
                 }`}
               >
@@ -7840,6 +7986,108 @@ export default function MyPage() {
         </>
         )}
       </section>
+      )}
+
+      {showReelsDatingSection && (
+        <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-4 shadow-[0_14px_40px_rgba(17,24,39,0.05)] sm:p-5">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="text-lg font-bold text-neutral-950">릴스 매물 지원</h2>
+              <p className="mt-1 text-xs leading-5 text-neutral-500">내 매물에 들어온 신청을 열람 기간 동안 확인할 수 있어요.</p>
+            </div>
+            <span className="shrink-0 rounded-full bg-violet-50 px-2.5 py-1 text-[11px] font-semibold text-violet-700">
+              72시간 열람
+            </span>
+          </div>
+
+          <div className="mt-4 divide-y divide-neutral-100 border-y border-neutral-100">
+            {activeMyReelsDatingAccess.map((listing) => (
+              <div key={`my-reels-${listing.id}`} className="py-4 first:pt-3 last:pb-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-neutral-950">{listing.title}</p>
+                    {listing.description ? <p className="mt-1 text-xs leading-5 text-neutral-500">{listing.description}</p> : null}
+                  </div>
+                  <p className="shrink-0 text-[11px] font-medium text-violet-700">
+                    {new Date(listing.access_expires_at).toLocaleString("ko-KR")}까지
+                  </p>
+                </div>
+
+                <div className="mt-3 flex items-center justify-between border-t border-neutral-100 pt-3">
+                  <p className="text-sm font-semibold text-neutral-900">신청 {listing.applications.length}건</p>
+                  {listing.instagram_url ? (
+                    <a
+                      href={listing.instagram_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-xs font-semibold text-violet-700 underline underline-offset-2"
+                    >
+                      릴스 보기
+                    </a>
+                  ) : null}
+                </div>
+
+                {listing.applications.length === 0 ? (
+                  <p className="mt-3 text-xs text-neutral-500">아직 들어온 신청이 없습니다.</p>
+                ) : (
+                  <div className="mt-2 divide-y divide-neutral-100">
+                    {listing.applications.map((application) => (
+                      <details key={application.id} className="group py-2">
+                        <summary className="flex cursor-pointer list-none items-center justify-between gap-3 py-1">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-semibold text-neutral-900">
+                              {application.applicant_display_nickname || "지원자"} · {application.age ?? "-"}세 · {application.region || "지역 없음"}
+                            </p>
+                            <p className="mt-0.5 truncate text-[11px] text-neutral-500">
+                              {application.height_cm ?? "-"}cm · {application.job || "직업 없음"} · 운동 {application.training_years ?? "-"}년
+                            </p>
+                          </div>
+                          <span className="shrink-0 text-[11px] font-semibold text-neutral-400 group-open:hidden">보기</span>
+                          <span className="hidden shrink-0 text-[11px] font-semibold text-neutral-700 group-open:inline">닫기</span>
+                        </summary>
+                        <div className="pb-2 pt-3 text-sm text-neutral-700">
+                          {application.instagram_id ? (
+                            <InstagramProfileLine
+                              label="인스타"
+                              username={application.instagram_id}
+                              className="text-xs font-semibold text-violet-700"
+                            />
+                          ) : null}
+                          {application.intro_text ? (
+                            <p className="mt-2 whitespace-pre-wrap break-words text-sm leading-6 text-neutral-700">
+                              {application.intro_text}
+                            </p>
+                          ) : null}
+                          {application.photo_signed_url ? (
+                            <a
+                              href={application.photo_signed_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="mt-3 inline-flex h-28 w-28 items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50"
+                            >
+                              {/* eslint-disable-next-line @next/next/no-img-element */}
+                              <img
+                                src={application.photo_signed_url}
+                                alt="릴스 매물 지원 사진"
+                                loading="lazy"
+                                decoding="async"
+                                className="h-full w-full object-cover"
+                              />
+                            </a>
+                          ) : null}
+                          <p className="mt-2 text-[11px] text-neutral-400">
+                            {new Date(application.created_at).toLocaleString("ko-KR")}
+                          </p>
+                        </div>
+                      </details>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+          {myReelsDatingAccessError ? <p className="mt-3 text-xs text-rose-600">{myReelsDatingAccessError}</p> : null}
+        </section>
       )}
 
       {(showPaymentSection || showSettingsSection) && (
@@ -11407,6 +11655,11 @@ export default function MyPage() {
                   {adminReelsDatingListings.map((item) => {
                     const applications = adminReelsDatingApplications.filter((app) => app.listing_id === item.id);
                     const latestApplication = applications[0] ?? null;
+                    const viewerCandidates = adminReelsViewerCandidates[item.id] ?? [];
+                    const accessExpiresAt = item.viewer_access_expires_at
+                      ? new Date(item.viewer_access_expires_at).getTime()
+                      : 0;
+                    const accessActive = Boolean(item.viewer_user_id && accessExpiresAt > Date.now());
                     return (
                       <div key={item.id} className="rounded-lg border border-violet-100 bg-violet-50/30 p-3">
                         <div className="flex flex-wrap items-start justify-between gap-2">
@@ -11443,6 +11696,91 @@ export default function MyPage() {
                               삭제
                             </button>
                           </div>
+                        </div>
+                        <div className="mt-3 border-t border-violet-100 pt-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-xs font-semibold text-neutral-900">지원 내역 72시간 열람</p>
+                              {item.viewer_user_id ? (
+                                <p className={`mt-1 text-[11px] ${accessActive ? "text-emerald-700" : "text-neutral-500"}`}>
+                                  {item.viewer_nickname || item.viewer_user_id.slice(0, 8)} · {accessActive ? "열람 중" : "만료됨"}
+                                  {item.viewer_access_expires_at
+                                    ? ` · ${new Date(item.viewer_access_expires_at).toLocaleString("ko-KR")}까지`
+                                    : ""}
+                                </p>
+                              ) : (
+                                <p className="mt-1 text-[11px] text-neutral-500">아직 지정된 회원이 없습니다.</p>
+                              )}
+                            </div>
+                            {item.viewer_user_id ? (
+                              <div className="flex gap-2">
+                                <button
+                                  type="button"
+                                  disabled={adminReelsViewerSavingId === item.id}
+                                  onClick={() =>
+                                    void handleAdminGrantReelsViewer(item.id, {
+                                      user_id: item.viewer_user_id || "",
+                                      nickname: item.viewer_nickname ?? null,
+                                    })
+                                  }
+                                  className="h-8 rounded-md border border-violet-200 bg-white px-3 text-[11px] font-semibold text-violet-800 disabled:opacity-50"
+                                >
+                                  72시간 다시 열기
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={adminReelsViewerSavingId === item.id}
+                                  onClick={() => void handleAdminRevokeReelsViewer(item)}
+                                  className="h-8 rounded-md border border-neutral-200 bg-white px-3 text-[11px] font-semibold text-neutral-600 disabled:opacity-50"
+                                >
+                                  회수
+                                </button>
+                              </div>
+                            ) : null}
+                          </div>
+                          <div className="mt-2 flex gap-2">
+                            <input
+                              value={adminReelsViewerQueries[item.id] ?? ""}
+                              onChange={(event) => {
+                                const value = event.target.value;
+                                setAdminReelsViewerQueries((prev) => ({ ...prev, [item.id]: value }));
+                                setAdminReelsViewerCandidates((prev) => ({ ...prev, [item.id]: [] }));
+                              }}
+                              onKeyDown={(event) => {
+                                if (event.key === "Enter") void handleAdminSearchReelsViewer(item.id);
+                              }}
+                              placeholder="열람할 회원 닉네임"
+                              className="h-9 min-w-0 flex-1 rounded-lg border border-violet-200 bg-white px-3 text-xs outline-none"
+                            />
+                            <button
+                              type="button"
+                              disabled={adminReelsViewerSearchingId === item.id || adminReelsViewerSavingId === item.id}
+                              onClick={() => void handleAdminSearchReelsViewer(item.id)}
+                              className="h-9 shrink-0 rounded-lg bg-violet-600 px-3 text-xs font-semibold text-white disabled:opacity-50"
+                            >
+                              {adminReelsViewerSearchingId === item.id ? "검색 중" : "회원 검색"}
+                            </button>
+                          </div>
+                          {viewerCandidates.length > 0 ? (
+                            <div className="mt-2 divide-y divide-violet-100 rounded-lg border border-violet-100 bg-white">
+                              {viewerCandidates.map((candidate) => (
+                                <div key={`${item.id}-${candidate.user_id}`} className="flex items-center justify-between gap-3 px-3 py-2">
+                                  <div className="min-w-0">
+                                    <p className="truncate text-xs font-semibold text-neutral-900">{candidate.nickname || "닉네임 없음"}</p>
+                                    <p className="mt-0.5 truncate text-[10px] text-neutral-400">{candidate.user_id}</p>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    disabled={adminReelsViewerSavingId === item.id}
+                                    onClick={() => void handleAdminGrantReelsViewer(item.id, candidate)}
+                                    className="h-8 shrink-0 rounded-md bg-neutral-950 px-3 text-[11px] font-semibold text-white disabled:opacity-50"
+                                  >
+                                    72시간 열기
+                                  </button>
+                                </div>
+                              ))}
+                            </div>
+                          ) : null}
                         </div>
                         {applications.length > 0 ? (
                           <details className="mt-3 rounded-lg border border-violet-100 bg-white">
