@@ -5,6 +5,8 @@ import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
 import { NextResponse } from "next/server";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { getUserBanResponse } from "@/lib/user-ban-guard";
+import { sendExpoPushToUser } from "@/lib/expo-push";
+import { sendDatingEmailNotification } from "@/lib/dating-swipe";
 
 function normalizeInstagramId(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -132,7 +134,7 @@ export async function POST(req: Request) {
 
     const cardRes = await adminClient
       .from("dating_paid_cards")
-      .select("id,user_id,status,expires_at,instagram_id")
+      .select("id,user_id,nickname,status,expires_at,instagram_id")
       .eq("id", paidCardId)
       .single();
     if (cardRes.error || !cardRes.data) {
@@ -178,6 +180,59 @@ export async function POST(req: Request) {
       const mapped = mapDbError(insertRes.error?.code ?? undefined);
       return NextResponse.json({ ok: false, requestId, ...mapped }, { status: mapped.status });
     }
+
+    const applicationId = insertRes.data.id;
+    const notificationTitle = "새 지원이 도착했어요";
+    const notificationBody = `${applicantDisplayNickname}님이 대기 없이 등록 카드에 지원했어요.`;
+    const notificationRoute = "/mypage#paid-card-received";
+
+    await adminClient
+      .from("notifications")
+      .insert({
+        user_id: card.user_id,
+        actor_id: user.id,
+        type: "dating_application_received",
+        post_id: null,
+        comment_id: null,
+        meta_json: {
+          card_id: paidCardId,
+          application_id: applicationId,
+          source_kind: "paid",
+          notification_title: notificationTitle,
+          notification_body: notificationBody,
+          notification_route: notificationRoute,
+        },
+      })
+      .then(({ error }) => {
+        if (error) {
+          console.error("[POST /api/dating/paid/apply] notification insert failed", { requestId, error });
+        }
+      });
+
+    await Promise.all([
+      sendExpoPushToUser(adminClient, card.user_id, {
+        title: notificationTitle,
+        body: notificationBody,
+        data: {
+          type: "dating_application_received",
+          cardId: paidCardId,
+          applicationId,
+          sourceKind: "paid",
+          route: notificationRoute,
+        },
+      }).catch((error) => {
+        console.error("[POST /api/dating/paid/apply] expo push failed", { requestId, error });
+      }),
+      sendDatingEmailNotification(
+        adminClient,
+        card.user_id,
+        "대기 없이 등록 카드에 새 지원이 도착했어요",
+        `${notificationBody}\n마이페이지에서 지원 내용을 확인해 주세요.`
+      ).catch((error) => {
+        console.error("[POST /api/dating/paid/apply] email failed", { requestId, error });
+        return false;
+      }),
+    ]);
 
     return NextResponse.json({ ok: true, code: "SUCCESS", requestId, id: insertRes.data.id, message: "지원이 완료되었습니다." });
   } catch (error) {

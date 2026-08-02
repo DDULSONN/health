@@ -34,6 +34,10 @@ function getNotificationApplicationStatus(item: NotificationRow): string {
   return typeof value === "string" ? value.trim() : "";
 }
 
+function getNotificationSourceKind(item: NotificationRow): "open" | "paid" {
+  return item.meta_json?.source_kind === "paid" ? "paid" : "open";
+}
+
 function getNotificationMetaText(
   item: NotificationRow,
   key: "notification_title" | "notification_body" | "notification_route"
@@ -51,7 +55,15 @@ function buildNotificationPresentation(
   const metaTitle = getNotificationMetaText(item, "notification_title");
   const metaBody = getNotificationMetaText(item, "notification_body");
   const metaRoute = getNotificationMetaText(item, "notification_route");
-  if (metaTitle && metaBody) {
+  const appStatus =
+    applicationState?.status ||
+    getNotificationApplicationStatus(item) ||
+    (applicationMissing ? "canceled" : null);
+  const preferCurrentApplicationState =
+    appStatus === "canceled" ||
+    (item.type === "dating_application_received" && (appStatus === "accepted" || appStatus === "rejected"));
+
+  if (metaTitle && metaBody && !preferCurrentApplicationState) {
     return {
       title: metaTitle,
       body: metaBody,
@@ -59,12 +71,9 @@ function buildNotificationPresentation(
     };
   }
 
-  const appStatus =
-    getNotificationApplicationStatus(item) ||
-    applicationState?.status ||
-    (applicationMissing ? "canceled" : null);
-
   if (item.type === "dating_application_received") {
+    const receivedRoute =
+      getNotificationSourceKind(item) === "paid" ? "/mypage#paid-card-received" : "/mypage#open-card-received";
     if (appStatus === "canceled") {
       return {
         title: "지원이 취소됐습니다",
@@ -85,7 +94,7 @@ function buildNotificationPresentation(
       return {
         title: "거절한 지원입니다",
         body: actorNickname ? `${actorNickname}님 지원을 거절한 상태입니다.` : "거절한 지원입니다.",
-        link: "/mypage#open-card-received",
+        link: receivedRoute,
       };
     }
 
@@ -94,9 +103,9 @@ function buildNotificationPresentation(
       return {
         title: "지원 답변이 기다리고 있어요",
         body: actorNickname
-          ? `${actorNickname}님 지원이 아직 대기 중이에요. 수락하거나 패스해 주세요.`
-          : "아직 대기 중인 오픈카드 지원이 있어요. 수락하거나 패스해 주세요.",
-        link: "/mypage#open-card-received",
+          ? `${actorNickname}님 지원이 아직 대기 중이에요. 수락하거나 거절해 주세요.`
+          : "아직 대기 중인 오픈카드 지원이 있어요. 수락하거나 거절해 주세요.",
+        link: receivedRoute,
       };
     }
 
@@ -105,7 +114,7 @@ function buildNotificationPresentation(
       body: actorNickname
         ? `${actorNickname}님이 내 오픈카드에 지원했습니다.`
         : "내 오픈카드에 새로운 지원이 도착했습니다.",
-      link: "/mypage#open-card-received",
+      link: receivedRoute,
     };
   }
 
@@ -178,14 +187,21 @@ export async function GET(request: Request) {
   }
 
   const actorIds = [...new Set((data ?? []).map((item) => item.actor_id).filter(Boolean))] as string[];
-  const applicationIds = [
+  const applicationNotifications = ((data ?? []) as NotificationRow[]).filter((item) =>
+    ["dating_application_received", "dating_application_accepted", "dating_application_rejected"].includes(item.type)
+  );
+  const openApplicationIds = [
     ...new Set(
-      ((data ?? []) as NotificationRow[])
-        .filter((item) =>
-          ["dating_application_received", "dating_application_accepted", "dating_application_rejected"].includes(
-            item.type
-          )
-        )
+      applicationNotifications
+        .filter((item) => getNotificationSourceKind(item) === "open")
+        .map(getNotificationApplicationId)
+        .filter(Boolean)
+    ),
+  ];
+  const paidApplicationIds = [
+    ...new Set(
+      applicationNotifications
+        .filter((item) => getNotificationSourceKind(item) === "paid")
         .map(getNotificationApplicationId)
         .filter(Boolean)
     ),
@@ -200,20 +216,27 @@ export async function GET(request: Request) {
 
   const applicationStateMap = new Map<string, DatingCardApplicationState>();
   let applicationStateLookupSucceeded = true;
-  if (applicationIds.length > 0) {
+  if (openApplicationIds.length > 0 || paidApplicationIds.length > 0) {
     const admin = createAdminClient();
-    const { data: apps, error: appsError } = await admin
-      .from("dating_card_applications")
-      .select("id,status")
-      .in("id", applicationIds);
+    const [openAppsResult, paidAppsResult] = await Promise.all([
+      openApplicationIds.length > 0
+        ? admin.from("dating_card_applications").select("id,status").in("id", openApplicationIds)
+        : Promise.resolve({ data: [], error: null }),
+      paidApplicationIds.length > 0
+        ? admin.from("dating_paid_card_applications").select("id,status").in("id", paidApplicationIds)
+        : Promise.resolve({ data: [], error: null }),
+    ]);
 
-    if (!appsError) {
-      for (const app of (apps ?? []) as DatingCardApplicationState[]) {
+    if (!openAppsResult.error && !paidAppsResult.error) {
+      for (const app of [...(openAppsResult.data ?? []), ...(paidAppsResult.data ?? [])] as DatingCardApplicationState[]) {
         applicationStateMap.set(app.id, app);
       }
     } else {
       applicationStateLookupSucceeded = false;
-      console.error("[GET /api/notifications] application state load failed", appsError);
+      console.error("[GET /api/notifications] application state load failed", {
+        openError: openAppsResult.error,
+        paidError: paidAppsResult.error,
+      });
     }
   }
 

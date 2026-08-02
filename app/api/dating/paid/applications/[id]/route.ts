@@ -2,6 +2,8 @@ import { isAdminEmail } from "@/lib/admin";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { sendExpoPushToUser } from "@/lib/expo-push";
+import { sendDatingEmailNotification } from "@/lib/dating-swipe";
 
 export async function PATCH(
   req: Request,
@@ -39,7 +41,7 @@ export async function PATCH(
 
   const { data: card, error: cardError } = await admin
     .from("dating_paid_cards")
-    .select("id, user_id")
+    .select("id, user_id, nickname")
     .eq("id", app.paid_card_id)
     .single();
 
@@ -106,6 +108,67 @@ export async function PATCH(
     if (deleteThreadError) {
       console.error("[PATCH /api/dating/paid/applications/[id]] delete thread failed", deleteThreadError);
       return NextResponse.json({ error: "연결은 삭제됐지만 채팅 정리에 실패했습니다." }, { status: 500 });
+    }
+  }
+
+  if ((status === "accepted" || status === "rejected") && app.applicant_user_id) {
+    const notificationType = status === "accepted" ? "dating_application_accepted" : "dating_application_rejected";
+    const title = status === "accepted" ? "지원이 수락됐습니다" : "지원 결과가 도착했습니다";
+    const cardNickname = String(card.nickname ?? "대기 없이 등록 카드").trim() || "대기 없이 등록 카드";
+    const body =
+      status === "accepted"
+        ? `${cardNickname} 지원이 수락되었습니다.`
+        : `${cardNickname} 지원이 거절되었습니다.`;
+    const route = status === "accepted" ? "/mypage#dating-connections" : "/mypage#paid-card-applied";
+
+    await admin
+      .from("notifications")
+      .insert({
+        user_id: app.applicant_user_id,
+        actor_id: card.user_id,
+        type: notificationType,
+        post_id: null,
+        comment_id: null,
+        meta_json: {
+          card_id: app.paid_card_id,
+          application_id: app.id,
+          application_status: status,
+          source_kind: "paid",
+          notification_title: title,
+          notification_body: body,
+          notification_route: route,
+        },
+      })
+      .then(({ error }) => {
+        if (error) {
+          console.error("[PATCH /api/dating/paid/applications/[id]] notification insert failed", error);
+        }
+      });
+
+    await sendExpoPushToUser(admin, app.applicant_user_id, {
+      title,
+      body,
+      data: {
+        type: notificationType,
+        cardId: app.paid_card_id,
+        applicationId: app.id,
+        sourceKind: "paid",
+        route,
+      },
+    }).catch((error) => {
+      console.error("[PATCH /api/dating/paid/applications/[id]] expo push failed", error);
+    });
+
+    if (status === "accepted") {
+      await sendDatingEmailNotification(
+        admin,
+        app.applicant_user_id,
+        "대기 없이 등록 카드 지원이 수락됐어요",
+        `${body}\n마이페이지에서 연결 상태를 확인해 주세요.`
+      ).catch((error) => {
+        console.error("[PATCH /api/dating/paid/applications/[id]] accepted email failed", error);
+        return false;
+      });
     }
   }
 
