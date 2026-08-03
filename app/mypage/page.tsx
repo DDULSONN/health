@@ -669,6 +669,7 @@ type MyOneOnOneCard = {
 };
 
 const ONE_ON_ONE_USER_EDIT_USED_TAG = "one_on_one_user_edit_used";
+const ONE_ON_ONE_USER_DELETED_TAG = "one_on_one_user_deleted";
 
 function hasOneOnOneUserEditBeenUsed(card: Pick<MyOneOnOneCard, "admin_tags">) {
   return Array.isArray(card.admin_tags) && card.admin_tags.includes(ONE_ON_ONE_USER_EDIT_USED_TAG);
@@ -1860,6 +1861,7 @@ export default function MyPage() {
   const [deletingPaidAppliedIds, setDeletingPaidAppliedIds] = useState<string[]>([]);
   const [cancelingPaidAppliedIds, setCancelingPaidAppliedIds] = useState<string[]>([]);
   const [deletingOneOnOneIds, setDeletingOneOnOneIds] = useState<string[]>([]);
+  const [restoringOneOnOneIds, setRestoringOneOnOneIds] = useState<string[]>([]);
   const [deletingOpenCardIds, setDeletingOpenCardIds] = useState<string[]>([]);
   const [deletingPaidCardIds, setDeletingPaidCardIds] = useState<string[]>([]);
   const [applyCreditsRemaining, setApplyCreditsRemaining] = useState(0);
@@ -5739,6 +5741,47 @@ export default function MyPage() {
     }
   };
 
+  const handleRestoreMyOneOnOneCard = async (cardId: string) => {
+    if (restoringOneOnOneIds.includes(cardId)) return;
+    if (!confirm("내렸던 1:1 프로필을 다시 올릴까요? 기존 사진과 작성 내용이 그대로 등록됩니다.")) return;
+
+    setRestoringOneOnOneIds((prev) => [...prev, cardId]);
+    try {
+      const res = await fetch(`/api/dating/1on1/my?id=${encodeURIComponent(cardId)}`, {
+        method: "PUT",
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        alert(body.error ?? "1:1 프로필 다시 올리기에 실패했습니다.");
+        return;
+      }
+
+      setMyOneOnOneCards((prev) =>
+        prev.map((item) =>
+          item.id === cardId
+            ? {
+                ...item,
+                status: "submitted",
+                archived: false,
+                reviewed_at: null,
+                admin_tags: Array.isArray(item.admin_tags)
+                  ? item.admin_tags.filter((tag) => tag !== ONE_ON_ONE_USER_DELETED_TAG)
+                  : item.admin_tags,
+              }
+            : item
+        )
+      );
+      try {
+        await reloadOneOnOneRecommendations();
+      } catch (reloadError) {
+        console.error("[mypage] restored 1on1 profile but recommendation reload failed", reloadError);
+      }
+      alert("1:1 프로필을 다시 올렸습니다.");
+    } finally {
+      setRestoringOneOnOneIds((prev) => prev.filter((id) => id !== cardId));
+    }
+  };
+
   const handleAdminApproveApplyCreditOrder = async (orderId: string) => {
     if (approvingOrderIds.includes(orderId)) return;
     setApprovingOrderIds((prev) => [...prev, orderId]);
@@ -8919,7 +8962,7 @@ export default function MyPage() {
                   </div>
                   {isArchivedOneOnOneCard ? (
                     <p className="mt-2 rounded-lg bg-neutral-100 px-3 py-2 text-xs leading-5 text-neutral-600">
-                      프로필 노출은 종료됐습니다. 기존 매칭과 번호교환 기록은 아래에서 계속 확인할 수 있어요.
+                      프로필 노출은 종료됐습니다. 다시 이용하려면 아래에서 프로필을 그대로 올릴 수 있어요.
                     </p>
                   ) : null}
                   <p className="mt-1 text-xs text-neutral-500">
@@ -9646,7 +9689,16 @@ export default function MyPage() {
                         신청서 수정
                       </Link>
                     )}
-                    {!isArchivedOneOnOneCard ? (
+                    {isArchivedOneOnOneCard ? (
+                      <button
+                        type="button"
+                        onClick={() => void handleRestoreMyOneOnOneCard(item.id)}
+                        disabled={restoringOneOnOneIds.includes(item.id)}
+                        className="inline-flex h-8 items-center rounded-md border border-emerald-300 bg-white px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                      >
+                        {restoringOneOnOneIds.includes(item.id) ? "처리 중..." : "프로필 다시 올리기"}
+                      </button>
+                    ) : (
                       <button
                         type="button"
                         onClick={() => void handleDeleteMyOneOnOneCard(item.id)}
@@ -9655,7 +9707,7 @@ export default function MyPage() {
                       >
                         {deletingOneOnOneIds.includes(item.id) ? "처리 중..." : "프로필 내리기"}
                       </button>
-                    ) : null}
+                    )}
                   </div>
                 </div>
               );

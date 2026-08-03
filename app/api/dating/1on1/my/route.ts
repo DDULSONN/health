@@ -1,7 +1,12 @@
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
-import { getDatingOneOnOneWriteStatus, getProfilePhoneVerification } from "@/lib/dating-1on1";
+import {
+  DATING_ONE_ON_ONE_ACTIVE_STATUSES,
+  getDatingOneOnOneWriteStatus,
+  getProfilePhoneVerification,
+} from "@/lib/dating-1on1";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
+import { getUserBanResponse } from "@/lib/user-ban-guard";
 import { NextResponse } from "next/server";
 import { getActiveOneOnOnePlus } from "@/lib/dating-1on1-plus";
 
@@ -73,6 +78,14 @@ function appendAdminTag(value: unknown, tag: string) {
     ? value.map((item) => String(item ?? "").trim()).filter((item) => item.length > 0)
     : [];
   return Array.from(new Set([...tags, tag])).slice(0, 20);
+}
+
+function removeAdminTag(value: unknown, tag: string) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => String(item ?? "").trim())
+    .filter((item) => item.length > 0 && item !== tag)
+    .slice(0, 20);
 }
 
 export async function GET(req: Request) {
@@ -327,6 +340,94 @@ export async function PATCH(req: Request) {
   }
 
   return NextResponse.json({ ok: true, id: cardId });
+}
+
+export async function PUT(req: Request) {
+  const { user } = await getRequestAuthContext(req);
+
+  if (!user) {
+    return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
+  }
+
+  const { searchParams } = new URL(req.url);
+  const cardId = (searchParams.get("id") ?? "").trim();
+  if (!cardId) {
+    return NextResponse.json({ error: "복구할 프로필을 확인할 수 없습니다." }, { status: 400 });
+  }
+
+  const admin = createAdminClient();
+  const banResponse = await getUserBanResponse(admin, user.id);
+  if (banResponse) return banResponse;
+
+  const [writeStatus, phoneState, currentRes, activeRes] = await Promise.all([
+    getDatingOneOnOneWriteStatus(admin),
+    getProfilePhoneVerification(admin, user.id),
+    admin
+      .from("dating_1on1_cards")
+      .select("id,status,admin_tags")
+      .eq("id", cardId)
+      .eq("user_id", user.id)
+      .maybeSingle(),
+    admin
+      .from("dating_1on1_cards")
+      .select("id")
+      .eq("user_id", user.id)
+      .in("status", [...DATING_ONE_ON_ONE_ACTIVE_STATUSES])
+      .neq("id", cardId)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+
+  if (writeStatus !== "approved") {
+    return NextResponse.json({ error: "현재 1:1 프로필 등록이 일시 중단되어 있습니다." }, { status: 403 });
+  }
+  if (!phoneState.phoneVerified || !phoneState.phoneE164) {
+    return NextResponse.json({ error: "휴대폰 인증 후 다시 올릴 수 있습니다." }, { status: 403 });
+  }
+  if (currentRes.error || activeRes.error) {
+    console.error("[PUT /api/dating/1on1/my] restore check failed", currentRes.error ?? activeRes.error);
+    return NextResponse.json({ error: "프로필 상태 확인에 실패했습니다." }, { status: 500 });
+  }
+  if (!currentRes.data) {
+    return NextResponse.json({ error: "복구할 프로필을 찾지 못했습니다." }, { status: 404 });
+  }
+
+  const tags = Array.isArray(currentRes.data.admin_tags)
+    ? currentRes.data.admin_tags.map((item) => String(item ?? "").trim())
+    : [];
+  if (currentRes.data.status !== "rejected" || !tags.includes(ONE_ON_ONE_USER_DELETED_TAG)) {
+    return NextResponse.json({ error: "직접 내린 프로필만 다시 올릴 수 있습니다." }, { status: 409 });
+  }
+  if (activeRes.data) {
+    return NextResponse.json({ error: "이미 이용 중인 1:1 프로필이 있어 다시 올릴 수 없습니다." }, { status: 409 });
+  }
+
+  const nowIso = new Date().toISOString();
+  const restoreRes = await admin
+    .from("dating_1on1_cards")
+    .update({
+      status: "submitted",
+      phone: phoneState.phoneE164,
+      admin_tags: removeAdminTag(currentRes.data.admin_tags, ONE_ON_ONE_USER_DELETED_TAG),
+      reviewed_by_user_id: null,
+      reviewed_at: null,
+      updated_at: nowIso,
+    })
+    .eq("id", cardId)
+    .eq("user_id", user.id)
+    .eq("status", "rejected")
+    .select("id")
+    .maybeSingle();
+
+  if (restoreRes.error || !restoreRes.data) {
+    console.error("[PUT /api/dating/1on1/my] restore failed", restoreRes.error);
+    if (restoreRes.error?.code === "23505") {
+      return NextResponse.json({ error: "이미 이용 중인 1:1 프로필이 있어 다시 올릴 수 없습니다." }, { status: 409 });
+    }
+    return NextResponse.json({ error: "프로필 다시 올리기에 실패했습니다." }, { status: 500 });
+  }
+
+  return NextResponse.json({ ok: true, id: cardId, status: "submitted", archived: false });
 }
 
 export async function DELETE(req: Request) {
