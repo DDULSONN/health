@@ -459,6 +459,22 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ error: "Request not found." }, { status: 404 });
   }
 
+  const currentTags = Array.isArray(currentRes.data.admin_tags)
+    ? currentRes.data.admin_tags.map((item) => String(item ?? "").trim())
+    : [];
+  if (currentTags.includes(ONE_ON_ONE_USER_DELETED_TAG)) {
+    return NextResponse.json({
+      ok: true,
+      id: cardId,
+      deleted: true,
+      archived: true,
+      message: "이미 내려간 1:1 프로필입니다.",
+    });
+  }
+  if (!DATING_ONE_ON_ONE_ACTIVE_STATUSES.includes(currentRes.data.status as (typeof DATING_ONE_ON_ONE_ACTIVE_STATUSES)[number])) {
+    return NextResponse.json({ error: "현재 상태에서는 프로필을 내릴 수 없습니다." }, { status: 409 });
+  }
+
   const nowIso = new Date().toISOString();
   const deleteRes = await admin
     .from("dating_1on1_cards")
@@ -469,13 +485,23 @@ export async function DELETE(req: Request) {
     })
     .eq("id", cardId)
     .eq("user_id", user.id)
+    .in("status", [...DATING_ONE_ON_ONE_ACTIVE_STATUSES])
     .select("id")
     .maybeSingle();
 
   if (deleteRes.error || !deleteRes.data) {
     console.error("[DELETE /api/dating/1on1/my] archive failed", deleteRes.error);
-    return NextResponse.json({ error: "Failed to archive request." }, { status: 500 });
+    return NextResponse.json(
+      { error: deleteRes.error ? "프로필 내리기에 실패했습니다." : "프로필 상태가 변경되었습니다. 새로고침 후 다시 확인해주세요." },
+      { status: deleteRes.error ? 500 : 409 }
+    );
   }
 
-  return NextResponse.json({ ok: true, id: cardId, deleted: true, archived: true });
+  return NextResponse.json({
+    ok: true,
+    id: cardId,
+    deleted: true,
+    archived: true,
+    message: "1:1 프로필을 내렸습니다. 기존 매칭 기록은 그대로 유지됩니다.",
+  });
 }
