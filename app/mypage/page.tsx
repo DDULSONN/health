@@ -2,7 +2,7 @@
 
 import dynamic from "next/dynamic";
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { timeAgo } from "@/lib/community";
@@ -1788,6 +1788,7 @@ export default function MyPage() {
   const [processingSwipeSubscriptionIds, setProcessingSwipeSubscriptionIds] = useState<string[]>([]);
   const [processingCityViewIds, setProcessingCityViewIds] = useState<string[]>([]);
   const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
+  const oneOnOneMatchActionLocksRef = useRef<Set<string>>(new Set());
   const [processingOneOnOneContactExchangeIds, setProcessingOneOnOneContactExchangeIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
   const [reportingDatingTargetKeys, setReportingDatingTargetKeys] = useState<string[]>([]);
@@ -4740,7 +4741,8 @@ export default function MyPage() {
     matchId: string,
     action: "select_candidate" | "source_cancel" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
   ) => {
-    if (processingOneOnOneMatchIds.includes(matchId)) return;
+    if (oneOnOneMatchActionLocksRef.current.has(matchId)) return;
+    oneOnOneMatchActionLocksRef.current.add(matchId);
     setProcessingOneOnOneMatchIds((prev) => [...prev, matchId]);
     try {
       const res = await fetch(`/api/dating/1on1/matches/${matchId}`, {
@@ -4748,18 +4750,41 @@ export default function MyPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action }),
       });
-      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; code?: string };
       if (!res.ok || !body.ok) {
-        alert(body.error ?? "1:1 매칭 처리에 실패했습니다.");
-        if (action === "source_cancel" && res.status === 409) {
-          await reloadOneOnOneAfterAction();
+        if ((action === "source_cancel" || action === "cancel_mutual") && res.status === 409) {
+          try {
+            await reloadOneOnOneAfterAction();
+          } catch (reloadError) {
+            console.error("[mypage] failed to refresh stale 1on1 action", reloadError);
+          }
+          if (body.code === "MATCH_ALREADY_HANDLED") return;
         }
+        alert(body.error ?? "1:1 매칭 처리에 실패했습니다.");
         return;
       }
-      await reloadOneOnOneAfterAction();
+      if (action === "source_cancel" || action === "cancel_mutual") {
+        setMyOneOnOneMatches((prev) =>
+          prev.map((match) =>
+            match.id === matchId
+              ? {
+                  ...match,
+                  state: action === "source_cancel" ? "source_skipped" : "admin_canceled",
+                  action_required: false,
+                }
+              : match
+          )
+        );
+      }
+      try {
+        await reloadOneOnOneAfterAction();
+      } catch (reloadError) {
+        console.error("[mypage] 1on1 action succeeded but reload failed", reloadError);
+      }
     } catch (e) {
       alert(e instanceof Error ? e.message : "1:1 매칭 처리에 실패했습니다.");
     } finally {
+      oneOnOneMatchActionLocksRef.current.delete(matchId);
       setProcessingOneOnOneMatchIds((prev) => prev.filter((id) => id !== matchId));
     }
   };
@@ -9428,7 +9453,7 @@ export default function MyPage() {
                                     if (!window.confirm("보낸 1:1 지원을 취소할까요? 상대가 수락하기 전까지만 취소할 수 있습니다.")) return;
                                     void handleOneOnOneMatchAction(match.id, "source_cancel");
                                   }}
-                                  className="inline-flex h-8 items-center rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-700 disabled:opacity-50"
+                                  className="inline-flex min-h-[44px] touch-manipulation items-center rounded-lg border border-red-300 bg-white px-4 text-xs font-medium text-red-700 disabled:opacity-50"
                                 >
                                   {processing ? "취소 중..." : "지원 취소"}
                                 </button>
@@ -9585,8 +9610,11 @@ export default function MyPage() {
                                         <button
                                           type="button"
                                           disabled={processingOneOnOneMatchIds.includes(match.id)}
-                                          onClick={() => void handleOneOnOneMatchAction(match.id, "cancel_mutual")}
-                                          className="inline-flex h-8 items-center rounded-md border border-rose-300 bg-white px-3 text-xs font-medium text-rose-700 disabled:opacity-50"
+                                          onClick={() => {
+                                            if (!window.confirm("이 1:1 매칭을 취소할까요?")) return;
+                                            void handleOneOnOneMatchAction(match.id, "cancel_mutual");
+                                          }}
+                                          className="inline-flex min-h-[44px] touch-manipulation items-center rounded-lg border border-rose-300 bg-white px-4 text-xs font-medium text-rose-700 disabled:opacity-50"
                                         >
                                           {processingOneOnOneMatchIds.includes(match.id) ? "취소 중..." : "매칭 취소"}
                                         </button>
@@ -9600,8 +9628,11 @@ export default function MyPage() {
                                   <button
                                     type="button"
                                     disabled={processingOneOnOneMatchIds.includes(match.id)}
-                                    onClick={() => void handleOneOnOneMatchAction(match.id, "cancel_mutual")}
-                                    className="inline-flex h-8 items-center rounded-md border border-rose-300 bg-white px-3 text-xs font-medium text-rose-700 disabled:opacity-50"
+                                    onClick={() => {
+                                      if (!window.confirm("이 1:1 매칭을 취소할까요?")) return;
+                                      void handleOneOnOneMatchAction(match.id, "cancel_mutual");
+                                    }}
+                                    className="inline-flex min-h-[44px] touch-manipulation items-center rounded-lg border border-rose-300 bg-white px-4 text-xs font-medium text-rose-700 disabled:opacity-50"
                                   >
                                     {processingOneOnOneMatchIds.includes(match.id) ? "취소 중..." : "매칭 취소"}
                                   </button>

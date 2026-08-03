@@ -128,7 +128,7 @@ export async function POST(
     row = await getMatchRow(admin, matchId);
   } catch (error) {
     console.error("[POST /api/dating/1on1/matches/[id]/contact-exchange] reload failed", error);
-    return NextResponse.json({ error: "Request saved, but reload failed." }, { status: 500 });
+    return NextResponse.json({ ok: true, item: null, warning: "MATCH_RELOAD_FAILED" });
   }
 
   return NextResponse.json({ ok: true, item: row });

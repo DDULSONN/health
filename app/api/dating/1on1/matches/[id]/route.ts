@@ -194,13 +194,13 @@ export async function POST(
     }
     if (row.state !== "source_selected") {
       return NextResponse.json(
-        { error: "상대가 이미 응답했거나 지원 상태가 변경되었습니다. 목록을 다시 확인해주세요." },
+        { error: "상대가 이미 응답했거나 지원 상태가 변경되었습니다. 목록을 다시 확인해주세요.", code: "MATCH_ALREADY_HANDLED" },
         { status: 409 }
       );
     }
     if (row.contact_exchange_status !== "none") {
       return NextResponse.json(
-        { error: "번호 교환 절차가 시작된 지원은 이 단계에서 취소할 수 없습니다." },
+        { error: "번호 교환 절차가 시작된 지원은 이 단계에서 취소할 수 없습니다.", code: "MATCH_CANCEL_NOT_READY" },
         { status: 409 }
       );
     }
@@ -224,7 +224,7 @@ export async function POST(
     }
     if (!updateRes.data) {
       return NextResponse.json(
-        { error: "상대가 이미 응답했거나 지원 상태가 변경되었습니다. 목록을 다시 확인해주세요." },
+        { error: "상대가 이미 응답했거나 지원 상태가 변경되었습니다. 목록을 다시 확인해주세요.", code: "MATCH_ALREADY_HANDLED" },
         { status: 409 }
       );
     }
@@ -329,13 +329,13 @@ export async function POST(
   if (body.action === "cancel_mutual") {
     const isParticipant = row.source_user_id === user.id || row.candidate_user_id === user.id;
     if (!isParticipant) {
-      return NextResponse.json({ error: "Only matched participants can cancel this match." }, { status: 403 });
+      return NextResponse.json({ error: "매칭 당사자만 취소할 수 있습니다.", code: "NOT_MATCH_PARTICIPANT" }, { status: 403 });
     }
     if (!["mutual_accepted", "candidate_accepted"].includes(row.state)) {
-      return NextResponse.json({ error: "Only accepted matches can be canceled." }, { status: 409 });
+      return NextResponse.json({ error: "이미 처리된 매칭입니다.", code: "MATCH_ALREADY_HANDLED" }, { status: 409 });
     }
     if (!canCancelApprovedContactExchange(row, nowMs)) {
-      return NextResponse.json({ error: "현재는 매칭을 취소할 수 없습니다." }, { status: 409 });
+      return NextResponse.json({ error: "아직 매칭을 취소할 수 없습니다.", code: "MATCH_CANCEL_NOT_READY" }, { status: 409 });
     }
 
     const updateRes = await admin
@@ -347,28 +347,33 @@ export async function POST(
       })
       .eq("id", matchId)
       .in("state", ["mutual_accepted", "candidate_accepted"])
+      .eq("contact_exchange_status", row.contact_exchange_status)
       .select("id")
       .maybeSingle();
 
     if (updateRes.error) {
       console.error("[POST /api/dating/1on1/matches/[id]] cancel mutual failed", updateRes.error);
-      return NextResponse.json({ error: "Failed to cancel this match." }, { status: 500 });
+      return NextResponse.json({ error: "매칭 취소 처리에 실패했습니다." }, { status: 500 });
     }
     if (!updateRes.data) {
-      return NextResponse.json({ error: "This match was already handled." }, { status: 409 });
+      return NextResponse.json({ error: "이미 처리된 매칭입니다.", code: "MATCH_ALREADY_HANDLED" }, { status: 409 });
     }
 
     const otherUserId =
       row.source_user_id === user.id ? row.candidate_user_id : row.source_user_id;
-    await notifyDatingUser(admin, {
-      userId: otherUserId,
-      actorId: user.id,
-      type: "dating_1on1_match_canceled",
-      title: "1:1 매칭이 취소됐어요",
-      body: "진행 중이던 1:1 매칭이 취소됐습니다.",
-      route: "/dating/1on1",
-      meta: { match_id: matchId },
-    });
+    try {
+      await notifyDatingUser(admin, {
+        userId: otherUserId,
+        actorId: user.id,
+        type: "dating_1on1_match_canceled",
+        title: "1:1 매칭이 취소됐어요",
+        body: "진행 중이던 1:1 매칭이 취소됐습니다.",
+        route: "/dating/1on1",
+        meta: { match_id: matchId },
+      });
+    } catch (notificationError) {
+      console.error("[POST /api/dating/1on1/matches/[id]] cancel notification failed", notificationError);
+    }
   }
 
   if (body.action === "candidate_reject") {
@@ -399,15 +404,19 @@ export async function POST(
       return NextResponse.json({ error: "This request was already handled." }, { status: 409 });
     }
 
-    await notifyDatingUser(admin, {
-      userId: row.source_user_id,
-      actorId: row.candidate_user_id,
-      type: "dating_1on1_match_canceled",
-      title: "1:1 요청 결과가 도착했어요",
-      body: "선택한 후보가 이번 요청을 진행하지 않기로 했습니다.",
-      route: "/dating/1on1",
-      meta: { match_id: matchId },
-    });
+    try {
+      await notifyDatingUser(admin, {
+        userId: row.source_user_id,
+        actorId: row.candidate_user_id,
+        type: "dating_1on1_match_canceled",
+        title: "1:1 요청 결과가 도착했어요",
+        body: "선택한 후보가 이번 요청을 진행하지 않기로 했습니다.",
+        route: "/dating/1on1",
+        meta: { match_id: matchId },
+      });
+    } catch (notificationError) {
+      console.error("[POST /api/dating/1on1/matches/[id]] candidate reject notification failed", notificationError);
+    }
   }
 
   if (body.action === "source_accept") {
@@ -453,15 +462,19 @@ export async function POST(
       return NextResponse.json({ error: "This request was already handled." }, { status: 409 });
     }
 
-    await notifyDatingUser(admin, {
-      userId: row.candidate_user_id,
-      actorId: row.source_user_id,
-      type: "dating_1on1_match_accepted",
-      title: "1:1 매칭이 성사됐어요",
-      body: "서로 수락해 번호 교환 단계가 열렸습니다.",
-      route: "/dating/1on1",
-      meta: { match_id: matchId },
-    });
+    try {
+      await notifyDatingUser(admin, {
+        userId: row.candidate_user_id,
+        actorId: row.source_user_id,
+        type: "dating_1on1_match_accepted",
+        title: "1:1 매칭이 성사됐어요",
+        body: "서로 수락해 번호 교환 단계가 열렸습니다.",
+        route: "/dating/1on1",
+        meta: { match_id: matchId },
+      });
+    } catch (notificationError) {
+      console.error("[POST /api/dating/1on1/matches/[id]] source accept notification failed", notificationError);
+    }
 
   }
 
@@ -493,22 +506,26 @@ export async function POST(
       return NextResponse.json({ error: "This request was already handled." }, { status: 409 });
     }
 
-    await notifyDatingUser(admin, {
-      userId: row.candidate_user_id,
-      actorId: row.source_user_id,
-      type: "dating_1on1_match_canceled",
-      title: "1:1 요청 결과가 도착했어요",
-      body: "진행 중이던 1:1 요청이 종료됐습니다.",
-      route: "/dating/1on1",
-      meta: { match_id: matchId },
-    });
+    try {
+      await notifyDatingUser(admin, {
+        userId: row.candidate_user_id,
+        actorId: row.source_user_id,
+        type: "dating_1on1_match_canceled",
+        title: "1:1 요청 결과가 도착했어요",
+        body: "진행 중이던 1:1 요청이 종료됐습니다.",
+        route: "/dating/1on1",
+        meta: { match_id: matchId },
+      });
+    } catch (notificationError) {
+      console.error("[POST /api/dating/1on1/matches/[id]] source reject notification failed", notificationError);
+    }
   }
 
   try {
     row = await getMatchRow(admin, matchId);
   } catch (error) {
     console.error("[POST /api/dating/1on1/matches/[id]] reload failed", error);
-    return NextResponse.json({ error: "Action saved, but reload failed." }, { status: 500 });
+    return NextResponse.json({ ok: true, item: null, warning: "MATCH_RELOAD_FAILED" });
   }
 
   return NextResponse.json({ ok: true, item: row });

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
 import PaidPolicyNotice from "@/components/PaidPolicyNotice";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
@@ -57,6 +57,8 @@ type NearbyViewSnapshot = {
   activeSex: "male" | "female";
   items: CardItem[];
   scrollY: number;
+  restoreOnNextVisit?: boolean;
+  restoreRequestedAt?: number;
 };
 
 function readNearbyViewSnapshot(): NearbyViewSnapshot | null {
@@ -73,7 +75,17 @@ function readNearbyViewSnapshot(): NearbyViewSnapshot | null {
 function writeNearbyViewSnapshot(snapshot: NearbyViewSnapshot) {
   if (typeof window === "undefined") return;
   try {
-    window.sessionStorage.setItem(NEARBY_VIEW_CACHE_KEY, JSON.stringify(snapshot));
+    const current = readNearbyViewSnapshot();
+    window.sessionStorage.setItem(
+      NEARBY_VIEW_CACHE_KEY,
+      JSON.stringify({
+        ...snapshot,
+        restoreOnNextVisit:
+          "restoreOnNextVisit" in snapshot ? snapshot.restoreOnNextVisit : (current?.restoreOnNextVisit ?? false),
+        restoreRequestedAt:
+          "restoreRequestedAt" in snapshot ? snapshot.restoreRequestedAt : current?.restoreRequestedAt,
+      })
+    );
   } catch {
     // ignore
   }
@@ -106,9 +118,31 @@ export default function NearbyViewPage() {
   const [items, setItems] = useState<CardItem[]>(initialSnapshot?.items ?? []);
   const [loading, setLoading] = useState(() => !(initialSnapshot?.items?.length));
   const listRequestIdRef = useRef(0);
+  const pendingSexTabScrollRef = useRef<number | null>(null);
+
+  useLayoutEffect(() => {
+    const scrollY = pendingSexTabScrollRef.current;
+    if (scrollY === null) return;
+    pendingSexTabScrollRef.current = null;
+    window.scrollTo({ top: scrollY, behavior: "auto" });
+  }, [activeSex]);
+
+  const handleActiveSexChange = (sex: "male" | "female") => {
+    if (sex === activeSex) return;
+    pendingSexTabScrollRef.current = window.scrollY;
+    setActiveSex(sex);
+  };
 
   useEffect(() => {
-    if (!initialSnapshot) return;
+    if (!initialSnapshot?.restoreOnNextVisit) return;
+    const requestedAt = Number(initialSnapshot.restoreRequestedAt ?? 0);
+    const restoreIsFresh = requestedAt > 0 && Date.now() - requestedAt <= 30 * 60 * 1000;
+    writeNearbyViewSnapshot({
+      ...initialSnapshot,
+      restoreOnNextVisit: false,
+      restoreRequestedAt: undefined,
+    });
+    if (!restoreIsFresh) return;
     const restore = window.requestAnimationFrame(() => {
       window.scrollTo({ top: initialSnapshot.scrollY ?? 0, behavior: "auto" });
     });
@@ -398,7 +432,7 @@ export default function NearbyViewPage() {
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setActiveSex("male")}
+                onClick={() => handleActiveSexChange("male")}
                 className={`inline-flex min-h-[36px] items-center rounded-xl px-3 text-xs font-semibold ${
                   activeSex === "male" ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100"
                 }`}
@@ -407,7 +441,7 @@ export default function NearbyViewPage() {
               </button>
               <button
                 type="button"
-                onClick={() => setActiveSex("female")}
+                onClick={() => handleActiveSexChange("female")}
                 className={`inline-flex min-h-[36px] items-center rounded-xl px-3 text-xs font-semibold ${
                   activeSex === "female" ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100"
                 }`}
@@ -425,6 +459,8 @@ export default function NearbyViewPage() {
                   activeSex,
                   items,
                   scrollY: window.scrollY,
+                  restoreOnNextVisit: true,
+                  restoreRequestedAt: Date.now(),
                 })
               }
             />

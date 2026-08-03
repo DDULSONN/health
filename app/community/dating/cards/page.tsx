@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import {
@@ -266,6 +266,8 @@ type OpenCardsSnapshot = {
   moreViewMale: PublicCard[];
   moreViewFemale: PublicCard[];
   scrollY?: number;
+  restoreOnNextVisit?: boolean;
+  restoreRequestedAt?: number;
 };
 
 function buildLoginRedirect(path: string) {
@@ -402,7 +404,17 @@ function readOpenCardsSnapshot(): OpenCardsSnapshot | null {
 function writeOpenCardsSnapshot(snapshot: OpenCardsSnapshot) {
   if (typeof window === "undefined") return;
   try {
-    window.sessionStorage.setItem(OPEN_CARDS_CACHE_KEY, JSON.stringify(snapshot));
+    const current = readOpenCardsSnapshot();
+    window.sessionStorage.setItem(
+      OPEN_CARDS_CACHE_KEY,
+      JSON.stringify({
+        ...snapshot,
+        restoreOnNextVisit:
+          "restoreOnNextVisit" in snapshot ? snapshot.restoreOnNextVisit : (current?.restoreOnNextVisit ?? false),
+        restoreRequestedAt:
+          "restoreRequestedAt" in snapshot ? snapshot.restoreRequestedAt : current?.restoreRequestedAt,
+      })
+    );
   } catch {
     // ignore cache write errors
   }
@@ -1758,12 +1770,21 @@ export default function OpenCardsPage() {
   const [oneOnOneHomeError, setOneOnOneHomeError] = useState("");
   const [oneOnOneHome, setOneOnOneHome] = useState<OneOnOneHomeState | null>(null);
   const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
+  const oneOnOneMatchActionLocksRef = useRef<Set<string>>(new Set());
+  const pendingSexTabScrollRef = useRef<number | null>(null);
   const [processingOneOnOneContactIds, setProcessingOneOnOneContactIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
   const [refreshingOneOnOneRecommendationIds, setRefreshingOneOnOneRecommendationIds] = useState<string[]>([]);
 
   useEffect(() => {
     activeSexRef.current = activeSex;
+  }, [activeSex]);
+
+  useLayoutEffect(() => {
+    const scrollY = pendingSexTabScrollRef.current;
+    if (scrollY === null) return;
+    pendingSexTabScrollRef.current = null;
+    window.scrollTo({ top: scrollY, behavior: "auto" });
   }, [activeSex]);
 
   useEffect(() => {
@@ -2048,7 +2069,15 @@ export default function OpenCardsPage() {
   ]);
 
   useEffect(() => {
-    if (!restoredSnapshot) return;
+    if (!restoredSnapshot?.restoreOnNextVisit) return;
+    const requestedAt = Number(restoredSnapshot.restoreRequestedAt ?? 0);
+    const restoreIsFresh = requestedAt > 0 && Date.now() - requestedAt <= 30 * 60 * 1000;
+    writeOpenCardsSnapshot({
+      ...restoredSnapshot,
+      restoreOnNextVisit: false,
+      restoreRequestedAt: undefined,
+    });
+    if (!restoreIsFresh) return;
     const restore = window.requestAnimationFrame(() => {
       window.scrollTo({ top: restoredSnapshot.scrollY ?? 0, behavior: "auto" });
     });
@@ -2471,7 +2500,8 @@ export default function OpenCardsPage() {
       matchId: string,
       action: "select_candidate" | "source_cancel" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
     ) => {
-      if (processingOneOnOneMatchIds.includes(matchId)) return;
+      if (oneOnOneMatchActionLocksRef.current.has(matchId)) return;
+      oneOnOneMatchActionLocksRef.current.add(matchId);
       setProcessingOneOnOneMatchIds((prev) => [...prev, matchId]);
       try {
         const res = await fetch(`/api/dating/1on1/matches/${matchId}`, {
@@ -2479,21 +2509,37 @@ export default function OpenCardsPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action }),
         });
-        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; code?: string };
         if (!res.ok || !body.ok) {
-          if (action === "source_cancel" && res.status === 409) {
+          if ((action === "source_cancel" || action === "cancel_mutual") && res.status === 409) {
             await reloadOneOnOneHome();
+            if (body.code === "MATCH_ALREADY_HANDLED") return;
           }
           throw new Error(body.error ?? "1:1 매칭 처리에 실패했습니다.");
+        }
+        if (action === "source_cancel" || action === "cancel_mutual") {
+          setOneOnOneHome((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  matches: prev.matches.map((match) =>
+                    match.id === matchId
+                      ? { ...match, state: action === "source_cancel" ? "source_skipped" : "admin_canceled", action_required: false }
+                      : match
+                  ),
+                }
+              : prev
+          );
         }
         await reloadOneOnOneHome();
       } catch (error) {
         alert(error instanceof Error ? error.message : "1:1 매칭 처리에 실패했습니다.");
       } finally {
+        oneOnOneMatchActionLocksRef.current.delete(matchId);
         setProcessingOneOnOneMatchIds((prev) => prev.filter((id) => id !== matchId));
       }
     },
-    [processingOneOnOneMatchIds, reloadOneOnOneHome]
+    [reloadOneOnOneHome]
   );
 
   const handleOneOnOneContactCheckout = useCallback(
@@ -2697,6 +2743,11 @@ export default function OpenCardsPage() {
   const activePaidItems = activeSex === "male" ? malePaidItems : femalePaidItems;
   const activeHasMore = activeSex === "male" ? maleHasMore : femaleHasMore;
   const activeCurrentCount = activeSex === "male" ? (queueStats?.male.public_count ?? males.length) : (queueStats?.female.public_count ?? females.length);
+  const handleActiveSexChange = (sex: "male" | "female") => {
+    if (sex === activeSex) return;
+    pendingSexTabScrollRef.current = window.scrollY;
+    setActiveSex(sex);
+  };
   const swipeTheme = getCardVisualTheme(swipeState.candidate?.card_id ?? activeSex);
   const showOpenCardSection = homeFeatureTab === "open_cards";
   const showQuickMatchSection = homeFeatureTab === "quick_match";
@@ -3291,7 +3342,7 @@ export default function OpenCardsPage() {
         <div className="mb-4 grid grid-cols-2 gap-2 rounded-[18px] border border-neutral-200/80 bg-white p-1.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
           <button
             type="button"
-            onClick={() => setActiveSex("female")}
+            onClick={() => handleActiveSexChange("female")}
             className={`inline-flex min-h-[46px] items-center justify-center rounded-[14px] px-3 text-sm font-black transition ${
               activeSex === "female"
                 ? "bg-rose-600 text-white shadow-[0_10px_20px_rgba(225,29,72,0.18)]"
@@ -3302,7 +3353,7 @@ export default function OpenCardsPage() {
           </button>
           <button
             type="button"
-            onClick={() => setActiveSex("male")}
+            onClick={() => handleActiveSexChange("male")}
             className={`inline-flex min-h-[46px] items-center justify-center rounded-[14px] px-3 text-sm font-black transition ${
               activeSex === "male"
                 ? "bg-slate-900 text-white shadow-[0_10px_20px_rgba(15,23,42,0.14)]"
@@ -4037,7 +4088,7 @@ function OneOnOneMatchActions({
             if (!window.confirm("보낸 1:1 지원을 취소할까요? 상대가 수락하기 전까지만 취소할 수 있습니다.")) return;
             onMatchAction(match.id, "source_cancel");
           }}
-          className="inline-flex min-h-[34px] items-center rounded-xl border border-rose-200 bg-white px-3 text-xs font-bold text-rose-700 disabled:opacity-50"
+          className="inline-flex min-h-[44px] touch-manipulation items-center rounded-xl border border-rose-200 bg-white px-4 text-xs font-bold text-rose-700 disabled:opacity-50"
         >
           {processing ? "취소 중..." : "지원 취소"}
         </button>
@@ -4089,8 +4140,11 @@ function OneOnOneMatchActions({
               <button
                 type="button"
                 disabled={processing}
-                onClick={() => onMatchAction(match.id, "cancel_mutual")}
-                className="inline-flex min-h-[34px] items-center rounded-xl border border-rose-200 bg-white px-3 text-xs font-bold text-rose-700 disabled:opacity-50"
+                onClick={() => {
+                  if (!window.confirm("이 1:1 매칭을 취소할까요?")) return;
+                  onMatchAction(match.id, "cancel_mutual");
+                }}
+                className="inline-flex min-h-[44px] touch-manipulation items-center rounded-xl border border-rose-200 bg-white px-4 text-xs font-bold text-rose-700 disabled:opacity-50"
               >
                 {processing ? "취소 중..." : "매칭 취소"}
               </button>
@@ -4131,8 +4185,11 @@ function OneOnOneMatchActions({
           <button
             type="button"
             disabled={processing}
-            onClick={() => onMatchAction(match.id, "cancel_mutual")}
-            className="inline-flex min-h-[34px] items-center rounded-xl border border-rose-200 bg-white px-3 text-xs font-bold text-rose-700 disabled:opacity-50"
+            onClick={() => {
+              if (!window.confirm("이 1:1 매칭을 취소할까요?")) return;
+              onMatchAction(match.id, "cancel_mutual");
+            }}
+            className="inline-flex min-h-[44px] touch-manipulation items-center rounded-xl border border-rose-200 bg-white px-4 text-xs font-bold text-rose-700 disabled:opacity-50"
           >
             {processing ? "취소 중..." : "매칭 취소"}
           </button>
@@ -4244,6 +4301,8 @@ function PaidCardRow({ card, viewerLoggedIn }: { card: PaidCard; viewerLoggedIn:
     writeOpenCardsSnapshot({
       ...snapshot,
       scrollY: window.scrollY,
+      restoreOnNextVisit: true,
+      restoreRequestedAt: Date.now(),
     });
   }, []);
 
@@ -4358,6 +4417,8 @@ function CardRow({ card, viewerLoggedIn }: { card: PublicCard; viewerLoggedIn: b
     writeOpenCardsSnapshot({
       ...snapshot,
       scrollY: window.scrollY,
+      restoreOnNextVisit: true,
+      restoreRequestedAt: Date.now(),
     });
   }, []);
 
