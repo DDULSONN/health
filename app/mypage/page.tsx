@@ -7189,7 +7189,7 @@ export default function MyPage() {
       )}
 
       <section className="mb-4 rounded-2xl border border-neutral-200/80 bg-white p-1.5 shadow-[0_10px_30px_rgba(17,24,39,0.04)]">
-        <div className="flex gap-1.5 overflow-x-auto sm:gap-2">
+        <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6 sm:gap-2">
           {([
             { key: "profile", label: "내 정보" },
             { key: "matching", label: "매칭" },
@@ -7204,7 +7204,7 @@ export default function MyPage() {
                 key={`mypage-section-${tab.key}`}
                 type="button"
                 onClick={() => setPageSectionTab(tab.key)}
-                className={`min-h-[44px] min-w-[82px] flex-1 rounded-xl px-3 text-sm font-semibold transition ${
+                className={`min-h-[44px] min-w-0 rounded-xl px-2 text-sm font-semibold transition ${
                   active ? "bg-neutral-950 text-white shadow-sm" : "bg-transparent text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800"
                 }`}
               >
