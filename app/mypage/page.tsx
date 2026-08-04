@@ -1802,6 +1802,7 @@ export default function MyPage() {
   const [processingSwipeSubscriptionIds, setProcessingSwipeSubscriptionIds] = useState<string[]>([]);
   const [processingCityViewIds, setProcessingCityViewIds] = useState<string[]>([]);
   const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
+  const [confirmingOneOnOneCancelIds, setConfirmingOneOnOneCancelIds] = useState<string[]>([]);
   const oneOnOneMatchActionLocksRef = useRef<Set<string>>(new Set());
   const [processingOneOnOneContactExchangeIds, setProcessingOneOnOneContactExchangeIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
@@ -4803,6 +4804,20 @@ export default function MyPage() {
       oneOnOneMatchActionLocksRef.current.delete(matchId);
       setProcessingOneOnOneMatchIds((prev) => prev.filter((id) => id !== matchId));
     }
+  };
+
+  const handleOneOnOneSupportCancelClick = (matchId: string) => {
+    if (oneOnOneMatchActionLocksRef.current.has(matchId)) return;
+    if (!confirmingOneOnOneCancelIds.includes(matchId)) {
+      setConfirmingOneOnOneCancelIds((prev) => (prev.includes(matchId) ? prev : [...prev, matchId]));
+      window.setTimeout(() => {
+        setConfirmingOneOnOneCancelIds((prev) => prev.filter((id) => id !== matchId));
+      }, 5000);
+      return;
+    }
+
+    setConfirmingOneOnOneCancelIds((prev) => prev.filter((id) => id !== matchId));
+    void handleOneOnOneMatchAction(matchId, "source_cancel");
   };
 
   const handleRequestOneOnOneContactExchange = async (matchId: string) => {
@@ -9555,6 +9570,7 @@ export default function MyPage() {
                       <div className="mt-2 space-y-2">
                         {waitingCandidateResponses.map((match) => {
                           const processing = processingOneOnOneMatchIds.includes(match.id);
+                          const confirmingCancel = confirmingOneOnOneCancelIds.includes(match.id);
                           const card = match.counterparty_card;
                           if (!card) return null;
                           return (
@@ -9572,13 +9588,14 @@ export default function MyPage() {
                                 <button
                                   type="button"
                                   disabled={processing}
-                                  onClick={() => {
-                                    if (!window.confirm("보낸 1:1 지원을 취소할까요? 상대가 수락하기 전까지만 취소할 수 있습니다.")) return;
-                                    void handleOneOnOneMatchAction(match.id, "source_cancel");
-                                  }}
-                                  className="inline-flex min-h-[44px] touch-manipulation items-center rounded-lg border border-red-300 bg-white px-4 text-xs font-medium text-red-700 disabled:opacity-50"
+                                  onClick={() => handleOneOnOneSupportCancelClick(match.id)}
+                                  className={`relative z-[60] inline-flex min-h-[48px] flex-1 touch-manipulation select-none items-center justify-center rounded-lg border px-4 text-xs font-semibold active:scale-[0.98] disabled:opacity-50 sm:flex-none ${
+                                    confirmingCancel
+                                      ? "border-red-600 bg-red-600 text-white"
+                                      : "border-red-300 bg-white text-red-700"
+                                  }`}
                                 >
-                                  {processing ? "취소 중..." : "지원 취소"}
+                                  {processing ? "취소 중..." : confirmingCancel ? "한 번 더 눌러 취소" : "지원 취소"}
                                 </button>
                                 <SmallDatingReportButton
                                   disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}
