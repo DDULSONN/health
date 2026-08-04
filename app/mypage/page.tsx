@@ -37,6 +37,14 @@ const AdminUserDatingCardsPanel = dynamic(() => import("@/components/admin/Admin
   loading: () => <MyPageWidgetSkeleton className="h-64" />,
 });
 
+const AppTestProgramPanel = dynamic(() => import("@/components/AppTestProgramPanel"), {
+  loading: () => <MyPageWidgetSkeleton className="h-20" />,
+});
+
+const AdminAppTestersPanel = dynamic(() => import("@/components/admin/AdminAppTestersPanel"), {
+  loading: () => <MyPageWidgetSkeleton className="h-64" />,
+});
+
 const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
   "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
@@ -918,6 +926,7 @@ type AdminManageTab =
   | "reels_dating"
   | "tools_patch_note"
   | "site_mascot"
+  | "app_testers"
   | "accepted_applications"
   | "mail_center"
   | "one_on_one_contact"
@@ -10323,6 +10332,8 @@ export default function MyPage() {
                   ? "릴스 매물 지원 (관리자)"
                   : adminManageTab === "payment_center"
                     ? "결제 운영 (관리자)"
+                    : adminManageTab === "app_testers"
+                      ? "앱 테스트 신청 (관리자)"
                     : adminManageTab === "tools_patch_note"
                       ? "도구 패치노트 (관리자)"
                     : adminManageTab === "accepted_applications"
@@ -10336,6 +10347,7 @@ export default function MyPage() {
               >
                 관리자 잠금 해제
               </Link>
+              {adminManageTab !== "app_testers" && (
               <button
                 type="button"
                 disabled={
@@ -10409,6 +10421,7 @@ export default function MyPage() {
                     ? "새로고침 중..."
                     : "신청목록 새로고침"}
               </button>
+              )}
             </div>
           </div>
 
@@ -10486,6 +10499,15 @@ export default function MyPage() {
               }`}
             >
               짐냥이
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdminManageTab("app_testers")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "app_testers" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              앱 테스트
             </button>
             <button
               type="button"
@@ -10615,6 +10637,8 @@ export default function MyPage() {
               광고 문의
             </button>
           </div>
+
+          {adminManageTab === "app_testers" && <AdminAppTestersPanel />}
 
           {adminManageTab === "site_dashboard" && (
           <div className="mb-3 space-y-4">
@@ -14870,6 +14894,10 @@ export default function MyPage() {
       </section>
 
       </>
+      )}
+
+      {showSettingsSection && (
+      <AppTestProgramPanel />
       )}
 
       {showSettingsSection && (

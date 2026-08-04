@@ -119,6 +119,7 @@ export default function NearbyViewPage() {
   const [loading, setLoading] = useState(() => !(initialSnapshot?.items?.length));
   const listRequestIdRef = useRef(0);
   const pendingSexTabScrollRef = useRef<number | null>(null);
+  const resultsSectionRef = useRef<HTMLElement | null>(null);
 
   useLayoutEffect(() => {
     const scrollY = pendingSexTabScrollRef.current;
@@ -226,6 +227,13 @@ export default function NearbyViewPage() {
     }
   }, []);
 
+  const showProvinceCards = useCallback((province: string, behavior: ScrollBehavior = "smooth") => {
+    setSelectedProvince(province);
+    window.requestAnimationFrame(() => {
+      resultsSectionRef.current?.scrollIntoView({ behavior, block: "start" });
+    });
+  }, []);
+
   useEffect(() => {
     queueMicrotask(() => {
       void loadStatus();
@@ -255,13 +263,13 @@ export default function NearbyViewPage() {
         if (body.message) alert(body.message);
         await loadStatus();
         if (body.province && body.status === "approved") {
-          setSelectedProvince(body.province);
+          showProvinceCards(body.province);
         }
       } finally {
         setSubmittingProvince("");
       }
     },
-    [loadStatus, status.loggedIn, submittingProvince]
+    [loadStatus, showProvinceCards, status.loggedIn, submittingProvince]
   );
 
   const requestCheckout = useCallback(
@@ -371,12 +379,12 @@ export default function NearbyViewPage() {
                     <>
                       <button
                         type="button"
-                        onClick={() => setSelectedProvince(stat.province)}
+                        onClick={() => showProvinceCards(stat.province)}
                         className={`inline-flex min-h-[36px] items-center rounded-xl px-3 text-xs font-semibold ${
                           selectedProvince === stat.province ? "bg-neutral-900 text-white" : "border border-neutral-300 bg-white text-neutral-700 hover:bg-neutral-100"
                         }`}
                       >
-                        바로 보기
+                        아래 카드 확인 ↓
                       </button>
                       <button
                         type="button"
@@ -384,9 +392,9 @@ export default function NearbyViewPage() {
                         disabled={!status.loggedIn || Boolean(checkoutProvince)}
                         className="inline-flex min-h-[36px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {checkoutProvince === stat.province ? "결제창 준비 중..." : "다음 30명 보기"}
+                        {checkoutProvince === stat.province ? "결제창 준비 중..." : "30명 더 열기"}
                       </button>
-                      <span className="text-xs font-medium text-emerald-700">24시간 열람중</span>
+                      <span className="text-xs font-medium text-emerald-700">24시간 열람중 · 아래에서 확인</span>
                     </>
                   ) : (
                     <>
@@ -397,7 +405,7 @@ export default function NearbyViewPage() {
                           disabled={!status.loggedIn || Boolean(submittingProvince)}
                           className="inline-flex min-h-[36px] items-center rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {submittingProvince === stat.province ? "처리 중..." : "무료 30명 보기"}
+                          {submittingProvince === stat.province ? "처리 중..." : "무료 30명 열기"}
                         </button>
                       ) : null}
                       <button
@@ -406,7 +414,7 @@ export default function NearbyViewPage() {
                         disabled={!status.loggedIn || Boolean(checkoutProvince)}
                         className="inline-flex min-h-[36px] items-center rounded-xl bg-emerald-600 px-3 text-xs font-semibold text-white hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {checkoutProvince === stat.province ? "결제창 준비 중..." : "30명 보기 5,000원"}
+                        {checkoutProvince === stat.province ? "결제창 준비 중..." : "30명 열기 5,000원"}
                       </button>
                       {isPending ? <span className="rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold text-amber-700">기존 요청 대기</span> : null}
                     </>
@@ -418,7 +426,11 @@ export default function NearbyViewPage() {
         </div>
       </section>
 
-      <section className="mt-5 rounded-[28px] border border-neutral-200 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
+      <section
+        id="nearby-results"
+        ref={resultsSectionRef}
+        className="mt-5 scroll-mt-20 rounded-[28px] border border-neutral-200 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)]"
+      >
         {!selectedProvince ? (
           <p className="text-sm text-neutral-500">결제나 무료 열람으로 열린 지역이 아직 없어요.</p>
         ) : loading ? (

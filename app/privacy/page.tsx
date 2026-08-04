@@ -48,7 +48,7 @@ export default function PrivacyPage() {
     <LegalPageLayout
       title="개인정보처리방침"
       description="짐툴은 서비스 제공에 필요한 최소한의 개인정보를 처리하며, 항목별 목적과 보유기간을 투명하게 안내합니다."
-      updatedAt="2026.05.27"
+      updatedAt="2026.08.04"
     >
       <Section title="1. 처리하는 개인정보 항목">
         <PolicyTable
@@ -97,6 +97,11 @@ export default function PrivacyPage() {
               item: "관리자 접속 및 처리 기록",
               purpose: "관리자 열람, 다운로드, 환불, 사진 검수 등 개인정보 처리 행위의 감사 및 사고 대응",
               retention: "접속기록 및 처리내역은 법령상 요구되는 기간 또는 보안 점검에 필요한 기간 동안 안전하게 보관하고, 기간 경과 후 파기합니다.",
+            },
+            {
+              item: "앱 테스트 신청 및 피드백",
+              purpose: "Google Play 비공개 테스트 초대, 참여 상태 관리, 오류 및 개선 의견 확인",
+              retention: "테스트 종료 또는 신청 철회 시 파기하며, 운영 및 분석을 위해 종료 후 최대 3개월 보관 후 파기합니다.",
             },
           ]}
         />

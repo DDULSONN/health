@@ -146,7 +146,7 @@ function getPrimaryAction(productType?: string, orderName?: string | null, provi
   if (productType === "swipe_premium_30d") return { href: "/community/dating/cards", label: "빠른매칭으로 돌아가기" };
   if (productType === "city_view") {
     const provinceQuery = province ? `?province=${encodeURIComponent(province)}` : "";
-    return { href: `/dating/nearby-view${provinceQuery}`, label: "가까운 후보 30명 보러가기" };
+    return { href: `/dating/nearby-view${provinceQuery}#nearby-results`, label: "열린 카드 바로 확인하기" };
   }
   if (productType === "love_fortune_detail") return { href: "/mypage?loveFortune=1#love-fortune", label: "저장된 풀이 보기" };
   return { href: "/dating/more-view", label: "이상형 더보기로 돌아가기" };
