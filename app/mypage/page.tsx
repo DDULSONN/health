@@ -678,9 +678,14 @@ type MyOneOnOneCard = {
 
 const ONE_ON_ONE_USER_EDIT_USED_TAG = "one_on_one_user_edit_used";
 const ONE_ON_ONE_USER_DELETED_TAG = "one_on_one_user_deleted";
+const ONE_ON_ONE_EDIT_LOCK_TAG = "one_on_one_edit_locked";
 
 function hasOneOnOneUserEditBeenUsed(card: Pick<MyOneOnOneCard, "admin_tags">) {
   return Array.isArray(card.admin_tags) && card.admin_tags.includes(ONE_ON_ONE_USER_EDIT_USED_TAG);
+}
+
+function isOneOnOneUserEditLocked(card: Pick<MyOneOnOneCard, "admin_tags">) {
+  return Array.isArray(card.admin_tags) && card.admin_tags.includes(ONE_ON_ONE_EDIT_LOCK_TAG);
 }
 
 type MyOneOnOneMatchCard = {
@@ -1871,6 +1876,7 @@ export default function MyPage() {
   const [deletingPaidAppliedIds, setDeletingPaidAppliedIds] = useState<string[]>([]);
   const [cancelingPaidAppliedIds, setCancelingPaidAppliedIds] = useState<string[]>([]);
   const [deletingOneOnOneIds, setDeletingOneOnOneIds] = useState<string[]>([]);
+  const [removingOneOnOneIds, setRemovingOneOnOneIds] = useState<string[]>([]);
   const oneOnOneProfileMutationLocksRef = useRef<Set<string>>(new Set());
   const [restoringOneOnOneIds, setRestoringOneOnOneIds] = useState<string[]>([]);
   const [deletingOpenCardIds, setDeletingOpenCardIds] = useState<string[]>([]);
@@ -5752,7 +5758,7 @@ export default function MyPage() {
   };
 
   const handleDeleteMyOneOnOneCard = async (cardId: string) => {
-    const lockKey = `archive:${cardId}`;
+    const lockKey = `profile:${cardId}`;
     if (oneOnOneProfileMutationLocksRef.current.has(lockKey)) return;
     if (!confirm("1:1 프로필을 내릴까요? 추천 노출은 종료되지만 기존 매칭과 번호교환 기록은 유지됩니다.")) return;
 
@@ -5783,7 +5789,7 @@ export default function MyPage() {
   };
 
   const handleRestoreMyOneOnOneCard = async (cardId: string) => {
-    const lockKey = `restore:${cardId}`;
+    const lockKey = `profile:${cardId}`;
     if (oneOnOneProfileMutationLocksRef.current.has(lockKey)) return;
     if (!confirm("내렸던 1:1 프로필을 다시 올릴까요? 기존 사진과 작성 내용이 그대로 등록됩니다.")) return;
 
@@ -5826,6 +5832,35 @@ export default function MyPage() {
     } finally {
       oneOnOneProfileMutationLocksRef.current.delete(lockKey);
       setRestoringOneOnOneIds((prev) => prev.filter((id) => id !== cardId));
+    }
+  };
+
+  const handleRemoveMyOneOnOneCard = async (cardId: string) => {
+    const lockKey = `profile:${cardId}`;
+    if (oneOnOneProfileMutationLocksRef.current.has(lockKey)) return;
+    if (!confirm("1:1 프로필을 삭제할까요? 신청서는 목록에서 사라지고 복구할 수 없지만, 기존 매칭과 번호교환 기록은 유지됩니다.")) return;
+
+    oneOnOneProfileMutationLocksRef.current.add(lockKey);
+    setRemovingOneOnOneIds((prev) => [...prev, cardId]);
+    try {
+      const res = await fetch(`/api/dating/1on1/my?id=${encodeURIComponent(cardId)}&mode=remove`, {
+        method: "DELETE",
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string; removed?: boolean };
+      if (!res.ok || body.removed !== true) {
+        alert(body.error ?? "1:1 프로필 삭제에 실패했습니다.");
+        return;
+      }
+
+      setMyOneOnOneCards((prev) => prev.filter((item) => item.id !== cardId));
+      setMyOneOnOneAutoRecommendations((prev) => prev.filter((group) => group.source_card_id !== cardId));
+      alert(body.message ?? "1:1 프로필을 삭제했습니다.");
+    } catch (error) {
+      console.error("[mypage] failed to remove 1on1 profile", error);
+      alert("네트워크 연결을 확인한 뒤 다시 시도해주세요.");
+    } finally {
+      oneOnOneProfileMutationLocksRef.current.delete(lockKey);
+      setRemovingOneOnOneIds((prev) => prev.filter((id) => id !== cardId));
     }
   };
 
@@ -8961,7 +8996,17 @@ export default function MyPage() {
           <div className="space-y-3">
             {myOneOnOneCards.map((item) => {
               const isArchivedOneOnOneCard = item.archived === true;
+              const oneOnOneUserEditUsed = hasOneOnOneUserEditBeenUsed(item);
+              const oneOnOneUserEditLocked = isOneOnOneUserEditLocked(item);
+              const canEditOneOnOneCard =
+                !oneOnOneUserEditUsed &&
+                !oneOnOneUserEditLocked &&
+                (item.status === "submitted" || isArchivedOneOnOneCard);
               const canArchiveOneOnOneCard = ["submitted", "reviewing", "approved"].includes(item.status);
+              const mutatingOneOnOneCard =
+                deletingOneOnOneIds.includes(item.id) ||
+                restoringOneOnOneIds.includes(item.id) ||
+                removingOneOnOneIds.includes(item.id);
               const relatedMatches = myOneOnOneMatchesByCardId.get(item.id) ?? [];
               const autoRecommendationGroup = myOneOnOneAutoRecommendationsByCardId.get(item.id) ?? null;
               const autoRecommendations = autoRecommendationGroup?.recommendations ?? [];
@@ -9022,6 +9067,61 @@ export default function MyPage() {
                     <span>키 {item.height_cm}cm</span>
                     <span>직업 {item.job}</span>
                     <span>지역 {item.region}</span>
+                  </div>
+                  <div className="mt-3 flex flex-col gap-3 border-y border-neutral-200 py-3 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="min-w-0">
+                      <p className="text-xs font-semibold text-neutral-900">신청서 관리</p>
+                      <p className="mt-1 text-[11px] leading-5 text-neutral-500">
+                        {isArchivedOneOnOneCard
+                          ? "현재 후보에게 노출되지 않아요. 내용을 수정한 뒤 프로필을 다시 올릴 수 있어요."
+                          : "신청서 내용 수정과 후보 노출 여부를 여기서 관리할 수 있어요."}
+                      </p>
+                    </div>
+                    <div className="flex shrink-0 flex-wrap gap-2">
+                      {canEditOneOnOneCard ? (
+                        <Link
+                          href={`/dating/1on1?editId=${item.id}`}
+                          className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-lg border border-amber-300 bg-amber-50 px-4 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                        >
+                          신청서 수정
+                        </Link>
+                      ) : (
+                        <span className="inline-flex min-h-[44px] items-center text-[11px] font-medium text-neutral-400">
+                          {oneOnOneUserEditUsed
+                            ? "수정 1회 사용 완료"
+                            : oneOnOneUserEditLocked
+                              ? "관리자 검수로 수정 제한"
+                              : "현재 수정 불가"}
+                        </span>
+                      )}
+                      {isArchivedOneOnOneCard ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleRestoreMyOneOnOneCard(item.id)}
+                          disabled={mutatingOneOnOneCard}
+                          className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                        >
+                          {restoringOneOnOneIds.includes(item.id) ? "처리 중..." : "프로필 다시 올리기"}
+                        </button>
+                      ) : canArchiveOneOnOneCard ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteMyOneOnOneCard(item.id)}
+                          disabled={mutatingOneOnOneCard}
+                          className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-lg border border-rose-300 bg-white px-4 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                        >
+                          {deletingOneOnOneIds.includes(item.id) ? "처리 중..." : "프로필 내리기"}
+                        </button>
+                      ) : null}
+                      <button
+                        type="button"
+                        onClick={() => void handleRemoveMyOneOnOneCard(item.id)}
+                        disabled={mutatingOneOnOneCard}
+                        className="inline-flex min-h-[44px] touch-manipulation items-center justify-center px-2 text-[11px] font-medium text-neutral-400 underline decoration-neutral-300 underline-offset-4 hover:text-red-600 disabled:opacity-50"
+                      >
+                        {removingOneOnOneIds.includes(item.id) ? "삭제 중..." : "삭제"}
+                      </button>
+                    </div>
                   </div>
                   {item.intro_text && (
                     <p className="mt-2 text-sm text-neutral-700 whitespace-pre-wrap break-words">{item.intro_text}</p>
@@ -9735,33 +9835,6 @@ export default function MyPage() {
                     >
                       1:1 소개팅 페이지
                     </Link>
-                    {item.status === "submitted" && !hasOneOnOneUserEditBeenUsed(item) && (
-                      <Link
-                        href={`/dating/1on1?editId=${item.id}`}
-                        className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-lg border border-amber-300 bg-white px-4 text-xs font-medium text-amber-700 hover:bg-amber-50"
-                      >
-                        신청서 수정
-                      </Link>
-                    )}
-                    {isArchivedOneOnOneCard ? (
-                      <button
-                        type="button"
-                        onClick={() => void handleRestoreMyOneOnOneCard(item.id)}
-                        disabled={restoringOneOnOneIds.includes(item.id)}
-                        className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-lg border border-emerald-300 bg-white px-4 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
-                      >
-                        {restoringOneOnOneIds.includes(item.id) ? "처리 중..." : "프로필 다시 올리기"}
-                      </button>
-                    ) : canArchiveOneOnOneCard ? (
-                      <button
-                        type="button"
-                        onClick={() => void handleDeleteMyOneOnOneCard(item.id)}
-                        disabled={deletingOneOnOneIds.includes(item.id)}
-                        className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-lg border border-red-300 bg-white px-4 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
-                      >
-                        {deletingOneOnOneIds.includes(item.id) ? "처리 중..." : "프로필 내리기"}
-                      </button>
-                    ) : null}
                   </div>
                 </div>
               );

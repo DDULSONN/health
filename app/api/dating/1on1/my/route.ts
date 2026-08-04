@@ -37,6 +37,7 @@ const WORKOUT_VALUES = new Set(["none", "1_2", "3_4", "5_plus"]);
 const ONE_ON_ONE_EDIT_LOCK_TAG = "one_on_one_edit_locked";
 const ONE_ON_ONE_USER_EDIT_USED_TAG = "one_on_one_user_edit_used";
 const ONE_ON_ONE_USER_DELETED_TAG = "one_on_one_user_deleted";
+const ONE_ON_ONE_USER_REMOVED_TAG = "one_on_one_user_removed";
 const BIRTH_YEAR_ERROR_MESSAGE = "나이가 아니라 출생연도 4자리를 입력해 주세요. 예: 1996";
 
 function normalizePath(raw: unknown): string {
@@ -77,7 +78,7 @@ function appendAdminTag(value: unknown, tag: string) {
   const tags = Array.isArray(value)
     ? value.map((item) => String(item ?? "").trim()).filter((item) => item.length > 0)
     : [];
-  return Array.from(new Set([...tags, tag])).slice(0, 20);
+  return Array.from(new Set([tag, ...tags])).slice(0, 20);
 }
 
 function removeAdminTag(value: unknown, tag: string) {
@@ -103,6 +104,7 @@ export async function GET(req: Request) {
       "id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,photo_paths,admin_note,admin_tags,reviewed_at,created_at,priority_boost_expires_at"
     )
     .eq("user_id", user.id)
+    .not("admin_tags", "cs", `{${ONE_ON_ONE_USER_REMOVED_TAG}}`)
     .order("created_at", { ascending: false })
     .limit(20);
 
@@ -113,6 +115,7 @@ export async function GET(req: Request) {
         "id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,photo_paths,admin_note,admin_tags,reviewed_at,created_at"
       )
       .eq("user_id", user.id)
+      .not("admin_tags", "cs", `{${ONE_ON_ONE_USER_REMOVED_TAG}}`)
       .order("created_at", { ascending: false })
       .limit(20);
     if (legacyRes.error) {
@@ -120,7 +123,9 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Failed to load 1:1 requests." }, { status: 500 });
     }
     const legacyItems = (legacyRes.data ?? []).map((row) => ({ ...row, priority_boost_expires_at: null }));
-    const items = legacyItems.map((row) => {
+    const items = legacyItems.filter(
+      (row) => !Array.isArray(row.admin_tags) || !row.admin_tags.includes(ONE_ON_ONE_USER_REMOVED_TAG),
+    ).map((row) => {
       const paths = Array.isArray(row.photo_paths)
         ? row.photo_paths
             .map((path) => normalizePath(path))
@@ -146,7 +151,9 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Failed to load 1:1 requests." }, { status: 500 });
   }
 
-  const items = (data ?? []).map((row) => {
+  const items = (data ?? []).filter(
+    (row) => !Array.isArray(row.admin_tags) || !row.admin_tags.includes(ONE_ON_ONE_USER_REMOVED_TAG),
+  ).map((row) => {
     const paths = Array.isArray(row.photo_paths)
       ? row.photo_paths
           .map((path) => normalizePath(path))
@@ -210,8 +217,16 @@ export async function PATCH(req: Request) {
   if (!currentRes.data) {
     return NextResponse.json({ error: "Request not found." }, { status: 404 });
   }
-  if (currentRes.data.status !== "submitted") {
-    return NextResponse.json({ error: "Only submitted requests can be edited." }, { status: 409 });
+  const currentTags = Array.isArray(currentRes.data.admin_tags)
+    ? currentRes.data.admin_tags.map((item) => String(item ?? "").trim())
+    : [];
+  if (currentTags.includes(ONE_ON_ONE_USER_REMOVED_TAG)) {
+    return NextResponse.json({ error: "삭제한 1:1 프로필은 수정할 수 없습니다." }, { status: 409 });
+  }
+  const isUserArchived =
+    currentRes.data.status === "rejected" && currentTags.includes(ONE_ON_ONE_USER_DELETED_TAG);
+  if (currentRes.data.status !== "submitted" && !isUserArchived) {
+    return NextResponse.json({ error: "접수 중이거나 직접 내린 신청서만 수정할 수 있습니다." }, { status: 409 });
   }
   if (isAdminEditLocked(currentRes.data.admin_tags)) {
     return NextResponse.json({ error: "관리자 검수로 인해 현재 1:1 신청서 수정이 제한되었습니다. 고객지원으로 문의해 주세요." }, { status: 409 });
@@ -327,19 +342,24 @@ export async function PATCH(req: Request) {
     admin_tags: appendAdminTag(currentRes.data.admin_tags, ONE_ON_ONE_USER_EDIT_USED_TAG),
   };
 
-  const { error } = await admin
+  const updateRes = await admin
     .from("dating_1on1_cards")
     .update(updatePayload)
     .eq("id", cardId)
     .eq("user_id", user.id)
-    .eq("status", "submitted");
+    .eq("status", currentRes.data.status)
+    .select("id,status")
+    .maybeSingle();
 
-  if (error) {
-    console.error("[PATCH /api/dating/1on1/my] update failed", error);
+  if (updateRes.error) {
+    console.error("[PATCH /api/dating/1on1/my] update failed", updateRes.error);
     return NextResponse.json({ error: "Failed to update request." }, { status: 500 });
   }
+  if (!updateRes.data) {
+    return NextResponse.json({ error: "신청서 상태가 변경되었습니다. 새로고침 후 다시 시도해 주세요." }, { status: 409 });
+  }
 
-  return NextResponse.json({ ok: true, id: cardId });
+  return NextResponse.json({ ok: true, id: cardId, archived: isUserArchived });
 }
 
 export async function PUT(req: Request) {
@@ -395,6 +415,9 @@ export async function PUT(req: Request) {
   const tags = Array.isArray(currentRes.data.admin_tags)
     ? currentRes.data.admin_tags.map((item) => String(item ?? "").trim())
     : [];
+  if (tags.includes(ONE_ON_ONE_USER_REMOVED_TAG)) {
+    return NextResponse.json({ error: "삭제한 1:1 프로필은 다시 올릴 수 없습니다." }, { status: 409 });
+  }
   if (currentRes.data.status !== "rejected" || !tags.includes(ONE_ON_ONE_USER_DELETED_TAG)) {
     return NextResponse.json({ error: "직접 내린 프로필만 다시 올릴 수 있습니다." }, { status: 409 });
   }
@@ -439,6 +462,7 @@ export async function DELETE(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const cardId = (searchParams.get("id") ?? "").trim();
+  const removePermanently = searchParams.get("mode") === "remove";
   if (!cardId) {
     return NextResponse.json({ error: "Card id is required." }, { status: 400 });
   }
@@ -462,6 +486,47 @@ export async function DELETE(req: Request) {
   const currentTags = Array.isArray(currentRes.data.admin_tags)
     ? currentRes.data.admin_tags.map((item) => String(item ?? "").trim())
     : [];
+  if (removePermanently && currentTags.includes(ONE_ON_ONE_USER_REMOVED_TAG)) {
+    return NextResponse.json({ ok: true, id: cardId, removed: true });
+  }
+  if (removePermanently) {
+    const removableStatuses = new Set<string>([...DATING_ONE_ON_ONE_ACTIVE_STATUSES, "rejected"]);
+    if (!removableStatuses.has(currentRes.data.status)) {
+      return NextResponse.json({ error: "현재 상태에서는 1:1 프로필을 삭제할 수 없습니다." }, { status: 409 });
+    }
+
+    const nowIso = new Date().toISOString();
+    const removeRes = await admin
+      .from("dating_1on1_cards")
+      .update({
+        status: "rejected",
+        admin_tags: appendAdminTag(
+          appendAdminTag(currentRes.data.admin_tags, ONE_ON_ONE_USER_DELETED_TAG),
+          ONE_ON_ONE_USER_REMOVED_TAG,
+        ),
+        updated_at: nowIso,
+      })
+      .eq("id", cardId)
+      .eq("user_id", user.id)
+      .eq("status", currentRes.data.status)
+      .select("id")
+      .maybeSingle();
+
+    if (removeRes.error || !removeRes.data) {
+      console.error("[DELETE /api/dating/1on1/my] remove failed", removeRes.error);
+      return NextResponse.json(
+        { error: removeRes.error ? "1:1 프로필 삭제에 실패했습니다." : "프로필 상태가 변경되었습니다. 새로고침 후 다시 시도해 주세요." },
+        { status: removeRes.error ? 500 : 409 },
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      id: cardId,
+      removed: true,
+      message: "1:1 프로필을 삭제했습니다. 기존 매칭과 번호교환 기록은 유지됩니다.",
+    });
+  }
   if (currentTags.includes(ONE_ON_ONE_USER_DELETED_TAG)) {
     return NextResponse.json({
       ok: true,

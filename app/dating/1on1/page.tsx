@@ -60,7 +60,9 @@ const WORKOUT_OPTIONS = [
 ] as const;
 
 const BIRTH_YEAR_HELP_MESSAGE = "나이가 아니라 출생연도 4자리를 입력해 주세요. 예: 1996";
+const ONE_ON_ONE_EDIT_LOCK_TAG = "one_on_one_edit_locked";
 const ONE_ON_ONE_USER_EDIT_USED_TAG = "one_on_one_user_edit_used";
+const ONE_ON_ONE_USER_DELETED_TAG = "one_on_one_user_deleted";
 const FORM_STEPS = [
   { title: "기본 정보", description: "이름과 성별을 알려주세요." },
   { title: "프로필", description: "후보 추천에 필요한 정보를 입력해주세요." },
@@ -71,6 +73,14 @@ const FORM_STEPS = [
 
 function hasOneOnOneUserEditBeenUsed(card: Pick<CardItem, "admin_tags">) {
   return Array.isArray(card.admin_tags) && card.admin_tags.includes(ONE_ON_ONE_USER_EDIT_USED_TAG);
+}
+
+function isOneOnOneEditLocked(card: Pick<CardItem, "admin_tags">) {
+  return Array.isArray(card.admin_tags) && card.admin_tags.includes(ONE_ON_ONE_EDIT_LOCK_TAG);
+}
+
+function isUserArchivedOneOnOneCard(card: Pick<CardItem, "status" | "admin_tags">) {
+  return card.status === "rejected" && Array.isArray(card.admin_tags) && card.admin_tags.includes(ONE_ON_ONE_USER_DELETED_TAG);
 }
 
 function smokingLabel(value: CardItem["smoking"]): string {
@@ -186,6 +196,7 @@ function DatingOneOnOnePageContent() {
 
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState<WriteStatusResponse | null>(null);
+  const [editingArchivedProfile, setEditingArchivedProfile] = useState(false);
   const [cards, setCards] = useState<CardItem[]>([]);
 
   const [sex, setSex] = useState<"male" | "female">("male");
@@ -363,8 +374,12 @@ function DatingOneOnOnePageContent() {
           if (!editTarget) {
             throw new Error("수정할 신청서를 찾을 수 없습니다.");
           }
-          if (editTarget.status !== "submitted") {
-            throw new Error("접수중 상태일 때만 수정할 수 있습니다.");
+          const archivedEdit = isUserArchivedOneOnOneCard(editTarget);
+          if (editTarget.status !== "submitted" && !archivedEdit) {
+            throw new Error("접수 중이거나 직접 내린 신청서만 수정할 수 있습니다.");
+          }
+          if (isOneOnOneEditLocked(editTarget)) {
+            throw new Error("관리자 검수로 인해 현재 신청서 수정이 제한되었습니다.");
           }
           if (hasOneOnOneUserEditBeenUsed(editTarget)) {
             throw new Error("1:1 신청서는 한 번만 수정할 수 있습니다.");
@@ -382,6 +397,7 @@ function DatingOneOnOnePageContent() {
           setPreferredPartnerText(editTarget.preferred_partner_text);
           setSmoking(editTarget.smoking);
           setWorkoutFrequency(editTarget.workout_frequency ?? "");
+          setEditingArchivedProfile(archivedEdit);
           setExistingPhotoUrls(Array.isArray(editTarget.photo_signed_urls) ? editTarget.photo_signed_urls : []);
           setConsentFakeInfo(true);
           setConsentNoShow(true);
@@ -533,7 +549,9 @@ function DatingOneOnOnePageContent() {
 
       setInfo(
         isEditMode
-          ? "신청서가 수정되었습니다. 진행 상황은 마이페이지 매칭탭에서 확인할 수 있어요."
+          ? editingArchivedProfile
+            ? "신청서가 수정되었습니다. 프로필은 계속 내려간 상태이며, 마이페이지에서 다시 올릴 수 있어요."
+            : "신청서가 수정되었습니다. 진행 상황은 마이페이지 매칭탭에서 확인할 수 있어요."
           : "신청서가 등록되었습니다. 후보 확인과 진행 상황은 마이페이지 매칭탭에서 확인해 주세요.",
       );
       setName("");
