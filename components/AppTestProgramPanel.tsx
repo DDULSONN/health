@@ -6,7 +6,9 @@ import { useCallback, useEffect, useState } from "react";
 import {
   APP_TEST_FEEDBACK_CATEGORIES,
   APP_TEST_FEEDBACK_CATEGORY_LABELS,
+  APP_TEST_PLAY_STORE_URL,
   APP_TEST_STATUS_LABELS,
+  canDownloadAppTest,
   type AppTestFeedbackCategory,
   type AppTestStatus,
 } from "@/lib/app-testing";
@@ -73,6 +75,20 @@ export default function AppTestProgramPanel() {
 
   useEffect(() => {
     void loadStatus();
+  }, [loadStatus]);
+
+  useEffect(() => {
+    const refreshWhenVisible = () => {
+      if (document.visibilityState === "visible") void loadStatus();
+    };
+    const intervalId = window.setInterval(refreshWhenVisible, 60_000);
+    window.addEventListener("focus", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
+    };
   }, [loadStatus]);
 
   const openModal = () => {
@@ -143,6 +159,8 @@ export default function AppTestProgramPanel() {
 
   if (!available) return null;
 
+  const downloadAvailable = application ? canDownloadAppTest(application.status) : false;
+
   return (
     <>
       <section className="mb-5 flex min-h-[76px] items-center gap-3 border-y border-neutral-200 bg-white px-3 py-3 sm:px-4">
@@ -168,14 +186,26 @@ export default function AppTestProgramPanel() {
             Google Play 비공개 테스트 · 아이폰은 추후 지원
           </p>
         </div>
-        <button
-          type="button"
-          onClick={openModal}
-          disabled={loading}
-          className="min-h-[44px] shrink-0 rounded-md border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-800 transition active:scale-[0.98] disabled:opacity-50"
-        >
-          {loading ? "확인 중" : application ? "피드백 보내기" : "테스트 신청"}
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          {downloadAvailable ? (
+            <a
+              href={APP_TEST_PLAY_STORE_URL}
+              target="_blank"
+              rel="noreferrer"
+              className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-md bg-neutral-950 px-3 text-xs font-semibold text-white transition active:scale-[0.98]"
+            >
+              다운로드
+            </a>
+          ) : null}
+          <button
+            type="button"
+            onClick={openModal}
+            disabled={loading}
+            className="min-h-[44px] rounded-md border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-800 transition active:scale-[0.98] disabled:opacity-50"
+          >
+            {loading ? "확인 중" : application ? (downloadAvailable ? "피드백" : "피드백 보내기") : "테스트 신청"}
+          </button>
+        </div>
       </section>
 
       {modalOpen ? (
@@ -212,6 +242,26 @@ export default function AppTestProgramPanel() {
 
             {application ? (
               <div className="mt-4 space-y-3">
+                {downloadAvailable ? (
+                  <div className="rounded-lg border border-emerald-200 bg-emerald-50 p-3">
+                    <p className="text-xs font-semibold text-emerald-900">Google Play 다운로드가 열렸어요.</p>
+                    <p className="mt-1 text-[11px] leading-5 text-emerald-800">
+                      신청한 이메일로 Google Play에 로그인한 뒤 설치해주세요.
+                    </p>
+                    <a
+                      href={APP_TEST_PLAY_STORE_URL}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="mt-3 inline-flex min-h-[44px] w-full touch-manipulation items-center justify-center rounded-md bg-neutral-950 px-4 text-xs font-semibold text-white active:scale-[0.99]"
+                    >
+                      플레이스토어에서 다운로드
+                    </a>
+                  </div>
+                ) : (
+                  <p className="rounded-lg bg-neutral-100 px-3 py-2 text-[11px] leading-5 text-neutral-600">
+                    이메일 등록이 완료되면 이곳에 다운로드 버튼이 자동으로 표시됩니다.
+                  </p>
+                )}
                 <label className="block text-xs font-semibold text-neutral-700">
                   의견 종류
                   <select

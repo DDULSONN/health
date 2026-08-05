@@ -8146,6 +8146,10 @@ export default function MyPage() {
       </section>
       )}
 
+      {showProfileSection && (
+      <AppTestProgramPanel />
+      )}
+
       {showReelsDatingSection && (
         <section className="mb-5 rounded-2xl border border-neutral-200/80 bg-white p-4 shadow-[0_14px_40px_rgba(17,24,39,0.05)] sm:p-5">
           <div className="flex items-start justify-between gap-3">
@@ -15020,10 +15024,6 @@ export default function MyPage() {
       </section>
 
       </>
-      )}
-
-      {showSettingsSection && (
-      <AppTestProgramPanel />
       )}
 
       {showSettingsSection && (

@@ -108,7 +108,9 @@ export default function AdminAppTestersPanel() {
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-sm font-semibold text-violet-950">Google Play 비공개 테스트</p>
-          <p className="mt-1 text-xs text-neutral-500">신청 이메일, 초대 상태와 사용 피드백을 관리합니다.</p>
+          <p className="mt-1 text-xs leading-5 text-neutral-500">
+            Play Console에 이메일을 등록한 뒤 상태를 ‘이메일 등록 완료’로 바꾸면 회원 마이페이지에 다운로드 버튼이 열립니다.
+          </p>
         </div>
         <button
           type="button"
@@ -169,7 +171,7 @@ export default function AdminAppTestersPanel() {
                   신청 {formatDate(item.created_at)} · {item.user_id}
                 </p>
                 {item.invited_at ? (
-                  <p className="mt-1 text-[11px] text-emerald-700">초대 처리 {formatDate(item.invited_at)}</p>
+                  <p className="mt-1 text-[11px] text-emerald-700">이메일 등록 처리 {formatDate(item.invited_at)}</p>
                 ) : null}
               </div>
               <div className="flex shrink-0 gap-2">
