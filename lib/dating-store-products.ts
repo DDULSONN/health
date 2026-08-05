@@ -7,7 +7,7 @@ export const DATING_STORE_PRODUCT_IDS = {
   oneOnOnePriorityRecommendation: "one_on_one_priority_recommendation",
   openCardRepost: "open_card_repost",
   swipePremium15d: "swipe_premium_15d",
-  swipePremium30d: "swipe_premium_30d",
+  swipePremium30d: "swipe_premium_monthly",
 } as const;
 
 export type DatingStoreProductId =

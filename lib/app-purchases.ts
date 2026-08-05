@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { google } from "googleapis";
 import { decodeJwt, importPKCS8, SignJWT } from "jose";
+import { syncAppleSwipeSubscription } from "@/lib/apple-swipe-subscription";
 import { CITY_VIEW_ACCESS_HOURS } from "@/lib/dating-city-view";
 import {
   approvePaidCard,
@@ -120,7 +121,7 @@ async function verifyAndroidPlayPurchase(input: DirectStorePurchaseInput & { pro
     throw new Error("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON 환경변수가 필요합니다.");
   }
 
-  const packageName = process.env.GOOGLE_PLAY_PACKAGE_NAME?.trim() || "com.helchang.dating";
+  const packageName = process.env.GOOGLE_PLAY_PACKAGE_NAME?.trim() || "com.gymtools.somefit";
   const auth = new google.auth.GoogleAuth({
     credentials,
     scopes: ["https://www.googleapis.com/auth/androidpublisher"],
@@ -261,7 +262,7 @@ async function fetchAppleTransactionInfo(transactionId: string) {
 }
 
 async function verifyApplePurchase(input: DirectStorePurchaseInput & { productId: DatingStoreProductId }) {
-  const bundleId = process.env.APPLE_IAP_BUNDLE_ID?.trim() || "com.helchang.dating";
+  const bundleId = process.env.APPLE_IAP_BUNDLE_ID?.trim() || "com.gymtools.somefit";
   const decodedClientToken = decodeTransactionToken(input.purchaseToken);
   const transactionId =
     String(input.transactionId ?? "").trim() ||
@@ -469,6 +470,40 @@ export async function fulfillDatingStorePurchase(
         : Number.isFinite(Number(verificationJson.expiresDate ?? 0))
           ? new Date(Number(verificationJson.expiresDate)).toISOString()
           : null;
+
+    if (input.platform === "ios") {
+      const decodedTransaction =
+        verificationJson.decodedTransaction && typeof verificationJson.decodedTransaction === "object"
+          ? (verificationJson.decodedTransaction as Record<string, unknown>)
+          : {};
+      const originalTransactionId = String(
+        decodedTransaction.originalTransactionId ?? verificationJson.originalTransactionId ?? ""
+      ).trim();
+      const transactionId = String(decodedTransaction.transactionId ?? verificationJson.transactionId ?? "").trim();
+      const expiresDate = Number(decodedTransaction.expiresDate ?? verificationJson.expiresDate ?? 0);
+      const signedDate = Number(decodedTransaction.signedDate ?? Date.now());
+
+      if (originalTransactionId && transactionId && Number.isFinite(expiresDate) && expiresDate > 0) {
+        return syncAppleSwipeSubscription(admin, {
+          userId: input.userId,
+          productId: input.productId,
+          originalTransactionId,
+          transactionId,
+          notificationType: "CLIENT_VERIFIED_PURCHASE",
+          status: 1,
+          signedDate,
+          transaction: {
+            ...decodedTransaction,
+            productId: input.productId,
+            originalTransactionId,
+            transactionId,
+            expiresDate,
+          },
+          renewal: null,
+          note,
+        });
+      }
+    }
 
     return grantSwipeSubscription(admin, {
       userId: input.userId,
