@@ -1878,6 +1878,8 @@ export default function MyPage() {
   const [cancelingPaidAppliedIds, setCancelingPaidAppliedIds] = useState<string[]>([]);
   const [deletingOneOnOneIds, setDeletingOneOnOneIds] = useState<string[]>([]);
   const [removingOneOnOneIds, setRemovingOneOnOneIds] = useState<string[]>([]);
+  const [confirmingOneOnOneArchiveIds, setConfirmingOneOnOneArchiveIds] = useState<string[]>([]);
+  const [confirmingOneOnOneRemoveIds, setConfirmingOneOnOneRemoveIds] = useState<string[]>([]);
   const oneOnOneProfileMutationLocksRef = useRef<Set<string>>(new Set());
   const [restoringOneOnOneIds, setRestoringOneOnOneIds] = useState<string[]>([]);
   const [deletingOpenCardIds, setDeletingOpenCardIds] = useState<string[]>([]);
@@ -5775,8 +5777,16 @@ export default function MyPage() {
   const handleDeleteMyOneOnOneCard = async (cardId: string) => {
     const lockKey = `profile:${cardId}`;
     if (oneOnOneProfileMutationLocksRef.current.has(lockKey)) return;
-    if (!confirm("1:1 프로필을 내릴까요? 추천 노출은 종료되지만 기존 매칭과 번호교환 기록은 유지됩니다.")) return;
+    if (!confirmingOneOnOneArchiveIds.includes(cardId)) {
+      setConfirmingOneOnOneArchiveIds((prev) => (prev.includes(cardId) ? prev : [...prev, cardId]));
+      setConfirmingOneOnOneRemoveIds((prev) => prev.filter((id) => id !== cardId));
+      window.setTimeout(() => {
+        setConfirmingOneOnOneArchiveIds((prev) => prev.filter((id) => id !== cardId));
+      }, 5000);
+      return;
+    }
 
+    setConfirmingOneOnOneArchiveIds((prev) => prev.filter((id) => id !== cardId));
     oneOnOneProfileMutationLocksRef.current.add(lockKey);
     setDeletingOneOnOneIds((prev) => [...prev, cardId]);
     try {
@@ -5853,8 +5863,16 @@ export default function MyPage() {
   const handleRemoveMyOneOnOneCard = async (cardId: string) => {
     const lockKey = `profile:${cardId}`;
     if (oneOnOneProfileMutationLocksRef.current.has(lockKey)) return;
-    if (!confirm("1:1 프로필을 삭제할까요? 신청서는 목록에서 사라지고 복구할 수 없지만, 기존 매칭과 번호교환 기록은 유지됩니다.")) return;
+    if (!confirmingOneOnOneRemoveIds.includes(cardId)) {
+      setConfirmingOneOnOneRemoveIds((prev) => (prev.includes(cardId) ? prev : [...prev, cardId]));
+      setConfirmingOneOnOneArchiveIds((prev) => prev.filter((id) => id !== cardId));
+      window.setTimeout(() => {
+        setConfirmingOneOnOneRemoveIds((prev) => prev.filter((id) => id !== cardId));
+      }, 5000);
+      return;
+    }
 
+    setConfirmingOneOnOneRemoveIds((prev) => prev.filter((id) => id !== cardId));
     oneOnOneProfileMutationLocksRef.current.add(lockKey);
     setRemovingOneOnOneIds((prev) => [...prev, cardId]);
     try {
@@ -9022,6 +9040,8 @@ export default function MyPage() {
                 deletingOneOnOneIds.includes(item.id) ||
                 restoringOneOnOneIds.includes(item.id) ||
                 removingOneOnOneIds.includes(item.id);
+              const confirmingOneOnOneArchive = confirmingOneOnOneArchiveIds.includes(item.id);
+              const confirmingOneOnOneRemove = confirmingOneOnOneRemoveIds.includes(item.id);
               const relatedMatches = myOneOnOneMatchesByCardId.get(item.id) ?? [];
               const autoRecommendationGroup = myOneOnOneAutoRecommendationsByCardId.get(item.id) ?? null;
               const autoRecommendations = autoRecommendationGroup?.recommendations ?? [];
@@ -9083,7 +9103,7 @@ export default function MyPage() {
                     <span>직업 {item.job}</span>
                     <span>지역 {item.region}</span>
                   </div>
-                  <div className="mt-3 flex flex-col gap-3 border-y border-neutral-200 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="relative z-[60] mt-3 flex flex-col gap-3 border-y border-neutral-200 bg-white py-3 sm:flex-row sm:items-center sm:justify-between">
                     <div className="min-w-0">
                       <p className="text-xs font-semibold text-neutral-900">신청서 관리</p>
                       <p className="mt-1 text-[11px] leading-5 text-neutral-500">
@@ -9123,18 +9143,34 @@ export default function MyPage() {
                           type="button"
                           onClick={() => void handleDeleteMyOneOnOneCard(item.id)}
                           disabled={mutatingOneOnOneCard}
-                          className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-lg border border-rose-300 bg-white px-4 text-xs font-semibold text-rose-700 hover:bg-rose-50 disabled:opacity-50"
+                          className={`inline-flex min-h-[48px] touch-manipulation select-none items-center justify-center rounded-lg border px-4 text-xs font-semibold active:scale-[0.98] disabled:opacity-50 ${
+                            confirmingOneOnOneArchive
+                              ? "border-rose-600 bg-rose-600 text-white"
+                              : "border-rose-300 bg-white text-rose-700 hover:bg-rose-50"
+                          }`}
                         >
-                          {deletingOneOnOneIds.includes(item.id) ? "처리 중..." : "프로필 내리기"}
+                          {deletingOneOnOneIds.includes(item.id)
+                            ? "처리 중..."
+                            : confirmingOneOnOneArchive
+                              ? "한 번 더 눌러 내리기"
+                              : "프로필 내리기"}
                         </button>
                       ) : null}
                       <button
                         type="button"
                         onClick={() => void handleRemoveMyOneOnOneCard(item.id)}
                         disabled={mutatingOneOnOneCard}
-                        className="inline-flex min-h-[44px] touch-manipulation items-center justify-center px-2 text-[11px] font-medium text-neutral-400 underline decoration-neutral-300 underline-offset-4 hover:text-red-600 disabled:opacity-50"
+                        className={`inline-flex min-h-[48px] touch-manipulation select-none items-center justify-center rounded-md px-2 text-[11px] font-medium underline underline-offset-4 active:scale-[0.98] disabled:opacity-50 ${
+                          confirmingOneOnOneRemove
+                            ? "bg-red-50 text-red-700 decoration-red-300"
+                            : "text-neutral-400 decoration-neutral-300 hover:text-red-600"
+                        }`}
                       >
-                        {removingOneOnOneIds.includes(item.id) ? "삭제 중..." : "삭제"}
+                        {removingOneOnOneIds.includes(item.id)
+                          ? "삭제 중..."
+                          : confirmingOneOnOneRemove
+                            ? "한 번 더 눌러 삭제"
+                            : "삭제"}
                       </button>
                     </div>
                   </div>
