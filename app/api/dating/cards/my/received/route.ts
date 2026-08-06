@@ -3,6 +3,10 @@ import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { syncOpenCardQueue } from "@/lib/dating-cards-queue";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import {
+  loadLatestDatingInstagramByUser,
+  normalizeDatingInstagramId,
+} from "@/lib/dating-instagram-server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
@@ -256,6 +260,13 @@ export async function GET(req: Request) {
   }
 
   const visibleApps = appsRes.data.filter((app) => !blockedUserIds.has(app.applicant_user_id));
+  const acceptedApplicantIdsWithMissingInstagram = visibleApps
+    .filter((app) => app.status === "accepted" && !normalizeDatingInstagramId(app.instagram_id))
+    .map((app) => app.applicant_user_id);
+  const instagramFallbackByUser = await loadLatestDatingInstagramByUser(
+    adminClient,
+    acceptedApplicantIdsWithMissingInstagram
+  );
   let rawSignedCount = 0;
   const safeApps = await Promise.all(
     visibleApps.map(async (app) => {
@@ -273,7 +284,12 @@ export async function GET(req: Request) {
 
       return {
         ...app,
-        instagram_id: app.status === "accepted" ? app.instagram_id : null,
+        instagram_id:
+          app.status === "accepted"
+            ? normalizeDatingInstagramId(app.instagram_id) ??
+              instagramFallbackByUser.get(app.applicant_user_id) ??
+              null
+            : null,
         photo_signed_urls: filteredUrls,
       };
     })

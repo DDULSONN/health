@@ -1,5 +1,9 @@
 ﻿import { createAdminClient } from "@/lib/supabase/server";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import {
+  loadLatestDatingInstagramByUser,
+  normalizeDatingInstagramId,
+} from "@/lib/dating-instagram-server";
 import { buildSignedImageUrl, buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
@@ -156,6 +160,16 @@ export async function GET(req: Request) {
 
   const cards = (cardsRes.data ?? []) as CardRow[];
   const cardsById = new Map(cards.map((card) => [card.id, card]));
+  const acceptedCardIds = new Set(
+    applications.filter((app) => app.status === "accepted").map((app) => app.card_id)
+  );
+  const missingAcceptedOwnerInstagramIds = cards
+    .filter((card) => acceptedCardIds.has(card.id) && !normalizeDatingInstagramId(card.instagram_id))
+    .map((card) => card.owner_user_id);
+  const instagramFallbackByUser = await loadLatestDatingInstagramByUser(
+    adminClient,
+    missingAcceptedOwnerInstagramIds
+  );
   const ownerIds = [...new Set(cards.map((card) => card.owner_user_id).filter(Boolean))];
   const ownerNickById = new Map<string, string | null>();
 
@@ -190,7 +204,12 @@ export async function GET(req: Request) {
             status: card.status,
             expires_at: card.expires_at,
             created_at: card.created_at,
-            instagram_id: card.instagram_id,
+            instagram_id:
+              app.status === "accepted"
+                ? normalizeDatingInstagramId(card.instagram_id) ??
+                  instagramFallbackByUser.get(card.owner_user_id) ??
+                  null
+                : null,
             owner_user_id: card.owner_user_id,
             owner_nickname: ownerNickById.get(card.owner_user_id) ?? null,
           }

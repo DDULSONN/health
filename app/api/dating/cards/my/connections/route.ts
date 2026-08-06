@@ -1,5 +1,9 @@
 ﻿import { createAdminClient } from "@/lib/supabase/server";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
+import {
+  loadLatestDatingInstagramByUser,
+  normalizeDatingInstagramId,
+} from "@/lib/dating-instagram-server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
@@ -205,6 +209,21 @@ export async function GET(req: Request) {
   }
 
   const profileMap = new Map(((profilesRes.data ?? []) as ProfileRow[]).map((p) => [p.user_id, p.nickname]));
+  const instagramFallbackUserIds = new Set<string>();
+  for (const app of acceptedApps) {
+    const card = cardsById.get(app.card_id);
+    if (!card) continue;
+    if (!normalizeDatingInstagramId(app.instagram_id)) instagramFallbackUserIds.add(app.applicant_user_id);
+    if (!normalizeDatingInstagramId(card.instagram_id)) instagramFallbackUserIds.add(card.owner_user_id);
+  }
+  for (const match of swipeMatches) {
+    if (!normalizeDatingInstagramId(match.user_a_instagram_id)) instagramFallbackUserIds.add(match.user_a_id);
+    if (!normalizeDatingInstagramId(match.user_b_instagram_id)) instagramFallbackUserIds.add(match.user_b_id);
+  }
+  const instagramFallbackByUser = await loadLatestDatingInstagramByUser(
+    adminClient,
+    instagramFallbackUserIds
+  );
 
   const acceptedItems = acceptedApps
     .map((app) => {
@@ -214,8 +233,18 @@ export async function GET(req: Request) {
       const otherUserId = isOwnerView ? app.applicant_user_id : card.owner_user_id;
       if (blockedUserIds.has(otherUserId)) return null;
       const otherNickname = String(profileMap.get(otherUserId) ?? "회원").trim() || "회원";
-      const myInstagram = isOwnerView ? card.instagram_id ?? null : app.instagram_id;
-      const otherInstagram = isOwnerView ? app.instagram_id : card.instagram_id ?? null;
+      const myInstagram =
+        (isOwnerView
+          ? normalizeDatingInstagramId(card.instagram_id)
+          : normalizeDatingInstagramId(app.instagram_id)) ??
+        instagramFallbackByUser.get(user.id) ??
+        null;
+      const otherInstagram =
+        (isOwnerView
+          ? normalizeDatingInstagramId(app.instagram_id)
+          : normalizeDatingInstagramId(card.instagram_id)) ??
+        instagramFallbackByUser.get(otherUserId) ??
+        null;
       return {
         application_id: app.id,
         card_id: app.card_id,
@@ -261,8 +290,14 @@ export async function GET(req: Request) {
       const otherUserId = isUserA ? match.user_b_id : match.user_a_id;
       const otherCardId = isUserA ? match.user_b_card_id : match.user_a_card_id;
       const otherNickname = String(profileMap.get(otherUserId) ?? "회원").trim() || "회원";
-      const myInstagram = isUserA ? match.user_a_instagram_id : match.user_b_instagram_id;
-      const otherInstagram = isUserA ? match.user_b_instagram_id : match.user_a_instagram_id;
+      const myInstagram =
+        normalizeDatingInstagramId(isUserA ? match.user_a_instagram_id : match.user_b_instagram_id) ??
+        instagramFallbackByUser.get(user.id) ??
+        null;
+      const otherInstagram =
+        normalizeDatingInstagramId(isUserA ? match.user_b_instagram_id : match.user_a_instagram_id) ??
+        instagramFallbackByUser.get(otherUserId) ??
+        null;
       const otherCard = cardsById.get(otherCardId);
       return {
         application_id: match.id,

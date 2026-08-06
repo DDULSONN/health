@@ -294,6 +294,7 @@ type MyAppliedCardApplication = {
     ideal_type: string | null;
     strengths_text: string | null;
     intro_text: string | null;
+    instagram_id: string | null;
     photo_signed_urls?: string[];
     status: "pending" | "public" | "expired" | "hidden";
     expires_at: string | null;
@@ -10242,6 +10243,11 @@ export default function MyPage() {
                   {app.status === "accepted" && app.instagram_id && (
                     <InstagramProfileLine label="지원자 인스타" username={app.instagram_id} />
                   )}
+                  {app.status === "accepted" && !app.instagram_id && (
+                    <p className="mt-2 text-xs text-amber-700">
+                      지원자 인스타 정보를 불러오지 못했습니다. 새로고침 후에도 보이지 않으면 문의해주세요.
+                    </p>
+                  )}
 
                   <div className="mt-3 flex flex-wrap gap-2">
                     {app.status === "submitted" && (
@@ -10338,6 +10344,17 @@ export default function MyPage() {
                     {app.card.intro_text && (
                       <p className="mt-1 whitespace-pre-wrap break-words text-sm text-neutral-700">소개글: {app.card.intro_text}</p>
                     )}
+                    {app.card.instagram_id ? (
+                      <InstagramProfileLine
+                        label="상대 인스타"
+                        username={app.card.instagram_id}
+                        className="mt-2 text-sm font-medium text-emerald-700"
+                      />
+                    ) : (
+                      <p className="mt-2 text-xs text-amber-700">
+                        상대 인스타 정보를 불러오지 못했습니다. 새로고침 후에도 보이지 않으면 문의해주세요.
+                      </p>
+                    )}
                   </div>
                 )}
                 {app.intro_text && (
@@ -10398,6 +10415,11 @@ export default function MyPage() {
                     username={item.other_instagram_id}
                     className="mt-1 text-sm font-medium text-emerald-700"
                   />
+                )}
+                {!item.other_instagram_id && (
+                  <p className="mt-2 text-xs text-amber-700">
+                    상대 인스타 정보를 불러오지 못했습니다. 새로고침 후에도 보이지 않으면 문의해주세요.
+                  </p>
                 )}
                 {item.matched_card && (
                   <div className="mt-3 rounded-lg border border-emerald-200 bg-white p-3">
