@@ -35,7 +35,6 @@ const CARD_BATCH_SIZE = 1000;
 const PAIR_BATCH_SIZE = 1000;
 const RECOMMENDATION_REFRESH_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const AGE_MATCH_MIN_QUOTA = 6;
-const PRIORITY_BOOST_MIN_QUOTA = 2;
 const NEAR_AGE_GAP = 2;
 const CLOSE_REGION_MAX_KM = 90;
 const RECENT_CANDIDATE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
@@ -183,14 +182,15 @@ function sortCandidatesForSource(
     if (aDistanceRank.distanceBandRank !== bDistanceRank.distanceBandRank) {
       return aDistanceRank.distanceBandRank - bDistanceRank.distanceBandRank;
     }
-    if (aDistanceRank.distanceRank !== bDistanceRank.distanceRank) {
-      return aDistanceRank.distanceRank - bDistanceRank.distanceRank;
-    }
 
     const aBoostActive = isPriorityBoostActive(a);
     const bBoostActive = isPriorityBoostActive(b);
     if (aBoostActive !== bBoostActive) {
       return aBoostActive ? -1 : 1;
+    }
+
+    if (aDistanceRank.distanceRank !== bDistanceRank.distanceRank) {
+      return aDistanceRank.distanceRank - bDistanceRank.distanceRank;
     }
 
     const aInAgeRange = isCandidateInSourceAgeRange(sourceCard, a);
@@ -339,9 +339,7 @@ function takeBalancedRecommendations(
     return isCloseRegionCandidate(sourceCard, candidate);
   });
   const recentNearby = sortedCandidates.filter((candidate) => isRecentNearbyCandidate(sourceCard, candidate));
-  const boosted = sortedCandidates.filter((candidate) => isPriorityBoostActive(candidate));
 
-  addFrom(rotateIfUseful(boosted, "priority-boost"), Math.min(limit, PRIORITY_BOOST_MIN_QUOTA), true);
   addFrom(rotateIfUseful(recentNearby, "recent-nearby"), Math.min(limit, REFRESH_RECENT_NEARBY_MIN_QUOTA), true);
   addFrom(rotateIfUseful(ageMatched, "age-match"), Math.min(limit, AGE_MATCH_MIN_QUOTA), true);
   addFrom(rotateIfUseful(nearAge, "near-age"), Math.min(limit, Math.max(AGE_MATCH_MIN_QUOTA, 7)), true);
@@ -349,7 +347,6 @@ function takeBalancedRecommendations(
   addFrom(rotateIfUseful(sortedCandidates, "balanced-rest"), limit, true);
 
   if (picked.length < limit) {
-    addFrom(rotateIfUseful(boosted, "priority-boost-fallback"), Math.min(limit, PRIORITY_BOOST_MIN_QUOTA), false);
     addFrom(rotateIfUseful(recentNearby, "recent-nearby-fallback"), Math.min(limit, REFRESH_RECENT_NEARBY_MIN_QUOTA), false);
     addFrom(rotateIfUseful(ageMatched, "age-match-fallback"), Math.min(limit, AGE_MATCH_MIN_QUOTA), false);
     addFrom(rotateIfUseful(nearAge, "near-age-fallback"), Math.min(limit, Math.max(AGE_MATCH_MIN_QUOTA, 7)), false);
@@ -389,7 +386,9 @@ function getRefreshExcludeIds(
   const excludeIds = new Set(defaultRecommendations.map((candidate) => candidate.id));
 
   for (const candidate of defaultRecommendations) {
-    if (isRecentNearbyCandidate(sourceCard, candidate) || isFreshStrongCandidateForRefresh(sourceCard, candidate, refreshUsedAt)) {
+    // A candidate already shown in the default list should not reappear after a refresh
+    // while alternatives exist. Only a genuinely new card created after the refresh may bypass this.
+    if (isFreshStrongCandidateForRefresh(sourceCard, candidate, refreshUsedAt)) {
       excludeIds.delete(candidate.id);
     }
   }
