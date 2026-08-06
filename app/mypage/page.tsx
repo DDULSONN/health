@@ -3,6 +3,7 @@
 import dynamic from "next/dynamic";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { timeAgo } from "@/lib/community";
@@ -42,6 +43,10 @@ const AppTestProgramPanel = dynamic(() => import("@/components/AppTestProgramPan
 });
 
 const AdminAppTestersPanel = dynamic(() => import("@/components/admin/AdminAppTestersPanel"), {
+  loading: () => <MyPageWidgetSkeleton className="h-64" />,
+});
+
+const AdminNicknameReviewPanel = dynamic(() => import("@/components/admin/AdminNicknameReviewPanel"), {
   loading: () => <MyPageWidgetSkeleton className="h-64" />,
 });
 
@@ -106,6 +111,106 @@ function InstagramProfileLine({
         </a>
       )}
     </div>
+  );
+}
+
+function MatchPhotoPreview({
+  src,
+  alt,
+  className,
+  imageClassName,
+}: {
+  src: string;
+  alt: string;
+  className: string;
+  imageClassName: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const historyMarkerRef = useRef<string | null>(null);
+
+  const openPreview = () => {
+    const marker = `match-photo-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    historyMarkerRef.current = marker;
+    window.history.pushState(
+      { ...(window.history.state ?? {}), gymtoolsMatchPhotoPreview: marker },
+      "",
+      window.location.href
+    );
+    setOpen(true);
+  };
+
+  const closePreview = useCallback(() => {
+    const marker = historyMarkerRef.current;
+    if (marker && window.history.state?.gymtoolsMatchPhotoPreview === marker) {
+      window.history.back();
+      return;
+    }
+    historyMarkerRef.current = null;
+    setOpen(false);
+  }, []);
+
+  useEffect(() => {
+    if (!open) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handlePopState = () => {
+      historyMarkerRef.current = null;
+      setOpen(false);
+    };
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closePreview();
+    };
+
+    window.addEventListener("popstate", handlePopState);
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("popstate", handlePopState);
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [closePreview, open]);
+
+  return (
+    <>
+      <button type="button" onClick={openPreview} className={className} aria-label={`${alt} 크게 보기`}>
+        {/* eslint-disable-next-line @next/next/no-img-element */}
+        <img src={src} alt={alt} loading="lazy" decoding="async" className={imageClassName} />
+      </button>
+      {open &&
+        typeof document !== "undefined" &&
+        createPortal(
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={alt}
+            className="fixed inset-0 z-[200] flex items-center justify-center bg-black/90 p-4"
+            onClick={closePreview}
+          >
+            <button
+              type="button"
+              onClick={(event) => {
+                event.stopPropagation();
+                closePreview();
+              }}
+              className="absolute right-4 top-4 flex h-11 w-11 items-center justify-center rounded-full border border-white/30 bg-black/60 text-xl font-semibold text-white"
+              aria-label="사진 닫기"
+              autoFocus
+            >
+              X
+            </button>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={src}
+              alt={alt}
+              className="max-h-[calc(100dvh-2rem)] max-w-full object-contain"
+              onClick={(event) => event.stopPropagation()}
+            />
+          </div>,
+          document.body
+        )}
+    </>
   );
 }
 
@@ -933,6 +1038,7 @@ type AdminManageTab =
   | "tools_patch_note"
   | "site_mascot"
   | "app_testers"
+  | "nickname_review"
   | "accepted_applications"
   | "mail_center"
   | "one_on_one_contact"
@@ -8804,16 +8910,13 @@ export default function MyPage() {
                 {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
                   <div className="mt-2 grid grid-cols-2 gap-2">
                     {card.photo_signed_urls.map((url, idx) => (
-                      <a key={`${card.id}-photo-${idx}`} href={url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50">
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
-                          src={url}
-                          alt={`유료카드 사진 ${idx + 1}`}
-                          loading="lazy"
-                          decoding="async"
-                          className="h-32 w-full object-cover"
-                        />
-                      </a>
+                      <MatchPhotoPreview
+                        key={`${card.id}-photo-${idx}`}
+                        src={url}
+                        alt={`유료카드 사진 ${idx + 1}`}
+                        className="overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50"
+                        imageClassName="h-32 w-full object-cover"
+                      />
                     ))}
                   </div>
                 )}
@@ -8866,16 +8969,13 @@ export default function MyPage() {
                   {Array.isArray(app.photo_signed_urls) && app.photo_signed_urls.length > 0 && (
                     <div className="mt-2 grid grid-cols-2 gap-2">
                       {app.photo_signed_urls.map((url, idx) => (
-                        <a key={`${app.id}-${idx}`} href={url} target="_blank" rel="noreferrer" className="overflow-hidden rounded-lg border border-neutral-200">
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={url}
-                            alt={`유료 지원자 사진 ${idx + 1}`}
-                            loading="lazy"
-                            decoding="async"
-                            className="h-32 w-full object-cover"
-                          />
-                        </a>
+                        <MatchPhotoPreview
+                          key={`${app.id}-${idx}`}
+                          src={url}
+                          alt={`유료 지원자 사진 ${idx + 1}`}
+                          className="overflow-hidden rounded-lg border border-neutral-200"
+                          imageClassName="h-32 w-full object-cover"
+                        />
                       ))}
                     </div>
                   )}
@@ -9192,23 +9292,13 @@ export default function MyPage() {
                   {Array.isArray(item.photo_signed_urls) && item.photo_signed_urls.length > 0 && (
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       {item.photo_signed_urls.map((url, idx) => (
-                        <a
+                        <MatchPhotoPreview
                           key={`${item.id}-${idx}`}
-                          href={url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
-                        >
-                          <div className="flex h-32 w-full items-center justify-center bg-neutral-50">
-                            <img
-                              src={url}
-                              alt={`1:1 신청 사진 ${idx + 1}`}
-                              loading="lazy"
-                              decoding="async"
-                              className="max-h-full max-w-full object-contain"
-                            />
-                          </div>
-                        </a>
+                          src={url}
+                          alt={`1:1 신청 사진 ${idx + 1}`}
+                          className="flex h-32 w-full items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50"
+                          imageClassName="max-h-full max-w-full object-contain"
+                        />
                       ))}
                     </div>
                   )}
@@ -9340,23 +9430,13 @@ export default function MyPage() {
                                 {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
                                   <div className="mt-2 grid grid-cols-2 gap-2">
                                     {card.photo_signed_urls.map((url, idx) => (
-                                      <a
+                                      <MatchPhotoPreview
                                         key={`${item.id}-${card.id}-${idx}`}
-                                        href={url}
-                                        target="_blank"
-                                        rel="noreferrer"
-                                        className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
-                                      >
-                                        <div className="flex h-24 w-full items-center justify-center bg-neutral-50">
-                                          <img
-                                            src={url}
-                                            alt={`자동 추천 후보 사진 ${idx + 1}`}
-                                            loading="lazy"
-                                            decoding="async"
-                                            className="max-h-full max-w-full object-contain"
-                                          />
-                                        </div>
-                                      </a>
+                                        src={url}
+                                        alt={`자동 추천 후보 사진 ${idx + 1}`}
+                                        className="flex h-24 w-full items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50"
+                                        imageClassName="max-h-full max-w-full object-contain"
+                                      />
                                     ))}
                                   </div>
                                 )}
@@ -9408,23 +9488,13 @@ export default function MyPage() {
                                       {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
                                         <div className="mt-2 grid grid-cols-2 gap-2">
                                           {card.photo_signed_urls.map((url, idx) => (
-                                            <a
+                                            <MatchPhotoPreview
                                               key={`${item.id}-admin-${card.id}-${idx}`}
-                                              href={url}
-                                              target="_blank"
-                                              rel="noreferrer"
-                                              className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
-                                            >
-                                              <div className="flex h-24 w-full items-center justify-center bg-neutral-50">
-                                                <img
-                                                  src={url}
-                                                  alt={`추가 후보 사진 ${idx + 1}`}
-                                                  loading="lazy"
-                                                  decoding="async"
-                                                  className="max-h-full max-w-full object-contain"
-                                                />
-                                              </div>
-                                            </a>
+                                              src={url}
+                                              alt={`추가 후보 사진 ${idx + 1}`}
+                                              className="flex h-24 w-full items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50"
+                                              imageClassName="max-h-full max-w-full object-contain"
+                                            />
                                           ))}
                                         </div>
                                       )}
@@ -9483,23 +9553,13 @@ export default function MyPage() {
                               {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
                                 <div className="mt-2 grid grid-cols-2 gap-2">
                                   {card.photo_signed_urls.map((url, idx) => (
-                                    <a
+                                    <MatchPhotoPreview
                                       key={`${match.id}-${idx}`}
-                                      href={url}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
-                                    >
-                                      <div className="flex h-24 w-full items-center justify-center bg-neutral-50">
-                                        <img
-                                          src={url}
-                                          alt={`후보 사진 ${idx + 1}`}
-                                          loading="lazy"
-                                          decoding="async"
-                                          className="max-h-full max-w-full object-contain"
-                                        />
-                                      </div>
-                                    </a>
+                                      src={url}
+                                      alt={`후보 사진 ${idx + 1}`}
+                                      className="flex h-24 w-full items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50"
+                                      imageClassName="max-h-full max-w-full object-contain"
+                                    />
                                   ))}
                                 </div>
                               )}
@@ -9556,23 +9616,13 @@ export default function MyPage() {
                               {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
                                 <div className="mt-2 grid grid-cols-2 gap-2">
                                   {card.photo_signed_urls.map((url, idx) => (
-                                    <a
+                                    <MatchPhotoPreview
                                       key={`${match.id}-candidate-${idx}`}
-                                      href={url}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
-                                    >
-                                      <div className="flex h-24 w-full items-center justify-center bg-neutral-50">
-                                        <img
-                                          src={url}
-                                          alt={`선택된 상대 사진 ${idx + 1}`}
-                                          loading="lazy"
-                                          decoding="async"
-                                          className="max-h-full max-w-full object-contain"
-                                        />
-                                      </div>
-                                    </a>
+                                      src={url}
+                                      alt={`선택된 상대 사진 ${idx + 1}`}
+                                      className="flex h-24 w-full items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50"
+                                      imageClassName="max-h-full max-w-full object-contain"
+                                    />
                                   ))}
                                 </div>
                               )}
@@ -9831,23 +9881,13 @@ export default function MyPage() {
                               {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
                                 <div className="mt-2 grid grid-cols-2 gap-2">
                                   {card.photo_signed_urls.map((url, idx) => (
-                                    <a
+                                    <MatchPhotoPreview
                                       key={`${match.id}-mutual-${idx}`}
-                                      href={url}
-                                      target="_blank"
-                                      rel="noreferrer"
-                                      className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
-                                    >
-                                      <div className="flex h-24 w-full items-center justify-center bg-neutral-50">
-                                        <img
-                                          src={url}
-                                          alt={`쌍방 수락 완료 상대 사진 ${idx + 1}`}
-                                          loading="lazy"
-                                          decoding="async"
-                                          className="max-h-full max-w-full object-contain"
-                                        />
-                                      </div>
-                                    </a>
+                                      src={url}
+                                      alt={`쌍방 수락 완료 상대 사진 ${idx + 1}`}
+                                      className="flex h-24 w-full items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50"
+                                      imageClassName="max-h-full max-w-full object-contain"
+                                    />
                                   ))}
                                 </div>
                               )}
@@ -10220,22 +10260,13 @@ export default function MyPage() {
                   {Array.isArray(app.photo_signed_urls) && app.photo_signed_urls.length > 0 && (
                     <div className="mt-3 grid grid-cols-2 gap-2">
                       {app.photo_signed_urls.map((url, idx) => (
-                        <a
+                        <MatchPhotoPreview
                           key={`${app.id}-${idx}`}
-                          href={url}
-                          target="_blank"
-                          rel="noreferrer"
+                          src={url}
+                          alt={`지원자 사진 ${idx + 1}`}
                           className="block overflow-hidden rounded-lg border border-neutral-200 bg-white"
-                        >
-                          {/* eslint-disable-next-line @next/next/no-img-element */}
-                          <img
-                            src={url}
-                            alt={`지원자 사진 ${idx + 1}`}
-                            loading="lazy"
-                            decoding="async"
-                            className="h-32 w-full object-cover"
-                          />
-                        </a>
+                          imageClassName="h-32 w-full object-cover"
+                        />
                       ))}
                     </div>
                   )}
@@ -10311,22 +10342,13 @@ export default function MyPage() {
                     {Array.isArray(app.card.photo_signed_urls) && app.card.photo_signed_urls.length > 0 && (
                       <div className="mt-2 grid grid-cols-2 gap-2">
                         {app.card.photo_signed_urls.map((url, idx) => (
-                          <a
+                          <MatchPhotoPreview
                             key={`${app.id}-matched-card-photo-${idx}`}
-                            href={url}
-                            target="_blank"
-                            rel="noreferrer"
+                            src={url}
+                            alt={`수락된 상대 오픈카드 사진 ${idx + 1}`}
                             className="block overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50"
-                          >
-                            {/* eslint-disable-next-line @next/next/no-img-element */}
-                            <img
-                              src={url}
-                              alt={`수락된 상대 오픈카드 사진 ${idx + 1}`}
-                              loading="lazy"
-                              decoding="async"
-                              className="aspect-[4/5] w-full object-cover"
-                            />
-                          </a>
+                            imageClassName="aspect-[4/5] w-full object-cover"
+                          />
                         ))}
                       </div>
                     )}
@@ -10486,6 +10508,8 @@ export default function MyPage() {
                     ? "결제 운영 (관리자)"
                     : adminManageTab === "app_testers"
                       ? "앱 테스트 신청 (관리자)"
+                    : adminManageTab === "nickname_review"
+                      ? "닉네임 검수 (관리자)"
                     : adminManageTab === "tools_patch_note"
                       ? "도구 패치노트 (관리자)"
                     : adminManageTab === "accepted_applications"
@@ -10499,7 +10523,7 @@ export default function MyPage() {
               >
                 관리자 잠금 해제
               </Link>
-              {adminManageTab !== "app_testers" && (
+              {adminManageTab !== "app_testers" && adminManageTab !== "nickname_review" && (
               <button
                 type="button"
                 disabled={
@@ -10703,6 +10727,15 @@ export default function MyPage() {
             </button>
             <button
               type="button"
+              onClick={() => setAdminManageTab("nickname_review")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "nickname_review" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              닉네임 검수
+            </button>
+            <button
+              type="button"
               onClick={() => setAdminManageTab("one_on_one_contact")}
               className={`h-8 rounded-md border px-3 text-xs font-medium ${
                 adminManageTab === "one_on_one_contact"
@@ -10791,6 +10824,7 @@ export default function MyPage() {
           </div>
 
           {adminManageTab === "app_testers" && <AdminAppTestersPanel />}
+          {adminManageTab === "nickname_review" && <AdminNicknameReviewPanel />}
 
           {adminManageTab === "site_dashboard" && (
           <div className="mb-3 space-y-4">
