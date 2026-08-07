@@ -13,6 +13,12 @@ const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const MAX_FILE_SIZE = 12 * 1024 * 1024;
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
   "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
+const PAID_FORM_STEPS = [
+  { title: "등록 방식과 기본 정보", description: "노출 방식을 고르고 기본 프로필을 입력해주세요." },
+  { title: "소개와 연락 정보", description: "장점과 이상형, 수락 후 공개할 인스타그램을 적어주세요." },
+  { title: "사진 확인", description: "실제로 공개될 사진 2장을 확인해주세요." },
+  { title: "입력 내용 확인", description: "등록 내용을 확인한 뒤 결제를 진행해주세요." },
+] as const;
 
 type PaidItem = {
   id: string;
@@ -121,6 +127,7 @@ export default function DatingPaidPage() {
   const [successId, setSuccessId] = useState("");
   const [successWasEdit, setSuccessWasEdit] = useState(false);
   const [formOpen, setFormOpen] = useState(false);
+  const [formStep, setFormStep] = useState(1);
   const [editLoading, setEditLoading] = useState(false);
 
   const [gender, setGender] = useState<"M" | "F">("M");
@@ -144,6 +151,8 @@ export default function DatingPaidPage() {
   const [tick, setTick] = useState(0);
 
   const openForm = () => {
+    setError("");
+    setFormStep(1);
     setFormOpen(true);
     if (typeof window !== "undefined") {
       window.requestAnimationFrame(() => {
@@ -205,6 +214,7 @@ export default function DatingPaidPage() {
     const shouldOpenForm = params.get("apply") === "1" || params.get("apply") === "true";
     setEditId(nextId);
     if (shouldOpenForm) {
+      setFormStep(1);
       setFormOpen(true);
     }
   }, []);
@@ -213,6 +223,7 @@ export default function DatingPaidPage() {
     if (!isEditMode || !editId) return;
     let cancelled = false;
     setFormOpen(true);
+    setFormStep(1);
     setEditLoading(true);
     queueMicrotask(async () => {
       try {
@@ -249,11 +260,76 @@ export default function DatingPaidPage() {
     };
   }, [editId, isEditMode]);
 
+  const moveToFormStep = (step: number) => {
+    setError("");
+    setFormStep(Math.min(PAID_FORM_STEPS.length, Math.max(1, step)));
+    if (typeof window !== "undefined") {
+      window.requestAnimationFrame(() => {
+        document.getElementById("paid-create-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+      });
+    }
+  };
+
+  const validateFormStep = (step: number) => {
+    if (step === 1) {
+      const ageValue = age ? Number(age) : null;
+      const heightValue = heightCm ? Number(heightCm) : null;
+      const trainingValue = trainingYears ? Number(trainingYears) : null;
+      if (ageValue != null && (!Number.isFinite(ageValue) || ageValue < 19 || ageValue > 99)) {
+        return "나이는 19세부터 99세까지 입력해주세요.";
+      }
+      if (heightValue != null && (!Number.isFinite(heightValue) || heightValue < 120 || heightValue > 230)) {
+        return "키는 120cm부터 230cm까지 입력해주세요.";
+      }
+      if (trainingValue != null && (!Number.isFinite(trainingValue) || trainingValue < 0 || trainingValue > 50)) {
+        return "운동 경력은 0년부터 50년까지 입력해주세요.";
+      }
+    }
+
+    if (step === 2) {
+      const normalizedInstagramId = normalizeInstagramId(instagramId);
+      if (!normalizedInstagramId) return "인스타그램 아이디를 입력해주세요.";
+      if (!/^[A-Za-z0-9._]{1,30}$/.test(normalizedInstagramId)) {
+        return "인스타그램 아이디 형식을 확인해 주세요. (@ 제외, 최대 30자)";
+      }
+    }
+
+    if (step === 3) {
+      const hasFirstPhoto = Boolean(photos[0]) || Boolean(existingRawPaths[0]);
+      const hasSecondPhoto = Boolean(photos[1]) || Boolean(existingRawPaths[1]);
+      if (!hasFirstPhoto || !hasSecondPhoto) return "사진 1과 사진 2를 모두 선택해 주세요.";
+      for (const photo of photos.filter((item): item is File => Boolean(item))) {
+        if (!ALLOWED_TYPES.includes(photo.type)) return "사진은 JPG/PNG/WebP만 업로드할 수 있습니다.";
+        if (photo.size > MAX_FILE_SIZE) return "사진은 장당 12MB 이하만 가능합니다.";
+      }
+    }
+
+    return "";
+  };
+
+  const handleNextFormStep = () => {
+    const message = validateFormStep(formStep);
+    if (message) {
+      setError(message);
+      return;
+    }
+    moveToFormStep(formStep + 1);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
     setSuccessId("");
     setSuccessWasEdit(false);
+
+    for (let step = 1; step <= 3; step += 1) {
+      const message = validateFormStep(step);
+      if (message) {
+        setFormStep(step);
+        setError(message);
+        return;
+      }
+    }
 
     const {
       data: { user },
@@ -418,6 +494,7 @@ export default function DatingPaidPage() {
         setExistingPreviewUrls([]);
         setExistingBlurThumbPath("");
         setEditingPaidCardStatus("");
+        setFormStep(1);
         setFormOpen(false);
         setEditId("");
         if (typeof window !== "undefined") {
@@ -447,6 +524,7 @@ export default function DatingPaidPage() {
         setExistingPreviewUrls([]);
         setExistingBlurThumbPath("");
         setEditingPaidCardStatus("");
+        setFormStep(1);
         setFormOpen(false);
         await loadItems();
         if (typeof globalThis !== "undefined" && typeof globalThis.scrollTo === "function") {
@@ -500,6 +578,7 @@ export default function DatingPaidPage() {
       setExistingPreviewUrls([]);
       setExistingBlurThumbPath("");
       setEditingPaidCardStatus("");
+      setFormStep(1);
       setFormOpen(false);
       await loadItems();
       if (typeof globalThis !== "undefined" && typeof globalThis.scrollTo === "function") {
@@ -598,140 +677,258 @@ export default function DatingPaidPage() {
 
       {formOpen && (
         <section id="paid-create-form" className="mt-5 rounded-2xl border border-neutral-200 bg-white p-4">
-          <h2 className="text-lg font-bold text-neutral-900">{isEditMode ? "유료 신청 수정" : "유료 신청 작성"}</h2>
-          <form onSubmit={handleSubmit} className="mt-4 space-y-3">
-            {editLoading && <p className="text-sm text-neutral-500">기존 카드 정보를 불러오는 중...</p>}
-            <div className="flex gap-2">
-              <button type="button" onClick={() => setGender("M")} className={`h-10 rounded-lg border px-4 text-sm ${gender === "M" ? "border-rose-500 bg-rose-500 text-white" : "border-neutral-300 bg-white text-neutral-700"}`}>
-                남자
-              </button>
-              <button type="button" onClick={() => setGender("F")} className={`h-10 rounded-lg border px-4 text-sm ${gender === "F" ? "border-rose-500 bg-rose-500 text-white" : "border-neutral-300 bg-white text-neutral-700"}`}>
-                여자
-              </button>
-            </div>
-
-            <div className="rounded-xl border border-neutral-200 p-3">
-              <p className="text-sm font-medium text-neutral-900">노출 방식</p>
-              <div className="mt-2 flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setDisplayMode("priority_24h")}
-                  className={`h-9 rounded-lg border px-3 text-sm ${
-                    displayMode === "priority_24h" ? "border-rose-500 bg-rose-500 text-white" : "border-neutral-300 bg-white text-neutral-700"
-                  }`}
-                >
-                  {DATING_PAID_FIXED_LABEL}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setDisplayMode("instant_public")}
-                  className={`h-9 rounded-lg border px-3 text-sm ${
-                    displayMode === "instant_public" ? "border-emerald-600 bg-emerald-600 text-white" : "border-neutral-300 bg-white text-neutral-700"
-                  }`}
-                >
-                  새치기(비고정)
-                </button>
-              </div>
-              <p className="mt-2 text-xs text-neutral-500">
-                {displayMode === "priority_24h" ? `${DATING_PAID_FIXED_LABEL}으로 노출됩니다.` : "상단 고정 없이 일반 카드 흐름으로 자연스럽게 노출됩니다."}
+          <div className="flex items-end justify-between gap-3">
+            <div>
+              <p className="text-xs font-semibold text-rose-600">
+                {formStep} / {PAID_FORM_STEPS.length}
               </p>
+              <h2 className="mt-1 text-lg font-bold text-neutral-900">
+                {isEditMode && formStep === 1 ? "유료 신청 수정" : PAID_FORM_STEPS[formStep - 1]?.title}
+              </h2>
+              <p className="mt-1 text-sm leading-5 text-neutral-500">{PAID_FORM_STEPS[formStep - 1]?.description}</p>
             </div>
+            <span className="shrink-0 text-xs font-semibold text-neutral-400">
+              {Math.round((formStep / PAID_FORM_STEPS.length) * 100)}%
+            </span>
+          </div>
+          <div className="mt-4 grid grid-cols-4 gap-1.5" aria-label="작성 진행 단계">
+            {PAID_FORM_STEPS.map((step, index) => (
+              <button
+                key={step.title}
+                type="button"
+                aria-label={`${index + 1}단계 ${step.title}`}
+                onClick={() => index + 1 < formStep && moveToFormStep(index + 1)}
+                className={`h-1.5 rounded-full ${index + 1 <= formStep ? "bg-rose-500" : "bg-neutral-200"}`}
+              />
+            ))}
+          </div>
 
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <input className="input" placeholder="나이" type="number" min={19} max={99} value={age} onChange={(e) => setAge(e.target.value)} />
-              <input className="input" placeholder="지역" maxLength={50} value={region} onChange={(e) => setRegion(e.target.value)} />
-              <input className="input" placeholder="키(cm)" type="number" min={120} max={230} value={heightCm} onChange={(e) => setHeightCm(e.target.value)} />
-              <input className="input" placeholder="직업" maxLength={80} value={job} onChange={(e) => setJob(e.target.value)} />
-              <input className="input md:col-span-2" placeholder="운동경력(년)" type="number" min={0} max={50} value={trainingYears} onChange={(e) => setTrainingYears(e.target.value)} />
-            </div>
+          <form onSubmit={handleSubmit} noValidate className="mt-5">
+            {editLoading && <p className="mb-4 text-sm text-neutral-500">기존 카드 정보를 불러오는 중...</p>}
 
-            <textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" rows={3} maxLength={300} placeholder="내 장점" value={strengthsText} onChange={(e) => setStrengthsText(e.target.value)} />
-            <textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" rows={3} maxLength={1000} placeholder="이상형" value={idealText} onChange={(e) => setIdealText(e.target.value)} />
-
-            <input className="input" placeholder="인스타그램 아이디(@ 없이, 필수)" required maxLength={30} value={instagramId} onChange={(e) => setInstagramId(normalizeInstagramId(e.target.value))} />
-
-            <label className="inline-flex items-start gap-2 text-sm text-neutral-700">
-              <input type="checkbox" checked={photoVisibility === "public"} onChange={(e) => setPhotoVisibility(e.target.checked ? "public" : "blur")} className="mt-1" />
-              <span>사진을 블러 없이 공개합니다. (미선택 시 블러 처리)</span>
-            </label>
-
-            <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-              <div>
-                <label className="mb-1 block text-sm text-neutral-700">사진 1 (필수)</label>
-                <input type="file" accept="image/jpeg,image/png,image/webp" required={!isEditMode} onChange={(e) => { handlePhotoChange(0, e.target.files?.[0] ?? null); if (isEditMode) e.currentTarget.value = ""; }} />
-                {(previewUrls[0] || existingPreviewUrls[0]) && (
-                  <div className="mt-2 flex h-36 items-center justify-center overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 text-center text-xs font-semibold text-neutral-500">
-                    {previewFailed[0] ? (
-                      <span className="px-3">{previewUrls[0] ? "파일은 선택됐어요. 미리보기 없이도 등록할 수 있습니다." : "기존 사진 미리보기를 불러오지 못했습니다."}</span>
-                    ) : (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img
-                        src={previewUrls[0] ?? existingPreviewUrls[0]}
-                        alt="유료카드 사진 1 미리보기"
-                        decoding="async"
-                        className="h-full w-full object-contain"
-                        onError={() => setPreviewFailed((prev) => [true, prev[1] ?? false])}
-                      />
-                    )}
+            {formStep === 1 && (
+              <div className="space-y-4">
+                <div>
+                  <p className="mb-2 text-sm font-semibold text-neutral-900">성별</p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <button type="button" onClick={() => setGender("M")} className={`h-11 rounded-xl border text-sm font-medium ${gender === "M" ? "border-rose-500 bg-rose-500 text-white" : "border-neutral-300 bg-white text-neutral-700"}`}>
+                      남자
+                    </button>
+                    <button type="button" onClick={() => setGender("F")} className={`h-11 rounded-xl border text-sm font-medium ${gender === "F" ? "border-rose-500 bg-rose-500 text-white" : "border-neutral-300 bg-white text-neutral-700"}`}>
+                      여자
+                    </button>
                   </div>
-                )}
-                {isEditMode && (
-                  <div className="mt-2 flex items-center justify-between gap-2 text-xs">
-                    <span className="font-medium text-neutral-500">{previewUrls[0] ? "새 사진 미리보기" : "기존 사진 유지"}</span>
-                    {photos[0] && <button type="button" onClick={() => handlePhotoChange(0, null)} className="font-semibold text-rose-600 underline">변경 취소</button>}
+                </div>
+
+                <div className="rounded-xl border border-neutral-200 p-3">
+                  <p className="text-sm font-semibold text-neutral-900">노출 방식</p>
+                  <div className="mt-2 grid grid-cols-2 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setDisplayMode("priority_24h")}
+                      className={`min-h-11 rounded-xl border px-3 text-sm font-medium ${
+                        displayMode === "priority_24h" ? "border-rose-500 bg-rose-500 text-white" : "border-neutral-300 bg-white text-neutral-700"
+                      }`}
+                    >
+                      {DATING_PAID_FIXED_LABEL}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setDisplayMode("instant_public")}
+                      className={`min-h-11 rounded-xl border px-3 text-sm font-medium ${
+                        displayMode === "instant_public" ? "border-emerald-600 bg-emerald-600 text-white" : "border-neutral-300 bg-white text-neutral-700"
+                      }`}
+                    >
+                      새치기(비고정)
+                    </button>
                   </div>
-                )}
+                  <p className="mt-2 text-xs leading-5 text-neutral-500">
+                    {displayMode === "priority_24h" ? `${DATING_PAID_FIXED_LABEL}으로 노출됩니다.` : "상단 고정 없이 일반 카드 흐름으로 자연스럽게 노출됩니다."}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="mb-2 text-sm font-semibold text-neutral-900">기본 정보</p>
+                  <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                    <input className="input" placeholder="나이" inputMode="numeric" type="number" min={19} max={99} value={age} onChange={(e) => setAge(e.target.value)} />
+                    <input className="input" placeholder="지역" maxLength={50} value={region} onChange={(e) => setRegion(e.target.value)} />
+                    <input className="input" placeholder="키(cm)" inputMode="numeric" type="number" min={120} max={230} value={heightCm} onChange={(e) => setHeightCm(e.target.value)} />
+                    <input className="input" placeholder="직업" maxLength={80} value={job} onChange={(e) => setJob(e.target.value)} />
+                    <input className="input md:col-span-2" placeholder="운동경력(년)" inputMode="numeric" type="number" min={0} max={50} value={trainingYears} onChange={(e) => setTrainingYears(e.target.value)} />
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="mb-1 block text-sm text-neutral-700">사진 2 (필수)</label>
-                <input type="file" accept="image/jpeg,image/png,image/webp" required={!isEditMode} onChange={(e) => { handlePhotoChange(1, e.target.files?.[0] ?? null); if (isEditMode) e.currentTarget.value = ""; }} />
-                {(previewUrls[1] || existingPreviewUrls[1]) && (
-                  <div className="mt-2 flex h-36 items-center justify-center overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 text-center text-xs font-semibold text-neutral-500">
-                    {previewFailed[1] ? (
-                      <span className="px-3">{previewUrls[1] ? "파일은 선택됐어요. 미리보기 없이도 등록할 수 있습니다." : "기존 사진 미리보기를 불러오지 못했습니다."}</span>
-                    ) : (
-                      /* eslint-disable-next-line @next/next/no-img-element */
-                      <img
-                        src={previewUrls[1] ?? existingPreviewUrls[1]}
-                        alt="유료카드 사진 2 미리보기"
-                        decoding="async"
-                        className="h-full w-full object-contain"
-                        onError={() => setPreviewFailed((prev) => [prev[0] ?? false, true])}
-                      />
-                    )}
-                  </div>
-                )}
-                {isEditMode && (
-                  <div className="mt-2 flex items-center justify-between gap-2 text-xs">
-                    <span className="font-medium text-neutral-500">{previewUrls[1] ? "새 사진 미리보기" : "기존 사진 유지"}</span>
-                    {photos[1] && <button type="button" onClick={() => handlePhotoChange(1, null)} className="font-semibold text-rose-600 underline">변경 취소</button>}
-                  </div>
-                )}
+            )}
+
+            {formStep === 2 && (
+              <div className="space-y-4">
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-neutral-900" htmlFor="paid-strengths">내 장점</label>
+                  <textarea id="paid-strengths" className="w-full rounded-xl border border-neutral-300 px-3 py-3" rows={4} maxLength={300} placeholder="나를 잘 보여주는 장점을 적어주세요." value={strengthsText} onChange={(e) => setStrengthsText(e.target.value)} />
+                  <p className="mt-1 text-right text-xs text-neutral-400">{strengthsText.length}/300</p>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-neutral-900" htmlFor="paid-ideal">원하는 상대</label>
+                  <textarea id="paid-ideal" className="w-full rounded-xl border border-neutral-300 px-3 py-3" rows={5} maxLength={1000} placeholder="어떤 사람을 만나고 싶은지 적어주세요." value={idealText} onChange={(e) => setIdealText(e.target.value)} />
+                  <p className="mt-1 text-right text-xs text-neutral-400">{idealText.length}/1000</p>
+                </div>
+                <div>
+                  <label className="mb-2 block text-sm font-semibold text-neutral-900" htmlFor="paid-instagram">인스타그램 아이디</label>
+                  <input id="paid-instagram" className="input" placeholder="@ 없이 입력" maxLength={30} autoCapitalize="none" autoCorrect="off" value={instagramId} onChange={(e) => setInstagramId(normalizeInstagramId(e.target.value))} />
+                  <p className="mt-2 text-xs leading-5 text-neutral-500">인스타그램은 매칭 수락 후 상대에게 공개됩니다.</p>
+                </div>
               </div>
+            )}
+
+            {formStep === 3 && (
+              <div className="space-y-4">
+                <label className="flex min-h-12 items-center gap-3 rounded-xl border border-neutral-200 px-3 py-2 text-sm text-neutral-700">
+                  <input type="checkbox" checked={photoVisibility === "public"} onChange={(e) => setPhotoVisibility(e.target.checked ? "public" : "blur")} className="h-4 w-4" />
+                  <span>사진을 블러 없이 공개합니다. 미선택 시 블러 처리됩니다.</span>
+                </label>
+
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                  {([0, 1] as const).map((index) => {
+                    const selectedPreview = previewUrls[index];
+                    const existingPreview = existingPreviewUrls[index];
+                    return (
+                      <div key={index} className="rounded-xl border border-neutral-200 p-3">
+                        <label className="block text-sm font-semibold text-neutral-900">사진 {index + 1} (필수)</label>
+                        <div className="mt-2 flex h-48 items-center justify-center overflow-hidden rounded-xl bg-neutral-50 text-center text-xs font-semibold text-neutral-500">
+                          {selectedPreview || existingPreview ? (
+                            previewFailed[index] ? (
+                              <span className="px-3">{selectedPreview ? "파일은 선택됐어요. 미리보기 없이도 등록할 수 있습니다." : "기존 사진 미리보기를 불러오지 못했습니다."}</span>
+                            ) : (
+                              /* eslint-disable-next-line @next/next/no-img-element */
+                              <img
+                                src={selectedPreview ?? existingPreview}
+                                alt={`유료카드 사진 ${index + 1} 미리보기`}
+                                decoding="async"
+                                className="h-full w-full object-contain"
+                                onError={() => setPreviewFailed((prev) => index === 0 ? [true, prev[1] ?? false] : [prev[0] ?? false, true])}
+                              />
+                            )
+                          ) : (
+                            <span>선택한 사진이 여기에 표시됩니다.</span>
+                          )}
+                        </div>
+                        <input
+                          className="mt-3 block w-full text-sm text-neutral-600 file:mr-3 file:rounded-lg file:border-0 file:bg-neutral-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white"
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          onChange={(e) => {
+                            handlePhotoChange(index, e.target.files?.[0] ?? null);
+                            if (isEditMode) e.currentTarget.value = "";
+                          }}
+                        />
+                        {isEditMode && (
+                          <div className="mt-2 flex items-center justify-between gap-2 text-xs">
+                            <span className="font-medium text-neutral-500">{selectedPreview ? "새 사진 미리보기" : "기존 사진 유지"}</span>
+                            {photos[index] && <button type="button" onClick={() => handlePhotoChange(index, null)} className="font-semibold text-rose-600 underline">변경 취소</button>}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+                {isEditMode && <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">새 사진을 선택하지 않은 칸은 화면에 보이는 기존 사진 그대로 유지됩니다.</p>}
+                <p className="text-xs leading-5 text-neutral-500">JPG, PNG, WebP 파일을 장당 12MB 이하로 올려주세요.</p>
+              </div>
+            )}
+
+            {formStep === 4 && (
+              <div className="space-y-3">
+                <div className="rounded-xl border border-neutral-200 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-bold text-neutral-900">노출·기본 정보</h3>
+                    <button type="button" onClick={() => moveToFormStep(1)} className="text-xs font-semibold text-rose-600">수정</button>
+                  </div>
+                  <p className="mt-2 text-sm leading-6 text-neutral-700">
+                    {gender === "M" ? "남자" : "여자"} · {displayMode === "priority_24h" ? DATING_PAID_FIXED_LABEL : "새치기(비고정)"}
+                    <br />
+                    {age || "나이 미입력"}세 · {region || "지역 미입력"} · {heightCm || "키 미입력"}{heightCm ? "cm" : ""}
+                    <br />
+                    {job || "직업 미입력"} · 운동 {trainingYears || "0"}년
+                  </p>
+                </div>
+
+                <div className="rounded-xl border border-neutral-200 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-bold text-neutral-900">소개·인스타그램</h3>
+                    <button type="button" onClick={() => moveToFormStep(2)} className="text-xs font-semibold text-rose-600">수정</button>
+                  </div>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-neutral-700">{strengthsText || "장점 미입력"}</p>
+                  <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-neutral-500">{idealText || "원하는 상대 미입력"}</p>
+                  <p className="mt-2 text-sm font-medium text-neutral-800">@{normalizeInstagramId(instagramId)}</p>
+                </div>
+
+                <div className="rounded-xl border border-neutral-200 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <h3 className="text-sm font-bold text-neutral-900">사진 2장</h3>
+                    <button type="button" onClick={() => moveToFormStep(3)} className="text-xs font-semibold text-rose-600">수정</button>
+                  </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2">
+                    {([0, 1] as const).map((index) => (
+                      <div key={index} className="flex h-32 items-center justify-center overflow-hidden rounded-xl bg-neutral-50 text-xs font-medium text-neutral-500">
+                        {previewUrls[index] || existingPreviewUrls[index] ? (
+                          previewFailed[index] ? (
+                            <span className="px-2 text-center">사진 {index + 1} 선택 완료</span>
+                          ) : (
+                            /* eslint-disable-next-line @next/next/no-img-element */
+                            <img src={previewUrls[index] ?? existingPreviewUrls[index]} alt={`최종 확인 사진 ${index + 1}`} className="h-full w-full object-cover" />
+                          )
+                        ) : (
+                          <span>사진 {index + 1} 없음</span>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                  <p className="mt-2 text-xs text-neutral-500">{photoVisibility === "public" ? "사진 공개" : "사진 블러 공개"}</p>
+                </div>
+
+                <div className="rounded-xl bg-neutral-50 p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-sm font-bold text-neutral-900">{isEditMode ? "수정 내용 저장" : "대기 없이 등록"}</p>
+                      <p className="mt-1 text-xs leading-5 text-neutral-500">
+                        {isEditMode ? "기존 결제와 노출 시간은 유지됩니다." : "결제 확인 후 카드가 등록되거나 노출됩니다."}
+                      </p>
+                    </div>
+                    <strong className="shrink-0 text-lg text-neutral-900">{isEditMode ? "추가 결제 없음" : "10,000원"}</strong>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {error && <p className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-sm font-medium text-red-600">{error}</p>}
+
+            <div className="mt-6 flex gap-2">
+              {formStep > 1 && (
+                <button type="button" onClick={() => moveToFormStep(formStep - 1)} disabled={submitting} className="h-11 min-w-24 rounded-xl border border-neutral-300 bg-white px-4 text-sm font-medium text-neutral-700 disabled:opacity-50">
+                  이전
+                </button>
+              )}
+              {formStep < PAID_FORM_STEPS.length ? (
+                <button type="button" onClick={handleNextFormStep} disabled={editLoading} className="h-11 flex-1 rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white disabled:opacity-50">
+                  다음
+                </button>
+              ) : (
+                <button type="submit" onClick={() => setSubmitMode("kakaopay")} disabled={submitting || editLoading} className="h-11 flex-1 rounded-xl bg-rose-500 px-4 text-sm font-semibold text-white hover:bg-rose-600 disabled:opacity-50">
+                  {submitting && submitMode === "kakaopay" ? "처리 중..." : isEditMode ? "수정 저장" : "10,000원 결제하고 등록"}
+                </button>
+              )}
             </div>
-            {isEditMode && <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">새 사진을 선택하지 않은 칸은 화면에 보이는 기존 사진 그대로 유지됩니다.</p>}
-            <p className="text-xs leading-5 text-neutral-500">{isEditMode ? "변경하지 않은 사진은 기존 사진으로 저장됩니다." : "사진 2장이 모두 선택되고 업로드되어야 결제를 진행할 수 있습니다."}</p>
 
-            {error && <p className="text-sm text-red-600">{error}</p>}
-
-            <button type="submit" onClick={() => setSubmitMode("kakaopay")} disabled={submitting || editLoading} className="h-11 rounded-xl bg-rose-500 px-4 text-sm font-medium text-white hover:bg-rose-600 disabled:opacity-50">
-              {submitting ? "신청 중..." : isEditMode ? "수정 저장" : "유료 신청 등록"}
-            </button>
-            {!isEditMode && (
-              <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-neutral-500">
-                <span>카카오페이가 어려우면 수동 신청 후 오픈카톡으로 이어갈 수 있어요.</span>
-                <button
-                  type="submit"
-                  onClick={() => setSubmitMode("manual")}
-                  disabled={submitting || editLoading}
-                  className="rounded-lg border border-neutral-300 bg-white px-3 py-1.5 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
-                >
-                  {submitting && submitMode === "manual" ? "신청 접수 중.." : "수동 신청"}
+            {formStep === PAID_FORM_STEPS.length && !isEditMode && (
+              <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-neutral-200 px-3 py-2 text-xs text-neutral-500">
+                <span>카카오페이가 어려우면 수동 신청도 가능해요.</span>
+                <button type="submit" onClick={() => setSubmitMode("manual")} disabled={submitting || editLoading} className="min-h-9 rounded-lg border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-700 disabled:opacity-50">
+                  {submitting && submitMode === "manual" ? "신청 접수 중..." : "수동 신청"}
                 </button>
               </div>
             )}
-            {isEditMode && editingPaidCardStatus === "approved" && (
-              <p className="mt-2 text-xs font-medium text-emerald-700">결제 완료된 카드의 내용만 수정합니다. 추가 결제는 진행되지 않습니다.</p>
+            {formStep === PAID_FORM_STEPS.length && isEditMode && editingPaidCardStatus === "approved" && (
+              <p className="mt-3 text-xs font-medium text-emerald-700">결제 완료된 카드의 내용만 수정하며 추가 결제는 진행되지 않습니다.</p>
             )}
           </form>
 

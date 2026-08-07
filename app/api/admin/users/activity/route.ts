@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getActiveOneOnOnePlus } from "@/lib/dating-1on1-plus";
 import { hashEmail } from "@/lib/account-deletion";
 import { requireAdminRoute } from "@/lib/admin-route";
+import { normalizePhoneToE164 } from "@/lib/phone-verification";
 import { createAdminClient } from "@/lib/supabase/server";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -265,22 +266,53 @@ async function findUserCandidatesByNickname(admin: AdminClient, query: string) {
 }
 
 async function findUserCandidateByProfilePhone(admin: AdminClient, phone: string) {
-  const normalizedPhone = normalizePhone(phone);
-  if (toDigits(normalizedPhone).length < 8) return null;
+  const normalizedPhone = normalizePhoneToE164(phone) || normalizePhone(phone);
+  const phoneDigits = toDigits(normalizedPhone);
+  if (phoneDigits.length < 8) return null;
 
-  const rows = await listSafe<Record<string, unknown>>(
+  const exactRows = await listSafe<Record<string, unknown>>(
     admin
       .from("profiles")
       .select("user_id,nickname,role,phone_verified,phone_e164,phone_verified_at,swipe_profile_visible,is_banned,banned_reason,banned_at,created_at")
-      .ilike("phone_e164", ilikePattern(normalizedPhone))
+      .eq("phone_e164", normalizedPhone)
       .limit(1)
   );
-  const profile = rows[0] ?? null;
+  let profile = exactRows[0] ?? null;
+
+  if (!profile) {
+    const suffixRows = await listSafe<Record<string, unknown>>(
+      admin
+        .from("profiles")
+        .select("user_id,nickname,role,phone_verified,phone_e164,phone_verified_at,swipe_profile_visible,is_banned,banned_reason,banned_at,created_at")
+        .ilike("phone_e164", ilikePattern(phoneDigits.slice(-8)))
+        .limit(1)
+    );
+    profile = suffixRows[0] ?? null;
+  }
+
   if (!profile) return null;
   return {
     userId: String(profile.user_id),
     profile,
   };
+}
+
+async function findUserCandidateByOneOnOnePhone(admin: AdminClient, phone: string) {
+  const normalizedPhone = normalizePhoneToE164(phone) || normalizePhone(phone);
+  const phoneDigits = toDigits(normalizedPhone);
+  if (phoneDigits.length < 8) return null;
+
+  const rows = await listSafe<Record<string, unknown>>(
+    admin
+      .from("dating_1on1_cards")
+      .select("user_id,phone,updated_at")
+      .ilike("phone", ilikePattern(phoneDigits.slice(-8)))
+      .order("updated_at", { ascending: false })
+      .limit(1)
+  );
+  const row = rows[0] ?? null;
+  if (!row?.user_id) return null;
+  return { userId: String(row.user_id), profile: null };
 }
 
 async function resolveUser(admin: AdminClient, query: string) {
@@ -298,9 +330,10 @@ async function resolveUser(admin: AdminClient, query: string) {
 
   const isEmailQuery = query.includes("@");
   const isPhoneQuery = toDigits(query).length >= 8;
-  const [nicknameCandidates, profilePhoneCandidate, emailUser, phoneUser] = await Promise.all([
+  const [nicknameCandidates, profilePhoneCandidate, oneOnOnePhoneCandidate, emailUser, phoneUser] = await Promise.all([
     isEmailQuery || isPhoneQuery ? Promise.resolve([]) : findUserCandidatesByNickname(admin, query),
     isPhoneQuery ? findUserCandidateByProfilePhone(admin, query) : Promise.resolve(null),
+    isPhoneQuery ? findUserCandidateByOneOnOnePhone(admin, query) : Promise.resolve(null),
     isEmailQuery ? findAuthUserByEmail(admin, query) : Promise.resolve(null),
     isPhoneQuery ? findAuthUserByPhone(admin, query) : Promise.resolve(null),
   ]);
@@ -310,7 +343,7 @@ async function resolveUser(admin: AdminClient, query: string) {
     return { userId: authUser.id, authUser, profile: await fetchProfile(admin, authUser.id) };
   }
 
-  const resolvedCandidate = profilePhoneCandidate ?? nicknameCandidates[0] ?? null;
+  const resolvedCandidate = profilePhoneCandidate ?? oneOnOnePhoneCandidate ?? nicknameCandidates[0] ?? null;
   if (!resolvedCandidate) return null;
 
   const profile = resolvedCandidate.profile ?? (await fetchProfile(admin, resolvedCandidate.userId));

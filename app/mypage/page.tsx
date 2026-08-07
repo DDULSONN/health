@@ -590,6 +590,7 @@ function formatPaymentProductLabel(order: MyPaymentCenterOrder) {
   if (order.product_type === "one_on_one_plus_30d") return "1:1 매칭 플러스 30일";
   if (order.product_type === "swipe_premium_30d") return "빠른매칭 플러스";
   if (order.product_type === "love_fortune_detail") return "연애운 상세 분석";
+  if (order.product_type === "account_unban") return "계정 이용 제한 해제";
   return order.order_name ?? order.product_type;
 }
 
@@ -617,6 +618,7 @@ function formatPaymentResultLabel(order: MyPaymentCenterOrder) {
   if (order.product_type === "one_on_one_plus_30d") return "1:1 매칭 플러스 적용 완료";
   if (order.product_type === "swipe_premium_30d") return "빠른매칭 플러스 적용 완료";
   if (order.product_type === "love_fortune_detail") return "연애운 상세 분석 이용권 반영 완료";
+  if (order.product_type === "account_unban") return "계정 이용 제한 해제 완료";
   return "결제 완료";
 }
 
@@ -895,6 +897,12 @@ type MyDatingContactBlock = {
   value_hint: string | null;
   label: string | null;
   created_at: string;
+};
+
+type AccountBanStatus = {
+  is_banned: boolean;
+  banned_reason: string | null;
+  banned_at: string | null;
 };
 
 type MyDatingUserBlock = {
@@ -1767,6 +1775,9 @@ export default function MyPage() {
 
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
+  const [accountBanStatus, setAccountBanStatus] = useState<AccountBanStatus | null>(null);
+  const [accountUnbanSubmitting, setAccountUnbanSubmitting] = useState(false);
+  const [accountUnbanError, setAccountUnbanError] = useState("");
   const [certRequests, setCertRequests] = useState<MyCertRequest[]>([]);
   const [datingApplication, setDatingApplication] = useState<DatingApplicationStatus | null>(null);
   const [myDatingCards, setMyDatingCards] = useState<MyDatingCard[]>([]);
@@ -3227,6 +3238,21 @@ export default function MyPage() {
           return;
         }
 
+        const accountStatusRes = await fetch("/api/mypage/account-status", { cache: "no-store" });
+        const accountStatusBody = (await accountStatusRes.json().catch(() => ({}))) as {
+          error?: string;
+          account?: AccountBanStatus;
+        };
+        if (!accountStatusRes.ok || !accountStatusBody.account) {
+          throw new Error(accountStatusBody.error ?? "계정 상태를 확인하지 못했습니다.");
+        }
+        if (isMounted) {
+          setAccountBanStatus(accountStatusBody.account);
+        }
+        if (accountStatusBody.account.is_banned) {
+          return;
+        }
+
         const [
           summaryRes,
           certRes,
@@ -3673,12 +3699,12 @@ export default function MyPage() {
   }, [adminManageTab, adminPaymentCenter, adminPaymentCenterLoading, isAdmin, refreshAdminPaymentCenter]);
 
   useEffect(() => {
-    if (loading || swipeSubscriptionStatus || swipeSubscriptionLoading) return;
+    if (loading || accountBanStatus?.is_banned || swipeSubscriptionStatus || swipeSubscriptionLoading) return;
 
     queueMicrotask(async () => {
       await reloadSwipeSubscriptionStatus();
     });
-  }, [loading, swipeSubscriptionStatus, swipeSubscriptionLoading, reloadSwipeSubscriptionStatus]);
+  }, [accountBanStatus?.is_banned, loading, swipeSubscriptionStatus, swipeSubscriptionLoading, reloadSwipeSubscriptionStatus]);
 
   useEffect(() => {
     if (!paymentCenterOpen || paymentCenterLoaded || paymentCenterLoading) return;
@@ -3818,6 +3844,38 @@ export default function MyPage() {
     await supabase.auth.signOut();
     router.push("/");
     router.refresh();
+  };
+
+  const handlePurchaseAccountUnban = async () => {
+    if (accountUnbanSubmitting) return;
+    setAccountUnbanSubmitting(true);
+    setAccountUnbanError("");
+
+    try {
+      const res = await fetch("/api/payments/toss/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ productType: "account_unban" }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        message?: string;
+        checkoutUrl?: string;
+      };
+      if (!res.ok || body.ok === false) {
+        throw new Error(body.message ?? body.error ?? "이용 제한 해제 결제를 시작하지 못했습니다.");
+      }
+      if (!body.checkoutUrl) {
+        throw new Error("결제창을 열지 못했습니다.");
+      }
+      window.location.href = body.checkoutUrl;
+    } catch (purchaseError) {
+      setAccountUnbanError(
+        purchaseError instanceof Error ? purchaseError.message : "이용 제한 해제 결제를 시작하지 못했습니다."
+      );
+      setAccountUnbanSubmitting(false);
+    }
   };
 
   const normalizePhoneForOtp = (raw: string): string => {
@@ -4629,11 +4687,11 @@ export default function MyPage() {
   }, []);
 
   useEffect(() => {
-    if (loading || swipeStatusLoaded || swipeStatusLoading) return;
+    if (loading || accountBanStatus?.is_banned || swipeStatusLoaded || swipeStatusLoading) return;
     void reloadSwipeStatus().catch((error) => {
       console.error("[mypage] initial swipe status load failed", error);
     });
-  }, [loading, reloadSwipeStatus, swipeStatusLoaded, swipeStatusLoading]);
+  }, [accountBanStatus?.is_banned, loading, reloadSwipeStatus, swipeStatusLoaded, swipeStatusLoading]);
 
   const handleToggleSwipeStatusPanel = async () => {
     const nextOpen = !swipeStatusPanelOpen;
@@ -7026,6 +7084,65 @@ export default function MyPage() {
     return (
       <main className="mx-auto max-w-2xl px-4 py-10">
         <p className="text-center text-neutral-400">불러오는 중...</p>
+      </main>
+    );
+  }
+
+  if (accountBanStatus?.is_banned) {
+    const bannedAtText = accountBanStatus.banned_at
+      ? new Date(accountBanStatus.banned_at).toLocaleString("ko-KR")
+      : null;
+    return (
+      <main className="mx-auto flex min-h-[calc(100dvh-80px)] max-w-2xl items-center px-4 py-10">
+        <section className="w-full overflow-hidden rounded-2xl border border-red-200 bg-white shadow-[0_20px_60px_rgba(127,29,29,0.12)]">
+          <div className="border-b border-red-100 bg-red-50 px-5 py-6 sm:px-7">
+            <p className="text-xs font-bold text-red-600">계정 이용 제한</p>
+            <h1 className="mt-2 text-2xl font-bold text-neutral-950">계정 이용이 정지되었습니다.</h1>
+            <p className="mt-2 text-sm leading-6 text-neutral-600">
+              아래 사유로 현재 짐툴의 매칭 및 지원 기능을 이용할 수 없습니다.
+            </p>
+          </div>
+
+          <div className="px-5 py-6 sm:px-7">
+            <div className="rounded-xl border border-red-100 bg-[#fffafa] px-4 py-4">
+              <p className="text-xs font-semibold text-neutral-500">정지 사유</p>
+              <p className="mt-2 break-words text-base font-bold leading-7 text-red-800">
+                {accountBanStatus.banned_reason?.trim() || "운영정책 위반"}
+              </p>
+              {bannedAtText ? <p className="mt-2 text-xs text-neutral-400">정지 일시 {bannedAtText}</p> : null}
+            </div>
+
+            <div className="mt-5 flex items-end justify-between gap-4">
+              <div>
+                <p className="text-sm font-bold text-neutral-950">이용 제한 해제</p>
+                <p className="mt-1 text-xs leading-5 text-neutral-500">결제가 완료되면 계정 정지가 자동으로 해제됩니다.</p>
+              </div>
+              <p className="shrink-0 text-xl font-bold text-neutral-950">20,000원</p>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => void handlePurchaseAccountUnban()}
+              disabled={accountUnbanSubmitting}
+              className="mt-4 min-h-[52px] w-full rounded-xl bg-neutral-950 px-4 text-sm font-bold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
+            >
+              {accountUnbanSubmitting ? "결제창 여는 중..." : "2만원 결제하고 정지 해제"}
+            </button>
+            {accountUnbanError ? <p className="mt-3 text-sm font-medium text-red-600">{accountUnbanError}</p> : null}
+
+            <p className="mt-4 text-[11px] leading-5 text-neutral-400">
+              정지 과정에서 내려간 오픈카드·빠른매칭·1:1 프로필은 결제 후 자동으로 다시 공개되지 않습니다.
+            </p>
+            <button
+              type="button"
+              onClick={() => void handleLogout()}
+              disabled={loggingOut}
+              className="mt-5 min-h-[44px] w-full border-t border-neutral-100 pt-4 text-xs font-semibold text-neutral-500"
+            >
+              {loggingOut ? "로그아웃 중..." : "다른 계정으로 로그인"}
+            </button>
+          </div>
+        </section>
       </main>
     );
   }
@@ -12989,7 +13106,7 @@ export default function MyPage() {
                         void handleAdminLoadUserActivity();
                       }
                     }}
-                    placeholder="닉네임, 이메일, 사용자 ID"
+                    placeholder="닉네임, 이메일, 휴대폰 번호, 사용자 ID"
                     className="mt-1 h-10 w-full rounded-lg border border-violet-200 bg-white px-3 text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
                   />
                 </label>
@@ -13003,7 +13120,7 @@ export default function MyPage() {
                 </button>
               </div>
               <p className="mt-2 text-[11px] text-neutral-500">
-                커뮤니티, 몸평, 오픈카드, 1:1, 결제, 문의, 휴대폰 인증 기록을 한 번에 확인합니다. 탈퇴 기록은 보관 기간 내에서만 조회됩니다.
+                닉네임·이메일·휴대폰 번호·사용자 ID로 검색해 커뮤니티, 오픈카드, 1:1, 결제 및 인증 기록을 한 번에 확인합니다.
               </p>
               {adminUserActivityError ? <p className="mt-2 text-xs text-red-600">{adminUserActivityError}</p> : null}
 

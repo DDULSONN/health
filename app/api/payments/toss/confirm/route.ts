@@ -39,7 +39,8 @@ type TossOrderRow = {
     | "one_on_one_priority_24h"
     | "one_on_one_plus_30d"
     | "swipe_premium_30d"
-    | "love_fortune_detail";
+    | "love_fortune_detail"
+    | "account_unban";
   product_ref_id: string | null;
   product_meta: Record<string, unknown> | null;
   order_name: string | null;
@@ -687,6 +688,47 @@ async function ensureOrderFulfilled(
     await ensureSwipePremiumFulfilled(admin, order);
   }
 
+  if (order.product_type === "account_unban") {
+    const profileRes = await admin
+      .from("profiles")
+      .select("is_banned")
+      .eq("user_id", order.user_id)
+      .maybeSingle();
+
+    if (profileRes.error || !profileRes.data) {
+      throw profileRes.error ?? new Error("ACCOUNT_PROFILE_MISSING");
+    }
+
+    if (profileRes.data.is_banned === true) {
+      const unbanRes = await admin
+        .from("profiles")
+        .update({
+          is_banned: false,
+          banned_reason: null,
+          banned_at: null,
+        })
+        .eq("user_id", order.user_id)
+        .eq("is_banned", true)
+        .select("user_id")
+        .maybeSingle();
+
+      if (unbanRes.error) {
+        throw unbanRes.error;
+      }
+
+      if (!unbanRes.data?.user_id) {
+        const confirmedRes = await admin
+          .from("profiles")
+          .select("is_banned")
+          .eq("user_id", order.user_id)
+          .maybeSingle();
+        if (confirmedRes.error || confirmedRes.data?.is_banned === true) {
+          throw confirmedRes.error ?? new Error("ACCOUNT_UNBAN_FAILED");
+        }
+      }
+    }
+  }
+
   if (order.product_type === "love_fortune_detail") {
     if (!order.product_ref_id) {
       throw new Error("LOVE_FORTUNE_READING_MISSING");
@@ -807,6 +849,34 @@ export async function POST(req: Request) {
         addedCredits: fulfillment.addedCredits,
         creditsAfter: fulfillment.creditsAfter,
       });
+    }
+
+    if (order.status !== "ready") {
+      return json(409, {
+        ok: false,
+        code: "ORDER_NOT_PAYABLE",
+        requestId,
+        message: "더 이상 결제할 수 없는 주문입니다. 마이페이지에서 다시 시도해주세요.",
+      });
+    }
+
+    if (order.product_type === "account_unban") {
+      const profileRes = await admin
+        .from("profiles")
+        .select("is_banned")
+        .eq("user_id", user.id)
+        .maybeSingle();
+      if (profileRes.error) {
+        throw profileRes.error;
+      }
+      if (profileRes.data?.is_banned !== true) {
+        return json(409, {
+          ok: false,
+          code: "ACCOUNT_ALREADY_ACTIVE",
+          requestId,
+          message: "이미 이용 제한이 해제된 계정입니다.",
+        });
+      }
     }
 
     const payment = await confirmTossPayment({ paymentKey, orderId, amount });

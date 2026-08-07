@@ -131,6 +131,7 @@ function formatProductType(productType?: string, orderName?: string | null) {
   if (productType === "one_on_one_plus_30d") return "1:1 매칭 플러스 30일";
   if (productType === "swipe_premium_30d") return "빠른매칭 플러스";
   if (productType === "love_fortune_detail") return "연애운 상세 풀이";
+  if (productType === "account_unban") return "계정 이용 제한 해제";
   return "-";
 }
 
@@ -149,6 +150,7 @@ function getPrimaryAction(productType?: string, orderName?: string | null, provi
     return { href: `/dating/nearby-view${provinceQuery}#nearby-results`, label: "열린 카드 바로 확인하기" };
   }
   if (productType === "love_fortune_detail") return { href: "/mypage?loveFortune=1#love-fortune", label: "저장된 풀이 보기" };
+  if (productType === "account_unban") return { href: "/mypage", label: "마이페이지로 돌아가기" };
   return { href: "/dating/more-view", label: "이상형 더보기로 돌아가기" };
 }
 
@@ -755,6 +757,8 @@ function PaymentSuccessContent() {
                             ? "가까운 후보 30명 열람권 반영 완료"
                             : result.productType === "love_fortune_detail"
                               ? "연애운 상세 풀이 생성 준비 완료"
+                              : result.productType === "account_unban"
+                                ? "계정 이용 제한 해제 완료"
                               : "결제 반영 완료"}
                 </p>
               </div>
