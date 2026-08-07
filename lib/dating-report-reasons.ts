@@ -3,7 +3,7 @@ export const DATING_CARD_REPORT_REASON_OPTIONS = [
   { code: "explicit_content", label: "부적절한 사진 / 노출" },
   { code: "abuse_harassment", label: "욕설 / 괴롭힘 / 불쾌한 표현" },
   { code: "commercial_spam", label: "상업 / 광고 / 외부 유도" },
-  { code: "safety_risk", label: "미성년 의심 / 안전 위험" },
+  { code: "safety_risk", label: "연락 두절 / 계정 의심 / 안전 문제" },
 ] as const;
 
 export type DatingCardReportReasonCode = (typeof DATING_CARD_REPORT_REASON_OPTIONS)[number]["code"];

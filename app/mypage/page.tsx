@@ -4581,7 +4581,7 @@ export default function MyPage() {
 
       setDatingUserReportDraft(null);
       const refreshResults = await Promise.allSettled([
-        reloadDatingUserBlocks(),
+        ...(body.blocked ? [reloadDatingUserBlocks()] : []),
         reloadOneOnOneMatches(),
         reloadOneOnOneRecommendations(),
         reloadSwipeStatus(),
@@ -4591,7 +4591,12 @@ export default function MyPage() {
           console.error("[mypage] post-report refresh failed", result.reason);
         }
       }
-      alert("신고가 접수됐고 해당 회원은 모든 매칭에서 즉시 차단됐습니다.");
+      alert(
+        body.message ??
+          (body.blocked
+            ? "신고가 접수됐고 해당 회원은 모든 매칭에서 즉시 차단됐습니다."
+            : "신고는 정상 접수됐습니다. 차단 처리에 실패해 관리자에게 함께 전달했습니다.")
+      );
     } catch (e) {
       alert(e instanceof Error ? e.message : "신고 접수에 실패했습니다.");
     } finally {

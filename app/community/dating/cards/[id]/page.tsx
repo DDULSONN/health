@@ -109,11 +109,11 @@ export default function OpenCardDetailPage() {
           detail: reportDetail.trim(),
         }),
       });
-      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
       if (!res.ok) {
         throw new Error(body.error ?? "신고 접수에 실패했습니다.");
       }
-      setReportMessage("신고가 접수되었습니다. 운영자가 확인 후 조치합니다.");
+      setReportMessage(body.message ?? "신고가 접수되었습니다. 운영자가 확인 후 조치합니다.");
       setReportOpen(false);
       setReportDetail("");
     } catch (error) {
