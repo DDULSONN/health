@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { requireAdminRoute } from "@/lib/admin-route";
 import { recordAdminAuditEvent } from "@/lib/admin-audit";
+import { reviewOneOnOneName } from "@/lib/dating-1on1-name-review";
 import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
 import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
 import { buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
@@ -272,7 +273,7 @@ function sourceLabel(value: SourceType) {
 
 function likelyTextFlags(texts: Record<string, string>, sourceType?: SourceType) {
   const reviewTexts = Object.entries(texts)
-    .filter(([key]) => !/instagram|job/i.test(key))
+    .filter(([key]) => !/instagram|job|^name$/i.test(key))
     .map(([, value]) => value.trim())
     .filter(Boolean);
   const merged = reviewTexts.join(" ").trim();
@@ -301,6 +302,10 @@ function likelyTextFlags(texts: Record<string, string>, sourceType?: SourceType)
 function ruleReview(card: CandidateCard): CardReview {
   const photoFlags: string[] = [];
   const textFlags = likelyTextFlags(card.texts, card.sourceType);
+  if (card.sourceType === "one_on_one" || card.sourceType === "one_on_one_application") {
+    const nameReview = reviewOneOnOneName(card.texts.name ?? card.displayName);
+    textFlags.push(...nameReview.flags.map((flag) => `이름: ${flag}`));
+  }
   const flags: string[] = [];
   const requiredTextFields = Object.entries(card.texts).filter(([key]) => !/instagram|job/i.test(key));
 
@@ -556,6 +561,7 @@ async function fetchOneOnOneCards(admin: AdminClient, limit: number): Promise<Ca
       age: typeof row.birth_year === "number" ? currentYear - row.birth_year + 1 : null,
       region: cleanText(row.region, 80) || null,
       texts: {
+        name: cleanText(row.name, 80),
         job: cleanText(row.job, 80),
         intro: cleanText(row.intro_text, 500),
         strengths: cleanText(row.strengths_text, 500),
@@ -691,6 +697,7 @@ async function fetchOneOnOneApplications(admin: AdminClient, limit: number): Pro
         age: typeof row.birth_year === "number" ? currentYear - row.birth_year + 1 : null,
         region: cleanText(row.region, 80) || null,
         texts: {
+          name: cleanText(row.name, 80),
           matchId: cleanText(proposal.id, 80),
           sourceCardId,
           candidateCardId,
@@ -911,6 +918,7 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
       age: typeof row.birth_year === "number" ? currentYear - row.birth_year + 1 : null,
       region: cleanText(row.region, 80) || null,
       texts: {
+        name: cleanText(row.name, 80),
         matchId: cleanText(proposal.id, 80),
         sourceCardId,
         candidateCardId,
@@ -954,6 +962,7 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
     age: typeof row.birth_year === "number" ? currentYear - row.birth_year + 1 : null,
     region: cleanText(row.region, 80) || null,
     texts: {
+      name: cleanText(row.name, 80),
       job: cleanText(row.job, 80),
       intro: cleanText(row.intro_text, 500),
       strengths: cleanText(row.strengths_text, 500),
@@ -970,7 +979,10 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
 function editableFieldsFromCandidate(card: CandidateCard | null): EditableFields {
   if (!card) return emptyEditableFields();
   return {
-    displayName: card.displayName,
+    displayName:
+      card.sourceType === "one_on_one" || card.sourceType === "one_on_one_application"
+        ? card.texts.name ?? card.displayName
+        : card.displayName,
     job: card.texts.job ?? "",
     region: card.region ?? "",
     intro: card.texts.intro ?? "",

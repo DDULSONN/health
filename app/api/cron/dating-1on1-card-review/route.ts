@@ -1,4 +1,5 @@
 import { ensureCronAuthorized } from "@/lib/cron-auth";
+import { reviewOneOnOneName } from "@/lib/dating-1on1-name-review";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -99,9 +100,16 @@ function buildReviewText(card: OneOnOneCardRow) {
 function reviewCard(card: OneOnOneCardRow) {
   const merged = buildReviewText(card);
   const matched = DIRECT_CONTACT_PATTERNS.filter((item) => item.pattern.test(merged));
-  const flags = Array.from(new Set(matched.map((item) => item.label)));
+  const nameReview = reviewOneOnOneName(card.name);
+  const flags = Array.from(
+    new Set([...matched.map((item) => item.label), ...nameReview.flags.map((flag) => `이름: ${flag}`)])
+  );
   const suspicionLevel: SuspicionLevel =
-    matched.some((item) => item.level === "high") ? "high" : flags.length > 0 ? "medium" : "clear";
+    matched.some((item) => item.level === "high") || (nameReview.suspicious && nameReview.level === "high")
+      ? "high"
+      : flags.length > 0
+        ? "medium"
+        : "clear";
 
   return {
     suspicionLevel,

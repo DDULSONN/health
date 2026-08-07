@@ -114,8 +114,9 @@ export async function POST(request: Request) {
 
   let hiddenOpenCards = 0;
   let hiddenPaidCards = 0;
+  let hiddenOneOnOneCards = 0;
   if (banned) {
-    const [openCardsRes, paidCardsRes] = await Promise.all([
+    const [openCardsRes, paidCardsRes, oneOnOneCardsRes] = await Promise.all([
       auth.admin
         .from("dating_cards")
         .update({ status: "hidden", expires_at: nowIso })
@@ -128,13 +129,23 @@ export async function POST(request: Request) {
         .eq("user_id", userId)
         .in("status", ["pending", "approved"])
         .select("id"),
+      auth.admin
+        .from("dating_1on1_cards")
+        .update({ status: "rejected", updated_at: nowIso })
+        .eq("user_id", userId)
+        .in("status", ["submitted", "reviewing", "approved"])
+        .select("id"),
     ]);
 
-    if (openCardsRes.error || paidCardsRes.error) {
-      console.error("[POST /api/admin/users/ban] hide visible cards failed", openCardsRes.error ?? paidCardsRes.error);
+    if (openCardsRes.error || paidCardsRes.error || oneOnOneCardsRes.error) {
+      console.error(
+        "[POST /api/admin/users/ban] hide visible cards failed",
+        openCardsRes.error ?? paidCardsRes.error ?? oneOnOneCardsRes.error
+      );
     }
     hiddenOpenCards = openCardsRes.data?.length ?? 0;
     hiddenPaidCards = paidCardsRes.data?.length ?? 0;
+    hiddenOneOnOneCards = oneOnOneCardsRes.data?.length ?? 0;
   }
 
   await recordAdminAuditEvent({
@@ -152,6 +163,7 @@ export async function POST(request: Request) {
       previous_reason: profileRes.data.banned_reason ?? null,
       hidden_open_cards: hiddenOpenCards,
       hidden_paid_cards: hiddenPaidCards,
+      hidden_one_on_one_cards: hiddenOneOnOneCards,
     },
   });
 
@@ -161,5 +173,6 @@ export async function POST(request: Request) {
     profile: updateRes.data,
     hiddenOpenCards,
     hiddenPaidCards,
+    hiddenOneOnOneCards,
   });
 }
