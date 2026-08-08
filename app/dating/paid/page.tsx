@@ -20,6 +20,8 @@ const PAID_FORM_STEPS = [
   { title: "입력 내용 확인", description: "등록 내용을 확인한 뒤 결제를 진행해주세요." },
 ] as const;
 
+type SubmitMode = "kakaopay" | "manual";
+
 type PaidItem = {
   id: string;
   nickname: string;
@@ -78,6 +80,18 @@ function withPaymentCardNotice(message: string) {
   return `${message}\n${PAYMENT_CARD_UNAVAILABLE_MESSAGE}`;
 }
 
+async function fetchWithNetworkMessage(
+  input: RequestInfo | URL,
+  init: RequestInit,
+  networkMessage: string
+) {
+  try {
+    return await fetch(input, init);
+  } catch {
+    throw new Error(networkMessage);
+  }
+}
+
 async function createBlurThumbnailFile(source: File): Promise<File> {
   const imageUrl = URL.createObjectURL(source);
   try {
@@ -122,7 +136,7 @@ export default function DatingPaidPage() {
   const [items, setItems] = useState<PaidItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-  const [submitMode, setSubmitMode] = useState<"kakaopay" | "manual">("kakaopay");
+  const [submitMode, setSubmitMode] = useState<SubmitMode>("kakaopay");
   const [error, setError] = useState("");
   const [successId, setSuccessId] = useState("");
   const [successWasEdit, setSuccessWasEdit] = useState(false);
@@ -316,8 +330,9 @@ export default function DatingPaidPage() {
     moveToFormStep(formStep + 1);
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  const submitPaidRequest = async (requestedSubmitMode: SubmitMode) => {
+    if (submitting) return;
+    setSubmitMode(requestedSubmitMode);
     setError("");
     setSuccessId("");
     setSuccessWasEdit(false);
@@ -376,7 +391,11 @@ export default function DatingPaidPage() {
         fd.append("kind", "raw");
         fd.append("asset_id", assetId);
         fd.append("index", String(i));
-        const res = await fetch("/api/dating/cards/upload-card", { method: "POST", body: fd });
+        const res = await fetchWithNetworkMessage(
+          "/api/dating/cards/upload-card",
+          { method: "POST", body: fd },
+          `사진 ${i + 1} 업로드 중 연결이 끊겼습니다. 네트워크를 확인한 뒤 다시 시도해 주세요.`
+        );
         const body = (await res.json().catch(() => ({}))) as { path?: string; error?: string };
         if (!res.ok || !body.path) {
           setError(body.error ?? "사진 업로드에 실패했습니다.");
@@ -470,11 +489,17 @@ export default function DatingPaidPage() {
         photo_paths: filteredRawPaths,
       };
 
-      const createRes = await fetch("/api/dating/paid/create", {
-        method: isEditMode ? "PATCH" : "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
+      const createRes = await fetchWithNetworkMessage(
+        "/api/dating/paid/create",
+        {
+          method: isEditMode ? "PATCH" : "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        },
+        isEditMode
+          ? "수정 내용을 저장하는 중 연결이 끊겼습니다. 잠시 후 다시 시도해 주세요."
+          : "신청을 접수하는 중 연결이 끊겼습니다. 잠시 후 다시 시도해 주세요."
+      );
       const createBody = (await createRes.json().catch(() => ({}))) as {
         ok?: boolean;
         paidCardId?: string;
@@ -507,7 +532,7 @@ export default function DatingPaidPage() {
         return;
       }
 
-      if (submitMode === "manual") {
+      if (requestedSubmitMode === "manual") {
         setSuccessId(createBody.paidCardId);
         setSuccessWasEdit(false);
         setPhotos([null, null]);
@@ -533,14 +558,26 @@ export default function DatingPaidPage() {
         return;
       }
 
-      const tossCreateRes = await fetch("/api/payments/toss/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productType: "paid_card",
-          paidCardId: createBody.paidCardId,
-        }),
-      });
+      let tossCreateRes: Response;
+      try {
+        tossCreateRes = await fetchWithNetworkMessage(
+          "/api/payments/toss/create",
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              productType: "paid_card",
+              paidCardId: createBody.paidCardId,
+            }),
+          },
+          "결제창을 준비하는 중 연결이 끊겼습니다. 잠시 후 다시 시도해 주세요."
+        );
+      } catch (paymentError) {
+        await fetch(`/api/dating/paid/create?id=${encodeURIComponent(createBody.paidCardId)}`, {
+          method: "DELETE",
+        }).catch(() => null);
+        throw paymentError;
+      }
       const tossCreateBody = (await tossCreateRes.json().catch(() => ({}))) as {
         ok?: boolean;
         checkoutUrl?: string;
@@ -589,6 +626,11 @@ export default function DatingPaidPage() {
     } finally {
       setSubmitting(false);
     }
+  };
+
+  const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+    e.preventDefault();
+    void submitPaidRequest("kakaopay");
   };
 
   const fixedItems = useMemo(() => items.filter((item) => item.display_mode !== "instant_public"), [items]);
@@ -913,7 +955,7 @@ export default function DatingPaidPage() {
                   다음
                 </button>
               ) : (
-                <button type="submit" onClick={() => setSubmitMode("kakaopay")} disabled={submitting || editLoading} className="h-11 flex-1 rounded-xl bg-rose-500 px-4 text-sm font-semibold text-white hover:bg-rose-600 disabled:opacity-50">
+                <button type="submit" disabled={submitting || editLoading} className="h-11 flex-1 rounded-xl bg-rose-500 px-4 text-sm font-semibold text-white hover:bg-rose-600 disabled:opacity-50">
                   {submitting && submitMode === "kakaopay" ? "처리 중..." : isEditMode ? "수정 저장" : "10,000원 결제하고 등록"}
                 </button>
               )}
@@ -922,7 +964,7 @@ export default function DatingPaidPage() {
             {formStep === PAID_FORM_STEPS.length && !isEditMode && (
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-neutral-200 px-3 py-2 text-xs text-neutral-500">
                 <span>카카오페이가 어려우면 수동 신청도 가능해요.</span>
-                <button type="submit" onClick={() => setSubmitMode("manual")} disabled={submitting || editLoading} className="min-h-9 rounded-lg border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-700 disabled:opacity-50">
+                <button type="button" onClick={() => void submitPaidRequest("manual")} disabled={submitting || editLoading} className="min-h-9 rounded-lg border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-700 disabled:opacity-50">
                   {submitting && submitMode === "manual" ? "신청 접수 중..." : "수동 신청"}
                 </button>
               </div>
