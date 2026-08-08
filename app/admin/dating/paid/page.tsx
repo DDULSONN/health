@@ -25,6 +25,8 @@ type PaidAdminItem = {
   expires_at: string | null;
   created_at: string;
   previewUrl: string;
+  photoPaths: string[];
+  imageUrls: string[];
 };
 
 type ApplyCreditOrderItem = {
@@ -196,6 +198,40 @@ export default function AdminDatingPaidPage() {
     }
   };
 
+  const handlePhotoUpload = async (item: PaidAdminItem, slot: number, file: File | null) => {
+    if (!file) return;
+    if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+      alert("JPG, PNG, WebP 사진만 올릴 수 있습니다.");
+      return;
+    }
+    if (file.size > 12 * 1024 * 1024) {
+      alert("사진은 장당 12MB 이하만 올릴 수 있습니다.");
+      return;
+    }
+
+    setActingId(item.id);
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("slot", String(slot));
+      const res = await fetch(`/api/admin/dating/paid/${encodeURIComponent(item.id)}/photo`, {
+        method: "POST",
+        body: formData,
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) {
+        alert(body.error ?? "사진 추가에 실패했습니다.");
+        return;
+      }
+      await load();
+      alert(`사진 ${slot + 1}을 저장했습니다.`);
+    } catch {
+      alert("사진 업로드 중 연결이 끊겼습니다. 다시 시도해 주세요.");
+    } finally {
+      setActingId("");
+    }
+  };
+
   const handleCopyId = async (id: string) => {
     try {
       await navigator.clipboard.writeText(id);
@@ -357,12 +393,37 @@ export default function AdminDatingPaidPage() {
                 {item.training_years != null && <span>운동 {item.training_years}년</span>}
               </div>
 
-              {item.previewUrl && (
-                <div className="mt-3 h-44 w-full overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50">
-                  {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={item.previewUrl} alt="" className="h-full w-full object-contain" />
-                </div>
-              )}
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                {[0, 1].map((slot) => {
+                  const imageUrl = item.imageUrls?.[slot] ?? "";
+                  return (
+                    <div key={slot} className="overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50">
+                      <div className="flex aspect-[4/3] items-center justify-center overflow-hidden">
+                        {imageUrl ? (
+                          // eslint-disable-next-line @next/next/no-img-element
+                          <img src={imageUrl} alt={`사진 ${slot + 1}`} className="h-full w-full object-contain" />
+                        ) : (
+                          <span className="text-xs font-medium text-rose-600">사진 {slot + 1} 없음</span>
+                        )}
+                      </div>
+                      <label className="flex min-h-10 cursor-pointer items-center justify-center border-t border-neutral-200 bg-white px-2 text-xs font-semibold text-violet-700 hover:bg-violet-50">
+                        {actingId === item.id ? "업로드 중..." : imageUrl ? `사진 ${slot + 1} 교체` : `사진 ${slot + 1} 추가`}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/webp"
+                          disabled={actingId === item.id}
+                          onChange={(event) => {
+                            const selectedFile = event.target.files?.[0] ?? null;
+                            event.currentTarget.value = "";
+                            void handlePhotoUpload(item, slot, selectedFile);
+                          }}
+                          className="sr-only"
+                        />
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
 
               {item.strengths_text && <p className="mt-2 text-xs text-emerald-700">내 장점: {item.strengths_text}</p>}
               {item.ideal_text && <p className="mt-1 text-xs text-rose-700 whitespace-pre-wrap break-words">이상형: {item.ideal_text}</p>}

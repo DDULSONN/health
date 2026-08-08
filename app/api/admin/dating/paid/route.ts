@@ -109,10 +109,12 @@ export async function GET(req: Request) {
 
     const items = await Promise.all(
       (data ?? []).map(async (row) => {
+        const photoPaths = Array.isArray(row.photo_paths)
+          ? row.photo_paths.filter((path): path is string => typeof path === "string" && path.length > 0).slice(0, 2)
+          : [];
         const firstPath =
-          Array.isArray(row.photo_paths) && row.photo_paths.length > 0 && typeof row.photo_paths[0] === "string"
-            ? row.photo_paths[0]
-            : "";
+          photoPaths.length > 0 ? photoPaths[0] : "";
+        const imageUrls = await Promise.all(photoPaths.map((path) => createSignedUrl(path)));
 
         let previewUrl = "";
         if (row.photo_visibility === "public" && firstPath) {
@@ -148,6 +150,8 @@ export async function GET(req: Request) {
           expires_at: row.expires_at,
           created_at: row.created_at,
           previewUrl,
+          photoPaths,
+          imageUrls,
         };
       })
     );
