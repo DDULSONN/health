@@ -32,6 +32,10 @@ function toBlurWebpPath(path: string): string {
   return path.includes("/blur/") ? path.replace(/\.[^.\/]+$/, ".webp") : path;
 }
 
+function toBlurPathFromRaw(rawPath: string): string {
+  return rawPath.replace("/raw/", "/blur/").replace(/\.[^.\/]+$/, ".webp");
+}
+
 function toThumbPath(rawPath: string): string {
   return rawPath.replace("/raw/", "/thumb/").replace(/\.[^.\/]+$/, ".webp");
 }
@@ -172,17 +176,22 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       if (url) imageUrls.push(url);
     }
   } else {
-    let blurThumbPath = normalizeDatingPhotoPath(data.blur_thumb_path);
-    if (!blurThumbPath && rawPaths.length > 0) {
-      blurThumbPath = (await ensureBlurThumbFromRaw(admin, rawPaths[0])) ?? "";
-    }
+    for (let index = 0; index < rawPaths.length; index += 1) {
+      const rawPath = rawPaths[index];
+      let blurThumbPath =
+        index === 0 ? normalizeDatingPhotoPath(data.blur_thumb_path) : toBlurPathFromRaw(rawPath);
+      let blurUrl = blurThumbPath
+        ? await getLitePublicUrlIfAvailable(admin, toBlurWebpPath(blurThumbPath))
+        : "";
 
-    if (blurThumbPath) {
-      const blurWebpPath = toBlurWebpPath(blurThumbPath);
-      let blurUrl = await getLitePublicUrlIfAvailable(admin, blurWebpPath);
       if (!blurUrl) {
-        blurUrl = await createSignedUrl(blurThumbPath);
+        blurThumbPath = (await ensureBlurThumbFromRaw(admin, rawPath)) ?? "";
+        if (blurThumbPath) {
+          blurUrl = await getLitePublicUrlIfAvailable(admin, toBlurWebpPath(blurThumbPath));
+          if (!blurUrl) blurUrl = await createSignedUrl(blurThumbPath);
+        }
       }
+
       if (blurUrl) imageUrls.push(blurUrl);
     }
   }
