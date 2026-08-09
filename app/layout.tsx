@@ -6,6 +6,7 @@ import "./globals.css";
 import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import MobileBottomTabBar from "@/components/MobileBottomTabBar";
+import PaymentMethodAnnouncement from "@/components/PaymentMethodAnnouncement";
 import SiteGuideBubble from "@/components/SiteGuideBubble";
 
 const DeferredAdSenseBootstrap = dynamic(() => import("@/components/AdSenseBootstrap"), {});
@@ -112,6 +113,7 @@ export default function RootLayout({
         <DeferredAdSenseBootstrap />
         <Header />
         <SiteGuideBubble />
+        <PaymentMethodAnnouncement />
         <div className="flex-1 pb-20 md:pb-0">{children}</div>
         <MobileBottomTabBar />
         <Footer />
