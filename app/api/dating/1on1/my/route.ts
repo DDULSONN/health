@@ -139,6 +139,7 @@ export async function GET(req: Request) {
         ...row,
         archived: Array.isArray(row.admin_tags) && row.admin_tags.includes(ONE_ON_ONE_USER_DELETED_TAG),
         plus_expires_at: activePlus?.expires_at ?? null,
+        plus_contact_exchange_included: activePlus?.contact_exchange_included === true,
         age: toCurrentAge(row.birth_year),
         photo_signed_urls,
       };
@@ -167,6 +168,7 @@ export async function GET(req: Request) {
       ...row,
       archived: Array.isArray(row.admin_tags) && row.admin_tags.includes(ONE_ON_ONE_USER_DELETED_TAG),
       plus_expires_at: activePlus?.expires_at ?? null,
+      plus_contact_exchange_included: activePlus?.contact_exchange_included === true,
       age: toCurrentAge(row.birth_year),
       photo_signed_urls,
     };

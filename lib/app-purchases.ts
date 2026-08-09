@@ -448,6 +448,7 @@ export async function fulfillDatingStorePurchase(
       userId: input.userId,
       grantKey: `direct-store:${input.eventKey}`,
       durationDays: DATING_STORE_PRODUCT_CATALOG[input.productId].durationDays,
+      allowLegacySchema: true,
     });
   }
 

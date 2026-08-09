@@ -6,9 +6,22 @@ create table if not exists public.dating_1on1_plus_subscriptions (
   user_id uuid primary key references auth.users(id) on delete cascade,
   starts_at timestamptz not null default now(),
   expires_at timestamptz not null,
+  contact_exchange_included boolean not null default false,
   updated_at timestamptz not null default now(),
   constraint dating_1on1_plus_subscription_dates_check check (expires_at > starts_at)
 );
+
+alter table public.dating_1on1_plus_subscriptions
+  add column if not exists contact_exchange_included boolean;
+
+-- Rows that existed before this column are legacy 70,000 KRW subscriptions.
+update public.dating_1on1_plus_subscriptions
+set contact_exchange_included = true
+where contact_exchange_included is null;
+
+alter table public.dating_1on1_plus_subscriptions
+  alter column contact_exchange_included set default false,
+  alter column contact_exchange_included set not null;
 
 create index if not exists idx_dating_1on1_plus_active
   on public.dating_1on1_plus_subscriptions (expires_at desc);
@@ -44,6 +57,7 @@ declare
   v_existing public.dating_1on1_plus_subscriptions%rowtype;
   v_starts_at timestamptz;
   v_expires_at timestamptz;
+  v_contact_exchange_included boolean := false;
 begin
   if p_user_id is null or coalesce(trim(p_grant_key), '') = '' then
     raise exception 'user_id and grant_key are required';
@@ -68,15 +82,27 @@ begin
   end;
   v_expires_at := greatest(coalesce(v_existing.expires_at, v_now), v_now)
     + make_interval(days => p_duration_days);
+  v_contact_exchange_included := case
+    when v_existing.user_id is not null and v_existing.expires_at > v_now
+      then coalesce(v_existing.contact_exchange_included, false)
+    else false
+  end;
 
   insert into public.dating_1on1_plus_grants (grant_key, user_id, duration_days)
   values (p_grant_key, p_user_id, p_duration_days);
 
-  insert into public.dating_1on1_plus_subscriptions (user_id, starts_at, expires_at, updated_at)
-  values (p_user_id, v_starts_at, v_expires_at, v_now)
+  insert into public.dating_1on1_plus_subscriptions (
+    user_id,
+    starts_at,
+    expires_at,
+    contact_exchange_included,
+    updated_at
+  )
+  values (p_user_id, v_starts_at, v_expires_at, v_contact_exchange_included, v_now)
   on conflict (user_id) do update set
     starts_at = excluded.starts_at,
     expires_at = excluded.expires_at,
+    contact_exchange_included = excluded.contact_exchange_included,
     updated_at = excluded.updated_at;
 
   return query select v_starts_at, v_expires_at, false;

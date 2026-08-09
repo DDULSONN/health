@@ -90,7 +90,7 @@ export async function POST(
   }
 
   const activePlus = await getActiveOneOnOnePlus(admin, user.id);
-  if (activePlus) {
+  if (activePlus?.contact_exchange_included) {
     const item = await grantOneOnOneContactExchange(admin, {
       matchId,
       userId: user.id,

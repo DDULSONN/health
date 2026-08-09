@@ -80,7 +80,7 @@ export const DATING_STORE_PRODUCT_CATALOG = {
   },
   [DATING_STORE_PRODUCT_IDS.oneOnOnePlus30d]: {
     kind: "one_on_one_plus_30d",
-    amountKrw: 70000,
+    amountKrw: 30000,
     durationDays: 30,
     storeType: "in-app",
   },

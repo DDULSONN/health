@@ -191,7 +191,7 @@ export default function MoreViewPage() {
               <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">5,000원</span>
               <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">지원권 1장 추가</span>
             </div>
-            <p className="mt-3 text-xs text-neutral-500">현재는 카카오페이 간편결제로만 결제 가능해요. 그 밖의 결제 문의는 오픈카톡으로 부탁드려요.</p>
+            <p className="mt-3 text-xs text-neutral-500">결제창에서 이용 가능한 결제수단을 선택할 수 있어요. 결제 문의는 오픈카톡으로 부탁드려요.</p>
           </div>
 
           <div className="w-full rounded-[24px] border border-neutral-200 bg-neutral-50 p-4 md:max-w-sm">
@@ -237,7 +237,7 @@ export default function MoreViewPage() {
                   disabled={!status.loggedIn || section.status === "approved" || submitting === section.sex}
                   className="inline-flex min-h-[42px] items-center rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
-                  {section.status === "approved" ? "이용 중" : submitting === section.sex ? "결제창 준비 중..." : "카카오페이로 결제"}
+                  {section.status === "approved" ? "이용 중" : submitting === section.sex ? "결제창 준비 중..." : "결제하기"}
                 </button>
                 {!status.loggedIn ? <span className="text-xs text-neutral-500">로그인 후 이용 가능</span> : null}
                 {!isAdmin && adminChecked ? <span className="text-xs text-neutral-500">현재는 운영 테스트 계정에서 먼저 확인 중입니다.</span> : null}

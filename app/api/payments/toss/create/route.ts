@@ -623,7 +623,7 @@ export async function POST(req: Request) {
       }
 
       const activePlus = await getActiveOneOnOnePlus(admin, user.id);
-      if (activePlus) {
+      if (activePlus?.contact_exchange_included) {
         const fulfilled = await grantOneOnOneContactExchange(admin, {
           matchId,
           userId: user.id,
@@ -731,6 +731,15 @@ export async function POST(req: Request) {
           message: error instanceof Error ? error.message : "1:1 매칭 플러스 설정을 확인하지 못했습니다.",
         });
       }
+      const activePlus = await getActiveOneOnOnePlus(admin, user.id);
+      if (activePlus) {
+        return json(409, {
+          ok: false,
+          code: "ONE_ON_ONE_PLUS_ALREADY_ACTIVE",
+          requestId,
+          message: "현재 이용 중인 플러스가 만료된 후 새 상품을 구매할 수 있습니다.",
+        });
+      }
       const cardId = typeof body.cardId === "string" ? body.cardId.trim() : "";
       let cardQuery = admin
         .from("dating_1on1_cards")
@@ -798,6 +807,8 @@ export async function POST(req: Request) {
       productMeta = {
         cardId: cardRes.data.id,
         durationDays: ONE_ON_ONE_PLUS_DURATION_DAYS,
+        planVersion: 2,
+        contactExchangeIncluded: false,
       };
     }
 

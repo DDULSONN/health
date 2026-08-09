@@ -963,7 +963,7 @@ export default function DatingPaidPage() {
 
             {formStep === PAID_FORM_STEPS.length && !isEditMode && (
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-neutral-200 px-3 py-2 text-xs text-neutral-500">
-                <span>카카오페이가 어려우면 수동 신청도 가능해요.</span>
+                <span>온라인 결제가 어려우면 수동 신청도 가능해요.</span>
                 <button type="button" onClick={() => void submitPaidRequest("manual")} disabled={submitting || editLoading} className="min-h-9 rounded-lg border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-700 disabled:opacity-50">
                   {submitting && submitMode === "manual" ? "신청 접수 중..." : "수동 신청"}
                 </button>

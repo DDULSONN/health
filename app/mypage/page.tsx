@@ -12,6 +12,7 @@ import { normalizeNickname, validateNickname } from "@/lib/nickname";
 import { pickLoveFortuneFaceAsset } from "@/lib/love-fortune-face-assets";
 import { PROVINCE_ORDER } from "@/lib/region-city";
 import { trackCheckoutStarted } from "@/lib/payment-analytics";
+import { ONE_ON_ONE_PLUS_PRICE_KRW } from "@/lib/dating-1on1-plus";
 function MyPageWidgetSkeleton({ className = "h-40" }: { className?: string }) {
   return (
     <div className={`rounded-2xl border border-neutral-200 bg-white p-4 ${className}`}>
@@ -788,6 +789,7 @@ type MyOneOnOneCard = {
   created_at: string;
   priority_boost_expires_at?: string | null;
   plus_expires_at?: string | null;
+  plus_contact_exchange_included?: boolean;
   photo_signed_urls?: string[];
 };
 
@@ -5308,7 +5310,7 @@ export default function MyPage() {
       trackCheckoutStarted({
         itemId: "one_on_one_plus_30d",
         itemName: "1:1 매칭 플러스 30일",
-        amount: 70000,
+        amount: ONE_ON_ONE_PLUS_PRICE_KRW,
       });
       window.location.href = body.checkoutUrl;
     } catch (error) {
@@ -7265,7 +7267,7 @@ export default function MyPage() {
         match.contact_exchange_status === "payment_pending_admin"
       )
     ) {
-      return "카카오페이 가능";
+      return "번호 교환 가능";
     }
     return oneOnOneContactExchangeText[match.contact_exchange_status];
   };
@@ -7936,7 +7938,7 @@ export default function MyPage() {
                   기본은 하루 {swipeSubscriptionStatus?.baseLimit ?? 5}회예요. 추가 이용을 신청하면 30일 동안 하루{" "}
                   {swipeSubscriptionStatus?.premiumLimit ?? 30}회까지 사용할 수 있고, 내 프로필도 빠른매칭에서 더 잘 보이게 돼요.
                 </p>
-                <p className="mt-2 text-[11px] text-amber-700">현재는 카카오페이 간편결제로만 결제할 수 있어요.</p>
+                <p className="mt-2 text-[11px] text-amber-700">결제창에서 이용 가능한 결제수단을 선택할 수 있어요.</p>
                 <p className="mt-1 text-[11px] text-amber-700">그 밖의 문의는 오픈카톡으로 부탁드려요.</p>
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <a
@@ -7960,7 +7962,7 @@ export default function MyPage() {
                       ? "이동 중..."
                       : swipeSubscriptionStatus?.status === "active"
                         ? "30일 더 연장"
-                        : "카카오페이로 시작"}
+                        : "결제하고 시작"}
                   </button>
                 </div>
                 {swipeSubscriptionStatus?.status === "pending" && swipeSubscriptionStatus.pendingSubscription?.id ? (
@@ -9375,6 +9377,7 @@ export default function MyPage() {
                 ? new Date(item.plus_expires_at).getTime()
                 : Number.NaN;
               const priorityBoostActive = Number.isFinite(priorityBoostExpiresAtMs) && priorityBoostExpiresAtMs > Date.now();
+              const plusContactExchangeIncluded = item.plus_contact_exchange_included === true;
               const priorityBoostSubmitting = oneOnOnePrioritySubmittingIds.includes(item.id);
               const canBuyPriorityBoost = ["submitted", "reviewing", "approved"].includes(item.status);
               const priorityBoostDetailOpen = oneOnOnePriorityDetailCardId === item.id;
@@ -9513,7 +9516,7 @@ export default function MyPage() {
                             <p className="text-sm font-bold text-neutral-950">1:1 매칭 플러스</p>
                           </div>
                           <p className="mt-2 text-xs leading-5 text-neutral-600">
-                            번호교환 무제한 · 후보 새로고침 하루 2회 · 프로필 우선 노출
+                            {plusContactExchangeIncluded ? "번호교환 포함 · " : ""}후보 새로고침 하루 2회 · 프로필 우선 노출
                           </p>
                           {priorityBoostActive && item.plus_expires_at ? (
                             <p className="mt-1 text-[11px] font-medium text-amber-800">
@@ -9542,16 +9545,16 @@ export default function MyPage() {
                             <div>
                               <p className="text-sm font-bold text-neutral-950">30일 동안 매칭 기회를 넓혀보세요</p>
                               <ul className="mt-2 space-y-2 text-xs leading-5 text-neutral-700">
-                                <li><strong className="text-neutral-950">번호교환 무제한</strong> · 쌍방 수락 후 추가 결제 없이</li>
                                 <li><strong className="text-neutral-950">후보 새로고침 하루 2회</strong> · 기본보다 한 번 더</li>
                                 <li><strong className="text-neutral-950">프로필 우선 노출</strong> · 추천 후보에서 더 잘 보이게</li>
+                                <li><strong className="text-neutral-950">번호교환</strong> · 기존과 동일하게 건별 결제</li>
                               </ul>
                               <p className="mt-1 text-[11px] leading-5 text-neutral-500">
                                 매칭을 보장하지 않으며 차단·성별·진행 상태 기준은 그대로 적용됩니다.
                               </p>
                             </div>
                             <div className="text-right">
-                              <p className="text-lg font-black text-[#8a5d0a]">70,000원</p>
+                              <p className="text-lg font-black text-[#8a5d0a]">{ONE_ON_ONE_PLUS_PRICE_KRW.toLocaleString("ko-KR")}원</p>
                               <p className="mt-0.5 text-[11px] text-neutral-500">30일 일시 이용권</p>
                             </div>
                           </div>
@@ -9874,7 +9877,7 @@ export default function MyPage() {
                                   {oneOnOneMatchStateText[match.state]}
                                 </span>
                               </div>
-                              <p className="mt-1 text-xs text-neutral-600">상대가 수락하면 바로 카카오페이 번호 교환 단계로 넘어갑니다.</p>
+                              <p className="mt-1 text-xs text-neutral-600">상대가 수락하면 바로 번호 교환 단계로 넘어갑니다.</p>
                               <div className="mt-2 flex flex-wrap justify-end gap-2">
                                 <button
                                   type="button"
@@ -9986,17 +9989,17 @@ export default function MyPage() {
                                   match.contact_exchange_status === "payment_pending_admin") ? (
                                   <>
                                     <p className="text-xs font-semibold text-neutral-900">
-                                      {priorityBoostActive ? "플러스 무료 번호교환" : "번호 즉시 교환"}
+                                      {plusContactExchangeIncluded ? "기존 플러스 무료 번호교환" : "번호 즉시 교환"}
                                     </p>
                                     <p className="mt-1 text-xs text-neutral-700">
-                                      {priorityBoostActive
-                                        ? "플러스 적용 중이라 추가 결제 없이 상대 연락처가 바로 공개됩니다."
+                                      {plusContactExchangeIncluded
+                                        ? "기존 플러스 혜택 적용 중이라 추가 결제 없이 상대 연락처가 바로 공개됩니다."
                                         : "기존 쌍방 매칭도 지금 결제하면 상대 연락처가 바로 교환됩니다."}
                                     </p>
-                                    {!priorityBoostActive ? (
+                                    {!plusContactExchangeIncluded ? (
                                       <>
                                         <p className="mt-2 text-[11px] text-neutral-500">
-                                          현재는 카카오페이 간편결제로 바로 번호 교환이 가능해요.
+                                          결제창에서 이용 가능한 결제수단을 선택해 바로 번호 교환할 수 있어요.
                                         </p>
                                         <p className="mt-1 text-[11px] text-neutral-500">
                                           다른 방식은 오픈카톡으로 입금해주시면 관리자가 수동으로 승인해드려요. 매칭 ID {match.id}
@@ -10004,7 +10007,7 @@ export default function MyPage() {
                                       </>
                                     ) : null}
                                     <div className="mt-2 flex flex-wrap gap-2">
-                                      {!priorityBoostActive ? (
+                                      {!plusContactExchangeIncluded ? (
                                         <a
                                           href={OPEN_KAKAO_URL}
                                           target="_blank"
@@ -10021,8 +10024,8 @@ export default function MyPage() {
                                         className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                                       >
                                         {contactProcessing
-                                          ? priorityBoostActive ? "교환 중..." : "결제 준비 중..."
-                                          : priorityBoostActive ? "무료로 번호교환" : "연락처 교환 진행하기"}
+                                          ? plusContactExchangeIncluded ? "교환 중..." : "결제 준비 중..."
+                                          : plusContactExchangeIncluded ? "무료로 번호교환" : "연락처 교환 진행하기"}
                                       </button>
                                     </div>
                                   </>

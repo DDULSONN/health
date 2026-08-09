@@ -458,11 +458,28 @@ async function ensureOneOnOnePlusFulfilled(
     typeof order.product_meta?.durationDays === "number" && Number.isFinite(order.product_meta.durationDays)
       ? Math.max(1, Math.round(order.product_meta.durationDays))
       : ONE_ON_ONE_PLUS_DURATION_DAYS;
-  return grantOneOnOnePlus(admin, {
+  const subscription = await grantOneOnOnePlus(admin, {
     userId: order.user_id,
     grantKey: `toss:${order.toss_order_id}`,
     durationDays,
+    allowLegacySchema: order.amount >= 70_000,
   });
+
+  // Checkout links created under the previous 70,000 KRW plan keep the promised benefit.
+  if (order.amount >= 70_000) {
+    const legacyBenefitRes = await admin
+      .from("dating_1on1_plus_subscriptions")
+      .update({ contact_exchange_included: true, updated_at: new Date().toISOString() })
+      .eq("user_id", order.user_id);
+    if (legacyBenefitRes.error) {
+      const message = String(legacyBenefitRes.error.message ?? "").toLowerCase();
+      const schemaNotMigrated =
+        message.includes("contact_exchange_included") || message.includes("schema cache");
+      if (!schemaNotMigrated) throw legacyBenefitRes.error;
+    }
+  }
+
+  return subscription;
 }
 
 async function ensureSwipePremiumFulfilled(

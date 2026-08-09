@@ -328,7 +328,7 @@ export default function NearbyViewPage() {
               <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">5,000원</span>
               <span className="rounded-full border border-neutral-200 bg-neutral-50 px-3 py-1 text-xs font-semibold text-neutral-700">지원권 1장 추가</span>
             </div>
-            <p className="mt-3 text-xs text-neutral-500">현재는 카카오페이 간편결제로만 결제 가능해요. 그 밖의 결제 문의는 오픈카톡으로 부탁드려요.</p>
+            <p className="mt-3 text-xs text-neutral-500">결제창에서 이용 가능한 결제수단을 선택할 수 있어요. 결제 문의는 오픈카톡으로 부탁드려요.</p>
           </div>
 
           <div className="w-full rounded-[24px] border border-neutral-200 bg-neutral-50 p-4 lg:max-w-sm">

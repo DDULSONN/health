@@ -69,7 +69,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         ...toPayload(limitInfo),
         requestId,
-        message: "이미 빠른매칭 플러스를 이용 중입니다. 카카오페이 결제는 추가 기간 연장으로 진행할 수 있습니다.",
+        message: "이미 빠른매칭 플러스를 이용 중입니다. 추가 결제는 기간 연장으로 진행할 수 있습니다.",
       });
     }
     if (limitInfo.pendingSubscription) {

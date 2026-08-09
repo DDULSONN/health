@@ -16,6 +16,7 @@ import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 import { cacheOpenCardDetail, cachePaidCardDetail } from "@/lib/dating-detail-cache";
 import { createClient } from "@/lib/supabase/client";
 import { trackCheckoutStarted } from "@/lib/payment-analytics";
+import { ONE_ON_ONE_PLUS_PRICE_KRW } from "@/lib/dating-1on1-plus";
 
 type PublicCard = {
   id: string;
@@ -225,7 +226,7 @@ type OneOnOneHomeState = {
   myCards: OneOnOneCardPreview[];
   matches: OneOnOneMatchPreview[];
   recommendations: OneOnOneRecommendationGroup[];
-  plus: { expires_at?: string | null } | null;
+  plus: { expires_at?: string | null; contact_exchange_included?: boolean } | null;
 };
 
 type ReelsDatingListing = {
@@ -3120,7 +3121,7 @@ export default function OpenCardsPage() {
                   추가 이용은 {SWIPE_PREMIUM_PRICE_KRW.toLocaleString("ko-KR")}원 · {SWIPE_PREMIUM_DURATION_DAYS}일 · 하루{" "}
                   {SWIPE_PREMIUM_DAILY_LIMIT}회 기준이에요.
                 </p>
-                <p className="mt-2 text-[11px] text-amber-800">현재 카카오페이 간편결제로만 결제 가능해요. 그 밖의 문의는 오픈카톡으로 부탁드려요.</p>
+                <p className="mt-2 text-[11px] text-amber-800">결제창에서 이용 가능한 결제수단을 선택할 수 있어요. 결제 문의는 오픈카톡으로 부탁드려요.</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -3298,7 +3299,7 @@ export default function OpenCardsPage() {
                 {SWIPE_PREMIUM_PRICE_KRW.toLocaleString("ko-KR")}원 · {SWIPE_PREMIUM_DURATION_DAYS}일 이용
               </p>
               <p className="mt-1 text-xs leading-5 text-amber-900/80">
-                더 많은 후보 확인과 프로필 노출 강화가 함께 적용돼요. 현재는 카카오페이 간편결제로만 결제 가능해요.
+                더 많은 후보 확인과 프로필 노출 강화가 함께 적용돼요. 결제창에서 이용 가능한 결제수단을 선택할 수 있어요.
               </p>
             </div>
             <div className="mt-4 flex flex-wrap gap-2">
@@ -3312,7 +3313,7 @@ export default function OpenCardsPage() {
                   ? "30일 더 연장하기"
                   : swipeSubscriptionSubmitting
                     ? "이동 중..."
-                    : "카카오페이로 시작"}
+                    : "결제하고 시작"}
               </button>
               <a
                 href={OPEN_KAKAO_URL}
@@ -3549,6 +3550,7 @@ function OneOnOneHomePanel({
   );
   const recommendationGroups = data?.recommendations ?? [];
   const plusActive = Boolean(data?.plus?.expires_at);
+  const plusContactExchangeIncluded = data?.plus?.contact_exchange_included === true;
   const recommendationCount = recommendationGroups.reduce(
     (sum, group) => sum + (group.recommendations?.length ?? 0) + (group.admin_recommendations?.length ?? 0),
     0
@@ -3591,7 +3593,7 @@ function OneOnOneHomePanel({
       trackCheckoutStarted({
         itemId: "one_on_one_plus_30d",
         itemName: "1:1 매칭 플러스 30일",
-        amount: 70000,
+        amount: ONE_ON_ONE_PLUS_PRICE_KRW,
       });
       window.location.href = body.checkoutUrl;
     } catch (checkoutError) {
@@ -3718,7 +3720,7 @@ function OneOnOneHomePanel({
                     <p className="text-sm font-black text-neutral-950">1:1 매칭 플러스</p>
                   </div>
                   <p className="mt-2 text-xs leading-5 text-neutral-600">
-                    번호교환 무제한 · 후보 새로고침 하루 2회 · 프로필 우선 노출
+                    {plusContactExchangeIncluded ? "번호교환 포함 · " : ""}후보 새로고침 하루 2회 · 프로필 우선 노출
                   </p>
                   {plusActive && data?.plus?.expires_at ? (
                     <p className="mt-1 text-[11px] font-semibold text-amber-800">
@@ -3745,10 +3747,10 @@ function OneOnOneHomePanel({
                   <div className="flex items-end justify-between gap-3">
                     <div>
                       <p className="text-sm font-black text-neutral-950">30일 동안 더 넓게 만나보세요</p>
-                      <p className="mt-1 text-xs leading-5 text-neutral-600">후보를 한 번 더 새로 보고, 수락 후 번호교환은 추가 결제 없이 진행합니다.</p>
+                      <p className="mt-1 text-xs leading-5 text-neutral-600">후보를 하루 한 번 더 새로 보고, 내 프로필이 추천 후보에 더 잘 노출됩니다.</p>
                     </div>
                     <div className="shrink-0 text-right">
-                      <p className="text-lg font-black text-[#8a5d0a]">70,000원</p>
+                      <p className="text-lg font-black text-[#8a5d0a]">{ONE_ON_ONE_PLUS_PRICE_KRW.toLocaleString("ko-KR")}원</p>
                       <p className="text-[10px] text-neutral-500">30일 이용권</p>
                     </div>
                   </div>
@@ -3787,7 +3789,7 @@ function OneOnOneHomePanel({
                       {match.counterparty_phone ? <p className="mt-2 text-sm font-black text-emerald-700">{match.counterparty_phone}</p> : null}
                       <OneOnOneMatchActions
                         match={match}
-                        plusActive={plusActive}
+                        contactExchangeIncluded={plusContactExchangeIncluded}
                         processing={processingMatchIds.includes(match.id)}
                         contactProcessing={processingContactIds.includes(match.id)}
                         onMatchAction={onMatchAction}
@@ -4031,14 +4033,14 @@ function OneOnOneCandidateCard({
 
 function OneOnOneMatchActions({
   match,
-  plusActive,
+  contactExchangeIncluded,
   processing,
   contactProcessing,
   onMatchAction,
   onContactCheckout,
 }: {
   match: OneOnOneMatchPreview;
-  plusActive: boolean;
+  contactExchangeIncluded: boolean;
   processing: boolean;
   contactProcessing: boolean;
   onMatchAction: (
@@ -4170,13 +4172,13 @@ function OneOnOneMatchActions({
 
     return (
       <div className="mt-3 rounded-2xl border border-emerald-100 bg-white p-3">
-        <p className="text-xs font-black text-neutral-900">{plusActive ? "플러스 무료 번호교환" : "번호 교환 가능"}</p>
+        <p className="text-xs font-black text-neutral-900">{contactExchangeIncluded ? "기존 플러스 무료 번호교환" : "번호 교환 가능"}</p>
         <p className="mt-1 text-xs leading-5 text-neutral-600">
-          {plusActive
-            ? "플러스 적용 중이라 추가 결제 없이 상대 연락처가 바로 공개됩니다."
+          {contactExchangeIncluded
+            ? "기존 플러스 혜택 적용 중이라 추가 결제 없이 상대 연락처가 바로 공개됩니다."
             : "결제 전 금액과 내용을 확인한 뒤 진행되며, 완료되면 상대 연락처가 바로 공개됩니다."}
         </p>
-        {!plusActive ? (
+        {!contactExchangeIncluded ? (
           <p className="mt-1 text-[11px] leading-5 text-neutral-400">결제 오류나 미반영은 마이페이지 결제 내역 또는 오픈카톡으로 확인 요청해주세요.</p>
         ) : null}
         <div className="mt-2 flex flex-wrap gap-2">
@@ -4187,8 +4189,8 @@ function OneOnOneMatchActions({
             className="inline-flex min-h-[34px] items-center rounded-xl bg-emerald-600 px-3 text-xs font-black text-white disabled:opacity-50"
           >
             {contactProcessing
-              ? plusActive ? "교환 중..." : "결제 준비 중..."
-              : plusActive ? "무료로 번호교환" : "연락처 교환 진행하기"}
+              ? contactExchangeIncluded ? "교환 중..." : "결제 준비 중..."
+              : contactExchangeIncluded ? "무료로 번호교환" : "연락처 교환 진행하기"}
           </button>
           <Link href="/mypage?section=matching" className="inline-flex min-h-[34px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold text-neutral-600">
             상세 보기
