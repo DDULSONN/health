@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { pickLoveFortuneFaceAsset } from "@/lib/love-fortune-face-assets";
+import { trackPurchaseCompleted } from "@/lib/payment-analytics";
 
 type ConfirmResponse = {
   ok?: boolean;
@@ -609,6 +610,16 @@ function PaymentSuccessContent() {
       cancelled = true;
     };
   }, [searchParams]);
+
+  useEffect(() => {
+    if (!result?.orderId || !result.productType || typeof result.amount !== "number") return;
+    trackPurchaseCompleted({
+      orderId: result.orderId,
+      itemId: result.productType,
+      itemName: result.orderName,
+      amount: result.amount,
+    });
+  }, [result]);
 
   useEffect(() => {
     if (result?.productType !== "love_fortune_detail" || !result.readingId || fortuneReading || fortuneGenerateAttempted) return;

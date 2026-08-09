@@ -18,7 +18,13 @@ import { isAllowedAdminUser } from "@/lib/admin";
 import { OPEN_CARD_EXPIRE_HOURS } from "@/lib/dating-open";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
-import { createTossPayment, getMissingTossConfigKeys, isTossConfigured } from "@/lib/toss-payments";
+import {
+  createTossPayment,
+  getMissingTossConfigKeys,
+  getTossCheckoutMode,
+  getTossCheckoutOptions,
+  isTossConfigured,
+} from "@/lib/toss-payments";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 type ProductType =
@@ -1164,10 +1170,7 @@ export async function POST(req: Request) {
       productType === "swipe_premium_30d" ||
       productType === "love_fortune_detail" ||
       productType === "account_unban"
-        ? {
-            flowMode: "DIRECT" as const,
-            easyPay: "KAKAOPAY" as const,
-          }
+        ? getTossCheckoutOptions()
         : {}),
     });
 
@@ -1188,6 +1191,7 @@ export async function POST(req: Request) {
       orderId: tossOrderId,
       amount: paymentAmount,
       checkoutUrl,
+      checkoutMode: getTossCheckoutMode(),
     });
   } catch (error) {
     console.error("[toss-create] unhandled", error);

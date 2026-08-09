@@ -15,6 +15,7 @@ import {
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 import { cacheOpenCardDetail, cachePaidCardDetail } from "@/lib/dating-detail-cache";
 import { createClient } from "@/lib/supabase/client";
+import { trackCheckoutStarted } from "@/lib/payment-analytics";
 
 type PublicCard = {
   id: string;
@@ -2573,6 +2574,11 @@ export default function OpenCardsPage() {
         if (!body.checkoutUrl) {
           throw new Error(withPaymentCardNotice("결제창을 열지 못했습니다."));
         }
+        trackCheckoutStarted({
+          itemId: "one_on_one_contact_exchange",
+          itemName: "1:1 번호 교환",
+          amount: 20000,
+        });
         window.location.href = body.checkoutUrl;
       } catch (error) {
         alert(error instanceof Error ? error.message : withPaymentCardNotice("번호 교환 결제를 시작하지 못했습니다."));
@@ -3582,6 +3588,11 @@ function OneOnOneHomePanel({
       if (!res.ok || body.ok === false || !body.checkoutUrl) {
         throw new Error(body.message ?? body.error ?? "1:1 매칭 플러스 결제창을 열지 못했습니다.");
       }
+      trackCheckoutStarted({
+        itemId: "one_on_one_plus_30d",
+        itemName: "1:1 매칭 플러스 30일",
+        amount: 70000,
+      });
       window.location.href = body.checkoutUrl;
     } catch (checkoutError) {
       alert(checkoutError instanceof Error ? checkoutError.message : "1:1 매칭 플러스 결제를 시작하지 못했습니다.");

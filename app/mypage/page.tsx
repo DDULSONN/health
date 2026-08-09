@@ -11,6 +11,7 @@ import { formatRemainingToKorean } from "@/lib/dating-open";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
 import { pickLoveFortuneFaceAsset } from "@/lib/love-fortune-face-assets";
 import { PROVINCE_ORDER } from "@/lib/region-city";
+import { trackCheckoutStarted } from "@/lib/payment-analytics";
 function MyPageWidgetSkeleton({ className = "h-40" }: { className?: string }) {
   return (
     <div className={`rounded-2xl border border-neutral-200 bg-white p-4 ${className}`}>
@@ -505,6 +506,8 @@ type MyPaymentCenterOrder = {
   created_at: string;
   method: string | null;
   receiptUrl: string | null;
+  canResume?: boolean;
+  resumeMatchId?: string | null;
 };
 
 type MyPaymentCenterData = {
@@ -1420,7 +1423,22 @@ type AdminPaymentCenterOverview = {
     recentPaidCount: number;
     recentReadyCount: number;
   };
+  funnel: {
+    recent7d: AdminPaymentFunnelItem[];
+    recent30d: AdminPaymentFunnelItem[];
+  };
   orders: AdminPaymentCenterOrder[];
+};
+
+type AdminPaymentFunnelItem = {
+  productType: string;
+  label: string;
+  checkoutCount: number;
+  paidCount: number;
+  readyCount: number;
+  failedCount: number;
+  revenueKrw: number;
+  conversionRate: number;
 };
 
 type AdminSiteDashboardFeatureKey =
@@ -2098,6 +2116,13 @@ export default function MyPage() {
   const [paymentCenterLoading, setPaymentCenterLoading] = useState(false);
   const [paymentCenterError, setPaymentCenterError] = useState("");
   const [paymentCenterData, setPaymentCenterData] = useState<MyPaymentCenterData | null>(null);
+  const resumableOneOnOneOrder = useMemo(
+    () =>
+      paymentCenterData?.orders.find(
+        (order) => order.status === "ready" && order.canResume && Boolean(order.resumeMatchId)
+      ) ?? null,
+    [paymentCenterData]
+  );
   const [loveFortuneOpen, setLoveFortuneOpen] = useState(false);
   const [loveFortuneLoaded, setLoveFortuneLoaded] = useState(false);
   const [loveFortuneLoading, setLoveFortuneLoading] = useState(false);
@@ -2277,16 +2302,18 @@ export default function MyPage() {
           const body = (await res.json().catch(() => ({}))) as {
             ok?: boolean;
             summary?: AdminPaymentCenterOverview["summary"];
+            funnel?: AdminPaymentCenterOverview["funnel"];
             orders?: AdminPaymentCenterOrder[];
             message?: string;
           };
 
-          if (!res.ok || !body.ok || !body.summary) {
+          if (!res.ok || !body.ok || !body.summary || !body.funnel) {
             throw new Error(body.message ?? "결제센터를 불러오지 못했습니다.");
           }
 
           setAdminPaymentCenter({
             summary: body.summary,
+            funnel: body.funnel,
             orders: body.orders ?? [],
           });
         } catch (error) {
@@ -3707,9 +3734,9 @@ export default function MyPage() {
   }, [accountBanStatus?.is_banned, loading, swipeSubscriptionStatus, swipeSubscriptionLoading, reloadSwipeSubscriptionStatus]);
 
   useEffect(() => {
-    if (!paymentCenterOpen || paymentCenterLoaded || paymentCenterLoading) return;
+    if (pageSectionTab !== "payment" || paymentCenterLoaded || paymentCenterLoading) return;
     void loadPaymentCenter(false);
-  }, [paymentCenterLoaded, paymentCenterLoading, paymentCenterOpen, loadPaymentCenter]);
+  }, [loadPaymentCenter, pageSectionTab, paymentCenterLoaded, paymentCenterLoading]);
 
   useEffect(() => {
     if (!isAdmin || !loveFortuneOpen || loveFortuneLoaded || loveFortuneLoading) return;
@@ -4730,6 +4757,11 @@ export default function MyPage() {
       if (!body.checkoutUrl) {
         throw new Error(withPaymentCardNotice("결제창을 열지 못했습니다."));
       }
+      trackCheckoutStarted({
+        itemId: "swipe_premium_30d",
+        itemName: "빠른매칭 플러스",
+        amount: 30000,
+      });
       window.location.href = body.checkoutUrl;
     } catch (error) {
       setSwipeSubscriptionError(
@@ -5029,6 +5061,11 @@ export default function MyPage() {
         alert(withPaymentCardNotice("결제창을 열지 못했습니다."));
         return;
       }
+      trackCheckoutStarted({
+        itemId: "one_on_one_contact_exchange",
+        itemName: "1:1 번호 교환",
+        amount: 20000,
+      });
       window.location.href = body.checkoutUrl;
     } catch (e) {
       alert(e instanceof Error ? e.message : withPaymentCardNotice("번호 교환 결제를 시작하지 못했습니다."));
@@ -5268,6 +5305,11 @@ export default function MyPage() {
       if (!body.checkoutUrl) {
         throw new Error(withPaymentCardNotice("결제창을 열지 못했습니다."));
       }
+      trackCheckoutStarted({
+        itemId: "one_on_one_plus_30d",
+        itemName: "1:1 매칭 플러스 30일",
+        amount: 70000,
+      });
       window.location.href = body.checkoutUrl;
     } catch (error) {
       alert(error instanceof Error ? error.message : withPaymentCardNotice("1:1 매칭 플러스 결제를 시작하지 못했습니다."));
@@ -8520,6 +8562,25 @@ export default function MyPage() {
           </div>
         </div>
 
+        {resumableOneOnOneOrder?.resumeMatchId ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold text-amber-950">완료하지 않은 1:1 번호 교환이 있어요.</p>
+              <p className="mt-1 text-xs text-amber-800">상호 수락 상태를 다시 확인한 뒤 새 결제창으로 안전하게 이어집니다.</p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void handleRequestOneOnOneContactExchange(resumableOneOnOneOrder.resumeMatchId as string)}
+              disabled={processingOneOnOneContactExchangeIds.includes(resumableOneOnOneOrder.resumeMatchId)}
+              className="inline-flex min-h-10 items-center rounded-lg bg-neutral-900 px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {processingOneOnOneContactExchangeIds.includes(resumableOneOnOneOrder.resumeMatchId)
+                ? "결제창 준비 중..."
+                : "결제 이어하기"}
+            </button>
+          </div>
+        ) : null}
+
         {paymentCenterOpen && (
           <>
             {paymentCenterError ? (
@@ -8632,6 +8693,18 @@ export default function MyPage() {
                               >
                                 매출전표 보기
                               </a>
+                            ) : null}
+                            {order.status === "ready" && order.canResume && order.resumeMatchId ? (
+                              <button
+                                type="button"
+                                onClick={() => void handleRequestOneOnOneContactExchange(order.resumeMatchId as string)}
+                                disabled={processingOneOnOneContactExchangeIds.includes(order.resumeMatchId)}
+                                className="inline-flex min-h-9 items-center rounded-lg bg-neutral-900 px-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {processingOneOnOneContactExchangeIds.includes(order.resumeMatchId)
+                                  ? "결제창 준비 중..."
+                                  : "결제 이어하기"}
+                              </button>
                             ) : null}
                           </div>
                         </article>
@@ -11349,6 +11422,53 @@ export default function MyPage() {
                       <p>결제 완료 후 혜택 지급이 어긋난 건은 주문 상태와 실제 승인 탭 상태를 함께 보는 방식으로 점검하면 됩니다.</p>
                     </div>
                   </div>
+                </div>
+
+                <div className="rounded-2xl border border-violet-200 bg-white p-4">
+                  <div className="flex flex-wrap items-end justify-between gap-2">
+                    <div>
+                      <p className="text-sm font-semibold text-violet-900">상품별 결제 전환</p>
+                      <p className="mt-1 text-xs text-neutral-500">결제창 생성 대비 실제 결제 완료 비율입니다. 재시도 주문도 각각 한 건으로 집계됩니다.</p>
+                    </div>
+                    <span className="text-[11px] font-medium text-neutral-500">최근 7일 / 30일</span>
+                  </div>
+                  {adminPaymentCenter.funnel.recent30d.length === 0 ? (
+                    <p className="mt-3 rounded-xl border border-dashed border-violet-100 p-4 text-sm text-neutral-500">최근 30일 결제 주문이 없습니다.</p>
+                  ) : (
+                    <div className="mt-3 overflow-x-auto">
+                      <table className="min-w-[760px] w-full text-left text-xs">
+                        <thead className="border-b border-violet-100 text-neutral-500">
+                          <tr>
+                            <th className="px-2 py-2 font-medium">상품</th>
+                            <th className="px-2 py-2 font-medium">7일 생성/완료</th>
+                            <th className="px-2 py-2 font-medium">7일 전환</th>
+                            <th className="px-2 py-2 font-medium">7일 매출</th>
+                            <th className="px-2 py-2 font-medium">30일 생성/완료</th>
+                            <th className="px-2 py-2 font-medium">30일 전환</th>
+                            <th className="px-2 py-2 font-medium">30일 미완료</th>
+                            <th className="px-2 py-2 font-medium">30일 매출</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {adminPaymentCenter.funnel.recent30d.map((item30) => {
+                            const item7 = adminPaymentCenter.funnel.recent7d.find((item) => item.productType === item30.productType);
+                            return (
+                              <tr key={`payment-funnel-${item30.productType}`} className="border-b border-violet-50 last:border-0">
+                                <td className="px-2 py-3 font-semibold text-neutral-900">{item30.label}</td>
+                                <td className="px-2 py-3 text-neutral-700">{item7?.checkoutCount ?? 0} / {item7?.paidCount ?? 0}</td>
+                                <td className="px-2 py-3 font-semibold text-neutral-900">{(item7?.conversionRate ?? 0).toLocaleString("ko-KR")}%</td>
+                                <td className="px-2 py-3 text-neutral-700">{(item7?.revenueKrw ?? 0).toLocaleString("ko-KR")}원</td>
+                                <td className="px-2 py-3 text-neutral-700">{item30.checkoutCount} / {item30.paidCount}</td>
+                                <td className="px-2 py-3 font-semibold text-neutral-900">{item30.conversionRate.toLocaleString("ko-KR")}%</td>
+                                <td className="px-2 py-3 text-neutral-700">대기 {item30.readyCount} · 실패/취소 {item30.failedCount}</td>
+                                <td className="px-2 py-3 font-semibold text-neutral-900">{item30.revenueKrw.toLocaleString("ko-KR")}원</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
                 </div>
 
                 <div className="rounded-2xl border border-violet-200 bg-white p-4">

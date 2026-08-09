@@ -68,6 +68,23 @@ export type TossCreatePaymentParams = {
   easyPay?: "KAKAOPAY";
 };
 
+export type TossCheckoutMode = "KAKAOPAY_DIRECT" | "DEFAULT";
+
+export function getTossCheckoutMode(): TossCheckoutMode {
+  return String(process.env.TOSS_CHECKOUT_MODE ?? "")
+    .trim()
+    .toUpperCase() === "DEFAULT"
+    ? "DEFAULT"
+    : "KAKAOPAY_DIRECT";
+}
+
+export function getTossCheckoutOptions(): Pick<TossCreatePaymentParams, "flowMode" | "easyPay"> {
+  if (getTossCheckoutMode() === "DEFAULT") {
+    return { flowMode: "DEFAULT" };
+  }
+  return { flowMode: "DIRECT", easyPay: "KAKAOPAY" };
+}
+
 export type TossCreatePaymentResponse = {
   paymentKey?: string;
   checkout?: {

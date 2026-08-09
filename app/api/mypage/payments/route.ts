@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 
 type TossOrderRow = {
   id: string;
+  product_ref_id: string | null;
   product_type: "apply_credits" | "paid_card" | "more_view" | "city_view" | "one_on_one_contact_exchange" | "swipe_premium_30d" | string;
   product_meta: Record<string, unknown> | null;
   toss_order_id: string;
@@ -41,7 +42,7 @@ export async function GET(req: Request) {
     const [ordersRes, usageRes, creditsRes, moreViewStatus] = await Promise.all([
       supabase
         .from("toss_test_payment_orders")
-        .select("id,product_type,product_meta,toss_order_id,order_name,amount,status,approved_at,created_at,raw_response")
+        .select("id,product_ref_id,product_type,product_meta,toss_order_id,order_name,amount,status,approved_at,created_at,raw_response")
         .order("created_at", { ascending: false })
         .limit(20),
       supabase
@@ -68,6 +69,45 @@ export async function GET(req: Request) {
     const creditsRemaining = Math.max(0, Number(creditsRes.data?.credits ?? 0));
     const baseRemaining = Math.max(0, baseLimit - baseUsed);
     const orders = (ordersRes.data ?? []) as TossOrderRow[];
+    const readyMatchIds = Array.from(
+      new Set(
+        orders
+          .filter((order) => order.product_type === "one_on_one_contact_exchange" && order.status === "ready")
+          .map((order) => order.product_ref_id)
+          .filter((value): value is string => Boolean(value))
+      )
+    );
+    const resumableMatchIds = new Set<string>();
+
+    if (readyMatchIds.length > 0) {
+      const matchesRes = await admin
+        .from("dating_1on1_match_proposals")
+        .select("id,source_user_id,candidate_user_id,state,contact_exchange_status")
+        .in("id", readyMatchIds);
+
+      if (matchesRes.error) {
+        console.error(`[mypage-payments] ${requestId} resumable matches query failed`, matchesRes.error);
+      } else {
+        for (const match of matchesRes.data ?? []) {
+          const isParticipant = match.source_user_id === user.id || match.candidate_user_id === user.id;
+          const isAccepted = match.state === "mutual_accepted" || match.state === "candidate_accepted";
+          const isPayable = match.contact_exchange_status === "none" || match.contact_exchange_status === "awaiting_applicant_payment";
+          if (isParticipant && isAccepted && isPayable) resumableMatchIds.add(match.id);
+        }
+      }
+    }
+
+    const latestReadyOrderIdByMatch = new Map<string, string>();
+    for (const order of orders) {
+      if (
+        order.product_type === "one_on_one_contact_exchange" &&
+        order.status === "ready" &&
+        order.product_ref_id &&
+        !latestReadyOrderIdByMatch.has(order.product_ref_id)
+      ) {
+        latestReadyOrderIdByMatch.set(order.product_ref_id, order.id);
+      }
+    }
 
     return json(200, {
       ok: true,
@@ -84,6 +124,16 @@ export async function GET(req: Request) {
         ...row,
         method: row.raw_response?.method ?? null,
         receiptUrl: row.raw_response?.receipt?.url ?? null,
+        canResume:
+          row.product_type === "one_on_one_contact_exchange" &&
+          row.status === "ready" &&
+          Boolean(row.product_ref_id) &&
+          latestReadyOrderIdByMatch.get(row.product_ref_id ?? "") === row.id &&
+          resumableMatchIds.has(row.product_ref_id ?? ""),
+        resumeMatchId:
+          row.product_type === "one_on_one_contact_exchange" && resumableMatchIds.has(row.product_ref_id ?? "")
+            ? row.product_ref_id
+            : null,
       })),
     });
   } catch (error) {
