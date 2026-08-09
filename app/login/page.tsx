@@ -299,6 +299,11 @@ function LoginContent() {
 
       {error && <p className="text-sm text-red-600 bg-red-50 rounded-xl p-3 mb-4 w-full text-center">{error}</p>}
       {success && <p className="text-sm text-emerald-700 bg-emerald-50 rounded-xl p-3 mb-4 w-full text-center">{success}</p>}
+      {tabParam === "password" && resetParam === "success" && (
+        <p className="text-sm text-emerald-700 bg-emerald-50 rounded-xl p-3 mb-4 w-full text-center">
+          비밀번호가 변경되었습니다. 새 비밀번호로 로그인해 주세요.
+        </p>
+      )}
       {tabParam === "password" && resetParam === "1" && (
         <p className="text-xs text-amber-800 bg-amber-50 rounded-xl p-3 mb-4 w-full text-center">
           비밀번호를 잊으셨다면 아래 `비밀번호를 잊으셨나요?` 링크를 눌러 재설정하세요.
