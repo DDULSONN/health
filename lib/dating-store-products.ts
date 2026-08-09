@@ -11,8 +11,43 @@ export const DATING_STORE_PRODUCT_IDS = {
   swipePremium30d: "swipe_premium_monthly",
 } as const;
 
+export const APPLE_DATING_STORE_PRODUCT_IDS = {
+  applyCredits5: "gymtools_apply_credits_5_ios",
+  instantOpenCard: "gymtools_instant_open_card_ios",
+  nearbyIdeal3h: "gymtools_nearby_ideal_3h_ios",
+  moreView3h: "gymtools_more_view_3h_ios",
+  oneOnOneContactExchange: "gymtools_one_on_one_contact_exchange_ios",
+  oneOnOnePlus30d: "gymtools_one_on_one_plus_30d_ios",
+  openCardRepost: "gymtools_open_card_repost_ios",
+  swipePremium30d: "gymtools_swipe_premium_monthly_ios",
+} as const;
+
 export type DatingStoreProductId =
   (typeof DATING_STORE_PRODUCT_IDS)[keyof typeof DATING_STORE_PRODUCT_IDS];
+
+const APPLE_TO_CANONICAL_PRODUCT_ID = {
+  [APPLE_DATING_STORE_PRODUCT_IDS.applyCredits5]: DATING_STORE_PRODUCT_IDS.applyCredits5,
+  [APPLE_DATING_STORE_PRODUCT_IDS.instantOpenCard]: DATING_STORE_PRODUCT_IDS.instantOpenCard,
+  [APPLE_DATING_STORE_PRODUCT_IDS.nearbyIdeal3h]: DATING_STORE_PRODUCT_IDS.nearbyIdeal3h,
+  [APPLE_DATING_STORE_PRODUCT_IDS.moreView3h]: DATING_STORE_PRODUCT_IDS.moreView3h,
+  [APPLE_DATING_STORE_PRODUCT_IDS.oneOnOneContactExchange]: DATING_STORE_PRODUCT_IDS.oneOnOneContactExchange,
+  [APPLE_DATING_STORE_PRODUCT_IDS.oneOnOnePlus30d]: DATING_STORE_PRODUCT_IDS.oneOnOnePlus30d,
+  [APPLE_DATING_STORE_PRODUCT_IDS.openCardRepost]: DATING_STORE_PRODUCT_IDS.openCardRepost,
+  [APPLE_DATING_STORE_PRODUCT_IDS.swipePremium30d]: DATING_STORE_PRODUCT_IDS.swipePremium30d,
+} as const;
+
+export function normalizeDatingStoreProductId(productId: string): DatingStoreProductId | null {
+  const canonicalIds = Object.values(DATING_STORE_PRODUCT_IDS) as string[];
+  if (canonicalIds.includes(productId)) return productId as DatingStoreProductId;
+
+  return (
+    APPLE_TO_CANONICAL_PRODUCT_ID[productId as keyof typeof APPLE_TO_CANONICAL_PRODUCT_ID] ?? null
+  );
+}
+
+export function isAppleDatingStoreProductId(productId: string) {
+  return Object.prototype.hasOwnProperty.call(APPLE_TO_CANONICAL_PRODUCT_ID, productId);
+}
 
 export const DATING_STORE_PRODUCT_CATALOG = {
   [DATING_STORE_PRODUCT_IDS.applyCredits5]: {

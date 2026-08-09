@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { buildAppleNotificationEventKey, verifyAppleServerNotification } from "@/lib/apple-store-notifications";
 import { syncAppleSwipeSubscription } from "@/lib/apple-swipe-subscription";
-import { DATING_STORE_PRODUCT_IDS } from "@/lib/dating-store-products";
+import { DATING_STORE_PRODUCT_IDS, normalizeDatingStoreProductId } from "@/lib/dating-store-products";
 import { createAdminClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
@@ -141,7 +141,7 @@ export async function POST(req: Request) {
       return json(200, { ok: true, code: "NO_TRANSACTION", requestId, eventKey });
     }
 
-    if (productId !== DATING_STORE_PRODUCT_IDS.swipePremium30d) {
+    if (normalizeDatingStoreProductId(productId) !== DATING_STORE_PRODUCT_IDS.swipePremium30d) {
       await updateEvent(admin, eventKey, {
         status: "ignored",
         processed_at: new Date().toISOString(),

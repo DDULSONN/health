@@ -18,6 +18,8 @@ import {
 import {
   DATING_STORE_PRODUCT_CATALOG,
   DATING_STORE_PRODUCT_IDS,
+  isAppleDatingStoreProductId,
+  normalizeDatingStoreProductId,
   type DatingStoreProductId,
 } from "@/lib/dating-store-products";
 import { extractProvinceFromRegion } from "@/lib/region-city";
@@ -47,10 +49,9 @@ export type DirectStoreVerificationResult = {
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
-function normalizeProductId(productId: string): DatingStoreProductId | null {
-  return Object.values(DATING_STORE_PRODUCT_IDS).includes(productId as DatingStoreProductId)
-    ? (productId as DatingStoreProductId)
-    : null;
+function normalizeProductId(platform: DirectStorePlatform, productId: string): DatingStoreProductId | null {
+  if (platform === "android" && isAppleDatingStoreProductId(productId)) return null;
+  return normalizeDatingStoreProductId(productId);
 }
 
 function isSubscriptionProduct(productId: DatingStoreProductId) {
@@ -262,7 +263,9 @@ async function fetchAppleTransactionInfo(transactionId: string) {
   throw new Error(lastErrorText || "App Store 서버에서 거래 조회에 실패했습니다.");
 }
 
-async function verifyApplePurchase(input: DirectStorePurchaseInput & { productId: DatingStoreProductId }) {
+async function verifyApplePurchase(
+  input: DirectStorePurchaseInput & { productId: DatingStoreProductId; storeProductId: string }
+) {
   const bundleId = process.env.APPLE_IAP_BUNDLE_ID?.trim() || "com.gymtools.somefit";
   const decodedClientToken = decodeTransactionToken(input.purchaseToken);
   const transactionId =
@@ -288,7 +291,7 @@ async function verifyApplePurchase(input: DirectStorePurchaseInput & { productId
   if (verifiedBundleId && verifiedBundleId !== bundleId) {
     throw new Error("App Store bundle identifier가 일치하지 않습니다.");
   }
-  if (verifiedProductId && verifiedProductId !== input.productId) {
+  if (verifiedProductId && verifiedProductId !== input.storeProductId) {
     throw new Error("App Store product identifier가 일치하지 않습니다.");
   }
   if (isSubscriptionProduct(input.productId) && (!Number.isFinite(expiresDate) || expiresDate <= Date.now())) {
@@ -320,7 +323,7 @@ async function verifyApplePurchase(input: DirectStorePurchaseInput & { productId
 }
 
 export async function verifyDirectStorePurchase(input: DirectStorePurchaseInput): Promise<DirectStoreVerificationResult> {
-  const productId = normalizeProductId(input.productId);
+  const productId = normalizeProductId(input.platform, input.productId);
   if (!productId || !DATING_STORE_PRODUCT_CATALOG[productId]) {
     throw new Error("지원하지 않는 결제 상품 ID입니다.");
   }
@@ -328,7 +331,7 @@ export async function verifyDirectStorePurchase(input: DirectStorePurchaseInput)
   const verified =
     input.platform === "android"
       ? await verifyAndroidPlayPurchase({ ...input, productId })
-      : await verifyApplePurchase({ ...input, productId });
+      : await verifyApplePurchase({ ...input, productId, storeProductId: input.productId });
 
   return {
     ...verified,
