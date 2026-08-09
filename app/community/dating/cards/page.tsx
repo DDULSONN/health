@@ -3717,11 +3717,17 @@ function OneOnOneHomePanel({
                 <div className="min-w-0">
                   <div className="flex items-center gap-2">
                     <span className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-bold text-amber-800">PLUS</span>
+                    <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-black text-amber-900">개편</span>
                     <p className="text-sm font-black text-neutral-950">1:1 매칭 플러스</p>
                   </div>
                   <p className="mt-2 text-xs leading-5 text-neutral-600">
-                    {plusContactExchangeIncluded ? "번호교환 포함 · " : ""}후보 새로고침 하루 2회 · 프로필 우선 노출
+                    {plusContactExchangeIncluded
+                      ? "기존 혜택 적용 중 · 번호교환 포함 · 후보 새로고침 하루 2회"
+                      : "30일 3만원 · 후보 새로고침 하루 2회 · 프로필 우선 노출"}
                   </p>
+                  {!plusContactExchangeIncluded ? (
+                    <p className="mt-1 text-[11px] font-semibold text-neutral-500">번호교환은 기존처럼 건별 결제돼요.</p>
+                  ) : null}
                   {plusActive && data?.plus?.expires_at ? (
                     <p className="mt-1 text-[11px] font-semibold text-amber-800">
                       {new Date(data.plus.expires_at).toLocaleString("ko-KR")}까지 이용 가능
