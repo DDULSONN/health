@@ -2077,6 +2077,9 @@ export default function MyPage() {
   const [adminOneOnOnePriorityGrantingIds, setAdminOneOnOnePriorityGrantingIds] = useState<string[]>([]);
   const [adminOneOnOnePriorityGrantError, setAdminOneOnOnePriorityGrantError] = useState("");
   const [adminOneOnOnePriorityGrantInfo, setAdminOneOnOnePriorityGrantInfo] = useState("");
+  const [adminOneOnOneEditGrantingIds, setAdminOneOnOneEditGrantingIds] = useState<string[]>([]);
+  const [adminOneOnOneEditGrantError, setAdminOneOnOneEditGrantError] = useState("");
+  const [adminOneOnOneEditGrantInfo, setAdminOneOnOneEditGrantInfo] = useState("");
   const [adminRefundOrderId, setAdminRefundOrderId] = useState("");
   const [adminRefundReasonByOrderId, setAdminRefundReasonByOrderId] = useState<Record<string, string>>({});
   const [adminRefundAmountByOrderId, setAdminRefundAmountByOrderId] = useState<Record<string, string>>({});
@@ -6659,6 +6662,8 @@ export default function MyPage() {
       setAdminOneOnOneBlockInfo("");
       setAdminOneOnOnePriorityGrantError("");
       setAdminOneOnOnePriorityGrantInfo("");
+      setAdminOneOnOneEditGrantError("");
+      setAdminOneOnOneEditGrantInfo("");
       const pendingOpenCard = body.details?.open_cards?.find((item) => item.status === "pending");
       if (pendingOpenCard?.id) {
         setAdminQueueMoveCardId(String(pendingOpenCard.id));
@@ -6925,6 +6930,56 @@ export default function MyPage() {
       setAdminOneOnOnePriorityGrantError(err instanceof Error ? err.message : "1:1 매칭 플러스 지급에 실패했습니다.");
     } finally {
       setAdminOneOnOnePriorityGrantingIds((prev) => prev.filter((id) => id !== cardId));
+    }
+  };
+
+  const handleAdminGrantOneOnOneEdit = async (card: Record<string, unknown>) => {
+    const userId = adminUserActivityResult?.user?.id ?? "";
+    const cardId = String(card.id ?? "").trim();
+    const cardName = String(card.name ?? "1:1 신청서").trim() || "1:1 신청서";
+    if (!userId || !cardId || adminOneOnOneEditGrantingIds.includes(cardId)) return;
+    if (!confirm(`${cardName} 신청서의 수정 기회를 1회 다시 열까요?`)) return;
+
+    setAdminOneOnOneEditGrantingIds((prev) => [...prev, cardId]);
+    setAdminOneOnOneEditGrantError("");
+    setAdminOneOnOneEditGrantInfo("");
+    try {
+      const res = await fetch(`/api/admin/dating/1on1/cards/${encodeURIComponent(cardId)}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "grant_user_edit", expected_user_id: userId }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        item?: { id?: string; admin_tags?: string[] | null };
+      };
+      if (!res.ok || !body.ok || !body.item?.id) {
+        throw new Error(body.error ?? "1:1 신청서 수정 기회를 열지 못했습니다.");
+      }
+
+      setAdminUserActivityResult((prev) =>
+        prev
+          ? {
+              ...prev,
+              details: {
+                ...(prev.details ?? {}),
+                one_on_one_cards: (prev.details?.one_on_one_cards ?? []).map((item) =>
+                  String(item.id ?? "") === body.item?.id
+                    ? { ...item, admin_tags: body.item.admin_tags ?? [] }
+                    : item
+                ),
+              },
+            }
+          : prev
+      );
+      setAdminOneOnOneEditGrantInfo(`${cardName} 신청서의 수정 기회를 1회 열었습니다.`);
+    } catch (err) {
+      setAdminOneOnOneEditGrantError(
+        err instanceof Error ? err.message : "1:1 신청서 수정 기회를 열지 못했습니다."
+      );
+    } finally {
+      setAdminOneOnOneEditGrantingIds((prev) => prev.filter((id) => id !== cardId));
     }
   };
 
@@ -13584,31 +13639,67 @@ export default function MyPage() {
                         {(adminUserActivityResult.details?.one_on_one_profile_history?.length ?? 0).toLocaleString("ko-KR")}건
                       </span>
                     </div>
+                    {adminOneOnOneEditGrantError ? (
+                      <p className="mt-2 text-xs text-rose-600">{adminOneOnOneEditGrantError}</p>
+                    ) : null}
+                    {adminOneOnOneEditGrantInfo ? (
+                      <p className="mt-2 text-xs text-emerald-700">{adminOneOnOneEditGrantInfo}</p>
+                    ) : null}
                     {adminUserActivityResult.details?.one_on_one_cards?.length ? (
                       <div className="mt-3 space-y-2">
-                        {adminUserActivityResult.details.one_on_one_cards.slice(0, 10).map((card, index) => (
-                          <div key={`admin-user-1on1-card-${String(card.id ?? index)}`} className="rounded-lg border border-indigo-100 bg-indigo-50/30 px-3 py-2">
-                            <div className="flex flex-wrap items-start justify-between gap-2">
-                              <div>
-                                <p className="text-xs font-bold text-neutral-950">
-                                  {adminString(card.name)} · {adminString(card.status)} · {adminString(card.region)}
-                                </p>
-                                <p className="mt-1 text-[11px] text-neutral-500">
-                                  작성 {adminDateTime(card.created_at)} · 수정 {adminDateTime(card.updated_at)}
-                                </p>
+                        {adminUserActivityResult.details.one_on_one_cards.slice(0, 10).map((card, index) => {
+                          const cardId = String(card.id ?? "").trim();
+                          const cardStatus = String(card.status ?? "").trim();
+                          const cardTags = Array.isArray(card.admin_tags)
+                            ? card.admin_tags.filter((tag): tag is string => typeof tag === "string")
+                            : [];
+                          const editWasUsed = cardTags.includes(ONE_ON_ONE_USER_EDIT_USED_TAG);
+                          const editIsLocked = cardTags.includes(ONE_ON_ONE_EDIT_LOCK_TAG);
+                          const isUserArchived =
+                            cardStatus === "rejected" && cardTags.includes(ONE_ON_ONE_USER_DELETED_TAG);
+                          const canGrantEdit =
+                            Boolean(cardId) &&
+                            editWasUsed &&
+                            !editIsLocked &&
+                            (cardStatus === "submitted" || isUserArchived);
+                          const isGranting = adminOneOnOneEditGrantingIds.includes(cardId);
+
+                          return (
+                            <div key={`admin-user-1on1-card-${cardId || index}`} className="rounded-lg border border-indigo-100 bg-indigo-50/30 px-3 py-2">
+                              <div className="flex flex-wrap items-start justify-between gap-2">
+                                <div>
+                                  <p className="text-xs font-bold text-neutral-950">
+                                    {adminString(card.name)} · {adminString(card.status)} · {adminString(card.region)}
+                                  </p>
+                                  <p className="mt-1 text-[11px] text-neutral-500">
+                                    작성 {adminDateTime(card.created_at)} · 수정 {adminDateTime(card.updated_at)}
+                                  </p>
+                                </div>
+                                <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-indigo-700">
+                                  {adminString(card.sex) === "female" ? "여성" : "남성"}
+                                </span>
                               </div>
-                              <span className="rounded-full bg-white px-2 py-1 text-[11px] font-semibold text-indigo-700">
-                                {adminString(card.sex) === "female" ? "여성" : "남성"}
-                              </span>
+                              <p className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-5 text-neutral-700">
+                                소개: {adminString(card.intro_text)}
+                              </p>
+                              <p className="mt-1 whitespace-pre-wrap break-words text-[11px] leading-5 text-neutral-600">
+                                장점: {adminString(card.strengths_text)}
+                              </p>
+                              {canGrantEdit ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void handleAdminGrantOneOnOneEdit(card)}
+                                  disabled={isGranting}
+                                  className="mt-2 min-h-9 rounded-lg border border-indigo-200 bg-white px-3 text-xs font-semibold text-indigo-700 disabled:cursor-not-allowed disabled:opacity-60"
+                                >
+                                  {isGranting ? "처리 중..." : "수정 1회 열기"}
+                                </button>
+                              ) : editIsLocked ? (
+                                <p className="mt-2 text-[11px] font-semibold text-rose-600">관리자 수정 잠금 중</p>
+                              ) : null}
                             </div>
-                            <p className="mt-2 whitespace-pre-wrap break-words text-[11px] leading-5 text-neutral-700">
-                              소개: {adminString(card.intro_text)}
-                            </p>
-                            <p className="mt-1 whitespace-pre-wrap break-words text-[11px] leading-5 text-neutral-600">
-                              장점: {adminString(card.strengths_text)}
-                            </p>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : (
                       <p className="mt-3 text-xs text-neutral-500">현재 남아있는 1:1 신청서가 없습니다.</p>

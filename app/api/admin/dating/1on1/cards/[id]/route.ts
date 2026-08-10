@@ -8,6 +8,7 @@ const SMOKING_VALUES = new Set(["non_smoker", "occasional", "smoker"]);
 const WORKOUT_VALUES = new Set(["none", "1_2", "3_4", "5_plus"]);
 const ONE_ON_ONE_EDIT_LOCK_TAG = "one_on_one_edit_locked";
 const ONE_ON_ONE_USER_EDIT_USED_TAG = "one_on_one_user_edit_used";
+const ONE_ON_ONE_USER_DELETED_TAG = "one_on_one_user_deleted";
 
 function text(value: unknown, maxLength: number) {
   return typeof value === "string" ? value.trim().slice(0, maxLength) : "";
@@ -61,14 +62,16 @@ export async function PATCH(
   }
 
   if (body.action === "grant_user_edit") {
-    if (cardRes.data.status !== "submitted") {
+    const currentTags = normalizeAdminTags(cardRes.data.admin_tags);
+    const isUserArchived =
+      cardRes.data.status === "rejected" && currentTags.includes(ONE_ON_ONE_USER_DELETED_TAG);
+    if (cardRes.data.status !== "submitted" && !isUserArchived) {
       return NextResponse.json(
-        { ok: false, error: "접수중 상태의 1:1 신청서만 회원 수정 기회를 열 수 있습니다." },
+        { ok: false, error: "접수 중이거나 회원이 직접 내린 1:1 신청서만 수정 기회를 열 수 있습니다." },
         { status: 409 }
       );
     }
 
-    const currentTags = normalizeAdminTags(cardRes.data.admin_tags);
     if (currentTags.includes(ONE_ON_ONE_EDIT_LOCK_TAG)) {
       return NextResponse.json(
         { ok: false, error: "관리자 검수에서 수정 잠금된 신청서입니다. 먼저 수정 잠금을 해제해주세요." },
@@ -91,7 +94,7 @@ export async function PATCH(
       })
       .eq("id", cardId)
       .eq("user_id", expectedUserId)
-      .eq("status", "submitted")
+      .eq("status", cardRes.data.status)
       .contains("admin_tags", [ONE_ON_ONE_USER_EDIT_USED_TAG])
       .select("id,user_id,status,admin_tags,updated_at")
       .maybeSingle();
