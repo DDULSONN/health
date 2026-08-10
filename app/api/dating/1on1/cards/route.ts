@@ -6,6 +6,7 @@ import {
   getDatingOneOnOneWriteStatus,
   getProfilePhoneVerification,
 } from "@/lib/dating-1on1";
+import { reconcileOneOnOnePhoneIdentity } from "@/lib/dating-1on1-identity";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { getUserBanResponse } from "@/lib/user-ban-guard";
@@ -255,26 +256,31 @@ export async function POST(req: Request) {
     );
   }
 
-  const duplicatePhoneRes = await admin
-    .from("dating_1on1_cards")
-    .select("id,user_id")
-    .eq("phone", phoneState.phoneE164)
-    .neq("user_id", user.id)
-    .in("status", [...DATING_ONE_ON_ONE_ACTIVE_STATUSES])
-    .limit(1)
-    .maybeSingle();
-  if (duplicatePhoneRes.error) {
-    console.error("[POST /api/dating/1on1/cards] phone duplicate check failed", duplicatePhoneRes.error);
+  let identityResult: Awaited<ReturnType<typeof reconcileOneOnOnePhoneIdentity>>;
+  try {
+    identityResult = await reconcileOneOnOnePhoneIdentity({
+      admin,
+      userId: user.id,
+      phoneE164: phoneState.phoneE164,
+    });
+  } catch (error) {
+    console.error("[POST /api/dating/1on1/cards] phone identity reconciliation failed", error);
     return NextResponse.json({ error: "Failed to validate phone identity." }, { status: 500 });
   }
-  if (duplicatePhoneRes.data) {
+  if (identityResult.conflictingVerifiedOwner) {
     return NextResponse.json(
       {
-        error: "같은 휴대폰 번호로 이용 중인 1:1 프로필이 있습니다. 기존 계정에서 프로필을 내리거나 고객센터로 문의해 주세요.",
-        code: "DUPLICATE_PHONE_PROFILE",
+        error: "이미 다른 계정에 등록된 휴대폰 번호입니다. 고객센터로 문의해 주세요.",
+        code: "PHONE_ALREADY_USED",
       },
       { status: 409 }
     );
+  }
+  if (identityResult.archivedCardCount > 0) {
+    console.info("[POST /api/dating/1on1/cards] archived stale phone cards", {
+      userId: user.id,
+      count: identityResult.archivedCardCount,
+    });
   }
 
   const body = (await req.json().catch(() => null)) as InputPayload | null;
