@@ -333,13 +333,25 @@ export async function GET(req: Request) {
   }
   const ownerIds = [...new Set(pageRows.map((row) => String(row.owner_user_id ?? "")).filter((id) => id.length > 0))];
   const phoneVerifiedByOwner = new Map<string, boolean>();
+  const bannedOwnerIds = new Set<string>();
   if (ownerIds.length > 0) {
-    const profileRes = await adminClient.from("profiles").select("user_id,phone_verified").in("user_id", ownerIds);
+    const profileRes = await adminClient
+      .from("profiles")
+      .select("user_id,phone_verified,is_banned")
+      .in("user_id", ownerIds);
     if (!profileRes.error && Array.isArray(profileRes.data)) {
-      for (const profile of profileRes.data as Array<{ user_id: string; phone_verified: boolean | null }>) {
+      for (const profile of profileRes.data as Array<{
+        user_id: string;
+        phone_verified: boolean | null;
+        is_banned: boolean | null;
+      }>) {
         phoneVerifiedByOwner.set(String(profile.user_id), profile.phone_verified === true);
+        if (profile.is_banned === true) bannedOwnerIds.add(String(profile.user_id));
       }
     }
+  }
+  if (bannedOwnerIds.size > 0) {
+    pageRows = pageRows.filter((row) => !bannedOwnerIds.has(String(row.owner_user_id ?? "")));
   }
 
   const items = await Promise.all(

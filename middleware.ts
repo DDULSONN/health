@@ -46,7 +46,7 @@ export async function middleware(request: NextRequest) {
     pathname === "/dating/1on1" &&
     request.nextUrl.searchParams.get("preview") === "1";
 
-  if (isOpenCardsRoute || isLocalOneOnOnePreview) {
+  if (isLocalOneOnOnePreview) {
     return NextResponse.next({ request });
   }
 
@@ -77,8 +77,47 @@ export async function middleware(request: NextRequest) {
   const confirmed = isEmailConfirmed(user);
 
   const protectedPrefixes = ["/community", "/mypage", "/cert/request", "/admin", "/certify", "/dating"];
-  const isProtected = protectedPrefixes.some((prefix) => pathname.startsWith(prefix));
+  const isProtected =
+    protectedPrefixes.some((prefix) => pathname.startsWith(prefix)) && !isOpenCardsRoute;
   const isVerifyPage = pathname.startsWith("/verify-email");
+  const isBanProtectedPage =
+    pathname.startsWith("/community") ||
+    pathname.startsWith("/dating") ||
+    pathname.startsWith("/chat") ||
+    pathname.startsWith("/notifications") ||
+    pathname.startsWith("/tools") ||
+    pathname.startsWith("/certify");
+  const isBanProtectedApi =
+    pathname.startsWith("/api/dating/") ||
+    pathname.startsWith("/api/community/") ||
+    pathname.startsWith("/api/posts") ||
+    pathname.startsWith("/api/comments") ||
+    pathname.startsWith("/api/notifications");
+
+  if (user && !isAdmin && (isBanProtectedPage || isBanProtectedApi)) {
+    const { data: accountState, error: accountStateError } = await supabase
+      .from("profiles")
+      .select("is_banned,banned_reason")
+      .eq("user_id", user.id)
+      .maybeSingle();
+
+    if (accountStateError) {
+      console.error("[middleware] failed to check banned account", accountStateError);
+    } else if (accountState?.is_banned) {
+      if (isApiRoute) {
+        return NextResponse.json(
+          {
+            error: accountState.banned_reason?.trim() || "이 계정은 관리자에 의해 이용이 제한되었습니다.",
+            error_code: "user_banned",
+          },
+          { status: 403 }
+        );
+      }
+      const restrictedUrl = new URL("/mypage", request.url);
+      restrictedUrl.searchParams.set("account", "restricted");
+      return NextResponse.redirect(restrictedUrl);
+    }
+  }
 
   if (isBodyBattlePath && !user) {
     if (isApiRoute) {
@@ -158,7 +197,15 @@ export const config = {
     "/certify/:path*",
     "/dating/:path*",
     "/community/:path*",
+    "/chat/:path*",
+    "/notifications/:path*",
+    "/tools/:path*",
     "/bodybattle/:path*",
+    "/api/dating/:path*",
+    "/api/community/:path*",
+    "/api/posts/:path*",
+    "/api/comments/:path*",
+    "/api/notifications/:path*",
     "/api/bodybattle/:path*",
     "/api/admin/bodybattle/:path*",
     "/api/cron/bodybattle-season",

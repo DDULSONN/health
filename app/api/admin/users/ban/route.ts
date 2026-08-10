@@ -83,6 +83,7 @@ export async function POST(request: Request) {
         is_banned: true,
         banned_reason: reason,
         banned_at: nowIso,
+        swipe_profile_visible: false,
       }
     : {
         is_banned: false,
@@ -94,7 +95,7 @@ export async function POST(request: Request) {
     .from("profiles")
     .update(profileUpdate)
     .eq("user_id", userId)
-    .select("user_id,nickname,role,is_banned,banned_reason,banned_at")
+    .select("user_id,nickname,role,is_banned,banned_reason,banned_at,swipe_profile_visible")
     .maybeSingle();
 
   if (updateRes.error) {

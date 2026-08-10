@@ -56,6 +56,10 @@ const AdminOneOnOneNameReviewPanel = dynamic(() => import("@/components/admin/Ad
   loading: () => <MyPageWidgetSkeleton className="h-64" />,
 });
 
+const AdminOneOnOneAbuseReviewPanel = dynamic(() => import("@/components/admin/AdminOneOnOneAbuseReviewPanel"), {
+  loading: () => <MyPageWidgetSkeleton className="h-64" />,
+});
+
 const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
   "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
@@ -1057,6 +1061,7 @@ type AdminManageTab =
   | "app_testers"
   | "nickname_review"
   | "one_on_one_name_review"
+  | "one_on_one_abuse_review"
   | "accepted_applications"
   | "mail_center"
   | "one_on_one_contact"
@@ -10776,6 +10781,8 @@ export default function MyPage() {
                       ? "닉네임 검수 (관리자)"
                     : adminManageTab === "one_on_one_name_review"
                       ? "1:1 이름 검수 (관리자)"
+                    : adminManageTab === "one_on_one_abuse_review"
+                      ? "1:1 반복 악용 검수 (관리자)"
                     : adminManageTab === "tools_patch_note"
                       ? "도구 패치노트 (관리자)"
                     : adminManageTab === "accepted_applications"
@@ -10789,7 +10796,7 @@ export default function MyPage() {
               >
                 관리자 잠금 해제
               </Link>
-              {adminManageTab !== "app_testers" && adminManageTab !== "nickname_review" && adminManageTab !== "one_on_one_name_review" && (
+              {adminManageTab !== "app_testers" && adminManageTab !== "nickname_review" && adminManageTab !== "one_on_one_name_review" && adminManageTab !== "one_on_one_abuse_review" && (
               <button
                 type="button"
                 disabled={
@@ -11013,6 +11020,17 @@ export default function MyPage() {
             </button>
             <button
               type="button"
+              onClick={() => setAdminManageTab("one_on_one_abuse_review")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "one_on_one_abuse_review"
+                  ? "border-violet-600 bg-violet-600 text-white"
+                  : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              1:1 반복 악용
+            </button>
+            <button
+              type="button"
               onClick={() => setAdminManageTab("one_on_one_contact")}
               className={`h-8 rounded-md border px-3 text-xs font-medium ${
                 adminManageTab === "one_on_one_contact"
@@ -11103,6 +11121,7 @@ export default function MyPage() {
           {adminManageTab === "app_testers" && <AdminAppTestersPanel />}
           {adminManageTab === "nickname_review" && <AdminNicknameReviewPanel />}
           {adminManageTab === "one_on_one_name_review" && <AdminOneOnOneNameReviewPanel />}
+          {adminManageTab === "one_on_one_abuse_review" && <AdminOneOnOneAbuseReviewPanel />}
 
           {adminManageTab === "site_dashboard" && (
           <div className="mb-3 space-y-4">
