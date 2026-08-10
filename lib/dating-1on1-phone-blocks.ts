@@ -27,6 +27,25 @@ export function normalizePhoneForOneOnOneBlock(raw: string): string {
   return normalized;
 }
 
+export function dedupeOneOnOneCardsByIdentity<
+  T extends { user_id: string; phone?: string | null },
+>(cards: T[]): T[] {
+  const seenUserIds = new Set<string>();
+  const seenPhones = new Set<string>();
+
+  return cards.filter((card) => {
+    const userId = String(card.user_id ?? "").trim();
+    const phone = card.phone ? normalizePhoneForOneOnOneBlock(card.phone) : "";
+    if ((userId && seenUserIds.has(userId)) || (phone && seenPhones.has(phone))) {
+      return false;
+    }
+
+    if (userId) seenUserIds.add(userId);
+    if (phone) seenPhones.add(phone);
+    return true;
+  });
+}
+
 export function hashOneOnOneBlockedPhone(phoneE164: string) {
   return crypto.createHmac("sha256", getPhoneBlockSecret()).update(phoneE164).digest("hex");
 }

@@ -427,6 +427,28 @@ export async function PUT(req: Request) {
     return NextResponse.json({ error: "이미 이용 중인 1:1 프로필이 있어 다시 올릴 수 없습니다." }, { status: 409 });
   }
 
+  const duplicatePhoneRes = await admin
+    .from("dating_1on1_cards")
+    .select("id,user_id")
+    .eq("phone", phoneState.phoneE164)
+    .neq("user_id", user.id)
+    .in("status", [...DATING_ONE_ON_ONE_ACTIVE_STATUSES])
+    .limit(1)
+    .maybeSingle();
+  if (duplicatePhoneRes.error) {
+    console.error("[PUT /api/dating/1on1/my] phone duplicate check failed", duplicatePhoneRes.error);
+    return NextResponse.json({ error: "휴대폰 번호의 기존 1:1 프로필을 확인하지 못했습니다." }, { status: 500 });
+  }
+  if (duplicatePhoneRes.data) {
+    return NextResponse.json(
+      {
+        error: "같은 휴대폰 번호로 이용 중인 1:1 프로필이 있습니다. 기존 계정에서 프로필을 내리거나 고객센터로 문의해 주세요.",
+        code: "DUPLICATE_PHONE_PROFILE",
+      },
+      { status: 409 }
+    );
+  }
+
   const nowIso = new Date().toISOString();
   const restoreRes = await admin
     .from("dating_1on1_cards")

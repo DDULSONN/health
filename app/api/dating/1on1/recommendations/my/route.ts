@@ -5,8 +5,10 @@ import {
   toDatingOneOnOneCardDetail,
 } from "@/lib/dating-1on1";
 import {
+  dedupeOneOnOneCardsByIdentity,
   getOneOnOnePhoneBlockMapForUsers,
   isOneOnOnePhoneBlockedPair,
+  normalizePhoneForOneOnOneBlock,
 } from "@/lib/dating-1on1-phone-blocks";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import {
@@ -571,6 +573,9 @@ export async function GET(req: Request) {
     priority_boost_expires_at: row.priority_boost_expires_at ?? null,
     plus_expires_at: plusByUserId.get(row.user_id)?.expires_at ?? null,
   }));
+  // Active rows are newest-first. Keep one current card per verified identity so
+  // profiles recreated under another account cannot fill the same candidate list.
+  const candidateUniverse = dedupeOneOnOneCardsByIdentity(normalizedCards);
   const myCards = normalizedCards.filter((card) => card.user_id === user.id);
   const mySourceCards = myCards.filter(
     (card) => card.status === "submitted" || card.status === "reviewing" || card.status === "approved"
@@ -662,9 +667,14 @@ export async function GET(req: Request) {
   const items = mySourceCards.map((sourceCard) => {
     const activePairIds = activePairMap.get(sourceCard.id) ?? new Set<string>();
     const handledPairIds = handledPairMap.get(sourceCard.id) ?? new Set<string>();
-    const candidates = normalizedCards.filter((candidateCard) => {
+    const sourcePhone = sourceCard.phone ? normalizePhoneForOneOnOneBlock(sourceCard.phone) : "";
+    const candidates = candidateUniverse.filter((candidateCard) => {
       if (candidateCard.id === sourceCard.id) return false;
       if (candidateCard.user_id === sourceCard.user_id) return false;
+      const candidatePhone = candidateCard.phone
+        ? normalizePhoneForOneOnOneBlock(candidateCard.phone)
+        : "";
+      if (sourcePhone && candidatePhone === sourcePhone) return false;
       if (candidateCard.sex === sourceCard.sex) return false;
       if (blockedUserIds.has(candidateCard.user_id)) return false;
       if (permanentlyRejectedUserIds.has(candidateCard.user_id)) return false;

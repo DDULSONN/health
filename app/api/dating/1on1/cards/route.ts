@@ -255,6 +255,28 @@ export async function POST(req: Request) {
     );
   }
 
+  const duplicatePhoneRes = await admin
+    .from("dating_1on1_cards")
+    .select("id,user_id")
+    .eq("phone", phoneState.phoneE164)
+    .neq("user_id", user.id)
+    .in("status", [...DATING_ONE_ON_ONE_ACTIVE_STATUSES])
+    .limit(1)
+    .maybeSingle();
+  if (duplicatePhoneRes.error) {
+    console.error("[POST /api/dating/1on1/cards] phone duplicate check failed", duplicatePhoneRes.error);
+    return NextResponse.json({ error: "Failed to validate phone identity." }, { status: 500 });
+  }
+  if (duplicatePhoneRes.data) {
+    return NextResponse.json(
+      {
+        error: "같은 휴대폰 번호로 이용 중인 1:1 프로필이 있습니다. 기존 계정에서 프로필을 내리거나 고객센터로 문의해 주세요.",
+        code: "DUPLICATE_PHONE_PROFILE",
+      },
+      { status: 409 }
+    );
+  }
+
   const body = (await req.json().catch(() => null)) as InputPayload | null;
   if (!body) {
     return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });

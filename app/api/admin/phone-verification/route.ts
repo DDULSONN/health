@@ -84,6 +84,36 @@ export async function POST(request: Request) {
   }
 
   const userId = profile.user_id;
+  const ownerRes = await auth.admin
+    .from("profiles")
+    .select("user_id")
+    .eq("phone_e164", phoneE164)
+    .eq("phone_verified", true)
+    .neq("user_id", userId)
+    .limit(1)
+    .maybeSingle();
+  if (ownerRes.error) {
+    console.error("[POST /api/admin/phone-verification] owner lookup failed", ownerRes.error);
+    return NextResponse.json({ error: "휴대폰 번호의 기존 소유 계정을 확인하지 못했습니다." }, { status: 500 });
+  }
+  if (ownerRes.data) {
+    await recordAdminAuditEvent({
+      admin: auth.admin,
+      adminUser: auth.user,
+      request,
+      action: "phone_verification_manual",
+      targetType: "profile",
+      targetId: userId,
+      requestId,
+      status: "failure",
+      metadata: { reason: "phone_already_used", phone_hash: hashPhoneForVerificationStorage(phoneE164) },
+    });
+    return NextResponse.json(
+      { error: "이미 다른 계정에 등록된 번호입니다.", code: "PHONE_ALREADY_USED" },
+      { status: 409 }
+    );
+  }
+
   const userRes = await auth.admin.auth.admin.getUserById(userId).catch(() => null);
   if (!userRes?.data?.user) {
     return NextResponse.json({ error: "대상 사용자 계정을 찾지 못했습니다." }, { status: 404 });

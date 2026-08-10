@@ -7,6 +7,7 @@ import {
 import {
   getOneOnOnePhoneBlockMapForUsers,
   isOneOnOnePhoneBlockedPair,
+  normalizePhoneForOneOnOneBlock,
 } from "@/lib/dating-1on1-phone-blocks";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { hasDatingContactPhoneBlockBetween } from "@/lib/dating-contact-blocks";
@@ -79,6 +80,43 @@ export async function POST(req: Request) {
   }
   if (sourceRes.data.user_id === candidateRes.data.user_id || sourceRes.data.sex === candidateRes.data.sex) {
     return NextResponse.json({ error: "Candidate card is not eligible." }, { status: 409 });
+  }
+
+  const sourcePhone = sourceRes.data.phone
+    ? normalizePhoneForOneOnOneBlock(sourceRes.data.phone)
+    : "";
+  const candidatePhone = candidateRes.data.phone
+    ? normalizePhoneForOneOnOneBlock(candidateRes.data.phone)
+    : "";
+  if (sourcePhone && candidatePhone === sourcePhone) {
+    return NextResponse.json(
+      { error: "본인과 동일한 인증 정보의 후보는 선택할 수 없습니다.", code: "SAME_PHONE_IDENTITY" },
+      { status: 409 }
+    );
+  }
+
+  if (candidatePhone) {
+    const currentIdentityCardRes = await admin
+      .from("dating_1on1_cards")
+      .select("id")
+      .eq("phone", candidateRes.data.phone)
+      .in("status", [...DATING_ONE_ON_ONE_ACTIVE_STATUSES])
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (currentIdentityCardRes.error) {
+      console.error("[POST /api/dating/1on1/matches/auto] identity duplicate check failed", currentIdentityCardRes.error);
+      return NextResponse.json({ error: "Failed to validate candidate identity." }, { status: 500 });
+    }
+    if (currentIdentityCardRes.data && currentIdentityCardRes.data.id !== candidateCardId) {
+      return NextResponse.json(
+        {
+          error: "후보 정보가 갱신되었습니다. 후보 목록을 다시 불러와 주세요.",
+          code: "DUPLICATE_CANDIDATE_IDENTITY",
+        },
+        { status: 409 }
+      );
+    }
   }
 
   const unifiedBlockResult = await Promise.all([
