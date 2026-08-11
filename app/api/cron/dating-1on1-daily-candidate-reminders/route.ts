@@ -3,10 +3,7 @@ import {
   getOneOnOnePhoneBlockMapForUsers,
   isOneOnOnePhoneBlockedPair,
 } from "@/lib/dating-1on1-phone-blocks";
-import {
-  getDatingContactBlockMapForUsers,
-  isDatingContactPhoneBlockedPair,
-} from "@/lib/dating-contact-blocks";
+import { hashDatingContactBlockValue, normalizeDatingContactPhone } from "@/lib/dating-contact-blocks";
 import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
 import { appendEmailUnsubscribeFooter, fetchMarketingUnsubscribedUserIds } from "@/lib/marketing-email";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -48,6 +45,12 @@ type ProfileRow = {
 type UserBlockRow = {
   blocker_user_id: string | null;
   blocked_user_id: string | null;
+};
+
+type ContactBlockRow = {
+  user_id: string | null;
+  block_type: string | null;
+  value_hash: string | null;
 };
 
 type MailLogRow = {
@@ -99,6 +102,38 @@ function addBlockedPair(blockMap: Map<string, Set<string>>, firstUserId: string,
   const second = blockMap.get(secondUserId) ?? new Set<string>();
   second.add(firstUserId);
   blockMap.set(secondUserId, second);
+}
+
+function addContactPhoneHash(blockMap: Map<string, Set<string>>, userId: string, valueHash: string) {
+  if (!userId || !valueHash) return;
+  const bucket = blockMap.get(userId) ?? new Set<string>();
+  bucket.add(valueHash);
+  blockMap.set(userId, bucket);
+}
+
+function isContactPhoneBlockedPair(input: {
+  sourceUserId: string;
+  sourcePhone: string | null;
+  candidateUserId: string;
+  candidatePhone: string | null;
+  blockMap: Map<string, Set<string>>;
+}) {
+  const sourcePhone = normalizeDatingContactPhone(String(input.sourcePhone ?? ""));
+  const candidatePhone = normalizeDatingContactPhone(String(input.candidatePhone ?? ""));
+  if (
+    candidatePhone &&
+    input.blockMap
+      .get(input.sourceUserId)
+      ?.has(hashDatingContactBlockValue("phone", candidatePhone))
+  ) {
+    return true;
+  }
+  return Boolean(
+    sourcePhone &&
+      input.blockMap
+        .get(input.candidateUserId)
+        ?.has(hashDatingContactBlockValue("phone", sourcePhone))
+  );
 }
 
 function hashForRotation(value: string) {
@@ -233,6 +268,27 @@ async function fetchUserBlocks(admin: AdminClient) {
   return blockMap;
 }
 
+async function fetchContactPhoneBlocks(admin: AdminClient) {
+  const blockMap = new Map<string, Set<string>>();
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const res = await admin
+      .from("dating_contact_blocks")
+      .select("user_id,block_type,value_hash")
+      .eq("block_type", "phone")
+      .range(from, from + PAGE_SIZE - 1);
+    if (res.error) {
+      if (isMissingTableError(res.error, "dating_contact_blocks")) return blockMap;
+      throw res.error;
+    }
+    const batch = (res.data ?? []) as ContactBlockRow[];
+    for (const row of batch) {
+      addContactPhoneHash(blockMap, String(row.user_id ?? "").trim(), String(row.value_hash ?? "").trim());
+    }
+    if (batch.length < PAGE_SIZE) break;
+  }
+  return blockMap;
+}
+
 async function fetchRecentSendCounts(admin: AdminClient, weekStartIso: string, todayStartIso: string) {
   const weeklyCountByUserId = new Map<string, number>();
   const sentTodayUserIds = new Set<string>();
@@ -325,7 +381,7 @@ export async function GET(request: Request) {
         fetchExistingPairs(admin, cardIds),
         fetchUserBlocks(admin),
         getOneOnOnePhoneBlockMapForUsers(admin, userIds),
-        getDatingContactBlockMapForUsers(admin, userIds),
+        fetchContactPhoneBlocks(admin),
         fetchRecentSendCounts(admin, weekStartIso, today.startIso),
       ]);
 
@@ -370,7 +426,7 @@ export async function GET(request: Request) {
         ) {
           return false;
         }
-        return !isDatingContactPhoneBlockedPair({
+        return !isContactPhoneBlockedPair({
           sourceUserId: sourceCard.user_id,
           sourcePhone: sourceCard.phone,
           candidateUserId: candidateCard.user_id,
