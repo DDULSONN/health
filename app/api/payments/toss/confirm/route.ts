@@ -15,6 +15,7 @@ import {
   SWIPE_PREMIUM_DURATION_DAYS,
 } from "@/lib/dating-swipe";
 import { OPEN_CARD_EXPIRE_HOURS } from "@/lib/dating-open";
+import { markOpenCardRepostFulfilled } from "@/lib/open-card-repost";
 import { isAllowedAdminUser } from "@/lib/admin";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -575,6 +576,11 @@ async function ensurePaidCardFulfilled(
     if (cardRes.data.status === "public") {
       const currentExpiresAt = cardRes.data.expires_at ? new Date(cardRes.data.expires_at).getTime() : 0;
       if (Number.isFinite(currentExpiresAt) && currentExpiresAt > Date.now()) {
+        await markOpenCardRepostFulfilled(admin, order, {
+          cardId: openCardId,
+          fulfilledAt: cardRes.data.published_at ?? new Date().toISOString(),
+          expiresAt: cardRes.data.expires_at ?? new Date(currentExpiresAt).toISOString(),
+        });
         return { alreadyApproved: true };
       }
     }
@@ -613,10 +619,21 @@ async function ensurePaidCardFulfilled(
       }
       const reopenedExpiresAt = reopenedAgain.data?.expires_at ? new Date(reopenedAgain.data.expires_at).getTime() : 0;
       if (reopenedAgain.data?.status === "public" && Number.isFinite(reopenedExpiresAt) && reopenedExpiresAt > Date.now()) {
+        await markOpenCardRepostFulfilled(admin, order, {
+          cardId: openCardId,
+          fulfilledAt: now.toISOString(),
+          expiresAt: reopenedAgain.data.expires_at ?? expiresAt,
+        });
         return { alreadyApproved: true };
       }
       throw new Error("OPEN_CARD_REOPEN_FAILED");
     }
+
+    await markOpenCardRepostFulfilled(admin, order, {
+      cardId: openCardId,
+      fulfilledAt: now.toISOString(),
+      expiresAt,
+    });
 
     return { alreadyApproved: false };
   }

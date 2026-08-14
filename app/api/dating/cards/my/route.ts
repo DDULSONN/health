@@ -5,6 +5,7 @@ import { getRequestAuthContext } from "@/lib/supabase/request";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { getUserBanResponse } from "@/lib/user-ban-guard";
 import { buildSignedImageUrlAllowRaw } from "@/lib/images";
+import { markOpenCardRepostDeleted, recoverOpenCardRepostEntitlement } from "@/lib/open-card-repost";
 
 function normalizeInstagramId(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -58,6 +59,9 @@ export async function GET(req: Request) {
   if (!user) return NextResponse.json({ error: "로그인이 필요합니다." }, { status: 401 });
 
   const adminClient = createAdminClient();
+  await recoverOpenCardRepostEntitlement(adminClient, user.id).catch((error) => {
+    console.error("[GET /api/dating/cards/my] paid repost recovery failed", error);
+  });
   const { data, error } = await adminClient
     .from("dating_cards")
     .select(
@@ -368,11 +372,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: `카드 생성에 실패했습니다. ${error?.message ?? ""}`.trim() }, { status: 500 });
   }
 
+  const recoveredRepost = await recoverOpenCardRepostEntitlement(adminClient, user.id).catch((recoveryError) => {
+    console.error("[POST /api/dating/cards/my] paid repost recovery failed", recoveryError);
+    return null;
+  });
+
   return NextResponse.json(
     {
       id: data.id,
-      status: data.status,
-      message: "오픈카드가 대기열에 등록되었습니다.",
+      status: recoveredRepost?.recovered ? "public" : data.status,
+      recovered_paid_repost: recoveredRepost?.recovered === true,
+      message: recoveredRepost?.recovered
+        ? "남아 있던 유료 재노출 시간이 새 오픈카드에 이어서 적용되었습니다."
+        : "오픈카드가 대기열에 등록되었습니다.",
     },
     { status: 201 }
   );
@@ -646,6 +658,10 @@ export async function DELETE(req: Request) {
     console.error("[DELETE /api/dating/cards/my] failed", deleteRes.error);
     return NextResponse.json({ error: "카드 삭제에 실패했습니다." }, { status: 500 });
   }
+
+  await markOpenCardRepostDeleted(adminClient, user.id, cardRes.data).catch((auditError) => {
+    console.error("[DELETE /api/dating/cards/my] paid repost delete audit failed", auditError);
+  });
 
   return NextResponse.json({ id: cardId, message: "대기중 오픈카드가 삭제되었습니다." });
 }
