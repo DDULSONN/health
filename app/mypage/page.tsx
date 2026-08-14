@@ -10,6 +10,9 @@ import { formatRemainingToKorean } from "@/lib/dating-open";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
 import { pickLoveFortuneFaceAsset } from "@/lib/love-fortune-face-assets";
 import { PROVINCE_ORDER } from "@/lib/region-city";
+import AdminDatingOnboardingTestLink from "@/components/admin/AdminDatingOnboardingTestLink";
+import AdminOpenCardRepostDiagnostics from "@/components/admin/AdminOpenCardRepostDiagnostics";
+import AdminOpenCardRequeuePanel from "@/components/admin/AdminOpenCardRequeuePanel";
 function MyPageWidgetSkeleton({ className = "h-40" }: { className?: string }) {
   return (
     <div className={`rounded-2xl border border-neutral-200 bg-white p-4 ${className}`}>
@@ -6774,6 +6777,7 @@ export default function MyPage() {
             <p className="mt-1 text-sm text-neutral-500">{nickname}</p>
           </div>
           <div className="flex max-w-[54%] flex-wrap justify-end gap-1.5">
+            {isAdmin ? <AdminDatingOnboardingTestLink /> : null}
             <span
               className={`inline-flex h-7 items-center rounded-full px-2.5 text-[11px] font-semibold ${
                 phoneVerified ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
@@ -12253,6 +12257,12 @@ export default function MyPage() {
                     )}
                   </div>
 
+                  <AdminOpenCardRequeuePanel
+                    userId={adminUserActivityResult.user?.id ?? ""}
+                    cards={adminUserActivityResult.details?.open_cards ?? []}
+                    isBanned={adminUserActivityResult.user?.profile?.is_banned === true}
+                  />
+
                   <div className="rounded-xl border border-violet-100 bg-white p-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
                       <div>
@@ -12320,6 +12330,10 @@ export default function MyPage() {
                       <p className="mt-3 text-xs text-neutral-500">이 회원의 대기중 오픈카드가 없습니다.</p>
                     )}
                   </div>
+
+                  <AdminOpenCardRepostDiagnostics
+                    rows={adminUserActivityResult.details?.open_card_repost_diagnostics ?? []}
+                  />
 
                   {adminUserActivityResult.details ? (
                     <div className="rounded-xl border border-neutral-200 bg-white p-3">

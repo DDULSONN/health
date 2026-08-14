@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { hashEmail } from "@/lib/account-deletion";
 import { requireAdminRoute } from "@/lib/admin-route";
 import { createAdminClient } from "@/lib/supabase/server";
+import { buildOpenCardRepostDiagnostics } from "@/lib/open-card-repost";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 type ActivityItem = {
@@ -694,6 +695,7 @@ export async function GET(request: Request) {
         )
       : [];
     const enrichedOneOnOneMatches = await enrichOneOnOneMatches(auth.admin, userId, oneOnOneMatches);
+    const openCardRepostDiagnostics = buildOpenCardRepostDiagnostics(payments, openCards);
 
     const counts = {
       posts: await countSafe(auth.admin.from("posts").select("id", { count: "exact", head: true }).eq("user_id", userId)),
@@ -722,6 +724,7 @@ export async function GET(request: Request) {
       bodycheck_votes: votes,
       reactions,
       payments,
+      open_card_repost_diagnostics: openCardRepostDiagnostics,
       support,
       phone_verification_attempts: phoneAttempts,
       notifications,
@@ -748,6 +751,7 @@ export async function GET(request: Request) {
     addRows(activities, "one_on_one_match", "1:1 매칭", enrichedOneOnOneMatches, "updated_at");
     addRows(activities, "one_on_one_profile_history", "1:1 프로필 기록", oneOnOneProfileHistory);
     addRows(activities, "payment", "결제", payments);
+    addRows(activities, "open_card_repost", "오픈카드 유료 재노출", openCardRepostDiagnostics, "paid_at");
     addRows(activities, "support", "문의", support);
     addRows(activities, "phone_verification", "휴대폰 인증", phoneAttempts);
     addRows(activities, "notification", "알림", notifications);

@@ -34,7 +34,9 @@ export async function middleware(request: NextRequest) {
   const isLegacyAdminApiPath =
     pathname === "/api/dating/1on1/matches/admin" ||
     pathname.startsWith("/api/dating/cards/admin/");
-  const isAdminProtectedPath = isAdminPath || isAdminApiPath || isLegacyAdminApiPath;
+  const isAdminOnboardingPreview = pathname === "/onboarding/dating";
+  const isAdminProtectedPath =
+    isAdminPath || isAdminApiPath || isLegacyAdminApiPath || isAdminOnboardingPreview;
   const isAdminUnlockPage = pathname === "/admin/unlock";
   const isAdminUnlockApi = pathname === "/api/admin/panel-unlock";
   const isAdminMeApi = pathname === "/api/admin/me";
@@ -114,6 +116,7 @@ export async function middleware(request: NextRequest) {
   if (
     isAdminProtectedPath &&
     isAdmin &&
+    !isAdminOnboardingPreview &&
     isAdminPanelLockEnabled() &&
     !isAdminUnlockPage &&
     !isAdminUnlockApi &&
@@ -161,5 +164,6 @@ export const config = {
     "/api/admin/:path*",
     "/api/dating/1on1/matches/admin",
     "/api/dating/cards/admin/:path*",
+    "/onboarding/dating",
   ],
 };
