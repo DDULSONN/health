@@ -194,10 +194,6 @@ export default function DatingOnboardingPage() {
         const write = (await writeResponse.json().catch(() => ({}))) as { enabled?: boolean };
         const profile = (await profileResponse.json().catch(() => ({}))) as { profile?: { nickname?: string | null } };
         if (!active) return;
-        if (one.isAdmin !== true) {
-          router.replace("/mypage");
-          return;
-        }
         if (!one.phoneVerified) {
           router.replace(`/phone-verification?next=${encodeURIComponent("/onboarding/dating")}`);
           return;
@@ -381,6 +377,19 @@ export default function DatingOnboardingPage() {
     const successes: string[] = [];
 
     try {
+      if (!nicknameSaved) {
+        setProgress("닉네임 저장 중");
+        const nicknameResponse = await fetchWithTimeout("/api/mypage/profile", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ nickname: normalizeNickname(nickname) }),
+        });
+        if (!nicknameResponse.ok) {
+          throw new Error(await responseError(nicknameResponse, "닉네임 저장에 실패했습니다."));
+        }
+        setNicknameSaved(true);
+      }
+
       let nextOpenAssets = openAssets;
       let nextOneOnOnePaths = oneOnOnePhotoPaths;
       if (targets.open && !completed.open && !nextOpenAssets) {
@@ -482,7 +491,7 @@ export default function DatingOnboardingPage() {
       <div className="mx-auto max-w-xl">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-bold text-amber-700">관리자 통합 작성 테스트</p>
+            <p className="text-xs font-bold text-rose-600">오픈카드 · 1:1 통합 작성</p>
             <h1 className="mt-1 text-2xl font-black">한 번 작성하고 바로 시작해요</h1>
             <p className="mt-2 text-sm leading-6 text-neutral-600">공통 정보는 한 번만 받고, 기존 오픈카드와 1:1 신청서에 맞게 나눠 등록합니다.</p>
           </div>

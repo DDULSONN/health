@@ -34,9 +34,8 @@ export async function middleware(request: NextRequest) {
   const isLegacyAdminApiPath =
     pathname === "/api/dating/1on1/matches/admin" ||
     pathname.startsWith("/api/dating/cards/admin/");
-  const isAdminOnboardingPreview = pathname === "/onboarding/dating";
-  const isAdminProtectedPath =
-    isAdminPath || isAdminApiPath || isLegacyAdminApiPath || isAdminOnboardingPreview;
+  const isDatingOnboarding = pathname === "/onboarding/dating";
+  const isAdminProtectedPath = isAdminPath || isAdminApiPath || isLegacyAdminApiPath;
   const isAdminUnlockPage = pathname === "/admin/unlock";
   const isAdminUnlockApi = pathname === "/api/admin/panel-unlock";
   const isAdminMeApi = pathname === "/api/admin/me";
@@ -80,7 +79,7 @@ export async function middleware(request: NextRequest) {
 
   const protectedPrefixes = ["/community", "/mypage", "/cert/request", "/admin", "/certify", "/dating"];
   const isProtected =
-    protectedPrefixes.some((prefix) => pathname.startsWith(prefix)) && !isOpenCardsRoute;
+    (protectedPrefixes.some((prefix) => pathname.startsWith(prefix)) && !isOpenCardsRoute) || isDatingOnboarding;
   const isVerifyPage = pathname.startsWith("/verify-email");
   const isBanProtectedPage =
     pathname.startsWith("/community") ||
@@ -88,7 +87,8 @@ export async function middleware(request: NextRequest) {
     pathname.startsWith("/chat") ||
     pathname.startsWith("/notifications") ||
     pathname.startsWith("/tools") ||
-    pathname.startsWith("/certify");
+    pathname.startsWith("/certify") ||
+    isDatingOnboarding;
   const isBanProtectedApi =
     pathname.startsWith("/api/dating/") ||
     pathname.startsWith("/api/community/") ||
@@ -159,7 +159,6 @@ export async function middleware(request: NextRequest) {
   if (
     isAdminProtectedPath &&
     isAdmin &&
-    !isAdminOnboardingPreview &&
     isAdminPanelLockEnabled() &&
     !isAdminUnlockPage &&
     !isAdminUnlockApi &&

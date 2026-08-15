@@ -9,7 +9,7 @@ import { normalizeNickname, validateNickname } from "@/lib/nickname";
 const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
 const STORED_EMAIL_KEY = "recent_login_email";
 const NICKNAME_MAX = 12;
-const SIGNUP_NEXT = "/";
+const SIGNUP_NEXT = "/onboarding/dating";
 
 type SignupStep = "form" | "pending_verify" | "existing_account";
 type SocialProvider = "google" | "apple";
