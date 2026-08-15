@@ -14,19 +14,21 @@ const CAMPAIGN_KEY = "dating_registration_reminder";
 const MAIL_LOG_TABLE = "admin_open_card_outreach_mail_logs";
 const SMS_REMINDER_DELAY_HOURS = 24;
 
-type ReminderReason = "new_user_missing_registration" | "open_card_final_expired";
+type ReminderReason = "profileless_integrated_registration" | "open_card_final_expired";
 type SmsReminderReason = "open_card_final_expired_sms";
 
 type AuthUserLite = {
   id: string;
   email: string;
   created_at: string | null;
+  email_confirmed_at: string | null;
 };
 
 type ProfileLite = {
   user_id: string | null;
   nickname: string | null;
   role?: string | null;
+  is_banned?: boolean | null;
   phone_verified?: boolean | null;
   phone_e164?: string | null;
 };
@@ -101,7 +103,12 @@ async function fetchAllAuthUsers(admin: AdminClient) {
       const id = String(user.id ?? "").trim();
       const email = String(user.email ?? "").trim();
       if (!id || !email) continue;
-      users.push({ id, email, created_at: user.created_at ?? null });
+      users.push({
+        id,
+        email,
+        created_at: user.created_at ?? null,
+        email_confirmed_at: user.email_confirmed_at ?? null,
+      });
     }
 
     if (batch.length < USER_PAGE_SIZE) break;
@@ -117,7 +124,10 @@ async function fetchProfilesByUserIds(admin: AdminClient, userIds: string[]) {
 
   for (let start = 0; start < userIds.length; start += CHUNK_SIZE) {
     const chunk = userIds.slice(start, start + CHUNK_SIZE);
-    const res = await admin.from("profiles").select("user_id,nickname,role,phone_verified,phone_e164").in("user_id", chunk);
+    const res = await admin
+      .from("profiles")
+      .select("user_id,nickname,role,is_banned,phone_verified,phone_e164")
+      .in("user_id", chunk);
     if (res.error) throw new Error(`프로필을 불러오지 못했습니다. ${res.error.message}`);
 
     for (const row of (res.data ?? []) as ProfileLite[]) {
@@ -287,30 +297,20 @@ async function logSmsSendResult(
   }
 }
 
-function buildNewUserMail(input: {
-  nickname: string | null;
-  missingOpenCard: boolean;
-  missingOneOnOne: boolean;
-}) {
+function buildProfilelessRegistrationMail(nickname: string | null) {
   const siteUrl = getSiteUrl();
-  const missingLabels = [
-    input.missingOpenCard ? "오픈카드" : "",
-    input.missingOneOnOne ? "1대1 매칭 카드" : "",
-  ].filter(Boolean);
 
   return {
-    subject: "[광고] GymTools 소개 등록을 마저 완료해 주세요",
+    subject: "[광고] 짐툴 소개 프로필을 한 번에 등록해 보세요",
     body: [
-      `${displayName(input.nickname)}님, 안녕하세요. GymTools입니다.`,
+      `${displayName(nickname)}님, 안녕하세요. 짐툴입니다.`,
       "",
-      `아직 ${missingLabels.join(", ")} 등록이 완료되지 않았어요.`,
-      "등록을 마치면 다른 회원이 내 소개를 보고 지원하거나, 1대1 매칭 후보를 더 정확하게 받을 수 있습니다.",
+      "아직 오픈카드와 1:1 매칭 프로필이 등록되지 않았어요.",
+      "이제 사진과 기본 소개를 한 번만 작성하면 두 서비스에 맞게 나누어 등록할 수 있습니다.",
+      "내 카드는 지원을 받고, 1:1 신청서는 추천 후보를 확인하는 데 사용돼요.",
       "",
-      "오픈카드 등록하기",
-      `${siteUrl}/community/dating/cards/new`,
-      "",
-      "1대1 매칭 작성하기",
-      `${siteUrl}/dating/1on1`,
+      "오픈카드와 1:1 한 번에 작성하기",
+      `${siteUrl}/onboarding/dating`,
     ].join("\n"),
   };
 }
@@ -347,23 +347,19 @@ function buildNewUserRecipients(input: {
     if (!createdAt || createdAt < minCreatedAt || createdAt > maxCreatedAt) continue;
 
     const profile = input.profilesByUserId.get(user.id);
-    if (profile?.role === "admin") continue;
+    if (!user.email_confirmed_at || profile?.role === "admin" || profile?.is_banned === true) continue;
 
     const missingOpenCard = (input.openCardsByUserId.get(user.id) ?? []).length === 0;
     const missingOneOnOne = !input.oneOnOneUserIds.has(user.id);
-    if (!missingOpenCard && !missingOneOnOne) continue;
+    if (!missingOpenCard || !missingOneOnOne) continue;
 
-    const mail = buildNewUserMail({
-      nickname: profile?.nickname ?? null,
-      missingOpenCard,
-      missingOneOnOne,
-    });
+    const mail = buildProfilelessRegistrationMail(profile?.nickname ?? null);
 
     recipients.push({
       userId: user.id,
       email: user.email,
       nickname: profile?.nickname ?? null,
-      reason: "new_user_missing_registration",
+      reason: "profileless_integrated_registration",
       subject: mail.subject,
       body: mail.body,
       meta: {
@@ -572,7 +568,7 @@ export async function GET(request: Request) {
       failed: 0,
     },
     by_reason: {
-      new_user_missing_registration: { candidates: 0, sent: 0, skipped: 0, failed: 0 },
+      profileless_integrated_registration: { candidates: 0, sent: 0, skipped: 0, failed: 0 },
       open_card_final_expired: { candidates: 0, sent: 0, skipped: 0, failed: 0 },
     } satisfies Record<ReminderReason, { candidates: number; sent: number; skipped: number; failed: number }>,
   };
@@ -581,13 +577,22 @@ export async function GET(request: Request) {
     results.by_reason[recipient.reason].candidates += 1;
   }
 
-  for (const recipient of candidates.slice(0, MAX_SEND_PER_RUN)) {
+  let attemptedEmails = 0;
+  let examinedEmails = 0;
+  let deferredEmails = 0;
+  for (const recipient of candidates) {
+    examinedEmails += 1;
     try {
       if (await hasSuccessfulLog(admin, recipient.userId, recipient.reason, recipient.dedupeMeta)) {
         results.skipped += 1;
         results.by_reason[recipient.reason].skipped += 1;
         continue;
       }
+      if (attemptedEmails >= MAX_SEND_PER_RUN) {
+        deferredEmails = candidates.length - examinedEmails + 1;
+        break;
+      }
+      attemptedEmails += 1;
 
       const mailBody = appendMarketingEmailFooter({
         body: recipient.body,
@@ -628,10 +633,6 @@ export async function GET(request: Request) {
       results.failed += 1;
       results.by_reason[recipient.reason].failed += 1;
     }
-  }
-
-  if (candidates.length > MAX_SEND_PER_RUN) {
-    results.skipped += candidates.length - MAX_SEND_PER_RUN;
   }
 
   for (const recipient of smsCandidates.slice(0, MAX_SEND_PER_RUN)) {
@@ -676,5 +677,5 @@ export async function GET(request: Request) {
     results.sms.skipped += smsCandidates.length - MAX_SEND_PER_RUN;
   }
 
-  return NextResponse.json({ ok: true, results });
+  return NextResponse.json({ ok: true, results: { ...results, deferred: deferredEmails } });
 }
