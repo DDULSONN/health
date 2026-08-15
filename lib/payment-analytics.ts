@@ -2,6 +2,7 @@ type AnalyticsItem = {
   itemId: string;
   itemName?: string | null;
   amount: number;
+  placement?: string | null;
 };
 
 type GtagWindow = Window & {
@@ -20,6 +21,37 @@ export function trackCheckoutStarted(item: AnalyticsItem) {
   sendEvent("begin_checkout", {
     currency: "KRW",
     value: item.amount,
+    items: [
+      {
+        item_id: item.itemId,
+        item_name: item.itemName ?? item.itemId,
+        price: item.amount,
+        quantity: 1,
+        item_list_name: item.placement ?? undefined,
+      },
+    ],
+  });
+}
+
+export function trackPaidOfferViewed(item: AnalyticsItem) {
+  sendEvent("view_item", {
+    currency: "KRW",
+    value: item.amount,
+    items: [
+      {
+        item_id: item.itemId,
+        item_name: item.itemName ?? item.itemId,
+        price: item.amount,
+        quantity: 1,
+        item_list_name: item.placement ?? undefined,
+      },
+    ],
+  });
+}
+
+export function trackPaidOfferSelected(item: AnalyticsItem) {
+  sendEvent("select_item", {
+    item_list_name: item.placement ?? "paid_offer",
     items: [
       {
         item_id: item.itemId,

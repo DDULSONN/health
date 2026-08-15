@@ -16,7 +16,7 @@ import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 import { cacheOpenCardDetail, cachePaidCardDetail } from "@/lib/dating-detail-cache";
 import { createClient } from "@/lib/supabase/client";
 import { trackCheckoutStarted } from "@/lib/payment-analytics";
-import { ONE_ON_ONE_PLUS_PRICE_KRW } from "@/lib/dating-1on1-plus";
+import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
 
 type PublicCard = {
   id: string;
@@ -1748,7 +1748,6 @@ export default function OpenCardsPage() {
   const [boostingFirstQueueCardId, setBoostingFirstQueueCardId] = useState("");
   const [swipeSubscriptionStatus, setSwipeSubscriptionStatus] = useState<SwipeSubscriptionStatus | null>(null);
   const [swipeSubscriptionLoading, setSwipeSubscriptionLoading] = useState(false);
-  const [swipeSubscriptionSubmitting, setSwipeSubscriptionSubmitting] = useState(false);
   const [swipePremiumGuideOpen, setSwipePremiumGuideOpen] = useState(false);
   const [homeAdLink, setHomeAdLink] = useState<HomeAdLinkSetting | null>(null);
   const [reelsListings, setReelsListings] = useState<ReelsDatingListing[]>([]);
@@ -2482,38 +2481,6 @@ export default function OpenCardsPage() {
     },
     [activeSex, loadSwipe, swipeState.canSwipe, swipeState.candidate, swipeState.loggedIn, swipeSubmitting]
   );
-
-  const handleSwipePremiumCheckout = useCallback(async () => {
-    if (swipeSubscriptionSubmitting) return;
-    setSwipeSubscriptionSubmitting(true);
-    setSwipeMessage("");
-    try {
-      const res = await fetch("/api/payments/toss/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productType: "swipe_premium_30d",
-        }),
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        error?: string;
-        message?: string;
-        checkoutUrl?: string;
-      };
-      if (!res.ok || !body.ok) {
-        throw new Error(withPaymentCardNotice(body.message ?? body.error ?? "빠른매칭 플러스 결제를 시작하지 못했습니다."));
-      }
-      if (!body.checkoutUrl) {
-        throw new Error(withPaymentCardNotice("결제창을 열지 못했습니다."));
-      }
-      window.location.href = body.checkoutUrl;
-    } catch (error) {
-      setSwipeMessage(error instanceof Error ? error.message : withPaymentCardNotice("빠른매칭 플러스 결제를 시작하지 못했습니다."));
-    } finally {
-      setSwipeSubscriptionSubmitting(false);
-    }
-  }, [swipeSubscriptionSubmitting]);
 
   const handleOneOnOneMatchAction = useCallback(
     async (
@@ -3330,27 +3297,13 @@ export default function OpenCardsPage() {
                 ×
               </button>
             </div>
-            <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
-              <p className="text-sm font-semibold text-amber-900">
-                {SWIPE_PREMIUM_PRICE_KRW.toLocaleString("ko-KR")}원 · {SWIPE_PREMIUM_DURATION_DAYS}일 이용
-              </p>
-              <p className="mt-1 text-xs leading-5 text-amber-900/80">
-                더 많은 후보 확인과 프로필 노출 강화가 함께 적용돼요. 결제창에서 이용 가능한 결제수단을 선택할 수 있어요.
-              </p>
-            </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <button
-                type="button"
-                disabled={!viewerLoggedIn || swipeSubscriptionSubmitting || swipeSubscriptionLoading}
-                onClick={() => void handleSwipePremiumCheckout()}
-                className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-2xl bg-amber-500 px-4 text-sm font-bold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-amber-600"
-              >
-                {swipeSubscriptionStatus?.status === "active"
-                  ? "30일 더 연장하기"
-                  : swipeSubscriptionSubmitting
-                    ? "이동 중..."
-                    : "결제하고 시작"}
-              </button>
+            <DatingPlusOffers
+              mode="swipe"
+              placement="open_card_quick_match_modal"
+              disabled={!viewerLoggedIn || swipeSubscriptionLoading}
+              className="mt-4"
+            />
+            <div className="mt-3 flex flex-wrap gap-2">
               <a
                 href={OPEN_KAKAO_URL}
                 target="_blank"
@@ -3578,7 +3531,6 @@ function OneOnOneHomePanel({
   onRefreshRecommendations: (sourceCardId: string) => void;
 }) {
   const [plusGuideOpen, setPlusGuideOpen] = useState(false);
-  const [plusSubmitting, setPlusSubmitting] = useState(false);
   const myCards = data?.myCards ?? [];
   const matches = data?.matches ?? [];
   const activeMatches = matches.filter((match) =>
@@ -3607,37 +3559,6 @@ function OneOnOneHomePanel({
     if (aImportant !== bImportant) return bImportant - aImportant;
     return String(b.created_at ?? "").localeCompare(String(a.created_at ?? ""));
   });
-  const handlePlusCheckout = async () => {
-    const cardId = String(activeCards[0]?.id ?? "");
-    if (!cardId || plusSubmitting) return;
-    setPlusSubmitting(true);
-    try {
-      const res = await fetch("/api/payments/toss/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productType: "one_on_one_plus_30d", cardId }),
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        error?: string;
-        message?: string;
-        checkoutUrl?: string;
-      };
-      if (!res.ok || body.ok === false || !body.checkoutUrl) {
-        throw new Error(body.message ?? body.error ?? "1:1 매칭 플러스 결제창을 열지 못했습니다.");
-      }
-      trackCheckoutStarted({
-        itemId: "one_on_one_plus_30d",
-        itemName: "1:1 매칭 플러스 30일",
-        amount: ONE_ON_ONE_PLUS_PRICE_KRW,
-      });
-      window.location.href = body.checkoutUrl;
-    } catch (checkoutError) {
-      alert(checkoutError instanceof Error ? checkoutError.message : "1:1 매칭 플러스 결제를 시작하지 못했습니다.");
-      setPlusSubmitting(false);
-    }
-  };
-
   return (
     <section className="mb-5 rounded-[30px] border border-black/5 bg-white p-4 shadow-[0_14px_40px_rgba(15,23,42,0.05)] md:p-6">
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
@@ -3759,7 +3680,7 @@ function OneOnOneHomePanel({
                   <p className="mt-2 text-xs leading-5 text-neutral-600">
                     {plusContactExchangeIncluded
                       ? "기존 혜택 적용 중 · 번호교환 포함 · 후보 새로고침 하루 2회"
-                      : "30일 3만원 · 후보 새로고침 하루 2회 · 프로필 우선 노출"}
+                      : "7일 9,900원부터 · 후보 새로고침 하루 2회 · 프로필 우선 노출"}
                   </p>
                   {!plusContactExchangeIncluded ? (
                     <p className="mt-1 text-[11px] font-semibold text-neutral-500">번호교환은 기존처럼 건별 결제돼요.</p>
@@ -3786,24 +3707,12 @@ function OneOnOneHomePanel({
               </div>
               {!plusActive && plusGuideOpen ? (
                 <div className="relative mt-4 border-t border-amber-200 pt-4">
-                  <div className="flex items-end justify-between gap-3">
-                    <div>
-                      <p className="text-sm font-black text-neutral-950">30일 동안 더 넓게 만나보세요</p>
-                      <p className="mt-1 text-xs leading-5 text-neutral-600">후보를 하루 한 번 더 새로 보고, 내 프로필이 추천 후보에 더 잘 노출됩니다.</p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-lg font-black text-[#8a5d0a]">{ONE_ON_ONE_PLUS_PRICE_KRW.toLocaleString("ko-KR")}원</p>
-                      <p className="text-[10px] text-neutral-500">30일 이용권</p>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    disabled={plusSubmitting}
-                    onClick={() => void handlePlusCheckout()}
-                    className="mt-4 h-11 w-full rounded-lg bg-[#8a5d0a] text-sm font-bold text-white shadow-[0_8px_22px_rgba(138,93,10,0.28)] transition hover:bg-[#704a06] disabled:cursor-not-allowed disabled:bg-neutral-300 disabled:shadow-none"
-                  >
-                    {plusSubmitting ? "결제 준비 중..." : "30일 플러스 시작하기"}
-                  </button>
+                  <p className="mb-3 text-xs leading-5 text-neutral-600">짧게 먼저 써보거나, 두 매칭 플러스를 한 번에 시작할 수 있어요.</p>
+                  <DatingPlusOffers
+                    mode="one_on_one"
+                    placement="open_card_one_on_one_panel"
+                    oneOnOneCardId={String(activeCards[0]?.id ?? "")}
+                  />
                 </div>
               ) : null}
             </div>

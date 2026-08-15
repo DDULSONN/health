@@ -43,6 +43,7 @@ type TossOrderRow = {
 
 type FunnelOrderRow = {
   product_type: string;
+  product_meta: Record<string, unknown> | null;
   amount: number;
   status: string;
   created_at: string;
@@ -54,8 +55,10 @@ const PAYMENT_PRODUCT_LABELS: Record<string, string> = {
   more_view: "이상형 더보기",
   city_view: "가까운 이상형",
   one_on_one_contact_exchange: "1:1 번호교환",
+  one_on_one_plus_7d: "1:1 매칭 플러스 7일",
   one_on_one_plus_30d: "1:1 매칭 플러스",
   swipe_premium_30d: "빠른매칭 플러스",
+  dating_all_pass_30d: "매칭 올패스 30일",
   love_fortune_detail: "연애운 상세 분석",
   account_unban: "이용 제한 해제",
 };
@@ -67,7 +70,7 @@ async function fetchFunnelOrders(admin: ReturnType<typeof createAdminClient>, si
   for (let offset = 0; offset < 50000; offset += pageSize) {
     const result = await admin
       .from("toss_test_payment_orders")
-      .select("product_type,amount,status,created_at")
+      .select("product_type,product_meta,amount,status,created_at")
       .gte("created_at", sinceIso)
       .order("created_at", { ascending: false })
       .range(offset, offset + pageSize - 1);
@@ -96,6 +99,13 @@ function buildFunnel(orders: FunnelOrderRow[], sinceMs: number) {
       const readyCount = productOrders.filter((order) => order.status === "ready").length;
       const failedCount = productOrders.filter((order) => order.status === "failed" || order.status === "canceled").length;
       const checkoutCount = productOrders.length;
+      const resumedCount = productOrders.filter((order) => Boolean(order.product_meta?.resumedFromOrderId)).length;
+      const placementCounts = new Map<string, number>();
+      for (const order of productOrders) {
+        const placement = String(order.product_meta?.offerPlacement ?? "").trim();
+        if (placement) placementCounts.set(placement, (placementCounts.get(placement) ?? 0) + 1);
+      }
+      const topPlacement = [...placementCounts.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] ?? null;
       return {
         productType,
         label: PAYMENT_PRODUCT_LABELS[productType] ?? productType,
@@ -103,6 +113,8 @@ function buildFunnel(orders: FunnelOrderRow[], sinceMs: number) {
         paidCount: paidOrders.length,
         readyCount,
         failedCount,
+        resumedCount,
+        topPlacement,
         revenueKrw: paidOrders.reduce((sum, order) => sum + Math.max(0, Number(order.amount) || 0), 0),
         conversionRate: checkoutCount > 0 ? Math.round((paidOrders.length / checkoutCount) * 1000) / 10 : 0,
       };

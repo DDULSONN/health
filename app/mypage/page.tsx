@@ -12,7 +12,7 @@ import { normalizeNickname, validateNickname } from "@/lib/nickname";
 import { pickLoveFortuneFaceAsset } from "@/lib/love-fortune-face-assets";
 import { PROVINCE_ORDER } from "@/lib/region-city";
 import { trackCheckoutStarted } from "@/lib/payment-analytics";
-import { ONE_ON_ONE_PLUS_PRICE_KRW } from "@/lib/dating-1on1-plus";
+import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
 import AdminDatingOnboardingTestLink from "@/components/admin/AdminDatingOnboardingTestLink";
 import AdminOpenCardRepostDiagnostics from "@/components/admin/AdminOpenCardRepostDiagnostics";
 import AdminOpenCardRequeuePanel from "@/components/admin/AdminOpenCardRequeuePanel";
@@ -504,6 +504,7 @@ type SwipeSubscriptionStatus = {
 
 type MyPaymentCenterOrder = {
   id: string;
+  product_ref_id?: string | null;
   product_type: "apply_credits" | "paid_card" | "more_view" | string;
   product_meta: Record<string, unknown> | null;
   toss_order_id: string;
@@ -515,6 +516,7 @@ type MyPaymentCenterOrder = {
   method: string | null;
   receiptUrl: string | null;
   canResume?: boolean;
+  canResumeProduct?: boolean;
   resumeMatchId?: string | null;
 };
 
@@ -599,7 +601,9 @@ function formatPaymentProductLabel(order: MyPaymentCenterOrder) {
   if (order.product_type === "one_on_one_contact_exchange") return "1:1 번호 즉시 교환";
   if (order.product_type === "one_on_one_priority_24h") return "1:1 우선 추천권";
   if (order.product_type === "one_on_one_plus_30d") return "1:1 매칭 플러스 30일";
+  if (order.product_type === "one_on_one_plus_7d") return "1:1 매칭 플러스 7일";
   if (order.product_type === "swipe_premium_30d") return "빠른매칭 플러스";
+  if (order.product_type === "dating_all_pass_30d") return "매칭 올패스 30일";
   if (order.product_type === "love_fortune_detail") return "연애운 상세 분석";
   if (order.product_type === "account_unban") return "계정 이용 제한 해제";
   return order.order_name ?? order.product_type;
@@ -627,7 +631,9 @@ function formatPaymentResultLabel(order: MyPaymentCenterOrder) {
   if (order.product_type === "one_on_one_contact_exchange") return "상대 연락처 공개 완료";
   if (order.product_type === "one_on_one_priority_24h") return "1:1 우선 추천 적용 완료";
   if (order.product_type === "one_on_one_plus_30d") return "1:1 매칭 플러스 적용 완료";
+  if (order.product_type === "one_on_one_plus_7d") return "1:1 매칭 플러스 7일 적용 완료";
   if (order.product_type === "swipe_premium_30d") return "빠른매칭 플러스 적용 완료";
+  if (order.product_type === "dating_all_pass_30d") return "두 플러스 적용 완료";
   if (order.product_type === "love_fortune_detail") return "연애운 상세 분석 이용권 반영 완료";
   if (order.product_type === "account_unban") return "계정 이용 제한 해제 완료";
   return "결제 완료";
@@ -1447,6 +1453,8 @@ type AdminPaymentFunnelItem = {
   paidCount: number;
   readyCount: number;
   failedCount: number;
+  resumedCount: number;
+  topPlacement: string | null;
   revenueKrw: number;
   conversionRate: number;
 };
@@ -2106,10 +2114,7 @@ export default function MyPage() {
   const [savingSwipeVisibility, setSavingSwipeVisibility] = useState(false);
   const [swipeSubscriptionStatus, setSwipeSubscriptionStatus] = useState<SwipeSubscriptionStatus | null>(null);
   const [swipeSubscriptionLoading, setSwipeSubscriptionLoading] = useState(false);
-  const [swipeSubscriptionSubmitting, setSwipeSubscriptionSubmitting] = useState(false);
   const [swipeSubscriptionError, setSwipeSubscriptionError] = useState("");
-  const [swipeSubscriptionInfo, setSwipeSubscriptionInfo] = useState("");
-  const [oneOnOnePrioritySubmittingIds, setOneOnOnePrioritySubmittingIds] = useState<string[]>([]);
   const [oneOnOnePriorityDetailCardId, setOneOnOnePriorityDetailCardId] = useState<string | null>(null);
   const [swipeSubscriptionPanelOpen, setSwipeSubscriptionPanelOpen] = useState(false);
   const [supportItems, setSupportItems] = useState<SupportInquiry[]>([]);
@@ -2129,10 +2134,18 @@ export default function MyPage() {
   const [paymentCenterLoading, setPaymentCenterLoading] = useState(false);
   const [paymentCenterError, setPaymentCenterError] = useState("");
   const [paymentCenterData, setPaymentCenterData] = useState<MyPaymentCenterData | null>(null);
+  const [resumingPaymentOrderId, setResumingPaymentOrderId] = useState<string | null>(null);
   const resumableOneOnOneOrder = useMemo(
     () =>
       paymentCenterData?.orders.find(
         (order) => order.status === "ready" && order.canResume && Boolean(order.resumeMatchId)
+      ) ?? null,
+    [paymentCenterData]
+  );
+  const resumableProductOrder = useMemo(
+    () =>
+      paymentCenterData?.orders.find(
+        (order) => order.status === "ready" && order.canResumeProduct === true
       ) ?? null,
     [paymentCenterData]
   );
@@ -2237,6 +2250,58 @@ export default function MyPage() {
       setPaymentCenterLoading(false);
     }
   }, [paymentCenterLoaded, paymentCenterLoading]);
+
+  const resumePaymentOrder = useCallback(async (order: MyPaymentCenterOrder) => {
+    if (resumingPaymentOrderId) return;
+    setResumingPaymentOrderId(order.id);
+    setPaymentCenterError("");
+
+    try {
+      const meta = order.product_meta ?? {};
+      const requestBody: Record<string, unknown> = {
+        productType: order.product_type,
+        resumedFromOrderId: order.id,
+        offerPlacement: "mypage_payment_recovery",
+      };
+
+      if (order.product_type === "more_view") requestBody.sex = meta.sex;
+      if (order.product_type === "city_view") requestBody.province = meta.province;
+      if (order.product_type === "one_on_one_plus_7d" || order.product_type === "one_on_one_plus_30d" || order.product_type === "dating_all_pass_30d") {
+        requestBody.cardId = meta.cardId;
+      }
+      if (order.product_type === "paid_card") {
+        if (meta.source === "open_card_reopen") requestBody.openCardId = meta.openCardId ?? order.product_ref_id;
+        else requestBody.paidCardId = order.product_ref_id;
+      }
+
+      const res = await fetch("/api/payments/toss/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        message?: string;
+        error?: string;
+        checkoutUrl?: string;
+        amount?: number;
+      };
+      if (!res.ok || body.ok === false || !body.checkoutUrl) {
+        throw new Error(body.message ?? body.error ?? "결제창을 다시 열지 못했습니다.");
+      }
+
+      trackCheckoutStarted({
+        itemId: order.product_type,
+        itemName: formatPaymentProductLabel(order),
+        amount: body.amount ?? order.amount,
+        placement: "mypage_payment_recovery",
+      });
+      window.location.href = body.checkoutUrl;
+    } catch (error) {
+      setPaymentCenterError(error instanceof Error ? error.message : "결제를 이어가지 못했습니다.");
+      setResumingPaymentOrderId(null);
+    }
+  }, [resumingPaymentOrderId]);
 
   const loadLoveFortuneReadings = useCallback(async (force = false) => {
     if (!isAdmin) return;
@@ -4745,46 +4810,6 @@ export default function MyPage() {
     }
   };
 
-  const handleRequestSwipeSubscription = async () => {
-    if (swipeSubscriptionSubmitting) return;
-    setSwipeSubscriptionSubmitting(true);
-    setSwipeSubscriptionError("");
-    setSwipeSubscriptionInfo("");
-    try {
-      const res = await fetch("/api/payments/toss/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productType: "swipe_premium_30d",
-        }),
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        error?: string;
-        message?: string;
-        checkoutUrl?: string;
-      };
-      if (!res.ok || body.ok === false) {
-        throw new Error(withPaymentCardNotice(body.message ?? body.error ?? "빠른매칭 플러스 결제를 시작하지 못했습니다."));
-      }
-      if (!body.checkoutUrl) {
-        throw new Error(withPaymentCardNotice("결제창을 열지 못했습니다."));
-      }
-      trackCheckoutStarted({
-        itemId: "swipe_premium_30d",
-        itemName: "빠른매칭 플러스",
-        amount: 30000,
-      });
-      window.location.href = body.checkoutUrl;
-    } catch (error) {
-      setSwipeSubscriptionError(
-        error instanceof Error ? error.message : withPaymentCardNotice("빠른매칭 플러스 결제를 시작하지 못했습니다.")
-      );
-    } finally {
-      setSwipeSubscriptionSubmitting(false);
-    }
-  };
-
   const reloadOpenDatingConnections = async () => {
     const [openRes, paidRes] = await Promise.all([
       fetch("/api/dating/cards/my/connections", { cache: "no-store" }),
@@ -5291,43 +5316,6 @@ export default function MyPage() {
       setMarketingConsentMessage(error instanceof Error ? error.message : "수신 설정을 저장하지 못했습니다.");
     } finally {
       setMarketingConsentLoading(false);
-    }
-  };
-
-  const handleRequestOneOnOnePriority = async (cardId: string) => {
-    if (oneOnOnePrioritySubmittingIds.includes(cardId)) return;
-    setOneOnOnePrioritySubmittingIds((prev) => [...prev, cardId]);
-    try {
-      const res = await fetch("/api/payments/toss/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          productType: "one_on_one_plus_30d",
-          cardId,
-        }),
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        error?: string;
-        message?: string;
-        checkoutUrl?: string;
-      };
-      if (!res.ok || body.ok === false) {
-        throw new Error(withPaymentCardNotice(body.message ?? body.error ?? "1:1 매칭 플러스 결제를 시작하지 못했습니다."));
-      }
-      if (!body.checkoutUrl) {
-        throw new Error(withPaymentCardNotice("결제창을 열지 못했습니다."));
-      }
-      trackCheckoutStarted({
-        itemId: "one_on_one_plus_30d",
-        itemName: "1:1 매칭 플러스 30일",
-        amount: ONE_ON_ONE_PLUS_PRICE_KRW,
-      });
-      window.location.href = body.checkoutUrl;
-    } catch (error) {
-      alert(error instanceof Error ? error.message : withPaymentCardNotice("1:1 매칭 플러스 결제를 시작하지 못했습니다."));
-    } finally {
-      setOneOnOnePrioritySubmittingIds((prev) => prev.filter((id) => id !== cardId));
     }
   };
 
@@ -8004,6 +7992,12 @@ export default function MyPage() {
                 </p>
                 <p className="mt-2 text-[11px] text-amber-700">결제창에서 이용 가능한 결제수단을 선택할 수 있어요.</p>
                 <p className="mt-1 text-[11px] text-amber-700">그 밖의 문의는 오픈카톡으로 부탁드려요.</p>
+                <DatingPlusOffers
+                  mode="swipe"
+                  placement="mypage_quick_match"
+                  disabled={swipeSubscriptionLoading}
+                  className="mt-3"
+                />
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <a
                     href={OPEN_KAKAO_URL}
@@ -8013,21 +8007,6 @@ export default function MyPage() {
                   >
                     오픈카톡 문의
                   </a>
-                  <button
-                    type="button"
-                    disabled={
-                      swipeSubscriptionSubmitting ||
-                      swipeSubscriptionLoading
-                    }
-                    onClick={() => void handleRequestSwipeSubscription()}
-                    className="h-8 rounded-md bg-amber-500 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    {swipeSubscriptionSubmitting
-                      ? "이동 중..."
-                      : swipeSubscriptionStatus?.status === "active"
-                        ? "30일 더 연장"
-                        : "결제하고 시작"}
-                  </button>
                 </div>
                 {swipeSubscriptionStatus?.status === "pending" && swipeSubscriptionStatus.pendingSubscription?.id ? (
                   <p className="mt-2 text-[11px] text-amber-700">
@@ -8039,9 +8018,6 @@ export default function MyPage() {
                 ) : null}
                 {swipeSubscriptionError ? (
                   <p className="mt-2 text-[11px] text-rose-600">{swipeSubscriptionError}</p>
-                ) : null}
-                {swipeSubscriptionInfo ? (
-                  <p className="mt-2 text-[11px] text-emerald-700">{swipeSubscriptionInfo}</p>
                 ) : null}
               </div>
             )}
@@ -8647,6 +8623,25 @@ export default function MyPage() {
           </div>
         ) : null}
 
+        {resumableProductOrder ? (
+          <div className="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3">
+            <div>
+              <p className="text-sm font-semibold text-neutral-950">완료하지 않은 결제가 있어요.</p>
+              <p className="mt-1 text-xs text-neutral-600">
+                {formatPaymentProductLabel(resumableProductOrder)} · 기존 주문은 취소하고 새 결제창으로 안전하게 이어집니다.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => void resumePaymentOrder(resumableProductOrder)}
+              disabled={Boolean(resumingPaymentOrderId)}
+              className="inline-flex min-h-10 items-center rounded-lg bg-neutral-900 px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {resumingPaymentOrderId === resumableProductOrder.id ? "결제창 준비 중..." : "결제 이어하기"}
+            </button>
+          </div>
+        ) : null}
+
         {paymentCenterOpen && (
           <>
             {paymentCenterError ? (
@@ -8770,6 +8765,16 @@ export default function MyPage() {
                                 {processingOneOnOneContactExchangeIds.includes(order.resumeMatchId)
                                   ? "결제창 준비 중..."
                                   : "결제 이어하기"}
+                              </button>
+                            ) : null}
+                            {order.status === "ready" && order.canResumeProduct ? (
+                              <button
+                                type="button"
+                                onClick={() => void resumePaymentOrder(order)}
+                                disabled={Boolean(resumingPaymentOrderId)}
+                                className="inline-flex min-h-9 items-center rounded-lg bg-neutral-900 px-3 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                              >
+                                {resumingPaymentOrderId === order.id ? "결제창 준비 중..." : "다시 결제"}
                               </button>
                             ) : null}
                           </div>
@@ -9442,7 +9447,7 @@ export default function MyPage() {
                 : Number.NaN;
               const priorityBoostActive = Number.isFinite(priorityBoostExpiresAtMs) && priorityBoostExpiresAtMs > Date.now();
               const plusContactExchangeIncluded = item.plus_contact_exchange_included === true;
-              const priorityBoostSubmitting = oneOnOnePrioritySubmittingIds.includes(item.id);
+              const priorityBoostSubmitting = false;
               const canBuyPriorityBoost = ["submitted", "reviewing", "approved"].includes(item.status);
               const priorityBoostDetailOpen = oneOnOnePriorityDetailCardId === item.id;
 
@@ -9583,7 +9588,7 @@ export default function MyPage() {
                           <p className="mt-2 text-xs leading-5 text-neutral-600">
                             {plusContactExchangeIncluded
                               ? "기존 혜택 적용 중 · 번호교환 포함 · 후보 새로고침 하루 2회"
-                              : "30일 3만원 · 후보 새로고침 하루 2회 · 프로필 우선 노출"}
+                              : "7일 9,900원부터 · 후보 새로고침 하루 2회 · 프로필 우선 노출"}
                           </p>
                           {!plusContactExchangeIncluded ? (
                             <p className="mt-1 text-[11px] font-semibold text-neutral-500">번호교환은 기존처럼 건별 결제돼요.</p>
@@ -9611,31 +9616,12 @@ export default function MyPage() {
                       </div>
                       {!priorityBoostActive && priorityBoostDetailOpen && (
                         <div className="relative mt-4 border-t border-amber-200 pt-4">
-                          <div className="flex flex-wrap items-start justify-between gap-3">
-                            <div>
-                              <p className="text-sm font-bold text-neutral-950">30일 동안 매칭 기회를 넓혀보세요</p>
-                              <ul className="mt-2 space-y-2 text-xs leading-5 text-neutral-700">
-                                <li><strong className="text-neutral-950">후보 새로고침 하루 2회</strong> · 기본보다 한 번 더</li>
-                                <li><strong className="text-neutral-950">프로필 우선 노출</strong> · 추천 후보에서 더 잘 보이게</li>
-                                <li><strong className="text-neutral-950">번호교환</strong> · 기존과 동일하게 건별 결제</li>
-                              </ul>
-                              <p className="mt-1 text-[11px] leading-5 text-neutral-500">
-                                매칭을 보장하지 않으며 차단·성별·진행 상태 기준은 그대로 적용됩니다.
-                              </p>
-                            </div>
-                            <div className="text-right">
-                              <p className="text-lg font-black text-[#8a5d0a]">{ONE_ON_ONE_PLUS_PRICE_KRW.toLocaleString("ko-KR")}원</p>
-                              <p className="mt-0.5 text-[11px] text-neutral-500">30일 일시 이용권</p>
-                            </div>
-                          </div>
-                          <button
-                            type="button"
-                            disabled={priorityBoostSubmitting}
-                            onClick={() => void handleRequestOneOnOnePriority(item.id)}
-                            className="mt-4 h-11 w-full rounded-lg bg-[#8a5d0a] text-sm font-bold text-white shadow-[0_8px_22px_rgba(138,93,10,0.28)] transition hover:bg-[#704a06] disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500 disabled:shadow-none"
-                          >
-                            {priorityBoostSubmitting ? "결제 준비 중..." : "30일 플러스 시작하기"}
-                          </button>
+                          <p className="mb-3 text-xs leading-5 text-neutral-600">7일권으로 먼저 써보거나, 빠른매칭까지 묶어서 시작할 수 있어요.</p>
+                          <DatingPlusOffers
+                            mode="one_on_one"
+                            placement="mypage_one_on_one_card"
+                            oneOnOneCardId={item.id}
+                          />
                         </div>
                       )}
                     </div>
@@ -11532,7 +11518,7 @@ export default function MyPage() {
                             <th className="px-2 py-2 font-medium">7일 매출</th>
                             <th className="px-2 py-2 font-medium">30일 생성/완료</th>
                             <th className="px-2 py-2 font-medium">30일 전환</th>
-                            <th className="px-2 py-2 font-medium">30일 미완료</th>
+                            <th className="px-2 py-2 font-medium">30일 미완료/복구</th>
                             <th className="px-2 py-2 font-medium">30일 매출</th>
                           </tr>
                         </thead>
@@ -11541,13 +11527,16 @@ export default function MyPage() {
                             const item7 = adminPaymentCenter.funnel.recent7d.find((item) => item.productType === item30.productType);
                             return (
                               <tr key={`payment-funnel-${item30.productType}`} className="border-b border-violet-50 last:border-0">
-                                <td className="px-2 py-3 font-semibold text-neutral-900">{item30.label}</td>
+                                <td className="px-2 py-3 font-semibold text-neutral-900">
+                                  {item30.label}
+                                  {item30.topPlacement ? <span className="mt-1 block text-[10px] font-normal text-neutral-400">{item30.topPlacement}</span> : null}
+                                </td>
                                 <td className="px-2 py-3 text-neutral-700">{item7?.checkoutCount ?? 0} / {item7?.paidCount ?? 0}</td>
                                 <td className="px-2 py-3 font-semibold text-neutral-900">{(item7?.conversionRate ?? 0).toLocaleString("ko-KR")}%</td>
                                 <td className="px-2 py-3 text-neutral-700">{(item7?.revenueKrw ?? 0).toLocaleString("ko-KR")}원</td>
                                 <td className="px-2 py-3 text-neutral-700">{item30.checkoutCount} / {item30.paidCount}</td>
                                 <td className="px-2 py-3 font-semibold text-neutral-900">{item30.conversionRate.toLocaleString("ko-KR")}%</td>
-                                <td className="px-2 py-3 text-neutral-700">대기 {item30.readyCount} · 실패/취소 {item30.failedCount}</td>
+                                <td className="px-2 py-3 text-neutral-700">대기 {item30.readyCount} · 실패/취소 {item30.failedCount} · 복구 {item30.resumedCount}</td>
                                 <td className="px-2 py-3 font-semibold text-neutral-900">{item30.revenueKrw.toLocaleString("ko-KR")}원</td>
                               </tr>
                             );
@@ -11585,10 +11574,14 @@ export default function MyPage() {
                                       ? "가까운 이상형"
                                     : order.product_type === "one_on_one_contact_exchange"
                                       ? "1:1 번호교환"
+                                      : order.product_type === "one_on_one_plus_7d"
+                                        ? "1:1 매칭 플러스 7일"
                                       : order.product_type === "one_on_one_plus_30d"
                                         ? "1:1 매칭 플러스"
                                       : order.product_type === "swipe_premium_30d"
                                         ? "빠른매칭 플러스"
+                                      : order.product_type === "dating_all_pass_30d"
+                                        ? "매칭 올패스"
                                     : order.product_type}
                               {" / "}
                               {order.amount.toLocaleString("ko-KR")}원

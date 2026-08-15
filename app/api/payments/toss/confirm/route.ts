@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { ONE_ON_ONE_PLUS_DURATION_DAYS, grantOneOnOnePlus } from "@/lib/dating-1on1-plus";
+import {
+  DATING_ALL_PASS_DURATION_DAYS,
+  ONE_ON_ONE_PLUS_DURATION_DAYS,
+  ONE_ON_ONE_PLUS_7D_DURATION_DAYS,
+  grantOneOnOnePlus,
+} from "@/lib/dating-1on1-plus";
 import { CITY_VIEW_ACCESS_HOURS } from "@/lib/dating-city-view";
 import { getActiveMoreViewGrant, normalizeCardSex } from "@/lib/dating-more-view";
 import {
@@ -38,8 +43,10 @@ type TossOrderRow = {
     | "city_view"
     | "one_on_one_contact_exchange"
     | "one_on_one_priority_24h"
+    | "one_on_one_plus_7d"
     | "one_on_one_plus_30d"
     | "swipe_premium_30d"
+    | "dating_all_pass_30d"
     | "love_fortune_detail"
     | "account_unban";
   product_ref_id: string | null;
@@ -458,7 +465,11 @@ async function ensureOneOnOnePlusFulfilled(
   const durationDays =
     typeof order.product_meta?.durationDays === "number" && Number.isFinite(order.product_meta.durationDays)
       ? Math.max(1, Math.round(order.product_meta.durationDays))
-      : ONE_ON_ONE_PLUS_DURATION_DAYS;
+      : order.product_type === "one_on_one_plus_7d"
+        ? ONE_ON_ONE_PLUS_7D_DURATION_DAYS
+        : order.product_type === "dating_all_pass_30d"
+          ? DATING_ALL_PASS_DURATION_DAYS
+          : ONE_ON_ONE_PLUS_DURATION_DAYS;
   const subscription = await grantOneOnOnePlus(admin, {
     userId: order.user_id,
     grantKey: `toss:${order.toss_order_id}`,
@@ -492,13 +503,21 @@ async function ensureSwipePremiumFulfilled(
   }
 
   const durationDays =
-    typeof order.product_meta?.durationDays === "number" && Number.isFinite(order.product_meta.durationDays)
-      ? Math.max(1, Number(order.product_meta.durationDays))
+    typeof order.product_meta?.swipeDurationDays === "number" && Number.isFinite(order.product_meta.swipeDurationDays)
+      ? Math.max(1, Number(order.product_meta.swipeDurationDays))
+      : typeof order.product_meta?.durationDays === "number" && Number.isFinite(order.product_meta.durationDays)
+        ? Math.max(1, Number(order.product_meta.durationDays))
       : SWIPE_PREMIUM_DURATION_DAYS;
   const dailyLimit =
-    typeof order.product_meta?.dailyLimit === "number" && Number.isFinite(order.product_meta.dailyLimit)
-      ? Math.max(SWIPE_PREMIUM_DAILY_LIMIT, Number(order.product_meta.dailyLimit))
+    typeof order.product_meta?.swipeDailyLimit === "number" && Number.isFinite(order.product_meta.swipeDailyLimit)
+      ? Math.max(SWIPE_PREMIUM_DAILY_LIMIT, Number(order.product_meta.swipeDailyLimit))
+      : typeof order.product_meta?.dailyLimit === "number" && Number.isFinite(order.product_meta.dailyLimit)
+        ? Math.max(SWIPE_PREMIUM_DAILY_LIMIT, Number(order.product_meta.dailyLimit))
       : SWIPE_PREMIUM_DAILY_LIMIT;
+  const entitlementAmount =
+    typeof order.product_meta?.swipePremiumAmount === "number" && Number.isFinite(order.product_meta.swipePremiumAmount)
+      ? Math.max(0, Number(order.product_meta.swipePremiumAmount))
+      : order.amount;
   const grantNote = `toss payment ${order.toss_order_id} | auto-approved`;
 
   const existingGrantRes = await admin
@@ -517,7 +536,7 @@ async function ensureSwipePremiumFulfilled(
   if (!existingGrantRes.data?.id) {
     await grantSwipeSubscription(admin, {
       userId: order.user_id,
-      amount: order.amount,
+      amount: entitlementAmount,
       dailyLimit,
       durationDays,
       note: grantNote,
@@ -714,11 +733,16 @@ async function ensureOrderFulfilled(
     await ensureOneOnOnePriorityFulfilled(admin, order);
   }
 
-  if (order.product_type === "one_on_one_plus_30d") {
+  if (order.product_type === "one_on_one_plus_7d" || order.product_type === "one_on_one_plus_30d") {
     await ensureOneOnOnePlusFulfilled(admin, order);
   }
 
   if (order.product_type === "swipe_premium_30d") {
+    await ensureSwipePremiumFulfilled(admin, order);
+  }
+
+  if (order.product_type === "dating_all_pass_30d") {
+    await ensureOneOnOnePlusFulfilled(admin, order);
     await ensureSwipePremiumFulfilled(admin, order);
   }
 

@@ -2,7 +2,11 @@
 import { normalizeCardSex } from "@/lib/dating-more-view";
 import { approveMoreViewRequest, grantMoreViewAccess, grantOneOnOneContactExchange } from "@/lib/dating-purchase-fulfillment";
 import {
+  DATING_ALL_PASS_DURATION_DAYS,
+  DATING_ALL_PASS_PRICE_KRW,
   ONE_ON_ONE_PLUS_DURATION_DAYS,
+  ONE_ON_ONE_PLUS_7D_DURATION_DAYS,
+  ONE_ON_ONE_PLUS_7D_PRICE_KRW,
   ONE_ON_ONE_PLUS_PRICE_KRW,
   assertOneOnOnePlusSchemaReady,
   getActiveOneOnOnePlus,
@@ -34,8 +38,10 @@ type ProductType =
   | "city_view"
   | "one_on_one_contact_exchange"
   | "one_on_one_priority_24h"
+  | "one_on_one_plus_7d"
   | "one_on_one_plus_30d"
   | "swipe_premium_30d"
+  | "dating_all_pass_30d"
   | "love_fortune_detail"
   | "account_unban";
 
@@ -61,6 +67,8 @@ type CreateBody = {
   partnerBirthDate?: unknown;
   partnerBirthTime?: unknown;
   partnerRelation?: unknown;
+  offerPlacement?: unknown;
+  resumedFromOrderId?: unknown;
 };
 
 type OneOnOneMatchRow = {
@@ -108,9 +116,17 @@ const PRODUCT_CONFIG: Record<ProductType, { amount: number; orderName: string }>
     amount: ONE_ON_ONE_PLUS_PRICE_KRW,
     orderName: "1:1 매칭 플러스 30일",
   },
+  one_on_one_plus_7d: {
+    amount: ONE_ON_ONE_PLUS_7D_PRICE_KRW,
+    orderName: "1:1 매칭 플러스 7일",
+  },
   swipe_premium_30d: {
     amount: SWIPE_PREMIUM_PRICE_KRW,
     orderName: "빠른매칭 플러스",
+  },
+  dating_all_pass_30d: {
+    amount: DATING_ALL_PASS_PRICE_KRW,
+    orderName: "1:1 + 빠른매칭 올패스 30일",
   },
   love_fortune_detail: {
     amount: 9900,
@@ -140,8 +156,10 @@ function parseProductType(raw: unknown): ProductType | "" {
     raw === "more_view" ||
     raw === "city_view" ||
     raw === "one_on_one_contact_exchange" ||
+    raw === "one_on_one_plus_7d" ||
     raw === "one_on_one_plus_30d" ||
     raw === "swipe_premium_30d" ||
+    raw === "dating_all_pass_30d" ||
     raw === "love_fortune_detail" ||
     raw === "account_unban"
   ) {
@@ -692,7 +710,7 @@ export async function POST(req: Request) {
       const duplicateOrderRes = await admin
         .from("toss_test_payment_orders")
         .select("id,status,created_at")
-        .eq("product_type", "swipe_premium_30d")
+        .in("product_type", ["swipe_premium_30d", "dating_all_pass_30d"])
         .eq("user_id", user.id)
         .eq("status", "ready")
         .order("created_at", { ascending: false })
@@ -720,7 +738,11 @@ export async function POST(req: Request) {
       };
     }
 
-    if (productType === "one_on_one_plus_30d") {
+    if (
+      productType === "one_on_one_plus_7d" ||
+      productType === "one_on_one_plus_30d" ||
+      productType === "dating_all_pass_30d"
+    ) {
       try {
         await assertOneOnOnePlusSchemaReady(admin);
       } catch (error) {
@@ -732,7 +754,7 @@ export async function POST(req: Request) {
         });
       }
       const activePlus = await getActiveOneOnOnePlus(admin, user.id);
-      if (activePlus) {
+      if (activePlus && productType !== "dating_all_pass_30d") {
         return json(409, {
           ok: false,
           code: "ONE_ON_ONE_PLUS_ALREADY_ACTIVE",
@@ -778,10 +800,26 @@ export async function POST(req: Request) {
         });
       }
 
+      if (productType === "dating_all_pass_30d") {
+        const swipeCard = await getLatestSwipeCardForUser(admin, user.id);
+        if (!swipeCard) {
+          return json(403, {
+            ok: false,
+            code: "SWIPE_CARD_REQUIRED",
+            requestId,
+            message: "올패스는 1:1 프로필과 빠른매칭 카드가 모두 등록되어 있어야 이용할 수 있습니다.",
+          });
+        }
+      }
+
+      const overlappingReadyProductTypes =
+        productType === "dating_all_pass_30d"
+          ? ["one_on_one_plus_7d", "one_on_one_plus_30d", "swipe_premium_30d", "dating_all_pass_30d"]
+          : ["one_on_one_plus_7d", "one_on_one_plus_30d", "dating_all_pass_30d"];
       const duplicateOrderRes = await admin
         .from("toss_test_payment_orders")
         .select("id,status,created_at")
-        .eq("product_type", "one_on_one_plus_30d")
+        .in("product_type", overlappingReadyProductTypes)
         .eq("user_id", user.id)
         .eq("status", "ready")
         .order("created_at", { ascending: false })
@@ -804,11 +842,26 @@ export async function POST(req: Request) {
       );
 
       productRefId = cardRes.data.id;
+      const durationDays =
+        productType === "one_on_one_plus_7d"
+          ? ONE_ON_ONE_PLUS_7D_DURATION_DAYS
+          : productType === "dating_all_pass_30d"
+            ? DATING_ALL_PASS_DURATION_DAYS
+            : ONE_ON_ONE_PLUS_DURATION_DAYS;
       productMeta = {
         cardId: cardRes.data.id,
-        durationDays: ONE_ON_ONE_PLUS_DURATION_DAYS,
+        durationDays,
         planVersion: 2,
         contactExchangeIncluded: false,
+        ...(productType === "dating_all_pass_30d"
+          ? {
+              includesOneOnOnePlus: true,
+              includesSwipePremium: true,
+              swipeDurationDays: SWIPE_PREMIUM_DURATION_DAYS,
+              swipeDailyLimit: SWIPE_PREMIUM_DAILY_LIMIT,
+              swipePremiumAmount: SWIPE_PREMIUM_PRICE_KRW,
+            }
+          : {}),
       };
     }
 
@@ -1107,6 +1160,14 @@ export async function POST(req: Request) {
       };
     }
 
+    const offerPlacement = cleanText(body.offerPlacement, 80);
+    const resumedFromOrderId = cleanText(body.resumedFromOrderId, 80);
+    productMeta = {
+      ...productMeta,
+      ...(offerPlacement ? { offerPlacement } : {}),
+      ...(resumedFromOrderId ? { resumedFromOrderId } : {}),
+    };
+
     const tossOrderId = crypto.randomUUID().replace(/-/g, "");
     const orderName =
       productType === "more_view"
@@ -1177,8 +1238,10 @@ export async function POST(req: Request) {
       productType === "more_view" ||
       productType === "city_view" ||
       productType === "one_on_one_contact_exchange" ||
+      productType === "one_on_one_plus_7d" ||
       productType === "one_on_one_plus_30d" ||
       productType === "swipe_premium_30d" ||
+      productType === "dating_all_pass_30d" ||
       productType === "love_fortune_detail" ||
       productType === "account_unban"
         ? getTossCheckoutOptions()

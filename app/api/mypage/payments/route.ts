@@ -23,6 +23,18 @@ type TossOrderRow = {
   } | null;
 };
 
+const GENERIC_RESUMABLE_PRODUCTS = new Set([
+  "apply_credits",
+  "paid_card",
+  "more_view",
+  "city_view",
+  "one_on_one_plus_7d",
+  "one_on_one_plus_30d",
+  "swipe_premium_30d",
+  "dating_all_pass_30d",
+  "account_unban",
+]);
+
 function json(status: number, payload: Record<string, unknown>) {
   return NextResponse.json(payload, { status });
 }
@@ -134,6 +146,8 @@ export async function GET(req: Request) {
           row.product_type === "one_on_one_contact_exchange" && resumableMatchIds.has(row.product_ref_id ?? "")
             ? row.product_ref_id
             : null,
+        canResumeProduct:
+          row.status === "ready" && GENERIC_RESUMABLE_PRODUCTS.has(row.product_type),
       })),
     });
   } catch (error) {
