@@ -199,14 +199,29 @@ export default async function LandingPage() {
                   ))}
                 </div>
               </div>
+              <section className={styles.startFlow} aria-labelledby="start-flow-title">
+                <div className={styles.startFlowHeading}>
+                  <strong id="start-flow-title">가입부터 매칭 준비까지 한 번에</strong>
+                  <span>공통 정보는 한 번만 적어요</span>
+                </div>
+                <ol className={styles.startFlowSteps}>
+                  <li><span>1</span><strong>가입</strong></li>
+                  <li><span>2</span><strong>번호 인증</strong></li>
+                  <li><span>3</span><strong>통합 프로필 작성</strong></li>
+                </ol>
+                <p>작성한 내용은 오픈카드와 1:1 매칭에 맞게 나누어 등록됩니다.</p>
+              </section>
               <div className={styles.ctaRow}>
-                <Link className={styles.primaryCta} href="/community/dating/cards">
-                  오픈카드 보기
+                <Link className={styles.primaryCta} href="/signup">
+                  가입하고 프로필 만들기
                 </Link>
-                <Link className={styles.secondaryCta} href="/dating/1on1">
-                  1:1 매칭 시작
+                <Link className={styles.secondaryCta} href="/login?tab=password&amp;next=%2Fonboarding%2Fdating">
+                  이미 가입했어요
                 </Link>
               </div>
+              <Link className={styles.browseLink} href="/community/dating/cards">
+                먼저 둘러보기
+              </Link>
             </div>
 
             <div className={styles.visualPanel} aria-label="오픈카드 미리보기">

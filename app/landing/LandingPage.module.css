@@ -207,6 +207,78 @@
   line-height: 1.55;
 }
 
+.startFlow {
+  display: grid;
+  gap: 0.8rem;
+  margin-top: 1.25rem;
+  padding-top: 1.15rem;
+  border-top: 1px solid rgba(20, 20, 24, 0.1);
+}
+
+.startFlowHeading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.startFlowHeading strong {
+  color: #151518;
+  font-size: 0.96rem;
+  font-weight: 900;
+}
+
+.startFlowHeading span {
+  color: #8a8a91;
+  font-size: 0.7rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.startFlowSteps {
+  display: grid;
+  grid-template-columns: 0.72fr 0.95fr 1.55fr;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-block: 1px solid rgba(20, 20, 24, 0.1);
+}
+
+.startFlowSteps li {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.75rem 0.55rem;
+}
+
+.startFlowSteps li + li {
+  border-left: 1px solid rgba(20, 20, 24, 0.1);
+}
+
+.startFlowSteps span {
+  flex: 0 0 auto;
+  color: #ef4356;
+  font-size: 0.68rem;
+  font-weight: 950;
+}
+
+.startFlowSteps strong {
+  min-width: 0;
+  color: #303036;
+  font-size: 0.78rem;
+  font-weight: 850;
+  line-height: 1.35;
+}
+
+.startFlow > p {
+  margin: 0;
+  color: #77777f;
+  font-size: 0.76rem;
+  font-weight: 650;
+  line-height: 1.55;
+}
+
 .ctaRow {
   display: flex;
   flex-wrap: wrap;
@@ -237,6 +309,16 @@
   border: 1px solid rgba(17, 17, 22, 0.14);
   color: #232329;
   background: #ffffff;
+}
+
+.browseLink {
+  display: inline-flex;
+  margin-top: 0.75rem;
+  color: #77777f;
+  font-size: 0.75rem;
+  font-weight: 750;
+  text-decoration: underline;
+  text-underline-offset: 0.22rem;
 }
 
 .visualPanel {
@@ -646,6 +728,21 @@
 
   .heroDifferenceItem p {
     font-size: 0.84rem;
+  }
+
+  .startFlowHeading {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 0.25rem;
+  }
+
+  .startFlowSteps {
+    grid-template-columns: 0.7fr 0.95fr 1.5fr;
+  }
+
+  .startFlowSteps li {
+    gap: 0.32rem;
+    padding-inline: 0.4rem;
   }
 
   .brandNote {
