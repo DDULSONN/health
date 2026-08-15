@@ -127,7 +127,7 @@ export default function DatingOnboardingPage() {
   const [available, setAvailable] = useState<Record<TargetKey, boolean>>({ open: false, oneOnOne: false });
   const [availabilityNote, setAvailabilityNote] = useState<Record<TargetKey, string>>({ open: "", oneOnOne: "" });
 
-  const [sex, setSex] = useState<Sex>("male");
+  const [sex, setSex] = useState<Sex | null>(null);
   const [nickname, setNickname] = useState("");
   const [nicknameSaved, setNicknameSaved] = useState(false);
   const [name, setName] = useState("");
@@ -236,6 +236,7 @@ export default function DatingOnboardingPage() {
     if (targetStep === 0) {
       const year = Number(birthYear);
       const height = Number(heightCm);
+      if (!sex) return "성별을 선택해 주세요.";
       if (!nicknameSaved) {
         const nicknameError = validateNickname(nickname);
         if (nicknameError) return nicknameError;
@@ -544,8 +545,8 @@ export default function DatingOnboardingPage() {
                   <div className="mt-5 grid gap-3 sm:grid-cols-2">
                     {!nicknameSaved && <TextField value={nickname} onChange={(value) => setNickname(normalizeNickname(value).slice(0, 12))} label="닉네임" placeholder="사이트에서 사용할 닉네임" className="sm:col-span-2" maxLength={12} />}
                     <div className="sm:col-span-2">
-                      <FieldLabel>성별</FieldLabel>
-                      <div className="grid grid-cols-2 border border-neutral-200">
+                      <FieldLabel>성별 (필수)</FieldLabel>
+                      <div className="grid grid-cols-2 border border-neutral-200" role="group" aria-label="성별 선택">
                         <Choice active={sex === "male"} onClick={() => setSex("male")}>남자</Choice>
                         <Choice active={sex === "female"} onClick={() => setSex("female")}>여자</Choice>
                       </div>
@@ -696,7 +697,7 @@ function FieldLabel({ children, className = "" }: { children: ReactNode; classNa
 }
 
 function Choice({ active, onClick, children }: { active: boolean; onClick: () => void; children: ReactNode }) {
-  return <button type="button" onClick={onClick} className={`h-11 text-sm font-bold ${active ? "bg-rose-50 text-rose-700" : "bg-white text-neutral-500"}`}>{children}</button>;
+  return <button type="button" aria-pressed={active} onClick={onClick} className={`h-11 text-sm font-bold ${active ? "bg-rose-50 text-rose-700" : "bg-white text-neutral-500"}`}>{children}</button>;
 }
 
 function TextField({ value, onChange, label, placeholder, className = "", inputMode, maxLength }: { value: string; onChange: (value: string) => void; label: string; placeholder: string; className?: string; inputMode?: "text" | "numeric"; maxLength?: number }) {
