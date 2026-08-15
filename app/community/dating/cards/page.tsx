@@ -1742,6 +1742,8 @@ export default function OpenCardsPage() {
   const [viewerLoggedIn, setViewerLoggedIn] = useState(false);
   const [viewerPhoneVerified, setViewerPhoneVerified] = useState(false);
   const [myOpenCards, setMyOpenCards] = useState<MyOpenCard[]>([]);
+  const [homeProfilePresenceReady, setHomeProfilePresenceReady] = useState(false);
+  const [hasActiveOneOnOneProfile, setHasActiveOneOnOneProfile] = useState(false);
   const [reactivatingHomeOpenCardId, setReactivatingHomeOpenCardId] = useState("");
   const [boostingFirstQueueCardId, setBoostingFirstQueueCardId] = useState("");
   const [swipeSubscriptionStatus, setSwipeSubscriptionStatus] = useState<SwipeSubscriptionStatus | null>(null);
@@ -1929,16 +1931,32 @@ export default function OpenCardsPage() {
   const reloadMyOpenCards = useCallback(async () => {
     if (!viewerLoggedIn) {
       setMyOpenCards([]);
+      setHasActiveOneOnOneProfile(false);
+      setHomeProfilePresenceReady(false);
       return;
     }
 
-    const res = await fetch("/api/dating/cards/my", { cache: "no-store" }).catch(() => null);
-    if (!res?.ok) {
+    setHomeProfilePresenceReady(false);
+    const [openCardsResponse, oneOnOneResponse] = await Promise.all([
+      fetch("/api/dating/cards/my", { cache: "no-store" }).catch(() => null),
+      fetch("/api/dating/1on1/write-status", { cache: "no-store" }).catch(() => null),
+    ]);
+
+    if (!openCardsResponse?.ok) {
       setMyOpenCards([]);
-      return;
+    } else {
+      const body = (await openCardsResponse.json().catch(() => ({}))) as { items?: MyOpenCard[] };
+      setMyOpenCards(Array.isArray(body.items) ? body.items : []);
     }
-    const body = (await res.json().catch(() => ({}))) as { items?: MyOpenCard[] };
-    setMyOpenCards(Array.isArray(body.items) ? body.items : []);
+
+    if (!oneOnOneResponse?.ok) {
+      setHasActiveOneOnOneProfile(false);
+    } else {
+      const body = (await oneOnOneResponse.json().catch(() => ({}))) as { activeRequestStatus?: string | null };
+      setHasActiveOneOnOneProfile(Boolean(body.activeRequestStatus));
+    }
+
+    setHomeProfilePresenceReady(Boolean(openCardsResponse?.ok && oneOnOneResponse?.ok));
   }, [viewerLoggedIn]);
 
   useEffect(() => {
@@ -2765,6 +2783,8 @@ export default function OpenCardsPage() {
   const reactivatableOpenCard = !hasActiveMyOpenCard
     ? myOpenCards.find((card) => card.status === "hidden" || card.status === "expired") ?? null
     : null;
+  const showUnifiedProfilePrompt =
+    viewerLoggedIn && homeProfilePresenceReady && myOpenCards.length === 0 && !hasActiveOneOnOneProfile;
   const visibleHomeFeatureTabs = useMemo(
     () => HOME_FEATURE_TABS.filter((tab) => tab.key !== "love_fortune" || isAdminPreviewUser),
     [isAdminPreviewUser]
@@ -2797,6 +2817,22 @@ export default function OpenCardsPage() {
           })}
         </div>
       </section>
+      {showUnifiedProfilePrompt ? (
+        <section className="mb-4 flex flex-col gap-3 border-y border-neutral-200 bg-white px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+          <div className="min-w-0">
+            <p className="text-sm font-black text-neutral-950">아직 등록된 소개 프로필이 없어요</p>
+            <p className="mt-1 text-xs font-medium leading-5 text-neutral-500">
+              한 번 작성하면 오픈카드와 1:1 매칭을 함께 시작할 수 있어요.
+            </p>
+          </div>
+          <Link
+            href="/onboarding/dating"
+            className="inline-flex min-h-[42px] shrink-0 items-center justify-center bg-neutral-950 px-4 text-sm font-bold text-white transition hover:bg-neutral-800"
+          >
+            {viewerPhoneVerified ? "한 번에 작성하기" : "인증하고 작성하기"}
+          </Link>
+        </section>
+      ) : null}
       {showLoveFortuneSection ? <AdminLoveFortunePanel /> : null}
       {showOpenCardSection ? (
       <section className="mb-4 rounded-[24px] border border-neutral-200/80 bg-white p-5 shadow-[0_12px_34px_rgba(15,23,42,0.06)] md:p-6">
