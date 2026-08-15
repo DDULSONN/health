@@ -151,6 +151,7 @@ export default function DatingOnboardingPage() {
   const [consentNoShow, setConsentNoShow] = useState(false);
   const [consentFee, setConsentFee] = useState(false);
   const [consentPrivacy, setConsentPrivacy] = useState(false);
+  const [consentNoDirectContact, setConsentNoDirectContact] = useState(false);
   const [consentOpenCard, setConsentOpenCard] = useState(false);
 
   const [openAssets, setOpenAssets] = useState<OpenPhotoAssets | null>(null);
@@ -281,7 +282,10 @@ export default function DatingOnboardingPage() {
     }
     if (targetStep === 4) {
       if (targets.open && !consentOpenCard) return "오픈카드 공개 범위 안내를 확인해 주세요.";
-      if (targets.oneOnOne && (!consentFakeInfo || !consentNoShow || !consentFee || !consentPrivacy)) {
+      if (
+        targets.oneOnOne &&
+        (!consentFakeInfo || !consentNoShow || !consentFee || !consentPrivacy || !consentNoDirectContact)
+      ) {
         return "1:1 신청 필수 확인 항목을 모두 체크해 주세요.";
       }
     }
@@ -442,6 +446,7 @@ export default function DatingOnboardingPage() {
               consent_no_show: consentNoShow,
               consent_fee: consentFee,
               consent_privacy: consentPrivacy,
+              consent_no_direct_contact: consentNoDirectContact,
             }),
           });
           if (!response.ok) throw new Error(await responseError(response, "1:1 신청서 등록에 실패했습니다."));
@@ -642,6 +647,7 @@ export default function DatingOnboardingPage() {
                         <Consent checked={consentFakeInfo} onChange={setConsentFakeInfo}>허위 정보 작성 시 이용이 제한될 수 있어요.</Consent>
                         <Consent checked={consentNoShow} onChange={setConsentNoShow}>노쇼나 무단 취소 시 재이용이 제한될 수 있어요.</Consent>
                         <Consent checked={consentFee} onChange={setConsentFee}>번호 교환 시 매칭비가 발생하고 연락처가 공개돼요.</Consent>
+                        <Consent checked={consentNoDirectContact} onChange={setConsentNoDirectContact}>신청서에는 휴대폰 번호, 카카오톡 ID, 인스타 계정, 오픈채팅 링크 등 외부 연락처를 적지 않아요.</Consent>
                         <Consent checked={consentPrivacy} onChange={setConsentPrivacy}>개인정보는 1:1 매칭 진행, 운영 확인, 안전 관리 목적으로만 사용돼요.</Consent>
                       </>
                     )}

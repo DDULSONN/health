@@ -345,7 +345,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Workout frequency value is invalid." }, { status: 400 });
   }
   if (!fakeInfoConsent || !noShowConsent || !feeConsent || !privacyConsent || !noDirectContactConsent) {
-    return NextResponse.json({ error: "All consent checkboxes are required." }, { status: 400 });
+    return NextResponse.json({ error: "필수 동의 항목을 모두 체크해 주세요." }, { status: 400 });
   }
 
   const rawPaths = Array.isArray(body.photo_paths) ? body.photo_paths : [];
