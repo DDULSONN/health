@@ -17,6 +17,50 @@ function sendEvent(eventName: string, params: Record<string, unknown>) {
   return true;
 }
 
+function getAnalyticsSessionId() {
+  if (typeof window === "undefined") return "";
+  const storageKey = "gymtools-payment-funnel-session";
+  try {
+    const existing = window.sessionStorage.getItem(storageKey);
+    if (existing) return existing;
+    const next = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
+    window.sessionStorage.setItem(storageKey, next);
+    return next;
+  } catch {
+    return "";
+  }
+}
+
+function recordInternalEvent(eventName: "view_item" | "select_item", item: AnalyticsItem) {
+  if (typeof window === "undefined") return;
+
+  const sessionId = getAnalyticsSessionId();
+  const dedupeKey = `gymtools-payment-funnel:${eventName}:${item.itemId}:${item.placement ?? "default"}`;
+  try {
+    if (window.sessionStorage.getItem(dedupeKey) === "1") return;
+    window.sessionStorage.setItem(dedupeKey, "1");
+  } catch {
+    // A blocked storage API should not prevent the event attempt.
+  }
+
+  void fetch("/api/analytics/payment-funnel", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    credentials: "same-origin",
+    keepalive: true,
+    body: JSON.stringify({
+      eventName,
+      itemId: item.itemId,
+      itemName: item.itemName ?? null,
+      amount: item.amount,
+      placement: item.placement ?? null,
+      sessionId,
+    }),
+  }).catch(() => {
+    // Analytics must never interrupt the product flow.
+  });
+}
+
 export function trackCheckoutStarted(item: AnalyticsItem) {
   sendEvent("begin_checkout", {
     currency: "KRW",
@@ -34,6 +78,7 @@ export function trackCheckoutStarted(item: AnalyticsItem) {
 }
 
 export function trackPaidOfferViewed(item: AnalyticsItem) {
+  recordInternalEvent("view_item", item);
   sendEvent("view_item", {
     currency: "KRW",
     value: item.amount,
@@ -50,6 +95,7 @@ export function trackPaidOfferViewed(item: AnalyticsItem) {
 }
 
 export function trackPaidOfferSelected(item: AnalyticsItem) {
+  recordInternalEvent("select_item", item);
   sendEvent("select_item", {
     item_list_name: item.placement ?? "paid_offer",
     items: [

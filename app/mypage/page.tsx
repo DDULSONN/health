@@ -1430,6 +1430,12 @@ type AdminPaymentCenterOrder = {
 };
 
 type AdminPaymentCenterOverview = {
+  period: {
+    days: 7 | 30 | 90;
+    startAt: string;
+    endAt: string;
+    previousStartAt: string;
+  };
   summary: {
     applyCreditsPending: number;
     paidCardsPending: number;
@@ -1439,11 +1445,37 @@ type AdminPaymentCenterOverview = {
     recentPaidCount: number;
     recentReadyCount: number;
   };
-  funnel: {
-    recent7d: AdminPaymentFunnelItem[];
-    recent30d: AdminPaymentFunnelItem[];
+  overview: {
+    current: AdminPaymentPeriodSummary;
+    previous: AdminPaymentPeriodSummary;
+    changes: {
+      revenue: number | null;
+      paidCount: number | null;
+      uniquePayers: number | null;
+      conversion: number;
+    };
   };
+  trackingAvailable: boolean;
+  products: AdminPaymentFunnelItem[];
+  daily: Array<{ date: string; revenueKrw: number; paidCount: number; checkoutCount: number }>;
+  methods: Array<{ method: string; paidCount: number; revenueKrw: number }>;
   orders: AdminPaymentCenterOrder[];
+};
+
+type AdminPaymentPeriodSummary = {
+  revenueKrw: number;
+  grossRevenueKrw: number;
+  refundKrw: number;
+  paidCount: number;
+  completedCheckoutCount: number;
+  checkoutCount: number;
+  readyCount: number;
+  failedCount: number;
+  canceledCount: number;
+  uniquePayers: number;
+  repeatPayers: number;
+  averageOrderKrw: number;
+  conversionRate: number;
 };
 
 type AdminPaymentFunnelItem = {
@@ -1451,12 +1483,21 @@ type AdminPaymentFunnelItem = {
   label: string;
   checkoutCount: number;
   paidCount: number;
+  completedCheckoutCount: number;
   readyCount: number;
   failedCount: number;
-  resumedCount: number;
+  canceledCount: number;
+  viewCount: number;
+  selectCount: number;
+  uniquePayers: number;
+  repeatPayers: number;
   topPlacement: string | null;
   revenueKrw: number;
+  previousRevenueKrw: number;
+  revenueChangeRate: number | null;
   conversionRate: number;
+  viewToSelectRate: number | null;
+  selectToCheckoutRate: number | null;
 };
 
 type AdminSiteDashboardFeatureKey =
@@ -1932,6 +1973,7 @@ export default function MyPage() {
   const [adminSiteDashboardLoading, setAdminSiteDashboardLoading] = useState(false);
   const [adminSiteDashboardError, setAdminSiteDashboardError] = useState("");
   const [adminPaymentCenter, setAdminPaymentCenter] = useState<AdminPaymentCenterOverview | null>(null);
+  const [adminPaymentPeriodDays, setAdminPaymentPeriodDays] = useState<7 | 30 | 90>(30);
   const [adminPaymentCenterLoading, setAdminPaymentCenterLoading] = useState(false);
   const [adminPaymentCenterError, setAdminPaymentCenterError] = useState("");
   const [adminAccountDeletionAudits, setAdminAccountDeletionAudits] = useState<AdminAccountDeletionAudit[]>([]);
@@ -2376,22 +2418,32 @@ export default function MyPage() {
         setAdminPaymentCenterError("");
 
         try {
-          const res = await fetch("/api/admin/payments/overview", { cache: "no-store" });
+          const res = await fetch(`/api/admin/payments/overview?days=${adminPaymentPeriodDays}`, { cache: "no-store" });
           const body = (await res.json().catch(() => ({}))) as {
             ok?: boolean;
+            period?: AdminPaymentCenterOverview["period"];
             summary?: AdminPaymentCenterOverview["summary"];
-            funnel?: AdminPaymentCenterOverview["funnel"];
+            overview?: AdminPaymentCenterOverview["overview"];
+            trackingAvailable?: boolean;
+            products?: AdminPaymentFunnelItem[];
+            daily?: AdminPaymentCenterOverview["daily"];
+            methods?: AdminPaymentCenterOverview["methods"];
             orders?: AdminPaymentCenterOrder[];
             message?: string;
           };
 
-          if (!res.ok || !body.ok || !body.summary || !body.funnel) {
+          if (!res.ok || !body.ok || !body.period || !body.summary || !body.overview) {
             throw new Error(body.message ?? "결제센터를 불러오지 못했습니다.");
           }
 
           setAdminPaymentCenter({
+            period: body.period,
             summary: body.summary,
-            funnel: body.funnel,
+            overview: body.overview,
+            trackingAvailable: body.trackingAvailable === true,
+            products: body.products ?? [],
+            daily: body.daily ?? [],
+            methods: body.methods ?? [],
             orders: body.orders ?? [],
           });
         } catch (error) {
@@ -2403,7 +2455,7 @@ export default function MyPage() {
           }
         }
       },
-    [isAdmin]
+    [adminPaymentPeriodDays, isAdmin]
   );
 
   const refreshAdminOpenCardData = useMemo(
@@ -3796,12 +3848,24 @@ export default function MyPage() {
   ]);
 
   useEffect(() => {
-    if (!isAdmin || adminManageTab !== "payment_center" || adminPaymentCenter || adminPaymentCenterLoading) {
+    if (
+      !isAdmin ||
+      adminManageTab !== "payment_center" ||
+      adminPaymentCenter?.period.days === adminPaymentPeriodDays ||
+      adminPaymentCenterLoading
+    ) {
       return;
     }
 
     void refreshAdminPaymentCenter(true);
-  }, [adminManageTab, adminPaymentCenter, adminPaymentCenterLoading, isAdmin, refreshAdminPaymentCenter]);
+  }, [
+    adminManageTab,
+    adminPaymentCenter,
+    adminPaymentCenterLoading,
+    adminPaymentPeriodDays,
+    isAdmin,
+    refreshAdminPaymentCenter,
+  ]);
 
   useEffect(() => {
     if (loading || accountBanStatus?.is_banned || swipeSubscriptionStatus || swipeSubscriptionLoading) return;
@@ -11424,10 +11488,34 @@ export default function MyPage() {
           {adminManageTab === "payment_center" && (
           <div className="mb-3 space-y-4">
             <div className="rounded-2xl border border-violet-200 bg-white p-4">
-              <p className="text-sm font-semibold text-violet-900">결제센터</p>
-              <p className="mt-1 text-xs text-neutral-600">
-                상품은 각 기능 화면에서 직접 결제하고, 여기서는 승인 대기와 최근 결제 상태만 모아봅니다.
-              </p>
+              <div className="flex flex-wrap items-end justify-between gap-3">
+                <div>
+                  <p className="text-sm font-semibold text-violet-900">매출 퍼널</p>
+                  <p className="mt-1 text-xs text-neutral-600">
+                    결제 주문 원장을 기준으로 상품별 전환과 매출 변화를 확인합니다.
+                  </p>
+                </div>
+                <div className="inline-flex rounded-lg border border-neutral-200 bg-neutral-50 p-1" aria-label="매출 집계 기간">
+                  {([7, 30, 90] as const).map((days) => (
+                    <button
+                      key={`payment-period-${days}`}
+                      type="button"
+                      onClick={() => {
+                        if (days === adminPaymentPeriodDays) return;
+                        setAdminPaymentCenter(null);
+                        setAdminPaymentPeriodDays(days);
+                      }}
+                      className={`h-8 min-w-14 rounded-md px-3 text-xs font-semibold transition-colors ${
+                        adminPaymentPeriodDays === days
+                          ? "bg-neutral-950 text-white shadow-sm"
+                          : "text-neutral-500 hover:bg-white hover:text-neutral-900"
+                      }`}
+                    >
+                      {days}일
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
 
             {adminPaymentCenterError ? (
@@ -11444,21 +11532,123 @@ export default function MyPage() {
 
             {adminPaymentCenter ? (
               <>
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                   {[
-                    { label: "지원권 주문 대기", value: adminPaymentCenter.summary.applyCreditsPending },
-                    { label: "유료카드 승인 대기", value: adminPaymentCenter.summary.paidCardsPending },
-                    { label: "이상형 더보기 대기", value: adminPaymentCenter.summary.moreViewPending },
-                    { label: "빠른매칭 구독 대기", value: adminPaymentCenter.summary.swipeSubscriptionsPending },
-                    { label: "1:1 번호교환 대기", value: adminPaymentCenter.summary.oneOnOneContactPending },
-                    { label: "최근 결제 완료", value: adminPaymentCenter.summary.recentPaidCount },
-                    { label: "최근 결제 생성", value: adminPaymentCenter.summary.recentReadyCount },
+                    {
+                      label: "순매출",
+                      value: `${adminPaymentCenter.overview.current.revenueKrw.toLocaleString("ko-KR")}원`,
+                      change: adminPaymentCenter.overview.changes.revenue,
+                      suffix: "%",
+                    },
+                    {
+                      label: "결제 완료",
+                      value: `${adminPaymentCenter.overview.current.paidCount.toLocaleString("ko-KR")}건`,
+                      change: adminPaymentCenter.overview.changes.paidCount,
+                      suffix: "%",
+                    },
+                    {
+                      label: "결제 전환",
+                      value: `${adminPaymentCenter.overview.current.conversionRate.toLocaleString("ko-KR")}%`,
+                      change: adminPaymentCenter.overview.changes.conversion,
+                      suffix: "%p",
+                    },
+                    {
+                      label: "결제 사용자",
+                      value: `${adminPaymentCenter.overview.current.uniquePayers.toLocaleString("ko-KR")}명`,
+                      change: adminPaymentCenter.overview.changes.uniquePayers,
+                      suffix: "%",
+                    },
+                    {
+                      label: "재구매 사용자",
+                      value: `${adminPaymentCenter.overview.current.repeatPayers.toLocaleString("ko-KR")}명`,
+                      detail: "기간 내 2회 이상 결제",
+                    },
+                    {
+                      label: "평균 결제액",
+                      value: `${adminPaymentCenter.overview.current.averageOrderKrw.toLocaleString("ko-KR")}원`,
+                      detail:
+                        adminPaymentCenter.overview.current.refundKrw > 0
+                          ? `환불 ${adminPaymentCenter.overview.current.refundKrw.toLocaleString("ko-KR")}원 반영`
+                          : "환불 제외 순매출 기준",
+                    },
                   ].map((item) => (
-                    <div key={`payment-center-summary-${item.label}`} className="rounded-2xl border border-violet-200 bg-white p-4">
+                    <div key={`payment-revenue-summary-${item.label}`} className="rounded-xl border border-neutral-200 bg-white p-4">
                       <p className="text-xs font-medium text-neutral-500">{item.label}</p>
-                      <p className="mt-2 text-2xl font-black text-neutral-900">{item.value.toLocaleString("ko-KR")}</p>
+                      <div className="mt-2 flex flex-wrap items-end gap-2">
+                        <p className="text-xl font-black text-neutral-950">{item.value}</p>
+                        {typeof item.change === "number" ? (
+                          <span
+                            className={`pb-0.5 text-[11px] font-semibold ${
+                              item.change > 0 ? "text-emerald-600" : item.change < 0 ? "text-rose-600" : "text-neutral-400"
+                            }`}
+                          >
+                            이전 기간 {item.change > 0 ? "+" : ""}{item.change.toLocaleString("ko-KR")}{item.suffix}
+                          </span>
+                        ) : item.change === null ? (
+                          <span className="pb-0.5 text-[11px] text-neutral-400">이전 기간 결제 없음</span>
+                        ) : null}
+                      </div>
+                      {item.detail ? <p className="mt-1 text-[11px] text-neutral-400">{item.detail}</p> : null}
                     </div>
                   ))}
+                </div>
+
+                <div className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_280px]">
+                  <div className="rounded-xl border border-neutral-200 bg-white p-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <div>
+                        <p className="text-sm font-semibold text-neutral-900">매출 흐름</p>
+                        <p className="mt-1 text-[11px] text-neutral-500">막대에 올리면 일별 결제액과 주문 수를 확인할 수 있습니다.</p>
+                      </div>
+                      <span className="text-[11px] font-medium text-neutral-400">최근 {adminPaymentCenter.period.days}일</span>
+                    </div>
+                    <div className="mt-4 overflow-x-auto pb-1">
+                      <div
+                        className="flex h-36 items-end gap-1"
+                        style={{ minWidth: `${Math.max(520, adminPaymentCenter.daily.length * 14)}px` }}
+                      >
+                        {adminPaymentCenter.daily.map((day) => {
+                          const maxRevenue = Math.max(1, ...adminPaymentCenter.daily.map((item) => item.revenueKrw));
+                          const height = day.revenueKrw > 0 ? Math.max(8, Math.round((day.revenueKrw / maxRevenue) * 128)) : 3;
+                          return (
+                            <div
+                              key={`payment-daily-${day.date}`}
+                              className="group relative flex min-w-2 flex-1 items-end self-stretch"
+                              title={`${day.date} · 매출 ${day.revenueKrw.toLocaleString("ko-KR")}원 · 결제 ${day.paidCount}건 · 생성 ${day.checkoutCount}건`}
+                            >
+                              <div
+                                className={`w-full rounded-t-sm ${day.revenueKrw > 0 ? "bg-violet-500 group-hover:bg-violet-700" : "bg-neutral-200"}`}
+                                style={{ height: `${height}px` }}
+                              />
+                            </div>
+                          );
+                        })}
+                      </div>
+                      <div className="mt-2 flex justify-between text-[10px] text-neutral-400">
+                        <span>{adminPaymentCenter.daily[0]?.date ?? "-"}</span>
+                        <span>{adminPaymentCenter.daily.at(-1)?.date ?? "-"}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="rounded-xl border border-neutral-200 bg-white p-4">
+                    <p className="text-sm font-semibold text-neutral-900">결제수단</p>
+                    {adminPaymentCenter.methods.length > 0 ? (
+                      <div className="mt-3 space-y-3">
+                        {adminPaymentCenter.methods.slice(0, 6).map((item) => (
+                          <div key={`payment-method-${item.method}`} className="flex items-center justify-between gap-3">
+                            <div className="min-w-0">
+                              <p className="truncate text-xs font-medium text-neutral-700">{item.method}</p>
+                              <p className="mt-0.5 text-[10px] text-neutral-400">{item.paidCount.toLocaleString("ko-KR")}건</p>
+                            </div>
+                            <p className="shrink-0 text-xs font-semibold text-neutral-900">{item.revenueKrw.toLocaleString("ko-KR")}원</p>
+                          </div>
+                        ))}
+                      </div>
+                    ) : (
+                      <p className="mt-3 text-xs text-neutral-400">기간 내 완료된 결제가 없습니다.</p>
+                    )}
+                  </div>
                 </div>
 
                 <div className="grid gap-3 lg:grid-cols-[1.1fr_0.9fr]">
@@ -11497,50 +11687,77 @@ export default function MyPage() {
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-violet-200 bg-white p-4">
+                <div className="rounded-xl border border-neutral-200 bg-white p-4">
                   <div className="flex flex-wrap items-end justify-between gap-2">
                     <div>
-                      <p className="text-sm font-semibold text-violet-900">상품별 결제 전환</p>
-                      <p className="mt-1 text-xs text-neutral-500">결제창 생성 대비 실제 결제 완료 비율입니다. 재시도 주문도 각각 한 건으로 집계됩니다.</p>
+                      <p className="text-sm font-semibold text-neutral-900">상품별 퍼널</p>
+                      <p className="mt-1 text-xs text-neutral-500">노출·선택은 추적 적용 화면 기준이며, 결제 생성과 완료는 전체 주문 원장 기준입니다.</p>
                     </div>
-                    <span className="text-[11px] font-medium text-neutral-500">최근 7일 / 30일</span>
+                    <span className="text-[11px] font-medium text-neutral-500">최근 {adminPaymentCenter.period.days}일</span>
                   </div>
-                  {adminPaymentCenter.funnel.recent30d.length === 0 ? (
-                    <p className="mt-3 rounded-xl border border-dashed border-violet-100 p-4 text-sm text-neutral-500">최근 30일 결제 주문이 없습니다.</p>
+                  {!adminPaymentCenter.trackingAvailable ? (
+                    <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+                      퍼널 기록 테이블 적용 전이라 노출·선택 수치는 비어 있습니다. 결제 생성과 완료, 매출은 주문 원장 기준으로 정상 집계됩니다.
+                    </p>
+                  ) : null}
+                  {adminPaymentCenter.products.length === 0 ? (
+                    <p className="mt-3 rounded-xl border border-dashed border-neutral-200 p-4 text-sm text-neutral-500">선택한 기간의 결제 데이터가 없습니다.</p>
                   ) : (
                     <div className="mt-3 overflow-x-auto">
-                      <table className="min-w-[760px] w-full text-left text-xs">
-                        <thead className="border-b border-violet-100 text-neutral-500">
+                      <table className="w-full min-w-[980px] text-left text-xs">
+                        <thead className="border-b border-neutral-200 text-neutral-500">
                           <tr>
                             <th className="px-2 py-2 font-medium">상품</th>
-                            <th className="px-2 py-2 font-medium">7일 생성/완료</th>
-                            <th className="px-2 py-2 font-medium">7일 전환</th>
-                            <th className="px-2 py-2 font-medium">7일 매출</th>
-                            <th className="px-2 py-2 font-medium">30일 생성/완료</th>
-                            <th className="px-2 py-2 font-medium">30일 전환</th>
-                            <th className="px-2 py-2 font-medium">30일 미완료/복구</th>
-                            <th className="px-2 py-2 font-medium">30일 매출</th>
+                            <th className="px-2 py-2 font-medium">노출 → 선택</th>
+                            <th className="px-2 py-2 font-medium">결제 시도</th>
+                            <th className="px-2 py-2 font-medium">생성 → 완료</th>
+                            <th className="px-2 py-2 font-medium">미완료</th>
+                            <th className="px-2 py-2 font-medium">구매자</th>
+                            <th className="px-2 py-2 font-medium">순매출</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {adminPaymentCenter.funnel.recent30d.map((item30) => {
-                            const item7 = adminPaymentCenter.funnel.recent7d.find((item) => item.productType === item30.productType);
-                            return (
-                              <tr key={`payment-funnel-${item30.productType}`} className="border-b border-violet-50 last:border-0">
-                                <td className="px-2 py-3 font-semibold text-neutral-900">
-                                  {item30.label}
-                                  {item30.topPlacement ? <span className="mt-1 block text-[10px] font-normal text-neutral-400">{item30.topPlacement}</span> : null}
-                                </td>
-                                <td className="px-2 py-3 text-neutral-700">{item7?.checkoutCount ?? 0} / {item7?.paidCount ?? 0}</td>
-                                <td className="px-2 py-3 font-semibold text-neutral-900">{(item7?.conversionRate ?? 0).toLocaleString("ko-KR")}%</td>
-                                <td className="px-2 py-3 text-neutral-700">{(item7?.revenueKrw ?? 0).toLocaleString("ko-KR")}원</td>
-                                <td className="px-2 py-3 text-neutral-700">{item30.checkoutCount} / {item30.paidCount}</td>
-                                <td className="px-2 py-3 font-semibold text-neutral-900">{item30.conversionRate.toLocaleString("ko-KR")}%</td>
-                                <td className="px-2 py-3 text-neutral-700">대기 {item30.readyCount} · 실패/취소 {item30.failedCount} · 복구 {item30.resumedCount}</td>
-                                <td className="px-2 py-3 font-semibold text-neutral-900">{item30.revenueKrw.toLocaleString("ko-KR")}원</td>
-                              </tr>
-                            );
-                          })}
+                          {adminPaymentCenter.products.map((item) => (
+                            <tr key={`payment-funnel-${item.productType}`} className="border-b border-neutral-100 last:border-0">
+                              <td className="px-2 py-3 font-semibold text-neutral-900">
+                                {item.label}
+                                {item.topPlacement ? <span className="mt-1 block text-[10px] font-normal text-neutral-400">{item.topPlacement}</span> : null}
+                              </td>
+                              <td className="px-2 py-3 text-neutral-700">
+                                <span className="font-medium">{item.viewCount.toLocaleString("ko-KR")} → {item.selectCount.toLocaleString("ko-KR")}</span>
+                                <span className="mt-1 block text-[10px] text-neutral-400">
+                                  {item.viewToSelectRate == null ? "기록 대기" : `${item.viewToSelectRate.toLocaleString("ko-KR")}%`}
+                                </span>
+                              </td>
+                              <td className="px-2 py-3 text-neutral-700">{item.checkoutCount.toLocaleString("ko-KR")}건</td>
+                              <td className="px-2 py-3 text-neutral-700">
+                                <span className="font-semibold text-neutral-900">{item.checkoutCount.toLocaleString("ko-KR")} → {item.completedCheckoutCount.toLocaleString("ko-KR")}</span>
+                                <span className="mt-1 block text-[10px] text-neutral-400">전환 {item.conversionRate.toLocaleString("ko-KR")}%</span>
+                              </td>
+                              <td className="px-2 py-3 text-neutral-700">
+                                대기 {item.readyCount.toLocaleString("ko-KR")}
+                                <span className="mt-1 block text-[10px] text-neutral-400">실패 {item.failedCount} · 취소 {item.canceledCount}</span>
+                              </td>
+                              <td className="px-2 py-3 text-neutral-700">
+                                {item.uniquePayers.toLocaleString("ko-KR")}명
+                                <span className="mt-1 block text-[10px] text-neutral-400">재구매 {item.repeatPayers.toLocaleString("ko-KR")}명</span>
+                              </td>
+                              <td className="px-2 py-3 font-semibold text-neutral-900">
+                                {item.revenueKrw.toLocaleString("ko-KR")}원
+                                <span
+                                  className={`mt-1 block text-[10px] ${
+                                    typeof item.revenueChangeRate === "number" && item.revenueChangeRate < 0
+                                      ? "text-rose-500"
+                                      : "text-emerald-600"
+                                  }`}
+                                >
+                                  {typeof item.revenueChangeRate === "number"
+                                    ? `이전 대비 ${item.revenueChangeRate > 0 ? "+" : ""}${item.revenueChangeRate.toLocaleString("ko-KR")}%`
+                                    : "이전 기간 매출 없음"}
+                                </span>
+                              </td>
+                            </tr>
+                          ))}
                         </tbody>
                       </table>
                     </div>
