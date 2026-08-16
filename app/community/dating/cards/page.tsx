@@ -3072,6 +3072,35 @@ export default function OpenCardsPage() {
           </div>
         </div>
 
+        <div className="mt-4 grid grid-cols-2 gap-1.5 rounded-[18px] border border-neutral-200 bg-neutral-50 p-1.5">
+          <button
+            type="button"
+            aria-pressed={activeSex === "female"}
+            disabled={swipeSubmitting}
+            onClick={() => handleActiveSexChange("female")}
+            className={`inline-flex min-h-[46px] items-center justify-center rounded-[14px] px-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-60 ${
+              activeSex === "female"
+                ? "bg-rose-600 text-white shadow-[0_8px_18px_rgba(225,29,72,0.16)]"
+                : "bg-transparent text-neutral-600 hover:bg-white hover:text-neutral-900"
+            }`}
+          >
+            여자 후보
+          </button>
+          <button
+            type="button"
+            aria-pressed={activeSex === "male"}
+            disabled={swipeSubmitting}
+            onClick={() => handleActiveSexChange("male")}
+            className={`inline-flex min-h-[46px] items-center justify-center rounded-[14px] px-3 text-sm font-black transition disabled:cursor-not-allowed disabled:opacity-60 ${
+              activeSex === "male"
+                ? "bg-neutral-950 text-white shadow-[0_8px_18px_rgba(15,23,42,0.14)]"
+                : "bg-transparent text-neutral-600 hover:bg-white hover:text-neutral-900"
+            }`}
+          >
+            남자 후보
+          </button>
+        </div>
+
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button
             type="button"
