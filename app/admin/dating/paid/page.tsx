@@ -65,6 +65,7 @@ export default function AdminDatingPaidPage() {
   const [error, setError] = useState("");
   const [actingId, setActingId] = useState<string>("");
   const [copiedId, setCopiedId] = useState("");
+  const [genderDrafts, setGenderDrafts] = useState<Record<string, "M" | "F">>({});
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -85,7 +86,9 @@ export default function AdminDatingPaidPage() {
       if (!res.ok) throw new Error(body.message ?? "유료 요청 목록을 불러오지 못했습니다.");
       if (!ordersRes.ok) throw new Error(ordersBody.message ?? "지원권 주문 목록을 불러오지 못했습니다.");
 
-      setItems(Array.isArray(body.items) ? body.items : []);
+      const nextItems = Array.isArray(body.items) ? body.items : [];
+      setItems(nextItems);
+      setGenderDrafts(Object.fromEntries(nextItems.map((item) => [item.id, item.gender])));
       setCreditOrders(Array.isArray(ordersBody.items) ? ordersBody.items : []);
     } catch (e) {
       setError(e instanceof Error ? e.message : "알 수 없는 오류");
@@ -100,9 +103,47 @@ export default function AdminDatingPaidPage() {
     });
   }, [load]);
 
+  const updatePendingGender = async (paidCardId: string, gender: "M" | "F") => {
+    const res = await fetch(`/api/admin/dating/paid/${encodeURIComponent(paidCardId)}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ gender }),
+    });
+    const body = (await res.json().catch(() => ({}))) as {
+      ok?: boolean;
+      error?: string;
+      item?: { gender?: "M" | "F" };
+    };
+    if (!res.ok || !body.ok) {
+      throw new Error(body.error ?? "성별 수정에 실패했습니다.");
+    }
+    const savedGender = body.item?.gender === "F" ? "F" : "M";
+    setItems((prev) => prev.map((item) => (item.id === paidCardId ? { ...item, gender: savedGender } : item)));
+    setGenderDrafts((prev) => ({ ...prev, [paidCardId]: savedGender }));
+  };
+
+  const handleSaveGender = async (item: PaidAdminItem) => {
+    const gender = genderDrafts[item.id] ?? item.gender;
+    if (gender === item.gender) return;
+    setActingId(item.id);
+    try {
+      await updatePendingGender(item.id, gender);
+    } catch (saveError) {
+      alert(saveError instanceof Error ? saveError.message : "성별 수정에 실패했습니다.");
+    } finally {
+      setActingId("");
+    }
+  };
+
   const handleApprove = async (paidCardId: string) => {
     setActingId(paidCardId);
     try {
+      const currentItem = items.find((item) => item.id === paidCardId);
+      const selectedGender = currentItem ? genderDrafts[paidCardId] ?? currentItem.gender : null;
+      if (currentItem && selectedGender && selectedGender !== currentItem.gender) {
+        await updatePendingGender(paidCardId, selectedGender);
+      }
+
       const res = await fetch("/api/admin/dating/paid/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -125,6 +166,8 @@ export default function AdminDatingPaidPage() {
             : item
         )
       );
+    } catch (approveError) {
+      alert(approveError instanceof Error ? approveError.message : "승인 처리에 실패했습니다.");
     } finally {
       setActingId("");
     }
@@ -359,12 +402,43 @@ export default function AdminDatingPaidPage() {
             <article key={item.id} className="rounded-xl border border-neutral-200 bg-white p-4">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <p className="text-sm font-semibold text-neutral-900">
-                  {item.nickname} / {item.gender === "M" ? "남자" : "여자"}
+                  {item.nickname} / {(genderDrafts[item.id] ?? item.gender) === "M" ? "남자" : "여자"}
                 </p>
                 <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${STATUS_STYLE[item.status]}`}>
                   {STATUS_LABEL[item.status]}
                 </span>
               </div>
+
+              {item.status === "pending" ? (
+                <div className="mt-3 flex flex-wrap items-end gap-2 rounded-lg border border-amber-200 bg-amber-50/70 p-3">
+                  <label className="min-w-[150px] flex-1 text-xs font-semibold text-amber-950">
+                    승인 전 성별 수정
+                    <select
+                      value={genderDrafts[item.id] ?? item.gender}
+                      disabled={actingId === item.id}
+                      onChange={(event) =>
+                        setGenderDrafts((prev) => ({
+                          ...prev,
+                          [item.id]: event.target.value === "F" ? "F" : "M",
+                        }))
+                      }
+                      className="mt-1 h-10 w-full rounded-md border border-amber-300 bg-white px-3 text-sm text-neutral-900 disabled:opacity-50"
+                    >
+                      <option value="M">남자</option>
+                      <option value="F">여자</option>
+                    </select>
+                  </label>
+                  <button
+                    type="button"
+                    disabled={actingId === item.id || (genderDrafts[item.id] ?? item.gender) === item.gender}
+                    onClick={() => void handleSaveGender(item)}
+                    className="h-10 rounded-md border border-amber-400 bg-white px-3 text-xs font-bold text-amber-900 disabled:cursor-not-allowed disabled:opacity-40"
+                  >
+                    성별 저장
+                  </button>
+                  <p className="w-full text-[11px] leading-4 text-amber-800">저장하지 않고 승인해도 선택한 성별이 함께 반영됩니다.</p>
+                </div>
+              ) : null}
 
               <div className="mt-2 flex flex-wrap items-center gap-2">
                 <span className="rounded bg-neutral-100 px-2 py-1 font-mono text-xs text-neutral-700">카드ID: {item.id}</span>
