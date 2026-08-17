@@ -8,6 +8,7 @@ import { reconcileOneOnOnePhoneIdentity } from "@/lib/dating-1on1-identity";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { getUserBanResponse } from "@/lib/user-ban-guard";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { NextResponse } from "next/server";
 import { getActiveOneOnOnePlus } from "@/lib/dating-1on1-plus";
 
@@ -179,6 +180,9 @@ export async function GET(req: Request) {
 }
 
 export async function PATCH(req: Request) {
+  const originError = ensureAllowedMutationOrigin(req);
+  if (originError) return originError;
+
   const { user } = await getRequestAuthContext(req);
 
   if (!user) {
@@ -366,6 +370,9 @@ export async function PATCH(req: Request) {
 }
 
 export async function PUT(req: Request) {
+  const originError = ensureAllowedMutationOrigin(req);
+  if (originError) return originError;
+
   const { user } = await getRequestAuthContext(req);
 
   if (!user) {
@@ -484,6 +491,9 @@ export async function PUT(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  const originError = ensureAllowedMutationOrigin(req);
+  if (originError) return originError;
+
   const { user } = await getRequestAuthContext(req);
 
   if (!user) {
@@ -493,6 +503,9 @@ export async function DELETE(req: Request) {
   const { searchParams } = new URL(req.url);
   const cardId = (searchParams.get("id") ?? "").trim();
   const removePermanently = searchParams.get("mode") === "remove";
+  const removeBody = removePermanently
+    ? ((await req.json().catch(() => null)) as { confirmCardId?: unknown } | null)
+    : null;
   if (!cardId) {
     return NextResponse.json({ error: "Card id is required." }, { status: 400 });
   }
@@ -520,6 +533,33 @@ export async function DELETE(req: Request) {
     return NextResponse.json({ ok: true, id: cardId, removed: true });
   }
   if (removePermanently) {
+    if (removeBody?.confirmCardId !== cardId) {
+      return NextResponse.json({ error: "프로필 삭제 확인 정보가 올바르지 않습니다." }, { status: 400 });
+    }
+    const isArchivedByUser =
+      currentRes.data.status === "rejected" && currentTags.includes(ONE_ON_ONE_USER_DELETED_TAG);
+    if (!isArchivedByUser) {
+      return NextResponse.json(
+        { error: "프로필을 완전히 삭제하려면 먼저 프로필 내리기를 진행해 주세요." },
+        { status: 409 },
+      );
+    }
+
+    const relatedMatchesRes = await admin
+      .from("dating_1on1_match_proposals")
+      .select("id", { count: "exact", head: true })
+      .or(`source_card_id.eq.${cardId},candidate_card_id.eq.${cardId}`);
+    if (relatedMatchesRes.error) {
+      console.error("[DELETE /api/dating/1on1/my] related matches lookup failed", relatedMatchesRes.error);
+      return NextResponse.json({ error: "기존 1:1 매칭 기록을 확인하지 못했습니다." }, { status: 500 });
+    }
+    if ((relatedMatchesRes.count ?? 0) > 0) {
+      return NextResponse.json(
+        { error: "기존 매칭이나 번호교환 기록이 있는 프로필은 내리기만 가능하며 완전히 삭제할 수 없습니다." },
+        { status: 409 },
+      );
+    }
+
     const removableStatuses = new Set<string>([...DATING_ONE_ON_ONE_ACTIVE_STATUSES, "rejected"]);
     if (!removableStatuses.has(currentRes.data.status)) {
       return NextResponse.json({ error: "현재 상태에서는 1:1 프로필을 삭제할 수 없습니다." }, { status: 409 });

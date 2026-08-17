@@ -2080,7 +2080,6 @@ export default function MyPage() {
   const [deletingOneOnOneIds, setDeletingOneOnOneIds] = useState<string[]>([]);
   const [removingOneOnOneIds, setRemovingOneOnOneIds] = useState<string[]>([]);
   const [confirmingOneOnOneArchiveIds, setConfirmingOneOnOneArchiveIds] = useState<string[]>([]);
-  const [confirmingOneOnOneRemoveIds, setConfirmingOneOnOneRemoveIds] = useState<string[]>([]);
   const oneOnOneProfileMutationLocksRef = useRef<Set<string>>(new Set());
   const [restoringOneOnOneIds, setRestoringOneOnOneIds] = useState<string[]>([]);
   const [deletingOpenCardIds, setDeletingOpenCardIds] = useState<string[]>([]);
@@ -6061,7 +6060,6 @@ export default function MyPage() {
     if (oneOnOneProfileMutationLocksRef.current.has(lockKey)) return;
     if (!confirmingOneOnOneArchiveIds.includes(cardId)) {
       setConfirmingOneOnOneArchiveIds((prev) => (prev.includes(cardId) ? prev : [...prev, cardId]));
-      setConfirmingOneOnOneRemoveIds((prev) => prev.filter((id) => id !== cardId));
       window.setTimeout(() => {
         setConfirmingOneOnOneArchiveIds((prev) => prev.filter((id) => id !== cardId));
       }, 5000);
@@ -6145,21 +6143,14 @@ export default function MyPage() {
   const handleRemoveMyOneOnOneCard = async (cardId: string) => {
     const lockKey = `profile:${cardId}`;
     if (oneOnOneProfileMutationLocksRef.current.has(lockKey)) return;
-    if (!confirmingOneOnOneRemoveIds.includes(cardId)) {
-      setConfirmingOneOnOneRemoveIds((prev) => (prev.includes(cardId) ? prev : [...prev, cardId]));
-      setConfirmingOneOnOneArchiveIds((prev) => prev.filter((id) => id !== cardId));
-      window.setTimeout(() => {
-        setConfirmingOneOnOneRemoveIds((prev) => prev.filter((id) => id !== cardId));
-      }, 5000);
-      return;
-    }
-
-    setConfirmingOneOnOneRemoveIds((prev) => prev.filter((id) => id !== cardId));
+    if (!window.confirm("내린 1:1 프로필을 완전히 삭제할까요? 기존 매칭과 번호교환 기록은 유지됩니다.")) return;
     oneOnOneProfileMutationLocksRef.current.add(lockKey);
     setRemovingOneOnOneIds((prev) => [...prev, cardId]);
     try {
       const res = await fetch(`/api/dating/1on1/my?id=${encodeURIComponent(cardId)}&mode=remove`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirmCardId: cardId }),
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string; removed?: boolean };
       if (!res.ok || body.removed !== true) {
@@ -9481,7 +9472,6 @@ export default function MyPage() {
                 restoringOneOnOneIds.includes(item.id) ||
                 removingOneOnOneIds.includes(item.id);
               const confirmingOneOnOneArchive = confirmingOneOnOneArchiveIds.includes(item.id);
-              const confirmingOneOnOneRemove = confirmingOneOnOneRemoveIds.includes(item.id);
               const relatedMatches = myOneOnOneMatchesByCardId.get(item.id) ?? [];
               const autoRecommendationGroup = myOneOnOneAutoRecommendationsByCardId.get(item.id) ?? null;
               const autoRecommendations = autoRecommendationGroup?.recommendations ?? [];
@@ -9597,22 +9587,16 @@ export default function MyPage() {
                               : "프로필 내리기"}
                         </button>
                       ) : null}
-                      <button
-                        type="button"
-                        onClick={() => void handleRemoveMyOneOnOneCard(item.id)}
-                        disabled={mutatingOneOnOneCard}
-                        className={`inline-flex min-h-[48px] touch-manipulation select-none items-center justify-center rounded-md px-2 text-[11px] font-medium underline underline-offset-4 active:scale-[0.98] disabled:opacity-50 ${
-                          confirmingOneOnOneRemove
-                            ? "bg-red-50 text-red-700 decoration-red-300"
-                            : "text-neutral-400 decoration-neutral-300 hover:text-red-600"
-                        }`}
-                      >
-                        {removingOneOnOneIds.includes(item.id)
-                          ? "삭제 중..."
-                          : confirmingOneOnOneRemove
-                            ? "한 번 더 눌러 삭제"
-                            : "삭제"}
-                      </button>
+                      {isArchivedOneOnOneCard && relatedMatches.length === 0 ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleRemoveMyOneOnOneCard(item.id)}
+                          disabled={mutatingOneOnOneCard}
+                          className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-md px-2 text-[11px] font-medium text-neutral-400 underline decoration-neutral-300 underline-offset-4 hover:text-red-600 active:scale-[0.98] disabled:opacity-50"
+                        >
+                          {removingOneOnOneIds.includes(item.id) ? "삭제 중..." : "완전히 삭제"}
+                        </button>
+                      ) : null}
                     </div>
                   </div>
                   {item.intro_text && (
