@@ -298,7 +298,7 @@ export default function SiteGuideBubble() {
     moved: boolean;
   } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [collapsed, setCollapsed] = useState(false);
+  const [collapsed, setCollapsed] = useState(true);
   const [guidePosition, setGuidePosition] = useState<GuidePosition | null>(null);
   const [index, setIndex] = useState(0);
   const [loggedIn, setLoggedIn] = useState<boolean | null>(null);
@@ -437,8 +437,8 @@ export default function SiteGuideBubble() {
 
   const boundPosition = (x: number, y: number): GuidePosition => {
     if (typeof window === "undefined") return { x, y };
-    const width = rootRef.current?.offsetWidth ?? 320;
-    const height = rootRef.current?.offsetHeight ?? 260;
+    const width = rootRef.current?.offsetWidth ?? 276;
+    const height = rootRef.current?.offsetHeight ?? 220;
     return {
       x: Math.min(Math.max(4, x), Math.max(4, window.innerWidth - width - 4)),
       y: Math.min(Math.max(64, y), Math.max(64, window.innerHeight - height - 8)),
@@ -493,14 +493,14 @@ export default function SiteGuideBubble() {
   return (
     <div
       ref={rootRef}
-      className={`pointer-events-none fixed z-40 w-[min(320px,calc(100vw-8px))] ${
+      className={`pointer-events-none fixed z-40 w-[min(276px,calc(100vw-8px))] ${
         guidePosition ? "" : `right-2 md:right-4 ${isMyPage ? "top-[132px] md:top-[124px]" : "top-[84px] md:top-[92px]"}`
       }`}
       style={guidePosition ? { left: guidePosition.x, top: guidePosition.y } : undefined}
     >
       <div className="relative flex flex-col items-end">
         {!collapsed ? (
-          <div className="pointer-events-auto relative mb-[-6px] mr-5 w-[min(196px,calc(100vw-112px))] rounded-[20px] border border-amber-200/80 bg-white/95 px-3 py-2.5 shadow-[0_12px_26px_rgba(15,23,42,0.12)] backdrop-blur-sm">
+          <div className="pointer-events-auto relative mb-[-5px] mr-3 w-[min(190px,calc(100vw-92px))] rounded-xl border border-neutral-200 bg-white/95 px-3 py-2.5 shadow-[0_8px_20px_rgba(15,23,42,0.1)] backdrop-blur-sm">
             <p className="text-[12px] font-extrabold leading-[18px] text-neutral-950">
               {loading ? "짐냥이가 지금 상황에 맞는 안내를 고르는 중이에요." : activeSuggestion?.title}
             </p>
@@ -533,7 +533,7 @@ export default function SiteGuideBubble() {
               ) : null}
             </div>
 
-            <div className="absolute bottom-[-7px] right-11 h-3.5 w-3.5 rotate-45 rounded-[4px] border-b border-r border-amber-200/80 bg-white/95" />
+            <div className="absolute bottom-[-6px] right-9 h-3 w-3 rotate-45 border-b border-r border-neutral-200 bg-white/95" />
           </div>
         ) : null}
 
@@ -548,15 +548,15 @@ export default function SiteGuideBubble() {
           aria-label={collapsed ? "짐냥이 안내 열기" : "짐냥이 안내 접기"}
           className={`pointer-events-auto relative z-10 shrink-0 touch-none select-none outline-none transition-all duration-300 focus-visible:ring-4 focus-visible:ring-amber-200/80 ${
             collapsed
-              ? "origin-top-right translate-y-0 scale-[0.64] cursor-pointer hover:-translate-y-1 active:translate-y-0 active:scale-[0.59]"
+              ? "origin-top-right translate-y-0 scale-[0.68] cursor-pointer hover:-translate-y-1 active:translate-y-0 active:scale-[0.63]"
               : "-translate-y-1 scale-100 cursor-grab active:cursor-grabbing active:scale-[0.97]"
           }`}
           title={collapsed ? "짐냥이를 누르면 안내가 열려요." : "짐냥이를 누르면 안내가 접혀요. 꾹 누르면 위치를 옮길 수 있어요."}
         >
-          <div className={`relative transition-all duration-300 ${collapsed ? "h-[120px] w-[108px]" : "h-[158px] w-[142px]"}`}>
+          <div className={`relative transition-all duration-300 ${collapsed ? "h-[96px] w-[88px]" : "h-[124px] w-[112px]"}`}>
             <div className="absolute inset-x-6 bottom-1 h-4 rounded-full bg-black/10 blur-md" />
             {collapsed ? <div className="absolute inset-3 rounded-[28px] bg-amber-200/30 blur-xl transition-transform duration-200 group-active:scale-90" /> : null}
-            <div className="absolute inset-0 overflow-hidden rounded-[32px] shadow-[0_10px_24px_rgba(15,23,42,0.12)] transition-transform duration-150 active:scale-95">
+            <div className="absolute inset-0 overflow-hidden rounded-2xl shadow-[0_8px_18px_rgba(15,23,42,0.1)] transition-transform duration-150 active:scale-95">
               <Image
                 src={mascotSrc}
                 alt="짐냥이"

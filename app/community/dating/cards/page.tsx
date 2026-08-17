@@ -2757,10 +2757,10 @@ export default function OpenCardsPage() {
     [isAdminPreviewUser]
   );
   return (
-    <main className="mx-auto max-w-5xl px-4 py-5 md:px-6 md:py-8">
+    <main className="mx-auto max-w-5xl px-3 py-4 md:px-6 md:py-7">
       <OpenCardDailySplash />
       <DatingAdultNotice />
-      <section className="sticky top-[64px] z-30 mb-4 rounded-[24px] border border-black/5 bg-white/95 p-1.5 shadow-[0_10px_28px_rgba(15,23,42,0.07)] backdrop-blur">
+      <section className="sticky top-[64px] z-30 mb-3 rounded-xl border border-neutral-200 bg-white/95 p-1 shadow-[0_6px_18px_rgba(15,23,42,0.06)] backdrop-blur">
         <div className={`grid gap-1 ${visibleHomeFeatureTabs.length >= 4 ? "grid-cols-4" : "grid-cols-3"}`}>
           {visibleHomeFeatureTabs.map((tab) => {
             const active = homeFeatureTab === tab.key;
@@ -2769,9 +2769,9 @@ export default function OpenCardsPage() {
                 key={tab.key}
                 type="button"
                 onClick={() => setHomeFeatureTab(tab.key)}
-                className={`rounded-[18px] px-2 py-3 text-center transition ${
+                className={`rounded-lg px-2 py-2.5 text-center transition ${
                   active
-                    ? "bg-neutral-950 text-white shadow-[0_10px_22px_rgba(15,23,42,0.16)]"
+                    ? "bg-neutral-950 text-white"
                     : "text-neutral-500 hover:bg-neutral-50 hover:text-neutral-900"
                 }`}
               >
@@ -2802,9 +2802,9 @@ export default function OpenCardsPage() {
       ) : null}
       {showLoveFortuneSection ? <AdminLoveFortunePanel /> : null}
       {showOpenCardSection ? (
-      <section className="mb-4 rounded-[24px] border border-neutral-200/80 bg-white p-5 shadow-[0_12px_34px_rgba(15,23,42,0.06)] md:p-6">
-        <div className="flex flex-col gap-4">
-          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+      <section className="mb-4 rounded-xl border border-neutral-200 bg-white p-4 shadow-[0_8px_24px_rgba(15,23,42,0.04)] md:p-5">
+        <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
             <div className="min-w-0 flex-1">
               <div className="mb-3 space-y-2">
                 {homeAdLink ? (
@@ -2812,7 +2812,7 @@ export default function OpenCardsPage() {
                     href={homeAdLink.linkUrl}
                     target={homeAdLink.linkUrl.startsWith("/") ? undefined : "_blank"}
                     rel={homeAdLink.linkUrl.startsWith("/") ? undefined : "noreferrer"}
-                    className="flex min-h-[38px] items-center gap-2 rounded-[16px] bg-blue-50 px-4 text-xs font-extrabold text-blue-700 transition hover:bg-blue-100/70"
+                    className="flex min-h-[36px] items-center gap-2 rounded-lg bg-blue-50 px-3 text-xs font-bold text-blue-700 transition hover:bg-blue-100/70"
                     title={homeAdLink.description || homeAdLink.title}
                   >
                     <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" aria-hidden />
@@ -2821,11 +2821,11 @@ export default function OpenCardsPage() {
                   </a>
                 ) : null}
               </div>
-              <div className="mb-3 overflow-hidden rounded-[18px] border border-neutral-200 bg-white">
+              <div className="mb-3 overflow-hidden rounded-lg border border-neutral-200 bg-white">
                 <button
                   type="button"
                   onClick={() => setGuideTopic((prev) => (prev === "open_card" ? null : "open_card"))}
-                  className={`flex min-h-[52px] w-full items-center gap-3 border-b border-neutral-100 px-4 text-left transition ${
+                  className={`flex min-h-[48px] w-full items-center gap-3 border-b border-neutral-100 px-3 text-left transition ${
                     guideTopic === "open_card"
                       ? "bg-rose-50/70"
                       : "bg-white hover:bg-neutral-50"
@@ -2838,7 +2838,7 @@ export default function OpenCardsPage() {
                 <button
                   type="button"
                   onClick={() => setGuideTopic((prev) => (prev === "one_on_one" ? null : "one_on_one"))}
-                  className={`flex min-h-[52px] w-full items-center gap-3 border-b border-neutral-100 px-4 text-left transition ${
+                  className={`flex min-h-[48px] w-full items-center gap-3 border-b border-neutral-100 px-3 text-left transition ${
                     guideTopic === "one_on_one"
                       ? "bg-sky-50/80"
                       : "bg-white hover:bg-neutral-50"
@@ -2850,7 +2850,7 @@ export default function OpenCardsPage() {
                 </button>
                 <Link
                   href="/dating/nearby-view"
-                  className="flex min-h-[52px] items-center gap-3 px-4 transition hover:bg-neutral-50"
+                  className="flex min-h-[48px] items-center gap-3 px-3 transition hover:bg-neutral-50"
                 >
                   <span className="shrink-0 rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-extrabold text-emerald-700">혜택</span>
                   <span className="min-w-0 flex-1 text-sm font-extrabold leading-5 text-neutral-900">
@@ -2860,28 +2860,28 @@ export default function OpenCardsPage() {
                 </Link>
               </div>
               {guideTopic ? (
-                <div className={`mt-3 rounded-[18px] border p-3.5 ${
+                <div className={`mt-3 rounded-lg border p-3 ${
                   guideTopic === "open_card" ? "border-rose-100 bg-rose-50/60" : "border-sky-100 bg-sky-50/60"
                 }`}>
                   {guideTopic === "open_card" ? (
                     <>
                       <div className="grid gap-2 sm:grid-cols-3">
-                        <div className="rounded-[14px] bg-white p-3 shadow-sm shadow-rose-100/40">
+                        <div className="border-b border-rose-100 bg-white p-3 last:border-b-0 sm:rounded-lg sm:border-b-0">
                           <p className="text-sm font-black text-neutral-950">1. 카드 작성</p>
                           <p className="mt-1.5 text-xs font-semibold leading-5 text-neutral-600">사진과 소개를 올려두면 공개 대기열에 들어가요.</p>
                         </div>
-                        <div className="rounded-[14px] bg-white p-3 shadow-sm shadow-rose-100/40">
+                        <div className="border-b border-rose-100 bg-white p-3 last:border-b-0 sm:rounded-lg sm:border-b-0">
                           <p className="text-sm font-black text-neutral-950">2. 카드 공개</p>
                           <p className="mt-1.5 text-xs font-semibold leading-5 text-neutral-600">순서가 오면 다른 사람들이 내 카드를 보고 지원해요.</p>
                         </div>
-                        <div className="rounded-[14px] bg-white p-3 shadow-sm shadow-rose-100/40">
+                        <div className="border-b border-rose-100 bg-white p-3 last:border-b-0 sm:rounded-lg sm:border-b-0">
                           <p className="text-sm font-black text-neutral-950">3. 지원 수락</p>
                           <p className="mt-1.5 text-xs font-semibold leading-5 text-neutral-600">마음에 드는 지원을 고르면 진행 상태가 열려요.</p>
                         </div>
                       </div>
                       <Link
                         href="/dating/card/new"
-                        className="mt-3 flex min-h-[42px] items-center justify-center rounded-[14px] bg-neutral-950 px-4 text-sm font-black text-white transition hover:bg-neutral-800"
+                        className="mt-3 flex min-h-[42px] items-center justify-center rounded-lg bg-neutral-950 px-4 text-sm font-bold text-white transition hover:bg-neutral-800"
                       >
                         오픈카드 작성하기
                       </Link>
@@ -2889,22 +2889,22 @@ export default function OpenCardsPage() {
                   ) : (
                     <>
                       <div className="grid gap-2 sm:grid-cols-3">
-                        <div className="rounded-[14px] bg-white p-3 shadow-sm shadow-sky-100/40">
+                        <div className="border-b border-sky-100 bg-white p-3 last:border-b-0 sm:rounded-lg sm:border-b-0">
                           <p className="text-sm font-black text-neutral-950">1. 신청서 작성</p>
                           <p className="mt-1.5 text-xs font-semibold leading-5 text-neutral-600">내 소개와 기본 정보를 등록하면 후보 추천이 시작돼요.</p>
                         </div>
-                        <div className="rounded-[14px] bg-white p-3 shadow-sm shadow-sky-100/40">
+                        <div className="border-b border-sky-100 bg-white p-3 last:border-b-0 sm:rounded-lg sm:border-b-0">
                           <p className="text-sm font-black text-neutral-950">2. 후보 확인</p>
                           <p className="mt-1.5 text-xs font-semibold leading-5 text-neutral-600">추천 후보를 보고 마음에 드는 사람을 골라요.</p>
                         </div>
-                        <div className="rounded-[14px] bg-white p-3 shadow-sm shadow-sky-100/40">
+                        <div className="border-b border-sky-100 bg-white p-3 last:border-b-0 sm:rounded-lg sm:border-b-0">
                           <p className="text-sm font-black text-neutral-950">3. 바로 지원</p>
                           <p className="mt-1.5 text-xs font-semibold leading-5 text-neutral-600">서로 수락되면 마이페이지에서 진행 상태를 확인해요.</p>
                         </div>
                       </div>
                       <Link
                         href="/dating/1on1"
-                        className="mt-3 flex min-h-[42px] items-center justify-center rounded-[14px] bg-neutral-950 px-4 text-sm font-black text-white transition hover:bg-neutral-800"
+                        className="mt-3 flex min-h-[42px] items-center justify-center rounded-lg bg-neutral-950 px-4 text-sm font-bold text-white transition hover:bg-neutral-800"
                       >
                         1대1 신청서 작성하기
                       </Link>
@@ -2912,8 +2912,8 @@ export default function OpenCardsPage() {
                   )}
                 </div>
               ) : null}
-              <div className="mt-3 rounded-[18px] border border-neutral-200 bg-white">
-                <div className="flex items-center gap-3 px-4 py-3.5">
+              <div className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50/60">
+                <div className="flex items-center gap-3 px-3 py-3">
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-extrabold text-neutral-900">오픈카드 기다리는 동안 1:1도 함께</p>
                     <p className="mt-1 text-xs font-medium text-neutral-400">신청서만 등록하면 추천 후보를 볼 수 있어요</p>
@@ -2924,7 +2924,7 @@ export default function OpenCardsPage() {
                   <button
                     type="button"
                     onClick={() => setHomeFeatureTab("one_on_one")}
-                    className="inline-flex min-h-[36px] shrink-0 items-center justify-center rounded-full bg-neutral-950 px-4 text-sm font-bold text-white transition hover:bg-neutral-800"
+                    className="inline-flex min-h-[38px] shrink-0 items-center justify-center rounded-lg bg-neutral-950 px-3.5 text-sm font-bold text-white transition hover:bg-neutral-800"
                   >
                     후보 보기
                   </button>
@@ -2977,7 +2977,7 @@ export default function OpenCardsPage() {
               <div className="grid gap-3">
                 <Link
                   href="/dating/card/new"
-                  className="inline-flex min-h-[62px] items-center justify-center rounded-[22px] bg-rose-600 px-5 text-lg font-bold text-white shadow-[0_14px_26px_rgba(225,29,72,0.22)] transition hover:-translate-y-0.5 hover:bg-rose-700"
+                  className="inline-flex min-h-[54px] items-center justify-center rounded-xl bg-rose-600 px-5 text-base font-bold text-white shadow-[0_10px_20px_rgba(225,29,72,0.18)] transition hover:bg-rose-700"
                 >
                   오픈카드 작성
                 </Link>
@@ -3003,7 +3003,7 @@ export default function OpenCardsPage() {
                 ) : null}
                 <Link
                   href="/dating/paid?apply=1"
-                  className="inline-flex min-h-[58px] items-center justify-center gap-2 rounded-[22px] border border-neutral-200 bg-white px-5 text-base font-bold text-neutral-800 shadow-[0_8px_18px_rgba(15,23,42,0.035)] transition hover:-translate-y-0.5 hover:bg-neutral-50"
+                  className="inline-flex min-h-[48px] items-center justify-center gap-2 rounded-xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-800 transition hover:bg-neutral-50"
                 >
                   <span className="rounded-lg bg-rose-600 px-2 py-1 text-[11px] font-bold text-white">추천</span>
                   대기 없이 등록
@@ -3016,19 +3016,19 @@ export default function OpenCardsPage() {
             <div className="flex gap-2 overflow-x-auto pb-1 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               <Link
                 href="/dating/apply-credits"
-                className="inline-flex min-h-[42px] shrink-0 items-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
+                className="inline-flex min-h-[40px] shrink-0 items-center rounded-lg border border-neutral-200 bg-white px-3.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
               >
                 지원권 구매
               </Link>
               <Link
                 href="/dating/more-view"
-                className="inline-flex min-h-[42px] shrink-0 items-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
+                className="inline-flex min-h-[40px] shrink-0 items-center rounded-lg border border-neutral-200 bg-white px-3.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
               >
                 이상형 더보기
               </Link>
               <Link
                 href="/dating/nearby-view"
-                className="inline-flex min-h-[42px] shrink-0 items-center rounded-full border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
+                className="inline-flex min-h-[40px] shrink-0 items-center rounded-lg border border-neutral-200 bg-white px-3.5 text-sm font-semibold text-neutral-600 hover:bg-neutral-50"
               >
                 내 가까운 이상형
               </Link>
@@ -4217,9 +4217,9 @@ function Section({
 
   return (
     <section>
-      <div className="mb-4">
-        <h2 className="text-[28px] font-black tracking-tight text-neutral-950">
-          {title} <span className="text-lg font-semibold text-neutral-400">{currentCount}명 공개중</span>
+      <div className="mb-3">
+        <h2 className="text-[22px] font-black text-neutral-950">
+          {title} <span className="text-sm font-semibold text-neutral-400">{currentCount}명 공개중</span>
         </h2>
         <p className="mt-1 text-xs font-semibold text-emerald-700">
           대기 없이 등록 카드는 지원권 차감 없이 지원할 수 있어요.
@@ -4232,13 +4232,13 @@ function Section({
       ) : (
         <>
           {pinnedPaidItems.length > 0 && (
-            <div className="mb-3 grid grid-cols-2 gap-3">
+            <div className="mb-3 grid grid-cols-2 gap-2.5 md:gap-3">
               {pinnedPaidItems.map((card) => (
                 <PaidCardRow key={card.id} card={card} viewerLoggedIn={viewerLoggedIn} />
               ))}
             </div>
           )}
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 gap-2.5 md:gap-3">
             {items.map((card) => (
               <CardRow key={card.id} card={card} viewerLoggedIn={viewerLoggedIn} />
             ))}
@@ -4250,7 +4250,7 @@ function Section({
             <button
               type="button"
               onClick={onMore}
-              className="mt-4 w-full min-h-[52px] rounded-[20px] border border-neutral-200 bg-white text-sm font-bold text-neutral-700 shadow-[0_8px_20px_rgba(15,23,42,0.03)] hover:bg-neutral-50"
+              className="mt-4 min-h-[48px] w-full rounded-lg border border-neutral-200 bg-white text-sm font-bold text-neutral-700 hover:bg-neutral-50"
             >
               더보기
             </button>
@@ -4300,8 +4300,8 @@ function PaidCardRow({ card, viewerLoggedIn }: { card: PaidCard; viewerLoggedIn:
   }, []);
 
   return (
-    <div className="flex h-full flex-col overflow-hidden rounded-[28px] border border-black/5 bg-white shadow-[0_12px_30px_rgba(15,23,42,0.05)]">
-      <div className={`relative min-h-[220px] overflow-hidden bg-gradient-to-br ${theme.shell} p-3`}>
+    <div className="flex h-full flex-col overflow-hidden rounded-xl border border-neutral-200 bg-white">
+      <div className={`relative min-h-[190px] overflow-hidden bg-gradient-to-br ${theme.shell} p-3 md:min-h-[220px]`}>
         <div className={`absolute inset-0 bg-gradient-to-b ${theme.overlay}`} aria-hidden />
         <div className="absolute -left-10 bottom-[-30px] h-36 w-36 rounded-full bg-white/10" aria-hidden />
         <div className="absolute -right-10 top-[-24px] h-32 w-32 rounded-full bg-white/10" aria-hidden />
@@ -4349,7 +4349,7 @@ function PaidCardRow({ card, viewerLoggedIn }: { card: PaidCard; viewerLoggedIn:
         </div>
       </div>
 
-      <div className="flex flex-1 flex-col p-4">
+      <div className="flex flex-1 flex-col p-3">
         <div className="flex flex-wrap gap-2">
           <PhoneVerifiedBadge verified={card.is_phone_verified} />
           {card.training_years != null ? (
@@ -4360,8 +4360,8 @@ function PaidCardRow({ card, viewerLoggedIn }: { card: PaidCard; viewerLoggedIn:
           ) : null}
         </div>
 
-        {card.strengths_text ? <p className="mt-3 line-clamp-2 text-[15px] leading-7 text-neutral-700">{card.strengths_text}</p> : null}
-        {card.ideal_text ? <p className="mt-2 line-clamp-2 text-sm leading-6 text-neutral-500">{card.ideal_text}</p> : null}
+        {card.strengths_text ? <p className="mt-3 line-clamp-2 text-sm leading-5 text-neutral-700">{card.strengths_text}</p> : null}
+        {card.ideal_text ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-neutral-500">{card.ideal_text}</p> : null}
 
         <div className="mt-auto grid gap-2 pt-4">
           <Link
@@ -4371,7 +4371,7 @@ function PaidCardRow({ card, viewerLoggedIn }: { card: PaidCard; viewerLoggedIn:
             onClick={rememberScroll}
             onTouchStart={warmRoute}
             onTouchEnd={rememberScroll}
-            className="inline-flex min-h-[46px] w-full items-center justify-center rounded-[18px] border border-neutral-200 px-3 text-sm font-bold text-neutral-700 hover:bg-neutral-50"
+            className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg border border-neutral-200 px-2 text-sm font-bold text-neutral-700 hover:bg-neutral-50"
           >
             {viewerLoggedIn ? "상세보기" : "로그인 후 보기"}
           </Link>
@@ -4382,7 +4382,7 @@ function PaidCardRow({ card, viewerLoggedIn }: { card: PaidCard; viewerLoggedIn:
             onClick={rememberScroll}
             onTouchStart={warmRoute}
             onTouchEnd={rememberScroll}
-            className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] bg-rose-600 px-3 text-sm font-bold text-white hover:bg-rose-700"
+            className="inline-flex min-h-[42px] w-full items-center justify-center rounded-lg bg-rose-600 px-2 text-sm font-bold text-white hover:bg-rose-700"
           >
             {viewerLoggedIn ? "지원하기" : "로그인 후 지원"}
           </Link>
@@ -4416,8 +4416,8 @@ function CardRow({ card, viewerLoggedIn }: { card: PublicCard; viewerLoggedIn: b
   }, []);
 
   return (
-    <div className={`flex h-full flex-col overflow-hidden rounded-[28px] border bg-white ${openCardBorderClass(card)}`}>
-      <div className={`relative min-h-[220px] overflow-hidden bg-gradient-to-br ${theme.shell} p-3`}>
+    <div className={`flex h-full flex-col overflow-hidden rounded-xl border bg-white ${openCardBorderClass(card)}`}>
+      <div className={`relative min-h-[190px] overflow-hidden bg-gradient-to-br ${theme.shell} p-3 md:min-h-[220px]`}>
         <div className={`absolute inset-0 bg-gradient-to-b ${theme.overlay}`} aria-hidden />
         <div className="absolute -left-10 bottom-[-30px] h-36 w-36 rounded-full bg-white/10" aria-hidden />
         <div className="absolute -right-10 top-[-24px] h-32 w-32 rounded-full bg-white/10" aria-hidden />
@@ -4470,7 +4470,7 @@ function CardRow({ card, viewerLoggedIn }: { card: PublicCard; viewerLoggedIn: b
         </div>
       </div>
 
-      <div className="flex flex-1 flex-col p-4">
+      <div className="flex flex-1 flex-col p-3">
         <div className="flex flex-wrap gap-2">
           <PhoneVerifiedBadge verified={card.is_phone_verified} />
           {card.training_years != null ? (
@@ -4481,8 +4481,8 @@ function CardRow({ card, viewerLoggedIn }: { card: PublicCard; viewerLoggedIn: b
           ) : null}
         </div>
 
-        {card.strengths_text ? <p className="mt-3 line-clamp-2 text-[15px] leading-7 text-neutral-700">{card.strengths_text}</p> : null}
-        {ideal ? <p className="mt-2 line-clamp-2 text-sm leading-6 text-neutral-500">{ideal}</p> : null}
+        {card.strengths_text ? <p className="mt-3 line-clamp-2 text-sm leading-5 text-neutral-700">{card.strengths_text}</p> : null}
+        {ideal ? <p className="mt-2 line-clamp-2 text-xs leading-5 text-neutral-500">{ideal}</p> : null}
 
         <div className="mt-auto grid gap-2 pt-4">
           <Link
@@ -4492,7 +4492,7 @@ function CardRow({ card, viewerLoggedIn }: { card: PublicCard; viewerLoggedIn: b
             onClick={rememberScroll}
             onTouchStart={warmRoute}
             onTouchEnd={rememberScroll}
-            className="inline-flex min-h-[46px] w-full items-center justify-center rounded-[18px] border border-neutral-200 bg-white px-3 text-sm font-bold text-neutral-700 hover:bg-neutral-50"
+            className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg border border-neutral-200 bg-white px-2 text-sm font-bold text-neutral-700 hover:bg-neutral-50"
           >
             {viewerLoggedIn ? "상세보기" : "로그인 후 보기"}
           </Link>
@@ -4503,7 +4503,7 @@ function CardRow({ card, viewerLoggedIn }: { card: PublicCard; viewerLoggedIn: b
             onClick={rememberScroll}
             onTouchStart={warmRoute}
             onTouchEnd={rememberScroll}
-            className="inline-flex min-h-[48px] w-full items-center justify-center rounded-[18px] bg-rose-600 px-3 text-sm font-bold text-white hover:bg-rose-700"
+            className="inline-flex min-h-[42px] w-full items-center justify-center rounded-lg bg-rose-600 px-2 text-sm font-bold text-white hover:bg-rose-700"
           >
             {viewerLoggedIn ? "지원하기" : "로그인 후 지원"}
           </Link>
