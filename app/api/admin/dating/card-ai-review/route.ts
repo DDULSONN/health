@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { requireAdminRoute } from "@/lib/admin-route";
 import { recordAdminAuditEvent } from "@/lib/admin-audit";
 import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
+import { datingContactReviewFlags } from "@/lib/dating-contact-content";
 import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
 import { buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -97,21 +98,6 @@ const SOURCE_TYPES: SourceType[] = [
 const SUSPICIOUS_LEVELS = new Set<SuspicionLevel>(["medium", "high"]);
 const ONE_ON_ONE_EDIT_LOCK_TAG = "one_on_one_edit_locked";
 const TEST_TEXT_PATTERNS = [/테스트|test|asdf|qwer|ㄹㄹ|ㅁㄴㅇ|ㅇㅇㅇ/i];
-const EXTERNAL_CONTACT_PATTERNS = [
-  /https?:\/\/|www\.|open\.kakao|t\.me|instagram\.com|bit\.ly|linktr\.ee/i,
-  /오픈\s*카톡|오픈\s*채팅|카카오톡|카톡\s*(아이디|id|문의|주세요|ㄱ)|디엠|dm\s*(주세요|문의|ㄱ)|텔레그램|telegram|라인\s*(id|아이디)?|line\s*(id)?/i,
-];
-const DIRECT_CONTACT_PATTERNS = [
-  /(?:010|011|016|017|018|019)[-\s.)]*(?:\d[-\s.]*){7,8}/,
-  /\b01[016789][^\d]{0,3}\d{3,4}[^\d]{0,3}\d{4}\b/,
-  /(카카오톡|카톡|오픈카톡|오픈채팅|kakao|kakaotalk).{0,18}(아이디|id|검색|추가|친추|연락|주세요|주세용|보내|남겨)/i,
-  /(카카오톡|카톡|kakao|kakaotalk)\s*[:：]?\s*[A-Za-z0-9._-]{2,}/i,
-  /(인스타|instagram|insta|ig|디엠|dm).{0,18}(아이디|id|계정|검색|팔로우|연락|주세요|주세용|보내|남겨)/i,
-  /(^|[^A-Za-z0-9._])@[A-Za-z0-9._]{3,}/i,
-  /(라인|line|텔레그램|telegram|텔레)\s*[:：]?\s*[A-Za-z0-9._-]{2,}/i,
-  /(연락처|연락|번호|전화|문자).{0,16}(주세요|주세용|가능|해요|할게|남겨|교환|010|카톡|카카오|인스타|dm|디엠)/i,
-];
-
 const COMMERCIAL_PATTERNS = [
   /(광고|홍보|협찬|제휴|업체)\s*(문의|가능|환영|주세요|받아요)/i,
   /(부업|수익|투자|코인|토토|바카라|카지노|대출|리딩방|공구)\s*(문의|모집|가능|추천|링크)?/i,
@@ -262,7 +248,7 @@ function sourceLabel(value: SourceType) {
 
 function likelyTextFlags(texts: Record<string, string>) {
   const reviewTexts = Object.entries(texts)
-    .filter(([key]) => !/instagram|job/i.test(key))
+    .filter(([key]) => !/instagram/i.test(key))
     .map(([, value]) => value.trim())
     .filter(Boolean);
   const merged = reviewTexts.join(" ").trim();
@@ -273,9 +259,7 @@ function likelyTextFlags(texts: Record<string, string>) {
     flags.push("테스트/장난성 문구");
   }
   if (/([가-힣A-Za-z0-9])\1{4,}/u.test(merged)) flags.push("반복 문자 과다");
-  if (/010[-\s]?\d{3,4}[-\s]?\d{4}/.test(merged)) flags.push("전화번호 직접 노출 의심");
-  if (DIRECT_CONTACT_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("연락처/외부 계정 선노출 의심");
-  if (EXTERNAL_CONTACT_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("외부 연락/링크 유도 의심");
+  flags.push(...datingContactReviewFlags(merged));
   if (COMMERCIAL_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("광고/상업성 문구 의심");
   if (UNSAFE_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("부적절/위험 키워드");
 
@@ -284,7 +268,7 @@ function likelyTextFlags(texts: Record<string, string>) {
 
 function ruleReview(card: CandidateCard): CardReview {
   const photoFlags: string[] = [];
-  const textFlags = likelyTextFlags(card.texts);
+  const textFlags = likelyTextFlags({ ...card.texts, displayName: card.displayName });
   const flags: string[] = [];
   const requiredTextFields = Object.entries(card.texts).filter(([key]) => !/instagram|job/i.test(key));
 
@@ -322,7 +306,7 @@ function ruleReview(card: CandidateCard): CardReview {
         : `${sourceLabel(card.sourceType)} 일반 검수상 큰 이상 없음`,
     photoFlags,
     textFlags: Array.from(new Set(textFlags)).slice(0, 10),
-    raw: { provider: "rules", version: "2026-05-23-2" },
+    raw: { provider: "rules", version: "2026-08-18-1" },
   };
 }
 

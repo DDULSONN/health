@@ -376,7 +376,7 @@ export default function AdminDatingCardAiReviewPanel() {
           <div>
             <p className="text-sm font-semibold text-violet-900">카드/지원 내역 검수</p>
             <p className="mt-1 text-xs text-neutral-500">
-              일반 검수는 글자수·특정 문장·금칙어만 빠르게 보고, AI 검수는 사진까지 확인합니다. 카드와 지원 내역 모두 자동 조치는 하지 않습니다.
+              일반 검수는 글자수·금칙어·연락처·외부 계정 아이디를 빠르게 보고, AI 검수는 사진까지 확인합니다. 카드와 지원 내역 모두 자동 조치는 하지 않습니다.
             </p>
           </div>
           <button

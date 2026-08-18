@@ -1,4 +1,5 @@
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
+import { DATING_CONTACT_CONTENT_ERROR, findDatingContactFields } from "@/lib/dating-contact-content";
 import { getDatingOneOnOneWriteStatus, getProfilePhoneVerification } from "@/lib/dating-1on1";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -242,6 +243,20 @@ export async function PATCH(req: Request) {
   }
   if (!preferredPartnerText || preferredPartnerText.length > 1000) {
     return NextResponse.json({ error: "Preferred partner must be 1-1000 characters." }, { status: 400 });
+  }
+  const contactFields = findDatingContactFields({
+    name,
+    job,
+    region,
+    intro_text: introText,
+    strengths_text: strengthsText,
+    preferred_partner_text: preferredPartnerText,
+  });
+  if (contactFields.length > 0) {
+    return NextResponse.json(
+      { error: DATING_CONTACT_CONTENT_ERROR, code: "EXTERNAL_CONTACT_NOT_ALLOWED", fields: contactFields.map((item) => item.field) },
+      { status: 400 }
+    );
   }
   if (!SMOKING_VALUES.has(smoking)) {
     return NextResponse.json({ error: "Smoking value is invalid." }, { status: 400 });
