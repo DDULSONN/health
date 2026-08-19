@@ -123,6 +123,7 @@ export default function NearbyViewPage() {
   );
   const [items, setItems] = useState<CardItem[]>(initialSnapshot?.items ?? []);
   const [loading, setLoading] = useState(() => !(initialSnapshot?.items?.length));
+  const [listError, setListError] = useState("");
   const listRequestIdRef = useRef(0);
   const pendingSexTabScrollRef = useRef<number | null>(null);
   const resultsSectionRef = useRef<HTMLElement | null>(null);
@@ -220,12 +221,15 @@ export default function NearbyViewPage() {
     if (!province) return;
     const requestId = ++listRequestIdRef.current;
     setLoading(true);
+    setListError("");
     try {
       const targetSexQuery = targetSex ? `&targetSex=${encodeURIComponent(targetSex)}` : "";
       const res = await fetch(`/api/dating/cards/city-view/list?province=${encodeURIComponent(province)}${targetSexQuery}`, { cache: "no-store" });
       if (requestId !== listRequestIdRef.current) return;
       if (!res.ok) {
+        const errorBody = (await res.json().catch(() => ({}))) as { error?: string };
         setItems([]);
+        setListError(errorBody.error ?? "열람 카드를 불러오지 못했습니다.");
         return;
       }
       const body = (await res.json()) as CityViewListResponse;
@@ -234,6 +238,10 @@ export default function NearbyViewPage() {
       if (body.targetSex === "male" || body.targetSex === "female") {
         setActiveSex(body.targetSex);
       }
+    } catch {
+      if (requestId !== listRequestIdRef.current) return;
+      setItems([]);
+      setListError("열람 카드를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
     } finally {
       if (requestId === listRequestIdRef.current) {
         setLoading(false);
@@ -341,7 +349,8 @@ export default function NearbyViewPage() {
   const femaleItems = useMemo(() => items.filter((i) => i.sex === "female"), [items]);
 
   return (
-    <main className="mx-auto max-w-5xl px-4 py-6">
+    <main className="min-h-screen bg-neutral-50 px-4 py-6 text-neutral-950">
+      <div className="mx-auto max-w-5xl">
       <div className="mb-4 flex items-center gap-2">
         <Link href="/community/dating/cards" className="rounded-full border border-neutral-300 bg-white px-3 py-1.5 text-sm font-medium text-neutral-700 hover:bg-neutral-50">
           오픈카드
@@ -495,6 +504,20 @@ export default function NearbyViewPage() {
           <p className="text-sm text-neutral-500">결제나 무료 열람으로 열린 지역이 아직 없어요.</p>
         ) : loading ? (
           <p className="text-sm text-neutral-500">카드를 불러오는 중...</p>
+        ) : listError ? (
+          <div className="rounded-2xl border border-rose-200 bg-rose-50 px-4 py-4">
+            <p className="text-sm font-medium text-rose-700">{listError}</p>
+            <button
+              type="button"
+              onClick={() => {
+                const targetSex = resolveTargetSexForProvince(selectedProvince);
+                void loadList(selectedProvince, targetSex);
+              }}
+              className="mt-3 inline-flex min-h-[40px] items-center rounded-xl bg-neutral-950 px-4 text-xs font-semibold text-white"
+            >
+              다시 불러오기
+            </button>
+          </div>
         ) : (
           <div className="space-y-5">
             <div className="flex items-center justify-between">
@@ -542,6 +565,7 @@ export default function NearbyViewPage() {
       </section>
 
       <PaidPolicyNotice />
+      </div>
     </main>
   );
 }

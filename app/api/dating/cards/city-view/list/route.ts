@@ -17,6 +17,14 @@ import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
 import { NextResponse } from "next/server";
 
+function isMissingColumnError(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const value = error as { code?: unknown; message?: unknown };
+  const code = String(value.code ?? "");
+  const message = String(value.message ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || message.includes("target_sex");
+}
+
 function normalizePath(value: unknown): string {
   if (typeof value !== "string") return "";
   const trimmed = value.trim();
@@ -148,7 +156,7 @@ export async function GET(req: Request) {
   const targetSexChanged = activeGrant.targetSex == null && requestedTargetSex === targetSex;
   if ((snapshotChanged && persistedCardIds.length > 0) || targetSexChanged) {
     const snapshotSeenCardIds = [...new Set([...activeGrant.snapshotSeenCardIds, ...persistedCardIds])];
-    const snapshotUpdateRes = await admin
+    let snapshotUpdateRes = await admin
       .from("dating_city_view_requests")
       .update({
         target_sex: targetSex,
@@ -159,8 +167,28 @@ export async function GET(req: Request) {
       .eq("status", "approved")
       .select("id")
       .maybeSingle();
+
+    if (snapshotUpdateRes.error && isMissingColumnError(snapshotUpdateRes.error)) {
+      snapshotUpdateRes = await admin
+        .from("dating_city_view_requests")
+        .update({
+          snapshot_card_ids: persistedCardIds,
+          snapshot_seen_card_ids: snapshotSeenCardIds,
+        })
+        .eq("id", activeGrant.requestId)
+        .eq("status", "approved")
+        .select("id")
+        .maybeSingle();
+    }
+
     if (snapshotUpdateRes.error || !snapshotUpdateRes.data) {
-      return NextResponse.json({ error: "지역별 후보 목록을 갱신하지 못했습니다. 잠시 후 다시 시도해주세요." }, { status: 500 });
+      // Snapshot persistence must not block an already-paid user from viewing
+      // the candidates selected for this response.
+      console.error("[city-view/list] snapshot update failed", {
+        requestId: activeGrant.requestId,
+        province,
+        code: snapshotUpdateRes.error?.code ?? null,
+      });
     }
   }
 
