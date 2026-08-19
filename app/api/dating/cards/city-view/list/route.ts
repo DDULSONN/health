@@ -88,13 +88,6 @@ export async function GET(req: Request) {
   if (!activeGrant) {
     return NextResponse.json({ error: "해당 도/광역시는 구매 또는 무료 열람 후 이용 가능합니다." }, { status: 403 });
   }
-  const targetSex = activeGrant.targetSex ?? defaultTargetSex ?? requestedTargetSex;
-  if (!targetSex) {
-    return NextResponse.json(
-      { error: "열람할 성별을 먼저 선택해 주세요.", code: "TARGET_SEX_REQUIRED" },
-      { status: 400 }
-    );
-  }
 
   const selectColumns =
     "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, instagram_id, expires_at, created_at, status";
@@ -103,6 +96,18 @@ export async function GET(req: Request) {
     rows = await fetchCityViewCandidateRows(admin);
   } catch {
     return NextResponse.json({ error: "목록을 불러오지 못했습니다." }, { status: 500 });
+  }
+
+  const snapshotIdSet = new Set(activeGrant.snapshotCardIds);
+  const snapshotTargetSex = normalizeDatingCityViewSex(
+    rows.find((row) => snapshotIdSet.has(String(row.id ?? "")))?.sex
+  );
+  const targetSex = activeGrant.targetSex ?? snapshotTargetSex ?? defaultTargetSex ?? requestedTargetSex;
+  if (!targetSex) {
+    return NextResponse.json(
+      { error: "열람할 성별을 먼저 선택해 주세요.", code: "TARGET_SEX_REQUIRED" },
+      { status: 400 }
+    );
   }
 
   const now = Date.now();

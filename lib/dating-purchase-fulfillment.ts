@@ -359,6 +359,23 @@ function mergeCardIds(...groups: string[][]): string[] {
   return [...new Set(groups.flat().filter((id) => id.trim().length > 0))];
 }
 
+async function inferSnapshotTargetSex(admin: AdminClient, cardIds: string[]): Promise<DatingCityViewSex | null> {
+  const uniqueIds = [...new Set(cardIds)].slice(0, 500);
+  if (uniqueIds.length === 0) return null;
+
+  const result = await admin.from("dating_cards").select("sex").in("id", uniqueIds);
+  if (result.error) return null;
+
+  let maleCount = 0;
+  let femaleCount = 0;
+  for (const row of result.data ?? []) {
+    if (row.sex === "male") maleCount += 1;
+    if (row.sex === "female") femaleCount += 1;
+  }
+  if (maleCount === femaleCount) return null;
+  return maleCount > femaleCount ? "male" : "female";
+}
+
 async function getPreviousCityViewSnapshotIds(admin: AdminClient, userId: string, city: string) {
   const res = await admin
     .from("dating_city_view_requests")
@@ -397,7 +414,9 @@ async function buildCityViewSnapshotCardIds(
   if (!province) return [];
 
   const usedIds = await getPreviousCityViewSnapshotIds(admin, userId, province);
-  const targetSex = await getCityViewTargetSex(admin, userId, requestedTargetSex);
+  const targetSex =
+    normalizeDatingCityViewSex(requestedTargetSex) ??
+    (await getCityViewTargetSex(admin, userId, requestedTargetSex));
   const [rows, blockedUserIds] = await Promise.all([
     fetchCityViewCandidateRows(admin),
     getDatingBlockedUserIds(admin, userId),
@@ -468,12 +487,14 @@ export async function approveCityViewRequest(admin: AdminClient, options: Approv
     throw pendingRes.error;
   }
 
+  const requestedTargetSex = normalizeDatingCityViewSex(options.targetSex);
   const targetSex = pendingRes.data
-    ? await getCityViewTargetSex(
+    ? requestedTargetSex ??
+      (await getCityViewTargetSex(
         admin,
         pendingRes.data.user_id,
-        options.targetSex ?? normalizeDatingCityViewSex(pendingRes.data.target_sex)
-      )
+        normalizeDatingCityViewSex(pendingRes.data.target_sex)
+      ))
     : null;
   const snapshotCardIds = pendingRes.data
     ? await safeBuildCityViewSnapshotCardIds(admin, pendingRes.data.user_id, pendingRes.data.city, targetSex)
@@ -735,26 +756,33 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
   }
 
   const accessExpiresAt = new Date(now + accessHours * 60 * 60 * 1000).toISOString();
-  const targetSex = await getCityViewTargetSex(
-    admin,
-    options.userId,
-    options.targetSex ?? normalizeDatingCityViewSex(activeRow?.target_sex)
-  );
+  const requestedTargetSex = normalizeDatingCityViewSex(options.targetSex);
+  const storedTargetSex = normalizeDatingCityViewSex(activeRow?.target_sex);
+  const existingSnapshotCardIds = parseSnapshotCardIds(activeRow?.snapshot_card_ids);
+  const existingSnapshotTargetSex =
+    storedTargetSex ?? (await inferSnapshotTargetSex(admin, existingSnapshotCardIds));
+  const targetSex =
+    requestedTargetSex ??
+    (await getCityViewTargetSex(admin, options.userId, storedTargetSex));
   const snapshotCardIds = await safeBuildCityViewSnapshotCardIds(
     admin,
     options.userId,
     options.city,
     targetSex
   );
-  const accumulatedSnapshotCardIds = mergeCardIds(
-    parseSnapshotCardIds((activeRow as { snapshot_card_ids?: unknown } | undefined)?.snapshot_card_ids),
-    snapshotCardIds
+  const targetSexChanged = Boolean(
+    requestedTargetSex && existingSnapshotTargetSex && requestedTargetSex !== existingSnapshotTargetSex
   );
-  const snapshotSeenCardIds = mergeCardIds(
-    parseSnapshotCardIds((activeRow as { snapshot_seen_card_ids?: unknown } | undefined)?.snapshot_seen_card_ids),
-    parseSnapshotCardIds((activeRow as { snapshot_card_ids?: unknown } | undefined)?.snapshot_card_ids),
-    snapshotCardIds
-  );
+  const accumulatedSnapshotCardIds = targetSexChanged
+    ? snapshotCardIds
+    : mergeCardIds(existingSnapshotCardIds, snapshotCardIds);
+  const snapshotSeenCardIds = targetSexChanged
+    ? snapshotCardIds
+    : mergeCardIds(
+        parseSnapshotCardIds(activeRow?.snapshot_seen_card_ids),
+        existingSnapshotCardIds,
+        snapshotCardIds
+      );
 
   if (activeRow?.id) {
     let updateRes = await admin
@@ -793,6 +821,8 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
       userId: options.userId,
       city: options.city,
       accessExpiresAt,
+      targetSex,
+      grantedCardCount: snapshotCardIds.length,
       bonusCreditsGranted: creditGrant?.addedCredits ?? 0,
     };
   }
@@ -861,15 +891,23 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
       }
       if (duplicateRes.error) throw duplicateRes.error;
       if (duplicateRes.data?.id) {
-        const retrySnapshotCardIds = mergeCardIds(
-          parseSnapshotCardIds((duplicateRes.data as CityViewGrantRow).snapshot_card_ids),
-          snapshotCardIds
+        const duplicateSnapshotCardIds = parseSnapshotCardIds(duplicateRes.data.snapshot_card_ids);
+        const duplicateSnapshotTargetSex =
+          normalizeDatingCityViewSex(duplicateRes.data.target_sex) ??
+          (await inferSnapshotTargetSex(admin, duplicateSnapshotCardIds));
+        const duplicateTargetSexChanged = Boolean(
+          requestedTargetSex && duplicateSnapshotTargetSex && requestedTargetSex !== duplicateSnapshotTargetSex
         );
-        const retrySnapshotSeenCardIds = mergeCardIds(
-          parseSnapshotCardIds((duplicateRes.data as CityViewGrantRow).snapshot_seen_card_ids),
-          parseSnapshotCardIds((duplicateRes.data as CityViewGrantRow).snapshot_card_ids),
-          snapshotCardIds
-        );
+        const retrySnapshotCardIds = duplicateTargetSexChanged
+          ? snapshotCardIds
+          : mergeCardIds(duplicateSnapshotCardIds, snapshotCardIds);
+        const retrySnapshotSeenCardIds = duplicateTargetSexChanged
+          ? snapshotCardIds
+          : mergeCardIds(
+              parseSnapshotCardIds(duplicateRes.data.snapshot_seen_card_ids),
+              duplicateSnapshotCardIds,
+              snapshotCardIds
+            );
         let retryUpdateRes = await admin
           .from("dating_city_view_requests")
           .update({
@@ -904,6 +942,8 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
           userId: options.userId,
           city: options.city,
           accessExpiresAt,
+          targetSex,
+          grantedCardCount: snapshotCardIds.length,
           bonusCreditsGranted: creditGrant?.addedCredits ?? 0,
         };
       }
@@ -917,6 +957,8 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
     userId: options.userId,
     city: options.city,
     accessExpiresAt,
+    targetSex,
+    grantedCardCount: snapshotCardIds.length,
     bonusCreditsGranted: creditGrant?.addedCredits ?? 0,
   };
 }

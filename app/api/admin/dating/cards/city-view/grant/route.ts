@@ -1,5 +1,9 @@
 import { isAllowedAdminUser } from "@/lib/admin";
-import { CITY_VIEW_ACCESS_HOURS } from "@/lib/dating-city-view";
+import {
+  CITY_VIEW_ACCESS_HOURS,
+  normalizeDatingCityViewSex,
+  type DatingCityViewSex,
+} from "@/lib/dating-city-view";
 import { grantCityViewAccess } from "@/lib/dating-purchase-fulfillment";
 import { PROVINCE_ORDER } from "@/lib/region-city";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
@@ -168,9 +172,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: "권한이 없습니다." }, { status: 403 });
   }
 
-  const body = (await req.json().catch(() => null)) as { userId?: unknown; province?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as {
+    userId?: unknown;
+    province?: unknown;
+    targetSex?: unknown;
+  } | null;
   const userId = normalizeQuery(body?.userId);
   const province = normalizeQuery(body?.province);
+  const targetSex = normalizeDatingCityViewSex(body?.targetSex);
 
   if (!userId) {
     return NextResponse.json({ ok: false, message: "대상 유저를 선택해주세요." }, { status: 400 });
@@ -180,6 +189,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: "지역을 다시 선택해주세요." }, { status: 400 });
   }
 
+  if (!targetSex) {
+    return NextResponse.json({ ok: false, message: "열람할 성별을 선택해주세요." }, { status: 400 });
+  }
+
   const admin = createAdminClient();
   const grant = await grantCityViewAccess(admin, {
     userId,
@@ -187,6 +200,7 @@ export async function POST(req: Request) {
     accessHours: CITY_VIEW_ACCESS_HOURS,
     note: `admin manual grant by ${adminUser.email ?? adminUser.id}`,
     bonusCredits: 0,
+    targetSex,
   }).catch((error) => {
     console.error("[admin-city-view-grant] failed", error);
     return null;
@@ -196,9 +210,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: "가까운 이상형 권한 지급에 실패했습니다." }, { status: 500 });
   }
 
+  const grantedTargetSex = (grant.targetSex ?? targetSex) as DatingCityViewSex;
+  const targetSexLabel = grantedTargetSex === "male" ? "남성" : "여성";
+  const grantedCardCount = Number(grant.grantedCardCount ?? 0);
+  const message =
+    grantedCardCount > 0
+      ? `${province} ${targetSexLabel} 카드 ${grantedCardCount}명을 바로 열어줬습니다.`
+      : `${province} ${targetSexLabel} 카드 열람 권한을 바로 열어줬습니다.`;
+
   return NextResponse.json({
     ok: true,
-    message: `${province} 지역을 바로 열어줬습니다.`,
+    message,
     item: grant,
   });
 }

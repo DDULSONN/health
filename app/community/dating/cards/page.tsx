@@ -1917,7 +1917,7 @@ export default function OpenCardsPage() {
         return;
       }
 
-      const summaryRes = await fetch("/api/mypage/summary", { cache: "no-store" }).catch(() => null);
+      const summaryRes = await fetch("/api/mypage/summary?profileOnly=1", { cache: "no-store" }).catch(() => null);
       if (!summaryRes?.ok) {
         setViewerPhoneVerified(false);
         return;

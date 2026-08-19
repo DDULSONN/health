@@ -14,6 +14,13 @@ type CityViewRequestRow = {
   created_at?: string | null;
 };
 
+function isMissingTargetSexColumn(error: unknown) {
+  const value = error as { code?: unknown; message?: unknown } | null;
+  const code = String(value?.code ?? "");
+  const message = String(value?.message ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || message.includes("target_sex");
+}
+
 function normalizeIsoDate(value: unknown): string | null {
   if (typeof value !== "string" || !value.trim()) return null;
   const date = new Date(value);
@@ -138,12 +145,20 @@ export async function POST(req: Request) {
     }
   }
 
-  const insertRes = await admin.from("dating_city_view_requests").insert({
+  let insertRes = await admin.from("dating_city_view_requests").insert({
     user_id: user.id,
     city: province,
     target_sex: targetSex,
     status: "pending",
   });
+
+  if (insertRes.error && isMissingTargetSexColumn(insertRes.error)) {
+    insertRes = await admin.from("dating_city_view_requests").insert({
+      user_id: user.id,
+      city: province,
+      status: "pending",
+    });
+  }
 
   if (insertRes.error) {
     return NextResponse.json({ ok: false, message: "신청 생성에 실패했습니다." }, { status: 500 });

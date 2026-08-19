@@ -184,7 +184,7 @@ export default function DatingOnboardingPage() {
           fetch("/api/dating/1on1/write-status", { cache: "no-store" }),
           fetch("/api/dating/cards/my", { cache: "no-store" }),
           fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
-          fetch("/api/mypage/summary", { cache: "no-store" }),
+          fetch("/api/mypage/summary?profileOnly=1", { cache: "no-store" }),
         ]);
         if (!oneResponse.ok || !openResponse.ok || !writeResponse.ok || !profileResponse.ok) {
           throw new Error("등록 가능 상태를 불러오지 못했습니다.");

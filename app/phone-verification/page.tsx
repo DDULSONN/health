@@ -50,7 +50,7 @@ function PhoneVerificationContent() {
         return;
       }
 
-      const res = await fetch("/api/mypage/summary", { cache: "no-store" }).catch(() => null);
+      const res = await fetch("/api/mypage/summary?profileOnly=1", { cache: "no-store" }).catch(() => null);
       if (res?.status === 401) {
         router.replace(buildLoginRedirect(next));
         return;

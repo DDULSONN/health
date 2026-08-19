@@ -1,5 +1,5 @@
 ﻿import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { google } from "googleapis";
 import { decodeJwt, importPKCS8, SignJWT } from "jose";
 import { syncAppleSwipeSubscription } from "@/lib/apple-swipe-subscription";
@@ -99,17 +99,59 @@ function decodeTransactionToken(purchaseToken: string | null | undefined) {
   }
 }
 
+function parseJsonObject(value: string): Record<string, unknown> | null {
+  try {
+    const parsed = JSON.parse(value) as unknown;
+    if (typeof parsed === "string") return parseJsonObject(parsed);
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
+    }
+  } catch {
+    return null;
+  }
+  return null;
+}
+
 function readGoogleServiceAccountJson() {
   const raw = process.env.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON?.trim() ?? "";
   if (!raw) return null;
 
-  const maybeJson = raw.startsWith("{")
-    ? raw
-    : raw.startsWith("ey") || raw.includes("base64")
-      ? Buffer.from(raw.replace(/^base64:/, ""), "base64").toString("utf8")
-      : readFileSync(raw, "utf8");
+  const direct = parseJsonObject(raw);
+  if (direct) return direct;
 
-  return JSON.parse(maybeJson) as Record<string, unknown>;
+  if (raw.includes('"type"') && raw.includes('"private_key"')) {
+    const wrapped = parseJsonObject(`{${raw.replace(/^\{?\s*|\s*\}?$/g, "")}}`);
+    if (wrapped) return wrapped;
+  }
+
+  const base64Value = raw.replace(/^base64:/i, "").replace(/\s/g, "");
+  if (/^[A-Za-z0-9+/]+={0,2}$/.test(base64Value) && base64Value.length >= 100) {
+    const decoded = parseJsonObject(Buffer.from(base64Value, "base64").toString("utf8"));
+    if (decoded) return decoded;
+  }
+
+  if (raw.length <= 1024 && !/[\r\n]/.test(raw) && existsSync(raw)) {
+    const fromFile = parseJsonObject(readFileSync(raw, "utf8"));
+    if (fromFile) return fromFile;
+  }
+
+  throw new Error("Google Play 서비스 계정 설정 형식이 올바르지 않습니다.");
+}
+
+export function toSafeAppPurchaseErrorMessage(error: unknown) {
+  const fallback = "결제 검증 처리 중 오류가 발생했습니다.";
+  const message = error instanceof Error ? error.message : String(error ?? "").trim();
+  if (!message) return fallback;
+
+  const containsSensitiveValue =
+    /private[_ -]?key|begin [a-z ]*private key|google_play_service_account_json|enametoolong|client_email/i.test(
+      message
+    );
+  if (containsSensitiveValue || message.length > 500) {
+    return "스토어 결제 설정을 확인할 수 없습니다. 관리자에게 문의해주세요.";
+  }
+
+  return message;
 }
 
 async function verifyAndroidPlayPurchase(input: DirectStorePurchaseInput & { productId: DatingStoreProductId }) {
@@ -443,13 +485,34 @@ export async function fulfillDatingStorePurchase(
     });
   }
 
-  if (input.productId === DATING_STORE_PRODUCT_IDS.oneOnOnePlus30d) {
+  if (
+    input.productId === DATING_STORE_PRODUCT_IDS.oneOnOnePlus7d ||
+    input.productId === DATING_STORE_PRODUCT_IDS.oneOnOnePlus30d
+  ) {
     return grantOneOnOnePlus(admin, {
       userId: input.userId,
       grantKey: `direct-store:${input.eventKey}`,
       durationDays: DATING_STORE_PRODUCT_CATALOG[input.productId].durationDays,
       allowLegacySchema: true,
     });
+  }
+
+  if (input.productId === DATING_STORE_PRODUCT_IDS.datingAllPass30d) {
+    const catalog = DATING_STORE_PRODUCT_CATALOG[input.productId];
+    const oneOnOne = await grantOneOnOnePlus(admin, {
+      userId: input.userId,
+      grantKey: `direct-store:${input.eventKey}:one-on-one`,
+      durationDays: catalog.durationDays,
+      allowLegacySchema: true,
+    });
+    const swipe = await grantSwipeSubscription(admin, {
+      userId: input.userId,
+      amount: catalog.swipePremiumAmountKrw,
+      dailyLimit: catalog.dailyLimit,
+      durationDays: catalog.durationDays,
+      note,
+    });
+    return { oneOnOne, swipe };
   }
 
   if (input.productId === DATING_STORE_PRODUCT_IDS.openCardRepost) {

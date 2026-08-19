@@ -1988,6 +1988,7 @@ export default function MyPage() {
   const [adminMoreViewGrantInfo, setAdminMoreViewGrantInfo] = useState("");
   const [adminCityViewGrantQuery, setAdminCityViewGrantQuery] = useState("");
   const [adminCityViewGrantProvince, setAdminCityViewGrantProvince] = useState<string>(PROVINCE_ORDER[0] ?? "서울");
+  const [adminCityViewGrantSex, setAdminCityViewGrantSex] = useState<"male" | "female">("female");
   const [adminCityViewGrantCandidates, setAdminCityViewGrantCandidates] = useState<AdminCityViewGrantCandidate[]>([]);
   const [adminCityViewGrantLoading, setAdminCityViewGrantLoading] = useState(false);
   const [adminCityViewGrantingUserId, setAdminCityViewGrantingUserId] = useState<string | null>(null);
@@ -2066,6 +2067,16 @@ export default function MyPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState<MyPageTab>("my_cert");
   const [pageSectionTab, setPageSectionTab] = useState<MyPageSectionTab>("profile");
+  const [matchingDataLoaded, setMatchingDataLoaded] = useState(false);
+  const [matchingDataLoading, setMatchingDataLoading] = useState(false);
+  const [matchingDataError, setMatchingDataError] = useState("");
+  const matchingDataLoadingRef = useRef(false);
+  const [settingsDataLoaded, setSettingsDataLoaded] = useState(false);
+  const [settingsDataLoading, setSettingsDataLoading] = useState(false);
+  const [settingsDataError, setSettingsDataError] = useState("");
+  const settingsDataLoadingRef = useRef(false);
+  const [adminBootstrapLoaded, setAdminBootstrapLoaded] = useState(false);
+  const adminBootstrapLoadingRef = useRef(false);
   const [matchingFilter, setMatchingFilter] = useState<MatchingFilter>("all");
   const [error, setError] = useState("");
   const [marketingOptedOut, setMarketingOptedOut] = useState<boolean | null>(null);
@@ -3409,327 +3420,57 @@ export default function MyPage() {
           return;
         }
 
-        const [
-          summaryRes,
-          certRes,
-          adminRes,
-          datingRes,
-          receivedRes,
-          appliedRes,
-          paidReceivedRes,
-          paidAppliedRes,
-          oneOnOneRes,
-          oneOnOneMatchesRes,
-          oneOnOneRecommendationsRes,
-          oneOnOnePhoneBlocksRes,
-          datingContactBlocksRes,
-          datingUserBlocksRes,
-          connectionsRes,
-          paidConnectionsRes,
-          writeSettingRes,
-          applyCreditsStatusRes,
-          adInquiryRes,
-          openCardHomeCopyRes,
-          openCardPublicSlotsRes,
-          toolsPatchNoteRes,
-          siteGuideMascotRes,
-          reelsDatingAccessRes,
-        ] = await Promise.all([
-          fetch("/api/mypage/summary", { cache: "no-store" }),
-          fetch("/api/cert-requests", { cache: "no-store" }),
+        const reelsDatingAccessPromise = fetch("/api/dating/reels/my-access", { cache: "no-store" })
+          .then(async (res) => ({
+            res,
+            body: (await res.json().catch(() => ({}))) as {
+              error?: string;
+              items?: MyReelsDatingAccess[];
+            },
+          }))
+          .catch((reelsError) => ({
+            res: null,
+            body: {
+              error:
+                reelsError instanceof Error
+                  ? reelsError.message
+                  : "릴스 매물 신청 내역을 불러오지 못했습니다.",
+              items: undefined as MyReelsDatingAccess[] | undefined,
+            },
+          }));
+
+        const [summaryRes, adminRes] = await Promise.all([
+          fetch("/api/mypage/summary?profileOnly=1", { cache: "no-store" }),
           fetch("/api/admin/me", { cache: "no-store" }),
-          fetch("/api/dating/my-application", { cache: "no-store" }),
-          fetch("/api/dating/cards/my/received", { cache: "no-store" }),
-          fetch("/api/dating/cards/my/applied", { cache: "no-store" }),
-          fetch("/api/dating/paid/my/received", { cache: "no-store" }),
-          fetch("/api/dating/paid/my/applied", { cache: "no-store" }),
-          fetch("/api/dating/1on1/my", { cache: "no-store" }),
-          fetch("/api/dating/1on1/matches/my", { cache: "no-store" }),
-          fetch("/api/dating/1on1/recommendations/my", { cache: "no-store" }),
-          fetch("/api/dating/1on1/phone-blocks", { cache: "no-store" }),
-          fetch("/api/dating/contact-blocks", { cache: "no-store" }),
-          fetch("/api/dating/blocks", { cache: "no-store" }),
-          fetch("/api/dating/cards/my/connections", { cache: "no-store" }),
-          fetch("/api/dating/paid/my/connections", { cache: "no-store" }),
-          fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
-          fetch("/api/dating/apply-credits/status", { cache: "no-store" }),
-          fetch("/api/admin/site/ad-inquiry", { cache: "no-store" }),
-          fetch("/api/admin/dating/cards/home-copy", { cache: "no-store" }),
-          fetch("/api/admin/dating/cards/public-slots", { cache: "no-store" }),
-          fetch("/api/admin/tools/patch-note", { cache: "no-store" }),
-          fetch("/api/admin/site-guide/mascot", { cache: "no-store" }),
-          fetch("/api/dating/reels/my-access", { cache: "no-store" }),
         ]);
 
         const summaryBody = (await summaryRes.json().catch(() => ({}))) as SummaryResponse & {
           error?: string;
         };
-        const certBody = (await certRes.json().catch(() => ({}))) as {
-          error?: string;
-          requests?: MyCertRequest[];
-        };
         const adminBody = (await adminRes.json().catch(() => ({}))) as { isAdmin?: boolean };
-        const datingBody = (await datingRes.json().catch(() => ({}))) as {
-          error?: string;
-          application?: DatingApplicationStatus | null;
-        };
-        const receivedBody = (await receivedRes.json().catch(() => ({}))) as {
-          error?: string;
-          cards?: MyDatingCard[];
-          applications?: ReceivedCardApplication[];
-        };
-        const appliedBody = (await appliedRes.json().catch(() => ({}))) as {
-          error?: string;
-          applications?: MyAppliedCardApplication[];
-        };
-        const paidReceivedBody = (await paidReceivedRes.json().catch(() => ({}))) as {
-          error?: string;
-          cards?: MyPaidCard[];
-          applications?: ReceivedPaidApplication[];
-        };
-        const paidAppliedBody = (await paidAppliedRes.json().catch(() => ({}))) as {
-          error?: string;
-          applications?: MyAppliedPaidApplication[];
-        };
-        const oneOnOneBody = (await oneOnOneRes.json().catch(() => ({}))) as {
-          error?: string;
-          items?: MyOneOnOneCard[];
-        };
-        const oneOnOneMatchesBody = (await oneOnOneMatchesRes.json().catch(() => ({}))) as {
-          error?: string;
-          items?: MyOneOnOneMatch[];
-        };
-        const oneOnOneRecommendationsBody = (await oneOnOneRecommendationsRes.json().catch(() => ({}))) as {
-          error?: string;
-          items?: MyOneOnOneAutoRecommendationGroup[];
-        };
-        const oneOnOnePhoneBlocksBody = (await oneOnOnePhoneBlocksRes.json().catch(() => ({}))) as {
-          error?: string;
-          items?: MyOneOnOnePhoneBlock[];
-        };
-        const datingContactBlocksBody = (await datingContactBlocksRes.json().catch(() => ({}))) as {
-          error?: string;
-          items?: MyDatingContactBlock[];
-        };
-        const datingUserBlocksBody = (await datingUserBlocksRes.json().catch(() => ({}))) as {
-          error?: string;
-          items?: MyDatingUserBlock[];
-        };
-        const connectionsBody = (await connectionsRes.json().catch(() => ({}))) as {
-          error?: string;
-          items?: DatingConnection[];
-        };
-        const paidConnectionsBody = (await paidConnectionsRes.json().catch(() => ({}))) as {
-          error?: string;
-          items?: DatingConnection[];
-        };
-        const writeSettingBody = (await writeSettingRes.json().catch(() => ({}))) as {
-          enabled?: boolean;
-        };
-        const applyCreditsBody = (await applyCreditsStatusRes.json().catch(() => ({}))) as ApplyCreditsStatusResponse;
-        const adInquiryBody = (await adInquiryRes.json().catch(() => ({}))) as AdInquirySettingsResponse;
-        const openCardHomeCopyBody = (await openCardHomeCopyRes.json().catch(() => ({}))) as OpenCardHomeCopyResponse;
-        const openCardPublicSlotsBody = (await openCardPublicSlotsRes.json().catch(() => ({}))) as OpenCardPublicSlotsResponse;
-        const toolsPatchNoteBody = (await toolsPatchNoteRes.json().catch(() => ({}))) as ToolsPatchNoteResponse;
-        const siteGuideMascotBody = (await siteGuideMascotRes.json().catch(() => ({}))) as SiteGuideMascotResponse;
-        const reelsDatingAccessBody = (await reelsDatingAccessRes.json().catch(() => ({}))) as {
-          error?: string;
-          items?: MyReelsDatingAccess[];
-        };
-
         if (!summaryRes.ok) {
           throw new Error(summaryBody.error ?? "마이페이지 정보를 불러오지 못했습니다.");
-        }
-        if (!certRes.ok) {
-          throw new Error(certBody.error ?? "인증 요청 정보를 불러오지 못했습니다.");
-        }
-        if (!receivedRes.ok) {
-          throw new Error(receivedBody.error ?? "내 오픈카드 지원자를 불러오지 못했습니다.");
-        }
-        if (!appliedRes.ok) {
-          throw new Error(appliedBody.error ?? "내 오픈카드 지원 이력을 불러오지 못했습니다.");
-        }
-        if (!paidReceivedRes.ok) {
-          throw new Error(paidReceivedBody.error ?? "내 유료카드 지원자를 불러오지 못했습니다.");
-        }
-        if (!paidAppliedRes.ok) {
-          throw new Error(paidAppliedBody.error ?? "내 유료카드 지원 이력을 불러오지 못했습니다.");
-        }
-        if (!oneOnOneRes.ok) {
-          throw new Error(oneOnOneBody.error ?? "내 1:1 소개팅 신청 내역을 불러오지 못했습니다.");
-        }
-        if (!oneOnOneMatchesRes.ok) {
-          console.error("[mypage] 1on1 matches load failed", oneOnOneMatchesBody.error ?? "unknown error");
-        }
-        if (!oneOnOneRecommendationsRes.ok) {
-          console.error("[mypage] 1on1 recommendations load failed", oneOnOneRecommendationsBody.error ?? "unknown error");
-        }
-        if (!oneOnOnePhoneBlocksRes.ok) {
-          console.error("[mypage] 1on1 phone blocks load failed", oneOnOnePhoneBlocksBody.error ?? "unknown error");
-        }
-        if (!datingContactBlocksRes.ok) {
-          console.error("[mypage] dating contact blocks load failed", datingContactBlocksBody.error ?? "unknown error");
-        }
-        if (!datingUserBlocksRes.ok) {
-          console.error("[mypage] dating user blocks load failed", datingUserBlocksBody.error ?? "unknown error");
-        }
-        if (!connectionsRes.ok) {
-          console.error("[mypage] open connections load failed", connectionsBody.error ?? "unknown error");
-        }
-        if (!paidConnectionsRes.ok) {
-          console.error("[mypage] paid connections load failed", paidConnectionsBody.error ?? "unknown error");
-        }
-        if (!reelsDatingAccessRes.ok) {
-          console.error("[mypage] reels dating access load failed", reelsDatingAccessBody.error ?? "unknown error");
         }
 
         if (isMounted) {
           const adminFlag = Boolean(adminBody.isAdmin);
           setSummary(summaryBody);
-          setCertRequests(certBody.requests ?? []);
           setIsAdmin(adminFlag);
-          setDatingApplication(datingBody.application ?? null);
-          setMyDatingCards(receivedBody.cards ?? []);
-          setReceivedApplications(receivedBody.applications ?? []);
-          setMyAppliedCardApplications(appliedBody.applications ?? []);
-          setMyPaidCards(paidReceivedBody.cards ?? []);
-          setReceivedPaidApplications(paidReceivedBody.applications ?? []);
-          setMyAppliedPaidApplications(paidAppliedBody.applications ?? []);
-          setMyOneOnOneCards(oneOnOneBody.items ?? []);
-          setMyOneOnOneMatches(oneOnOneMatchesRes.ok ? (oneOnOneMatchesBody.items ?? []) : []);
-          setMyOneOnOneAutoRecommendations(
-            oneOnOneRecommendationsRes.ok ? (oneOnOneRecommendationsBody.items ?? []) : []
-          );
-          setMyOneOnOnePhoneBlocks(oneOnOnePhoneBlocksRes.ok ? (oneOnOnePhoneBlocksBody.items ?? []) : []);
-          setMyDatingContactBlocks(datingContactBlocksRes.ok ? (datingContactBlocksBody.items ?? []) : []);
-          setMyDatingUserBlocks(datingUserBlocksRes.ok ? (datingUserBlocksBody.items ?? []) : []);
-          setSwipeStatusSummary(null);
-          setMyOutgoingSwipeLikes([]);
-          setMyIncomingSwipeLikes([]);
-          setSwipeStatusLoaded(false);
-          setDatingConnections([
-            ...(connectionsRes.ok ? (connectionsBody.items ?? []) : []),
-            ...(paidConnectionsRes.ok ? (paidConnectionsBody.items ?? []) : []),
-          ]);
-          setMyReelsDatingAccess(reelsDatingAccessRes.ok ? reelsDatingAccessBody.items ?? [] : []);
-          setMyReelsDatingAccessLoaded(true);
-          setMyReelsDatingAccessError(reelsDatingAccessRes.ok ? "" : reelsDatingAccessBody.error ?? "릴스 매물 신청 내역을 불러오지 못했습니다.");
-          setOpenCardWriteEnabled(writeSettingBody.enabled !== false);
-          setOpenCardHomeSubtitle(openCardHomeCopyBody.subtitle?.trim() || DEFAULT_OPEN_CARD_HOME_SUBTITLE);
-          setOpenCardPublicMaleExtra(String(Math.max(0, Number(openCardPublicSlotsBody.maleExtra ?? 0))));
-          setOpenCardPublicFemaleExtra(String(Math.max(0, Number(openCardPublicSlotsBody.femaleExtra ?? 0))));
-          setOpenCardPublicMaleEffectiveLimit(Math.max(0, Number(openCardPublicSlotsBody.maleEffectiveLimit ?? 30)));
-          setOpenCardPublicFemaleEffectiveLimit(Math.max(0, Number(openCardPublicSlotsBody.femaleEffectiveLimit ?? 30)));
-          setApplyCreditsRemaining(Math.max(0, Number(applyCreditsBody.creditsRemaining ?? 0)));
-          setAdInquiryEnabled(adInquiryBody.enabled !== false);
-          setAdInquiryTitle(adInquiryBody.title ?? "(광고) 문의 주세요");
-          setAdInquiryDescription(
-            adInquiryBody.description ?? "배너, 제휴, 스폰서 문의는 오픈카톡으로 편하게 남겨 주세요."
-          );
-          setAdInquiryCta(adInquiryBody.cta ?? "오픈카톡 문의");
-          setAdInquiryLinkUrl(adInquiryBody.linkUrl ?? "");
-          setAdInquiryBadge(adInquiryBody.badge ?? "AD SLOT");
-          setAdInquiryTheme(adInquiryBody.theme ?? "emerald");
-          setToolsPatchNoteEnabled(toolsPatchNoteBody.enabled === true);
-          setToolsPatchNoteText(toolsPatchNoteBody.text?.trim() ?? "");
-          setToolsPatchNoteItems(Array.isArray(toolsPatchNoteBody.items) ? toolsPatchNoteBody.items : []);
-          setSiteGuideMascotId(siteGuideMascotBody.selectedId ?? "default");
-          setSiteGuideMascotOptions(
-            Array.isArray(siteGuideMascotBody.options) && siteGuideMascotBody.options.length > 0
-              ? siteGuideMascotBody.options
-              : DEFAULT_SITE_GUIDE_MASCOT_OPTIONS
-          );
           setError("");
-
-          if (adminFlag) {
-            const [
-              datingStatsRes,
-              datingInsightsRes,
-              ordersRes,
-              moreViewRes,
-              cityViewRes,
-              accountDeletionAuditsRes,
-            ] = await Promise.all([
-              fetch("/api/admin/dating/stats", { cache: "no-store" }),
-              fetch("/api/admin/dating/insights", { cache: "no-store" }),
-              fetch("/api/admin/dating/apply-credits/orders?status=pending", { cache: "no-store" }),
-              fetch("/api/admin/dating/cards/more-view/requests?status=pending", { cache: "no-store" }),
-              fetch("/api/admin/dating/cards/city-view/requests?status=pending", { cache: "no-store" }),
-              fetch("/api/admin/account-deletion-audits", { cache: "no-store" }),
-            ]);
-            const datingStatsBody = (await datingStatsRes.json().catch(() => ({}))) as {
-              error?: string;
-              stats?: AdminDatingStats;
-            };
-            const datingInsightsBody = (await datingInsightsRes.json().catch(() => ({}))) as
-              | (AdminDatingInsights & { error?: string })
-              | { error?: string };
-            const ordersBody = (await ordersRes.json().catch(() => ({}))) as {
-              error?: string;
-              items?: AdminApplyCreditOrder[];
-            };
-            const moreViewBody = (await moreViewRes.json().catch(() => ({}))) as {
-              error?: string;
-              items?: AdminMoreViewRequest[];
-            };
-            const cityViewBody = (await cityViewRes.json().catch(() => ({}))) as {
-              error?: string;
-              items?: AdminCityViewRequest[];
-            };
-            const accountDeletionAuditsBody = (await accountDeletionAuditsRes.json().catch(() => ({}))) as AdminAccountDeletionAuditsResponse;
-            if (!datingStatsRes.ok) {
-              console.error("[mypage] admin dating stats load failed", datingStatsBody);
-            }
-            if (!datingInsightsRes.ok) {
-              console.error("[mypage] admin dating insights load failed", datingInsightsBody);
-            }
-            if (!ordersRes.ok) {
-              console.error("[mypage] admin apply credits load failed", ordersBody);
-            }
-            if (isMounted) {
-              setAdminDatingStats(datingStatsRes.ok ? datingStatsBody.stats ?? null : null);
-              setAdminDatingInsights(
-                datingInsightsRes.ok && "totals" in datingInsightsBody && "female_preference" in datingInsightsBody
-                  ? datingInsightsBody
-                  : null
-              );
-              setAdminOpenCards([]);
-              setAdminOpenCardApplications([]);
-              setAdminPaidCardApplications([]);
-              setAdminAcceptedRecentApplications([]);
-              setAdminAcceptedRecentFallback(false);
-              setAdminAcceptedRecentLoaded(false);
-              setAdminOpenCardsLoaded(false);
-              setAdminPaymentCenter(null);
-              setAdminOneOnOneContactRequests([]);
-              setAdminOneOnOneContactLoaded(false);
-              setAdminApplyCreditOrders(ordersRes.ok ? ordersBody.items ?? [] : []);
-              setAdminMoreViewRequests(moreViewRes.ok ? moreViewBody.items ?? [] : []);
-              setAdminCityViewRequests(cityViewRes.ok ? cityViewBody.items ?? [] : []);
-              setAdminAccountDeletionAudits(accountDeletionAuditsRes.ok ? accountDeletionAuditsBody.items ?? [] : []);
-              setAdminAccountDeletionAuditError(accountDeletionAuditsRes.ok ? "" : accountDeletionAuditsBody.error ?? "탈퇴 기록을 불러오지 못했습니다.");
-            }
-          } else {
-            setAdminDatingStats(null);
-            setAdminDatingInsights(null);
-            setAdminOpenCards([]);
-            setAdminOpenCardApplications([]);
-            setAdminPaidCardApplications([]);
-            setAdminAcceptedRecentApplications([]);
-            setAdminAcceptedRecentFallback(false);
-            setAdminAcceptedRecentLoaded(false);
-            setAdminOpenCardsLoaded(false);
-            setAdminPaymentCenter(null);
-            setAdminOneOnOneContactRequests([]);
-            setAdminOneOnOneContactLoaded(false);
-            setAdminApplyCreditOrders([]);
-            setAdminSwipeSubscriptionRequests([]);
-            setAdminMoreViewRequests([]);
-            setAdminCityViewRequests([]);
-            setAdminAccountDeletionAudits([]);
-            setAdminAccountDeletionAuditError("");
-          }
         }
+
+        void reelsDatingAccessPromise.then(({ res, body }) => {
+          if (!isMounted) return;
+          const succeeded = res?.ok === true;
+          if (!succeeded) {
+            console.error("[mypage] reels dating access load failed", body.error ?? "unknown error");
+          }
+          setMyReelsDatingAccess(succeeded ? body.items ?? [] : []);
+          setMyReelsDatingAccessLoaded(true);
+          setMyReelsDatingAccessError(
+            succeeded ? "" : body.error ?? "릴스 매물 신청 내역을 불러오지 못했습니다."
+          );
+        });
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         if (isMounted) setError(message);
@@ -3770,6 +3511,124 @@ export default function MyPage() {
   }, [isAdmin, pageSectionTab]);
 
   useEffect(() => {
+    if (
+      loading ||
+      !isAdmin ||
+      pageSectionTab !== "admin" ||
+      adminBootstrapLoaded ||
+      adminBootstrapLoadingRef.current
+    ) {
+      return;
+    }
+
+    adminBootstrapLoadingRef.current = true;
+    void (async () => {
+      const [
+        datingStatsRes,
+        datingInsightsRes,
+        accountDeletionAuditsRes,
+        adInquiryRes,
+        openCardHomeCopyRes,
+        openCardPublicSlotsRes,
+        toolsPatchNoteRes,
+        siteGuideMascotRes,
+      ] = await Promise.all([
+        fetch("/api/admin/dating/stats", { cache: "no-store" }),
+        fetch("/api/admin/dating/insights", { cache: "no-store" }),
+        fetch("/api/admin/account-deletion-audits", { cache: "no-store" }),
+        fetch("/api/admin/site/ad-inquiry", { cache: "no-store" }),
+        fetch("/api/admin/dating/cards/home-copy", { cache: "no-store" }),
+        fetch("/api/admin/dating/cards/public-slots", { cache: "no-store" }),
+        fetch("/api/admin/tools/patch-note", { cache: "no-store" }),
+        fetch("/api/admin/site-guide/mascot", { cache: "no-store" }),
+      ]);
+      const [
+        datingStatsBody,
+        datingInsightsBody,
+        accountDeletionAuditsBody,
+        adInquiryBody,
+        openCardHomeCopyBody,
+        openCardPublicSlotsBody,
+        toolsPatchNoteBody,
+        siteGuideMascotBody,
+      ] = await Promise.all([
+        datingStatsRes.json().catch(() => ({})),
+        datingInsightsRes.json().catch(() => ({})),
+        accountDeletionAuditsRes.json().catch(() => ({})),
+        adInquiryRes.json().catch(() => ({})),
+        openCardHomeCopyRes.json().catch(() => ({})),
+        openCardPublicSlotsRes.json().catch(() => ({})),
+        toolsPatchNoteRes.json().catch(() => ({})),
+        siteGuideMascotRes.json().catch(() => ({})),
+      ]) as [
+        { error?: string; stats?: AdminDatingStats },
+        (AdminDatingInsights & { error?: string }) | { error?: string },
+        AdminAccountDeletionAuditsResponse,
+        AdInquirySettingsResponse,
+        OpenCardHomeCopyResponse,
+        OpenCardPublicSlotsResponse,
+        ToolsPatchNoteResponse,
+        SiteGuideMascotResponse,
+      ];
+
+      setAdminDatingStats(datingStatsRes.ok ? datingStatsBody.stats ?? null : null);
+      setAdminDatingInsights(
+        datingInsightsRes.ok && "totals" in datingInsightsBody && "female_preference" in datingInsightsBody
+          ? datingInsightsBody
+          : null
+      );
+      setAdminAccountDeletionAudits(
+        accountDeletionAuditsRes.ok ? accountDeletionAuditsBody.items ?? [] : []
+      );
+      setAdminAccountDeletionAuditError(
+        accountDeletionAuditsRes.ok
+          ? ""
+          : accountDeletionAuditsBody.error ?? "탈퇴 기록을 불러오지 못했습니다."
+      );
+      if (adInquiryRes.ok) {
+        setAdInquiryEnabled(adInquiryBody.enabled !== false);
+        setAdInquiryTitle(adInquiryBody.title ?? "(광고) 문의 주세요");
+        setAdInquiryDescription(
+          adInquiryBody.description ?? "배너, 제휴, 스폰서 문의는 오픈카톡으로 편하게 남겨 주세요."
+        );
+        setAdInquiryCta(adInquiryBody.cta ?? "오픈카톡 문의");
+        setAdInquiryLinkUrl(adInquiryBody.linkUrl ?? "");
+        setAdInquiryBadge(adInquiryBody.badge ?? "AD SLOT");
+        setAdInquiryTheme(adInquiryBody.theme ?? "emerald");
+      }
+      if (openCardHomeCopyRes.ok) {
+        setOpenCardHomeSubtitle(openCardHomeCopyBody.subtitle?.trim() || DEFAULT_OPEN_CARD_HOME_SUBTITLE);
+      }
+      if (openCardPublicSlotsRes.ok) {
+        setOpenCardPublicMaleExtra(String(Math.max(0, Number(openCardPublicSlotsBody.maleExtra ?? 0))));
+        setOpenCardPublicFemaleExtra(String(Math.max(0, Number(openCardPublicSlotsBody.femaleExtra ?? 0))));
+        setOpenCardPublicMaleEffectiveLimit(Math.max(0, Number(openCardPublicSlotsBody.maleEffectiveLimit ?? 30)));
+        setOpenCardPublicFemaleEffectiveLimit(Math.max(0, Number(openCardPublicSlotsBody.femaleEffectiveLimit ?? 30)));
+      }
+      if (toolsPatchNoteRes.ok) {
+        setToolsPatchNoteEnabled(toolsPatchNoteBody.enabled === true);
+        setToolsPatchNoteText(toolsPatchNoteBody.text?.trim() ?? "");
+        setToolsPatchNoteItems(Array.isArray(toolsPatchNoteBody.items) ? toolsPatchNoteBody.items : []);
+      }
+      if (siteGuideMascotRes.ok) {
+        setSiteGuideMascotId(siteGuideMascotBody.selectedId ?? "default");
+        setSiteGuideMascotOptions(
+          Array.isArray(siteGuideMascotBody.options) && siteGuideMascotBody.options.length > 0
+            ? siteGuideMascotBody.options
+            : DEFAULT_SITE_GUIDE_MASCOT_OPTIONS
+        );
+      }
+      setAdminBootstrapLoaded(true);
+    })()
+      .catch((error) => {
+        console.error("[mypage] admin bootstrap load failed", error);
+      })
+      .finally(() => {
+        adminBootstrapLoadingRef.current = false;
+      });
+  }, [adminBootstrapLoaded, isAdmin, loading, pageSectionTab]);
+
+  useEffect(() => {
     if (myReelsDatingAccess.length === 0) return;
     const timer = window.setInterval(() => setReelsAccessNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);
@@ -3786,15 +3645,15 @@ export default function MyPage() {
   }, [myReelsDatingAccess, myReelsDatingAccessLoaded, pageSectionTab, reelsAccessNow]);
 
   useEffect(() => {
-    if (!isAdmin || adminManageTab !== "open_cards" || adminOpenCardsLoaded || adminOpenCardsLoading) {
+    if (!isAdmin || pageSectionTab !== "admin" || adminManageTab !== "open_cards" || adminOpenCardsLoaded || adminOpenCardsLoading) {
       return;
     }
 
     void refreshAdminOpenCardData(true);
-  }, [adminManageTab, adminOpenCardsLoaded, adminOpenCardsLoading, isAdmin, refreshAdminOpenCardData]);
+  }, [adminManageTab, adminOpenCardsLoaded, adminOpenCardsLoading, isAdmin, pageSectionTab, refreshAdminOpenCardData]);
 
   useEffect(() => {
-    if (!isAdmin || adminManageTab !== "reels_dating" || adminReelsDatingLoaded || adminReelsDatingLoading) {
+    if (!isAdmin || pageSectionTab !== "admin" || adminManageTab !== "reels_dating" || adminReelsDatingLoaded || adminReelsDatingLoading) {
       return;
     }
 
@@ -3804,12 +3663,14 @@ export default function MyPage() {
     adminReelsDatingLoaded,
     adminReelsDatingLoading,
     isAdmin,
+    pageSectionTab,
     refreshAdminReelsDatingData,
   ]);
 
   useEffect(() => {
     if (
       !isAdmin ||
+      pageSectionTab !== "admin" ||
       adminManageTab !== "accepted_applications" ||
       adminAcceptedRecentLoaded ||
       adminAcceptedRecentLoading
@@ -3823,19 +3684,20 @@ export default function MyPage() {
     adminAcceptedRecentLoading,
     adminManageTab,
     isAdmin,
+    pageSectionTab,
     refreshAdminAcceptedRecentApplications,
   ]);
 
   useEffect(() => {
-    if (!isAdmin || adminManageTab !== "mail_center") {
+    if (!isAdmin || pageSectionTab !== "admin" || adminManageTab !== "mail_center") {
       return;
     }
 
     void loadAdminOpenCardOutreachPreview();
-  }, [adminManageTab, isAdmin, loadAdminOpenCardOutreachPreview]);
+  }, [adminManageTab, isAdmin, pageSectionTab, loadAdminOpenCardOutreachPreview]);
 
   useEffect(() => {
-    if (!isAdmin || adminManageTab !== "one_on_one_contact") {
+    if (!isAdmin || pageSectionTab !== "admin" || adminManageTab !== "one_on_one_contact") {
       return;
     }
 
@@ -3843,12 +3705,14 @@ export default function MyPage() {
   }, [
     adminManageTab,
     isAdmin,
+    pageSectionTab,
     refreshAdminOneOnOneContactData,
   ]);
 
   useEffect(() => {
     if (
       !isAdmin ||
+      pageSectionTab !== "admin" ||
       adminManageTab !== "payment_center" ||
       adminPaymentCenter?.period.days === adminPaymentPeriodDays ||
       adminPaymentCenterLoading
@@ -3863,16 +3727,23 @@ export default function MyPage() {
     adminPaymentCenterLoading,
     adminPaymentPeriodDays,
     isAdmin,
+    pageSectionTab,
     refreshAdminPaymentCenter,
   ]);
 
   useEffect(() => {
-    if (loading || accountBanStatus?.is_banned || swipeSubscriptionStatus || swipeSubscriptionLoading) return;
+    if (
+      loading ||
+      pageSectionTab !== "matching" ||
+      accountBanStatus?.is_banned ||
+      swipeSubscriptionStatus ||
+      swipeSubscriptionLoading
+    ) return;
 
     queueMicrotask(async () => {
       await reloadSwipeSubscriptionStatus();
     });
-  }, [accountBanStatus?.is_banned, loading, swipeSubscriptionStatus, swipeSubscriptionLoading, reloadSwipeSubscriptionStatus]);
+  }, [accountBanStatus?.is_banned, loading, pageSectionTab, swipeSubscriptionStatus, swipeSubscriptionLoading, reloadSwipeSubscriptionStatus]);
 
   useEffect(() => {
     if (pageSectionTab !== "payment" || paymentCenterLoaded || paymentCenterLoading) return;
@@ -3885,7 +3756,7 @@ export default function MyPage() {
   }, [isAdmin, loveFortuneLoaded, loveFortuneLoading, loveFortuneOpen, loadLoveFortuneReadings]);
 
   useEffect(() => {
-    if (loading || !isAdmin) return;
+    if (loading || !isAdmin || pageSectionTab !== "admin") return;
 
     queueMicrotask(async () => {
       try {
@@ -3903,7 +3774,7 @@ export default function MyPage() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [loading, isAdmin, refreshAdminQueueData]);
+  }, [loading, isAdmin, pageSectionTab, refreshAdminQueueData]);
 
   useEffect(() => {
     if (!isAdmin || activeTab !== "admin_review") return;
@@ -3919,7 +3790,7 @@ export default function MyPage() {
   }, [activeTab, isAdmin, refreshAdminQueueData]);
 
   useEffect(() => {
-    if (loading || !isAdmin) return;
+    if (loading || !isAdmin || pageSectionTab !== "admin") return;
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible") return;
       void refreshAdminQueueData(false);
@@ -3929,14 +3800,14 @@ export default function MyPage() {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [loading, isAdmin, refreshAdminQueueData]);
+  }, [loading, isAdmin, pageSectionTab, refreshAdminQueueData]);
 
   useEffect(() => {
-    if (loading || !isAdmin || adminManageTab !== "site_dashboard") return;
+    if (loading || !isAdmin || pageSectionTab !== "admin" || adminManageTab !== "site_dashboard") return;
     queueMicrotask(async () => {
       await refreshAdminSiteDashboard(true);
     });
-  }, [loading, isAdmin, adminManageTab, refreshAdminSiteDashboard]);
+  }, [loading, isAdmin, pageSectionTab, adminManageTab, refreshAdminSiteDashboard]);
 
   useEffect(() => {
     if (loading || !supportPanelOpen || supportLoaded) return;
@@ -3978,7 +3849,7 @@ export default function MyPage() {
   }, [summary?.profile.email, supportContactEmail]);
 
   useEffect(() => {
-    if (loading || !summary) return;
+    if (loading || !summary || pageSectionTab !== "settings") return;
 
     let cancelled = false;
     (async () => {
@@ -3996,7 +3867,7 @@ export default function MyPage() {
     return () => {
       cancelled = true;
     };
-  }, [loading, summary]);
+  }, [loading, pageSectionTab, summary]);
 
   useEffect(() => {
     if (phoneOtpResendAfterSec <= 0) return;
@@ -4855,11 +4726,17 @@ export default function MyPage() {
   }, []);
 
   useEffect(() => {
-    if (loading || accountBanStatus?.is_banned || swipeStatusLoaded || swipeStatusLoading) return;
+    if (
+      loading ||
+      pageSectionTab !== "matching" ||
+      accountBanStatus?.is_banned ||
+      swipeStatusLoaded ||
+      swipeStatusLoading
+    ) return;
     void reloadSwipeStatus().catch((error) => {
       console.error("[mypage] initial swipe status load failed", error);
     });
-  }, [accountBanStatus?.is_banned, loading, reloadSwipeStatus, swipeStatusLoaded, swipeStatusLoading]);
+  }, [accountBanStatus?.is_banned, loading, pageSectionTab, reloadSwipeStatus, swipeStatusLoaded, swipeStatusLoading]);
 
   const handleToggleSwipeStatusPanel = async () => {
     const nextOpen = !swipeStatusPanelOpen;
@@ -4889,7 +4766,7 @@ export default function MyPage() {
     setDatingConnections([...(openBody.items ?? []), ...(paidBody.items ?? [])]);
   };
 
-  const reloadOpenAppliedApplications = async () => {
+  const reloadOpenAppliedApplications = async (strict = false) => {
     const [receivedRes, appliedRes] = await Promise.all([
       fetch("/api/dating/cards/my/received", { cache: "no-store" }),
       fetch("/api/dating/cards/my/applied", { cache: "no-store" }),
@@ -4912,9 +4789,14 @@ export default function MyPage() {
     if (appliedRes.ok) {
       setMyAppliedCardApplications(appliedBody.applications ?? []);
     }
+    if (strict && (!receivedRes.ok || !appliedRes.ok)) {
+      throw new Error(
+        receivedBody.error ?? appliedBody.error ?? "오픈카드 지원 내역을 불러오지 못했습니다."
+      );
+    }
   };
 
-  const reloadPaidAppliedApplications = async () => {
+  const reloadPaidAppliedApplications = async (strict = false) => {
     const [receivedRes, appliedRes] = await Promise.all([
       fetch("/api/dating/paid/my/received", { cache: "no-store" }),
       fetch("/api/dating/paid/my/applied", { cache: "no-store" }),
@@ -4937,7 +4819,141 @@ export default function MyPage() {
     if (appliedRes.ok) {
       setMyAppliedPaidApplications(appliedBody.applications ?? []);
     }
+    if (strict && (!receivedRes.ok || !appliedRes.ok)) {
+      throw new Error(
+        receivedBody.error ?? appliedBody.error ?? "유료카드 지원 내역을 불러오지 못했습니다."
+      );
+    }
   };
+
+  useEffect(() => {
+    if (
+      loading ||
+      accountBanStatus?.is_banned ||
+      (pageSectionTab !== "profile" && pageSectionTab !== "matching") ||
+      matchingDataLoaded ||
+      matchingDataLoadingRef.current
+    ) {
+      return;
+    }
+
+    matchingDataLoadingRef.current = true;
+    setMatchingDataLoading(true);
+    setMatchingDataError("");
+
+    void (async () => {
+      const loadDatingApplication = async () => {
+        const res = await fetch("/api/dating/my-application", { cache: "no-store" });
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          application?: DatingApplicationStatus | null;
+        };
+        if (!res.ok) throw new Error(body.error ?? "내 소개팅 신청 정보를 불러오지 못했습니다.");
+        setDatingApplication(body.application ?? null);
+      };
+      const loadOneOnOneCards = async () => {
+        const res = await fetch("/api/dating/1on1/my", { cache: "no-store" });
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          items?: MyOneOnOneCard[];
+        };
+        if (!res.ok) throw new Error(body.error ?? "내 1:1 신청서를 불러오지 못했습니다.");
+        setMyOneOnOneCards(body.items ?? []);
+      };
+      const loadOpenCardSettings = async () => {
+        const [writeSettingRes, applyCreditsStatusRes] = await Promise.all([
+          fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
+          fetch("/api/dating/apply-credits/status", { cache: "no-store" }),
+        ]);
+        const writeSettingBody = (await writeSettingRes.json().catch(() => ({}))) as { enabled?: boolean };
+        const applyCreditsBody = (await applyCreditsStatusRes.json().catch(() => ({}))) as ApplyCreditsStatusResponse;
+        if (writeSettingRes.ok) setOpenCardWriteEnabled(writeSettingBody.enabled !== false);
+        if (applyCreditsStatusRes.ok) {
+          setApplyCreditsRemaining(Math.max(0, Number(applyCreditsBody.creditsRemaining ?? 0)));
+        }
+        if (!writeSettingRes.ok || !applyCreditsStatusRes.ok) {
+          throw new Error("오픈카드 이용 설정을 불러오지 못했습니다.");
+        }
+      };
+
+      const results = await Promise.allSettled([
+        loadDatingApplication(),
+        reloadOpenAppliedApplications(true),
+        reloadPaidAppliedApplications(true),
+        loadOneOnOneCards(),
+        reloadOneOnOneMatches(),
+        reloadOneOnOneRecommendations(),
+        reloadOpenDatingConnections(),
+        loadOpenCardSettings(),
+      ]);
+      const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+      if (failures.length > 0) {
+        for (const failure of failures) {
+          console.error("[mypage] deferred matching load failed", failure.reason);
+        }
+        setMatchingDataError("일부 매칭 정보를 불러오지 못했습니다. 다시 시도해주세요.");
+      }
+      setMatchingDataLoaded(true);
+    })()
+      .catch((error) => {
+        console.error("[mypage] deferred matching load failed", error);
+        setMatchingDataError(error instanceof Error ? error.message : "매칭 정보를 불러오지 못했습니다.");
+      })
+      .finally(() => {
+        matchingDataLoadingRef.current = false;
+        setMatchingDataLoading(false);
+      });
+  }, [accountBanStatus?.is_banned, loading, matchingDataLoaded, pageSectionTab]);
+
+  useEffect(() => {
+    if (
+      loading ||
+      accountBanStatus?.is_banned ||
+      pageSectionTab !== "settings" ||
+      settingsDataLoaded ||
+      settingsDataLoadingRef.current
+    ) {
+      return;
+    }
+
+    settingsDataLoadingRef.current = true;
+    setSettingsDataLoading(true);
+    setSettingsDataError("");
+
+    void (async () => {
+      const loadCertRequests = async () => {
+        const res = await fetch("/api/cert-requests", { cache: "no-store" });
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          requests?: MyCertRequest[];
+        };
+        if (!res.ok) throw new Error(body.error ?? "인증 요청 정보를 불러오지 못했습니다.");
+        setCertRequests(body.requests ?? []);
+      };
+      const results = await Promise.allSettled([
+        loadCertRequests(),
+        reloadOneOnOnePhoneBlocks(),
+        reloadDatingContactBlocks(),
+        reloadDatingUserBlocks(),
+      ]);
+      const failures = results.filter((result): result is PromiseRejectedResult => result.status === "rejected");
+      if (failures.length > 0) {
+        for (const failure of failures) {
+          console.error("[mypage] deferred settings load failed", failure.reason);
+        }
+        setSettingsDataError("일부 설정 정보를 불러오지 못했습니다. 다시 시도해주세요.");
+      }
+      setSettingsDataLoaded(true);
+    })()
+      .catch((error) => {
+        console.error("[mypage] deferred settings load failed", error);
+        setSettingsDataError(error instanceof Error ? error.message : "설정 정보를 불러오지 못했습니다.");
+      })
+      .finally(() => {
+        settingsDataLoadingRef.current = false;
+        setSettingsDataLoading(false);
+      });
+  }, [accountBanStatus?.is_banned, loading, pageSectionTab, settingsDataLoaded]);
 
   const handleDeleteDatingConnection = async (item: DatingConnection) => {
     const deletingKey = `${item.source ?? "open"}:${item.application_id}`;
@@ -6602,7 +6618,11 @@ export default function MyPage() {
       const res = await fetch("/api/admin/dating/cards/city-view/grant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, province: adminCityViewGrantProvince }),
+        body: JSON.stringify({
+          userId,
+          province: adminCityViewGrantProvince,
+          targetSex: adminCityViewGrantSex,
+        }),
       });
       const body = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -7846,15 +7866,20 @@ export default function MyPage() {
         <div className="mt-2 grid grid-cols-2 overflow-hidden rounded-xl border border-neutral-200 bg-white sm:grid-cols-4">
           {applicationOverviewItems.map((item) => (
             <div key={item.label} className="relative border-b border-r border-neutral-100 p-3 last:border-r-0 sm:border-b-0">
-              <span className={`absolute inset-y-3 left-0 w-0.5 rounded-full ${item.value > 0 ? item.accent : "bg-neutral-200"}`} aria-hidden="true" />
+              <span className={`absolute inset-y-3 left-0 w-0.5 rounded-full ${matchingDataLoaded && item.value > 0 ? item.accent : "bg-neutral-200"}`} aria-hidden="true" />
               <button
                 type="button"
                 onClick={item.onClick}
                 className="block min-h-[64px] w-full rounded-lg pl-1 text-left transition hover:opacity-70 focus:outline-none focus:ring-2 focus:ring-neutral-200"
               >
                 <p className="text-[11px] font-semibold text-neutral-500">{item.label}</p>
-                <p className="mt-1 text-xl font-bold text-neutral-950">{item.value}<span className="ml-0.5 text-[11px] font-medium text-neutral-400">건</span></p>
-                <p className="mt-1 truncate text-[10px] font-medium text-neutral-400">{item.detail}</p>
+                <p className="mt-1 text-xl font-bold text-neutral-950">
+                  {matchingDataLoaded ? item.value : "…"}
+                  {matchingDataLoaded && <span className="ml-0.5 text-[11px] font-medium text-neutral-400">건</span>}
+                </p>
+                <p className="mt-1 truncate text-[10px] font-medium text-neutral-400">
+                  {matchingDataLoading ? "불러오는 중" : matchingDataError ? "다시 확인 필요" : item.detail}
+                </p>
               </button>
             </div>
           ))}
@@ -7944,15 +7969,33 @@ export default function MyPage() {
                   onClick={item.onClick}
                   className="relative min-h-[82px] border-b border-r border-neutral-100 p-3 text-left transition hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-200 sm:border-b-0"
                 >
-                  <span className={`absolute inset-y-3 left-0 w-0.5 rounded-full ${item.value > 0 ? item.accent : "bg-neutral-200"}`} aria-hidden="true" />
+                  <span className={`absolute inset-y-3 left-0 w-0.5 rounded-full ${matchingDataLoaded && item.value > 0 ? item.accent : "bg-neutral-200"}`} aria-hidden="true" />
                   <p className="pl-1 text-[11px] font-semibold text-neutral-500">{item.label}</p>
                   <p className="mt-1 pl-1 text-xl font-bold text-neutral-950">
-                    {item.value}<span className="ml-0.5 text-[11px] font-medium text-neutral-400">건</span>
+                    {matchingDataLoaded ? item.value : "…"}
+                    {matchingDataLoaded && <span className="ml-0.5 text-[11px] font-medium text-neutral-400">건</span>}
                   </p>
-                  <p className="mt-1 truncate pl-1 text-[10px] font-medium text-neutral-400">{item.detail}</p>
+                  <p className="mt-1 truncate pl-1 text-[10px] font-medium text-neutral-400">
+                    {matchingDataLoading ? "불러오는 중" : matchingDataError ? "다시 확인 필요" : item.detail}
+                  </p>
                 </button>
               ))}
             </div>
+            {matchingDataError ? (
+              <div className="mt-3 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+                <p className="text-xs text-amber-800">{matchingDataError}</p>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMatchingDataError("");
+                    setMatchingDataLoaded(false);
+                  }}
+                  className="h-8 shrink-0 rounded-md border border-amber-300 bg-white px-3 text-xs font-semibold text-amber-800"
+                >
+                  다시 불러오기
+                </button>
+              </div>
+            ) : null}
             <div className="mt-3 flex gap-1 overflow-x-auto rounded-xl bg-neutral-100 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {([
                 { key: "all", label: "전체" },
@@ -8341,6 +8384,25 @@ export default function MyPage() {
           <h2 className="text-lg font-bold text-neutral-950">설정</h2>
           <p className="mt-1 text-xs text-neutral-500">차단, 인증, 문의와 계정 설정을 관리합니다.</p>
         </div>
+        {settingsDataLoading ? (
+          <p className="mb-3 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs text-neutral-500">
+            차단 및 인증 내역을 불러오는 중입니다.
+          </p>
+        ) : settingsDataError ? (
+          <div className="mb-3 flex items-center justify-between gap-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+            <p className="text-xs text-amber-800">{settingsDataError}</p>
+            <button
+              type="button"
+              onClick={() => {
+                setSettingsDataError("");
+                setSettingsDataLoaded(false);
+              }}
+              className="h-8 shrink-0 rounded-md border border-amber-300 bg-white px-3 text-xs font-semibold text-amber-800"
+            >
+              다시 불러오기
+            </button>
+          </div>
+        ) : null}
 
         <div className="mt-4 rounded-xl border border-rose-200 bg-rose-50/50 p-3">
           <div className="flex flex-col gap-3">
@@ -14646,25 +14708,51 @@ export default function MyPage() {
                   <div>
                     <p className="text-xs font-semibold text-violet-900">유저에게 가까운 이상형 직접 열어주기</p>
                     <p className="mt-1 text-[11px] text-violet-800">
-                      닉네임이나 이메일로 유저를 찾은 뒤, 원하는 지역을 바로 열어줄 수 있어요.
+                      닉네임이나 이메일로 유저를 찾은 뒤, 지역과 실제 보여줄 카드 성별을 선택하세요.
                     </p>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <label className="text-[11px] font-medium text-violet-800" htmlFor="admin-city-view-grant-province">
-                      열어줄 지역
-                    </label>
-                    <select
-                      id="admin-city-view-grant-province"
-                      value={adminCityViewGrantProvince}
-                      onChange={(e) => setAdminCityViewGrantProvince(e.target.value)}
-                      className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none"
-                    >
-                      {PROVINCE_ORDER.map((province) => (
-                        <option key={province} value={province}>
-                          {province}
-                        </option>
-                      ))}
-                    </select>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-2">
+                      <label className="text-[11px] font-medium text-violet-800" htmlFor="admin-city-view-grant-province">
+                        지역
+                      </label>
+                      <select
+                        id="admin-city-view-grant-province"
+                        value={adminCityViewGrantProvince}
+                        onChange={(e) => setAdminCityViewGrantProvince(e.target.value)}
+                        className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none"
+                      >
+                        {PROVINCE_ORDER.map((province) => (
+                          <option key={province} value={province}>
+                            {province}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-medium text-violet-800">열람 성별</span>
+                      <div className="inline-flex h-9 overflow-hidden rounded-lg border border-violet-200 bg-white p-0.5">
+                        {([
+                          { value: "female", label: "여성" },
+                          { value: "male", label: "남성" },
+                        ] as const).map((option) => {
+                          const selected = adminCityViewGrantSex === option.value;
+                          return (
+                            <button
+                              key={option.value}
+                              type="button"
+                              aria-pressed={selected}
+                              onClick={() => setAdminCityViewGrantSex(option.value)}
+                              className={`min-w-12 rounded-md px-2.5 text-xs font-semibold ${
+                                selected ? "bg-violet-600 text-white" : "text-neutral-500 hover:bg-violet-50"
+                              }`}
+                            >
+                              {option.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                 </div>
                 <div className="mt-3 flex flex-col gap-2 sm:flex-row">
@@ -14716,7 +14804,9 @@ export default function MyPage() {
                             onClick={() => void handleAdminGrantCityViewToUser(item.userId)}
                             className="h-9 shrink-0 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                           >
-                            {isGranting ? "지급 중..." : `${adminCityViewGrantProvince} 열어주기`}
+                            {isGranting
+                              ? "지급 중..."
+                              : `${adminCityViewGrantProvince} ${adminCityViewGrantSex === "male" ? "남성" : "여성"} 열기`}
                           </button>
                         </div>
                       );

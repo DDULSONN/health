@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
-export async function GET() {
+export async function GET(req: Request) {
   const supabase = await createClient();
   const {
     data: { user },
@@ -25,6 +25,28 @@ export async function GET() {
       .maybeSingle();
   }
 
+  if (profileRes.error) {
+    return NextResponse.json({ error: profileRes.error.message }, { status: 500 });
+  }
+
+  const profile = {
+    email: user.email ?? null,
+    nickname: profileRes.data?.nickname ?? null,
+    nickname_changed_count: Number(profileRes.data?.nickname_changed_count ?? 0),
+    nickname_change_credits: Number(profileRes.data?.nickname_change_credits ?? 0),
+    phone_verified: profileRes.data?.phone_verified === true,
+    phone_verified_at: profileRes.data?.phone_verified_at ?? null,
+    swipe_profile_visible: profileRes.data?.swipe_profile_visible !== false,
+  };
+
+  if (new URL(req.url).searchParams.get("profileOnly") === "1") {
+    return NextResponse.json({
+      profile,
+      weekly_win_count: 0,
+      bodycheck_posts: [],
+    });
+  }
+
   const [bodycheckRes, winnersRes] = await Promise.all([
     supabase
       .from("posts")
@@ -34,15 +56,9 @@ export async function GET() {
       .eq("is_hidden", false)
       .order("created_at", { ascending: false })
       .limit(50),
-    supabase
-      .from("hall_of_fame")
-      .select("id")
-      .eq("user_id", user.id),
+    supabase.from("hall_of_fame").select("id").eq("user_id", user.id),
   ]);
 
-  if (profileRes.error) {
-    return NextResponse.json({ error: profileRes.error.message }, { status: 500 });
-  }
   if (bodycheckRes.error) {
     return NextResponse.json({ error: bodycheckRes.error.message }, { status: 500 });
   }
@@ -51,22 +67,12 @@ export async function GET() {
   }
 
   const posts = (bodycheckRes.data ?? []).filter(
-    (post) => !(post as Record<string, unknown>).is_deleted,
+    (post) => !(post as Record<string, unknown>).is_deleted
   );
 
-  const weeklyWinCount = winnersRes.data?.length ?? 0;
-
   return NextResponse.json({
-    profile: {
-      email: user.email ?? null,
-      nickname: profileRes.data?.nickname ?? null,
-      nickname_changed_count: Number(profileRes.data?.nickname_changed_count ?? 0),
-      nickname_change_credits: Number(profileRes.data?.nickname_change_credits ?? 0),
-      phone_verified: profileRes.data?.phone_verified === true,
-      phone_verified_at: profileRes.data?.phone_verified_at ?? null,
-      swipe_profile_visible: profileRes.data?.swipe_profile_visible !== false,
-    },
-    weekly_win_count: weeklyWinCount,
+    profile,
+    weekly_win_count: winnersRes.data?.length ?? 0,
     bodycheck_posts: posts.map((post) => ({
       ...post,
       average_score: post.vote_count

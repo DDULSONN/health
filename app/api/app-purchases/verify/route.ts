@@ -2,6 +2,7 @@
 import {
   buildPurchaseEventKey,
   fulfillDatingStorePurchase,
+  toSafeAppPurchaseErrorMessage,
   verifyDirectStorePurchase,
   type DirectStorePlatform,
 } from "@/lib/app-purchases";
@@ -120,8 +121,7 @@ export async function POST(req: Request) {
 
       if (
         existingRes.data?.status === "failed" ||
-        existingRes.data?.status === "ignored" ||
-        existingRes.data?.status === "processing"
+        existingRes.data?.status === "ignored"
       ) {
         const retryRes = await admin
           .from("app_purchase_events")
@@ -192,7 +192,17 @@ export async function POST(req: Request) {
       .eq("event_key", eventKey);
 
     if (updateRes.error) {
-      throw updateRes.error;
+      console.error("[app-purchase] fulfillment audit update failed", {
+        eventKey,
+        error: toSafeAppPurchaseErrorMessage(updateRes.error),
+      });
+      return json(200, "SUCCESS", requestId, "결제가 정상 반영되었습니다.", {
+        eventKey,
+        productId: verified.productId,
+        store: verified.store,
+        result: fulfilled,
+        auditPending: true,
+      });
     }
 
     return json(200, "SUCCESS", requestId, "결제가 정상 반영되었습니다.", {
@@ -202,6 +212,8 @@ export async function POST(req: Request) {
       result: fulfilled,
     });
   } catch (error) {
+    const rawMessage = error instanceof Error ? error.message : "";
+    const message = toSafeAppPurchaseErrorMessage(error);
     if (eventKey) {
       const admin = createAdminClient();
       await admin
@@ -209,15 +221,14 @@ export async function POST(req: Request) {
         .update({
           status: "failed",
           processed_at: new Date().toISOString(),
-          note: error instanceof Error ? error.message : "unknown error",
+          note: message,
         })
         .eq("event_key", eventKey);
     }
 
-    const message = error instanceof Error ? error.message : "결제 검증 처리 중 오류가 발생했습니다.";
-    const code = /GOOGLE_PLAY_SERVICE_ACCOUNT_JSON|APPLE_IAP_/i.test(message)
+    const code = /GOOGLE_PLAY_SERVICE_ACCOUNT_JSON|APPLE_IAP_|Google Play|App Store|스토어/i.test(rawMessage)
       ? "STORE_VERIFY_FAILED"
-      : /결제|purchase|App Store|Google Play|환경변수|transactionId|bundle/i.test(message)
+      : /결제|purchase|App Store|Google Play|환경변수|transactionId|bundle|스토어/i.test(message)
         ? "STORE_VERIFY_FAILED"
         : "INTERNAL_SERVER_ERROR";
 

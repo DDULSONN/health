@@ -125,7 +125,13 @@ export async function confirmTossPayment(input: {
   return tossFetch<TossConfirmPaymentResponse>("/v1/payments/confirm", {
     method: "POST",
     body: JSON.stringify(input),
-    idempotencyKey: crypto.randomUUID(),
+    idempotencyKey: input.orderId,
+  });
+}
+
+export async function getTossPayment(paymentKey: string) {
+  return tossFetch<TossConfirmPaymentResponse>(`/v1/payments/${encodeURIComponent(paymentKey)}`, {
+    method: "GET",
   });
 }
 

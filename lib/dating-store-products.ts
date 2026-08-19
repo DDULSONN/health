@@ -5,7 +5,9 @@ export const DATING_STORE_PRODUCT_IDS = {
   moreView3h: "more_view_3h",
   oneOnOneContactExchange: "one_on_one_contact_exchange",
   oneOnOnePriorityRecommendation: "one_on_one_priority_recommendation",
+  oneOnOnePlus7d: "one_on_one_plus_7d",
   oneOnOnePlus30d: "one_on_one_plus_30d",
+  datingAllPass30d: "dating_all_pass_30d",
   openCardRepost: "open_card_repost",
   swipePremium15d: "swipe_premium_15d",
   swipePremium30d: "swipe_premium_monthly",
@@ -17,7 +19,9 @@ export const APPLE_DATING_STORE_PRODUCT_IDS = {
   nearbyIdeal3h: "gymtools_nearby_ideal_3h_ios",
   moreView3h: "gymtools_more_view_3h_ios",
   oneOnOneContactExchange: "gymtools_one_on_one_contact_exchange_ios",
+  oneOnOnePlus7d: "gymtools_one_on_one_plus_7d_ios",
   oneOnOnePlus30d: "gymtools_one_on_one_plus_30d_ios",
+  datingAllPass30d: "gymtools_dating_all_pass_30d_ios",
   openCardRepost: "gymtools_open_card_repost_ios",
   swipePremium30d: "gymtools_swipe_premium_monthly_ios",
 } as const;
@@ -31,7 +35,9 @@ const APPLE_TO_CANONICAL_PRODUCT_ID = {
   [APPLE_DATING_STORE_PRODUCT_IDS.nearbyIdeal3h]: DATING_STORE_PRODUCT_IDS.nearbyIdeal3h,
   [APPLE_DATING_STORE_PRODUCT_IDS.moreView3h]: DATING_STORE_PRODUCT_IDS.moreView3h,
   [APPLE_DATING_STORE_PRODUCT_IDS.oneOnOneContactExchange]: DATING_STORE_PRODUCT_IDS.oneOnOneContactExchange,
+  [APPLE_DATING_STORE_PRODUCT_IDS.oneOnOnePlus7d]: DATING_STORE_PRODUCT_IDS.oneOnOnePlus7d,
   [APPLE_DATING_STORE_PRODUCT_IDS.oneOnOnePlus30d]: DATING_STORE_PRODUCT_IDS.oneOnOnePlus30d,
+  [APPLE_DATING_STORE_PRODUCT_IDS.datingAllPass30d]: DATING_STORE_PRODUCT_IDS.datingAllPass30d,
   [APPLE_DATING_STORE_PRODUCT_IDS.openCardRepost]: DATING_STORE_PRODUCT_IDS.openCardRepost,
   [APPLE_DATING_STORE_PRODUCT_IDS.swipePremium30d]: DATING_STORE_PRODUCT_IDS.swipePremium30d,
 } as const;
@@ -59,7 +65,7 @@ export const DATING_STORE_PRODUCT_CATALOG = {
   },
   [DATING_STORE_PRODUCT_IDS.nearbyIdeal3h]: {
     kind: "nearby_ideal_3h",
-    hours: 3,
+    hours: 24,
     bonusCredits: 1,
   },
   [DATING_STORE_PRODUCT_IDS.moreView3h]: {
@@ -78,10 +84,24 @@ export const DATING_STORE_PRODUCT_CATALOG = {
     durationDays: 3,
     storeType: "in-app",
   },
+  [DATING_STORE_PRODUCT_IDS.oneOnOnePlus7d]: {
+    kind: "one_on_one_plus_7d",
+    amountKrw: 9900,
+    durationDays: 7,
+    storeType: "in-app",
+  },
   [DATING_STORE_PRODUCT_IDS.oneOnOnePlus30d]: {
     kind: "one_on_one_plus_30d",
     amountKrw: 30000,
     durationDays: 30,
+    storeType: "in-app",
+  },
+  [DATING_STORE_PRODUCT_IDS.datingAllPass30d]: {
+    kind: "dating_all_pass_30d",
+    amountKrw: 39900,
+    swipePremiumAmountKrw: 30000,
+    durationDays: 30,
+    dailyLimit: 30,
     storeType: "in-app",
   },
   [DATING_STORE_PRODUCT_IDS.openCardRepost]: {

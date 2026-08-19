@@ -24,7 +24,13 @@ import { markOpenCardRepostFulfilled } from "@/lib/open-card-repost";
 import { isAllowedAdminUser } from "@/lib/admin";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
-import { confirmTossPayment, getMissingTossConfigKeys, isTossConfigured } from "@/lib/toss-payments";
+import {
+  confirmTossPayment,
+  getMissingTossConfigKeys,
+  getTossPayment,
+  isTossConfigured,
+  type TossConfirmPaymentResponse,
+} from "@/lib/toss-payments";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 
 type ConfirmBody = {
@@ -88,7 +94,7 @@ async function ensureApplyCreditsFulfilled(
   actingUserId: string
 ) {
   if (!order.product_ref_id) {
-    return { addedCredits: 0, creditsAfter: 0 };
+    throw new Error("APPLY_CREDIT_ORDER_MISSING");
   }
 
   const applyOrderRes = await admin
@@ -128,6 +134,30 @@ async function ensureApplyCreditsFulfilled(
     addedCredits: Number(row?.added_credits ?? 0),
     creditsAfter: Number(row?.credits_after ?? 0),
   };
+}
+
+function isMatchingApprovedPayment(
+  payment: TossConfirmPaymentResponse,
+  input: { paymentKey: string; orderId: string; amount: number }
+) {
+  return (
+    payment.paymentKey === input.paymentKey &&
+    payment.orderId === input.orderId &&
+    payment.totalAmount === input.amount &&
+    payment.status === "DONE"
+  );
+}
+
+async function confirmOrRecoverTossPayment(input: { paymentKey: string; orderId: string; amount: number }) {
+  try {
+    return await confirmTossPayment(input);
+  } catch (confirmError) {
+    const existingPayment = await getTossPayment(input.paymentKey).catch(() => null);
+    if (existingPayment && isMatchingApprovedPayment(existingPayment, input)) {
+      return existingPayment;
+    }
+    throw confirmError;
+  }
 }
 
 async function ensureMoreViewFulfilled(
@@ -909,6 +939,7 @@ export async function POST(req: Request) {
         orderName: order.order_name,
         readingId: order.product_type === "love_fortune_detail" ? order.product_ref_id : undefined,
         orderId,
+        amount: order.amount,
         addedCredits: fulfillment.addedCredits,
         creditsAfter: fulfillment.creditsAfter,
       });
@@ -942,7 +973,7 @@ export async function POST(req: Request) {
       }
     }
 
-    const payment = await confirmTossPayment({ paymentKey, orderId, amount });
+    const payment = await confirmOrRecoverTossPayment({ paymentKey, orderId, amount });
 
     const updateRes = await admin
       .from("toss_test_payment_orders")
@@ -954,8 +985,9 @@ export async function POST(req: Request) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", order.id)
+      .eq("status", "ready")
       .select("id")
-      .single();
+      .maybeSingle();
 
     if (updateRes.error) {
       console.error("[toss-confirm] update failed", updateRes.error);
@@ -965,6 +997,22 @@ export async function POST(req: Request) {
         requestId,
         message: "결제 결과 저장에 실패했습니다.",
       });
+    }
+
+    if (!updateRes.data?.id) {
+      const latestOrderRes = await admin
+        .from("toss_test_payment_orders")
+        .select("status")
+        .eq("id", order.id)
+        .maybeSingle();
+      if (latestOrderRes.error || latestOrderRes.data?.status !== "paid") {
+        return json(500, {
+          ok: false,
+          code: "ORDER_UPDATE_FAILED",
+          requestId,
+          message: "결제 결과 저장을 완료하지 못했습니다. 잠시 후 다시 확인해주세요.",
+        });
+      }
     }
 
     const fulfillment = await ensureOrderFulfilled(admin, order, user.id);
@@ -990,6 +1038,14 @@ export async function POST(req: Request) {
         code: "MORE_VIEW_METADATA_MISSING",
         requestId,
         message: "이상형 더보기 결제 정보가 올바르지 않습니다.",
+      });
+    }
+    if (error instanceof Error && error.message === "APPLY_CREDIT_ORDER_MISSING") {
+      return json(500, {
+        ok: false,
+        code: "APPLY_CREDIT_ORDER_MISSING",
+        requestId,
+        message: "지원권 결제 주문 정보가 올바르지 않습니다.",
       });
     }
     if (error instanceof Error && error.message === "CITY_VIEW_PROVINCE_MISSING") {

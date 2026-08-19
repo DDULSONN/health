@@ -592,19 +592,31 @@ function PaymentSuccessContent() {
     let cancelled = false;
     queueMicrotask(async () => {
       try {
-        const res = await fetch("/api/payments/toss/confirm", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ paymentKey, orderId, amount }),
-        });
-        const body = (await res.json().catch(() => ({}))) as ConfirmResponse;
-        if (!res.ok || !body.ok) {
-          if (!cancelled) setError(body.message ?? "결제 확인 처리에 실패했습니다.");
-          return;
+        for (let attempt = 0; attempt < 3 && !cancelled; attempt += 1) {
+          try {
+            const res = await fetch("/api/payments/toss/confirm", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ paymentKey, orderId, amount }),
+            });
+            const body = (await res.json().catch(() => ({}))) as ConfirmResponse;
+            if (res.ok && body.ok) {
+              if (!cancelled) setResult(body);
+              return;
+            }
+            if (res.status < 500 || attempt === 2) {
+              if (!cancelled) setError(body.message ?? "결제 확인 처리에 실패했습니다.");
+              return;
+            }
+          } catch {
+            if (attempt === 2) {
+              if (!cancelled) setError("결제 확인 중 서버 오류가 발생했습니다.");
+              return;
+            }
+          }
+
+          await new Promise((resolve) => window.setTimeout(resolve, 800 * (attempt + 1)));
         }
-        if (!cancelled) setResult(body);
-      } catch {
-        if (!cancelled) setError("결제 확인 중 서버 오류가 발생했습니다.");
       } finally {
         if (!cancelled) setLoading(false);
       }

@@ -341,7 +341,7 @@ export default function SiteGuideBubble() {
       setLoading(true);
       try {
         const [summaryRes, cardsRes, oneOnOneRes] = await Promise.all([
-          fetch("/api/mypage/summary", { cache: "no-store" }),
+          fetch("/api/mypage/summary?profileOnly=1", { cache: "no-store" }),
           fetch("/api/dating/cards/my", { cache: "no-store" }),
           fetch("/api/dating/1on1/write-status", { cache: "no-store" }),
         ]);
