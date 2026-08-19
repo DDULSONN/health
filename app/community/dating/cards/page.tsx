@@ -2278,8 +2278,13 @@ export default function OpenCardsPage() {
   }, [snapshotReady, restoredSnapshot, loadInitial]);
 
   useEffect(() => {
+    const SECONDARY_POLL_INTERVAL_MS = 5 * 60_000;
+    const SECONDARY_FOCUS_REFRESH_GAP_MS = 60_000;
+    let lastPolledAt = 0;
+
     const pollSecondaryStatus = async () => {
       if (document.visibilityState !== "visible") return;
+      lastPolledAt = Date.now();
 
       try {
         const [mvStatusRes, qsRes] = await Promise.all([
@@ -2324,10 +2329,11 @@ export default function OpenCardsPage() {
 
     const timer = window.setInterval(() => {
       void pollSecondaryStatus();
-    }, 60000);
+    }, SECONDARY_POLL_INTERVAL_MS);
 
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible") return;
+      if (Date.now() - lastPolledAt < SECONDARY_FOCUS_REFRESH_GAP_MS) return;
       void pollSecondaryStatus();
     };
 

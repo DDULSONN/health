@@ -3898,7 +3898,7 @@ export default function MyPage() {
     const intervalId = window.setInterval(() => {
       if (document.visibilityState !== "visible") return;
       void refreshAdminQueueData(false);
-    }, 15000);
+    }, 60_000);
 
     return () => {
       window.clearInterval(intervalId);

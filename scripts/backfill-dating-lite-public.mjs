@@ -8,6 +8,7 @@ const SOURCE_LEGACY_BUCKET = "dating-photos";
 const TARGET_BUCKET = "dating-card-lite";
 const PAGE_SIZE = 500;
 const MARKER_TTL_SEC = 365 * 24 * 60 * 60;
+const FETCH_TIMEOUT_MS = 30_000;
 
 function parseArgs(argv) {
   const args = new Set(argv.slice(2));
@@ -211,7 +212,10 @@ async function main() {
       return;
     }
 
-    const res = await fetch(sourceUrl, { cache: "no-store" }).catch(() => null);
+    const res = await fetch(sourceUrl, {
+      cache: "no-store",
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+    }).catch(() => null);
     if (!res || !res.ok) {
       stats.fetchFail += 1;
       stats.failed += 1;

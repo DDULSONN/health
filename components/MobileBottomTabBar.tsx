@@ -17,7 +17,7 @@ type ChatBadgeState = {
 };
 
 const TOOL_PATHS = ["/tools", "/flirting-generator", "/lifts", "/1rm", "/certify"];
-const CHAT_BADGE_CACHE_TTL_MS = 30_000;
+const CHAT_BADGE_CACHE_TTL_MS = 2 * 60_000;
 let chatBadgeCache: { value: ChatBadgeState; expiresAt: number } | null = null;
 
 const TABS: TabItem[] = [
@@ -126,7 +126,7 @@ export default function MobileBottomTabBar() {
   useEffect(() => {
     const onFocus = () => {
       if (document.visibilityState !== "visible") return;
-      void loadChatBadge({ force: true });
+      void loadChatBadge();
     };
 
     window.addEventListener("focus", onFocus);

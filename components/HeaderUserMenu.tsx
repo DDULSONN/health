@@ -12,6 +12,8 @@ type HeaderUserMenuProps = {
 };
 
 const NOTIFICATION_COUNT_EVENT = "dating-notification-count";
+const NOTIFICATION_POLL_INTERVAL_MS = 5 * 60_000;
+const NOTIFICATION_FOCUS_REFRESH_GAP_MS = 60_000;
 
 export default function HeaderUserMenu({
   pathname,
@@ -32,8 +34,10 @@ export default function HeaderUserMenu({
   useEffect(() => {
     let mounted = true;
     let hasUser = false;
+    let lastNotificationRefreshAt = 0;
 
     async function loadUnreadCount() {
+      lastNotificationRefreshAt = Date.now();
       try {
         const response = await fetch("/api/notifications?limit=1", {
           cache: "no-store",
@@ -111,7 +115,13 @@ export default function HeaderUserMenu({
       router.refresh();
     });
     const refreshVisibleNotifications = () => {
-      if (hasUser && document.visibilityState === "visible") void loadUnreadCount();
+      if (
+        hasUser &&
+        document.visibilityState === "visible" &&
+        Date.now() - lastNotificationRefreshAt >= NOTIFICATION_FOCUS_REFRESH_GAP_MS
+      ) {
+        void loadUnreadCount();
+      }
     };
     const syncNotificationCount = (event: Event) => {
       const nextCount = (event as CustomEvent<number>).detail;
@@ -119,7 +129,7 @@ export default function HeaderUserMenu({
     };
     const intervalId = mobile
       ? null
-      : window.setInterval(refreshVisibleNotifications, 30_000);
+      : window.setInterval(refreshVisibleNotifications, NOTIFICATION_POLL_INTERVAL_MS);
     if (!mobile) {
       window.addEventListener("focus", refreshVisibleNotifications);
       document.addEventListener("visibilitychange", refreshVisibleNotifications);
