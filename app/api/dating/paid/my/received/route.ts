@@ -1,4 +1,8 @@
 import { createAdminClient, createClient } from "@/lib/supabase/server";
+import {
+  loadLatestDatingInstagramByUser,
+  normalizeDatingInstagramId,
+} from "@/lib/dating-instagram-server";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { buildSignedImageUrl, buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { NextResponse } from "next/server";
@@ -126,6 +130,14 @@ export async function GET(req: Request) {
     })
   );
 
+  const acceptedApplicantsMissingInstagram = (apps ?? [])
+    .filter((app) => app.status === "accepted" && !normalizeDatingInstagramId(app.instagram_id))
+    .map((app) => app.applicant_user_id);
+  const instagramFallbackByUser = await loadLatestDatingInstagramByUser(
+    admin,
+    acceptedApplicantsMissingInstagram
+  );
+
   const safeApps = await Promise.all(
     (apps ?? []).map(async (app) => {
       const rawPaths = Array.isArray(app.photo_paths)
@@ -139,7 +151,12 @@ export async function GET(req: Request) {
       return {
         ...app,
         card_id: app.paid_card_id,
-        instagram_id: app.status === "accepted" ? app.instagram_id : null,
+        instagram_id:
+          app.status === "accepted"
+            ? normalizeDatingInstagramId(app.instagram_id) ??
+              instagramFallbackByUser.get(app.applicant_user_id) ??
+              null
+            : null,
         photo_signed_urls: filtered,
       };
     })

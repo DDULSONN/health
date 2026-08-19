@@ -1,5 +1,6 @@
 ﻿import { isAdminEmail } from "@/lib/admin";
 import { buildDatingApplicationAcceptedNotification } from "@/lib/dating-email-templates";
+import { ensureDatingChatThread } from "@/lib/dating-chat";
 import { sendExpoPushToUser } from "@/lib/expo-push";
 import { recordDatingMatchEvent } from "@/lib/dating-match-metrics";
 import { sendDatingEmailNotification } from "@/lib/dating-swipe";
@@ -114,6 +115,16 @@ export async function PATCH(
   const cardHidden = false;
 
   if (status === "accepted") {
+    await ensureDatingChatThread(adminClient, {
+      sourceKind: "open",
+      sourceId: app.id,
+      userAId: card.owner_user_id,
+      userBId: app.applicant_user_id,
+    }).catch((chatError) => {
+      console.error("[PATCH /api/dating/cards/applications/[id]] chat thread failed", chatError);
+      return null;
+    });
+
     try {
       await recordDatingMatchEvent(adminClient, {
         kind: "open_card",

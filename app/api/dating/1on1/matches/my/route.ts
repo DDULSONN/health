@@ -18,6 +18,13 @@ const CLOSED_MATCH_LIMIT = 80;
 const ACTIVE_MATCH_STATES = ["proposed", "source_selected", "candidate_accepted", "mutual_accepted"];
 const CLOSED_MATCH_STATES = ["source_skipped", "candidate_rejected", "source_declined", "admin_canceled"];
 
+function formatPhoneForDisplay(value: string | null | undefined) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return null;
+  if (raw.startsWith("+82")) return `0${raw.slice(3)}`;
+  return raw;
+}
+
 async function fetchMyMatchesByStates(
   admin: ReturnType<typeof createAdminClient>,
   userId: string,
@@ -146,8 +153,13 @@ export async function GET(req: Request) {
     items: rows.map((row) => {
       const role = row.source_user_id === user.id ? "source" : "candidate";
       const counterpartyCardId = role === "source" ? row.candidate_card_id : row.source_card_id;
+      const counterpartyUserId = role === "source" ? row.candidate_user_id : row.source_user_id;
       const counterpartyPhone =
-        row.contact_exchange_status === "approved" ? (phoneMap.get(counterpartyCardId) ?? null) : null;
+        row.contact_exchange_status === "approved"
+          ? formatPhoneForDisplay(
+              phoneMap.get(counterpartyCardId) ?? profilePhoneMap.get(counterpartyUserId) ?? null
+            )
+          : null;
       return {
         ...row,
         role,

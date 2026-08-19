@@ -5,7 +5,7 @@ import {
   ONE_ON_ONE_PLUS_7D_DURATION_DAYS,
   grantOneOnOnePlus,
 } from "@/lib/dating-1on1-plus";
-import { CITY_VIEW_ACCESS_HOURS } from "@/lib/dating-city-view";
+import { CITY_VIEW_ACCESS_HOURS, normalizeDatingCityViewSex } from "@/lib/dating-city-view";
 import { getActiveMoreViewGrant, normalizeCardSex } from "@/lib/dating-more-view";
 import {
   approvePaidCard,
@@ -194,6 +194,7 @@ async function ensureCityViewFulfilled(
   if (!province) {
     throw new Error("CITY_VIEW_PROVINCE_MISSING");
   }
+  const targetSex = normalizeDatingCityViewSex(order.product_meta?.targetSex);
 
   const fulfillmentKey = `toss:${order.toss_order_id}`;
   if (order.product_meta?.cityViewFulfillmentKey === fulfillmentKey) {
@@ -219,6 +220,7 @@ async function ensureCityViewFulfilled(
         product_meta: {
           ...(order.product_meta ?? {}),
           province,
+          targetSex,
           cityViewFulfillmentKey: fulfillmentKey,
           cityViewFulfilledAt: new Date().toISOString(),
         },
@@ -263,6 +265,7 @@ async function ensureCityViewFulfilled(
       accessHours: CITY_VIEW_ACCESS_HOURS,
       note: `toss payment ${order.toss_order_id} | next 30 cards`,
       bonusCredits: 1,
+      targetSex,
     });
 
     await markOrderFulfilled();
@@ -290,6 +293,7 @@ async function ensureCityViewFulfilled(
       note: `toss payment ${order.toss_order_id} | auto-approved`,
       accessHours: CITY_VIEW_ACCESS_HOURS,
       bonusCredits: 1,
+      targetSex,
     });
 
     await markOrderFulfilled();
@@ -302,6 +306,7 @@ async function ensureCityViewFulfilled(
     accessHours: CITY_VIEW_ACCESS_HOURS,
     note: `toss payment ${order.toss_order_id} | auto-approved`,
     bonusCredits: 1,
+    targetSex,
   });
 
   await markOrderFulfilled();

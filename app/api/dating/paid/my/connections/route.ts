@@ -1,4 +1,8 @@
 import { createAdminClient, createClient } from "@/lib/supabase/server";
+import {
+  loadLatestDatingInstagramByUser,
+  normalizeDatingInstagramId,
+} from "@/lib/dating-instagram-server";
 import { NextResponse } from "next/server";
 
 export async function GET() {
@@ -66,6 +70,14 @@ export async function GET() {
   ];
   const profilesRes = await admin.from("profiles").select("user_id,nickname").in("user_id", profileIds);
   const profileMap = new Map((profilesRes.data ?? []).map((p) => [p.user_id, p.nickname]));
+  const instagramFallbackUserIds = new Set<string>();
+  for (const app of acceptedApps) {
+    const card = cardsById.get(app.paid_card_id);
+    if (!card) continue;
+    if (!normalizeDatingInstagramId(app.instagram_id)) instagramFallbackUserIds.add(app.applicant_user_id);
+    if (!normalizeDatingInstagramId(card.instagram_id)) instagramFallbackUserIds.add(card.user_id);
+  }
+  const instagramFallbackByUser = await loadLatestDatingInstagramByUser(admin, instagramFallbackUserIds);
 
   const items = acceptedApps
     .map((app) => {
@@ -81,8 +93,14 @@ export async function GET() {
         role: isOwnerView ? "owner" : "applicant",
         other_user_id: otherUserId,
         other_nickname: otherNickname,
-        my_instagram_id: isOwnerView ? card.instagram_id ?? null : app.instagram_id,
-        other_instagram_id: isOwnerView ? app.instagram_id : card.instagram_id ?? null,
+        my_instagram_id:
+          normalizeDatingInstagramId(isOwnerView ? card.instagram_id : app.instagram_id) ??
+          instagramFallbackByUser.get(user.id) ??
+          null,
+        other_instagram_id:
+          normalizeDatingInstagramId(isOwnerView ? app.instagram_id : card.instagram_id) ??
+          instagramFallbackByUser.get(otherUserId) ??
+          null,
         source: "paid",
       };
     })

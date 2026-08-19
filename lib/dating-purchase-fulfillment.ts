@@ -1,5 +1,11 @@
 ﻿import { createAdminClient } from "@/lib/supabase/server";
-import { CITY_VIEW_ACCESS_HOURS, CITY_VIEW_CARD_LIMIT, getCityViewTargetSex } from "@/lib/dating-city-view";
+import {
+  CITY_VIEW_ACCESS_HOURS,
+  CITY_VIEW_CARD_LIMIT,
+  getCityViewTargetSex,
+  normalizeDatingCityViewSex,
+  type DatingCityViewSex,
+} from "@/lib/dating-city-view";
 import { fetchCityViewCandidateRows, sortCityViewCandidates } from "@/lib/dating-city-view-candidates";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
@@ -333,11 +339,13 @@ type ApproveCityViewRequestOptions = {
   note?: string | null;
   accessHours?: number;
   bonusCredits?: number;
+  targetSex?: DatingCityViewSex | null;
 };
 
 type CityViewGrantRow = {
   id?: string | null;
   access_expires_at?: string | null;
+  target_sex?: unknown;
   snapshot_card_ids?: unknown;
   snapshot_seen_card_ids?: unknown;
 };
@@ -379,12 +387,17 @@ async function getPreviousCityViewSnapshotIds(admin: AdminClient, userId: string
   return ids;
 }
 
-async function buildCityViewSnapshotCardIds(admin: AdminClient, userId: string, city: string) {
+async function buildCityViewSnapshotCardIds(
+  admin: AdminClient,
+  userId: string,
+  city: string,
+  requestedTargetSex?: DatingCityViewSex | null
+) {
   const province = normalizeCityProvince(city);
   if (!province) return [];
 
   const usedIds = await getPreviousCityViewSnapshotIds(admin, userId, province);
-  const targetSex = await getCityViewTargetSex(admin, userId);
+  const targetSex = await getCityViewTargetSex(admin, userId, requestedTargetSex);
   const [rows, blockedUserIds] = await Promise.all([
     fetchCityViewCandidateRows(admin),
     getDatingBlockedUserIds(admin, userId),
@@ -413,9 +426,14 @@ async function buildCityViewSnapshotCardIds(admin: AdminClient, userId: string, 
     .map((row) => row.id);
 }
 
-async function safeBuildCityViewSnapshotCardIds(admin: AdminClient, userId: string, city: string) {
+async function safeBuildCityViewSnapshotCardIds(
+  admin: AdminClient,
+  userId: string,
+  city: string,
+  requestedTargetSex?: DatingCityViewSex | null
+) {
   try {
-    return await buildCityViewSnapshotCardIds(admin, userId, city);
+    return await buildCityViewSnapshotCardIds(admin, userId, city, requestedTargetSex);
   } catch (error) {
     console.error("[city-view] snapshot build failed; granting access without snapshot", {
       userId,
@@ -431,18 +449,35 @@ export async function approveCityViewRequest(admin: AdminClient, options: Approv
   const bonusCredits = options.bonusCredits ?? 1;
   const reviewedAt = new Date().toISOString();
   const accessExpiresAt = new Date(Date.now() + accessHours * 60 * 60 * 1000).toISOString();
-  const pendingRes = await admin
+  let pendingRes = await admin
     .from("dating_city_view_requests")
-    .select("id,user_id,city")
+    .select("id,user_id,city,target_sex")
     .eq("id", options.requestId)
     .eq("status", "pending")
     .maybeSingle();
 
+  if (pendingRes.error && isMissingColumnError(pendingRes.error)) {
+    pendingRes = await admin
+      .from("dating_city_view_requests")
+      .select("id,user_id,city")
+      .eq("id", options.requestId)
+      .eq("status", "pending")
+      .maybeSingle();
+  }
   if (pendingRes.error) {
     throw pendingRes.error;
   }
 
-  const snapshotCardIds = pendingRes.data ? await safeBuildCityViewSnapshotCardIds(admin, pendingRes.data.user_id, pendingRes.data.city) : [];
+  const targetSex = pendingRes.data
+    ? await getCityViewTargetSex(
+        admin,
+        pendingRes.data.user_id,
+        options.targetSex ?? normalizeDatingCityViewSex(pendingRes.data.target_sex)
+      )
+    : null;
+  const snapshotCardIds = pendingRes.data
+    ? await safeBuildCityViewSnapshotCardIds(admin, pendingRes.data.user_id, pendingRes.data.city, targetSex)
+    : [];
   let updateRes = await admin
     .from("dating_city_view_requests")
     .update({
@@ -451,6 +486,7 @@ export async function approveCityViewRequest(admin: AdminClient, options: Approv
       reviewed_at: reviewedAt,
       reviewed_by_user_id: options.reviewedByUserId,
       access_expires_at: accessExpiresAt,
+      target_sex: targetSex,
       snapshot_card_ids: snapshotCardIds,
       snapshot_seen_card_ids: snapshotCardIds,
     })
@@ -468,6 +504,8 @@ export async function approveCityViewRequest(admin: AdminClient, options: Approv
         reviewed_at: reviewedAt,
         reviewed_by_user_id: options.reviewedByUserId,
         access_expires_at: accessExpiresAt,
+        snapshot_card_ids: snapshotCardIds,
+        snapshot_seen_card_ids: snapshotCardIds,
       })
       .eq("id", options.requestId)
       .eq("status", "pending")
@@ -484,6 +522,7 @@ export async function approveCityViewRequest(admin: AdminClient, options: Approv
         accessHours,
         note: options.note ?? "approved with active grant refresh",
         bonusCredits,
+        targetSex,
       });
       await admin
         .from("dating_city_view_requests")
@@ -635,6 +674,7 @@ type GrantCityViewAccessOptions = {
   accessHours?: number;
   note?: string | null;
   bonusCredits?: number;
+  targetSex?: DatingCityViewSex | null;
 };
 
 export async function grantCityViewAccess(admin: AdminClient, options: GrantCityViewAccessOptions) {
@@ -643,7 +683,7 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
   const now = Date.now();
   let activeRes: { data: CityViewGrantRow[] | null; error: unknown } = await admin
     .from("dating_city_view_requests")
-    .select("id,access_expires_at,snapshot_card_ids,snapshot_seen_card_ids")
+    .select("id,access_expires_at,target_sex,snapshot_card_ids,snapshot_seen_card_ids")
     .eq("user_id", options.userId)
     .eq("city", options.city)
     .eq("status", "approved")
@@ -654,7 +694,7 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
   if (activeRes.error && isMissingColumnError(activeRes.error)) {
     activeRes = await admin
       .from("dating_city_view_requests")
-      .select("id,access_expires_at")
+      .select("id,access_expires_at,snapshot_card_ids,snapshot_seen_card_ids")
       .eq("user_id", options.userId)
       .eq("city", options.city)
       .eq("status", "approved")
@@ -695,7 +735,17 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
   }
 
   const accessExpiresAt = new Date(now + accessHours * 60 * 60 * 1000).toISOString();
-  const snapshotCardIds = await safeBuildCityViewSnapshotCardIds(admin, options.userId, options.city);
+  const targetSex = await getCityViewTargetSex(
+    admin,
+    options.userId,
+    options.targetSex ?? normalizeDatingCityViewSex(activeRow?.target_sex)
+  );
+  const snapshotCardIds = await safeBuildCityViewSnapshotCardIds(
+    admin,
+    options.userId,
+    options.city,
+    targetSex
+  );
   const accumulatedSnapshotCardIds = mergeCardIds(
     parseSnapshotCardIds((activeRow as { snapshot_card_ids?: unknown } | undefined)?.snapshot_card_ids),
     snapshotCardIds
@@ -713,6 +763,7 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
         access_expires_at: accessExpiresAt,
         note: options.note ?? null,
         reviewed_at: new Date().toISOString(),
+        target_sex: targetSex,
         snapshot_card_ids: accumulatedSnapshotCardIds,
         snapshot_seen_card_ids: snapshotSeenCardIds,
       })
@@ -726,6 +777,8 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
           access_expires_at: accessExpiresAt,
           note: options.note ?? null,
           reviewed_at: new Date().toISOString(),
+          snapshot_card_ids: accumulatedSnapshotCardIds,
+          snapshot_seen_card_ids: snapshotSeenCardIds,
         })
         .eq("id", activeRow.id)
         .select("id,user_id,city,status,access_expires_at")
@@ -754,6 +807,7 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
       reviewed_by_user_id: null,
       reviewed_at: new Date().toISOString(),
       access_expires_at: accessExpiresAt,
+      target_sex: targetSex,
       snapshot_card_ids: snapshotCardIds,
       snapshot_seen_card_ids: snapshotCardIds,
     })
@@ -771,6 +825,8 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
         reviewed_by_user_id: null,
         reviewed_at: new Date().toISOString(),
         access_expires_at: accessExpiresAt,
+        snapshot_card_ids: snapshotCardIds,
+        snapshot_seen_card_ids: snapshotCardIds,
       })
       .select("id,user_id,city,status,access_expires_at")
       .single();
@@ -781,7 +837,7 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
     if (errorCode === "23505") {
       let duplicateRes: { data: CityViewGrantRow | null; error: unknown } = await admin
         .from("dating_city_view_requests")
-        .select("id,access_expires_at,snapshot_card_ids,snapshot_seen_card_ids")
+        .select("id,access_expires_at,target_sex,snapshot_card_ids,snapshot_seen_card_ids")
         .eq("user_id", options.userId)
         .eq("city", options.city)
         .eq("status", "approved")
@@ -793,7 +849,7 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
       if (duplicateRes.error && isMissingColumnError(duplicateRes.error)) {
         duplicateRes = await admin
           .from("dating_city_view_requests")
-          .select("id,access_expires_at")
+          .select("id,access_expires_at,snapshot_card_ids,snapshot_seen_card_ids")
           .eq("user_id", options.userId)
           .eq("city", options.city)
           .eq("status", "approved")
@@ -820,6 +876,7 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
             access_expires_at: accessExpiresAt,
             note: options.note ?? null,
             reviewed_at: new Date().toISOString(),
+            target_sex: targetSex,
             snapshot_card_ids: retrySnapshotCardIds,
             snapshot_seen_card_ids: retrySnapshotSeenCardIds,
           })
@@ -833,6 +890,8 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
               access_expires_at: accessExpiresAt,
               note: options.note ?? null,
               reviewed_at: new Date().toISOString(),
+              snapshot_card_ids: retrySnapshotCardIds,
+              snapshot_seen_card_ids: retrySnapshotSeenCardIds,
             })
             .eq("id", duplicateRes.data.id)
             .select("id,user_id,city,status,access_expires_at")

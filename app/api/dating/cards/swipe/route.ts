@@ -11,6 +11,7 @@ import {
   sendDatingEmailNotification,
 } from "@/lib/dating-swipe";
 import { recordDatingMatchEvent } from "@/lib/dating-match-metrics";
+import { ensureDatingChatThread } from "@/lib/dating-chat";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
 import { notifyDatingUser } from "@/lib/dating-notifications";
@@ -438,6 +439,16 @@ export async function POST(req: Request) {
         if (matchInsertRes.error) {
           throw matchInsertRes.error;
         }
+
+        await ensureDatingChatThread(adminClient, {
+          sourceKind: "swipe",
+          sourceId: matchInsertRes.data.id,
+          userAId,
+          userBId,
+        }).catch((chatError) => {
+          console.error("[POST /api/dating/cards/swipe] chat thread failed", chatError);
+          return null;
+        });
 
         try {
           await recordDatingMatchEvent(adminClient, {

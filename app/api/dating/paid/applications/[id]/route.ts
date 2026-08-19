@@ -1,4 +1,5 @@
 import { isAdminEmail } from "@/lib/admin";
+import { ensureDatingChatThread } from "@/lib/dating-chat";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -112,6 +113,18 @@ export async function PATCH(
   }
 
   if ((status === "accepted" || status === "rejected") && app.applicant_user_id) {
+    if (status === "accepted") {
+      await ensureDatingChatThread(admin, {
+        sourceKind: "paid",
+        sourceId: app.id,
+        userAId: card.user_id,
+        userBId: app.applicant_user_id,
+      }).catch((chatError) => {
+        console.error("[PATCH /api/dating/paid/applications/[id]] chat thread failed", chatError);
+        return null;
+      });
+    }
+
     const notificationType = status === "accepted" ? "dating_application_accepted" : "dating_application_rejected";
     const title = status === "accepted" ? "지원이 수락됐습니다" : "지원 결과가 도착했습니다";
     const cardNickname = String(card.nickname ?? "대기 없이 등록 카드").trim() || "대기 없이 등록 카드";

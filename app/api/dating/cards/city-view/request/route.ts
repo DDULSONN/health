@@ -1,5 +1,6 @@
 ﻿import { extractProvinceFromRegion } from "@/lib/region-city";
 import { claimCityViewWeeklyBenefit } from "@/lib/dating-city-view-weekly";
+import { getCityViewTargetSex } from "@/lib/dating-city-view";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -70,7 +71,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: "로그인이 필요합니다." }, { status: 401 });
   }
 
-  const body = (await req.json().catch(() => null)) as { city?: unknown; province?: unknown; useWeeklyBenefit?: unknown } | null;
+  const body = (await req.json().catch(() => null)) as {
+    city?: unknown;
+    province?: unknown;
+    targetSex?: unknown;
+    useWeeklyBenefit?: unknown;
+  } | null;
   const provinceRaw = typeof body?.province === "string" ? body.province.trim() : typeof body?.city === "string" ? body.city.trim() : "";
   const province = extractProvinceFromRegion(provinceRaw) ?? provinceRaw;
   const useWeeklyBenefit = body?.useWeeklyBenefit === true;
@@ -80,6 +86,14 @@ export async function POST(req: Request) {
   }
 
   const admin = createAdminClient();
+  const targetSex = await getCityViewTargetSex(admin, user.id, body?.targetSex);
+
+  if (!targetSex) {
+    return NextResponse.json(
+      { ok: false, code: "TARGET_SEX_REQUIRED", message: "열람할 성별을 먼저 선택해 주세요." },
+      { status: 400 }
+    );
+  }
 
   if (useWeeklyBenefit) {
     try {
@@ -127,6 +141,7 @@ export async function POST(req: Request) {
   const insertRes = await admin.from("dating_city_view_requests").insert({
     user_id: user.id,
     city: province,
+    target_sex: targetSex,
     status: "pending",
   });
 

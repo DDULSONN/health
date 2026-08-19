@@ -45,7 +45,7 @@ export async function loadLatestDatingInstagramByUser(
   const ids = [...new Set([...userIds].map((id) => id.trim()).filter(Boolean))];
   if (ids.length === 0) return new Map();
 
-  const [cardsRes, applicationsRes] = await Promise.all([
+  const [cardsRes, applicationsRes, paidCardsRes, paidApplicationsRes] = await Promise.all([
     adminClient
       .from("dating_cards")
       .select("owner_user_id, instagram_id, created_at")
@@ -62,6 +62,22 @@ export async function loadLatestDatingInstagramByUser(
       .neq("instagram_id", "")
       .order("created_at", { ascending: false })
       .limit(5000),
+    adminClient
+      .from("dating_paid_cards")
+      .select("user_id, instagram_id, created_at")
+      .in("user_id", ids)
+      .not("instagram_id", "is", null)
+      .neq("instagram_id", "")
+      .order("created_at", { ascending: false })
+      .limit(5000),
+    adminClient
+      .from("dating_paid_card_applications")
+      .select("applicant_user_id, instagram_id, created_at")
+      .in("applicant_user_id", ids)
+      .not("instagram_id", "is", null)
+      .neq("instagram_id", "")
+      .order("created_at", { ascending: false })
+      .limit(5000),
   ]);
 
   if (cardsRes.error) {
@@ -70,12 +86,24 @@ export async function loadLatestDatingInstagramByUser(
   if (applicationsRes.error) {
     console.error("[dating-instagram] application fallback lookup failed", applicationsRes.error);
   }
+  if (paidCardsRes.error) {
+    console.error("[dating-instagram] paid card fallback lookup failed", paidCardsRes.error);
+  }
+  if (paidApplicationsRes.error) {
+    console.error("[dating-instagram] paid application fallback lookup failed", paidApplicationsRes.error);
+  }
 
   const candidates = new Map<string, InstagramCandidate>();
   for (const row of cardsRes.data ?? []) {
     setLatestCandidate(candidates, row.owner_user_id, row.instagram_id, row.created_at);
   }
   for (const row of applicationsRes.data ?? []) {
+    setLatestCandidate(candidates, row.applicant_user_id, row.instagram_id, row.created_at);
+  }
+  for (const row of paidCardsRes.data ?? []) {
+    setLatestCandidate(candidates, row.user_id, row.instagram_id, row.created_at);
+  }
+  for (const row of paidApplicationsRes.data ?? []) {
     setLatestCandidate(candidates, row.applicant_user_id, row.instagram_id, row.created_at);
   }
 

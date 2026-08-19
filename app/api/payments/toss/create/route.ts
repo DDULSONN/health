@@ -1,5 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { normalizeCardSex } from "@/lib/dating-more-view";
+import { getCityViewTargetSex } from "@/lib/dating-city-view";
 import { approveMoreViewRequest, grantMoreViewAccess, grantOneOnOneContactExchange } from "@/lib/dating-purchase-fulfillment";
 import {
   DATING_ALL_PASS_DURATION_DAYS,
@@ -48,6 +49,7 @@ type ProductType =
 type CreateBody = {
   productType?: unknown;
   sex?: unknown;
+  targetSex?: unknown;
   province?: unknown;
   matchId?: unknown;
   cardId?: unknown;
@@ -537,12 +539,22 @@ export async function POST(req: Request) {
         });
       }
 
+      const targetSex = await getCityViewTargetSex(admin, user.id, body.targetSex);
+      if (!targetSex) {
+        return json(400, {
+          ok: false,
+          code: "TARGET_SEX_REQUIRED",
+          requestId,
+          message: "열람할 성별을 먼저 선택해 주세요.",
+        });
+      }
+
       const duplicateOrderRes = await admin
         .from("toss_test_payment_orders")
         .select("id,status,created_at")
         .eq("product_type", "city_view")
         .eq("user_id", user.id)
-        .contains("product_meta", { province })
+        .contains("product_meta", { province, targetSex })
         .in("status", ["ready", "paid"])
         .order("created_at", { ascending: false })
         .limit(5);
@@ -563,7 +575,7 @@ export async function POST(req: Request) {
       await cancelReadyOrders(admin, readyOrderIds);
 
       productRefId = user.id;
-      productMeta = { province };
+      productMeta = { province, targetSex };
     }
 
     if (productType === "one_on_one_contact_exchange") {

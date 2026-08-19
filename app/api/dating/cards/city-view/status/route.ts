@@ -1,5 +1,10 @@
 ﻿import { extractProvinceFromRegion, PROVINCE_ORDER } from "@/lib/region-city";
 import { getCityViewWeeklyBenefitStatus } from "@/lib/dating-city-view-weekly";
+import {
+  getCityViewTargetSex,
+  normalizeDatingCityViewSex,
+  type DatingCityViewSex,
+} from "@/lib/dating-city-view";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -14,6 +19,7 @@ type ProvinceStat = {
 type ActiveCityDetail = {
   province: string;
   expiresAt: string;
+  targetSex: DatingCityViewSex | null;
 };
 
 type WeeklyBenefitStatus = {
@@ -26,11 +32,20 @@ type WeeklyBenefitStatus = {
 
 type CityViewRequestRow = {
   city?: string;
+  target_sex?: unknown;
   status?: string | null;
   access_expires_at?: string | null;
   reviewed_at?: string | null;
   created_at?: string | null;
 };
+
+function isMissingTargetSexColumn(error: unknown) {
+  if (!error || typeof error !== "object") return false;
+  const value = error as { code?: unknown; message?: unknown };
+  const code = String(value.code ?? "");
+  const message = String(value.message ?? "").toLowerCase();
+  return code === "42703" || code === "PGRST204" || message.includes("target_sex");
+}
 
 function normalizeIsoDate(value: unknown): string | null {
   if (typeof value !== "string" || !value.trim()) return null;
@@ -123,6 +138,8 @@ export async function GET(req: Request) {
       activeCityDetails: [],
       pendingCities: [],
       provinceStats,
+      targetSex: null,
+      requiresTargetSexChoice: false,
       weeklyBenefit: {
         eligible: false,
         canClaim: false,
@@ -133,17 +150,28 @@ export async function GET(req: Request) {
     });
   }
 
-  const historyRes = await admin
+  let historyRes: { data: CityViewRequestRow[] | null; error: unknown } = await admin
     .from("dating_city_view_requests")
-    .select("city,status,access_expires_at,reviewed_at,created_at")
+    .select("city,target_sex,status,access_expires_at,reviewed_at,created_at")
     .eq("user_id", user.id)
     .order("reviewed_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false })
     .limit(500);
 
+  if (historyRes.error && isMissingTargetSexColumn(historyRes.error)) {
+    historyRes = await admin
+      .from("dating_city_view_requests")
+      .select("city,status,access_expires_at,reviewed_at,created_at")
+      .eq("user_id", user.id)
+      .order("reviewed_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .limit(500);
+  }
+
   const activeCityDetails: ActiveCityDetail[] = [];
   const pendingCities: string[] = [];
   const weeklyBenefit = await getCityViewWeeklyBenefitStatus(admin, user.id);
+  const defaultTargetSex = await getCityViewTargetSex(admin, user.id);
 
   if (Array.isArray(historyRes.data)) {
     const byProvince = new Map<string, CityViewRequestRow[]>();
@@ -163,6 +191,7 @@ export async function GET(req: Request) {
         activeCityDetails.push({
           province,
           expiresAt: normalizeIsoDate(activeApproved.access_expires_at)!,
+          targetSex: normalizeDatingCityViewSex(activeApproved.target_sex) ?? defaultTargetSex,
         });
         continue;
       }
@@ -184,5 +213,7 @@ export async function GET(req: Request) {
     pendingCities,
     provinceStats,
     weeklyBenefit,
+    targetSex: defaultTargetSex,
+    requiresTargetSexChoice: defaultTargetSex == null,
   });
 }

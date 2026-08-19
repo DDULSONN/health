@@ -110,6 +110,16 @@ function avatarTone(seed: string) {
 
 export default function ChatPage() {
   const supabase = useMemo(() => createClient(), []);
+  const requestedConnection = useMemo(() => {
+    if (typeof window === "undefined") return null;
+    const params = new URLSearchParams(window.location.search);
+    const sourceKind = params.get("source_kind") ?? "";
+    const sourceId = params.get("source_id")?.trim() ?? "";
+    if ((sourceKind !== "open" && sourceKind !== "paid" && sourceKind !== "swipe") || !sourceId) {
+      return null;
+    }
+    return { sourceKind: sourceKind as ChatSourceKind, sourceId };
+  }, []);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
@@ -128,6 +138,7 @@ export default function ChatPage() {
   );
   const [reportDetails, setReportDetails] = useState("");
   const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const requestedConnectionAppliedRef = useRef(false);
 
   const sending = pendingSendCount > 0;
 
@@ -172,6 +183,33 @@ export default function ChatPage() {
         setInbox(inboxItems);
         setAvailable(availableItems);
         setSelected((prev) => {
+          if (requestedConnection && !requestedConnectionAppliedRef.current) {
+            const requestedThread = inboxItems.find(
+              (item) =>
+                item.source_kind === requestedConnection.sourceKind &&
+                item.source_id === requestedConnection.sourceId
+            );
+            if (requestedThread) {
+              requestedConnectionAppliedRef.current = true;
+              return { kind: "thread", threadId: requestedThread.thread_id };
+            }
+            const requestedAvailable = availableItems.find(
+              (item) =>
+                item.sourceKind === requestedConnection.sourceKind &&
+                item.sourceId === requestedConnection.sourceId
+            );
+            if (requestedAvailable) {
+              requestedConnectionAppliedRef.current = true;
+              return {
+                kind: "available",
+                sourceKind: requestedAvailable.sourceKind,
+                sourceId: requestedAvailable.sourceId,
+                peerNickname: requestedAvailable.peerNickname,
+                title: requestedAvailable.title,
+                threadId: requestedAvailable.thread_id ?? null,
+              };
+            }
+          }
           if (prev?.kind === "thread") {
             return inboxItems.some((item) => item.thread_id === prev.threadId) ? prev : null;
           }
@@ -205,7 +243,7 @@ export default function ChatPage() {
         }
       }
     },
-    []
+    [requestedConnection]
   );
 
   const syncThreadSilently = useCallback(async (threadId: string) => {

@@ -10,9 +10,14 @@ type ActiveCityViewGrant = {
   requestId: string;
   province: string;
   accessExpiresAt: string;
+  targetSex: DatingCityViewSex | null;
   snapshotCardIds: string[];
   snapshotSeenCardIds: string[];
 };
+
+export function normalizeDatingCityViewSex(value: unknown): DatingCityViewSex | null {
+  return value === "male" || value === "female" ? value : null;
+}
 
 export function getOppositeDatingSex(sex: string | null | undefined): DatingCityViewSex | null {
   if (sex === "male") return "female";
@@ -39,9 +44,13 @@ export async function getUserOpenCardSex(
 
 export async function getCityViewTargetSex(
   adminClient: ReturnType<typeof createAdminClient>,
-  userId: string
+  userId: string,
+  requestedSex?: unknown
 ): Promise<DatingCityViewSex | null> {
-  return getOppositeDatingSex(await getUserOpenCardSex(adminClient, userId));
+  return (
+    getOppositeDatingSex(await getUserOpenCardSex(adminClient, userId)) ??
+    normalizeDatingCityViewSex(requestedSex)
+  );
 }
 
 function normalizeIsoDate(value: unknown): string | null {
@@ -73,7 +82,7 @@ export async function getActiveCityViewGrant(
 
   const res = await adminClient
     .from("dating_city_view_requests")
-    .select("id,city,access_expires_at,snapshot_card_ids,snapshot_seen_card_ids,reviewed_at,created_at")
+    .select("id,city,target_sex,access_expires_at,snapshot_card_ids,snapshot_seen_card_ids,reviewed_at,created_at")
     .eq("user_id", userId)
     .eq("city", province)
     .eq("status", "approved")
@@ -83,6 +92,40 @@ export async function getActiveCityViewGrant(
 
   if (res.error) {
     if (!isMissingColumnError(res.error)) return null;
+
+    const snapshotLegacyRes = await adminClient
+      .from("dating_city_view_requests")
+      .select("id,city,access_expires_at,snapshot_card_ids,snapshot_seen_card_ids")
+      .eq("user_id", userId)
+      .eq("city", province)
+      .eq("status", "approved")
+      .order("reviewed_at", { ascending: false, nullsFirst: false })
+      .order("created_at", { ascending: false })
+      .limit(10);
+
+    if (!snapshotLegacyRes.error && Array.isArray(snapshotLegacyRes.data)) {
+      for (const row of snapshotLegacyRes.data as Array<{
+        id: string;
+        city: string;
+        access_expires_at: string | null;
+        snapshot_card_ids?: unknown;
+        snapshot_seen_card_ids?: unknown;
+      }>) {
+        const expiresAtIso = normalizeIsoDate(row.access_expires_at);
+        if (!expiresAtIso || new Date(expiresAtIso).getTime() <= Date.now()) continue;
+        return {
+          requestId: row.id,
+          province: extractProvinceFromRegion(row.city) ?? row.city,
+          accessExpiresAt: expiresAtIso,
+          targetSex: null,
+          snapshotCardIds: parseSnapshotCardIds(row.snapshot_card_ids),
+          snapshotSeenCardIds: parseSnapshotCardIds(row.snapshot_seen_card_ids),
+        };
+      }
+      return null;
+    }
+
+    if (snapshotLegacyRes.error && !isMissingColumnError(snapshotLegacyRes.error)) return null;
 
     const legacyRes = await adminClient
       .from("dating_city_view_requests")
@@ -102,6 +145,7 @@ export async function getActiveCityViewGrant(
         requestId: row.id,
         province: extractProvinceFromRegion(row.city) ?? row.city,
         accessExpiresAt: expiresAtIso,
+        targetSex: null,
         snapshotCardIds: [],
         snapshotSeenCardIds: [],
       };
@@ -114,6 +158,7 @@ export async function getActiveCityViewGrant(
   for (const row of rows as Array<{
     id: string;
     city: string;
+    target_sex?: unknown;
     access_expires_at: string | null;
     snapshot_card_ids?: unknown;
     snapshot_seen_card_ids?: unknown;
@@ -124,6 +169,7 @@ export async function getActiveCityViewGrant(
       requestId: row.id,
       province: extractProvinceFromRegion(row.city) ?? row.city,
       accessExpiresAt: expiresAtIso,
+      targetSex: normalizeDatingCityViewSex(row.target_sex),
       snapshotCardIds: parseSnapshotCardIds(row.snapshot_card_ids),
       snapshotSeenCardIds: parseSnapshotCardIds(row.snapshot_seen_card_ids),
     };

@@ -1,4 +1,9 @@
-import { CITY_VIEW_CARD_LIMIT, getActiveCityViewGrant, getCityViewTargetSex } from "@/lib/dating-city-view";
+import {
+  CITY_VIEW_CARD_LIMIT,
+  getActiveCityViewGrant,
+  getCityViewTargetSex,
+  normalizeDatingCityViewSex,
+} from "@/lib/dating-city-view";
 import {
   buildRegionFirstCityViewCardIds,
   fetchCityViewCandidateRows,
@@ -61,18 +66,26 @@ export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const provinceRaw = (searchParams.get("province") ?? searchParams.get("city") ?? "").trim();
   const province = extractProvinceFromRegion(provinceRaw) ?? provinceRaw;
+  const requestedTargetSex = normalizeDatingCityViewSex(searchParams.get("targetSex"));
   if (!province) {
     return NextResponse.json({ error: "province 값이 필요합니다." }, { status: 400 });
   }
 
   const admin = createAdminClient();
-  const [blockedUserIds, activeGrant, targetSex] = await Promise.all([
+  const [blockedUserIds, activeGrant, defaultTargetSex] = await Promise.all([
     getDatingBlockedUserIds(admin, user.id),
     getActiveCityViewGrant(admin, user.id, province),
     getCityViewTargetSex(admin, user.id),
   ]);
   if (!activeGrant) {
     return NextResponse.json({ error: "해당 도/광역시는 구매 또는 무료 열람 후 이용 가능합니다." }, { status: 403 });
+  }
+  const targetSex = activeGrant.targetSex ?? defaultTargetSex ?? requestedTargetSex;
+  if (!targetSex) {
+    return NextResponse.json(
+      { error: "열람할 성별을 먼저 선택해 주세요.", code: "TARGET_SEX_REQUIRED" },
+      { status: 400 }
+    );
   }
 
   const selectColumns =
@@ -132,11 +145,13 @@ export async function GET(req: Request) {
   const snapshotChanged =
     persistedCardIds.length !== previousCardIds.length ||
     persistedCardIds.some((id, index) => id !== previousCardIds[index]);
-  if (snapshotChanged && persistedCardIds.length > 0) {
+  const targetSexChanged = activeGrant.targetSex == null && requestedTargetSex === targetSex;
+  if ((snapshotChanged && persistedCardIds.length > 0) || targetSexChanged) {
     const snapshotSeenCardIds = [...new Set([...activeGrant.snapshotSeenCardIds, ...persistedCardIds])];
     const snapshotUpdateRes = await admin
       .from("dating_city_view_requests")
       .update({
+        target_sex: targetSex,
         snapshot_card_ids: persistedCardIds,
         snapshot_seen_card_ids: snapshotSeenCardIds,
       })

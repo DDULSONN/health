@@ -7932,11 +7932,28 @@ export default function MyPage() {
           <div id="matching-filter-panel" className="scroll-mt-24">
             <div className="flex items-end justify-between gap-3">
               <div>
-                <h2 className="text-lg font-bold text-neutral-950">매칭 내역</h2>
-                <p className="mt-1 text-xs text-neutral-500">확인할 내역만 골라 빠르게 볼 수 있어요.</p>
+                <h2 className="text-lg font-bold text-neutral-950">내 매칭</h2>
+                <p className="mt-1 text-xs text-neutral-500">확인이 필요한 진행 상황부터 모아봤어요.</p>
               </div>
             </div>
-            <div className="mt-3 flex gap-2 overflow-x-auto pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+            <div className="mt-3 grid grid-cols-2 overflow-hidden rounded-xl border border-neutral-200 bg-white sm:grid-cols-4">
+              {applicationOverviewItems.map((item) => (
+                <button
+                  key={`matching-overview-${item.label}`}
+                  type="button"
+                  onClick={item.onClick}
+                  className="relative min-h-[82px] border-b border-r border-neutral-100 p-3 text-left transition hover:bg-neutral-50 focus:outline-none focus:ring-2 focus:ring-inset focus:ring-neutral-200 sm:border-b-0"
+                >
+                  <span className={`absolute inset-y-3 left-0 w-0.5 rounded-full ${item.value > 0 ? item.accent : "bg-neutral-200"}`} aria-hidden="true" />
+                  <p className="pl-1 text-[11px] font-semibold text-neutral-500">{item.label}</p>
+                  <p className="mt-1 pl-1 text-xl font-bold text-neutral-950">
+                    {item.value}<span className="ml-0.5 text-[11px] font-medium text-neutral-400">건</span>
+                  </p>
+                  <p className="mt-1 truncate pl-1 text-[10px] font-medium text-neutral-400">{item.detail}</p>
+                </button>
+              ))}
+            </div>
+            <div className="mt-3 flex gap-1 overflow-x-auto rounded-xl bg-neutral-100 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
               {([
                 { key: "all", label: "전체" },
                 { key: "received", label: `받은 지원 ${receivedOpenPendingCount + receivedPaidPendingCount}` },
@@ -7949,10 +7966,10 @@ export default function MyPage() {
                   type="button"
                   onClick={() => setMatchingFilter(filter.key)}
                   aria-pressed={matchingFilter === filter.key}
-                  className={`min-h-[40px] shrink-0 rounded-full border px-4 text-xs font-semibold transition ${
+                  className={`min-h-[38px] shrink-0 rounded-lg px-3.5 text-xs font-semibold transition ${
                     matchingFilter === filter.key
-                      ? "border-neutral-950 bg-neutral-950 text-white"
-                      : "border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50"
+                      ? "bg-neutral-950 text-white"
+                      : "text-neutral-500 hover:bg-white hover:text-neutral-800"
                   }`}
                 >
                   {filter.label}
@@ -7963,7 +7980,7 @@ export default function MyPage() {
 
         {(matchingFilter === "all" || matchingFilter === "quick") && (
 
-          <div id="swipe-status-panel" className="mt-4 rounded-xl border border-rose-100 bg-rose-50/40 p-4">
+          <div id="swipe-status-panel" className="mt-3 rounded-xl border border-neutral-200 bg-white p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <p className="text-sm font-semibold text-neutral-900">빠른매칭 진행 상황</p>
@@ -9209,8 +9226,8 @@ export default function MyPage() {
 
       {showMatchingSection && (
       <>
-      <section id="paid-card-received" className={`${matchingFilter === "all" || matchingFilter === "received" ? "" : "hidden"} mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]`}>
-        <h2 className="text-lg font-bold text-neutral-950 mb-3">내 유료카드 지원자</h2>
+      <section id="paid-card-received" className={`${matchingFilter === "all" || matchingFilter === "received" ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
+        <h2 className="mb-3 text-base font-bold text-neutral-950">대기 없이 등록 · 받은 지원</h2>
         {myPaidCards.length === 0 ? (
           <p className="text-sm text-neutral-500">등록된 유료카드가 없습니다.</p>
         ) : (
@@ -9349,8 +9366,8 @@ export default function MyPage() {
         )}
       </section>
 
-      <section id="paid-card-applied" className={`${matchingFilter === "all" || matchingFilter === "applied" ? "" : "hidden"} mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]`}>
-        <h2 className="text-lg font-bold text-neutral-950 mb-3">내 36시간 고정카드 지원 이력</h2>
+      <section id="paid-card-applied" className={`${matchingFilter === "all" || matchingFilter === "applied" ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
+        <h2 className="mb-3 text-base font-bold text-neutral-950">대기 없이 등록 · 내 지원</h2>
         {myAppliedPaidApplications.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 지원한 내역이 없습니다.</p>
         ) : (
@@ -9408,8 +9425,8 @@ export default function MyPage() {
         )}
       </section>
 
-      <section className={`${matchingFilter === "all" || matchingFilter === "one_on_one" ? "" : "hidden"} mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]`}>
-        <h2 className="text-lg font-bold text-neutral-900 mb-3">소개팅 신청 현황</h2>
+      <section className={`${matchingFilter === "all" || matchingFilter === "one_on_one" ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
+        <h2 className="mb-3 text-base font-bold text-neutral-950">1:1 신청서 상태</h2>
         {datingApplication ? (
           <div className="space-y-2 text-sm">
             <p className="text-neutral-600">
@@ -9446,8 +9463,8 @@ export default function MyPage() {
         </div>
       </section>
 
-      <section id="one-on-one-status" className={`${matchingFilter === "all" || matchingFilter === "one_on_one" ? "" : "hidden"} mb-5 rounded-2xl border border-neutral-200/80 bg-white p-5 shadow-[0_14px_40px_rgba(17,24,39,0.05)]`}>
-        <h2 className="text-lg font-bold text-neutral-950 mb-3">내 1:1 소개팅 신청 내역</h2>
+      <section id="one-on-one-status" className={`${matchingFilter === "all" || matchingFilter === "one_on_one" ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
+        <h2 className="mb-3 text-base font-bold text-neutral-950">1:1 진행 내역</h2>
         <div className="mb-3 rounded-xl border border-neutral-200 bg-[#fbfaf8] px-3 py-3">
           <p className="text-xs font-semibold text-neutral-900">1:1 이용 안내</p>
           <p className="mt-1 text-[11px] leading-5 text-neutral-600">
@@ -10527,8 +10544,8 @@ export default function MyPage() {
         </div>
       </section>
 
-      <section id="open-card-received" className={`${matchingFilter === "all" || matchingFilter === "received" ? "" : "hidden"} mb-5 rounded-2xl border border-neutral-200 bg-white p-5`}>
-        <h2 className="text-lg font-bold text-neutral-900 mb-3">내 카드 지원자</h2>
+      <section id="open-card-received" className={`${matchingFilter === "all" || matchingFilter === "received" ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
+        <h2 className="mb-3 text-base font-bold text-neutral-950">오픈카드 · 받은 지원</h2>
         {receivedApplications.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 받은 지원서가 없습니다.</p>
         ) : (
@@ -10618,8 +10635,8 @@ export default function MyPage() {
         )}
       </section>
 
-      <section id="open-card-applied" className={`${matchingFilter === "all" || matchingFilter === "applied" ? "" : "hidden"} mb-5 rounded-2xl border border-neutral-200 bg-white p-5`}>
-        <h2 className="text-lg font-bold text-neutral-900 mb-3">내 오픈카드 지원 이력</h2>
+      <section id="open-card-applied" className={`${matchingFilter === "all" || matchingFilter === "applied" ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
+        <h2 className="mb-3 text-base font-bold text-neutral-950">오픈카드 · 내 지원</h2>
         {myAppliedCardApplications.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 지원한 내역이 없습니다.</p>
         ) : (
@@ -10720,8 +10737,8 @@ export default function MyPage() {
         )}
       </section>
 
-      <section id="dating-connections" className={`${matchingFilter === "all" ? "" : "hidden"} mb-5 rounded-2xl border border-neutral-200 bg-white p-5`}>
-        <h2 className="text-lg font-bold text-neutral-900 mb-3">매칭 인스타 교환</h2>
+      <section id="dating-connections" className={`${matchingFilter === "all" ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
+        <h2 className="mb-3 text-base font-bold text-neutral-950">연결된 인스타</h2>
         {datingConnections.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 수락된 연결이 없습니다.</p>
         ) : (
@@ -10750,6 +10767,14 @@ export default function MyPage() {
                     상대 인스타 정보를 불러오지 못했습니다. 새로고침 후에도 보이지 않으면 문의해주세요.
                   </p>
                 )}
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <Link
+                    href={`/chat?source_kind=${encodeURIComponent(item.source ?? "open")}&source_id=${encodeURIComponent(item.application_id)}`}
+                    className="inline-flex min-h-[40px] items-center justify-center rounded-lg bg-neutral-900 px-4 text-xs font-semibold text-white hover:bg-neutral-800"
+                  >
+                    채팅하기
+                  </Link>
+                </div>
                 {item.matched_card && (
                   <div className="mt-3 rounded-lg border border-emerald-200 bg-white p-3">
                     <p className="text-xs font-semibold text-emerald-700">

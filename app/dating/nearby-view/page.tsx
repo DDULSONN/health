@@ -17,9 +17,11 @@ type CityStatusResponse = {
   ok?: boolean;
   loggedIn?: boolean;
   activeCities?: string[];
-  activeCityDetails?: Array<{ province: string; expiresAt: string }>;
+  activeCityDetails?: Array<{ province: string; expiresAt: string; targetSex: "male" | "female" | null }>;
   pendingCities?: string[];
   provinceStats?: ProvinceStat[];
+  targetSex?: "male" | "female" | null;
+  requiresTargetSexChoice?: boolean;
   weeklyBenefit?: {
     eligible: boolean;
     canClaim: boolean;
@@ -55,6 +57,7 @@ type NearbyViewSnapshot = {
   status: CityStatusResponse;
   selectedProvince: string;
   activeSex: "male" | "female";
+  selectedTargetSex: "male" | "female" | null;
   items: CardItem[];
   scrollY: number;
   restoreOnNextVisit?: boolean;
@@ -115,6 +118,9 @@ export default function NearbyViewPage() {
   );
   const [selectedProvince, setSelectedProvince] = useState<string>(initialSnapshot?.selectedProvince ?? "");
   const [activeSex, setActiveSex] = useState<"male" | "female">(initialSnapshot?.activeSex ?? "male");
+  const [selectedTargetSex, setSelectedTargetSex] = useState<"male" | "female" | null>(
+    initialSnapshot?.selectedTargetSex ?? null
+  );
   const [items, setItems] = useState<CardItem[]>(initialSnapshot?.items ?? []);
   const [loading, setLoading] = useState(() => !(initialSnapshot?.items?.length));
   const listRequestIdRef = useRef(0);
@@ -156,6 +162,7 @@ export default function NearbyViewPage() {
         status,
         selectedProvince,
         activeSex,
+        selectedTargetSex,
         items,
         scrollY: window.scrollY,
       });
@@ -164,7 +171,7 @@ export default function NearbyViewPage() {
     saveSnapshot();
     window.addEventListener("pagehide", saveSnapshot);
     return () => window.removeEventListener("pagehide", saveSnapshot);
-  }, [activeSex, items, selectedProvince, status]);
+  }, [activeSex, items, selectedProvince, selectedTargetSex, status]);
 
   const loadStatus = useCallback(async () => {
     const res = await fetch("/api/dating/cards/city-view/status", { cache: "no-store" });
@@ -194,7 +201,13 @@ export default function NearbyViewPage() {
       pendingCities: pending,
       provinceStats,
       weeklyBenefit: body.weeklyBenefit ?? { eligible: false, canClaim: false, weekId: "", claimedProvince: null, claimedAt: null },
+      targetSex: body.targetSex ?? null,
+      requiresTargetSexChoice: body.requiresTargetSexChoice === true,
     });
+
+    if (body.targetSex === "male" || body.targetSex === "female") {
+      setSelectedTargetSex(body.targetSex);
+    }
 
     setSelectedProvince((currentProvince) => {
       if (requestedProvince && active.includes(requestedProvince)) return requestedProvince;
@@ -203,12 +216,13 @@ export default function NearbyViewPage() {
     });
   }, [requestedProvince]);
 
-  const loadList = useCallback(async (province: string) => {
+  const loadList = useCallback(async (province: string, targetSex: "male" | "female" | null) => {
     if (!province) return;
     const requestId = ++listRequestIdRef.current;
     setLoading(true);
     try {
-      const res = await fetch(`/api/dating/cards/city-view/list?province=${encodeURIComponent(province)}`, { cache: "no-store" });
+      const targetSexQuery = targetSex ? `&targetSex=${encodeURIComponent(targetSex)}` : "";
+      const res = await fetch(`/api/dating/cards/city-view/list?province=${encodeURIComponent(province)}${targetSexQuery}`, { cache: "no-store" });
       if (requestId !== listRequestIdRef.current) return;
       if (!res.ok) {
         setItems([]);
@@ -242,18 +256,32 @@ export default function NearbyViewPage() {
 
   useEffect(() => {
     if (!selectedProvince) return;
-    void loadList(selectedProvince);
-  }, [selectedProvince, loadList]);
+    const activeTargetSex = status.activeCityDetails?.find((detail) => detail.province === selectedProvince)?.targetSex ?? null;
+    void loadList(selectedProvince, activeTargetSex ?? status.targetSex ?? selectedTargetSex);
+  }, [selectedProvince, selectedTargetSex, status.activeCityDetails, status.targetSex, loadList]);
+
+  const resolveTargetSexForProvince = useCallback(
+    (province: string) =>
+      status.activeCityDetails?.find((detail) => detail.province === province)?.targetSex ??
+      status.targetSex ??
+      selectedTargetSex,
+    [selectedTargetSex, status.activeCityDetails, status.targetSex]
+  );
 
   const claimWeeklyBenefit = useCallback(
     async (province: string) => {
       if (!province || !status.loggedIn || submittingProvince) return;
+      const targetSex = resolveTargetSexForProvince(province);
+      if (!targetSex) {
+        alert("열람할 성별을 먼저 선택해 주세요.");
+        return;
+      }
       setSubmittingProvince(province);
       try {
         const res = await fetch("/api/dating/cards/city-view/request", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ province, useWeeklyBenefit: true }),
+          body: JSON.stringify({ province, targetSex, useWeeklyBenefit: true }),
         });
         const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; province?: string; status?: "approved" | "pending" };
         if (!res.ok || !body.ok) {
@@ -269,18 +297,23 @@ export default function NearbyViewPage() {
         setSubmittingProvince("");
       }
     },
-    [loadStatus, showProvinceCards, status.loggedIn, submittingProvince]
+    [loadStatus, resolveTargetSexForProvince, showProvinceCards, status.loggedIn, submittingProvince]
   );
 
   const requestCheckout = useCallback(
     async (province: string) => {
       if (!province || !status.loggedIn || checkoutProvince) return;
+      const targetSex = resolveTargetSexForProvince(province);
+      if (!targetSex) {
+        alert("열람할 성별을 먼저 선택해 주세요.");
+        return;
+      }
       setCheckoutProvince(province);
       try {
         const res = await fetch("/api/payments/toss/create", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ productType: "city_view", province }),
+          body: JSON.stringify({ productType: "city_view", province, targetSex }),
         });
         const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; checkoutUrl?: string };
 
@@ -301,7 +334,7 @@ export default function NearbyViewPage() {
         setCheckoutProvince("");
       }
     },
-    [checkoutProvince, status.loggedIn]
+    [checkoutProvince, resolveTargetSexForProvince, status.loggedIn]
   );
 
   const maleItems = useMemo(() => items.filter((i) => i.sex === "male"), [items]);
@@ -356,6 +389,33 @@ export default function NearbyViewPage() {
       </section>
 
       <DatingAdultNotice />
+
+      {status.loggedIn && status.requiresTargetSexChoice ? (
+        <section className="mt-5 border-y border-neutral-200 bg-white px-1 py-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <h2 className="text-sm font-semibold text-neutral-900">열람할 성별</h2>
+              <p className="mt-1 text-xs text-neutral-500">오픈카드가 없어 이번 열람에서 볼 성별을 선택해 주세요.</p>
+            </div>
+            <div className="grid min-w-[220px] grid-cols-2 rounded-lg border border-neutral-200 bg-neutral-100 p-1">
+              {(["female", "male"] as const).map((sex) => (
+                <button
+                  key={sex}
+                  type="button"
+                  onClick={() => setSelectedTargetSex(sex)}
+                  className={`min-h-[40px] rounded-md px-4 text-sm font-semibold transition-colors ${
+                    selectedTargetSex === sex
+                      ? "bg-white text-neutral-950 shadow-sm"
+                      : "text-neutral-500 hover:text-neutral-800"
+                  }`}
+                >
+                  {sex === "female" ? "여성 카드" : "남성 카드"}
+                </button>
+              ))}
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="mt-5 rounded-[28px] border border-neutral-200 bg-white p-4 shadow-[0_10px_30px_rgba(15,23,42,0.04)]">
         <h2 className="mb-3 text-sm font-semibold text-neutral-800">지역별 인원</h2>
@@ -469,6 +529,7 @@ export default function NearbyViewPage() {
                   status,
                   selectedProvince,
                   activeSex,
+                  selectedTargetSex,
                   items,
                   scrollY: window.scrollY,
                   restoreOnNextVisit: true,

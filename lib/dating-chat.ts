@@ -14,6 +14,13 @@ export type DatingChatResolvedConnection = {
   createdAt: string;
 };
 
+type EnsureDatingChatThreadInput = {
+  sourceKind: DatingChatSourceKind;
+  sourceId: string;
+  userAId: string;
+  userBId: string;
+};
+
 export function isMissingDatingChatRelation(error: unknown) {
   if (!error || typeof error !== "object") return false;
   const code = String((error as { code?: unknown }).code ?? "");
@@ -25,6 +32,57 @@ export function isMissingDatingChatRelation(error: unknown) {
     message.includes("relation") ||
     message.includes("could not find the table")
   );
+}
+
+function isUniqueViolation(error: unknown) {
+  return !!error && typeof error === "object" && String((error as { code?: unknown }).code ?? "") === "23505";
+}
+
+export async function ensureDatingChatThread(
+  admin: AdminClient,
+  input: EnsureDatingChatThreadInput
+): Promise<string | null> {
+  const sourceId = input.sourceId.trim();
+  const participantIds = [input.userAId.trim(), input.userBId.trim()].sort();
+  const [userAId, userBId] = participantIds;
+  if (!sourceId || !userAId || !userBId || userAId === userBId) return null;
+
+  const existingRes = await admin
+    .from("dating_chat_threads")
+    .select("id")
+    .eq("source_kind", input.sourceKind)
+    .eq("source_id", sourceId)
+    .maybeSingle();
+
+  if (existingRes.error) {
+    if (isMissingDatingChatRelation(existingRes.error)) return null;
+    throw existingRes.error;
+  }
+  if (existingRes.data?.id) return String(existingRes.data.id);
+
+  const insertRes = await admin
+    .from("dating_chat_threads")
+    .insert({
+      source_kind: input.sourceKind,
+      source_id: sourceId,
+      user_a_id: userAId,
+      user_b_id: userBId,
+    })
+    .select("id")
+    .single();
+
+  if (!insertRes.error && insertRes.data?.id) return String(insertRes.data.id);
+  if (isMissingDatingChatRelation(insertRes.error)) return null;
+  if (!isUniqueViolation(insertRes.error)) throw insertRes.error;
+
+  const racedRes = await admin
+    .from("dating_chat_threads")
+    .select("id")
+    .eq("source_kind", input.sourceKind)
+    .eq("source_id", sourceId)
+    .maybeSingle();
+  if (racedRes.error) throw racedRes.error;
+  return racedRes.data?.id ? String(racedRes.data.id) : null;
 }
 
 async function getNicknameMap(admin: AdminClient, userIds: string[]) {
