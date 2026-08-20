@@ -31,6 +31,10 @@ export default function Footer() {
         </div>
 
         <div className="mt-3 flex flex-wrap justify-center gap-3 text-[11px] text-neutral-500">
+          <Link href="/guide" className="transition-colors hover:text-neutral-700">
+            운동·소개팅 가이드
+          </Link>
+          <span>|</span>
           <Link href="/terms" className="transition-colors hover:text-neutral-700">
             이용약관
           </Link>

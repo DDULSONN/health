@@ -4,6 +4,19 @@ import path from "path";
 import withPWAInit from "next-pwa";
 
 const __projectDir = path.dirname(fileURLToPath(import.meta.url));
+const noIndexSources = [
+  "/admin/:path*",
+  "/api/:path*",
+  "/auth/:path*",
+  "/chat/:path*",
+  "/login",
+  "/mypage/:path*",
+  "/notifications/:path*",
+  "/onboarding/:path*",
+  "/payments/:path*",
+  "/phone-verification/:path*",
+  "/signup",
+];
 const withPWA = withPWAInit({
   dest: "public",
   register: true,
@@ -54,6 +67,10 @@ const nextConfig: NextConfig = {
   },
   async headers() {
     return [
+      ...noIndexSources.map((source) => ({
+        source,
+        headers: [{ key: "X-Robots-Tag", value: "noindex, nofollow" }],
+      })),
       {
         source: "/:path*",
         headers: [

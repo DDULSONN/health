@@ -1,21 +1,31 @@
 import type { MetadataRoute } from "next";
-import { headers } from "next/headers";
+import { SEO_GUIDES } from "@/lib/seo-guides";
 
-export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const host = (await headers()).get("host");
-  const baseUrl = process.env.NEXT_PUBLIC_SITE_URL ?? `https://${host}`;
+const BASE_URL = "https://helchang.com";
 
-  return [
-    { url: baseUrl, lastModified: new Date(), changeFrequency: "weekly", priority: 1 },
-    { url: `${baseUrl}/1rm`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.9 },
-    { url: `${baseUrl}/tools`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.8 },
-    { url: `${baseUrl}/flirting-generator`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.7 },
-    { url: `${baseUrl}/lifts`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.9 },
-    { url: `${baseUrl}/ad-inquiry`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.7 },
-    { url: `${baseUrl}/certify`, lastModified: new Date(), changeFrequency: "monthly", priority: 0.7 },
-    { url: `${baseUrl}/dating/1on1`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.8 },
-    { url: `${baseUrl}/community`, lastModified: new Date(), changeFrequency: "daily", priority: 0.8 },
-    { url: `${baseUrl}/community/dating/cards`, lastModified: new Date(), changeFrequency: "daily", priority: 0.9 },
-    { url: `${baseUrl}/community/bodycheck`, lastModified: new Date(), changeFrequency: "daily", priority: 0.8 },
+export default function sitemap(): MetadataRoute.Sitemap {
+  const staticPages: MetadataRoute.Sitemap = [
+    { url: BASE_URL, changeFrequency: "weekly", priority: 1 },
+    { url: `${BASE_URL}/guide`, changeFrequency: "weekly", priority: 0.9 },
+    { url: `${BASE_URL}/1rm`, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${BASE_URL}/tools`, changeFrequency: "monthly", priority: 0.7 },
+    { url: `${BASE_URL}/flirting-generator`, changeFrequency: "monthly", priority: 0.7 },
+    { url: `${BASE_URL}/lifts`, changeFrequency: "monthly", priority: 0.8 },
+    { url: `${BASE_URL}/snacks`, changeFrequency: "monthly", priority: 0.6 },
+    { url: `${BASE_URL}/certify`, changeFrequency: "monthly", priority: 0.6 },
+    { url: `${BASE_URL}/dating/1on1`, changeFrequency: "weekly", priority: 0.8 },
+    { url: `${BASE_URL}/community`, changeFrequency: "daily", priority: 0.7 },
+    { url: `${BASE_URL}/community/dating/cards`, changeFrequency: "daily", priority: 0.9 },
+    { url: `${BASE_URL}/community/bodycheck`, changeFrequency: "daily", priority: 0.7 },
+    { url: `${BASE_URL}/dating-policy`, changeFrequency: "yearly", priority: 0.3 },
   ];
+
+  const guidePages: MetadataRoute.Sitemap = SEO_GUIDES.map((guide) => ({
+    url: `${BASE_URL}/guide/${guide.slug}`,
+    lastModified: new Date(guide.updatedAt),
+    changeFrequency: "monthly",
+    priority: 0.8,
+  }));
+
+  return [...staticPages, ...guidePages];
 }
