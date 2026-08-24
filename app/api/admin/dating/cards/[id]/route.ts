@@ -1,4 +1,4 @@
-﻿import { isAdminEmail } from "@/lib/admin";
+﻿import { isAllowedAdminUser } from "@/lib/admin";
 import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
 import { OPEN_CARD_EXPIRE_HOURS, getOpenCardLimitBySex } from "@/lib/dating-open";
 import { invalidateDatingViewerSexResolution } from "@/lib/dating-viewer-sex";
@@ -54,8 +54,8 @@ export async function PATCH(
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user || !isAdminEmail(user.email)) {
-    return NextResponse.json({ error: "沅뚰븳???놁뒿?덈떎." }, { status: 403 });
+  if (!user || !isAllowedAdminUser(user.id, user.email)) {
+    return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
   }
 
   const body = await req.json().catch(() => null);
@@ -72,7 +72,7 @@ export async function PATCH(
       : undefined;
 
   if (rawStatus != null && !status) {
-    return NextResponse.json({ error: "?덉슜?섏? ?딆? ?곹깭媛믪엯?덈떎." }, { status: 400 });
+    return NextResponse.json({ error: "허용되지 않은 상태값입니다." }, { status: 400 });
   }
   if (rawSex != null && !sex) {
     return NextResponse.json({ error: "성별은 남성 또는 여성만 선택할 수 있습니다." }, { status: 400 });
@@ -88,7 +88,7 @@ export async function PATCH(
     .single();
 
   if (cardError || !card) {
-    return NextResponse.json({ error: "移대뱶瑜?李얠쓣 ???놁뒿?덈떎." }, { status: 404 });
+    return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404 });
   }
   if (expectedOwnerUserId && card.owner_user_id !== expectedOwnerUserId) {
     return NextResponse.json({ error: "선택한 회원의 오픈카드가 아닙니다." }, { status: 409 });
@@ -124,25 +124,25 @@ export async function PATCH(
     ].some((key) => Object.prototype.hasOwnProperty.call(body, key));
 
   if (!status && !contentUpdateRequested) {
-    return NextResponse.json({ error: "?섏젙??而⑤샽?댁? ?놁뒿?덈떎." }, { status: 400 });
+    return NextResponse.json({ error: "수정할 내용이 없습니다." }, { status: 400 });
   }
 
   if (contentUpdateRequested) {
     if (!displayNickname) {
-      return NextResponse.json({ error: "?쒖떆???됰꽕?꾩쓣 ?낅젰?댁＜?몄슂." }, { status: 400 });
+      return NextResponse.json({ error: "표시 닉네임을 입력해주세요." }, { status: 400 });
     }
     if (age != null && (age < 19 || age > 99)) {
-      return NextResponse.json({ error: "?섏씠瑜??뺤씤?댁＜?몄슂." }, { status: 400 });
+      return NextResponse.json({ error: "나이를 확인해주세요." }, { status: 400 });
     }
     if (heightCm != null && (heightCm < 120 || heightCm > 230)) {
-      return NextResponse.json({ error: "?ㅻ?瑜??뺤씤?댁＜?몄슂." }, { status: 400 });
+      return NextResponse.json({ error: "키를 확인해주세요." }, { status: 400 });
     }
     if (trainingYears != null && (trainingYears < 0 || trainingYears > 50)) {
-      return NextResponse.json({ error: "?대룞寃쎈젰???뺤씤?댁＜?몄슂." }, { status: 400 });
+      return NextResponse.json({ error: "운동 경력을 확인해주세요." }, { status: 400 });
     }
     if (instagramId && !validInstagramId(instagramId)) {
       return NextResponse.json(
-        { error: "?몄뒪?洹몃옩 ?꾩씠???뺤떇???щ컮瑜댁? ?딆뒿?덈떎. (@ ?쒖쇅, ?곷Ц/?レ옄/._, 理쒕? 30??" },
+        { error: "인스타그램 아이디 형식이 올바르지 않습니다. (@ 제외, 영문/숫자/._, 최대 30자)" },
         { status: 400 }
       );
     }
@@ -165,6 +165,7 @@ export async function PATCH(
     is_3lift_verified?: boolean;
     published_at?: string | null;
     expires_at?: string | null;
+    queue_priority_at?: string | null;
   } = {};
 
   if (contentUpdateRequested) {
@@ -189,6 +190,7 @@ export async function PATCH(
   const effectiveSex = sex ?? (card.sex === "female" ? "female" : "male");
   const sexChanged = Boolean(sex && sex !== card.sex);
   const shouldCheckPublicSlot = status === "public" || (sexChanged && card.status === "public");
+  let queuedDueToSexChange = false;
 
   if (shouldCheckPublicSlot) {
     const slotLimit = getOpenCardLimitBySex(effectiveSex);
@@ -215,14 +217,25 @@ export async function PATCH(
 
     if (slotError) {
       console.error("[PATCH /api/admin/dating/cards/[id]] slot count failed", slotError);
-      return NextResponse.json({ error: "怨듦컻 ?щ’ ?뺤씤???ㅽ뙣?덉뒿?덈떎." }, { status: 500 });
+      return NextResponse.json({ error: "공개 슬롯 확인에 실패했습니다." }, { status: 500 });
     }
 
     if ((count ?? 0) >= slotLimit) {
-      return NextResponse.json(
-        { error: "?꾩옱 怨듦컻 ?щ’??媛??李쇱뼱?? ?湲곗뿴???깅줉?댁＜?몄슂.", code: "PUBLIC_SLOT_FULL" },
-        { status: 409 }
-      );
+      if (sexChanged && card.status === "public" && status == null) {
+        queuedDueToSexChange = true;
+        updatePayload.status = "pending";
+        updatePayload.published_at = null;
+        updatePayload.expires_at = null;
+        updatePayload.queue_priority_at = new Date().toISOString();
+      } else {
+        return NextResponse.json(
+          {
+            error: "현재 공개 슬롯이 가득 찼습니다. 먼저 기존 공개 카드를 대기 또는 숨김 상태로 변경해주세요.",
+            code: "PUBLIC_SLOT_FULL",
+          },
+          { status: 409 }
+        );
+      }
     }
 
     if (status === "public") {
@@ -267,12 +280,13 @@ export async function PATCH(
     const legacyPayload = status ? { ...updatePayload, status } : updatePayload;
     delete legacyPayload.published_at;
     delete legacyPayload.expires_at;
+    delete legacyPayload.queue_priority_at;
     updateRes = await adminClient.from("dating_cards").update(legacyPayload).eq("id", id);
   }
 
   if (updateRes.error) {
     console.error("[PATCH /api/admin/dating/cards/[id]] failed", updateRes.error);
-    return NextResponse.json({ error: "?곹깭 蹂寃쎌뿉 ?ㅽ뙣?덉뒿?덈떎." }, { status: 500 });
+    return NextResponse.json({ error: "카드 수정에 실패했습니다." }, { status: 500 });
   }
 
   if (sexChanged) {
@@ -298,7 +312,12 @@ export async function PATCH(
     .eq("id", id)
     .maybeSingle();
 
-  return NextResponse.json({ ok: true, status: status ?? card.status, item: updatedCard ?? null });
+  return NextResponse.json({
+    ok: true,
+    status: updatedCard?.status ?? updatePayload.status ?? status ?? card.status,
+    item: updatedCard ?? null,
+    queuedDueToSexChange,
+  });
 }
 
 export async function DELETE(
@@ -311,7 +330,7 @@ export async function DELETE(
     data: { user },
   } = await supabase.auth.getUser();
 
-  if (!user || !isAdminEmail(user.email)) {
+  if (!user || !isAllowedAdminUser(user.id, user.email)) {
     return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
   }
 

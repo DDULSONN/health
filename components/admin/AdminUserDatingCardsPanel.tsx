@@ -194,6 +194,7 @@ export default function AdminUserDatingCardsPanel({
       const body = (await response.json().catch(() => ({}))) as {
         ok?: boolean;
         error?: string;
+        queuedDueToSexChange?: boolean;
       };
       if (!response.ok || body.ok === false) {
         throw new Error(body.error ?? "카드 수정에 실패했습니다.");
@@ -201,7 +202,11 @@ export default function AdminUserDatingCardsPanel({
 
       setEditingKey("");
       setDraft(null);
-      setMessage(`${isOpen ? "오픈카드" : "1:1 신청서"}를 수정했습니다.`);
+      setMessage(
+        body.queuedDueToSexChange
+          ? "성별을 변경했습니다. 해당 성별의 공개 슬롯이 가득 차 이 카드는 대기열로 이동했습니다."
+          : `${isOpen ? "오픈카드" : "1:1 신청서"}를 수정했습니다.`
+      );
       await onChanged();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "카드 수정에 실패했습니다.");
