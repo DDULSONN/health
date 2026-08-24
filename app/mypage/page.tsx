@@ -3016,11 +3016,6 @@ export default function MyPage() {
           paidConnectionsRes,
           writeSettingRes,
           applyCreditsStatusRes,
-          adInquiryRes,
-          openCardHomeCopyRes,
-          openCardPublicSlotsRes,
-          toolsPatchNoteRes,
-          siteGuideMascotRes,
         ] = await Promise.all([
           fetch("/api/mypage/summary", { cache: "no-store" }),
           fetch("/api/cert-requests", { cache: "no-store" }),
@@ -3039,11 +3034,6 @@ export default function MyPage() {
           fetch("/api/dating/paid/my/connections", { cache: "no-store" }),
           fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
           fetch("/api/dating/apply-credits/status", { cache: "no-store" }),
-          fetch("/api/admin/site/ad-inquiry", { cache: "no-store" }),
-          fetch("/api/admin/dating/cards/home-copy", { cache: "no-store" }),
-          fetch("/api/admin/dating/cards/public-slots", { cache: "no-store" }),
-          fetch("/api/admin/tools/patch-note", { cache: "no-store" }),
-          fetch("/api/admin/site-guide/mascot", { cache: "no-store" }),
         ]);
 
         const summaryBody = (await summaryRes.json().catch(() => ({}))) as SummaryResponse & {
@@ -3108,11 +3098,6 @@ export default function MyPage() {
           enabled?: boolean;
         };
         const applyCreditsBody = (await applyCreditsStatusRes.json().catch(() => ({}))) as ApplyCreditsStatusResponse;
-        const adInquiryBody = (await adInquiryRes.json().catch(() => ({}))) as AdInquirySettingsResponse;
-        const openCardHomeCopyBody = (await openCardHomeCopyRes.json().catch(() => ({}))) as OpenCardHomeCopyResponse;
-        const openCardPublicSlotsBody = (await openCardPublicSlotsRes.json().catch(() => ({}))) as OpenCardPublicSlotsResponse;
-        const toolsPatchNoteBody = (await toolsPatchNoteRes.json().catch(() => ({}))) as ToolsPatchNoteResponse;
-        const siteGuideMascotBody = (await siteGuideMascotRes.json().catch(() => ({}))) as SiteGuideMascotResponse;
 
         if (!summaryRes.ok) {
           throw new Error(summaryBody.error ?? "마이페이지 정보를 불러오지 못했습니다.");
@@ -3182,30 +3167,7 @@ export default function MyPage() {
             ...(paidConnectionsRes.ok ? (paidConnectionsBody.items ?? []) : []),
           ]);
           setOpenCardWriteEnabled(writeSettingBody.enabled !== false);
-          setOpenCardHomeSubtitle(openCardHomeCopyBody.subtitle?.trim() || DEFAULT_OPEN_CARD_HOME_SUBTITLE);
-          setOpenCardPublicMaleExtra(String(Math.max(0, Number(openCardPublicSlotsBody.maleExtra ?? 0))));
-          setOpenCardPublicFemaleExtra(String(Math.max(0, Number(openCardPublicSlotsBody.femaleExtra ?? 0))));
-          setOpenCardPublicMaleEffectiveLimit(Math.max(0, Number(openCardPublicSlotsBody.maleEffectiveLimit ?? 30)));
-          setOpenCardPublicFemaleEffectiveLimit(Math.max(0, Number(openCardPublicSlotsBody.femaleEffectiveLimit ?? 30)));
           setApplyCreditsRemaining(Math.max(0, Number(applyCreditsBody.creditsRemaining ?? 0)));
-          setAdInquiryEnabled(adInquiryBody.enabled !== false);
-          setAdInquiryTitle(adInquiryBody.title ?? "(광고) 문의 주세요");
-          setAdInquiryDescription(
-            adInquiryBody.description ?? "배너, 제휴, 스폰서 문의는 오픈카톡으로 편하게 남겨 주세요."
-          );
-          setAdInquiryCta(adInquiryBody.cta ?? "오픈카톡 문의");
-          setAdInquiryLinkUrl(adInquiryBody.linkUrl ?? "");
-          setAdInquiryBadge(adInquiryBody.badge ?? "AD SLOT");
-          setAdInquiryTheme(adInquiryBody.theme ?? "emerald");
-          setToolsPatchNoteEnabled(toolsPatchNoteBody.enabled === true);
-          setToolsPatchNoteText(toolsPatchNoteBody.text?.trim() ?? "");
-          setToolsPatchNoteItems(Array.isArray(toolsPatchNoteBody.items) ? toolsPatchNoteBody.items : []);
-          setSiteGuideMascotId(siteGuideMascotBody.selectedId ?? "default");
-          setSiteGuideMascotOptions(
-            Array.isArray(siteGuideMascotBody.options) && siteGuideMascotBody.options.length > 0
-              ? siteGuideMascotBody.options
-              : DEFAULT_SITE_GUIDE_MASCOT_OPTIONS
-          );
           setError("");
 
           if (adminFlag) {
@@ -3216,6 +3178,11 @@ export default function MyPage() {
               moreViewRes,
               cityViewRes,
               accountDeletionAuditsRes,
+              adInquiryRes,
+              openCardHomeCopyRes,
+              openCardPublicSlotsRes,
+              toolsPatchNoteRes,
+              siteGuideMascotRes,
             ] = await Promise.all([
               fetch("/api/admin/dating/stats", { cache: "no-store" }),
               fetch("/api/admin/dating/insights", { cache: "no-store" }),
@@ -3223,6 +3190,11 @@ export default function MyPage() {
               fetch("/api/admin/dating/cards/more-view/requests?status=pending", { cache: "no-store" }),
               fetch("/api/admin/dating/cards/city-view/requests?status=pending", { cache: "no-store" }),
               fetch("/api/admin/account-deletion-audits", { cache: "no-store" }),
+              fetch("/api/admin/site/ad-inquiry", { cache: "no-store" }),
+              fetch("/api/admin/dating/cards/home-copy", { cache: "no-store" }),
+              fetch("/api/admin/dating/cards/public-slots", { cache: "no-store" }),
+              fetch("/api/admin/tools/patch-note", { cache: "no-store" }),
+              fetch("/api/admin/site-guide/mascot", { cache: "no-store" }),
             ]);
             const datingStatsBody = (await datingStatsRes.json().catch(() => ({}))) as {
               error?: string;
@@ -3244,6 +3216,11 @@ export default function MyPage() {
               items?: AdminCityViewRequest[];
             };
             const accountDeletionAuditsBody = (await accountDeletionAuditsRes.json().catch(() => ({}))) as AdminAccountDeletionAuditsResponse;
+            const adInquiryBody = (await adInquiryRes.json().catch(() => ({}))) as AdInquirySettingsResponse;
+            const openCardHomeCopyBody = (await openCardHomeCopyRes.json().catch(() => ({}))) as OpenCardHomeCopyResponse;
+            const openCardPublicSlotsBody = (await openCardPublicSlotsRes.json().catch(() => ({}))) as OpenCardPublicSlotsResponse;
+            const toolsPatchNoteBody = (await toolsPatchNoteRes.json().catch(() => ({}))) as ToolsPatchNoteResponse;
+            const siteGuideMascotBody = (await siteGuideMascotRes.json().catch(() => ({}))) as SiteGuideMascotResponse;
             if (!datingStatsRes.ok) {
               console.error("[mypage] admin dating stats load failed", datingStatsBody);
             }
@@ -3275,6 +3252,29 @@ export default function MyPage() {
               setAdminCityViewRequests(cityViewRes.ok ? cityViewBody.items ?? [] : []);
               setAdminAccountDeletionAudits(accountDeletionAuditsRes.ok ? accountDeletionAuditsBody.items ?? [] : []);
               setAdminAccountDeletionAuditError(accountDeletionAuditsRes.ok ? "" : accountDeletionAuditsBody.error ?? "탈퇴 기록을 불러오지 못했습니다.");
+              setOpenCardHomeSubtitle(openCardHomeCopyBody.subtitle?.trim() || DEFAULT_OPEN_CARD_HOME_SUBTITLE);
+              setOpenCardPublicMaleExtra(String(Math.max(0, Number(openCardPublicSlotsBody.maleExtra ?? 0))));
+              setOpenCardPublicFemaleExtra(String(Math.max(0, Number(openCardPublicSlotsBody.femaleExtra ?? 0))));
+              setOpenCardPublicMaleEffectiveLimit(Math.max(0, Number(openCardPublicSlotsBody.maleEffectiveLimit ?? 30)));
+              setOpenCardPublicFemaleEffectiveLimit(Math.max(0, Number(openCardPublicSlotsBody.femaleEffectiveLimit ?? 30)));
+              setAdInquiryEnabled(adInquiryBody.enabled !== false);
+              setAdInquiryTitle(adInquiryBody.title ?? "(광고) 문의 주세요");
+              setAdInquiryDescription(
+                adInquiryBody.description ?? "배너, 제휴, 스폰서 문의는 오픈카톡으로 편하게 남겨 주세요."
+              );
+              setAdInquiryCta(adInquiryBody.cta ?? "오픈카톡 문의");
+              setAdInquiryLinkUrl(adInquiryBody.linkUrl ?? "");
+              setAdInquiryBadge(adInquiryBody.badge ?? "AD SLOT");
+              setAdInquiryTheme(adInquiryBody.theme ?? "emerald");
+              setToolsPatchNoteEnabled(toolsPatchNoteBody.enabled === true);
+              setToolsPatchNoteText(toolsPatchNoteBody.text?.trim() ?? "");
+              setToolsPatchNoteItems(Array.isArray(toolsPatchNoteBody.items) ? toolsPatchNoteBody.items : []);
+              setSiteGuideMascotId(siteGuideMascotBody.selectedId ?? "default");
+              setSiteGuideMascotOptions(
+                Array.isArray(siteGuideMascotBody.options) && siteGuideMascotBody.options.length > 0
+                  ? siteGuideMascotBody.options
+                  : DEFAULT_SITE_GUIDE_MASCOT_OPTIONS
+              );
             }
           } else {
             setAdminDatingStats(null);
@@ -3417,7 +3417,7 @@ export default function MyPage() {
   }, [isAdmin, loveFortuneLoaded, loveFortuneLoading, loveFortuneOpen, loadLoveFortuneReadings]);
 
   useEffect(() => {
-    if (loading || !isAdmin) return;
+    if (loading || !isAdmin || pageSectionTab !== "admin") return;
 
     queueMicrotask(async () => {
       try {
@@ -3435,23 +3435,10 @@ export default function MyPage() {
     return () => {
       window.clearInterval(intervalId);
     };
-  }, [loading, isAdmin, refreshAdminQueueData]);
+  }, [loading, isAdmin, pageSectionTab, refreshAdminQueueData]);
 
   useEffect(() => {
-    if (!isAdmin || activeTab !== "admin_review") return;
-
-    queueMicrotask(async () => {
-      try {
-        if (document.visibilityState !== "visible") return;
-        await refreshAdminQueueData(false);
-      } catch (error) {
-        console.error("[mypage] admin queue tab refresh failed", error);
-      }
-    });
-  }, [activeTab, isAdmin, refreshAdminQueueData]);
-
-  useEffect(() => {
-    if (loading || !isAdmin) return;
+    if (loading || !isAdmin || pageSectionTab !== "admin") return;
     const handleVisibilityChange = () => {
       if (document.visibilityState !== "visible") return;
       void refreshAdminQueueData(false);
@@ -3461,14 +3448,14 @@ export default function MyPage() {
     return () => {
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, [loading, isAdmin, refreshAdminQueueData]);
+  }, [loading, isAdmin, pageSectionTab, refreshAdminQueueData]);
 
   useEffect(() => {
-    if (loading || !isAdmin || adminManageTab !== "site_dashboard") return;
+    if (loading || !isAdmin || pageSectionTab !== "admin" || adminManageTab !== "site_dashboard") return;
     queueMicrotask(async () => {
       await refreshAdminSiteDashboard(true);
     });
-  }, [loading, isAdmin, adminManageTab, refreshAdminSiteDashboard]);
+  }, [loading, isAdmin, pageSectionTab, adminManageTab, refreshAdminSiteDashboard]);
 
   useEffect(() => {
     if (loading || !supportPanelOpen || supportLoaded) return;
