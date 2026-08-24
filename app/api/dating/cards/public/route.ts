@@ -9,6 +9,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { shouldRunAtMostEvery } from "@/lib/throttled-task";
 import { NextResponse } from "next/server";
 import { resolveDatingViewerSex, type DatingSex } from "@/lib/dating-viewer-sex";
+import { isAllowedAdminUser } from "@/lib/admin";
 
 const RAW_COUNT_MAX = 40;
 const PREVIEW_LIMIT_FOR_GUEST = 6;
@@ -277,27 +278,39 @@ export async function GET(req: Request) {
   };
 
   if (user) {
-    const resolution = await resolveDatingViewerSex(adminClient, user);
-    audience = {
-      ...resolution,
-      canSwitchSex: false,
-      requiresSexSelection: resolution.status === "missing",
-    };
-
-    if (resolution.status === "resolved" && resolution.targetSex) {
-      sex = resolution.targetSex;
+    if (isAllowedAdminUser(user.id, user.email)) {
+      audience = {
+        status: "admin",
+        viewerSex: null,
+        targetSex: requestedSex,
+        source: null,
+        canSwitchSex: true,
+        requiresSexSelection: false,
+      };
+      sex = requestedSex;
     } else {
-      return NextResponse.json(
-        {
-          items: [],
-          hasMore: false,
-          nextCursorCreatedAt: null,
-          nextCursorId: null,
-          previewOnly: false,
-          audience,
-        },
-        { headers: personalizedNoStoreHeaders() }
-      );
+      const resolution = await resolveDatingViewerSex(adminClient, user);
+      audience = {
+        ...resolution,
+        canSwitchSex: false,
+        requiresSexSelection: resolution.status === "missing",
+      };
+
+      if (resolution.status === "resolved" && resolution.targetSex) {
+        sex = resolution.targetSex;
+      } else {
+        return NextResponse.json(
+          {
+            items: [],
+            hasMore: false,
+            nextCursorCreatedAt: null,
+            nextCursorId: null,
+            previewOnly: false,
+            audience,
+          },
+          { headers: personalizedNoStoreHeaders() }
+        );
+      }
     }
   }
 
