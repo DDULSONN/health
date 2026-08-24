@@ -6,6 +6,8 @@ import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
+import { isAllowedAdminUser } from "@/lib/admin";
+import { resolveDatingViewerSex } from "@/lib/dating-viewer-sex";
 
 function normalizePath(value: unknown): string {
   if (typeof value !== "string") return "";
@@ -74,12 +76,28 @@ export async function GET(req: Request) {
     }
 
     const { searchParams } = new URL(req.url);
-    const sex = normalizeCardSex(searchParams.get("sex"));
+    let sex = normalizeCardSex(searchParams.get("sex"));
     if (!sex) {
       return NextResponse.json({ error: "sex 값이 올바르지 않습니다." }, { status: 400 });
     }
 
     const admin = createAdminClient();
+    if (!isAllowedAdminUser(user.id, user.email)) {
+      const resolution = await resolveDatingViewerSex(admin, user);
+      if (resolution.status === "missing") {
+        return NextResponse.json({ code: "DATING_SEX_REQUIRED", error: "먼저 내 성별을 확인해주세요." }, { status: 428 });
+      }
+      if (resolution.status === "conflict") {
+        return NextResponse.json(
+          { code: "DATING_SEX_CONFLICT", error: "기존 카드의 성별 정보가 일치하지 않습니다. 고객센터에 문의해주세요." },
+          { status: 409 }
+        );
+      }
+      if (resolution.status !== "resolved" || !resolution.targetSex) {
+        return NextResponse.json({ error: "성별 정보를 확인하지 못했습니다." }, { status: 503 });
+      }
+      sex = resolution.targetSex;
+    }
     const blockedUserIds = await getDatingBlockedUserIds(admin, user.id);
     const activeGrant = await getActiveMoreViewGrant(admin, user.id, sex);
     if (!activeGrant) {

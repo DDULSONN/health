@@ -1,4 +1,5 @@
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { getRequestAuthContext } from "@/lib/supabase/request";
+import { createAdminClient } from "@/lib/supabase/server";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
@@ -7,6 +8,8 @@ import { kvGetString, kvSetString } from "@/lib/edge-kv";
 import { shouldRunAtMostEvery } from "@/lib/throttled-task";
 import { ensureBlurThumbFromRaw } from "@/lib/dating-blur-thumb";
 import { NextResponse } from "next/server";
+import { isAllowedAdminUser } from "@/lib/admin";
+import { normalizeDatingSex, resolveDatingViewerSex, type DatingSex } from "@/lib/dating-viewer-sex";
 
 const LITE_PUBLIC_BUCKET = "dating-card-lite";
 const LITE_PUBLIC_PROBE_TTL_MS = 6 * 60 * 60 * 1000;
@@ -145,10 +148,19 @@ export async function GET(req: Request) {
     if (!rateLimit.allowed) {
       return jsonNoStore(429, { ok: false, code: "RATE_LIMIT", requestId, message: "Too many requests" });
     }
-    const supabase = await createClient();
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
+    const { user } = await getRequestAuthContext(req);
+    const requestedSex = normalizeDatingSex(new URL(req.url).searchParams.get("sex"));
+    let targetSex: DatingSex | null = requestedSex;
+    if (user && !isAllowedAdminUser(user.id, user.email)) {
+      const resolution = await resolveDatingViewerSex(admin, user);
+      if (resolution.status === "missing" || resolution.status === "conflict") {
+        return jsonNoStore(200, { ok: true, requestId, items: [], audienceStatus: resolution.status });
+      }
+      if (resolution.status !== "resolved" || !resolution.targetSex) {
+        return jsonNoStore(503, { ok: false, requestId, items: [], message: "성별 정보를 확인하지 못했습니다." });
+      }
+      targetSex = resolution.targetSex;
+    }
     const counters: SignCounters = { signCalls: 0, cacheHit: 0, cacheMiss: 0, rawSigned: 0, blurSigned: 0 };
     const nowIso = new Date().toISOString();
 
@@ -164,25 +176,29 @@ export async function GET(req: Request) {
       }
     }
 
-    const queryRes = await admin
+    let query = admin
       .from("dating_paid_cards")
       .select(
         "id,user_id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,is_3lift_verified,photo_visibility,display_mode,blur_thumb_path,photo_paths,expires_at,paid_at,created_at"
       )
       .eq("status", "approved")
       .gt("expires_at", nowIso);
+    if (targetSex) query = query.eq("gender", targetSex === "male" ? "M" : "F");
+    const queryRes = await query;
 
     let rowsData = (queryRes.data as Array<Record<string, unknown>> | null) ?? null;
     let rowsError = queryRes.error;
 
     if (rowsError && isMissingColumnError(rowsError)) {
-      const legacy = await admin
+      let legacyQuery = admin
         .from("dating_paid_cards")
         .select(
           "id,user_id,nickname,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,is_3lift_verified,photo_visibility,blur_thumb_path,photo_paths,expires_at,paid_at,created_at"
         )
         .eq("status", "approved")
         .gt("expires_at", nowIso);
+      if (targetSex) legacyQuery = legacyQuery.eq("gender", targetSex === "male" ? "M" : "F");
+      const legacy = await legacyQuery;
       rowsError = legacy.error;
       rowsData = (legacy.data ?? []).map((row) => ({
         ...(row as Record<string, unknown>),

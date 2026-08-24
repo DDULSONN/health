@@ -38,6 +38,25 @@ type PublicCard = {
   created_at: string;
 };
 
+type DatingSex = "male" | "female";
+
+type OpenCardsAudience = {
+  status: "guest" | "admin" | "resolved" | "missing" | "conflict" | "unavailable";
+  viewerSex: DatingSex | null;
+  targetSex: DatingSex | null;
+  source: "open_card" | "one_on_one" | "metadata" | null;
+  canSwitchSex: boolean;
+  requiresSexSelection: boolean;
+};
+
+type OpenCardsListResponse = {
+  items: PublicCard[];
+  hasMore: boolean;
+  nextCursorCreatedAt: string | null;
+  nextCursorId: string | null;
+  audience?: OpenCardsAudience;
+};
+
 type QueueStats = {
   male: {
     pending_count: number;
@@ -240,7 +259,7 @@ type ReelsDatingListing = {
 };
 
 const PAGE_SIZE = 20;
-const OPEN_CARDS_CACHE_KEY = "community-dating-open-cards:v1";
+const OPEN_CARDS_CACHE_KEY = "community-dating-open-cards:v2";
 const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
   "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
@@ -1595,7 +1614,7 @@ function AdminLoveFortunePanel() {
 }
 
 async function fetchBySex(
-  sex: "male" | "female",
+  sex: DatingSex,
   _offsetLegacy: number,
   cursorCreatedAt: string | null,
   cursorId: string | null
@@ -1605,12 +1624,7 @@ async function fetchBySex(
   if (cursorId) params.set("cursorId", cursorId);
   const res = await fetch(`/api/dating/cards/list?${params.toString()}`, { cache: "no-store" });
   if (!res.ok) throw new Error("failed to load open cards");
-  return (await res.json()) as {
-    items: PublicCard[];
-    hasMore: boolean;
-    nextCursorCreatedAt: string | null;
-    nextCursorId: string | null;
-  };
+  return (await res.json()) as OpenCardsListResponse;
 }
 
 function OpenCardDailySplash() {
@@ -1698,7 +1712,10 @@ export default function OpenCardsPage() {
   const supabase = useMemo(() => createClient(), []);
   const [restoredSnapshot, setRestoredSnapshot] = useState<OpenCardsSnapshot | null>(null);
   const [snapshotReady, setSnapshotReady] = useState(false);
-  const [activeSex, setActiveSex] = useState<"male" | "female">("female");
+  const [activeSex, setActiveSex] = useState<DatingSex>("female");
+  const [cardsAudience, setCardsAudience] = useState<OpenCardsAudience | null>(null);
+  const [viewerSexSaving, setViewerSexSaving] = useState(false);
+  const [viewerSexError, setViewerSexError] = useState("");
   const [guideTopic, setGuideTopic] = useState<"open_card" | "one_on_one" | null>(null);
   const [males, setMales] = useState<PublicCard[]>([]);
   const [females, setFemales] = useState<PublicCard[]>([]);
@@ -1736,7 +1753,8 @@ export default function OpenCardsPage() {
     candidate: null,
     reason: null,
   });
-  const activeSexRef = useRef<"male" | "female">(activeSex);
+  const activeSexRef = useRef<DatingSex>(activeSex);
+  const loadedOpenCardSexesRef = useRef<Record<DatingSex, boolean>>({ male: false, female: false });
   const swipeCacheRef = useRef<Partial<Record<"male" | "female", SwipeState>>>({});
   const swipeRequestIdRef = useRef({ male: 0, female: 0 });
   const [viewerLoggedIn, setViewerLoggedIn] = useState(false);
@@ -1807,9 +1825,8 @@ export default function OpenCardsPage() {
       setPaidItems(snapshot.paidItems);
       setMoreViewMale(snapshot.moreViewMale);
       setMoreViewFemale(snapshot.moreViewFemale);
-      if (snapshot.males.length > 0 || snapshot.females.length > 0) {
-        setLoading(false);
-      }
+      loadedOpenCardSexesRef.current.male = snapshot.males.length > 0;
+      loadedOpenCardSexesRef.current.female = snapshot.females.length > 0;
     }
     setSnapshotReady(true);
   }, []);
@@ -2141,11 +2158,12 @@ export default function OpenCardsPage() {
     queueStats,
   ]);
 
-  const refreshSecondary = useCallback(async () => {
+  const refreshSecondary = useCallback(async (preferredSex?: DatingSex) => {
+    const visibleSex = preferredSex ?? activeSexRef.current;
     try {
       const [qsRes, paidRes, mvStatusRes] = await Promise.all([
         fetch("/api/dating/cards/queue-stats", { cache: "no-store" }),
-        fetch("/api/dating/paid/list", { cache: "no-store" }),
+        fetch(`/api/dating/paid/list?sex=${visibleSex}`, { cache: "no-store" }),
         fetch("/api/dating/cards/more-view/status", { cache: "no-store" }),
       ]);
       if (qsRes.ok) {
@@ -2170,7 +2188,7 @@ export default function OpenCardsPage() {
       setMoreViewStatus(nextStatus);
 
       const pendingFetches: Promise<void>[] = [];
-      if (nextStatus.male === "approved") {
+      if (nextStatus.male === "approved" && visibleSex === "male") {
         pendingFetches.push(
           fetch("/api/dating/cards/more-view/list?sex=male", { cache: "no-store" })
             .then(async (res) => {
@@ -2183,7 +2201,7 @@ export default function OpenCardsPage() {
       } else {
         setMoreViewMale([]);
       }
-      if (nextStatus.female === "approved") {
+      if (nextStatus.female === "approved" && visibleSex === "female") {
         pendingFetches.push(
           fetch("/api/dating/cards/more-view/list?sex=female", { cache: "no-store" })
             .then(async (res) => {
@@ -2202,27 +2220,98 @@ export default function OpenCardsPage() {
     }
   }, []);
 
-  const loadInitial = useCallback(async (options?: { silent?: boolean }) => {
-    if (!options?.silent) {
-      setLoading(true);
-    }
-    try {
-      const [m, f] = await Promise.all([fetchBySex("male", 0, null, null), fetchBySex("female", 0, null, null)]);
-      setMales(m.items ?? []);
-      setFemales(f.items ?? []);
-      setMaleCursorCreatedAt(m.nextCursorCreatedAt ?? null);
-      setMaleCursorId(m.nextCursorId ?? null);
-      setFemaleCursorCreatedAt(f.nextCursorCreatedAt ?? null);
-      setFemaleCursorId(f.nextCursorId ?? null);
-      setMaleHasMore(Boolean(m.hasMore));
-      setFemaleHasMore(Boolean(f.hasMore));
-      setLoading(false);
-      void refreshSecondary();
-    } catch (e) {
-      console.error("open cards load failed", e);
-      setLoading(false);
-    }
-  }, [refreshSecondary]);
+  const loadInitial = useCallback(
+    async (options?: { silent?: boolean; sex?: DatingSex }) => {
+      if (!options?.silent) {
+        setLoading(true);
+      }
+      try {
+        const requestedSex = options?.sex ?? activeSexRef.current;
+        const result = await fetchBySex(requestedSex, 0, null, null);
+        const audience = result.audience ?? null;
+        const effectiveSex = audience?.targetSex ?? requestedSex;
+        setCardsAudience(audience);
+        setViewerSexError("");
+
+        if (audience && (audience.status === "missing" || audience.status === "conflict" || audience.status === "unavailable")) {
+          setMales([]);
+          setFemales([]);
+          setMaleHasMore(false);
+          setFemaleHasMore(false);
+          loadedOpenCardSexesRef.current = { male: false, female: false };
+        } else if (effectiveSex === "male") {
+          setActiveSex("male");
+          setMales(result.items ?? []);
+          setMaleCursorCreatedAt(result.nextCursorCreatedAt ?? null);
+          setMaleCursorId(result.nextCursorId ?? null);
+          setMaleHasMore(Boolean(result.hasMore));
+          loadedOpenCardSexesRef.current.male = true;
+          if (audience?.status === "resolved" && !audience.canSwitchSex) {
+            setFemales([]);
+            setFemaleHasMore(false);
+            loadedOpenCardSexesRef.current.female = false;
+          }
+        } else {
+          setActiveSex("female");
+          setFemales(result.items ?? []);
+          setFemaleCursorCreatedAt(result.nextCursorCreatedAt ?? null);
+          setFemaleCursorId(result.nextCursorId ?? null);
+          setFemaleHasMore(Boolean(result.hasMore));
+          loadedOpenCardSexesRef.current.female = true;
+          if (audience?.status === "resolved" && !audience.canSwitchSex) {
+            setMales([]);
+            setMaleHasMore(false);
+            loadedOpenCardSexesRef.current.male = false;
+          }
+        }
+        setLoading(false);
+        void refreshSecondary(effectiveSex);
+      } catch (e) {
+        console.error("open cards load failed", e);
+        setLoading(false);
+      }
+    },
+    [refreshSecondary]
+  );
+
+  const handleOpenCardSexChange = useCallback(
+    async (nextSex: DatingSex) => {
+      if (cardsAudience?.canSwitchSex !== true || activeSexRef.current === nextSex) return;
+      pendingSexTabScrollRef.current = window.scrollY;
+      setActiveSex(nextSex);
+      activeSexRef.current = nextSex;
+      if (loadedOpenCardSexesRef.current[nextSex]) {
+        void refreshSecondary(nextSex);
+        return;
+      }
+      await loadInitial({ sex: nextSex });
+    },
+    [cardsAudience?.canSwitchSex, loadInitial, refreshSecondary]
+  );
+
+  const handleViewerSexSelection = useCallback(
+    async (viewerSex: DatingSex) => {
+      if (viewerSexSaving) return;
+      setViewerSexSaving(true);
+      setViewerSexError("");
+      try {
+        const res = await fetch("/api/dating/cards/viewer-sex", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ sex: viewerSex }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { error?: string; targetSex?: DatingSex };
+        if (!res.ok || !body.targetSex) throw new Error(body.error ?? "성별 정보를 저장하지 못했습니다.");
+        loadedOpenCardSexesRef.current = { male: false, female: false };
+        await loadInitial({ sex: body.targetSex });
+      } catch (error) {
+        setViewerSexError(error instanceof Error ? error.message : "성별 정보를 저장하지 못했습니다.");
+      } finally {
+        setViewerSexSaving(false);
+      }
+    },
+    [loadInitial, viewerSexSaving]
+  );
 
   const handleReactivateHomeOpenCard = useCallback(
     async (cardId: string) => {
@@ -2303,8 +2392,12 @@ export default function OpenCardsPage() {
           female: mvStatusBody.female ?? "none",
         };
         setMoreViewStatus(nextStatus);
+        const enforcedTarget =
+          cardsAudience?.status === "resolved" && cardsAudience.canSwitchSex === false
+            ? cardsAudience.targetSex
+            : null;
 
-        if (nextStatus.male === "approved") {
+        if (nextStatus.male === "approved" && (!enforcedTarget || enforcedTarget === "male")) {
           const maleRes = await fetch("/api/dating/cards/more-view/list?sex=male", { cache: "no-store" });
           if (maleRes.ok) {
             const body = (await maleRes.json()) as { items?: PublicCard[] };
@@ -2313,7 +2406,7 @@ export default function OpenCardsPage() {
         } else {
           setMoreViewMale([]);
         }
-        if (nextStatus.female === "approved") {
+        if (nextStatus.female === "approved" && (!enforcedTarget || enforcedTarget === "female")) {
           const femaleRes = await fetch("/api/dating/cards/more-view/list?sex=female", { cache: "no-store" });
           if (femaleRes.ok) {
             const body = (await femaleRes.json()) as { items?: PublicCard[] };
@@ -2342,7 +2435,7 @@ export default function OpenCardsPage() {
       window.clearInterval(timer);
       document.removeEventListener("visibilitychange", handleVisibilityChange);
     };
-  }, []);
+  }, [cardsAudience]);
 
   const loadMoreMale = useCallback(async () => {
     if (!maleHasMore) return;
@@ -2431,12 +2524,13 @@ export default function OpenCardsPage() {
 
   useEffect(() => {
     setSwipeMessage("");
-    const otherSex = activeSex === "male" ? "female" : "male";
-    void loadSwipe(activeSex, { preferCache: true });
-    if (!swipeCacheRef.current[otherSex]) {
-      void loadSwipe(otherSex, { preferCache: true, silent: true });
+    if (!cardsAudience) return;
+    if (cardsAudience.status !== "guest" && cardsAudience.status !== "admin" && cardsAudience.status !== "resolved") {
+      setSwipeLoading(false);
+      return;
     }
-  }, [activeSex, loadSwipe]);
+    void loadSwipe(activeSex, { preferCache: true });
+  }, [activeSex, cardsAudience, loadSwipe]);
 
   const handleSwipe = useCallback(
     async (action: "like" | "pass") => {
@@ -2746,6 +2840,9 @@ export default function OpenCardsPage() {
     pendingSexTabScrollRef.current = window.scrollY;
     setActiveSex(sex);
   };
+  const openCardsAudienceBlocked = Boolean(
+    cardsAudience && cardsAudience.status !== "guest" && cardsAudience.status !== "admin" && cardsAudience.status !== "resolved"
+  );
   const swipeTheme = getCardVisualTheme(swipeState.candidate?.card_id ?? activeSex);
   const showOpenCardSection = homeFeatureTab === "open_cards";
   const showQuickMatchSection = homeFeatureTab === "quick_match";
@@ -3078,6 +3175,7 @@ export default function OpenCardsPage() {
           </div>
         </div>
 
+        {cardsAudience?.canSwitchSex === true ? (
         <div className="mt-4 grid grid-cols-2 gap-1.5 rounded-[18px] border border-neutral-200 bg-neutral-50 p-1.5">
           <button
             type="button"
@@ -3106,6 +3204,7 @@ export default function OpenCardsPage() {
             남자 후보
           </button>
         </div>
+        ) : null}
 
         <div className="mt-4 flex flex-wrap items-center gap-2">
           <button
@@ -3369,11 +3468,11 @@ export default function OpenCardsPage() {
         />
       ) : null}
 
-      {showOpenCardSection ? (
+      {showOpenCardSection && cardsAudience?.canSwitchSex === true ? (
         <div className="mb-4 grid grid-cols-2 gap-2 rounded-[18px] border border-neutral-200/80 bg-white p-1.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
           <button
             type="button"
-            onClick={() => handleActiveSexChange("female")}
+            onClick={() => void handleOpenCardSexChange("female")}
             className={`inline-flex min-h-[46px] items-center justify-center rounded-[14px] px-3 text-sm font-black transition ${
               activeSex === "female"
                 ? "bg-rose-600 text-white shadow-[0_10px_20px_rgba(225,29,72,0.18)]"
@@ -3384,7 +3483,7 @@ export default function OpenCardsPage() {
           </button>
           <button
             type="button"
-            onClick={() => handleActiveSexChange("male")}
+            onClick={() => void handleOpenCardSexChange("male")}
             className={`inline-flex min-h-[46px] items-center justify-center rounded-[14px] px-3 text-sm font-black transition ${
               activeSex === "male"
                 ? "bg-slate-900 text-white shadow-[0_10px_20px_rgba(15,23,42,0.14)]"
@@ -3396,9 +3495,68 @@ export default function OpenCardsPage() {
         </div>
       ) : null}
 
+      {showOpenCardSection && cardsAudience?.status === "missing" ? (
+        <section className="mb-5 rounded-[26px] border border-rose-100 bg-white p-5 text-center shadow-[0_12px_34px_rgba(15,23,42,0.06)]">
+          <p className="text-base font-black text-neutral-950">내 성별을 확인해주세요</p>
+          <p className="mt-2 text-sm leading-6 text-neutral-500">
+            기존 오픈카드나 1:1 카드가 없어 최초 한 번만 확인합니다. 선택한 성별의 이성 카드만 표시됩니다.
+          </p>
+          <div className="mt-4 grid grid-cols-2 gap-2">
+            <button
+              type="button"
+              disabled={viewerSexSaving}
+              onClick={() => void handleViewerSexSelection("male")}
+              className="min-h-[48px] rounded-2xl bg-slate-900 px-4 text-sm font-black text-white disabled:opacity-50"
+            >
+              나는 남성
+            </button>
+            <button
+              type="button"
+              disabled={viewerSexSaving}
+              onClick={() => void handleViewerSexSelection("female")}
+              className="min-h-[48px] rounded-2xl bg-rose-600 px-4 text-sm font-black text-white disabled:opacity-50"
+            >
+              나는 여성
+            </button>
+          </div>
+          {viewerSexError ? <p className="mt-3 text-sm font-semibold text-red-600">{viewerSexError}</p> : null}
+        </section>
+      ) : null}
+
+      {showOpenCardSection && cardsAudience?.status === "conflict" ? (
+        <section className="mb-5 rounded-[26px] border border-amber-200 bg-amber-50 p-5 text-center">
+          <p className="text-base font-black text-amber-950">성별 정보 확인이 필요합니다</p>
+          <p className="mt-2 text-sm leading-6 text-amber-800">
+            기존 오픈카드와 1:1 카드의 성별 정보가 서로 달라 자동으로 결정하지 않았습니다.
+          </p>
+          <a
+            href={OPEN_KAKAO_URL}
+            target="_blank"
+            rel="noreferrer"
+            className="mt-4 inline-flex min-h-[46px] items-center justify-center rounded-2xl bg-amber-900 px-5 text-sm font-black text-white"
+          >
+            고객센터 문의
+          </a>
+        </section>
+      ) : null}
+
+      {showOpenCardSection && cardsAudience?.status === "unavailable" ? (
+        <section className="mb-5 rounded-[26px] border border-neutral-200 bg-white p-5 text-center">
+          <p className="text-base font-black text-neutral-950">성별 정보를 확인하지 못했습니다</p>
+          <p className="mt-2 text-sm text-neutral-500">잠시 후 다시 시도해주세요.</p>
+          <button
+            type="button"
+            onClick={() => void loadInitial()}
+            className="mt-4 min-h-[46px] rounded-2xl bg-neutral-950 px-5 text-sm font-black text-white"
+          >
+            다시 시도
+          </button>
+        </section>
+      ) : null}
+
       {showOpenCardSection && loading ? (
         <p className="text-neutral-400 text-center py-10">불러오는 중...</p>
-      ) : showOpenCardSection ? (
+      ) : showOpenCardSection && !openCardsAudienceBlocked ? (
         <Section
           title={activeSex === "male" ? "남자 오픈카드" : "여자 오픈카드"}
           currentCount={activeCurrentCount}

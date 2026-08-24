@@ -8,6 +8,8 @@ import { kvGetString, kvSetString } from "@/lib/edge-kv";
 import { createAdminClient } from "@/lib/supabase/server";
 import { shouldRunAtMostEvery } from "@/lib/throttled-task";
 import { NextResponse } from "next/server";
+import { isAllowedAdminUser } from "@/lib/admin";
+import { resolveDatingViewerSex, type DatingSex } from "@/lib/dating-viewer-sex";
 
 const RAW_COUNT_MAX = 40;
 const PREVIEW_LIMIT_FOR_GUEST = 6;
@@ -41,6 +43,16 @@ function parseCursorId(value: string | null): string | null {
   if (!value) return null;
   const v = value.trim();
   return v.length > 0 ? v : null;
+}
+
+function personalizedNoStoreHeaders(): HeadersInit {
+  return {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    Pragma: "no-cache",
+    Expires: "0",
+    "CDN-Cache-Control": "no-store",
+    "Vercel-CDN-Cache-Control": "no-store",
+  };
 }
 
 function isMissingColumnError(error: unknown): boolean {
@@ -245,9 +257,52 @@ export async function GET(req: Request) {
   const limit = isGuestPreview ? Math.min(requestedLimit, PREVIEW_LIMIT_FOR_GUEST) : requestedLimit;
   const cursorCreatedAt = parseCursorTs(searchParams.get("cursorCreatedAt"));
   const cursorId = parseCursorId(searchParams.get("cursorId"));
-  const sex = searchParams.get("sex");
+  const requestedSex: DatingSex = searchParams.get("sex") === "male" ? "male" : "female";
 
   const adminClient = createAdminClient();
+  const isAdmin = Boolean(user && isAllowedAdminUser(user.id, user.email));
+  let sex: DatingSex = requestedSex;
+  let audience: {
+    status: "guest" | "admin" | "resolved" | "missing" | "conflict" | "unavailable";
+    viewerSex: DatingSex | null;
+    targetSex: DatingSex | null;
+    source: "open_card" | "one_on_one" | "metadata" | null;
+    canSwitchSex: boolean;
+    requiresSexSelection: boolean;
+  } = {
+    status: isGuestPreview ? "guest" : "admin",
+    viewerSex: null,
+    targetSex: requestedSex,
+    source: null,
+    canSwitchSex: true,
+    requiresSexSelection: false,
+  };
+
+  if (user && !isAdmin) {
+    const resolution = await resolveDatingViewerSex(adminClient, user);
+    audience = {
+      ...resolution,
+      canSwitchSex: false,
+      requiresSexSelection: resolution.status === "missing",
+    };
+
+    if (resolution.status === "resolved" && resolution.targetSex) {
+      sex = resolution.targetSex;
+    } else {
+      return NextResponse.json(
+        {
+          items: [],
+          hasMore: false,
+          nextCursorCreatedAt: null,
+          nextCursorId: null,
+          previewOnly: false,
+          audience,
+        },
+        { headers: personalizedNoStoreHeaders() }
+      );
+    }
+  }
+
   if (await shouldRunAtMostEvery("dating:open-cards:sync", OPEN_CARD_SYNC_INTERVAL_SEC)) {
     await syncOpenCardQueue(adminClient).catch((error) => {
       console.error(`[GET /api/dating/cards/list] requestId=${requestId} queue sync failed`, error);
@@ -408,15 +463,10 @@ export async function GET(req: Request) {
       nextCursorCreatedAt: hasMore && lastItem ? lastItem.created_at : null,
       nextCursorId: hasMore && lastItem ? lastItem.id : null,
       previewOnly: isGuestPreview,
+      audience,
     },
     {
-      headers: {
-        "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-        Pragma: "no-cache",
-        Expires: "0",
-        "CDN-Cache-Control": "no-store",
-        "Vercel-CDN-Cache-Control": "no-store",
-      },
+      headers: personalizedNoStoreHeaders(),
     }
   );
 }
