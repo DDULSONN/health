@@ -173,16 +173,6 @@ function SmallDatingReportButton({
 type MyPageTab = "my_cert" | "request_status" | "admin_review";
 type MyPageSectionTab = "profile" | "matching" | "payment" | "admin";
 
-type BodycheckPost = {
-  id: string;
-  title: string;
-  created_at: string;
-  score_sum: number;
-  vote_count: number;
-  average_score: number;
-  images: string[] | null;
-};
-
 type SummaryResponse = {
   profile: {
     email: string | null;
@@ -193,8 +183,6 @@ type SummaryResponse = {
     phone_verified_at: string | null;
     swipe_profile_visible: boolean;
   };
-  weekly_win_count: number;
-  bodycheck_posts: BodycheckPost[];
 };
 
 type SupportInquiry = {

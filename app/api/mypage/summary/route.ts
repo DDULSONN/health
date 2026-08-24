@@ -25,36 +25,9 @@ export async function GET() {
       .maybeSingle();
   }
 
-  const [bodycheckRes, winnersRes] = await Promise.all([
-    supabase
-      .from("posts")
-      .select("id, title, created_at, score_sum, vote_count, images, is_deleted")
-      .eq("user_id", user.id)
-      .eq("type", "photo_bodycheck")
-      .eq("is_hidden", false)
-      .order("created_at", { ascending: false })
-      .limit(50),
-    supabase
-      .from("hall_of_fame")
-      .select("id")
-      .eq("user_id", user.id),
-  ]);
-
   if (profileRes.error) {
     return NextResponse.json({ error: profileRes.error.message }, { status: 500 });
   }
-  if (bodycheckRes.error) {
-    return NextResponse.json({ error: bodycheckRes.error.message }, { status: 500 });
-  }
-  if (winnersRes.error) {
-    return NextResponse.json({ error: winnersRes.error.message }, { status: 500 });
-  }
-
-  const posts = (bodycheckRes.data ?? []).filter(
-    (post) => !(post as Record<string, unknown>).is_deleted,
-  );
-
-  const weeklyWinCount = winnersRes.data?.length ?? 0;
 
   return NextResponse.json({
     profile: {
@@ -66,12 +39,5 @@ export async function GET() {
       phone_verified_at: profileRes.data?.phone_verified_at ?? null,
       swipe_profile_visible: profileRes.data?.swipe_profile_visible !== false,
     },
-    weekly_win_count: weeklyWinCount,
-    bodycheck_posts: posts.map((post) => ({
-      ...post,
-      average_score: post.vote_count
-        ? Number((post.score_sum / post.vote_count).toFixed(2))
-        : 0,
-    })),
   });
 }
