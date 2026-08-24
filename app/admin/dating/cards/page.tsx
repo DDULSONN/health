@@ -99,6 +99,7 @@ type AdminUserReport = {
 
 type AdminCardSort = "newest" | "oldest" | "pending_first";
 type AdminCardFilter = "all" | "public" | "pending" | "hidden" | "expired";
+type AdminCardSexFilter = "all" | "male" | "female";
 
 function formatDate(value: string | null) {
   if (!value) return "-";
@@ -142,6 +143,7 @@ export default function AdminDatingCardsPage() {
   const [userReports, setUserReports] = useState<AdminUserReport[]>([]);
   const [cardSort, setCardSort] = useState<AdminCardSort>("newest");
   const [cardFilter, setCardFilter] = useState<AdminCardFilter>("public");
+  const [cardSexFilter, setCardSexFilter] = useState<AdminCardSexFilter>("all");
   const [selectedCardIds, setSelectedCardIds] = useState<string[]>([]);
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -197,7 +199,11 @@ export default function AdminDatingCardsPage() {
   }, [load]);
 
   const visibleCards = useMemo(() => {
-    const base = cards.filter((card) => (cardFilter === "all" ? true : card.status === cardFilter));
+    const base = cards.filter((card) => {
+      if (cardFilter !== "all" && card.status !== cardFilter) return false;
+      if (cardSexFilter !== "all" && card.sex !== cardSexFilter) return false;
+      return true;
+    });
     const pendingFirstRank: Record<AdminCard["status"], number> = {
       pending: 0,
       public: 1,
@@ -216,7 +222,7 @@ export default function AdminDatingCardsPage() {
       if (rankGap !== 0) return rankGap;
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
-  }, [cards, cardFilter, cardSort]);
+  }, [cards, cardFilter, cardSexFilter, cardSort]);
 
   const sortedReports = useMemo(() => {
     const rank: Record<AdminReport["status"], number> = {
@@ -503,6 +509,16 @@ export default function AdminDatingCardsPage() {
             <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-lg font-semibold text-neutral-900">카드 전체 관리</h2>
               <div className="flex flex-wrap items-center gap-2">
+                <select
+                  value={cardSexFilter}
+                  onChange={(e) => setCardSexFilter(e.target.value as AdminCardSexFilter)}
+                  className="h-8 rounded-md border border-neutral-300 bg-white px-2 text-xs text-neutral-800"
+                  aria-label="카드 성별 필터"
+                >
+                  <option value="all">남녀 전체</option>
+                  <option value="male">남성 카드</option>
+                  <option value="female">여성 카드</option>
+                </select>
                 <select
                   value={cardFilter}
                   onChange={(e) => setCardFilter(e.target.value as AdminCardFilter)}
