@@ -43,6 +43,7 @@ function readString(value: unknown) {
 export async function POST(req: Request) {
   const requestId = crypto.randomUUID();
   let eventKey = "";
+  let fulfillmentStarted = false;
 
   try {
     const { user } = await getRequestAuthContext(req);
@@ -61,7 +62,7 @@ export async function POST(req: Request) {
     const purchaseToken = readString(input.purchaseToken) || null;
     const transactionId = readString(input.transactionId) || null;
     const originalTransactionId = readString(input.originalTransactionId) || null;
-    const attributes =
+    let attributes =
       input.attributes && typeof input.attributes === "object"
         ? (input.attributes as Record<string, string | null | undefined>)
         : {};
@@ -102,7 +103,7 @@ export async function POST(req: Request) {
     if (insertRes.error && String(insertRes.error.code ?? "") === "23505") {
       const existingRes = await admin
         .from("app_purchase_events")
-        .select("status,fulfilled_at")
+        .select("status,fulfilled_at,processed_at,created_at,user_id,product_id,context_json")
         .eq("event_key", eventKey)
         .maybeSingle();
 
@@ -110,19 +111,47 @@ export async function POST(req: Request) {
         throw existingRes.error;
       }
 
-      if (existingRes.data?.status === "fulfilled") {
-        return json(200, "ALREADY_FULFILLED", requestId, "이미 반영된 결제입니다.", {
+      const existing = existingRes.data;
+      if (existing?.user_id && existing.user_id !== user.id) {
+        return json(400, "VALIDATION_ERROR", requestId, "이 결제는 다른 사용자에게 연결되어 있습니다.", {
           eventKey,
-          alreadyFulfilled: true,
-          fulfilledAt: existingRes.data.fulfilled_at ?? null,
+        });
+      }
+      if (existing?.product_id && existing.product_id !== productId) {
+        return json(400, "VALIDATION_ERROR", requestId, "결제 상품 정보가 기존 기록과 일치하지 않습니다.", {
+          eventKey,
         });
       }
 
-      if (
-        existingRes.data?.status === "failed" ||
-        existingRes.data?.status === "ignored" ||
-        existingRes.data?.status === "processing"
-      ) {
+      const storedAttributes =
+        existing?.context_json && typeof existing.context_json === "object"
+          ? (existing.context_json as Record<string, string | null | undefined>)
+          : {};
+      if (Object.keys(storedAttributes).length > 0) {
+        attributes = storedAttributes;
+      }
+
+      if (existing?.status === "fulfilled") {
+        return json(200, "ALREADY_FULFILLED", requestId, "이미 반영된 결제입니다.", {
+          eventKey,
+          alreadyFulfilled: true,
+          fulfilledAt: existing.fulfilled_at ?? null,
+        });
+      }
+
+      const processingStartedAt = new Date(existing?.processed_at ?? existing?.created_at ?? 0).getTime();
+      const processingIsStale =
+        existing?.status === "processing" &&
+        (!Number.isFinite(processingStartedAt) || Date.now() - processingStartedAt > 2 * 60 * 1000);
+
+      if (existing?.status === "processing" && !processingIsStale) {
+        return json(409, "DUPLICATE_PURCHASE", requestId, "이미 처리 중인 결제입니다.", {
+          eventKey,
+          status: "processing",
+        });
+      }
+
+      if (existing?.status === "failed" || existing?.status === "ignored" || processingIsStale) {
         const retryRes = await admin
           .from("app_purchase_events")
           .update({
@@ -137,20 +166,28 @@ export async function POST(req: Request) {
             raw_payload: {
               rawPurchase,
             },
-            note: `retry requested from ${existingRes.data.status}`,
+            note: `retry requested from ${existing?.status ?? "processing"}`,
             processed_at: null,
             fulfilled_at: null,
           })
           .eq("event_key", eventKey)
-          .eq("status", existingRes.data.status);
+          .eq("status", existing?.status ?? "processing")
+          .select("event_key")
+          .maybeSingle();
 
         if (retryRes.error) {
           throw retryRes.error;
         }
+        if (!retryRes.data) {
+          return json(409, "DUPLICATE_PURCHASE", requestId, "다른 요청에서 결제를 처리 중입니다.", {
+            eventKey,
+            status: "processing",
+          });
+        }
       } else {
-        return json(409, "DUPLICATE_PURCHASE", requestId, "이미 처리 중인 결제입니다.", {
-          eventKey,
-          status: existingRes.data?.status ?? "processing",
+          return json(409, "DUPLICATE_PURCHASE", requestId, "이미 처리 중인 결제입니다.", {
+            eventKey,
+            status: existing?.status ?? "processing",
         });
       }
     } else if (insertRes.error) {
@@ -167,6 +204,7 @@ export async function POST(req: Request) {
       attributes,
     });
 
+    fulfillmentStarted = true;
     const fulfilled = await fulfillDatingStorePurchase(admin, {
       userId: user.id,
       productId: verified.productId,
@@ -204,12 +242,16 @@ export async function POST(req: Request) {
   } catch (error) {
     if (eventKey) {
       const admin = createAdminClient();
+      const errorMessage = error instanceof Error ? error.message : "unknown error";
       await admin
         .from("app_purchase_events")
         .update({
           status: "failed",
+          verified: fulfillmentStarted,
           processed_at: new Date().toISOString(),
-          note: error instanceof Error ? error.message : "unknown error",
+          note: fulfillmentStarted
+            ? `fulfillment failed; retry allowed: ${errorMessage}`
+            : errorMessage,
         })
         .eq("event_key", eventKey);
     }

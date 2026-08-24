@@ -1,6 +1,10 @@
 import { Status, type JWSRenewalInfoDecodedPayload, type JWSTransactionDecodedPayload } from "@apple/app-store-server-library";
 import { grantSwipeSubscription } from "@/lib/dating-purchase-fulfillment";
-import { DATING_STORE_PRODUCT_CATALOG, DATING_STORE_PRODUCT_IDS } from "@/lib/dating-store-products";
+import {
+  DATING_STORE_PRODUCT_CATALOG,
+  DATING_STORE_PRODUCT_IDS,
+  normalizeDatingStoreProductId,
+} from "@/lib/dating-store-products";
 import { createAdminClient } from "@/lib/supabase/server";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -73,7 +77,7 @@ export async function syncAppleSwipeSubscription(
     note: string;
   }
 ) {
-  if (input.productId !== DATING_STORE_PRODUCT_IDS.swipePremium30d) {
+  if (normalizeDatingStoreProductId(input.productId) !== DATING_STORE_PRODUCT_IDS.swipePremium30d) {
     return { handled: false, ignored: true, reason: "not_swipe_subscription" } as const;
   }
 

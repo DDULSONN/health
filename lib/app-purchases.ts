@@ -4,6 +4,7 @@ import { google } from "googleapis";
 import { decodeJwt, importPKCS8, SignJWT } from "jose";
 import { syncAppleSwipeSubscription } from "@/lib/apple-swipe-subscription";
 import { CITY_VIEW_ACCESS_HOURS } from "@/lib/dating-city-view";
+import { grantOneOnOnePlus } from "@/lib/dating-1on1-plus";
 import {
   approvePaidCard,
   grantApplyCredits,
@@ -17,6 +18,8 @@ import {
 import {
   DATING_STORE_PRODUCT_CATALOG,
   DATING_STORE_PRODUCT_IDS,
+  isAppleDatingStoreProductId,
+  normalizeDatingStoreProductId,
   type DatingStoreProductId,
 } from "@/lib/dating-store-products";
 import { extractProvinceFromRegion } from "@/lib/region-city";
@@ -45,11 +48,11 @@ export type DirectStoreVerificationResult = {
 };
 
 type AdminClient = ReturnType<typeof createAdminClient>;
+const GOOGLE_PLAY_PACKAGE_NAME = "com.gymtools.somefit";
 
-function normalizeProductId(productId: string): DatingStoreProductId | null {
-  return Object.values(DATING_STORE_PRODUCT_IDS).includes(productId as DatingStoreProductId)
-    ? (productId as DatingStoreProductId)
-    : null;
+function normalizeProductId(platform: DirectStorePlatform, productId: string): DatingStoreProductId | null {
+  if (platform === "android" && isAppleDatingStoreProductId(productId)) return null;
+  return normalizeDatingStoreProductId(productId);
 }
 
 function isSubscriptionProduct(productId: DatingStoreProductId) {
@@ -84,6 +87,39 @@ function normalizeAttributes(attributes: DirectStorePurchaseInput["attributes"])
     }
     return acc;
   }, {});
+}
+
+async function grantDirectStoreSwipeOnce(
+  admin: AdminClient,
+  options: {
+    userId: string;
+    eventKey: string;
+    amount: number;
+    dailyLimit: number;
+    durationDays: number;
+    expiresAt?: string | null;
+  }
+) {
+  const note = `source=direct_store event=${options.eventKey}`;
+  const existingRes = await admin
+    .from("dating_swipe_subscription_requests")
+    .select("id,user_id,status,amount,daily_limit,duration_days,approved_at,expires_at,note")
+    .eq("user_id", options.userId)
+    .eq("note", note)
+    .limit(1)
+    .maybeSingle();
+
+  if (existingRes.error) throw existingRes.error;
+  if (existingRes.data?.id) return existingRes.data;
+
+  return grantSwipeSubscription(admin, {
+    userId: options.userId,
+    amount: options.amount,
+    dailyLimit: options.dailyLimit,
+    durationDays: options.durationDays,
+    expiresAt: options.expiresAt,
+    note,
+  });
 }
 
 function decodeTransactionToken(purchaseToken: string | null | undefined) {
@@ -121,7 +157,11 @@ async function verifyAndroidPlayPurchase(input: DirectStorePurchaseInput & { pro
     throw new Error("GOOGLE_PLAY_SERVICE_ACCOUNT_JSON 환경변수가 필요합니다.");
   }
 
-  const packageName = process.env.GOOGLE_PLAY_PACKAGE_NAME?.trim() || "com.gymtools.somefit";
+  const packageName = GOOGLE_PLAY_PACKAGE_NAME;
+  const clientPackageName = String(input.rawPurchase?.packageNameAndroid ?? "").trim();
+  if (clientPackageName && clientPackageName !== packageName) {
+    throw new Error("Google Play 구매 앱의 패키지 이름이 일치하지 않습니다.");
+  }
   const auth = new google.auth.GoogleAuth({
     credentials,
     scopes: ["https://www.googleapis.com/auth/androidpublisher"],
@@ -261,7 +301,9 @@ async function fetchAppleTransactionInfo(transactionId: string) {
   throw new Error(lastErrorText || "App Store 서버에서 거래 조회에 실패했습니다.");
 }
 
-async function verifyApplePurchase(input: DirectStorePurchaseInput & { productId: DatingStoreProductId }) {
+async function verifyApplePurchase(
+  input: DirectStorePurchaseInput & { productId: DatingStoreProductId; storeProductId: string }
+) {
   const bundleId = process.env.APPLE_IAP_BUNDLE_ID?.trim() || "com.gymtools.somefit";
   const decodedClientToken = decodeTransactionToken(input.purchaseToken);
   const transactionId =
@@ -287,7 +329,7 @@ async function verifyApplePurchase(input: DirectStorePurchaseInput & { productId
   if (verifiedBundleId && verifiedBundleId !== bundleId) {
     throw new Error("App Store bundle identifier가 일치하지 않습니다.");
   }
-  if (verifiedProductId && verifiedProductId !== input.productId) {
+  if (verifiedProductId && verifiedProductId !== input.storeProductId) {
     throw new Error("App Store product identifier가 일치하지 않습니다.");
   }
   if (isSubscriptionProduct(input.productId) && (!Number.isFinite(expiresDate) || expiresDate <= Date.now())) {
@@ -319,7 +361,7 @@ async function verifyApplePurchase(input: DirectStorePurchaseInput & { productId
 }
 
 export async function verifyDirectStorePurchase(input: DirectStorePurchaseInput): Promise<DirectStoreVerificationResult> {
-  const productId = normalizeProductId(input.productId);
+  const productId = normalizeProductId(input.platform, input.productId);
   if (!productId || !DATING_STORE_PRODUCT_CATALOG[productId]) {
     throw new Error("지원하지 않는 결제 상품 ID입니다.");
   }
@@ -327,7 +369,7 @@ export async function verifyDirectStorePurchase(input: DirectStorePurchaseInput)
   const verified =
     input.platform === "android"
       ? await verifyAndroidPlayPurchase({ ...input, productId })
-      : await verifyApplePurchase({ ...input, productId });
+      : await verifyApplePurchase({ ...input, productId, storeProductId: input.productId });
 
   return {
     ...verified,
@@ -402,6 +444,7 @@ export async function fulfillDatingStorePurchase(
 
     const result = await approvePaidCard(admin, {
       paidCardId,
+      userId: input.userId,
       displayMode: "instant_public",
     });
 
@@ -439,6 +482,35 @@ export async function fulfillDatingStorePurchase(
     });
   }
 
+  if (
+    input.productId === DATING_STORE_PRODUCT_IDS.oneOnOnePlus7d ||
+    input.productId === DATING_STORE_PRODUCT_IDS.oneOnOnePlus30d
+  ) {
+    return grantOneOnOnePlus(admin, {
+      userId: input.userId,
+      grantKey: `direct-store:${input.eventKey}`,
+      durationDays: DATING_STORE_PRODUCT_CATALOG[input.productId].durationDays,
+      requireActiveCard: false,
+    });
+  }
+
+  if (input.productId === DATING_STORE_PRODUCT_IDS.datingAllPass30d) {
+    const oneOnOne = await grantOneOnOnePlus(admin, {
+      userId: input.userId,
+      grantKey: `direct-store:${input.eventKey}:one-on-one`,
+      durationDays: DATING_STORE_PRODUCT_CATALOG[input.productId].durationDays,
+      requireActiveCard: false,
+    });
+    const swipe = await grantDirectStoreSwipeOnce(admin, {
+      userId: input.userId,
+      eventKey: `${input.eventKey}:all-pass-swipe`,
+      amount: DATING_STORE_PRODUCT_CATALOG[input.productId].amountKrw,
+      dailyLimit: DATING_STORE_PRODUCT_CATALOG[input.productId].dailyLimit,
+      durationDays: DATING_STORE_PRODUCT_CATALOG[input.productId].durationDays,
+    });
+    return { oneOnOne, swipe };
+  }
+
   if (input.productId === DATING_STORE_PRODUCT_IDS.openCardRepost) {
     const cardId = attributes.dating_open_card_id ?? "";
     if (!cardId) {
@@ -453,12 +525,12 @@ export async function fulfillDatingStorePurchase(
   }
 
   if (input.productId === DATING_STORE_PRODUCT_IDS.swipePremium15d) {
-    return grantSwipeSubscription(admin, {
+    return grantDirectStoreSwipeOnce(admin, {
       userId: input.userId,
+      eventKey: input.eventKey,
       amount: DATING_STORE_PRODUCT_CATALOG[input.productId].amountKrw,
       dailyLimit: DATING_STORE_PRODUCT_CATALOG[input.productId].dailyLimit,
       durationDays: DATING_STORE_PRODUCT_CATALOG[input.productId].durationDays,
-      note,
     });
   }
 
@@ -505,13 +577,13 @@ export async function fulfillDatingStorePurchase(
       }
     }
 
-    return grantSwipeSubscription(admin, {
+    return grantDirectStoreSwipeOnce(admin, {
       userId: input.userId,
+      eventKey: input.eventKey,
       amount: DATING_STORE_PRODUCT_CATALOG[input.productId].amountKrw,
       dailyLimit: DATING_STORE_PRODUCT_CATALOG[input.productId].dailyLimit,
       durationDays: DATING_STORE_PRODUCT_CATALOG[input.productId].durationDays,
       expiresAt,
-      note,
     });
   }
 
