@@ -95,6 +95,28 @@ async function lookupDatingViewerSex(
   const openCardSex = normalizeDatingSex(openCardResult.data?.sex);
   const oneOnOneSex = normalizeDatingSex(oneOnOneResult.data?.sex);
   const metadataSex = readMetadataSex(user);
+
+  if (openCardSex && oneOnOneSex && openCardSex !== oneOnOneSex) {
+    const openCardCreatedAt = Date.parse(String(openCardResult.data?.created_at ?? ""));
+    const oneOnOneCreatedAt = Date.parse(String(oneOnOneResult.data?.created_at ?? ""));
+    const useOneOnOne =
+      Number.isFinite(oneOnOneCreatedAt) &&
+      (!Number.isFinite(openCardCreatedAt) || oneOnOneCreatedAt > openCardCreatedAt);
+    const selectedSex = useOneOnOne ? oneOnOneSex : openCardSex;
+
+    console.warn("[dating-viewer-sex] conflicting sources; using most recent card", {
+      userId: user.id,
+      selectedSource: useOneOnOne ? "one_on_one" : "open_card",
+    });
+
+    return {
+      status: "resolved",
+      viewerSex: selectedSex,
+      targetSex: getOppositeDatingSex(selectedSex),
+      source: useOneOnOne ? "one_on_one" : "open_card",
+    };
+  }
+
   return resolveDatingViewerSexFromSources(openCardSex, oneOnOneSex, metadataSex);
 }
 
