@@ -156,6 +156,7 @@ export default function AdminUserDatingCardsPanel({
         ? {
             expected_owner_user_id: userId,
             display_nickname: draft.displayName,
+            sex: draft.sex,
             age: draft.age,
             region: draft.region,
             height_cm: draft.heightCm,
@@ -375,19 +376,17 @@ export default function AdminUserDatingCardsPanel({
                 value={draft.displayName}
                 onChange={(next) => updateDraft("displayName", next)}
               />
-              {kind === "one_on_one" ? (
-                <label className="block text-[11px] font-semibold text-neutral-600">
-                  성별
-                  <select
-                    value={draft.sex}
-                    onChange={(event) => updateDraft("sex", event.target.value)}
-                    className="mt-1 h-9 w-full rounded-lg border border-neutral-200 bg-white px-3 text-xs text-neutral-900"
-                  >
-                    <option value="male">남성</option>
-                    <option value="female">여성</option>
-                  </select>
-                </label>
-              ) : null}
+              <label className="block text-[11px] font-semibold text-neutral-600">
+                성별
+                <select
+                  value={draft.sex}
+                  onChange={(event) => updateDraft("sex", event.target.value)}
+                  className="mt-1 h-9 w-full rounded-lg border border-neutral-200 bg-white px-3 text-xs text-neutral-900"
+                >
+                  <option value="male">남성</option>
+                  <option value="female">여성</option>
+                </select>
+              </label>
               <Field
                 label={kind === "open" ? "나이" : "출생연도"}
                 type="number"

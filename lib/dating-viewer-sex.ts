@@ -124,6 +124,10 @@ export function cacheDatingViewerSexResolution(userId: string, value: DatingView
   resolutionCache.set(userId, { expiresAt: Date.now() + RESOLUTION_CACHE_TTL_MS, value });
 }
 
+export function invalidateDatingViewerSexResolution(userId: string) {
+  resolutionCache.delete(userId);
+}
+
 export async function resolveDatingViewerSex(
   admin: SupabaseClient,
   user: Pick<User, "id" | "user_metadata">

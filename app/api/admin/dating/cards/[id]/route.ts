@@ -1,6 +1,7 @@
 ﻿import { isAdminEmail } from "@/lib/admin";
 import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
 import { OPEN_CARD_EXPIRE_HOURS, getOpenCardLimitBySex } from "@/lib/dating-open";
+import { invalidateDatingViewerSexResolution } from "@/lib/dating-viewer-sex";
 import { createClient, createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -63,6 +64,8 @@ export async function PATCH(
     100
   );
   const rawStatus = (body as { status?: string } | null)?.status;
+  const rawSex = (body as { sex?: unknown } | null)?.sex;
+  const sex = rawSex === "male" || rawSex === "female" ? rawSex : undefined;
   const status =
     rawStatus === "pending" || rawStatus === "public" || rawStatus === "hidden" || rawStatus === "expired"
       ? rawStatus
@@ -70,6 +73,9 @@ export async function PATCH(
 
   if (rawStatus != null && !status) {
     return NextResponse.json({ error: "?덉슜?섏? ?딆? ?곹깭媛믪엯?덈떎." }, { status: 400 });
+  }
+  if (rawSex != null && !sex) {
+    return NextResponse.json({ error: "성별은 남성 또는 여성만 선택할 수 있습니다." }, { status: 400 });
   }
 
   const adminClient = createAdminClient();
@@ -104,6 +110,7 @@ export async function PATCH(
     body != null &&
     [
       "display_nickname",
+      "sex",
       "age",
       "region",
       "height_cm",
@@ -143,6 +150,7 @@ export async function PATCH(
 
   const updatePayload: {
     status?: "pending" | "public" | "hidden" | "expired";
+    sex?: "male" | "female";
     display_nickname?: string | null;
     age?: number | null;
     region?: string | null;
@@ -160,6 +168,7 @@ export async function PATCH(
   } = {};
 
   if (contentUpdateRequested) {
+    if (sex) updatePayload.sex = sex;
     updatePayload.display_nickname = displayNickname;
     updatePayload.age = age;
     updatePayload.region = region || null;
@@ -177,14 +186,19 @@ export async function PATCH(
     updatePayload.status = status;
   }
 
-  if (status === "public") {
-    const slotLimit = getOpenCardLimitBySex(card.sex === "female" ? "female" : "male");
+  const effectiveSex = sex ?? (card.sex === "female" ? "female" : "male");
+  const sexChanged = Boolean(sex && sex !== card.sex);
+  const shouldCheckPublicSlot = status === "public" || (sexChanged && card.status === "public");
+
+  if (shouldCheckPublicSlot) {
+    const slotLimit = getOpenCardLimitBySex(effectiveSex);
 
     let { count, error: slotError } = await adminClient
       .from("dating_cards")
       .select("id", { count: "exact", head: true })
-      .eq("sex", card.sex)
+      .eq("sex", effectiveSex)
       .eq("status", "public")
+      .neq("id", id)
       .gt("expires_at", new Date().toISOString());
 
     // Legacy fallback when expires_at column is not available yet.
@@ -192,8 +206,9 @@ export async function PATCH(
       const legacy = await adminClient
         .from("dating_cards")
         .select("id", { count: "exact", head: true })
-        .eq("sex", card.sex)
-        .eq("status", "public");
+        .eq("sex", effectiveSex)
+        .eq("status", "public")
+        .neq("id", id);
       count = legacy.count;
       slotError = legacy.error;
     }
@@ -210,12 +225,13 @@ export async function PATCH(
       );
     }
 
-    const now = new Date();
-    updatePayload.published_at = now.toISOString();
-    updatePayload.expires_at = new Date(now.getTime() + OPEN_CARD_EXPIRE_HOURS * 60 * 60 * 1000).toISOString();
+    if (status === "public") {
+      const now = new Date();
+      updatePayload.published_at = now.toISOString();
+      updatePayload.expires_at = new Date(now.getTime() + OPEN_CARD_EXPIRE_HOURS * 60 * 60 * 1000).toISOString();
 
-    if (card.owner_user_id) {
-      const certRes = await adminClient
+      if (card.owner_user_id) {
+        const certRes = await adminClient
         .from("cert_requests")
         .select("id,total")
         .eq("user_id", card.owner_user_id)
@@ -225,17 +241,20 @@ export async function PATCH(
         .limit(1)
         .maybeSingle();
 
-      if (certRes.error) {
-        console.warn("[PATCH /api/admin/dating/cards/[id]] cert sync skipped", certRes.error);
-      } else {
-        const verifiedTotal3Lift = toInt((certRes.data as { total?: unknown } | null)?.total);
-        updatePayload.is_3lift_verified = Boolean(certRes.data);
-        if (verifiedTotal3Lift != null) {
-          updatePayload.total_3lift = verifiedTotal3Lift;
+        if (certRes.error) {
+          console.warn("[PATCH /api/admin/dating/cards/[id]] cert sync skipped", certRes.error);
+        } else {
+          const verifiedTotal3Lift = toInt((certRes.data as { total?: unknown } | null)?.total);
+          updatePayload.is_3lift_verified = Boolean(certRes.data);
+          if (verifiedTotal3Lift != null) {
+            updatePayload.total_3lift = verifiedTotal3Lift;
+          }
         }
       }
     }
-  } else if (status === "pending") {
+  }
+
+  if (status === "pending") {
     updatePayload.published_at = null;
     updatePayload.expires_at = null;
   } else if (status === "hidden" || status === "expired") {
@@ -256,10 +275,16 @@ export async function PATCH(
     return NextResponse.json({ error: "?곹깭 蹂寃쎌뿉 ?ㅽ뙣?덉뒿?덈떎." }, { status: 500 });
   }
 
-  if (status && ((card.status === "public" && status !== "public") || status === "hidden" || status === "expired")) {
-    const sex = card.sex === "female" ? "female" : "male";
+  if (sexChanged) {
+    invalidateDatingViewerSexResolution(card.owner_user_id);
+  }
+
+  const previousSexNeedsPromotion =
+    card.status === "public" && (sexChanged || (status != null && status !== "public"));
+  if (previousSexNeedsPromotion) {
+    const previousSex = card.sex === "female" ? "female" : "male";
     try {
-      await promotePendingCardsBySex(adminClient, sex);
+      await promotePendingCardsBySex(adminClient, previousSex);
     } catch (promoteError) {
       console.error("[PATCH /api/admin/dating/cards/[id]] promote pending failed", promoteError);
     }

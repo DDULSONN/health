@@ -1054,6 +1054,7 @@ type AdminAcceptedRecentApplication = {
 };
 
 type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
+type AdminOpenCardSexFilter = "all" | "male" | "female";
 type AdminApplicationSort = "newest" | "oldest" | "submitted_first" | "accepted_first";
 type AdminDataView = "cards" | "applications";
 type AdminManageTab =
@@ -1924,6 +1925,7 @@ export default function MyPage() {
   const [adminOpenCardDraft, setAdminOpenCardDraft] = useState<AdminOpenCardEditDraft | null>(null);
   const [savingAdminOpenCard, setSavingAdminOpenCard] = useState(false);
   const [adminCardSort, setAdminCardSort] = useState<AdminCardSort>("public_first");
+  const [adminOpenCardSexFilter, setAdminOpenCardSexFilter] = useState<AdminOpenCardSexFilter>("all");
   const [adminApplicationSort, setAdminApplicationSort] = useState<AdminApplicationSort>("newest");
   const [adminDataView, setAdminDataView] = useState<AdminDataView>("cards");
   const [adminManageTab, setAdminManageTab] = useState<AdminManageTab>("site_dashboard");
@@ -7589,7 +7591,10 @@ export default function MyPage() {
     hidden: 2,
     expired: 3,
   };
-  const sortedAdminOpenCards = [...adminOpenCards].sort((a, b) => {
+  const filteredAdminOpenCards = adminOpenCards.filter(
+    (card) => adminOpenCardSexFilter === "all" || card.sex === adminOpenCardSexFilter
+  );
+  const sortedAdminOpenCards = [...filteredAdminOpenCards].sort((a, b) => {
     if (adminCardSort === "newest") {
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     }
@@ -15247,7 +15252,8 @@ export default function MyPage() {
             ) : null}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-violet-800">
-                카드 {adminOpenCards.length}건 / 오픈카드 지원 {adminOpenCardApplications.length}건 / 36시간 지원 {adminPaidCardApplications.length}건
+                카드 {filteredAdminOpenCards.length}건
+                {adminOpenCardSexFilter === "all" ? "" : ` / 전체 ${adminOpenCards.length}건`} / 오픈카드 지원 {adminOpenCardApplications.length}건 / 36시간 지원 {adminPaidCardApplications.length}건
               </h3>
               <div className="flex items-center gap-2">
                 <div className="inline-flex rounded-md border border-violet-200 bg-white p-0.5">
@@ -15271,16 +15277,36 @@ export default function MyPage() {
                   </button>
                 </div>
                 {adminDataView === "cards" ? (
-                  <select
-                    value={adminCardSort}
-                    onChange={(e) => setAdminCardSort(e.target.value as AdminCardSort)}
-                    className="h-8 rounded-md border border-violet-200 bg-white px-2 text-xs text-violet-800"
-                  >
-                    <option value="public_first">카드: 공개중 우선</option>
-                    <option value="pending_first">카드: 대기 우선</option>
-                    <option value="newest">카드: 최신순</option>
-                    <option value="oldest">카드: 오래된순</option>
-                  </select>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="inline-flex rounded-md border border-violet-200 bg-white p-0.5" aria-label="오픈카드 성별 선택">
+                      {([
+                        ["all", "전체"],
+                        ["male", "남성"],
+                        ["female", "여성"],
+                      ] as const).map(([value, label]) => (
+                        <button
+                          key={value}
+                          type="button"
+                          onClick={() => setAdminOpenCardSexFilter(value)}
+                          className={`h-7 rounded px-2.5 text-xs font-semibold ${
+                            adminOpenCardSexFilter === value ? "bg-violet-600 text-white" : "text-violet-800"
+                          }`}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                    <select
+                      value={adminCardSort}
+                      onChange={(e) => setAdminCardSort(e.target.value as AdminCardSort)}
+                      className="h-8 rounded-md border border-violet-200 bg-white px-2 text-xs text-violet-800"
+                    >
+                      <option value="public_first">카드: 공개중 우선</option>
+                      <option value="pending_first">카드: 대기 우선</option>
+                      <option value="newest">카드: 최신순</option>
+                      <option value="oldest">카드: 오래된순</option>
+                    </select>
+                  </div>
                 ) : (
                   <select
                     value={adminApplicationSort}
@@ -15297,8 +15323,8 @@ export default function MyPage() {
             </div>
 
             {adminDataView === "cards" ? (
-              adminOpenCards.length === 0 ? (
-                <p className="text-sm text-neutral-600">등록된 오픈카드가 없습니다.</p>
+              filteredAdminOpenCards.length === 0 ? (
+                <p className="text-sm text-neutral-600">선택한 성별의 오픈카드가 없습니다.</p>
               ) : (
                 <div className="space-y-2">
                   {sortedAdminOpenCards.map((card) => (
