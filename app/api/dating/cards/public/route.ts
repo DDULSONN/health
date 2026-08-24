@@ -8,7 +8,6 @@ import { kvGetString, kvSetString } from "@/lib/edge-kv";
 import { createAdminClient } from "@/lib/supabase/server";
 import { shouldRunAtMostEvery } from "@/lib/throttled-task";
 import { NextResponse } from "next/server";
-import { isAllowedAdminUser } from "@/lib/admin";
 import { resolveDatingViewerSex, type DatingSex } from "@/lib/dating-viewer-sex";
 
 const RAW_COUNT_MAX = 40;
@@ -260,7 +259,6 @@ export async function GET(req: Request) {
   const requestedSex: DatingSex = searchParams.get("sex") === "male" ? "male" : "female";
 
   const adminClient = createAdminClient();
-  const isAdmin = Boolean(user && isAllowedAdminUser(user.id, user.email));
   let sex: DatingSex = requestedSex;
   let audience: {
     status: "guest" | "admin" | "resolved" | "missing" | "conflict" | "unavailable";
@@ -270,7 +268,7 @@ export async function GET(req: Request) {
     canSwitchSex: boolean;
     requiresSexSelection: boolean;
   } = {
-    status: isGuestPreview ? "guest" : "admin",
+    status: "guest",
     viewerSex: null,
     targetSex: requestedSex,
     source: null,
@@ -278,7 +276,7 @@ export async function GET(req: Request) {
     requiresSexSelection: false,
   };
 
-  if (user && !isAdmin) {
+  if (user) {
     const resolution = await resolveDatingViewerSex(adminClient, user);
     audience = {
       ...resolution,

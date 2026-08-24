@@ -18,7 +18,6 @@ import { notifyDatingUser } from "@/lib/dating-notifications";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
-import { isAllowedAdminUser } from "@/lib/admin";
 import { resolveDatingViewerSex } from "@/lib/dating-viewer-sex";
 
 export const runtime = "nodejs";
@@ -113,13 +112,11 @@ export async function GET(req: Request) {
     }
   }
 
-  if (!isAllowedAdminUser(user.id, user.email)) {
-    const resolution = await resolveDatingViewerSex(adminClient, user);
-    if (resolution.status !== "resolved" || !resolution.targetSex) {
-      return viewerSexFailure(resolution.status);
-    }
-    sex = resolution.targetSex;
+  const resolution = await resolveDatingViewerSex(adminClient, user);
+  if (resolution.status !== "resolved" || !resolution.targetSex) {
+    return viewerSexFailure(resolution.status);
   }
+  sex = resolution.targetSex;
 
   try {
     const limitInfo = await getSwipeLimitInfo(adminClient, user.id);
@@ -216,13 +213,11 @@ export async function POST(req: Request) {
 
   const adminClient = createAdminClient();
 
-  if (!isAllowedAdminUser(user.id, user.email)) {
-    const resolution = await resolveDatingViewerSex(adminClient, user);
-    if (resolution.status !== "resolved" || !resolution.targetSex) {
-      return viewerSexFailure(resolution.status);
-    }
-    sex = resolution.targetSex;
+  const resolution = await resolveDatingViewerSex(adminClient, user);
+  if (resolution.status !== "resolved" || !resolution.targetSex) {
+    return viewerSexFailure(resolution.status);
   }
+  sex = resolution.targetSex;
 
   try {
     const limitInfo = await getSwipeLimitInfo(adminClient, user.id);
