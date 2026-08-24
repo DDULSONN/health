@@ -15,6 +15,8 @@ import { hasDatingContactBlockBetween } from "@/lib/dating-contact-blocks";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
+import { isAllowedAdminUser } from "@/lib/admin";
+import { resolveDatingViewerSex } from "@/lib/dating-viewer-sex";
 
 export const runtime = "nodejs";
 
@@ -45,6 +47,19 @@ function sanitizeAction(value: unknown): SwipeAction | null {
   return value === "like" || value === "pass" ? value : null;
 }
 
+function viewerSexFailure(status: "resolved" | "missing" | "conflict" | "unavailable") {
+  if (status === "missing") {
+    return NextResponse.json({ code: "DATING_SEX_REQUIRED", error: "먼저 내 성별을 확인해주세요." }, { status: 428 });
+  }
+  if (status === "conflict") {
+    return NextResponse.json(
+      { code: "DATING_SEX_CONFLICT", error: "기존 카드의 성별 정보가 일치하지 않습니다. 고객센터에 문의해주세요." },
+      { status: 409 }
+    );
+  }
+  return NextResponse.json({ error: "성별 정보를 확인하지 못했습니다. 잠시 후 다시 시도해주세요." }, { status: 503 });
+}
+
 export async function GET(req: Request) {
   const { user } = await getRequestAuthContext(req);
   const ip = extractClientIp(req);
@@ -62,7 +77,7 @@ export async function GET(req: Request) {
   }
 
   const { searchParams } = new URL(req.url);
-  const sex = sanitizeSex(searchParams.get("sex"));
+  let sex = sanitizeSex(searchParams.get("sex"));
   if (!sex) {
     return NextResponse.json({ error: "성별 정보가 올바르지 않습니다." }, { status: 400 });
   }
@@ -93,6 +108,14 @@ export async function GET(req: Request) {
         reason: "로그인하면 빠른매칭 후보와 오늘 남은 횟수를 바로 확인할 수 있습니다.",
       });
     }
+  }
+
+  if (!isAllowedAdminUser(user.id, user.email)) {
+    const resolution = await resolveDatingViewerSex(adminClient, user);
+    if (resolution.status !== "resolved" || !resolution.targetSex) {
+      return viewerSexFailure(resolution.status);
+    }
+    sex = resolution.targetSex;
   }
 
   try {
@@ -171,7 +194,7 @@ export async function POST(req: Request) {
       }
     | null;
 
-  const sex = sanitizeSex(body?.sex ?? null);
+  let sex = sanitizeSex(body?.sex ?? null);
   const action = sanitizeAction(body?.action);
   const targetUserId = String(body?.target_user_id ?? "").trim();
   const targetCardId = String(body?.target_card_id ?? "").trim();
@@ -184,6 +207,14 @@ export async function POST(req: Request) {
   }
 
   const adminClient = createAdminClient();
+
+  if (!isAllowedAdminUser(user.id, user.email)) {
+    const resolution = await resolveDatingViewerSex(adminClient, user);
+    if (resolution.status !== "resolved" || !resolution.targetSex) {
+      return viewerSexFailure(resolution.status);
+    }
+    sex = resolution.targetSex;
+  }
 
   try {
     const limitInfo = await getSwipeLimitInfo(adminClient, user.id);
