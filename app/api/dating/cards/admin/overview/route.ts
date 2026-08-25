@@ -1,4 +1,4 @@
-﻿import { isAllowedAdminUser } from "@/lib/admin";
+import { isAllowedAdminUser } from "@/lib/admin";
 import {
   buildSignedImageUrl,
   extractStorageObjectPathFromBuckets,
@@ -8,8 +8,13 @@ import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
-const PAGE_SIZE = 1000;
-const BACKUP_RETENTION_MS = 14 * 24 * 60 * 60 * 1000;
+const DEFAULT_PAGE_SIZE = 24;
+const MAX_PAGE_SIZE = 50;
+const ACTIVE_STATUSES = ["public", "pending"] as const;
+
+type ActiveCardStatus = (typeof ACTIVE_STATUSES)[number];
+type CardSexFilter = "all" | "male" | "female";
+type CardSort = "public_first" | "pending_first" | "newest" | "oldest";
 
 type DatingCardRow = {
   id: string;
@@ -29,62 +34,29 @@ type DatingCardRow = {
   is_3lift_verified: boolean;
   photo_paths: string[] | null;
   blur_thumb_path: string | null;
-  status: "pending" | "public" | "expired" | "hidden";
+  status: ActiveCardStatus;
   published_at: string | null;
   expires_at: string | null;
   created_at: string;
 };
 
-type DatingCardFallbackRow = {
-  id: string;
-  owner_user_id: string;
-  sex: "male" | "female";
-  age: number | null;
-  region: string | null;
-  height_cm: number | null;
-  job: string | null;
-  training_years: number | null;
-  ideal_type: string | null;
-  total_3lift: number | null;
-  percent_all: number | null;
-  is_3lift_verified: boolean;
-  status: "pending" | "public" | "expired" | "hidden";
-  created_at: string;
-};
-
-type DatingCardApplicationRow = {
-  id: string;
-  card_id: string;
-  applicant_user_id: string;
-  applicant_display_nickname: string | null;
-  age: number | null;
-  height_cm: number | null;
-  region: string | null;
-  job: string | null;
-  training_years: number | null;
-  intro_text: string | null;
-  instagram_id: string | null;
-  photo_paths: string[] | null;
-  status: "submitted" | "accepted" | "rejected" | "canceled";
-  created_at: string;
-  accepted_at?: string | null;
-};
-
-type DatingCardApplicationFallbackRow = {
-  id: string;
-  card_id: string;
-  applicant_user_id: string;
-  age: number | null;
-  height_cm: number | null;
-  region: string | null;
-  job: string | null;
-  training_years: number | null;
-  intro_text: string | null;
-  instagram_id: string | null;
-  photo_urls: string[] | null;
-  status: "submitted" | "accepted" | "rejected" | "canceled";
-  created_at: string;
-};
+type DatingCardFallbackRow = Pick<
+  DatingCardRow,
+  | "id"
+  | "owner_user_id"
+  | "sex"
+  | "age"
+  | "region"
+  | "height_cm"
+  | "job"
+  | "training_years"
+  | "ideal_type"
+  | "total_3lift"
+  | "percent_all"
+  | "is_3lift_verified"
+  | "status"
+  | "created_at"
+>;
 
 type ProfileRow = {
   user_id: string;
@@ -92,57 +64,35 @@ type ProfileRow = {
   is_banned: boolean | null;
 };
 
-async function fetchAllRows<T>(
-  fetchPage: (from: number, to: number) => PromiseLike<{ data: T[] | null; error: unknown }>
-) {
-  const all: T[] = [];
-  let from = 0;
-  while (true) {
-    const to = from + PAGE_SIZE - 1;
-    const page = await fetchPage(from, to);
-    if (page.error) {
-      return { data: null as T[] | null, error: page.error };
-    }
-    const rows = page.data ?? [];
-    all.push(...rows);
-    if (rows.length < PAGE_SIZE) break;
-    from += PAGE_SIZE;
-  }
-  return { data: all, error: null as unknown };
-}
+const FULL_CARD_SELECT =
+  "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, strengths_text, ideal_type, instagram_id, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, status, published_at, expires_at, created_at";
+const FALLBACK_CARD_SELECT =
+  "id, owner_user_id, sex, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, status, created_at";
 
 function getErrorCode(error: unknown) {
   if (!error || typeof error !== "object") return "";
   return String((error as { code?: unknown }).code ?? "");
 }
 
-function backupPathFromApplicationPhoto(raw: unknown): string | null {
-  const path = (extractStorageObjectPathFromBuckets(raw, ["dating-apply-photos", "dating-photos"]) ?? "").trim();
-  const parts = path.split("/").filter(Boolean);
-  if (parts.length !== 4 || parts[0] !== "card-applications") return null;
-
-  const fileName = parts[3];
-  const match = /^(\d{12,})-\d+\.(?:jpe?g|png|webp)$/i.exec(fileName);
-  if (!match) return null;
-
-  const timestamp = Number(match[1]);
-  if (!Number.isFinite(timestamp) || Date.now() - timestamp > BACKUP_RETENTION_MS) return null;
-
-  const backupFileName = fileName.replace(/\.(?:jpe?g|png|webp)$/i, ".webp");
-  return ["admin-application-backups", parts[1], parts[2], backupFileName].join("/");
+function parsePositiveInteger(value: string | null, fallback: number, maximum?: number) {
+  const parsed = Number.parseInt(value ?? "", 10);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  return maximum ? Math.min(parsed, maximum) : parsed;
 }
 
-function adminBackupPhotoUrl(path: string): string {
-  return `/api/admin/dating/cards/application-backup-photo?path=${encodeURIComponent(path)}`;
+function parseSex(value: string | null): CardSexFilter {
+  return value === "male" || value === "female" ? value : "all";
+}
+
+function parseSort(value: string | null): CardSort {
+  return value === "pending_first" || value === "newest" || value === "oldest" ? value : "public_first";
 }
 
 function toLiteCardPhotoPath(raw: unknown): string | null {
   const path = extractStorageObjectPathFromBuckets(raw, ["dating-card-photos", "dating-photos"]);
   if (!path) return null;
 
-  const litePath = path
-    .replace("/raw/", "/lite/")
-    .replace(/\.(?:jpe?g|png|webp)$/i, ".webp");
+  const litePath = path.replace("/raw/", "/lite/").replace(/\.(?:jpe?g|png|webp)$/i, ".webp");
   return litePath.includes("/lite/") ? litePath : null;
 }
 
@@ -160,6 +110,19 @@ function buildAdminCardPreviewUrls(photoPaths: string[] | null): string[] {
   ].slice(0, 2);
 }
 
+function normalizeFallbackRows(rows: DatingCardFallbackRow[]): DatingCardRow[] {
+  return rows.map((card) => ({
+    ...card,
+    display_nickname: null,
+    strengths_text: null,
+    instagram_id: null,
+    photo_paths: [],
+    blur_thumb_path: null,
+    published_at: null,
+    expires_at: null,
+  }));
+}
+
 export async function GET(req: Request) {
   const { user } = await getRequestAuthContext(req);
 
@@ -167,156 +130,119 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
   }
 
+  const url = new URL(req.url);
+  const requestedPage = parsePositiveInteger(url.searchParams.get("page"), 1);
+  const pageSize = parsePositiveInteger(url.searchParams.get("pageSize"), DEFAULT_PAGE_SIZE, MAX_PAGE_SIZE);
+  const sex = parseSex(url.searchParams.get("sex"));
+  const sort = parseSort(url.searchParams.get("sort"));
   const adminClient = createAdminClient();
 
-  let cardsRes = await fetchAllRows<DatingCardRow>((from, to) =>
-    adminClient
-      .from("dating_cards")
-      .select(
-        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, strengths_text, ideal_type, instagram_id, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, status, published_at, expires_at, created_at"
-      )
-      .order("created_at", { ascending: false })
-      .range(from, to)
-  );
+  const countStatus = async (status: ActiveCardStatus) => {
+    let query = adminClient.from("dating_cards").select("id", { count: "exact", head: true }).eq("status", status);
+    if (sex !== "all") query = query.eq("sex", sex);
+    const result = await query;
+    if (result.error) throw result.error;
+    return result.count ?? 0;
+  };
 
-  if (cardsRes.error && getErrorCode(cardsRes.error) === "42703") {
-    const fallbackCardsRes = await fetchAllRows<DatingCardFallbackRow>((from, to) =>
-      adminClient
-        .from("dating_cards")
-        .select(
-          "id, owner_user_id, sex, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, status, created_at"
-        )
-        .order("created_at", { ascending: false })
-        .range(from, to)
-    );
+  const fetchSlice = async (
+    statuses: readonly ActiveCardStatus[],
+    from: number,
+    to: number,
+    ascending: boolean
+  ): Promise<DatingCardRow[]> => {
+    if (to < from) return [];
 
-    cardsRes = {
-      ...fallbackCardsRes,
-      data: (fallbackCardsRes.data ?? []).map((card) => ({
-        ...card,
-        display_nickname: null,
-        strengths_text: null,
-        instagram_id: null,
-        photo_paths: [],
-        blur_thumb_path: null,
-        published_at: null,
-        expires_at: null,
-      })),
+    const runQuery = async (select: string) => {
+      let query = adminClient.from("dating_cards").select(select).in("status", [...statuses]);
+      if (sex !== "all") query = query.eq("sex", sex);
+      return query.order("created_at", { ascending }).range(from, to);
     };
-  }
 
-  let appsRes = await fetchAllRows<DatingCardApplicationRow>((from, to) =>
-    adminClient
-      .from("dating_card_applications")
-      .select(
-        "id, card_id, applicant_user_id, applicant_display_nickname, age, height_cm, region, job, training_years, intro_text, instagram_id, photo_paths, status, created_at, accepted_at"
-      )
-      .order("created_at", { ascending: false })
-      .range(from, to)
-  );
+    const result = await runQuery(FULL_CARD_SELECT);
+    if (!result.error) return (result.data ?? []) as unknown as DatingCardRow[];
+    if (getErrorCode(result.error) !== "42703") throw result.error;
 
-  if (appsRes.error && getErrorCode(appsRes.error) === "42703") {
-    const fallbackAppsRes = await fetchAllRows<DatingCardApplicationRow>((from, to) =>
-      adminClient
-        .from("dating_card_applications")
-        .select(
-          "id, card_id, applicant_user_id, applicant_display_nickname, age, height_cm, region, job, training_years, intro_text, instagram_id, photo_paths, status, created_at"
-        )
-        .order("created_at", { ascending: false })
-        .range(from, to)
-    );
+    const fallback = await runQuery(FALLBACK_CARD_SELECT);
+    if (fallback.error) throw fallback.error;
+    return normalizeFallbackRows((fallback.data ?? []) as unknown as DatingCardFallbackRow[]);
+  };
 
-    if (fallbackAppsRes.error && getErrorCode(fallbackAppsRes.error) === "42703") {
-      const legacyAppsRes = await fetchAllRows<DatingCardApplicationFallbackRow>((from, to) =>
-        adminClient
-          .from("dating_card_applications")
-          .select(
-            "id, card_id, applicant_user_id, age, height_cm, region, job, training_years, intro_text, instagram_id, photo_urls, status, created_at"
-          )
-          .order("created_at", { ascending: false })
-          .range(from, to)
-      );
+  try {
+    const [publicCount, pendingCount] = await Promise.all([countStatus("public"), countStatus("pending")]);
+    const total = publicCount + pendingCount;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+    const page = Math.min(requestedPage, totalPages);
+    const offset = (page - 1) * pageSize;
+    let rows: DatingCardRow[] = [];
 
-      appsRes = {
-        ...legacyAppsRes,
-        data: (legacyAppsRes.data ?? []).map((app) => ({
-          ...app,
-          applicant_display_nickname: null,
-          photo_paths: app.photo_urls ?? [],
-          accepted_at: null,
-        })),
-      };
+    if (sort === "newest" || sort === "oldest") {
+      rows = await fetchSlice(ACTIVE_STATUSES, offset, offset + pageSize - 1, sort === "oldest");
     } else {
-      appsRes = {
-        ...fallbackAppsRes,
-        data: (fallbackAppsRes.data ?? []).map((app) => ({
-          ...app,
-          accepted_at: null,
-        })),
-      };
-    }
-  }
+      const primaryStatus: ActiveCardStatus = sort === "pending_first" ? "pending" : "public";
+      const secondaryStatus: ActiveCardStatus = primaryStatus === "public" ? "pending" : "public";
+      const primaryCount = primaryStatus === "public" ? publicCount : pendingCount;
+      const ascending = sort === "pending_first";
+      let remaining = pageSize;
 
-  if (cardsRes.error || appsRes.error) {
-    console.error("[GET /api/dating/cards/admin/overview] failed", {
-      cardsError: cardsRes.error,
-      appsError: appsRes.error,
-    });
-    return NextResponse.json({ error: "관리자 데이터를 불러오지 못했습니다." }, { status: 500 });
-  }
+      if (offset < primaryCount) {
+        const primaryRows = await fetchSlice(
+          [primaryStatus],
+          offset,
+          Math.min(primaryCount - 1, offset + remaining - 1),
+          ascending
+        );
+        rows.push(...primaryRows);
+        remaining -= primaryRows.length;
+      }
 
-  const userIds = [
-    ...new Set([
-      ...(cardsRes.data ?? []).map((card) => card.owner_user_id),
-      ...(appsRes.data ?? []).map((app) => app.applicant_user_id),
-    ]),
-  ];
-
-  let nickMap: Record<string, string | null> = {};
-  let bannedMap: Record<string, boolean> = {};
-  if (userIds.length > 0) {
-    const profilesRes = await adminClient.from("profiles").select("user_id, nickname, is_banned").in("user_id", userIds);
-    let profileRows: ProfileRow[] = [];
-    if (!profilesRes.error) {
-      profileRows = (profilesRes.data ?? []) as ProfileRow[];
-    } else if (getErrorCode(profilesRes.error) === "42703") {
-      const fallbackProfilesRes = await adminClient.from("profiles").select("user_id, nickname").in("user_id", userIds);
-      if (!fallbackProfilesRes.error) {
-        profileRows = (fallbackProfilesRes.data ?? []).map((profile) => ({ ...profile, is_banned: false })) as ProfileRow[];
+      if (remaining > 0) {
+        const secondaryOffset = Math.max(0, offset - primaryCount);
+        rows.push(...(await fetchSlice([secondaryStatus], secondaryOffset, secondaryOffset + remaining - 1, ascending)));
       }
     }
-    nickMap = Object.fromEntries(profileRows.map((p) => [p.user_id, p.nickname]));
-    bannedMap = Object.fromEntries(profileRows.map((p) => [p.user_id, p.is_banned === true]));
+
+    const userIds = [...new Set(rows.map((card) => card.owner_user_id))];
+    let profileRows: ProfileRow[] = [];
+    if (userIds.length > 0) {
+      const profiles = await adminClient.from("profiles").select("user_id, nickname, is_banned").in("user_id", userIds);
+      if (!profiles.error) {
+        profileRows = (profiles.data ?? []) as ProfileRow[];
+      } else if (getErrorCode(profiles.error) === "42703") {
+        const fallbackProfiles = await adminClient.from("profiles").select("user_id, nickname").in("user_id", userIds);
+        if (!fallbackProfiles.error) {
+          profileRows = (fallbackProfiles.data ?? []).map((profile) => ({ ...profile, is_banned: false })) as ProfileRow[];
+        }
+      }
+    }
+
+    const nickMap = Object.fromEntries(profileRows.map((profile) => [profile.user_id, profile.nickname]));
+    const bannedMap = Object.fromEntries(profileRows.map((profile) => [profile.user_id, profile.is_banned === true]));
+    const cards = rows.map((card) => ({
+      ...card,
+      owner_nickname: nickMap[card.owner_user_id] ?? null,
+      owner_is_banned: bannedMap[card.owner_user_id] === true,
+      admin_preview_urls: card.status === "public" ? buildAdminCardPreviewUrls(card.photo_paths) : [],
+    }));
+
+    return NextResponse.json(
+      {
+        cards,
+        pagination: {
+          page,
+          pageSize,
+          total,
+          totalPages,
+          publicCount,
+          pendingCount,
+          hasPrevious: page > 1,
+          hasNext: page < totalPages,
+        },
+      },
+      { headers: { "Cache-Control": "private, no-store" } }
+    );
+  } catch (error) {
+    console.error("[GET /api/dating/cards/admin/overview] failed", error);
+    return NextResponse.json({ error: "공개·대기 오픈카드를 불러오지 못했습니다." }, { status: 500 });
   }
-
-  const cards = (cardsRes.data ?? []).map((card) => ({
-    ...card,
-    owner_nickname: nickMap[card.owner_user_id] ?? null,
-    owner_is_banned: bannedMap[card.owner_user_id] === true,
-    admin_preview_urls: card.status === "public" ? buildAdminCardPreviewUrls(card.photo_paths) : [],
-  }));
-
-  const cardsById = Object.fromEntries(cards.map((card) => [card.id, card])) as Record<string, (typeof cards)[number]>;
-  const applications = (appsRes.data ?? []).map((app) => {
-    const card = cardsById[app.card_id];
-    const backupPhotoUrls = Array.isArray(app.photo_paths)
-      ? app.photo_paths
-          .map((path) => backupPathFromApplicationPhoto(path))
-          .filter((path): path is string => Boolean(path))
-          .map((path) => adminBackupPhotoUrl(path))
-      : [];
-    return {
-      ...app,
-      admin_backup_photo_urls: backupPhotoUrls,
-      applicant_nickname: nickMap[app.applicant_user_id] ?? null,
-      card_owner_user_id: card?.owner_user_id ?? null,
-      card_owner_nickname: card?.owner_nickname ?? null,
-      card_display_nickname: card?.display_nickname ?? null,
-      card_sex: card?.sex ?? null,
-      card_status: card?.status ?? null,
-    };
-  });
-
-  return NextResponse.json({ cards, applications });
 }
-

@@ -968,6 +968,17 @@ type AdminOpenCard = {
   created_at: string;
 };
 
+type AdminOpenCardPagination = {
+  page: number;
+  pageSize: number;
+  total: number;
+  totalPages: number;
+  publicCount: number;
+  pendingCount: number;
+  hasPrevious: boolean;
+  hasNext: boolean;
+};
+
 type AdminOpenCardEditDraft = {
   display_nickname: string;
   age: string;
@@ -980,55 +991,6 @@ type AdminOpenCardEditDraft = {
   instagram_id: string;
   total_3lift: string;
   percent_all: string;
-};
-
-type AdminOpenCardApplication = {
-  id: string;
-  card_id: string;
-  applicant_user_id: string;
-  applicant_nickname: string | null;
-  applicant_display_nickname: string | null;
-  age: number | null;
-  height_cm: number | null;
-  region: string | null;
-  job: string | null;
-  training_years: number | null;
-  intro_text: string | null;
-  instagram_id: string;
-  photo_paths: string[];
-  admin_backup_photo_urls?: string[];
-  status: "submitted" | "accepted" | "rejected" | "canceled";
-  created_at: string;
-  accepted_at?: string | null;
-  card_owner_user_id?: string | null;
-  card_owner_nickname?: string | null;
-  card_display_nickname?: string | null;
-  card_sex?: "male" | "female" | null;
-  card_status?: "pending" | "public" | "expired" | "hidden" | null;
-};
-
-type AdminPaidCardApplication = {
-  id: string;
-  card_id: string;
-  applicant_user_id: string;
-  applicant_nickname: string | null;
-  applicant_display_nickname: string | null;
-  age: number | null;
-  height_cm: number | null;
-  region: string | null;
-  job: string | null;
-  training_years: number | null;
-  intro_text: string | null;
-  instagram_id: string;
-  photo_paths: string[];
-  status: "submitted" | "accepted" | "rejected" | "canceled";
-  created_at: string;
-  accepted_at?: string | null;
-  card_owner_user_id?: string | null;
-  card_owner_nickname?: string | null;
-  card_nickname?: string | null;
-  card_gender?: "M" | "F" | null;
-  card_status?: "pending" | "approved" | "rejected" | "expired" | null;
 };
 
 type AdminAcceptedRecentApplication = {
@@ -1058,8 +1020,6 @@ type AdminAcceptedRecentApplication = {
 
 type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
 type AdminOpenCardSexFilter = "all" | "male" | "female";
-type AdminApplicationSort = "newest" | "oldest" | "submitted_first" | "accepted_first";
-type AdminDataView = "cards" | "applications";
 type AdminManageTab =
   | "site_dashboard"
   | "payment_center"
@@ -1880,8 +1840,19 @@ export default function MyPage() {
   const [swipeStatusLoading, setSwipeStatusLoading] = useState(false);
   const [swipeStatusView, setSwipeStatusView] = useState<"incoming" | "outgoing">("incoming");
   const [adminOpenCards, setAdminOpenCards] = useState<AdminOpenCard[]>([]);
-  const [adminOpenCardApplications, setAdminOpenCardApplications] = useState<AdminOpenCardApplication[]>([]);
-  const [adminPaidCardApplications, setAdminPaidCardApplications] = useState<AdminPaidCardApplication[]>([]);
+  const [adminOpenCardPage, setAdminOpenCardPage] = useState(1);
+  const [adminOpenCardPagination, setAdminOpenCardPagination] = useState<AdminOpenCardPagination>({
+    page: 1,
+    pageSize: 24,
+    total: 0,
+    totalPages: 1,
+    publicCount: 0,
+    pendingCount: 0,
+    hasPrevious: false,
+    hasNext: false,
+  });
+  const [adminOpenCardsError, setAdminOpenCardsError] = useState("");
+  const adminOpenCardsAbortRef = useRef<AbortController | null>(null);
   const [adminAcceptedRecentApplications, setAdminAcceptedRecentApplications] = useState<AdminAcceptedRecentApplication[]>([]);
   const [adminAcceptedRecentFallback, setAdminAcceptedRecentFallback] = useState(false);
   const [adminAcceptedRecentLoaded, setAdminAcceptedRecentLoaded] = useState(false);
@@ -1928,8 +1899,6 @@ export default function MyPage() {
   const [adminOpenCardActionKey, setAdminOpenCardActionKey] = useState("");
   const [adminCardSort, setAdminCardSort] = useState<AdminCardSort>("public_first");
   const [adminOpenCardSexFilter, setAdminOpenCardSexFilter] = useState<AdminOpenCardSexFilter>("all");
-  const [adminApplicationSort, setAdminApplicationSort] = useState<AdminApplicationSort>("newest");
-  const [adminDataView, setAdminDataView] = useState<AdminDataView>("cards");
   const [adminManageTab, setAdminManageTab] = useState<AdminManageTab>("site_dashboard");
   const [adminReelsDatingListings, setAdminReelsDatingListings] = useState<AdminReelsDatingListing[]>([]);
   const [adminReelsDatingApplications, setAdminReelsDatingApplications] = useState<AdminReelsDatingApplication[]>([]);
@@ -2477,46 +2446,53 @@ export default function MyPage() {
       async (showLoading = true) => {
         if (!isAdmin) return;
 
+        adminOpenCardsAbortRef.current?.abort();
+        const controller = new AbortController();
+        adminOpenCardsAbortRef.current = controller;
+
         if (showLoading) {
           setAdminOpenCardsLoading(true);
         }
+        setAdminOpenCardsError("");
 
         try {
-          const [overviewRes, paidAppsRes] = await Promise.all([
-            fetch("/api/dating/cards/admin/overview", { cache: "no-store" }),
-            fetch("/api/admin/dating/paid/applications", { cache: "no-store" }),
-          ]);
+          const params = new URLSearchParams({
+            page: String(adminOpenCardPage),
+            pageSize: "24",
+            sex: adminOpenCardSexFilter,
+            sort: adminCardSort,
+          });
+          const response = await fetch(`/api/dating/cards/admin/overview?${params.toString()}`, {
+            cache: "no-store",
+            signal: controller.signal,
+          });
+          const body = (await response.json().catch(() => ({}))) as {
+            cards?: AdminOpenCard[];
+            pagination?: AdminOpenCardPagination;
+            error?: string;
+          };
 
-          const [overviewBody, paidAppsBody] = await Promise.all([
-            overviewRes.json().catch(() => ({})),
-            paidAppsRes.json().catch(() => ({})),
-          ]);
-
-          if (overviewRes.ok) {
-            const body = overviewBody as { cards?: AdminOpenCard[]; applications?: AdminOpenCardApplication[] };
-            setAdminOpenCards(body.cards ?? []);
-            setAdminOpenCardApplications(body.applications ?? []);
-          } else {
-            console.error("[mypage] admin overview refresh failed", overviewBody);
+          if (!response.ok || !body.pagination) {
+            throw new Error(body.error ?? "공개·대기 오픈카드를 불러오지 못했습니다.");
           }
 
-          if (paidAppsRes.ok) {
-            const body = paidAppsBody as { items?: AdminPaidCardApplication[] };
-            setAdminPaidCardApplications(body.items ?? []);
-          } else {
-            console.error("[mypage] paid applications refresh failed", paidAppsBody);
-          }
+          setAdminOpenCards(body.cards ?? []);
+          setAdminOpenCardPagination(body.pagination);
+          setAdminOpenCardPage(body.pagination.page);
 
           setAdminOpenCardsLoaded(true);
         } catch (error) {
+          if (error instanceof DOMException && error.name === "AbortError") return;
           console.error("[mypage] admin open card data refresh failed", error);
+          setAdminOpenCardsError(error instanceof Error ? error.message : "공개·대기 오픈카드를 불러오지 못했습니다.");
+          setAdminOpenCardsLoaded(true);
         } finally {
-          if (showLoading) {
+          if (adminOpenCardsAbortRef.current === controller) {
             setAdminOpenCardsLoading(false);
           }
         }
       },
-    [isAdmin]
+    [adminCardSort, adminOpenCardPage, adminOpenCardSexFilter, isAdmin]
   );
 
   const refreshAdminAcceptedRecentApplications = useMemo(
@@ -3649,12 +3625,14 @@ export default function MyPage() {
   }, [myReelsDatingAccess, myReelsDatingAccessLoaded, pageSectionTab, reelsAccessNow]);
 
   useEffect(() => {
-    if (!isAdmin || pageSectionTab !== "admin" || adminManageTab !== "open_cards" || adminOpenCardsLoaded || adminOpenCardsLoading) {
+    if (!isAdmin || pageSectionTab !== "admin" || adminManageTab !== "open_cards" || adminOpenCardsLoaded) {
       return;
     }
 
     void refreshAdminOpenCardData(true);
-  }, [adminManageTab, adminOpenCardsLoaded, adminOpenCardsLoading, isAdmin, pageSectionTab, refreshAdminOpenCardData]);
+  }, [adminManageTab, adminOpenCardsLoaded, isAdmin, pageSectionTab, refreshAdminOpenCardData]);
+
+  useEffect(() => () => adminOpenCardsAbortRef.current?.abort(), []);
 
   useEffect(() => {
     if (!isAdmin || pageSectionTab !== "admin" || adminManageTab !== "reels_dating" || adminReelsDatingLoaded || adminReelsDatingLoading) {
@@ -5342,7 +5320,6 @@ export default function MyPage() {
         return;
       }
       setAdminOpenCards((prev) => prev.filter((item) => item.id !== card.id));
-      setAdminOpenCardApplications((prev) => prev.filter((app) => app.card_id !== card.id));
       if (editingAdminOpenCardId === card.id) {
         setEditingAdminOpenCardId(null);
         setAdminOpenCardDraft(null);
@@ -7576,81 +7553,7 @@ export default function MyPage() {
       },
     },
   ];
-  const statusRankPublicFirst: Record<AdminOpenCard["status"], number> = {
-    public: 0,
-    pending: 1,
-    hidden: 2,
-    expired: 3,
-  };
-  const statusRankPendingFirst: Record<AdminOpenCard["status"], number> = {
-    pending: 0,
-    public: 1,
-    hidden: 2,
-    expired: 3,
-  };
-  const filteredAdminOpenCards = adminOpenCards.filter(
-    (card) => adminOpenCardSexFilter === "all" || card.sex === adminOpenCardSexFilter
-  );
-  const sortedAdminOpenCards = [...filteredAdminOpenCards].sort((a, b) => {
-    if (adminCardSort === "newest") {
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    }
-    if (adminCardSort === "oldest") {
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-    }
-    if (adminCardSort === "public_first") {
-      const diff = statusRankPublicFirst[a.status] - statusRankPublicFirst[b.status];
-      if (diff !== 0) return diff;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    }
-    const diff = statusRankPendingFirst[a.status] - statusRankPendingFirst[b.status];
-    if (diff !== 0) return diff;
-    return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-  });
-  const appStatusRankSubmittedFirst: Record<AdminOpenCardApplication["status"], number> = {
-    submitted: 0,
-    accepted: 1,
-    rejected: 2,
-    canceled: 3,
-  };
-  const appStatusRankAcceptedFirst: Record<AdminOpenCardApplication["status"], number> = {
-    accepted: 0,
-    submitted: 1,
-    rejected: 2,
-    canceled: 3,
-  };
-  const sortedAdminOpenCardApplications = [...adminOpenCardApplications].sort((a, b) => {
-    if (adminApplicationSort === "newest") {
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    }
-    if (adminApplicationSort === "oldest") {
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-    }
-    if (adminApplicationSort === "submitted_first") {
-      const diff = appStatusRankSubmittedFirst[a.status] - appStatusRankSubmittedFirst[b.status];
-      if (diff !== 0) return diff;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    }
-    const diff = appStatusRankAcceptedFirst[a.status] - appStatusRankAcceptedFirst[b.status];
-    if (diff !== 0) return diff;
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-  });
-  const sortedAdminPaidCardApplications = [...adminPaidCardApplications].sort((a, b) => {
-    if (adminApplicationSort === "newest") {
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    }
-    if (adminApplicationSort === "oldest") {
-      return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
-    }
-    if (adminApplicationSort === "submitted_first") {
-      const diff = appStatusRankSubmittedFirst[a.status] - appStatusRankSubmittedFirst[b.status];
-      if (diff !== 0) return diff;
-      return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-    }
-    const diff = appStatusRankAcceptedFirst[a.status] - appStatusRankAcceptedFirst[b.status];
-    if (diff !== 0) return diff;
-    return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
-  });
+  const sortedAdminOpenCards = adminOpenCards;
 
   const activeMyReelsDatingAccess = myReelsDatingAccess.filter(
     (item) => new Date(item.access_expires_at).getTime() > reelsAccessNow
@@ -15216,85 +15119,64 @@ export default function MyPage() {
           <div className="space-y-3">
             {!adminOpenCardsLoaded ? (
               <div className="rounded-xl border border-violet-200 bg-white p-4 text-sm text-neutral-600">
-                오픈카드 탭을 열 때만 전체 카드와 지원 내역을 불러오도록 바꿨습니다. 잠시만 기다려 주세요.
+                현재 공개·대기 카드만 페이지 단위로 불러오고 있습니다. 잠시만 기다려 주세요.
+              </div>
+            ) : null}
+            {adminOpenCardsError ? (
+              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-700">
+                {adminOpenCardsError}
               </div>
             ) : null}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <h3 className="text-sm font-semibold text-violet-800">
-                카드 {filteredAdminOpenCards.length}건
-                {adminOpenCardSexFilter === "all" ? "" : ` / 전체 ${adminOpenCards.length}건`} / 오픈카드 지원 {adminOpenCardApplications.length}건 / 36시간 지원 {adminPaidCardApplications.length}건
+                공개·대기 {adminOpenCardPagination.total}건 · 현재 {adminOpenCards.length}건
+                {adminOpenCardSexFilter === "all"
+                  ? ` (공개 ${adminOpenCardPagination.publicCount} · 대기 ${adminOpenCardPagination.pendingCount})`
+                  : ""}
               </h3>
-              <div className="flex items-center gap-2">
-                <div className="inline-flex rounded-md border border-violet-200 bg-white p-0.5">
-                  <button
-                    type="button"
-                    onClick={() => setAdminDataView("cards")}
-                    className={`h-7 rounded px-2 text-xs ${
-                      adminDataView === "cards" ? "bg-violet-600 text-white" : "text-violet-800"
-                    }`}
-                  >
-                    카드 보기
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setAdminDataView("applications")}
-                    className={`h-7 rounded px-2 text-xs ${
-                      adminDataView === "applications" ? "bg-violet-600 text-white" : "text-violet-800"
-                    }`}
-                  >
-                    지원이력 보기
-                  </button>
-                </div>
-                {adminDataView === "cards" ? (
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="inline-flex rounded-md border border-violet-200 bg-white p-0.5" aria-label="오픈카드 성별 선택">
-                      {([
-                        ["all", "전체"],
-                        ["male", "남성"],
-                        ["female", "여성"],
-                      ] as const).map(([value, label]) => (
-                        <button
-                          key={value}
-                          type="button"
-                          onClick={() => setAdminOpenCardSexFilter(value)}
-                          className={`h-7 rounded px-2.5 text-xs font-semibold ${
-                            adminOpenCardSexFilter === value ? "bg-violet-600 text-white" : "text-violet-800"
-                          }`}
-                        >
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                    <select
-                      value={adminCardSort}
-                      onChange={(e) => setAdminCardSort(e.target.value as AdminCardSort)}
-                      className="h-8 rounded-md border border-violet-200 bg-white px-2 text-xs text-violet-800"
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="inline-flex rounded-md border border-violet-200 bg-white p-0.5" aria-label="오픈카드 성별 선택">
+                  {([
+                    ["all", "전체"],
+                    ["male", "남성"],
+                    ["female", "여성"],
+                  ] as const).map(([value, label]) => (
+                    <button
+                      key={value}
+                      type="button"
+                      onClick={() => {
+                        setAdminOpenCardSexFilter(value);
+                        setAdminOpenCardPage(1);
+                        setAdminOpenCardsLoaded(false);
+                      }}
+                      className={`h-7 rounded px-2.5 text-xs font-semibold ${
+                        adminOpenCardSexFilter === value ? "bg-violet-600 text-white" : "text-violet-800"
+                      }`}
                     >
-                      <option value="public_first">카드: 공개중 우선</option>
-                      <option value="pending_first">카드: 대기 우선</option>
-                      <option value="newest">카드: 최신순</option>
-                      <option value="oldest">카드: 오래된순</option>
-                    </select>
-                  </div>
-                ) : (
-                  <select
-                    value={adminApplicationSort}
-                    onChange={(e) => setAdminApplicationSort(e.target.value as AdminApplicationSort)}
-                    className="h-8 rounded-md border border-violet-200 bg-white px-2 text-xs text-violet-800"
-                  >
-                    <option value="newest">지원이력: 최신순</option>
-                    <option value="oldest">지원이력: 오래된순</option>
-                    <option value="submitted_first">지원이력: 대기 우선</option>
-                    <option value="accepted_first">지원이력: 수락 우선</option>
-                  </select>
-                )}
+                      {label}
+                    </button>
+                  ))}
+                </div>
+                <select
+                  value={adminCardSort}
+                  onChange={(event) => {
+                    setAdminCardSort(event.target.value as AdminCardSort);
+                    setAdminOpenCardPage(1);
+                    setAdminOpenCardsLoaded(false);
+                  }}
+                  className="h-8 rounded-md border border-violet-200 bg-white px-2 text-xs text-violet-800"
+                >
+                  <option value="public_first">카드: 공개중 우선</option>
+                  <option value="pending_first">카드: 대기 우선</option>
+                  <option value="newest">카드: 최신순</option>
+                  <option value="oldest">카드: 오래된순</option>
+                </select>
               </div>
             </div>
 
-            {adminDataView === "cards" ? (
-              filteredAdminOpenCards.length === 0 ? (
-                <p className="text-sm text-neutral-600">선택한 성별의 오픈카드가 없습니다.</p>
-              ) : (
+            {adminOpenCards.length === 0 ? (
+              <p className="text-sm text-neutral-600">선택한 조건의 공개·대기 오픈카드가 없습니다.</p>
+            ) : (
                 <div className="space-y-2">
                   {sortedAdminOpenCards.map((card) => (
                     <div key={card.id} className="rounded-xl border border-violet-200 bg-white p-3">
@@ -15579,113 +15461,36 @@ export default function MyPage() {
                     </div>
                   ))}
                 </div>
-              )
-            ) : adminOpenCardApplications.length === 0 && adminPaidCardApplications.length === 0 ? (
-              <p className="text-sm text-neutral-600">등록된 지원 이력이 없습니다.</p>
-            ) : (
-              <div className="space-y-2">
-                {adminOpenCardApplications.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-violet-700">오픈카드 지원 이력</p>
-                    {sortedAdminOpenCardApplications.map((app) => (
-                      <div key={app.id} className="rounded-xl border border-violet-200 bg-white p-3">
-                        <p className="text-sm font-semibold text-neutral-900">
-                          지원서 {app.id.slice(0, 8)}... / 카드 {app.card_id.slice(0, 8)}... / 상태 {app.status}
-                        </p>
-                        <p className="mt-1 text-[11px] text-neutral-500">
-                          지원: {new Date(app.created_at).toLocaleString("ko-KR")}
-                          {app.accepted_at ? ` · 수락: ${new Date(app.accepted_at).toLocaleString("ko-KR")}` : ""}
-                        </p>
-                        <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
-                          <span>지원자: {app.applicant_nickname ?? app.applicant_user_id.slice(0, 8)}</span>
-                          {app.card_owner_nickname && <span>카드 작성자 {app.card_owner_nickname}</span>}
-                          {app.card_display_nickname && <span>카드 닉네임 {app.card_display_nickname}</span>}
-                          {app.card_sex && <span>카드 성별: {app.card_sex === "male" ? "남자" : "여자"}</span>}
-                          {app.card_status && <span>카드 상태: {app.card_status}</span>}
-                          {app.applicant_display_nickname && <span>표시 닉네임: {app.applicant_display_nickname}</span>}
-                          {app.age != null && <span>나이 {app.age}</span>}
-                          {app.height_cm != null && <span>키 {app.height_cm}cm</span>}
-                          {app.region && <span>지역 {app.region}</span>}
-                          {app.job && <span>직업 {app.job}</span>}
-                          {app.training_years != null && <span>운동 {app.training_years}년</span>}
-                        </div>
-                        <p className="mt-1 text-xs font-medium text-violet-700">인스타: @{app.instagram_id}</p>
-                        {app.intro_text && (
-                          <p className="mt-1 text-xs text-neutral-700 whitespace-pre-wrap break-words">
-                            자기소개: {app.intro_text}
-                          </p>
-                        )}
-                        {Array.isArray(app.admin_backup_photo_urls) && app.admin_backup_photo_urls.length > 0 && (
-                          <div className="mt-2 grid grid-cols-2 gap-2 sm:max-w-sm">
-                            {app.admin_backup_photo_urls.map((url, idx) => (
-                              <a
-                                key={`${app.id}-admin-backup-photo-${idx}`}
-                                href={url}
-                                target="_blank"
-                                rel="noreferrer"
-                                className="block overflow-hidden rounded-md border border-violet-200 bg-violet-50"
-                              >
-                                {/* eslint-disable-next-line @next/next/no-img-element */}
-                                <img
-                                  src={url}
-                                  alt={`관리자 백업 사진 ${idx + 1}`}
-                                  loading="lazy"
-                                  decoding="async"
-                                  className="h-28 w-full object-cover"
-                                />
-                              </a>
-                            ))}
-                          </div>
-                        )}
-                        <p className="mt-1 text-xs text-neutral-500 break-all">
-                          사진 경로: {Array.isArray(app.photo_paths) ? app.photo_paths.join(", ") : "-"}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                {adminPaidCardApplications.length > 0 && (
-                  <div className="space-y-2">
-                    <p className="text-xs font-semibold text-rose-700">36시간 카드 지원 이력</p>
-                    {sortedAdminPaidCardApplications.map((app) => (
-                      <div key={app.id} className="rounded-xl border border-rose-200 bg-rose-50/30 p-3">
-                        <p className="text-sm font-semibold text-neutral-900">
-                          지원서 {app.id.slice(0, 8)}... / 36시간 카드 {app.card_id.slice(0, 8)}... / 상태 {app.status}
-                        </p>
-                        <p className="mt-1 text-[11px] text-neutral-500">
-                          지원: {new Date(app.created_at).toLocaleString("ko-KR")}
-                          {app.accepted_at ? ` · 수락: ${new Date(app.accepted_at).toLocaleString("ko-KR")}` : ""}
-                        </p>
-                        <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
-                          <span>지원자: {app.applicant_nickname ?? app.applicant_user_id.slice(0, 8)}</span>
-                          {app.card_owner_nickname && <span>카드 작성자 {app.card_owner_nickname}</span>}
-                          {app.card_nickname && <span>카드 닉네임 {app.card_nickname}</span>}
-                          {app.card_gender && <span>카드 성별: {app.card_gender === "M" ? "남자" : "여자"}</span>}
-                          {app.card_status && <span>카드 상태: {app.card_status}</span>}
-                          {app.applicant_display_nickname && <span>표시 닉네임: {app.applicant_display_nickname}</span>}
-                          {app.age != null && <span>나이 {app.age}</span>}
-                          {app.height_cm != null && <span>키 {app.height_cm}cm</span>}
-                          {app.region && <span>지역 {app.region}</span>}
-                          {app.job && <span>직업 {app.job}</span>}
-                          {app.training_years != null && <span>운동 {app.training_years}년</span>}
-                        </div>
-                        <p className="mt-1 text-xs font-medium text-rose-700">
-                          인스타: {app.instagram_id ? `@${app.instagram_id}` : "-"}
-                        </p>
-                        {app.intro_text && (
-                          <p className="mt-1 text-xs text-neutral-700 whitespace-pre-wrap break-words">
-                            자기소개: {app.intro_text}
-                          </p>
-                        )}
-                        <p className="mt-1 text-xs text-neutral-500 break-all">
-                          사진 경로: {Array.isArray(app.photo_paths) ? app.photo_paths.join(", ") : "-"}
-                        </p>
-                      </div>
-                    ))}
-                  </div>
-                )}
+              )}
+            {adminOpenCardPagination.totalPages > 1 ? (
+              <div className="flex items-center justify-center gap-3 pt-2">
+                <button
+                  type="button"
+                  disabled={!adminOpenCardPagination.hasPrevious || adminOpenCardsLoading}
+                  onClick={() => {
+                    setAdminOpenCardPage((page) => Math.max(1, page - 1));
+                    setAdminOpenCardsLoaded(false);
+                  }}
+                  className="h-9 rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  이전
+                </button>
+                <span className="text-xs font-medium text-neutral-600">
+                  {adminOpenCardPagination.page} / {adminOpenCardPagination.totalPages} 페이지
+                </span>
+                <button
+                  type="button"
+                  disabled={!adminOpenCardPagination.hasNext || adminOpenCardsLoading}
+                  onClick={() => {
+                    setAdminOpenCardPage((page) => Math.min(adminOpenCardPagination.totalPages, page + 1));
+                    setAdminOpenCardsLoaded(false);
+                  }}
+                  className="h-9 rounded-md border border-violet-200 bg-white px-3 text-xs font-semibold text-violet-800 disabled:cursor-not-allowed disabled:opacity-40"
+                >
+                  다음
+                </button>
               </div>
-            )}
+            ) : null}
           </div>
           )}
         </section>
