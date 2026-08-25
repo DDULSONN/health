@@ -1854,8 +1854,6 @@ export default function MyPage() {
   const [loading, setLoading] = useState(true);
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [accountBanStatus, setAccountBanStatus] = useState<AccountBanStatus | null>(null);
-  const [accountUnbanSubmitting, setAccountUnbanSubmitting] = useState(false);
-  const [accountUnbanError, setAccountUnbanError] = useState("");
   const [certRequests, setCertRequests] = useState<MyCertRequest[]>([]);
   const [datingApplication, setDatingApplication] = useState<DatingApplicationStatus | null>(null);
   const [myDatingCards, setMyDatingCards] = useState<MyDatingCard[]>([]);
@@ -3885,38 +3883,6 @@ export default function MyPage() {
     await supabase.auth.signOut();
     router.push("/");
     router.refresh();
-  };
-
-  const handlePurchaseAccountUnban = async () => {
-    if (accountUnbanSubmitting) return;
-    setAccountUnbanSubmitting(true);
-    setAccountUnbanError("");
-
-    try {
-      const res = await fetch("/api/payments/toss/create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productType: "account_unban" }),
-      });
-      const body = (await res.json().catch(() => ({}))) as {
-        ok?: boolean;
-        error?: string;
-        message?: string;
-        checkoutUrl?: string;
-      };
-      if (!res.ok || body.ok === false) {
-        throw new Error(body.message ?? body.error ?? "이용 제한 해제 결제를 시작하지 못했습니다.");
-      }
-      if (!body.checkoutUrl) {
-        throw new Error("결제창을 열지 못했습니다.");
-      }
-      window.location.href = body.checkoutUrl;
-    } catch (purchaseError) {
-      setAccountUnbanError(
-        purchaseError instanceof Error ? purchaseError.message : "이용 제한 해제 결제를 시작하지 못했습니다."
-      );
-      setAccountUnbanSubmitting(false);
-    }
   };
 
   const normalizePhoneForOtp = (raw: string): string => {
@@ -7261,59 +7227,20 @@ export default function MyPage() {
   }
 
   if (accountBanStatus?.is_banned) {
-    const bannedAtText = accountBanStatus.banned_at
-      ? new Date(accountBanStatus.banned_at).toLocaleString("ko-KR")
-      : null;
     return (
       <main className="mx-auto flex min-h-[calc(100dvh-80px)] max-w-2xl items-center px-4 py-10">
-        <section className="w-full overflow-hidden rounded-2xl border border-red-200 bg-white shadow-[0_20px_60px_rgba(127,29,29,0.12)]">
-          <div className="border-b border-red-100 bg-red-50 px-5 py-6 sm:px-7">
-            <p className="text-xs font-bold text-red-600">계정 이용 제한</p>
-            <h1 className="mt-2 text-2xl font-bold text-neutral-950">계정 이용이 정지되었습니다.</h1>
-            <p className="mt-2 text-sm leading-6 text-neutral-600">
-              아래 사유로 현재 짐툴의 매칭 및 지원 기능을 이용할 수 없습니다.
-            </p>
-          </div>
-
-          <div className="px-5 py-6 sm:px-7">
-            <div className="rounded-xl border border-red-100 bg-[#fffafa] px-4 py-4">
-              <p className="text-xs font-semibold text-neutral-500">정지 사유</p>
-              <p className="mt-2 break-words text-base font-bold leading-7 text-red-800">
-                {accountBanStatus.banned_reason?.trim() || "운영정책 위반"}
-              </p>
-              {bannedAtText ? <p className="mt-2 text-xs text-neutral-400">정지 일시 {bannedAtText}</p> : null}
-            </div>
-
-            <div className="mt-5 flex items-end justify-between gap-4">
-              <div>
-                <p className="text-sm font-bold text-neutral-950">이용 제한 해제</p>
-                <p className="mt-1 text-xs leading-5 text-neutral-500">결제가 완료되면 계정 정지가 자동으로 해제됩니다.</p>
-              </div>
-              <p className="shrink-0 text-xl font-bold text-neutral-950">20,000원</p>
-            </div>
-
-            <button
-              type="button"
-              onClick={() => void handlePurchaseAccountUnban()}
-              disabled={accountUnbanSubmitting}
-              className="mt-4 min-h-[52px] w-full rounded-xl bg-neutral-950 px-4 text-sm font-bold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:opacity-60"
-            >
-              {accountUnbanSubmitting ? "결제창 여는 중..." : "2만원 결제하고 정지 해제"}
-            </button>
-            {accountUnbanError ? <p className="mt-3 text-sm font-medium text-red-600">{accountUnbanError}</p> : null}
-
-            <p className="mt-4 text-[11px] leading-5 text-neutral-400">
-              정지 과정에서 내려간 오픈카드·빠른매칭·1:1 프로필은 결제 후 자동으로 다시 공개되지 않습니다.
-            </p>
-            <button
-              type="button"
-              onClick={() => void handleLogout()}
-              disabled={loggingOut}
-              className="mt-5 min-h-[44px] w-full border-t border-neutral-100 pt-4 text-xs font-semibold text-neutral-500"
-            >
-              {loggingOut ? "로그아웃 중..." : "다른 계정으로 로그인"}
-            </button>
-          </div>
+        <section className="w-full rounded-2xl border border-red-200 bg-white px-6 py-10 text-center shadow-[0_20px_60px_rgba(127,29,29,0.12)] sm:px-8">
+          <p className="text-xs font-bold text-red-600">계정 이용 제한</p>
+          <h1 className="mt-3 text-2xl font-bold text-neutral-950">계정이 밴 처리되었습니다.</h1>
+          <p className="mt-3 text-sm leading-6 text-neutral-600">
+            계정 관련 문의가 필요한 경우 아래 이메일로 연락해주세요.
+          </p>
+          <a
+            href="mailto:gymtools.kr@gmail.com?subject=%EC%A7%90%ED%88%B4%20%EA%B3%84%EC%A0%95%20%EB%B0%B4%20%EB%AC%B8%EC%9D%98"
+            className="mt-6 inline-flex min-h-[52px] w-full items-center justify-center rounded-xl bg-neutral-950 px-5 text-sm font-bold text-white transition hover:bg-neutral-800"
+          >
+            이메일 보내기
+          </a>
         </section>
       </main>
     );

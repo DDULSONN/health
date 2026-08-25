@@ -43,8 +43,7 @@ type ProductType =
   | "one_on_one_plus_30d"
   | "swipe_premium_30d"
   | "dating_all_pass_30d"
-  | "love_fortune_detail"
-  | "account_unban";
+  | "love_fortune_detail";
 
 type CreateBody = {
   productType?: unknown;
@@ -134,10 +133,6 @@ const PRODUCT_CONFIG: Record<ProductType, { amount: number; orderName: string }>
     amount: 9900,
     orderName: "연애운 상세 분석",
   },
-  account_unban: {
-    amount: 20000,
-    orderName: "계정 이용 제한 해제",
-  },
 };
 
 const OPEN_CARD_REOPEN_AMOUNT_KRW = 5000;
@@ -162,8 +157,7 @@ function parseProductType(raw: unknown): ProductType | "" {
     raw === "one_on_one_plus_30d" ||
     raw === "swipe_premium_30d" ||
     raw === "dating_all_pass_30d" ||
-    raw === "love_fortune_detail" ||
-    raw === "account_unban"
+    raw === "love_fortune_detail"
   ) {
     return raw;
   }
@@ -329,56 +323,6 @@ export async function POST(req: Request) {
     const admin = createAdminClient();
     let productRefId: string | null = null;
     let productMeta: Record<string, unknown> = {};
-
-    if (productType === "account_unban") {
-      const profileRes = await admin
-        .from("profiles")
-        .select("is_banned,banned_reason,banned_at")
-        .eq("user_id", user.id)
-        .maybeSingle();
-
-      if (profileRes.error) {
-        console.error("[toss-create] account ban lookup failed", profileRes.error);
-        return json(500, {
-          ok: false,
-          code: "ACCOUNT_STATUS_LOOKUP_FAILED",
-          requestId,
-          message: "계정 정지 상태를 확인하지 못했습니다.",
-        });
-      }
-
-      if (profileRes.data?.is_banned !== true) {
-        return json(409, {
-          ok: false,
-          code: "ACCOUNT_NOT_BANNED",
-          requestId,
-          message: "현재 이용이 정지된 계정이 아닙니다.",
-        });
-      }
-
-      productMeta = {
-        bannedReason: profileRes.data.banned_reason ?? null,
-        bannedAt: profileRes.data.banned_at ?? null,
-        unbanFeeKrw: config.amount,
-      };
-
-      const cancelReadyRes = await admin
-        .from("toss_test_payment_orders")
-        .update({ status: "canceled", updated_at: new Date().toISOString() })
-        .eq("user_id", user.id)
-        .eq("product_type", "account_unban")
-        .eq("status", "ready");
-
-      if (cancelReadyRes.error) {
-        console.error("[toss-create] stale account unban order cancel failed", cancelReadyRes.error);
-        return json(500, {
-          ok: false,
-          code: "CREATE_ORDER_FAILED",
-          requestId,
-          message: "기존 정지 해제 주문을 정리하지 못했습니다.",
-        });
-      }
-    }
 
     if (productType === "apply_credits") {
       const applyOrderRes = await admin
@@ -1254,8 +1198,7 @@ export async function POST(req: Request) {
       productType === "one_on_one_plus_30d" ||
       productType === "swipe_premium_30d" ||
       productType === "dating_all_pass_30d" ||
-      productType === "love_fortune_detail" ||
-      productType === "account_unban"
+      productType === "love_fortune_detail"
         ? getTossCheckoutOptions()
         : {}),
     });

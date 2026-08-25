@@ -781,47 +781,6 @@ async function ensureOrderFulfilled(
     await ensureSwipePremiumFulfilled(admin, order);
   }
 
-  if (order.product_type === "account_unban") {
-    const profileRes = await admin
-      .from("profiles")
-      .select("is_banned")
-      .eq("user_id", order.user_id)
-      .maybeSingle();
-
-    if (profileRes.error || !profileRes.data) {
-      throw profileRes.error ?? new Error("ACCOUNT_PROFILE_MISSING");
-    }
-
-    if (profileRes.data.is_banned === true) {
-      const unbanRes = await admin
-        .from("profiles")
-        .update({
-          is_banned: false,
-          banned_reason: null,
-          banned_at: null,
-        })
-        .eq("user_id", order.user_id)
-        .eq("is_banned", true)
-        .select("user_id")
-        .maybeSingle();
-
-      if (unbanRes.error) {
-        throw unbanRes.error;
-      }
-
-      if (!unbanRes.data?.user_id) {
-        const confirmedRes = await admin
-          .from("profiles")
-          .select("is_banned")
-          .eq("user_id", order.user_id)
-          .maybeSingle();
-        if (confirmedRes.error || confirmedRes.data?.is_banned === true) {
-          throw confirmedRes.error ?? new Error("ACCOUNT_UNBAN_FAILED");
-        }
-      }
-    }
-  }
-
   if (order.product_type === "love_fortune_detail") {
     if (!order.product_ref_id) {
       throw new Error("LOVE_FORTUNE_READING_MISSING");
@@ -920,6 +879,15 @@ export async function POST(req: Request) {
 
     const order = orderRes.data as TossOrderRow;
 
+    if (order.product_type === "account_unban") {
+      return json(410, {
+        ok: false,
+        code: "ACCOUNT_UNBAN_DISABLED",
+        requestId,
+        message: "계정 밴 해제 결제는 더 이상 제공하지 않습니다. 운영팀 이메일로 문의해주세요.",
+      });
+    }
+
     if (order.amount !== amount) {
       return json(400, {
         ok: false,
@@ -952,25 +920,6 @@ export async function POST(req: Request) {
         requestId,
         message: "더 이상 결제할 수 없는 주문입니다. 마이페이지에서 다시 시도해주세요.",
       });
-    }
-
-    if (order.product_type === "account_unban") {
-      const profileRes = await admin
-        .from("profiles")
-        .select("is_banned")
-        .eq("user_id", user.id)
-        .maybeSingle();
-      if (profileRes.error) {
-        throw profileRes.error;
-      }
-      if (profileRes.data?.is_banned !== true) {
-        return json(409, {
-          ok: false,
-          code: "ACCOUNT_ALREADY_ACTIVE",
-          requestId,
-          message: "이미 이용 제한이 해제된 계정입니다.",
-        });
-      }
     }
 
     const payment = await confirmOrRecoverTossPayment({ paymentKey, orderId, amount });
