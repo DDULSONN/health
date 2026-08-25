@@ -20,7 +20,6 @@ type CardDraft = {
   ideal: string;
   intro: string;
   instagramId: string;
-  phone: string;
   total3Lift: string;
   percentAll: string;
   smoking: string;
@@ -54,7 +53,6 @@ function makeDraft(kind: CardKind, item: CardRecord): CardDraft {
     ideal: value(item, kind === "open" ? "ideal_type" : "preferred_partner_text"),
     intro: value(item, "intro_text"),
     instagramId: value(item, "instagram_id"),
-    phone: value(item, "phone"),
     total3Lift: value(item, "total_3lift"),
     percentAll: value(item, "percent_all"),
     smoking: value(item, "smoking") || "non_smoker",
@@ -177,7 +175,6 @@ export default function AdminUserDatingCardsPanel({
             height_cm: draft.heightCm,
             job: draft.job,
             region: draft.region,
-            phone: draft.phone,
             intro_text: draft.intro,
             strengths_text: draft.strengths,
             preferred_partner_text: draft.ideal,
@@ -429,7 +426,9 @@ export default function AdminUserDatingCardsPanel({
                 </>
               ) : (
                 <>
-                  <Field label="연락처" value={draft.phone} onChange={(next) => updateDraft("phone", next)} />
+                  <p className="rounded-lg border border-neutral-200 bg-neutral-100 px-3 py-2 text-[11px] leading-5 text-neutral-500">
+                    연락처는 회원의 휴대폰 인증 정보와 자동 연동되며 관리자 카드 수정에서는 변경할 수 없습니다.
+                  </p>
                   <label className="block text-[11px] font-semibold text-neutral-600">
                     흡연
                     <select

@@ -1,5 +1,6 @@
 import { recordAdminAuditEvent } from "@/lib/admin-audit";
 import { requireAdminRoute } from "@/lib/admin-route";
+import { normalizeDatingContactPhone } from "@/lib/dating-contact-blocks";
 import { NextResponse } from "next/server";
 
 const CARD_STATUSES = new Set(["submitted", "reviewing", "approved", "rejected"]);
@@ -50,7 +51,7 @@ export async function PATCH(
 
   const cardRes = await guard.admin
     .from("dating_1on1_cards")
-    .select("id,user_id,status,admin_tags")
+    .select("id,user_id,status,admin_tags,phone")
     .eq("id", cardId)
     .eq("user_id", expectedUserId)
     .maybeSingle();
@@ -133,7 +134,6 @@ export async function PATCH(
   const heightCm = nullableInt(body.height_cm, 120, 230);
   const job = text(body.job, 80);
   const region = text(body.region, 80);
-  const phone = text(body.phone, 15);
   const introText = text(body.intro_text, 2000);
   const strengthsText = text(body.strengths_text, 1000);
   const preferredPartnerText = text(body.preferred_partner_text, 1000);
@@ -141,11 +141,8 @@ export async function PATCH(
   const workoutFrequency = text(body.workout_frequency, 30);
   const status = text(body.status, 30);
 
-  if (!name || !job || !region || !phone || !introText || !strengthsText || !preferredPartnerText) {
+  if (!name || !job || !region || !introText || !strengthsText || !preferredPartnerText) {
     return NextResponse.json({ ok: false, error: "필수 입력 내용을 모두 확인해 주세요." }, { status: 400 });
-  }
-  if (phone.length < 9) {
-    return NextResponse.json({ ok: false, error: "연락처를 확인해 주세요." }, { status: 400 });
   }
   if (!SEX_VALUES.has(sex) || !CARD_STATUSES.has(status)) {
     return NextResponse.json({ ok: false, error: "성별 또는 상태 값이 올바르지 않습니다." }, { status: 400 });
@@ -155,6 +152,28 @@ export async function PATCH(
   }
   if (!SMOKING_VALUES.has(smoking) || !WORKOUT_VALUES.has(workoutFrequency)) {
     return NextResponse.json({ ok: false, error: "흡연 또는 운동 빈도를 확인해 주세요." }, { status: 400 });
+  }
+
+  const profilePhoneRes = await guard.admin
+    .from("profiles")
+    .select("phone_verified,phone_e164")
+    .eq("user_id", expectedUserId)
+    .maybeSingle();
+  if (profilePhoneRes.error) {
+    console.error("[PATCH /api/admin/dating/1on1/cards/[id]] profile phone lookup failed", profilePhoneRes.error);
+    return NextResponse.json({ ok: false, error: "회원의 인증 연락처를 확인하지 못했습니다." }, { status: 500 });
+  }
+  const verifiedProfilePhone =
+    profilePhoneRes.data?.phone_verified === true
+      ? normalizeDatingContactPhone(String(profilePhoneRes.data.phone_e164 ?? ""))
+      : "";
+  const currentCardPhone = normalizeDatingContactPhone(String(cardRes.data.phone ?? ""));
+  const phone = verifiedProfilePhone || currentCardPhone;
+  if (!phone) {
+    return NextResponse.json(
+      { ok: false, error: "정상적인 인증 연락처가 없어 1:1 신청서를 수정할 수 없습니다. 먼저 휴대폰 인증 상태를 확인해주세요." },
+      { status: 409 }
+    );
   }
 
   const payload = {
@@ -202,6 +221,7 @@ export async function PATCH(
       owner_user_id: expectedUserId,
       previous_status: cardRes.data.status,
       next_status: status,
+      phone_repaired_from_verified_profile: Boolean(verifiedProfilePhone && verifiedProfilePhone !== cardRes.data.phone),
     },
   });
 

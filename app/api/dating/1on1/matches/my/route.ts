@@ -10,6 +10,7 @@ import {
   getDatingContactBlockMapForUsers,
   getDatingProfilePhoneMapForUsers,
   isDatingContactPhoneBlockedPair,
+  normalizeDatingContactPhone,
 } from "@/lib/dating-contact-blocks";
 import { NextResponse } from "next/server";
 
@@ -19,10 +20,10 @@ const ACTIVE_MATCH_STATES = ["proposed", "source_selected", "candidate_accepted"
 const CLOSED_MATCH_STATES = ["source_skipped", "candidate_rejected", "source_declined", "admin_canceled"];
 
 function formatPhoneForDisplay(value: string | null | undefined) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return null;
-  if (raw.startsWith("+82")) return `0${raw.slice(3)}`;
-  return raw;
+  const normalized = normalizeDatingContactPhone(String(value ?? ""));
+  if (!normalized) return null;
+  if (normalized.startsWith("+82")) return `0${normalized.slice(3)}`;
+  return normalized;
 }
 
 async function fetchMyMatchesByStates(
@@ -154,11 +155,11 @@ export async function GET(req: Request) {
       const role = row.source_user_id === user.id ? "source" : "candidate";
       const counterpartyCardId = role === "source" ? row.candidate_card_id : row.source_card_id;
       const counterpartyUserId = role === "source" ? row.candidate_user_id : row.source_user_id;
+      const verifiedProfilePhone = profilePhoneMap.get(counterpartyUserId) ?? null;
+      const legacyCardPhone = phoneMap.get(counterpartyCardId) ?? null;
       const counterpartyPhone =
         row.contact_exchange_status === "approved"
-          ? formatPhoneForDisplay(
-              phoneMap.get(counterpartyCardId) ?? profilePhoneMap.get(counterpartyUserId) ?? null
-            )
+          ? formatPhoneForDisplay(verifiedProfilePhone) ?? formatPhoneForDisplay(legacyCardPhone)
           : null;
       return {
         ...row,

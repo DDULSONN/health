@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
+import { normalizeDatingContactPhone } from "@/lib/dating-contact-blocks";
 
 export type DatingOneOnOneWriteStatus = "approved" | "paused";
 export const DATING_ONE_ON_ONE_ACTIVE_STATUSES = ["submitted", "reviewing", "approved"] as const;
@@ -367,7 +368,8 @@ export async function getDatingOneOnOneCardPhonesByIds(
     }
 
     for (const row of data ?? []) {
-      phonesById.set(row.id, (row as DatingOneOnOneCardPhoneRow).phone ?? null);
+      const normalizedPhone = normalizeDatingContactPhone(String((row as DatingOneOnOneCardPhoneRow).phone ?? ""));
+      phonesById.set(row.id, normalizedPhone || null);
     }
   }
 
