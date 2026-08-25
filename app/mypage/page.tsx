@@ -346,16 +346,6 @@ type SupportInquiry = {
   answered_at: string | null;
 };
 
-type DatingApplicationStatus = {
-  id: string;
-  created_at: string;
-  status: string;
-  approved_for_public: boolean;
-  display_nickname: string | null;
-  age: number | null;
-  training_years: number | null;
-};
-
 type MyDatingCard = {
   id: string;
   sex: "male" | "female";
@@ -1858,7 +1848,6 @@ export default function MyPage() {
   const [summary, setSummary] = useState<SummaryResponse | null>(null);
   const [accountBanStatus, setAccountBanStatus] = useState<AccountBanStatus | null>(null);
   const [certRequests, setCertRequests] = useState<MyCertRequest[]>([]);
-  const [datingApplication, setDatingApplication] = useState<DatingApplicationStatus | null>(null);
   const [myDatingCards, setMyDatingCards] = useState<MyDatingCard[]>([]);
   const [receivedApplications, setReceivedApplications] = useState<ReceivedCardApplication[]>([]);
   const [myAppliedCardApplications, setMyAppliedCardApplications] = useState<MyAppliedCardApplication[]>([]);
@@ -4814,15 +4803,6 @@ export default function MyPage() {
     setMatchingDataError("");
 
     void (async () => {
-      const loadDatingApplication = async () => {
-        const res = await fetch("/api/dating/my-application", { cache: "no-store" });
-        const body = (await res.json().catch(() => ({}))) as {
-          error?: string;
-          application?: DatingApplicationStatus | null;
-        };
-        if (!res.ok) throw new Error(body.error ?? "내 소개팅 신청 정보를 불러오지 못했습니다.");
-        setDatingApplication(body.application ?? null);
-      };
       const loadOneOnOneCards = async () => {
         const res = await fetch("/api/dating/1on1/my", { cache: "no-store" });
         const body = (await res.json().catch(() => ({}))) as {
@@ -4849,7 +4829,6 @@ export default function MyPage() {
       };
 
       const results = await Promise.allSettled([
-        loadDatingApplication(),
         reloadOpenAppliedApplications(true),
         reloadPaidAppliedApplications(true),
         loadOneOnOneCards(),
@@ -7352,13 +7331,6 @@ export default function MyPage() {
   const approvedRequests = certRequests.filter(
     (item) => item.status === "approved" && (item.certificates?.length ?? 0) > 0
   );
-  const datingStatusText: Record<string, string> = {
-    submitted: "접수",
-    reviewing: "검토중",
-    interview: "인터뷰",
-    matched: "매칭 완료",
-    rejected: "보류/거절",
-  };
   const datingStatusColor: Record<string, string> = {
     submitted: "bg-neutral-100 text-neutral-700",
     reviewing: "bg-blue-100 text-blue-700",
@@ -8564,12 +8536,6 @@ export default function MyPage() {
           {isAdmin && (
             <>
               <Link
-                href="/admin/dating"
-                className="flex min-h-[44px] items-center rounded-xl border border-pink-200 bg-pink-50 px-4 text-sm font-medium text-pink-700 hover:bg-pink-100"
-              >
-                소개팅 신청 관리
-              </Link>
-              <Link
                 href="/admin/dating/cards"
                 className="flex min-h-[44px] items-center rounded-xl border border-violet-200 bg-violet-50 px-4 text-sm font-medium text-violet-700 hover:bg-violet-100"
               >
@@ -9504,44 +9470,6 @@ export default function MyPage() {
             ))}
           </div>
         )}
-      </section>
-
-      <section className={`${matchingFilter === "all" || matchingFilter === "one_on_one" ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
-        <h2 className="mb-3 text-base font-bold text-neutral-950">1:1 신청서 상태</h2>
-        {datingApplication ? (
-          <div className="space-y-2 text-sm">
-            <p className="text-neutral-600">
-              신청일 <span className="text-neutral-900">{new Date(datingApplication.created_at).toLocaleString("ko-KR")}</span>
-            </p>
-            <p className="text-neutral-600">
-              상태:{" "}
-              <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${datingStatusColor[datingApplication.status] ?? "bg-neutral-100 text-neutral-700"}`}>
-                {datingStatusText[datingApplication.status] ?? datingApplication.status}
-              </span>
-            </p>
-            <p className="text-neutral-600">공개 승인:
-              <span className={datingApplication.approved_for_public ? "text-emerald-700 font-medium" : "text-neutral-500"}>
-                {datingApplication.approved_for_public ? "승인됨" : "미승인"}
-              </span>
-            </p>
-
-            <div className="flex flex-wrap gap-2 text-xs text-neutral-600">
-              {datingApplication.display_nickname && <span>닉네임: {datingApplication.display_nickname}</span>}
-              {datingApplication.age != null && <span>나이: {datingApplication.age}세</span>}
-              {datingApplication.training_years != null && <span>운동경력: {datingApplication.training_years}년</span>}
-            </div>
-          </div>
-        ) : (
-          <p className="text-sm text-neutral-500">소개팅 신청 내역이 없습니다.</p>
-        )}
-        <div className="mt-4">
-          <Link
-            href="/dating/apply"
-            className="inline-flex min-h-[42px] items-center rounded-lg bg-neutral-950 px-4 text-sm font-medium text-white hover:bg-neutral-800"
-          >
-            신청하러 가기
-          </Link>
-        </div>
       </section>
 
       <section id="one-on-one-status" className={`${matchingFilter === "all" || matchingFilter === "one_on_one" ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
