@@ -129,6 +129,71 @@ export function validateWorkEmail(value: unknown) {
   return { ok: true as const, email, domain };
 }
 
+export async function validateWorkEmailMailboxDomain(value: unknown) {
+  const validation = validateWorkEmail(value);
+  if (!validation.ok) return validation;
+
+  const providers = ["https://cloudflare-dns.com/dns-query", "https://dns.google/resolve"];
+  let lastError: unknown = null;
+  for (const provider of providers) {
+    try {
+      const url = new URL(provider);
+      url.searchParams.set("name", validation.domain);
+      url.searchParams.set("type", "MX");
+      const response = await fetch(url, {
+        headers: { Accept: "application/dns-json" },
+        cache: "no-store",
+        signal: AbortSignal.timeout(5000),
+      });
+      if (!response.ok) throw new Error(`DNS_HTTP_${response.status}`);
+      const body = (await response.json()) as {
+        Status?: number;
+        Answer?: Array<{ type?: number; data?: string }>;
+      };
+      if (body.Status === 3) {
+        return {
+          ok: false as const,
+          email: validation.email,
+          domain: validation.domain,
+          error: "존재하지 않는 이메일 도메인입니다. 주소를 다시 확인해주세요.",
+          temporary: false,
+        };
+      }
+      if (body.Status !== 0) throw new Error(`DNS_STATUS_${String(body.Status)}`);
+
+      const hasMailServer = (body.Answer ?? []).some((answer) => {
+        if (answer.type !== 15 || typeof answer.data !== "string") return false;
+        const exchange = answer.data.trim().split(/\s+/).pop()?.replace(/\.+$/, "") ?? "";
+        return exchange.length > 0;
+      });
+      if (!hasMailServer) {
+        return {
+          ok: false as const,
+          email: validation.email,
+          domain: validation.domain,
+          error: "메일을 받을 수 있는 회사 도메인인지 확인할 수 없습니다.",
+          temporary: false,
+        };
+      }
+      return validation;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  console.warn("[employment-verification] MX lookup temporarily unavailable", {
+    domain: validation.domain,
+    message: lastError instanceof Error ? lastError.message : "UNKNOWN",
+  });
+  return {
+    ok: false as const,
+    email: validation.email,
+    domain: validation.domain,
+    error: "회사 이메일 확인이 일시적으로 지연되고 있습니다. 잠시 후 다시 시도해주세요.",
+    temporary: true,
+  };
+}
+
 export function maskWorkEmail(email: string) {
   const [local, domain] = email.split("@");
   const visible = local.length <= 2 ? local.slice(0, 1) : local.slice(0, 2);

@@ -7,7 +7,7 @@ import {
   normalizeCompanyName,
   readEmploymentChallenge,
   readEmploymentVerification,
-  validateWorkEmail,
+  validateWorkEmailMailboxDomain,
 } from "@/lib/employment-verification";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
@@ -90,12 +90,15 @@ export async function POST(request: Request) {
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
     const companyName = normalizeCompanyName(body.companyName);
-    const emailResult = validateWorkEmail(body.email);
+    const emailResult = await validateWorkEmailMailboxDomain(body.email);
     if (!companyName) {
       return NextResponse.json({ ok: false, error: "회사명을 입력해주세요." }, { status: 400 });
     }
     if (!emailResult.ok) {
-      return NextResponse.json({ ok: false, error: emailResult.error }, { status: 400 });
+      return NextResponse.json(
+        { ok: false, error: emailResult.error },
+        { status: "temporary" in emailResult && emailResult.temporary ? 503 : 400 }
+      );
     }
 
     const admin = createAdminClient();

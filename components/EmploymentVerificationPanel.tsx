@@ -29,6 +29,8 @@ type ApiResponse = {
   maskedEmail?: string;
   expiresAt?: string;
   resendAfterSec?: number;
+  eligible?: boolean;
+  domain?: string;
 };
 
 export default function EmploymentVerificationPanel() {
@@ -40,6 +42,8 @@ export default function EmploymentVerificationPanel() {
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [checkingEmail, setCheckingEmail] = useState(false);
+  const [emailEligibility, setEmailEligibility] = useState<"idle" | "eligible" | "ineligible">("idle");
   const [renewing, setRenewing] = useState(false);
   const [resendAfterSec, setResendAfterSec] = useState(0);
   const [error, setError] = useState("");
@@ -74,8 +78,40 @@ export default function EmploymentVerificationPanel() {
     return () => window.clearInterval(timer);
   }, [resendAfterSec]);
 
+  const checkEmailEligibility = async () => {
+    const normalizedEmail = email.trim().toLowerCase();
+    if (!normalizedEmail) {
+      setEmailEligibility("idle");
+      return false;
+    }
+    setCheckingEmail(true);
+    setError("");
+    try {
+      const response = await fetch("/api/mypage/employment-verification/check", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: normalizedEmail }),
+      });
+      const body = (await response.json().catch(() => ({}))) as ApiResponse;
+      if (!response.ok || body.ok === false || body.eligible !== true) {
+        setEmailEligibility("ineligible");
+        throw new Error(body.error || "직장 이메일로 확인되지 않았습니다.");
+      }
+      setEmailEligibility("eligible");
+      setMessage(body.message || `@${body.domain ?? ""} 직장 이메일을 확인했습니다.`);
+      return true;
+    } catch (checkError) {
+      setError(checkError instanceof Error ? checkError.message : "직장 이메일 확인에 실패했습니다.");
+      return false;
+    } finally {
+      setCheckingEmail(false);
+    }
+  };
+
   const sendCode = async () => {
     if (sending || resendAfterSec > 0) return;
+    const eligible = emailEligibility === "eligible" || (await checkEmailEligibility());
+    if (!eligible) return;
     setSending(true);
     setError("");
     setMessage("");
@@ -204,21 +240,30 @@ export default function EmploymentVerificationPanel() {
           <input
             type="email"
             value={email}
-            onChange={(event) => setEmail(event.target.value)}
+            onChange={(event) => {
+              setEmail(event.target.value);
+              setEmailEligibility("idle");
+              setMessage("");
+            }}
+            onBlur={() => {
+              if (email.trim() && emailEligibility === "idle") void checkEmailEligibility();
+            }}
             maxLength={254}
             placeholder="직장 이메일 (예: name@company.com)"
             autoComplete="email"
             className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-violet-400"
           />
+          {checkingEmail ? <p className="text-[11px] text-violet-700">회사 이메일 도메인을 확인하는 중...</p> : null}
+          {emailEligibility === "eligible" ? <p className="text-[11px] font-semibold text-emerald-700">직장 이메일 도메인 확인 완료</p> : null}
           <p className="text-[11px] leading-5 text-neutral-500">Gmail·네이버 등 개인 이메일은 제외되며, 이메일 주소 전체는 인증 완료 후 저장하지 않습니다.</p>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => void sendCode()}
-              disabled={sending || resendAfterSec > 0 || !companyName.trim() || !email.trim()}
+              disabled={sending || checkingEmail || resendAfterSec > 0 || !companyName.trim() || !email.trim()}
               className="h-10 rounded-lg border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-700 disabled:opacity-50"
             >
-              {sending ? "발송 중..." : resendAfterSec > 0 ? `${resendAfterSec}초 후 재발송` : pending ? "인증번호 재발송" : "인증번호 발송"}
+              {sending ? "발송 중..." : checkingEmail ? "이메일 확인 중..." : resendAfterSec > 0 ? `${resendAfterSec}초 후 재발송` : pending ? "인증번호 재발송" : "인증번호 발송"}
             </button>
             {renewing ? (
               <button
