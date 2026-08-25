@@ -2,44 +2,19 @@ import type { User } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { recordAdminAuditEvent } from "@/lib/admin-audit";
 import { requireAdminRoute } from "@/lib/admin-route";
+import {
+  EMPLOYMENT_VERIFICATION_KEY,
+  addEmploymentValidityMonths,
+  isValidCompanyDomain,
+  normalizeCompanyName,
+  normalizeEmailDomain,
+  readEmploymentVerification,
+  serializeEmploymentVerification,
+  type EmploymentVerification,
+} from "@/lib/employment-verification";
 import { createAdminClient } from "@/lib/supabase/server";
 
-const METADATA_KEY = "employment_verification";
-const PERSONAL_EMAIL_DOMAINS = new Set([
-  "gmail.com",
-  "googlemail.com",
-  "naver.com",
-  "daum.net",
-  "hanmail.net",
-  "kakao.com",
-  "hotmail.com",
-  "outlook.com",
-  "live.com",
-  "icloud.com",
-  "me.com",
-  "yahoo.com",
-  "yahoo.co.kr",
-  "proton.me",
-  "protonmail.com",
-]);
-
 type AdminClient = ReturnType<typeof createAdminClient>;
-type StoredVerification = {
-  id: string;
-  user_id: string;
-  company_name: string;
-  email_domain: string;
-  status: "verified" | "revoked";
-  verification_method: "admin_manual";
-  verified_at: string;
-  expires_at: string;
-  verified_by_user_id: string | null;
-  revoked_at: string | null;
-  revoked_by_user_id: string | null;
-  revoke_reason: string | null;
-  created_at: string;
-  updated_at: string;
-};
 
 type ProfileRow = {
   user_id: string;
@@ -52,80 +27,8 @@ function isUuid(value: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(value);
 }
 
-function normalizeDomain(value: unknown) {
-  if (typeof value !== "string") return "";
-  const normalized = value
-    .trim()
-    .toLowerCase()
-    .replace(/^https?:\/\//, "")
-    .replace(/^www\./, "")
-    .split(/[/?#]/)[0]
-    .replace(/^@+/, "");
-  return (normalized.split("@").pop() ?? "").replace(/\.+$/, "");
-}
-
-function isValidCompanyDomain(domain: string) {
-  const isPersonalDomain = [...PERSONAL_EMAIL_DOMAINS].some(
-    (personalDomain) => domain === personalDomain || domain.endsWith(`.${personalDomain}`)
-  );
-  if (domain.length < 3 || domain.length > 253 || isPersonalDomain) return false;
-  return /^(?=.{3,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$/i.test(domain);
-}
-
 function normalizeSearch(value: string) {
   return value.trim().replace(/[,%]/g, " ").slice(0, 100);
-}
-
-function addMonthsIso(months: number) {
-  const date = new Date();
-  date.setUTCMonth(date.getUTCMonth() + months);
-  return date.toISOString();
-}
-
-function readVerification(user: User): StoredVerification | null {
-  const raw = user.app_metadata?.[METADATA_KEY];
-  if (!raw || typeof raw !== "object") return null;
-  const item = raw as Partial<StoredVerification>;
-  if (
-    typeof item.id !== "string" ||
-    typeof item.user_id !== "string" ||
-    typeof item.company_name !== "string" ||
-    typeof item.email_domain !== "string" ||
-    (item.status !== "verified" && item.status !== "revoked") ||
-    typeof item.verified_at !== "string" ||
-    typeof item.expires_at !== "string" ||
-    typeof item.created_at !== "string" ||
-    typeof item.updated_at !== "string"
-  ) {
-    return null;
-  }
-  return {
-    id: item.id,
-    user_id: item.user_id,
-    company_name: item.company_name,
-    email_domain: item.email_domain,
-    status: item.status,
-    verification_method: "admin_manual",
-    verified_at: item.verified_at,
-    expires_at: item.expires_at,
-    verified_by_user_id: item.verified_by_user_id ?? null,
-    revoked_at: item.revoked_at ?? null,
-    revoked_by_user_id: item.revoked_by_user_id ?? null,
-    revoke_reason: item.revoke_reason ?? null,
-    created_at: item.created_at,
-    updated_at: item.updated_at,
-  };
-}
-
-function withEffectiveStatus(verification: StoredVerification | null) {
-  if (!verification) return null;
-  const effectiveStatus =
-    verification.status === "revoked"
-      ? "revoked"
-      : new Date(verification.expires_at).getTime() > Date.now()
-        ? "verified"
-        : "expired";
-  return { ...verification, effective_status: effectiveStatus };
 }
 
 async function findAuthUserByEmail(admin: AdminClient, email: string) {
@@ -145,13 +48,13 @@ async function listUsersWithEmploymentMetadata(admin: AdminClient) {
   for (let page = 1; page <= 20; page += 1) {
     const { data, error } = await admin.auth.admin.listUsers({ page, perPage: 1000 });
     if (error) throw error;
-    users.push(...data.users.filter((user) => readVerification(user) !== null));
+    users.push(...data.users.filter((user) => readEmploymentVerification(user) !== null));
     if (data.users.length < 1000) break;
   }
   return users
     .sort((left, right) => {
-      const leftAt = readVerification(left)?.updated_at ?? "";
-      const rightAt = readVerification(right)?.updated_at ?? "";
+      const leftAt = readEmploymentVerification(left)?.updated_at ?? "";
+      const rightAt = readEmploymentVerification(right)?.updated_at ?? "";
       return rightAt.localeCompare(leftAt);
     })
     .slice(0, 100);
@@ -175,7 +78,7 @@ function serializeUser(user: User, profiles: Map<string, ProfileRow>, exposeEmai
     role: profile?.role ?? null,
     isBanned: profile?.is_banned === true,
     accountEmail: exposeEmail ? user.email ?? null : null,
-    verification: withEffectiveStatus(readVerification(user)),
+    verification: serializeEmploymentVerification(readEmploymentVerification(user)),
   };
 }
 
@@ -247,9 +150,9 @@ export async function POST(request: Request) {
     if (profileError) throw profileError;
 
     const authUser = authUserData.user;
-    const current = readVerification(authUser);
+    const current = readEmploymentVerification(authUser);
     const now = new Date().toISOString();
-    let next: StoredVerification;
+    let next: EmploymentVerification;
 
     if (action === "revoke") {
       const reason = typeof body.reason === "string" ? body.reason.trim().slice(0, 300) : "";
@@ -264,8 +167,8 @@ export async function POST(request: Request) {
         updated_at: now,
       };
     } else {
-      const companyName = typeof body.companyName === "string" ? body.companyName.trim().replace(/\s{2,}/g, " ").slice(0, 80) : "";
-      const emailDomain = normalizeDomain(body.emailDomain);
+      const companyName = normalizeCompanyName(body.companyName);
+      const emailDomain = normalizeEmailDomain(body.emailDomain);
       const rawMonths = Number(body.validityMonths ?? 12);
       const validityMonths = Number.isInteger(rawMonths) ? Math.max(1, Math.min(24, rawMonths)) : 12;
       if (!companyName) return NextResponse.json({ ok: false, error: "회사명을 입력해주세요." }, { status: 400 });
@@ -280,7 +183,7 @@ export async function POST(request: Request) {
         status: "verified",
         verification_method: "admin_manual",
         verified_at: now,
-        expires_at: addMonthsIso(validityMonths),
+        expires_at: addEmploymentValidityMonths(validityMonths),
         verified_by_user_id: auth.user.id,
         revoked_at: null,
         revoked_by_user_id: null,
@@ -291,7 +194,7 @@ export async function POST(request: Request) {
     }
 
     const { data: updated, error: updateError } = await auth.admin.auth.admin.updateUserById(userId, {
-      app_metadata: { ...(authUser.app_metadata ?? {}), [METADATA_KEY]: next },
+      app_metadata: { ...(authUser.app_metadata ?? {}), [EMPLOYMENT_VERIFICATION_KEY]: next },
     });
     if (updateError || !updated?.user) throw updateError ?? new Error("updated user missing");
 
@@ -311,7 +214,7 @@ export async function POST(request: Request) {
         nickname: profile?.nickname ?? null,
       },
     });
-    return NextResponse.json({ ok: true, storage: "auth_app_metadata", item: withEffectiveStatus(next) });
+    return NextResponse.json({ ok: true, storage: "auth_app_metadata", item: serializeEmploymentVerification(next) });
   } catch (error) {
     console.error("[POST /api/admin/employment-verifications] failed", error);
     await recordAdminAuditEvent({

@@ -69,6 +69,11 @@ const AdminEmploymentVerificationPanel = dynamic(
   { loading: () => <MyPageWidgetSkeleton className="h-64" /> }
 );
 
+const EmploymentVerificationPanel = dynamic(
+  () => import("@/components/EmploymentVerificationPanel"),
+  { loading: () => <MyPageWidgetSkeleton className="mt-4 h-40" /> }
+);
+
 const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
   "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
@@ -7945,6 +7950,8 @@ export default function MyPage() {
             </div>
         </div>
         )}
+
+        <EmploymentVerificationPanel />
 
         </>
         )}
