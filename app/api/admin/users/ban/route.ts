@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { isAllowedAdminUser } from "@/lib/admin";
 import { recordAdminAuditEvent } from "@/lib/admin-audit";
 import { requireAdminRoute } from "@/lib/admin-route";
+import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
 
 function normalizeReason(value: unknown) {
   const reason = typeof value === "string" ? value.trim().replace(/\s{2,}/g, " ").slice(0, 300) : "";
@@ -123,7 +124,7 @@ export async function POST(request: Request) {
         .update({ status: "hidden", expires_at: nowIso })
         .eq("owner_user_id", userId)
         .in("status", ["pending", "public"])
-        .select("id"),
+        .select("id,sex"),
       auth.admin
         .from("dating_paid_cards")
         .update({ status: "expired", expires_at: nowIso })
@@ -147,6 +148,21 @@ export async function POST(request: Request) {
     hiddenOpenCards = openCardsRes.data?.length ?? 0;
     hiddenPaidCards = paidCardsRes.data?.length ?? 0;
     hiddenOneOnOneCards = oneOnOneCardsRes.data?.length ?? 0;
+
+    const vacatedSexes = [
+      ...new Set(
+        (openCardsRes.data ?? [])
+          .map((card) => (card as { sex?: unknown }).sex)
+          .filter((sex): sex is "male" | "female" => sex === "male" || sex === "female")
+      ),
+    ];
+    await Promise.all(
+      vacatedSexes.map((sex) =>
+        promotePendingCardsBySex(auth.admin, sex).catch((error) => {
+          console.error(`[POST /api/admin/users/ban] promote ${sex} pending cards failed`, error);
+        })
+      )
+    );
   }
 
   await recordAdminAuditEvent({

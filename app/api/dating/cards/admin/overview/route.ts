@@ -1,5 +1,9 @@
 ﻿import { isAllowedAdminUser } from "@/lib/admin";
-import { extractStorageObjectPathFromBuckets } from "@/lib/images";
+import {
+  buildSignedImageUrl,
+  extractStorageObjectPathFromBuckets,
+  withImageTransform,
+} from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -85,6 +89,7 @@ type DatingCardApplicationFallbackRow = {
 type ProfileRow = {
   user_id: string;
   nickname: string | null;
+  is_banned: boolean | null;
 };
 
 async function fetchAllRows<T>(
@@ -129,6 +134,30 @@ function backupPathFromApplicationPhoto(raw: unknown): string | null {
 
 function adminBackupPhotoUrl(path: string): string {
   return `/api/admin/dating/cards/application-backup-photo?path=${encodeURIComponent(path)}`;
+}
+
+function toLiteCardPhotoPath(raw: unknown): string | null {
+  const path = extractStorageObjectPathFromBuckets(raw, ["dating-card-photos", "dating-photos"]);
+  if (!path) return null;
+
+  const litePath = path
+    .replace("/raw/", "/lite/")
+    .replace(/\.(?:jpe?g|png|webp)$/i, ".webp");
+  return litePath.includes("/lite/") ? litePath : null;
+}
+
+function buildAdminCardPreviewUrls(photoPaths: string[] | null): string[] {
+  if (!Array.isArray(photoPaths)) return [];
+
+  return [
+    ...new Set(
+      photoPaths
+        .map((path) => toLiteCardPhotoPath(path))
+        .filter((path): path is string => Boolean(path))
+        .map((path) => withImageTransform(buildSignedImageUrl("dating-card-photos", path), { width: 720, quality: 68 }))
+        .filter((url): url is string => Boolean(url))
+    ),
+  ].slice(0, 2);
 }
 
 export async function GET(req: Request) {
@@ -244,16 +273,27 @@ export async function GET(req: Request) {
   ];
 
   let nickMap: Record<string, string | null> = {};
+  let bannedMap: Record<string, boolean> = {};
   if (userIds.length > 0) {
-    const profilesRes = await adminClient.from("profiles").select("user_id, nickname").in("user_id", userIds);
+    const profilesRes = await adminClient.from("profiles").select("user_id, nickname, is_banned").in("user_id", userIds);
+    let profileRows: ProfileRow[] = [];
     if (!profilesRes.error) {
-      nickMap = Object.fromEntries(((profilesRes.data ?? []) as ProfileRow[]).map((p) => [p.user_id, p.nickname]));
+      profileRows = (profilesRes.data ?? []) as ProfileRow[];
+    } else if (getErrorCode(profilesRes.error) === "42703") {
+      const fallbackProfilesRes = await adminClient.from("profiles").select("user_id, nickname").in("user_id", userIds);
+      if (!fallbackProfilesRes.error) {
+        profileRows = (fallbackProfilesRes.data ?? []).map((profile) => ({ ...profile, is_banned: false })) as ProfileRow[];
+      }
     }
+    nickMap = Object.fromEntries(profileRows.map((p) => [p.user_id, p.nickname]));
+    bannedMap = Object.fromEntries(profileRows.map((p) => [p.user_id, p.is_banned === true]));
   }
 
   const cards = (cardsRes.data ?? []).map((card) => ({
     ...card,
     owner_nickname: nickMap[card.owner_user_id] ?? null,
+    owner_is_banned: bannedMap[card.owner_user_id] === true,
+    admin_preview_urls: card.status === "public" ? buildAdminCardPreviewUrls(card.photo_paths) : [],
   }));
 
   const cardsById = Object.fromEntries(cards.map((card) => [card.id, card])) as Record<string, (typeof cards)[number]>;

@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import dynamic from "next/dynamic";
+import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -944,6 +945,8 @@ type AdminOpenCard = {
   id: string;
   owner_user_id: string;
   owner_nickname: string | null;
+  owner_is_banned: boolean;
+  admin_preview_urls: string[];
   sex: "male" | "female";
   display_nickname: string | null;
   age: number | null;
@@ -1922,6 +1925,7 @@ export default function MyPage() {
   const [editingAdminOpenCardId, setEditingAdminOpenCardId] = useState<string | null>(null);
   const [adminOpenCardDraft, setAdminOpenCardDraft] = useState<AdminOpenCardEditDraft | null>(null);
   const [savingAdminOpenCard, setSavingAdminOpenCard] = useState(false);
+  const [adminOpenCardActionKey, setAdminOpenCardActionKey] = useState("");
   const [adminCardSort, setAdminCardSort] = useState<AdminCardSort>("public_first");
   const [adminOpenCardSexFilter, setAdminOpenCardSexFilter] = useState<AdminOpenCardSexFilter>("all");
   const [adminApplicationSort, setAdminApplicationSort] = useState<AdminApplicationSort>("newest");
@@ -5300,21 +5304,104 @@ export default function MyPage() {
     }
   };
 
-  const handleAdminDeleteOpenCard = async (cardId: string) => {
-    if (!confirm("해당 오픈카드를 삭제할까요?")) return;
-    const res = await fetch(`/api/admin/dating/cards/${cardId}`, {
-      method: "DELETE",
-    });
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    if (!res.ok) {
-      alert(body.error ?? "카드 삭제에 실패했습니다.");
-      return;
+  const handleAdminHideOpenCard = async (card: AdminOpenCard) => {
+    if (adminOpenCardActionKey || !confirm(`${card.display_nickname ?? "해당"} 오픈카드를 즉시 숨김 처리할까요?`)) return;
+
+    const actionKey = `hide:${card.id}`;
+    setAdminOpenCardActionKey(actionKey);
+    try {
+      const res = await fetch(`/api/admin/dating/cards/${card.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status: "hidden", expected_owner_user_id: card.owner_user_id }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { error?: string; item?: Partial<AdminOpenCard> | null };
+      if (!res.ok) {
+        alert(body.error ?? "카드 숨김 처리에 실패했습니다.");
+        return;
+      }
+      setAdminOpenCards((prev) =>
+        prev.map((item) =>
+          item.id === card.id
+            ? { ...item, ...(body.item ?? {}), status: "hidden", admin_preview_urls: [] }
+            : item
+        )
+      );
+      await refreshAdminOpenCardData(false);
+      alert("오픈카드를 숨김 처리했습니다.");
+    } catch {
+      alert("네트워크 오류로 카드 숨김 처리에 실패했습니다.");
+    } finally {
+      setAdminOpenCardActionKey("");
     }
-    setAdminOpenCards((prev) => prev.filter((card) => card.id !== cardId));
-    setAdminOpenCardApplications((prev) => prev.filter((app) => app.card_id !== cardId));
-    if (editingAdminOpenCardId === cardId) {
-      setEditingAdminOpenCardId(null);
-      setAdminOpenCardDraft(null);
+  };
+
+  const handleAdminDeleteOpenCard = async (card: AdminOpenCard) => {
+    if (adminOpenCardActionKey || !confirm(`${card.display_nickname ?? "해당"} 오픈카드를 영구 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
+
+    const actionKey = `delete:${card.id}`;
+    setAdminOpenCardActionKey(actionKey);
+    try {
+      const res = await fetch(
+        `/api/admin/dating/cards/${card.id}?userId=${encodeURIComponent(card.owner_user_id)}`,
+        { method: "DELETE" }
+      );
+      const body = (await res.json().catch(() => ({}))) as { error?: string };
+      if (!res.ok) {
+        alert(body.error ?? "카드 삭제에 실패했습니다.");
+        return;
+      }
+      setAdminOpenCards((prev) => prev.filter((item) => item.id !== card.id));
+      setAdminOpenCardApplications((prev) => prev.filter((app) => app.card_id !== card.id));
+      if (editingAdminOpenCardId === card.id) {
+        setEditingAdminOpenCardId(null);
+        setAdminOpenCardDraft(null);
+      }
+      await refreshAdminOpenCardData(false);
+    } catch {
+      alert("네트워크 오류로 카드 삭제에 실패했습니다.");
+    } finally {
+      setAdminOpenCardActionKey("");
+    }
+  };
+
+  const handleAdminBanOpenCardOwner = async (card: AdminOpenCard) => {
+    if (adminOpenCardActionKey || card.owner_is_banned) return;
+    const ownerLabel = card.owner_nickname?.trim() || card.display_nickname?.trim() || card.owner_user_id.slice(0, 8);
+    const reason = prompt(`${ownerLabel} 회원의 밴 사유를 입력해주세요.`, "오픈카드 사진 또는 내용 운영정책 위반")?.trim();
+    if (!reason || !confirm(`${ownerLabel} 회원을 밴 처리할까요? 이 회원의 공개·대기 카드가 모두 비노출됩니다.`)) return;
+
+    const actionKey = `ban:${card.id}`;
+    setAdminOpenCardActionKey(actionKey);
+    try {
+      const res = await fetch("/api/admin/users/ban", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: card.owner_user_id, banned: true, reason }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; hiddenOpenCards?: number };
+      if (!res.ok || body.ok === false) {
+        alert(body.error ?? "회원 밴 처리에 실패했습니다.");
+        return;
+      }
+      setAdminOpenCards((prev) =>
+        prev.map((item) =>
+          item.owner_user_id === card.owner_user_id
+            ? {
+                ...item,
+                owner_is_banned: true,
+                status: item.status === "public" || item.status === "pending" ? "hidden" : item.status,
+                admin_preview_urls: [],
+              }
+            : item
+        )
+      );
+      await refreshAdminOpenCardData(false);
+      alert(`회원 밴 처리 완료 · 오픈카드 ${Number(body.hiddenOpenCards ?? 0)}건 비노출`);
+    } catch {
+      alert("네트워크 오류로 회원 밴 처리에 실패했습니다.");
+    } finally {
+      setAdminOpenCardActionKey("");
     }
   };
 
@@ -15264,6 +15351,9 @@ export default function MyPage() {
                       </p>
                       <div className="mt-1 flex flex-wrap gap-2 text-xs text-neutral-600">
                         <span>owner: {card.owner_nickname ?? card.owner_user_id.slice(0, 8)}</span>
+                        {card.owner_is_banned && (
+                          <span className="rounded-full bg-red-100 px-2 py-0.5 font-semibold text-red-700">밴 회원</span>
+                        )}
                         {card.age != null && <span>나이 {card.age}</span>}
                         {card.height_cm != null && <span>키 {card.height_cm}cm</span>}
                         {card.region && <span>지역 {card.region}</span>}
@@ -15298,30 +15388,79 @@ export default function MyPage() {
                           만료 예정: {new Date(card.expires_at).toLocaleString("ko-KR")}
                         </p>
                       )}
-                      {card.blur_thumb_path && (
-                        <p className="mt-1 text-xs text-neutral-500 break-all">
-                          blur 경로: {card.blur_thumb_path}
-                        </p>
+                      {card.status === "public" && (
+                        <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <p className="text-xs font-semibold text-emerald-800">검수용 무블러 WebP</p>
+                            <span className="text-[10px] text-emerald-700">최대 720px · 관리자 전용</span>
+                          </div>
+                          {Array.isArray(card.admin_preview_urls) && card.admin_preview_urls.length > 0 ? (
+                            <div className="mt-2 grid grid-cols-2 gap-2">
+                              {card.admin_preview_urls.map((url, index) => (
+                                <a
+                                  key={`${card.id}-preview-${index}`}
+                                  href={url}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="overflow-hidden rounded-lg border border-emerald-200 bg-neutral-100"
+                                  aria-label={`${card.display_nickname ?? "오픈카드"} 검수 사진 ${index + 1} 크게 보기`}
+                                >
+                                  <Image
+                                    src={url}
+                                    alt={`${card.display_nickname ?? "오픈카드"} 검수 사진 ${index + 1}`}
+                                    width={720}
+                                    height={960}
+                                    unoptimized
+                                    className="aspect-[3/4] h-auto w-full object-contain"
+                                  />
+                                </a>
+                              ))}
+                            </div>
+                          ) : (
+                            <p className="mt-2 text-xs text-amber-700">경량 WebP 사진이 없거나 아직 생성되지 않았습니다.</p>
+                          )}
+                        </div>
                       )}
-                      <p className="mt-1 text-xs text-neutral-500 break-all">
-                        사진 경로: {Array.isArray(card.photo_paths) ? card.photo_paths.join(", ") : "-"}
-                      </p>
                       <div className="mt-2 flex flex-wrap gap-2">
                         <button
                           type="button"
                           onClick={() =>
                             editingAdminOpenCardId === card.id ? closeAdminOpenCardEditor() : openAdminOpenCardEditor(card)
                           }
+                          disabled={Boolean(adminOpenCardActionKey)}
                           className="h-8 rounded-md border border-violet-200 bg-violet-50 px-3 text-xs font-medium text-violet-800"
                         >
                           {editingAdminOpenCardId === card.id ? "수정 닫기" : "내용 수정"}
                         </button>
+                        {(card.status === "public" || card.status === "pending") && (
+                          <button
+                            type="button"
+                            onClick={() => void handleAdminHideOpenCard(card)}
+                            disabled={Boolean(adminOpenCardActionKey)}
+                            className="h-8 rounded-md border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-800 disabled:opacity-50"
+                          >
+                            {adminOpenCardActionKey === `hide:${card.id}` ? "숨김 처리 중..." : "즉시 숨김"}
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => void handleAdminDeleteOpenCard(card.id)}
-                          className="h-8 rounded-md bg-red-600 px-3 text-xs font-medium text-white"
+                          onClick={() => void handleAdminDeleteOpenCard(card)}
+                          disabled={Boolean(adminOpenCardActionKey)}
+                          className="h-8 rounded-md bg-red-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                         >
-                          삭제
+                          {adminOpenCardActionKey === `delete:${card.id}` ? "삭제 중..." : "삭제"}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => void handleAdminBanOpenCardOwner(card)}
+                          disabled={Boolean(adminOpenCardActionKey) || card.owner_is_banned}
+                          className="h-8 rounded-md bg-neutral-900 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                          {card.owner_is_banned
+                            ? "밴 처리됨"
+                            : adminOpenCardActionKey === `ban:${card.id}`
+                              ? "밴 처리 중..."
+                              : "회원 밴"}
                         </button>
                       </div>
                       {editingAdminOpenCardId === card.id && adminOpenCardDraft ? (
