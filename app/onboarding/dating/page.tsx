@@ -38,6 +38,7 @@ const PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const PHOTO_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp"]);
 const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
 const MAX_ADULT_BIRTH_YEAR = Math.min(2010, new Date().getFullYear() - 18);
+const ONE_ON_ONE_CANDIDATES_HREF = "/community/dating/cards?tab=one_on_one&from=onboarding";
 
 function normalizeInstagramId(value: string) {
   return value.trim().replace(/^@+/, "").replace(/\s+/g, "").slice(0, 30);
@@ -469,6 +470,12 @@ export default function DatingOnboardingPage() {
 
       if (successes.length > 0) setInfo(`${successes.join(" · ")} 등록을 완료했습니다.`);
       if (failures.length > 0) setError(`${failures.join("\n")} 성공한 등록은 유지되며 실패한 항목만 다시 시도할 수 있어요.`);
+      if (successes.includes("1:1 신청서") && failures.length === 0) {
+        setInfo(`${successes.join(" · ")} 등록 완료! 지금 추천 후보를 확인할 수 있어요.`);
+        setProgress("추천 후보 불러오는 중");
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 650));
+        router.replace(ONE_ON_ONE_CANDIDATES_HREF);
+      }
     } catch (uploadError) {
       if (uploadError instanceof DOMException && uploadError.name === "AbortError") {
         setError("사진 처리 시간이 초과되었습니다. 네트워크를 확인하고 다시 시도해 주세요.");
@@ -525,8 +532,17 @@ export default function DatingOnboardingPage() {
         {nothingAvailable ? (
           <section className="mt-5 border border-neutral-200 bg-white p-5">
             <p className="text-base font-bold">이미 준비가 끝났어요</p>
-            <p className="mt-2 text-sm leading-6 text-neutral-600">등록된 카드와 진행 상태는 마이페이지에서 확인할 수 있습니다.</p>
-            <Link href="/mypage?section=matching" className="mt-4 inline-flex h-11 items-center bg-neutral-950 px-4 text-sm font-bold text-white">마이페이지에서 확인</Link>
+            <p className="mt-2 text-sm leading-6 text-neutral-600">
+              {completed.oneOnOne
+                ? "작성한 1:1 프로필로 추천 후보를 바로 확인할 수 있습니다."
+                : "등록된 카드와 진행 상태는 마이페이지에서 확인할 수 있습니다."}
+            </p>
+            <Link
+              href={completed.oneOnOne ? ONE_ON_ONE_CANDIDATES_HREF : "/mypage?section=matching"}
+              className="mt-4 inline-flex h-11 items-center bg-neutral-950 px-4 text-sm font-bold text-white"
+            >
+              {completed.oneOnOne ? "1:1 추천 후보 확인하기" : "마이페이지에서 확인"}
+            </Link>
           </section>
         ) : (
           <>
@@ -675,7 +691,13 @@ export default function DatingOnboardingPage() {
                 {step < STEP_LABELS.length - 1 ? (
                   <button type="button" onClick={moveNext} className="h-12 bg-neutral-950 px-5 text-sm font-bold text-white">다음</button>
                 ) : allSelectedDone ? (
-                  <button type="button" onClick={() => router.replace("/community/dating/cards")} className="h-12 bg-emerald-600 px-5 text-sm font-bold text-white">오픈카드 홈으로</button>
+                  <button
+                    type="button"
+                    onClick={() => router.replace(completed.oneOnOne ? ONE_ON_ONE_CANDIDATES_HREF : "/community/dating/cards")}
+                    className="h-12 bg-emerald-600 px-5 text-sm font-bold text-white"
+                  >
+                    {completed.oneOnOne ? "1:1 추천 후보 확인하기" : "오픈카드 홈으로"}
+                  </button>
                 ) : (
                   <button type="button" disabled={submitting} onClick={() => void submit()} className="h-12 bg-rose-500 px-5 text-sm font-bold text-white disabled:opacity-50">{submitting ? "등록 중..." : completed.open || completed.oneOnOne ? "남은 등록 다시 시도" : "연애 준비 시작하기"}</button>
                 )}

@@ -1786,6 +1786,7 @@ export default function OpenCardsPage() {
     consent: false,
   });
   const [homeFeatureTab, setHomeFeatureTab] = useState<HomeFeatureTab>("open_cards");
+  const [arrivedFromDatingOnboarding, setArrivedFromDatingOnboarding] = useState(false);
   const [isAdminPreviewUser, setIsAdminPreviewUser] = useState(false);
   const [oneOnOneHomeLoading, setOneOnOneHomeLoading] = useState(false);
   const [oneOnOneHomeError, setOneOnOneHomeError] = useState("");
@@ -1800,6 +1801,18 @@ export default function OpenCardsPage() {
   useEffect(() => {
     activeSexRef.current = activeSex;
   }, [activeSex]);
+
+  useEffect(() => {
+    const url = new URL(window.location.href);
+    if (url.searchParams.get("tab") === "one_on_one") {
+      setHomeFeatureTab("one_on_one");
+    }
+    if (url.searchParams.get("from") === "onboarding") {
+      setArrivedFromDatingOnboarding(true);
+      url.searchParams.delete("from");
+      window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    }
+  }, []);
 
   useLayoutEffect(() => {
     const scrollY = pendingSexTabScrollRef.current;
@@ -3453,6 +3466,7 @@ export default function OpenCardsPage() {
 
       {showOneOnOneSection ? (
         <OneOnOneHomePanel
+          arrivedFromOnboarding={arrivedFromDatingOnboarding}
           viewerLoggedIn={viewerLoggedIn}
           loading={oneOnOneHomeLoading}
           error={oneOnOneHomeError}
@@ -3694,6 +3708,7 @@ export default function OpenCardsPage() {
 }
 
 function OneOnOneHomePanel({
+  arrivedFromOnboarding,
   viewerLoggedIn,
   loading,
   error,
@@ -3707,6 +3722,7 @@ function OneOnOneHomePanel({
   onAutoSelect,
   onRefreshRecommendations,
 }: {
+  arrivedFromOnboarding: boolean;
   viewerLoggedIn: boolean;
   loading: boolean;
   error: string;
@@ -3753,7 +3769,15 @@ function OneOnOneHomePanel({
     return String(b.created_at ?? "").localeCompare(String(a.created_at ?? ""));
   });
   return (
-    <section className="mb-5 rounded-[30px] border border-black/5 bg-white p-4 shadow-[0_14px_40px_rgba(15,23,42,0.05)] md:p-6">
+    <section id="one-on-one-candidates" className="mb-5 rounded-[30px] border border-black/5 bg-white p-4 shadow-[0_14px_40px_rgba(15,23,42,0.05)] md:p-6">
+      {arrivedFromOnboarding ? (
+        <div role="status" className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
+          <p className="text-sm font-black text-emerald-900">1:1 신청서 작성 완료</p>
+          <p className="mt-1 text-xs font-semibold leading-5 text-emerald-700">
+            등록한 정보로 추천 후보를 바로 확인할 수 있어요. 아래에서 마음에 드는 후보를 선택해보세요.
+          </p>
+        </div>
+      ) : null}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
         <div>
           <span className="inline-flex rounded-full bg-sky-50 px-3 py-1 text-xs font-black text-sky-700">1대1 매칭</span>
