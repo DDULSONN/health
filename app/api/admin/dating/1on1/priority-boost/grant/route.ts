@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 import { recordAdminAuditEvent } from "@/lib/admin-audit";
 import { requireAdminRoute } from "@/lib/admin-route";
-import { ONE_ON_ONE_PLUS_DURATION_DAYS, grantOneOnOnePlus } from "@/lib/dating-1on1-plus";
+import {
+  ONE_ON_ONE_PLUS_7D_DURATION_DAYS,
+  ONE_ON_ONE_PLUS_DURATION_DAYS,
+  grantOneOnOnePlus,
+} from "@/lib/dating-1on1-plus";
 
 const ACTIVE_ONE_ON_ONE_STATUSES = ["submitted", "reviewing", "approved"];
 
@@ -10,11 +14,24 @@ export async function POST(request: Request) {
   const auth = await requireAdminRoute();
   if (!auth.ok) return auth.response;
 
-  const body = (await request.json().catch(() => ({}))) as { userId?: unknown; cardId?: unknown };
+  const body = (await request.json().catch(() => ({}))) as {
+    userId?: unknown;
+    cardId?: unknown;
+    durationDays?: unknown;
+  };
   const requestedUserId = String(body.userId ?? "").trim();
   const cardId = String(body.cardId ?? "").trim();
+  const requestedDurationDays = body.durationDays == null ? ONE_ON_ONE_PLUS_DURATION_DAYS : Number(body.durationDays);
+  const durationDays = [ONE_ON_ONE_PLUS_7D_DURATION_DAYS, ONE_ON_ONE_PLUS_DURATION_DAYS].includes(
+    requestedDurationDays
+  )
+    ? requestedDurationDays
+    : null;
   if (!requestedUserId && !cardId) {
     return NextResponse.json({ error: "사용자 ID 또는 1:1 카드 ID가 필요합니다." }, { status: 400 });
+  }
+  if (!durationDays) {
+    return NextResponse.json({ error: "1:1 매칭 플러스는 7일 또는 30일만 지급할 수 있습니다." }, { status: 400 });
   }
 
   let query = auth.admin
@@ -41,7 +58,7 @@ export async function POST(request: Request) {
     subscription = await grantOneOnOnePlus(auth.admin, {
       userId: cardRes.data.user_id,
       grantKey: `admin:${requestId}`,
-      durationDays: ONE_ON_ONE_PLUS_DURATION_DAYS,
+      durationDays,
     });
   } catch (error) {
     console.error("[POST /api/admin/dating/1on1/priority-boost/grant] grant failed", error);
@@ -61,7 +78,7 @@ export async function POST(request: Request) {
     requestId,
     metadata: {
       card_id: cardRes.data.id,
-      duration_days: ONE_ON_ONE_PLUS_DURATION_DAYS,
+      duration_days: durationDays,
       expires_at: subscription.expires_at,
     },
   });
@@ -69,7 +86,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     card: { ...cardRes.data, plus_expires_at: subscription.expires_at },
-    durationDays: ONE_ON_ONE_PLUS_DURATION_DAYS,
+    durationDays,
     expiresAt: subscription.expires_at,
   });
 }

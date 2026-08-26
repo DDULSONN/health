@@ -6969,7 +6969,10 @@ export default function MyPage() {
     }
   };
 
-  const handleAdminGrantOneOnOnePriorityBoost = async (card: Record<string, unknown>) => {
+  const handleAdminGrantOneOnOnePriorityBoost = async (
+    card: Record<string, unknown>,
+    durationDays: 7 | 30
+  ) => {
     const userId = adminUserActivityResult?.user?.id ?? "";
     const cardId = String(card.id ?? "").trim();
     const cardName = String(card.name ?? "1:1 신청").trim() || "1:1 신청";
@@ -6978,7 +6981,7 @@ export default function MyPage() {
       return;
     }
     if (adminOneOnOnePriorityGrantingIds.includes(cardId)) return;
-    if (!confirm(`${cardName} 회원에게 1:1 매칭 플러스 30일을 지급할까요? 이용 중이면 30일 연장됩니다.`)) return;
+    if (!confirm(`${cardName} 회원에게 1:1 매칭 플러스 ${durationDays}일을 지급할까요? 이용 중이면 ${durationDays}일 연장됩니다.`)) return;
 
     setAdminOneOnOnePriorityGrantingIds((prev) => [...prev, cardId]);
     setAdminOneOnOnePriorityGrantError("");
@@ -6987,7 +6990,7 @@ export default function MyPage() {
       const res = await fetch("/api/admin/dating/1on1/priority-boost/grant", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, cardId }),
+        body: JSON.stringify({ userId, cardId, durationDays }),
       });
       const body = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -6997,6 +7000,7 @@ export default function MyPage() {
           plus_expires_at?: string | null;
         };
         expiresAt?: string | null;
+        durationDays?: number;
       };
       if (!res.ok || !body.ok || !body.card?.id) {
         throw new Error(body.error ?? "1:1 매칭 플러스 지급에 실패했습니다.");
@@ -7017,7 +7021,9 @@ export default function MyPage() {
           : prev
       );
       setAdminOneOnOnePriorityGrantInfo(
-        expiresAt ? `1:1 매칭 플러스 지급 완료 · ${new Date(expiresAt).toLocaleString("ko-KR")}까지` : "1:1 매칭 플러스를 지급했습니다."
+        expiresAt
+          ? `1:1 매칭 플러스 ${durationDays}일 지급 완료 · ${new Date(expiresAt).toLocaleString("ko-KR")}까지`
+          : `1:1 매칭 플러스 ${durationDays}일을 지급했습니다.`
       );
     } catch (err) {
       setAdminOneOnOnePriorityGrantError(err instanceof Error ? err.message : "1:1 매칭 플러스 지급에 실패했습니다.");
@@ -13616,7 +13622,7 @@ export default function MyPage() {
                             <div>
                               <p className="text-xs font-semibold text-pink-900">1:1 매칭 플러스 지급</p>
                               <p className="mt-1 text-[11px] text-neutral-500">
-                                활성 1:1 신청 회원에게 플러스 30일을 바로 지급합니다.
+                                활성 1:1 신청 회원에게 플러스 7일 또는 30일을 바로 지급합니다.
                               </p>
                             </div>
                           </div>
@@ -13645,14 +13651,24 @@ export default function MyPage() {
                                               : "플러스 미이용"}
                                           </p>
                                         </div>
-                                        <button
-                                          type="button"
-                                          onClick={() => void handleAdminGrantOneOnOnePriorityBoost(card)}
-                                          disabled={granting}
-                                          className="h-8 rounded-lg bg-pink-600 px-3 text-xs font-semibold text-white disabled:opacity-60"
-                                        >
-                                          {granting ? "지급 중..." : activeBoost ? "30일 연장" : "30일 지급"}
-                                        </button>
+                                        <div className="flex shrink-0 gap-1.5">
+                                          <button
+                                            type="button"
+                                            onClick={() => void handleAdminGrantOneOnOnePriorityBoost(card, 7)}
+                                            disabled={granting}
+                                            className="h-8 rounded-lg border border-pink-200 bg-white px-3 text-xs font-semibold text-pink-700 disabled:opacity-60"
+                                          >
+                                            {granting ? "처리 중..." : activeBoost ? "7일 연장" : "7일 지급"}
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => void handleAdminGrantOneOnOnePriorityBoost(card, 30)}
+                                            disabled={granting}
+                                            className="h-8 rounded-lg bg-pink-600 px-3 text-xs font-semibold text-white disabled:opacity-60"
+                                          >
+                                            {granting ? "처리 중..." : activeBoost ? "30일 연장" : "30일 지급"}
+                                          </button>
+                                        </div>
                                       </div>
                                     </div>
                                   );
