@@ -262,6 +262,28 @@ function adminDateTime(value: unknown) {
   return typeof value === "string" && value ? new Date(value).toLocaleString("ko-KR") : "-";
 }
 
+function toDateTimeLocal(value: string | null | undefined) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const localDate = new Date(date.getTime() - date.getTimezoneOffset() * 60_000);
+  return localDate.toISOString().slice(0, 16);
+}
+
+function dateTimeLocalToIso(value: string) {
+  if (!value) return null;
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? null : date.toISOString();
+}
+
+function isSafeHeaderAdLink(value: string) {
+  const url = value.trim();
+  return (
+    (url.startsWith("/") && !url.startsWith("//") && !url.includes("\\")) ||
+    url.startsWith("https://")
+  );
+}
+
 function oneOnOneMatchStateLabel(value: unknown) {
   const state = String(value ?? "");
   if (state === "proposed") return "후보 전달";
@@ -1693,6 +1715,16 @@ type AdInquirySettingsResponse = {
   theme?: "emerald" | "rose" | "violet" | "sky" | "amber" | "neutral";
 };
 
+type HeaderAdSettingsResponse = {
+  enabled?: boolean;
+  imageUrl?: string;
+  linkUrl?: string;
+  altText?: string;
+  startsAt?: string | null;
+  expiresAt?: string | null;
+  visible?: boolean;
+};
+
 type OpenCardHomeCopyResponse = {
   subtitle?: string;
 };
@@ -2015,6 +2047,17 @@ export default function MyPage() {
   const [adInquirySaving, setAdInquirySaving] = useState(false);
   const [adInquiryError, setAdInquiryError] = useState("");
   const [adInquiryInfo, setAdInquiryInfo] = useState("");
+  const [headerAdEnabled, setHeaderAdEnabled] = useState(false);
+  const [headerAdImageUrl, setHeaderAdImageUrl] = useState("");
+  const [headerAdLinkUrl, setHeaderAdLinkUrl] = useState("");
+  const [headerAdAltText, setHeaderAdAltText] = useState("");
+  const [headerAdStartsAt, setHeaderAdStartsAt] = useState("");
+  const [headerAdExpiresAt, setHeaderAdExpiresAt] = useState("");
+  const [headerAdVisible, setHeaderAdVisible] = useState(false);
+  const [headerAdSaving, setHeaderAdSaving] = useState(false);
+  const [headerAdUploading, setHeaderAdUploading] = useState(false);
+  const [headerAdError, setHeaderAdError] = useState("");
+  const [headerAdInfo, setHeaderAdInfo] = useState("");
   const [toolsPatchNoteEnabled, setToolsPatchNoteEnabled] = useState(false);
   const [toolsPatchNoteText, setToolsPatchNoteText] = useState("");
   const [toolsPatchNoteItems, setToolsPatchNoteItems] = useState<ToolsPatchNoteResponse["items"]>([]);
@@ -3507,6 +3550,7 @@ export default function MyPage() {
         datingStatsRes,
         datingInsightsRes,
         accountDeletionAuditsRes,
+        headerAdRes,
         adInquiryRes,
         openCardHomeCopyRes,
         openCardPublicSlotsRes,
@@ -3516,6 +3560,7 @@ export default function MyPage() {
         fetch("/api/admin/dating/stats", { cache: "no-store" }),
         fetch("/api/admin/dating/insights", { cache: "no-store" }),
         fetch("/api/admin/account-deletion-audits", { cache: "no-store" }),
+        fetch("/api/admin/site/header-ad", { cache: "no-store" }),
         fetch("/api/admin/site/ad-inquiry", { cache: "no-store" }),
         fetch("/api/admin/dating/cards/home-copy", { cache: "no-store" }),
         fetch("/api/admin/dating/cards/public-slots", { cache: "no-store" }),
@@ -3526,6 +3571,7 @@ export default function MyPage() {
         datingStatsBody,
         datingInsightsBody,
         accountDeletionAuditsBody,
+        headerAdBody,
         adInquiryBody,
         openCardHomeCopyBody,
         openCardPublicSlotsBody,
@@ -3535,6 +3581,7 @@ export default function MyPage() {
         datingStatsRes.json().catch(() => ({})),
         datingInsightsRes.json().catch(() => ({})),
         accountDeletionAuditsRes.json().catch(() => ({})),
+        headerAdRes.json().catch(() => ({})),
         adInquiryRes.json().catch(() => ({})),
         openCardHomeCopyRes.json().catch(() => ({})),
         openCardPublicSlotsRes.json().catch(() => ({})),
@@ -3544,6 +3591,7 @@ export default function MyPage() {
         { error?: string; stats?: AdminDatingStats },
         (AdminDatingInsights & { error?: string }) | { error?: string },
         AdminAccountDeletionAuditsResponse,
+        HeaderAdSettingsResponse,
         AdInquirySettingsResponse,
         OpenCardHomeCopyResponse,
         OpenCardPublicSlotsResponse,
@@ -3565,6 +3613,15 @@ export default function MyPage() {
           ? ""
           : accountDeletionAuditsBody.error ?? "탈퇴 기록을 불러오지 못했습니다."
       );
+      if (headerAdRes.ok) {
+        setHeaderAdEnabled(headerAdBody.enabled === true);
+        setHeaderAdImageUrl(headerAdBody.imageUrl ?? "");
+        setHeaderAdLinkUrl(headerAdBody.linkUrl ?? "");
+        setHeaderAdAltText(headerAdBody.altText ?? "");
+        setHeaderAdStartsAt(toDateTimeLocal(headerAdBody.startsAt));
+        setHeaderAdExpiresAt(toDateTimeLocal(headerAdBody.expiresAt));
+        setHeaderAdVisible(headerAdBody.visible === true);
+      }
       if (adInquiryRes.ok) {
         setAdInquiryEnabled(adInquiryBody.enabled !== false);
         setAdInquiryTitle(adInquiryBody.title ?? "(광고) 문의 주세요");
@@ -5890,6 +5947,107 @@ export default function MyPage() {
     setToolsPatchNoteText(nextText.slice(0, 100));
     setToolsPatchNoteError("");
     setToolsPatchNoteInfo("");
+  };
+
+  const applyHeaderAdSetting = (setting: HeaderAdSettingsResponse) => {
+    setHeaderAdEnabled(setting.enabled === true);
+    setHeaderAdImageUrl(setting.imageUrl ?? "");
+    setHeaderAdLinkUrl(setting.linkUrl ?? "");
+    setHeaderAdAltText(setting.altText ?? "");
+    setHeaderAdStartsAt(toDateTimeLocal(setting.startsAt));
+    setHeaderAdExpiresAt(toDateTimeLocal(setting.expiresAt));
+    setHeaderAdVisible(setting.visible === true);
+  };
+
+  const handleAdminSaveHeaderAd = async () => {
+    setHeaderAdSaving(true);
+    setHeaderAdError("");
+    setHeaderAdInfo("");
+    try {
+      const res = await fetch("/api/admin/site/header-ad", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: headerAdEnabled,
+          imageUrl: headerAdImageUrl,
+          linkUrl: headerAdLinkUrl,
+          altText: headerAdAltText,
+          startsAt: dateTimeLocalToIso(headerAdStartsAt),
+          expiresAt: dateTimeLocalToIso(headerAdExpiresAt),
+        }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        setting?: HeaderAdSettingsResponse;
+      };
+      if (!res.ok || !body.ok || !body.setting) {
+        setHeaderAdError(body.error ?? "헤더 배너 설정 저장에 실패했습니다.");
+        return;
+      }
+      applyHeaderAdSetting(body.setting);
+      setHeaderAdInfo(body.setting.visible ? "헤더 배너를 노출했습니다." : "헤더 배너 설정을 저장했습니다.");
+    } catch (error) {
+      setHeaderAdError(error instanceof Error ? error.message : "헤더 배너 설정 저장에 실패했습니다.");
+    } finally {
+      setHeaderAdSaving(false);
+    }
+  };
+
+  const handleAdminUploadHeaderAd = async (file: File | null) => {
+    if (!file) return;
+    setHeaderAdUploading(true);
+    setHeaderAdError("");
+    setHeaderAdInfo("");
+    try {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch("/api/admin/site/header-ad", { method: "POST", body: form });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        setting?: HeaderAdSettingsResponse;
+      };
+      if (!res.ok || !body.ok || !body.setting) {
+        setHeaderAdError(body.error ?? "배너 이미지 업로드에 실패했습니다.");
+        return;
+      }
+      applyHeaderAdSetting(body.setting);
+      setHeaderAdInfo("이미지를 4:1 WebP로 최적화해 업로드했습니다. 링크를 확인한 뒤 저장해 주세요.");
+    } catch (error) {
+      setHeaderAdError(error instanceof Error ? error.message : "배너 이미지 업로드에 실패했습니다.");
+    } finally {
+      setHeaderAdUploading(false);
+    }
+  };
+
+  const handleAdminRemoveHeaderAd = async () => {
+    if (!confirm("헤더 배너 광고를 숨기고 등록 정보를 비울까요?")) return;
+    setHeaderAdSaving(true);
+    setHeaderAdError("");
+    setHeaderAdInfo("");
+    try {
+      const res = await fetch("/api/admin/site/header-ad", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled: false, imageUrl: "", linkUrl: "", altText: "", startsAt: null, expiresAt: null }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        setting?: HeaderAdSettingsResponse;
+      };
+      if (!res.ok || !body.ok || !body.setting) {
+        setHeaderAdError(body.error ?? "헤더 배너 제거에 실패했습니다.");
+        return;
+      }
+      applyHeaderAdSetting(body.setting);
+      setHeaderAdInfo("헤더 배너 광고를 제거했습니다.");
+    } catch (error) {
+      setHeaderAdError(error instanceof Error ? error.message : "헤더 배너 제거에 실패했습니다.");
+    } finally {
+      setHeaderAdSaving(false);
+    }
   };
 
   const handleAdminSaveAdInquiry = async () => {
@@ -11121,7 +11279,7 @@ export default function MyPage() {
                   adminManageTab === "site_ads" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
               }`}
             >
-              광고 문의
+              광고 관리
             </button>
           </div>
 
@@ -14934,6 +15092,147 @@ export default function MyPage() {
 
             {adminManageTab === "site_ads" && (
             <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
+            <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div>
+                  <p className="text-xs font-semibold text-violet-800">헤더 배너 광고</p>
+                  <p className="mt-1 text-[11px] text-neutral-500">
+                    짐툴 로고 옆에만 작게 노출됩니다. OFF이거나 이미지가 없으면 헤더 공간도 생기지 않습니다.
+                  </p>
+                </div>
+                <span
+                  className={`rounded-full px-2 py-1 text-[11px] font-semibold ${
+                    headerAdVisible
+                      ? "bg-emerald-100 text-emerald-700"
+                      : headerAdEnabled
+                        ? "bg-amber-100 text-amber-700"
+                        : "bg-neutral-200 text-neutral-600"
+                  }`}
+                >
+                  {headerAdVisible ? "현재 노출 중" : headerAdEnabled ? "예약·기간 외" : "숨김"}
+                </span>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => setHeaderAdEnabled(true)}
+                  disabled={headerAdSaving || headerAdUploading}
+                  className={`h-8 rounded-md px-3 text-xs font-medium text-white ${headerAdEnabled ? "bg-emerald-600" : "bg-neutral-400"}`}
+                >
+                  ON
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHeaderAdEnabled(false)}
+                  disabled={headerAdSaving || headerAdUploading}
+                  className={`h-8 rounded-md px-3 text-xs font-medium text-white ${!headerAdEnabled ? "bg-rose-600" : "bg-neutral-400"}`}
+                >
+                  OFF
+                </button>
+                <label className="inline-flex h-8 cursor-pointer items-center rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800">
+                  {headerAdUploading ? "변환·업로드 중..." : "배너 이미지 선택"}
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    disabled={headerAdSaving || headerAdUploading}
+                    className="sr-only"
+                    onChange={(event) => {
+                      void handleAdminUploadHeaderAd(event.target.files?.[0] ?? null);
+                      event.currentTarget.value = "";
+                    }}
+                  />
+                </label>
+              </div>
+
+              {headerAdImageUrl ? (
+                <div className="mt-3 max-w-[320px]">
+                  <p className="mb-1 text-[11px] text-neutral-500">실제 비율 미리보기 (4:1)</p>
+                  <div className="relative aspect-[4/1] overflow-hidden rounded-lg border border-neutral-200 bg-white">
+                    <Image
+                      src={headerAdImageUrl}
+                      alt={headerAdAltText || "헤더 광고 미리보기"}
+                      fill
+                      sizes="320px"
+                      className="object-cover"
+                      unoptimized
+                    />
+                    <span className="absolute bottom-0 right-0 bg-black/65 px-1 py-px text-[9px] font-bold text-white">AD</span>
+                  </div>
+                </div>
+              ) : null}
+
+              <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                <input
+                  type="url"
+                  value={headerAdLinkUrl}
+                  onChange={(event) => setHeaderAdLinkUrl(event.target.value)}
+                  placeholder="클릭 이동 링크 (https://... 또는 /경로)"
+                  className="h-10 rounded-lg border border-violet-200 bg-white px-3 text-sm sm:col-span-2"
+                />
+                <input
+                  type="text"
+                  value={headerAdAltText}
+                  onChange={(event) => setHeaderAdAltText(event.target.value)}
+                  maxLength={100}
+                  placeholder="광고 설명 (예: OOO 헬스장 이벤트)"
+                  className="h-10 rounded-lg border border-violet-200 bg-white px-3 text-sm sm:col-span-2"
+                />
+                <label className="text-[11px] font-medium text-neutral-600">
+                  노출 시작 (선택)
+                  <input
+                    type="datetime-local"
+                    value={headerAdStartsAt}
+                    onChange={(event) => setHeaderAdStartsAt(event.target.value)}
+                    className="mt-1 h-10 w-full rounded-lg border border-violet-200 bg-white px-3 text-sm"
+                  />
+                </label>
+                <label className="text-[11px] font-medium text-neutral-600">
+                  노출 종료 (선택)
+                  <input
+                    type="datetime-local"
+                    value={headerAdExpiresAt}
+                    onChange={(event) => setHeaderAdExpiresAt(event.target.value)}
+                    className="mt-1 h-10 w-full rounded-lg border border-violet-200 bg-white px-3 text-sm"
+                  />
+                </label>
+              </div>
+
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => void handleAdminSaveHeaderAd()}
+                  disabled={headerAdSaving || headerAdUploading}
+                  className="h-9 rounded-lg bg-violet-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                >
+                  {headerAdSaving ? "저장 중..." : "배너 설정 저장"}
+                </button>
+                {isSafeHeaderAdLink(headerAdLinkUrl) ? (
+                  <a
+                    href={headerAdLinkUrl}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex h-9 items-center rounded-lg border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800"
+                  >
+                    링크 확인
+                  </a>
+                ) : null}
+                {(headerAdImageUrl || headerAdLinkUrl) ? (
+                  <button
+                    type="button"
+                    onClick={() => void handleAdminRemoveHeaderAd()}
+                    disabled={headerAdSaving || headerAdUploading}
+                    className="h-9 rounded-lg border border-rose-200 bg-white px-3 text-xs font-medium text-rose-700 disabled:opacity-50"
+                  >
+                    광고 제거
+                  </button>
+                ) : null}
+              </div>
+              {headerAdError && <p className="mt-2 text-xs text-rose-600">{headerAdError}</p>}
+              {headerAdInfo && <p className="mt-2 text-xs text-emerald-700">{headerAdInfo}</p>}
+            </div>
+
+            <div className="mt-4 border-t border-violet-100 pt-4">
             <p className="text-xs font-semibold text-violet-800">광고 문의 슬롯 설정</p>
             <p className="mt-1 text-[11px] text-neutral-500">
               홈 카드와 광고 문의 페이지에서 사용하는 문구와 링크를 여기서 관리합니다.
@@ -15034,6 +15333,7 @@ export default function MyPage() {
             </div>
             {adInquiryError && <p className="mt-2 text-xs text-rose-600">{adInquiryError}</p>}
             {adInquiryInfo && <p className="mt-2 text-xs text-emerald-700">{adInquiryInfo}</p>}
+            </div>
           </div>
           )}
 

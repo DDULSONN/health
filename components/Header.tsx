@@ -21,6 +21,13 @@ const NAV_ITEMS = [
 const TOOL_PATHS = ["/tools", "/flirting-generator", "/lifts", "/1rm", "/certify"];
 const DATING_REACTION_COUNT_EVENT = "dating-reaction-count";
 
+type HeaderAd = {
+  visible?: boolean;
+  imageUrl?: string;
+  linkUrl?: string;
+  altText?: string;
+};
+
 function isActive(pathname: string, href: string) {
   if (href === "/tools") {
     return TOOL_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
@@ -32,7 +39,31 @@ export default function Header() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const [datingReactionCount, setDatingReactionCount] = useState<number | null>(null);
+  const [headerAd, setHeaderAd] = useState<HeaderAd | null>(null);
   const showDatingReactionBadge = pathname.startsWith("/community/dating/cards");
+
+  useEffect(() => {
+    let cancelled = false;
+    if (pathname === "/" || pathname.startsWith("/landing")) return;
+
+    fetch("/api/site/header-ad", { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((body: HeaderAd | null) => {
+        if (cancelled) return;
+        if (body?.visible && body.imageUrl && body.linkUrl) {
+          setHeaderAd(body);
+        } else {
+          setHeaderAd(null);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setHeaderAd(null);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname]);
 
   useEffect(() => {
     let cancelled = false;
@@ -88,8 +119,32 @@ export default function Header() {
             />
             <span>짐툴</span>
           </Link>
+          {headerAd?.imageUrl && headerAd.linkUrl ? (
+            <a
+              href={headerAd.linkUrl}
+              target={headerAd.linkUrl.startsWith("/") ? undefined : "_blank"}
+              rel={headerAd.linkUrl.startsWith("/") ? "sponsored" : "noreferrer sponsored"}
+              aria-label={headerAd.altText || "광고"}
+              className="relative inline-flex h-7 w-[92px] shrink-0 overflow-hidden rounded-lg border border-black/10 bg-neutral-50 shadow-sm md:h-8 md:w-32"
+            >
+              <Image
+                src={headerAd.imageUrl}
+                alt={headerAd.altText || "광고"}
+                fill
+                sizes="(min-width: 768px) 128px, 92px"
+                className="object-cover"
+                unoptimized
+                onError={() => setHeaderAd(null)}
+              />
+              <span className="absolute bottom-0 right-0 bg-black/65 px-1 py-px text-[8px] font-bold leading-none text-white">
+                AD
+              </span>
+            </a>
+          ) : null}
           {showDatingReactionBadge && datingReactionCount !== null ? (
-            <span className="inline-flex max-w-[112px] items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-extrabold text-rose-600">
+            <span
+              className={`${headerAd ? "hidden sm:inline-flex" : "inline-flex"} max-w-[112px] items-center gap-1 rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-extrabold text-rose-600`}
+            >
               <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-rose-500" aria-hidden />
               <span className="truncate">오늘 {datingReactionCount.toLocaleString("ko-KR")}건</span>
             </span>
