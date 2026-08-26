@@ -2,6 +2,11 @@ import type { User } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import { kvIncrWindow } from "@/lib/edge-kv";
 import {
+  companyAllowsEmailDomain,
+  findEmploymentCompanyById,
+  loadEmploymentCompanyDirectory,
+} from "@/lib/employment-company-directory";
+import {
   EMPLOYMENT_CHALLENGE_KEY,
   EMPLOYMENT_VERIFICATION_KEY,
   addEmploymentValidityMonths,
@@ -98,6 +103,15 @@ export async function POST(request: Request) {
     if (new Date(challenge.expires_at).getTime() <= Date.now()) {
       return NextResponse.json({ ok: false, error: "인증번호가 만료되었습니다. 새 인증번호를 발송해주세요." }, { status: 400 });
     }
+
+    const directory = await loadEmploymentCompanyDirectory(admin);
+    const company = findEmploymentCompanyById(directory.companies, challenge.company_id);
+    if (!company || !companyAllowsEmailDomain(company, challenge.email_domain)) {
+      return NextResponse.json(
+        { ok: false, error: "회사 또는 이메일 도메인 승인이 변경되었습니다. 회사 선택부터 다시 진행해주세요." },
+        { status: 409 }
+      );
+    }
     if (!verifyEmploymentOtp(challenge, user.id, code)) {
       return NextResponse.json({ ok: false, error: "인증번호가 맞지 않습니다." }, { status: 400 });
     }
@@ -117,7 +131,7 @@ export async function POST(request: Request) {
     const next: EmploymentVerification = {
       id: current?.id ?? crypto.randomUUID(),
       user_id: user.id,
-      company_name: challenge.company_name,
+      company_name: company.name,
       email_domain: challenge.email_domain,
       email_hash: challenge.email_hash,
       status: "verified",

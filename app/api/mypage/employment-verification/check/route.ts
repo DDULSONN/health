@@ -1,8 +1,13 @@
 import { NextResponse } from "next/server";
-import { validateWorkEmailMailboxDomain } from "@/lib/employment-verification";
+import {
+  companyAllowsEmailDomain,
+  findEmploymentCompanyById,
+  loadEmploymentCompanyDirectory,
+} from "@/lib/employment-company-directory";
+import { validateWorkEmail, validateWorkEmailMailboxDomain } from "@/lib/employment-verification";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
-import { createClient } from "@/lib/supabase/server";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -35,6 +40,31 @@ export async function POST(request: Request) {
     }
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
+    const email = validateWorkEmail(body.email);
+    if (!email.ok) {
+      return NextResponse.json({ ok: false, eligible: false, error: email.error }, { status: 400 });
+    }
+
+    const directory = await loadEmploymentCompanyDirectory(createAdminClient());
+    const company = findEmploymentCompanyById(directory.companies, body.companyId);
+    if (!company) {
+      return NextResponse.json(
+        { ok: false, eligible: false, error: "인증할 회사를 목록에서 선택해주세요." },
+        { status: 400 }
+      );
+    }
+    if (!companyAllowsEmailDomain(company, email.domain)) {
+      return NextResponse.json(
+        {
+          ok: false,
+          eligible: false,
+          code: "COMPANY_DOMAIN_MISMATCH",
+          error: `${company.name}에 등록된 회사 이메일 도메인과 일치하지 않습니다.`,
+        },
+        { status: 400 }
+      );
+    }
+
     const result = await validateWorkEmailMailboxDomain(body.email);
     if (!result.ok) {
       return NextResponse.json(
@@ -47,7 +77,8 @@ export async function POST(request: Request) {
       ok: true,
       eligible: true,
       domain: result.domain,
-      message: "인증번호를 받을 수 있는 직장 이메일 도메인으로 확인했습니다.",
+      company: { id: company.id, name: company.name },
+      message: `${company.name}의 승인된 직장 이메일 도메인으로 확인했습니다.`,
     });
   } catch (error) {
     console.error("[POST /api/mypage/employment-verification/check] failed", { requestId, error });

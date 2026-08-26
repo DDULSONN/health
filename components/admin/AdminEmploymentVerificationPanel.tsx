@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useCallback, useEffect, useState } from "react";
+import AdminEmploymentCompanyDirectoryPanel from "@/components/admin/AdminEmploymentCompanyDirectoryPanel";
 
 type Verification = {
   id: string;
@@ -189,7 +190,7 @@ export default function AdminEmploymentVerificationPanel() {
           <div>
             <p className="text-sm font-bold text-violet-950">직장인 인증 관리</p>
             <p className="mt-1 text-xs leading-5 text-neutral-600">
-              현재는 관리자 수동 인증 단계입니다. 회사 이메일 주소 전체는 저장하지 않고 회사명과 도메인만 저장합니다.
+              회사·도메인 자동 인증 목록을 관리하고 필요한 회원에게 수동 인증을 부여할 수 있습니다.
             </p>
           </div>
           <button
@@ -204,6 +205,8 @@ export default function AdminEmploymentVerificationPanel() {
         {error ? <p className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}
         {message ? <p className="mt-3 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{message}</p> : null}
       </div>
+
+      <AdminEmploymentCompanyDirectoryPanel />
 
       <div className="rounded-xl border border-neutral-200 bg-white p-4">
         <p className="text-sm font-semibold text-neutral-900">회원 검색</p>

@@ -14,10 +14,17 @@ type Verification = {
 
 type Pending = {
   maskedEmail: string;
+  companyId: string;
   companyName: string;
   emailDomain: string;
   expiresAt: string;
   resendAfterSec: number;
+};
+
+type Company = {
+  id: string;
+  name: string;
+  domains: string[];
 };
 
 type ApiResponse = {
@@ -31,12 +38,15 @@ type ApiResponse = {
   resendAfterSec?: number;
   eligible?: boolean;
   domain?: string;
+  company?: { id: string; name: string };
+  companies?: Company[];
 };
 
 export default function EmploymentVerificationPanel() {
   const [verification, setVerification] = useState<Verification | null>(null);
   const [pending, setPending] = useState<Pending | null>(null);
-  const [companyName, setCompanyName] = useState("");
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [companyId, setCompanyId] = useState("");
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(true);
@@ -52,13 +62,31 @@ export default function EmploymentVerificationPanel() {
   const loadStatus = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await fetch("/api/mypage/employment-verification", { cache: "no-store" });
-      const body = (await response.json().catch(() => ({}))) as ApiResponse;
-      if (!response.ok || body.ok === false) throw new Error(body.error || "직장 인증 상태를 불러오지 못했습니다.");
-      setVerification(body.verification ?? null);
-      setPending(body.pending ?? null);
-      setResendAfterSec(body.pending?.resendAfterSec ?? 0);
-      if (body.pending?.companyName) setCompanyName(body.pending.companyName);
+      const [statusResponse, companiesResponse] = await Promise.all([
+        fetch("/api/mypage/employment-verification", { cache: "no-store" }),
+        fetch("/api/mypage/employment-verification/companies", { cache: "no-store" }),
+      ]);
+      const [statusBody, companiesBody] = (await Promise.all([
+        statusResponse.json().catch(() => ({})),
+        companiesResponse.json().catch(() => ({})),
+      ])) as [ApiResponse, ApiResponse];
+      if (!statusResponse.ok || statusBody.ok === false) {
+        throw new Error(statusBody.error || "직장 인증 상태를 불러오지 못했습니다.");
+      }
+      if (!companiesResponse.ok || companiesBody.ok === false) {
+        throw new Error(companiesBody.error || "인증 가능한 회사 목록을 불러오지 못했습니다.");
+      }
+      const nextCompanies = companiesBody.companies ?? [];
+      const nextVerification = statusBody.verification ?? null;
+      setCompanies(nextCompanies);
+      setVerification(nextVerification);
+      setPending(statusBody.pending ?? null);
+      setResendAfterSec(statusBody.pending?.resendAfterSec ?? 0);
+      setCompanyId(
+        statusBody.pending?.companyId ??
+          nextCompanies.find((company) => company.name === nextVerification?.company_name)?.id ??
+          ""
+      );
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "직장 인증 상태를 불러오지 못했습니다.");
     } finally {
@@ -80,6 +108,11 @@ export default function EmploymentVerificationPanel() {
 
   const checkEmailEligibility = async () => {
     const normalizedEmail = email.trim().toLowerCase();
+    if (!companyId) {
+      setEmailEligibility("ineligible");
+      setError("회사를 먼저 선택해주세요.");
+      return false;
+    }
     if (!normalizedEmail) {
       setEmailEligibility("idle");
       return false;
@@ -90,7 +123,7 @@ export default function EmploymentVerificationPanel() {
       const response = await fetch("/api/mypage/employment-verification/check", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email: normalizedEmail }),
+        body: JSON.stringify({ companyId, email: normalizedEmail }),
       });
       const body = (await response.json().catch(() => ({}))) as ApiResponse;
       if (!response.ok || body.ok === false || body.eligible !== true) {
@@ -98,7 +131,7 @@ export default function EmploymentVerificationPanel() {
         throw new Error(body.error || "직장 이메일로 확인되지 않았습니다.");
       }
       setEmailEligibility("eligible");
-      setMessage(body.message || `@${body.domain ?? ""} 직장 이메일을 확인했습니다.`);
+      setMessage(body.message || `@${body.domain ?? ""} 회사 이메일을 확인했습니다.`);
       return true;
     } catch (checkError) {
       setError(checkError instanceof Error ? checkError.message : "직장 이메일 확인에 실패했습니다.");
@@ -119,7 +152,7 @@ export default function EmploymentVerificationPanel() {
       const response = await fetch("/api/mypage/employment-verification/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ companyName, email }),
+        body: JSON.stringify({ companyId, email }),
       });
       const body = (await response.json().catch(() => ({}))) as ApiResponse;
       if (!response.ok || body.ok === false) {
@@ -128,7 +161,8 @@ export default function EmploymentVerificationPanel() {
       }
       const nextPending: Pending = {
         maskedEmail: body.maskedEmail ?? email,
-        companyName: companyName.trim(),
+        companyId,
+        companyName: body.company?.name ?? companies.find((company) => company.id === companyId)?.name ?? "",
         emailDomain: email.split("@").pop()?.toLowerCase() ?? "",
         expiresAt: body.expiresAt ?? new Date(Date.now() + 10 * 60 * 1000).toISOString(),
         resendAfterSec: body.resendAfterSec ?? 60,
@@ -205,7 +239,7 @@ export default function EmploymentVerificationPanel() {
             type="button"
             onClick={() => {
               setRenewing(true);
-              setCompanyName(verification.company_name);
+              setCompanyId(companies.find((company) => company.name === verification.company_name)?.id ?? "");
               setEmail("");
               setError("");
               setMessage("");
@@ -228,15 +262,22 @@ export default function EmploymentVerificationPanel() {
 
       {showForm && !isRevoked ? (
         <div className="mt-3 space-y-2">
-          <input
-            type="text"
-            value={companyName}
-            onChange={(event) => setCompanyName(event.target.value)}
-            maxLength={80}
-            placeholder="회사명"
-            autoComplete="organization"
+          <select
+            value={companyId}
+            onChange={(event) => {
+              setCompanyId(event.target.value);
+              setEmailEligibility("idle");
+              setMessage("");
+            }}
             className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-violet-400"
-          />
+          >
+            <option value="">회사를 선택해주세요</option>
+            {companies.map((company) => (
+              <option key={company.id} value={company.id}>
+                {company.name}
+              </option>
+            ))}
+          </select>
           <input
             type="email"
             value={email}
@@ -255,12 +296,19 @@ export default function EmploymentVerificationPanel() {
           />
           {checkingEmail ? <p className="text-[11px] text-violet-700">회사 이메일 도메인을 확인하는 중...</p> : null}
           {emailEligibility === "eligible" ? <p className="text-[11px] font-semibold text-emerald-700">직장 이메일 도메인 확인 완료</p> : null}
-          <p className="text-[11px] leading-5 text-neutral-500">Gmail·네이버 등 개인 이메일은 제외되며, 이메일 주소 전체는 인증 완료 후 저장하지 않습니다.</p>
+          {companyId ? (
+            <p className="text-[11px] leading-5 text-neutral-500">
+              승인 도메인: {companies.find((company) => company.id === companyId)?.domains.map((domain) => `@${domain}`).join(", ")}
+            </p>
+          ) : companies.length === 0 ? (
+            <p className="text-[11px] leading-5 text-amber-700">현재 등록된 회사가 없습니다. 관리자에게 회사·도메인 등록을 요청해주세요.</p>
+          ) : null}
+          <p className="text-[11px] leading-5 text-neutral-500">선택한 회사의 승인 도메인과 일치해야 하며, 이메일 주소 전체는 인증 완료 후 저장하지 않습니다.</p>
           <div className="flex flex-wrap gap-2">
             <button
               type="button"
               onClick={() => void sendCode()}
-              disabled={sending || checkingEmail || resendAfterSec > 0 || !companyName.trim() || !email.trim()}
+              disabled={sending || checkingEmail || resendAfterSec > 0 || !companyId || !email.trim()}
               className="h-10 rounded-lg border border-violet-200 bg-white px-3 text-sm font-semibold text-violet-700 disabled:opacity-50"
             >
               {sending ? "발송 중..." : checkingEmail ? "이메일 확인 중..." : resendAfterSec > 0 ? `${resendAfterSec}초 후 재발송` : pending ? "인증번호 재발송" : "인증번호 발송"}

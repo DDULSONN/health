@@ -1,12 +1,17 @@
 import { NextResponse } from "next/server";
 import { kvIncrWindow } from "@/lib/edge-kv";
 import {
+  companyAllowsEmailDomain,
+  findEmploymentCompanyById,
+  loadEmploymentCompanyDirectory,
+} from "@/lib/employment-company-directory";
+import {
   EMPLOYMENT_CHALLENGE_KEY,
   EMPLOYMENT_RESEND_SECONDS,
   createEmploymentOtp,
-  normalizeCompanyName,
   readEmploymentChallenge,
   readEmploymentVerification,
+  validateWorkEmail,
   validateWorkEmailMailboxDomain,
 } from "@/lib/employment-verification";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
@@ -89,11 +94,25 @@ export async function POST(request: Request) {
     }
 
     const body = (await request.json().catch(() => ({}))) as Record<string, unknown>;
-    const companyName = normalizeCompanyName(body.companyName);
-    const emailResult = await validateWorkEmailMailboxDomain(body.email);
-    if (!companyName) {
-      return NextResponse.json({ ok: false, error: "회사명을 입력해주세요." }, { status: 400 });
+    const email = validateWorkEmail(body.email);
+    if (!email.ok) {
+      return NextResponse.json({ ok: false, error: email.error }, { status: 400 });
     }
+
+    const admin = createAdminClient();
+    const directory = await loadEmploymentCompanyDirectory(admin);
+    const company = findEmploymentCompanyById(directory.companies, body.companyId);
+    if (!company) {
+      return NextResponse.json({ ok: false, error: "인증할 회사를 목록에서 선택해주세요." }, { status: 400 });
+    }
+    if (!companyAllowsEmailDomain(company, email.domain)) {
+      return NextResponse.json(
+        { ok: false, code: "COMPANY_DOMAIN_MISMATCH", error: `${company.name}에 등록된 회사 이메일 도메인과 일치하지 않습니다.` },
+        { status: 400 }
+      );
+    }
+
+    const emailResult = await validateWorkEmailMailboxDomain(body.email);
     if (!emailResult.ok) {
       return NextResponse.json(
         { ok: false, error: emailResult.error },
@@ -101,7 +120,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const admin = createAdminClient();
     const { data: authData, error: authError } = await admin.auth.admin.getUserById(user.id);
     if (authError || !authData.user) throw authError ?? new Error("auth user missing");
 
@@ -133,7 +151,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const { code, challenge } = createEmploymentOtp({ userId: user.id, email: emailResult.email, companyName });
+    const { code, challenge } = createEmploymentOtp({
+      userId: user.id,
+      email: emailResult.email,
+      companyId: company.id,
+      companyName: company.name,
+    });
     const nextMetadata = { ...(authData.user.app_metadata ?? {}), [EMPLOYMENT_CHALLENGE_KEY]: challenge };
     const { error: saveError } = await admin.auth.admin.updateUserById(user.id, { app_metadata: nextMetadata });
     if (saveError) throw saveError;
@@ -141,7 +164,7 @@ export async function POST(request: Request) {
     const sendResult = await sendOtpEmail({
       email: emailResult.email,
       code,
-      companyName,
+      companyName: company.name,
       challengeId: challenge.id,
     });
     if (!sendResult.ok) {
@@ -164,6 +187,7 @@ export async function POST(request: Request) {
       maskedEmail: challenge.masked_email,
       expiresAt: challenge.expires_at,
       resendAfterSec: EMPLOYMENT_RESEND_SECONDS,
+      company: { id: company.id, name: company.name },
       message: `${challenge.masked_email}로 인증번호를 발송했습니다.`,
     });
   } catch (error) {

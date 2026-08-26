@@ -28,6 +28,7 @@ export async function GET() {
     const pending = challenge && new Date(challenge.expires_at).getTime() > now
       ? {
           maskedEmail: challenge.masked_email,
+          companyId: challenge.company_id,
           companyName: challenge.company_name,
           emailDomain: challenge.email_domain,
           expiresAt: challenge.expires_at,

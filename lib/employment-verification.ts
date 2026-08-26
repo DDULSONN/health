@@ -65,6 +65,7 @@ export type EmploymentVerification = {
 export type EmploymentChallenge = {
   id: string;
   user_id: string;
+  company_id: string;
   company_name: string;
   email_domain: string;
   email_hash: string;
@@ -129,16 +130,22 @@ export function validateWorkEmail(value: unknown) {
   return { ok: true as const, email, domain };
 }
 
-export async function validateWorkEmailMailboxDomain(value: unknown) {
-  const validation = validateWorkEmail(value);
-  if (!validation.ok) return validation;
-
+export async function validateCompanyDomainMailbox(value: unknown) {
+  const domain = normalizeEmailDomain(value);
+  if (!isValidCompanyDomain(domain)) {
+    return {
+      ok: false as const,
+      domain,
+      error: "개인 메일이 아닌 올바른 회사 이메일 도메인을 입력해주세요.",
+      temporary: false,
+    };
+  }
   const providers = ["https://cloudflare-dns.com/dns-query", "https://dns.google/resolve"];
   let lastError: unknown = null;
   for (const provider of providers) {
     try {
       const url = new URL(provider);
-      url.searchParams.set("name", validation.domain);
+      url.searchParams.set("name", domain);
       url.searchParams.set("type", "MX");
       const response = await fetch(url, {
         headers: { Accept: "application/dns-json" },
@@ -153,9 +160,8 @@ export async function validateWorkEmailMailboxDomain(value: unknown) {
       if (body.Status === 3) {
         return {
           ok: false as const,
-          email: validation.email,
-          domain: validation.domain,
-          error: "존재하지 않는 이메일 도메인입니다. 주소를 다시 확인해주세요.",
+          domain,
+          error: "존재하지 않는 회사 이메일 도메인입니다.",
           temporary: false,
         };
       }
@@ -169,29 +175,38 @@ export async function validateWorkEmailMailboxDomain(value: unknown) {
       if (!hasMailServer) {
         return {
           ok: false as const,
-          email: validation.email,
-          domain: validation.domain,
+          domain,
           error: "메일을 받을 수 있는 회사 도메인인지 확인할 수 없습니다.",
           temporary: false,
         };
       }
-      return validation;
+      return { ok: true as const, domain };
     } catch (error) {
       lastError = error;
     }
   }
 
   console.warn("[employment-verification] MX lookup temporarily unavailable", {
-    domain: validation.domain,
+    domain,
     message: lastError instanceof Error ? lastError.message : "UNKNOWN",
   });
   return {
     ok: false as const,
-    email: validation.email,
-    domain: validation.domain,
+    domain,
     error: "회사 이메일 확인이 일시적으로 지연되고 있습니다. 잠시 후 다시 시도해주세요.",
     temporary: true,
   };
+}
+
+export async function validateWorkEmailMailboxDomain(value: unknown) {
+  const validation = validateWorkEmail(value);
+  if (!validation.ok) return validation;
+
+  const domainResult = await validateCompanyDomainMailbox(validation.domain);
+  if (!domainResult.ok) {
+    return { ...domainResult, email: validation.email };
+  }
+  return validation;
 }
 
 export function maskWorkEmail(email: string) {
@@ -204,7 +219,7 @@ export function hashWorkEmail(email: string) {
   return crypto.createHmac("sha256", employmentSecret()).update(`email:${normalizeWorkEmail(email)}`).digest("hex");
 }
 
-export function createEmploymentOtp(input: { userId: string; email: string; companyName: string }) {
+export function createEmploymentOtp(input: { userId: string; email: string; companyId: string; companyName: string }) {
   const code = crypto.randomInt(100000, 1000000).toString();
   const id = crypto.randomUUID();
   const sentAt = new Date();
@@ -217,6 +232,7 @@ export function createEmploymentOtp(input: { userId: string; email: string; comp
   const challenge: EmploymentChallenge = {
     id,
     user_id: input.userId,
+    company_id: input.companyId,
     company_name: input.companyName,
     email_domain: normalizeEmailDomain(input.email),
     email_hash: emailHash,
@@ -283,6 +299,7 @@ export function readEmploymentChallenge(user: User): EmploymentChallenge | null 
   if (
     typeof item.id !== "string" ||
     item.user_id !== user.id ||
+    typeof item.company_id !== "string" ||
     typeof item.company_name !== "string" ||
     typeof item.email_domain !== "string" ||
     typeof item.email_hash !== "string" ||
