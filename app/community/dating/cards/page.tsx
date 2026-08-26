@@ -17,6 +17,11 @@ import { cacheOpenCardDetail, cachePaidCardDetail } from "@/lib/dating-detail-ca
 import { createClient } from "@/lib/supabase/client";
 import { trackCheckoutStarted } from "@/lib/payment-analytics";
 import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
+import OneOnOneContactNudge from "@/components/dating/OneOnOneContactNudge";
+import type {
+  OneOnOneContactNudgePresetKey,
+  OneOnOneContactNudgeSummary,
+} from "@/lib/dating-1on1-contact-nudge";
 
 type PublicCard = {
   id: string;
@@ -228,6 +233,7 @@ type OneOnOneMatchPreview = {
   action_required?: boolean;
   counterparty_card?: OneOnOneCardPreview | null;
   counterparty_phone?: string | null;
+  contact_nudge?: OneOnOneContactNudgeSummary | null;
   created_at?: string | null;
 };
 
@@ -1795,6 +1801,7 @@ export default function OpenCardsPage() {
   const oneOnOneMatchActionLocksRef = useRef<Set<string>>(new Set());
   const pendingSexTabScrollRef = useRef<number | null>(null);
   const [processingOneOnOneContactIds, setProcessingOneOnOneContactIds] = useState<string[]>([]);
+  const [processingOneOnOneNudgeIds, setProcessingOneOnOneNudgeIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
   const [refreshingOneOnOneRecommendationIds, setRefreshingOneOnOneRecommendationIds] = useState<string[]>([]);
 
@@ -2856,6 +2863,28 @@ export default function OpenCardsPage() {
   const openCardsAudienceBlocked = Boolean(
     cardsAudience && cardsAudience.status !== "guest" && cardsAudience.status !== "admin" && cardsAudience.status !== "resolved"
   );
+
+  const handleOneOnOneContactNudge = useCallback(
+    async (matchId: string, presetKey: OneOnOneContactNudgePresetKey) => {
+      if (processingOneOnOneNudgeIds.includes(matchId)) return;
+      setProcessingOneOnOneNudgeIds((prev) => [...prev, matchId]);
+      try {
+        const res = await fetch(`/api/dating/1on1/matches/${matchId}/nudge`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ presetKey }),
+        });
+        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+        if (!res.ok || !body.ok) throw new Error(body.error ?? "한마디를 보내지 못했습니다.");
+        await reloadOneOnOneHome();
+      } catch (error) {
+        alert(error instanceof Error ? error.message : "한마디를 보내지 못했습니다.");
+      } finally {
+        setProcessingOneOnOneNudgeIds((prev) => prev.filter((id) => id !== matchId));
+      }
+    },
+    [processingOneOnOneNudgeIds, reloadOneOnOneHome]
+  );
   const swipeTheme = getCardVisualTheme(swipeState.candidate?.card_id ?? activeSex);
   const showOpenCardSection = homeFeatureTab === "open_cards";
   const showQuickMatchSection = homeFeatureTab === "quick_match";
@@ -3473,10 +3502,12 @@ export default function OpenCardsPage() {
           data={oneOnOneHome}
           processingMatchIds={processingOneOnOneMatchIds}
           processingContactIds={processingOneOnOneContactIds}
+          processingNudgeIds={processingOneOnOneNudgeIds}
           processingAutoKeys={processingOneOnOneAutoKeys}
           refreshingRecommendationIds={refreshingOneOnOneRecommendationIds}
           onMatchAction={handleOneOnOneMatchAction}
           onContactCheckout={handleOneOnOneContactCheckout}
+          onContactNudge={handleOneOnOneContactNudge}
           onAutoSelect={handleOneOnOneAutoSelect}
           onRefreshRecommendations={handleOneOnOneRecommendationRefresh}
         />
@@ -3715,10 +3746,12 @@ function OneOnOneHomePanel({
   data,
   processingMatchIds,
   processingContactIds,
+  processingNudgeIds,
   processingAutoKeys,
   refreshingRecommendationIds,
   onMatchAction,
   onContactCheckout,
+  onContactNudge,
   onAutoSelect,
   onRefreshRecommendations,
 }: {
@@ -3729,6 +3762,7 @@ function OneOnOneHomePanel({
   data: OneOnOneHomeState | null;
   processingMatchIds: string[];
   processingContactIds: string[];
+  processingNudgeIds: string[];
   processingAutoKeys: string[];
   refreshingRecommendationIds: string[];
   onMatchAction: (
@@ -3736,6 +3770,7 @@ function OneOnOneHomePanel({
     action: "select_candidate" | "source_cancel" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
   ) => void;
   onContactCheckout: (matchId: string) => void;
+  onContactNudge: (matchId: string, presetKey: OneOnOneContactNudgePresetKey) => void;
   onAutoSelect: (sourceCardId: string, candidateCardId: string) => void;
   onRefreshRecommendations: (sourceCardId: string) => void;
 }) {
@@ -3960,8 +3995,10 @@ function OneOnOneHomePanel({
                         contactExchangeIncluded={plusContactExchangeIncluded}
                         processing={processingMatchIds.includes(match.id)}
                         contactProcessing={processingContactIds.includes(match.id)}
+                        nudgeProcessing={processingNudgeIds.includes(match.id)}
                         onMatchAction={onMatchAction}
                         onContactCheckout={onContactCheckout}
+                        onContactNudge={onContactNudge}
                       />
                     </OneOnOneCandidateCard>
                   ))}
@@ -4204,18 +4241,22 @@ function OneOnOneMatchActions({
   contactExchangeIncluded,
   processing,
   contactProcessing,
+  nudgeProcessing,
   onMatchAction,
   onContactCheckout,
+  onContactNudge,
 }: {
   match: OneOnOneMatchPreview;
   contactExchangeIncluded: boolean;
   processing: boolean;
   contactProcessing: boolean;
+  nudgeProcessing: boolean;
   onMatchAction: (
     matchId: string,
     action: "select_candidate" | "source_cancel" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
   ) => void;
   onContactCheckout: (matchId: string) => void;
+  onContactNudge: (matchId: string, presetKey: OneOnOneContactNudgePresetKey) => void;
 }) {
   if (match.role === "source" && match.state === "proposed") {
     return (
@@ -4375,6 +4416,12 @@ function OneOnOneMatchActions({
             {processing ? "취소 중..." : "매칭 취소"}
           </button>
         </div>
+        <OneOnOneContactNudge
+          matchId={match.id}
+          nudge={match.contact_nudge}
+          processing={nudgeProcessing}
+          onSend={onContactNudge}
+        />
       </div>
     );
   }

@@ -1,5 +1,10 @@
 import type { DatingOneOnOneMatchRow } from "@/lib/dating-1on1";
 import {
+  getOneOnOneContactNudgeEligibility,
+  type OneOnOneContactNudgeItem,
+  type OneOnOneContactNudgePresetKey,
+} from "@/lib/dating-1on1-contact-nudge";
+import {
   getDatingOneOnOneCardPhonesByIds,
   getDatingOneOnOneCardsByIds,
 } from "@/lib/dating-1on1";
@@ -18,6 +23,18 @@ const MY_MATCH_BATCH_SIZE = 500;
 const CLOSED_MATCH_LIMIT = 80;
 const ACTIVE_MATCH_STATES = ["proposed", "source_selected", "candidate_accepted", "mutual_accepted"];
 const CLOSED_MATCH_STATES = ["source_skipped", "candidate_rejected", "source_declined", "admin_canceled"];
+
+type ContactNudgeRow = OneOnOneContactNudgeItem & {
+  match_id: string;
+  sender_user_id: string;
+  recipient_user_id: string;
+  preset_key: OneOnOneContactNudgePresetKey;
+};
+
+function isMissingNudgeSchema(error: { code?: string | null; message?: string | null }) {
+  const message = String(error.message ?? "").toLowerCase();
+  return error.code === "42P01" || error.code === "PGRST205" || message.includes("dating_1on1_contact_nudges");
+}
 
 function formatPhoneForDisplay(value: string | null | undefined) {
   const normalized = normalizeDatingContactPhone(String(value ?? ""));
@@ -150,6 +167,31 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "Failed to load phone details." }, { status: 500 });
   }
 
+  let nudgeSchemaAvailable = true;
+  let nudgeRows: ContactNudgeRow[] = [];
+  if (rows.length > 0) {
+    const nudgeRes = await admin
+      .from("dating_1on1_contact_nudges")
+      .select("match_id,sender_user_id,recipient_user_id,preset_key,message_text,created_at")
+      .in("match_id", rows.map((row) => row.id))
+      .order("created_at", { ascending: false });
+    if (nudgeRes.error) {
+      nudgeSchemaAvailable = false;
+      if (!isMissingNudgeSchema(nudgeRes.error)) {
+        console.error("[GET /api/dating/1on1/matches/my] contact nudges failed", nudgeRes.error);
+      }
+    } else {
+      nudgeRows = (nudgeRes.data ?? []) as ContactNudgeRow[];
+    }
+  }
+
+  const nudgesByMatchId = new Map<string, ContactNudgeRow[]>();
+  for (const nudge of nudgeRows) {
+    const items = nudgesByMatchId.get(nudge.match_id) ?? [];
+    items.push(nudge);
+    nudgesByMatchId.set(nudge.match_id, items);
+  }
+
   return NextResponse.json({
     items: rows.map((row) => {
       const role = row.source_user_id === user.id ? "source" : "candidate";
@@ -161,6 +203,10 @@ export async function GET(req: Request) {
         row.contact_exchange_status === "approved"
           ? formatPhoneForDisplay(verifiedProfilePhone) ?? formatPhoneForDisplay(legacyCardPhone)
           : null;
+      const nudges = nudgesByMatchId.get(row.id) ?? [];
+      const sentByMe = nudges.find((nudge) => nudge.sender_user_id === user.id) ?? null;
+      const receivedFromOther = nudges.find((nudge) => nudge.recipient_user_id === user.id) ?? null;
+      const nudgeEligibility = getOneOnOneContactNudgeEligibility(row);
       return {
         ...row,
         role,
@@ -168,6 +214,25 @@ export async function GET(req: Request) {
         candidate_card: cardMap.get(row.candidate_card_id) ?? null,
         counterparty_card: cardMap.get(counterpartyCardId) ?? null,
         counterparty_phone: counterpartyPhone,
+        contact_nudge: {
+          available: nudgeSchemaAvailable,
+          eligible_at: nudgeEligibility.eligibleAt,
+          can_send: nudgeSchemaAvailable && nudgeEligibility.eligible && !sentByMe,
+          sent_by_me: sentByMe
+            ? {
+                preset_key: sentByMe.preset_key,
+                message_text: sentByMe.message_text,
+                created_at: sentByMe.created_at,
+              }
+            : null,
+          received_from_other: receivedFromOther
+            ? {
+                preset_key: receivedFromOther.preset_key,
+                message_text: receivedFromOther.message_text,
+                created_at: receivedFromOther.created_at,
+              }
+            : null,
+        },
         action_required:
           (role === "source" && row.state === "proposed") ||
           (role === "candidate" && row.state === "source_selected"),

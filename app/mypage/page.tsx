@@ -14,6 +14,11 @@ import { pickLoveFortuneFaceAsset } from "@/lib/love-fortune-face-assets";
 import { PROVINCE_ORDER } from "@/lib/region-city";
 import { trackCheckoutStarted } from "@/lib/payment-analytics";
 import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
+import OneOnOneContactNudge from "@/components/dating/OneOnOneContactNudge";
+import type {
+  OneOnOneContactNudgePresetKey,
+  OneOnOneContactNudgeSummary,
+} from "@/lib/dating-1on1-contact-nudge";
 import AdminDatingOnboardingTestLink from "@/components/admin/AdminDatingOnboardingTestLink";
 import AdminOpenCardRepostDiagnostics from "@/components/admin/AdminOpenCardRepostDiagnostics";
 import AdminOpenCardRequeuePanel from "@/components/admin/AdminOpenCardRequeuePanel";
@@ -898,6 +903,7 @@ type MyOneOnOneMatch = {
   candidate_card: MyOneOnOneMatchCard | null;
   counterparty_card: MyOneOnOneMatchCard | null;
   counterparty_phone: string | null;
+  contact_nudge?: OneOnOneContactNudgeSummary | null;
 };
 
 const ONE_ON_ONE_CONTACT_CANCEL_DELAY_MS = 48 * 60 * 60 * 1000;
@@ -2012,6 +2018,7 @@ export default function MyPage() {
   const [confirmingOneOnOneCancelIds, setConfirmingOneOnOneCancelIds] = useState<string[]>([]);
   const oneOnOneMatchActionLocksRef = useRef<Set<string>>(new Set());
   const [processingOneOnOneContactExchangeIds, setProcessingOneOnOneContactExchangeIds] = useState<string[]>([]);
+  const [processingOneOnOneNudgeIds, setProcessingOneOnOneNudgeIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
   const [reportingDatingTargetKeys, setReportingDatingTargetKeys] = useState<string[]>([]);
   const [datingUserReportDraft, setDatingUserReportDraft] = useState<DatingUserReportDraft | null>(null);
@@ -5358,6 +5365,31 @@ export default function MyPage() {
       alert("네트워크 오류로 카드 숨김 처리에 실패했습니다.");
     } finally {
       setAdminOpenCardActionKey("");
+    }
+  };
+
+  const handleOneOnOneContactNudge = async (
+    matchId: string,
+    presetKey: OneOnOneContactNudgePresetKey
+  ) => {
+    if (processingOneOnOneNudgeIds.includes(matchId)) return;
+    setProcessingOneOnOneNudgeIds((prev) => [...prev, matchId]);
+    try {
+      const res = await fetch(`/api/dating/1on1/matches/${matchId}/nudge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ presetKey }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) {
+        alert(body.error ?? "한마디를 보내지 못했습니다.");
+        return;
+      }
+      await reloadOneOnOneAfterAction();
+    } catch (error) {
+      alert(error instanceof Error ? error.message : "한마디를 보내지 못했습니다.");
+    } finally {
+      setProcessingOneOnOneNudgeIds((prev) => prev.filter((id) => id !== matchId));
     }
   };
 
@@ -10238,6 +10270,12 @@ export default function MyPage() {
                                           : plusContactExchangeIncluded ? "무료로 번호교환" : "연락처 교환 진행하기"}
                                       </button>
                                     </div>
+                                    <OneOnOneContactNudge
+                                      matchId={match.id}
+                                      nudge={match.contact_nudge}
+                                      processing={processingOneOnOneNudgeIds.includes(match.id)}
+                                      onSend={(targetMatchId, presetKey) => void handleOneOnOneContactNudge(targetMatchId, presetKey)}
+                                    />
                                   </>
                                 ) : null}
                                 {match.contact_exchange_status === "approved" ? (
