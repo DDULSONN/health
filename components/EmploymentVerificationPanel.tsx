@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 type Verification = {
   company_name: string;
@@ -47,6 +47,9 @@ export default function EmploymentVerificationPanel() {
   const [pending, setPending] = useState<Pending | null>(null);
   const [companies, setCompanies] = useState<Company[]>([]);
   const [companyId, setCompanyId] = useState("");
+  const [companyQuery, setCompanyQuery] = useState("");
+  const [companyPickerOpen, setCompanyPickerOpen] = useState(false);
+  const [companyHighlightIndex, setCompanyHighlightIndex] = useState(0);
   const [email, setEmail] = useState("");
   const [code, setCode] = useState("");
   const [loading, setLoading] = useState(true);
@@ -82,9 +85,14 @@ export default function EmploymentVerificationPanel() {
       setVerification(nextVerification);
       setPending(statusBody.pending ?? null);
       setResendAfterSec(statusBody.pending?.resendAfterSec ?? 0);
-      setCompanyId(
+      const nextCompanyId =
         statusBody.pending?.companyId ??
-          nextCompanies.find((company) => company.name === nextVerification?.company_name)?.id ??
+        nextCompanies.find((company) => company.name === nextVerification?.company_name)?.id ??
+        "";
+      setCompanyId(nextCompanyId);
+      setCompanyQuery(
+        nextCompanies.find((company) => company.id === nextCompanyId)?.name ??
+          nextVerification?.company_name ??
           ""
       );
     } catch (loadError) {
@@ -105,6 +113,43 @@ export default function EmploymentVerificationPanel() {
     }, 1000);
     return () => window.clearInterval(timer);
   }, [resendAfterSec]);
+
+  const filteredCompanies = useMemo(() => {
+    const query = companyQuery.trim().toLocaleLowerCase("ko-KR").replace(/^@/, "");
+    if (!query) return companies.slice(0, 8);
+    return companies
+      .filter((company) => {
+        const name = company.name.toLocaleLowerCase("ko-KR");
+        return name.includes(query) || company.domains.some((domain) => domain.includes(query));
+      })
+      .sort((left, right) => {
+        const leftStarts = left.name.toLocaleLowerCase("ko-KR").startsWith(query) ? 0 : 1;
+        const rightStarts = right.name.toLocaleLowerCase("ko-KR").startsWith(query) ? 0 : 1;
+        return leftStarts - rightStarts || left.name.localeCompare(right.name, "ko-KR");
+      })
+      .slice(0, 8);
+  }, [companies, companyQuery]);
+
+  const selectCompany = (company: Company) => {
+    setCompanyId(company.id);
+    setCompanyQuery(company.name);
+    setCompanyPickerOpen(false);
+    setCompanyHighlightIndex(0);
+    setEmailEligibility("idle");
+    setError("");
+    setMessage("");
+  };
+
+  const updateEmail = (nextEmail: string) => {
+    setEmail(nextEmail);
+    setEmailEligibility("idle");
+    setMessage("");
+
+    const domain = nextEmail.trim().toLowerCase().split("@")[1]?.replace(/\.$/, "") ?? "";
+    if (!domain) return;
+    const detectedCompany = companies.find((company) => company.domains.includes(domain));
+    if (detectedCompany) selectCompany(detectedCompany);
+  };
 
   const checkEmailEligibility = async () => {
     const normalizedEmail = email.trim().toLowerCase();
@@ -239,7 +284,9 @@ export default function EmploymentVerificationPanel() {
             type="button"
             onClick={() => {
               setRenewing(true);
-              setCompanyId(companies.find((company) => company.name === verification.company_name)?.id ?? "");
+              const currentCompany = companies.find((company) => company.name === verification.company_name);
+              setCompanyId(currentCompany?.id ?? "");
+              setCompanyQuery(currentCompany?.name ?? verification.company_name);
               setEmail("");
               setError("");
               setMessage("");
@@ -262,30 +309,115 @@ export default function EmploymentVerificationPanel() {
 
       {showForm && !isRevoked ? (
         <div className="mt-3 space-y-2">
-          <select
-            value={companyId}
-            onChange={(event) => {
-              setCompanyId(event.target.value);
-              setEmailEligibility("idle");
-              setMessage("");
-            }}
-            className="h-10 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm outline-none focus:border-violet-400"
-          >
-            <option value="">회사를 선택해주세요</option>
-            {companies.map((company) => (
-              <option key={company.id} value={company.id}>
-                {company.name}
-              </option>
-            ))}
-          </select>
+          <div className="relative">
+            <label htmlFor="employment-company-search" className="mb-1 block text-[11px] font-semibold text-neutral-600">
+              회사명
+            </label>
+            <div className="relative">
+              <input
+                id="employment-company-search"
+                type="search"
+                role="combobox"
+                aria-expanded={companyPickerOpen}
+                aria-controls="employment-company-options"
+                aria-activedescendant={
+                  companyPickerOpen && filteredCompanies[companyHighlightIndex]
+                    ? `employment-company-option-${filteredCompanies[companyHighlightIndex].id}`
+                    : undefined
+                }
+                aria-autocomplete="list"
+                value={companyQuery}
+                onFocus={() => {
+                  setCompanyPickerOpen(true);
+                  setCompanyHighlightIndex(0);
+                }}
+                onBlur={() => setCompanyPickerOpen(false)}
+                onChange={(event) => {
+                  const query = event.target.value;
+                  const normalizedQuery = query.trim().toLocaleLowerCase("ko-KR").replace(/^@/, "");
+                  const exactCompany = companies.find(
+                    (company) =>
+                      company.name.toLocaleLowerCase("ko-KR") === normalizedQuery ||
+                      company.domains.includes(normalizedQuery)
+                  );
+                  setCompanyQuery(query);
+                  setCompanyId(exactCompany?.id ?? "");
+                  setCompanyPickerOpen(true);
+                  setCompanyHighlightIndex(0);
+                  setEmailEligibility("idle");
+                  setError("");
+                  setMessage("");
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "ArrowDown") {
+                    event.preventDefault();
+                    setCompanyPickerOpen(true);
+                    if (filteredCompanies.length > 0) {
+                      setCompanyHighlightIndex((current) => Math.min(current + 1, filteredCompanies.length - 1));
+                    }
+                  } else if (event.key === "ArrowUp") {
+                    event.preventDefault();
+                    setCompanyHighlightIndex((current) => Math.max(current - 1, 0));
+                  } else if (
+                    event.key === "Enter" &&
+                    companyPickerOpen &&
+                    filteredCompanies[companyHighlightIndex]
+                  ) {
+                    event.preventDefault();
+                    selectCompany(filteredCompanies[companyHighlightIndex]);
+                  } else if (event.key === "Escape") {
+                    setCompanyPickerOpen(false);
+                  }
+                }}
+                placeholder="회사명 또는 이메일 도메인 검색"
+                autoComplete="off"
+                className="h-11 w-full rounded-xl border border-neutral-200 bg-white px-3 pr-20 text-sm outline-none transition focus:border-violet-400 focus:ring-2 focus:ring-violet-100"
+              />
+              {companyId ? (
+                <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-bold text-emerald-700">
+                  선택됨
+                </span>
+              ) : null}
+            </div>
+            {companyPickerOpen ? (
+              <div
+                id="employment-company-options"
+                role="listbox"
+                className="absolute z-20 mt-1 max-h-64 w-full overflow-y-auto rounded-xl border border-neutral-200 bg-white p-1 shadow-lg"
+              >
+                {filteredCompanies.length > 0 ? (
+                  filteredCompanies.map((company, index) => (
+                    <button
+                      key={company.id}
+                      id={`employment-company-option-${company.id}`}
+                      type="button"
+                      role="option"
+                      aria-selected={company.id === companyId}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onMouseEnter={() => setCompanyHighlightIndex(index)}
+                      onClick={() => selectCompany(company)}
+                      className={`flex w-full items-center justify-between gap-3 rounded-lg px-3 py-2 text-left transition hover:bg-violet-50 ${
+                        index === companyHighlightIndex || company.id === companyId ? "bg-violet-50" : ""
+                      }`}
+                    >
+                      <span className="text-sm font-semibold text-neutral-800">{company.name}</span>
+                      <span className="truncate text-[11px] text-neutral-500">
+                        {company.domains.map((domain) => `@${domain}`).join(", ")}
+                      </span>
+                    </button>
+                  ))
+                ) : (
+                  <div className="px-3 py-3 text-xs leading-5 text-neutral-500">
+                    등록된 회사에서 찾지 못했어요. 회사명이나 이메일 도메인을 다시 확인해주세요.
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
           <input
             type="email"
             value={email}
-            onChange={(event) => {
-              setEmail(event.target.value);
-              setEmailEligibility("idle");
-              setMessage("");
-            }}
+            onChange={(event) => updateEmail(event.target.value)}
             onBlur={() => {
               if (email.trim() && emailEligibility === "idle") void checkEmailEligibility();
             }}
