@@ -13,15 +13,10 @@ import { normalizeNickname, validateNickname } from "@/lib/nickname";
 import { pickLoveFortuneFaceAsset } from "@/lib/love-fortune-face-assets";
 import { PROVINCE_ORDER } from "@/lib/region-city";
 import { trackCheckoutStarted } from "@/lib/payment-analytics";
-import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
-import OneOnOneContactNudge from "@/components/dating/OneOnOneContactNudge";
 import type {
   OneOnOneContactNudgePresetKey,
   OneOnOneContactNudgeSummary,
 } from "@/lib/dating-1on1-contact-nudge";
-import AdminDatingOnboardingTestLink from "@/components/admin/AdminDatingOnboardingTestLink";
-import AdminOpenCardRepostDiagnostics from "@/components/admin/AdminOpenCardRepostDiagnostics";
-import AdminOpenCardRequeuePanel from "@/components/admin/AdminOpenCardRequeuePanel";
 function MyPageWidgetSkeleton({ className = "h-40" }: { className?: string }) {
   return (
     <div className={`rounded-2xl border border-neutral-200 bg-white p-4 ${className}`}>
@@ -36,6 +31,21 @@ function MyPageWidgetSkeleton({ className = "h-40" }: { className?: string }) {
 const AdminCertReviewPanel = dynamic(() => import("@/components/AdminCertReviewPanel"), {
   loading: () => <MyPageWidgetSkeleton className="h-56" />,
 });
+
+const DatingPlusOffers = dynamic(() => import("@/components/dating/DatingPlusOffers"));
+const OneOnOneContactNudge = dynamic(() => import("@/components/dating/OneOnOneContactNudge"));
+const AdminDatingOnboardingTestLink = dynamic(
+  () => import("@/components/admin/AdminDatingOnboardingTestLink")
+);
+const AdminOpenCardRepostDiagnostics = dynamic(
+  () => import("@/components/admin/AdminOpenCardRepostDiagnostics")
+);
+const AdminOpenCardRequeuePanel = dynamic(
+  () => import("@/components/admin/AdminOpenCardRequeuePanel")
+);
+const AdminOpenCardPreviewImage = dynamic(
+  () => import("@/components/admin/AdminOpenCardPreviewImage")
+);
 
 const AdminReportsPanel = dynamic(() => import("@/components/AdminReportsPanel"), {
   loading: () => <MyPageWidgetSkeleton className="h-80" />,
@@ -366,6 +376,8 @@ type SummaryResponse = {
     phone_verified_at: string | null;
     swipe_profile_visible: boolean;
   };
+  account: AccountBanStatus;
+  isAdmin: boolean;
   weekly_win_count: number;
   bodycheck_posts: BodycheckPost[];
 };
@@ -3426,81 +3438,27 @@ export default function MyPage() {
 
     (async () => {
       try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-
-        if (!user) {
-          router.replace("/login?redirect=/mypage");
-          return;
-        }
-
-        const accountStatusRes = await fetch("/api/mypage/account-status", { cache: "no-store" });
-        const accountStatusBody = (await accountStatusRes.json().catch(() => ({}))) as {
-          error?: string;
-          account?: AccountBanStatus;
-        };
-        if (!accountStatusRes.ok || !accountStatusBody.account) {
-          throw new Error(accountStatusBody.error ?? "계정 상태를 확인하지 못했습니다.");
-        }
-        if (isMounted) {
-          setAccountBanStatus(accountStatusBody.account);
-        }
-        if (accountStatusBody.account.is_banned) {
-          return;
-        }
-
-        const reelsDatingAccessPromise = fetch("/api/dating/reels/my-access", { cache: "no-store" })
-          .then(async (res) => ({
-            res,
-            body: (await res.json().catch(() => ({}))) as {
-              error?: string;
-              items?: MyReelsDatingAccess[];
-            },
-          }))
-          .catch((reelsError) => ({
-            res: null,
-            body: {
-              error:
-                reelsError instanceof Error
-                  ? reelsError.message
-                  : "릴스 매물 신청 내역을 불러오지 못했습니다.",
-              items: undefined as MyReelsDatingAccess[] | undefined,
-            },
-          }));
-
-        const [summaryRes, adminRes] = await Promise.all([
-          fetch("/api/mypage/summary?profileOnly=1", { cache: "no-store" }),
-          fetch("/api/admin/me", { cache: "no-store" }),
-        ]);
-
+        const summaryRes = await fetch("/api/mypage/summary?profileOnly=1", { cache: "no-store" });
         const summaryBody = (await summaryRes.json().catch(() => ({}))) as SummaryResponse & {
           error?: string;
         };
-        const adminBody = (await adminRes.json().catch(() => ({}))) as { isAdmin?: boolean };
+        if (summaryRes.status === 401) {
+          router.replace("/login?redirect=/mypage");
+          return;
+        }
         if (!summaryRes.ok) {
           throw new Error(summaryBody.error ?? "마이페이지 정보를 불러오지 못했습니다.");
         }
-
-        if (isMounted) {
-          const adminFlag = Boolean(adminBody.isAdmin);
-          setSummary(summaryBody);
-          setIsAdmin(adminFlag);
-          setError("");
+        if (!summaryBody.account) {
+          throw new Error("계정 상태를 확인하지 못했습니다.");
         }
 
-        void reelsDatingAccessPromise.then(({ res, body }) => {
-          if (!isMounted) return;
-          const succeeded = res?.ok === true;
-          if (!succeeded) {
-            console.error("[mypage] reels dating access load failed", body.error ?? "unknown error");
-          }
-          setMyReelsDatingAccess(succeeded ? body.items ?? [] : []);
-          setMyReelsDatingAccessLoaded(true);
-          setMyReelsDatingAccessError(
-            succeeded ? "" : body.error ?? "릴스 매물 신청 내역을 불러오지 못했습니다."
-          );
-        });
+        if (isMounted) {
+          setSummary(summaryBody);
+          setAccountBanStatus(summaryBody.account);
+          setIsAdmin(summaryBody.isAdmin === true);
+          setError("");
+        }
       } catch (e) {
         const message = e instanceof Error ? e.message : String(e);
         if (isMounted) setError(message);
@@ -3512,7 +3470,7 @@ export default function MyPage() {
     return () => {
       isMounted = false;
     };
-  }, [router, supabase]);
+  }, [router]);
 
   useEffect(() => {
     if (!isAdmin && activeTab === "admin_review") {
@@ -3677,6 +3635,46 @@ export default function MyPage() {
     const timer = window.setInterval(() => setReelsAccessNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);
   }, [myReelsDatingAccess.length]);
+
+  useEffect(() => {
+    if (loading || accountBanStatus?.is_banned || myReelsDatingAccessLoaded) return;
+
+    let cancelled = false;
+    const timer = window.setTimeout(async () => {
+      try {
+        const res = await fetch("/api/dating/reels/my-access", { cache: "no-store" });
+        const body = (await res.json().catch(() => ({}))) as {
+          error?: string;
+          items?: MyReelsDatingAccess[];
+        };
+        if (cancelled) return;
+
+        if (!res.ok) {
+          throw new Error(body.error ?? "릴스 매물 신청 내역을 불러오지 못했습니다.");
+        }
+        setMyReelsDatingAccess(body.items ?? []);
+        setMyReelsDatingAccessError("");
+      } catch (reelsError) {
+        if (cancelled) return;
+        console.error("[mypage] reels dating access load failed", reelsError);
+        setMyReelsDatingAccess([]);
+        setMyReelsDatingAccessError(
+          reelsError instanceof Error
+            ? reelsError.message
+            : "릴스 매물 신청 내역을 불러오지 못했습니다."
+        );
+      } finally {
+        if (!cancelled) {
+          setMyReelsDatingAccessLoaded(true);
+        }
+      }
+    }, pageSectionTab === "reels_dating" ? 0 : 600);
+
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+  }, [accountBanStatus?.is_banned, loading, myReelsDatingAccessLoaded, pageSectionTab]);
 
   useEffect(() => {
     if (!myReelsDatingAccessLoaded) return;
@@ -4851,11 +4849,12 @@ export default function MyPage() {
       return;
     }
 
-    matchingDataLoadingRef.current = true;
-    setMatchingDataLoading(true);
-    setMatchingDataError("");
+    const timer = window.setTimeout(() => {
+      matchingDataLoadingRef.current = true;
+      setMatchingDataLoading(true);
+      setMatchingDataError("");
 
-    void (async () => {
+      void (async () => {
       const loadOneOnOneCards = async () => {
         const res = await fetch("/api/dating/1on1/my", { cache: "no-store" });
         const body = (await res.json().catch(() => ({}))) as {
@@ -4898,15 +4897,18 @@ export default function MyPage() {
         setMatchingDataError("일부 매칭 정보를 불러오지 못했습니다. 다시 시도해주세요.");
       }
       setMatchingDataLoaded(true);
-    })()
-      .catch((error) => {
-        console.error("[mypage] deferred matching load failed", error);
-        setMatchingDataError(error instanceof Error ? error.message : "매칭 정보를 불러오지 못했습니다.");
-      })
-      .finally(() => {
-        matchingDataLoadingRef.current = false;
-        setMatchingDataLoading(false);
-      });
+      })()
+        .catch((error) => {
+          console.error("[mypage] deferred matching load failed", error);
+          setMatchingDataError(error instanceof Error ? error.message : "매칭 정보를 불러오지 못했습니다.");
+        })
+        .finally(() => {
+          matchingDataLoadingRef.current = false;
+          setMatchingDataLoading(false);
+        });
+    }, pageSectionTab === "matching" ? 0 : 800);
+
+    return () => window.clearTimeout(timer);
   }, [accountBanStatus?.is_banned, loading, matchingDataLoaded, pageSectionTab]);
 
   useEffect(() => {
@@ -15588,23 +15590,11 @@ export default function MyPage() {
                           {Array.isArray(card.admin_preview_urls) && card.admin_preview_urls.length > 0 ? (
                             <div className="mt-2 grid grid-cols-2 gap-2">
                               {card.admin_preview_urls.map((url, index) => (
-                                <a
+                                <AdminOpenCardPreviewImage
                                   key={`${card.id}-preview-${index}`}
-                                  href={url}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="overflow-hidden rounded-lg border border-emerald-200 bg-neutral-100"
-                                  aria-label={`${card.display_nickname ?? "오픈카드"} 검수 사진 ${index + 1} 크게 보기`}
-                                >
-                                  <Image
-                                    src={url}
-                                    alt={`${card.display_nickname ?? "오픈카드"} 검수 사진 ${index + 1}`}
-                                    width={720}
-                                    height={960}
-                                    unoptimized
-                                    className="aspect-[3/4] h-auto w-full object-contain"
-                                  />
-                                </a>
+                                  url={url}
+                                  alt={`${card.display_nickname ?? "오픈카드"} 검수 사진 ${index + 1}`}
+                                />
                               ))}
                             </div>
                           ) : (

@@ -24,6 +24,7 @@ const BLOCKED_SIGNED_PREFIXES: Record<string, string[]> = {
 const DEFAULT_MAX_WIDTH = 1080;
 const DEFAULT_QUALITY = 72;
 const LONG_IMAGE_CACHE_CONTROL = "public, max-age=86400, s-maxage=2592000, stale-while-revalidate=604800";
+const ADMIN_PREVIEW_CACHE_CONTROL = "private, max-age=3600";
 
 function pickUpstreamHeaders(src: Headers): Headers {
   const dst = new Headers();
@@ -444,7 +445,12 @@ async function fetchPublicLite(bucket: string, objectPath: string, method: strin
   });
 }
 
-async function createSignedUpstreamUrl(bucket: string, objectPath: string, requestId: string): Promise<string> {
+async function createSignedUpstreamUrl(
+  bucket: string,
+  objectPath: string,
+  requestId: string,
+  allowLegacyFallback = true
+): Promise<string> {
   let signCalls = 0;
   const signed = await getCachedSignedUrlWithBucket({
     requestId,
@@ -463,7 +469,7 @@ async function createSignedUpstreamUrl(bucket: string, objectPath: string, reque
   if (signed.url) return signed.url;
 
   // Legacy fallback for old paths that may still live in dating-photos.
-  if (bucket === "dating-card-photos" || bucket === "dating-apply-photos") {
+  if (allowLegacyFallback && (bucket === "dating-card-photos" || bucket === "dating-apply-photos")) {
     const fallback = await getCachedSignedUrlWithBucket({
       requestId,
       bucket: "dating-photos",
@@ -482,6 +488,85 @@ async function createSignedUpstreamUrl(bucket: string, objectPath: string, reque
   }
 
   return "";
+}
+
+async function fetchAdminDatingCardPreview(
+  req: Request,
+  bucket: string,
+  objectPath: string,
+  method: string,
+  requestId: string
+) {
+  if (bucket !== "dating-card-photos") {
+    return new Response("Not Found", { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
+
+  const { user } = await getRequestAuthContext(req);
+  if (!user || !isAllowedAdminUser(user.id, user.email)) {
+    return new Response("Not Found", { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
+
+  const candidates = objectPath.includes("/raw/")
+    ? [...new Set([toLitePath(objectPath), objectPath])]
+    : [objectPath];
+  const storageBuckets = ["dating-card-photos", "dating-photos"] as const;
+  let upstream: Response | null = null;
+
+  for (const candidatePath of candidates) {
+    for (const storageBucket of storageBuckets) {
+      const signedUrl = await createSignedUpstreamUrl(storageBucket, candidatePath, requestId, false);
+      if (!signedUrl) continue;
+
+      const response = await fetch(signedUrl, {
+        method: method === "HEAD" ? "HEAD" : "GET",
+        cache: "no-store",
+      }).catch(() => null);
+      const contentType = response?.headers.get("content-type")?.toLowerCase() ?? "";
+      if (response?.ok && contentType.startsWith("image/")) {
+        upstream = response;
+        break;
+      }
+    }
+    if (upstream) break;
+  }
+
+  if (!upstream) {
+    return new Response("Not Found", { status: 404, headers: { "Cache-Control": "no-store" } });
+  }
+
+  const cacheHeaders = new Headers();
+  cacheHeaders.set("Content-Type", "image/webp");
+  cacheHeaders.set("Cache-Control", ADMIN_PREVIEW_CACHE_CONTROL);
+  cacheHeaders.set("Vary", "Cookie, Accept");
+  cacheHeaders.set("X-Content-Type-Options", "nosniff");
+
+  if (method === "HEAD") {
+    return new Response(null, { status: 200, headers: cacheHeaders });
+  }
+
+  const url = new URL(req.url);
+  const widthParam = Number(url.searchParams.get("w") ?? 720);
+  const qualityParam = Number(url.searchParams.get("q") ?? 68);
+  const width = Number.isFinite(widthParam) ? Math.max(320, Math.min(720, Math.round(widthParam))) : 720;
+  const quality = Number.isFinite(qualityParam) ? Math.max(45, Math.min(75, Math.round(qualityParam))) : 68;
+
+  try {
+    const input = Buffer.from(await upstream.arrayBuffer());
+    const output = await sharp(input, { limitInputPixels: 33_000_000 })
+      .rotate()
+      .resize({ width, withoutEnlargement: true })
+      .webp({ quality })
+      .toBuffer();
+
+    cacheHeaders.set("Content-Length", String(output.byteLength));
+    return new Response(new Uint8Array(output), { status: 200, headers: cacheHeaders });
+  } catch (error) {
+    console.warn("[image-proxy] admin card preview conversion failed", {
+      objectPathTail: objectPath.split("/").slice(-2).join("/"),
+      error: error instanceof Error ? error.message : String(error),
+    });
+    return new Response("Bad Gateway", { status: 502, headers: { "Cache-Control": "no-store" } });
+  }
 }
 
 async function fetchSigned(bucket: string, objectPath: string, method: string, requestId: string) {
@@ -610,6 +695,9 @@ async function handler(req: Request, params: Promise<{ slug: string[] }>) {
 
   if (mode === "public-lite") {
     return fetchPublicLite(bucket, objectPath, req.method, requestId);
+  }
+  if (mode === "admin-preview") {
+    return fetchAdminDatingCardPreview(req, bucket, objectPath, req.method, requestId);
   }
   if (mode === "signed") {
     const allowed = await canReadSignedObject(req, bucket, objectPath);

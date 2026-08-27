@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { createClient } from "@/lib/supabase/server";
+import { isAllowedAdminUser } from "@/lib/admin";
+import { createAdminClient, createClient } from "@/lib/supabase/server";
 
 export async function GET(req: Request) {
   const supabase = await createClient();
@@ -11,16 +12,21 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  let profileRes = await supabase
+  const admin = createAdminClient();
+  let profileRes = await admin
     .from("profiles")
-    .select("nickname, nickname_changed_count, nickname_change_credits, phone_verified, phone_verified_at, swipe_profile_visible")
+    .select(
+      "nickname, nickname_changed_count, nickname_change_credits, phone_verified, phone_verified_at, swipe_profile_visible, is_banned, banned_reason, banned_at"
+    )
     .eq("user_id", user.id)
     .maybeSingle();
 
   if (profileRes.error && profileRes.error.message?.includes("swipe_profile_visible")) {
-    profileRes = await supabase
+    profileRes = await admin
       .from("profiles")
-      .select("nickname, nickname_changed_count, nickname_change_credits, phone_verified, phone_verified_at")
+      .select(
+        "nickname, nickname_changed_count, nickname_change_credits, phone_verified, phone_verified_at, is_banned, banned_reason, banned_at"
+      )
       .eq("user_id", user.id)
       .maybeSingle();
   }
@@ -38,10 +44,18 @@ export async function GET(req: Request) {
     phone_verified_at: profileRes.data?.phone_verified_at ?? null,
     swipe_profile_visible: profileRes.data?.swipe_profile_visible !== false,
   };
+  const account = {
+    is_banned: profileRes.data?.is_banned === true,
+    banned_reason: profileRes.data?.banned_reason ?? null,
+    banned_at: profileRes.data?.banned_at ?? null,
+  };
+  const isAdmin = isAllowedAdminUser(user.id, user.email);
 
   if (new URL(req.url).searchParams.get("profileOnly") === "1") {
     return NextResponse.json({
       profile,
+      account,
+      isAdmin,
       weekly_win_count: 0,
       bodycheck_posts: [],
     });
@@ -72,6 +86,8 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     profile,
+    account,
+    isAdmin,
     weekly_win_count: winnersRes.data?.length ?? 0,
     bodycheck_posts: posts.map((post) => ({
       ...post,

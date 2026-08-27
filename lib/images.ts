@@ -129,6 +129,18 @@ export function buildSignedImageUrlAllowRaw(bucket: string, objectPath: string):
   return `/i/signed/${encodePath(safeBucket)}/${encodePath(safePath)}`;
 }
 
+export function buildAdminCardPreviewImageUrl(
+  objectPath: string,
+  options?: ImageTransformOptions
+): string {
+  const safePath = assertSafeObjectPath(objectPath);
+  if (!safePath) return "";
+
+  const width = clamp(Math.round(options?.width ?? 720), 320, 720);
+  const quality = clamp(Math.round(options?.quality ?? 68), 45, 75);
+  return `/i/admin-preview/dating-card-photos/${encodePath(safePath)}?w=${width}&q=${quality}`;
+}
+
 export function withImageTransform(raw: string | null | undefined, options?: ImageTransformOptions): string | null {
   if (!raw) return null;
   const value = raw.trim();

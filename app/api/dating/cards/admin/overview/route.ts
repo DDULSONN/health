@@ -1,8 +1,7 @@
 import { isAllowedAdminUser } from "@/lib/admin";
 import {
-  buildSignedImageUrl,
+  buildAdminCardPreviewImageUrl,
   extractStorageObjectPathFromBuckets,
-  withImageTransform,
 } from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -88,12 +87,9 @@ function parseSort(value: string | null): CardSort {
   return value === "pending_first" || value === "newest" || value === "oldest" ? value : "public_first";
 }
 
-function toLiteCardPhotoPath(raw: unknown): string | null {
+function toAdminCardPhotoPath(raw: unknown): string | null {
   const path = extractStorageObjectPathFromBuckets(raw, ["dating-card-photos", "dating-photos"]);
-  if (!path) return null;
-
-  const litePath = path.replace("/raw/", "/lite/").replace(/\.(?:jpe?g|png|webp)$/i, ".webp");
-  return litePath.includes("/lite/") ? litePath : null;
+  return path || null;
 }
 
 function buildAdminCardPreviewUrls(photoPaths: string[] | null): string[] {
@@ -102,9 +98,9 @@ function buildAdminCardPreviewUrls(photoPaths: string[] | null): string[] {
   return [
     ...new Set(
       photoPaths
-        .map((path) => toLiteCardPhotoPath(path))
+        .map((path) => toAdminCardPhotoPath(path))
         .filter((path): path is string => Boolean(path))
-        .map((path) => withImageTransform(buildSignedImageUrl("dating-card-photos", path), { width: 720, quality: 68 }))
+        .map((path) => buildAdminCardPreviewImageUrl(path, { width: 720, quality: 68 }))
         .filter((url): url is string => Boolean(url))
     ),
   ].slice(0, 2);
