@@ -548,6 +548,47 @@ async function enrichOneOnOneMatches(
   });
 }
 
+function getOneOnOnePaymentMatchId(order: Record<string, unknown>) {
+  if (order.product_type !== "one_on_one_contact_exchange") return "";
+  const meta = order.product_meta && typeof order.product_meta === "object"
+    ? (order.product_meta as Record<string, unknown>)
+    : {};
+  const matchId = typeof meta.matchId === "string" ? meta.matchId.trim() : "";
+  const productRefId = typeof order.product_ref_id === "string" ? order.product_ref_id.trim() : "";
+  return matchId || productRefId;
+}
+
+function attachOneOnOneMatchesToPayments(
+  payments: Array<Record<string, unknown>>,
+  matches: Array<Record<string, unknown>>
+) {
+  const matchById = new Map(matches.map((match) => [String(match.id ?? ""), match]));
+
+  return payments.map((order) => {
+    const matchId = getOneOnOnePaymentMatchId(order);
+    if (!matchId) return order;
+
+    const match = matchById.get(matchId);
+    return {
+      ...order,
+      one_on_one_match: match
+        ? {
+            id: match.id ?? matchId,
+            state: match.state ?? null,
+            contact_exchange_status: match.contact_exchange_status ?? null,
+            role: match.role ?? null,
+            counterpart_user_id: match.counterpart_user_id ?? null,
+            counterpart_card: match.counterpart_card ?? null,
+            counterpart_profile: match.counterpart_profile ?? null,
+          }
+        : {
+            id: matchId,
+            missing: true,
+          },
+    };
+  });
+}
+
 export async function GET(request: Request) {
   const auth = await requireAdminRoute();
   if (!auth.ok) return auth.response;
@@ -671,7 +712,7 @@ export async function GET(request: Request) {
       listSafe<Record<string, unknown>>(
         auth.admin
           .from("toss_test_payment_orders")
-          .select("id,product_type,product_meta,amount,status,order_name,toss_order_id,payment_key,raw_response,created_at,approved_at")
+          .select("id,product_type,product_ref_id,product_meta,amount,status,order_name,toss_order_id,payment_key,raw_response,created_at,approved_at")
           .eq("user_id", userId)
           .order("created_at", { ascending: false })
           .limit(50)
@@ -730,13 +771,35 @@ export async function GET(request: Request) {
             .limit(100)
         )
       : [];
-    const enrichedOneOnOneMatches = await enrichOneOnOneMatches(auth.admin, userId, oneOnOneMatches);
+    const paymentMatchIds = [
+      ...new Set(payments.map((order) => getOneOnOnePaymentMatchId(order)).filter(Boolean)),
+    ];
+    const loadedMatchIds = new Set(oneOnOneMatches.map((match) => String(match.id ?? "")).filter(Boolean));
+    const missingPaymentMatchIds = paymentMatchIds.filter((matchId) => !loadedMatchIds.has(matchId));
+    const missingPaymentMatches = missingPaymentMatchIds.length
+      ? await listSafe<Record<string, unknown>>(
+          auth.admin
+            .from("dating_1on1_match_proposals")
+            .select("id,state,contact_exchange_status,source_card_id,source_user_id,candidate_card_id,candidate_user_id,created_at,updated_at,source_selected_at,candidate_responded_at,source_final_responded_at")
+            .in("id", missingPaymentMatchIds)
+        )
+      : [];
+    const allEnrichedOneOnOneMatches = await enrichOneOnOneMatches(
+      auth.admin,
+      userId,
+      [...oneOnOneMatches, ...missingPaymentMatches]
+    );
+    const primaryMatchIds = new Set(oneOnOneMatches.map((match) => String(match.id ?? "")));
+    const enrichedOneOnOneMatches = allEnrichedOneOnOneMatches.filter((match) =>
+      primaryMatchIds.has(String((match as Record<string, unknown>).id ?? ""))
+    );
+    const enrichedPayments = attachOneOnOneMatchesToPayments(payments, allEnrichedOneOnOneMatches);
     const activeOneOnOnePlus = await getActiveOneOnOnePlus(auth.admin, userId);
     const oneOnOneCardsWithPlus = oneOnOneCards.map((card) => ({
       ...card,
       plus_expires_at: activeOneOnOnePlus?.expires_at ?? null,
     }));
-    const openCardRepostDiagnostics = buildOpenCardRepostDiagnostics(payments, openCards);
+    const openCardRepostDiagnostics = buildOpenCardRepostDiagnostics(enrichedPayments, openCards);
 
     const counts = {
       posts: await countSafe(auth.admin.from("posts").select("id", { count: "exact", head: true }).eq("user_id", userId)),
@@ -764,7 +827,7 @@ export async function GET(request: Request) {
       community_comments: comments,
       bodycheck_votes: votes,
       reactions,
-      payments,
+      payments: enrichedPayments,
       open_card_repost_diagnostics: openCardRepostDiagnostics,
       support,
       phone_verification_attempts: phoneAttempts,
@@ -791,7 +854,7 @@ export async function GET(request: Request) {
     addRows(activities, "one_on_one_card", "1:1 카드", oneOnOneCards);
     addRows(activities, "one_on_one_match", "1:1 매칭", enrichedOneOnOneMatches, "updated_at");
     addRows(activities, "one_on_one_profile_history", "1:1 프로필 기록", oneOnOneProfileHistory);
-    addRows(activities, "payment", "결제", payments);
+    addRows(activities, "payment", "결제", enrichedPayments);
     addRows(activities, "open_card_repost", "오픈카드 유료 재노출", openCardRepostDiagnostics, "paid_at");
     addRows(activities, "support", "문의", support);
     addRows(activities, "phone_verification", "휴대폰 인증", phoneAttempts);

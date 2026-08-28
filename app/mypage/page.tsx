@@ -14145,12 +14145,25 @@ export default function MyPage() {
                           const orderId = String(order.id ?? "");
                           const status = String(order.status ?? "");
                           const amount = Number(order.amount ?? 0);
+                          const productType = String(order.product_type ?? "");
                           const canRefund = status === "paid" && Boolean(order.payment_key);
                           const rawResponse = order.raw_response && typeof order.raw_response === "object" ? (order.raw_response as Record<string, unknown>) : {};
                           const refundMeta =
                             rawResponse.admin_refund && typeof rawResponse.admin_refund === "object"
                               ? (rawResponse.admin_refund as Record<string, unknown>)
                               : null;
+                          const oneOnOneMatch =
+                            order.one_on_one_match && typeof order.one_on_one_match === "object"
+                              ? (order.one_on_one_match as Record<string, unknown>)
+                              : null;
+                          const counterpartCard =
+                            oneOnOneMatch?.counterpart_card && typeof oneOnOneMatch.counterpart_card === "object"
+                              ? (oneOnOneMatch.counterpart_card as Record<string, unknown>)
+                              : {};
+                          const counterpartProfile =
+                            oneOnOneMatch?.counterpart_profile && typeof oneOnOneMatch.counterpart_profile === "object"
+                              ? (oneOnOneMatch.counterpart_profile as Record<string, unknown>)
+                              : {};
                           return (
                             <div key={`refund-order-${orderId}`} className="rounded-lg border border-rose-100 bg-rose-50/30 px-3 py-2">
                               <div className="flex flex-wrap items-start justify-between gap-2">
@@ -14166,6 +14179,28 @@ export default function MyPage() {
                                     <p className="mt-1 text-[11px] text-rose-700">
                                       환불 반영: {Number(refundMeta.canceledTotal ?? 0).toLocaleString("ko-KR")}원 · {String(refundMeta.cancelReason ?? "-")}
                                     </p>
+                                  ) : null}
+                                  {productType === "one_on_one_contact_exchange" && oneOnOneMatch ? (
+                                    <div className="mt-2 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2 text-[11px] leading-5 text-sky-900">
+                                      {oneOnOneMatch.missing === true ? (
+                                        <p>
+                                          1:1 결제 매칭 ID {adminString(oneOnOneMatch.id)} · 상대 신청서가 삭제되어 상세 정보는 없습니다.
+                                        </p>
+                                      ) : (
+                                        <>
+                                          <p className="font-bold">
+                                            결제 매칭 상대: 1:1 이름 {adminString(counterpartCard.name, "정보 없음")}
+                                            {adminString(counterpartProfile.nickname, "")
+                                              ? ` · 닉네임 ${adminString(counterpartProfile.nickname)}`
+                                              : ""}
+                                          </p>
+                                          <p>
+                                            {adminString(counterpartCard.region)} / {adminString(counterpartCard.job)} · 상대 user {adminString(oneOnOneMatch.counterpart_user_id)}
+                                          </p>
+                                          <p className="break-all">매칭 ID {adminString(oneOnOneMatch.id)}</p>
+                                        </>
+                                      )}
+                                    </div>
                                   ) : null}
                                 </div>
                                 <span
