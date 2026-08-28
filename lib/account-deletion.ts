@@ -1,8 +1,17 @@
 import { createHash } from "crypto";
 import type { SupabaseClient } from "@supabase/supabase-js";
+import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
 
 type DeletionMode = "hard" | "soft";
 type InitiatedByRole = "self" | "admin";
+type ActiveOpenCardStatus = "pending" | "public";
+type OpenCardSex = "male" | "female";
+
+type ActiveOpenCardSnapshot = {
+  id: string;
+  status: ActiveOpenCardStatus;
+  sex: OpenCardSex;
+};
 
 export function maskEmail(email: string | null | undefined) {
   const value = (email ?? "").trim();
@@ -84,6 +93,82 @@ async function insertDeletionAudit(
   }
 }
 
+async function hideActiveOpenCards(admin: SupabaseClient, userId: string) {
+  const cardsRes = await admin
+    .from("dating_cards")
+    .select("id,status,sex")
+    .eq("owner_user_id", userId)
+    .in("status", ["pending", "public"]);
+
+  if (cardsRes.error) {
+    return { ok: false as const, error: cardsRes.error.message };
+  }
+
+  const cards = (cardsRes.data ?? []).flatMap((row) => {
+    const status = row.status === "pending" || row.status === "public" ? row.status : null;
+    const sex = row.sex === "male" || row.sex === "female" ? row.sex : null;
+    const id = typeof row.id === "string" ? row.id : "";
+    return id && status && sex ? [{ id, status, sex } satisfies ActiveOpenCardSnapshot] : [];
+  });
+
+  if (cards.length === 0) {
+    return { ok: true as const, cards };
+  }
+
+  const hideRes = await admin
+    .from("dating_cards")
+    .update({ status: "hidden" })
+    .eq("owner_user_id", userId)
+    .in("id", cards.map((card) => card.id))
+    .in("status", ["pending", "public"]);
+
+  if (hideRes.error) {
+    return { ok: false as const, error: hideRes.error.message };
+  }
+
+  return { ok: true as const, cards };
+}
+
+async function restoreActiveOpenCards(
+  admin: SupabaseClient,
+  userId: string,
+  cards: ActiveOpenCardSnapshot[]
+) {
+  for (const status of ["pending", "public"] as const) {
+    const ids = cards.filter((card) => card.status === status).map((card) => card.id);
+    if (ids.length === 0) continue;
+
+    const restoreRes = await admin
+      .from("dating_cards")
+      .update({ status })
+      .eq("owner_user_id", userId)
+      .eq("status", "hidden")
+      .in("id", ids);
+
+    if (restoreRes.error) {
+      console.error("[account deletion] open card rollback failed", {
+        userId,
+        status,
+        error: restoreRes.error.message,
+      });
+    }
+  }
+}
+
+async function refillOpenCardSlots(admin: SupabaseClient, cards: ActiveOpenCardSnapshot[]) {
+  const sexes = [...new Set(cards.filter((card) => card.status === "public").map((card) => card.sex))];
+  for (const sex of sexes) {
+    try {
+      await promotePendingCardsBySex(admin, sex);
+    } catch (error) {
+      console.warn("[account deletion] open card slot refill failed", {
+        sex,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+}
+
 export async function performAccountDeletion(params: {
   admin: SupabaseClient;
   userId: string;
@@ -101,6 +186,16 @@ export async function performAccountDeletion(params: {
   if (nickname === null) {
     const profileRes = await admin.from("profiles").select("nickname").eq("user_id", userId).maybeSingle();
     nickname = typeof profileRes.data?.nickname === "string" ? profileRes.data.nickname : null;
+  }
+
+  const hiddenCards = await hideActiveOpenCards(admin, userId);
+  if (!hiddenCards.ok) {
+    console.error("[account deletion] open card cleanup failed", hiddenCards.error);
+    return {
+      ok: false as const,
+      error: "오픈카드 숨김 처리에 실패해 회원 탈퇴를 중단했습니다. 잠시 후 다시 시도해 주세요.",
+      debug: hiddenCards.error,
+    };
   }
 
   const pushTokenReset = await admin.from("profiles").update({ push_token: null }).eq("user_id", userId);
@@ -121,7 +216,9 @@ export async function performAccountDeletion(params: {
       initiated_by_role: initiatedByRole,
     });
 
-    return { ok: true as const, mode: "hard" as const };
+    await refillOpenCardSlots(admin, hiddenCards.cards);
+
+    return { ok: true as const, mode: "hard" as const, hiddenOpenCards: hiddenCards.cards.length };
   }
 
   console.error("[account deletion] hard delete failed", hardDelete.error);
@@ -129,6 +226,7 @@ export async function performAccountDeletion(params: {
   const softDelete = await admin.auth.admin.deleteUser(userId, true);
   if (softDelete.error) {
     console.error("[account deletion] soft delete failed", softDelete.error);
+    await restoreActiveOpenCards(admin, userId, hiddenCards.cards);
     return {
       ok: false as const,
       error: "회원 탈퇴 처리에 실패했습니다. 잠시 후 다시 시도해 주세요. 문제가 계속되면 문의 부탁드립니다.",
@@ -156,5 +254,7 @@ export async function performAccountDeletion(params: {
     initiated_by_role: initiatedByRole,
   });
 
-  return { ok: true as const, mode: "soft" as const };
+  await refillOpenCardSlots(admin, hiddenCards.cards);
+
+  return { ok: true as const, mode: "soft" as const, hiddenOpenCards: hiddenCards.cards.length };
 }

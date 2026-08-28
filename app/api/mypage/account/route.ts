@@ -39,6 +39,7 @@ export async function DELETE(req: Request) {
   return NextResponse.json({
     ok: true,
     mode: result.mode,
+    hidden_open_cards: result.hiddenOpenCards,
     message: "회원 탈퇴가 처리되었습니다.",
   });
 }

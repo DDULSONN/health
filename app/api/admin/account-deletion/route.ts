@@ -103,6 +103,7 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     mode: result.mode,
+    hidden_open_cards: result.hiddenOpenCards,
     user_id: target.id,
     nickname: target.nickname,
     email: target.email,
