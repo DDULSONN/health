@@ -46,6 +46,12 @@ const AdminOpenCardRequeuePanel = dynamic(
 const AdminOpenCardPreviewImage = dynamic(
   () => import("@/components/admin/AdminOpenCardPreviewImage")
 );
+const AdminReferralRewardPanel = dynamic(
+  () => import("@/components/admin/AdminReferralRewardPanel")
+);
+const ReferralInvitePanel = dynamic(() => import("@/components/ReferralInvitePanel"), {
+  loading: () => <MyPageWidgetSkeleton className="h-40" />,
+});
 
 const AdminReportsPanel = dynamic(() => import("@/components/AdminReportsPanel"), {
   loading: () => <MyPageWidgetSkeleton className="h-80" />,
@@ -8053,6 +8059,7 @@ export default function MyPage() {
         )}
 
         <EmploymentVerificationPanel />
+        <ReferralInvitePanel />
 
         </>
         )}
@@ -14495,10 +14502,11 @@ export default function MyPage() {
                   onClick={() => void handleAdminGrantApplyCredits()}
                   className="h-9 rounded-lg bg-violet-600 px-3 text-xs font-semibold text-white disabled:opacity-50"
                 >
-                  {adminApplyCreditGrantLoading ? "지급 중..." : "3장 지급"}
+                  {adminApplyCreditGrantLoading ? "지급 중..." : "5장 지급"}
                 </button>
               </div>
             </div>
+            <AdminReferralRewardPanel />
             <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <input
                 type="text"

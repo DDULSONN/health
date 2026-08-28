@@ -6,8 +6,11 @@ import { useRouter } from "next/navigation";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { isEmailConfirmed } from "@/lib/auth-confirmed";
+import { isValidReferralCode, normalizeReferralCode } from "@/lib/referral-code";
 
 const STORED_EMAIL_KEY = "recent_login_email";
+const PENDING_REFERRAL_KEY = "pending_signup_referral";
+const PENDING_REFERRAL_MAX_AGE_MS = 30 * 60 * 1000;
 const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
 const IN_APP_UA_PATTERNS = ["kakaotalk", "instagram", "naver", "fban", "fbav", "line"];
 
@@ -22,6 +25,7 @@ type CallbackState = {
   error: string | null;
   errorCode: string | null;
   errorDescription: string | null;
+  referralCode: string | null;
 };
 
 type ViewState =
@@ -72,7 +76,26 @@ function parseStateFromLocation(): CallbackState {
     error: merged.get("error"),
     errorCode: merged.get("error_code"),
     errorDescription: merged.get("error_description"),
+    referralCode: normalizeReferralCode(merged.get("ref")) || null,
   };
+}
+
+function readPendingReferralCode(): string | null {
+  try {
+    const raw = window.localStorage.getItem(PENDING_REFERRAL_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { code?: unknown; createdAt?: unknown };
+    const code = normalizeReferralCode(parsed.code);
+    const createdAt = Number(parsed.createdAt);
+    if (!isValidReferralCode(code) || !Number.isFinite(createdAt) || Date.now() - createdAt > PENDING_REFERRAL_MAX_AGE_MS) {
+      window.localStorage.removeItem(PENDING_REFERRAL_KEY);
+      return null;
+    }
+    return code;
+  } catch {
+    window.localStorage.removeItem(PENDING_REFERRAL_KEY);
+    return null;
+  }
 }
 
 function buildCanonicalCallbackUrl(next: string): string {
@@ -110,6 +133,25 @@ export default function AuthCallbackPage() {
       const supabase = createClient();
       const next = parsed.next || "/";
       const gatedNext = withPhoneVerificationGate(next);
+      const referralCode = isValidReferralCode(parsed.referralCode)
+        ? normalizeReferralCode(parsed.referralCode)
+        : readPendingReferralCode();
+
+      const claimReferral = async () => {
+        if (!referralCode) return;
+        try {
+          const response = await fetch("/api/referrals/claim", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ code: referralCode }),
+          });
+          if (response.status < 500) {
+            window.localStorage.removeItem(PENDING_REFERRAL_KEY);
+          }
+        } catch (claimError) {
+          console.error("[auth/callback] referral claim failed", claimError);
+        }
+      };
 
       const finalizeSuccess = async () => {
         const {
@@ -117,6 +159,7 @@ export default function AuthCallbackPage() {
         } = await supabase.auth.getSession();
 
         if (session) {
+          await claimReferral();
           router.replace(gatedNext);
           return;
         }

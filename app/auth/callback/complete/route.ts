@@ -2,6 +2,9 @@
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { isEmailConfirmed } from "@/lib/auth-confirmed";
+import { isValidReferralCode, normalizeReferralCode } from "@/lib/referral-code";
+import { claimReferralRelationship } from "@/lib/referrals-server";
+import { createAdminClient } from "@/lib/supabase/server";
 
 export const runtime = "nodejs";
 
@@ -35,6 +38,23 @@ function buildVerifyEmailRedirect(requestUrl: URL, next: string) {
   return NextResponse.redirect(verifyUrl);
 }
 
+async function claimReferralSafely(userId: string, rawCode: string | null) {
+  const code = normalizeReferralCode(rawCode);
+  if (!isValidReferralCode(code)) return;
+
+  try {
+    const result = await claimReferralRelationship(createAdminClient(), userId, code);
+    if (!result.ok) {
+      console.warn("[auth/callback/complete] referral claim rejected", {
+        userId,
+        resultCode: result.code,
+      });
+    }
+  } catch (error) {
+    console.error("[auth/callback/complete] referral claim failed", { userId, error });
+  }
+}
+
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
@@ -46,6 +66,7 @@ export async function GET(request: NextRequest) {
   const callbackErrorCode = url.searchParams.get("error_code");
   const callbackErrorDescription = url.searchParams.get("error_description");
   const next = safeNextPath(url.searchParams.get("next"));
+  const referralCode = url.searchParams.get("ref");
 
   const logContext = {
     path: url.pathname,
@@ -57,6 +78,7 @@ export async function GET(request: NextRequest) {
     hasRefreshToken: Boolean(refreshToken),
     hasError: Boolean(callbackError),
     hasErrorCode: Boolean(callbackErrorCode),
+    hasReferralCode: isValidReferralCode(referralCode),
     queryKeys: [...new Set(Array.from(url.searchParams.keys()))],
   };
   console.info("[auth/callback/complete] incoming", logContext);
@@ -93,6 +115,7 @@ export async function GET(request: NextRequest) {
       ...logContext,
       userId: existingUser.id,
     });
+    await claimReferralSafely(existingUser.id, referralCode);
     return response;
   }
 
@@ -200,6 +223,8 @@ export async function GET(request: NextRequest) {
     ...logContext,
     userId: user.id,
   });
+
+  await claimReferralSafely(user.id, referralCode);
 
   return response;
 }
