@@ -997,9 +997,15 @@ export default function AdminDatingOneOnOnePage() {
 
   const handleContactExchangeAction = async (
     matchId: string,
-    action: "approve" | "reset"
+    action: "approve" | "reset" | "cancel"
   ) => {
     if (processingContactExchangeIds.includes(matchId)) return;
+    if (
+      action === "cancel" &&
+      !confirm("이 1:1 매칭을 취소할까요? 번호 공개 완료 상태여도 양쪽에서 종료됩니다. 이미 공개된 번호는 회수할 수 없고, 입금·결제 건은 자동 환불되지 않습니다.")
+    ) {
+      return;
+    }
     setProcessingContactExchangeIds((prev) => [...prev, matchId]);
     setError("");
     try {
@@ -1785,6 +1791,16 @@ export default function AdminDatingOneOnOnePage() {
                           className="h-8 rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 disabled:opacity-50"
                         >
                           대기 상태로 유지
+                        </button>
+                      ) : null}
+                      {match.contact_exchange_status !== "canceled" ? (
+                        <button
+                          type="button"
+                          disabled={processingContactExchangeIds.includes(match.id)}
+                          onClick={() => void handleContactExchangeAction(match.id, "cancel")}
+                          className="h-8 rounded-md border border-rose-300 bg-white px-3 text-xs font-medium text-rose-700 disabled:opacity-50"
+                        >
+                          {processingContactExchangeIds.includes(match.id) ? "처리 중..." : "매칭 취소"}
                         </button>
                       ) : null}
                     </div>

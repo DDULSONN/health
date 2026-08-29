@@ -1,10 +1,12 @@
 import { isAllowedAdminUser } from "@/lib/admin";
 import type { DatingOneOnOneMatchRow } from "@/lib/dating-1on1";
+import { notifyDatingUser } from "@/lib/dating-notifications";
+import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
 
-type AdminContactExchangeAction = "approve" | "reset";
+type AdminContactExchangeAction = "approve" | "reset" | "cancel";
 
 type Payload = {
   action?: AdminContactExchangeAction;
@@ -30,6 +32,9 @@ export async function POST(
   req: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const originResponse = ensureAllowedMutationOrigin(req);
+  if (originResponse) return originResponse;
+
   const { user } = await getRequestAuthContext(req);
 
   if (!user) {
@@ -41,7 +46,7 @@ export async function POST(
 
   const body = (await req.json().catch(() => null)) as Payload | null;
   const action = body?.action;
-  if (action !== "approve" && action !== "reset") {
+  if (action !== "approve" && action !== "reset" && action !== "cancel") {
     return NextResponse.json({ error: "Invalid action." }, { status: 400 });
   }
 
@@ -77,14 +82,24 @@ export async function POST(
           contact_exchange_approved_by_user_id: user.id,
           updated_at: nowIso,
         }
-      : {
-          contact_exchange_status: "awaiting_applicant_payment",
-          contact_exchange_paid_at: null,
-          contact_exchange_paid_by_user_id: null,
-          contact_exchange_approved_at: null,
-          contact_exchange_approved_by_user_id: null,
-          updated_at: nowIso,
-        };
+      : action === "reset"
+        ? {
+            contact_exchange_status: "awaiting_applicant_payment",
+            contact_exchange_paid_at: null,
+            contact_exchange_paid_by_user_id: null,
+            contact_exchange_approved_at: null,
+            contact_exchange_approved_by_user_id: null,
+            updated_at: nowIso,
+          }
+        : {
+            state: "admin_canceled",
+            contact_exchange_status: "canceled",
+            contact_exchange_note: [
+              row.contact_exchange_note?.trim(),
+              `관리자 매칭 취소 (${nowIso})`,
+            ].filter(Boolean).join(" | "),
+            updated_at: nowIso,
+          };
 
   if (
     action === "approve" &&
@@ -95,12 +110,16 @@ export async function POST(
   if (action === "reset" && row.contact_exchange_status === "approved") {
     return NextResponse.json({ error: "Approved exchanges should not be reset here." }, { status: 409 });
   }
+  if (action === "cancel" && row.contact_exchange_status === "canceled") {
+    return NextResponse.json({ error: "이미 취소된 매칭입니다." }, { status: 409 });
+  }
 
   const updateRes = await admin
     .from("dating_1on1_match_proposals")
     .update(nextPatch)
     .eq("id", matchId)
     .eq("state", "mutual_accepted")
+    .eq("contact_exchange_status", row.contact_exchange_status)
     .select("id")
     .maybeSingle();
 
@@ -110,6 +129,36 @@ export async function POST(
   }
   if (!updateRes.data) {
     return NextResponse.json({ error: "This phone exchange state was already changed." }, { status: 409 });
+  }
+
+  if (action === "cancel") {
+    try {
+      await Promise.all([
+        notifyDatingUser(admin, {
+          userId: row.source_user_id,
+          actorId: user.id,
+          type: "dating_1on1_match_canceled",
+          title: "1:1 매칭이 취소됐어요",
+          body: "관리자 확인으로 진행 중이던 1:1 매칭이 취소됐습니다.",
+          route: "/dating/1on1",
+          meta: { match_id: matchId, canceled_by: "admin" },
+        }),
+        notifyDatingUser(admin, {
+          userId: row.candidate_user_id,
+          actorId: user.id,
+          type: "dating_1on1_match_canceled",
+          title: "1:1 매칭이 취소됐어요",
+          body: "관리자 확인으로 진행 중이던 1:1 매칭이 취소됐습니다.",
+          route: "/dating/1on1",
+          meta: { match_id: matchId, canceled_by: "admin" },
+        }),
+      ]);
+    } catch (notificationError) {
+      console.error(
+        "[POST /api/admin/dating/1on1/matches/[id]/contact-exchange] cancel notification failed",
+        notificationError
+      );
+    }
   }
 
   try {

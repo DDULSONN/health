@@ -6698,9 +6698,15 @@ export default function MyPage() {
 
   const handleAdminProcessOneOnOneContactExchange = async (
     matchId: string,
-    action: "approve" | "reset"
+    action: "approve" | "reset" | "cancel"
   ) => {
     if (processingOneOnOneContactExchangeIds.includes(matchId)) return;
+    if (
+      action === "cancel" &&
+      !confirm("이 1:1 매칭을 취소할까요? 양쪽 회원의 진행 목록에서 종료됩니다. 입금·결제 건은 자동 환불되지 않으므로 별도로 확인해야 합니다.")
+    ) {
+      return;
+    }
     setProcessingOneOnOneContactExchangeIds((prev) => [...prev, matchId]);
     try {
       const res = await fetch(`/api/admin/dating/1on1/matches/${matchId}/contact-exchange`, {
@@ -14453,7 +14459,7 @@ export default function MyPage() {
                             </p>
                           ) : null}
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center justify-end gap-2">
                           <button
                             type="button"
                             disabled={processing}
@@ -14469,6 +14475,14 @@ export default function MyPage() {
                             className="h-8 rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 disabled:opacity-50"
                           >
                             대기 유지
+                          </button>
+                          <button
+                            type="button"
+                            disabled={processing}
+                            onClick={() => void handleAdminProcessOneOnOneContactExchange(item.id, "cancel")}
+                            className="h-8 rounded-md border border-rose-300 bg-white px-3 text-xs font-medium text-rose-700 disabled:opacity-50"
+                          >
+                            {processing ? "처리 중..." : "매칭 취소"}
                           </button>
                         </div>
                       </div>
