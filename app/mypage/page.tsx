@@ -175,7 +175,37 @@ function MatchPhotoPreview({
   imageClassName: string;
 }) {
   const [open, setOpen] = useState(false);
+  const [imageState, setImageState] = useState(() => ({
+    baseSrc: src,
+    currentSrc: src,
+    retryCount: 0,
+    failed: false,
+  }));
   const historyMarkerRef = useRef<string | null>(null);
+  const currentImageState = imageState.baseSrc === src
+    ? imageState
+    : { baseSrc: src, currentSrc: src, retryCount: 0, failed: false };
+
+  const retryImage = useCallback(() => {
+    const separator = src.includes("?") ? "&" : "?";
+    setImageState((current) => ({
+      baseSrc: src,
+      currentSrc: `${src}${separator}retry=${Date.now()}`,
+      retryCount: current.baseSrc === src ? current.retryCount + 1 : 1,
+      failed: false,
+    }));
+  }, [src]);
+
+  const handleImageError = () => {
+    if (currentImageState.retryCount === 0) {
+      retryImage();
+      return;
+    }
+    setImageState((current) => ({
+      ...(current.baseSrc === src ? current : currentImageState),
+      failed: true,
+    }));
+  };
 
   const openPreview = () => {
     const marker = `match-photo-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -223,9 +253,27 @@ function MatchPhotoPreview({
 
   return (
     <>
-      <button type="button" onClick={openPreview} className={className} aria-label={`${alt} 크게 보기`}>
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src={src} alt={alt} loading="lazy" decoding="async" className={imageClassName} />
+      <button
+        type="button"
+        onClick={currentImageState.failed ? retryImage : openPreview}
+        className={className}
+        aria-label={currentImageState.failed ? `${alt} 다시 불러오기` : `${alt} 크게 보기`}
+      >
+        {currentImageState.failed ? (
+          <span className="px-2 text-center text-[11px] font-semibold text-neutral-500">
+            사진 다시 불러오기
+          </span>
+        ) : (
+          /* eslint-disable-next-line @next/next/no-img-element */
+          <img
+            src={currentImageState.currentSrc}
+            alt={alt}
+            loading="lazy"
+            decoding="async"
+            className={imageClassName}
+            onError={handleImageError}
+          />
+        )}
       </button>
       {open &&
         typeof document !== "undefined" &&
@@ -251,9 +299,10 @@ function MatchPhotoPreview({
             </button>
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
-              src={src}
+              src={currentImageState.currentSrc}
               alt={alt}
               className="max-h-[calc(100dvh-2rem)] max-w-full object-contain"
+              onError={handleImageError}
               onClick={(event) => event.stopPropagation()}
             />
           </div>,

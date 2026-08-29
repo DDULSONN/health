@@ -24,6 +24,7 @@ const BLOCKED_SIGNED_PREFIXES: Record<string, string[]> = {
 const DEFAULT_MAX_WIDTH = 1080;
 const DEFAULT_QUALITY = 72;
 const LONG_IMAGE_CACHE_CONTROL = "public, max-age=86400, s-maxage=2592000, stale-while-revalidate=604800";
+const PRIVATE_MATCH_IMAGE_CACHE_CONTROL = "private, max-age=3600";
 const ADMIN_PREVIEW_CACHE_CONTROL = "private, max-age=3600";
 
 function pickUpstreamHeaders(src: Headers): Headers {
@@ -593,9 +594,11 @@ async function fetchSigned(bucket: string, objectPath: string, method: string, r
     });
   }
 
-  // Signed fetch still benefits from edge/browser caching because this proxy URL is stable.
-  headers.set("Cache-Control", LONG_IMAGE_CACHE_CONTROL);
-  headers.set("Vary", "Accept");
+  // 1:1 photos are permission-gated per member. Keep them out of shared caches so a
+  // stale mobile/CDN response cannot cross sessions; the browser may cache briefly.
+  const isPrivateMatchPhoto = bucket === "dating-1on1-photos";
+  headers.set("Cache-Control", isPrivateMatchPhoto ? PRIVATE_MATCH_IMAGE_CACHE_CONTROL : LONG_IMAGE_CACHE_CONTROL);
+  headers.set("Vary", isPrivateMatchPhoto ? "Cookie, Accept" : "Accept");
   headers.delete("set-cookie");
   return new Response(method === "HEAD" ? null : upstream.body, {
     status: upstream.status,
