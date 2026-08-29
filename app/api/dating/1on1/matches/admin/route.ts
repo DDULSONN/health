@@ -55,6 +55,7 @@ const MATCH_STATES = new Set([
 ]);
 
 const ADMIN_SENT_DELETABLE_STATES = new Set(["proposed", "source_skipped", "admin_canceled"]);
+const ADMIN_SENDABLE_CARD_STATUSES = new Set(["submitted", "reviewing", "approved"]);
 const MATCH_BATCH_SIZE = 1000;
 const FULL_MATCH_SELECT =
   "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,contact_exchange_status,contact_exchange_requested_at,contact_exchange_paid_at,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_approved_by_user_id,contact_exchange_note,source_phone_share_consented_at,candidate_phone_share_consented_at,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at";
@@ -300,6 +301,12 @@ export async function POST(req: Request) {
   if (!sourceRes.data) {
     return NextResponse.json({ error: "Source card not found." }, { status: 404 });
   }
+  if (!ADMIN_SENDABLE_CARD_STATUSES.has(String(sourceRes.data.status ?? ""))) {
+    return NextResponse.json(
+      { error: "현재 후보를 보낼 수 없는 기준 카드입니다." },
+      { status: 409 }
+    );
+  }
 
   const candidatesRes = await admin
     .from("dating_1on1_cards")
@@ -311,7 +318,12 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Failed to load candidate cards." }, { status: 500 });
   }
 
-  const candidateRows = (candidatesRes.data ?? []).filter((row) => row.user_id !== sourceRes.data?.user_id);
+  const candidateRows = (candidatesRes.data ?? []).filter(
+    (row) =>
+      row.user_id !== sourceRes.data?.user_id &&
+      row.sex !== sourceRes.data?.sex &&
+      ADMIN_SENDABLE_CARD_STATUSES.has(String(row.status ?? ""))
+  );
 
   if (candidateRows.length === 0) {
     return NextResponse.json(

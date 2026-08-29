@@ -49,6 +49,10 @@ const AdminOpenCardPreviewImage = dynamic(
 const AdminReferralRewardPanel = dynamic(
   () => import("@/components/admin/AdminReferralRewardPanel")
 );
+const AdminOneOnOneCandidateSenderPanel = dynamic(
+  () => import("@/components/admin/AdminOneOnOneCandidateSenderPanel"),
+  { loading: () => <MyPageWidgetSkeleton className="h-72" /> }
+);
 const ReferralInvitePanel = dynamic(() => import("@/components/ReferralInvitePanel"), {
   loading: () => <MyPageWidgetSkeleton className="h-40" />,
 });
@@ -1084,6 +1088,7 @@ type AdminManageTab =
   | "one_on_one_abuse_review"
   | "accepted_applications"
   | "mail_center"
+  | "one_on_one_candidates"
   | "one_on_one_contact"
   | "apply_credits"
   | "swipe_subscriptions"
@@ -2184,6 +2189,7 @@ export default function MyPage() {
   const [adminOneOnOneBlockError, setAdminOneOnOneBlockError] = useState("");
   const [adminOneOnOneBlockInfo, setAdminOneOnOneBlockInfo] = useState("");
   const [adminOneOnOnePriorityGrantingIds, setAdminOneOnOnePriorityGrantingIds] = useState<string[]>([]);
+  const [adminOneOnOnePriorityRevokingIds, setAdminOneOnOnePriorityRevokingIds] = useState<string[]>([]);
   const [adminOneOnOnePriorityGrantError, setAdminOneOnOnePriorityGrantError] = useState("");
   const [adminOneOnOnePriorityGrantInfo, setAdminOneOnOnePriorityGrantInfo] = useState("");
   const [adminOneOnOneEditGrantingIds, setAdminOneOnOneEditGrantingIds] = useState<string[]>([]);
@@ -7218,7 +7224,7 @@ export default function MyPage() {
               details: {
                 ...(prev.details ?? {}),
                 one_on_one_cards: (prev.details?.one_on_one_cards ?? []).map((item) =>
-                  String(item.id ?? "") === body.card?.id ? { ...item, plus_expires_at: expiresAt } : item
+                  ({ ...item, plus_expires_at: expiresAt })
                 ),
               },
             }
@@ -7233,6 +7239,67 @@ export default function MyPage() {
       setAdminOneOnOnePriorityGrantError(err instanceof Error ? err.message : "1:1 매칭 플러스 지급에 실패했습니다.");
     } finally {
       setAdminOneOnOnePriorityGrantingIds((prev) => prev.filter((id) => id !== cardId));
+    }
+  };
+
+  const handleAdminRevokeOneOnOnePriorityBoost = async (card: Record<string, unknown>) => {
+    const userId = adminUserActivityResult?.user?.id ?? "";
+    const cardId = String(card.id ?? "").trim();
+    const cardName = String(card.name ?? "1:1 신청").trim() || "1:1 신청";
+    const expiresAt = typeof card.plus_expires_at === "string" ? card.plus_expires_at : "";
+    if (!userId || !cardId || !expiresAt) {
+      setAdminOneOnOnePriorityGrantError("현재 이용 중인 1:1 매칭 플러스 정보를 찾지 못했습니다.");
+      return;
+    }
+    if (
+      adminOneOnOnePriorityGrantingIds.includes(cardId) ||
+      adminOneOnOnePriorityRevokingIds.includes(cardId)
+    ) return;
+    if (!confirm(
+      `${cardName} 회원의 1:1 매칭 플러스 이용권을 즉시 회수할까요?\n\n결제 취소나 환불은 처리되지 않으며 구매 내역은 그대로 남습니다.`
+    )) return;
+
+    setAdminOneOnOnePriorityRevokingIds((prev) => [...prev, cardId]);
+    setAdminOneOnOnePriorityGrantError("");
+    setAdminOneOnOnePriorityGrantInfo("");
+    try {
+      const res = await fetch("/api/admin/dating/1on1/priority-boost/revoke", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, expectedExpiresAt: expiresAt }),
+      });
+      const body = (await res.json().catch(() => ({}))) as {
+        ok?: boolean;
+        error?: string;
+        userId?: string;
+      };
+      if (!res.ok || !body.ok || body.userId !== userId) {
+        throw new Error(body.error ?? "1:1 매칭 플러스 이용권 회수에 실패했습니다.");
+      }
+
+      setAdminUserActivityResult((prev) =>
+        prev
+          ? {
+              ...prev,
+              details: {
+                ...(prev.details ?? {}),
+                one_on_one_cards: (prev.details?.one_on_one_cards ?? []).map((item) => ({
+                  ...item,
+                  plus_expires_at: null,
+                })),
+              },
+            }
+          : prev
+      );
+      setAdminOneOnOnePriorityGrantInfo(
+        "1:1 매칭 플러스 이용권을 즉시 회수했습니다. 결제 및 구매 내역은 유지됩니다."
+      );
+    } catch (err) {
+      setAdminOneOnOnePriorityGrantError(
+        err instanceof Error ? err.message : "1:1 매칭 플러스 이용권 회수에 실패했습니다."
+      );
+    } finally {
+      setAdminOneOnOnePriorityRevokingIds((prev) => prev.filter((id) => id !== cardId));
     }
   };
 
@@ -10974,6 +11041,8 @@ export default function MyPage() {
             <h2 className="text-lg font-bold text-violet-900">
               {adminManageTab === "mail_center"
                 ? "회원 메일 발송 (관리자)"
+                : adminManageTab === "one_on_one_candidates"
+                  ? "1:1 후보 발송 (관리자)"
                 : adminManageTab === "one_on_one_contact"
                   ? "1:1 번호 공개 관리 (관리자)"
                 : adminManageTab === "reels_dating"
@@ -11003,7 +11072,7 @@ export default function MyPage() {
               >
                 관리자 잠금 해제
               </Link>
-              {adminManageTab !== "app_testers" && adminManageTab !== "nickname_review" && adminManageTab !== "one_on_one_name_review" && adminManageTab !== "one_on_one_abuse_review" && adminManageTab !== "employment_verify" && (
+              {adminManageTab !== "app_testers" && adminManageTab !== "nickname_review" && adminManageTab !== "one_on_one_name_review" && adminManageTab !== "one_on_one_abuse_review" && adminManageTab !== "employment_verify" && adminManageTab !== "one_on_one_candidates" && (
               <button
                 type="button"
                 disabled={
@@ -11249,6 +11318,17 @@ export default function MyPage() {
             </button>
             <button
               type="button"
+              onClick={() => setAdminManageTab("one_on_one_candidates")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "one_on_one_candidates"
+                  ? "border-violet-600 bg-violet-600 text-white"
+                  : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              1:1 후보 발송
+            </button>
+            <button
+              type="button"
               onClick={() => setAdminManageTab("one_on_one_contact")}
               className={`h-8 rounded-md border px-3 text-xs font-medium ${
                 adminManageTab === "one_on_one_contact"
@@ -11341,6 +11421,7 @@ export default function MyPage() {
           {adminManageTab === "one_on_one_name_review" && <AdminOneOnOneNameReviewPanel />}
           {adminManageTab === "one_on_one_abuse_review" && <AdminOneOnOneAbuseReviewPanel />}
           {adminManageTab === "employment_verify" && <AdminEmploymentVerificationPanel />}
+          {adminManageTab === "one_on_one_candidates" && <AdminOneOnOneCandidateSenderPanel />}
 
           {adminManageTab === "site_dashboard" && (
           <div className="mb-3 space-y-4">
@@ -13833,7 +13914,7 @@ export default function MyPage() {
                             <div>
                               <p className="text-xs font-semibold text-pink-900">1:1 매칭 플러스 지급</p>
                               <p className="mt-1 text-[11px] text-neutral-500">
-                                활성 1:1 신청 회원에게 플러스 7일 또는 30일을 바로 지급합니다.
+                                플러스 7일·30일 지급 또는 현재 이용권 회수가 가능합니다. 회수해도 결제·구매 내역은 보존됩니다.
                               </p>
                             </div>
                           </div>
@@ -13849,6 +13930,8 @@ export default function MyPage() {
                                   const expiresAtMs = expiresAtRaw ? new Date(expiresAtRaw).getTime() : Number.NaN;
                                   const activeBoost = Number.isFinite(expiresAtMs) && expiresAtMs > Date.now();
                                   const granting = adminOneOnOnePriorityGrantingIds.includes(cardId);
+                                  const revoking = adminOneOnOnePriorityRevokingIds.includes(cardId);
+                                  const processing = granting || revoking;
                                   return (
                                     <div key={`admin-1on1-priority-${cardId}`} className="rounded-lg border border-pink-100 bg-pink-50/40 px-3 py-2">
                                       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -13866,7 +13949,7 @@ export default function MyPage() {
                                           <button
                                             type="button"
                                             onClick={() => void handleAdminGrantOneOnOnePriorityBoost(card, 7)}
-                                            disabled={granting}
+                                            disabled={processing}
                                             className="h-8 rounded-lg border border-pink-200 bg-white px-3 text-xs font-semibold text-pink-700 disabled:opacity-60"
                                           >
                                             {granting ? "처리 중..." : activeBoost ? "7일 연장" : "7일 지급"}
@@ -13874,11 +13957,21 @@ export default function MyPage() {
                                           <button
                                             type="button"
                                             onClick={() => void handleAdminGrantOneOnOnePriorityBoost(card, 30)}
-                                            disabled={granting}
+                                            disabled={processing}
                                             className="h-8 rounded-lg bg-pink-600 px-3 text-xs font-semibold text-white disabled:opacity-60"
                                           >
                                             {granting ? "처리 중..." : activeBoost ? "30일 연장" : "30일 지급"}
                                           </button>
+                                          {activeBoost ? (
+                                            <button
+                                              type="button"
+                                              onClick={() => void handleAdminRevokeOneOnOnePriorityBoost(card)}
+                                              disabled={processing}
+                                              className="h-8 rounded-lg border border-rose-200 bg-white px-3 text-xs font-semibold text-rose-700 disabled:opacity-60"
+                                            >
+                                              {revoking ? "회수 중..." : "이용권 회수"}
+                                            </button>
+                                          ) : null}
                                         </div>
                                       </div>
                                     </div>
