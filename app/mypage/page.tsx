@@ -1973,6 +1973,10 @@ export default function MyPage() {
   const [, setAdminOneOnOneContactLoaded] = useState(false);
   const [adminOneOnOneContactLoading, setAdminOneOnOneContactLoading] = useState(false);
   const [adminOneOnOneContactSearch, setAdminOneOnOneContactSearch] = useState("");
+  const [adminOneOnOneContactAppliedSearch, setAdminOneOnOneContactAppliedSearch] = useState("");
+  const [adminOneOnOneContactPage, setAdminOneOnOneContactPage] = useState(1);
+  const [adminOneOnOneContactTotal, setAdminOneOnOneContactTotal] = useState(0);
+  const [adminOneOnOneContactHasMore, setAdminOneOnOneContactHasMore] = useState(false);
   const [adminOpenCardOutreachScope, setAdminOpenCardOutreachScope] = useState<AdminOpenCardOutreachScope>("combined");
   const [adminOpenCardOutreachStaleDays, setAdminOpenCardOutreachStaleDays] = useState("30");
   const [adminOpenCardOutreachPhoneFilter, setAdminOpenCardOutreachPhoneFilter] =
@@ -3377,21 +3381,47 @@ export default function MyPage() {
 
   const refreshAdminOneOnOneContactData = useMemo(
     () =>
-      async (showLoading = true) => {
+      async (
+        showLoading = true,
+        options: { page?: number; append?: boolean; query?: string } = {}
+      ) => {
         if (!isAdmin) return;
+
+        const page = Math.max(1, Math.floor(options.page ?? 1));
+        const query = (options.query ?? "").trim();
 
         if (showLoading) {
           setAdminOneOnOneContactLoading(true);
+          if (!options.append) {
+            setAdminOneOnOneContactRequests([]);
+            setAdminOneOnOneContactHasMore(false);
+          }
         }
 
         try {
-          const res = await fetch("/api/admin/dating/1on1/contact-exchange-queue", { cache: "no-store" });
+          const params = new URLSearchParams({ page: String(page), page_size: "30" });
+          if (query) params.set("q", query);
+          const res = await fetch(`/api/admin/dating/1on1/contact-exchange-queue?${params.toString()}`, {
+            cache: "no-store",
+          });
           const body = (await res.json().catch(() => ({}))) as {
             items?: AdminOneOnOneContactExchangeRequest[];
+            page?: number;
+            total?: number;
+            has_more?: boolean;
           };
 
           if (res.ok) {
-            setAdminOneOnOneContactRequests(body.items ?? []);
+            const nextItems = body.items ?? [];
+            setAdminOneOnOneContactRequests((current) => {
+              if (!options.append) return nextItems;
+              const merged = new Map(current.map((item) => [item.id, item]));
+              for (const item of nextItems) merged.set(item.id, item);
+              return [...merged.values()];
+            });
+            setAdminOneOnOneContactPage(body.page ?? page);
+            setAdminOneOnOneContactTotal(body.total ?? nextItems.length);
+            setAdminOneOnOneContactHasMore(body.has_more === true);
             setAdminOneOnOneContactLoaded(true);
           } else {
             console.error("[mypage] admin 1on1 contact queue refresh failed", body);
@@ -3406,6 +3436,25 @@ export default function MyPage() {
       },
     [isAdmin]
   );
+
+  const handleAdminOneOnOneContactSearch = async (event: React.FormEvent) => {
+    event.preventDefault();
+    const nextSearch = adminOneOnOneContactSearch.trim();
+    if (nextSearch === adminOneOnOneContactAppliedSearch) {
+      await refreshAdminOneOnOneContactData(true, { page: 1, query: nextSearch });
+      return;
+    }
+    setAdminOneOnOneContactAppliedSearch(nextSearch);
+  };
+
+  const handleAdminOneOnOneContactLoadMore = async () => {
+    if (adminOneOnOneContactLoading || !adminOneOnOneContactHasMore) return;
+    await refreshAdminOneOnOneContactData(true, {
+      page: adminOneOnOneContactPage + 1,
+      append: true,
+      query: adminOneOnOneContactAppliedSearch,
+    });
+  };
 
   const refreshAdminReelsDatingData = useMemo(
     () =>
@@ -3806,9 +3855,13 @@ export default function MyPage() {
       return;
     }
 
-    void refreshAdminOneOnOneContactData(true);
+    void refreshAdminOneOnOneContactData(true, {
+      page: 1,
+      query: adminOneOnOneContactAppliedSearch,
+    });
   }, [
     adminManageTab,
+    adminOneOnOneContactAppliedSearch,
     isAdmin,
     pageSectionTab,
     refreshAdminOneOnOneContactData,
@@ -6776,6 +6829,7 @@ export default function MyPage() {
       }
 
       setAdminOneOnOneContactRequests((prev) => prev.filter((item) => item.id !== matchId));
+      setAdminOneOnOneContactTotal((prev) => Math.max(0, prev - 1));
     } finally {
       setProcessingOneOnOneContactExchangeIds((prev) => prev.filter((id) => id !== matchId));
     }
@@ -7783,32 +7837,8 @@ export default function MyPage() {
             userId.includes(normalizedAdminCityViewSearch)
           );
         });
-  const normalizedAdminOneOnOneContactSearch = adminOneOnOneContactSearch.trim().toLowerCase();
-  const filteredAdminOneOnOneContactRequests =
-    normalizedAdminOneOnOneContactSearch.length === 0
-      ? adminOneOnOneContactRequests
-      : adminOneOnOneContactRequests.filter((item) => {
-          const sourceName = oneOnOneContactDisplayName(item.source_card, item.source_profile, item.source_user_id).toLowerCase();
-          const candidateName = oneOnOneContactDisplayName(item.candidate_card, item.candidate_profile, item.candidate_user_id).toLowerCase();
-          const sourceRegion = (item.source_card?.region ?? "").trim().toLowerCase();
-          const candidateRegion = (item.candidate_card?.region ?? "").trim().toLowerCase();
-          const sourcePhone = (item.source_card?.phone ?? "").trim().toLowerCase();
-          const candidatePhone = (item.candidate_card?.phone ?? "").trim().toLowerCase();
-          const sourceUserId = item.source_user_id.trim().toLowerCase();
-          const candidateUserId = item.candidate_user_id.trim().toLowerCase();
-          const matchId = item.id.trim().toLowerCase();
-          return (
-            sourceName.includes(normalizedAdminOneOnOneContactSearch) ||
-            candidateName.includes(normalizedAdminOneOnOneContactSearch) ||
-            sourceRegion.includes(normalizedAdminOneOnOneContactSearch) ||
-            candidateRegion.includes(normalizedAdminOneOnOneContactSearch) ||
-            sourcePhone.includes(normalizedAdminOneOnOneContactSearch) ||
-            candidatePhone.includes(normalizedAdminOneOnOneContactSearch) ||
-            sourceUserId.includes(normalizedAdminOneOnOneContactSearch) ||
-            candidateUserId.includes(normalizedAdminOneOnOneContactSearch) ||
-            matchId.includes(normalizedAdminOneOnOneContactSearch)
-          );
-        });
+  const normalizedAdminOneOnOneContactSearch = adminOneOnOneContactAppliedSearch.trim().toLowerCase();
+  const filteredAdminOneOnOneContactRequests = adminOneOnOneContactRequests;
   const hasActiveOpenCard = myDatingCards.some((card) => card.status === "pending" || card.status === "public");
   const swipeMatchConnections = datingConnections.filter((item) => item.role === "swipe_match");
   const visibleSwipeMatchCount = swipeMatchConnections.length;
@@ -11158,7 +11188,10 @@ export default function MyPage() {
                     : adminManageTab === "accepted_applications"
                     ? refreshAdminAcceptedRecentApplications(true)
                     : adminManageTab === "one_on_one_contact"
-                      ? refreshAdminOneOnOneContactData(true)
+                      ? refreshAdminOneOnOneContactData(true, {
+                          page: 1,
+                          query: adminOneOnOneContactAppliedSearch,
+                        })
                       : refreshAdminQueueData(true))
                 }
                 className="h-8 rounded-md border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 disabled:cursor-not-allowed disabled:opacity-60"
@@ -14540,24 +14573,48 @@ export default function MyPage() {
           {adminManageTab === "one_on_one_contact" && (
           <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
             <p className="text-xs font-semibold text-violet-800">
-              1:1 번호 공개 가능 매칭 {adminOneOnOneContactRequests.length}건
+              1:1 번호 공개 가능 매칭 {adminOneOnOneContactTotal.toLocaleString("ko-KR")}건
             </p>
             <p className="mt-1 text-[11px] text-neutral-500">
               쌍방 수락 후 아직 번호 교환 전인 건을 모았습니다. 오픈카톡으로 입금 확인이 오면 여기서 바로 승인하면 됩니다.
             </p>
-            <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <form
+              onSubmit={handleAdminOneOnOneContactSearch}
+              className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center"
+            >
               <input
                 type="text"
                 value={adminOneOnOneContactSearch}
                 onChange={(e) => setAdminOneOnOneContactSearch(e.target.value)}
-                placeholder="지원자/상대 닉네임, 지역, 번호, 매칭ID 검색"
+                placeholder="이름·닉네임·지역·번호·정확한 매칭/회원ID 검색"
                 className="h-9 w-full rounded-lg border border-violet-200 bg-white px-3 text-xs text-neutral-900 outline-none ring-0 placeholder:text-neutral-400 sm:max-w-sm"
               />
+              <button
+                type="submit"
+                disabled={adminOneOnOneContactLoading}
+                className="h-9 rounded-lg bg-violet-600 px-3 text-xs font-semibold text-white disabled:opacity-50"
+              >
+                {adminOneOnOneContactLoading ? "검색 중..." : "검색"}
+              </button>
               {normalizedAdminOneOnOneContactSearch ? (
-                <p className="text-[11px] text-neutral-500">검색 결과 {filteredAdminOneOnOneContactRequests.length}건</p>
+                <button
+                  type="button"
+                  disabled={adminOneOnOneContactLoading}
+                  onClick={() => {
+                    setAdminOneOnOneContactSearch("");
+                    setAdminOneOnOneContactAppliedSearch("");
+                  }}
+                  className="h-9 rounded-lg border border-violet-200 bg-white px-3 text-xs font-medium text-violet-800 disabled:opacity-50"
+                >
+                  초기화
+                </button>
               ) : null}
-            </div>
-            {adminOneOnOneContactLoading ? (
+            </form>
+            <p className="mt-2 text-[11px] text-neutral-500">
+              {normalizedAdminOneOnOneContactSearch ? "검색 결과 " : ""}
+              {adminOneOnOneContactTotal.toLocaleString("ko-KR")}건 중 {adminOneOnOneContactRequests.length.toLocaleString("ko-KR")}건 표시
+            </p>
+            {adminOneOnOneContactLoading && adminOneOnOneContactRequests.length === 0 ? (
               <p className="mt-3 text-xs text-neutral-500">불러오는 중...</p>
             ) : filteredAdminOneOnOneContactRequests.length === 0 ? (
               <p className="mt-3 text-xs text-neutral-500">
@@ -14633,6 +14690,16 @@ export default function MyPage() {
                 })}
               </div>
             )}
+            {adminOneOnOneContactHasMore ? (
+              <button
+                type="button"
+                disabled={adminOneOnOneContactLoading}
+                onClick={() => void handleAdminOneOnOneContactLoadMore()}
+                className="mt-3 h-9 w-full rounded-lg border border-violet-200 bg-white text-xs font-semibold text-violet-800 disabled:opacity-50"
+              >
+                {adminOneOnOneContactLoading ? "불러오는 중..." : "30건 더 보기"}
+              </button>
+            ) : null}
           </div>
           )}
 

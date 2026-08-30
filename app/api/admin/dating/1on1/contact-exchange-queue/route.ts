@@ -3,8 +3,10 @@ import { isAllowedAdminUser } from "@/lib/admin";
 import { type DatingOneOnOneMatchRow, getDatingOneOnOneCardsByIds } from "@/lib/dating-1on1";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
+import { resolveOneOnOneAdminSearchTargets } from "@/lib/dating-1on1-admin-search";
 
-const BATCH_SIZE = 500;
+const DEFAULT_PAGE_SIZE = 30;
+const MAX_PAGE_SIZE = 50;
 const FULL_QUEUE_SELECT =
   "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,contact_exchange_status,contact_exchange_requested_at,contact_exchange_paid_at,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_approved_by_user_id,contact_exchange_note,source_phone_share_consented_at,candidate_phone_share_consented_at,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at";
 
@@ -29,35 +31,29 @@ function isMissingContactExchangeColumnsError(error: { message?: string } | null
   );
 }
 
-async function fetchPendingContactExchangeMatches(admin: ReturnType<typeof createAdminClient>) {
-  const rows: DatingOneOnOneMatchRow[] = [];
-  let from = 0;
+async function fetchPendingContactExchangeMatches(
+  admin: ReturnType<typeof createAdminClient>,
+  { page, pageSize, orFilter }: { page: number; pageSize: number; orFilter: string | null }
+) {
+  const from = (page - 1) * pageSize;
+  let query = admin
+    .from("dating_1on1_match_proposals")
+    .select(FULL_QUEUE_SELECT, { count: "exact" })
+    .eq("state", "mutual_accepted")
+    .in("contact_exchange_status", ["payment_pending_admin", "awaiting_applicant_payment", "none"])
+    .order("contact_exchange_paid_at", { ascending: false, nullsFirst: false })
+    .order("updated_at", { ascending: false })
+    .order("created_at", { ascending: false })
+    .order("id", { ascending: false })
+    .range(from, from + pageSize - 1);
 
-  while (true) {
-    const { data, error } = await admin
-      .from("dating_1on1_match_proposals")
-      .select(FULL_QUEUE_SELECT)
-      .eq("state", "mutual_accepted")
-      .in("contact_exchange_status", ["payment_pending_admin", "awaiting_applicant_payment", "none"])
-      .order("contact_exchange_paid_at", { ascending: false, nullsFirst: false })
-      .order("updated_at", { ascending: false })
-      .order("created_at", { ascending: false })
-      .range(from, from + BATCH_SIZE - 1);
-
-    if (error) {
-      if (isMissingContactExchangeColumnsError(error)) {
-        return [];
-      }
-      throw error;
-    }
-
-    const batch = (data ?? []) as DatingOneOnOneMatchRow[];
-    rows.push(...batch);
-    if (batch.length < BATCH_SIZE) break;
-    from += BATCH_SIZE;
+  if (orFilter) query = query.or(orFilter);
+  const { data, error, count } = await query;
+  if (error) {
+    if (isMissingContactExchangeColumnsError(error)) return { rows: [], total: 0 };
+    throw error;
   }
-
-  return rows;
+  return { rows: (data ?? []) as DatingOneOnOneMatchRow[], total: count ?? 0 };
 }
 
 async function fetchProfilesByUserIds(admin: ReturnType<typeof createAdminClient>, userIds: string[]) {
@@ -122,9 +118,24 @@ export async function GET(req: Request) {
   }
 
   const admin = createAdminClient();
+  const { searchParams } = new URL(req.url);
+  const rawPage = Number(searchParams.get("page") ?? "1");
+  const rawPageSize = Number(searchParams.get("page_size") ?? String(DEFAULT_PAGE_SIZE));
+  const page = Number.isFinite(rawPage) ? Math.max(1, Math.floor(rawPage)) : 1;
+  const pageSize = Number.isFinite(rawPageSize)
+    ? Math.min(MAX_PAGE_SIZE, Math.max(1, Math.floor(rawPageSize)))
+    : DEFAULT_PAGE_SIZE;
 
   try {
-    const rows = await fetchPendingContactExchangeMatches(admin);
+    const searchTargets = await resolveOneOnOneAdminSearchTargets(admin, searchParams.get("q") ?? "");
+    if (!searchTargets.matched) {
+      return NextResponse.json({ items: [], page, page_size: pageSize, total: 0, has_more: false });
+    }
+    const { rows, total } = await fetchPendingContactExchangeMatches(admin, {
+      page,
+      pageSize,
+      orFilter: searchTargets.orFilter,
+    });
     const cardMap = await getDatingOneOnOneCardsByIds(
       admin,
       rows.flatMap((row) => [row.source_card_id, row.candidate_card_id])
@@ -142,6 +153,10 @@ export async function GET(req: Request) {
         source_profile: profileMap.get(row.source_user_id) ?? null,
         candidate_profile: profileMap.get(row.candidate_user_id) ?? null,
       })),
+      page,
+      page_size: pageSize,
+      total,
+      has_more: page * pageSize < total,
     });
   } catch (error) {
     console.error("[GET /api/admin/dating/1on1/contact-exchange-queue] failed", error);

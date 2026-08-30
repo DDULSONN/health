@@ -387,6 +387,12 @@ export default function AdminDatingOneOnOnePage() {
   const [matchStateFilter, setMatchStateFilter] = useState<
     "" | AdminMatchItem["state"] | "mutual_only" | "mutual_pending_exchange"
   >("mutual_only");
+  const [matchSearch, setMatchSearch] = useState("");
+  const [appliedMatchSearch, setAppliedMatchSearch] = useState("");
+  const [matchPage, setMatchPage] = useState(1);
+  const [matchTotal, setMatchTotal] = useState(0);
+  const [matchHasMore, setMatchHasMore] = useState(false);
+  const [matchLoading, setMatchLoading] = useState(false);
 
   const [sex, setSex] = useState<"" | "male" | "female">("");
   const [region, setRegion] = useState("");
@@ -451,11 +457,78 @@ export default function AdminDatingOneOnOnePage() {
     setEditTagsById(nextTags);
   };
 
+  const buildMatchQuery = (
+    filter: typeof matchStateFilter,
+    search: string,
+    page: number
+  ) => {
+    const query = new URLSearchParams({ page: String(page), page_size: "30" });
+    if (filter === "mutual_only") {
+      query.set("state", "mutual_accepted");
+    } else if (filter === "mutual_pending_exchange") {
+      query.set("state", "mutual_accepted");
+      query.set("pending_exchange", "1");
+    } else if (filter) {
+      query.set("state", filter);
+    }
+    if (search.trim()) query.set("q", search.trim());
+    return query.toString();
+  };
+
+  const loadAdminMatches = async ({
+    filter = matchStateFilter,
+    search = appliedMatchSearch,
+    page = 1,
+    append = false,
+    showLoading = true,
+  }: {
+    filter?: typeof matchStateFilter;
+    search?: string;
+    page?: number;
+    append?: boolean;
+    showLoading?: boolean;
+  } = {}) => {
+    if (showLoading) {
+      setMatchLoading(true);
+      if (!append) {
+        setMatchItems([]);
+        setMatchHasMore(false);
+      }
+    }
+    try {
+      const res = await fetch(
+        `/api/dating/1on1/matches/admin?${buildMatchQuery(filter, search, page)}`,
+        { cache: "no-store" }
+      );
+      const body = (await res.json().catch(() => ({}))) as {
+        items?: AdminMatchItem[];
+        page?: number;
+        total?: number;
+        has_more?: boolean;
+        error?: string;
+      };
+      if (!res.ok) throw new Error(body.error ?? "매칭 목록을 불러오지 못했습니다.");
+
+      const nextItems = body.items ?? [];
+      setMatchItems((current) => {
+        if (!append) return nextItems;
+        const merged = new Map(current.map((item) => [item.id, item]));
+        for (const item of nextItems) merged.set(item.id, item);
+        return [...merged.values()];
+      });
+      setMatchPage(body.page ?? page);
+      setMatchTotal(body.total ?? nextItems.length);
+      setMatchHasMore(body.has_more === true);
+    } finally {
+      if (showLoading) setMatchLoading(false);
+    }
+  };
+
   const load = async () => {
     setError("");
-    const [cardsRes, matchesRes] = await Promise.all([
+    const [cardsRes] = await Promise.all([
       fetch(`/api/dating/1on1/cards?${buildQuery()}`, { cache: "no-store" }),
-      fetch("/api/dating/1on1/matches/admin", { cache: "no-store" }),
+      loadAdminMatches({ page: 1, append: false, showLoading: false }),
     ]);
     const body = (await cardsRes.json().catch(() => ({}))) as {
       items?: CardItem[];
@@ -463,19 +536,11 @@ export default function AdminDatingOneOnOnePage() {
       counts_filtered?: Counts;
       error?: string;
     };
-    const matchesBody = (await matchesRes.json().catch(() => ({}))) as {
-      items?: AdminMatchItem[];
-      error?: string;
-    };
     if (!cardsRes.ok) {
       throw new Error(body.error ?? "목록을 불러오지 못했습니다.");
     }
-    if (!matchesRes.ok) {
-      throw new Error(matchesBody.error ?? "매칭 목록을 불러오지 못했습니다.");
-    }
     const rows = body.items ?? [];
     setItems(rows);
-    setMatchItems(matchesBody.items ?? []);
     setCountsTotal(
       body.counts_total ?? {
         total: rows.length,
@@ -597,6 +662,43 @@ export default function AdminDatingOneOnOnePage() {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleMatchFilterChange = async (nextFilter: typeof matchStateFilter) => {
+    setMatchStateFilter(nextFilter);
+    setError("");
+    try {
+      await loadAdminMatches({ filter: nextFilter, search: appliedMatchSearch, page: 1, append: false });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "매칭 목록을 불러오지 못했습니다.");
+    }
+  };
+
+  const handleMatchSearch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const nextSearch = matchSearch.trim();
+    setAppliedMatchSearch(nextSearch);
+    setError("");
+    try {
+      await loadAdminMatches({ filter: matchStateFilter, search: nextSearch, page: 1, append: false });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "매칭 검색에 실패했습니다.");
+    }
+  };
+
+  const handleLoadMoreMatches = async () => {
+    if (matchLoading || !matchHasMore) return;
+    setError("");
+    try {
+      await loadAdminMatches({
+        filter: matchStateFilter,
+        search: appliedMatchSearch,
+        page: matchPage + 1,
+        append: true,
+      });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "다음 매칭 목록을 불러오지 못했습니다.");
     }
   };
 
@@ -902,6 +1004,10 @@ export default function AdminDatingOneOnOnePage() {
   }, [selectableCandidateCards]);
 
   const toggleCandidateSelection = (candidateCardId: string) => {
+    if (!selectedCandidateCardIds.includes(candidateCardId) && selectedCandidateCardIds.length >= AUTO_CANDIDATE_LIMIT) {
+      setError(`후보는 한 번에 최대 ${AUTO_CANDIDATE_LIMIT}명까지 선택할 수 있습니다.`);
+      return;
+    }
     setSelectedCandidateCardIds((prev) =>
       prev.includes(candidateCardId) ? prev.filter((id) => id !== candidateCardId) : [...prev, candidateCardId]
     );
@@ -909,7 +1015,9 @@ export default function AdminDatingOneOnOnePage() {
 
   const handleSelectAutoCandidates = () => {
     if (autoRecommendedCandidateIds.length === 0) return;
-    setSelectedCandidateCardIds((prev) => [...new Set([...prev, ...autoRecommendedCandidateIds])]);
+    setSelectedCandidateCardIds((prev) =>
+      [...new Set([...prev, ...autoRecommendedCandidateIds])].slice(0, AUTO_CANDIDATE_LIMIT)
+    );
   };
 
   const handleSendCandidates = async () => {
@@ -1680,7 +1788,8 @@ export default function AdminDatingOneOnOnePage() {
           </div>
           <select
             value={matchStateFilter}
-            onChange={(e) => setMatchStateFilter(e.target.value as typeof matchStateFilter)}
+            onChange={(e) => void handleMatchFilterChange(e.target.value as typeof matchStateFilter)}
+            disabled={matchLoading}
             className="h-10 rounded-lg border border-emerald-200 bg-white px-2 text-sm text-emerald-900"
           >
             <option value="mutual_only">쌍방 수락 완료만</option>
@@ -1697,8 +1806,46 @@ export default function AdminDatingOneOnOnePage() {
           </select>
         </div>
 
+        <form onSubmit={handleMatchSearch} className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center">
+          <input
+            type="text"
+            value={matchSearch}
+            onChange={(e) => setMatchSearch(e.target.value)}
+            placeholder="이름·닉네임·지역·번호·정확한 매칭/회원ID 검색"
+            className="h-10 flex-1 rounded-lg border border-emerald-200 bg-white px-3 text-sm text-neutral-900 outline-none placeholder:text-neutral-400"
+          />
+          <button
+            type="submit"
+            disabled={matchLoading}
+            className="h-10 rounded-lg bg-emerald-700 px-4 text-sm font-semibold text-white disabled:opacity-50"
+          >
+            {matchLoading ? "불러오는 중..." : "매칭 검색"}
+          </button>
+          {appliedMatchSearch ? (
+            <button
+              type="button"
+              disabled={matchLoading}
+              onClick={() => {
+                setMatchSearch("");
+                setAppliedMatchSearch("");
+                void loadAdminMatches({ filter: matchStateFilter, search: "", page: 1, append: false }).catch((e) =>
+                  setError(e instanceof Error ? e.message : "매칭 목록을 불러오지 못했습니다.")
+                );
+              }}
+              className="h-10 rounded-lg border border-emerald-200 bg-white px-4 text-sm font-medium text-emerald-800 disabled:opacity-50"
+            >
+              검색 초기화
+            </button>
+          ) : null}
+        </form>
+        <p className="mt-2 text-xs text-emerald-800">
+          전체 {matchTotal.toLocaleString("ko-KR")}건 중 {matchItems.length.toLocaleString("ko-KR")}건 표시
+        </p>
+
         <div className="mt-3 space-y-2">
-          {visibleMatches.length === 0 ? (
+          {matchLoading && matchItems.length === 0 ? (
+            <p className="text-sm text-neutral-500">매칭 목록을 불러오는 중...</p>
+          ) : visibleMatches.length === 0 ? (
             <p className="text-sm text-neutral-500">해당 조건의 매칭 기록이 없습니다.</p>
           ) : (
             visibleMatches.map((match) => {
@@ -1811,6 +1958,16 @@ export default function AdminDatingOneOnOnePage() {
             })
           )}
         </div>
+        {matchHasMore ? (
+          <button
+            type="button"
+            disabled={matchLoading}
+            onClick={() => void handleLoadMoreMatches()}
+            className="mt-3 h-10 w-full rounded-lg border border-emerald-200 bg-white text-sm font-semibold text-emerald-800 disabled:opacity-50"
+          >
+            {matchLoading ? "불러오는 중..." : "30건 더 보기"}
+          </button>
+        ) : null}
       </section>
 
       <form onSubmit={handleSearch} className="mb-4 rounded-2xl border border-neutral-200 bg-white p-4">

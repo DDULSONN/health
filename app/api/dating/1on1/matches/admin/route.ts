@@ -21,6 +21,7 @@ import {
 } from "@/lib/dating-1on1-admin-user-blocks";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
+import { resolveOneOnOneAdminSearchTargets } from "@/lib/dating-1on1-admin-search";
 import { NextResponse } from "next/server";
 
 type AdminCreatePayload = {
@@ -56,7 +57,9 @@ const MATCH_STATES = new Set([
 
 const ADMIN_SENT_DELETABLE_STATES = new Set(["proposed", "source_skipped", "admin_canceled"]);
 const ADMIN_SENDABLE_CARD_STATUSES = new Set(["submitted", "reviewing", "approved"]);
-const MATCH_BATCH_SIZE = 1000;
+const ADMIN_CANDIDATE_LIMIT = 10;
+const DEFAULT_MATCH_PAGE_SIZE = 30;
+const MAX_MATCH_PAGE_SIZE = 50;
 const FULL_MATCH_SELECT =
   "id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,contact_exchange_status,contact_exchange_requested_at,contact_exchange_paid_at,contact_exchange_paid_by_user_id,contact_exchange_approved_at,contact_exchange_approved_by_user_id,contact_exchange_note,source_phone_share_consented_at,candidate_phone_share_consented_at,admin_sent_by_user_id,source_selected_at,candidate_responded_at,source_final_responded_at,created_at,updated_at";
 const LEGACY_MATCH_SELECT =
@@ -107,60 +110,59 @@ function toLegacyCompatibleMatchRow(row: LegacyAdminMatchRow): DatingOneOnOneMat
   };
 }
 
-async function fetchAllAdminMatches(
+async function fetchAdminMatchPage(
   admin: ReturnType<typeof createAdminClient>,
   {
     state,
+    pendingExchangeOnly,
     sourceCardId,
     candidateCardId,
+    orFilter,
+    page,
+    pageSize,
   }: {
     state: string;
+    pendingExchangeOnly: boolean;
     sourceCardId: string;
     candidateCardId: string;
+    orFilter: string | null;
+    page: number;
+    pageSize: number;
   }
 ) {
-  const rows: DatingOneOnOneMatchRow[] = [];
-  let from = 0;
+  const from = (page - 1) * pageSize;
   let useLegacySelect = false;
 
-  while (true) {
-    const buildQuery = (selectColumns: string) => {
-      let query = admin
-        .from("dating_1on1_match_proposals")
-        .select(selectColumns)
-        .order("updated_at", { ascending: false })
-        .order("created_at", { ascending: false })
-        .range(from, from + MATCH_BATCH_SIZE - 1);
+  const buildQuery = (selectColumns: string, legacy = false) => {
+    let query = admin
+      .from("dating_1on1_match_proposals")
+      .select(selectColumns, { count: "exact" })
+      .order("updated_at", { ascending: false })
+      .order("created_at", { ascending: false })
+      .order("id", { ascending: false })
+      .range(from, from + pageSize - 1);
 
-      if (state && MATCH_STATES.has(state)) {
-        query = query.eq("state", state);
-      }
-      if (sourceCardId) {
-        query = query.eq("source_card_id", sourceCardId);
-      }
-      if (candidateCardId) {
-        query = query.eq("candidate_card_id", candidateCardId);
-      }
-
-      return query;
-    };
-
-    let { data, error } = await buildQuery(useLegacySelect ? LEGACY_MATCH_SELECT : FULL_MATCH_SELECT);
-    if (error && !useLegacySelect && isMissingContactExchangeColumnsError(error)) {
-      useLegacySelect = true;
-      ({ data, error } = await buildQuery(LEGACY_MATCH_SELECT));
+    if (state && MATCH_STATES.has(state)) query = query.eq("state", state);
+    if (pendingExchangeOnly && !legacy) {
+      query = query.in("contact_exchange_status", ["none", "awaiting_applicant_payment", "payment_pending_admin"]);
     }
-    if (error) throw error;
+    if (sourceCardId) query = query.eq("source_card_id", sourceCardId);
+    if (candidateCardId) query = query.eq("candidate_card_id", candidateCardId);
+    if (orFilter) query = query.or(orFilter);
+    return query;
+  };
 
-    const batch = useLegacySelect
-      ? ((data ?? []) as unknown as LegacyAdminMatchRow[]).map(toLegacyCompatibleMatchRow)
-      : ((data ?? []) as unknown as DatingOneOnOneMatchRow[]);
-    rows.push(...batch);
-    if (batch.length < MATCH_BATCH_SIZE) break;
-    from += MATCH_BATCH_SIZE;
+  let { data, error, count } = await buildQuery(FULL_MATCH_SELECT);
+  if (error && isMissingContactExchangeColumnsError(error)) {
+    useLegacySelect = true;
+    ({ data, error, count } = await buildQuery(LEGACY_MATCH_SELECT, true));
   }
+  if (error) throw error;
 
-  return rows;
+  const rows = useLegacySelect
+    ? ((data ?? []) as unknown as LegacyAdminMatchRow[]).map(toLegacyCompatibleMatchRow)
+    : ((data ?? []) as unknown as DatingOneOnOneMatchRow[]);
+  return { rows, total: count ?? rows.length };
 }
 
 async function fetchProfilesByUserIds(admin: ReturnType<typeof createAdminClient>, userIds: string[]) {
@@ -226,13 +228,35 @@ export async function GET(req: Request) {
 
   const { searchParams } = new URL(req.url);
   const state = (searchParams.get("state") ?? "").trim();
+  const pendingExchangeOnly = searchParams.get("pending_exchange") === "1";
   const sourceCardId = (searchParams.get("source_card_id") ?? "").trim();
   const candidateCardId = (searchParams.get("candidate_card_id") ?? "").trim();
+  const rawPage = Number(searchParams.get("page") ?? "1");
+  const rawPageSize = Number(searchParams.get("page_size") ?? String(DEFAULT_MATCH_PAGE_SIZE));
+  const page = Number.isFinite(rawPage) ? Math.max(1, Math.floor(rawPage)) : 1;
+  const pageSize = Number.isFinite(rawPageSize)
+    ? Math.min(MAX_MATCH_PAGE_SIZE, Math.max(1, Math.floor(rawPageSize)))
+    : DEFAULT_MATCH_PAGE_SIZE;
 
   const admin = createAdminClient();
   let rows: DatingOneOnOneMatchRow[];
+  let total = 0;
   try {
-    rows = await fetchAllAdminMatches(admin, { state, sourceCardId, candidateCardId });
+    const searchTargets = await resolveOneOnOneAdminSearchTargets(admin, searchParams.get("q") ?? "");
+    if (!searchTargets.matched) {
+      return NextResponse.json({ items: [], page, page_size: pageSize, total: 0, has_more: false });
+    }
+    const result = await fetchAdminMatchPage(admin, {
+      state,
+      pendingExchangeOnly,
+      sourceCardId,
+      candidateCardId,
+      orFilter: searchTargets.orFilter,
+      page,
+      pageSize,
+    });
+    rows = result.rows;
+    total = result.total;
   } catch (error) {
     console.error("[GET /api/dating/1on1/matches/admin] failed", error);
     return NextResponse.json({ error: "Failed to load matches." }, { status: 500 });
@@ -257,6 +281,10 @@ export async function GET(req: Request) {
       source_profile: profileMap.get(row.source_user_id) ?? null,
       candidate_profile: profileMap.get(row.candidate_user_id) ?? null,
     })),
+    page,
+    page_size: pageSize,
+    total,
+    has_more: page * pageSize < total,
   });
 }
 
@@ -285,6 +313,12 @@ export async function POST(req: Request) {
   }
   if (candidateCardIds.length === 0) {
     return NextResponse.json({ error: "At least one candidate card is required." }, { status: 400 });
+  }
+  if (candidateCardIds.length > ADMIN_CANDIDATE_LIMIT) {
+    return NextResponse.json(
+      { error: `후보는 한 번에 최대 ${ADMIN_CANDIDATE_LIMIT}명까지 보낼 수 있습니다.` },
+      { status: 400 }
+    );
   }
 
   const admin = createAdminClient();
