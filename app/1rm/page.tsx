@@ -18,6 +18,23 @@ import {
 
 const STORAGE_KEY = "gymtools_1rm";
 
+function OneRmSearchFallback() {
+  return (
+    <main className="mx-auto max-w-md px-4 py-8">
+      <h1 className="mb-1 text-2xl font-bold text-neutral-900">1RM 계산기</h1>
+      <p className="mb-6 text-sm leading-relaxed text-neutral-500">
+        벤치프레스·스쿼트·데드리프트의 중량과 반복 횟수로 예상 1RM과 추천 작업 중량을 계산하세요.
+      </p>
+      <section className="rounded-2xl border border-neutral-200 bg-white p-5">
+        <h2 className="font-semibold text-neutral-900">1RM 계산 방법</h2>
+        <p className="mt-2 text-sm leading-relaxed text-neutral-600">
+          Epley와 Brzycki 공식을 지원하며, 반복 횟수는 1~12회 범위에서 입력할 수 있습니다. 계산기를 불러오는 중입니다.
+        </p>
+      </section>
+    </main>
+  );
+}
+
 function OneRmContent() {
   const searchParams = useSearchParams();
 
@@ -30,6 +47,8 @@ function OneRmContent() {
   const [shareStatus, setShareStatus] = useState<"idle" | "copied">("idle");
   const [calcStatus, setCalcStatus] = useState<"idle" | "done" | "invalid">("idle");
 
+  /* URL·localStorage의 초기값을 마운트 후 한 번 폼에 반영해야 한다. */
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const qW = searchParams.get("w");
     const qR = searchParams.get("reps");
@@ -67,6 +86,7 @@ function OneRmContent() {
 
     setMounted(true);
   }, [searchParams]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   useEffect(() => {
     if (!mounted) return;
@@ -126,14 +146,6 @@ function OneRmContent() {
       setCalcStatus("idle");
     }
   }, [hasResult]);
-
-  if (!mounted) {
-    return (
-      <main className="max-w-md mx-auto px-4 py-10">
-        <p className="text-neutral-400 text-center">로딩 중...</p>
-      </main>
-    );
-  }
 
   return (
     <main className="max-w-md mx-auto px-4 py-8">
@@ -306,6 +318,26 @@ function OneRmContent() {
           반복 횟수는 1~12 범위에서 가장 정확합니다. 12 이하로 입력해 주세요.
         </p>
       )}
+
+      <section className="mt-8 space-y-3 border-t border-neutral-200 pt-6 text-sm leading-relaxed text-neutral-600">
+        <h2 className="text-lg font-bold text-neutral-900">1RM이란?</h2>
+        <p>
+          1RM은 정확한 자세로 한 번 들어 올릴 수 있는 최대 중량입니다. 직접 최대 중량에 도전하지 않아도 작업 중량과 반복
+          횟수로 예상치를 구해 운동 강도를 정할 수 있습니다.
+        </p>
+        <p>
+          계산 결과는 컨디션과 자세에 따라 실제 기록과 다를 수 있습니다. 무리한 중량 증량보다 안전한 자세와 점진적인 증가를
+          우선하세요.
+        </p>
+        <div className="flex flex-wrap gap-2 pt-1">
+          <Link href="/lifts" className="rounded-full bg-neutral-100 px-3 py-2 font-medium text-neutral-700">
+            3대 합계 계산기
+          </Link>
+          <Link href="/protein" className="rounded-full bg-neutral-100 px-3 py-2 font-medium text-neutral-700">
+            프로틴 추천
+          </Link>
+        </div>
+      </section>
     </main>
   );
 }
@@ -313,11 +345,7 @@ function OneRmContent() {
 export default function OneRmPage() {
   return (
     <Suspense
-      fallback={
-        <main className="max-w-md mx-auto px-4 py-10">
-          <p className="text-neutral-400 text-center">로딩 중...</p>
-        </main>
-      }
+      fallback={<OneRmSearchFallback />}
     >
       <OneRmContent />
     </Suspense>

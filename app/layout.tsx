@@ -22,11 +22,12 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-const siteTitle = "짐툴 GymTools - 운동하는 사람들의 소개팅";
+const siteTitle = "짐툴 GymTools - 취향이 맞는 사람을 만나는 소개팅";
 const siteDescription =
-  "짐툴은 오픈카드, 빠른매칭, 1:1 소개팅으로 운동하는 사람들이 더 자연스럽게 연결되는 소개팅 서비스입니다.";
+  "짐툴은 오픈카드, 빠른매칭, 1:1 소개팅으로 취향이 맞는 사람들이 더 자연스럽게 연결되는 소개팅 서비스입니다.";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com"),
   title: {
     default: siteTitle,
     template: "%s | 짐툴 GymTools",
@@ -64,7 +65,7 @@ export const metadata: Metadata = {
   twitter: {
     card: "summary",
     title: siteTitle,
-    description: "오픈카드, 빠른매칭, 1:1 소개팅으로 운동하는 사람들과 자연스럽게 연결돼요.",
+    description: "오픈카드, 빠른매칭, 1:1 소개팅 중 원하는 방식으로 자연스럽게 연결돼요.",
   },
 };
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
+import proteinData from "@/data/protein.json";
 import AdSlot from "@/components/AdSlot";
 import {
   filterProducts,
@@ -11,18 +12,10 @@ import {
 } from "@/lib/protein";
 
 export default function ProteinPage() {
-  const [products, setProducts] = useState<ProteinProduct[]>([]);
+  const products = proteinData as ProteinProduct[];
   const [query, setQuery] = useState("");
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [sort, setSort] = useState<SortOption>("latest");
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    import("@/data/protein.json").then((mod) => {
-      setProducts(mod.default as ProteinProduct[]);
-      setMounted(true);
-    });
-  }, []);
 
   const filtered = useMemo(() => {
     const f = filterProducts(products, query, selectedTags);
@@ -34,14 +27,6 @@ export default function ProteinPage() {
       prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]
     );
   };
-
-  if (!mounted) {
-    return (
-      <main className="max-w-2xl mx-auto px-4 py-10">
-        <p className="text-neutral-400 text-center">로딩 중...</p>
-      </main>
-    );
-  }
 
   return (
     <main className="max-w-2xl mx-auto px-4 py-8">
@@ -175,6 +160,14 @@ export default function ProteinPage() {
       )}
 
       <AdSlot slotId="protein-list" className="mt-6" />
+
+      <section className="mt-8 rounded-2xl bg-neutral-50 p-5 text-sm leading-relaxed text-neutral-600">
+        <h2 className="mb-2 text-base font-bold text-neutral-900">프로틴 고르는 기준</h2>
+        <p>
+          유청 단백질 제품은 단백질 함량, 1회 섭취량, 알레르기 성분과 가격을 함께 비교하세요. 유당에 민감하다면 WPI처럼
+          유당 함량을 낮춘 제품이 맞는지 성분표를 먼저 확인하는 것이 좋습니다.
+        </p>
+      </section>
 
       {/* 고지문 */}
       <p className="text-xs text-neutral-400 text-center mt-6 leading-relaxed">

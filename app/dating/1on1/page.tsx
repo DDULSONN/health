@@ -172,15 +172,72 @@ async function fetchWithRetry(input: RequestInfo | URL, init: RequestInit, timeo
   throw lastError instanceof Error ? lastError : new Error("요청에 실패했습니다.");
 }
 
+function OneOnOnePublicLanding({ checking = false }: { checking?: boolean }) {
+  return (
+    <main className="min-h-screen bg-[#fff8f8] px-4 py-8">
+      <div className="mx-auto max-w-3xl">
+        <section className="rounded-3xl border border-rose-100 bg-white px-5 py-8 text-center shadow-sm sm:px-8">
+          <p className="text-sm font-bold text-rose-500">짐툴 1:1 매칭</p>
+          <h1 className="mt-2 text-3xl font-black tracking-tight text-neutral-950">취향이 맞는 사람을 만나는 1:1 소개팅</h1>
+          <p className="mx-auto mt-4 max-w-xl text-sm leading-7 text-neutral-600">
+            신청서를 등록하면 운영진 검수 후 조건에 맞는 이성 후보를 확인할 수 있습니다. 서로 수락한 경우에만 다음 번호 교환
+            단계로 진행됩니다.
+          </p>
+          <div className="mt-6 flex flex-col justify-center gap-2 sm:flex-row">
+            <Link
+              href="/login?redirect=/dating/1on1"
+              className="rounded-xl bg-rose-500 px-5 py-3 text-sm font-bold text-white hover:bg-rose-600"
+            >
+              로그인하고 신청하기
+            </Link>
+            <Link
+              href="/signup"
+              className="rounded-xl border border-neutral-200 bg-white px-5 py-3 text-sm font-bold text-neutral-700 hover:bg-neutral-50"
+            >
+              회원가입
+            </Link>
+          </div>
+          {checking && <p className="mt-4 text-xs text-neutral-400">로그인 상태를 확인하고 있습니다.</p>}
+        </section>
+
+        <section className="mt-6 grid gap-3 sm:grid-cols-3" aria-label="1대1 매칭 진행 방식">
+          {[
+            ["1", "신청서 등록", "기본 정보와 사진을 등록하고 검수를 기다립니다."],
+            ["2", "후보 확인", "검수된 이성 후보를 확인하고 수락 여부를 선택합니다."],
+            ["3", "쌍방 수락", "서로 수락한 매칭만 번호 교환 단계로 이어집니다."],
+          ].map(([step, title, description]) => (
+            <article key={step} className="rounded-2xl border border-rose-100 bg-white p-5">
+              <span className="flex h-8 w-8 items-center justify-center rounded-full bg-rose-50 text-sm font-black text-rose-500">
+                {step}
+              </span>
+              <h2 className="mt-3 font-bold text-neutral-900">{title}</h2>
+              <p className="mt-2 text-sm leading-6 text-neutral-600">{description}</p>
+            </article>
+          ))}
+        </section>
+
+        <section className="mt-6 rounded-2xl border border-neutral-200 bg-white p-5">
+          <h2 className="font-bold text-neutral-900">안전한 만남을 위한 운영 원칙</h2>
+          <p className="mt-2 text-sm leading-6 text-neutral-600">
+            휴대폰 인증과 신청서 검수를 거치며, 무단 연락처 공유·잠수·불쾌한 언행은 신고 및 제재 대상이 될 수 있습니다.
+          </p>
+          <div className="mt-4 flex flex-wrap gap-3 text-sm font-semibold">
+            <Link href="/community/dating/cards" className="text-rose-600 hover:underline">
+              오픈카드 보기
+            </Link>
+            <Link href="/dating-policy" className="text-neutral-600 hover:underline">
+              소개팅 운영정책
+            </Link>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
 export default function DatingOneOnOnePage() {
   return (
-    <Suspense
-      fallback={
-        <main className="mx-auto max-w-3xl px-4 py-10">
-          <p className="text-sm text-neutral-500">로딩 중...</p>
-        </main>
-      }
-    >
+    <Suspense fallback={<OneOnOnePublicLanding checking />}>
       <DatingOneOnOnePageContent />
     </Suspense>
   );
@@ -195,6 +252,7 @@ function DatingOneOnOnePageContent() {
   const isLocalPreview = process.env.NODE_ENV === "development" && searchParams.get("preview") === "1";
 
   const [loading, setLoading] = useState(true);
+  const [isGuest, setIsGuest] = useState(false);
   const [status, setStatus] = useState<WriteStatusResponse | null>(null);
   const [editingArchivedProfile, setEditingArchivedProfile] = useState(false);
   const [cards, setCards] = useState<CardItem[]>([]);
@@ -341,7 +399,7 @@ function DatingOneOnOnePageContent() {
           data: { user },
         } = await supabase.auth.getUser();
         if (!user) {
-          router.replace("/login?redirect=/dating/1on1");
+          if (mounted) setIsGuest(true);
           return;
         }
 
@@ -591,13 +649,9 @@ function DatingOneOnOnePageContent() {
     }
   };
 
-  if (loading) {
-    return (
-      <main className="mx-auto max-w-3xl px-4 py-10">
-        <p className="text-sm text-neutral-500">로딩 중...</p>
-      </main>
-    );
-  }
+  if (isGuest) return <OneOnOnePublicLanding />;
+
+  if (loading) return <OneOnOnePublicLanding checking />;
 
   if (!status) {
     return (

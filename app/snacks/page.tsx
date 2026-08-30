@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import snacksEmbedData from "@/data/snacksEmbed.json";
 import CoupangEmbed from "@/components/CoupangEmbed";
 import CoupangNotice from "@/components/CoupangNotice";
 import CoupangNoticeTop from "@/components/CoupangNoticeTop";
@@ -31,21 +31,7 @@ function getRankBadge(rank: number): string {
 }
 
 export default function SnacksPage() {
-  const [data, setData] = useState<SnacksEmbedData | null>(null);
-
-  useEffect(() => {
-    import("@/data/snacksEmbed.json").then((mod) => {
-      setData(mod.default as SnacksEmbedData);
-    });
-  }, []);
-
-  if (!data) {
-    return (
-      <main className="max-w-3xl mx-auto px-4 py-10">
-        <p className="text-neutral-400 text-center">로딩 중...</p>
-      </main>
-    );
-  }
+  const data = snacksEmbedData as SnacksEmbedData;
 
   return (
     <main className="max-w-3xl mx-auto px-4 py-8">
@@ -98,6 +84,14 @@ export default function SnacksPage() {
       })}
 
       <AdSlot slotId="snacks-bottom" className="mb-6" />
+
+      <section className="mb-6 rounded-2xl bg-neutral-50 p-5 text-sm leading-relaxed text-neutral-600">
+        <h2 className="mb-2 text-base font-bold text-neutral-900">다이어트 간식 선택 기준</h2>
+        <p>
+          간식은 제품명보다 1회 섭취량의 열량과 단백질·당류·나트륨을 함께 확인하세요. 하루 식단 안에서 먹을 양을 먼저 정하면
+          과식을 줄이는 데 도움이 됩니다.
+        </p>
+      </section>
 
       {/* 쿠팡 파트너스 고지문 */}
       <CoupangNotice />
