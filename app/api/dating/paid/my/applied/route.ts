@@ -1,4 +1,8 @@
 import { createAdminClient, createClient } from "@/lib/supabase/server";
+import {
+  loadLatestDatingInstagramByUser,
+  normalizeDatingInstagramId,
+} from "@/lib/dating-instagram-server";
 import { NextResponse } from "next/server";
 
 type PaidCardRow = {
@@ -6,6 +10,7 @@ type PaidCardRow = {
   user_id: string;
   gender: "M" | "F";
   nickname: string | null;
+  instagram_id: string | null;
   status: "pending" | "approved" | "rejected" | "expired";
   expires_at: string | null;
   created_at: string;
@@ -54,7 +59,7 @@ export async function GET() {
 
   const cardsRes = await adminClient
     .from("dating_paid_cards")
-    .select("id,user_id,gender,nickname,status,expires_at,created_at")
+    .select("id,user_id,gender,nickname,instagram_id,status,expires_at,created_at")
     .in("id", cardIds);
 
   if (cardsRes.error) {
@@ -64,6 +69,16 @@ export async function GET() {
 
   const cards = (cardsRes.data ?? []) as PaidCardRow[];
   const cardsById = new Map(cards.map((card) => [card.id, card]));
+  const acceptedCardIds = new Set(
+    applications.filter((app) => app.status === "accepted").map((app) => app.paid_card_id)
+  );
+  const missingAcceptedOwnerInstagramIds = cards
+    .filter((card) => acceptedCardIds.has(card.id) && !normalizeDatingInstagramId(card.instagram_id))
+    .map((card) => card.user_id);
+  const instagramFallbackByUser = await loadLatestDatingInstagramByUser(
+    adminClient,
+    missingAcceptedOwnerInstagramIds
+  );
   const ownerIds = [
     ...new Set(
       cards
@@ -101,6 +116,12 @@ export async function GET() {
             id: card.id,
             gender: card.gender,
             nickname: card.nickname,
+            instagram_id:
+              app.status === "accepted"
+                ? normalizeDatingInstagramId(card.instagram_id) ??
+                  instagramFallbackByUser.get(card.user_id) ??
+                  null
+                : null,
             status: card.status,
             expires_at: card.expires_at,
             created_at: card.created_at,

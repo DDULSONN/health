@@ -1771,6 +1771,7 @@ type MyAppliedPaidApplication = {
     id: string;
     gender: "M" | "F";
     nickname: string | null;
+    instagram_id: string | null;
     status: "pending" | "approved" | "rejected" | "expired";
     expires_at: string | null;
     created_at: string;
@@ -9713,6 +9714,22 @@ export default function MyPage() {
                 </p>
                 {app.intro_text && (
                   <p className="mt-2 text-sm text-neutral-700 whitespace-pre-wrap break-words">{app.intro_text}</p>
+                )}
+                {app.status === "accepted" && (
+                  <div className="mt-3 rounded-xl border border-emerald-200 bg-white p-3">
+                    <p className="text-xs font-semibold text-emerald-700">수락된 상대 인스타</p>
+                    {app.card?.instagram_id ? (
+                      <InstagramProfileLine
+                        label="상대 인스타"
+                        username={app.card.instagram_id}
+                        className="mt-2 text-sm font-medium text-emerald-700"
+                      />
+                    ) : (
+                      <p className="mt-2 text-xs text-amber-700">
+                        상대 인스타 정보를 불러오지 못했습니다. 새로고침 후에도 보이지 않으면 문의해주세요.
+                      </p>
+                    )}
+                  </div>
                 )}
                 <div className="mt-3">
                   <div className="flex flex-wrap gap-2">
