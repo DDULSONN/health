@@ -43,6 +43,7 @@ function mockDatabase(tables, intercept) {
       const builder = {
         select(fields) { query.fields = fields; return builder; },
         eq(key, value) { query.filters.push(["eq", key, value]); return builder; },
+        is(key, value) { query.filters.push(["eq", key, value]); return builder; },
         neq(key, value) { query.filters.push(["neq", key, value]); return builder; },
         in(key, value) { query.filters.push(["in", key, value]); return builder; },
         gt(key, value) { query.filters.push(["gt", key, value]); return builder; },
@@ -52,12 +53,20 @@ function mockDatabase(tables, intercept) {
         order(key, options) { query.orders.push([key, options.ascending]); return builder; },
         range(from, to) { query.from = from; query.to = to; return builder; },
         limit(count) { query.to = count - 1; return builder; },
+        maybeSingle() { query.single = true; return builder; },
+        insert(values) { query.insert = Array.isArray(values) ? values : [values]; return builder; },
+        update(values) { query.update = values; return builder; },
         then(resolve, reject) {
           return Promise.resolve().then(() => {
             calls.push(structuredClone(query));
             const override = intercept?.(query, tables);
             if (override) return override;
+            if (query.insert) {
+              tables[table] ??= [];
+              tables[table].push(...query.insert.map((row, i) => ({ id: `inserted-${tables[table].length + i}`, ...row })));
+            }
             let rows = [...(tables[table] ?? [])];
+            if (query.insert) rows = rows.slice(-query.insert.length);
             for (const [operation, key, value] of query.filters) {
               rows = rows.filter((row) => {
                 if (operation === "eq") return row[key] === value;
@@ -66,11 +75,24 @@ function mockDatabase(tables, intercept) {
                 if (operation === "gt") return row[key] != null && row[key] > value;
                 if (operation === "gte") return row[key] != null && row[key] >= value;
                 if (operation === "lte") return row[key] != null && row[key] <= value;
-                if (operation === "or") return key.split(",").some((expression) => {
-                  const [column, operator, ...rest] = expression.split(".");
-                  assert.equal(operator, "eq");
-                  return row[column] === rest.join(".");
-                });
+                if (operation === "or") {
+                  const split = (text) => {
+                    const parts = []; let depth = 0; let start = 0;
+                    for (let i = 0; i < text.length; i++) {
+                      if (text[i] === "(") depth++;
+                      if (text[i] === ")") depth--;
+                      if (text[i] === "," && depth === 0) { parts.push(text.slice(start, i)); start = i + 1; }
+                    }
+                    return [...parts, text.slice(start)];
+                  };
+                  const matches = (expression) => {
+                    if (expression.startsWith("and(")) return split(expression.slice(4, -1)).every(matches);
+                    const [column, operator, ...rest] = expression.split(".");
+                    assert.equal(operator, "eq");
+                    return row[column] === rest.join(".");
+                  };
+                  return split(key).some(matches);
+                }
                 throw new Error(`Unhandled operator ${operation}`);
               });
             }
@@ -81,10 +103,11 @@ function mockDatabase(tables, intercept) {
               return 0;
             });
             rows = rows.slice(query.from, query.to + 1);
+            if (query.update) rows.forEach((row) => Object.assign(row, query.update));
             if (query.fields !== "*") {
               rows = rows.map((row) => Object.fromEntries(query.fields.split(",").map((key) => [key.trim(), row[key.trim()]])));
             }
-            return { data: rows, error: null };
+            return { data: query.single ? rows[0] ?? null : rows, error: null };
           }).then(resolve, reject);
         },
       };
@@ -121,6 +144,20 @@ async function runApi(tables, { intercept, signedIn = true } = {}) {
   });
   const { GET } = apiLoad("@/app/api/dating/1on1/recommendations/my/route");
   const response = await GET(new Request("http://localhost/api/dating/1on1/recommendations/my"));
+  return { response, body: await response.json(), calls: db.calls };
+}
+async function runSelect(tables, { intercept, sourceId = "source", candidateId = "c0", admin = false, signedIn = true, allowedAdmin = true } = {}) {
+  const db = mockDatabase(tables, intercept);
+  const apiLoad = createLoader({
+    "@/lib/supabase/server": { createAdminClient: () => db },
+    "@/lib/supabase/request": { getRequestAuthContext: async () => ({ user: signedIn ? { id: "user-source" } : null }) },
+    "@/lib/admin": { isAllowedAdminUser: () => allowedAdmin },
+  });
+  const { POST } = apiLoad(`@/app/api/dating/1on1/matches/${admin ? "admin" : "auto"}/route`);
+  const response = await POST(new Request("http://localhost/api/dating/1on1/matches/auto", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_card_id: sourceId, ...(admin ? { candidate_card_ids: [candidateId] } : { candidate_card_id: candidateId }) }),
+  }));
   return { response, body: await response.json(), calls: db.calls };
 }
 function allCandidates(body) {
@@ -228,13 +265,17 @@ test("API fetches only opposite-sex summaries and hydrates at most 13 unique car
   assert.equal(new Set(ids(candidates)).size, 13);
   assert.ok(candidates.every((candidate) => candidate.sex === "female"));
   const scans = result.calls.filter((call) => call.table === "dating_1on1_cards");
-  assert.equal(scans.length, 3);
+  assert.ok(scans.length >= 3);
   assert.ok(scans[1].filters.some(([op, key, value]) => op === "in" && key === "sex" && value.join() === "female"));
   for (const scan of scans.slice(0, 2)) {
     assert.equal(scan.fields.includes("photo_paths"), false);
     assert.equal(scan.fields.includes("intro_text"), false);
   }
-  assert.equal(scans[2].filters.find(([op, key]) => op === "in" && key === "id")[2].length, 13);
+  const details = scans.filter((query) => query.fields.includes("photo_paths"));
+  assert.equal(details.length, 1);
+  assert.equal(details[0].filters.find(([op, key]) => op === "in" && key === "id")[2].length, 13);
+  const identityScans = scans.filter((query) => query.fields === "id,user_id,phone,created_at");
+  assert.ok(identityScans.every((query) => query.filters.some(([op, key]) => op === "in" && ["user_id", "phone"].includes(key))));
   for (const candidate of candidates) {
     assert.equal(candidate.intro_text, "한글 소개");
     assert.equal(candidate.photo_signed_urls.length, 1);
@@ -395,4 +436,168 @@ test("phone/contact blocks beyond the first 1000 rows are still enforced", async
   const contactMap = await load("@/lib/dating-contact-blocks").getDatingContactBlockMapForUsers(db, ["one-user"]);
   assert.equal(phoneMap.get("one-user").size, 1105);
   assert.equal(contactMap.get("one-user:phone").size, 1105);
+});
+
+for (const reverse of [false, true]) {
+  for (const state of ["proposed", "source_selected", "candidate_accepted", "mutual_accepted"]) {
+    test(`recreated source AND candidate cannot bypass ${state} (${reverse ? "reverse" : "direct"})`, async () => {
+      const tables = fixture(2);
+      for (const id of ["source", "c0"]) {
+        const current = tables.dating_1on1_cards.find((row) => row.id === id);
+        tables.dating_1on1_cards.push({ ...current, id: `old-${id}`, status: "rejected" });
+      }
+      tables.dating_1on1_match_proposals = [pair({ state,
+        source_card_id: reverse ? "old-c0" : "old-source", candidate_card_id: reverse ? "old-source" : "old-c0",
+        source_user_id: reverse ? "user-c0" : "user-source", candidate_user_id: reverse ? "user-source" : "user-c0",
+      })];
+      assert.deepEqual(ids(allCandidates((await runApi(tables)).body)), ["c1"]);
+      for (const admin of [false, true]) {
+        const selected = await runSelect(tables, { admin });
+        assert.equal(selected.response.status, 409);
+        assert.equal(selected.calls.some((query) => query.insert || query.update), false);
+      }
+    });
+  }
+}
+
+test("gender changed after an old card: no obsolete recommendation and neither endpoint accepts it", async () => {
+  const tables = fixture(2);
+  tables.dating_1on1_cards.push({ ...tables.dating_1on1_cards[1], id: "new-male", sex: "male", created_at: new Date().toISOString() });
+  assert.deepEqual(ids(allCandidates((await runApi(tables)).body)), ["c1"]);
+  for (const admin of [false, true]) {
+    const result = await runSelect(tables, { admin });
+    assert.equal(result.response.status, 409);
+    assert.equal(result.calls.some((query) => query.insert), false);
+  }
+});
+
+test("source gender follows newest card, and stale source selection reloads instead of matching", async () => {
+  const tables = fixture(2);
+  tables.dating_1on1_cards.push({ ...tables.dating_1on1_cards[0], id: "new-source", sex: "female", created_at: new Date().toISOString() });
+  const body = (await runApi(tables)).body;
+  assert.equal(body.items.length, 1);
+  assert.equal(body.items[0].source_card_id, "new-source");
+  assert.deepEqual(allCandidates(body), []);
+  const result = await runSelect(tables);
+  assert.equal(result.response.status, 409);
+  assert.equal(result.body.code, "STALE_SOURCE_IDENTITY");
+});
+
+test("cross-sex identity duplicates are detected across accounts and phone formats", async () => {
+  const tables = fixture(2);
+  const newer = { ...tables.dating_1on1_cards[1], id: "new-identity", user_id: "other-account", sex: "male", created_at: new Date().toISOString() };
+  newer.phone = "01012345678";
+  tables.profiles[1].phone_e164 = "+821012345678";
+  tables.dating_1on1_cards[1].phone = "+821012345678";
+  tables.dating_1on1_cards.push(newer);
+  tables.profiles.push({ user_id: newer.user_id, phone_e164: newer.phone, is_banned: false });
+  assert.deepEqual(ids(allCandidates((await runApi(tables)).body)), ["c1"]);
+  assert.equal((await runSelect(tables)).response.status, 409);
+});
+
+test("same-timestamp latest identity uses the same deterministic ID tie-break for display and selection", async () => {
+  const tables = fixture(2);
+  tables.dating_1on1_cards.push({ ...tables.dating_1on1_cards[1], id: "z-new" });
+  assert.deepEqual(new Set(ids(allCandidates((await runApi(tables)).body))), new Set(["c1", "z-new"]));
+  assert.equal((await runSelect(tables)).response.status, 409);
+  assert.equal((await runSelect(tables, { candidateId: "z-new" })).response.status, 200);
+});
+
+test("all historical rows are checked: an expired row cannot conceal a live duplicate after 1000 rows", async () => {
+  const tables = fixture(1);
+  tables.dating_1on1_match_proposals = Array.from({ length: 1001 }, (_, i) => pair({ id: `expired-${i}`, source_selected_at: new Date(Date.now() - 3 * day).toISOString() }));
+  tables.dating_1on1_match_proposals.push(pair({ id: "live", state: "mutual_accepted", candidate_card_id: "old-c0", created_at: "2025-01-01T00:00:00Z" }));
+  assert.deepEqual(allCandidates((await runApi(tables)).body), []);
+  const result = await runSelect(tables);
+  assert.equal(result.response.status, 409);
+  assert.equal(result.calls.some((query) => query.update || query.insert), false);
+});
+
+test("expired pairs allow retry, without sacrificing small-pool candidate re-exposure", async () => {
+  const tables = fixture(1);
+  tables.dating_1on1_match_proposals = [pair({ source_selected_at: new Date(Date.now() - 3 * day).toISOString() })];
+  assert.deepEqual(ids(allCandidates((await runApi(tables)).body)), ["c0"]);
+  const result = await runSelect(tables);
+  assert.equal(result.response.status, 200);
+  assert.equal(tables.dating_1on1_match_proposals[0].state, "admin_canceled");
+  assert.equal(tables.dating_1on1_match_proposals[1].state, "source_selected");
+});
+
+test("expired-pair cleanup aborts when the pair changed concurrently", async () => {
+  const tables = fixture(1);
+  tables.dating_1on1_match_proposals = [pair({ source_selected_at: new Date(Date.now() - 3 * day).toISOString() })];
+  const result = await runSelect(tables, { intercept: (query) => query.update ? { data: null, error: null } : null });
+  assert.equal(result.response.status, 409);
+  assert.equal(result.body.code, "CANDIDATE_PAIR_CHANGED");
+  assert.equal(result.calls.some((query) => query.insert), false);
+});
+
+test("normal selection succeeds, but replay cannot insert a second user-pair", async () => {
+  for (const admin of [false, true]) {
+    const tables = fixture(1);
+    assert.equal((await runSelect(tables, { admin })).response.status, 200);
+    assert.equal((await runSelect(tables, { admin })).response.status, 409);
+    assert.equal(tables.dating_1on1_match_proposals.length, 1);
+  }
+});
+
+test("selection still rejects banned, withdrawn, blocked and permanently rejected members", async () => {
+  for (const condition of ["banned", "withdrawn", "blocked", "rejected", "reverse-rejected"]) {
+    const tables = fixture(1);
+    if (condition === "banned") tables.profiles[1].is_banned = true;
+    if (condition === "withdrawn") tables.profiles.pop();
+    if (condition === "blocked") tables.dating_user_blocks = [{ id: "block", blocker_user_id: "user-c0", blocked_user_id: "user-source" }];
+    if (condition === "rejected") tables.dating_1on1_match_proposals = [pair({ state: "candidate_rejected", candidate_card_id: "old-c0" })];
+    if (condition === "reverse-rejected") tables.dating_1on1_match_proposals = [pair({ state: "source_declined", source_user_id: "user-c0", candidate_user_id: "user-source" })];
+    for (const admin of [false, true]) {
+      const result = await runSelect(tables, { admin });
+      assert.equal(result.response.status, 409, condition);
+      assert.equal(result.calls.some((query) => query.insert), false);
+    }
+  }
+});
+
+test("new identity/history safety queries fail closed", async () => {
+  const failure = { data: null, error: { code: "XX000", message: "backend unavailable" } };
+  for (const field of ["id,user_id,phone,created_at", "id,source_card_id,candidate_card_id,source_user_id,candidate_user_id,state,source_selected_at,updated_at,created_at"]) {
+    const intercept = (query) => query.fields === field ? failure : null;
+    assert.equal((await runApi(fixture(1), { intercept })).response.status, 500);
+    for (const admin of [false, true]) {
+      const result = await runSelect(fixture(1), { intercept, admin });
+      assert.equal(result.response.status, 500);
+      assert.equal(result.calls.some((query) => query.insert), false);
+    }
+  }
+});
+
+test("selection preserves authentication, admin-role and source ownership boundaries", async () => {
+  assert.equal((await runSelect(fixture(), { signedIn: false })).response.status, 401);
+  assert.equal((await runSelect(fixture(), { admin: true, allowedAdmin: false })).response.status, 403);
+  assert.equal((await runSelect(fixture(), { sourceId: "c1" })).response.status, 403);
+});
+
+test("large pools validate only the displayed shortlist, without loading all identity rows", async () => {
+  const result = await runApi(fixture(1005));
+  const ownerLookups = result.calls.filter((query) => query.fields === "id,user_id,phone,created_at" &&
+    query.filters.some(([op, key]) => op === "in" && key === "user_id"));
+  assert.equal(ownerLookups.length, 1);
+  assert.equal(ownerLookups[0].filters.find(([op, key]) => op === "in" && key === "user_id")[2].length, 14);
+  assert.equal(allCandidates(result.body).length, 13);
+});
+
+test("stale shortlist members are refilled, and an entirely stale pool terminates without leaking photos", async () => {
+  for (const staleCount of [20, 30]) {
+    const tables = fixture(30);
+    for (const row of tables.dating_1on1_cards.slice(1, staleCount + 1)) {
+      tables.dating_1on1_cards.push({ ...row, id: `new-${row.id}`, sex: "male", created_at: new Date().toISOString() });
+    }
+    const result = await runApi(tables);
+    assert.equal(result.response.status, 200);
+    const candidates = allCandidates(result.body);
+    assert.equal(candidates.length, 30 - staleCount);
+    assert.equal(new Set(ids(candidates)).size, candidates.length);
+    const photoScans = result.calls.filter((query) => query.fields.includes("photo_paths"));
+    assert.equal(photoScans.length, staleCount === 30 ? 0 : 1);
+    assert.ok(result.calls.length < 100);
+  }
 });

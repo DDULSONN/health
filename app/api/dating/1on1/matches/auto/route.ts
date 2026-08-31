@@ -1,6 +1,5 @@
 import {
   DATING_ONE_ON_ONE_ACTIVE_STATUSES,
-  DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES,
   DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES,
   isDatingOneOnOnePendingPairExpired,
 } from "@/lib/dating-1on1";
@@ -18,6 +17,9 @@ import {
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
+import { getCurrentOneOnOneCardIds } from "@/lib/dating-1on1-current-cards";
+import { fetchRecommendationProfiles } from "@/lib/dating-1on1-recommendation-data";
+import { fetchOneOnOnePairHistory } from "@/lib/dating-1on1-pair-history";
 
 type CreateAutoMatchPayload = {
   source_card_id?: string;
@@ -82,12 +84,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Candidate card is not eligible." }, { status: 409 });
   }
 
-  const sourcePhone = sourceRes.data.phone
-    ? normalizePhoneForOneOnOneBlock(sourceRes.data.phone)
-    : "";
-  const candidatePhone = candidateRes.data.phone
-    ? normalizePhoneForOneOnOneBlock(candidateRes.data.phone)
-    : "";
+  let profiles: Awaited<ReturnType<typeof fetchRecommendationProfiles>>;
+  let currentCardIds: Set<string>;
+  try {
+    profiles = await fetchRecommendationProfiles(admin, [sourceRes.data.user_id, candidateRes.data.user_id]);
+    currentCardIds = await getCurrentOneOnOneCardIds(admin, [sourceRes.data, candidateRes.data], profiles);
+  } catch (error) {
+    console.error("[POST /api/dating/1on1/matches/auto] current identity check failed", error);
+    return NextResponse.json({ error: "Failed to validate current identities." }, { status: 500 });
+  }
+  const sourcePhone = normalizePhoneForOneOnOneBlock(profiles.get(sourceRes.data.user_id)?.phone ?? sourceRes.data.phone ?? "");
+  const candidatePhone = normalizePhoneForOneOnOneBlock(profiles.get(candidateRes.data.user_id)?.phone ?? candidateRes.data.phone ?? "");
   if (sourcePhone && candidatePhone === sourcePhone) {
     return NextResponse.json(
       { error: "본인과 동일한 인증 정보의 후보는 선택할 수 없습니다.", code: "SAME_PHONE_IDENTITY" },
@@ -95,28 +102,11 @@ export async function POST(req: Request) {
     );
   }
 
-  if (candidatePhone) {
-    const currentIdentityCardRes = await admin
-      .from("dating_1on1_cards")
-      .select("id")
-      .eq("phone", candidateRes.data.phone)
-      .in("status", [...DATING_ONE_ON_ONE_ACTIVE_STATUSES])
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    if (currentIdentityCardRes.error) {
-      console.error("[POST /api/dating/1on1/matches/auto] identity duplicate check failed", currentIdentityCardRes.error);
-      return NextResponse.json({ error: "Failed to validate candidate identity." }, { status: 500 });
-    }
-    if (currentIdentityCardRes.data && currentIdentityCardRes.data.id !== candidateCardId) {
-      return NextResponse.json(
-        {
-          error: "후보 정보가 갱신되었습니다. 후보 목록을 다시 불러와 주세요.",
-          code: "DUPLICATE_CANDIDATE_IDENTITY",
-        },
-        { status: 409 }
-      );
-    }
+  if (!currentCardIds.has(sourceCardId) || !currentCardIds.has(candidateCardId)) {
+    return NextResponse.json({
+      error: "회원 정보가 변경되었거나 현재 선택할 수 없는 카드입니다. 목록을 다시 불러와 주세요.",
+      code: !currentCardIds.has(sourceCardId) ? "STALE_SOURCE_IDENTITY" : "DUPLICATE_CANDIDATE_IDENTITY",
+    }, { status: 409 });
   }
 
   const unifiedBlockResult = await Promise.all([
@@ -156,9 +146,9 @@ export async function POST(req: Request) {
   if (
     isOneOnOnePhoneBlockedPair({
       sourceUserId: sourceRes.data.user_id,
-      sourcePhone: sourceRes.data.phone ?? null,
+      sourcePhone,
       candidateUserId: candidateRes.data.user_id,
-      candidatePhone: candidateRes.data.phone ?? null,
+      candidatePhone,
       blockMap: phoneBlockMap,
     })
   ) {
@@ -199,35 +189,23 @@ export async function POST(req: Request) {
     );
   }
 
-  const [existingPairRes, reversePairRes] = await Promise.all([
-    admin
-      .from("dating_1on1_match_proposals")
-      .select("id,state,source_selected_at,updated_at,created_at")
-      .eq("source_card_id", sourceCardId)
-      .eq("candidate_card_id", candidateCardId)
-      .in("state", [...DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES])
-      .limit(1)
-      .maybeSingle(),
-    admin
-      .from("dating_1on1_match_proposals")
-      .select("id,state,source_selected_at,updated_at,created_at")
-      .eq("source_card_id", candidateCardId)
-      .eq("candidate_card_id", sourceCardId)
-      .in("state", [...DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES])
-      .limit(1)
-      .maybeSingle(),
-  ]);
-
-  if (existingPairRes.error || reversePairRes.error) {
-    console.error("[POST /api/dating/1on1/matches/auto] existing pair check failed", {
-      directError: existingPairRes.error,
-      reverseError: reversePairRes.error,
-    });
+  const activePairRows = await fetchOneOnOnePairHistory(admin, user.id, {
+    activeOnly: true, counterpartUserId: candidateRes.data.user_id,
+  }).catch((error) => {
+    console.error("[POST /api/dating/1on1/matches/auto] existing pair check failed", error);
+    return null;
+  });
+  if (!activePairRows) {
     return NextResponse.json({ error: "Failed to validate existing pair." }, { status: 500 });
   }
-  const activePairRows = [existingPairRes.data, reversePairRes.data].filter(
-    (row): row is NonNullable<typeof row> => Boolean(row)
-  );
+  // Check all rows before expiring anything. In particular, an expired row must
+  // not hide another still-live match for the same two members.
+  if (activePairRows.some((row) => !isDatingOneOnOnePendingPairExpired(row))) {
+    return NextResponse.json({
+      error: "이미 진행 중인 상대입니다. 후보 목록을 다시 불러와 주세요.",
+      code: "CANDIDATE_ALREADY_HANDLED",
+    }, { status: 409 });
+  }
   const nowIso = new Date().toISOString();
 
   for (const pairRow of activePairRows) {
@@ -238,6 +216,7 @@ export async function POST(req: Request) {
       .update({ state: "admin_canceled", updated_at: nowIso })
       .eq("id", pairRow.id)
       .eq("state", pairRow.state)
+      .eq("updated_at", pairRow.updated_at)
       .select("id")
       .maybeSingle();
     if (expireRes.error) {
@@ -253,16 +232,6 @@ export async function POST(req: Request) {
         { status: 409 }
       );
     }
-  }
-
-  if (activePairRows.some((row) => !isDatingOneOnOnePendingPairExpired(row))) {
-    return NextResponse.json(
-      {
-        error: "이미 확인한 후보입니다. 후보 목록을 다시 불러와 주세요.",
-        code: "CANDIDATE_ALREADY_HANDLED",
-      },
-      { status: 409 }
-    );
   }
 
   const insertRes = await admin

@@ -23,6 +23,8 @@ import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { resolveOneOnOneAdminSearchTargets } from "@/lib/dating-1on1-admin-search";
 import { NextResponse } from "next/server";
+import { getCurrentOneOnOneCardIds } from "@/lib/dating-1on1-current-cards";
+import { fetchOneOnOnePairHistory } from "@/lib/dating-1on1-pair-history";
 
 type AdminCreatePayload = {
   source_card_id?: string;
@@ -352,8 +354,17 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Failed to load candidate cards." }, { status: 500 });
   }
 
+  const currentCardIds = await getCurrentOneOnOneCardIds(admin, [sourceRes.data, ...(candidatesRes.data ?? [])]).catch((error) => {
+    console.error("[POST /api/dating/1on1/matches/admin] current identity check failed", error);
+    return null;
+  });
+  if (!currentCardIds) return NextResponse.json({ error: "회원 정보를 확인하지 못했습니다." }, { status: 500 });
+  if (!currentCardIds.has(sourceCardId)) {
+    return NextResponse.json({ error: "기준 카드 정보가 변경되었습니다. 회원을 다시 검색해 주세요." }, { status: 409 });
+  }
   const candidateRows = (candidatesRes.data ?? []).filter(
     (row) =>
+      currentCardIds.has(row.id) &&
       row.user_id !== sourceRes.data?.user_id &&
       row.sex !== sourceRes.data?.sex &&
       ADMIN_SENDABLE_CARD_STATUSES.has(String(row.status ?? ""))
@@ -439,51 +450,28 @@ export async function POST(req: Request) {
       .map((row) => row.id)
   );
 
-  const [existingPairRes, rejectedDirectRes, rejectedReverseRes] = await Promise.all([
-    admin
-      .from("dating_1on1_match_proposals")
-      .select("candidate_card_id")
-      .eq("source_card_id", sourceCardId)
-      .in(
-        "candidate_card_id",
-        candidateRows.map((row) => row.id)
-      )
-      .in("state", [...DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES]),
-    admin
-      .from("dating_1on1_match_proposals")
-      .select("candidate_user_id")
-      .eq("source_user_id", sourceRes.data.user_id)
-      .in("candidate_user_id", candidateUserIds)
-      .in("state", [...DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES]),
-    admin
-      .from("dating_1on1_match_proposals")
-      .select("source_user_id")
-      .eq("candidate_user_id", sourceRes.data.user_id)
-      .in("source_user_id", candidateUserIds)
-      .in("state", [...DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES]),
-  ]);
-
-  if (existingPairRes.error || rejectedDirectRes.error || rejectedReverseRes.error) {
-    console.error("[POST /api/dating/1on1/matches/admin] pair check failed", {
-      activeError: existingPairRes.error,
-      rejectedDirectError: rejectedDirectRes.error,
-      rejectedReverseError: rejectedReverseRes.error,
-    });
+  const pairHistory = await fetchOneOnOnePairHistory(admin, sourceRes.data.user_id).catch((error) => {
+    console.error("[POST /api/dating/1on1/matches/admin] pair check failed", error);
+    return null;
+  });
+  if (!pairHistory) {
     return NextResponse.json({ error: "Failed to validate existing candidate pairs." }, { status: 500 });
   }
-
-  const existingPairIds = new Set((existingPairRes.data ?? []).map((row) => row.candidate_card_id));
-  const permanentlyRejectedUserIds = new Set([
-    ...(rejectedDirectRes.data ?? []).map((row) => row.candidate_user_id),
-    ...(rejectedReverseRes.data ?? []).map((row) => row.source_user_id),
-  ]);
+  const otherUserId = (row: typeof pairHistory[number]) =>
+    row.source_user_id === sourceRes.data!.user_id ? row.candidate_user_id : row.source_user_id;
+  const existingUserIds = new Set(pairHistory
+    .filter((row) => (DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES as readonly string[]).includes(row.state)).map(otherUserId));
+  const existingPairIds = new Set(candidateRows.filter((row) => existingUserIds.has(row.user_id)).map((row) => row.id));
+  const permanentlyRejectedUserIds = new Set(pairHistory
+    .filter((row) => (DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES as readonly string[]).includes(row.state)).map(otherUserId));
   const permanentlyRejectedCandidateIds = new Set(
     candidateRows.filter((row) => permanentlyRejectedUserIds.has(row.user_id)).map((row) => row.id)
   );
-  const skippedCandidateCardIds = candidateRows
-    .map((row) => row.id)
+  const eligibleIds = new Set(candidateRows.map((row) => row.id));
+  const skippedCandidateCardIds = candidateCardIds
     .filter(
       (id) =>
+        !eligibleIds.has(id) ||
         existingPairIds.has(id) ||
         permanentlyRejectedCandidateIds.has(id) ||
         phoneBlockedCandidateIds.has(id) ||
@@ -523,6 +511,9 @@ export async function POST(req: Request) {
 
   const insertRes = await admin.from("dating_1on1_match_proposals").insert(insertRows).select("id");
   if (insertRes.error) {
+    if (insertRes.error.code === "23505") {
+      return NextResponse.json({ error: "이미 진행 중인 후보가 있습니다. 다시 검색해 주세요." }, { status: 409 });
+    }
     console.error("[POST /api/dating/1on1/matches/admin] insert failed", insertRes.error);
     return NextResponse.json({ error: "Failed to send candidates." }, { status: 500 });
   }

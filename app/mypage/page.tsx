@@ -5337,6 +5337,8 @@ export default function MyPage() {
           body.code === "CANDIDATE_ALREADY_HANDLED" ||
           body.code === "CANDIDATE_PAIR_ACTIVE" ||
           body.code === "CANDIDATE_PAIR_CHANGED" ||
+          body.code === "DUPLICATE_CANDIDATE_IDENTITY" ||
+          body.code === "STALE_SOURCE_IDENTITY" ||
           body.code === "CANDIDATE_PREVIOUSLY_REJECTED"
         ) {
           await reloadOneOnOneRecommendations();

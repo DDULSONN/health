@@ -44,9 +44,10 @@ import {
   fetchRecommendationProfiles,
   type RecommendationCardRow,
 } from "@/lib/dating-1on1-recommendation-data";
+import { getCurrentOneOnOneCardIds } from "@/lib/dating-1on1-current-cards";
+import { fetchOneOnOnePairHistory, type OneOnOnePairHistory } from "@/lib/dating-1on1-pair-history";
 
 const RECOMMENDATION_LIMIT = 10;
-const PAIR_BATCH_SIZE = 1000;
 const RECOMMENDATION_REFRESH_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_PAIR_STATES = new Set(["proposed", "source_selected", "candidate_accepted", "mutual_accepted"]);
 const RECYCLABLE_PAIR_STATES = new Set(["source_skipped", "admin_canceled"]);
@@ -59,18 +60,6 @@ type RecommendationCard = RecommendationCardRow & {
 type RefreshEventRow = {
   card_id: string;
   refreshed_at: string;
-};
-type MatchPairRow = {
-  source_card_id: string;
-  candidate_card_id: string;
-  state: string;
-  source_selected_at: string | null;
-  updated_at: string | null;
-  created_at: string;
-};
-type RejectedPairRow = {
-  source_user_id: string;
-  candidate_user_id: string;
 };
 
 function getRefreshAvailability(
@@ -112,64 +101,6 @@ function isMissingRefreshEventSchema(error: unknown) {
   return message.includes("dating_1on1_recommendation_refresh_events") || message.includes("schema cache");
 }
 
-async function fetchPairRowsForCards(
-  admin: ReturnType<typeof createAdminClient>,
-  column: "source_card_id" | "candidate_card_id",
-  cardIds: string[]
-) {
-  const rows: MatchPairRow[] = [];
-  let from = 0;
-
-  while (true) {
-    const { data, error } = await admin
-      .from("dating_1on1_match_proposals")
-      .select("id,source_card_id,candidate_card_id,state,source_selected_at,updated_at,created_at")
-      .in(column, cardIds)
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: false })
-      .range(from, from + PAIR_BATCH_SIZE - 1);
-    if (error) throw error;
-
-    const batch = (data ?? []) as MatchPairRow[];
-    rows.push(...batch);
-    if (batch.length < PAIR_BATCH_SIZE) break;
-    from += PAIR_BATCH_SIZE;
-  }
-
-  return rows;
-}
-
-async function fetchPermanentlyRejectedUserIds(
-  admin: ReturnType<typeof createAdminClient>,
-  userId: string
-) {
-  const rejectedUserIds = new Set<string>();
-
-  for (const column of ["source_user_id", "candidate_user_id"] as const) {
-    let from = 0;
-    while (true) {
-      const { data, error } = await admin
-        .from("dating_1on1_match_proposals")
-        .select("source_user_id,candidate_user_id")
-        .eq(column, userId)
-        .in("state", [...DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES])
-        .order("created_at", { ascending: false })
-        .range(from, from + PAIR_BATCH_SIZE - 1);
-      if (error) throw error;
-
-      const batch = (data ?? []) as RejectedPairRow[];
-      for (const row of batch) {
-        const otherUserId = row.source_user_id === userId ? row.candidate_user_id : row.source_user_id;
-        if (otherUserId) rejectedUserIds.add(otherUserId);
-      }
-      if (batch.length < PAIR_BATCH_SIZE) break;
-      from += PAIR_BATCH_SIZE;
-    }
-  }
-
-  return rejectedUserIds;
-}
-
 export async function GET(req: Request) {
   const { user } = await getRequestAuthContext(req);
 
@@ -186,6 +117,8 @@ export async function GET(req: Request) {
     ownRows = await fetchActiveRecommendationRows(admin, { userId: user.id });
     // No application means no candidate scans, subscriptions, photos or block lookups.
     if (ownRows.length === 0) return NextResponse.json({ items: [] });
+    // Only the newest active application determines the source's gender.
+    ownRows = ownRows.slice(0, 1);
     const sexes = [...new Set(ownRows.map((row) => row.sex === "male" ? "female" as const : "male" as const))];
     candidateRows = await fetchActiveRecommendationRows(admin, { sexes, excludeUserId: user.id });
     profiles = await fetchRecommendationProfiles(admin, [user.id, ...candidateRows.map((row) => row.user_id)]);
@@ -233,32 +166,26 @@ export async function GET(req: Request) {
   const profilePhoneMap = new Map([...profiles].flatMap(([userId, profile]) => profile.phone ? [[userId, profile.phone] as const] : []));
   let plusByUserId: Awaited<ReturnType<typeof getActiveOneOnOnePlusByUserIds>>;
   let activityByUserId: Map<string, string>;
-  let sourcePairRows: MatchPairRow[];
-  let reversePairRows: MatchPairRow[];
+  let pairRows: OneOnOnePairHistory[];
   let phoneBlockMap: Awaited<ReturnType<typeof getOneOnOnePhoneBlockMapForUsers>>;
   let adminUserBlockPairSet: Awaited<ReturnType<typeof getOneOnOneAdminUserBlockPairSetForUsers>>;
   let contactBlockMap: Awaited<ReturnType<typeof getDatingContactBlockMapForUsers>>;
   let blockedUserIds: Awaited<ReturnType<typeof getDatingBlockedUserIds>>;
-  let permanentlyRejectedUserIds: Awaited<ReturnType<typeof fetchPermanentlyRejectedUserIds>>;
   try {
     [
-      sourcePairRows,
-      reversePairRows,
+      pairRows,
       phoneBlockMap,
       adminUserBlockPairSet,
       contactBlockMap,
       blockedUserIds,
-      permanentlyRejectedUserIds,
       plusByUserId,
       activityByUserId,
     ] = await Promise.all([
-      fetchPairRowsForCards(admin, "source_card_id", sourceCardIds),
-      fetchPairRowsForCards(admin, "candidate_card_id", sourceCardIds),
+      fetchOneOnOnePairHistory(admin, user.id),
       getOneOnOnePhoneBlockMapForUsers(admin, allCandidateUserIds),
       getOneOnOneAdminUserBlockPairSetForUsers(admin, [user.id]),
       getDatingContactBlockMapForUsers(admin, allCandidateUserIds),
       getDatingBlockedUserIds(admin, user.id),
-      fetchPermanentlyRejectedUserIds(admin, user.id),
       getActiveOneOnOnePlusByUserIds(admin, allCandidateUserIds),
       fetchRecommendationActivity(admin, candidateUniverse.map((card) => card.user_id), nowMs).catch((error) => {
         // Activity is a ranking hint, not an eligibility check. Keep recommendations
@@ -281,36 +208,29 @@ export async function GET(req: Request) {
     }
   }
 
-  const activePairMap = new Map<string, Set<string>>();
-  const handledPairMap = new Map<string, Set<string>>();
-  const addPairHistory = (row: MatchPairRow, sourceCardId: string, candidateCardId: string) => {
+  const activeUserIds = new Set<string>();
+  const handledUserIds = new Set<string>();
+  const permanentlyRejectedUserIds = new Set<string>();
+  for (const row of pairRows) {
+    const otherUserId = row.source_user_id === user.id ? row.candidate_user_id : row.source_user_id;
+    if ((DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES as readonly string[]).includes(row.state)) {
+      permanentlyRejectedUserIds.add(otherUserId);
+    }
     if (ACTIVE_PAIR_STATES.has(row.state) && !isDatingOneOnOnePendingPairExpired(row)) {
-      const activeIds = activePairMap.get(sourceCardId) ?? new Set<string>();
-      activeIds.add(candidateCardId);
-      activePairMap.set(sourceCardId, activeIds);
-      handledPairMap.get(sourceCardId)?.delete(candidateCardId);
-      return;
+      activeUserIds.add(otherUserId);
+      continue;
     }
     const recyclable =
       RECYCLABLE_PAIR_STATES.has(row.state) || isDatingOneOnOnePendingPairExpired(row);
-    if (!recyclable || activePairMap.get(sourceCardId)?.has(candidateCardId)) return;
-    const handledIds = handledPairMap.get(sourceCardId) ?? new Set<string>();
-    handledIds.add(candidateCardId);
-    handledPairMap.set(sourceCardId, handledIds);
-  };
-
-  for (const row of sourcePairRows) {
-    addPairHistory(row, row.source_card_id, row.candidate_card_id);
-  }
-  for (const row of reversePairRows) {
-    addPairHistory(row, row.candidate_card_id, row.source_card_id);
+    if (recyclable) handledUserIds.add(otherUserId);
   }
 
-  const items = mySourceCards.map((sourceCard) => {
-    const activePairIds = activePairMap.get(sourceCard.id) ?? new Set<string>();
-    const handledPairIds = handledPairMap.get(sourceCard.id) ?? new Set<string>();
+  const unavailableCardIds = new Set<string>();
+  const buildItems = () => mySourceCards.map((sourceCard) => {
+    const handledPairIds = new Set(candidateUniverse.filter((card) => handledUserIds.has(card.user_id)).map((card) => card.id));
     const sourcePhone = sourceCard.phone ? normalizePhoneForOneOnOneBlock(sourceCard.phone) : "";
     const candidates = candidateUniverse.filter((candidateCard) => {
+      if (unavailableCardIds.has(candidateCard.id)) return false;
       if (candidateCard.id === sourceCard.id) return false;
       if (candidateCard.user_id === sourceCard.user_id) return false;
       const candidatePhone = candidateCard.phone
@@ -320,7 +240,7 @@ export async function GET(req: Request) {
       if (candidateCard.sex === sourceCard.sex) return false;
       if (blockedUserIds.has(candidateCard.user_id)) return false;
       if (permanentlyRejectedUserIds.has(candidateCard.user_id)) return false;
-      if (activePairIds.has(candidateCard.id)) return false;
+      if (activeUserIds.has(candidateCard.user_id)) return false;
       if (
         isOneOnOnePhoneBlockedPair({
           sourceUserId: sourceCard.user_id,
@@ -431,6 +351,25 @@ export async function GET(req: Request) {
   });
 
   try {
+    let items = buildItems();
+    const checkedCardIds = new Set<string>();
+    // Validate only the short list we intend to display. Refill removed stale
+    // identities from the full ranked pool, not by scanning everyone's phones.
+    // Each iteration checks new IDs, so even a dirty legacy pool terminates.
+    while (true) {
+      const pending = [...new Map([
+        ...mySourceCards,
+        ...items.flatMap((item) => [...item.recommendations, ...item.admin_recommendations]),
+      ].filter((card) => !checkedCardIds.has(card.id)).map((card) => [card.id, card])).values()];
+      if (pending.length === 0) break;
+      const currentIds = await getCurrentOneOnOneCardIds(admin, pending, profiles);
+      const invalid = pending.filter((card) => !currentIds.has(card.id));
+      for (const card of pending) checkedCardIds.add(card.id);
+      if (invalid.some((card) => card.user_id === user.id)) return NextResponse.json({ items: [] });
+      if (invalid.length === 0) break;
+      for (const card of invalid) unavailableCardIds.add(card.id);
+      items = buildItems();
+    }
     const details = await fetchRecommendationDetails(admin, items.flatMap((item) =>
       [...item.recommendations, ...item.admin_recommendations].map((card) => card.id)));
     const hydrate = (cards: RecommendationCard[]) => cards.flatMap((card) => {
