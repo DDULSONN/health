@@ -28,7 +28,7 @@ export type DatingContactBlockCardLike = {
   instagram_id?: string | null;
 };
 
-const CONTACT_BLOCK_BATCH_SIZE = 500;
+const CONTACT_BLOCK_BATCH_SIZE = 200;
 
 export type DatingContactBlockMap = Map<string, Set<string>>;
 
@@ -111,22 +111,27 @@ export async function getDatingContactBlockMapForUsers(adminClient: SupabaseClie
 
   for (let start = 0; start < uniqueUserIds.length; start += CONTACT_BLOCK_BATCH_SIZE) {
     const chunk = uniqueUserIds.slice(start, start + CONTACT_BLOCK_BATCH_SIZE);
-    const { data, error } = await adminClient
-      .from("dating_contact_blocks")
-      .select("user_id,block_type,value_hash")
-      .in("user_id", chunk);
+    for (let from = 0; ; from += 500) {
+      const { data, error } = await adminClient
+        .from("dating_contact_blocks")
+        .select("user_id,block_type,value_hash")
+        .in("user_id", chunk)
+        .order("id", { ascending: true })
+        .range(from, from + 499);
 
-    if (error) {
-      if (isMissingDatingContactBlocksTableError(error)) return new Map();
-      throw error;
-    }
+      if (error) {
+        if (isMissingDatingContactBlocksTableError(error)) return new Map();
+        throw error;
+      }
 
-    for (const row of (data ?? []) as ContactBlockRow[]) {
-      const userId = String(row.user_id ?? "").trim();
-      const type = row.block_type === "phone" || row.block_type === "instagram" ? row.block_type : null;
-      const valueHash = String(row.value_hash ?? "").trim();
-      if (!userId || !type || !valueHash) continue;
-      addHash(blockMap, userId, type, valueHash);
+      for (const row of (data ?? []) as ContactBlockRow[]) {
+        const userId = String(row.user_id ?? "").trim();
+        const type = row.block_type === "phone" || row.block_type === "instagram" ? row.block_type : null;
+        const valueHash = String(row.value_hash ?? "").trim();
+        if (!userId || !type || !valueHash) continue;
+        addHash(blockMap, userId, type, valueHash);
+      }
+      if ((data ?? []).length < 500) break;
     }
   }
 

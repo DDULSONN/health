@@ -5352,7 +5352,7 @@ export default function MyPage() {
     const recommendationGroup = myOneOnOneAutoRecommendations.find((group) => group.source_card_id === sourceCardId);
     const refreshLimit = recommendationGroup?.refresh_limit ?? 1;
     const refreshRemaining = recommendationGroup?.refresh_remaining ?? (recommendationGroup?.can_refresh ? 1 : 0);
-    if (!confirm(`자동 추천 후보 10명을 새로 불러올까요? 최근 24시간 기준 ${refreshLimit}회 중 ${refreshRemaining}회 남았습니다.`)) return;
+    if (!confirm(`자동 추천 후보를 최대 10명까지 새로 불러올까요? 후보가 적으면 일부가 다시 보일 수 있어요. 최근 24시간 기준 ${refreshLimit}회 중 ${refreshRemaining}회 남았습니다.`)) return;
 
     setRefreshingOneOnOneRecommendationIds((prev) => [...prev, sourceCardId]);
     try {
@@ -9995,9 +9995,9 @@ export default function MyPage() {
                       <div className="mt-3 rounded-xl border border-pink-200 bg-pink-50/50 p-3">
                         <div className="flex items-start justify-between gap-3">
                           <div>
-                            <p className="text-sm font-semibold text-pink-900">자동 추천 후보 10명</p>
+                            <p className="text-sm font-semibold text-pink-900">자동 추천 후보 최대 10명</p>
                             <p className="mt-1 text-xs text-pink-700">
-                              내 나이와 지역 기준으로 먼저 추천되는 후보예요. 같은 시군구를 우선 보고, 없으면 같은 시도나 가까운 지역 후보 순으로 보여줘요.
+                              나이와 가까운 지역을 고려해 추천해요. 조건이 비슷하면 최근 1:1 활동이 있는 회원을 먼저 보여줘요.
                             </p>
                           </div>
                           <button
@@ -10086,7 +10086,7 @@ export default function MyPage() {
                                 오늘의 추가 후보 {adminAutoRecommendations.length}명
                               </p>
                               <p className="mt-1 text-xs text-emerald-700">
-                                기본 추천 10명과 겹치지 않는 나이대 맞춤 후보예요. 매일 자동으로 바뀝니다.
+                                기본 추천과 겹치지 않는 나이대 맞춤 후보를 최대 3명까지 보여줘요. 매일 다시 선정하며, 후보가 적으면 전날과 같을 수 있어요.
                               </p>
                               <div className="mt-3 space-y-2">
                                 {adminAutoRecommendations.map((card) => {

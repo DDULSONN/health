@@ -9,7 +9,8 @@ type PhoneBlockRow = {
 
 export type OneOnOnePhoneBlockMap = Map<string, Set<string>>;
 
-const PHONE_BLOCK_BATCH_SIZE = 500;
+// UUID filters are echoed in response headers; 500 IDs can exceed Node's 16 KB limit.
+const PHONE_BLOCK_BATCH_SIZE = 200;
 
 function getPhoneBlockSecret() {
   return (
@@ -74,23 +75,28 @@ export async function getOneOnOnePhoneBlockMapForUsers(
 
   for (let start = 0; start < uniqueUserIds.length; start += PHONE_BLOCK_BATCH_SIZE) {
     const chunk = uniqueUserIds.slice(start, start + PHONE_BLOCK_BATCH_SIZE);
-    const { data, error } = await adminClient
-      .from("dating_1on1_phone_blocks")
-      .select("user_id,phone_hash")
-      .in("user_id", chunk);
+    for (let from = 0; ; from += 500) {
+      const { data, error } = await adminClient
+        .from("dating_1on1_phone_blocks")
+        .select("user_id,phone_hash")
+        .in("user_id", chunk)
+        .order("id", { ascending: true })
+        .range(from, from + 499);
 
-    if (error) {
-      if (isMissingPhoneBlocksTableError(error)) return new Map();
-      throw error;
-    }
+      if (error) {
+        if (isMissingPhoneBlocksTableError(error)) return new Map();
+        throw error;
+      }
 
-    for (const row of (data ?? []) as PhoneBlockRow[]) {
-      const userId = String(row.user_id ?? "").trim();
-      const phoneHash = String(row.phone_hash ?? "").trim();
-      if (!userId || !phoneHash) continue;
-      const bucket = blockMap.get(userId) ?? new Set<string>();
-      bucket.add(phoneHash);
-      blockMap.set(userId, bucket);
+      for (const row of (data ?? []) as PhoneBlockRow[]) {
+        const userId = String(row.user_id ?? "").trim();
+        const phoneHash = String(row.phone_hash ?? "").trim();
+        if (!userId || !phoneHash) continue;
+        const bucket = blockMap.get(userId) ?? new Set<string>();
+        bucket.add(phoneHash);
+        blockMap.set(userId, bucket);
+      }
+      if ((data ?? []).length < 500) break;
     }
   }
 

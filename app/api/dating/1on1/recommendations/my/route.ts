@@ -1,8 +1,7 @@
 import {
-  DATING_ONE_ON_ONE_ACTIVE_STATUSES,
   DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES,
   isDatingOneOnOnePendingPairExpired,
-  toDatingOneOnOneCardDetail,
+  toDatingOneOnOneAge,
 } from "@/lib/dating-1on1";
 import {
   dedupeOneOnOneCardsByIdentity,
@@ -13,14 +12,21 @@ import {
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import {
   getDatingContactBlockMapForUsers,
-  getDatingProfilePhoneMapForUsers,
   isDatingContactPhoneBlockedPair,
 } from "@/lib/dating-contact-blocks";
 import {
   getOneOnOneAdminUserBlockPairSetForUsers,
   isOneOnOneAdminUserBlockedPair,
 } from "@/lib/dating-1on1-admin-user-blocks";
-import { getRegionDistanceMeta } from "@/lib/region-distance";
+import {
+  getActiveRecommendationRefresh,
+  getRefreshExcludeIds,
+  isCandidateInSourceAgeRange,
+  sortCandidatesForSource,
+  sortRefreshCandidatesForSource,
+  takeBalancedRecommendations,
+  takeRecommendations,
+} from "@/lib/dating-1on1-recommendations";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { getKstDateString } from "@/lib/weekly";
@@ -31,45 +37,24 @@ import {
   getActiveOneOnOnePlusByUserIds,
 } from "@/lib/dating-1on1-plus";
 import { NextResponse } from "next/server";
+import {
+  fetchActiveRecommendationRows,
+  fetchRecommendationActivity,
+  fetchRecommendationDetails,
+  fetchRecommendationProfiles,
+  type RecommendationCardRow,
+} from "@/lib/dating-1on1-recommendation-data";
 
 const RECOMMENDATION_LIMIT = 10;
-const CARD_BATCH_SIZE = 1000;
 const PAIR_BATCH_SIZE = 1000;
 const RECOMMENDATION_REFRESH_COOLDOWN_MS = 24 * 60 * 60 * 1000;
-const AGE_MATCH_MIN_QUOTA = 6;
-const NEAR_AGE_GAP = 2;
-const CLOSE_REGION_MAX_KM = 90;
-const RECENT_CANDIDATE_WINDOW_MS = 7 * 24 * 60 * 60 * 1000;
-const REFRESH_RECENT_NEARBY_MIN_QUOTA = 4;
 const ACTIVE_PAIR_STATES = new Set(["proposed", "source_selected", "candidate_accepted", "mutual_accepted"]);
 const RECYCLABLE_PAIR_STATES = new Set(["source_skipped", "admin_canceled"]);
 
-type CardRow = {
-  id: string;
-  user_id: string;
-  sex: "male" | "female";
-  name: string;
-  birth_year: number;
-  height_cm: number;
-  job: string;
-  region: string;
-  intro_text: string;
-  strengths_text: string;
-  preferred_partner_text: string;
-  smoking: "non_smoker" | "occasional" | "smoker";
-  workout_frequency: "none" | "1_2" | "3_4" | "5_plus" | null;
-  status: "submitted" | "reviewing" | "approved" | "rejected";
-  created_at: string;
-  recommendation_refresh_used_at?: string | null;
-  priority_boost_expires_at?: string | null;
+type RecommendationCard = RecommendationCardRow & {
+  age: number | null;
   plus_expires_at?: string | null;
-  photo_paths: unknown;
-  phone: string | null;
-};
-type RecommendationCard = ReturnType<typeof toDatingOneOnOneCardDetail> & {
-  phone: string | null;
-  priority_boost_expires_at?: string | null;
-  plus_expires_at?: string | null;
+  last_active_at?: string | null;
 };
 type RefreshEventRow = {
   card_id: string;
@@ -87,316 +72,6 @@ type RejectedPairRow = {
   source_user_id: string;
   candidate_user_id: string;
 };
-
-function getAgeRange(card: { sex: "male" | "female"; age: number | null }) {
-  if (card.age == null || !Number.isFinite(card.age)) {
-    return { minAge: null as number | null, maxAge: null as number | null };
-  }
-
-  return card.sex === "male"
-    ? { minAge: Math.max(19, card.age - 4), maxAge: card.age + 1 }
-    : { minAge: Math.max(19, card.age - 1), maxAge: card.age + 4 };
-}
-
-function hashSeed(value: string): number {
-  let hash = 2166136261;
-  for (let index = 0; index < value.length; index += 1) {
-    hash ^= value.charCodeAt(index);
-    hash = Math.imul(hash, 16777619);
-  }
-  return hash >>> 0;
-}
-
-function getAgeGap(sourceAge: number | null, candidateAge: number | null): number {
-  if (sourceAge == null || candidateAge == null || !Number.isFinite(sourceAge) || !Number.isFinite(candidateAge)) {
-    return Number.POSITIVE_INFINITY;
-  }
-  return Math.abs(sourceAge - candidateAge);
-}
-
-function isCandidateInSourceAgeRange(sourceCard: RecommendationCard, candidateCard: RecommendationCard) {
-  const sourceAgeRange = getAgeRange(sourceCard);
-  if (
-    sourceAgeRange.minAge == null ||
-    sourceAgeRange.maxAge == null ||
-    candidateCard.age == null ||
-    !Number.isFinite(candidateCard.age)
-  ) {
-    return false;
-  }
-  return candidateCard.age >= sourceAgeRange.minAge && candidateCard.age <= sourceAgeRange.maxAge;
-}
-
-function getDistanceRank(sourceRegion: string | null, candidateRegion: string | null) {
-  const meta = getRegionDistanceMeta(sourceRegion, candidateRegion);
-
-  return {
-    sameRegionRank: meta.sameRegion ? 0 : 1,
-    sameProvinceRank: meta.sameProvince ? 0 : 1,
-    distanceBandRank:
-      meta.distanceKm == null ? 4 : meta.distanceKm <= 15 ? 0 : meta.distanceKm <= 40 ? 1 : meta.distanceKm <= 90 ? 2 : 3,
-    distanceRank: meta.distanceKm ?? Number.POSITIVE_INFINITY,
-  };
-}
-
-function isPriorityBoostActive(card: { priority_boost_expires_at?: string | null; plus_expires_at?: string | null }) {
-  return [card.priority_boost_expires_at, card.plus_expires_at].some((value) => {
-    if (!value) return false;
-    const expiresAtMs = new Date(value).getTime();
-    return Number.isFinite(expiresAtMs) && expiresAtMs > Date.now();
-  });
-}
-
-function isRecentlyCreated(card: { created_at: string }, nowMs = Date.now()) {
-  const createdAtMs = Date.parse(card.created_at);
-  return Number.isFinite(createdAtMs) && nowMs - createdAtMs <= RECENT_CANDIDATE_WINDOW_MS;
-}
-
-function getCreatedAtRank(card: { created_at: string }) {
-  const createdAtMs = Date.parse(card.created_at);
-  return Number.isFinite(createdAtMs) ? -createdAtMs : Number.POSITIVE_INFINITY;
-}
-
-function isCloseRegionCandidate(sourceCard: RecommendationCard, candidateCard: RecommendationCard) {
-  const distance = getRegionDistanceMeta(sourceCard.region, candidateCard.region).distanceKm;
-  return distance != null && distance <= CLOSE_REGION_MAX_KM;
-}
-
-function isRecentNearbyCandidate(sourceCard: RecommendationCard, candidateCard: RecommendationCard) {
-  return isRecentlyCreated(candidateCard) && (isCloseRegionCandidate(sourceCard, candidateCard) || isCandidateInSourceAgeRange(sourceCard, candidateCard));
-}
-
-function sortCandidatesForSource(
-  sourceCard: RecommendationCard,
-  candidates: RecommendationCard[],
-  seedSuffix: string
-) {
-  return [...candidates].sort((a, b) => {
-    const aDistanceRank = getDistanceRank(sourceCard.region, a.region);
-    const bDistanceRank = getDistanceRank(sourceCard.region, b.region);
-    if (aDistanceRank.sameRegionRank !== bDistanceRank.sameRegionRank) {
-      return aDistanceRank.sameRegionRank - bDistanceRank.sameRegionRank;
-    }
-    if (aDistanceRank.sameProvinceRank !== bDistanceRank.sameProvinceRank) {
-      return aDistanceRank.sameProvinceRank - bDistanceRank.sameProvinceRank;
-    }
-
-    if (aDistanceRank.distanceBandRank !== bDistanceRank.distanceBandRank) {
-      return aDistanceRank.distanceBandRank - bDistanceRank.distanceBandRank;
-    }
-
-    const aBoostActive = isPriorityBoostActive(a);
-    const bBoostActive = isPriorityBoostActive(b);
-    if (aBoostActive !== bBoostActive) {
-      return aBoostActive ? -1 : 1;
-    }
-
-    if (aDistanceRank.distanceRank !== bDistanceRank.distanceRank) {
-      return aDistanceRank.distanceRank - bDistanceRank.distanceRank;
-    }
-
-    const aInAgeRange = isCandidateInSourceAgeRange(sourceCard, a);
-    const bInAgeRange = isCandidateInSourceAgeRange(sourceCard, b);
-    if (aInAgeRange !== bInAgeRange) {
-      return aInAgeRange ? -1 : 1;
-    }
-
-    const aAgeGap = getAgeGap(sourceCard.age, a.age);
-    const bAgeGap = getAgeGap(sourceCard.age, b.age);
-    if (aAgeGap !== bAgeGap) {
-      return aAgeGap - bAgeGap;
-    }
-
-    const aHash = hashSeed(`${sourceCard.id}:${seedSuffix}:${a.id}`);
-    const bHash = hashSeed(`${sourceCard.id}:${seedSuffix}:${b.id}`);
-    if (aHash !== bHash) return aHash - bHash;
-    return a.id.localeCompare(b.id);
-  });
-}
-
-function sortRefreshCandidatesForSource(
-  sourceCard: RecommendationCard,
-  candidates: RecommendationCard[],
-  seedSuffix: string,
-  preferredExcludeIds: Set<string>
-) {
-  return [...candidates].sort((a, b) => {
-    const aExcluded = preferredExcludeIds.has(a.id);
-    const bExcluded = preferredExcludeIds.has(b.id);
-    if (aExcluded !== bExcluded) return aExcluded ? 1 : -1;
-
-    const aRecentNearby = isRecentNearbyCandidate(sourceCard, a);
-    const bRecentNearby = isRecentNearbyCandidate(sourceCard, b);
-    if (aRecentNearby !== bRecentNearby) return aRecentNearby ? -1 : 1;
-
-    const aRecent = isRecentlyCreated(a);
-    const bRecent = isRecentlyCreated(b);
-    if (aRecent !== bRecent) return aRecent ? -1 : 1;
-
-    const aBoostActive = isPriorityBoostActive(a);
-    const bBoostActive = isPriorityBoostActive(b);
-    if (aBoostActive !== bBoostActive) return aBoostActive ? -1 : 1;
-
-    const aInAgeRange = isCandidateInSourceAgeRange(sourceCard, a);
-    const bInAgeRange = isCandidateInSourceAgeRange(sourceCard, b);
-    if (aInAgeRange !== bInAgeRange) return aInAgeRange ? -1 : 1;
-
-    const aDistanceRank = getDistanceRank(sourceCard.region, a.region);
-    const bDistanceRank = getDistanceRank(sourceCard.region, b.region);
-    const aIsNearby = aDistanceRank.distanceBandRank <= 2;
-    const bIsNearby = bDistanceRank.distanceBandRank <= 2;
-    if (aIsNearby !== bIsNearby) return aIsNearby ? -1 : 1;
-
-    const aAgeGap = getAgeGap(sourceCard.age, a.age);
-    const bAgeGap = getAgeGap(sourceCard.age, b.age);
-    const aNearAge = aAgeGap <= NEAR_AGE_GAP;
-    const bNearAge = bAgeGap <= NEAR_AGE_GAP;
-    if (aNearAge !== bNearAge) return aNearAge ? -1 : 1;
-
-    const aHash = hashSeed(`${sourceCard.id}:${seedSuffix}:explore:${a.id}`);
-    const bHash = hashSeed(`${sourceCard.id}:${seedSuffix}:explore:${b.id}`);
-    if (aHash !== bHash) return aHash - bHash;
-
-    if (aDistanceRank.distanceBandRank !== bDistanceRank.distanceBandRank) {
-      return aDistanceRank.distanceBandRank - bDistanceRank.distanceBandRank;
-    }
-    if (aAgeGap !== bAgeGap) return aAgeGap - bAgeGap;
-    const aCreatedAtRank = getCreatedAtRank(a);
-    const bCreatedAtRank = getCreatedAtRank(b);
-    if (aCreatedAtRank !== bCreatedAtRank) return aCreatedAtRank - bCreatedAtRank;
-    return a.id.localeCompare(b.id);
-  });
-}
-
-function rotateCandidates<T>(items: T[], offset: number) {
-  if (items.length <= 1) return items;
-  const normalizedOffset = offset % items.length;
-  if (normalizedOffset <= 0) return items;
-  return [...items.slice(normalizedOffset), ...items.slice(0, normalizedOffset)];
-}
-
-function takeRecommendations(
-  sortedCandidates: RecommendationCard[],
-  limit: number,
-  preferredExcludeIds: Set<string> | null = null,
-  rotationSeed: string | null = null
-) {
-  if (!preferredExcludeIds || preferredExcludeIds.size === 0) {
-    return sortedCandidates.slice(0, limit);
-  }
-
-  const preferredPool = sortedCandidates.filter((candidate) => !preferredExcludeIds.has(candidate.id));
-  const rotatedPreferredPool =
-    rotationSeed && preferredPool.length > limit
-      ? rotateCandidates(preferredPool, hashSeed(rotationSeed) % preferredPool.length)
-      : preferredPool;
-
-  const picked: RecommendationCard[] = [];
-  for (const candidate of rotatedPreferredPool) {
-    if (preferredExcludeIds.has(candidate.id)) continue;
-    picked.push(candidate);
-    if (picked.length >= limit) {
-      return picked;
-    }
-  }
-
-  for (const candidate of sortedCandidates) {
-    if (picked.some((pickedCandidate) => pickedCandidate.id === candidate.id)) continue;
-    picked.push(candidate);
-    if (picked.length >= limit) {
-      return picked;
-    }
-  }
-
-  return picked;
-}
-
-function takeBalancedRecommendations(
-  sourceCard: RecommendationCard,
-  sortedCandidates: RecommendationCard[],
-  limit: number,
-  preferredExcludeIds: Set<string> | null = null,
-  rotationSeed: string | null = null
-) {
-  const excludeIds = preferredExcludeIds ?? new Set<string>();
-  const picked: RecommendationCard[] = [];
-  const pickedIds = new Set<string>();
-
-  const rotateIfUseful = (items: RecommendationCard[], suffix: string) =>
-    rotationSeed && items.length > 1 ? rotateCandidates(items, hashSeed(`${rotationSeed}:${suffix}`) % items.length) : items;
-
-  const addFrom = (items: RecommendationCard[], targetCount: number, avoidExcluded: boolean) => {
-    for (const candidate of items) {
-      if (picked.length >= limit || picked.length >= targetCount) return;
-      if (pickedIds.has(candidate.id)) continue;
-      if (avoidExcluded && excludeIds.has(candidate.id)) continue;
-      picked.push(candidate);
-      pickedIds.add(candidate.id);
-    }
-  };
-
-  const ageMatched = sortedCandidates.filter((candidate) => isCandidateInSourceAgeRange(sourceCard, candidate));
-  const nearAge = sortedCandidates.filter((candidate) => getAgeGap(sourceCard.age, candidate.age) <= NEAR_AGE_GAP);
-  const closeRegion = sortedCandidates.filter((candidate) => {
-    return isCloseRegionCandidate(sourceCard, candidate);
-  });
-  const recentNearby = sortedCandidates.filter((candidate) => isRecentNearbyCandidate(sourceCard, candidate));
-
-  addFrom(rotateIfUseful(recentNearby, "recent-nearby"), Math.min(limit, REFRESH_RECENT_NEARBY_MIN_QUOTA), true);
-  addFrom(rotateIfUseful(ageMatched, "age-match"), Math.min(limit, AGE_MATCH_MIN_QUOTA), true);
-  addFrom(rotateIfUseful(nearAge, "near-age"), Math.min(limit, Math.max(AGE_MATCH_MIN_QUOTA, 7)), true);
-  addFrom(rotateIfUseful(closeRegion, "close-region"), Math.min(limit, Math.max(picked.length, 8)), true);
-  addFrom(rotateIfUseful(sortedCandidates, "balanced-rest"), limit, true);
-
-  if (picked.length < limit) {
-    addFrom(rotateIfUseful(recentNearby, "recent-nearby-fallback"), Math.min(limit, REFRESH_RECENT_NEARBY_MIN_QUOTA), false);
-    addFrom(rotateIfUseful(ageMatched, "age-match-fallback"), Math.min(limit, AGE_MATCH_MIN_QUOTA), false);
-    addFrom(rotateIfUseful(nearAge, "near-age-fallback"), Math.min(limit, Math.max(AGE_MATCH_MIN_QUOTA, 7)), false);
-    addFrom(rotateIfUseful(closeRegion, "close-region-fallback"), Math.min(limit, Math.max(picked.length, 8)), false);
-    addFrom(rotateIfUseful(sortedCandidates, "balanced-rest-fallback"), limit, false);
-  }
-
-  return picked;
-}
-
-function isFreshStrongCandidateForRefresh(
-  sourceCard: RecommendationCard,
-  candidateCard: RecommendationCard,
-  refreshUsedAt: string | null | undefined
-) {
-  if (!refreshUsedAt) return false;
-
-  const refreshMs = Date.parse(refreshUsedAt);
-  const candidateCreatedMs = Date.parse(candidateCard.created_at);
-  if (!Number.isFinite(refreshMs) || !Number.isFinite(candidateCreatedMs) || candidateCreatedMs <= refreshMs) {
-    return false;
-  }
-
-  const distance = getRegionDistanceMeta(sourceCard.region, candidateCard.region).distanceKm;
-  const closeRegion = distance != null && distance <= CLOSE_REGION_MAX_KM;
-  const ageMatched = isCandidateInSourceAgeRange(sourceCard, candidateCard);
-  const nearAge = getAgeGap(sourceCard.age, candidateCard.age) <= NEAR_AGE_GAP;
-
-  return closeRegion || ageMatched || nearAge;
-}
-
-function getRefreshExcludeIds(
-  sourceCard: RecommendationCard,
-  defaultRecommendations: RecommendationCard[],
-  refreshUsedAt: string | null | undefined
-) {
-  const excludeIds = new Set(defaultRecommendations.map((candidate) => candidate.id));
-
-  for (const candidate of defaultRecommendations) {
-    // A candidate already shown in the default list should not reappear after a refresh
-    // while alternatives exist. Only a genuinely new card created after the refresh may bypass this.
-    if (isFreshStrongCandidateForRefresh(sourceCard, candidate, refreshUsedAt)) {
-      excludeIds.delete(candidate.id);
-    }
-  }
-
-  return excludeIds;
-}
 
 function getRefreshAvailability(
   refreshEvents: string[],
@@ -435,58 +110,6 @@ function getRefreshAvailability(
 function isMissingRefreshEventSchema(error: unknown) {
   const message = String((error as { message?: unknown } | null)?.message ?? error ?? "").toLowerCase();
   return message.includes("dating_1on1_recommendation_refresh_events") || message.includes("schema cache");
-}
-
-function stripInternalPhone(card: RecommendationCard) {
-  return Object.fromEntries(
-    Object.entries(card).filter(
-      ([key]) => key !== "phone" && key !== "priority_boost_expires_at" && key !== "plus_expires_at"
-    )
-  ) as Omit<RecommendationCard, "phone" | "priority_boost_expires_at" | "plus_expires_at">;
-}
-
-async function fetchAllActiveCards(admin: ReturnType<typeof createAdminClient>) {
-  const rows: CardRow[] = [];
-  let from = 0;
-
-  while (true) {
-    const { data, error } = await admin
-      .from("dating_1on1_cards")
-      .select(
-        "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,recommendation_refresh_used_at,priority_boost_expires_at,photo_paths,phone"
-      )
-      .in("status", [...DATING_ONE_ON_ONE_ACTIVE_STATUSES])
-      .order("created_at", { ascending: false })
-      .range(from, from + CARD_BATCH_SIZE - 1);
-
-    if (error) {
-      const message = String(error.message ?? "");
-      if (message.includes("priority_boost_expires_at")) {
-        const legacyRes = await admin
-          .from("dating_1on1_cards")
-          .select(
-            "id,user_id,sex,name,birth_year,height_cm,job,region,intro_text,strengths_text,preferred_partner_text,smoking,workout_frequency,status,created_at,recommendation_refresh_used_at,photo_paths,phone"
-          )
-          .in("status", [...DATING_ONE_ON_ONE_ACTIVE_STATUSES])
-          .order("created_at", { ascending: false })
-          .range(from, from + CARD_BATCH_SIZE - 1);
-        if (legacyRes.error) throw legacyRes.error;
-        const legacyBatch = (legacyRes.data ?? []).map((row) => ({ ...row, priority_boost_expires_at: null })) as CardRow[];
-        rows.push(...legacyBatch);
-        if (legacyBatch.length < CARD_BATCH_SIZE) break;
-        from += CARD_BATCH_SIZE;
-        continue;
-      }
-      throw error;
-    }
-
-    const batch = (data ?? []) as CardRow[];
-    rows.push(...batch);
-    if (batch.length < CARD_BATCH_SIZE) break;
-    from += CARD_BATCH_SIZE;
-  }
-
-  return rows;
 }
 
 async function fetchPairRowsForCards(
@@ -555,35 +178,36 @@ export async function GET(req: Request) {
   }
 
   const admin = createAdminClient();
-  let activeCards: CardRow[];
+  const nowMs = Date.now();
+  let ownRows: RecommendationCardRow[];
+  let candidateRows: RecommendationCardRow[];
+  let profiles: Awaited<ReturnType<typeof fetchRecommendationProfiles>>;
   try {
-    activeCards = await fetchAllActiveCards(admin);
+    ownRows = await fetchActiveRecommendationRows(admin, { userId: user.id });
+    // No application means no candidate scans, subscriptions, photos or block lookups.
+    if (ownRows.length === 0) return NextResponse.json({ items: [] });
+    const sexes = [...new Set(ownRows.map((row) => row.sex === "male" ? "female" as const : "male" as const))];
+    candidateRows = await fetchActiveRecommendationRows(admin, { sexes, excludeUserId: user.id });
+    profiles = await fetchRecommendationProfiles(admin, [user.id, ...candidateRows.map((row) => row.user_id)]);
   } catch (error) {
     console.error("[GET /api/dating/1on1/recommendations/my] cards failed", error);
-    return NextResponse.json({ error: "Failed to load active cards." }, { status: 500 });
+    return NextResponse.json({ error: "Failed to load eligible cards." }, { status: 500 });
   }
-
-  const plusByUserId = await getActiveOneOnOnePlusByUserIds(
-    admin,
-    activeCards.map((row) => row.user_id)
-  );
-  const normalizedCards = activeCards.map((row) => ({
-    ...toDatingOneOnOneCardDetail(row),
-    phone: row.phone ?? null,
-    priority_boost_expires_at: row.priority_boost_expires_at ?? null,
-    plus_expires_at: plusByUserId.get(row.user_id)?.expires_at ?? null,
-  }));
-  // Active rows are newest-first. Keep one current card per verified identity so
-  // profiles recreated under another account cannot fill the same candidate list.
-  const candidateUniverse = dedupeOneOnOneCardsByIdentity(normalizedCards);
-  const myCards = normalizedCards.filter((card) => card.user_id === user.id);
-  const mySourceCards = myCards.filter(
-    (card) => card.status === "submitted" || card.status === "reviewing" || card.status === "approved"
-  );
-
-  if (mySourceCards.length === 0) {
-    return NextResponse.json({ items: [] });
+  if (!profiles.has(user.id) || profiles.get(user.id)?.banned) {
+    return NextResponse.json({ error: "Account is not eligible for recommendations." }, { status: 403 });
   }
+  const normalize = (row: RecommendationCardRow): RecommendationCard => ({
+    ...row,
+    age: toDatingOneOnOneAge(row.birth_year),
+    phone: profiles.get(row.user_id)?.phone ?? row.phone,
+    last_active_at: row.recommendation_refresh_used_at ?? null,
+  });
+  const mySourceCards = ownRows.map(normalize);
+  // Preserve the full eligible opposite-sex pool, with only small ranking fields.
+  // Do not arbitrarily drop older profiles to make the query look faster.
+  const candidateUniverse = dedupeOneOnOneCardsByIdentity(candidateRows
+    .filter((row) => profiles.has(row.user_id) && !profiles.get(row.user_id)?.banned)
+    .map(normalize));
 
   const sourceCardIds = mySourceCards.map((card) => card.id);
   const adminRecommendationDate = getKstDateString();
@@ -605,14 +229,16 @@ export async function GET(req: Request) {
     refreshEventsByCardId.set(row.card_id, events);
   }
 
-  const allCandidateUserIds = normalizedCards.map((card) => card.user_id);
+  const allCandidateUserIds = [...new Set([user.id, ...candidateUniverse.map((card) => card.user_id)])];
+  const profilePhoneMap = new Map([...profiles].flatMap(([userId, profile]) => profile.phone ? [[userId, profile.phone] as const] : []));
+  let plusByUserId: Awaited<ReturnType<typeof getActiveOneOnOnePlusByUserIds>>;
+  let activityByUserId: Map<string, string>;
   let sourcePairRows: MatchPairRow[];
   let reversePairRows: MatchPairRow[];
   let phoneBlockMap: Awaited<ReturnType<typeof getOneOnOnePhoneBlockMapForUsers>>;
   let adminUserBlockPairSet: Awaited<ReturnType<typeof getOneOnOneAdminUserBlockPairSetForUsers>>;
   let contactBlockMap: Awaited<ReturnType<typeof getDatingContactBlockMapForUsers>>;
   let blockedUserIds: Awaited<ReturnType<typeof getDatingBlockedUserIds>>;
-  let profilePhoneMap: Awaited<ReturnType<typeof getDatingProfilePhoneMapForUsers>>;
   let permanentlyRejectedUserIds: Awaited<ReturnType<typeof fetchPermanentlyRejectedUserIds>>;
   try {
     [
@@ -622,21 +248,37 @@ export async function GET(req: Request) {
       adminUserBlockPairSet,
       contactBlockMap,
       blockedUserIds,
-      profilePhoneMap,
       permanentlyRejectedUserIds,
+      plusByUserId,
+      activityByUserId,
     ] = await Promise.all([
       fetchPairRowsForCards(admin, "source_card_id", sourceCardIds),
       fetchPairRowsForCards(admin, "candidate_card_id", sourceCardIds),
       getOneOnOnePhoneBlockMapForUsers(admin, allCandidateUserIds),
-      getOneOnOneAdminUserBlockPairSetForUsers(admin, allCandidateUserIds),
+      getOneOnOneAdminUserBlockPairSetForUsers(admin, [user.id]),
       getDatingContactBlockMapForUsers(admin, allCandidateUserIds),
       getDatingBlockedUserIds(admin, user.id),
-      getDatingProfilePhoneMapForUsers(admin, allCandidateUserIds),
       fetchPermanentlyRejectedUserIds(admin, user.id),
+      getActiveOneOnOnePlusByUserIds(admin, allCandidateUserIds),
+      fetchRecommendationActivity(admin, candidateUniverse.map((card) => card.user_id), nowMs).catch((error) => {
+        // Activity is a ranking hint, not an eligibility check. Keep recommendations
+        // available if this optional signal is unavailable; safety queries still fail closed.
+        console.warn("[GET /api/dating/1on1/recommendations/my] activity unavailable", error);
+        return new Map<string, string>();
+      }),
     ]);
   } catch (error) {
     console.error("[GET /api/dating/1on1/recommendations/my] recommendation context failed", error);
     return NextResponse.json({ error: "Failed to load recommendation context." }, { status: 500 });
+  }
+
+  for (const card of [...mySourceCards, ...candidateUniverse]) {
+    card.plus_expires_at = plusByUserId.get(card.user_id)?.expires_at ?? null;
+    const activity = activityByUserId.get(card.user_id);
+    const refreshMs = Date.parse(card.last_active_at ?? "");
+    if (activity && (!Number.isFinite(refreshMs) || refreshMs > nowMs || Date.parse(activity) > refreshMs)) {
+      card.last_active_at = activity;
+    }
   }
 
   const activePairMap = new Map<string, Set<string>>();
@@ -717,34 +359,36 @@ export async function GET(req: Request) {
       );
     });
 
-    const defaultSortedCandidates = sortCandidatesForSource(sourceCard, candidates, "default");
+    const defaultSortedCandidates = sortCandidatesForSource(sourceCard, candidates, `${adminRecommendationDate}:default`, nowMs);
     const defaultRecommendations = takeBalancedRecommendations(
       sourceCard,
       defaultSortedCandidates,
       RECOMMENDATION_LIMIT,
       handledPairIds,
-      `${sourceCard.id}:${adminRecommendationDate}:default`
+      nowMs
     );
+    const activeRefresh = getActiveRecommendationRefresh(sourceCard.recommendation_refresh_used_at, nowMs);
     const refreshExcludeIds = getRefreshExcludeIds(
       sourceCard,
       defaultRecommendations,
-      sourceCard.recommendation_refresh_used_at
+      activeRefresh
     );
     for (const handledId of handledPairIds) {
       refreshExcludeIds.add(handledId);
     }
-    const recommendations = sourceCard.recommendation_refresh_used_at
+    const recommendations = activeRefresh
       ? takeBalancedRecommendations(
           sourceCard,
           sortRefreshCandidatesForSource(
             sourceCard,
             candidates,
-            sourceCard.recommendation_refresh_used_at,
-            refreshExcludeIds
+            activeRefresh,
+            refreshExcludeIds,
+            nowMs
           ),
           RECOMMENDATION_LIMIT,
           refreshExcludeIds,
-          `${sourceCard.id}:${sourceCard.recommendation_refresh_used_at}:refresh`
+          nowMs
         )
       : defaultRecommendations;
     const sourcePlus = plusByUserId.get(sourceCard.user_id) ?? null;
@@ -760,11 +404,11 @@ export async function GET(req: Request) {
       sortCandidatesForSource(
         sourceCard,
         candidates.filter((candidate) => isCandidateInSourceAgeRange(sourceCard, candidate)),
-        `${adminRecommendationDate}:admin-extra`
+        `${adminRecommendationDate}:admin-extra`,
+        nowMs
       ),
       ONE_ON_ONE_FREE_EXTRA_CANDIDATES,
-      adminExcludeIds,
-      `${sourceCard.id}:${adminRecommendationDate}:admin-extra`
+      adminExcludeIds
     );
 
     return {
@@ -779,12 +423,28 @@ export async function GET(req: Request) {
       can_refresh: refreshAvailability.canRefreshNow,
       candidate_pool_count: candidates.length,
       plus: sourcePlus,
-      recommendations: recommendations.map(stripInternalPhone),
+      recommendations: recommendations,
       admin_recommendation_date: adminRecommendationDate,
-      admin_recommendations: adminRecommendations.map(stripInternalPhone),
+      admin_recommendations: adminRecommendations,
       admin_recommendation_limit: ONE_ON_ONE_FREE_EXTRA_CANDIDATES,
     };
   });
 
-  return NextResponse.json({ items });
+  try {
+    const details = await fetchRecommendationDetails(admin, items.flatMap((item) =>
+      [...item.recommendations, ...item.admin_recommendations].map((card) => card.id)));
+    const hydrate = (cards: RecommendationCard[]) => cards.flatMap((card) => {
+      const detail = details.get(card.id);
+      // Status is rechecked by the detail query; also drop identities/sex changed mid-request.
+      return detail && detail.user_id === card.user_id && detail.sex === card.sex ? [detail] : [];
+    });
+    return NextResponse.json({ items: items.map((item) => ({
+      ...item,
+      recommendations: hydrate(item.recommendations),
+      admin_recommendations: hydrate(item.admin_recommendations),
+    })) });
+  } catch (error) {
+    console.error("[GET /api/dating/1on1/recommendations/my] details failed", error);
+    return NextResponse.json({ error: "Failed to load recommendation details." }, { status: 500 });
+  }
 }

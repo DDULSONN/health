@@ -2,6 +2,8 @@ import type { createAdminClient } from "@/lib/supabase/server";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
+const PLUS_LOOKUP_BATCH_SIZE = 200;
+
 export const ONE_ON_ONE_PLUS_PRODUCT_TYPE = "one_on_one_plus_30d";
 export const ONE_ON_ONE_PLUS_PRICE_KRW = 30_000;
 export const ONE_ON_ONE_PLUS_DURATION_DAYS = 30;
@@ -86,18 +88,18 @@ export async function getActiveOneOnOnePlusByUserIds(admin: AdminClient, userIds
   const activeByUserId = new Map<string, OneOnOnePlusSubscription>();
   if (uniqueIds.length === 0) return activeByUserId;
 
-  for (let index = 0; index < uniqueIds.length; index += 500) {
+  for (let index = 0; index < uniqueIds.length; index += PLUS_LOOKUP_BATCH_SIZE) {
     const result = await admin
       .from("dating_1on1_plus_subscriptions")
       .select("user_id,starts_at,expires_at,contact_exchange_included,updated_at")
-      .in("user_id", uniqueIds.slice(index, index + 500))
+      .in("user_id", uniqueIds.slice(index, index + PLUS_LOOKUP_BATCH_SIZE))
       .gt("expires_at", new Date().toISOString());
     if (result.error) {
       if (isMissingContactExchangeColumn(result.error)) {
         const legacyResult = await admin
           .from("dating_1on1_plus_subscriptions")
           .select("user_id,starts_at,expires_at,updated_at")
-          .in("user_id", uniqueIds.slice(index, index + 500))
+          .in("user_id", uniqueIds.slice(index, index + PLUS_LOOKUP_BATCH_SIZE))
           .gt("expires_at", new Date().toISOString());
         if (legacyResult.error) {
           if (isMissingPlusSchema(legacyResult.error)) return new Map();
