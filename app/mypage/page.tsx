@@ -13,6 +13,7 @@ import { normalizeNickname, validateNickname } from "@/lib/nickname";
 import { pickLoveFortuneFaceAsset } from "@/lib/love-fortune-face-assets";
 import { PROVINCE_ORDER } from "@/lib/region-city";
 import { trackCheckoutStarted } from "@/lib/payment-analytics";
+import type { AdminTodayPaymentData } from "@/components/admin/AdminTodayPaymentSummary";
 import type {
   OneOnOneContactNudgePresetKey,
   OneOnOneContactNudgeSummary,
@@ -31,6 +32,8 @@ function MyPageWidgetSkeleton({ className = "h-40" }: { className?: string }) {
 const AdminCertReviewPanel = dynamic(() => import("@/components/AdminCertReviewPanel"), {
   loading: () => <MyPageWidgetSkeleton className="h-56" />,
 });
+
+const AdminTodayPaymentSummary = dynamic(() => import("@/components/admin/AdminTodayPaymentSummary"));
 
 const DatingPlusOffers = dynamic(() => import("@/components/dating/DatingPlusOffers"));
 const OneOnOneContactNudge = dynamic(() => import("@/components/dating/OneOnOneContactNudge"));
@@ -1501,6 +1504,7 @@ type AdminPaymentCenterOverview = {
     endAt: string;
     previousStartAt: string;
   };
+  today: AdminTodayPaymentData | null;
   summary: {
     applyCreditsPending: number;
     paidCardsPending: number;
@@ -2533,6 +2537,7 @@ export default function MyPage() {
           const body = (await res.json().catch(() => ({}))) as {
             ok?: boolean;
             period?: AdminPaymentCenterOverview["period"];
+            today?: AdminPaymentCenterOverview["today"];
             summary?: AdminPaymentCenterOverview["summary"];
             overview?: AdminPaymentCenterOverview["overview"];
             trackingAvailable?: boolean;
@@ -2549,6 +2554,7 @@ export default function MyPage() {
 
           setAdminPaymentCenter({
             period: body.period,
+            today: body.today ?? null,
             summary: body.summary,
             overview: body.overview,
             trackingAvailable: body.trackingAvailable === true,
@@ -11877,6 +11883,7 @@ export default function MyPage() {
 
             {adminPaymentCenter ? (
               <>
+                <AdminTodayPaymentSummary data={adminPaymentCenter.today} />
                 <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
                   {[
                     {

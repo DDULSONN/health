@@ -211,6 +211,19 @@ function buildPeriodSummary(orders: TossOrderRow[], startMs: number, endMs: numb
   };
 }
 
+function buildTodaySummary(orders: TossOrderRow[], nowMs: number) {
+  const date = kstDateKey(nowMs);
+  const startMs = Date.parse(`${date}T00:00:00+09:00`);
+  const summary = buildPeriodSummary(orders, startMs, nowMs);
+  return {
+    date,
+    startAt: new Date(startMs).toISOString(),
+    endAt: new Date(nowMs).toISOString(),
+    revenueKrw: summary.revenueKrw,
+    paidCount: summary.paidCount,
+  };
+}
+
 function buildProducts(
   orders: TossOrderRow[],
   events: FunnelEventRow[],
@@ -420,6 +433,9 @@ export async function GET(request: Request) {
         endAt: new Date(endMs).toISOString(),
         previousStartAt: new Date(previousStartMs).toISOString(),
       },
+      // The existing period query already covers today, including older orders
+      // approved today. No extra DB query or dependence on the selected period.
+      today: buildTodaySummary(orders, endMs),
       summary: {
         applyCreditsPending: applyCreditsPendingRes.count ?? 0,
         paidCardsPending: paidCardsPendingRes.count ?? 0,
