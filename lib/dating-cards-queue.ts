@@ -2,6 +2,11 @@ import { OPEN_CARD_EXPIRE_HOURS, getOpenCardEffectiveLimitBySex } from "@/lib/da
 import { createAdminClient } from "@/lib/supabase/server";
 
 type CardSex = "male" | "female";
+const OPEN_CARD_QUEUE_SYNC_LOCK_KEY = "open_card_queue_sync_lock";
+// Covers a worst-case batch of expirations/promotions while still recovering
+// automatically if a serverless invocation is interrupted.
+const OPEN_CARD_QUEUE_SYNC_LEASE_MS = 2 * 60 * 1000;
+const OPEN_CARD_QUEUE_SYNC_LOCK_EPOCH = "1970-01-01T00:00:00.000Z";
 
 function isMissingColumnError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
@@ -101,70 +106,45 @@ async function promoteOnePending(
   return pendingCard.id;
 }
 
-async function trimPublicOverflowBySex(
+async function tryAcquireOpenCardQueueSyncLease(
   adminClient: ReturnType<typeof createAdminClient>,
-  sex: CardSex
+  now = new Date()
 ) {
-  const slotLimit = await getOpenCardEffectiveLimitBySex(adminClient, sex);
+  const token = crypto.randomUUID();
+  const acquiredAt = now.toISOString();
+  const staleBefore = new Date(now.getTime() - OPEN_CARD_QUEUE_SYNC_LEASE_MS).toISOString();
+  const valueJson = {
+    token,
+    acquiredAt,
+    expiresAt: new Date(now.getTime() + OPEN_CARD_QUEUE_SYNC_LEASE_MS).toISOString(),
+  };
+  const attempt = () => adminClient
+    .from("site_settings")
+    .update({ value_json: valueJson, updated_at: acquiredAt })
+    .eq("key", OPEN_CARD_QUEUE_SYNC_LOCK_KEY)
+    .lt("updated_at", staleBefore)
+    .select("key")
+    .maybeSingle();
 
-  let { data, error } = await adminClient
-    .from("dating_cards")
-    .select("id, created_at")
-    .eq("sex", sex)
-    .eq("status", "public")
-    .gt("expires_at", new Date().toISOString())
-    .order("created_at", { ascending: false })
-    .order("id", { ascending: false })
-    .limit(500);
+  let lockRes = await attempt();
+  if (lockRes.error) throw lockRes.error;
+  if (lockRes.data) return true;
 
-  if (error && isMissingColumnError(error)) {
-    const legacy = await adminClient
-      .from("dating_cards")
-      .select("id, created_at")
-      .eq("sex", sex)
-      .eq("status", "public")
-      .order("created_at", { ascending: false })
-      .order("id", { ascending: false })
-      .limit(500);
-    data = legacy.data;
-    error = legacy.error;
+  const existingRes = await adminClient.from("site_settings")
+    .select("key").eq("key", OPEN_CARD_QUEUE_SYNC_LOCK_KEY).maybeSingle();
+  if (existingRes.error) throw existingRes.error;
+  if (!existingRes.data) {
+    const insertRes = await adminClient.from("site_settings").insert({
+      key: OPEN_CARD_QUEUE_SYNC_LOCK_KEY,
+      value_json: { initialized: true },
+      updated_at: OPEN_CARD_QUEUE_SYNC_LOCK_EPOCH,
+    });
+    if (insertRes.error && insertRes.error.code !== "23505") throw insertRes.error;
+    lockRes = await attempt();
+    if (lockRes.error) throw lockRes.error;
+    if (lockRes.data) return true;
   }
-
-  if (error) throw error;
-
-  const rows = Array.isArray(data) ? data : [];
-  if (rows.length <= slotLimit) return [];
-
-  const overflowIds = rows.slice(slotLimit).map((row) => row.id).filter(Boolean);
-  if (overflowIds.length === 0) return [];
-
-  let updateError: unknown = null;
-  for (let index = 0; index < overflowIds.length; index += 1) {
-    const updateRes = await adminClient
-      .from("dating_cards")
-      .update({
-        status: "pending",
-        published_at: null,
-        expires_at: null,
-        queue_priority_at: new Date(Date.now() + index).toISOString(),
-      })
-      .eq("id", overflowIds[index])
-      .eq("status", "public");
-
-    if (updateRes.error) {
-      updateError = updateRes.error;
-      break;
-    }
-  }
-
-  if (updateError && isMissingColumnError(updateError)) {
-    const fallbackRes = await adminClient.from("dating_cards").update({ status: "pending" }).in("id", overflowIds).eq("status", "public");
-    if (fallbackRes.error) throw fallbackRes.error;
-  } else if (updateError) {
-    throw updateError;
-  }
-
-  return overflowIds;
+  return false;
 }
 
 type ExpiringCardRow = {
@@ -298,6 +278,17 @@ export async function promotePendingCardsBySex(
 export async function syncOpenCardQueue(
   adminClient: ReturnType<typeof createAdminClient>
 ) {
+  const leaseAcquired = await tryAcquireOpenCardQueueSyncLease(adminClient);
+  if (!leaseAcquired) {
+    return {
+      skipped: true,
+      expiredIds: [] as string[],
+      requeuedIds: [] as string[],
+      trimmed: { male: [] as string[], female: [] as string[] },
+      promoted: { male: [] as string[], female: [] as string[] },
+    };
+  }
+
   let expiredIds: string[] = [];
   let requeuedIds: string[] = [];
 
@@ -310,18 +301,19 @@ export async function syncOpenCardQueue(
     requeuedIds = syncResult.requeuedIds;
   }
 
-  const trimmedMaleIds = await trimPublicOverflowBySex(adminClient, "male");
-  const trimmedFemaleIds = await trimPublicOverflowBySex(adminClient, "female");
-
   const male = await promotePendingCardsBySex(adminClient, "male");
   const female = await promotePendingCardsBySex(adminClient, "female");
 
   return {
+    skipped: false,
     expiredIds,
     requeuedIds,
     trimmed: {
-      male: trimmedMaleIds,
-      female: trimmedFemaleIds,
+      // Public cards keep their full 24-hour window. If an old deployment or
+      // an admin slot reduction left a temporary overflow, let it expire
+      // naturally and do not promote another card until the count is below the limit.
+      male: [] as string[],
+      female: [] as string[],
     },
     promoted: {
       male: male.promotedIds,
