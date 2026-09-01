@@ -10,6 +10,8 @@
     "check:image-proxy": "node scripts/check-no-direct-supabase-image-urls.mjs",
     "check:1on1-recommendations": "node scripts/check-dating-1on1-recommendations.cjs",
     "check:open-card-queue": "node scripts/check-dating-card-queue.cjs",
+    "check:open-card-activity": "node scripts/check-dating-open-card-activity.cjs",
+    "check:open-card-activity-route": "node scripts/check-dating-open-card-activity-route.cjs",
     "check:payment-today": "node scripts/check-payment-today.cjs",
     "backfill:dating-lite:dry": "node scripts/backfill-dating-lite.mjs --verbose",
     "backfill:dating-lite:apply": "node scripts/backfill-dating-lite.mjs --apply --concurrency=4",

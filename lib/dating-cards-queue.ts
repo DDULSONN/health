@@ -1,4 +1,5 @@
 import { OPEN_CARD_EXPIRE_HOURS, getOpenCardEffectiveLimitBySex } from "@/lib/dating-open";
+import { OPEN_CARD_DORMANT_QUEUE_PRIORITY_ISO } from "@/lib/dating-open-card-activity";
 import { createAdminClient } from "@/lib/supabase/server";
 
 type CardSex = "male" | "female";
@@ -53,14 +54,19 @@ async function promoteOnePending(
 ) {
   let { data: pendingCard, error: pendingError } = (await adminClient
     .from("dating_cards")
-    .select("id, created_at, queue_priority_at")
+    .select("id, created_at, queue_priority_at, inactivity_deferred_at")
     .eq("sex", sex)
     .eq("status", "pending")
     .order("queue_priority_at", { ascending: true })
     .order("created_at", { ascending: true })
     .limit(1)
     .maybeSingle()) as {
-      data: { id: string; created_at: string; queue_priority_at?: string | null } | null;
+      data: {
+        id: string;
+        created_at: string;
+        queue_priority_at?: string | null;
+        inactivity_deferred_at?: string | null;
+      } | null;
       error: { code?: string; message?: string } | null;
     };
 
@@ -73,7 +79,7 @@ async function promoteOnePending(
       .order("created_at", { ascending: true })
       .limit(1)
       .maybeSingle();
-    pendingCard = fallback.data ? { ...fallback.data, queue_priority_at: null } : null;
+    pendingCard = fallback.data ? { ...fallback.data, queue_priority_at: null, inactivity_deferred_at: undefined } : null;
     pendingError = fallback.error;
   }
 
@@ -84,7 +90,7 @@ async function promoteOnePending(
   const publishedAt = now.toISOString();
   const expiresAt = new Date(now.getTime() + OPEN_CARD_EXPIRE_HOURS * 60 * 60 * 1000).toISOString();
 
-  let updateRes = await adminClient
+  let updateQuery = adminClient
     .from("dating_cards")
     .update({
       status: "public",
@@ -94,16 +100,26 @@ async function promoteOnePending(
     .eq("id", pendingCard.id)
     .eq("status", "pending");
 
+  if (pendingCard.inactivity_deferred_at !== undefined) {
+    updateQuery = pendingCard.inactivity_deferred_at
+      ? updateQuery.eq("inactivity_deferred_at", pendingCard.inactivity_deferred_at)
+      : updateQuery.is("inactivity_deferred_at", null);
+  }
+
+  let updateRes = await updateQuery.select("id").maybeSingle();
+
   if (updateRes.error && isMissingColumnError(updateRes.error)) {
     updateRes = await adminClient
       .from("dating_cards")
       .update({ status: "public" })
       .eq("id", pendingCard.id)
-      .eq("status", "pending");
+      .eq("status", "pending")
+      .select("id")
+      .maybeSingle();
   }
 
   if (updateRes.error) throw updateRes.error;
-  return pendingCard.id;
+  return updateRes.data?.id ? pendingCard.id : null;
 }
 
 async function tryAcquireOpenCardQueueSyncLease(
@@ -151,19 +167,29 @@ type ExpiringCardRow = {
   id: string;
   sex: CardSex;
   auto_requeue_count?: number | null;
+  inactivity_deferred_at?: string | null;
 };
 
 async function fetchExpiringPublicCards(
   adminClient: ReturnType<typeof createAdminClient>
 ) {
-  const { data, error } = await adminClient
+  let { data, error } = await adminClient
     .from("dating_cards")
-    .select("id, sex, auto_requeue_count")
+    .select("id, sex, auto_requeue_count, inactivity_deferred_at")
     .eq("status", "public")
     .lte("expires_at", new Date().toISOString());
 
   if (error && isMissingColumnError(error)) {
-    return { rows: null as ExpiringCardRow[] | null, missingAutoRequeueColumn: true };
+    const legacy = await adminClient
+      .from("dating_cards")
+      .select("id, sex, auto_requeue_count")
+      .eq("status", "public")
+      .lte("expires_at", new Date().toISOString());
+    data = (legacy.data ?? []).map((row) => ({ ...row, inactivity_deferred_at: null }));
+    error = legacy.error;
+    if (error && isMissingColumnError(error)) {
+      return { rows: null as ExpiringCardRow[] | null, missingAutoRequeueColumn: true };
+    }
   }
   if (error) throw error;
 
@@ -238,6 +264,9 @@ async function requeueExpiredCards(
 
   const requeuedIds: string[] = [];
   for (const row of rows) {
+    const queuePriorityAt = row.inactivity_deferred_at
+      ? OPEN_CARD_DORMANT_QUEUE_PRIORITY_ISO
+      : new Date(Date.now() + requeuedIds.length).toISOString();
     const updateRes = await adminClient
       .from("dating_cards")
       .update({
@@ -245,7 +274,7 @@ async function requeueExpiredCards(
         published_at: null,
         expires_at: null,
         auto_requeue_count: Number(row.auto_requeue_count ?? 0) + 1,
-        queue_priority_at: new Date(Date.now() + requeuedIds.length).toISOString(),
+        queue_priority_at: queuePriorityAt,
       })
       .eq("id", row.id)
       .eq("status", "public");

@@ -66,6 +66,9 @@ async function reactivateOpenCard(cardId: string, userId: string) {
       expires_at: null,
       queue_priority_at: nowIso,
       auto_requeue_count: 0,
+      inactivity_notice_sent_at: null,
+      inactivity_notice_baseline_at: null,
+      inactivity_deferred_at: null,
     })
     .eq("id", cardId)
     .eq("owner_user_id", userId)
@@ -80,12 +83,29 @@ async function reactivateOpenCard(cardId: string, userId: string) {
         status: "pending",
         published_at: null,
         expires_at: null,
+        queue_priority_at: nowIso,
+        auto_requeue_count: 0,
       })
       .eq("id", cardId)
       .eq("owner_user_id", userId)
       .in("status", ["expired", "hidden"])
       .select("id,status")
       .maybeSingle();
+
+    if (updateRes.error && isMissingColumnError(updateRes.error)) {
+      updateRes = await adminClient
+        .from("dating_cards")
+        .update({
+          status: "pending",
+          published_at: null,
+          expires_at: null,
+        })
+        .eq("id", cardId)
+        .eq("owner_user_id", userId)
+        .in("status", ["expired", "hidden"])
+        .select("id,status")
+        .maybeSingle();
+    }
   }
 
   if (updateRes.error || !updateRes.data) {

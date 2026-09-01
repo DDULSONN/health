@@ -74,11 +74,24 @@ async function moveCardAhead(admin: AdminClient, cardId: string, sex: "male" | "
           ? afterMs - 1
           : Date.now();
 
-  const updateRes = await admin
+  let updateRes = await admin
     .from("dating_cards")
-    .update({ queue_priority_at: new Date(targetMs).toISOString() })
+    .update({
+      queue_priority_at: new Date(targetMs).toISOString(),
+      inactivity_notice_sent_at: null,
+      inactivity_notice_baseline_at: null,
+      inactivity_deferred_at: null,
+    })
     .eq("id", cardId)
     .eq("status", "pending");
+
+  if (updateRes.error && isMissingQueueFeatureError(updateRes.error)) {
+    updateRes = await admin
+      .from("dating_cards")
+      .update({ queue_priority_at: new Date(targetMs).toISOString() })
+      .eq("id", cardId)
+      .eq("status", "pending");
+  }
 
   if (updateRes.error) throw updateRes.error;
 

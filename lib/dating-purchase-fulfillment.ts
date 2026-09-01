@@ -1380,6 +1380,9 @@ export async function grantOpenCardRepost(admin: AdminClient, options: GrantOpen
       expires_at: null,
       queue_priority_at: nowIso,
       auto_requeue_count: 0,
+      inactivity_notice_sent_at: null,
+      inactivity_notice_baseline_at: null,
+      inactivity_deferred_at: null,
     })
     .eq("id", cardId)
     .eq("owner_user_id", options.userId)
@@ -1394,12 +1397,29 @@ export async function grantOpenCardRepost(admin: AdminClient, options: GrantOpen
         status: "pending",
         published_at: null,
         expires_at: null,
+        queue_priority_at: nowIso,
+        auto_requeue_count: 0,
       })
       .eq("id", cardId)
       .eq("owner_user_id", options.userId)
       .in("status", ["expired", "hidden"])
       .select("id,owner_user_id,status")
       .maybeSingle();
+
+    if (updateRes.error && isMissingColumnError(updateRes.error)) {
+      updateRes = await admin
+        .from("dating_cards")
+        .update({
+          status: "pending",
+          published_at: null,
+          expires_at: null,
+        })
+        .eq("id", cardId)
+        .eq("owner_user_id", options.userId)
+        .in("status", ["expired", "hidden"])
+        .select("id,owner_user_id,status")
+        .maybeSingle();
+    }
   }
 
   if (updateRes.error) {

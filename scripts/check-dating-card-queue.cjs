@@ -49,6 +49,7 @@ function mockDatabase(initial = {}, options = {}) {
         if (operator === "lt") return row[key] != null && row[key] < value;
         if (operator === "lte") return row[key] != null && row[key] <= value;
         if (operator === "gt") return row[key] != null && row[key] > value;
+        if (operator === "is") return value === null ? row[key] == null : row[key] === value;
         if (operator === "in") return value.includes(row[key]);
         throw new Error(`unsupported filter ${operator}`);
       });
@@ -82,6 +83,7 @@ function mockDatabase(initial = {}, options = {}) {
       lt(key, value) { query.filters.push(["lt", key, value]); return builder; },
       lte(key, value) { query.filters.push(["lte", key, value]); return builder; },
       gt(key, value) { query.filters.push(["gt", key, value]); return builder; },
+      is(key, value) { query.filters.push(["is", key, value]); return builder; },
       in(key, value) { query.filters.push(["in", key, value]); return builder; },
       order(key, options = {}) { query.orders.push([key, options.ascending !== false]); return builder; },
       limit(value) { query.limit = value; return builder; },
@@ -142,6 +144,24 @@ test("newly published cards receive a complete 24-hour window", async () => {
   assert.equal(published.status, "public");
   assert.ok(Date.parse(published.published_at) >= before);
   assert.equal(Date.parse(published.expires_at) - Date.parse(published.published_at), 24 * 60 * 60 * 1000);
+});
+
+test("an inactive deferred card keeps the final queue priority after its public window ends", async () => {
+  const db = mockDatabase({
+    site_settings: [lock()],
+    dating_cards: [card("1", {
+      status: "public",
+      expires_at: past,
+      published_at: past,
+      auto_requeue_count: 2,
+      inactivity_deferred_at: past,
+    })],
+  });
+  await loadQueue(0).syncOpenCardQueue(db);
+  const deferred = db.tables.dating_cards[0];
+  assert.equal(deferred.status, "pending");
+  assert.equal(deferred.queue_priority_at, "9999-12-31T23:59:59.999Z");
+  assert.equal(deferred.auto_requeue_count, 3);
 });
 
 test("a fresh lease fails closed without mutating cards and expires automatically", async () => {
