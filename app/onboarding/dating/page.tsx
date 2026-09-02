@@ -39,6 +39,7 @@ const PHOTO_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp"]);
 const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
 const MAX_ADULT_BIRTH_YEAR = Math.min(2010, new Date().getFullYear() - 18);
 const ONE_ON_ONE_CANDIDATES_HREF = "/community/dating/cards?tab=one_on_one&from=onboarding";
+const INSTANT_OPEN_CARD_HREF = "/dating/paid?apply=1&source=open_card";
 
 function normalizeInstagramId(value: string) {
   return value.trim().replace(/^@+/, "").replace(/\s+/g, "").slice(0, 30);
@@ -162,6 +163,7 @@ export default function DatingOnboardingPage() {
   const [progress, setProgress] = useState("");
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const [continueToInstantOpenCard, setContinueToInstantOpenCard] = useState(false);
 
   useEffect(() => {
     const urls = photos.map((file) => (file ? URL.createObjectURL(file) : null));
@@ -172,11 +174,16 @@ export default function DatingOnboardingPage() {
   useEffect(() => {
     let active = true;
     (async () => {
+      const wantsInstantOpenCard = new URLSearchParams(window.location.search).get("next") === "instant_open_card";
+      const onboardingPath = wantsInstantOpenCard
+        ? "/onboarding/dating?next=instant_open_card"
+        : "/onboarding/dating";
+      setContinueToInstantOpenCard(wantsInstantOpenCard);
       const {
         data: { user },
       } = await supabase.auth.getUser();
       if (!user) {
-        router.replace(`/login?redirect=${encodeURIComponent("/onboarding/dating")}`);
+        router.replace(`/login?redirect=${encodeURIComponent(onboardingPath)}`);
         return;
       }
 
@@ -196,11 +203,15 @@ export default function DatingOnboardingPage() {
         const profile = (await profileResponse.json().catch(() => ({}))) as { profile?: { nickname?: string | null } };
         if (!active) return;
         if (!one.phoneVerified) {
-          router.replace(`/phone-verification?next=${encodeURIComponent("/onboarding/dating")}`);
+          router.replace(`/phone-verification?next=${encodeURIComponent(onboardingPath)}`);
           return;
         }
 
         const hasActiveOpen = (open.items ?? []).some((item) => item.status === "pending" || item.status === "public");
+        if (wantsInstantOpenCard && hasActiveOpen) {
+          router.replace(INSTANT_OPEN_CARD_HREF);
+          return;
+        }
         const openAvailable = write.enabled !== false && !hasActiveOpen;
         const oneAvailable = one.canWrite === true;
         const profileNickname = normalizeNickname(String(profile.profile?.nickname ?? ""));
@@ -208,7 +219,10 @@ export default function DatingOnboardingPage() {
         setNickname(profileNickname || metadataNickname);
         setNicknameSaved(Boolean(profileNickname || metadataNickname));
         setAvailable({ open: openAvailable, oneOnOne: oneAvailable });
-        setTargets({ open: openAvailable, oneOnOne: oneAvailable });
+        setTargets({
+          open: openAvailable,
+          oneOnOne: wantsInstantOpenCard ? false : oneAvailable,
+        });
         setCompleted({ open: hasActiveOpen, oneOnOne: Boolean(one.activeRequestStatus) });
         setAvailabilityNote({
           open: hasActiveOpen ? "이미 등록된 오픈카드가 있어요." : write.enabled === false ? "현재 오픈카드 작성이 중단되어 있어요." : "",
@@ -470,7 +484,12 @@ export default function DatingOnboardingPage() {
 
       if (successes.length > 0) setInfo(`${successes.join(" · ")} 등록을 완료했습니다.`);
       if (failures.length > 0) setError(`${failures.join("\n")} 성공한 등록은 유지되며 실패한 항목만 다시 시도할 수 있어요.`);
-      if (successes.includes("1:1 신청서") && failures.length === 0) {
+      if (continueToInstantOpenCard && successes.includes("오픈카드") && failures.length === 0) {
+        setInfo("오픈카드 등록 완료! 결제 내용을 확인해 주세요.");
+        setProgress("결제 화면으로 이동 중");
+        await new Promise<void>((resolve) => window.setTimeout(resolve, 450));
+        router.replace(INSTANT_OPEN_CARD_HREF);
+      } else if (successes.includes("1:1 신청서") && failures.length === 0) {
         setInfo(`${successes.join(" · ")} 등록 완료! 지금 추천 후보를 확인할 수 있어요.`);
         setProgress("추천 후보 불러오는 중");
         await new Promise<void>((resolve) => window.setTimeout(resolve, 650));
@@ -492,16 +511,18 @@ export default function DatingOnboardingPage() {
     return <main className="mx-auto flex min-h-[70vh] max-w-lg items-center justify-center px-4"><p className="text-sm text-neutral-500">가입 정보를 확인하고 있어요...</p></main>;
   }
 
-  const nothingAvailable = !available.open && !available.oneOnOne;
+  const nothingAvailable = continueToInstantOpenCard
+    ? !available.open
+    : !available.open && !available.oneOnOne;
 
   return (
     <main className="min-h-screen bg-neutral-50 px-4 py-7 text-neutral-950">
       <div className="mx-auto max-w-xl">
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-bold text-rose-600">오픈카드 · 1:1 통합 작성</p>
-            <h1 className="mt-1 text-2xl font-black">한 번 작성하고 바로 시작해요</h1>
-            <p className="mt-2 text-sm leading-6 text-neutral-600">공통 정보는 한 번만 받고, 기존 오픈카드와 1:1 신청서에 맞게 나눠 등록합니다.</p>
+            <p className="text-xs font-bold text-rose-600">프로필 등록</p>
+            <h1 className="mt-1 text-2xl font-black">소개 프로필 작성</h1>
+            <p className="mt-2 text-sm leading-6 text-neutral-600">오픈카드와 1:1 매칭에 함께 사용할 정보를 입력해 주세요.</p>
           </div>
           <button type="button" onClick={() => router.replace("/community/dating/cards")} className="shrink-0 text-xs font-semibold text-neutral-500 underline underline-offset-4">나중에</button>
         </div>
@@ -511,7 +532,7 @@ export default function DatingOnboardingPage() {
             {(["open", "oneOnOne"] as TargetKey[]).map((key) => {
               const label = key === "open" ? "오픈카드" : "1:1 매칭";
               const done = completed[key];
-              const enabled = available[key] && !done;
+              const enabled = available[key] && !done && (!continueToInstantOpenCard || key === "open");
               const selected = targets[key] && enabled;
               return (
                 <button
@@ -531,27 +552,55 @@ export default function DatingOnboardingPage() {
 
         {nothingAvailable ? (
           <section className="mt-5 border border-neutral-200 bg-white p-5">
-            <p className="text-base font-bold">이미 준비가 끝났어요</p>
+            <p className="text-base font-bold">
+              {continueToInstantOpenCard && !completed.open ? "지금은 오픈카드를 등록할 수 없어요" : "이미 준비가 끝났어요"}
+            </p>
             <p className="mt-2 text-sm leading-6 text-neutral-600">
-              {completed.oneOnOne
+              {continueToInstantOpenCard && !completed.open
+                ? availabilityNote.open || "오픈카드 작성이 다시 열리면 대기 없이 등록도 이어서 이용할 수 있습니다."
+                : completed.oneOnOne
                 ? "작성한 1:1 프로필로 추천 후보를 바로 확인할 수 있습니다."
                 : "등록된 카드와 진행 상태는 마이페이지에서 확인할 수 있습니다."}
             </p>
             <Link
-              href={completed.oneOnOne ? ONE_ON_ONE_CANDIDATES_HREF : "/mypage?section=matching"}
+              href={continueToInstantOpenCard ? "/community/dating/cards" : completed.oneOnOne ? ONE_ON_ONE_CANDIDATES_HREF : "/mypage?section=matching"}
               className="mt-4 inline-flex h-11 items-center bg-neutral-950 px-4 text-sm font-bold text-white"
             >
-              {completed.oneOnOne ? "1:1 추천 후보 확인하기" : "마이페이지에서 확인"}
+              {continueToInstantOpenCard ? "오픈카드 홈으로" : completed.oneOnOne ? "1:1 추천 후보 확인하기" : "마이페이지에서 확인"}
             </Link>
           </section>
         ) : (
           <>
-            <nav className="mt-5 grid grid-cols-5 border-b border-neutral-200" aria-label="작성 단계">
-              {STEP_LABELS.map((label, index) => (
-                <button key={label} type="button" onClick={() => index <= step && setStep(index)} className={`h-12 border-b-2 text-[11px] font-bold ${index === step ? "border-rose-500 text-neutral-950" : index < step ? "border-transparent text-neutral-600" : "border-transparent text-neutral-300"}`}>
-                  <span className="block">{index + 1}</span>{label}
-                </button>
-              ))}
+            <nav className="mt-5 bg-white px-4 pt-4" aria-label="작성 단계">
+              <div className="flex items-center justify-between text-xs font-bold">
+                <span className="text-neutral-900">{step + 1}. {STEP_LABELS[step]}</span>
+                <span className="text-neutral-400">{step + 1} / {STEP_LABELS.length}</span>
+              </div>
+              <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-neutral-100" aria-hidden>
+                <div
+                  className="h-full rounded-full bg-rose-500 transition-[width] duration-300"
+                  style={{ width: `${((step + 1) / STEP_LABELS.length) * 100}%` }}
+                />
+              </div>
+              <div className="mt-2 grid grid-cols-5 gap-1 pb-3">
+                {STEP_LABELS.map((label, index) => (
+                  <button
+                    key={label}
+                    type="button"
+                    disabled={index > step}
+                    onClick={() => index <= step && setStep(index)}
+                    className={`min-h-8 truncate rounded-md px-1 text-[10px] font-bold ${
+                      index === step
+                        ? "bg-rose-50 text-rose-700"
+                        : index < step
+                          ? "text-neutral-600 hover:bg-neutral-50"
+                          : "text-neutral-300"
+                    } disabled:cursor-default`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
             </nav>
 
             <section className="bg-white px-4 py-5 sm:px-5">
@@ -578,11 +627,11 @@ export default function DatingOnboardingPage() {
 
               {step === 1 && (
                 <div>
-                  <StepHeading title="나를 보여주는 글" description="같은 문장을 각 서비스의 알맞은 위치에 나눠 담아요." />
+                  <StepHeading title="내 소개" description="상대가 나를 이해하고 대화를 시작하기 쉬운 내용을 적어 주세요." />
                   <div className="mt-5 space-y-4">
-                    {targets.oneOnOne && <TextArea value={introText} onChange={setIntroText} label="자기소개" placeholder="일상, 성격, 취미를 편하게 적어주세요." maxLength={2000} />}
-                    <TextArea value={strengthsText} onChange={setStrengthsText} label="내 강점" placeholder="나와 만나면 좋은 점을 적어주세요." maxLength={targets.open ? 150 : 1000} />
-                    <TextArea value={preferredPartnerText} onChange={setPreferredPartnerText} label="원하는 상대" placeholder="중요하게 생각하는 점을 적어주세요." maxLength={1000} />
+                    {targets.oneOnOne && <TextArea value={introText} onChange={setIntroText} label="요즘 나는 어떤 사람인가요?" placeholder="평소 일상, 주말에 하는 일, 좋아하는 것 등을 적어 주세요." maxLength={2000} />}
+                    <TextArea value={strengthsText} onChange={setStrengthsText} label="나와 만나면 어떤 점이 좋을까요?" placeholder="성격이나 관계에서의 장점을 구체적으로 적어 주세요." maxLength={targets.open ? 150 : 1000} />
+                    <TextArea value={preferredPartnerText} onChange={setPreferredPartnerText} label="어떤 사람을 만나고 싶나요?" placeholder="성격, 대화 방식, 함께 하고 싶은 일 등을 적어 주세요." maxLength={1000} />
                     {targets.open && <p className="text-xs leading-5 text-neutral-500">내 강점과 원하는 상대 내용은 오픈카드에도 공개됩니다.</p>}
                   </div>
                 </div>
@@ -699,7 +748,7 @@ export default function DatingOnboardingPage() {
                     {completed.oneOnOne ? "1:1 추천 후보 확인하기" : "오픈카드 홈으로"}
                   </button>
                 ) : (
-                  <button type="button" disabled={submitting} onClick={() => void submit()} className="h-12 bg-rose-500 px-5 text-sm font-bold text-white disabled:opacity-50">{submitting ? "등록 중..." : completed.open || completed.oneOnOne ? "남은 등록 다시 시도" : "연애 준비 시작하기"}</button>
+                  <button type="button" disabled={submitting} onClick={() => void submit()} className="h-12 bg-rose-500 px-5 text-sm font-bold text-white disabled:opacity-50">{submitting ? "등록 중..." : completed.open || completed.oneOnOne ? "남은 등록 다시 시도" : "선택한 프로필 등록하기"}</button>
                 )}
               </div>
             </section>

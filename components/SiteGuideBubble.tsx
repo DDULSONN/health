@@ -112,7 +112,7 @@ function buildSuggestions(input: {
         id: "pending-paid",
         title: "바로 공개하고 싶다면 대기 없이 등록할 수 있어요",
         body: "지금 공개 타이밍을 놓치고 싶지 않을 때만 선택하면 돼요.",
-        href: "/dating/paid",
+        href: "/dating/paid?apply=1&source=open_card",
         cta: "대기 없이 등록",
       }
     );
@@ -131,7 +131,7 @@ function buildSuggestions(input: {
         id: "public-card-reopen",
         title: "반응이 적었다면 다시 노출도 확인해보세요",
         body: "지원이 적게 들어온 카드는 마이페이지에서 재노출 안내가 뜰 수 있어요.",
-        href: "/dating/paid",
+        href: "/dating/paid?apply=1&source=open_card",
         cta: "노출 옵션 보기",
       }
     );

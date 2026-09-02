@@ -7848,6 +7848,11 @@ export default function MyPage() {
         });
   const normalizedAdminOneOnOneContactSearch = adminOneOnOneContactAppliedSearch.trim().toLowerCase();
   const filteredAdminOneOnOneContactRequests = adminOneOnOneContactRequests;
+  const primaryMyOpenCard =
+    myDatingCards.find((card) => card.status === "public") ??
+    myDatingCards.find((card) => card.status === "pending") ??
+    myDatingCards[0] ??
+    null;
   const hasActiveOpenCard = myDatingCards.some((card) => card.status === "pending" || card.status === "public");
   const swipeMatchConnections = datingConnections.filter((item) => item.role === "swipe_match");
   const visibleSwipeMatchCount = swipeMatchConnections.length;
@@ -8227,6 +8232,78 @@ export default function MyPage() {
 
         {showMatchingSection && (
         <>
+          <section className="mb-3 rounded-2xl border border-rose-100 bg-[#fffafb] p-4 shadow-[0_6px_20px_rgba(190,24,93,0.05)]">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div className="min-w-0">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="text-base font-bold text-neutral-950">내 오픈카드</h2>
+                  {matchingDataLoaded && primaryMyOpenCard ? (
+                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
+                      primaryMyOpenCard.status === "public"
+                        ? "bg-emerald-100 text-emerald-700"
+                        : primaryMyOpenCard.status === "pending"
+                          ? "bg-amber-100 text-amber-800"
+                          : "bg-neutral-100 text-neutral-600"
+                    }`}>
+                      {primaryMyOpenCard.status === "public"
+                        ? "공개 중"
+                        : primaryMyOpenCard.status === "pending"
+                          ? "대기 중"
+                          : primaryMyOpenCard.status === "expired"
+                            ? "공개 종료"
+                            : "숨김"}
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-1 text-xs leading-5 text-neutral-500">
+                  {!matchingDataLoaded
+                    ? "카드 상태를 확인하고 있어요."
+                    : primaryMyOpenCard?.status === "pending"
+                      ? `현재 공개를 기다리고 있어요.${typeof primaryMyOpenCard.queue_position === "number" && primaryMyOpenCard.queue_position > 0 ? ` 대기 ${primaryMyOpenCard.queue_position}번째예요.` : ""}`
+                      : primaryMyOpenCard?.status === "public"
+                        ? "현재 오픈카드에 들어온 지원을 확인할 수 있어요."
+                        : myDatingCards.length > 0
+                          ? "기존 카드 내용을 확인하거나 다시 등록할 수 있어요."
+                          : "오픈카드를 등록하면 지원을 받을 수 있어요."}
+                </p>
+              </div>
+              <div className="flex w-full flex-wrap gap-2 sm:w-auto sm:justify-end">
+                {matchingDataLoaded && myDatingCards.length > 0 ? (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => document.getElementById("my-open-card-status")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                      className="inline-flex min-h-[40px] flex-1 items-center justify-center rounded-lg border border-neutral-200 bg-white px-3.5 text-xs font-bold text-neutral-700 hover:bg-neutral-50 sm:flex-none"
+                    >
+                      카드 관리
+                    </button>
+                    <Link
+                      href="/dating/paid?apply=1&source=open_card"
+                      className="inline-flex min-h-[40px] flex-1 items-center justify-center rounded-lg bg-rose-600 px-3.5 text-xs font-bold text-white hover:bg-rose-700 sm:flex-none"
+                    >
+                      대기 없이 등록
+                    </Link>
+                  </>
+                ) : matchingDataLoaded ? (
+                  <Link
+                    href="/dating/card/new"
+                    className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg bg-rose-600 px-4 text-xs font-bold text-white hover:bg-rose-700 sm:w-auto"
+                  >
+                    오픈카드 등록하기
+                  </Link>
+                ) : (
+                  <span className="inline-flex min-h-[40px] w-full items-center justify-center rounded-lg bg-neutral-100 px-4 text-xs font-bold text-neutral-400 sm:w-auto">
+                    불러오는 중...
+                  </span>
+                )}
+              </div>
+            </div>
+            {matchingDataLoaded && myDatingCards.some((card) => card.status === "pending") ? (
+              <p className="mt-3 border-t border-rose-100 pt-3 text-[11px] leading-5 text-rose-700">
+                대기 없이 등록해도 현재 대기 중인 오픈카드는 삭제되거나 순번이 바뀌지 않습니다.
+              </p>
+            ) : null}
+          </section>
           <div id="matching-filter-panel" className="scroll-mt-24">
             <div className="flex items-end justify-between gap-3">
               <div>
@@ -10704,7 +10781,7 @@ export default function MyPage() {
         </p>
       </section>
 
-      <section className={`${matchingFilter === "all" ? "" : "hidden"} mb-5 rounded-2xl border border-neutral-200 bg-white p-5`}>
+      <section id="my-open-card-status" className={`${matchingFilter === "all" ? "" : "hidden"} scroll-mt-24 mb-5 rounded-2xl border border-neutral-200 bg-white p-5`}>
         <h2 className="text-lg font-bold text-neutral-900 mb-3">내 오픈카드 상태</h2>
         {myDatingCards.length === 0 ? (
           <p className="text-sm text-neutral-500">등록된 오픈카드가 없습니다.</p>
@@ -10717,9 +10794,9 @@ export default function MyPage() {
                 Boolean(card.expires_at) ||
                 Number(card.auto_requeue_count ?? 0) > 0;
               const canShowReopen =
-                ["pending", "hidden", "expired"].includes(card.status) &&
+                ["hidden", "expired"].includes(card.status) &&
                 hasPublishedBefore &&
-                (!hasActiveOpenCard || card.status === "pending");
+                !hasActiveOpenCard;
               const canReactivate =
                 (card.status === "hidden" || card.status === "expired") &&
                 !hasActiveOpenCard &&

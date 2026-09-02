@@ -61,7 +61,10 @@ function normalizeInstagramId(value: unknown) {
 }
 
 function json(status: number, payload: Record<string, unknown>) {
-  return NextResponse.json(payload, { status });
+  return NextResponse.json(payload, {
+    status,
+    headers: { "Cache-Control": "private, no-store, max-age=0" },
+  });
 }
 
 function isMissingColumnError(error: unknown): boolean {
@@ -102,12 +105,69 @@ export async function GET(req: Request) {
   }
 
   const { searchParams } = new URL(req.url);
+  const source = searchParams.get("source")?.trim() ?? "";
+  const adminClient = createAdminClient();
+
+  if (source === "open_card") {
+    const cardsRes = await adminClient
+      .from("dating_cards")
+      .select("id,sex,age,region,height_cm,job,training_years,strengths_text,ideal_type,instagram_id,photo_visibility,blur_thumb_path,photo_paths,status,created_at")
+      .eq("owner_user_id", user.id)
+      .in("status", ["pending", "public", "hidden", "expired"])
+      .order("created_at", { ascending: false })
+      .limit(10);
+
+    if (cardsRes.error) {
+      console.error(`[dating-paid-source] ${requestId} open card read error`, cardsRes.error);
+      return json(500, { ok: false, code: "SOURCE_READ_FAILED", requestId, message: "기존 오픈카드를 불러오지 못했습니다." });
+    }
+
+    const cards = cardsRes.data ?? [];
+    const sourceCard =
+      cards.find((card) => card.status === "pending") ??
+      cards.find((card) => card.status === "public") ??
+      cards[0] ??
+      null;
+
+    if (!sourceCard) {
+      return json(404, { ok: false, code: "SOURCE_NOT_FOUND", requestId, message: "복사할 오픈카드가 없습니다." });
+    }
+
+    const photoPaths = Array.isArray(sourceCard.photo_paths)
+      ? sourceCard.photo_paths.filter((path): path is string => typeof path === "string" && path.length > 0).slice(0, 2)
+      : [];
+
+    return json(200, {
+      ok: true,
+      requestId,
+      card: {
+        id: sourceCard.id,
+        sex: sourceCard.sex === "female" ? "female" : "male",
+        age: typeof sourceCard.age === "number" ? sourceCard.age : null,
+        region: typeof sourceCard.region === "string" ? sourceCard.region : null,
+        height_cm: typeof sourceCard.height_cm === "number" ? sourceCard.height_cm : null,
+        job: typeof sourceCard.job === "string" ? sourceCard.job : null,
+        training_years: typeof sourceCard.training_years === "number" ? sourceCard.training_years : null,
+        strengths_text: typeof sourceCard.strengths_text === "string" ? sourceCard.strengths_text : null,
+        ideal_type: typeof sourceCard.ideal_type === "string" ? sourceCard.ideal_type : null,
+        instagram_id: typeof sourceCard.instagram_id === "string" ? sourceCard.instagram_id : null,
+        photo_visibility: sourceCard.photo_visibility === "public" ? "public" : "blur",
+        blur_thumb_path: typeof sourceCard.blur_thumb_path === "string" ? sourceCard.blur_thumb_path : null,
+        photo_paths: photoPaths,
+        photo_preview_urls: photoPaths
+          .map((path) => buildSignedImageUrlAllowRaw("dating-card-photos", path))
+          .filter(Boolean),
+        status: ["pending", "public", "expired", "hidden"].includes(String(sourceCard.status ?? ""))
+          ? sourceCard.status
+          : "hidden",
+      },
+    });
+  }
+
   const id = searchParams.get("id")?.trim() ?? "";
   if (!id) {
     return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "id가 필요합니다." });
   }
-
-  const adminClient = createAdminClient();
   const rowRes = await adminClient
     .from("dating_paid_cards")
     .select("id,gender,age,region,height_cm,job,training_years,strengths_text,ideal_text,intro_text,instagram_id,photo_visibility,display_mode,blur_thumb_path,photo_paths,status,paid_at,expires_at")
@@ -219,6 +279,24 @@ export async function POST(req: Request) {
       return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: "사진 경로가 올바르지 않습니다." });
     }
 
+    if (displayMode === "instant_public") {
+      const sourceCardRes = await adminClient
+        .from("dating_cards")
+        .select("id")
+        .eq("owner_user_id", user.id)
+        .in("status", ["pending", "public", "hidden", "expired"])
+        .limit(1)
+        .maybeSingle();
+
+      if (sourceCardRes.error) {
+        console.error(`[dating-paid-create] ${requestId} source eligibility error`, sourceCardRes.error);
+        return json(500, { ok: false, code: "SOURCE_READ_FAILED", requestId, message: "오픈카드 등록 여부를 확인하지 못했습니다." });
+      }
+      if (!sourceCardRes.data) {
+        return json(400, { ok: false, code: "OPEN_CARD_REQUIRED", requestId, message: "오픈카드 등록 후 대기 없이 등록할 수 있습니다." });
+      }
+    }
+
     const profileRes = await adminClient
       .from("profiles")
       .select("nickname")
@@ -301,7 +379,7 @@ export async function POST(req: Request) {
         ok: false,
         code: "SCHEMA_MISMATCH",
         requestId,
-        message: "display_mode 컬럼이 없어 새치기(비고정) 모드를 저장할 수 없습니다. 마이그레이션을 먼저 적용해주세요.",
+        message: "display_mode 컬럼이 없어 대기 없이 등록 모드를 저장할 수 없습니다. 마이그레이션을 먼저 적용해주세요.",
       });
     }
 
@@ -368,6 +446,23 @@ export async function PATCH(req: Request) {
     }
 
     const adminClient = createAdminClient();
+    if (displayMode === "instant_public") {
+      const sourceCardRes = await adminClient
+        .from("dating_cards")
+        .select("id")
+        .eq("owner_user_id", user.id)
+        .in("status", ["pending", "public", "hidden", "expired"])
+        .limit(1)
+        .maybeSingle();
+
+      if (sourceCardRes.error) {
+        console.error(`[dating-paid-update] ${requestId} source eligibility error`, sourceCardRes.error);
+        return json(500, { ok: false, code: "SOURCE_READ_FAILED", requestId, message: "오픈카드 등록 여부를 확인하지 못했습니다." });
+      }
+      if (!sourceCardRes.data) {
+        return json(400, { ok: false, code: "OPEN_CARD_REQUIRED", requestId, message: "오픈카드 등록 후 대기 없이 등록할 수 있습니다." });
+      }
+    }
     const rowRes = await adminClient
       .from("dating_paid_cards")
     .select("id,status,expires_at")
@@ -467,7 +562,7 @@ export async function PATCH(req: Request) {
         ok: false,
         code: "SCHEMA_MISMATCH",
         requestId,
-        message: "display_mode 컬럼이 없어 새치기(비고정) 모드를 저장할 수 없습니다. 마이그레이션을 먼저 적용해주세요.",
+        message: "display_mode 컬럼이 없어 대기 없이 등록 모드를 저장할 수 없습니다. 마이그레이션을 먼저 적용해주세요.",
       });
     }
 

@@ -65,6 +65,24 @@ type EditablePaidCard = {
   expires_at?: string | null;
 };
 
+type SourceOpenCard = {
+  id: string;
+  sex: "male" | "female";
+  age: number | null;
+  region: string | null;
+  height_cm: number | null;
+  job: string | null;
+  training_years: number | null;
+  strengths_text: string | null;
+  ideal_type: string | null;
+  instagram_id: string | null;
+  photo_visibility: "blur" | "public";
+  blur_thumb_path: string | null;
+  photo_paths: string[];
+  photo_preview_urls?: string[];
+  status: "pending" | "public" | "expired" | "hidden";
+};
+
 function normalizeInstagramId(value: string) {
   return value.trim().replace(/^@+/, "").replace(/\s+/g, "").slice(0, 30);
 }
@@ -162,18 +180,10 @@ export default function DatingPaidPage() {
   const [existingPreviewUrls, setExistingPreviewUrls] = useState<string[]>([]);
   const [existingBlurThumbPath, setExistingBlurThumbPath] = useState("");
   const [editingPaidCardStatus, setEditingPaidCardStatus] = useState<"pending" | "approved" | "">("");
+  const [sourceOpenCard, setSourceOpenCard] = useState<SourceOpenCard | null>(null);
+  const [sourcePrefillLoading, setSourcePrefillLoading] = useState(false);
+  const [sourcePrefillMessage, setSourcePrefillMessage] = useState("");
   const [tick, setTick] = useState(0);
-
-  const openForm = () => {
-    setError("");
-    setFormStep(1);
-    setFormOpen(true);
-    if (typeof window !== "undefined") {
-      window.requestAnimationFrame(() => {
-        document.getElementById("paid-create-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
-      });
-    }
-  };
 
   const loadItems = async () => {
     setLoading(true);
@@ -226,10 +236,71 @@ export default function DatingPaidPage() {
     const params = new URLSearchParams(window.location.search);
     const nextId = params.get("editId") ?? "";
     const shouldOpenForm = params.get("apply") === "1" || params.get("apply") === "true";
+    const shouldReuseOpenCard = params.get("source") === "open_card";
     setEditId(nextId);
     if (shouldOpenForm) {
       setFormStep(1);
       setFormOpen(true);
+    }
+
+    if (!nextId && shouldOpenForm && shouldReuseOpenCard) {
+      setSourcePrefillLoading(true);
+      queueMicrotask(async () => {
+        try {
+          const res = await fetch("/api/dating/paid/create?source=open_card", { cache: "no-store" });
+          const body = (await res.json().catch(() => ({}))) as { card?: SourceOpenCard; code?: string; message?: string };
+          if (!res.ok || !body.card) {
+            if (res.status === 401 || body.code === "UNAUTHORIZED") {
+              const nextPath = "/onboarding/dating?next=instant_open_card";
+              window.location.href = `/login?redirect=${encodeURIComponent(nextPath)}`;
+              return;
+            }
+            if (res.status === 404 || body.code === "SOURCE_NOT_FOUND") {
+              window.location.href = "/onboarding/dating?next=instant_open_card";
+              return;
+            }
+            throw new Error(body.message ?? "기존 오픈카드를 불러오지 못했습니다.");
+          }
+          const sourceCard = body.card;
+
+          const rawPaths = Array.isArray(sourceCard.photo_paths)
+            ? sourceCard.photo_paths.filter((path): path is string => typeof path === "string" && path.length > 0).slice(0, 2)
+            : [];
+          const previewUrls = Array.isArray(sourceCard.photo_preview_urls)
+            ? sourceCard.photo_preview_urls.filter((url): url is string => typeof url === "string" && url.length > 0).slice(0, 2)
+            : [];
+          const normalizedInstagram = normalizeInstagramId(sourceCard.instagram_id ?? "");
+
+          setSourceOpenCard(sourceCard);
+          setGender(sourceCard.sex === "female" ? "F" : "M");
+          setAge(sourceCard.age != null ? String(sourceCard.age) : "");
+          setRegion(sourceCard.region ?? "");
+          setHeightCm(sourceCard.height_cm != null ? String(sourceCard.height_cm) : "");
+          setJob(sourceCard.job ?? "");
+          setTrainingYears(sourceCard.training_years != null ? String(sourceCard.training_years) : "");
+          setStrengthsText(sourceCard.strengths_text ?? "");
+          setIdealText(sourceCard.ideal_type ?? "");
+          setInstagramId(normalizedInstagram);
+          setPhotoVisibility(sourceCard.photo_visibility === "public" ? "public" : "blur");
+          setDisplayMode("instant_public");
+          setExistingRawPaths(rawPaths);
+          setExistingPreviewUrls(previewUrls);
+          setExistingBlurThumbPath(sourceCard.blur_thumb_path ?? "");
+          setFormStep(/^[A-Za-z0-9._]{1,30}$/.test(normalizedInstagram) && rawPaths.length === 2 ? 4 : 2);
+          setSourcePrefillMessage(
+            sourceCard.status === "pending"
+              ? "대기 중인 오픈카드는 그대로 두고, 같은 내용으로 즉시 공개 카드를 별도 등록합니다."
+              : "기존 오픈카드 내용으로 즉시 공개 카드를 별도 등록합니다."
+          );
+        } catch (prefillError) {
+          setDisplayMode("instant_public");
+          setSourcePrefillMessage(
+            prefillError instanceof Error ? prefillError.message : "기존 오픈카드를 불러오지 못했습니다."
+          );
+        } finally {
+          setSourcePrefillLoading(false);
+        }
+      });
     }
   }, []);
 
@@ -662,13 +733,12 @@ export default function DatingPaidPage() {
       <section className="rounded-2xl border border-rose-200 bg-gradient-to-br from-white via-rose-50/70 to-orange-50/70 p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
           <h1 className="text-xl font-bold text-neutral-900">{DATING_PAID_FIXED_BADGE_LABEL} 신청</h1>
-          <button
-            type="button"
-            onClick={openForm}
+          <Link
+            href="/dating/paid?apply=1&source=open_card"
             className="rounded-lg bg-rose-500 px-3 py-2 text-sm font-medium text-white hover:bg-rose-600"
           >
             신청하기
-          </button>
+          </Link>
         </div>
         <p className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
           <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
@@ -747,6 +817,21 @@ export default function DatingPaidPage() {
 
           <form onSubmit={handleSubmit} noValidate className="mt-5">
             {editLoading && <p className="mb-4 text-sm text-neutral-500">기존 카드 정보를 불러오는 중...</p>}
+            {sourcePrefillLoading ? (
+              <div className="mb-4 rounded-xl border border-rose-100 bg-rose-50 px-3 py-3">
+                <p className="text-sm font-bold text-rose-900">내 오픈카드 내용을 불러오는 중...</p>
+                <p className="mt-1 text-xs leading-5 text-rose-700">사진과 프로필을 다시 입력하지 않도록 준비하고 있어요.</p>
+              </div>
+            ) : sourcePrefillMessage ? (
+              <div className={`mb-4 rounded-xl border px-3 py-3 ${sourceOpenCard ? "border-emerald-200 bg-emerald-50" : "border-amber-200 bg-amber-50"}`}>
+                <p className={`text-sm font-bold ${sourceOpenCard ? "text-emerald-900" : "text-amber-900"}`}>
+                  {sourceOpenCard ? "기존 프로필을 불러왔어요" : "프로필을 확인해 주세요"}
+                </p>
+                <p className={`mt-1 text-xs leading-5 ${sourceOpenCard ? "text-emerald-800" : "text-amber-800"}`}>
+                  {sourcePrefillMessage}
+                </p>
+              </div>
+            ) : null}
 
             {formStep === 1 && (
               <div className="space-y-4">
@@ -781,11 +866,11 @@ export default function DatingPaidPage() {
                         displayMode === "instant_public" ? "border-emerald-600 bg-emerald-600 text-white" : "border-neutral-300 bg-white text-neutral-700"
                       }`}
                     >
-                      새치기(비고정)
+                      대기 없이 등록
                     </button>
                   </div>
                   <p className="mt-2 text-xs leading-5 text-neutral-500">
-                    {displayMode === "priority_24h" ? `${DATING_PAID_FIXED_LABEL}으로 노출됩니다.` : "상단 고정 없이 일반 카드 흐름으로 자연스럽게 노출됩니다."}
+                    {displayMode === "priority_24h" ? `${DATING_PAID_FIXED_LABEL}으로 노출됩니다.` : "기존 대기 카드는 유지하고 별도 카드가 바로 공개됩니다."}
                   </p>
                 </div>
 
@@ -886,7 +971,7 @@ export default function DatingPaidPage() {
                     <button type="button" onClick={() => moveToFormStep(1)} className="text-xs font-semibold text-rose-600">수정</button>
                   </div>
                   <p className="mt-2 text-sm leading-6 text-neutral-700">
-                    {gender === "M" ? "남자" : "여자"} · {displayMode === "priority_24h" ? DATING_PAID_FIXED_LABEL : "새치기(비고정)"}
+                    {gender === "M" ? "남자" : "여자"} · {displayMode === "priority_24h" ? DATING_PAID_FIXED_LABEL : "대기 없이 등록"}
                     <br />
                     {age || "나이 미입력"}세 · {region || "지역 미입력"} · {heightCm || "키 미입력"}{heightCm ? "cm" : ""}
                     <br />
@@ -951,11 +1036,11 @@ export default function DatingPaidPage() {
                 </button>
               )}
               {formStep < PAID_FORM_STEPS.length ? (
-                <button type="button" onClick={handleNextFormStep} disabled={editLoading} className="h-11 flex-1 rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white disabled:opacity-50">
+                <button type="button" onClick={handleNextFormStep} disabled={editLoading || sourcePrefillLoading} className="h-11 flex-1 rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white disabled:opacity-50">
                   다음
                 </button>
               ) : (
-                <button type="submit" disabled={submitting || editLoading} className="h-11 flex-1 rounded-xl bg-rose-500 px-4 text-sm font-semibold text-white hover:bg-rose-600 disabled:opacity-50">
+                <button type="submit" disabled={submitting || editLoading || sourcePrefillLoading} className="h-11 flex-1 rounded-xl bg-rose-500 px-4 text-sm font-semibold text-white hover:bg-rose-600 disabled:opacity-50">
                   {submitting && submitMode === "kakaopay" ? "처리 중..." : isEditMode ? "수정 저장" : "10,000원 결제하고 등록"}
                 </button>
               )}
@@ -1077,7 +1162,7 @@ function GenderSection({ title, items }: { title: string; items: PaidItem[] }) {
                       item.display_mode === "instant_public" ? "bg-emerald-100 text-emerald-700" : "bg-rose-100 text-rose-700"
                     }`}
                   >
-                    {item.display_mode === "instant_public" ? "새치기" : DATING_PAID_FIXED_SHORT_LABEL}
+                    {item.display_mode === "instant_public" ? "대기 없이 등록" : DATING_PAID_FIXED_SHORT_LABEL}
                   </span>
                 </div>
                 {item.expires_at ? (
