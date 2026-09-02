@@ -10620,19 +10620,27 @@ export default function MyPage() {
                           const card = match.counterparty_card;
                           if (!card) return null;
                           return (
-                            <div key={match.id} className="flex items-center justify-between gap-2 rounded-lg border border-neutral-200 bg-white px-3 py-2">
-                              <p className="text-xs text-neutral-700">
-                                {card.name} / {card.age ?? "-"}세 / {card.region}
-                              </p>
-                              <div className="flex shrink-0 items-center gap-2">
-                                <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${oneOnOneMatchStateColor[match.state]}`}>
-                                  {oneOnOneMatchStateText[match.state]}
-                                </span>
-                                <SmallDatingReportButton
-                                  disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}
-                                  onClick={() => void handleDatingUserReport("one_on_one_match", match.id, "지난 1:1 매칭 상대")}
-                                />
+                            <div key={match.id} className="rounded-lg border border-neutral-200 bg-white px-3 py-2">
+                              <div className="flex items-center justify-between gap-2">
+                                <p className="text-xs text-neutral-700">
+                                  {card.name} / {card.age ?? "-"}세 / {card.region}
+                                </p>
+                                <div className="flex shrink-0 items-center gap-2">
+                                  <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${oneOnOneMatchStateColor[match.state]}`}>
+                                    {oneOnOneMatchStateText[match.state]}
+                                  </span>
+                                  <SmallDatingReportButton
+                                    disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}
+                                    onClick={() => void handleDatingUserReport("one_on_one_match", match.id, "지난 1:1 매칭 상대")}
+                                  />
+                                </div>
                               </div>
+                              <OneOnOneContactNudge
+                                matchId={match.id}
+                                nudge={match.contact_nudge}
+                                processing={processingOneOnOneNudgeIds.includes(match.id)}
+                                onSend={(targetMatchId, presetKey) => void handleOneOnOneContactNudge(targetMatchId, presetKey)}
+                              />
                             </div>
                           );
                         })}

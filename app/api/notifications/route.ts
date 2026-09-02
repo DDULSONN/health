@@ -40,7 +40,7 @@ function getNotificationSourceKind(item: NotificationRow): "open" | "paid" {
 
 function getNotificationMetaText(
   item: NotificationRow,
-  key: "notification_title" | "notification_body" | "notification_route"
+  key: "notification_title" | "notification_body" | "notification_route" | "notification_type" | "sender_display_name"
 ): string {
   const value = item.meta_json?.[key];
   return typeof value === "string" ? value.trim() : "";
@@ -62,6 +62,22 @@ function buildNotificationPresentation(
   const preferCurrentApplicationState =
     appStatus === "canceled" ||
     (item.type === "dating_application_received" && (appStatus === "accepted" || appStatus === "rejected"));
+
+  const notificationType = getNotificationMetaText(item, "notification_type") || item.type;
+  if (notificationType === "dating_1on1_contact_nudge") {
+    const senderName = getNotificationMetaText(item, "sender_display_name") || actorNickname || "";
+    const senderSubject = senderName ? `${senderName}님이` : "1:1 상대가";
+    const message = metaBody || "연락처 교환 한마디를 보냈어요.";
+    const senderPrefix = senderName ? `${senderName}님:` : "";
+    const messageWithoutSender = senderPrefix && message.startsWith(senderPrefix)
+      ? message.slice(senderPrefix.length).trimStart()
+      : message;
+    return {
+      title: `${senderSubject} 1:1 한마디를 보냈어요`,
+      body: senderName ? `${senderName}님: ${messageWithoutSender}` : message,
+      link: metaRoute.startsWith("/") ? metaRoute : "/community/dating/cards?tab=one_on_one",
+    };
+  }
 
   if (metaTitle && metaBody && !preferCurrentApplicationState) {
     return {
