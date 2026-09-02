@@ -277,6 +277,10 @@ const HOME_FEATURE_TABS: Array<{ key: HomeFeatureTab; label: string; body: strin
   { key: "love_fortune", label: "연애운", body: "ADMIN" },
 ];
 
+function parseHomeFeatureTab(value: string | null): HomeFeatureTab | null {
+  return HOME_FEATURE_TABS.some((tab) => tab.key === value) ? (value as HomeFeatureTab) : null;
+}
+
 type OpenCardsSnapshot = {
   activeSex: "male" | "female";
   males: PublicCard[];
@@ -1713,6 +1717,7 @@ export default function OpenCardsPage() {
   const [homeFeatureTab, setHomeFeatureTab] = useState<HomeFeatureTab>("open_cards");
   const [arrivedFromDatingOnboarding, setArrivedFromDatingOnboarding] = useState(false);
   const [isAdminPreviewUser, setIsAdminPreviewUser] = useState(false);
+  const [adminPreviewResolved, setAdminPreviewResolved] = useState(false);
   const [oneOnOneHomeLoading, setOneOnOneHomeLoading] = useState(false);
   const [oneOnOneHomeError, setOneOnOneHomeError] = useState("");
   const [oneOnOneHome, setOneOnOneHome] = useState<OneOnOneHomeState | null>(null);
@@ -1730,8 +1735,9 @@ export default function OpenCardsPage() {
 
   useEffect(() => {
     const url = new URL(window.location.href);
-    if (url.searchParams.get("tab") === "one_on_one") {
-      setHomeFeatureTab("one_on_one");
+    const requestedTab = parseHomeFeatureTab(url.searchParams.get("tab"));
+    if (requestedTab) {
+      setHomeFeatureTab(requestedTab);
     }
     if (url.searchParams.get("from") === "onboarding") {
       setArrivedFromDatingOnboarding(true);
@@ -1796,6 +1802,9 @@ export default function OpenCardsPage() {
       })
       .catch(() => {
         if (!cancelled) setIsAdminPreviewUser(false);
+      })
+      .finally(() => {
+        if (!cancelled) setAdminPreviewResolved(true);
       });
 
     return () => {
@@ -1803,11 +1812,18 @@ export default function OpenCardsPage() {
     };
   }, []);
 
+  const handleHomeFeatureTabChange = useCallback((nextTab: HomeFeatureTab) => {
+    setHomeFeatureTab(nextTab);
+    const url = new URL(window.location.href);
+    url.searchParams.set("tab", nextTab);
+    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+  }, []);
+
   useEffect(() => {
-    if (!isAdminPreviewUser && homeFeatureTab === "love_fortune") {
-      setHomeFeatureTab("open_cards");
+    if (adminPreviewResolved && !isAdminPreviewUser && homeFeatureTab === "love_fortune") {
+      handleHomeFeatureTabChange("open_cards");
     }
-  }, [homeFeatureTab, isAdminPreviewUser]);
+  }, [adminPreviewResolved, handleHomeFeatureTabChange, homeFeatureTab, isAdminPreviewUser]);
 
   useEffect(() => {
     let cancelled = false;
@@ -2880,7 +2896,8 @@ export default function OpenCardsPage() {
               <button
                 key={tab.key}
                 type="button"
-                onClick={() => setHomeFeatureTab(tab.key)}
+                aria-pressed={active}
+                onClick={() => handleHomeFeatureTabChange(tab.key)}
                 className={`rounded-lg px-2 py-2.5 text-center transition ${
                   active
                     ? "bg-neutral-950 text-white"
@@ -3345,6 +3362,63 @@ export default function OpenCardsPage() {
         </div>
       ) : null}
 
+      {(showOpenCardSection || showOneOnOneSection) &&
+      (cardsAudience?.canSwitchSex === true || cardsAudience?.targetSex) ? (
+        <div
+          className={`mb-4 grid gap-2 rounded-[18px] border border-neutral-200/80 bg-white p-1.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)] ${
+            cardsAudience?.canSwitchSex === true ? "grid-cols-3" : "grid-cols-2"
+          }`}
+          aria-label="매칭 종류 선택"
+        >
+          {(cardsAudience?.canSwitchSex === true || cardsAudience?.targetSex === "female") ? (
+            <button
+              type="button"
+              aria-pressed={showOpenCardSection && activeSex === "female"}
+              onClick={() => {
+                handleHomeFeatureTabChange("open_cards");
+                if (activeSex !== "female") void handleOpenCardSexChange("female");
+              }}
+              className={`inline-flex min-h-[46px] items-center justify-center rounded-[14px] px-2 text-sm font-black transition ${
+                showOpenCardSection && activeSex === "female"
+                  ? "bg-rose-600 text-white shadow-[0_10px_20px_rgba(225,29,72,0.18)]"
+                  : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
+              }`}
+            >
+              {cardsAudience?.canSwitchSex === true ? "여자 카드" : "여자 카드 보기"}
+            </button>
+          ) : null}
+          {(cardsAudience?.canSwitchSex === true || cardsAudience?.targetSex === "male") ? (
+            <button
+              type="button"
+              aria-pressed={showOpenCardSection && activeSex === "male"}
+              onClick={() => {
+                handleHomeFeatureTabChange("open_cards");
+                if (activeSex !== "male") void handleOpenCardSexChange("male");
+              }}
+              className={`inline-flex min-h-[46px] items-center justify-center rounded-[14px] px-2 text-sm font-black transition ${
+                showOpenCardSection && activeSex === "male"
+                  ? "bg-slate-900 text-white shadow-[0_10px_20px_rgba(15,23,42,0.14)]"
+                  : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
+              }`}
+            >
+              {cardsAudience?.canSwitchSex === true ? "남자 카드" : "남자 카드 보기"}
+            </button>
+          ) : null}
+          <button
+            type="button"
+            aria-pressed={showOneOnOneSection}
+            onClick={() => handleHomeFeatureTabChange("one_on_one")}
+            className={`inline-flex min-h-[46px] items-center justify-center rounded-[14px] px-2 text-sm font-black transition ${
+              showOneOnOneSection
+                ? "bg-rose-600 text-white shadow-[0_10px_20px_rgba(225,29,72,0.18)]"
+                : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
+            }`}
+          >
+            1:1 매칭
+          </button>
+        </div>
+      ) : null}
+
       {showOneOnOneSection ? (
         <OneOnOneHomePanel
           arrivedFromOnboarding={arrivedFromDatingOnboarding}
@@ -3363,33 +3437,6 @@ export default function OpenCardsPage() {
           onAutoSelect={handleOneOnOneAutoSelect}
           onRefreshRecommendations={handleOneOnOneRecommendationRefresh}
         />
-      ) : null}
-
-      {showOpenCardSection && cardsAudience?.canSwitchSex === true ? (
-        <div className="mb-4 grid grid-cols-2 gap-2 rounded-[18px] border border-neutral-200/80 bg-white p-1.5 shadow-[0_8px_22px_rgba(15,23,42,0.04)]">
-          <button
-            type="button"
-            onClick={() => void handleOpenCardSexChange("female")}
-            className={`inline-flex min-h-[46px] items-center justify-center rounded-[14px] px-3 text-sm font-black transition ${
-              activeSex === "female"
-                ? "bg-rose-600 text-white shadow-[0_10px_20px_rgba(225,29,72,0.18)]"
-                : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
-            }`}
-          >
-            여자 카드 보기
-          </button>
-          <button
-            type="button"
-            onClick={() => void handleOpenCardSexChange("male")}
-            className={`inline-flex min-h-[46px] items-center justify-center rounded-[14px] px-3 text-sm font-black transition ${
-              activeSex === "male"
-                ? "bg-slate-900 text-white shadow-[0_10px_20px_rgba(15,23,42,0.14)]"
-                : "text-neutral-600 hover:bg-neutral-50 hover:text-neutral-900"
-            }`}
-          >
-            남자 카드 보기
-          </button>
-        </div>
       ) : null}
 
       {showOpenCardSection && cardsAudience?.status === "missing" ? (
