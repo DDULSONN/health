@@ -20,12 +20,15 @@ export default function OneOnOneContactNudge({ matchId, nudge, processing, onSen
   if (!nudge?.available) return null;
   const hasContent = Boolean(nudge.received_from_other || nudge.sent_by_me || nudge.can_send);
   if (!hasContent) return null;
+  const senderName = nudge.received_from_other?.sender_display_name?.trim() ?? "";
 
   return (
     <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
       {nudge.received_from_other ? (
         <div className="rounded-xl bg-white px-3 py-2.5">
-          <p className="text-[11px] font-black text-amber-800">상대가 보낸 한마디</p>
+          <p className="text-[11px] font-black text-amber-800">
+            {senderName ? `${senderName}님이 보낸 1:1 한마디` : "상대가 보낸 1:1 한마디"}
+          </p>
           <p className="mt-1 text-sm font-bold leading-6 text-neutral-900">“{nudge.received_from_other.message_text}”</p>
           <p className="mt-2 text-[11px] font-bold leading-5 text-rose-600">
             연락처 교환 후 잠수하거나 상대방에게 불쾌한 언행을 할 경우 제재 대상입니다.

@@ -77,6 +77,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const recipientUserId = isSource ? match.candidate_user_id : match.source_user_id;
+  const senderCardId = isSource ? match.source_card_id : match.candidate_card_id;
   try {
     const [memberBlocked, contactBlocked] = await Promise.all([
       hasDatingBlockBetween(admin, user.id, recipientUserId),
@@ -89,6 +90,21 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     console.error("[POST /api/dating/1on1/matches/[id]/nudge] block check failed", error);
     return NextResponse.json({ error: "안전 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });
   }
+
+  const senderCardRes = await admin
+    .from("dating_1on1_cards")
+    .select("name")
+    .eq("id", senderCardId)
+    .eq("user_id", user.id)
+    .maybeSingle();
+  if (senderCardRes.error) {
+    console.error("[POST /api/dating/1on1/matches/[id]/nudge] sender card load failed", senderCardRes.error);
+  }
+  const senderDisplayName = String(senderCardRes.data?.name ?? "")
+    .replace(/[\r\n]+/g, " ")
+    .trim()
+    .slice(0, 30);
+  const senderSubject = senderDisplayName ? `${senderDisplayName}님이` : "1:1 상대가";
 
   const nowIso = new Date().toISOString();
   const insert = await admin
@@ -121,16 +137,16 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "문구를 보내지 못했습니다." }, { status: 500 });
   }
 
-  const email = buildOneOnOneContactNudgeEmail(preset.message);
+  const email = buildOneOnOneContactNudgeEmail(preset.message, senderDisplayName);
   const [, emailSent] = await Promise.all([
     notifyDatingUser(admin, {
       userId: recipientUserId,
       actorId: user.id,
       type: "dating_1on1_contact_nudge",
-      title: "1:1 상대가 한마디를 보냈어요",
-      body: preset.message,
+      title: `${senderSubject} 1:1 한마디를 보냈어요`,
+      body: senderDisplayName ? `${senderDisplayName}님: ${preset.message}` : preset.message,
       route: "/community/dating/cards?tab=one_on_one",
-      meta: { match_id: match.id, preset_key: preset.key },
+      meta: { match_id: match.id, preset_key: preset.key, sender_display_name: senderDisplayName || null },
     }).catch((error) => {
       console.error("[POST /api/dating/1on1/matches/[id]/nudge] notification failed", error);
       return null;
@@ -147,5 +163,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     });
   }
 
-  return NextResponse.json({ ok: true, nudge: insert.data });
+  return NextResponse.json({
+    ok: true,
+    nudge: {
+      ...insert.data,
+      sender_display_name: senderDisplayName || null,
+    },
+  });
 }

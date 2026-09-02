@@ -4217,6 +4217,12 @@ function OneOnOneMatchActions({
           <p className="text-xs font-semibold text-emerald-700">
             번호 교환이 완료됐어요. 공개된 연락처는 안전하게 이용해주세요.
           </p>
+          <OneOnOneContactNudge
+            matchId={match.id}
+            nudge={match.contact_nudge}
+            processing={nudgeProcessing}
+            onSend={onContactNudge}
+          />
           {canCancelMatch ? (
             <div className="mt-2 flex flex-wrap gap-2">
               <button

@@ -10488,6 +10488,12 @@ export default function MyPage() {
                               <p className="mt-1 text-xs text-neutral-600">
                                 {card.height_cm}cm / {card.job} / {new Date(match.updated_at).toLocaleString("ko-KR")}
                               </p>
+                              <OneOnOneContactNudge
+                                matchId={match.id}
+                                nudge={match.contact_nudge}
+                                processing={processingOneOnOneNudgeIds.includes(match.id)}
+                                onSend={(targetMatchId, presetKey) => void handleOneOnOneContactNudge(targetMatchId, presetKey)}
+                              />
                               <div className="mt-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
                                 {(match.contact_exchange_status === "none" ||
                                   match.contact_exchange_status === "awaiting_applicant_payment" ||
@@ -10533,12 +10539,6 @@ export default function MyPage() {
                                           : plusContactExchangeIncluded ? "무료로 번호교환" : "연락처 교환 진행하기"}
                                       </button>
                                     </div>
-                                    <OneOnOneContactNudge
-                                      matchId={match.id}
-                                      nudge={match.contact_nudge}
-                                      processing={processingOneOnOneNudgeIds.includes(match.id)}
-                                      onSend={(targetMatchId, presetKey) => void handleOneOnOneContactNudge(targetMatchId, presetKey)}
-                                    />
                                   </>
                                 ) : null}
                                 {match.contact_exchange_status === "approved" ? (

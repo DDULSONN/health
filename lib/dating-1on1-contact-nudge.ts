@@ -25,6 +25,7 @@ export type OneOnOneContactNudgeItem = {
   preset_key: OneOnOneContactNudgePresetKey;
   message_text: string;
   created_at: string;
+  sender_display_name?: string | null;
 };
 
 export type OneOnOneContactNudgeSummary = {
@@ -40,13 +41,17 @@ export function getOneOnOneContactNudgeMessage(value: unknown) {
   return ONE_ON_ONE_CONTACT_NUDGE_PRESETS.find((preset) => preset.key === value) ?? null;
 }
 
-export function buildOneOnOneContactNudgeEmail(message: string) {
+export function buildOneOnOneContactNudgeEmail(message: string, senderDisplayName?: string | null) {
   const preset = ONE_ON_ONE_CONTACT_NUDGE_PRESETS.find((item) => item.message === message);
   const safeMessage = preset?.message ?? "연락처를 교환하고 싶다는 한마디가 도착했어요.";
+  const safeSenderName = typeof senderDisplayName === "string"
+    ? senderDisplayName.replace(/[\r\n]+/g, " ").trim().slice(0, 30)
+    : "";
+  const senderSubject = safeSenderName ? `${safeSenderName}님이` : "1:1 상대가";
   return {
-    subject: "[짐툴] 1:1 상대가 한마디를 보냈어요",
+    subject: `[짐툴] ${senderSubject} 한마디를 보냈어요`,
     text: [
-      "1:1 쌍방 매칭 상대가 연락처 교환 한마디를 보냈어요.",
+      `${senderSubject} 연락처 교환 한마디를 보냈어요.`,
       "",
       `“${safeMessage}”`,
       "",

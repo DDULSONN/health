@@ -197,6 +197,7 @@ export async function GET(req: Request) {
       const role = row.source_user_id === user.id ? "source" : "candidate";
       const counterpartyCardId = role === "source" ? row.candidate_card_id : row.source_card_id;
       const counterpartyUserId = role === "source" ? row.candidate_user_id : row.source_user_id;
+      const counterpartyCard = cardMap.get(counterpartyCardId) ?? null;
       const verifiedProfilePhone = profilePhoneMap.get(counterpartyUserId) ?? null;
       const legacyCardPhone = phoneMap.get(counterpartyCardId) ?? null;
       const counterpartyPhone =
@@ -212,7 +213,7 @@ export async function GET(req: Request) {
         role,
         source_card: cardMap.get(row.source_card_id) ?? null,
         candidate_card: cardMap.get(row.candidate_card_id) ?? null,
-        counterparty_card: cardMap.get(counterpartyCardId) ?? null,
+        counterparty_card: counterpartyCard,
         counterparty_phone: counterpartyPhone,
         contact_nudge: {
           available: nudgeSchemaAvailable,
@@ -230,6 +231,7 @@ export async function GET(req: Request) {
                 preset_key: receivedFromOther.preset_key,
                 message_text: receivedFromOther.message_text,
                 created_at: receivedFromOther.created_at,
+                sender_display_name: counterpartyCard?.name ?? null,
               }
             : null,
         },
