@@ -51,7 +51,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next({ request });
   }
 
-  const response = NextResponse.next({ request });
+  let response = NextResponse.next({ request });
+
+  const withSessionCookies = (nextResponse: NextResponse) => {
+    response.cookies.getAll().forEach((cookie) => {
+      nextResponse.cookies.set(cookie);
+    });
+    return nextResponse;
+  };
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL ?? "",
@@ -62,6 +69,12 @@ export async function middleware(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
+          // The refreshed session must be visible to Server Components and route
+          // handlers during this same request, not only on the browser's next request.
+          cookiesToSet.forEach(({ name, value }) => {
+            request.cookies.set(name, value);
+          });
+          response = NextResponse.next({ request });
           cookiesToSet.forEach(({ name, value, options }) => {
             response.cookies.set(name, value, options);
           });
@@ -107,17 +120,17 @@ export async function middleware(request: NextRequest) {
       console.error("[middleware] failed to check banned account", accountStateError);
     } else if (accountState?.is_banned) {
       if (isApiRoute) {
-        return NextResponse.json(
+        return withSessionCookies(NextResponse.json(
           {
             error: accountState.banned_reason?.trim() || "이 계정은 관리자에 의해 이용이 제한되었습니다.",
             error_code: "user_banned",
           },
           { status: 403 }
-        );
+        ));
       }
       const restrictedUrl = new URL("/mypage", request.url);
       restrictedUrl.searchParams.set("account", "restricted");
-      return NextResponse.redirect(restrictedUrl);
+      return withSessionCookies(NextResponse.redirect(restrictedUrl));
     }
   }
 
@@ -134,26 +147,26 @@ export async function middleware(request: NextRequest) {
 
   if ((isAdminProtectedPath || isProtected) && !user) {
     if (isAdminApiPath || isLegacyAdminApiPath) {
-      return NextResponse.json({ error: "Login is required." }, { status: 401 });
+      return withSessionCookies(NextResponse.json({ error: "Login is required." }, { status: 401 }));
     }
     const url = new URL("/login", request.url);
     const original = pathname + request.nextUrl.search;
     url.searchParams.set("next", original);
     url.searchParams.set("redirect", original);
-    return NextResponse.redirect(url);
+    return withSessionCookies(NextResponse.redirect(url));
   }
 
   if (isProtected && user && !confirmed && !isVerifyPage) {
     const url = new URL("/verify-email", request.url);
     url.searchParams.set("next", pathname + request.nextUrl.search);
-    return NextResponse.redirect(url);
+    return withSessionCookies(NextResponse.redirect(url));
   }
 
   if (isAdminProtectedPath && !isAdmin) {
     if (isApiRoute) {
-      return NextResponse.json({ error: "Admin only." }, { status: 403 });
+      return withSessionCookies(NextResponse.json({ error: "Admin only." }, { status: 403 }));
     }
-    return NextResponse.redirect(new URL("/", request.url));
+    return withSessionCookies(NextResponse.redirect(new URL("/", request.url)));
   }
 
   if (
@@ -167,25 +180,25 @@ export async function middleware(request: NextRequest) {
     const unlocked = await isAdminPanelUnlocked(user.id, request.cookies.get(getAdminPanelCookieName())?.value);
     if (!unlocked) {
       if (isApiRoute) {
-        return NextResponse.json(
+        return withSessionCookies(NextResponse.json(
           {
             error: "관리자 2차 확인이 필요합니다. 관리탭 상단의 '관리자 잠금 해제'를 눌러 비밀번호를 입력해주세요.",
             unlockUrl: "/admin/unlock",
           },
           { status: 423 }
-        );
+        ));
       }
       const url = new URL("/admin/unlock", request.url);
       url.searchParams.set("next", pathname + request.nextUrl.search);
-      return NextResponse.redirect(url);
+      return withSessionCookies(NextResponse.redirect(url));
     }
   }
 
   if (isBodyBattlePath && !isAdmin) {
     if (isApiRoute) {
-      return NextResponse.json({ ok: false, message: "Admin only." }, { status: 403 });
+      return withSessionCookies(NextResponse.json({ ok: false, message: "Admin only." }, { status: 403 }));
     }
-    return NextResponse.redirect(new URL("/", request.url));
+    return withSessionCookies(NextResponse.redirect(new URL("/", request.url)));
   }
 
   return response;

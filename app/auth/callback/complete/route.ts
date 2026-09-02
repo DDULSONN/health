@@ -38,6 +38,13 @@ function buildVerifyEmailRedirect(requestUrl: URL, next: string) {
   return NextResponse.redirect(verifyUrl);
 }
 
+function copyResponseCookies(source: NextResponse, target: NextResponse) {
+  source.cookies.getAll().forEach((cookie) => {
+    target.cookies.set(cookie);
+  });
+  return target;
+}
+
 async function claimReferralSafely(userId: string, rawCode: string | null) {
   const code = normalizeReferralCode(rawCode);
   if (!isValidReferralCode(code)) return;
@@ -108,7 +115,7 @@ export async function GET(request: NextRequest) {
 
   if (existingUser) {
     if (!isEmailConfirmed(existingUser)) {
-      return buildVerifyEmailRedirect(url, next);
+      return copyResponseCookies(response, buildVerifyEmailRedirect(url, next));
     }
 
     console.info("[auth/callback/complete] existing session found", {
@@ -130,11 +137,11 @@ export async function GET(request: NextRequest) {
         ...logContext,
         reason: error.message,
       });
-      return buildLoginRedirect(url, next, {
+      return copyResponseCookies(response, buildLoginRedirect(url, next, {
         error: "verify_otp_failed",
         errorCode: callbackErrorCode ?? "otp_verify_failed",
         errorDescription: callbackErrorDescription ?? error.message,
-      });
+      }));
     }
   } else if (callbackError || callbackErrorCode) {
     const reason = `${callbackError ?? "callback_error"}/${callbackErrorCode ?? ""}`;
@@ -142,11 +149,11 @@ export async function GET(request: NextRequest) {
       ...logContext,
       reason,
     });
-    return buildLoginRedirect(url, next, {
+    return copyResponseCookies(response, buildLoginRedirect(url, next, {
       error: callbackError ?? "access_denied",
       errorCode: callbackErrorCode,
       errorDescription: callbackErrorDescription,
-    });
+    }));
   } else if (code) {
     const { error } = await supabase.auth.exchangeCodeForSession(code);
     if (error) {
@@ -163,11 +170,11 @@ export async function GET(request: NextRequest) {
         ...logContext,
         reason: error.message,
       });
-      return buildLoginRedirect(url, next, {
+      return copyResponseCookies(response, buildLoginRedirect(url, next, {
         error: "exchange_failed",
         errorCode: isFlowStateError ? "flow_state_missing" : "oauth_code_exchange_failed",
         errorDescription: friendly,
-      });
+      }));
     }
   } else if (accessToken && refreshToken) {
     const { error } = await supabase.auth.setSession({
@@ -179,22 +186,22 @@ export async function GET(request: NextRequest) {
         ...logContext,
         reason: error.message,
       });
-      return buildLoginRedirect(url, next, {
+      return copyResponseCookies(response, buildLoginRedirect(url, next, {
         error: "set_session_failed",
         errorCode: "set_session_failed",
         errorDescription: error.message,
-      });
+      }));
     }
   } else {
     console.error("[auth/callback/complete] missing callback params", {
       ...logContext,
       reason: "No supported auth params",
     });
-    return buildLoginRedirect(url, next, {
+    return copyResponseCookies(response, buildLoginRedirect(url, next, {
       error: "missing_callback_params",
       errorCode: "missing_callback_params",
       errorDescription: "링크가 만료됐거나 잘못되었습니다.",
-    });
+    }));
   }
 
   const {
@@ -208,15 +215,15 @@ export async function GET(request: NextRequest) {
       ...logContext,
       reason,
     });
-    return buildLoginRedirect(url, next, {
+    return copyResponseCookies(response, buildLoginRedirect(url, next, {
       error: "session_verification_failed",
       errorCode: "session_verification_failed",
       errorDescription: reason,
-    });
+    }));
   }
 
   if (!isEmailConfirmed(user)) {
-    return buildVerifyEmailRedirect(url, next);
+    return copyResponseCookies(response, buildVerifyEmailRedirect(url, next));
   }
 
   console.info("[auth/callback/complete] success", {
