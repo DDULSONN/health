@@ -288,29 +288,46 @@ export async function GET(req: Request) {
       nowMs
     );
     const activeRefresh = getActiveRecommendationRefresh(sourceCard.recommendation_refresh_used_at, nowMs);
-    const refreshExcludeIds = getRefreshExcludeIds(
-      sourceCard,
-      defaultRecommendations,
-      activeRefresh
-    );
-    for (const handledId of handledPairIds) {
-      refreshExcludeIds.add(handledId);
+    const refreshSeeds = (refreshEventsByCardId.get(sourceCard.id) ?? [])
+      .map((value) => getActiveRecommendationRefresh(value, nowMs))
+      .filter((value): value is string => Boolean(value));
+    if (
+      activeRefresh &&
+      !refreshSeeds.some((value) => Math.abs(Date.parse(value) - Date.parse(activeRefresh)) <= 5_000)
+    ) {
+      // Compatibility for a card refreshed before the event table migration.
+      refreshSeeds.push(activeRefresh);
+      refreshSeeds.sort((a, b) => Date.parse(a) - Date.parse(b));
     }
-    const recommendations = activeRefresh
-      ? takeBalancedRecommendations(
+
+    let recommendations = defaultRecommendations;
+    const previouslyShownRecommendationIds = new Set(handledPairIds);
+    const allShownRecommendationIds = new Set(defaultRecommendations.map((candidate) => candidate.id));
+    for (const refreshSeed of refreshSeeds) {
+      const refreshExcludeIds = getRefreshExcludeIds(
+        sourceCard,
+        defaultRecommendations,
+        refreshSeed
+      );
+      for (const shownId of previouslyShownRecommendationIds) refreshExcludeIds.add(shownId);
+      recommendations = takeBalancedRecommendations(
+        sourceCard,
+        sortRefreshCandidatesForSource(
           sourceCard,
-          sortRefreshCandidatesForSource(
-            sourceCard,
-            candidates,
-            activeRefresh,
-            refreshExcludeIds,
-            nowMs
-          ),
-          RECOMMENDATION_LIMIT,
+          candidates,
+          refreshSeed,
           refreshExcludeIds,
           nowMs
-        )
-      : defaultRecommendations;
+        ),
+        RECOMMENDATION_LIMIT,
+        refreshExcludeIds,
+        nowMs
+      );
+      for (const candidate of recommendations) {
+        previouslyShownRecommendationIds.add(candidate.id);
+        allShownRecommendationIds.add(candidate.id);
+      }
+    }
     const sourcePlus = plusByUserId.get(sourceCard.user_id) ?? null;
     const refreshLimit = sourcePlus ? ONE_ON_ONE_PLUS_REFRESH_LIMIT : ONE_ON_ONE_FREE_REFRESH_LIMIT;
     const refreshAvailability = getRefreshAvailability(
@@ -318,8 +335,7 @@ export async function GET(req: Request) {
       sourceCard.recommendation_refresh_used_at,
       refreshLimit
     );
-    const recommendationIds = new Set(recommendations.map((candidate) => candidate.id));
-    const adminExcludeIds = new Set([...recommendationIds, ...handledPairIds]);
+    const adminExcludeIds = new Set([...allShownRecommendationIds, ...handledPairIds]);
     const adminRecommendations = takeRecommendations(
       sortCandidatesForSource(
         sourceCard,

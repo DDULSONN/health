@@ -1,4 +1,5 @@
 ﻿import { NextResponse } from "next/server";
+import { getOneOnOneContactNudgeSenderDisplayName } from "@/lib/dating-1on1-contact-nudge";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 
@@ -17,6 +18,24 @@ type NotificationRow = {
 type DatingCardApplicationState = {
   id: string;
   status: string | null;
+};
+
+type OneOnOneMatchIdentity = {
+  id: string;
+  source_card_id: string;
+  source_user_id: string;
+  candidate_card_id: string;
+  candidate_user_id: string;
+};
+
+type OneOnOneNudgeSender = {
+  match_id: string;
+  sender_user_id: string;
+};
+
+type OneOnOneCardIdentity = {
+  id: string;
+  name: string | null;
 };
 
 function getNotificationApplicationId(item: NotificationRow): string {
@@ -46,9 +65,41 @@ function getNotificationMetaText(
   return typeof value === "string" ? value.trim() : "";
 }
 
+function isOneOnOneContactNudge(item: NotificationRow): boolean {
+  return getNotificationMetaText(item, "notification_type") === "dating_1on1_contact_nudge" ||
+    item.type === "dating_1on1_contact_nudge";
+}
+
+function getNotificationMatchId(item: NotificationRow): string {
+  const value = item.meta_json?.match_id;
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function getOneOnOneNudgeSenderCardName(
+  item: NotificationRow,
+  matchMap: Map<string, OneOnOneMatchIdentity>,
+  nudgeSenderMap: Map<string, string>,
+  cardNameMap: Map<string, string>,
+): string {
+  const matchId = getNotificationMatchId(item);
+  const match = matchMap.get(matchId);
+  if (!match) return "";
+
+  let senderUserId = item.actor_id || nudgeSenderMap.get(matchId) || "";
+  if (!senderUserId) {
+    if (item.user_id === match.source_user_id) senderUserId = match.candidate_user_id;
+    if (item.user_id === match.candidate_user_id) senderUserId = match.source_user_id;
+  }
+
+  if (senderUserId === match.source_user_id) return cardNameMap.get(match.source_card_id) || "";
+  if (senderUserId === match.candidate_user_id) return cardNameMap.get(match.candidate_card_id) || "";
+  return "";
+}
+
 function buildNotificationPresentation(
   item: NotificationRow,
   actorNickname: string | null,
+  oneOnOneCardName: string | null = null,
   applicationState: DatingCardApplicationState | null = null,
   applicationMissing = false
 ): { title: string; body: string; link: string | null } {
@@ -65,13 +116,18 @@ function buildNotificationPresentation(
 
   const notificationType = getNotificationMetaText(item, "notification_type") || item.type;
   if (notificationType === "dating_1on1_contact_nudge") {
-    const senderName = getNotificationMetaText(item, "sender_display_name") || actorNickname || "";
+    const senderName = getOneOnOneContactNudgeSenderDisplayName({
+      storedSenderName: getNotificationMetaText(item, "sender_display_name"),
+      oneOnOneCardName,
+      actorNickname,
+    });
     const senderSubject = senderName ? `${senderName}님이` : "1:1 상대가";
     const message = metaBody || "연락처 교환 한마디를 보냈어요.";
-    const senderPrefix = senderName ? `${senderName}님:` : "";
-    const messageWithoutSender = senderPrefix && message.startsWith(senderPrefix)
-      ? message.slice(senderPrefix.length).trimStart()
-      : message;
+    const senderPrefixes = [senderName, getNotificationMetaText(item, "sender_display_name"), actorNickname]
+      .filter((value, index, values): value is string => Boolean(value) && values.indexOf(value) === index)
+      .map((value) => `${value}님:`);
+    const matchedPrefix = senderPrefixes.find((prefix) => message.startsWith(prefix)) ?? "";
+    const messageWithoutSender = matchedPrefix ? message.slice(matchedPrefix.length).trimStart() : message;
     return {
       title: `${senderSubject} 1:1 한마디를 보냈어요`,
       body: senderName ? `${senderName}님: ${messageWithoutSender}` : message,
@@ -202,10 +258,14 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 
-  const actorIds = [...new Set((data ?? []).map((item) => item.actor_id).filter(Boolean))] as string[];
-  const applicationNotifications = ((data ?? []) as NotificationRow[]).filter((item) =>
+  const notificationRows = (data ?? []) as NotificationRow[];
+  const actorIds = [...new Set(notificationRows.map((item) => item.actor_id).filter(Boolean))] as string[];
+  const applicationNotifications = notificationRows.filter((item) =>
     ["dating_application_received", "dating_application_accepted", "dating_application_rejected"].includes(item.type)
   );
+  const oneOnOneNudgeMatchIds = [
+    ...new Set(notificationRows.filter(isOneOnOneContactNudge).map(getNotificationMatchId).filter(Boolean)),
+  ];
   const openApplicationIds = [
     ...new Set(
       applicationNotifications
@@ -231,15 +291,30 @@ export async function GET(request: Request) {
   }
 
   const applicationStateMap = new Map<string, DatingCardApplicationState>();
+  const oneOnOneMatchMap = new Map<string, OneOnOneMatchIdentity>();
+  const oneOnOneNudgeSenderMap = new Map<string, string>();
+  const oneOnOneCardNameMap = new Map<string, string>();
   let applicationStateLookupSucceeded = true;
-  if (openApplicationIds.length > 0 || paidApplicationIds.length > 0) {
+  if (openApplicationIds.length > 0 || paidApplicationIds.length > 0 || oneOnOneNudgeMatchIds.length > 0) {
     const admin = createAdminClient();
-    const [openAppsResult, paidAppsResult] = await Promise.all([
+    const [openAppsResult, paidAppsResult, oneOnOneMatchesResult, oneOnOneNudgesResult] = await Promise.all([
       openApplicationIds.length > 0
         ? admin.from("dating_card_applications").select("id,status").in("id", openApplicationIds)
         : Promise.resolve({ data: [], error: null }),
       paidApplicationIds.length > 0
         ? admin.from("dating_paid_card_applications").select("id,status").in("id", paidApplicationIds)
+        : Promise.resolve({ data: [], error: null }),
+      oneOnOneNudgeMatchIds.length > 0
+        ? admin
+            .from("dating_1on1_match_proposals")
+            .select("id,source_card_id,source_user_id,candidate_card_id,candidate_user_id")
+            .in("id", oneOnOneNudgeMatchIds)
+        : Promise.resolve({ data: [], error: null }),
+      oneOnOneNudgeMatchIds.length > 0
+        ? admin
+            .from("dating_1on1_contact_nudges")
+            .select("match_id,sender_user_id")
+            .in("match_id", oneOnOneNudgeMatchIds)
         : Promise.resolve({ data: [], error: null }),
     ]);
 
@@ -254,6 +329,36 @@ export async function GET(request: Request) {
         paidError: paidAppsResult.error,
       });
     }
+
+    if (!oneOnOneMatchesResult.error) {
+      const matches = (oneOnOneMatchesResult.data ?? []) as OneOnOneMatchIdentity[];
+      for (const match of matches) oneOnOneMatchMap.set(match.id, match);
+
+      const cardIds = [
+        ...new Set(matches.flatMap((match) => [match.source_card_id, match.candidate_card_id]).filter(Boolean)),
+      ];
+      if (cardIds.length > 0) {
+        const cardsResult = await admin.from("dating_1on1_cards").select("id,name").in("id", cardIds);
+        if (!cardsResult.error) {
+          for (const card of (cardsResult.data ?? []) as OneOnOneCardIdentity[]) {
+            const name = String(card.name ?? "").replace(/[\r\n]+/g, " ").trim().slice(0, 30);
+            if (name) oneOnOneCardNameMap.set(card.id, name);
+          }
+        } else {
+          console.error("[GET /api/notifications] 1:1 card identity load failed", cardsResult.error);
+        }
+      }
+    } else {
+      console.error("[GET /api/notifications] 1:1 match identity load failed", oneOnOneMatchesResult.error);
+    }
+
+    if (!oneOnOneNudgesResult.error) {
+      for (const nudge of (oneOnOneNudgesResult.data ?? []) as OneOnOneNudgeSender[]) {
+        if (nudge.sender_user_id) oneOnOneNudgeSenderMap.set(nudge.match_id, nudge.sender_user_id);
+      }
+    } else {
+      console.error("[GET /api/notifications] 1:1 nudge sender load failed", oneOnOneNudgesResult.error);
+    }
   }
 
   const { count: unreadCountRaw } = await supabase
@@ -263,9 +368,16 @@ export async function GET(request: Request) {
     .eq("is_read", false);
 
   return NextResponse.json({
-    items: (data ?? []).map((item) => {
-      const actorNickname = item.actor_id ? profileMap.get(item.actor_id)?.nickname ?? null : null;
-      const notification = item as NotificationRow;
+    items: notificationRows.map((notification) => {
+      const actorNickname = notification.actor_id ? profileMap.get(notification.actor_id)?.nickname ?? null : null;
+      const oneOnOneSenderCardName = isOneOnOneContactNudge(notification)
+        ? getOneOnOneNudgeSenderCardName(
+            notification,
+            oneOnOneMatchMap,
+            oneOnOneNudgeSenderMap,
+            oneOnOneCardNameMap,
+          )
+        : "";
       const applicationId = getNotificationApplicationId(notification);
       const applicationState = applicationId
         ? applicationStateMap.get(applicationId) ?? null
@@ -273,12 +385,13 @@ export async function GET(request: Request) {
       const presentation = buildNotificationPresentation(
         notification,
         actorNickname,
+        oneOnOneSenderCardName || null,
         applicationState,
         Boolean(applicationId && applicationStateLookupSucceeded && !applicationState)
       );
       return {
-        ...item,
-        actor_profile: item.actor_id ? profileMap.get(item.actor_id) ?? null : null,
+        ...notification,
+        actor_profile: notification.actor_id ? profileMap.get(notification.actor_id) ?? null : null,
         title: presentation.title,
         body: presentation.body,
         link: presentation.link,

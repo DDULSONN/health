@@ -408,6 +408,44 @@ test("free/Plus refresh limits and legacy timestamps remain compatible", async (
   }
 });
 
+test("a second Plus refresh excludes both the default and first refreshed candidate lists", async () => {
+  const firstRefreshedAt = new Date(Date.now() - 60_000).toISOString();
+  const secondRefreshedAt = new Date(Date.now() - 30_000).toISOString();
+  const firstTables = fixture(40);
+  firstTables.dating_1on1_cards[0].recommendation_refresh_used_at = firstRefreshedAt;
+  firstTables.dating_1on1_recommendation_refresh_events = [
+    { card_id: "source", refreshed_at: firstRefreshedAt },
+  ];
+  const firstRecommendations = (await runApi(firstTables)).body.items[0].recommendations;
+
+  const secondTables = fixture(40);
+  secondTables.dating_1on1_cards[0].recommendation_refresh_used_at = secondRefreshedAt;
+  secondTables.dating_1on1_recommendation_refresh_events = [
+    { card_id: "source", refreshed_at: firstRefreshedAt },
+    { card_id: "source", refreshed_at: secondRefreshedAt },
+  ];
+  const secondRecommendations = (await runApi(secondTables)).body.items[0].recommendations;
+
+  assert.equal(firstRecommendations.length, 10);
+  assert.equal(secondRecommendations.length, 10);
+  assert.equal(secondRecommendations.some((candidate) => ids(firstRecommendations).includes(candidate.id)), false);
+});
+
+test("a second Plus refresh safely refills a genuinely small pool", async () => {
+  const firstRefreshedAt = new Date(Date.now() - 60_000).toISOString();
+  const secondRefreshedAt = new Date(Date.now() - 30_000).toISOString();
+  const tables = fixture(12);
+  tables.dating_1on1_cards[0].recommendation_refresh_used_at = secondRefreshedAt;
+  tables.dating_1on1_recommendation_refresh_events = [
+    { card_id: "source", refreshed_at: firstRefreshedAt },
+    { card_id: "source", refreshed_at: secondRefreshedAt },
+  ];
+  const recommendations = (await runApi(tables)).body.items[0].recommendations;
+
+  assert.equal(recommendations.length, 10);
+  assert.equal(new Set(ids(recommendations)).size, 10);
+});
+
 test("activity lookup skips already-found busy members without losing quieter members", async () => {
   const tables = fixture(2);
   tables.dating_1on1_match_proposals = Array.from({ length: 2000 }, (_, index) => pair({

@@ -36,6 +36,20 @@ export type OneOnOneContactNudgeSummary = {
   received_from_other: OneOnOneContactNudgeItem | null;
 };
 
+function normalizeOneOnOneSenderName(value: string | null | undefined) {
+  return typeof value === "string" ? value.replace(/[\r\n]+/g, " ").trim().slice(0, 30) : "";
+}
+
+export function getOneOnOneContactNudgeSenderDisplayName(options: {
+  storedSenderName?: string | null;
+  oneOnOneCardName?: string | null;
+  actorNickname?: string | null;
+}) {
+  return normalizeOneOnOneSenderName(options.storedSenderName) ||
+    normalizeOneOnOneSenderName(options.oneOnOneCardName) ||
+    normalizeOneOnOneSenderName(options.actorNickname);
+}
+
 export function getOneOnOneContactNudgeMessage(value: unknown) {
   if (typeof value !== "string") return null;
   return ONE_ON_ONE_CONTACT_NUDGE_PRESETS.find((preset) => preset.key === value) ?? null;
@@ -44,9 +58,7 @@ export function getOneOnOneContactNudgeMessage(value: unknown) {
 export function buildOneOnOneContactNudgeEmail(message: string, senderDisplayName?: string | null) {
   const preset = ONE_ON_ONE_CONTACT_NUDGE_PRESETS.find((item) => item.message === message);
   const safeMessage = preset?.message ?? "연락처를 교환하고 싶다는 한마디가 도착했어요.";
-  const safeSenderName = typeof senderDisplayName === "string"
-    ? senderDisplayName.replace(/[\r\n]+/g, " ").trim().slice(0, 30)
-    : "";
+  const safeSenderName = getOneOnOneContactNudgeSenderDisplayName({ storedSenderName: senderDisplayName });
   const senderSubject = safeSenderName ? `${safeSenderName}님이` : "1:1 상대가";
   return {
     subject: `[짐툴] ${senderSubject} 한마디를 보냈어요`,
