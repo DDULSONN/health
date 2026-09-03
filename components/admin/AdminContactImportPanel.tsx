@@ -227,7 +227,7 @@ export default function AdminContactImportPanel() {
         <p className="text-xs font-semibold text-neutral-800">사용 방법</p>
         {supported === true ? (
           <p className="mt-1 text-[11px] leading-5 text-neutral-600">
-            ‘휴대폰 연락처 선택’을 누르면 이 브라우저에서 연락처를 직접 고를 수 있습니다. 전체 연락처는 vCard 파일로 한 번에 불러올 수 있습니다.
+            전체 연락처는 파일 하나로 한 번에 차단할 수 있습니다. 브라우저 연락처 선택창은 일부 연락처만 직접 고를 때 사용하세요.
           </p>
         ) : supported === false ? (
           <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-900">
@@ -275,16 +275,6 @@ export default function AdminContactImportPanel() {
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        {supported === true && (
-          <button
-            type="button"
-            onClick={() => void handleImport()}
-            disabled={importing || clearing || loadingStatus || status.schemaMissing}
-            className="h-10 rounded-lg bg-violet-600 px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {importing ? "차단 반영 중..." : "휴대폰 연락처 선택"}
-          </button>
-        )}
         <input
           ref={vCardInputRef}
           type="file"
@@ -302,19 +292,33 @@ export default function AdminContactImportPanel() {
           onClick={() => vCardInputRef.current?.click()}
           disabled={supported === null || importing || clearing || loadingStatus || status.schemaMissing}
           className={`h-10 rounded-lg px-4 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
-            supported === true
-              ? "border border-violet-200 bg-white text-violet-800"
-              : "bg-violet-600 text-white"
+            isAndroid || supported !== true
+              ? "bg-violet-600 text-white"
+              : "border border-violet-200 bg-white text-violet-800"
           }`}
         >
           {importing
             ? "연락처 확인 중..."
             : isAndroid
-              ? "전체 연락처 파일 불러오기"
+              ? "전체 연락처 한 번에 차단"
               : isIOS
                 ? "아이폰 연락처 파일 선택"
                 : "vCard 파일 선택"}
         </button>
+        {supported === true && (
+          <button
+            type="button"
+            onClick={() => void handleImport()}
+            disabled={importing || clearing || loadingStatus || status.schemaMissing}
+            className={`h-10 rounded-lg px-4 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+              isAndroid
+                ? "border border-violet-200 bg-white text-violet-800"
+                : "bg-violet-600 text-white"
+            }`}
+          >
+            {importing ? "차단 반영 중..." : isAndroid ? "일부 연락처 직접 선택" : "휴대폰 연락처 선택"}
+          </button>
+        )}
         <button
           type="button"
           onClick={() => void loadStatus()}
@@ -332,6 +336,12 @@ export default function AdminContactImportPanel() {
           {clearing ? "해제 중..." : "번호 차단 전체 해제"}
         </button>
       </div>
+
+      {supported === true && isAndroid ? (
+        <p className="mt-2 text-[11px] leading-5 text-neutral-500">
+          브라우저의 연락처 선택창에는 보안상 전체 선택이 없습니다. 전체 차단은 위의 첫 번째 버튼을 이용해주세요.
+        </p>
+      ) : null}
 
       {formattedSyncDate ? <p className="mt-2 text-[11px] text-neutral-500">최근 반영: {formattedSyncDate}</p> : null}
       {message ? <p className="mt-2 text-xs font-medium text-emerald-700">{message}</p> : null}

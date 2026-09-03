@@ -507,6 +507,9 @@
   width: max-content;
   gap: 0.7rem;
   animation: reviewsDrift 34s linear infinite;
+  backface-visibility: hidden;
+  transform: translate3d(0, 0, 0);
+  will-change: transform;
 }
 
 .reviewSpacer {
@@ -656,10 +659,10 @@
 
 @keyframes reviewsDrift {
   from {
-    transform: translateX(0);
+    transform: translate3d(0, 0, 0);
   }
   to {
-    transform: translateX(calc(-50% - 0.35rem));
+    transform: translate3d(calc(-50% - 0.35rem), 0, 0);
   }
 }
 
@@ -759,6 +762,10 @@
     height: 8.7rem;
   }
 
+  .reviewTrack {
+    animation-duration: 30s;
+  }
+
   .reviewNote {
     font-size: 0.72rem;
   }
@@ -776,9 +783,12 @@
   .pulseRing,
   .heroDifference,
   .revealBlock,
-  .cardTrack,
-  .reviewTrack {
+  .cardTrack {
     animation: none;
+  }
+
+  .reviewTrack {
+    animation: reviewsDrift 68s linear infinite;
   }
 
   .heroDifference,
