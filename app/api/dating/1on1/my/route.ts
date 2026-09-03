@@ -547,15 +547,17 @@ export async function DELETE(req: Request) {
 
     const relatedMatchesRes = await admin
       .from("dating_1on1_match_proposals")
-      .select("id", { count: "exact", head: true })
+      .select("state")
       .or(`source_card_id.eq.${cardId},candidate_card_id.eq.${cardId}`);
     if (relatedMatchesRes.error) {
       console.error("[DELETE /api/dating/1on1/my] related matches lookup failed", relatedMatchesRes.error);
       return NextResponse.json({ error: "기존 1:1 매칭 기록을 확인하지 못했습니다." }, { status: 500 });
     }
-    if ((relatedMatchesRes.count ?? 0) > 0) {
+    const closedMatchStates = new Set(["source_skipped", "candidate_rejected", "source_declined", "admin_canceled"]);
+    const hasOpenRelatedMatch = (relatedMatchesRes.data ?? []).some((row) => !closedMatchStates.has(row.state));
+    if (hasOpenRelatedMatch) {
       return NextResponse.json(
-        { error: "기존 매칭이나 번호교환 기록이 있는 프로필은 내리기만 가능하며 완전히 삭제할 수 없습니다." },
+        { error: "진행 중인 매칭이나 번호교환이 있어 지금은 삭제할 수 없습니다. 매칭 종료 후 다시 시도해 주세요." },
         { status: 409 },
       );
     }

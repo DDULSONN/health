@@ -421,6 +421,17 @@ type MyPageTab = "my_cert" | "request_status" | "admin_review";
 type MyPageSectionTab = "profile" | "matching" | "reels_dating" | "payment" | "settings" | "admin";
 type MatchingFilter = "all" | "received" | "applied" | "one_on_one" | "quick";
 
+const MY_PAGE_SECTION_TABS = new Set<MyPageSectionTab>([
+  "profile",
+  "matching",
+  "reels_dating",
+  "payment",
+  "settings",
+  "admin",
+]);
+const MY_PAGE_MATCHING_FILTERS = new Set<MatchingFilter>(["all", "received", "applied", "one_on_one", "quick"]);
+const MY_PAGE_CERT_TABS = new Set<MyPageTab>(["my_cert", "request_status", "admin_review"]);
+
 type BodycheckPost = {
   id: string;
   title: string;
@@ -2174,6 +2185,7 @@ export default function MyPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState<MyPageTab>("my_cert");
   const [pageSectionTab, setPageSectionTab] = useState<MyPageSectionTab>("profile");
+  const [navigationStateReady, setNavigationStateReady] = useState(false);
   const [matchingDataLoaded, setMatchingDataLoaded] = useState(false);
   const [matchingDataLoading, setMatchingDataLoading] = useState(false);
   const [matchingDataError, setMatchingDataError] = useState("");
@@ -3593,30 +3605,71 @@ export default function MyPage() {
   }, [router]);
 
   useEffect(() => {
-    if (!isAdmin && activeTab === "admin_review") {
+    if (!loading && !isAdmin && activeTab === "admin_review") {
       setActiveTab("my_cert");
     }
-  }, [isAdmin, activeTab]);
+  }, [activeTab, isAdmin, loading]);
 
   useEffect(() => {
-    const section = new URLSearchParams(window.location.search).get("section");
-    if (
-      section === "matching" ||
-      section === "reels_dating" ||
-      section === "payment" ||
-      section === "profile" ||
-      section === "settings" ||
-      section === "admin"
-    ) {
-      setPageSectionTab(section);
-    }
+    const applyNavigationFromUrl = () => {
+      const params = new URLSearchParams(window.location.search);
+      const section = params.get("section");
+      const match = params.get("match");
+      const settings = params.get("settings");
+
+      setPageSectionTab(
+        section && MY_PAGE_SECTION_TABS.has(section as MyPageSectionTab)
+          ? (section as MyPageSectionTab)
+          : "profile",
+      );
+      setMatchingFilter(
+        match && MY_PAGE_MATCHING_FILTERS.has(match as MatchingFilter)
+          ? (match as MatchingFilter)
+          : "all",
+      );
+      setActiveTab(
+        settings && MY_PAGE_CERT_TABS.has(settings as MyPageTab)
+          ? (settings as MyPageTab)
+          : "my_cert",
+      );
+      setNavigationStateReady(true);
+    };
+
+    applyNavigationFromUrl();
+    window.addEventListener("popstate", applyNavigationFromUrl);
+    return () => window.removeEventListener("popstate", applyNavigationFromUrl);
   }, []);
 
   useEffect(() => {
-    if (!isAdmin && pageSectionTab === "admin") {
+    if (!navigationStateReady) return;
+
+    const url = new URL(window.location.href);
+    url.searchParams.set("section", pageSectionTab);
+
+    if (pageSectionTab === "matching" && matchingFilter !== "all") {
+      url.searchParams.set("match", matchingFilter);
+    } else {
+      url.searchParams.delete("match");
+    }
+
+    if (pageSectionTab === "settings" && activeTab !== "my_cert") {
+      url.searchParams.set("settings", activeTab);
+    } else {
+      url.searchParams.delete("settings");
+    }
+
+    const nextUrl = `${url.pathname}${url.search}${url.hash}`;
+    const currentUrl = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+    if (nextUrl !== currentUrl) {
+      window.history.replaceState(window.history.state, "", nextUrl);
+    }
+  }, [activeTab, matchingFilter, navigationStateReady, pageSectionTab]);
+
+  useEffect(() => {
+    if (!loading && !isAdmin && pageSectionTab === "admin") {
       setPageSectionTab("profile");
     }
-  }, [isAdmin, pageSectionTab]);
+  }, [isAdmin, loading, pageSectionTab]);
 
   useEffect(() => {
     if (
@@ -6499,7 +6552,7 @@ export default function MyPage() {
   const handleRemoveMyOneOnOneCard = async (cardId: string) => {
     const lockKey = `profile:${cardId}`;
     if (oneOnOneProfileMutationLocksRef.current.has(lockKey)) return;
-    if (!window.confirm("내린 1:1 프로필을 완전히 삭제할까요? 기존 매칭과 번호교환 기록은 유지됩니다.")) return;
+    if (!window.confirm("이 1:1 프로필을 삭제할까요? 내 프로필 목록에서는 사라지지만 기존 매칭, 결제 및 번호교환 기록은 유지됩니다.")) return;
     oneOnOneProfileMutationLocksRef.current.add(lockKey);
     setRemovingOneOnOneIds((prev) => [...prev, cardId]);
     try {
@@ -7931,6 +7984,14 @@ export default function MyPage() {
   const activeMyReelsDatingAccess = myReelsDatingAccess.filter(
     (item) => new Date(item.access_expires_at).getTime() > reelsAccessNow
   );
+  const myPageSectionTabs: Array<{ key: MyPageSectionTab; label: string }> = [
+    { key: "profile", label: "내 정보" },
+    { key: "matching", label: "매칭" },
+    ...(activeMyReelsDatingAccess.length > 0 ? [{ key: "reels_dating" as const, label: "릴스 매물" }] : []),
+    { key: "payment", label: "결제" },
+    { key: "settings", label: "설정" },
+    ...(isAdmin ? [{ key: "admin" as const, label: "관리" }] : []),
+  ];
 
   const showProfileSection = pageSectionTab === "profile";
   const showMatchingSection = pageSectionTab === "matching";
@@ -8028,23 +8089,23 @@ export default function MyPage() {
         </div>
       )}
 
-      <section className="mb-4 rounded-2xl border border-neutral-200/80 bg-white p-1.5 shadow-[0_10px_30px_rgba(17,24,39,0.04)]">
-        <div className="grid grid-cols-4 gap-1.5 sm:grid-cols-6 sm:gap-2">
-          {([
-            { key: "profile", label: "내 정보" },
-            { key: "matching", label: "매칭" },
-            ...(activeMyReelsDatingAccess.length > 0 ? [{ key: "reels_dating", label: "릴스 매물" }] : []),
-            { key: "payment", label: "결제" },
-            { key: "settings", label: "설정" },
-            ...(isAdmin ? [{ key: "admin", label: "관리" }] : []),
-          ] as Array<{ key: MyPageSectionTab; label: string }>).map((tab) => {
+      <section className="mb-4 overflow-x-auto rounded-2xl border border-neutral-200/80 bg-white p-1.5 shadow-[0_10px_30px_rgba(17,24,39,0.04)] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+        <div
+          role="tablist"
+          aria-label="마이페이지 메뉴"
+          className="grid min-w-full gap-1.5 sm:gap-2"
+          style={{ gridTemplateColumns: `repeat(${myPageSectionTabs.length}, minmax(64px, 1fr))` }}
+        >
+          {myPageSectionTabs.map((tab) => {
             const active = pageSectionTab === tab.key;
             return (
               <button
                 key={`mypage-section-${tab.key}`}
                 type="button"
+                role="tab"
+                aria-selected={active}
                 onClick={() => setPageSectionTab(tab.key)}
-                className={`min-h-[44px] min-w-0 rounded-xl px-2 text-sm font-semibold transition ${
+                className={`min-h-[44px] min-w-[64px] rounded-xl px-2 text-sm font-semibold transition ${
                   active ? "bg-neutral-950 text-white shadow-sm" : "bg-transparent text-neutral-500 hover:bg-neutral-50 hover:text-neutral-800"
                 }`}
               >
@@ -9906,6 +9967,9 @@ export default function MyPage() {
               const closedMatches = relatedMatches.filter((match) =>
                 ["source_skipped", "candidate_rejected", "source_declined", "admin_canceled"].includes(match.state)
               );
+              const hasOpenRelatedMatches = relatedMatches.some(
+                (match) => !["source_skipped", "candidate_rejected", "source_declined", "admin_canceled"].includes(match.state)
+              );
               const priorityBoostExpiresAtMs = item.plus_expires_at
                 ? new Date(item.plus_expires_at).getTime()
                 : Number.NaN;
@@ -9997,15 +10061,20 @@ export default function MyPage() {
                               : "프로필 내리기"}
                         </button>
                       ) : null}
-                      {isArchivedOneOnOneCard && relatedMatches.length === 0 ? (
+                      {isArchivedOneOnOneCard && !hasOpenRelatedMatches ? (
                         <button
                           type="button"
                           onClick={() => void handleRemoveMyOneOnOneCard(item.id)}
                           disabled={mutatingOneOnOneCard}
                           className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-md px-2 text-[11px] font-medium text-neutral-400 underline decoration-neutral-300 underline-offset-4 hover:text-red-600 active:scale-[0.98] disabled:opacity-50"
                         >
-                          {removingOneOnOneIds.includes(item.id) ? "삭제 중..." : "완전히 삭제"}
+                          {removingOneOnOneIds.includes(item.id) ? "삭제 중..." : "삭제"}
                         </button>
+                      ) : null}
+                      {isArchivedOneOnOneCard && hasOpenRelatedMatches ? (
+                        <span className="inline-flex min-h-[44px] items-center text-[11px] font-medium text-neutral-400">
+                          진행 중인 매칭 종료 후 삭제 가능
+                        </span>
                       ) : null}
                     </div>
                   </div>
@@ -16229,25 +16298,29 @@ export default function MyPage() {
       {showSettingsSection && (
       <>
       <section className="mb-5">
-        <div className="mb-3 flex flex-wrap gap-2">
+        <div role="tablist" aria-label="인증서 메뉴" className="mb-3 flex gap-1 overflow-x-auto rounded-xl bg-neutral-100 p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <button
             type="button"
+            role="tab"
+            aria-selected={activeTab === "my_cert"}
             onClick={() => setActiveTab("my_cert")}
-            className={`h-10 rounded-xl border px-4 text-sm font-medium ${
+            className={`h-10 shrink-0 rounded-lg px-4 text-sm font-semibold transition ${
               activeTab === "my_cert"
-                ? "border-emerald-600 bg-emerald-600 text-white"
-                : "border-neutral-300 bg-white text-neutral-700"
+                ? "bg-neutral-950 text-white shadow-sm"
+                : "text-neutral-500 hover:bg-white hover:text-neutral-800"
             }`}
           >
             내 인증서
           </button>
           <button
             type="button"
+            role="tab"
+            aria-selected={activeTab === "request_status"}
             onClick={() => setActiveTab("request_status")}
-            className={`h-10 rounded-xl border px-4 text-sm font-medium ${
+            className={`h-10 shrink-0 rounded-lg px-4 text-sm font-semibold transition ${
               activeTab === "request_status"
-                ? "border-emerald-600 bg-emerald-600 text-white"
-                : "border-neutral-300 bg-white text-neutral-700"
+                ? "bg-neutral-950 text-white shadow-sm"
+                : "text-neutral-500 hover:bg-white hover:text-neutral-800"
             }`}
           >
             요청 현황
@@ -16255,11 +16328,13 @@ export default function MyPage() {
           {isAdmin && (
             <button
               type="button"
+              role="tab"
+              aria-selected={activeTab === "admin_review"}
               onClick={() => setActiveTab("admin_review")}
-              className={`h-10 rounded-xl border px-4 text-sm font-medium ${
+              className={`h-10 shrink-0 rounded-lg px-4 text-sm font-semibold transition ${
                 activeTab === "admin_review"
-                  ? "border-neutral-900 bg-neutral-900 text-white"
-                  : "border-neutral-300 bg-white text-neutral-700"
+                  ? "bg-neutral-950 text-white shadow-sm"
+                  : "text-neutral-500 hover:bg-white hover:text-neutral-800"
               }`}
             >
               관리자 심사
