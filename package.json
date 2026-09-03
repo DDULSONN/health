@@ -10,6 +10,7 @@
     "check:image-proxy": "node scripts/check-no-direct-supabase-image-urls.mjs",
     "check:1on1-recommendations": "node scripts/check-dating-1on1-recommendations.cjs",
     "check:1on1-contact-nudge": "node scripts/check-dating-1on1-contact-nudge.cjs",
+    "check:1on1-sms-message": "node scripts/check-dating-1on1-sms-message.cjs",
     "check:open-card-queue": "node scripts/check-dating-card-queue.cjs",
     "check:open-card-activity": "node scripts/check-dating-open-card-activity.cjs",
     "check:open-card-activity-route": "node scripts/check-dating-open-card-activity-route.cjs",

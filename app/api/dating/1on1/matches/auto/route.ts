@@ -1,6 +1,7 @@
 import {
   DATING_ONE_ON_ONE_ACTIVE_STATUSES,
   DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES,
+  getDatingOneOnOneCardsByIds,
   isDatingOneOnOnePendingPairExpired,
 } from "@/lib/dating-1on1";
 import {
@@ -20,6 +21,10 @@ import { NextResponse } from "next/server";
 import { getCurrentOneOnOneCardIds } from "@/lib/dating-1on1-current-cards";
 import { fetchRecommendationProfiles } from "@/lib/dating-1on1-recommendation-data";
 import { fetchOneOnOnePairHistory } from "@/lib/dating-1on1-pair-history";
+import { buildOneOnOneSelectionReceivedNotification } from "@/lib/dating-email-templates";
+import { sendDatingEmailNotification } from "@/lib/dating-swipe";
+import { notifyDatingUser } from "@/lib/dating-notifications";
+import { sendOneOnOneSelectionSms } from "@/lib/dating-1on1-sms";
 
 type CreateAutoMatchPayload = {
   source_card_id?: string;
@@ -262,5 +267,46 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Failed to send automatic candidate request." }, { status: 500 });
   }
 
-  return NextResponse.json({ ok: true, id: insertRes.data?.id ?? null });
+  const matchId = insertRes.data?.id ?? null;
+  if (matchId) {
+    try {
+      const cards = await getDatingOneOnOneCardsByIds(admin, [sourceCardId, candidateCardId]);
+      const notification = buildOneOnOneSelectionReceivedNotification(
+        cards.get(sourceCardId)?.name ?? "상대",
+        cards.get(candidateCardId)?.name ?? "내 카드",
+      );
+      await Promise.all([
+        sendDatingEmailNotification(
+          admin,
+          candidateRes.data.user_id,
+          notification.emailSubject,
+          notification.emailText,
+        ),
+        notifyDatingUser(admin, {
+          userId: candidateRes.data.user_id,
+          actorId: sourceRes.data.user_id,
+          type: "dating_1on1_selection_received",
+          title: notification.pushTitle,
+          body: notification.pushBody,
+          route: "/dating/1on1",
+          meta: { match_id: matchId },
+        }),
+        sendOneOnOneSelectionSms(admin, {
+          matchId,
+          sourceUserId: sourceRes.data.user_id,
+          recipientUserId: candidateRes.data.user_id,
+        }),
+        admin
+          .from("dating_1on1_candidate_favorites")
+          .delete()
+          .eq("user_id", user.id)
+          .eq("source_card_id", sourceCardId)
+          .eq("candidate_card_id", candidateCardId),
+      ]);
+    } catch (notificationError) {
+      console.error("[POST /api/dating/1on1/matches/auto] selection notification failed", notificationError);
+    }
+  }
+
+  return NextResponse.json({ ok: true, id: matchId });
 }

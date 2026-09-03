@@ -48,6 +48,7 @@ import { getCurrentOneOnOneCardIds } from "@/lib/dating-1on1-current-cards";
 import { fetchOneOnOnePairHistory, type OneOnOnePairHistory } from "@/lib/dating-1on1-pair-history";
 
 const RECOMMENDATION_LIMIT = 10;
+const FAVORITE_TABLE = "dating_1on1_candidate_favorites";
 const RECOMMENDATION_REFRESH_COOLDOWN_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_PAIR_STATES = new Set(["proposed", "source_selected", "candidate_accepted", "mutual_accepted"]);
 const RECYCLABLE_PAIR_STATES = new Set(["source_skipped", "admin_canceled"]);
@@ -60,6 +61,11 @@ type RecommendationCard = RecommendationCardRow & {
 type RefreshEventRow = {
   card_id: string;
   refreshed_at: string;
+};
+type FavoriteRow = {
+  source_card_id: string;
+  candidate_card_id: string;
+  created_at: string;
 };
 
 function getRefreshAvailability(
@@ -99,6 +105,12 @@ function getRefreshAvailability(
 function isMissingRefreshEventSchema(error: unknown) {
   const message = String((error as { message?: unknown } | null)?.message ?? error ?? "").toLowerCase();
   return message.includes("dating_1on1_recommendation_refresh_events") || message.includes("schema cache");
+}
+
+function isMissingFavoriteSchema(error: unknown) {
+  const code = String((error as { code?: unknown } | null)?.code ?? "");
+  const message = String((error as { message?: unknown } | null)?.message ?? error ?? "").toLowerCase();
+  return code === "42P01" || code === "PGRST205" || message.includes(FAVORITE_TABLE) || message.includes("schema cache");
 }
 
 export async function GET(req: Request) {
@@ -160,6 +172,21 @@ export async function GET(req: Request) {
     const events = refreshEventsByCardId.get(row.card_id) ?? [];
     events.push(row.refreshed_at);
     refreshEventsByCardId.set(row.card_id, events);
+  }
+
+  const favoriteRowsRes = await admin
+    .from(FAVORITE_TABLE)
+    .select("source_card_id,candidate_card_id,created_at")
+    .eq("user_id", user.id)
+    .in("source_card_id", sourceCardIds)
+    .order("created_at", { ascending: false });
+  let favoriteRows: FavoriteRow[] = [];
+  if (favoriteRowsRes.error) {
+    if (!isMissingFavoriteSchema(favoriteRowsRes.error)) {
+      console.error("[GET /api/dating/1on1/recommendations/my] favorites failed", favoriteRowsRes.error);
+    }
+  } else {
+    favoriteRows = (favoriteRowsRes.data ?? []) as FavoriteRow[];
   }
 
   const allCandidateUserIds = [...new Set([user.id, ...candidateUniverse.map((card) => card.user_id)])];
@@ -279,7 +306,14 @@ export async function GET(req: Request) {
       );
     });
 
-    const defaultSortedCandidates = sortCandidatesForSource(sourceCard, candidates, `${adminRecommendationDate}:default`, nowMs);
+    const favoriteIds = new Set(
+      favoriteRows.filter((row) => row.source_card_id === sourceCard.id).map((row) => row.candidate_card_id),
+    );
+    const favoriteCandidates = favoriteRows
+      .filter((row) => row.source_card_id === sourceCard.id)
+      .flatMap((row) => candidates.find((candidate) => candidate.id === row.candidate_card_id) ?? []);
+    const unsavedCandidates = candidates.filter((candidate) => !favoriteIds.has(candidate.id));
+    const defaultSortedCandidates = sortCandidatesForSource(sourceCard, unsavedCandidates, `${adminRecommendationDate}:default`, nowMs);
     const defaultRecommendations = takeBalancedRecommendations(
       sourceCard,
       defaultSortedCandidates,
@@ -314,7 +348,7 @@ export async function GET(req: Request) {
         sourceCard,
         sortRefreshCandidatesForSource(
           sourceCard,
-          candidates,
+          unsavedCandidates,
           refreshSeed,
           refreshExcludeIds,
           nowMs
@@ -339,7 +373,7 @@ export async function GET(req: Request) {
     const adminRecommendations = takeRecommendations(
       sortCandidatesForSource(
         sourceCard,
-        candidates.filter((candidate) => isCandidateInSourceAgeRange(sourceCard, candidate)),
+        unsavedCandidates.filter((candidate) => isCandidateInSourceAgeRange(sourceCard, candidate)),
         `${adminRecommendationDate}:admin-extra`,
         nowMs
       ),
@@ -359,6 +393,7 @@ export async function GET(req: Request) {
       can_refresh: refreshAvailability.canRefreshNow,
       candidate_pool_count: candidates.length,
       plus: sourcePlus,
+      favorite_candidates: favoriteCandidates,
       recommendations: recommendations,
       admin_recommendation_date: adminRecommendationDate,
       admin_recommendations: adminRecommendations,
@@ -375,7 +410,7 @@ export async function GET(req: Request) {
     while (true) {
       const pending = [...new Map([
         ...mySourceCards,
-        ...items.flatMap((item) => [...item.recommendations, ...item.admin_recommendations]),
+        ...items.flatMap((item) => [...item.favorite_candidates, ...item.recommendations, ...item.admin_recommendations]),
       ].filter((card) => !checkedCardIds.has(card.id)).map((card) => [card.id, card])).values()];
       if (pending.length === 0) break;
       const currentIds = await getCurrentOneOnOneCardIds(admin, pending, profiles);
@@ -387,7 +422,7 @@ export async function GET(req: Request) {
       items = buildItems();
     }
     const details = await fetchRecommendationDetails(admin, items.flatMap((item) =>
-      [...item.recommendations, ...item.admin_recommendations].map((card) => card.id)));
+      [...item.favorite_candidates, ...item.recommendations, ...item.admin_recommendations].map((card) => card.id)));
     const hydrate = (cards: RecommendationCard[]) => cards.flatMap((card) => {
       const detail = details.get(card.id);
       // Status is rechecked by the detail query; also drop identities/sex changed mid-request.
@@ -395,6 +430,7 @@ export async function GET(req: Request) {
     });
     return NextResponse.json({ items: items.map((item) => ({
       ...item,
+      favorite_candidates: hydrate(item.favorite_candidates),
       recommendations: hydrate(item.recommendations),
       admin_recommendations: hydrate(item.admin_recommendations),
     })) });

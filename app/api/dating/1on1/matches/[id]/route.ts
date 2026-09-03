@@ -13,6 +13,7 @@ import { hasDatingContactPhoneBlockBetween } from "@/lib/dating-contact-blocks";
 import { notifyDatingUser } from "@/lib/dating-notifications";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { sendDatingEmailNotification } from "@/lib/dating-swipe";
+import { sendOneOnOneSelectionSms } from "@/lib/dating-1on1-sms";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
@@ -173,6 +174,11 @@ export async function POST(
 
       await Promise.all([
         sendOneOnOneReminderEmail(admin, row.candidate_user_id, () => notification),
+        sendOneOnOneSelectionSms(admin, {
+          matchId,
+          sourceUserId: row.source_user_id,
+          recipientUserId: row.candidate_user_id,
+        }),
         notifyDatingUser(admin, {
           userId: row.candidate_user_id,
           actorId: row.source_user_id,

@@ -56,6 +56,7 @@ function mockDatabase(tables, intercept) {
         maybeSingle() { query.single = true; return builder; },
         insert(values) { query.insert = Array.isArray(values) ? values : [values]; return builder; },
         update(values) { query.update = values; return builder; },
+        delete() { query.delete = true; return builder; },
         then(resolve, reject) {
           return Promise.resolve().then(() => {
             calls.push(structuredClone(query));
@@ -104,6 +105,10 @@ function mockDatabase(tables, intercept) {
             });
             rows = rows.slice(query.from, query.to + 1);
             if (query.update) rows.forEach((row) => Object.assign(row, query.update));
+            if (query.delete) {
+              const deletedIds = new Set(rows.map((row) => row.id));
+              tables[table] = (tables[table] ?? []).filter((row) => !deletedIds.has(row.id));
+            }
             if (query.fields !== "*") {
               rows = rows.map((row) => Object.fromEntries(query.fields.split(",").map((key) => [key.trim(), row[key.trim()]])));
             }
@@ -152,6 +157,17 @@ async function runSelect(tables, { intercept, sourceId = "source", candidateId =
     "@/lib/supabase/server": { createAdminClient: () => db },
     "@/lib/supabase/request": { getRequestAuthContext: async () => ({ user: signedIn ? { id: "user-source" } : null }) },
     "@/lib/admin": { isAllowedAdminUser: () => allowedAdmin },
+    "@/lib/dating-email-templates": {
+      buildOneOnOneSelectionReceivedNotification: () => ({
+        emailSubject: "test",
+        emailText: "test",
+        pushTitle: "test",
+        pushBody: "test",
+      }),
+    },
+    "@/lib/dating-swipe": { sendDatingEmailNotification: async () => true },
+    "@/lib/dating-notifications": { notifyDatingUser: async () => true },
+    "@/lib/dating-1on1-sms": { sendOneOnOneSelectionSms: async () => false },
   });
   const { POST } = apiLoad(`@/app/api/dating/1on1/matches/${admin ? "admin" : "auto"}/route`);
   const response = await POST(new Request("http://localhost/api/dating/1on1/matches/auto", {
@@ -406,6 +422,22 @@ test("free/Plus refresh limits and legacy timestamps remain compatible", async (
     assert.equal(group.refresh_remaining, plus ? 1 : 0);
     assert.equal(group.can_refresh, plus);
   }
+});
+
+test("saved candidates are separated from rotating recommendations without duplication", async () => {
+  const tables = fixture(15);
+  tables.dating_1on1_candidate_favorites = [{
+    id: "favorite-1",
+    user_id: "user-source",
+    source_card_id: "source",
+    candidate_card_id: "c0",
+    created_at: "2026-08-31T02:00:00Z",
+  }];
+  const { response, body } = await runApi(tables);
+  assert.equal(response.status, 200);
+  assert.deepEqual(body.items[0].favorite_candidates.map((candidate) => candidate.id), ["c0"]);
+  assert.equal(body.items[0].recommendations.some((candidate) => candidate.id === "c0"), false);
+  assert.equal(body.items[0].admin_recommendations.some((candidate) => candidate.id === "c0"), false);
 });
 
 test("a second Plus refresh excludes both the default and first refreshed candidate lists", async () => {

@@ -1013,6 +1013,7 @@ type MyOneOnOneAutoRecommendationGroup = {
   refresh_limit?: number;
   next_refresh_at?: string | null;
   can_refresh?: boolean;
+  favorite_candidates?: MyOneOnOneMatchCard[];
   recommendations: MyOneOnOneMatchCard[];
   admin_recommendation_date?: string | null;
   admin_recommendations?: MyOneOnOneMatchCard[];
@@ -2115,6 +2116,7 @@ export default function MyPage() {
   const [processingOneOnOneContactExchangeIds, setProcessingOneOnOneContactExchangeIds] = useState<string[]>([]);
   const [processingOneOnOneNudgeIds, setProcessingOneOnOneNudgeIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
+  const [processingOneOnOneFavoriteKeys, setProcessingOneOnOneFavoriteKeys] = useState<string[]>([]);
   const [reportingDatingTargetKeys, setReportingDatingTargetKeys] = useState<string[]>([]);
   const [datingUserReportDraft, setDatingUserReportDraft] = useState<DatingUserReportDraft | null>(null);
   const [processingSwipeLikeBackIds, setProcessingSwipeLikeBackIds] = useState<string[]>([]);
@@ -5408,6 +5410,34 @@ export default function MyPage() {
       alert(e instanceof Error ? e.message : "자동 추천 후보 선택에 실패했습니다.");
     } finally {
       setProcessingOneOnOneAutoKeys((prev) => prev.filter((key) => key !== actionKey));
+    }
+  };
+
+  const handleToggleOneOnOneFavorite = async (
+    sourceCardId: string,
+    candidateCardId: string,
+    favorite: boolean,
+  ) => {
+    const actionKey = `${sourceCardId}:${candidateCardId}`;
+    if (processingOneOnOneFavoriteKeys.includes(actionKey)) return;
+    setProcessingOneOnOneFavoriteKeys((prev) => [...prev, actionKey]);
+    try {
+      const res = await fetch("/api/dating/1on1/favorites", {
+        method: favorite ? "DELETE" : "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ source_card_id: sourceCardId, candidate_card_id: candidateCardId }),
+      });
+      const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string };
+      if (!res.ok || !body.ok) {
+        alert(body.error ?? (favorite ? "찜 해제에 실패했습니다." : "후보 찜에 실패했습니다."));
+        return;
+      }
+      await reloadOneOnOneRecommendations();
+    } catch (error) {
+      console.error("[mypage] failed to update 1on1 favorite", error);
+      alert("네트워크 연결을 확인한 뒤 다시 시도해주세요.");
+    } finally {
+      setProcessingOneOnOneFavoriteKeys((prev) => prev.filter((key) => key !== actionKey));
     }
   };
 
@@ -9945,6 +9975,7 @@ export default function MyPage() {
               const confirmingOneOnOneArchive = confirmingOneOnOneArchiveIds.includes(item.id);
               const relatedMatches = myOneOnOneMatchesByCardId.get(item.id) ?? [];
               const autoRecommendationGroup = myOneOnOneAutoRecommendationsByCardId.get(item.id) ?? null;
+              const favoriteCandidates = autoRecommendationGroup?.favorite_candidates ?? [];
               const autoRecommendations = autoRecommendationGroup?.recommendations ?? [];
               const adminAutoRecommendations = autoRecommendationGroup?.admin_recommendations ?? [];
               const canRefreshAutoRecommendations = autoRecommendationGroup?.can_refresh === true;
@@ -10188,7 +10219,76 @@ export default function MyPage() {
                                 : "이 카드는 최근에 추천 새로고침을 사용했어요."}
                           </p>
                         )}
-                        {autoRecommendations.length === 0 && adminAutoRecommendations.length === 0 ? (
+                        {favoriteCandidates.length > 0 && (
+                          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+                            <div className="flex items-center justify-between gap-2">
+                              <p className="text-sm font-semibold text-amber-950">찜한 후보 {favoriteCandidates.length}명</p>
+                              <span className="text-[11px] font-medium text-amber-700">최대 10명</span>
+                            </div>
+                            <p className="mt-1 text-[11px] leading-5 text-amber-800">
+                              찜은 상대에게 알려지지 않으며 예약을 보장하지 않아요. 선택할 때 현재 상태를 다시 확인합니다.
+                            </p>
+                            <div className="mt-3 space-y-2">
+                              {favoriteCandidates.map((card) => {
+                                const actionKey = `${item.id}:${card.id}`;
+                                const selecting = processingOneOnOneAutoKeys.includes(actionKey);
+                                const saving = processingOneOnOneFavoriteKeys.includes(actionKey);
+                                return (
+                                  <div key={`${item.id}-favorite-${card.id}`} className="rounded-lg border border-amber-200 bg-white p-3">
+                                    <div className="flex items-center justify-between gap-2">
+                                      <p className="text-sm font-medium text-neutral-900">
+                                        {card.name} / {card.age ?? "-"}세 / {card.region}
+                                      </p>
+                                      <span className="inline-flex rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-800">
+                                        찜
+                                      </span>
+                                    </div>
+                                    <p className="mt-1 text-xs text-neutral-600">{card.height_cm}cm / {card.job}</p>
+                                    <p className="mt-2 whitespace-pre-wrap break-words text-xs text-neutral-700">{card.intro_text}</p>
+                                    <p className="mt-2 text-xs text-neutral-700">장점: {card.strengths_text}</p>
+                                    <p className="mt-1 text-xs text-neutral-700">원하는 점: {card.preferred_partner_text}</p>
+                                    {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
+                                      <div className="mt-2 grid grid-cols-2 gap-2">
+                                        {card.photo_signed_urls.map((url, idx) => (
+                                          <MatchPhotoPreview
+                                            key={`${item.id}-favorite-${card.id}-${idx}`}
+                                            src={url}
+                                            alt={`찜한 후보 사진 ${idx + 1}`}
+                                            className="flex h-24 w-full items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50"
+                                            imageClassName="max-h-full max-w-full object-contain"
+                                          />
+                                        ))}
+                                      </div>
+                                    )}
+                                    <div className="mt-3 flex flex-wrap gap-2">
+                                      <button
+                                        type="button"
+                                        disabled={selecting || saving}
+                                        onClick={() => void handleOneOnOneAutoRecommendationSelect(item.id, card.id)}
+                                        className="inline-flex h-8 items-center rounded-md bg-pink-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                                      >
+                                        {selecting ? "처리 중..." : "이 후보 선택"}
+                                      </button>
+                                      <button
+                                        type="button"
+                                        disabled={selecting || saving}
+                                        onClick={() => void handleToggleOneOnOneFavorite(item.id, card.id, true)}
+                                        className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-800 disabled:opacity-50"
+                                      >
+                                        {saving ? "처리 중..." : "찜 해제"}
+                                      </button>
+                                      <SmallDatingReportButton
+                                        disabled={reportingDatingTargetKeys.includes(`one_on_one_card:${card.id}`)}
+                                        onClick={() => void handleDatingUserReport("one_on_one_card", card.id, "1:1 찜한 후보")}
+                                      />
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                        {favoriteCandidates.length === 0 && autoRecommendations.length === 0 && adminAutoRecommendations.length === 0 ? (
                         <div className="mt-3 rounded-lg border border-dashed border-pink-200 bg-white p-3 text-sm text-neutral-500">
                           지금 바로 보여줄 자동 추천 후보가 없어요. 이미 진행 중인 매칭이 있거나, 조건에 맞는 후보가 새로 잡히면 여기서 보여드릴게요.
                         </div>
@@ -10234,6 +10334,14 @@ export default function MyPage() {
                                     className="inline-flex h-8 items-center rounded-md bg-pink-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                                   >
                                     {processing ? "처리 중..." : "이 후보 선택"}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={processing || processingOneOnOneFavoriteKeys.includes(actionKey)}
+                                    onClick={() => void handleToggleOneOnOneFavorite(item.id, card.id, false)}
+                                    className="inline-flex h-8 items-center rounded-md border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700 disabled:opacity-50"
+                                  >
+                                    {processingOneOnOneFavoriteKeys.includes(actionKey) ? "저장 중..." : "♡ 찜"}
                                   </button>
                                   <SmallDatingReportButton
                                     disabled={reportingDatingTargetKeys.includes(`one_on_one_card:${card.id}`)}
@@ -10292,6 +10400,14 @@ export default function MyPage() {
                                           className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                                         >
                                           {processing ? "처리 중..." : "이 후보 선택"}
+                                        </button>
+                                        <button
+                                          type="button"
+                                          disabled={processing || processingOneOnOneFavoriteKeys.includes(actionKey)}
+                                          onClick={() => void handleToggleOneOnOneFavorite(item.id, card.id, false)}
+                                          className="inline-flex h-8 items-center rounded-md border border-emerald-300 bg-white px-3 text-xs font-medium text-emerald-700 disabled:opacity-50"
+                                        >
+                                          {processingOneOnOneFavoriteKeys.includes(actionKey) ? "저장 중..." : "♡ 찜"}
                                         </button>
                                         <SmallDatingReportButton
                                           disabled={reportingDatingTargetKeys.includes(`one_on_one_card:${card.id}`)}
