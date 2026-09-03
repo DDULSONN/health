@@ -46,6 +46,9 @@ const AdminOpenCardRepostDiagnostics = dynamic(
 const AdminOpenCardRequeuePanel = dynamic(
   () => import("@/components/admin/AdminOpenCardRequeuePanel")
 );
+const AdminContactImportPanel = dynamic(
+  () => import("@/components/admin/AdminContactImportPanel")
+);
 const AdminOpenCardPreviewImage = dynamic(
   () => import("@/components/admin/AdminOpenCardPreviewImage")
 );
@@ -1148,6 +1151,7 @@ type AdminManageTab =
   | "city_view"
   | "reports"
   | "phone_verify"
+  | "contact_import"
   | "account_deletions"
   | "site_ads";
 
@@ -11248,6 +11252,8 @@ export default function MyPage() {
                       ? "1:1 반복 악용 검수 (관리자)"
                     : adminManageTab === "employment_verify"
                       ? "직장인 인증 관리 (관리자)"
+                    : adminManageTab === "contact_import"
+                      ? "연락처 차단 테스트 (관리자)"
                     : adminManageTab === "tools_patch_note"
                       ? "도구 패치노트 (관리자)"
                     : adminManageTab === "accepted_applications"
@@ -11261,7 +11267,7 @@ export default function MyPage() {
               >
                 관리자 잠금 해제
               </Link>
-              {adminManageTab !== "app_testers" && adminManageTab !== "nickname_review" && adminManageTab !== "one_on_one_name_review" && adminManageTab !== "one_on_one_abuse_review" && adminManageTab !== "employment_verify" && adminManageTab !== "one_on_one_candidates" && (
+              {adminManageTab !== "app_testers" && adminManageTab !== "nickname_review" && adminManageTab !== "one_on_one_name_review" && adminManageTab !== "one_on_one_abuse_review" && adminManageTab !== "employment_verify" && adminManageTab !== "one_on_one_candidates" && adminManageTab !== "contact_import" && (
               <button
                 type="button"
                 disabled={
@@ -11588,6 +11594,17 @@ export default function MyPage() {
               </button>
               <button
                 type="button"
+                onClick={() => setAdminManageTab("contact_import")}
+                className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                  adminManageTab === "contact_import"
+                    ? "border-violet-600 bg-violet-600 text-white"
+                    : "border-violet-200 bg-white text-violet-800"
+                }`}
+              >
+                연락처 차단 테스트
+              </button>
+              <button
+                type="button"
                 onClick={() => setAdminManageTab("account_deletions")}
                 className={`h-8 rounded-md border px-3 text-xs font-medium ${
                   adminManageTab === "account_deletions"
@@ -11614,6 +11631,7 @@ export default function MyPage() {
           {adminManageTab === "one_on_one_abuse_review" && <AdminOneOnOneAbuseReviewPanel />}
           {adminManageTab === "employment_verify" && <AdminEmploymentVerificationPanel />}
           {adminManageTab === "one_on_one_candidates" && <AdminOneOnOneCandidateSenderPanel />}
+          {adminManageTab === "contact_import" && <AdminContactImportPanel />}
 
           {adminManageTab === "site_dashboard" && (
           <div className="mb-3 space-y-4">

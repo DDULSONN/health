@@ -92,11 +92,22 @@ export async function POST(req: Request) {
       { status: 400 }
     );
   }
+  const admin = createAdminClient();
   if (phones.length === 0) {
-    return NextResponse.json({ ok: true, imported_count: 0, total_count: 0 });
+    const countRes = await admin
+      .from("dating_contact_blocks")
+      .select("id", { count: "exact", head: true })
+      .eq("user_id", user.id)
+      .eq("block_type", "phone");
+    if (countRes.error) {
+      const message = isMissingDatingContactBlocksTableError(countRes.error)
+        ? "지인 차단 기능이 아직 서버에 적용되지 않았습니다."
+        : "연락처 차단 상태를 확인하지 못했습니다.";
+      return NextResponse.json({ error: message }, { status: 500 });
+    }
+    return NextResponse.json({ ok: true, imported_count: 0, total_count: countRes.count ?? 0 });
   }
 
-  const admin = createAdminClient();
   for (let start = 0; start < phones.length; start += UPSERT_BATCH_SIZE) {
     const chunk = phones.slice(start, start + UPSERT_BATCH_SIZE);
     const datingRows = chunk.map((phone) => ({
