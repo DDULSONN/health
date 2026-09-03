@@ -36,6 +36,8 @@ export default function AdminContactImportPanel() {
   const vCardInputRef = useRef<HTMLInputElement | null>(null);
   const [supported, setSupported] = useState<boolean | null>(null);
   const [isIOS, setIsIOS] = useState(false);
+  const [isAndroid, setIsAndroid] = useState(false);
+  const [isSamsungInternet, setIsSamsungInternet] = useState(false);
   const [status, setStatus] = useState<SyncStatus>({ count: 0, lastSyncedAt: null, schemaMissing: false });
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [importing, setImporting] = useState(false);
@@ -69,11 +71,14 @@ export default function AdminContactImportPanel() {
 
   useEffect(() => {
     const pickerNavigator = navigator as ContactPickerNavigator;
+    const userAgent = navigator.userAgent;
     setSupported(Boolean(window.isSecureContext && pickerNavigator.contacts?.select));
     setIsIOS(
-      /iPad|iPhone|iPod/i.test(navigator.userAgent) ||
+      /iPad|iPhone|iPod/i.test(userAgent) ||
         (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1)
     );
+    setIsAndroid(/Android/i.test(userAgent));
+    setIsSamsungInternet(/SamsungBrowser/i.test(userAgent));
     void loadStatus();
   }, [loadStatus]);
 
@@ -225,17 +230,33 @@ export default function AdminContactImportPanel() {
             <p>
               {isIOS
                 ? "아이폰은 웹에서 연락처를 바로 열 수 없어 vCard 파일로 가져옵니다."
+                : isAndroid
+                  ? isSamsungInternet
+                    ? "삼성 인터넷은 연락처 선택창을 지원하지 않습니다. 같은 페이지를 Android Chrome으로 열면 연락처를 바로 선택할 수 있습니다."
+                    : "현재 Android 브라우저는 연락처 선택창을 지원하지 않습니다. Android Chrome으로 열거나 vCard 파일을 선택해주세요."
                 : "현재 브라우저는 연락처 선택창을 지원하지 않아 vCard 파일로 가져올 수 있습니다."}
             </p>
-            <details className="mt-2">
-              <summary className="cursor-pointer font-semibold text-amber-950">아이폰에서 내보내는 방법</summary>
-              <ol className="mt-2 list-decimal space-y-1 pl-4">
-                <li>연락처 앱 왼쪽 위의 ‘목록’을 누릅니다.</li>
-                <li>‘모든 연락처’를 길게 누르고 ‘내보내기’를 선택합니다.</li>
-                <li>전화번호 항목만 선택한 뒤 ‘완료’를 누릅니다.</li>
-                <li>‘파일에 저장’한 다음 이 화면에서 해당 .vcf 파일을 선택합니다.</li>
-              </ol>
-            </details>
+            {isAndroid ? (
+              <details className="mt-2">
+                <summary className="cursor-pointer font-semibold text-amber-950">안드로이드에서 간편하게 차단하기</summary>
+                <ol className="mt-2 list-decimal space-y-1 pl-4">
+                  <li>현재 페이지 주소를 복사합니다.</li>
+                  <li>Android Chrome을 열어 주소를 붙여넣습니다.</li>
+                  <li>마이페이지 설정에서 ‘휴대폰 연락처 선택’을 누릅니다.</li>
+                  <li>차단할 연락처를 선택하고 확인합니다.</li>
+                </ol>
+              </details>
+            ) : isIOS ? (
+              <details className="mt-2">
+                <summary className="cursor-pointer font-semibold text-amber-950">아이폰에서 내보내는 방법</summary>
+                <ol className="mt-2 list-decimal space-y-1 pl-4">
+                  <li>연락처 앱 왼쪽 위의 ‘목록’을 누릅니다.</li>
+                  <li>‘모든 연락처’를 길게 누르고 ‘내보내기’를 선택합니다.</li>
+                  <li>전화번호 항목만 선택한 뒤 ‘완료’를 누릅니다.</li>
+                  <li>‘파일에 저장’한 다음 이 화면에서 해당 .vcf 파일을 선택합니다.</li>
+                </ol>
+              </details>
+            ) : null}
           </div>
         ) : null}
         <p className="mt-2 text-[11px] leading-5 text-neutral-500">
@@ -278,7 +299,7 @@ export default function AdminContactImportPanel() {
               disabled={supported === null || importing || clearing || loadingStatus || status.schemaMissing}
               className="h-10 rounded-lg bg-violet-600 px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {importing ? "연락처 확인 중..." : isIOS ? "아이폰 연락처 파일 선택" : "vCard 파일 선택"}
+              {importing ? "연락처 확인 중..." : isIOS ? "아이폰 연락처 파일 선택" : isAndroid ? "Android vCard 파일 선택" : "vCard 파일 선택"}
             </button>
           </>
         )}
