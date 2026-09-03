@@ -140,6 +140,10 @@ export default function AdminContactImportPanel() {
     } catch (caught) {
       if (caught instanceof DOMException && caught.name === "AbortError") {
         setMessage("연락처 선택을 취소했습니다.");
+      } else if (isSamsungInternet) {
+        setError(
+          "삼성 인터넷에서 연락처 선택창을 열지 못했습니다. 삼성 인터넷을 최신 버전으로 업데이트하거나 아래 ‘전체 연락처 파일 불러오기’를 이용해주세요."
+        );
       } else {
         setError(caught instanceof Error ? caught.message : "연락처 차단에 실패했습니다.");
       }
@@ -223,7 +227,7 @@ export default function AdminContactImportPanel() {
         <p className="text-xs font-semibold text-neutral-800">사용 방법</p>
         {supported === true ? (
           <p className="mt-1 text-[11px] leading-5 text-neutral-600">
-            아래 버튼을 누른 뒤 차단할 연락처를 여러 명 선택하고 확인하세요.
+            ‘휴대폰 연락처 선택’을 누르면 이 브라우저에서 연락처를 직접 고를 수 있습니다. 전체 연락처는 vCard 파일로 한 번에 불러올 수 있습니다.
           </p>
         ) : supported === false ? (
           <div className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-[11px] leading-5 text-amber-900">
@@ -232,21 +236,11 @@ export default function AdminContactImportPanel() {
                 ? "아이폰은 웹에서 연락처를 바로 열 수 없어 vCard 파일로 가져옵니다."
                 : isAndroid
                   ? isSamsungInternet
-                    ? "삼성 인터넷은 연락처 선택창을 지원하지 않습니다. 같은 페이지를 Android Chrome으로 열면 연락처를 바로 선택할 수 있습니다."
-                    : "현재 Android 브라우저는 연락처 선택창을 지원하지 않습니다. Android Chrome으로 열거나 vCard 파일을 선택해주세요."
+                    ? "현재 사용 중인 삼성 인터넷에서는 연락처 선택 기능이 활성화되지 않았습니다. 브라우저를 업데이트하거나 연락처 파일을 불러와주세요."
+                    : "현재 Android 브라우저에서는 연락처 선택 기능이 활성화되지 않았습니다. 연락처 파일을 불러오면 바로 차단할 수 있습니다."
                 : "현재 브라우저는 연락처 선택창을 지원하지 않아 vCard 파일로 가져올 수 있습니다."}
             </p>
-            {isAndroid ? (
-              <details className="mt-2">
-                <summary className="cursor-pointer font-semibold text-amber-950">안드로이드에서 간편하게 차단하기</summary>
-                <ol className="mt-2 list-decimal space-y-1 pl-4">
-                  <li>현재 페이지 주소를 복사합니다.</li>
-                  <li>Android Chrome을 열어 주소를 붙여넣습니다.</li>
-                  <li>마이페이지 설정에서 ‘휴대폰 연락처 선택’을 누릅니다.</li>
-                  <li>차단할 연락처를 선택하고 확인합니다.</li>
-                </ol>
-              </details>
-            ) : isIOS ? (
+            {isIOS ? (
               <details className="mt-2">
                 <summary className="cursor-pointer font-semibold text-amber-950">아이폰에서 내보내는 방법</summary>
                 <ol className="mt-2 list-decimal space-y-1 pl-4">
@@ -259,6 +253,17 @@ export default function AdminContactImportPanel() {
             ) : null}
           </div>
         ) : null}
+        {isAndroid ? (
+          <details className="mt-2 rounded-lg border border-neutral-200 bg-white px-3 py-2 text-[11px] leading-5 text-neutral-600">
+            <summary className="cursor-pointer font-semibold text-neutral-800">삼성 연락처 전체를 한 번에 차단하는 방법</summary>
+            <ol className="mt-2 list-decimal space-y-1 pl-4">
+              <li>삼성 연락처 앱에서 메뉴를 열고 ‘연락처 관리’를 누릅니다.</li>
+              <li>‘연락처 가져오기/내보내기’에서 ‘내보내기’를 선택합니다.</li>
+              <li>휴대전화에 vCard(.vcf) 파일로 저장합니다.</li>
+              <li>아래 ‘전체 연락처 파일 불러오기’에서 저장한 파일을 선택합니다.</li>
+            </ol>
+          </details>
+        ) : null}
         <p className="mt-2 text-[11px] leading-5 text-neutral-500">
           연락처 파일은 서버에 올리지 않고 이 브라우저에서 전화번호만 추출합니다. 번호는 서버에서 복구할 수 없는 해시로 바뀌며 원문은 저장하지 않습니다.
         </p>
@@ -270,7 +275,7 @@ export default function AdminContactImportPanel() {
       </div>
 
       <div className="mt-3 flex flex-wrap gap-2">
-        {supported === true ? (
+        {supported === true && (
           <button
             type="button"
             onClick={() => void handleImport()}
@@ -279,30 +284,37 @@ export default function AdminContactImportPanel() {
           >
             {importing ? "차단 반영 중..." : "휴대폰 연락처 선택"}
           </button>
-        ) : (
-          <>
-            <input
-              ref={vCardInputRef}
-              type="file"
-              accept=".vcf,text/vcard,text/x-vcard"
-              disabled={supported === null || importing || clearing || loadingStatus || status.schemaMissing}
-              onChange={(event) => {
-                const file = event.currentTarget.files?.[0] ?? null;
-                event.currentTarget.value = "";
-                void handleVCardFile(file);
-              }}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => vCardInputRef.current?.click()}
-              disabled={supported === null || importing || clearing || loadingStatus || status.schemaMissing}
-              className="h-10 rounded-lg bg-violet-600 px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {importing ? "연락처 확인 중..." : isIOS ? "아이폰 연락처 파일 선택" : isAndroid ? "Android vCard 파일 선택" : "vCard 파일 선택"}
-            </button>
-          </>
         )}
+        <input
+          ref={vCardInputRef}
+          type="file"
+          accept=".vcf,text/vcard,text/x-vcard"
+          disabled={supported === null || importing || clearing || loadingStatus || status.schemaMissing}
+          onChange={(event) => {
+            const file = event.currentTarget.files?.[0] ?? null;
+            event.currentTarget.value = "";
+            void handleVCardFile(file);
+          }}
+          className="hidden"
+        />
+        <button
+          type="button"
+          onClick={() => vCardInputRef.current?.click()}
+          disabled={supported === null || importing || clearing || loadingStatus || status.schemaMissing}
+          className={`h-10 rounded-lg px-4 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
+            supported === true
+              ? "border border-violet-200 bg-white text-violet-800"
+              : "bg-violet-600 text-white"
+          }`}
+        >
+          {importing
+            ? "연락처 확인 중..."
+            : isAndroid
+              ? "전체 연락처 파일 불러오기"
+              : isIOS
+                ? "아이폰 연락처 파일 선택"
+                : "vCard 파일 선택"}
+        </button>
         <button
           type="button"
           onClick={() => void loadStatus()}
