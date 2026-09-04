@@ -7,6 +7,7 @@ import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { isEmailConfirmed } from "@/lib/auth-confirmed";
 import { isValidReferralCode, normalizeReferralCode } from "@/lib/referral-code";
+import { safeInternalPath } from "@/lib/safe-internal-path";
 
 const STORED_EMAIL_KEY = "recent_login_email";
 const PENDING_REFERRAL_KEY = "pending_signup_referral";
@@ -26,6 +27,7 @@ type CallbackState = {
   errorCode: string | null;
   errorDescription: string | null;
   referralCode: string | null;
+  recovery: boolean;
 };
 
 type ViewState =
@@ -34,9 +36,7 @@ type ViewState =
   | { kind: "recovery"; detail: string };
 
 function safeNextPath(input: string | null): string {
-  if (!input || !input.startsWith("/")) return "/";
-  if (input.startsWith("//")) return "/";
-  return input;
+  return safeInternalPath(input);
 }
 
 function withPhoneVerificationGate(next: string): string {
@@ -77,6 +77,7 @@ function parseStateFromLocation(): CallbackState {
     errorCode: merged.get("error_code"),
     errorDescription: merged.get("error_description"),
     referralCode: normalizeReferralCode(merged.get("ref")) || null,
+    recovery: merged.get("recovery") === "1",
   };
 }
 
@@ -98,16 +99,22 @@ function readPendingReferralCode(): string | null {
   }
 }
 
-function buildCanonicalCallbackUrl(next: string): string {
+function buildCanonicalCallbackUrl(next: string, recovery = false): string {
   const url = new URL("/auth/callback", CANONICAL_SITE_URL);
   url.searchParams.set("next", safeNextPath(next));
+  if (recovery) url.searchParams.set("recovery", "1");
   return url.toString();
 }
 
-function buildLoginHref(next: string, email: string): string {
+function buildLoginHref(next: string, email: string, recovery = false): string {
   const params = new URLSearchParams();
   params.set("next", safeNextPath(next));
   if (email) params.set("email", email);
+  if (recovery) {
+    params.set("reason", "phone_already_used");
+    params.set("tab", "otp");
+    params.set("recovery", "1");
+  }
   return `/login?${params.toString()}`;
 }
 
@@ -159,6 +166,22 @@ export default function AuthCallbackPage() {
         } = await supabase.auth.getSession();
 
         if (session) {
+          if (parsed.recovery) {
+            const profileResponse = await fetch("/api/mypage/summary?profileOnly=1", { cache: "no-store" }).catch(() => null);
+            if (profileResponse?.ok) {
+              const profileBody = (await profileResponse.json().catch(() => ({}))) as {
+                profile?: { phone_verified?: boolean };
+              };
+              if (profileBody.profile?.phone_verified !== true) {
+                const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
+                setViewState({
+                  kind: "recovery",
+                  detail: signOutError ? "recovery_signout_failed" : "recovery_account_mismatch",
+                });
+                return;
+              }
+            }
+          }
           await claimReferral();
           router.replace(gatedNext);
           return;
@@ -248,6 +271,14 @@ export default function AuthCallbackPage() {
       return "인증 링크가 만료됐거나 이미 사용됐어요. 계정은 만들어졌을 수 있으니 로그인해 주세요.";
     }
 
+    if (viewState.detail === "recovery_account_mismatch") {
+      return "선택한 계정에는 기존 휴대폰 인증이 없습니다. 예전에 사용한 다른 계정으로 로그인해 주세요.";
+    }
+
+    if (viewState.detail === "recovery_signout_failed") {
+      return "계정을 다시 선택할 준비를 하지 못했어요. 브라우저를 새로고침한 뒤 다시 시도해 주세요.";
+    }
+
     if (state.errorDescription) return state.errorDescription;
     return "인증 링크를 확인하지 못했어요. 계정이 이미 준비됐을 수 있으니 로그인해 주세요.";
   }, [state, viewState]);
@@ -264,7 +295,7 @@ export default function AuthCallbackPage() {
 
     try {
       const supabase = createClient();
-      const callbackUrl = buildCanonicalCallbackUrl(gatedNext);
+      const callbackUrl = buildCanonicalCallbackUrl(gatedNext, state?.recovery === true);
       const isSignupLink = state?.otpType === "signup";
       const { error } = isSignupLink
         ? await supabase.auth.resend({
@@ -278,6 +309,7 @@ export default function AuthCallbackPage() {
             email: normalized,
             options: {
               emailRedirectTo: callbackUrl,
+              shouldCreateUser: state?.recovery !== true,
             },
           });
 
@@ -334,7 +366,7 @@ export default function AuthCallbackPage() {
 
           <div className="mt-4 grid grid-cols-1 gap-2">
             <Link
-              href={buildLoginHref(gatedNext, email)}
+              href={buildLoginHref(gatedNext, email, state.recovery)}
               className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-emerald-600 text-white text-sm font-medium"
             >
               로그인하러 가기
@@ -359,7 +391,7 @@ export default function AuthCallbackPage() {
 
         <div className="mt-3 grid grid-cols-1 gap-2">
           <Link
-            href={buildLoginHref(gatedNext, email)}
+            href={buildLoginHref(gatedNext, email, state.recovery)}
             className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-amber-600 text-white text-sm font-medium"
           >
             로그인하러 가기

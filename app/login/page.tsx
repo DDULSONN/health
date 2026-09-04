@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { isEmailConfirmed } from "@/lib/auth-confirmed";
+import { safeInternalPath } from "@/lib/safe-internal-path";
 
 const STORED_EMAIL_KEY = "recent_login_email";
 const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
@@ -14,9 +15,7 @@ type AuthMode = "social" | "password" | "otp";
 type SocialProvider = "google" | "apple";
 
 function safeNextPath(input: string | null): string {
-  if (!input || !input.startsWith("/")) return "/";
-  if (input.startsWith("//")) return "/";
-  return input;
+  return safeInternalPath(input);
 }
 
 function isInAppBrowser(ua: string): boolean {
@@ -60,6 +59,7 @@ function LoginContent() {
   const tabParam = searchParams.get("tab");
   const resetParam = searchParams.get("reset");
   const recoveryParam = searchParams.get("recovery");
+  const isRecoveryFlow = recoveryParam === "1";
   const reasonParam = searchParams.get("reason");
   const errorParam = searchParams.get("error");
   const errorCode = searchParams.get("error_code")?.toLowerCase() ?? null;
@@ -83,7 +83,11 @@ function LoginContent() {
   const [sessionChecking, setSessionChecking] = useState(true);
   const [canResendConfirm, setCanResendConfirm] = useState(false);
 
-  const callbackUrl = useMemo(() => buildCanonicalCallbackUrl(next), [next]);
+  const callbackUrl = useMemo(() => {
+    const url = new URL(buildCanonicalCallbackUrl(next));
+    if (isRecoveryFlow) url.searchParams.set("recovery", "1");
+    return url.toString();
+  }, [isRecoveryFlow, next]);
 
   const isOtpExpired = errorCode === "otp_expired";
   const isFlowStateMissing = errorCode === "flow_state_missing";
@@ -101,7 +105,9 @@ function LoginContent() {
 
   useEffect(() => {
     const stored = window.localStorage.getItem(STORED_EMAIL_KEY);
-    if (stored) setEmail(stored);
+    // The recently used address usually belongs to the just-created duplicate
+    // account. Never prefill it while the user is trying to recover an older one.
+    if (!isRecoveryFlow && stored) setEmail(stored);
     setInAppBrowser(isInAppBrowser(navigator.userAgent));
 
     (async () => {
@@ -128,7 +134,7 @@ function LoginContent() {
         setSessionChecking(false);
       }
     })();
-  }, [initialErrorMessage, next, router]);
+  }, [initialErrorMessage, isRecoveryFlow, next, router]);
 
   useEffect(() => {
     if (tabParam === "password") setMode("password");
@@ -153,6 +159,7 @@ function LoginContent() {
         email: normalized,
         options: {
           emailRedirectTo: callbackUrl,
+          shouldCreateUser: !isRecoveryFlow,
         },
       });
 
@@ -317,9 +324,9 @@ function LoginContent() {
           <p className="mt-1 text-xs leading-5 text-amber-800">
             휴대폰 번호가 이미 등록되어 있습니다. 예전에 가입한 Google·Apple 계정 또는 이메일을 이용해주세요.
           </p>
-          {recoveryParam === "1" && (
+          {isRecoveryFlow && (
             <p className="mt-1 text-xs leading-5 text-amber-700">
-              가입 방식을 잘 모르겠다면 Google과 Apple을 먼저 확인한 뒤, 이메일 로그인 링크를 이용해보세요.
+              반드시 예전에 사용한 계정을 선택해주세요. 이메일 링크는 등록된 기존 계정에만 발송됩니다.
             </p>
           )}
         </div>
@@ -449,9 +456,11 @@ function LoginContent() {
         )}
       </div>
 
-      <div className="mt-6 text-sm text-neutral-600">
-        처음 오셨나요? <Link href="/signup" className="text-emerald-700 underline">이메일로 회원가입</Link>
-      </div>
+      {!isRecoveryFlow && (
+        <div className="mt-6 text-sm text-neutral-600">
+          처음 오셨나요? <Link href="/signup" className="text-emerald-700 underline">이메일로 회원가입</Link>
+        </div>
+      )}
 
       <p className="mt-4 text-center text-xs text-neutral-400">
         로그인하면{" "}

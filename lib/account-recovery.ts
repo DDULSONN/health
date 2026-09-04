@@ -1,16 +1,19 @@
+import { safeInternalPath } from "@/lib/safe-internal-path";
+
 export const PHONE_ALREADY_USED_CODE = "PHONE_ALREADY_USED";
 
 export function safeAccountRecoveryNext(input: string | null | undefined) {
-  if (!input || !input.startsWith("/") || input.startsWith("//")) return "/";
+  const safePath = safeInternalPath(input);
+  const pathname = safePath.split(/[?#]/, 1)[0];
   if (
-    input.startsWith("/login") ||
-    input.startsWith("/signup") ||
-    input.startsWith("/auth") ||
-    input.startsWith("/account-recovery")
+    pathname === "/login" || pathname.startsWith("/login/") ||
+    pathname === "/signup" || pathname.startsWith("/signup/") ||
+    pathname === "/auth" || pathname.startsWith("/auth/") ||
+    pathname === "/account-recovery" || pathname.startsWith("/account-recovery/")
   ) {
     return "/";
   }
-  return input;
+  return safePath;
 }
 
 export function buildExistingAccountLoginHref(
@@ -31,7 +34,7 @@ export function buildAccountRecoveryHref(nextInput: string | null | undefined) {
 }
 
 export function buildPasswordResetHref() {
-  return "/auth/reset-password";
+  return "/auth/reset-password?recovery=1";
 }
 
 export function isPhoneAlreadyUsedCode(input: unknown) {

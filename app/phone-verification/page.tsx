@@ -166,7 +166,7 @@ function PhoneVerificationContent() {
       const supabase = createClient();
       const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
       if (signOutError) throw signOutError;
-      window.location.assign(buildExistingAccountLoginHref(next));
+      window.location.assign(buildExistingAccountLoginHref(next, { recovery: true }));
     } catch {
       setError("로그인 화면으로 이동하지 못했습니다. 잠시 후 다시 시도해 주세요.");
       setSwitchingAccount(false);

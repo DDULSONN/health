@@ -75,6 +75,12 @@ function loadCallbackComplete(user) {
     "@/lib/supabase/server": {
       createAdminClient: () => ({}),
     },
+    "@/lib/safe-internal-path": {
+      safeInternalPath: (input, fallback = "/") => {
+        if (!input || !input.startsWith("/") || input.startsWith("//") || input.includes("\\")) return fallback;
+        return input;
+      },
+    },
     "@supabase/ssr": {
       createServerClient: (_url, _key, options) => ({
         auth: {

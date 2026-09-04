@@ -26,7 +26,7 @@ export default function Footer() {
             <span className="mx-2 text-neutral-300">|</span>
             연락처: 010-8693-0657
             <span className="mx-2 text-neutral-300">|</span>
-            이메일: gymtools.kr@gmail.com
+            이메일: <span>gymtools.kr</span><span>@</span><span>gmail.com</span>
           </p>
         </div>
 

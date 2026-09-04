@@ -107,6 +107,7 @@ export default function ResetPasswordPage() {
   const [sending, setSending] = useState(false);
   const [updating, setUpdating] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [recoveryFlow, setRecoveryFlow] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -133,7 +134,9 @@ export default function ResetPasswordPage() {
     });
 
     const storedEmail = normalizeEmail(window.localStorage.getItem(STORED_EMAIL_KEY));
-    if (storedEmail) setEmail(storedEmail);
+    const isRecoveryFlow = new URLSearchParams(window.location.search).get("recovery") === "1";
+    setRecoveryFlow(isRecoveryFlow);
+    if (!isRecoveryFlow && storedEmail) setEmail(storedEmail);
 
     const sentAt = Number(window.localStorage.getItem(RESET_SENT_AT_KEY) ?? "0");
     const secondsLeft = Math.max(
@@ -391,8 +394,11 @@ export default function ResetPasswordPage() {
             </form>
           )}
 
-          <Link href="/login?tab=password" className="mt-5 block text-center text-sm text-neutral-500 underline">
-            로그인으로 돌아가기
+          <Link
+            href={recoveryFlow ? "/account-recovery" : "/login?tab=password"}
+            className="mt-5 block text-center text-sm text-neutral-500 underline"
+          >
+            {recoveryFlow ? "계정 찾기로 돌아가기" : "로그인으로 돌아가기"}
           </Link>
         </>
       )}

@@ -5,13 +5,12 @@ import { isEmailConfirmed } from "@/lib/auth-confirmed";
 import { isValidReferralCode, normalizeReferralCode } from "@/lib/referral-code";
 import { claimReferralRelationship } from "@/lib/referrals-server";
 import { createAdminClient } from "@/lib/supabase/server";
+import { safeInternalPath } from "@/lib/safe-internal-path";
 
 export const runtime = "nodejs";
 
 function safeNextPath(input: string | null): string {
-  if (!input || !input.startsWith("/")) return "/";
-  if (input.startsWith("//")) return "/";
-  return input;
+  return safeInternalPath(input);
 }
 
 function buildLoginRedirect(

@@ -6,12 +6,22 @@ const test = require("node:test");
 const ts = require("typescript");
 
 const root = path.resolve(__dirname, "..");
+const safePathSource = fs.readFileSync(path.join(root, "lib/safe-internal-path.ts"), "utf8");
+const safePathOutput = ts.transpileModule(safePathSource, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+}).outputText;
+const safePathLoaded = { exports: {} };
+new Function("require", "module", "exports", safePathOutput)(require, safePathLoaded, safePathLoaded.exports);
 const helperSource = fs.readFileSync(path.join(root, "lib/account-recovery.ts"), "utf8");
 const output = ts.transpileModule(helperSource, {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
 }).outputText;
 const loaded = { exports: {} };
-new Function("module", "exports", output)(loaded, loaded.exports);
+new Function("require", "module", "exports", output)(
+  (name) => name === "@/lib/safe-internal-path" ? safePathLoaded.exports : require(name),
+  loaded,
+  loaded.exports,
+);
 const recovery = loaded.exports;
 
 test("duplicate phone response code is detected exactly", () => {
@@ -21,7 +31,14 @@ test("duplicate phone response code is detected exactly", () => {
 });
 
 test("account recovery never accepts an external or auth-loop redirect", () => {
-  for (const input of ["https://evil.example", "//evil.example", "/login?next=/x", "/auth/callback", "/account-recovery"]) {
+  for (const input of [
+    "https://evil.example",
+    "//evil.example",
+    "/\\\\evil.example",
+    "/login?next=/x",
+    "/auth/callback",
+    "/account-recovery",
+  ]) {
     assert.equal(recovery.safeAccountRecoveryNext(input), "/");
   }
   assert.equal(recovery.safeAccountRecoveryNext("/onboarding/dating?next=instant_open_card"), "/onboarding/dating?next=instant_open_card");
@@ -38,7 +55,7 @@ test("login and recovery links preserve only a safe destination", () => {
   const accountRecovery = new URL(recovery.buildAccountRecoveryHref("//evil.example"), "https://helchang.com");
   assert.equal(accountRecovery.pathname, "/account-recovery");
   assert.equal(accountRecovery.searchParams.get("next"), "/");
-  assert.equal(recovery.buildPasswordResetHref(), "/auth/reset-password");
+  assert.equal(recovery.buildPasswordResetHref(), "/auth/reset-password?recovery=1");
 });
 
 test("Korean recovery copy remains valid UTF-8", () => {
@@ -54,4 +71,18 @@ test("Korean recovery copy remains valid UTF-8", () => {
   assert.match(phonePage, /signOut\(\{ scope: "local" \}\)/);
   assert.match(recoveryPage, /가입했던 방법을 선택해 주세요/);
   assert.match(recoveryPage, /signOut\(\{ scope: "local" \}\)/);
+});
+
+test("recovery login cannot create a new OTP account or prefill the duplicate account", () => {
+  const loginSource = fs.readFileSync(path.join(root, "app/login/page.tsx"), "utf8");
+  const callbackSource = fs.readFileSync(path.join(root, "app/auth/callback/page.tsx"), "utf8");
+  const resetSource = fs.readFileSync(path.join(root, "app/auth/reset-password/page.tsx"), "utf8");
+  assert.match(loginSource, /shouldCreateUser: !isRecoveryFlow/);
+  assert.match(loginSource, /if \(!isRecoveryFlow && stored\) setEmail\(stored\)/);
+  assert.match(callbackSource, /shouldCreateUser: state\?\.recovery !== true/);
+  assert.match(callbackSource, /params\.set\("recovery", "1"\)/);
+  assert.match(callbackSource, /profileBody\.profile\?\.phone_verified !== true/);
+  assert.match(callbackSource, /recovery_account_mismatch/);
+  assert.match(resetSource, /if \(!isRecoveryFlow && storedEmail\) setEmail\(storedEmail\)/);
+  assert.match(resetSource, /recoveryFlow \? "\/account-recovery"/);
 });

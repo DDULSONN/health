@@ -4,6 +4,7 @@ import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { isEmailConfirmed } from "@/lib/auth-confirmed";
+import { safeInternalPath } from "@/lib/safe-internal-path";
 
 const STORED_EMAIL_KEY = "recent_login_email";
 const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
@@ -11,9 +12,7 @@ const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
 type VerifyState = "checking" | "ready" | "redirecting";
 
 function safeNextPath(input: string | null): string {
-  if (!input || !input.startsWith("/")) return "/";
-  if (input.startsWith("//")) return "/";
-  return input;
+  return safeInternalPath(input);
 }
 
 function VerifyEmailContent() {
