@@ -46,7 +46,7 @@ export default function Header() {
     let cancelled = false;
     if (pathname === "/" || pathname.startsWith("/landing")) return;
 
-    fetch("/api/site/header-ad", { cache: "no-store" })
+    fetch("/api/site/header-ad")
       .then((res) => (res.ok ? res.json() : null))
       .then((body: HeaderAd | null) => {
         if (cancelled) return;

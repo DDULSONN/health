@@ -4,6 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { loadDatingProfileBootstrap } from "@/lib/dating-profile-bootstrap-client";
 
 type SummaryResponse = {
   profile?: {
@@ -15,10 +16,6 @@ type SummaryResponse = {
 type OpenCardItem = {
   id: string;
   status: "pending" | "public" | "expired" | "hidden";
-};
-
-type OpenCardsResponse = {
-  items?: OpenCardItem[];
 };
 
 type OneOnOneStatusResponse = {
@@ -340,34 +337,22 @@ export default function SiteGuideBubble() {
     async function load() {
       setLoading(true);
       try {
-        const [summaryRes, cardsRes, oneOnOneRes] = await Promise.all([
-          fetch("/api/mypage/summary?profileOnly=1", { cache: "no-store" }),
-          fetch("/api/dating/cards/my", { cache: "no-store" }),
-          fetch("/api/dating/1on1/write-status", { cache: "no-store" }),
-        ]);
-
-        if (cancelled) return;
-
-        if (summaryRes.status === 401 || oneOnOneRes.status === 401) {
-          setLoggedIn(false);
-          setSummary(null);
-          setOpenCards([]);
-          setOneOnOne(null);
-          return;
-        }
-
-        const [summaryBody, cardsBody, oneOnOneBody] = await Promise.all([
-          summaryRes.json().catch(() => ({})),
-          cardsRes.json().catch(() => ({})),
-          oneOnOneRes.json().catch(() => ({})),
-        ]);
+        const bootstrap = await loadDatingProfileBootstrap();
 
         if (cancelled) return;
 
         setLoggedIn(true);
-        setSummary((summaryBody ?? {}) as SummaryResponse);
-        setOpenCards(Array.isArray((cardsBody as OpenCardsResponse).items) ? ((cardsBody as OpenCardsResponse).items ?? []) : []);
-        setOneOnOne((oneOnOneBody ?? {}) as OneOnOneStatusResponse);
+        setSummary((bootstrap.profile ?? {}) as SummaryResponse);
+        setOpenCards(Array.isArray(bootstrap.openCards.items) ? (bootstrap.openCards.items as OpenCardItem[]) : []);
+        setOneOnOne((bootstrap.oneOnOne ?? {}) as OneOnOneStatusResponse);
+      } catch (error) {
+        if (cancelled) return;
+        if ((error as Error & { status?: number }).status === 401) {
+          setLoggedIn(false);
+          setSummary(null);
+          setOpenCards([]);
+          setOneOnOne(null);
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -384,7 +369,7 @@ export default function SiteGuideBubble() {
 
     async function loadMascot() {
       try {
-        const res = await fetch("/api/site-guide/mascot", { cache: "no-store" });
+        const res = await fetch("/api/site-guide/mascot");
         const body = (await res.json().catch(() => ({}))) as SiteGuideMascotResponse;
         const nextSrc = body.selected?.src;
         if (!cancelled && res.ok && typeof nextSrc === "string" && isAllowedMascotSrc(nextSrc)) {

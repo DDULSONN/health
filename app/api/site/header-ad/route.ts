@@ -19,5 +19,5 @@ export async function GET() {
     ? DEFAULT_HEADER_AD_SETTING
     : normalizeHeaderAdSetting(data?.value_json ?? DEFAULT_HEADER_AD_SETTING);
 
-  return publicCachedJson(toPublicHeaderAd(setting), { sMaxAge: 10 });
+  return publicCachedJson(toPublicHeaderAd(setting), { sMaxAge: 60, staleWhileRevalidate: 300 });
 }

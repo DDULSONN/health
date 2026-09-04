@@ -7,6 +7,14 @@ import { useRouter } from "next/navigation";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
 import { createClient } from "@/lib/supabase/client";
+import { loadDatingProfileBootstrap } from "@/lib/dating-profile-bootstrap-client";
+import {
+  clearProfileDraft,
+  formatDraftSavedAt,
+  readProfileDraft,
+  type StoredProfileDraft,
+  writeProfileDraft,
+} from "@/lib/profile-draft";
 
 type TargetKey = "open" | "oneOnOne";
 type Sex = "male" | "female";
@@ -31,6 +39,33 @@ type OpenPhotoAssets = {
   rawPaths: string[];
   blurPaths: string[];
   blurThumbPath: string;
+};
+
+type OnboardingProfileDraft = {
+  step: number;
+  targets: Record<TargetKey, boolean>;
+  sex: Sex | null;
+  nickname: string;
+  name: string;
+  birthYear: string;
+  heightCm: string;
+  job: string;
+  region: string;
+  introText: string;
+  strengthsText: string;
+  preferredPartnerText: string;
+  smoking: Smoking;
+  workoutFrequency: string;
+  trainingYears: string;
+  instagramId: string;
+  total3Lift: string;
+  photoVisibility: "blur" | "public";
+  consentFakeInfo: boolean;
+  consentNoShow: boolean;
+  consentFee: boolean;
+  consentPrivacy: boolean;
+  consentNoDirectContact: boolean;
+  consentOpenCard: boolean;
 };
 
 const STEP_LABELS = ["기본 정보", "소개", "생활 정보", "사진", "확인"] as const;
@@ -164,6 +199,10 @@ export default function DatingOnboardingPage() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [continueToInstantOpenCard, setContinueToInstantOpenCard] = useState(false);
+  const [draftUserId, setDraftUserId] = useState("");
+  const [pendingDraft, setPendingDraft] = useState<StoredProfileDraft<OnboardingProfileDraft> | null>(null);
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
 
   useEffect(() => {
     const urls = photos.map((file) => (file ? URL.createObjectURL(file) : null));
@@ -186,21 +225,14 @@ export default function DatingOnboardingPage() {
         router.replace(`/login?redirect=${encodeURIComponent(onboardingPath)}`);
         return;
       }
+      setDraftUserId(user.id);
 
       try {
-        const [oneResponse, openResponse, writeResponse, profileResponse] = await Promise.all([
-          fetch("/api/dating/1on1/write-status", { cache: "no-store" }),
-          fetch("/api/dating/cards/my", { cache: "no-store" }),
-          fetch("/api/dating/cards/write-enabled", { cache: "no-store" }),
-          fetch("/api/mypage/summary?profileOnly=1", { cache: "no-store" }),
-        ]);
-        if (!oneResponse.ok || !openResponse.ok || !writeResponse.ok || !profileResponse.ok) {
-          throw new Error("등록 가능 상태를 불러오지 못했습니다.");
-        }
-        const one = (await oneResponse.json().catch(() => ({}))) as OneOnOneWriteStatus;
-        const open = (await openResponse.json().catch(() => ({}))) as { items?: OpenCardItem[] };
-        const write = (await writeResponse.json().catch(() => ({}))) as { enabled?: boolean };
-        const profile = (await profileResponse.json().catch(() => ({}))) as { profile?: { nickname?: string | null } };
+        const bootstrap = await loadDatingProfileBootstrap();
+        const one = bootstrap.oneOnOne as OneOnOneWriteStatus;
+        const open = bootstrap.openCards as { items?: OpenCardItem[] };
+        const write = bootstrap.openWrite;
+        const profile = bootstrap.profile;
         if (!active) return;
         if (!one.phoneVerified) {
           router.replace(`/phone-verification?next=${encodeURIComponent(onboardingPath)}`);
@@ -232,6 +264,10 @@ export default function DatingOnboardingPage() {
               ? "현재 1:1 신청서 작성이 중단되어 있어요."
               : "",
         });
+        const savedDraft = readProfileDraft<OnboardingProfileDraft>("onboarding", user.id);
+        setPendingDraft(savedDraft);
+        setDraftSavedAt(savedDraft?.savedAt ?? null);
+        setDraftReady(!savedDraft);
       } catch {
         if (active) setError("등록 가능 상태를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
       } finally {
@@ -245,6 +281,78 @@ export default function DatingOnboardingPage() {
 
   const selectedTargets = (Object.keys(targets) as TargetKey[]).filter((key) => targets[key] && (available[key] || completed[key]));
   const allSelectedDone = selectedTargets.length > 0 && selectedTargets.every((key) => completed[key]);
+
+  const resumeDraft = () => {
+    if (!pendingDraft) return;
+    const draft = pendingDraft.value;
+    const resumedTargets = {
+      open: available.open && draft.targets?.open === true,
+      oneOnOne: available.oneOnOne && draft.targets?.oneOnOne === true,
+    };
+    if (!resumedTargets.open && !resumedTargets.oneOnOne) {
+      resumedTargets.open = available.open;
+      resumedTargets.oneOnOne = !available.open && available.oneOnOne;
+    }
+    setStep(Math.min(STEP_LABELS.length - 1, Math.max(0, Number(draft.step) || 0)));
+    setTargets(resumedTargets);
+    setSex(draft.sex === "female" ? "female" : draft.sex === "male" ? "male" : null);
+    if (!nicknameSaved) setNickname(normalizeNickname(draft.nickname ?? "").slice(0, 12));
+    setName(String(draft.name ?? "").slice(0, 30));
+    setBirthYear(String(draft.birthYear ?? "").replace(/\D/g, "").slice(0, 4));
+    setHeightCm(String(draft.heightCm ?? "").replace(/\D/g, "").slice(0, 3));
+    setJob(String(draft.job ?? "").slice(0, 80));
+    setRegion(String(draft.region ?? "").slice(0, 80));
+    setIntroText(String(draft.introText ?? "").slice(0, 2000));
+    setStrengthsText(String(draft.strengthsText ?? "").slice(0, 2000));
+    setPreferredPartnerText(String(draft.preferredPartnerText ?? "").slice(0, 2000));
+    setSmoking(["non_smoker", "occasional", "smoker"].includes(draft.smoking) ? draft.smoking : "non_smoker");
+    setWorkoutFrequency(String(draft.workoutFrequency ?? ""));
+    setTrainingYears(String(draft.trainingYears ?? "").replace(/\D/g, "").slice(0, 2));
+    setInstagramId(normalizeInstagramId(String(draft.instagramId ?? "")));
+    setTotal3Lift(String(draft.total3Lift ?? "").replace(/\D/g, "").slice(0, 4));
+    setPhotoVisibility(draft.photoVisibility === "public" ? "public" : "blur");
+    setConsentFakeInfo(draft.consentFakeInfo === true);
+    setConsentNoShow(draft.consentNoShow === true);
+    setConsentFee(draft.consentFee === true);
+    setConsentPrivacy(draft.consentPrivacy === true);
+    setConsentNoDirectContact(draft.consentNoDirectContact === true);
+    setConsentOpenCard(draft.consentOpenCard === true);
+    setPendingDraft(null);
+    setDraftReady(true);
+    setInfo("");
+  };
+
+  const discardDraft = () => {
+    if (draftUserId) clearProfileDraft("onboarding", draftUserId);
+    setPendingDraft(null);
+    setDraftSavedAt(null);
+    setDraftReady(true);
+  };
+
+  useEffect(() => {
+    if (!draftReady || !draftUserId || checking || submitting || allSelectedDone) return;
+    const hasContent = Boolean(
+      step > 0 || (!nicknameSaved && nickname.trim()) || name.trim() || birthYear || heightCm || job.trim() || region.trim() ||
+      introText.trim() || strengthsText.trim() || preferredPartnerText.trim() || instagramId.trim()
+    );
+    if (!hasContent) return;
+    const timer = window.setTimeout(() => {
+      const savedAt = Date.now();
+      const saved = writeProfileDraft<OnboardingProfileDraft>("onboarding", draftUserId, {
+        step, targets, sex, nickname, name, birthYear, heightCm, job, region, introText, strengthsText,
+        preferredPartnerText, smoking, workoutFrequency, trainingYears, instagramId, total3Lift,
+        photoVisibility, consentFakeInfo, consentNoShow, consentFee, consentPrivacy,
+        consentNoDirectContact, consentOpenCard,
+      }, savedAt);
+      if (saved) setDraftSavedAt(savedAt);
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [
+    allSelectedDone, birthYear, checking, consentFakeInfo, consentFee, consentNoDirectContact,
+    consentNoShow, consentOpenCard, consentPrivacy, draftReady, draftUserId, heightCm, instagramId,
+    introText, job, name, nickname, nicknameSaved, photoVisibility, preferredPartnerText, region, sex, smoking,
+    step, strengthsText, submitting, targets, total3Lift, trainingYears, workoutFrequency,
+  ]);
 
   const validateStep = (targetStep: number) => {
     if (selectedTargets.length === 0) return "등록할 서비스를 하나 이상 선택해 주세요.";
@@ -484,6 +592,10 @@ export default function DatingOnboardingPage() {
 
       if (successes.length > 0) setInfo(`${successes.join(" · ")} 등록을 완료했습니다.`);
       if (failures.length > 0) setError(`${failures.join("\n")} 성공한 등록은 유지되며 실패한 항목만 다시 시도할 수 있어요.`);
+      if (successes.length > 0 && failures.length === 0 && draftUserId) {
+        clearProfileDraft("onboarding", draftUserId);
+        setDraftSavedAt(null);
+      }
       if (continueToInstantOpenCard && successes.includes("오픈카드") && failures.length === 0) {
         setInfo("오픈카드 등록 완료! 결제 내용을 확인해 주세요.");
         setProgress("결제 화면으로 이동 중");
@@ -526,6 +638,21 @@ export default function DatingOnboardingPage() {
           </div>
           <button type="button" onClick={() => router.replace("/community/dating/cards")} className="shrink-0 text-xs font-semibold text-neutral-500 underline underline-offset-4">나중에</button>
         </div>
+
+        {pendingDraft ? (
+          <section className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
+            <p className="text-sm font-black text-rose-950">작성 중이던 프로필이 있어요</p>
+            <p className="mt-1 text-xs leading-5 text-rose-700">
+              {formatDraftSavedAt(pendingDraft.savedAt)} 저장 · 사진은 개인정보 보호를 위해 저장하지 않아요.
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button type="button" onClick={resumeDraft} className="h-10 rounded-xl bg-rose-600 px-4 text-xs font-black text-white">이어서 작성</button>
+              <button type="button" onClick={discardDraft} className="h-10 rounded-xl border border-rose-200 bg-white px-4 text-xs font-bold text-rose-700">새로 작성</button>
+            </div>
+          </section>
+        ) : draftSavedAt ? (
+          <p className="mt-3 text-right text-[11px] font-semibold text-neutral-400">{formatDraftSavedAt(draftSavedAt)} 자동 임시저장</p>
+        ) : null}
 
         <section className="mt-5 border-y border-neutral-200 bg-white py-3">
           <div className="grid grid-cols-2 gap-2">

@@ -5,6 +5,14 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
+import { loadDatingProfileBootstrap } from "@/lib/dating-profile-bootstrap-client";
+import {
+  clearProfileDraft,
+  formatDraftSavedAt,
+  readProfileDraft,
+  type StoredProfileDraft,
+  writeProfileDraft,
+} from "@/lib/profile-draft";
 
 type WriteStatusResponse = {
   loggedIn: boolean;
@@ -15,6 +23,26 @@ type WriteStatusResponse = {
   reason: string | null;
   activeRequestStatus?: "submitted" | "reviewing" | "approved" | null;
   totalApplications?: number;
+};
+
+type OneOnOneProfileDraft = {
+  formStep: number;
+  sex: "male" | "female";
+  name: string;
+  birthYear: string;
+  heightCm: string;
+  job: string;
+  region: string;
+  introText: string;
+  strengthsText: string;
+  preferredPartnerText: string;
+  smoking: "non_smoker" | "occasional" | "smoker";
+  workoutFrequency: string;
+  consentFakeInfo: boolean;
+  consentNoShow: boolean;
+  consentFee: boolean;
+  consentPrivacy: boolean;
+  consentNoDirectContact: boolean;
 };
 
 type CardItem = {
@@ -282,6 +310,10 @@ function DatingOneOnOnePageContent() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [formStep, setFormStep] = useState(1);
+  const [draftUserId, setDraftUserId] = useState("");
+  const [pendingDraft, setPendingDraft] = useState<StoredProfileDraft<OneOnOneProfileDraft> | null>(null);
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
   const birthYearInputRef = useRef<HTMLInputElement | null>(null);
   const formTopRef = useRef<HTMLDivElement | null>(null);
 
@@ -377,6 +409,12 @@ function DatingOneOnOnePageContent() {
 
   useEffect(() => {
     if (isLocalPreview) {
+      const previewUserId = "local-preview";
+      const savedDraft = readProfileDraft<OneOnOneProfileDraft>("one-on-one", previewUserId);
+      setDraftUserId(previewUserId);
+      setPendingDraft(savedDraft);
+      setDraftSavedAt(savedDraft?.savedAt ?? null);
+      setDraftReady(!savedDraft);
       setStatus({
         loggedIn: true,
         isAdmin: false,
@@ -402,12 +440,10 @@ function DatingOneOnOnePageContent() {
           if (mounted) setIsGuest(true);
           return;
         }
+        setDraftUserId(user.id);
 
-        const statusRes = await fetch("/api/dating/1on1/write-status", { cache: "no-store" });
-        const statusBody = (await statusRes.json().catch(() => ({}))) as WriteStatusResponse & { error?: string };
-        if (!statusRes.ok) {
-          throw new Error(statusBody.error ?? "권한 상태를 불러오지 못했습니다.");
-        }
+        const bootstrap = await loadDatingProfileBootstrap();
+        const statusBody = bootstrap.oneOnOne as WriteStatusResponse;
 
         if (!mounted) return;
         setStatus(statusBody);
@@ -462,6 +498,11 @@ function DatingOneOnOnePageContent() {
           setConsentFee(true);
           setConsentPrivacy(true);
           setConsentNoDirectContact(true);
+        } else {
+          const savedDraft = readProfileDraft<OneOnOneProfileDraft>("one-on-one", user.id);
+          setPendingDraft(savedDraft);
+          setDraftSavedAt(savedDraft?.savedAt ?? null);
+          setDraftReady(!savedDraft);
         }
       } catch (e) {
         if (!mounted) return;
@@ -475,6 +516,61 @@ function DatingOneOnOnePageContent() {
       mounted = false;
     };
   }, [editId, isEditMode, isLocalPreview, router, supabase]);
+
+  const resumeDraft = () => {
+    if (!pendingDraft) return;
+    const draft = pendingDraft.value;
+    setFormStep(Math.min(FORM_STEPS.length, Math.max(1, Number(draft.formStep) || 1)));
+    setSex(draft.sex === "female" ? "female" : "male");
+    setName(String(draft.name ?? "").slice(0, 30));
+    setBirthYear(String(draft.birthYear ?? "").replace(/\D/g, "").slice(0, 4));
+    setHeightCm(String(draft.heightCm ?? "").replace(/\D/g, "").slice(0, 3));
+    setJob(String(draft.job ?? "").slice(0, 80));
+    setRegion(String(draft.region ?? "").slice(0, 80));
+    setIntroText(String(draft.introText ?? "").slice(0, 2000));
+    setStrengthsText(String(draft.strengthsText ?? "").slice(0, 2000));
+    setPreferredPartnerText(String(draft.preferredPartnerText ?? "").slice(0, 2000));
+    setSmoking(["non_smoker", "occasional", "smoker"].includes(draft.smoking) ? draft.smoking : "non_smoker");
+    setWorkoutFrequency(String(draft.workoutFrequency ?? ""));
+    setConsentFakeInfo(draft.consentFakeInfo === true);
+    setConsentNoShow(draft.consentNoShow === true);
+    setConsentFee(draft.consentFee === true);
+    setConsentPrivacy(draft.consentPrivacy === true);
+    setConsentNoDirectContact(draft.consentNoDirectContact === true);
+    setPendingDraft(null);
+    setDraftReady(true);
+    setInfo("");
+  };
+
+  const discardDraft = () => {
+    if (draftUserId) clearProfileDraft("one-on-one", draftUserId);
+    setPendingDraft(null);
+    setDraftSavedAt(null);
+    setDraftReady(true);
+  };
+
+  useEffect(() => {
+    if (isEditMode || !draftReady || !draftUserId || loading || submitting) return;
+    const hasContent = Boolean(
+      formStep > 1 || name.trim() || birthYear || heightCm || job.trim() || region.trim() || introText.trim() ||
+      strengthsText.trim() || preferredPartnerText.trim()
+    );
+    if (!hasContent) return;
+    const timer = window.setTimeout(() => {
+      const savedAt = Date.now();
+      const saved = writeProfileDraft<OneOnOneProfileDraft>("one-on-one", draftUserId, {
+        formStep, sex, name, birthYear, heightCm, job, region, introText, strengthsText,
+        preferredPartnerText, smoking, workoutFrequency, consentFakeInfo, consentNoShow,
+        consentFee, consentPrivacy, consentNoDirectContact,
+      }, savedAt);
+      if (saved) setDraftSavedAt(savedAt);
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [
+    birthYear, consentFakeInfo, consentFee, consentNoDirectContact, consentNoShow, consentPrivacy,
+    draftReady, draftUserId, formStep, heightCm, introText, isEditMode, job, loading, name,
+    preferredPartnerText, region, sex, smoking, strengthsText, submitting, workoutFrequency,
+  ]);
 
   const handleSlotChange = (slot: 1 | 2, files: FileList | null) => {
     const picked = files?.[0] ?? null;
@@ -612,6 +708,10 @@ function DatingOneOnOnePageContent() {
             : "신청서가 수정되었습니다. 진행 상황은 마이페이지 매칭탭에서 확인할 수 있어요."
           : "신청서가 등록되었습니다. 후보 확인과 진행 상황은 마이페이지 매칭탭에서 확인해 주세요.",
       );
+      if (!isEditMode && draftUserId) {
+        clearProfileDraft("one-on-one", draftUserId);
+        setDraftSavedAt(null);
+      }
       setName("");
       setSex("male");
       setBirthYear("");
@@ -765,6 +865,20 @@ function DatingOneOnOnePageContent() {
         {!isEditMode && writeBlockedMessage && (
           <p className="mt-2 text-xs font-medium text-amber-700">{writeBlockedMessage}</p>
         )}
+        {!isEditMode && pendingDraft ? (
+          <div className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
+            <p className="text-sm font-black text-rose-950">작성 중이던 신청서가 있어요</p>
+            <p className="mt-1 text-xs leading-5 text-rose-700">
+              {formatDraftSavedAt(pendingDraft.savedAt)} 저장 · 사진은 개인정보 보호를 위해 저장하지 않아요.
+            </p>
+            <div className="mt-3 flex gap-2">
+              <button type="button" onClick={resumeDraft} className="h-10 rounded-xl bg-rose-600 px-4 text-xs font-black text-white">이어서 작성</button>
+              <button type="button" onClick={discardDraft} className="h-10 rounded-xl border border-rose-200 bg-white px-4 text-xs font-bold text-rose-700">새로 작성</button>
+            </div>
+          </div>
+        ) : !isEditMode && draftSavedAt ? (
+          <p className="mt-3 text-right text-[11px] font-semibold text-neutral-400">{formatDraftSavedAt(draftSavedAt)} 자동 임시저장</p>
+        ) : null}
         <div className="mt-5">
           <div className="flex items-center justify-between gap-3">
             <div>

@@ -3,6 +3,14 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { createClient } from "@/lib/supabase/client";
+import {
+  clearProfileDraft,
+  formatDraftSavedAt,
+  readProfileDraft,
+  type StoredProfileDraft,
+  writeProfileDraft,
+} from "@/lib/profile-draft";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const UNSUPPORTED_IPHONE_PHOTO_TYPES = ["image/heic", "image/heif"];
@@ -26,6 +34,21 @@ type MyCardItem = {
   blur_paths: string[] | null;
   total_3lift: number | null;
   status: "pending" | "public" | "expired" | "hidden";
+};
+
+type OpenCardProfileDraft = {
+  formStep: number;
+  sex: "male" | "female";
+  age: string;
+  region: string;
+  heightCm: string;
+  job: string;
+  trainingYears: string;
+  idealType: string;
+  strengthsText: string;
+  instagramId: string;
+  photoVisibility: "blur" | "public";
+  total3Lift: string;
 };
 
 const FORM_STEPS = [
@@ -152,6 +175,10 @@ export default function NewDatingCardPage() {
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [formStep, setFormStep] = useState(1);
+  const [draftUserId, setDraftUserId] = useState("");
+  const [pendingDraft, setPendingDraft] = useState<StoredProfileDraft<OpenCardProfileDraft> | null>(null);
+  const [draftReady, setDraftReady] = useState(false);
+  const [draftSavedAt, setDraftSavedAt] = useState<number | null>(null);
 
   useEffect(() => {
     queueMicrotask(async () => {
@@ -182,6 +209,23 @@ export default function NewDatingCardPage() {
     if (typeof window === "undefined") return;
     const nextId = new URLSearchParams(window.location.search).get("editId") ?? "";
     setEditId(nextId);
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("editId")) return;
+    let cancelled = false;
+    void createClient().auth.getUser().then(({ data }) => {
+      if (cancelled || !data.user) return;
+      const savedDraft = readProfileDraft<OpenCardProfileDraft>("open-card", data.user.id);
+      setDraftUserId(data.user.id);
+      setPendingDraft(savedDraft);
+      setDraftSavedAt(savedDraft?.savedAt ?? null);
+      setDraftReady(!savedDraft);
+    });
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   useEffect(() => {
@@ -227,6 +271,54 @@ export default function NewDatingCardPage() {
       cancelled = true;
     };
   }, [editId, isEditMode]);
+
+  const resumeDraft = () => {
+    if (!pendingDraft) return;
+    const draft = pendingDraft.value;
+    setFormStep(Math.min(FORM_STEPS.length, Math.max(1, Number(draft.formStep) || 1)));
+    setSex(draft.sex === "female" ? "female" : "male");
+    setAge(String(draft.age ?? "").replace(/\D/g, "").slice(0, 2));
+    setRegion(String(draft.region ?? "").slice(0, 80));
+    setHeightCm(String(draft.heightCm ?? "").replace(/\D/g, "").slice(0, 3));
+    setJob(String(draft.job ?? "").slice(0, 80));
+    setTrainingYears(String(draft.trainingYears ?? "").replace(/\D/g, "").slice(0, 2));
+    setIdealType(String(draft.idealType ?? "").slice(0, 2000));
+    setStrengthsText(String(draft.strengthsText ?? "").slice(0, 2000));
+    setInstagramId(normalizeInstagramId(String(draft.instagramId ?? "")));
+    setPhotoVisibility(draft.photoVisibility === "public" ? "public" : "blur");
+    setTotal3Lift(String(draft.total3Lift ?? "").replace(/\D/g, "").slice(0, 4));
+    setPendingDraft(null);
+    setDraftReady(true);
+    setError("");
+  };
+
+  const discardDraft = () => {
+    if (draftUserId) clearProfileDraft("open-card", draftUserId);
+    setPendingDraft(null);
+    setDraftSavedAt(null);
+    setDraftReady(true);
+  };
+
+  useEffect(() => {
+    if (isEditMode || !draftReady || !draftUserId || submitting) return;
+    const hasContent = Boolean(
+      formStep > 1 || age || region.trim() || heightCm || job.trim() || trainingYears || idealType.trim() ||
+      strengthsText.trim() || instagramId.trim() || total3Lift
+    );
+    if (!hasContent) return;
+    const timer = window.setTimeout(() => {
+      const savedAt = Date.now();
+      const saved = writeProfileDraft<OpenCardProfileDraft>("open-card", draftUserId, {
+        formStep, sex, age, region, heightCm, job, trainingYears, idealType, strengthsText,
+        instagramId, photoVisibility, total3Lift,
+      }, savedAt);
+      if (saved) setDraftSavedAt(savedAt);
+    }, 700);
+    return () => window.clearTimeout(timer);
+  }, [
+    age, draftReady, draftUserId, formStep, heightCm, idealType, instagramId, isEditMode, job,
+    photoVisibility, region, sex, strengthsText, submitting, total3Lift, trainingYears,
+  ]);
 
   const readErrorMessage = async (res: Response, fallback: string) => {
     const text = await res.text().catch(() => "");
@@ -449,6 +541,10 @@ export default function NewDatingCardPage() {
       }
       const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
 
+      if (!isEditMode && draftUserId) {
+        clearProfileDraft("open-card", draftUserId);
+        setDraftSavedAt(null);
+      }
       alert(body.message ?? (isEditMode ? "오픈카드를 수정했습니다." : "오픈카드를 생성했습니다."));
       router.push("/mypage");
     } catch {
@@ -467,6 +563,20 @@ export default function NewDatingCardPage() {
       <h1 className="text-2xl font-black text-neutral-950 mt-3">{isEditMode ? "오픈카드 수정" : "오픈카드 작성"}</h1>
       {isEditMode && <p className="text-sm text-amber-700 mt-1">대기중 오픈카드 수정 모드</p>}
       <p className="text-sm text-neutral-500 mt-1">한 단계씩 작성하고, 등록 전 사진과 내용을 확인할 수 있어요.</p>
+      {!isEditMode && pendingDraft ? (
+        <section className="mt-4 rounded-2xl border border-rose-200 bg-rose-50 px-4 py-3">
+          <p className="text-sm font-black text-rose-950">작성 중이던 오픈카드가 있어요</p>
+          <p className="mt-1 text-xs leading-5 text-rose-700">
+            {formatDraftSavedAt(pendingDraft.savedAt)} 저장 · 사진은 개인정보 보호를 위해 저장하지 않아요.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <button type="button" onClick={resumeDraft} className="h-10 rounded-xl bg-rose-600 px-4 text-xs font-black text-white">이어서 작성</button>
+            <button type="button" onClick={discardDraft} className="h-10 rounded-xl border border-rose-200 bg-white px-4 text-xs font-bold text-rose-700">새로 작성</button>
+          </div>
+        </section>
+      ) : !isEditMode && draftSavedAt ? (
+        <p className="mt-3 text-right text-[11px] font-semibold text-neutral-400">{formatDraftSavedAt(draftSavedAt)} 자동 임시저장</p>
+      ) : null}
       {!writeSettingLoading && !writeEnabled && (
         <p className="mt-2 text-sm font-medium text-red-600">현재 오픈카드 작성이 일시 중단되었습니다.</p>
       )}
