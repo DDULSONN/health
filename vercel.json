@@ -14,6 +14,10 @@
       "schedule": "* * * * *"
     },
     {
+      "path": "/api/cron/duplicate-phone-notices",
+      "schedule": "* * * * *"
+    },
+    {
       "path": "/api/cron/community-fit-room-cleanup",
       "schedule": "17 */6 * * *"
     },
