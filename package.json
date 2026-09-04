@@ -16,6 +16,7 @@
     "check:open-card-activity-route": "node scripts/check-dating-open-card-activity-route.cjs",
     "check:payment-today": "node scripts/check-payment-today.cjs",
     "check:auth-session": "node scripts/check-auth-session-middleware.cjs",
+    "check:account-recovery": "node scripts/check-account-recovery.cjs",
     "check:contact-vcard": "node scripts/check-dating-contact-vcard.cjs",
     "check:contact-block-sync": "node scripts/check-dating-contact-block-sync.cjs",
     "backfill:dating-lite:dry": "node scripts/backfill-dating-lite.mjs --verbose",

@@ -3,12 +3,16 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import {
+  buildAccountRecoveryHref,
+  buildExistingAccountLoginHref,
+  isPhoneAlreadyUsedCode,
+  PHONE_ALREADY_USED_CODE,
+  safeAccountRecoveryNext,
+} from "@/lib/account-recovery";
 
 function safeNextPath(input: string | null): string {
-  if (!input || !input.startsWith("/")) return "/";
-  if (input.startsWith("//")) return "/";
-  if (input.startsWith("/login") || input.startsWith("/signup") || input.startsWith("/auth")) return "/";
-  return input;
+  return safeAccountRecoveryNext(input);
 }
 
 function normalizePhoneForOtp(raw: string) {
@@ -36,7 +40,9 @@ function PhoneVerificationContent() {
   const [resendAfterSec, setResendAfterSec] = useState(0);
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
+  const [switchingAccount, setSwitchingAccount] = useState(false);
   const [error, setError] = useState("");
+  const [errorCode, setErrorCode] = useState<string | null>(null);
   const [info, setInfo] = useState("");
 
   useEffect(() => {
@@ -85,7 +91,10 @@ function PhoneVerificationContent() {
 
     setSending(true);
     setError("");
+    setErrorCode(null);
     setInfo("");
+    setPendingPhone(null);
+    setCode("");
     try {
       const res = await fetch("/api/mypage/phone-verification/send", {
         method: "POST",
@@ -94,11 +103,13 @@ function PhoneVerificationContent() {
       });
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
+        code?: string;
         pendingPhone?: string;
         message?: string;
         resendAfterSec?: number;
       };
       if (!res.ok) {
+        setErrorCode(isPhoneAlreadyUsedCode(body.code) ? PHONE_ALREADY_USED_CODE : body.code ?? null);
         setError(body.error ?? "인증번호 발송에 실패했습니다.");
         return;
       }
@@ -125,14 +136,16 @@ function PhoneVerificationContent() {
 
     setVerifying(true);
     setError("");
+    setErrorCode(null);
     try {
       const res = await fetch("/api/mypage/phone-verification/verify", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ phone: pendingPhone, token: trimmed }),
       });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; phone_verified?: boolean };
+      const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string; phone_verified?: boolean };
       if (!res.ok || body.phone_verified !== true) {
+        setErrorCode(isPhoneAlreadyUsedCode(body.code) ? PHONE_ALREADY_USED_CODE : body.code ?? null);
         setError(body.error ?? "인증번호 확인에 실패했습니다.");
         return;
       }
@@ -142,6 +155,21 @@ function PhoneVerificationContent() {
       setError(err instanceof Error ? err.message : "인증번호 확인에 실패했습니다.");
     } finally {
       setVerifying(false);
+    }
+  };
+
+  const moveToExistingAccountLogin = async () => {
+    if (switchingAccount) return;
+    setSwitchingAccount(true);
+    setError("");
+    try {
+      const supabase = createClient();
+      const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
+      if (signOutError) throw signOutError;
+      window.location.assign(buildExistingAccountLoginHref(next));
+    } catch {
+      setError("로그인 화면으로 이동하지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      setSwitchingAccount(false);
     }
   };
 
@@ -168,7 +196,14 @@ function PhoneVerificationContent() {
             inputMode="tel"
             autoComplete="tel"
             value={phone}
-            onChange={(event) => setPhone(event.target.value)}
+            onChange={(event) => {
+              setPhone(event.target.value);
+              setPendingPhone(null);
+              setCode("");
+              setError("");
+              setErrorCode(null);
+              setInfo("");
+            }}
             placeholder="01012345678"
             className="h-12 w-full rounded-xl border border-neutral-300 px-3 text-base outline-none focus:border-emerald-500"
           />
@@ -203,7 +238,37 @@ function PhoneVerificationContent() {
           )}
         </div>
 
-        {error && <p className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-600">{error}</p>}
+        {errorCode === PHONE_ALREADY_USED_CODE ? (
+          <div role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">
+            <p className="text-sm font-bold text-amber-950">이미 가입된 휴대폰 번호예요</p>
+            <p className="mt-1 text-xs leading-5 text-amber-800">
+              새 계정에서는 이 번호를 다시 인증할 수 없습니다. 기존 계정으로 로그인하면 이전 프로필을 그대로 이용할 수 있어요.
+            </p>
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                disabled={switchingAccount}
+                onClick={() => void moveToExistingAccountLogin()}
+                className="h-10 rounded-lg bg-neutral-950 px-3 text-xs font-bold text-white disabled:opacity-50"
+              >
+                {switchingAccount ? "이동 중..." : "기존 계정 로그인"}
+              </button>
+              <button
+                type="button"
+                disabled={switchingAccount}
+                onClick={() => window.location.assign(buildAccountRecoveryHref(next))}
+                className="h-10 rounded-lg border border-amber-300 bg-white px-3 text-xs font-bold text-amber-900 disabled:opacity-50"
+              >
+                계정 찾기
+              </button>
+            </div>
+            {error && error !== "이미 다른 계정에 등록된 번호입니다." && (
+              <p className="mt-3 text-xs text-red-600">{error}</p>
+            )}
+          </div>
+        ) : error ? (
+          <p role="alert" className="mt-4 rounded-xl bg-red-50 p-3 text-sm text-red-600">{error}</p>
+        ) : null}
         {info && <p className="mt-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700">{info}</p>}
       </div>
     </main>

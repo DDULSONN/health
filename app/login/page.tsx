@@ -59,6 +59,8 @@ function LoginContent() {
   const next = safeNextPath(searchParams.get("next") ?? searchParams.get("redirect") ?? "/");
   const tabParam = searchParams.get("tab");
   const resetParam = searchParams.get("reset");
+  const recoveryParam = searchParams.get("recovery");
+  const reasonParam = searchParams.get("reason");
   const errorParam = searchParams.get("error");
   const errorCode = searchParams.get("error_code")?.toLowerCase() ?? null;
   const errorDescription = searchParams.get("error_description");
@@ -308,6 +310,19 @@ function LoginContent() {
         <p className="text-xs text-amber-800 bg-amber-50 rounded-xl p-3 mb-4 w-full text-center">
           비밀번호를 잊으셨다면 아래 `비밀번호를 잊으셨나요?` 링크를 눌러 재설정하세요.
         </p>
+      )}
+      {reasonParam === "phone_already_used" && (
+        <div className="mb-4 w-full rounded-xl border border-amber-200 bg-amber-50 p-3 text-left">
+          <p className="text-sm font-bold text-amber-950">기존 계정으로 로그인해 주세요</p>
+          <p className="mt-1 text-xs leading-5 text-amber-800">
+            휴대폰 번호가 이미 등록되어 있습니다. 예전에 가입한 Google·Apple 계정 또는 이메일을 이용해주세요.
+          </p>
+          {recoveryParam === "1" && (
+            <p className="mt-1 text-xs leading-5 text-amber-700">
+              가입 방식을 잘 모르겠다면 Google과 Apple을 먼저 확인한 뒤, 이메일 로그인 링크를 이용해보세요.
+            </p>
+          )}
+        </div>
       )}
 
       {inAppBrowser && (
