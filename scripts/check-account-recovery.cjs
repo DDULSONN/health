@@ -24,6 +24,23 @@ new Function("require", "module", "exports", output)(
 );
 const recovery = loaded.exports;
 
+const ticketSource = fs.readFileSync(path.join(root, "lib/account-recovery-ticket.ts"), "utf8");
+const ticketOutput = ts.transpileModule(ticketSource, {
+  compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020 },
+}).outputText;
+const ticketLoaded = { exports: {} };
+new Function("require", "module", "exports", ticketOutput)(
+  (name) => {
+    if (name === "@/lib/solapi-phone-verification") {
+      return { hashPhoneForVerificationStorage: (phone) => require("node:crypto").createHash("sha256").update(phone).digest("hex") };
+    }
+    return require(name);
+  },
+  ticketLoaded,
+  ticketLoaded.exports,
+);
+const recoveryTicket = ticketLoaded.exports;
+
 test("duplicate phone response code is detected exactly", () => {
   assert.equal(recovery.isPhoneAlreadyUsedCode("PHONE_ALREADY_USED"), true);
   assert.equal(recovery.isPhoneAlreadyUsedCode("phone_already_used"), true);
@@ -55,7 +72,22 @@ test("login and recovery links preserve only a safe destination", () => {
   const accountRecovery = new URL(recovery.buildAccountRecoveryHref("//evil.example"), "https://helchang.com");
   assert.equal(accountRecovery.pathname, "/account-recovery");
   assert.equal(accountRecovery.searchParams.get("next"), "/");
-  assert.equal(recovery.buildPasswordResetHref(), "/auth/reset-password?recovery=1");
+  const reset = new URL(recovery.buildPasswordResetHref("/mypage?tab=matching"), "https://helchang.com");
+  assert.equal(reset.pathname, "/auth/reset-password");
+  assert.equal(reset.searchParams.get("recovery"), "1");
+  assert.equal(reset.searchParams.get("next"), "/mypage?tab=matching");
+});
+
+test("recovery ticket is signed, expires, and rejects tampering", () => {
+  const now = Date.UTC(2026, 8, 4, 0, 0, 0);
+  const ticket = recoveryTicket.createAccountRecoveryTicket("+821012345678", now);
+  const parsed = recoveryTicket.readAccountRecoveryTicket(ticket, now + 1_000);
+  assert.match(parsed.phoneHash, /^[a-f0-9]{64}$/);
+  assert.equal(parsed.expiresAt, Math.floor(now / 1000) + recoveryTicket.ACCOUNT_RECOVERY_TTL_SECONDS);
+  const ticketParts = ticket.split(".");
+  ticketParts[3] = `${ticketParts[3][0] === "a" ? "b" : "a"}${ticketParts[3].slice(1)}`;
+  assert.equal(recoveryTicket.readAccountRecoveryTicket(ticketParts.join("."), now + 1_000), null);
+  assert.equal(recoveryTicket.readAccountRecoveryTicket(ticket, now + recoveryTicket.ACCOUNT_RECOVERY_TTL_SECONDS * 1_000), null);
 });
 
 test("Korean recovery copy remains valid UTF-8", () => {
@@ -77,12 +109,21 @@ test("recovery login cannot create a new OTP account or prefill the duplicate ac
   const loginSource = fs.readFileSync(path.join(root, "app/login/page.tsx"), "utf8");
   const callbackSource = fs.readFileSync(path.join(root, "app/auth/callback/page.tsx"), "utf8");
   const resetSource = fs.readFileSync(path.join(root, "app/auth/reset-password/page.tsx"), "utf8");
+  const sessionRouteSource = fs.readFileSync(path.join(root, "app/api/account-recovery/session/route.ts"), "utf8");
   assert.match(loginSource, /shouldCreateUser: !isRecoveryFlow/);
   assert.match(loginSource, /if \(!isRecoveryFlow && stored\) setEmail\(stored\)/);
   assert.match(callbackSource, /shouldCreateUser: state\?\.recovery !== true/);
   assert.match(callbackSource, /params\.set\("recovery", "1"\)/);
-  assert.match(callbackSource, /profileBody\.profile\?\.phone_verified !== true/);
+  assert.match(callbackSource, /checkAccountRecoverySession\(\)/);
   assert.match(callbackSource, /recovery_account_mismatch/);
+  assert.match(callbackSource, /recovery_verification_failed/);
+  const magicLinkBlock = loginSource.split("const sendMagicLink = async () => {")[1].split("const handleSocialLogin")[0];
+  const passwordBlock = loginSource.split("const handlePasswordLogin = async () => {")[1].split("const handleResendConfirmEmail")[0];
+  assert.doesNotMatch(magicLinkBlock, /finishPasswordRecoveryLogin/);
+  assert.match(passwordBlock, /signInWithPassword[\s\S]*finishPasswordRecoveryLogin\(supabase\)/);
+  assert.match(sessionRouteSource, /ticket\.phoneHash !== hashPhoneForVerificationStorage\(phoneE164\)/);
+  assert.match(sessionRouteSource, /RECOVERY_SESSION_EXPIRED/);
   assert.match(resetSource, /if \(!isRecoveryFlow && storedEmail\) setEmail\(storedEmail\)/);
-  assert.match(resetSource, /recoveryFlow \? "\/account-recovery"/);
+  assert.match(resetSource, /loginParams\.set\("recovery", "1"\)/);
+  assert.match(resetSource, /account-recovery\?next=/);
 });

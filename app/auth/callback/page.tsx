@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/client";
 import { isEmailConfirmed } from "@/lib/auth-confirmed";
 import { isValidReferralCode, normalizeReferralCode } from "@/lib/referral-code";
 import { safeInternalPath } from "@/lib/safe-internal-path";
+import { checkAccountRecoverySession } from "@/lib/account-recovery-client";
 
 const STORED_EMAIL_KEY = "recent_login_email";
 const PENDING_REFERRAL_KEY = "pending_signup_referral";
@@ -167,19 +168,22 @@ export default function AuthCallbackPage() {
 
         if (session) {
           if (parsed.recovery) {
-            const profileResponse = await fetch("/api/mypage/summary?profileOnly=1", { cache: "no-store" }).catch(() => null);
-            if (profileResponse?.ok) {
-              const profileBody = (await profileResponse.json().catch(() => ({}))) as {
-                profile?: { phone_verified?: boolean };
-              };
-              if (profileBody.profile?.phone_verified !== true) {
-                const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
-                setViewState({
-                  kind: "recovery",
-                  detail: signOutError ? "recovery_signout_failed" : "recovery_account_mismatch",
-                });
-                return;
-              }
+            const recoveryCheck = await checkAccountRecoverySession();
+            if (!recoveryCheck.ok) {
+              const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
+              const mismatch = recoveryCheck.code === "RECOVERY_ACCOUNT_MISMATCH";
+              const expired = recoveryCheck.code === "RECOVERY_SESSION_EXPIRED";
+              setViewState({
+                kind: "recovery",
+                detail: signOutError
+                  ? "recovery_signout_failed"
+                  : mismatch
+                    ? "recovery_account_mismatch"
+                    : expired
+                      ? "recovery_session_expired"
+                      : "recovery_verification_failed",
+              });
+              return;
             }
           }
           await claimReferral();
@@ -277,6 +281,14 @@ export default function AuthCallbackPage() {
 
     if (viewState.detail === "recovery_signout_failed") {
       return "계정을 다시 선택할 준비를 하지 못했어요. 브라우저를 새로고침한 뒤 다시 시도해 주세요.";
+    }
+
+    if (viewState.detail === "recovery_session_expired") {
+      return "계정 찾기 확인 시간이 지났어요. 휴대폰 인증 화면에서 다시 계정 찾기를 시작해 주세요.";
+    }
+
+    if (viewState.detail === "recovery_verification_failed") {
+      return "기존 계정 확인이 일시적으로 지연되고 있어요. 잠시 후 다시 시도해 주세요.";
     }
 
     if (state.errorDescription) return state.errorDescription;

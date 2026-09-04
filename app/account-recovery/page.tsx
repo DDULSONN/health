@@ -28,7 +28,7 @@ function AccountRecoveryContent() {
       if (signOutError) throw signOutError;
       window.location.assign(
         method === "password"
-          ? buildPasswordResetHref()
+          ? buildPasswordResetHref(next)
           : buildExistingAccountLoginHref(next, { tab: method, recovery: true }),
       );
     } catch {

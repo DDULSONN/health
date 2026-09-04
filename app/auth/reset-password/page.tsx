@@ -5,6 +5,7 @@ import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
+import { safeInternalPath } from "@/lib/safe-internal-path";
 
 const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
 const STORED_EMAIL_KEY = "recent_login_email";
@@ -55,9 +56,11 @@ function parseRecoveryParams(): RecoveryParams {
   };
 }
 
-function buildResetRedirectUrl(): string {
+function buildResetRedirectUrl(recovery: boolean, next: string): string {
   const url = new URL("/auth/reset-password", CANONICAL_SITE_URL);
   url.searchParams.set("mode", "update");
+  if (recovery) url.searchParams.set("recovery", "1");
+  url.searchParams.set("next", safeInternalPath(next));
   return url.toString();
 }
 
@@ -108,12 +111,16 @@ export default function ResetPasswordPage() {
   const [updating, setUpdating] = useState(false);
   const [cooldown, setCooldown] = useState(0);
   const [recoveryFlow, setRecoveryFlow] = useState(false);
+  const [nextPath, setNextPath] = useState("/");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
     let active = true;
+    const locationParams = new URLSearchParams(window.location.search);
+    const isRecoveryFlow = locationParams.get("recovery") === "1";
+    const recoveryNext = safeInternalPath(locationParams.get("next"));
 
     const setRequestView = (text?: string) => {
       if (!active) return;
@@ -123,7 +130,9 @@ export default function ResetPasswordPage() {
 
     const setUpdateView = () => {
       if (!active) return;
-      window.history.replaceState({}, "", "/auth/reset-password?mode=update");
+      const params = new URLSearchParams({ mode: "update", next: recoveryNext });
+      if (isRecoveryFlow) params.set("recovery", "1");
+      window.history.replaceState({}, "", `/auth/reset-password?${params.toString()}`);
       setError(null);
       setMessage(null);
       setView("update");
@@ -134,8 +143,8 @@ export default function ResetPasswordPage() {
     });
 
     const storedEmail = normalizeEmail(window.localStorage.getItem(STORED_EMAIL_KEY));
-    const isRecoveryFlow = new URLSearchParams(window.location.search).get("recovery") === "1";
     setRecoveryFlow(isRecoveryFlow);
+    setNextPath(recoveryNext);
     if (!isRecoveryFlow && storedEmail) setEmail(storedEmail);
 
     const sentAt = Number(window.localStorage.getItem(RESET_SENT_AT_KEY) ?? "0");
@@ -236,7 +245,7 @@ export default function ResetPasswordPage() {
     try {
       const supabase = createClient();
       const { error: sendError } = await supabase.auth.resetPasswordForEmail(normalized, {
-        redirectTo: buildResetRedirectUrl(),
+        redirectTo: buildResetRedirectUrl(recoveryFlow, nextPath),
       });
 
       if (sendError) {
@@ -292,7 +301,12 @@ export default function ResetPasswordPage() {
 
       setMessage("비밀번호가 변경되었습니다. 새 비밀번호로 로그인해 주세요.");
       await supabase.auth.signOut({ scope: "local" });
-      window.setTimeout(() => router.replace("/login?tab=password&reset=success"), 700);
+      const loginParams = new URLSearchParams({ tab: "password", reset: "success", next: nextPath });
+      if (recoveryFlow) {
+        loginParams.set("reason", "phone_already_used");
+        loginParams.set("recovery", "1");
+      }
+      window.setTimeout(() => router.replace(`/login?${loginParams.toString()}`), 700);
     } catch (caught) {
       const detail = caught instanceof Error ? caught.message : "unknown";
       setError(mapRecoveryError(detail));
@@ -395,7 +409,7 @@ export default function ResetPasswordPage() {
           )}
 
           <Link
-            href={recoveryFlow ? "/account-recovery" : "/login?tab=password"}
+            href={recoveryFlow ? `/account-recovery?next=${encodeURIComponent(nextPath)}` : "/login?tab=password"}
             className="mt-5 block text-center text-sm text-neutral-500 underline"
           >
             {recoveryFlow ? "계정 찾기로 돌아가기" : "로그인으로 돌아가기"}

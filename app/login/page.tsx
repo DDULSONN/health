@@ -1,11 +1,12 @@
 ﻿"use client";
 
-import { Suspense, useEffect, useMemo, useState } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { isEmailConfirmed } from "@/lib/auth-confirmed";
 import { safeInternalPath } from "@/lib/safe-internal-path";
+import { checkAccountRecoverySession } from "@/lib/account-recovery-client";
 
 const STORED_EMAIL_KEY = "recent_login_email";
 const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
@@ -92,6 +93,24 @@ function LoginContent() {
   const isOtpExpired = errorCode === "otp_expired";
   const isFlowStateMissing = errorCode === "flow_state_missing";
 
+  const finishPasswordRecoveryLogin = useCallback(async (supabase: ReturnType<typeof createClient>) => {
+    if (!isRecoveryFlow) return true;
+    const recoveryCheck = await checkAccountRecoverySession();
+    if (recoveryCheck.ok) return true;
+
+    const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
+    if (signOutError) {
+      setError("계정을 다시 선택할 준비를 하지 못했어요. 새로고침한 뒤 다시 시도해 주세요.");
+    } else if (recoveryCheck.code === "RECOVERY_ACCOUNT_MISMATCH") {
+      setError("이 계정은 해당 휴대폰 번호로 인증된 기존 계정이 아닙니다. 다른 계정으로 로그인해 주세요.");
+    } else if (recoveryCheck.code === "RECOVERY_SESSION_EXPIRED") {
+      setError("계정 찾기 확인 시간이 지났어요. 휴대폰 인증 화면에서 다시 시작해 주세요.");
+    } else {
+      setError("기존 계정 확인이 일시적으로 지연되고 있어요. 잠시 후 다시 시도해 주세요.");
+    }
+    return false;
+  }, [isRecoveryFlow]);
+
   const initialErrorMessage = useMemo(() => {
     if (isOtpExpired) return "로그인 링크가 만료되었거나 이미 사용됐어요. 다시 보내드릴게요.";
     if (isFlowStateMissing) {
@@ -118,6 +137,7 @@ function LoginContent() {
         } = await supabase.auth.getSession();
 
         if (session?.user && isEmailConfirmed(session.user)) {
+          if (!(await finishPasswordRecoveryLogin(supabase))) return;
           setError(null);
           setSuccess("이미 로그인되어 있습니다. 이동 중...");
           setTimeout(() => router.replace(next || "/"), 700);
@@ -134,7 +154,7 @@ function LoginContent() {
         setSessionChecking(false);
       }
     })();
-  }, [initialErrorMessage, isRecoveryFlow, next, router]);
+  }, [finishPasswordRecoveryLogin, initialErrorMessage, isRecoveryFlow, next, router]);
 
   useEffect(() => {
     if (tabParam === "password") setMode("password");
@@ -227,6 +247,8 @@ function LoginContent() {
         setCanResendConfirm(mapped.unconfirmed);
         return;
       }
+
+      if (!(await finishPasswordRecoveryLogin(supabase))) return;
 
       window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
       setSuccess("로그인되었습니다. 이동 중...");

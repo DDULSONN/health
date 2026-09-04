@@ -33,8 +33,11 @@ export function buildAccountRecoveryHref(nextInput: string | null | undefined) {
   return `/account-recovery?next=${encodeURIComponent(safeAccountRecoveryNext(nextInput))}`;
 }
 
-export function buildPasswordResetHref() {
-  return "/auth/reset-password?recovery=1";
+export function buildPasswordResetHref(nextInput?: string | null) {
+  const params = new URLSearchParams();
+  params.set("recovery", "1");
+  params.set("next", safeAccountRecoveryNext(nextInput));
+  return `/auth/reset-password?${params.toString()}`;
 }
 
 export function isPhoneAlreadyUsedCode(input: unknown) {

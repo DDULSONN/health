@@ -5,6 +5,7 @@ import { hashPhoneForVerificationStorage, hashSolapiOtp } from "@/lib/solapi-pho
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
+import { attachAccountRecoveryTicket } from "@/lib/account-recovery-ticket";
 
 const ATTEMPT_LOG_TABLE = "profile_phone_verification_attempts";
 const SOLAPI_OTP_TABLE = "profile_phone_verification_solapi_otps";
@@ -127,7 +128,10 @@ export async function POST(req: Request) {
         ip,
         providerError: "PHONE_ALREADY_VERIFIED_BY_ANOTHER_USER",
       });
-      return NextResponse.json({ error: "\uC774\uBBF8 \uB2E4\uB978 \uACC4\uC815\uC5D0 \uB4F1\uB85D\uB41C \uBC88\uD638\uC785\uB2C8\uB2E4.", code: "PHONE_ALREADY_USED" }, { status: 400 });
+      return attachAccountRecoveryTicket(
+        NextResponse.json({ error: "\uC774\uBBF8 \uB2E4\uB978 \uACC4\uC815\uC5D0 \uB4F1\uB85D\uB41C \uBC88\uD638\uC785\uB2C8\uB2E4.", code: "PHONE_ALREADY_USED" }, { status: 400 }),
+        phoneE164,
+      );
     }
 
     const attemptKey = `phone-otp-verify:user:${user.id}:phone:${hashPhoneForVerificationStorage(phoneE164)}:600`;
