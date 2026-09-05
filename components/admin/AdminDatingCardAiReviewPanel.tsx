@@ -1,6 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { REVIEW_RANK } from "@/lib/dating-review";
+import { datingContactReviewFlags } from "@/lib/dating-contact-content";
 
 type SourceType =
   | "all"
@@ -196,8 +198,23 @@ export default function AdminDatingCardAiReviewPanel() {
   const [editDrafts, setEditDrafts] = useState<Record<string, EditableFields>>({});
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [visibleCount, setVisibleCount] = useState(20);
+  const requestVersion = useRef(0);
+  const filteredItems = items.filter((item) => {
+    const review = itemReview(item);
+    const flags = review.flags.join(" ");
+    const matches = filter === "all" ||
+      (filter === "contact" && /연락|계정|전화|링크|이메일/.test(flags)) ||
+      (filter === "photo" && review.photoFlags.length > 0) ||
+      (filter === "commercial" && /광고|상업|위험/.test(flags)) ||
+      (filter === "incomplete" && /미완료|읽지 못|재검수 필요/.test(flags));
+    return matches && `${itemDisplayName(item)} ${itemCardId(item)} ${itemUserId(item)}`.toLowerCase().includes(search.trim().toLowerCase());
+  }).sort((a, b) => REVIEW_RANK[itemReview(b).suspicionLevel] - REVIEW_RANK[itemReview(a).suspicionLevel]);
 
   const loadLatest = useCallback(async () => {
+    const version = ++requestVersion.current;
     setError("");
     try {
       const query = new URLSearchParams();
@@ -206,9 +223,11 @@ export default function AdminDatingCardAiReviewPanel() {
       const res = await fetch(`/api/admin/dating/card-ai-review${query.size ? `?${query.toString()}` : ""}`, { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as ScanResponse;
       if (!res.ok || body.ok === false) throw new Error(body.message || "최근 검수 목록을 불러오지 못했습니다.");
+      if (version !== requestVersion.current) return;
       setItems(body.items ?? []);
+      setVisibleCount(20);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "최근 검수 목록을 불러오지 못했습니다.");
+      if (version === requestVersion.current) setError(err instanceof Error ? err.message : "최근 검수 목록을 불러오지 못했습니다.");
     }
   }, [includeClear, source]);
 
@@ -216,7 +235,9 @@ export default function AdminDatingCardAiReviewPanel() {
     void loadLatest();
   }, [loadLatest]);
 
-  const runScan = async (mode: ReviewMode) => {
+  const runScan = async (mode: ReviewMode, target?: ReviewItem) => {
+    if (processingKey !== "" || loadingMode !== null) return;
+    const version = ++requestVersion.current;
     setLoadingMode(mode);
     setError("");
     setInfo("");
@@ -225,29 +246,34 @@ export default function AdminDatingCardAiReviewPanel() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          source,
+          source: target ? itemSource(target) : source,
+          cardId: target ? itemCardId(target) : undefined,
           limit: Number(limit) || 50,
           mode,
-          includeClear,
+          includeClear: target ? true : includeClear,
         }),
       });
       const body = (await res.json().catch(() => ({}))) as ScanResponse;
       if (!res.ok || body.ok === false) {
         throw new Error([body.message, body.detail].filter(Boolean).join(" ") || "카드 검수에 실패했습니다.");
       }
-      setItems(body.items ?? []);
+      if (version !== requestVersion.current) return;
+      if (target) setItems((prev) => prev.map((item) => itemKey(item) === itemKey(target) ? body.items?.[0] ?? item : item));
+      else setItems(body.items ?? []);
+      setVisibleCount(20);
       setInfo(
         `${modeLabel(mode)} 완료: ${body.scannedCount ?? 0}개 검사, 의심 ${body.suspiciousCount ?? 0}개 표시` +
           (body.model ? ` (${body.model})` : "")
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "카드 검수에 실패했습니다.");
+      if (version === requestVersion.current) setError(err instanceof Error ? err.message : "카드 검수에 실패했습니다.");
     } finally {
       setLoadingMode(null);
     }
   };
 
   const handleAction = async (item: ReviewItem, action: "delete_card" | "send_warning_email" | "set_one_on_one_edit_lock") => {
+    if (loadingMode !== null) return;
     const sourceType = itemSource(item);
     const cardId = itemCardId(item);
     const review = itemReview(item);
@@ -333,6 +359,7 @@ export default function AdminDatingCardAiReviewPanel() {
   };
 
   const saveEdit = async (item: ReviewItem) => {
+    if (loadingMode !== null) return;
     const sourceType = itemSource(item);
     const cardId = itemCardId(item);
     const key = itemKey(item);
@@ -382,6 +409,7 @@ export default function AdminDatingCardAiReviewPanel() {
           <button
             type="button"
             onClick={() => void loadLatest()}
+            disabled={loadingMode !== null}
             className="h-9 rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-700"
           >
             최근 결과
@@ -390,6 +418,7 @@ export default function AdminDatingCardAiReviewPanel() {
 
         <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_120px_auto]">
           <select
+            disabled={loadingMode !== null}
             value={source}
             onChange={(event) => setSource(event.target.value as SourceType)}
             className="h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm"
@@ -432,6 +461,7 @@ export default function AdminDatingCardAiReviewPanel() {
         <label className="mt-3 flex items-center gap-2 text-xs font-semibold text-neutral-600">
           <input
             type="checkbox"
+            disabled={loadingMode !== null}
             checked={includeClear}
             onChange={(event) => setIncludeClear(event.target.checked)}
             className="h-4 w-4 rounded border-neutral-300"
@@ -445,13 +475,20 @@ export default function AdminDatingCardAiReviewPanel() {
         {error ? <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}
       </div>
 
-      {items.length === 0 ? (
+      <div className="flex flex-wrap gap-2">
+        <input aria-label="검수 결과 이름 또는 ID 검색" placeholder="이름 또는 ID 검색" value={search} onChange={(event) => { setSearch(event.target.value); setVisibleCount(20); }} className="h-9 rounded-xl border border-neutral-200 px-3 text-xs" />
+        <select aria-label="검수 사유" value={filter} onChange={(event) => { setFilter(event.target.value); setVisibleCount(20); }} className="h-9 rounded-xl border border-neutral-200 px-3 text-xs">
+          <option value="all">모든 사유</option><option value="contact">연락처·외부 계정</option><option value="photo">사진</option><option value="commercial">광고·위험 문구</option><option value="incomplete">검수 미완료</option>
+        </select>
+        <span className="self-center text-xs text-neutral-500">불러온 결과 중 {filteredItems.length}개 · 위험도순</span>
+      </div>
+      {filteredItems.length === 0 ? (
         <div className="rounded-2xl border border-neutral-200 bg-white p-6 text-center text-sm text-neutral-500">
           표시할 의심 카드/지원 내역이 없습니다.
         </div>
       ) : (
         <div className="grid gap-3">
-          {items.map((item) => {
+          {filteredItems.slice(0, visibleCount).map((item) => {
             const review = itemReview(item);
             const sourceType = itemSource(item);
             const cardId = itemCardId(item);
@@ -496,6 +533,7 @@ export default function AdminDatingCardAiReviewPanel() {
                           key={url}
                           src={url}
                           alt="검수 사진"
+                          loading="lazy"
                           className="h-20 w-20 rounded-xl border border-neutral-200 object-cover"
                         />
                       ))}
@@ -504,6 +542,7 @@ export default function AdminDatingCardAiReviewPanel() {
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-2">
+                  <button type="button" disabled={loadingMode !== null || processingKey !== ""} onClick={() => void runScan("ai", item)} className="h-9 rounded-xl border border-neutral-200 px-3 text-xs font-semibold disabled:opacity-50">이 항목 AI 재검수</button>
                   <button
                     type="button"
                     onClick={() => void handleAction(item, "send_warning_email")}
@@ -653,7 +692,7 @@ export default function AdminDatingCardAiReviewPanel() {
                     <div className="mt-2 space-y-1">
                       {Object.entries(item.texts).map(([key, value]) =>
                         value ? (
-                          <p key={key}>
+                          <p key={key} className={!/instagram|Id$|^candidate/i.test(key) && datingContactReviewFlags(value).length ? "rounded bg-amber-100 p-2 text-amber-900" : ""}>
                             <span className="font-semibold">{key}: </span>
                             {value}
                           </p>
@@ -667,6 +706,7 @@ export default function AdminDatingCardAiReviewPanel() {
           })}
         </div>
       )}
+      {filteredItems.length > visibleCount ? <button type="button" onClick={() => setVisibleCount((count) => count + 20)} className="w-full rounded-xl border border-neutral-200 py-3 text-sm">20개 더 보기</button> : null}
     </div>
   );
 }
