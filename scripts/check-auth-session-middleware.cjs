@@ -72,6 +72,9 @@ function loadCallbackComplete(user) {
     "@/lib/referrals-server": {
       claimReferralRelationship: async () => ({ ok: true }),
     },
+    "@/lib/signup-email-consent-server": {
+      recordSignupEmailConsent: async () => {},
+    },
     "@/lib/supabase/server": {
       createAdminClient: () => ({}),
     },

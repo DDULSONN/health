@@ -1,4 +1,5 @@
-﻿import { createClient } from "@/lib/supabase/server";
+import { selectPublicProfiles } from "@/lib/public-profiles";
+import { createClient } from "@/lib/supabase/server";
 import { containsProfanity, getRateLimitRemaining } from "@/lib/moderation";
 import { checkRouteRateLimit, extractClientIp } from "@/lib/request-rate-limit";
 import { NextResponse } from "next/server";
@@ -178,7 +179,7 @@ export async function GET(request: Request) {
 
   const [{ data: profiles }, certSummaryMap, reactionRows, commentRows] = await Promise.all([
     userIds.length > 0
-      ? supabase.from("profiles").select("user_id, nickname, role").in("user_id", userIds)
+      ? selectPublicProfiles().in("user_id", userIds)
       : Promise.resolve({ data: [] as { user_id: string; nickname: string; role: string }[] }),
     fetchUserCertSummaryMap(userIds, supabase),
     freePostIds.length > 0

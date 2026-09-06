@@ -1,4 +1,5 @@
-﻿import { NextResponse } from "next/server";
+import { selectPublicProfiles } from "@/lib/public-profiles";
+import { NextResponse } from "next/server";
 import { getOneOnOneContactNudgeSenderDisplayName } from "@/lib/dating-1on1-contact-nudge";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -284,7 +285,7 @@ export async function GET(request: Request) {
   ];
   const profileMap = new Map<string, { nickname: string | null }>();
   if (actorIds.length > 0) {
-    const { data: profiles } = await supabase.from("profiles").select("user_id, nickname").in("user_id", actorIds);
+    const { data: profiles } = await selectPublicProfiles().in("user_id", actorIds);
     for (const profile of profiles ?? []) {
       profileMap.set(profile.user_id, { nickname: profile.nickname });
     }

@@ -1,3 +1,4 @@
+import { selectPublicProfiles } from "@/lib/public-profiles";
 import { NextResponse } from "next/server";
 import { buildSignedImageUrl, extractStorageObjectPath } from "@/lib/images";
 import { createClient } from "@/lib/supabase/server";
@@ -75,7 +76,7 @@ export async function GET() {
 
   const [{ data: profiles }, votedResult] = await Promise.all([
     profileUserIds.length
-      ? supabase.from("profiles").select("user_id, nickname").in("user_id", profileUserIds)
+      ? selectPublicProfiles().in("user_id", profileUserIds)
       : Promise.resolve({ data: [] as { user_id: string; nickname: string | null }[] }),
     user && postIds.length
       ? supabase.from("votes").select("post_id").eq("voter_id", user.id).in("post_id", postIds)

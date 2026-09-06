@@ -1,3 +1,4 @@
+import { selectPublicProfiles } from "@/lib/public-profiles";
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -37,9 +38,7 @@ export async function GET(req: Request) {
       .eq("thread_id", threadId)
       .order("created_at", { ascending: true }),
     supabase.from("posts").select("id,title").eq("id", thread.post_id).maybeSingle(),
-    supabase
-      .from("profiles")
-      .select("user_id,nickname")
+    selectPublicProfiles()
       .in("user_id", [thread.author_id, thread.sender_id]),
   ]);
 

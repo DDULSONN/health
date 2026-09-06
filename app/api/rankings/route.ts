@@ -1,3 +1,4 @@
+import { selectPublicProfiles } from "@/lib/public-profiles";
 import { createClient } from "@/lib/supabase/server";
 import { publicCachedJson } from "@/lib/http-cache";
 
@@ -67,9 +68,7 @@ export async function GET() {
   const profileMap = new Map<string, { nickname: string }>();
 
   if (allUserIds.length > 0) {
-    const { data: profiles } = await supabase
-      .from("profiles")
-      .select("user_id, nickname")
+    const { data: profiles } = await selectPublicProfiles()
       .in("user_id", allUserIds);
 
     for (const p of profiles ?? []) {

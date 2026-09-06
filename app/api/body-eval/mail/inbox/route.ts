@@ -1,3 +1,4 @@
+import { selectPublicProfiles } from "@/lib/public-profiles";
 import { createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -74,7 +75,7 @@ export async function GET() {
       threads.map((t) => (t.author_id === user.id ? t.sender_id : t.author_id))
     ),
   ];
-  const profileRes = await supabase.from("profiles").select("user_id,nickname").in("user_id", peerIds);
+  const profileRes = await selectPublicProfiles().in("user_id", peerIds);
   const nicknameByUserId = new Map<string, string>();
   for (const p of profileRes.data ?? []) {
     nicknameByUserId.set(String(p.user_id), String(p.nickname ?? "익명"));

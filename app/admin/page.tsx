@@ -14,6 +14,7 @@ export default function AdminPage() {
   const [loading, setLoading] = useState(true);
   const [reports, setReports] = useState<Report[]>([]);
   const [posts, setPosts] = useState<Post[]>([]);
+  const [postsError, setPostsError] = useState<string | null>(null);
 
   // admin 체크
   useEffect(() => {
@@ -22,13 +23,9 @@ export default function AdminPage() {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) { router.push("/login?redirect=/admin"); return; }
 
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("role")
-        .eq("user_id", user.id)
-        .single();
-
-      if (profile?.role !== "admin") { router.push("/"); return; }
+      const adminResponse = await fetch("/api/admin/me", { cache: "no-store" }).catch(() => null);
+      const adminStatus = await adminResponse?.json().catch(() => null);
+      if (!adminResponse?.ok || adminStatus?.isAdmin !== true) { router.push("/"); return; }
       setAuthorized(true);
       setLoading(false);
     })();
@@ -44,13 +41,15 @@ export default function AdminPage() {
   }, []);
 
   const loadPosts = useCallback(async () => {
-    const supabase = createClient();
-    const { data } = await supabase
-      .from("posts")
-      .select("*, profiles(nickname)")
-      .order("created_at", { ascending: false })
-      .limit(50);
-    setPosts((data as Post[]) ?? []);
+    setPostsError(null);
+    try {
+      const response = await fetch("/api/admin/posts", { cache: "no-store" });
+      const data = await response.json();
+      if (!response.ok || !Array.isArray(data.posts)) throw new Error("POSTS_LOAD_FAILED");
+      setPosts(data.posts);
+    } catch {
+      setPostsError("게시글을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+    }
   }, []);
 
   useEffect(() => {
@@ -95,6 +94,7 @@ export default function AdminPage() {
       <div className="mb-4 flex items-center justify-between">
         <h1 className="text-2xl font-bold text-neutral-900">관리자</h1>
       </div>
+      {tab === "posts" && postsError && <p role="alert" className="mb-3 text-sm text-red-600">{postsError}</p>}
 
       <div className="flex rounded-xl border border-neutral-300 overflow-hidden mb-5">
         {(["reports", "posts"] as Tab[]).map((t) => (

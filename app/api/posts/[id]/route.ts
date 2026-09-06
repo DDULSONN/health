@@ -1,3 +1,4 @@
+import { selectPublicProfiles } from "@/lib/public-profiles";
 import { createClient } from "@/lib/supabase/server";
 import { containsProfanity } from "@/lib/moderation";
 import { BODYCHECK_SCORE_MAP, type BodycheckRating } from "@/lib/community";
@@ -69,7 +70,7 @@ export async function GET(request: Request, { params }: RouteCtx) {
   }
 
   const [{ data: authorProfile }, { data: comments }] = await Promise.all([
-    supabase.from("profiles").select("nickname, role").eq("user_id", post.user_id).single(),
+    selectPublicProfiles().eq("user_id", post.user_id).single(),
     supabase
       .from("comments")
       .select(COMMENT_SELECT)
@@ -83,9 +84,7 @@ export async function GET(request: Request, { params }: RouteCtx) {
   ];
   const [commentProfilesRes, certSummaryMap] = await Promise.all([
     commentUserIds.length > 0
-      ? supabase
-          .from("profiles")
-          .select("user_id, nickname")
+      ? selectPublicProfiles()
           .in("user_id", commentUserIds)
       : Promise.resolve({ data: [] as { user_id: string; nickname: string }[] }),
     fetchUserCertSummaryMap([post.user_id as string, ...commentUserIds], supabase),
