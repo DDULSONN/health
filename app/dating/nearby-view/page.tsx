@@ -46,6 +46,7 @@ type CardItem = {
 };
 
 type CityViewListResponse = {
+  purchasePreview?: { newCount: number } | null;
   limit?: number;
   items?: CardItem[];
   targetSex?: "male" | "female" | null;
@@ -110,6 +111,8 @@ export default function NearbyViewPage() {
   }, []);
   const [submittingProvince, setSubmittingProvince] = useState("");
   const [checkoutProvince, setCheckoutProvince] = useState("");
+  const checkoutInFlightRef = useRef(false);
+  const [purchasePreview, setPurchasePreview] = useState<{ province: string; newCount: number } | null>(null);
   const [status, setStatus] = useState<CityStatusResponse>(
     initialSnapshot?.status ?? {
       loggedIn: false,
@@ -228,12 +231,14 @@ export default function NearbyViewPage() {
     const requestId = ++listRequestIdRef.current;
     setLoading(true);
     setListError("");
+    setPurchasePreview(null);
     try {
       const targetSexQuery = targetSex ? `&targetSex=${encodeURIComponent(targetSex)}` : "";
       const res = await fetch(`/api/dating/cards/city-view/list?province=${encodeURIComponent(province)}${targetSexQuery}`, { cache: "no-store" });
       if (requestId !== listRequestIdRef.current) return;
       if (!res.ok) {
         const errorBody = (await res.json().catch(() => ({}))) as { error?: string };
+        if (requestId !== listRequestIdRef.current) return;
         setItems([]);
         setListError(errorBody.error ?? "열람 카드를 불러오지 못했습니다.");
         return;
@@ -241,6 +246,7 @@ export default function NearbyViewPage() {
       const body = (await res.json()) as CityViewListResponse;
       if (requestId !== listRequestIdRef.current) return;
       setItems(Array.isArray(body.items) ? body.items : []);
+      setPurchasePreview(body.purchasePreview ? { province, newCount: body.purchasePreview.newCount } : null);
       setCardLimit(typeof body.limit === "number" && body.limit > 0 ? body.limit : 30);
       if (body.targetSex === "male" || body.targetSex === "female") {
         setActiveSex(body.targetSex);
@@ -316,19 +322,20 @@ export default function NearbyViewPage() {
   );
 
   const requestCheckout = useCallback(
-    async (province: string) => {
-      if (!province || !status.loggedIn || checkoutProvince) return;
+    async (province: string, requireNewCandidates = false) => {
+      if (!province || !status.loggedIn || checkoutInFlightRef.current) return;
       const targetSex = resolveTargetSexForProvince(province);
       if (!targetSex) {
         alert("열람할 성별을 먼저 선택해 주세요.");
         return;
       }
+      checkoutInFlightRef.current = true;
       setCheckoutProvince(province);
       try {
         const res = await fetch("/api/payments/toss/create", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ productType: "city_view", province, targetSex }),
+          body: JSON.stringify({ productType: "city_view", province, targetSex, requireNewCandidates }),
         });
         const body = (await res.json().catch(() => ({}))) as { ok?: boolean; message?: string; checkoutUrl?: string };
 
@@ -346,10 +353,11 @@ export default function NearbyViewPage() {
       } catch {
         alert(withPaymentCardNotice("결제 요청 처리 중 오류가 발생했습니다."));
       } finally {
+        checkoutInFlightRef.current = false;
         setCheckoutProvince("");
       }
     },
-    [checkoutProvince, resolveTargetSexForProvince, status.loggedIn]
+    [resolveTargetSexForProvince, status.loggedIn]
   );
 
   const maleItems = useMemo(() => items.filter((i) => i.sex === "male"), [items]);
@@ -478,14 +486,14 @@ export default function NearbyViewPage() {
                       >
                         아래 카드 확인 ↓
                       </button>
-                      <button
+                      {!(selectedProvince === stat.province && cardLimit === 10) ? <button
                         type="button"
-                        onClick={() => void requestCheckout(stat.province)}
+                        onClick={() => void requestCheckout(stat.province, true)}
                         disabled={!status.loggedIn || Boolean(checkoutProvince)}
                         className="inline-flex min-h-[36px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-700 hover:bg-neutral-100 disabled:cursor-not-allowed disabled:opacity-50"
                       >
-                        {checkoutProvince === stat.province ? "결제창 준비 중..." : "30명 더 열기"}
-                      </button>
+                        {checkoutProvince === stat.province ? "결제창 준비 중..." : "최대 30명 더 보기"}
+                      </button> : null}
                       <span className="text-xs font-medium text-emerald-700">24시간 열람중 · 아래에서 확인</span>
                     </>
                   ) : (
@@ -545,7 +553,7 @@ export default function NearbyViewPage() {
           <div className="space-y-5">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-neutral-800">{selectedProvince} 카드</h2>
-              <span className="text-xs font-medium text-emerald-700">{cardLimit === 10 ? "주간 무료 · 최대 10명 · 24시간" : "24시간 · 결제할 때마다 30명 추가"}</span>
+              <span className="text-xs font-medium text-emerald-700">{cardLimit === 10 ? "주간 무료 · 최대 10명 · 24시간" : "24시간 · 구매당 최대 30명 열람"}</span>
             </div>
             <div className="flex gap-2">
               <button
@@ -584,6 +592,21 @@ export default function NearbyViewPage() {
                 })
               }
             />
+            {cardLimit === 10 && purchasePreview?.province === selectedProvince ? (
+              <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4">
+                {purchasePreview.newCount > 0 ? (
+                  <>
+                    <p className="text-sm font-semibold text-neutral-900">아직 열람하지 않은 후보 {purchasePreview.newCount}명이 더 있어요</p>
+                    <p className="mt-2 text-xs leading-5 text-neutral-600">{selectedProvince} 우선 · 다른 지역 포함 · 5,000원 · 결제 후 24시간 · 지원권 1장 포함</p>
+                    <p className="mt-1 text-xs leading-5 text-neutral-500">최대 30명 열람에 새 후보 {purchasePreview.newCount}명이 포함돼요. 후보 상태에 따라 인원은 달라질 수 있어요.</p>
+                    {purchasePreview.newCount < 30 ? <p className="mt-1 text-xs text-neutral-500">새 후보 외에 이전에 열람한 후보가 포함될 수 있어요.</p> : null}
+                    <button type="button" onClick={() => void requestCheckout(selectedProvince, true)} disabled={Boolean(checkoutProvince)} className="mt-3 min-h-[44px] w-full rounded-xl bg-rose-600 px-4 text-sm font-semibold text-white hover:bg-rose-700 disabled:opacity-50">
+                      {checkoutProvince ? "결제창 준비 중..." : "가까운 후보 더 보기 · 5,000원"}
+                    </button>
+                  </>
+                ) : <p className="text-sm text-neutral-600">현재 새로 열람할 후보가 없어요. 나중에 다시 확인해주세요.</p>}
+              </div>
+            ) : null}
           </div>
         )}
       </section>

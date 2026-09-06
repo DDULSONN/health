@@ -1,6 +1,6 @@
 ﻿import { NextResponse } from "next/server";
 import { normalizeCardSex } from "@/lib/dating-more-view";
-import { getCityViewTargetSex } from "@/lib/dating-city-view";
+import { getCityViewTargetSex, normalizeDatingCityViewSex } from "@/lib/dating-city-view";
 import { approveMoreViewRequest, grantMoreViewAccess, grantOneOnOneContactExchange } from "@/lib/dating-purchase-fulfillment";
 import {
   DATING_ALL_PASS_DURATION_DAYS,
@@ -31,6 +31,9 @@ import {
   isTossConfigured,
 } from "@/lib/toss-payments";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
+
+import { normalizeDatingApplyReturn } from "@/lib/dating-apply-return";
+import { getCityViewPurchasePreview } from "@/lib/dating-purchase-fulfillment";
 
 type ProductType =
   | "apply_credits"
@@ -70,6 +73,8 @@ type CreateBody = {
   partnerRelation?: unknown;
   offerPlacement?: unknown;
   resumedFromOrderId?: unknown;
+  returnTo?: unknown;
+  requireNewCandidates?: unknown;
 };
 
 type OneOnOneMatchRow = {
@@ -514,6 +519,16 @@ export async function POST(req: Request) {
       }
 
       const duplicateOrders = duplicateOrderRes.data ?? [];
+
+      if (body.requireNewCandidates === true) {
+        if (normalizeDatingCityViewSex(body.targetSex) !== targetSex) {
+          return json(409, { ok: false, code: "TARGET_SEX_CHANGED", requestId, message: "프로필의 성별 정보가 변경되었습니다. 새로고침 후 후보를 다시 확인해주세요." });
+        }
+        const preview = await getCityViewPurchasePreview(admin, user.id, province, targetSex);
+        if (preview.newCount === 0) {
+          return json(409, { ok: false, code: "NO_NEW_CANDIDATES", requestId, message: "현재 새로 열람할 후보가 없습니다. 나중에 다시 확인해주세요." });
+        }
+      }
 
       const readyOrderIds = duplicateOrders.filter((row) => row.status === "ready").map((row) => row.id);
       await cancelReadyOrders(admin, readyOrderIds);
@@ -1171,6 +1186,11 @@ export async function POST(req: Request) {
     successUrl.searchParams.set("productType", productType);
     const failUrl = new URL("/payments/fail", baseUrl);
     failUrl.searchParams.set("productType", productType);
+    const applyReturn = productType === "apply_credits" ? normalizeDatingApplyReturn(body.returnTo) : null;
+    if (applyReturn) {
+      successUrl.searchParams.set("returnTo", applyReturn);
+      failUrl.searchParams.set("returnTo", applyReturn);
+    }
     const cityViewProvince =
       productType === "city_view" && typeof productMeta.province === "string"
         ? productMeta.province

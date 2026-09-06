@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
+import { saveApplyCheckoutDraft, readApplyCheckoutDraft, clearApplyCheckoutDraft } from "@/lib/dating-apply-draft";
 
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 import { createClient } from "@/lib/supabase/client";
@@ -75,6 +76,9 @@ export default function DatingCardApplyPage() {
   const supabase = useMemo(() => createClient(), []);
 
   const [card, setCard] = useState<CardDetail | null>(null);
+  const viewerIdRef = useRef("");
+  const uploadedPathsRef = useRef<string[]>([]);
+  const creditCheckoutInFlightRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
@@ -96,11 +100,12 @@ export default function DatingCardApplyPage() {
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
 
   const fillFromLatestApplication = (item: LatestApplicationPrefill) => {
+    uploadedPathsRef.current = item.photo_paths;
     setAge(item.age ? String(item.age) : "");
     setHeightCm(item.height_cm ? String(item.height_cm) : "");
     setRegion(item.region ?? "");
     setJob(item.job ?? "");
-    setTrainingYears(item.training_years ? String(item.training_years) : "");
+    setTrainingYears(item.training_years != null ? String(item.training_years) : "");
     setIntroText(item.intro_text ?? "");
     setInstagramId(normalizeInstagramId(item.instagram_id ?? ""));
     setConsent(true);
@@ -121,6 +126,7 @@ export default function DatingCardApplyPage() {
         router.replace(`/login?redirect=${encodeURIComponent(applyHref)}`);
         return;
       }
+      viewerIdRef.current = user.id;
 
       try {
         const [cardRes, latestRes] = await Promise.all([
@@ -149,6 +155,19 @@ export default function DatingCardApplyPage() {
             fillFromLatestApplication(latestBody.item);
           }
         }
+        if (active) {
+          let draft = null;
+          try { draft = readApplyCheckoutDraft(window.sessionStorage, user.id, id); } catch { /* Continue without a draft when storage is disabled. */ }
+          if (draft) {
+            setAge(draft.age); setHeightCm(draft.heightCm); setRegion(draft.region); setJob(draft.job);
+            setTrainingYears(draft.trainingYears); setIntroText(draft.introText); setInstagramId(draft.instagramId);
+            setConsent(false);
+            setReuseLastPhotos(draft.photoPaths.length === 2);
+            uploadedPathsRef.current = draft.photoPaths;
+            setLastApplication({ id: "checkout-draft", age: Number(draft.age), height_cm: Number(draft.heightCm), region: draft.region, job: draft.job, training_years: Number(draft.trainingYears), intro_text: draft.introText, instagram_id: draft.instagramId, photo_paths: draft.photoPaths, created_at: new Date().toISOString() });
+            setPrefillNotice("결제 전 작성 내용을 복구했어요. 내용을 확인하고 동의 후 지원해주세요. 결제만으로 지원되지는 않아요.");
+          }
+        }
       } catch {
         router.replace(listHref);
         return;
@@ -167,6 +186,7 @@ export default function DatingCardApplyPage() {
   }, [applyHref, id, listHref, router, supabase]);
 
   const handlePhotoChange = (index: number, file: File | null) => {
+    uploadedPathsRef.current = [];
     const next = [...photos];
     next[index] = file;
     setPhotos(next);
@@ -182,6 +202,7 @@ export default function DatingCardApplyPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting || creditCheckoutInFlightRef.current) return;
     setError("");
     setErrorCode("");
     setProfileEditUrl(null);
@@ -249,6 +270,7 @@ export default function DatingCardApplyPage() {
         uploadedPaths = lastApplication?.photo_paths ?? [];
       }
 
+      uploadedPathsRef.current = uploadedPaths;
       const payload = {
         card_id: id,
         age: Number(age),
@@ -300,6 +322,7 @@ export default function DatingCardApplyPage() {
       }
 
       alert("지원이 완료됐습니다.");
+      try { clearApplyCheckoutDraft(window.sessionStorage, viewerIdRef.current, id); } catch { /* Storage may be disabled. */ }
       router.push("/mypage");
     } catch {
       setError("네트워크 오류가 발생했습니다.");
@@ -309,12 +332,27 @@ export default function DatingCardApplyPage() {
   };
 
   const handleRequestApplyCredits = async () => {
+    if (creditCheckoutInFlightRef.current || submitting) return;
+    if (photos.some(Boolean) && uploadedPathsRef.current.length !== 2) {
+      setError("변경한 사진이 아직 저장되지 않았어요. 아래 지원하기를 눌러 사진과 작성 내용을 확인한 뒤 충전해주세요.");
+      return;
+    }
+    creditCheckoutInFlightRef.current = true;
     setCreditRequesting(true);
     try {
+      try {
+        saveApplyCheckoutDraft(window.sessionStorage, viewerIdRef.current, id, {
+          age, heightCm, region, job, trainingYears, introText, instagramId,
+          photoPaths: uploadedPathsRef.current.length === 2 ? uploadedPathsRef.current : reuseLastPhotos ? lastApplication?.photo_paths ?? [] : [],
+        });
+      } catch {
+        setError("작성 내용을 임시 보관하지 못했습니다. 브라우저 저장 설정을 확인한 뒤 다시 시도해주세요.");
+        return;
+      }
       const res = await fetch("/api/payments/toss/create", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productType: "apply_credits" }),
+        body: JSON.stringify({ productType: "apply_credits", returnTo: applyHref }),
       });
       const body = (await res.json().catch(() => ({}))) as {
         ok?: boolean;
@@ -333,6 +371,7 @@ export default function DatingCardApplyPage() {
     } catch {
       setError(withPaymentCardNotice("결제 요청 처리 중 오류가 발생했습니다."));
     } finally {
+      creditCheckoutInFlightRef.current = false;
       setCreditRequesting(false);
     }
   };
@@ -384,7 +423,7 @@ export default function DatingCardApplyPage() {
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
-                <p className="text-sm font-semibold text-emerald-900">마지막 지원 내용을 불러왔어요</p>
+                <p className="text-sm font-semibold text-emerald-900">{lastApplication.id === "checkout-draft" ? "작성하던 지원서를 불러왔어요" : "마지막 지원 내용을 불러왔어요"}</p>
                 <p className="mt-1 text-xs text-emerald-800">{prefillNotice || `${formatDateTime(lastApplication.created_at)} 기준 내용입니다.`}</p>
               </div>
               <button
@@ -479,9 +518,8 @@ export default function DatingCardApplyPage() {
             )}
             {errorCode === "DAILY_APPLY_LIMIT" && (
               <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 p-3">
-                <p className="text-xs text-amber-800">
-                  지원권 5장 5,000원이며 결제창에서 이용 가능한 결제수단을 선택할 수 있어요. 결제 문의는 오픈카톡으로 부탁드려요.
-                </p>
+                <p className="text-sm font-semibold text-neutral-900">지원권을 모두 사용했어요</p>
+                <p className="mt-1 text-xs leading-5 text-neutral-600">지원권 5장 · 5,000원. 충전 후 이 상대에게 지원을 이어갈 수 있어요. 작성 내용은 이 탭에 1시간 동안 임시 보관되며, 최종 지원은 직접 확인해주세요.</p>
                 <div className="mt-2 flex flex-wrap gap-2">
                   <button
                     type="button"
@@ -489,7 +527,7 @@ export default function DatingCardApplyPage() {
                     disabled={creditRequesting}
                     className="inline-flex min-h-[36px] items-center rounded-md bg-amber-500 px-3 text-xs font-medium text-white disabled:opacity-50"
                   >
-                    {creditRequesting ? "결제창 준비 중..." : "결제하기"}
+                    {creditRequesting ? "결제창 준비 중..." : "지원권 5장 충전 · 5,000원"}
                   </button>
                   <a
                     href={OPEN_KAKAO_URL}
@@ -507,7 +545,7 @@ export default function DatingCardApplyPage() {
 
         <button
           type="submit"
-          disabled={submitting}
+          disabled={submitting || creditRequesting}
           className="w-full min-h-[46px] rounded-xl bg-pink-500 text-sm font-medium text-white hover:bg-pink-600 disabled:opacity-50"
         >
           {submitting ? "지원 중..." : "지원하기"}

@@ -3,6 +3,7 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import { normalizeDatingApplyReturn } from "@/lib/dating-apply-return";
 
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE = "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
 
@@ -34,7 +35,8 @@ function PaymentFailContent() {
   const message = searchParams.get("message") ?? "결제가 취소되었거나 정상적으로 완료되지 않았습니다.";
   const orderId = searchParams.get("orderId") ?? "-";
   const productType = searchParams.get("productType");
-  const primaryAction = getPrimaryAction(productType);
+  const applyReturn = productType === "apply_credits" ? normalizeDatingApplyReturn(searchParams.get("returnTo")) : null;
+  const primaryAction = applyReturn ? { href: applyReturn, label: "작성하던 지원서로 돌아가기" } : getPrimaryAction(productType);
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">

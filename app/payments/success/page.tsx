@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { pickLoveFortuneFaceAsset } from "@/lib/love-fortune-face-assets";
 import { trackPurchaseCompleted } from "@/lib/payment-analytics";
+import { normalizeDatingApplyReturn } from "@/lib/dating-apply-return";
 
 type ConfirmResponse = {
   ok?: boolean;
@@ -720,7 +721,12 @@ function PaymentSuccessContent() {
     return () => window.clearInterval(timer);
   }, [fortuneLoading]);
 
-  const primaryAction = getPrimaryAction(result?.productType, result?.orderName, searchParams.get("province"));
+  const applyReturn = result?.productType === "apply_credits" ? normalizeDatingApplyReturn(searchParams.get("returnTo")) : null;
+  const primaryAction = applyReturn
+    ? { href: applyReturn, label: "보던 상대에게 지원 이어가기" }
+    : result?.productType === "apply_credits"
+      ? { href: "/community/dating/cards", label: "오픈카드 보러 가기" }
+      : getPrimaryAction(result?.productType, result?.orderName, searchParams.get("province"));
   const isLoveFortune = result?.productType === "love_fortune_detail";
   const activeFortuneLoadingStep = LOVE_FORTUNE_LOADING_STEPS[fortuneLoadingStep] ?? LOVE_FORTUNE_LOADING_STEPS[0];
   const fortuneLoadingProgress = Math.min(

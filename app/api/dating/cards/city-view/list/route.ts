@@ -10,6 +10,7 @@ import {
   sortCityViewCandidates,
 } from "@/lib/dating-city-view-candidates";
 import { WEEKLY_CITY_VIEW_LIMIT } from "@/lib/dating-city-view-policy";
+import { getPreviousCityViewSnapshotIds } from "@/lib/dating-purchase-fulfillment";
 import { extractProvinceFromRegion } from "@/lib/region-city";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -256,8 +257,18 @@ export async function GET(req: Request) {
   });
 
   const includedProvinces = [...new Set(items.map((item) => extractProvinceFromRegion(item.region) ?? "").filter(Boolean))];
+  let purchasePreview: { newCount: number } | null = null;
+  if (activeGrant.preview) {
+    try {
+      const usedIds = await getPreviousCityViewSnapshotIds(admin, user.id, province, true);
+      for (const id of [...activeGrant.snapshotCardIds, ...activeGrant.snapshotSeenCardIds]) usedIds.add(id);
+      purchasePreview = { newCount: Math.min(CITY_VIEW_CARD_LIMIT, eligibleRows.filter((row) => !usedIds.has(row.id)).length) };
+    } catch {
+      // An optional purchase offer must never interrupt existing access.
+    }
+  }
 
-  return NextResponse.json({ items, province, includedProvinces, limit: targetCardCount, preview: activeGrant.preview, expiresAt: activeGrant.accessExpiresAt, targetSex }, { headers: { "Cache-Control": "private, no-store" } });
+  return NextResponse.json({ items, province, includedProvinces, purchasePreview, limit: targetCardCount, preview: activeGrant.preview, expiresAt: activeGrant.accessExpiresAt, targetSex }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 

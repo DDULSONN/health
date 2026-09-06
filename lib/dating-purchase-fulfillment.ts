@@ -377,7 +377,7 @@ async function inferSnapshotTargetSex(admin: AdminClient, cardIds: string[]): Pr
   return maleCount > femaleCount ? "male" : "female";
 }
 
-async function getPreviousCityViewSnapshotIds(admin: AdminClient, userId: string, city: string) {
+export async function getPreviousCityViewSnapshotIds(admin: AdminClient, userId: string, city: string, strict = false) {
   const res = await admin
     .from("dating_city_view_requests")
     .select("snapshot_card_ids,snapshot_seen_card_ids")
@@ -389,7 +389,7 @@ async function getPreviousCityViewSnapshotIds(admin: AdminClient, userId: string
     .limit(100);
 
   if (res.error) {
-    if (isMissingColumnError(res.error)) return new Set<string>();
+    if (!strict && isMissingColumnError(res.error)) return new Set<string>();
     throw res.error;
   }
 
@@ -462,6 +462,12 @@ async function safeBuildCityViewSnapshotCardIds(
     });
     return [];
   }
+}
+
+export async function getCityViewPurchasePreview(admin: AdminClient, userId: string, city: string, targetSex: DatingCityViewSex) {
+  const ids = await buildCityViewSnapshotCardIds(admin, userId, city, targetSex);
+  const usedIds = await getPreviousCityViewSnapshotIds(admin, userId, normalizeCityProvince(city), true);
+  return { newCount: ids.filter((id) => !usedIds.has(id)).length };
 }
 
 export async function approveCityViewRequest(admin: AdminClient, options: ApproveCityViewRequestOptions) {

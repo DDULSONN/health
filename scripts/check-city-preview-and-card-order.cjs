@@ -5,7 +5,7 @@ const path = require("node:path");
 const ts = require("typescript");
 const root = path.resolve(__dirname, "..");
 function load(file, imports, extra = "") {
-  const output = ts.transpileModule(fs.readFileSync(path.join(root, file), "utf8") + extra, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
+  const output = ts.transpileModule(fs.readFileSync(path.join(root, file), "utf8") + extra, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText;
   const mod = { exports: {} };
   new Function("require", "module", "exports", output)(imports, mod, mod.exports);
   return mod.exports;
@@ -27,7 +27,12 @@ const grantRow = { id: "grant", city: "서울", access_expires_at: "2099-01-01",
 const rows = ids.map((id) => ({ id, owner_user_id: id, sex: "female", region: "서울", status: "pending", created_at: "2026-01-01", photo_paths: [] }));
 let grant;
 let db;
+let purchaseHistoryFails = false;
 const list = load("app/api/dating/cards/city-view/list/route.ts", (id) => {
+  if (id.endsWith("dating-purchase-fulfillment")) return { getPreviousCityViewSnapshotIds: async () => {
+    if (purchaseHistoryFails) throw new Error("history unavailable");
+    return new Set(grant.snapshotCardIds);
+  } };
   if (id === "next/server") return require(id);
   if (id.endsWith("dating-city-view-candidates")) return {
     fetchCityViewCandidateRows: async () => rows,
@@ -63,6 +68,12 @@ const list = load("app/api/dating/cards/city-view/list/route.ts", (id) => {
   let body = await response.json();
   assert.equal(body.items.length, 10);
   assert.equal(body.limit, 10);
+  assert.equal(body.purchasePreview.newCount, 25, "Offer excludes the 10 free candidates");
+  purchaseHistoryFails = true;
+  const noOffer = await (await list.GET(new Request("https://local.test/?province=서울"))).json();
+  assert.equal(noOffer.purchasePreview, null);
+  assert.equal(noOffer.items.length, 10, "Offer failure must not break free access");
+  purchaseHistoryFails = false;
   assert.equal(writes, 0);
   assert.match(response.headers.get("cache-control"), /no-store/);
   grant.snapshotCardIds = ["removed", ...ids.slice(0, 9)];
@@ -86,8 +97,9 @@ const list = load("app/api/dating/cards/city-view/list/route.ts", (id) => {
   assert.equal(cursors.parseCursorTs("2026-09-06T00:00:00.123456+00:00"), "2026-09-06T00:00:00.123456+00:00");
   assert.equal(cursors.parseCursorId("bad,query"), null);
   assert.equal(cursors.parseCursorTs("not a date"), null);
+  let previewRows = [];
   const fulfillment = load("lib/dating-purchase-fulfillment.ts", (id) => {
-    if (id.endsWith("dating-city-view-candidates")) return { fetchCityViewCandidateRows: async () => [], sortCityViewCandidates: (values) => values };
+    if (id.endsWith("dating-city-view-candidates")) return { fetchCityViewCandidateRows: async () => previewRows, sortCityViewCandidates: (values) => values };
     if (id.endsWith("dating-city-view")) return { ...city, getCityViewTargetSex: async () => "female" };
     if (id.endsWith("dating-city-view-policy")) return policy;
     if (id.endsWith("region-city")) return region;
@@ -97,6 +109,29 @@ const list = load("app/api/dating/cards/city-view/list/route.ts", (id) => {
   });
   await assert.rejects(fulfillment.grantCityViewAccess(dbFor(() => ({ data: [], error: null })), { userId: "viewer", city: "서울", note: policy.WEEKLY_CITY_VIEW_NOTE, bonusCredits: 0 }), /후보가 없습니다/);
   await assert.rejects(fulfillment.grantCityViewAccess(accessDb, { userId: "viewer", city: "서울", note: policy.WEEKLY_CITY_VIEW_NOTE, bonusCredits: 0 }), /이미 열람 중/);
+  previewRows = rows;
+  assert.equal((await fulfillment.getCityViewPurchasePreview(accessDb, "viewer", "서울", "female")).newCount, 25);
+  assert.equal((await fulfillment.getCityViewPurchasePreview(dbFor(() => ({ data: [{ snapshot_card_ids: ids }], error: null })), "viewer", "서울", "female")).newCount, 0);
+  await assert.rejects(fulfillment.getCityViewPurchasePreview(dbFor(() => ({ data: null, error: { code: "42703" } })), "viewer", "서울", "female"));
+  const returns = load("lib/dating-apply-return.ts", require);
+  const applyHref = "/community/dating/cards/12345678-1234-1234-1234-123456789abc/apply?from=nearby";
+  assert.equal(returns.normalizeDatingApplyReturn(applyHref), applyHref);
+  for (const unsafe of ["https://evil.test", "//evil.test", "/\\evil.test", "/mypage", applyHref + "&redirect=https://evil.test", null]) assert.equal(returns.normalizeDatingApplyReturn(unsafe), null);
+  const drafts = load("lib/dating-apply-draft.ts", require);
+  const values = new Map();
+  const storage = { getItem: (key) => values.get(key) ?? null, setItem: (key, value) => values.set(key, value), removeItem: (key) => values.delete(key) };
+  const draft = { age: "25", heightCm: "170", region: "서울", job: "회사원", trainingYears: "2", introText: "안녕하세요! ☕", instagramId: "test", photoPaths: ["a", "b"] };
+  drafts.saveApplyCheckoutDraft(storage, "viewer", "card", draft);
+  assert.equal(drafts.readApplyCheckoutDraft(storage, "viewer", "card").introText, draft.introText);
+  assert.equal(drafts.readApplyCheckoutDraft(storage, "other-user", "card"), null);
+  assert.equal(drafts.readApplyCheckoutDraft(storage, "viewer", "other-card"), null);
+  const draftKey = [...values.keys()][0];
+  values.set(draftKey, JSON.stringify({ ...draft, savedAt: Date.now() - 3600001 }));
+  assert.equal(drafts.readApplyCheckoutDraft(storage, "viewer", "card"), null);
+  assert.equal(values.size, 0);
+  drafts.saveApplyCheckoutDraft(storage, "viewer", "card", draft);
+  drafts.clearApplyCheckoutDraft(storage, "viewer", "card");
+  assert.equal(values.size, 0);
   let reserved = false;
   let grants = 0;
   let failGrant = false;
@@ -156,5 +191,26 @@ const list = load("app/api/dating/cards/city-view/list/route.ts", (id) => {
   failGrant = true;
   await assert.rejects(weekly.claimCityViewWeeklyBenefit(weeklyDb, { userId: "viewer", province: "서울" }), /no candidates/);
   assert.equal(reserved, false, "Failed grant must release the weekly claim");
-  console.log("PASS: free 10, no refill, direct-access restriction, paid/legacy 30, schema failure, private cache, publication ordering wiring");
+  const React = require("react");
+  const { renderToStaticMarkup } = require("react-dom/server");
+  let offerCount = 25;
+  let stateIndex = 0;
+  const nearbyPage = load("app/dating/nearby-view/page.tsx", (id) => {
+    if (id === "react") return {
+      ...React, useMemo: (fn) => fn(), useEffect: () => {}, useLayoutEffect: () => {}, useCallback: (fn) => fn, useRef: (value) => ({ current: value }),
+      useState: () => [["", "", { province: "서울", newCount: offerCount }, { loggedIn: true, activeCities: ["서울"], activeCityDetails: [], provinceStats: [], targetSex: "female" }, "서울", "female", "female", [], 10, false, ""][stateIndex++], () => {}],
+    };
+    if (id === "react/jsx-runtime") return require(id);
+    if (id === "next/link") return ({ href, children }) => React.createElement("a", { href }, children);
+    return () => null;
+  }).default;
+  let html = renderToStaticMarkup(React.createElement(nearbyPage));
+  assert.match(html, /후보 25명이 더 있어요/);
+  assert.match(html, /가까운 후보 더 보기 · 5,000원/);
+  assert.match(html, /다른 지역 포함/);
+  offerCount = 0; stateIndex = 0;
+  html = renderToStaticMarkup(React.createElement(nearbyPage));
+  assert.match(html, /현재 새로 열람할 후보가 없어요/);
+  assert.ok(!html.includes("가까운 후보 더 보기 · 5,000원"));
+  console.log("PASS: preview/access/order regression; new-candidate counts and rendered offers; safe payment returns; Korean draft restore, isolation and expiry; weekly eligibility and concurrency");
 })().catch((error) => { console.error(error); process.exitCode = 1; });
