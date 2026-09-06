@@ -1,4 +1,5 @@
 import { CITY_VIEW_CARD_LIMIT, getActiveCityViewGrant, getCityViewTargetSex } from "@/lib/dating-city-view";
+import { WEEKLY_CITY_VIEW_LIMIT } from "@/lib/dating-city-view-policy";
 import { extractProvinceFromRegion, getNearbyProvinceFallbackOrder } from "@/lib/region-city";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -69,6 +70,7 @@ export async function GET(req: Request) {
   if (!activeGrant) {
     return NextResponse.json({ error: "해당 도/광역시는 구매 또는 무료 열람 후 이용 가능합니다." }, { status: 403 });
   }
+  const cardLimit = activeGrant.preview ? WEEKLY_CITY_VIEW_LIMIT : CITY_VIEW_CARD_LIMIT;
 
   const selectColumns =
     "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, instagram_id, expires_at, created_at, status";
@@ -113,8 +115,8 @@ export async function GET(req: Request) {
       .map((row) => [String((row as { id?: string }).id ?? ""), row] as const)
       .filter(([id]) => id.length > 0)
   );
-  let selectedCardIds = activeGrant.snapshotCardIds.filter((id) => rowById.has(id)).slice(0, CITY_VIEW_CARD_LIMIT);
-  if (selectedCardIds.length < CITY_VIEW_CARD_LIMIT) {
+  let selectedCardIds = activeGrant.snapshotCardIds.slice(0, cardLimit).filter((id) => rowById.has(id));
+  if (!activeGrant.preview && selectedCardIds.length < CITY_VIEW_CARD_LIMIT) {
     const selectedSet = new Set(selectedCardIds);
     const fillers = [...rowById.keys()].filter((id) => !selectedSet.has(id)).slice(0, CITY_VIEW_CARD_LIMIT - selectedCardIds.length);
     selectedCardIds = [...selectedCardIds, ...fillers];
@@ -168,7 +170,7 @@ export async function GET(req: Request) {
 
   const includedProvinces = [...new Set(items.map((item) => extractProvinceFromRegion(item.region) ?? "").filter(Boolean))];
 
-  return NextResponse.json({ items, province, includedProvinces, limit: CITY_VIEW_CARD_LIMIT, expiresAt: activeGrant.accessExpiresAt, targetSex });
+  return NextResponse.json({ items, province, includedProvinces, limit: cardLimit, preview: activeGrant.preview, expiresAt: activeGrant.accessExpiresAt, targetSex }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 

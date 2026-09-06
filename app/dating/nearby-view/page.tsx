@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
 import PaidPolicyNotice from "@/components/PaidPolicyNotice";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
@@ -42,16 +42,18 @@ type CardItem = {
 };
 
 type CityViewListResponse = {
+  limit?: number;
   items?: CardItem[];
   targetSex?: "male" | "female" | null;
 };
 
 const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
-const NEARBY_VIEW_CACHE_KEY = "dating-nearby-view:v1";
+const NEARBY_VIEW_CACHE_KEY = "dating-nearby-view:v2";
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
   "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
 
 type NearbyViewSnapshot = {
+  cardLimit: number;
   status: CityStatusResponse;
   selectedProvince: string;
   activeSex: "male" | "female";
@@ -100,6 +102,9 @@ export default function NearbyViewPage() {
   const [selectedProvince, setSelectedProvince] = useState<string>(initialSnapshot?.selectedProvince ?? "");
   const [activeSex, setActiveSex] = useState<"male" | "female">(initialSnapshot?.activeSex ?? "male");
   const [items, setItems] = useState<CardItem[]>(initialSnapshot?.items ?? []);
+  const [cardLimit, setCardLimit] = useState(initialSnapshot?.cardLimit ?? 30);
+  const listRequestVersion = useRef(0);
+  const [listError, setListError] = useState("");
   const [loading, setLoading] = useState(() => !(initialSnapshot?.items?.length));
 
   useEffect(() => {
@@ -113,6 +118,7 @@ export default function NearbyViewPage() {
   useEffect(() => {
     const saveSnapshot = () => {
       writeNearbyViewSnapshot({
+        cardLimit,
         status,
         selectedProvince,
         activeSex,
@@ -124,7 +130,7 @@ export default function NearbyViewPage() {
     saveSnapshot();
     window.addEventListener("pagehide", saveSnapshot);
     return () => window.removeEventListener("pagehide", saveSnapshot);
-  }, [activeSex, items, selectedProvince, status]);
+  }, [activeSex, items, selectedProvince, status, cardLimit]);
 
   const loadStatus = useCallback(async () => {
     const res = await fetch("/api/dating/cards/city-view/status", { cache: "no-store" });
@@ -162,21 +168,29 @@ export default function NearbyViewPage() {
   }, [selectedProvince]);
 
   const loadList = useCallback(async (province: string) => {
+    const version = ++listRequestVersion.current;
     if (!province) return;
     setLoading(true);
+    setListError("");
     try {
       const res = await fetch(`/api/dating/cards/city-view/list?province=${encodeURIComponent(province)}`, { cache: "no-store" });
       if (!res.ok) {
-        setItems([]);
-        return;
+        throw new Error("목록을 불러오지 못했습니다. 다시 시도해주세요.");
       }
       const body = (await res.json()) as CityViewListResponse;
+      if (version !== listRequestVersion.current) return;
       setItems(Array.isArray(body.items) ? body.items : []);
+      setCardLimit(body.limit === 10 ? 10 : 30);
       if (body.targetSex === "male" || body.targetSex === "female") {
         setActiveSex(body.targetSex);
       }
+    } catch (error) {
+      if (version === listRequestVersion.current) {
+        setItems([]);
+        setListError(error instanceof Error ? error.message : "목록을 불러오지 못했습니다.");
+      }
     } finally {
-      setLoading(false);
+      if (version === listRequestVersion.current) setLoading(false);
     }
   }, []);
 
@@ -279,10 +293,10 @@ export default function NearbyViewPage() {
 
           <div className="w-full rounded-[24px] border border-neutral-200 bg-neutral-50 p-4 lg:max-w-sm">
             <p className="text-sm font-semibold text-neutral-800">오픈카드 유지 혜택</p>
-            <p className="mt-1 text-sm text-neutral-600">오픈카드를 공개 중이거나 대기 중으로 유지하면, 매주 지역 1곳의 후보 30명을 무료로 열어볼 수 있어요.</p>
+            <p className="mt-1 text-sm text-neutral-600">오픈카드 보유 회원은 매주 지역 1곳의 후보를 최대 10명까지 무료로 열어볼 수 있어요.</p>
             {status.weeklyBenefit?.eligible ? (
               status.weeklyBenefit.canClaim ? (
-                <p className="mt-2 text-xs font-medium text-emerald-700">이번 주 무료 30명 열람 1회가 남아 있어요.</p>
+                <p className="mt-2 text-xs font-medium text-emerald-700">이번 주 무료 · 최대 10명 열람 1회가 남아 있어요.</p>
               ) : (
                 <p className="mt-2 text-xs font-medium text-neutral-600">이번 주 무료 열람은 {status.weeklyBenefit.claimedProvince ?? "-"}에서 사용했어요.</p>
               )
@@ -351,7 +365,7 @@ export default function NearbyViewPage() {
                           disabled={!status.loggedIn || Boolean(submittingProvince)}
                           className="inline-flex min-h-[36px] items-center rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {submittingProvince === stat.province ? "처리 중..." : "무료 30명 보기"}
+                          {submittingProvince === stat.province ? "처리 중..." : "무료 최대 10명 보기"}
                         </button>
                       ) : null}
                       <button
@@ -377,11 +391,13 @@ export default function NearbyViewPage() {
           <p className="text-sm text-neutral-500">결제나 무료 열람으로 열린 지역이 아직 없어요.</p>
         ) : loading ? (
           <p className="text-sm text-neutral-500">카드를 불러오는 중...</p>
+        ) : listError ? (
+          <div className="text-sm text-neutral-600">{listError}<button type="button" onClick={() => void loadList(selectedProvince)} className="ml-2 underline">다시 시도</button></div>
         ) : (
           <div className="space-y-5">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-neutral-800">{selectedProvince} 카드</h2>
-              <span className="text-xs font-medium text-emerald-700">24시간 · 가까운 후보 최대 30명</span>
+              <span className="text-xs font-medium text-emerald-700">24시간 · 가까운 후보 최대 {cardLimit}명</span>
             </div>
             <div className="flex gap-2">
               <button
@@ -408,6 +424,7 @@ export default function NearbyViewPage() {
               items={activeSex === "male" ? maleItems : femaleItems}
               onNavigateAway={() =>
                 writeNearbyViewSnapshot({
+                  cardLimit,
                   status,
                   selectedProvince,
                   activeSex,

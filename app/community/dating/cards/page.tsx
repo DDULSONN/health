@@ -251,7 +251,7 @@ type ReelsDatingListing = {
 };
 
 const PAGE_SIZE = 20;
-const OPEN_CARDS_CACHE_KEY = "community-dating-open-cards:v2";
+const OPEN_CARDS_CACHE_KEY = "community-dating-open-cards:v3";
 const OPEN_KAKAO_URL = process.env.NEXT_PUBLIC_OPENKAKAO_URL ?? "https://open.kakao.com/o/s2gvTdhi";
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
   "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
@@ -4163,9 +4163,8 @@ function Section({
   onMore: () => void;
   viewerLoggedIn: boolean;
 }) {
-  const pinnedPaidItems = paidItems.filter((card) => card.display_mode !== "instant_public");
-  const instantPaidItems = paidItems.filter((card) => card.display_mode === "instant_public");
-  const hasAnyItems = pinnedPaidItems.length > 0 || items.length > 0 || instantPaidItems.length > 0;
+  const pinnedPaidItems = paidItems;
+  const hasAnyItems = pinnedPaidItems.length > 0 || items.length > 0;
 
   return (
     <section>
@@ -4190,9 +4189,6 @@ function Section({
           <div className="grid grid-cols-2 gap-3">
             {items.map((card) => (
               <CardRow key={card.id} card={card} viewerLoggedIn={viewerLoggedIn} />
-            ))}
-            {instantPaidItems.map((card) => (
-              <PaidCardRow key={`paid-${card.id}`} card={card} viewerLoggedIn={viewerLoggedIn} />
             ))}
           </div>
           {hasMore && viewerLoggedIn && (
