@@ -9,6 +9,7 @@ import {
   fetchCityViewCandidateRows,
   sortCityViewCandidates,
 } from "@/lib/dating-city-view-candidates";
+import { WEEKLY_CITY_VIEW_LIMIT } from "@/lib/dating-city-view-policy";
 import { extractProvinceFromRegion } from "@/lib/region-city";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -136,12 +137,14 @@ export async function GET(req: Request) {
       ids.indexOf(id) === index
   );
   const grantedCardIds = [...storedCardIds, ...newerRotatedCardIds];
-  const targetCardCount = Math.max(
+  const targetCardCount = activeGrant.preview ? WEEKLY_CITY_VIEW_LIMIT : Math.max(
     CITY_VIEW_CARD_LIMIT,
     activeGrant.snapshotCardIds.length,
     grantedCardIds.length
   );
-  const selectedCardIds = buildRegionFirstCityViewCardIds(
+  const selectedCardIds = activeGrant.preview
+    ? activeGrant.snapshotCardIds.slice(0, WEEKLY_CITY_VIEW_LIMIT).filter((id) => eligibleById.has(id))
+    : buildRegionFirstCityViewCardIds(
     eligibleRows,
     province,
     grantedCardIds,
@@ -159,7 +162,7 @@ export async function GET(req: Request) {
     persistedCardIds.length !== previousCardIds.length ||
     persistedCardIds.some((id, index) => id !== previousCardIds[index]);
   const targetSexChanged = activeGrant.targetSex == null && requestedTargetSex === targetSex;
-  if ((snapshotChanged && persistedCardIds.length > 0) || targetSexChanged) {
+  if (!activeGrant.preview && ((snapshotChanged && persistedCardIds.length > 0) || targetSexChanged)) {
     const snapshotSeenCardIds = [...new Set([...activeGrant.snapshotSeenCardIds, ...persistedCardIds])];
     let snapshotUpdateRes = await admin
       .from("dating_city_view_requests")
@@ -254,7 +257,7 @@ export async function GET(req: Request) {
 
   const includedProvinces = [...new Set(items.map((item) => extractProvinceFromRegion(item.region) ?? "").filter(Boolean))];
 
-  return NextResponse.json({ items, province, includedProvinces, limit: targetCardCount, expiresAt: activeGrant.accessExpiresAt, targetSex });
+  return NextResponse.json({ items, province, includedProvinces, limit: targetCardCount, preview: activeGrant.preview, expiresAt: activeGrant.accessExpiresAt, targetSex }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 

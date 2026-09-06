@@ -44,16 +44,18 @@ type CardItem = {
 };
 
 type CityViewListResponse = {
+  limit?: number;
   items?: CardItem[];
   targetSex?: "male" | "female" | null;
 };
 
 const OPEN_KAKAO_URL = "https://open.kakao.com/o/s2gvTdhi";
-const NEARBY_VIEW_CACHE_KEY = "dating-nearby-view:v1";
+const NEARBY_VIEW_CACHE_KEY = "dating-nearby-view:v2";
 const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
   "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
 
 type NearbyViewSnapshot = {
+  cardLimit: number;
   status: CityStatusResponse;
   selectedProvince: string;
   activeSex: "male" | "female";
@@ -122,6 +124,7 @@ export default function NearbyViewPage() {
     initialSnapshot?.selectedTargetSex ?? null
   );
   const [items, setItems] = useState<CardItem[]>(initialSnapshot?.items ?? []);
+  const [cardLimit, setCardLimit] = useState(initialSnapshot?.cardLimit ?? 30);
   const [loading, setLoading] = useState(() => !(initialSnapshot?.items?.length));
   const [listError, setListError] = useState("");
   const listRequestIdRef = useRef(0);
@@ -160,6 +163,7 @@ export default function NearbyViewPage() {
   useEffect(() => {
     const saveSnapshot = () => {
       writeNearbyViewSnapshot({
+        cardLimit,
         status,
         selectedProvince,
         activeSex,
@@ -172,7 +176,7 @@ export default function NearbyViewPage() {
     saveSnapshot();
     window.addEventListener("pagehide", saveSnapshot);
     return () => window.removeEventListener("pagehide", saveSnapshot);
-  }, [activeSex, items, selectedProvince, selectedTargetSex, status]);
+  }, [activeSex, items, selectedProvince, selectedTargetSex, status, cardLimit]);
 
   const loadStatus = useCallback(async () => {
     const res = await fetch("/api/dating/cards/city-view/status", { cache: "no-store" });
@@ -235,6 +239,7 @@ export default function NearbyViewPage() {
       const body = (await res.json()) as CityViewListResponse;
       if (requestId !== listRequestIdRef.current) return;
       setItems(Array.isArray(body.items) ? body.items : []);
+      setCardLimit(typeof body.limit === "number" && body.limit > 0 ? body.limit : 30);
       if (body.targetSex === "male" || body.targetSex === "female") {
         setActiveSex(body.targetSex);
       }
@@ -375,10 +380,10 @@ export default function NearbyViewPage() {
 
           <div className="w-full rounded-[24px] border border-neutral-200 bg-neutral-50 p-4 lg:max-w-sm">
             <p className="text-sm font-semibold text-neutral-800">오픈카드 유지 혜택</p>
-            <p className="mt-1 text-sm text-neutral-600">오픈카드를 공개 중이거나 대기 중으로 유지하면, 매주 지역 1곳의 후보 30명을 무료로 열어볼 수 있어요.</p>
+            <p className="mt-1 text-sm text-neutral-600">오픈카드 보유 회원은 매주 지역 1곳의 후보를 최대 10명까지 무료로 열어볼 수 있어요.</p>
             {status.weeklyBenefit?.eligible ? (
               status.weeklyBenefit.canClaim ? (
-                <p className="mt-2 text-xs font-medium text-emerald-700">이번 주 무료 30명 열람 1회가 남아 있어요.</p>
+                <p className="mt-2 text-xs font-medium text-emerald-700">이번 주 무료 · 최대 10명 열람 1회가 남아 있어요.</p>
               ) : (
                 <p className="mt-2 text-xs font-medium text-neutral-600">이번 주 무료 열람은 {status.weeklyBenefit.claimedProvince ?? "-"}에서 사용했어요.</p>
               )
@@ -474,7 +479,7 @@ export default function NearbyViewPage() {
                           disabled={!status.loggedIn || Boolean(submittingProvince)}
                           className="inline-flex min-h-[36px] items-center rounded-xl border border-emerald-300 bg-emerald-50 px-3 text-xs font-semibold text-emerald-700 hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
                         >
-                          {submittingProvince === stat.province ? "처리 중..." : "무료 30명 열기"}
+                          {submittingProvince === stat.province ? "처리 중..." : "무료 최대 10명 열기"}
                         </button>
                       ) : null}
                       <button
@@ -522,7 +527,7 @@ export default function NearbyViewPage() {
           <div className="space-y-5">
             <div className="flex items-center justify-between">
               <h2 className="text-sm font-semibold text-neutral-800">{selectedProvince} 카드</h2>
-              <span className="text-xs font-medium text-emerald-700">24시간 · 결제할 때마다 30명 추가</span>
+              <span className="text-xs font-medium text-emerald-700">{cardLimit === 10 ? "주간 무료 · 최대 10명 · 24시간" : "24시간 · 결제할 때마다 30명 추가"}</span>
             </div>
             <div className="flex gap-2">
               <button
@@ -549,6 +554,7 @@ export default function NearbyViewPage() {
               items={activeSex === "male" ? maleItems : femaleItems}
               onNavigateAway={() =>
                 writeNearbyViewSnapshot({
+                  cardLimit,
                   status,
                   selectedProvince,
                   activeSex,

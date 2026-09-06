@@ -1,4 +1,5 @@
 import { extractProvinceFromRegion } from "@/lib/region-city";
+import { isWeeklyCityViewPreview, WEEKLY_CITY_VIEW_LIMIT } from "@/lib/dating-city-view-policy";
 import type { createAdminClient } from "@/lib/supabase/server";
 
 export const CITY_VIEW_CARD_LIMIT = 30;
@@ -13,6 +14,7 @@ type ActiveCityViewGrant = {
   targetSex: DatingCityViewSex | null;
   snapshotCardIds: string[];
   snapshotSeenCardIds: string[];
+  preview: boolean;
 };
 
 export function normalizeDatingCityViewSex(value: unknown): DatingCityViewSex | null {
@@ -65,13 +67,6 @@ function parseSnapshotCardIds(value: unknown): string[] {
   return value.filter((v): v is string => typeof v === "string" && v.trim().length > 0);
 }
 
-function isMissingColumnError(error: unknown): boolean {
-  if (!error || typeof error !== "object") return false;
-  const code = String((error as { code?: unknown }).code ?? "");
-  const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
-  return code === "42703" || code === "PGRST204" || message.includes("column");
-}
-
 export async function getActiveCityViewGrant(
   adminClient: ReturnType<typeof createAdminClient>,
   userId: string,
@@ -80,9 +75,9 @@ export async function getActiveCityViewGrant(
   const province = extractProvinceFromRegion(provinceInput) ?? provinceInput.trim();
   if (!province) return null;
 
-  const res = await adminClient
+  let res = await adminClient
     .from("dating_city_view_requests")
-    .select("id,city,target_sex,access_expires_at,snapshot_card_ids,snapshot_seen_card_ids,reviewed_at,created_at")
+    .select("id,city,target_sex,access_expires_at,snapshot_card_ids,snapshot_seen_card_ids,reviewed_at,created_at,note")
     .eq("user_id", userId)
     .eq("city", province)
     .eq("status", "approved")
@@ -91,73 +86,20 @@ export async function getActiveCityViewGrant(
     .limit(10);
 
   if (res.error) {
-    if (!isMissingColumnError(res.error)) return null;
-
-    const snapshotLegacyRes = await adminClient
-      .from("dating_city_view_requests")
-      .select("id,city,access_expires_at,snapshot_card_ids,snapshot_seen_card_ids")
-      .eq("user_id", userId)
-      .eq("city", province)
-      .eq("status", "approved")
+    const legacy = await adminClient.from("dating_city_view_requests")
+      .select("id,city,access_expires_at,snapshot_card_ids,snapshot_seen_card_ids,reviewed_at,created_at,note")
+      .eq("user_id", userId).eq("city", province).eq("status", "approved")
       .order("reviewed_at", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false })
-      .limit(10);
-
-    if (!snapshotLegacyRes.error && Array.isArray(snapshotLegacyRes.data)) {
-      for (const row of snapshotLegacyRes.data as Array<{
-        id: string;
-        city: string;
-        access_expires_at: string | null;
-        snapshot_card_ids?: unknown;
-        snapshot_seen_card_ids?: unknown;
-      }>) {
-        const expiresAtIso = normalizeIsoDate(row.access_expires_at);
-        if (!expiresAtIso || new Date(expiresAtIso).getTime() <= Date.now()) continue;
-        return {
-          requestId: row.id,
-          province: extractProvinceFromRegion(row.city) ?? row.city,
-          accessExpiresAt: expiresAtIso,
-          targetSex: null,
-          snapshotCardIds: parseSnapshotCardIds(row.snapshot_card_ids),
-          snapshotSeenCardIds: parseSnapshotCardIds(row.snapshot_seen_card_ids),
-        };
-      }
-      return null;
-    }
-
-    if (snapshotLegacyRes.error && !isMissingColumnError(snapshotLegacyRes.error)) return null;
-
-    const legacyRes = await adminClient
-      .from("dating_city_view_requests")
-      .select("id,city,access_expires_at")
-      .eq("user_id", userId)
-      .eq("city", province)
-      .eq("status", "approved")
-      .order("reviewed_at", { ascending: false, nullsFirst: false })
-      .order("created_at", { ascending: false })
-      .limit(10);
-
-    if (legacyRes.error || !Array.isArray(legacyRes.data)) return null;
-    for (const row of legacyRes.data as Array<{ id: string; city: string; access_expires_at: string | null }>) {
-      const expiresAtIso = normalizeIsoDate(row.access_expires_at);
-      if (!expiresAtIso || new Date(expiresAtIso).getTime() <= Date.now()) continue;
-      return {
-        requestId: row.id,
-        province: extractProvinceFromRegion(row.city) ?? row.city,
-        accessExpiresAt: expiresAtIso,
-        targetSex: null,
-        snapshotCardIds: [],
-        snapshotSeenCardIds: [],
-      };
-    }
-
-    return null;
+      .order("created_at", { ascending: false }).limit(10);
+    if (legacy.error) return null;
+    res = { ...legacy, data: legacy.data?.map((row) => ({ ...row, target_sex: null })) ?? null };
   }
 
   const rows = Array.isArray(res.data) ? res.data : [];
   for (const row of rows as Array<{
     id: string;
     city: string;
+    note?: unknown;
     target_sex?: unknown;
     access_expires_at: string | null;
     snapshot_card_ids?: unknown;
@@ -172,6 +114,7 @@ export async function getActiveCityViewGrant(
       targetSex: normalizeDatingCityViewSex(row.target_sex),
       snapshotCardIds: parseSnapshotCardIds(row.snapshot_card_ids),
       snapshotSeenCardIds: parseSnapshotCardIds(row.snapshot_seen_card_ids),
+      preview: isWeeklyCityViewPreview(row.note),
     };
   }
 
@@ -199,7 +142,7 @@ export async function hasCityViewCardAccess(
 
   const res = await adminClient
     .from("dating_city_view_requests")
-    .select("city,access_expires_at,snapshot_card_ids")
+    .select("city,access_expires_at,snapshot_card_ids,note")
     .eq("user_id", userId)
     .eq("status", "approved")
     .order("reviewed_at", { ascending: false, nullsFirst: false })
@@ -207,16 +150,20 @@ export async function hasCityViewCardAccess(
     .limit(200);
 
   if (res.error) {
-    return isMissingColumnError(res.error) ? hasCityViewAccess(adminClient, userId, region) : false;
+    return false;
   }
 
   const cardProvince = extractProvinceFromRegion(region);
   const rows = Array.isArray(res.data) ? res.data : [];
-  for (const row of rows as Array<{ city: string; access_expires_at: string | null; snapshot_card_ids?: unknown }>) {
+  for (const row of rows as Array<{ city: string; access_expires_at: string | null; snapshot_card_ids?: unknown; note?: unknown }>) {
     const expiresAtIso = normalizeIsoDate(row.access_expires_at);
     if (!expiresAtIso || new Date(expiresAtIso).getTime() <= Date.now()) continue;
 
     const snapshotCardIds = parseSnapshotCardIds(row.snapshot_card_ids);
+    if (isWeeklyCityViewPreview(row.note)) {
+      if (snapshotCardIds.slice(0, WEEKLY_CITY_VIEW_LIMIT).includes(normalizedCardId)) return true;
+      continue;
+    }
     if (snapshotCardIds.includes(normalizedCardId)) return true;
 
     // Legacy or temporarily failed grants without a snapshot retain same-province access.

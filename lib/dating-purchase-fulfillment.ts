@@ -7,6 +7,7 @@ import {
   type DatingCityViewSex,
 } from "@/lib/dating-city-view";
 import { fetchCityViewCandidateRows, sortCityViewCandidates } from "@/lib/dating-city-view-candidates";
+import { isWeeklyCityViewPreview, WEEKLY_CITY_VIEW_LIMIT } from "@/lib/dating-city-view-policy";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
 import { DATING_PAID_FIXED_MS } from "@/lib/dating-paid";
@@ -735,6 +736,9 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
     return Number.isFinite(expiresAt) && expiresAt > now;
   });
   const activeRow = liveActiveRows[0];
+  if (isWeeklyCityViewPreview(options.note) && activeRow) {
+    throw new Error("이 지역은 이미 열람 중입니다. 이용 종료 후 무료 혜택을 사용해주세요.");
+  }
   const duplicateActiveIds = liveActiveRows
     .slice(1)
     .map((row) => row.id)
@@ -764,12 +768,12 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
   const targetSex =
     requestedTargetSex ??
     (await getCityViewTargetSex(admin, options.userId, storedTargetSex));
-  const snapshotCardIds = await safeBuildCityViewSnapshotCardIds(
-    admin,
-    options.userId,
-    options.city,
-    targetSex
-  );
+  const snapshotCardIds = isWeeklyCityViewPreview(options.note)
+    ? (await buildCityViewSnapshotCardIds(admin, options.userId, options.city, targetSex)).slice(0, WEEKLY_CITY_VIEW_LIMIT)
+    : await safeBuildCityViewSnapshotCardIds(admin, options.userId, options.city, targetSex);
+  if (isWeeklyCityViewPreview(options.note) && snapshotCardIds.length === 0) {
+    throw new Error("현재 열람 가능한 후보가 없습니다. 무료 횟수는 차감되지 않습니다.");
+  }
   const targetSexChanged = Boolean(
     requestedTargetSex && existingSnapshotTargetSex && requestedTargetSex !== existingSnapshotTargetSex
   );
@@ -864,6 +868,7 @@ export async function grantCityViewAccess(admin: AdminClient, options: GrantCity
 
   if (insertRes.error) {
     const errorCode = String((insertRes.error as { code?: unknown }).code ?? "");
+    if (isWeeklyCityViewPreview(options.note)) throw insertRes.error;
     if (errorCode === "23505") {
       let duplicateRes: { data: CityViewGrantRow | null; error: unknown } = await admin
         .from("dating_city_view_requests")

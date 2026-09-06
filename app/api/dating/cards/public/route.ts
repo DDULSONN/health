@@ -36,13 +36,15 @@ function parseCursorTs(value: string | null): string | null {
   if (!value) return null;
   const ts = new Date(value);
   if (Number.isNaN(ts.getTime())) return null;
+  // Preserve PostgreSQL microseconds so a page boundary never drops tied cards.
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,6})?(?:Z|[+-]\d{2}:\d{2})$/.test(value)) return value;
   return ts.toISOString();
 }
 
 function parseCursorId(value: string | null): string | null {
   if (!value) return null;
   const v = value.trim();
-  return v.length > 0 ? v : null;
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(v) ? v : null;
 }
 
 function personalizedNoStoreHeaders(): HeadersInit {
@@ -323,11 +325,11 @@ export async function GET(req: Request) {
   let query = adminClient
     .from("dating_cards")
     .select(
-      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, instagram_id, expires_at, created_at"
+      "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, strengths_text, photo_visibility, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_paths, blur_thumb_path, instagram_id, expires_at, created_at, published_at"
     )
     .eq("status", "public")
     .gt("expires_at", new Date().toISOString())
-    .order("created_at", { ascending: false })
+    .order("published_at", { ascending: false, nullsFirst: false })
     .order("id", { ascending: false })
     .limit(limit + 1);
 
@@ -335,9 +337,11 @@ export async function GET(req: Request) {
     query = query.eq("sex", sex);
   }
   if (cursorCreatedAt && cursorId) {
-    query = query.or(`created_at.lt.${cursorCreatedAt},and(created_at.eq.${cursorCreatedAt},id.lt.${cursorId})`);
+    query = cursorCreatedAt === "0001-01-01T00:00:00.000Z"
+      ? query.is("published_at", null).lt("id", cursorId)
+      : query.or(`published_at.lt.${cursorCreatedAt},published_at.is.null,and(published_at.eq.${cursorCreatedAt},id.lt.${cursorId})`);
   } else if (cursorCreatedAt) {
-    query = query.lt("created_at", cursorCreatedAt);
+    query = query.lt("published_at", cursorCreatedAt);
   }
 
   const queryStart = Date.now();
@@ -350,20 +354,22 @@ export async function GET(req: Request) {
     let legacyQuery = adminClient
       .from("dating_cards")
       .select(
-        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, instagram_id, expires_at, created_at"
+        "id, owner_user_id, sex, display_nickname, age, region, height_cm, job, training_years, ideal_type, total_3lift, percent_all, is_3lift_verified, photo_paths, blur_thumb_path, instagram_id, expires_at, created_at, published_at"
       )
       .eq("status", "public")
       .gt("expires_at", new Date().toISOString())
-      .order("created_at", { ascending: false })
+      .order("published_at", { ascending: false, nullsFirst: false })
       .order("id", { ascending: false })
       .limit(limit + 1);
     if (sex === "male" || sex === "female") {
       legacyQuery = legacyQuery.eq("sex", sex);
     }
     if (cursorCreatedAt && cursorId) {
-      legacyQuery = legacyQuery.or(`created_at.lt.${cursorCreatedAt},and(created_at.eq.${cursorCreatedAt},id.lt.${cursorId})`);
+      legacyQuery = cursorCreatedAt === "0001-01-01T00:00:00.000Z"
+        ? legacyQuery.is("published_at", null).lt("id", cursorId)
+        : legacyQuery.or(`published_at.lt.${cursorCreatedAt},published_at.is.null,and(published_at.eq.${cursorCreatedAt},id.lt.${cursorId})`);
     } else if (cursorCreatedAt) {
-      legacyQuery = legacyQuery.lt("created_at", cursorCreatedAt);
+      legacyQuery = legacyQuery.lt("published_at", cursorCreatedAt);
     }
     const legacyStart = Date.now();
     const legacyRes = await legacyQuery;
@@ -392,6 +398,7 @@ export async function GET(req: Request) {
   const rows = data ?? [];
   const hasMore = rows.length > limit;
   let pageRows = hasMore ? rows.slice(0, limit) : rows;
+  const lastScannedRow = pageRows.length ? pageRows[pageRows.length - 1] : null;
   if (user?.id) {
     const blockedUserIds = await getDatingBlockedUserIds(adminClient, user.id);
     pageRows = pageRows.filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")));
@@ -450,6 +457,7 @@ export async function GET(req: Request) {
         image_urls: imageUrls,
         expires_at: row.expires_at,
         created_at: row.created_at,
+        published_at: row.published_at,
       };
     })
   );
@@ -466,12 +474,12 @@ export async function GET(req: Request) {
     `[list.metrics] requestId=${requestId} path=/api/dating/cards/public cards=${items.length} rawSigned=${counters.rawCount} blurSigned=${counters.blurCount} cacheHitRatePct=${cacheHitRatePct} signCalls=${counters.signCalls}`
   );
 
-  const lastItem = items.length > 0 ? items[items.length - 1] : null;
+  const lastItem = lastScannedRow;
   return NextResponse.json(
     {
       items,
       hasMore,
-      nextCursorCreatedAt: hasMore && lastItem ? lastItem.created_at : null,
+      nextCursorCreatedAt: hasMore && lastItem ? lastItem.published_at ?? "0001-01-01T00:00:00.000Z" : null,
       nextCursorId: hasMore && lastItem ? lastItem.id : null,
       previewOnly: isGuestPreview,
       audience,

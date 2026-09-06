@@ -1,5 +1,6 @@
 import { extractProvinceFromRegion } from "@/lib/region-city";
 import { CITY_VIEW_ACCESS_HOURS } from "@/lib/dating-city-view";
+import { WEEKLY_CITY_VIEW_NOTE } from "@/lib/dating-city-view-policy";
 import { grantCityViewAccess } from "@/lib/dating-purchase-fulfillment";
 import { getKstWeekId, getKstWeekRange } from "@/lib/weekly";
 import type { createAdminClient } from "@/lib/supabase/server";
@@ -66,7 +67,7 @@ async function getRequestBasedWeeklyClaimRow(admin: AdminClient, userId: string)
     .select("id,city,reviewed_at,created_at")
     .eq("user_id", userId)
     .eq("status", "approved")
-    .eq("note", "weekly open card benefit")
+    .in("note", ["weekly open card benefit", WEEKLY_CITY_VIEW_NOTE])
     .gte("reviewed_at", range.startUtcIso)
     .lt("reviewed_at", range.endUtcIso)
     .order("reviewed_at", { ascending: false, nullsFirst: false })
@@ -161,32 +162,36 @@ export async function claimCityViewWeeklyBenefit(admin: AdminClient, options: Cl
     throw new Error("이번 주 무료 열람은 이미 사용했습니다.");
   }
 
-  const granted = await grantCityViewAccess(admin, {
-    userId: options.userId,
-    city: province,
-    accessHours: CITY_VIEW_ACCESS_HOURS,
-    note: "weekly open card benefit",
-    bonusCredits: 0,
-  });
-
   const claimInsertRes = await admin
     .from("dating_city_view_weekly_benefits")
     .insert({
       user_id: options.userId,
       week_id: weekId,
       province,
-      granted_request_id: granted.requestId,
     })
     .select("id")
     .maybeSingle();
 
-  if (claimInsertRes.error && !isSchemaUnavailable(claimInsertRes.error) && String(claimInsertRes.error.code ?? "") !== "23505") {
-    console.error("[city-view weekly benefit] claim history insert failed", {
-      userId: options.userId,
-      province,
-      error: claimInsertRes.error,
-    });
+  if (claimInsertRes.error || !claimInsertRes.data) {
+    if (String(claimInsertRes.error?.code ?? "") === "23505") throw new Error("이번 주 무료 열람은 이미 사용했습니다.");
+    throw new Error("무료 혜택 사용 기록을 저장하지 못했습니다. 잠시 후 다시 시도해주세요.");
   }
+  let granted;
+  try {
+    granted = await grantCityViewAccess(admin, {
+      userId: options.userId,
+      city: province,
+      accessHours: CITY_VIEW_ACCESS_HOURS,
+      note: WEEKLY_CITY_VIEW_NOTE,
+      bonusCredits: 0,
+    });
+  } catch (error) {
+    await admin.from("dating_city_view_weekly_benefits").delete().eq("id", claimInsertRes.data.id).eq("user_id", options.userId);
+    throw error;
+  }
+  const linkRes = await admin.from("dating_city_view_weekly_benefits")
+    .update({ granted_request_id: granted.requestId }).eq("id", claimInsertRes.data.id);
+  if (linkRes.error) console.error("[city-view weekly benefit] grant link failed", linkRes.error);
 
   return {
     province,
