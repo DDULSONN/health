@@ -100,7 +100,11 @@ const list = load("app/api/dating/cards/city-view/list/route.ts", (id) => {
   let reserved = false;
   let grants = 0;
   let failGrant = false;
+  let openCount = 1;
+  let oneOnOneCount = 1;
+  let registrationError = null;
   const weekly = load("lib/dating-city-view-weekly.ts", (id) => {
+    if (id.endsWith("dating-1on1")) return { DATING_ONE_ON_ONE_ACTIVE_STATUSES: ["submitted", "reviewing", "approved"] };
     if (id.endsWith("region-city")) return region;
     if (id.endsWith("dating-city-view-policy")) return policy;
     if (id.endsWith("dating-city-view")) return city;
@@ -111,7 +115,8 @@ const list = load("app/api/dating/cards/city-view/list/route.ts", (id) => {
   const weeklyDb = { from(table) {
     let insert = false;
     const q = { then(resolve, reject) {
-      let result = { data: null, error: null, count: table === "dating_cards" ? 1 : 0 };
+      const registration = table === "dating_cards" || table === "dating_1on1_cards";
+      let result = { data: null, error: registration ? registrationError : null, count: table === "dating_cards" ? openCount : table === "dating_1on1_cards" ? oneOnOneCount : 0 };
       if (insert) {
         result = reserved ? { error: { code: "23505" } } : { data: { id: "claim" }, error: null };
         reserved = true;
@@ -119,10 +124,31 @@ const list = load("app/api/dating/cards/city-view/list/route.ts", (id) => {
       return Promise.resolve(result).then(resolve, reject);
     } };
     for (const key of ["select", "eq", "in", "gte", "lt", "order", "limit", "maybeSingle", "update"]) q[key] = () => q;
+    q.in = (column, values) => {
+      if (table === "dating_1on1_cards") assert.deepEqual(values, ["submitted", "reviewing", "approved"], "Deleted/rejected profiles must not qualify");
+      return q;
+    };
     q.insert = () => { insert = true; return q; };
     q.delete = () => { reserved = false; return q; };
     return q;
   } };
+  for (const [open, one] of [[0, 0], [1, 0], [0, 1], [1, 1]]) {
+    openCount = open;
+    oneOnOneCount = one;
+    const status = await weekly.getCityViewWeeklyBenefitStatus(weeklyDb, "viewer");
+    assert.equal(status.hasOpenCard, Boolean(open));
+    assert.equal(status.hasOneOnOneCard, Boolean(one));
+    assert.equal(status.canClaim, Boolean(open && one));
+    if (!status.eligible) {
+      await assert.rejects(weekly.claimCityViewWeeklyBenefit(weeklyDb, { userId: "viewer", province: "서울" }), /모두 등록해야/);
+      assert.equal(reserved, false);
+      assert.equal(grants, 0);
+    }
+  }
+  registrationError = { code: "42703" };
+  await assert.rejects(weekly.claimCityViewWeeklyBenefit(weeklyDb, { userId: "viewer", province: "서울" }));
+  assert.equal(reserved, false, "Lookup errors must not consume or grant benefits");
+  registrationError = null;
   const claims = await Promise.allSettled([1, 2].map(() => weekly.claimCityViewWeeklyBenefit(weeklyDb, { userId: "viewer", province: "서울" })));
   assert.equal(claims.filter((claim) => claim.status === "fulfilled").length, 1);
   assert.equal(grants, 1, "Concurrent claims must only grant once");

@@ -23,6 +23,8 @@ type CityStatusResponse = {
   targetSex?: "male" | "female" | null;
   requiresTargetSexChoice?: boolean;
   weeklyBenefit?: {
+    hasOpenCard?: boolean;
+    hasOneOnOneCard?: boolean;
     eligible: boolean;
     canClaim: boolean;
     weekId: string;
@@ -379,8 +381,8 @@ export default function NearbyViewPage() {
           </div>
 
           <div className="w-full rounded-[24px] border border-neutral-200 bg-neutral-50 p-4 lg:max-w-sm">
-            <p className="text-sm font-semibold text-neutral-800">오픈카드 유지 혜택</p>
-            <p className="mt-1 text-sm text-neutral-600">오픈카드 보유 회원은 매주 지역 1곳의 후보를 최대 10명까지 무료로 열어볼 수 있어요.</p>
+            <p className="text-sm font-semibold text-neutral-800">프로필 등록 혜택</p>
+            <p className="mt-1 text-sm text-neutral-600">오픈카드와 1:1 프로필을 모두 등록하면 매주 지역 1곳의 후보를 최대 10명까지 무료로 열어볼 수 있어요.</p>
             {status.weeklyBenefit?.eligible ? (
               status.weeklyBenefit.canClaim ? (
                 <p className="mt-2 text-xs font-medium text-emerald-700">이번 주 무료 · 최대 10명 열람 1회가 남아 있어요.</p>
@@ -388,7 +390,23 @@ export default function NearbyViewPage() {
                 <p className="mt-2 text-xs font-medium text-neutral-600">이번 주 무료 열람은 {status.weeklyBenefit.claimedProvince ?? "-"}에서 사용했어요.</p>
               )
             ) : (
-              <p className="mt-2 text-xs text-neutral-500">이 혜택은 오픈카드를 유지 중인 회원에게만 제공됩니다.</p>
+              <div className="mt-2 text-xs text-neutral-600">
+                {!status.loggedIn ? (
+                  <Link href="/login?next=%2Fdating%2Fnearby-view" className="inline-flex min-h-[40px] items-center underline underline-offset-4">로그인하고 등록 상태 확인하기</Link>
+                ) : status.weeklyBenefit?.hasOpenCard !== undefined && status.weeklyBenefit?.hasOneOnOneCard !== undefined ? (
+                  <>
+                    <p>{!status.weeklyBenefit.hasOpenCard && !status.weeklyBenefit.hasOneOnOneCard
+                      ? "오픈카드와 1:1 프로필을 먼저 작성해주세요."
+                      : !status.weeklyBenefit.hasOpenCard ? "오픈카드를 작성하면 무료 열람을 이용할 수 있어요." : "1:1 프로필을 작성하면 무료 열람을 이용할 수 있어요."}</p>
+                    <Link
+                      href={!status.weeklyBenefit.hasOpenCard && !status.weeklyBenefit.hasOneOnOneCard ? "/onboarding/dating" : !status.weeklyBenefit.hasOpenCard ? "/dating/card/new" : "/dating/1on1"}
+                      className="mt-2 inline-flex min-h-[40px] items-center rounded-xl border border-neutral-300 bg-white px-3 font-medium text-neutral-700 hover:bg-neutral-100"
+                    >
+                      {!status.weeklyBenefit.hasOpenCard && !status.weeklyBenefit.hasOneOnOneCard ? "프로필 작성하기" : !status.weeklyBenefit.hasOpenCard ? "오픈카드 작성하기" : "1:1 프로필 작성하기"}
+                    </Link>
+                  </>
+                ) : <p>등록 상태를 확인한 뒤 무료 열람을 이용할 수 있어요.</p>}
+              </div>
             )}
             <a
               href={OPEN_KAKAO_URL}

@@ -1,6 +1,7 @@
 import { extractProvinceFromRegion } from "@/lib/region-city";
 import { CITY_VIEW_ACCESS_HOURS } from "@/lib/dating-city-view";
 import { WEEKLY_CITY_VIEW_NOTE } from "@/lib/dating-city-view-policy";
+import { DATING_ONE_ON_ONE_ACTIVE_STATUSES } from "@/lib/dating-1on1";
 import { grantCityViewAccess } from "@/lib/dating-purchase-fulfillment";
 import { getKstWeekId, getKstWeekRange } from "@/lib/weekly";
 import type { createAdminClient } from "@/lib/supabase/server";
@@ -8,6 +9,8 @@ import type { createAdminClient } from "@/lib/supabase/server";
 type AdminClient = ReturnType<typeof createAdminClient>;
 
 export type CityViewWeeklyBenefitStatus = {
+  hasOpenCard: boolean;
+  hasOneOnOneCard: boolean;
   eligible: boolean;
   canClaim: boolean;
   weekId: string;
@@ -53,10 +56,18 @@ async function hasEligibleOpenCard(admin: AdminClient, userId: string) {
     .in("status", ["pending", "public", "hidden", "expired"]);
 
   if (res.error) {
-    if (isSchemaUnavailable(res.error)) return true;
     throw res.error;
   }
 
+  return Number(res.count ?? 0) > 0;
+}
+
+async function hasEligibleOneOnOneCard(admin: AdminClient, userId: string) {
+  const res = await admin.from("dating_1on1_cards")
+    .select("id", { count: "exact", head: true })
+    .eq("user_id", userId)
+    .in("status", [...DATING_ONE_ON_ONE_ACTIVE_STATUSES]);
+  if (res.error) throw res.error;
   return Number(res.count ?? 0) > 0;
 }
 
@@ -131,9 +142,16 @@ export async function getCityViewWeeklyBenefitStatus(
   now = new Date()
 ): Promise<CityViewWeeklyBenefitStatus> {
   const weekId = getKstWeekId(now);
-  const [eligible, claimRow] = await Promise.all([hasEligibleOpenCard(admin, userId), getWeeklyClaimRow(admin, userId, weekId)]);
+  const [hasOpenCard, hasOneOnOneCard, claimRow] = await Promise.all([
+    hasEligibleOpenCard(admin, userId),
+    hasEligibleOneOnOneCard(admin, userId),
+    getWeeklyClaimRow(admin, userId, weekId),
+  ]);
+  const eligible = hasOpenCard && hasOneOnOneCard;
 
   return {
+    hasOpenCard,
+    hasOneOnOneCard,
     eligible,
     canClaim: eligible && !claimRow,
     weekId,
@@ -156,7 +174,7 @@ export async function claimCityViewWeeklyBenefit(admin: AdminClient, options: Cl
   const weekId = getKstWeekId();
   const status = await getCityViewWeeklyBenefitStatus(admin, options.userId);
   if (!status.eligible) {
-    throw new Error("오픈카드를 보유한 회원만 주간 무료 열람을 사용할 수 있습니다.");
+    throw new Error("오픈카드와 1:1 프로필을 모두 등록해야 주간 무료 열람을 사용할 수 있습니다. 빠진 프로필을 작성해주세요.");
   }
   if (!status.canClaim) {
     throw new Error("이번 주 무료 열람은 이미 사용했습니다.");

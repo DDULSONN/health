@@ -23,6 +23,8 @@ type ActiveCityDetail = {
 };
 
 type WeeklyBenefitStatus = {
+  hasOpenCard: boolean;
+  hasOneOnOneCard: boolean;
   eligible: boolean;
   canClaim: boolean;
   weekId: string;
@@ -141,6 +143,8 @@ export async function GET(req: Request) {
       targetSex: null,
       requiresTargetSexChoice: false,
       weeklyBenefit: {
+        hasOpenCard: false,
+        hasOneOnOneCard: false,
         eligible: false,
         canClaim: false,
         weekId: "",

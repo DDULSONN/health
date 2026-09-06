@@ -113,13 +113,13 @@ export async function POST(req: Request) {
         ok: true,
         status: "approved",
         province: granted.province,
-        message: "오픈카드 유지 혜택으로 이번 주 무료 열람이 바로 열렸습니다.",
+        message: "프로필 등록 혜택으로 이번 주 무료 열람이 바로 열렸습니다.",
       });
     } catch (error) {
       console.error("[city-view weekly benefit] claim failed", error);
       const message = getErrorMessage(error, "주간 무료 열람 처리에 실패했습니다.");
       const statusCode =
-        message.includes("이미 사용") || message.includes("오픈카드를 유지") || message.includes("도/광역시명을 확인")
+        message.includes("이미 사용") || message.includes("모두 등록해야") || message.includes("도/광역시명을 확인")
           ? 400
           : 500;
       return NextResponse.json({ ok: false, message }, { status: statusCode });
