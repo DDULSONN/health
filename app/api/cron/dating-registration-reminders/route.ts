@@ -1,7 +1,7 @@
 import { ensureCronAuthorized } from "@/lib/cron-auth";
 import { OPEN_CARD_AUTO_REQUEUE_LIMIT } from "@/lib/dating-open";
 import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
-import { appendMarketingEmailFooter, fetchMarketingUnsubscribedUserIds } from "@/lib/marketing-email";
+import { appendMarketingEmailFooter, fetchMarketingUnsubscribedUserIds, fetchEmailMarketingExcludedUserIds } from "@/lib/marketing-email";
 import { isSolapiPhoneOtpConfigured, sendSolapiTextMessage } from "@/lib/solapi-phone-verification";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
@@ -546,6 +546,8 @@ export async function GET(request: Request) {
       openCardsByUserId,
     }),
   ].filter((recipient) => !unsubscribedUserIds.has(recipient.userId));
+  const emailExcluded = await fetchEmailMarketingExcludedUserIds(admin, candidates.map((recipient) => recipient.userId), CAMPAIGN_KEY);
+  const emailCandidates = candidates.filter((recipient) => !emailExcluded.has(recipient.userId));
 
   const smsCandidates = await buildExpiredCardSmsRecipients({
     admin,
@@ -557,7 +559,7 @@ export async function GET(request: Request) {
   });
 
   const results = {
-    candidates: candidates.length,
+    candidates: emailCandidates.length,
     sent: 0,
     skipped: 0,
     failed: 0,
@@ -573,14 +575,14 @@ export async function GET(request: Request) {
     } satisfies Record<ReminderReason, { candidates: number; sent: number; skipped: number; failed: number }>,
   };
 
-  for (const recipient of candidates) {
+  for (const recipient of emailCandidates) {
     results.by_reason[recipient.reason].candidates += 1;
   }
 
   let attemptedEmails = 0;
   let examinedEmails = 0;
   let deferredEmails = 0;
-  for (const recipient of candidates) {
+  for (const recipient of emailCandidates) {
     examinedEmails += 1;
     try {
       if (await hasSuccessfulLog(admin, recipient.userId, recipient.reason, recipient.dedupeMeta)) {
@@ -589,7 +591,7 @@ export async function GET(request: Request) {
         continue;
       }
       if (attemptedEmails >= MAX_SEND_PER_RUN) {
-        deferredEmails = candidates.length - examinedEmails + 1;
+        deferredEmails = emailCandidates.length - examinedEmails + 1;
         break;
       }
       attemptedEmails += 1;

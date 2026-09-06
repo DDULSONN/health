@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { ensureCronAuthorized } from "@/lib/cron-auth";
 import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
-import { appendMarketingEmailFooter } from "@/lib/marketing-email";
+import { appendMarketingEmailFooter, fetchEmailMarketingExcludedUserIds } from "@/lib/marketing-email";
 import { createAdminClient } from "@/lib/supabase/server";
 
 const JOB_TABLE = "admin_outreach_mail_jobs";
@@ -135,6 +135,7 @@ async function processJob(admin: ReturnType<typeof createAdminClient>, job: Outr
 
   for (let start = 0; start < chunk.length; start += SEND_CONCURRENCY) {
     const batch = chunk.slice(start, start + SEND_CONCURRENCY);
+    const excluded = await fetchEmailMarketingExcludedUserIds(admin, batch.map((item) => item.user_id), job.campaign_key);
     const results = await Promise.all(
       batch.map(async (item, index) => {
         const sentAt = new Date().toISOString();
@@ -146,10 +147,11 @@ async function processJob(admin: ReturnType<typeof createAdminClient>, job: Outr
           activity_at: item.activity_at ?? null,
         };
 
-        if (!item.email) {
+        if (!item.email || excluded.has(item.user_id)) {
+          const reason = !item.email ? "EMAIL_MISSING" : "EMAIL_CONSENT_NOT_CONFIRMED";
           return {
             ok: false as const,
-            error: `발송 실패: ${item.nickname ?? item.user_id} / EMAIL_MISSING`,
+            error: `발송 제외: ${item.nickname ?? item.user_id} / ${reason}`,
             logRow: {
               campaign_key: job.campaign_key,
               user_id: item.user_id,
@@ -158,7 +160,7 @@ async function processJob(admin: ReturnType<typeof createAdminClient>, job: Outr
               success: false,
               provider: "resend",
               provider_status: null,
-              provider_error: "EMAIL_MISSING",
+              provider_error: reason,
               sent_at: sentAt,
               admin_user_id: job.admin_user_id,
               meta,

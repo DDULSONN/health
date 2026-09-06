@@ -6,7 +6,7 @@ import {
 } from "@/lib/dating-open-card-activity";
 import { OPEN_CARD_AUTO_REQUEUE_LIMIT } from "@/lib/dating-open";
 import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
-import { appendMarketingEmailFooter, fetchMarketingUnsubscribedUserIds } from "@/lib/marketing-email";
+import { appendMarketingEmailFooter, fetchEmailMarketingExcludedUserIds as fetchMarketingUnsubscribedUserIds } from "@/lib/marketing-email";
 import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 

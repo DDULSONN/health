@@ -135,13 +135,26 @@ export function appendEmailUnsubscribeFooter(input: {
 export async function fetchMarketingUnsubscribedUserIds(
   admin: AdminClient,
   userIds: string[],
-  campaignKey: string
+  campaignKey: string,
+  requireEmailConsent = false
 ) {
   const unsubscribed = new Set<string>();
   if (!userIds.length) return unsubscribed;
 
   for (let start = 0; start < userIds.length; start += 500) {
     const chunk = userIds.slice(start, start + 500);
+    // Transactional match notifications keep their existing subscription rules.
+    // Marketing campaigns require an affirmative record; legacy membership is not consent.
+    if (requireEmailConsent) {
+      const consentRes = await admin.from("email_marketing_consents")
+        .select("user_id").in("user_id", chunk).eq("consented", true);
+      if (consentRes.error) {
+        for (const userId of chunk) unsubscribed.add(userId);
+      } else {
+        const consented = new Set((consentRes.data ?? []).map((row) => String(row.user_id)));
+        for (const userId of chunk) if (!consented.has(userId)) unsubscribed.add(userId);
+      }
+    }
     const res = await admin
       .from(UNSUBSCRIBE_TABLE)
       .select("user_id")
@@ -151,7 +164,7 @@ export async function fetchMarketingUnsubscribedUserIds(
     if (res.error) {
       if (isMissingUnsubscribeTableError(res.error)) {
         console.warn(`[marketing-email] missing table: ${UNSUBSCRIBE_TABLE}`);
-        return unsubscribed;
+        return new Set(userIds);
       }
       throw new Error(`수신거부 목록을 불러오지 못했습니다. ${res.error.message}`);
     }
@@ -163,4 +176,8 @@ export async function fetchMarketingUnsubscribedUserIds(
   }
 
   return unsubscribed;
+}
+
+export function fetchEmailMarketingExcludedUserIds(admin: AdminClient, userIds: string[], campaignKey: string) {
+  return fetchMarketingUnsubscribedUserIds(admin, userIds, campaignKey, true);
 }

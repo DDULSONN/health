@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
 import { isValidReferralCode, normalizeReferralCode } from "@/lib/referral-code";
+import { EMAIL_CONSENT_LABEL, EMAIL_CONSENT_DESCRIPTION } from "@/lib/signup-email-consent";
 
 const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
 const STORED_EMAIL_KEY = "recent_login_email";
@@ -17,9 +18,10 @@ type SignupStep = "form" | "pending_verify" | "existing_account";
 type SocialProvider = "google" | "apple";
 type ReferralCodeStatus = "idle" | "checking" | "valid" | "invalid";
 
-function buildCanonicalCallbackUrl(next: string, referralCode?: string): string {
+function buildCanonicalCallbackUrl(next: string, referralCode?: string, consentToken?: string | null): string {
   const url = new URL("/auth/callback", CANONICAL_SITE_URL);
   url.searchParams.set("next", next.startsWith("/") ? next : "/");
+  if (consentToken) url.searchParams.set("signup_consent", consentToken);
   const normalizedReferralCode = normalizeReferralCode(referralCode);
   if (isValidReferralCode(normalizedReferralCode)) {
     url.searchParams.set("ref", normalizedReferralCode);
@@ -52,6 +54,7 @@ export default function SignupPage() {
   const [password, setPassword] = useState("");
   const [passwordConfirm, setPasswordConfirm] = useState("");
   const [emailFormOpen, setEmailFormOpen] = useState(false);
+  const [emailMarketingConsent, setEmailMarketingConsent] = useState(false);
   const [referralFormOpen, setReferralFormOpen] = useState(false);
   const [referralCode, setReferralCode] = useState("");
   const [referralCodeStatus, setReferralCodeStatus] = useState<ReferralCodeStatus>("idle");
@@ -147,6 +150,7 @@ export default function SignupPage() {
 
   const handleSignup = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
+    if (loading) return;
     const normalized = email.trim().toLowerCase();
     const cleanNickname = normalizeNickname(nickname);
     if (!normalized) {
@@ -178,12 +182,14 @@ export default function SignupPage() {
     try {
       const supabase = createClient();
       const cleanReferralCode = normalizeReferralCode(referralCode);
+      const consentToken = await prepareEmailConsent("email", normalized);
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: normalized,
         password,
         options: {
           data: {
             nickname: cleanNickname,
+            ...(consentToken ? { signup_email_consent_token: consentToken } : {}),
             ...(cleanReferralCode ? { referral_code: cleanReferralCode } : {}),
           },
           emailRedirectTo: buildCanonicalCallbackUrl(SIGNUP_NEXT, cleanReferralCode),
@@ -219,8 +225,14 @@ export default function SignupPage() {
           body: JSON.stringify({ code: cleanReferralCode }),
         }).catch(() => null);
       }
+      if (data.session && consentToken) {
+        await fetch("/api/signup/email-marketing", {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "record", token: consentToken }), signal: AbortSignal.timeout(4000),
+        }).catch(() => null);
+      }
       setStep("pending_verify");
-      setInfo("가입 요청이 완료되었습니다. 메일함에서 인증 후 로그인하세요.");
+      setInfo(`가입 요청이 완료되었습니다. 메일함에서 인증 후 로그인하세요.${emailMarketingConsent && !consentToken ? " 광고성 이메일 수신 동의는 저장되지 않았습니다." : ""}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : "회원가입 처리 중 오류가 발생했습니다.");
     } finally {
@@ -262,7 +274,20 @@ export default function SignupPage() {
     }
   };
 
+  const prepareEmailConsent = async (provider: "email" | SocialProvider, targetEmail = ""): Promise<string | null> => {
+    try {
+      const response = await fetch("/api/signup/email-marketing", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "prepare", consented: emailMarketingConsent, provider, email: targetEmail }),
+        signal: AbortSignal.timeout(4000),
+      });
+      const body = await response.json();
+      return response.ok && typeof body.token === "string" ? body.token : null;
+    } catch { return null; }
+  };
+
   const handleSocialSignup = async (provider: SocialProvider) => {
+    if (loading) return;
     const providerLabel = provider === "apple" ? "Apple" : "Google";
     if (!(await validateCurrentReferralCode())) {
       setError("추천 코드를 다시 확인하거나 입력란을 비워주세요.");
@@ -275,6 +300,8 @@ export default function SignupPage() {
     try {
       const supabase = createClient();
       const cleanReferralCode = normalizeReferralCode(referralCode);
+      const consentToken = await prepareEmailConsent(provider);
+      if (emailMarketingConsent && !consentToken) alert("광고성 이메일 수신 동의는 저장되지 않았습니다. 회원가입은 계속 진행합니다.");
       if (isValidReferralCode(cleanReferralCode)) {
         window.localStorage.setItem(
           PENDING_REFERRAL_KEY,
@@ -286,7 +313,7 @@ export default function SignupPage() {
       const { error: authError } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: buildCanonicalCallbackUrl(SIGNUP_NEXT, cleanReferralCode),
+          redirectTo: buildCanonicalCallbackUrl(SIGNUP_NEXT, cleanReferralCode, consentToken),
         },
       });
       if (authError) {
@@ -311,6 +338,13 @@ export default function SignupPage() {
 
       {step === "form" && (
         <div className="space-y-4">
+          <div className="rounded-xl border border-neutral-100 px-3 py-2">
+            <label className="flex min-h-[44px] cursor-pointer items-center gap-2 text-xs text-neutral-700">
+              <input type="checkbox" checked={emailMarketingConsent} disabled={loading} onChange={(event) => setEmailMarketingConsent(event.target.checked)} className="h-4 w-4 shrink-0 accent-emerald-600" aria-describedby="signup-email-consent-description" />
+              <span>{EMAIL_CONSENT_LABEL}</span>
+            </label>
+            <p id="signup-email-consent-description" className="pb-1 text-[11px] leading-5 text-neutral-500">{EMAIL_CONSENT_DESCRIPTION}</p>
+          </div>
           <button
             type="button"
             onClick={() => handleSocialSignup("google")}

@@ -187,6 +187,14 @@ export default function AuthCallbackPage() {
             }
           }
           await claimReferral();
+          const signupConsentToken = new URLSearchParams(window.location.search).get("signup_consent") ?? session.user.user_metadata?.signup_email_consent_token;
+          if (!parsed.recovery && typeof signupConsentToken === "string") {
+            await fetch("/api/signup/email-marketing", {
+              method: "POST", headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ action: "record", token: signupConsentToken }),
+              signal: AbortSignal.timeout(4000),
+            }).catch(() => null);
+          }
           router.replace(gatedNext);
           return;
         }

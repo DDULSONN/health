@@ -7,7 +7,7 @@ import {
 import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
 import {
   appendMarketingEmailFooter,
-  fetchMarketingUnsubscribedUserIds,
+  fetchEmailMarketingExcludedUserIds as fetchMarketingUnsubscribedUserIds,
   normalizeMarketingSubject,
 } from "@/lib/marketing-email";
 import { requireAdminRoute } from "@/lib/admin-route";

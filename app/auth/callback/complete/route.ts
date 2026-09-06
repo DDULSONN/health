@@ -6,6 +6,7 @@ import { isValidReferralCode, normalizeReferralCode } from "@/lib/referral-code"
 import { claimReferralRelationship } from "@/lib/referrals-server";
 import { createAdminClient } from "@/lib/supabase/server";
 import { safeInternalPath } from "@/lib/safe-internal-path";
+import { recordSignupEmailConsent } from "@/lib/signup-email-consent-server";
 
 export const runtime = "nodejs";
 
@@ -122,6 +123,8 @@ export async function GET(request: NextRequest) {
       userId: existingUser.id,
     });
     await claimReferralSafely(existingUser.id, referralCode);
+    await recordSignupEmailConsent(createAdminClient(), existingUser, url.searchParams.get("signup_consent") ?? undefined)
+      .catch(() => console.warn("[signup-consent] recording deferred; no marketing permission granted"));
     return response;
   }
 
@@ -231,6 +234,8 @@ export async function GET(request: NextRequest) {
   });
 
   await claimReferralSafely(user.id, referralCode);
+  await recordSignupEmailConsent(createAdminClient(), user, url.searchParams.get("signup_consent") ?? undefined)
+    .catch(() => console.warn("[signup-consent] recording deferred; no marketing permission granted"));
 
   return response;
 }

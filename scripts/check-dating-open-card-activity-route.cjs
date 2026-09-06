@@ -82,7 +82,7 @@ function loadRoute(db, options = {}) {
     },
     "@/lib/marketing-email": {
       appendMarketingEmailFooter: ({ body }) => body,
-      fetchMarketingUnsubscribedUserIds: async () => new Set(options.unsubscribedUserIds ?? []),
+      fetchEmailMarketingExcludedUserIds: async () => new Set(options.unsubscribedUserIds ?? []),
     },
     "@/lib/supabase/server": { createAdminClient: () => db.admin },
     "next/server": { NextResponse: { json: (body, init) => new Response(JSON.stringify(body), {
