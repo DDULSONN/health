@@ -169,6 +169,29 @@ async function refillOpenCardSlots(admin: SupabaseClient, cards: ActiveOpenCardS
   }
 }
 
+async function hideOneOnOneCards(admin: SupabaseClient, userId: string) {
+  const current = await admin.from("dating_1on1_cards").select("id,status")
+    .eq("user_id", userId).in("status", ["submitted", "reviewing", "approved"]);
+  if (current.error) return { ok: false as const, error: current.error.message };
+  const cards = current.data ?? [];
+  if (!cards.length) return { ok: true as const, cards };
+  const result = await admin.from("dating_1on1_cards")
+    .update({ status: "rejected", updated_at: new Date().toISOString() })
+    .eq("user_id", userId).in("id", cards.map((card) => card.id))
+    .in("status", ["submitted", "reviewing", "approved"]);
+  if (result.error) return { ok: false as const, error: result.error.message };
+  return { ok: true as const, cards };
+}
+
+async function restoreOneOnOneCards(admin: SupabaseClient, userId: string, cards: { id: string; status: string }[]) {
+  for (const card of cards) {
+    const result = await admin.from("dating_1on1_cards")
+      .update({ status: card.status, updated_at: new Date().toISOString() })
+      .eq("user_id", userId).eq("id", card.id).eq("status", "rejected");
+    if (result.error) console.error("[account deletion] 1:1 rollback failed", { userId, code: result.error.code });
+  }
+}
+
 export async function performAccountDeletion(params: {
   admin: SupabaseClient;
   userId: string;
@@ -196,6 +219,14 @@ export async function performAccountDeletion(params: {
       error: "오픈카드 숨김 처리에 실패해 회원 탈퇴를 중단했습니다. 잠시 후 다시 시도해 주세요.",
       debug: hiddenCards.error,
     };
+  }
+
+  const hiddenOneOnOne = await hideOneOnOneCards(admin, userId);
+  if (!hiddenOneOnOne.ok) {
+    await restoreActiveOpenCards(admin, userId, hiddenCards.cards);
+    return { ok: false as const,
+      error: "1:1 프로필 내리기에 실패해 회원 탈퇴를 중단했습니다. 잠시 후 다시 시도해 주세요.",
+      debug: hiddenOneOnOne.error };
   }
 
   const pushTokenReset = await admin.from("profiles").update({ push_token: null }).eq("user_id", userId);
@@ -227,6 +258,7 @@ export async function performAccountDeletion(params: {
   if (softDelete.error) {
     console.error("[account deletion] soft delete failed", softDelete.error);
     await restoreActiveOpenCards(admin, userId, hiddenCards.cards);
+    await restoreOneOnOneCards(admin, userId, hiddenOneOnOne.cards);
     return {
       ok: false as const,
       error: "회원 탈퇴 처리에 실패했습니다. 잠시 후 다시 시도해 주세요. 문제가 계속되면 문의 부탁드립니다.",

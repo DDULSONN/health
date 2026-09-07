@@ -65,8 +65,12 @@ function createDeliveryAdmin() {
   };
 }
 
-function createSmsHarness({ memberBlocked = false, contactBlocked = false, unsubscribed = false, providerFails = false } = {}) {
+function createSmsHarness({ memberBlocked = false, contactBlocked = false, unsubscribed = false, providerFails = false, deleted = false, missing = false, authError = false } = {}) {
   const admin = createDeliveryAdmin();
+  admin.auth = { admin: { getUserById: async (id) => {
+    assert.equal(id, "recipient");
+    return { data: { user: missing ? null : { id, deleted_at: deleted ? "2026-09-07" : null } }, error: authError ? new Error("unavailable") : null };
+  } } };
   const sent = [];
   const sms = loadSmsModule({
     "@/lib/dating-1on1": {
@@ -120,4 +124,13 @@ test("SMS provider failure never fails matching and is recorded", async () => {
     console.error = originalError;
   }
   assert.equal(harness.admin.statusUpdates.at(-1).status, "failed");
+});
+
+test("deleted, missing and unverifiable accounts never receive SMS", async () => {
+  for (const option of [{ deleted: true }, { missing: true }, { authError: true }]) {
+    const harness = createSmsHarness(option);
+    assert.equal(await harness.send(), false);
+    assert.equal(harness.sent.length, 0);
+    assert.equal(harness.admin.statusUpdates.at(-1).provider_error, "RECIPIENT_UNAVAILABLE");
+  }
 });

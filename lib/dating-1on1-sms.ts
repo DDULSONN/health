@@ -61,6 +61,16 @@ export async function sendOneOnOneSelectionSms(
     if (!reserveRes.data?.id) return false;
 
     try {
+      // Soft-deleted Auth accounts can retain profile/card rows. Check Auth
+      // immediately before sending, and fail closed if it cannot be checked.
+      const recipient = await admin.auth.admin.getUserById(input.recipientUserId);
+      const user = recipient.data?.user;
+      if (recipient.error || !user || (user as typeof user & { deleted_at?: string | null }).deleted_at) {
+        await admin.from(DELIVERY_TABLE)
+          .update({ status: "failed", provider_error: "RECIPIENT_UNAVAILABLE" })
+          .eq("id", reserveRes.data.id).eq("status", "sending");
+        return false;
+      }
       await sendSolapiTextMessage({ phoneE164: phone.phoneE164, text: ONE_ON_ONE_SELECTION_SMS_TEXT });
       const sentRes = await admin
         .from(DELIVERY_TABLE)
