@@ -58,8 +58,6 @@ function load(name) {
   console.log(JSON.stringify({ events: events.length, refreshedCards: grouped.size, repeatedCards: [...grouped.values()].filter(r=>r.length>=2).length, sampled: samples.length }));
   const route = load('@/app/api/dating/1on1/recommendations/my/route');
   const rules = load('@/lib/dating-1on1-recommendations');
-  console.log(JSON.stringify({ recoveryEligibleCardHistories: [...grouped.values()]
-    .filter(rows=>rules.getRecommendationRecoverySeed?.(rows.map(row=>row.refreshed_at))).length }));
   for (const rows of samples) {
     viewer = rows[0].user_id; captured = null;
     const response = await route.GET(new Request('https://example.test/'));

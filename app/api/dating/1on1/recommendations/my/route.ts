@@ -21,8 +21,6 @@ import {
 import {
   getActiveRecommendationRefresh,
   getRecommendationRecoverySeed,
-  RECOMMENDATION_RECOVERY_CUTOFF,
-  RECOMMENDATION_RECOVERY_END,
   RECOMMENDATION_REFRESH_HISTORY_MS,
   replayRecommendationRefreshes,
   isCandidateInSourceAgeRange,
@@ -161,15 +159,22 @@ export async function GET(req: Request) {
   const adminRecommendationDate = getKstDateString();
   const refreshEventsByCardId = new Map<string, string[]>();
 
-  const refreshEventsRes = await admin
-    .from("dating_1on1_recommendation_refresh_events")
-    .select("card_id,refreshed_at")
-    .in("card_id", sourceCardIds)
-    .gt("refreshed_at", new Date(nowMs < Date.parse(RECOMMENDATION_RECOVERY_END)
-      ? Math.min(nowMs - RECOMMENDATION_REFRESH_HISTORY_MS,
-        Date.parse(RECOMMENDATION_RECOVERY_CUTOFF) - RECOMMENDATION_REFRESH_HISTORY_MS)
-      : nowMs - RECOMMENDATION_REFRESH_HISTORY_MS).toISOString())
-    .order("refreshed_at", { ascending: true });
+  const [refreshEventsRes, recoveryRes] = await Promise.all([
+    admin.from("dating_1on1_recommendation_refresh_events")
+      .select("card_id,refreshed_at")
+      .in("card_id", sourceCardIds)
+      .gt("refreshed_at", new Date(nowMs - RECOMMENDATION_REFRESH_HISTORY_MS).toISOString())
+      .order("refreshed_at", { ascending: true }),
+    // Primary-key lookup of at most one server-only, already-applied correction.
+    admin.from("dating_1on1_recommendation_recoveries")
+      .select("card_id,refreshed_at")
+      .eq("user_id", user.id)
+      .eq("card_id", sourceCardIds[0])
+      .maybeSingle(),
+  ]);
+  if (recoveryRes.error && !["42P01", "PGRST205"].includes(recoveryRes.error.code)) {
+    console.warn("[GET /api/dating/1on1/recommendations/my] optional recovery unavailable", recoveryRes.error);
+  }
   if (refreshEventsRes.error && !isMissingRefreshEventSchema(refreshEventsRes.error)) {
     console.error("[GET /api/dating/1on1/recommendations/my] refresh events failed", refreshEventsRes.error);
     return NextResponse.json({ error: "Failed to load recommendation refresh usage." }, { status: 500 });
@@ -338,9 +343,9 @@ export async function GET(req: Request) {
       refreshSeeds.sort((a, b) => Date.parse(a) - Date.parse(b));
     }
 
-    const recoverySeed = getRecommendationRecoverySeed(refreshSeeds, nowMs);
+    const recoverySeed = getRecommendationRecoverySeed(recoveryRes.error ? null : recoveryRes.data?.refreshed_at, nowMs);
     if (recoverySeed) refreshSeeds.push(recoverySeed);
-    const hasActiveRefresh = Boolean(recoverySeed) || refreshSeeds.some((seed) => getActiveRecommendationRefresh(seed, nowMs));
+    const hasActiveRefresh = refreshSeeds.some((seed) => getActiveRecommendationRefresh(seed, nowMs));
     const replay = hasActiveRefresh
       ? replayRecommendationRefreshes(sourceCard, unsavedCandidates,
         defaultRecommendations, refreshSeeds, handledPairIds, RECOMMENDATION_LIMIT, nowMs)
@@ -378,7 +383,7 @@ export async function GET(req: Request) {
       refresh_limit: refreshAvailability.refreshLimit,
       next_refresh_at: refreshAvailability.nextRefreshAt,
       can_refresh: refreshAvailability.canRefreshNow,
-      recovery_refresh_applied: Boolean(recoverySeed),
+      recovery_refresh_applied: Boolean(getActiveRecommendationRefresh(recoverySeed, nowMs)),
       candidate_pool_count: candidates.length,
       plus: sourcePlus,
       favorite_candidates: favoriteCandidates,

@@ -484,25 +484,29 @@ test("a second Plus refresh safely refills a genuinely small pool", async () => 
 
 test("cross-day refresh history rotates candidates without consuming today's allowance", async () => {
   const tables = fixture(45);
-  const old = new Date(Date.now() - 26 * 3600000).toISOString();
-  const latest = new Date(Date.now() - 10000).toISOString();
+  const atTime = Date.parse('2026-09-08T14:00:00.000Z');
+  const old = new Date(atTime - 26 * 3600000).toISOString();
+  const latest = new Date(atTime - 10000).toISOString();
   tables.dating_1on1_recommendation_refresh_events = [{ card_id: 'source', refreshed_at: old }];
-  const expired = (await runApi(tables)).body.items[0];
+  const expired = (await runApi(tables, { atTime })).body.items[0];
   assert.equal(expired.refresh_used_count, 0);
   assert.equal(expired.refresh_remaining, 1);
   const refreshedTables = structuredClone(tables);
   refreshedTables.dating_1on1_cards[0].recommendation_refresh_used_at = latest;
   refreshedTables.dating_1on1_recommendation_refresh_events.push({ card_id: 'source', refreshed_at: latest });
-  const refreshed = (await runApi(refreshedTables)).body.items[0];
+  const refreshed = (await runApi(refreshedTables, { atTime })).body.items[0];
   assert.equal(refreshed.refresh_used_count, 1);
   assert.equal(refreshed.refresh_remaining, 0);
   assert.equal(refreshed.recommendations.some(c=>ids(expired.recommendations).includes(c.id)), false);
-  const noHistoryTables = structuredClone(refreshedTables);
-  noHistoryTables.dating_1on1_recommendation_refresh_events = [{ card_id: 'source', refreshed_at: latest }];
-  const withoutHistory = (await runApi(noHistoryTables)).body.items[0];
-  // Today's single-seed list is not yesterday's displayed list: its tie-break
-  // seed differs. The older event must still materially affect selection.
-  assert.notDeepEqual(ids(refreshed.recommendations), ids(withoutHistory.recommendations));
+  const normalize = c => ({ ...c, age: load('@/lib/dating-1on1').toDatingOneOnOneAge(c.birth_year) });
+  const expectedSource = normalize(refreshedTables.dating_1on1_cards[0]);
+  const pool = refreshedTables.dating_1on1_cards.slice(1).map(normalize);
+  const defaults = rules.takeBalancedRecommendations(expectedSource,
+    rules.sortCandidatesForSource(expectedSource, pool, '2026-09-08:default', atTime), 10, new Set(), atTime);
+  // Different random seeds may legitimately yield the same page. Verify the
+  // real two-event replay, not an unreliable comparison against a one-event page.
+  const expected = rules.replayRecommendationRefreshes(expectedSource, pool, defaults, [old, latest], new Set(), 10, atTime);
+  assert.deepEqual(ids(refreshed.recommendations), ids(expected.recommendations));
 });
 
 test("history replay maximizes rotation even after a small pool has all been seen", () => {
@@ -543,29 +547,27 @@ test("refreshes more than 24 hours apart avoid the previous reconstructed page",
   assert.equal(after.some(c=>ids(before).includes(c.id)),false);
 });
 
-test("one-off recovery selects only recent multi-day pre-fix refresh users and expires", () => {
-  const cutoff = Date.parse(rules.RECOMMENDATION_RECOVERY_CUTOFF);
-  const recovery = Date.parse(rules.RECOMMENDATION_RECOVERY_SEED);
-  const stamps = [new Date(cutoff-2*day).toISOString(),new Date(cutoff-1000).toISOString()];
-  assert.equal(rules.getRecommendationRecoverySeed(stamps,recovery),rules.RECOMMENDATION_RECOVERY_SEED);
-  assert.equal(rules.getRecommendationRecoverySeed(stamps,recovery-1),null);
-  assert.equal(rules.getRecommendationRecoverySeed(stamps,Date.parse(rules.RECOMMENDATION_RECOVERY_END)),null);
-  for(const history of [[],[stamps[1]],[stamps[1],stamps[1]],['invalid',stamps[1]],
-    [new Date(cutoff-2*3600000).toISOString(),stamps[1]],
-    [new Date(cutoff-5*day).toISOString(),new Date(cutoff-4*day).toISOString()],
-    [new Date(cutoff+1).toISOString(),new Date(cutoff+day).toISOString()]]) {
-    assert.equal(rules.getRecommendationRecoverySeed(history,recovery+1000),null);
+test("recovery replays only a recorded past timestamp within normal refresh history", () => {
+  const stamp = '2026-09-08T13:30:00.000Z';
+  const recovery = Date.parse(stamp);
+  assert.equal(rules.getRecommendationRecoverySeed(stamp, recovery), stamp);
+  assert.equal(rules.getRecommendationRecoverySeed(stamp, recovery - 1), null);
+  assert.equal(rules.getRecommendationRecoverySeed(stamp, recovery + 7 * day - 1), stamp);
+  assert.equal(rules.getRecommendationRecoverySeed(stamp, recovery + 7 * day), null);
+  for (const missing of [null, undefined, '', 'invalid']) {
+    assert.equal(rules.getRecommendationRecoverySeed(missing, recovery), null);
   }
 });
 
 test("automatic recovery is deterministic, quota-free, read-only and preserves safety/favorites", async () => {
-  const cutoff = Date.parse(rules.RECOMMENDATION_RECOVERY_CUTOFF);
-  const recovery = Date.parse(rules.RECOMMENDATION_RECOVERY_SEED);
+  const cutoff = Date.parse('2026-09-08T13:12:00.000Z');
+  const recovery = Date.parse('2026-09-08T13:30:00.000Z');
   for(const plus of [false,true]) for(const expired of [false,true]) {
     const tables = fixture(65);
     const times = [cutoff-3*day,cutoff-(expired?26*3600000:1000)].map(ms=>new Date(ms).toISOString());
     tables.dating_1on1_cards[0].recommendation_refresh_used_at=times[1];
     tables.dating_1on1_recommendation_refresh_events=times.map(refreshed_at=>({card_id:'source',refreshed_at}));
+    tables.dating_1on1_recommendation_recoveries=[{user_id:'user-source',card_id:'source',refreshed_at:new Date(recovery).toISOString()}];
     if(plus)tables.dating_1on1_plus_subscriptions=[{user_id:'user-source',expires_at:new Date(recovery+day).toISOString()}];
     tables.profiles.find(p=>p.user_id==='user-c0').is_banned=true;
     tables.dating_1on1_candidate_favorites=[{user_id:'user-source',source_card_id:'source',candidate_card_id:'c1',created_at:new Date(cutoff).toISOString()}];
@@ -584,19 +586,20 @@ test("automatic recovery is deterministic, quota-free, read-only and preserves s
   }
 });
 
-test("delayed recovery keeps eligibility, excludes main from extras and ends without consuming quota", async () => {
-  const cutoff = Date.parse(rules.RECOMMENDATION_RECOVERY_CUTOFF);
-  const recovery = Date.parse(rules.RECOMMENDATION_RECOVERY_SEED);
-  const end = Date.parse(rules.RECOMMENDATION_RECOVERY_END);
+test("reading after the normal refresh window never grants another recovery or changes quota", async () => {
+  const cutoff = Date.parse('2026-09-08T13:12:00.000Z');
+  const recovery = Date.parse('2026-09-08T13:30:00.000Z');
   const tables = fixture(65);
   const times = [cutoff - 6 * day, cutoff - 2 * day].map(ms => new Date(ms).toISOString());
   tables.dating_1on1_cards[0].recommendation_refresh_used_at = times[1];
   tables.dating_1on1_recommendation_refresh_events = times.map(refreshed_at => ({ card_id: 'source', refreshed_at }));
-  for (const atTime of [recovery + 2 * day, end - 1, end]) {
+  tables.dating_1on1_recommendation_recoveries = [{ user_id: 'user-source', card_id: 'source', refreshed_at: new Date(recovery).toISOString() }];
+  const before = structuredClone(tables);
+  for (const atTime of [recovery + day - 1, recovery + day, recovery + 2 * day, recovery + 10 * day]) {
     const result = await runApi(tables, { atTime });
     assert.equal(result.response.status, 200);
     const group = result.body.items[0];
-    assert.equal(group.recovery_refresh_applied, atTime < end);
+    assert.equal(group.recovery_refresh_applied, atTime < recovery + day);
     assert.equal(group.refresh_used_count, 0);
     assert.equal(group.refresh_remaining, 1);
     assert.equal(group.can_refresh, true);
@@ -604,17 +607,19 @@ test("delayed recovery keeps eligibility, excludes main from extras and ends wit
     assert.equal(group.admin_recommendations.some(c => ids(group.recommendations).includes(c.id)), false);
     assert.equal(result.calls.filter(c => c.table === 'dating_1on1_recommendation_refresh_events').length, 1);
     assert.equal(result.calls.some(c => c.insert || c.update || c.delete), false);
+    assert.deepEqual(tables, before);
   }
 });
 
 test("a manual refresh after recovery rotates again and charges only the real refresh", async () => {
-  const cutoff = Date.parse(rules.RECOMMENDATION_RECOVERY_CUTOFF);
-  const recovery = Date.parse(rules.RECOMMENDATION_RECOVERY_SEED);
+  const cutoff = Date.parse('2026-09-08T13:12:00.000Z');
+  const recovery = Date.parse('2026-09-08T13:30:00.000Z');
   for (const plus of [false, true]) {
     const tables = fixture(80);
     const times = [cutoff - 3 * day, cutoff - 26 * 3600000].map(ms => new Date(ms).toISOString());
     tables.dating_1on1_cards[0].recommendation_refresh_used_at = times[1];
     tables.dating_1on1_recommendation_refresh_events = times.map(refreshed_at => ({ card_id: 'source', refreshed_at }));
+    tables.dating_1on1_recommendation_recoveries = [{ user_id: 'user-source', card_id: 'source', refreshed_at: new Date(recovery).toISOString() }];
     if (plus) tables.dating_1on1_plus_subscriptions = [{ user_id: 'user-source', expires_at: new Date(recovery + day).toISOString() }];
     const before = (await runApi(tables, { atTime: recovery + 1000 })).body.items[0];
     const refreshedAt = new Date(recovery + 2000).toISOString();
@@ -630,14 +635,15 @@ test("a manual refresh after recovery rotates again and charges only the real re
 });
 
 test("recovery cannot restore blocked, active, rejected or withdrawn candidates in either direction", async () => {
-  const cutoff = Date.parse(rules.RECOMMENDATION_RECOVERY_CUTOFF);
-  const recovery = Date.parse(rules.RECOMMENDATION_RECOVERY_SEED);
+  const cutoff = Date.parse('2026-09-08T13:12:00.000Z');
+  const recovery = Date.parse('2026-09-08T13:30:00.000Z');
   const phoneLib = load('@/lib/dating-1on1-phone-blocks');
   const contactLib = load('@/lib/dating-contact-blocks');
   for (const reverse of [false, true]) {
     const tables = fixture(10);
     tables.dating_1on1_recommendation_refresh_events = [cutoff - 2 * day, cutoff - 1000]
       .map(ms => ({ card_id: 'source', refreshed_at: new Date(ms).toISOString() }));
+    tables.dating_1on1_recommendation_recoveries = [{ user_id: 'user-source', card_id: 'source', refreshed_at: new Date(recovery).toISOString() }];
     tables.dating_user_blocks = [{ blocker_user_id: reverse ? 'user-c0' : 'user-source', blocked_user_id: reverse ? 'user-source' : 'user-c0' }];
     tables.dating_1on1_admin_user_blocks = [{ user_a_id: reverse ? 'user-c1' : 'user-source', user_b_id: reverse ? 'user-source' : 'user-c1' }];
     tables.dating_1on1_phone_blocks = [{ user_id: reverse ? 'user-c2' : 'user-source', phone_hash: phoneLib.hashOneOnOneBlockedPhone(tables.profiles[reverse ? 0 : 3].phone_e164) }];
@@ -660,6 +666,27 @@ test("recovery cannot restore blocked, active, rejected or withdrawn candidates 
     assert.deepEqual(ids(result.body.items[0].favorite_candidates), ['c8']);
     assert.deepEqual(tables, before);
   }
+});
+
+test("missing recovery schema, unrelated records or refresh history cannot grant a correction", async () => {
+  const atTime = Date.parse('2026-09-08T14:00:00.000Z');
+  const tables = fixture(20);
+  tables.dating_1on1_recommendation_refresh_events = [atTime - 3 * day, atTime - 2 * day]
+    .map(ms => ({ card_id: 'source', refreshed_at: new Date(ms).toISOString() }));
+  for (const record of [null,
+    { user_id: 'someone-else', card_id: 'source' },
+    { user_id: 'user-source', card_id: 'old-source' },
+  ]) {
+    tables.dating_1on1_recommendation_recoveries = record ? [{ ...record, refreshed_at: new Date(atTime - 1000).toISOString() }] : [];
+    const result = await runApi(tables, { atTime });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.items[0].recovery_refresh_applied, false);
+  }
+  const result = await runApi(tables, { atTime, intercept: q => q.table === 'dating_1on1_recommendation_recoveries'
+    ? { data: null, error: { code: 'PGRST205', message: 'recovery table missing' } } : null });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.items[0].recommendations.length, 10);
+  assert.equal(result.body.items[0].recovery_refresh_applied, false);
 });
 
 test("activity lookup skips already-found busy members without losing quieter members", async () => {

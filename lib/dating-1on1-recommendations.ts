@@ -4,22 +4,12 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const AGE_MATCH_MIN_QUOTA = 6;
 const RECENT_MIN_QUOTA = 4;
 export const RECOMMENDATION_REFRESH_HISTORY_MS = 7 * DAY_MS;
-// One-off recovery for members who repeatedly refreshed before the fix.
-// Kept separate from usage events: this must never consume a free/Plus refresh.
-export const RECOMMENDATION_RECOVERY_CUTOFF = "2026-09-08T13:12:00.000Z";
-export const RECOMMENDATION_RECOVERY_SEED = "2026-09-08T13:30:00.000Z";
-export const RECOMMENDATION_RECOVERY_END = "2026-09-11T13:30:00.000Z";
-
-export function getRecommendationRecoverySeed(refreshTimes: string[], nowMs = Date.now()) {
-  const cutoff = Date.parse(RECOMMENDATION_RECOVERY_CUTOFF);
-  if (nowMs < Date.parse(RECOMMENDATION_RECOVERY_SEED) || nowMs >= Date.parse(RECOMMENDATION_RECOVERY_END)) return null;
-  const history = [...new Set(refreshTimes.map(Date.parse))]
-    .filter((ms) => Number.isFinite(ms) && ms < cutoff && ms >= cutoff - RECOMMENDATION_REFRESH_HISTORY_MS)
-    .sort((a, b) => a - b);
-  if (history.length < 2 || history[history.length - 1] < cutoff - 3 * DAY_MS) return null;
-  // Two near-simultaneous Plus refreshes alone are not evidence of a multi-day issue.
-  if (history[history.length - 1] - history[0] < DAY_MS) return null;
-  return RECOMMENDATION_RECOVERY_SEED;
+// A persisted, once-per-account correction, separate from charged refresh events.
+// Replay it like a normal refresh; reading candidates never grants another one.
+export function getRecommendationRecoverySeed(refreshedAt: string | null | undefined, nowMs = Date.now()) {
+  const timestamp = Date.parse(refreshedAt ?? "");
+  return Number.isFinite(timestamp) && timestamp <= nowMs && timestamp > nowMs - RECOMMENDATION_REFRESH_HISTORY_MS
+    ? refreshedAt! : null;
 }
 
 export type RecommendationCandidate = {
