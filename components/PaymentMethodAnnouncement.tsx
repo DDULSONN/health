@@ -3,7 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 
-const ANNOUNCEMENT_ID = "payment-methods-expanded-2026-08-09";
+const ANNOUNCEMENT_ID = "one-on-one-refresh-fixed-2026-09-08";
 const STORAGE_KEY = `site-announcement:${ANNOUNCEMENT_ID}`;
 const VISIBLE_PATH_PREFIXES = [
   "/community/dating",
@@ -58,18 +58,15 @@ export default function PaymentMethodAnnouncement() {
       <section
         role="dialog"
         aria-modal="true"
-        aria-labelledby="payment-method-announcement-title"
+        aria-labelledby="site-announcement-title"
         className="w-full max-w-sm rounded-lg border border-neutral-200 bg-white p-5 shadow-2xl"
       >
         <p className="text-xs font-semibold text-rose-600">새 소식</p>
-        <h2 id="payment-method-announcement-title" className="mt-2 text-xl font-bold text-neutral-950">
-          결제수단이 더 다양해졌어요
+        <h2 id="site-announcement-title" className="mt-2 text-xl font-bold text-neutral-950">
+          1:1 후보 새로고침 개선
         </h2>
         <p className="mt-3 text-sm leading-6 text-neutral-600">
-          이제 결제창에서 이용 가능한 카드와 간편결제 수단을 직접 선택할 수 있어요.
-        </p>
-        <p className="mt-2 text-xs leading-5 text-neutral-500">
-          국민·우리·현대카드는 현재 이용이 어려울 수 있습니다.
+          후보를 새로고침해도 같은 사람이 반복되던 문제를 수정했습니다.
         </p>
         <button
           type="button"
