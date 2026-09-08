@@ -3,6 +3,7 @@ import { getRegionDistanceMeta } from "@/lib/region-distance";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const AGE_MATCH_MIN_QUOTA = 6;
 const RECENT_MIN_QUOTA = 4;
+export const RECOMMENDATION_REFRESH_HISTORY_MS = 7 * DAY_MS;
 
 export type RecommendationCandidate = {
   id: string;
@@ -173,4 +174,49 @@ export function getRefreshExcludeIds<T extends RecommendationCandidate>(
 export function getActiveRecommendationRefresh(value: string | null | undefined, nowMs = Date.now()) {
   const timestamp = Date.parse(value ?? "");
   return Number.isFinite(timestamp) && timestamp <= nowMs && nowMs - timestamp < DAY_MS ? value! : null;
+}
+
+// Replay a short, bounded history using today's eligible pool. This is a ranking
+// hint, never a safety exclusion or an exact historical impression record.
+export function replayRecommendationRefreshes<T extends RecommendationCandidate>(
+  source: RecommendationCandidate,
+  candidates: T[],
+  defaults: T[],
+  refreshTimes: string[],
+  handledIds: Set<string>,
+  limit: number,
+  nowMs = Date.now()
+) {
+  const seeds = [...new Set(refreshTimes)].filter((value) => {
+    const ms = Date.parse(value);
+    return Number.isFinite(ms) && ms <= nowMs && ms > nowMs - RECOMMENDATION_REFRESH_HISTORY_MS;
+  }).sort((a, b) => Date.parse(a) - Date.parse(b)).slice(-32);
+  let recommendations = defaults;
+  const shownIds = new Set(defaults.map((card) => card.id));
+  const activeShownIds = new Set(shownIds);
+  const excluded = new Set([...handledIds, ...shownIds]);
+  for (const seed of seeds) {
+    const previousIds = new Set(recommendations.map((card) => card.id));
+    const sorted = sortCandidatesForSource(source, candidates, `refresh:${seed}`, nowMs);
+    recommendations = [];
+    const pickedIds = new Set<string>();
+    // Unseen first, then older pages, and the preceding page only to fill a
+    // genuinely small pool. Quotas cannot override these refresh priorities.
+    for (const pool of [
+      sorted.filter((card) => !excluded.has(card.id) && !previousIds.has(card.id)),
+      sorted.filter((card) => !previousIds.has(card.id)),
+      sorted,
+    ]) {
+      const picked = takeBalancedRecommendations(source, pool.filter((card) => !pickedIds.has(card.id)),
+        limit - recommendations.length, new Set(), nowMs);
+      recommendations.push(...picked);
+      for (const card of picked) pickedIds.add(card.id);
+      if (recommendations.length >= limit) break;
+    }
+    for (const card of recommendations) { excluded.add(card.id); shownIds.add(card.id); }
+    if (getActiveRecommendationRefresh(seed, nowMs)) {
+      for (const card of recommendations) activeShownIds.add(card.id);
+    }
+  }
+  return { recommendations, shownIds, activeShownIds, seeds };
 }

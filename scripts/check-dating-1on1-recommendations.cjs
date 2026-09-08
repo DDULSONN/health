@@ -478,6 +478,67 @@ test("a second Plus refresh safely refills a genuinely small pool", async () => 
   assert.equal(new Set(ids(recommendations)).size, 10);
 });
 
+test("cross-day refresh history rotates candidates without consuming today's allowance", async () => {
+  const tables = fixture(45);
+  const old = new Date(Date.now() - 26 * 3600000).toISOString();
+  const latest = new Date(Date.now() - 10000).toISOString();
+  tables.dating_1on1_recommendation_refresh_events = [{ card_id: 'source', refreshed_at: old }];
+  const expired = (await runApi(tables)).body.items[0];
+  assert.equal(expired.refresh_used_count, 0);
+  assert.equal(expired.refresh_remaining, 1);
+  const refreshedTables = structuredClone(tables);
+  refreshedTables.dating_1on1_cards[0].recommendation_refresh_used_at = latest;
+  refreshedTables.dating_1on1_recommendation_refresh_events.push({ card_id: 'source', refreshed_at: latest });
+  const refreshed = (await runApi(refreshedTables)).body.items[0];
+  assert.equal(refreshed.refresh_used_count, 1);
+  assert.equal(refreshed.refresh_remaining, 0);
+  assert.equal(refreshed.recommendations.some(c=>ids(expired.recommendations).includes(c.id)), false);
+  const noHistoryTables = structuredClone(refreshedTables);
+  noHistoryTables.dating_1on1_recommendation_refresh_events = [{ card_id: 'source', refreshed_at: latest }];
+  const withoutHistory = (await runApi(noHistoryTables)).body.items[0];
+  // Today's single-seed list is not yesterday's displayed list: its tie-break
+  // seed differs. The older event must still materially affect selection.
+  assert.notDeepEqual(ids(refreshed.recommendations), ids(withoutHistory.recommendations));
+});
+
+test("history replay maximizes rotation even after a small pool has all been seen", () => {
+  for (const size of [0, 1, 9, 10, 11, 12, 19, 20, 60]) {
+    const pool = Array.from({length:size},(_,i)=>card(`p${i}`, { age: 20 + i % 15 }));
+    const defaults = rules.takeBalancedRecommendations(source,pool,10,new Set(),now);
+    let previous = defaults;
+    const stamps = [];
+    for (let i=0;i<8;i++) {
+      stamps.push(new Date(now-(8-i)*1000).toISOString());
+      const result = rules.replayRecommendationRefreshes(source,pool,defaults,stamps,new Set(),10,now);
+      assert.equal(result.recommendations.length, Math.min(size,10));
+      assert.equal(new Set(ids(result.recommendations)).size, result.recommendations.length);
+      const newCount = result.recommendations.filter(c=>!ids(previous).includes(c.id)).length;
+      assert.equal(newCount, Math.min(10,Math.max(size-10,0)));
+      assert.deepEqual(result, rules.replayRecommendationRefreshes(source,pool,defaults,stamps,new Set(),10,now));
+      previous = result.recommendations;
+    }
+  }
+});
+
+test("refresh replay ignores invalid, future, duplicate and expired history", () => {
+  const pool = Array.from({length:40},(_,i)=>card(`history${i}`));
+  const stamp = new Date(now-1000).toISOString();
+  const result = rules.replayRecommendationRefreshes(source,pool,pool.slice(0,10),
+    ['bad',new Date(now+1).toISOString(),new Date(now-7*day).toISOString(),stamp,stamp],new Set(),10,now);
+  assert.deepEqual(result.seeds,[stamp]);
+  assert.equal(result.recommendations.length,10);
+});
+
+test("refreshes more than 24 hours apart avoid the previous reconstructed page", () => {
+  const pool = Array.from({length:60},(_,i)=>card(`daily${i}`,{age:20+i%15}));
+  const defaults = rules.takeBalancedRecommendations(source,pool,10,new Set(),now);
+  const first = new Date(now-2*day).toISOString();
+  const second = new Date(now-1000).toISOString();
+  const before = rules.replayRecommendationRefreshes(source,pool,defaults,[first],new Set(),10,now).recommendations;
+  const after = rules.replayRecommendationRefreshes(source,pool,defaults,[first,second],new Set(),10,now).recommendations;
+  assert.equal(after.some(c=>ids(before).includes(c.id)),false);
+});
+
 test("activity lookup skips already-found busy members without losing quieter members", async () => {
   const tables = fixture(2);
   tables.dating_1on1_match_proposals = Array.from({ length: 2000 }, (_, index) => pair({

@@ -20,10 +20,10 @@ import {
 } from "@/lib/dating-1on1-admin-user-blocks";
 import {
   getActiveRecommendationRefresh,
-  getRefreshExcludeIds,
+  RECOMMENDATION_REFRESH_HISTORY_MS,
+  replayRecommendationRefreshes,
   isCandidateInSourceAgeRange,
   sortCandidatesForSource,
-  sortRefreshCandidatesForSource,
   takeBalancedRecommendations,
   takeRecommendations,
 } from "@/lib/dating-1on1-recommendations";
@@ -162,7 +162,7 @@ export async function GET(req: Request) {
     .from("dating_1on1_recommendation_refresh_events")
     .select("card_id,refreshed_at")
     .in("card_id", sourceCardIds)
-    .gt("refreshed_at", new Date(Date.now() - RECOMMENDATION_REFRESH_COOLDOWN_MS).toISOString())
+    .gt("refreshed_at", new Date(nowMs - RECOMMENDATION_REFRESH_HISTORY_MS).toISOString())
     .order("refreshed_at", { ascending: true });
   if (refreshEventsRes.error && !isMissingRefreshEventSchema(refreshEventsRes.error)) {
     console.error("[GET /api/dating/1on1/recommendations/my] refresh events failed", refreshEventsRes.error);
@@ -322,9 +322,7 @@ export async function GET(req: Request) {
       nowMs
     );
     const activeRefresh = getActiveRecommendationRefresh(sourceCard.recommendation_refresh_used_at, nowMs);
-    const refreshSeeds = (refreshEventsByCardId.get(sourceCard.id) ?? [])
-      .map((value) => getActiveRecommendationRefresh(value, nowMs))
-      .filter((value): value is string => Boolean(value));
+    const refreshSeeds = [...(refreshEventsByCardId.get(sourceCard.id) ?? [])];
     if (
       activeRefresh &&
       !refreshSeeds.some((value) => Math.abs(Date.parse(value) - Date.parse(activeRefresh)) <= 5_000)
@@ -334,34 +332,15 @@ export async function GET(req: Request) {
       refreshSeeds.sort((a, b) => Date.parse(a) - Date.parse(b));
     }
 
-    let recommendations = defaultRecommendations;
-    const previouslyShownRecommendationIds = new Set(handledPairIds);
-    const allShownRecommendationIds = new Set(defaultRecommendations.map((candidate) => candidate.id));
-    for (const refreshSeed of refreshSeeds) {
-      const refreshExcludeIds = getRefreshExcludeIds(
-        sourceCard,
-        defaultRecommendations,
-        refreshSeed
-      );
-      for (const shownId of previouslyShownRecommendationIds) refreshExcludeIds.add(shownId);
-      recommendations = takeBalancedRecommendations(
-        sourceCard,
-        sortRefreshCandidatesForSource(
-          sourceCard,
-          unsavedCandidates,
-          refreshSeed,
-          refreshExcludeIds,
-          nowMs
-        ),
-        RECOMMENDATION_LIMIT,
-        refreshExcludeIds,
-        nowMs
-      );
-      for (const candidate of recommendations) {
-        previouslyShownRecommendationIds.add(candidate.id);
-        allShownRecommendationIds.add(candidate.id);
-      }
-    }
+    const hasActiveRefresh = refreshSeeds.some((seed) => getActiveRecommendationRefresh(seed, nowMs));
+    const replay = hasActiveRefresh
+      ? replayRecommendationRefreshes(sourceCard, unsavedCandidates,
+        defaultRecommendations, refreshSeeds, handledPairIds, RECOMMENDATION_LIMIT, nowMs)
+      : { recommendations: defaultRecommendations, activeShownIds: new Set(defaultRecommendations.map((card) => card.id)) };
+    const recommendations = hasActiveRefresh ? replay.recommendations : defaultRecommendations;
+    // Extra candidates must not overlap today's main pages; old history is a
+    // preference, not a reason to make the separate extra list disappear.
+    const allShownRecommendationIds = replay.activeShownIds;
     const sourcePlus = plusByUserId.get(sourceCard.user_id) ?? null;
     const refreshLimit = sourcePlus ? ONE_ON_ONE_PLUS_REFRESH_LIMIT : ONE_ON_ONE_FREE_REFRESH_LIMIT;
     const refreshAvailability = getRefreshAvailability(
