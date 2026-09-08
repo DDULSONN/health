@@ -7,8 +7,12 @@ const ts = require("typescript");
 
 const root = path.resolve(__dirname, "..");
 // Load the real TypeScript modules, without adding a runtime/test dependency.
-function createLoader(overrides = {}) {
+function createLoader(overrides = {}, nowMs) {
   const cache = new Map();
+  const Clock = nowMs == null ? Date : class extends Date {
+    constructor(...args) { super(...(args.length ? args : [nowMs])); }
+    static now() { return nowMs; }
+  };
   return function load(name) {
     if (Object.hasOwn(overrides, name)) return overrides[name];
     if (!name.startsWith("@/")) return require(name);
@@ -19,7 +23,7 @@ function createLoader(overrides = {}) {
     const output = ts.transpileModule(fs.readFileSync(filename, "utf8"), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
     }).outputText;
-    new Function("require", "module", "exports", output)(load, loadedModule, loadedModule.exports);
+    new Function("require", "module", "exports", "Date", output)(load, loadedModule, loadedModule.exports, Clock);
     return loadedModule.exports;
   };
 }
@@ -141,12 +145,12 @@ function fixture(size = 15) {
   };
 }
 
-async function runApi(tables, { intercept, signedIn = true } = {}) {
+async function runApi(tables, { intercept, signedIn = true, atTime } = {}) {
   const db = mockDatabase(tables, intercept);
   const apiLoad = createLoader({
     "@/lib/supabase/server": { createAdminClient: () => db },
     "@/lib/supabase/request": { getRequestAuthContext: async () => ({ user: signedIn ? { id: "user-source" } : null }) },
-  });
+  }, atTime);
   const { GET } = apiLoad("@/app/api/dating/1on1/recommendations/my/route");
   const response = await GET(new Request("http://localhost/api/dating/1on1/recommendations/my"));
   return { response, body: await response.json(), calls: db.calls };
@@ -537,6 +541,125 @@ test("refreshes more than 24 hours apart avoid the previous reconstructed page",
   const before = rules.replayRecommendationRefreshes(source,pool,defaults,[first],new Set(),10,now).recommendations;
   const after = rules.replayRecommendationRefreshes(source,pool,defaults,[first,second],new Set(),10,now).recommendations;
   assert.equal(after.some(c=>ids(before).includes(c.id)),false);
+});
+
+test("one-off recovery selects only recent multi-day pre-fix refresh users and expires", () => {
+  const cutoff = Date.parse(rules.RECOMMENDATION_RECOVERY_CUTOFF);
+  const recovery = Date.parse(rules.RECOMMENDATION_RECOVERY_SEED);
+  const stamps = [new Date(cutoff-2*day).toISOString(),new Date(cutoff-1000).toISOString()];
+  assert.equal(rules.getRecommendationRecoverySeed(stamps,recovery),rules.RECOMMENDATION_RECOVERY_SEED);
+  assert.equal(rules.getRecommendationRecoverySeed(stamps,recovery-1),null);
+  assert.equal(rules.getRecommendationRecoverySeed(stamps,Date.parse(rules.RECOMMENDATION_RECOVERY_END)),null);
+  for(const history of [[],[stamps[1]],[stamps[1],stamps[1]],['invalid',stamps[1]],
+    [new Date(cutoff-2*3600000).toISOString(),stamps[1]],
+    [new Date(cutoff-5*day).toISOString(),new Date(cutoff-4*day).toISOString()],
+    [new Date(cutoff+1).toISOString(),new Date(cutoff+day).toISOString()]]) {
+    assert.equal(rules.getRecommendationRecoverySeed(history,recovery+1000),null);
+  }
+});
+
+test("automatic recovery is deterministic, quota-free, read-only and preserves safety/favorites", async () => {
+  const cutoff = Date.parse(rules.RECOMMENDATION_RECOVERY_CUTOFF);
+  const recovery = Date.parse(rules.RECOMMENDATION_RECOVERY_SEED);
+  for(const plus of [false,true]) for(const expired of [false,true]) {
+    const tables = fixture(65);
+    const times = [cutoff-3*day,cutoff-(expired?26*3600000:1000)].map(ms=>new Date(ms).toISOString());
+    tables.dating_1on1_cards[0].recommendation_refresh_used_at=times[1];
+    tables.dating_1on1_recommendation_refresh_events=times.map(refreshed_at=>({card_id:'source',refreshed_at}));
+    if(plus)tables.dating_1on1_plus_subscriptions=[{user_id:'user-source',expires_at:new Date(recovery+day).toISOString()}];
+    tables.profiles.find(p=>p.user_id==='user-c0').is_banned=true;
+    tables.dating_1on1_candidate_favorites=[{user_id:'user-source',source_card_id:'source',candidate_card_id:'c1',created_at:new Date(cutoff).toISOString()}];
+    const before=(await runApi(tables,{atTime:recovery-1})).body.items[0];
+    const result=await runApi(tables,{atTime:recovery+1000});
+    const after=result.body.items[0];
+    const again=(await runApi(tables,{atTime:recovery+1000})).body.items[0];
+    assert.equal(after.recovery_refresh_applied,true);
+    for(const key of ['refresh_used_count','refresh_remaining','refresh_limit','next_refresh_at','refresh_used_at'])assert.equal(after[key],before[key],key);
+    assert.equal(after.recommendations.some(c=>ids(before.recommendations).includes(c.id)),false);
+    assert.deepEqual(ids(after.recommendations),ids(again.recommendations));
+    assert.equal(after.recommendations.some(c=>['c0','c1'].includes(c.id)),false);
+    assert.deepEqual(ids(after.favorite_candidates),['c1']);
+    assert.equal(after.admin_recommendations.some(c=>ids(after.recommendations).includes(c.id)),false);
+    assert.equal(result.calls.some(c=>c.insert||c.update||c.delete),false);
+  }
+});
+
+test("delayed recovery keeps eligibility, excludes main from extras and ends without consuming quota", async () => {
+  const cutoff = Date.parse(rules.RECOMMENDATION_RECOVERY_CUTOFF);
+  const recovery = Date.parse(rules.RECOMMENDATION_RECOVERY_SEED);
+  const end = Date.parse(rules.RECOMMENDATION_RECOVERY_END);
+  const tables = fixture(65);
+  const times = [cutoff - 6 * day, cutoff - 2 * day].map(ms => new Date(ms).toISOString());
+  tables.dating_1on1_cards[0].recommendation_refresh_used_at = times[1];
+  tables.dating_1on1_recommendation_refresh_events = times.map(refreshed_at => ({ card_id: 'source', refreshed_at }));
+  for (const atTime of [recovery + 2 * day, end - 1, end]) {
+    const result = await runApi(tables, { atTime });
+    assert.equal(result.response.status, 200);
+    const group = result.body.items[0];
+    assert.equal(group.recovery_refresh_applied, atTime < end);
+    assert.equal(group.refresh_used_count, 0);
+    assert.equal(group.refresh_remaining, 1);
+    assert.equal(group.can_refresh, true);
+    assert.equal(group.recommendations.length, 10);
+    assert.equal(group.admin_recommendations.some(c => ids(group.recommendations).includes(c.id)), false);
+    assert.equal(result.calls.filter(c => c.table === 'dating_1on1_recommendation_refresh_events').length, 1);
+    assert.equal(result.calls.some(c => c.insert || c.update || c.delete), false);
+  }
+});
+
+test("a manual refresh after recovery rotates again and charges only the real refresh", async () => {
+  const cutoff = Date.parse(rules.RECOMMENDATION_RECOVERY_CUTOFF);
+  const recovery = Date.parse(rules.RECOMMENDATION_RECOVERY_SEED);
+  for (const plus of [false, true]) {
+    const tables = fixture(80);
+    const times = [cutoff - 3 * day, cutoff - 26 * 3600000].map(ms => new Date(ms).toISOString());
+    tables.dating_1on1_cards[0].recommendation_refresh_used_at = times[1];
+    tables.dating_1on1_recommendation_refresh_events = times.map(refreshed_at => ({ card_id: 'source', refreshed_at }));
+    if (plus) tables.dating_1on1_plus_subscriptions = [{ user_id: 'user-source', expires_at: new Date(recovery + day).toISOString() }];
+    const before = (await runApi(tables, { atTime: recovery + 1000 })).body.items[0];
+    const refreshedAt = new Date(recovery + 2000).toISOString();
+    tables.dating_1on1_cards[0].recommendation_refresh_used_at = refreshedAt;
+    tables.dating_1on1_recommendation_refresh_events.push({ card_id: 'source', refreshed_at: refreshedAt });
+    const after = (await runApi(tables, { atTime: recovery + 3000 })).body.items[0];
+    assert.equal(after.recovery_refresh_applied, true);
+    assert.equal(after.refresh_used_count, 1);
+    assert.equal(after.refresh_remaining, plus ? 1 : 0);
+    assert.equal(after.recommendations.length, 10);
+    assert.equal(after.recommendations.some(c => ids(before.recommendations).includes(c.id)), false);
+  }
+});
+
+test("recovery cannot restore blocked, active, rejected or withdrawn candidates in either direction", async () => {
+  const cutoff = Date.parse(rules.RECOMMENDATION_RECOVERY_CUTOFF);
+  const recovery = Date.parse(rules.RECOMMENDATION_RECOVERY_SEED);
+  const phoneLib = load('@/lib/dating-1on1-phone-blocks');
+  const contactLib = load('@/lib/dating-contact-blocks');
+  for (const reverse of [false, true]) {
+    const tables = fixture(10);
+    tables.dating_1on1_recommendation_refresh_events = [cutoff - 2 * day, cutoff - 1000]
+      .map(ms => ({ card_id: 'source', refreshed_at: new Date(ms).toISOString() }));
+    tables.dating_user_blocks = [{ blocker_user_id: reverse ? 'user-c0' : 'user-source', blocked_user_id: reverse ? 'user-source' : 'user-c0' }];
+    tables.dating_1on1_admin_user_blocks = [{ user_a_id: reverse ? 'user-c1' : 'user-source', user_b_id: reverse ? 'user-source' : 'user-c1' }];
+    tables.dating_1on1_phone_blocks = [{ user_id: reverse ? 'user-c2' : 'user-source', phone_hash: phoneLib.hashOneOnOneBlockedPhone(tables.profiles[reverse ? 0 : 3].phone_e164) }];
+    tables.dating_contact_blocks = [{ user_id: reverse ? 'user-c3' : 'user-source', block_type: 'phone', value_hash: contactLib.hashDatingContactBlockValue('phone', tables.profiles[reverse ? 0 : 4].phone_e164) }];
+    tables.dating_1on1_match_proposals = ['mutual_accepted', 'candidate_rejected'].map((state, i) => {
+      const other = `c${i + 4}`;
+      return pair({ id: `pair-${other}`, state,
+        source_card_id: reverse ? other : 'source', candidate_card_id: reverse ? 'source' : other,
+        source_user_id: reverse ? `user-${other}` : 'user-source', candidate_user_id: reverse ? 'user-source' : `user-${other}`,
+      });
+    });
+    tables.profiles = tables.profiles.filter(p => p.user_id !== 'user-c6');
+    tables.profiles.find(p => p.user_id === 'user-c7').is_banned = true;
+    tables.dating_1on1_candidate_favorites = [{ user_id: 'user-source', source_card_id: 'source', candidate_card_id: 'c8', created_at: new Date(cutoff).toISOString() }];
+    const before = structuredClone(tables);
+    const result = await runApi(tables, { atTime: recovery + 1000 });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.items[0].recovery_refresh_applied, true);
+    assert.deepEqual(ids(allCandidates(result.body)), ['c9']);
+    assert.deepEqual(ids(result.body.items[0].favorite_candidates), ['c8']);
+    assert.deepEqual(tables, before);
+  }
 });
 
 test("activity lookup skips already-found busy members without losing quieter members", async () => {
