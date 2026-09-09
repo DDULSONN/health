@@ -4,9 +4,9 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { formatRemainingToKorean } from "@/lib/dating-open";
-import { DATING_CARD_REPORT_REASON_OPTIONS, type DatingCardReportReasonCode } from "@/lib/dating-report-reasons";
+import DatingReportButton from "@/components/DatingReportButton";
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
-import { readOpenCardDetail } from "@/lib/dating-detail-cache";
+import { readOpenCardDetail, removeOpenCardDetail } from "@/lib/dating-detail-cache";
 import { createClient } from "@/lib/supabase/client";
 
 type CardDetail = {
@@ -44,11 +44,7 @@ export default function OpenCardDetailPage() {
   const supabase = useMemo(() => createClient(), []);
   const [card, setCard] = useState<CardDetail | null>(() => readOpenCardDetail<CardDetail>(id));
   const [loading, setLoading] = useState(() => !readOpenCardDetail<CardDetail>(id));
-  const [reportOpen, setReportOpen] = useState(false);
-  const [reportReasonCode, setReportReasonCode] = useState<DatingCardReportReasonCode>("fake_profile");
-  const [reportDetail, setReportDetail] = useState("");
-  const [reportSubmitting, setReportSubmitting] = useState(false);
-  const [reportMessage, setReportMessage] = useState("");
+
 
   useEffect(() => {
     queueMicrotask(async () => {
@@ -92,36 +88,6 @@ export default function OpenCardDetailPage() {
 
   if (!card) return null;
 
-  async function submitReport() {
-    if (reportSubmitting) return;
-    if (!card) return;
-
-    const targetCardId = card.id;
-    setReportSubmitting(true);
-    setReportMessage("");
-    try {
-      const res = await fetch("/api/dating/cards/report", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          card_id: targetCardId,
-          reason_code: reportReasonCode,
-          detail: reportDetail.trim(),
-        }),
-      });
-      const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
-      if (!res.ok) {
-        throw new Error(body.error ?? "신고 접수에 실패했습니다.");
-      }
-      setReportMessage(body.message ?? "신고가 접수되었습니다. 운영자가 확인 후 조치합니다.");
-      setReportOpen(false);
-      setReportDetail("");
-    } catch (error) {
-      setReportMessage(error instanceof Error ? error.message : "신고 접수에 실패했습니다.");
-    } finally {
-      setReportSubmitting(false);
-    }
-  }
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
@@ -209,74 +175,17 @@ export default function OpenCardDetailPage() {
             >
               지원하기
             </Link>
-            <button
-              type="button"
-              onClick={() => {
-                setReportMessage("");
-                setReportOpen(true);
-              }}
-              className="inline-flex min-h-[44px] items-center rounded-lg border border-rose-200 bg-rose-50 px-4 text-sm font-medium text-rose-700 hover:bg-rose-100"
-            >
-              신고
-            </button>
+            <DatingReportButton targetType="open_card" targetId={card.id} label={card.display_nickname}
+              onReported={(result) => {
+                if (result.blocked) {
+                  removeOpenCardDetail(card.id);
+                  router.replace(listHref);
+                }
+              }} />
           </div>
-          {reportMessage ? <p className="mt-3 text-sm text-rose-700">{reportMessage}</p> : null}
         </div>
       </div>
 
-      {reportOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-black/40 px-4 py-6 sm:items-center">
-          <div className="w-full max-w-md rounded-2xl bg-white p-5 shadow-2xl">
-            <h2 className="text-lg font-bold text-neutral-900">오픈카드 신고</h2>
-            <p className="mt-1 text-sm text-neutral-500">가장 가까운 사유를 하나 선택해 주세요.</p>
-            <div className="mt-4 space-y-2">
-              {DATING_CARD_REPORT_REASON_OPTIONS.map((option) => (
-                <label
-                  key={option.code}
-                  className={`flex cursor-pointer items-center gap-3 rounded-xl border px-3 py-3 text-sm ${
-                    reportReasonCode === option.code
-                      ? "border-rose-300 bg-rose-50 text-rose-700"
-                      : "border-neutral-200 bg-white text-neutral-700"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="dating-card-report-reason"
-                    checked={reportReasonCode === option.code}
-                    onChange={() => setReportReasonCode(option.code)}
-                  />
-                  <span>{option.label}</span>
-                </label>
-              ))}
-            </div>
-            <textarea
-              value={reportDetail}
-              onChange={(e) => setReportDetail(e.target.value)}
-              maxLength={500}
-              rows={4}
-              placeholder="상세 설명이 있으면 적어 주세요. (선택)"
-              className="mt-4 w-full rounded-xl border border-neutral-200 px-3 py-2 text-sm outline-none focus:border-rose-300"
-            />
-            <div className="mt-4 flex gap-2">
-              <button
-                type="button"
-                onClick={() => setReportOpen(false)}
-                className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-xl border border-neutral-300 bg-white text-sm font-medium text-neutral-700"
-              >
-                닫기
-              </button>
-              <button
-                type="button"
-                onClick={() => void submitReport()}
-                disabled={reportSubmitting}
-                className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-xl bg-rose-600 text-sm font-medium text-white disabled:opacity-50"
-              >
-                {reportSubmitting ? "접수 중..." : "신고 접수"}
-              </button>
-            </div>
-          </div>
-        </div>
-      ) : null}
     </main>
   );
 }

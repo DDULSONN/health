@@ -32,6 +32,15 @@ export function readOpenCardDetail<T>(id: string): T | null {
   return readCache<T>(buildKey("open-card", id));
 }
 
+export function removeOpenCardDetail(id: string) {
+  if (typeof window === "undefined") return;
+  try {
+    window.sessionStorage.removeItem(buildKey("open-card", id));
+  } catch {
+    // Storage can be disabled; server-side block enforcement remains authoritative.
+  }
+}
+
 export function cachePaidCardDetail(id: string, payload: unknown) {
   writeCache(buildKey("paid-card", id), payload);
 }

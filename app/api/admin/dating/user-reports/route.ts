@@ -1,5 +1,5 @@
-import { isAdminEmail } from "@/lib/admin";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
+import { reportListOptions } from "@/lib/admin-report-list";
+import { requireAdminRoute } from "@/lib/admin-route";
 import { NextResponse } from "next/server";
 
 type DatingUserReportRow = {
@@ -64,32 +64,30 @@ function normalizeLegacyReport(row: Partial<DatingUserReportRow>): DatingUserRep
 }
 
 export async function GET(req: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const auth = await requireAdminRoute();
+  if (!auth.ok) return auth.response;
 
-  if (!user || !isAdminEmail(user.email)) {
-    return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
-  }
-
-  const { searchParams } = new URL(req.url);
-  const status = (searchParams.get("status") ?? "").trim();
-  const admin = createAdminClient();
+  const { status, limit, offset } = reportListOptions(req);
+  const admin = auth.admin;
 
   const buildQuery = (select: string) => {
-    let query = admin.from("dating_user_reports").select(select).order("created_at", { ascending: false }).limit(500);
+    let query = admin.from("dating_user_reports").select(select, { count: "exact" }).order("created_at", { ascending: false }).order("id", { ascending: false }).range(offset, offset + limit - 1);
 
     if (status === "open" || status === "resolved" || status === "dismissed") {
       query = query.eq("status", status);
+    } else if (status === "closed") {
+      query = query.in("status", ["resolved", "dismissed"]);
     }
 
     return query;
   };
 
-  let { data, error } = await buildQuery(FULL_REPORT_SELECT);
+  let evidenceAvailable = true;
+  let { data, error, count } = await buildQuery(FULL_REPORT_SELECT);
   if (error && isMissingColumnError(error)) {
     const legacyRes = await buildQuery(LEGACY_REPORT_SELECT);
+    evidenceAvailable = false;
+    count = legacyRes.count;
     data = legacyRes.data;
     error = legacyRes.error;
   }
@@ -118,8 +116,21 @@ export async function GET(req: Request) {
   }
 
   const profileMap = new Map(((profilesRes.data ?? []) as ProfileRow[]).map((item) => [item.user_id, item]));
+  const matchCardIds = [...new Set(reports.filter((report) =>
+    report.target_type === "one_on_one_card" || report.target_type === "one_on_one_match"
+  ).map((report) => report.target_card_id ?? (report.target_type === "one_on_one_card" ? report.target_id : null)).filter((id): id is string => Boolean(id)))];
+  const matchCards = matchCardIds.length > 0
+    ? await admin.from("dating_1on1_cards").select("id,name").in("id", matchCardIds)
+    : { data: [], error: null };
+  if (matchCards.error) console.error("[admin reports] match names unavailable", matchCards.error);
+  const matchNameMap = new Map((matchCards.data ?? []).map((card) => [card.id, card.name]));
 
+  const openCount = await admin.from("dating_user_reports").select("id", { count: "exact", head: true }).eq("status", "open");
   return NextResponse.json({
+    total: count ?? null,
+    unresolved_total: openCount.error ? null : openCount.count,
+    has_more: count === null ? reports.length === limit : offset + reports.length < count,
+    evidence_available: evidenceAvailable,
     items: reports.map((report) => {
       const reporter = profileMap.get(report.reporter_user_id) ?? null;
       const reported = profileMap.get(report.reported_user_id) ?? null;
@@ -129,6 +140,7 @@ export async function GET(req: Request) {
         ...report,
         reporter_nickname: reporter?.nickname ?? null,
         reported_nickname: reported?.nickname ?? null,
+        reported_match_name: matchNameMap.get(report.target_card_id ?? report.target_id) ?? null,
         reported_is_banned: reported?.is_banned === true,
         reported_banned_reason: reported?.banned_reason ?? null,
         reviewer_nickname: reviewer?.nickname ?? null,

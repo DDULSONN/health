@@ -1,6 +1,6 @@
-import { isAdminEmail } from "@/lib/admin";
+import { reportListOptions } from "@/lib/admin-report-list";
+import { requireAdminRoute } from "@/lib/admin-route";
 import { isMissingDatingChatRelation } from "@/lib/dating-chat";
-import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 type ChatReportRow = {
@@ -42,35 +42,30 @@ type ThreadRow = {
 };
 
 export async function GET(req: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
+  const auth = await requireAdminRoute();
+  if (!auth.ok) return auth.response;
 
-  if (!user || !isAdminEmail(user.email)) {
-    return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
-  }
+  const { status, limit, offset } = reportListOptions(req);
 
-  const { searchParams } = new URL(req.url);
-  const status = (searchParams.get("status") ?? "").trim();
-
-  const admin = createAdminClient();
+  const admin = auth.admin;
   let query = admin
     .from("dating_chat_reports")
     .select(
-      "id,thread_id,source_kind,source_id,reporter_user_id,reported_user_id,reason,details,conversation_excerpt,status,created_at,reviewed_at,reviewed_by_user_id"
+      "id,thread_id,source_kind,source_id,reporter_user_id,reported_user_id,reason,details,conversation_excerpt,status,created_at,reviewed_at,reviewed_by_user_id", { count: "exact" }
     )
     .order("created_at", { ascending: false })
-    .limit(500);
+    .order("id", { ascending: false }).range(offset, offset + limit - 1);
 
   if (status === "open" || status === "resolved" || status === "dismissed") {
     query = query.eq("status", status);
+  } else if (status === "closed") {
+    query = query.in("status", ["resolved", "dismissed"]);
   }
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
   if (error) {
     if (isMissingDatingChatRelation(error)) {
-      return NextResponse.json({ items: [] });
+      return NextResponse.json({ items: [], total: 0, unresolved_total: 0, has_more: false });
     }
     console.error("[GET /api/admin/dating/chat-reports] failed", error);
     return NextResponse.json({ error: "채팅 신고 목록을 불러오지 못했습니다." }, { status: 500 });
@@ -104,7 +99,11 @@ export async function GET(req: Request) {
   const profileMap = new Map(((profilesRes.data ?? []) as ProfileRow[]).map((item) => [item.user_id, item]));
   const threadMap = new Map(((threadsRes.data ?? []) as ThreadRow[]).map((item) => [item.id, item]));
 
+  const openCount = await admin.from("dating_chat_reports").select("id", { count: "exact", head: true }).eq("status", "open");
   return NextResponse.json({
+    total: count ?? null,
+    unresolved_total: openCount.error ? null : openCount.count,
+    has_more: count === null ? reports.length === limit : offset + reports.length < count,
     items: reports.map((report) => {
       const reporter = profileMap.get(report.reporter_user_id) ?? null;
       const reported = profileMap.get(report.reported_user_id) ?? null;

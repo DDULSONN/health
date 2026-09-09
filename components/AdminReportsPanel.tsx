@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import AdminCommunityModerationPanel from "@/components/AdminCommunityModerationPanel";
 
 type ReportStatus = "open" | "resolved" | "dismissed";
 type ReportKind = "card" | "user" | "chat" | "community";
+type PagedKind = Exclude<ReportKind, "community">;
+type ReportPage<T> = { items?: T[]; total?: number | null; unresolved_total?: number | null; has_more?: boolean; evidence_available?: boolean };
 type StatusFilter = "open" | "all" | "closed";
 
 type CardReport = {
@@ -36,6 +38,7 @@ type UserReport = {
   target_card_id: string | null;
   reason: string;
   evidence_snapshot: unknown;
+  reported_match_name?: string | null;
   evidence_preserved_at: string | null;
   admin_note: string | null;
   action_note: string | null;
@@ -118,17 +121,25 @@ export default function AdminReportsPanel() {
   const [userReports, setUserReports] = useState<UserReport[]>([]);
   const [chatReports, setChatReports] = useState<ChatReport[]>([]);
   const [communityOpenCount, setCommunityOpenCount] = useState(0);
+  const [pages, setPages] = useState<Record<PagedKind, number>>({ card: 0, user: 0, chat: 0 });
+  const [pageInfo, setPageInfo] = useState<Record<PagedKind, { total: number | null; open: number | null; more: boolean }>>({
+    card: { total: null, open: null, more: false }, user: { total: null, open: null, more: false }, chat: { total: null, open: null, more: false },
+  });
+  const [evidenceAvailable, setEvidenceAvailable] = useState(false);
+  const loadGeneration = useRef(0);
   const [loading, setLoading] = useState(true);
   const [processingKey, setProcessingKey] = useState<string | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
 
   const load = useCallback(async () => {
+    const generation = ++loadGeneration.current;
+    const query = (key: PagedKind) => `?status=${statusFilter}&limit=50&offset=${pages[key] * 50}`;
     setLoading(true);
     setErrors([]);
     const requests = await Promise.allSettled([
-      fetch("/api/admin/dating/reports", { cache: "no-store" }),
-      fetch("/api/admin/dating/user-reports", { cache: "no-store" }),
-      fetch("/api/admin/dating/chat-reports", { cache: "no-store" }),
+      fetch(`/api/admin/dating/reports${query("card")}`, { cache: "no-store" }),
+      fetch(`/api/admin/dating/user-reports${query("user")}`, { cache: "no-store" }),
+      fetch(`/api/admin/dating/chat-reports${query("chat")}`, { cache: "no-store" }),
       fetch("/api/admin/community/reports", { cache: "no-store" }),
     ]);
 
@@ -147,32 +158,44 @@ export default function AdminReportsPanel() {
     };
 
     const [cards, users, chats, community] = await Promise.all([
-      read<{ items?: CardReport[] }>(requests[0], "오픈카드"),
-      read<{ items?: UserReport[] }>(requests[1], "지원·1:1"),
-      read<{ items?: ChatReport[] }>(requests[2], "채팅"),
+      read<ReportPage<CardReport>>(requests[0], "오픈카드"),
+      read<ReportPage<UserReport>>(requests[1], "지원·1:1"),
+      read<ReportPage<ChatReport>>(requests[2], "채팅"),
       read<CommunitySummary>(requests[3], "커뮤니티"),
     ]);
 
+    if (generation !== loadGeneration.current) return;
     if (cards) setCardReports(cards.items ?? []);
+    else setCardReports([]);
+    if (!users) setUserReports([]);
+    if (!chats) setChatReports([]);
+    setEvidenceAvailable(users?.evidence_available === true);
+    setPageInfo({
+      card: { total: cards?.total ?? null, open: cards?.unresolved_total ?? null, more: cards?.has_more === true },
+      user: { total: users?.total ?? null, open: users?.unresolved_total ?? null, more: users?.has_more === true },
+      chat: { total: chats?.total ?? null, open: chats?.unresolved_total ?? null, more: chats?.has_more === true },
+    });
     if (users) setUserReports(users.items ?? []);
     if (chats) setChatReports(chats.items ?? []);
     if (community) setCommunityOpenCount(Number(community.unresolved_total ?? 0));
     setErrors(nextErrors);
     setLoading(false);
-  }, []);
+  }, [pages, statusFilter]);
 
   useEffect(() => {
+    const generationRef = loadGeneration;
     void load();
+    return () => { generationRef.current++; };
   }, [load]);
 
   const counts = useMemo(
     () => ({
-      card: cardReports.filter((item) => item.status === "open").length,
-      user: userReports.filter((item) => item.status === "open").length,
-      chat: chatReports.filter((item) => item.status === "open").length,
+      card: pageInfo.card.open ?? 0,
+      user: pageInfo.user.open ?? 0,
+      chat: pageInfo.chat.open ?? 0,
       community: communityOpenCount,
     }),
-    [cardReports, chatReports, communityOpenCount, userReports]
+    [pageInfo, communityOpenCount]
   );
 
   const totalOpen = counts.card + counts.user + counts.chat + counts.community;
@@ -256,17 +279,17 @@ export default function AdminReportsPanel() {
     return (
       <div className="flex flex-wrap gap-2">
         {status !== "resolved" ? (
-          <button type="button" disabled={processingKey !== null} onClick={() => void updateStatus(reportKind, id, "resolved")} className="h-8 rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50">
+          <button type="button" disabled={loading || processingKey !== null} onClick={() => void updateStatus(reportKind, id, "resolved")} className="h-8 rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50">
             {processing ? "처리 중..." : "처리 완료"}
           </button>
         ) : null}
         {status !== "dismissed" ? (
-          <button type="button" disabled={processingKey !== null} onClick={() => void updateStatus(reportKind, id, "dismissed")} className="h-8 rounded-md bg-neutral-700 px-3 text-xs font-medium text-white disabled:opacity-50">
+          <button type="button" disabled={loading || processingKey !== null} onClick={() => void updateStatus(reportKind, id, "dismissed")} className="h-8 rounded-md bg-neutral-700 px-3 text-xs font-medium text-white disabled:opacity-50">
             기각
           </button>
         ) : null}
         {status !== "open" ? (
-          <button type="button" disabled={processingKey !== null} onClick={() => void updateStatus(reportKind, id, "open")} className="h-8 rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 disabled:opacity-50">
+          <button type="button" disabled={loading || processingKey !== null} onClick={() => void updateStatus(reportKind, id, "open")} className="h-8 rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 disabled:opacity-50">
             다시 열기
           </button>
         ) : null}
@@ -281,7 +304,7 @@ export default function AdminReportsPanel() {
           <div>
             <div className="flex items-center gap-2">
               <h3 className="text-base font-semibold text-neutral-950">신고 관리</h3>
-              <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">미처리 {totalOpen}건</span>
+              <span className="rounded-full bg-rose-50 px-2.5 py-1 text-xs font-semibold text-rose-700">미처리 {Object.values(pageInfo).some((info) => info.open === null) ? "확인 중" : `${totalOpen}건`}</span>
             </div>
             <p className="mt-1 text-xs text-neutral-500">서비스에서 접수된 신고를 유형별로 확인하고 바로 조치합니다.</p>
           </div>
@@ -301,7 +324,7 @@ export default function AdminReportsPanel() {
         {kind !== "community" ? (
           <div className="mt-3 flex gap-1 rounded-lg bg-neutral-100 p-1">
             {(["open", "all", "closed"] as StatusFilter[]).map((item) => (
-              <button key={item} type="button" onClick={() => setStatusFilter(item)} className={`h-8 flex-1 rounded-md text-xs font-medium ${statusFilter === item ? "bg-white text-neutral-950 shadow-sm" : "text-neutral-500"}`}>
+              <button key={item} type="button" onClick={() => { setStatusFilter(item); setPages({ card: 0, user: 0, chat: 0 }); }} className={`h-8 flex-1 rounded-md text-xs font-medium ${statusFilter === item ? "bg-white text-neutral-950 shadow-sm" : "text-neutral-500"}`}>
                 {item === "open" ? "미처리" : item === "all" ? "전체" : "처리됨"}
               </button>
             ))}
@@ -326,7 +349,7 @@ export default function AdminReportsPanel() {
                   <p className="mt-2 text-sm font-semibold text-neutral-950">{report.owner_nickname || report.card_display_nickname || "닉네임 없음"}의 오픈카드</p>
                   <p className="mt-1 text-xs text-neutral-500">신고자 {report.reporter_nickname || report.reporter_user_id.slice(0, 8)} · 카드 상태 {report.card_status || "-"}</p>
                 </div>
-                <button type="button" disabled={processingKey !== null} onClick={() => void toggleBan(report.card_owner_user_id, report.owner_nickname, report.owner_is_banned)} className={`h-8 rounded-md px-3 text-xs font-medium text-white disabled:opacity-50 ${report.owner_is_banned ? "bg-neutral-700" : "bg-rose-700"}`}>
+                <button type="button" disabled={loading || processingKey !== null} onClick={() => void toggleBan(report.card_owner_user_id, report.owner_nickname, report.owner_is_banned)} className={`h-8 rounded-md px-3 text-xs font-medium text-white disabled:opacity-50 ${report.owner_is_banned ? "bg-neutral-700" : "bg-rose-700"}`}>
                   {report.owner_is_banned ? "정지 해제" : "계정 정지"}
                 </button>
               </div>
@@ -343,6 +366,7 @@ export default function AdminReportsPanel() {
 
       {kind === "user" ? (
         <div className="space-y-3">
+          {!loading && !evidenceAvailable ? <p role="status" className="rounded-lg bg-amber-50 p-3 text-xs text-amber-800">증거 보존 DB 업데이트가 필요합니다. 신고 접수와 상태 처리는 가능합니다.</p> : null}
           {visibleUserReports.map((report) => (
             <article key={report.id} className="rounded-xl border border-neutral-200 bg-white p-4">
               <div className="flex flex-wrap items-start justify-between gap-3">
@@ -352,10 +376,11 @@ export default function AdminReportsPanel() {
                     <span className="rounded-full bg-sky-50 px-2 py-1 text-[11px] font-medium text-sky-700">{targetTypeLabel(report.target_type)}</span>
                     <span className="text-xs text-neutral-400">{formatDate(report.created_at)}</span>
                   </div>
-                  <p className="mt-2 text-sm font-semibold text-neutral-950">{report.reported_nickname || report.reported_user_id.slice(0, 8)} 신고</p>
+                  <p className="mt-2 text-sm font-semibold text-neutral-950">{report.reported_match_name || report.reported_nickname || report.reported_user_id.slice(0, 8)} 신고</p>
+                  {report.reported_match_name && report.reported_nickname ? <p className="mt-1 text-xs text-neutral-500">계정 닉네임: {report.reported_nickname}</p> : null}
                   <p className="mt-1 text-xs text-neutral-500">신고자 {report.reporter_nickname || report.reporter_user_id.slice(0, 8)}</p>
                 </div>
-                <button type="button" disabled={processingKey !== null} onClick={() => void toggleBan(report.reported_user_id, report.reported_nickname, report.reported_is_banned)} className={`h-8 rounded-md px-3 text-xs font-medium text-white disabled:opacity-50 ${report.reported_is_banned ? "bg-neutral-700" : "bg-rose-700"}`}>
+                <button type="button" disabled={loading || processingKey !== null} onClick={() => void toggleBan(report.reported_user_id, report.reported_nickname, report.reported_is_banned)} className={`h-8 rounded-md px-3 text-xs font-medium text-white disabled:opacity-50 ${report.reported_is_banned ? "bg-neutral-700" : "bg-rose-700"}`}>
                   {report.reported_is_banned ? "정지 해제" : "계정 정지"}
                 </button>
               </div>
@@ -364,9 +389,13 @@ export default function AdminReportsPanel() {
                 <p className="mt-1 whitespace-pre-wrap break-words text-sm text-neutral-800">{report.reason}</p>
               </div>
               {(report.admin_note || report.action_note) ? <p className="mt-2 text-xs text-neutral-500">관리 기록: {report.admin_note || report.action_note}</p> : null}
+              {report.evidence_preserved_at && report.evidence_snapshot ? <details className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 p-3">
+                <summary className="cursor-pointer text-xs font-medium text-neutral-700">보존된 신고 내용 · {formatDate(report.evidence_preserved_at)}</summary>
+                <pre className="mt-2 max-h-72 overflow-auto whitespace-pre-wrap break-all text-xs text-neutral-600">{JSON.stringify(report.evidence_snapshot, null, 2)}</pre>
+              </details> : null}
               <div className="mt-3 flex flex-wrap gap-2">
                 {actionButtons("user", report.id, report.status)}
-                <button type="button" disabled={processingKey !== null} onClick={() => void preserveEvidence(report)} className="h-8 rounded-md border border-sky-200 bg-sky-50 px-3 text-xs font-medium text-sky-700 disabled:opacity-50">
+                <button type="button" disabled={!evidenceAvailable || loading || processingKey !== null} onClick={() => void preserveEvidence(report)} className="h-8 rounded-md border border-sky-200 bg-sky-50 px-3 text-xs font-medium text-sky-700 disabled:opacity-50">
                   {report.evidence_preserved_at ? "증거 다시 보존" : "증거 보존"}
                 </button>
               </div>
@@ -389,7 +418,7 @@ export default function AdminReportsPanel() {
                   <p className="mt-2 text-sm font-semibold text-neutral-950">{report.reported_nickname || report.reported_user_id.slice(0, 8)} 채팅 신고</p>
                   <p className="mt-1 text-xs text-neutral-500">신고자 {report.reporter_nickname || report.reporter_user_id.slice(0, 8)} · {report.source_kind}</p>
                 </div>
-                <button type="button" disabled={processingKey !== null} onClick={() => void toggleBan(report.reported_user_id, report.reported_nickname, report.reported_is_banned)} className={`h-8 rounded-md px-3 text-xs font-medium text-white disabled:opacity-50 ${report.reported_is_banned ? "bg-neutral-700" : "bg-rose-700"}`}>
+                <button type="button" disabled={loading || processingKey !== null} onClick={() => void toggleBan(report.reported_user_id, report.reported_nickname, report.reported_is_banned)} className={`h-8 rounded-md px-3 text-xs font-medium text-white disabled:opacity-50 ${report.reported_is_banned ? "bg-neutral-700" : "bg-rose-700"}`}>
                   {report.reported_is_banned ? "정지 해제" : "계정 정지"}
                 </button>
               </div>
@@ -418,6 +447,11 @@ export default function AdminReportsPanel() {
         </div>
       ) : null}
 
+      {kind !== "community" ? <div className="flex items-center justify-center gap-3 py-3">
+        <button type="button" disabled={loading || pages[kind] === 0} onClick={() => setPages((prev) => ({ ...prev, [kind]: Math.max(0, prev[kind] - 1) }))} className="min-h-10 rounded-lg border border-neutral-200 bg-white px-3 text-xs disabled:opacity-40">이전</button>
+        <span className="text-xs text-neutral-500">{pages[kind] + 1}페이지 · {pageInfo[kind].total ?? "-"}건</span>
+        <button type="button" disabled={loading || !pageInfo[kind].more} onClick={() => setPages((prev) => ({ ...prev, [kind]: prev[kind] + 1 }))} className="min-h-10 rounded-lg border border-neutral-200 bg-white px-3 text-xs disabled:opacity-40">다음</button>
+      </div> : null}
       {kind === "community" ? <AdminCommunityModerationPanel /> : null}
     </div>
   );

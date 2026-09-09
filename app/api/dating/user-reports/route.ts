@@ -1,9 +1,8 @@
 import {
   buildDatingCardReportReasonText,
   isDatingCardReportReasonCode,
-  type DatingCardReportReasonCode,
 } from "@/lib/dating-report-reasons";
-import { isMissingDatingBlocksTableError } from "@/lib/dating-blocks";
+import { applyReportBlock, reportResultMessage, safeReportEvidence } from "@/lib/dating-report-safety";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
@@ -53,7 +52,7 @@ async function safeMaybeSingle<T>(
   query: PromiseLike<{ data: T | null; error: { message?: string } | null }>
 ): Promise<T | null> {
   const { data, error } = await query;
-  if (error) console.error("[dating user report] snapshot query failed", error);
+  if (error) throw error;
   return data ?? null;
 }
 
@@ -69,7 +68,7 @@ async function resolveOpenCardApplicationTarget(
     .maybeSingle();
 
   if (appRes.error || !appRes.data) {
-    if (appRes.error) console.error("[dating user report] open application load failed", appRes.error);
+    if (appRes.error) throw appRes.error;
     return null;
   }
 
@@ -80,7 +79,7 @@ async function resolveOpenCardApplicationTarget(
     .maybeSingle();
 
   if (cardRes.error || !cardRes.data) {
-    if (cardRes.error) console.error("[dating user report] open card load failed", cardRes.error);
+    if (cardRes.error) throw cardRes.error;
     return null;
   }
 
@@ -107,7 +106,7 @@ async function resolvePaidCardApplicationTarget(
     .maybeSingle();
 
   if (appRes.error || !appRes.data) {
-    if (appRes.error) console.error("[dating user report] paid application load failed", appRes.error);
+    if (appRes.error) throw appRes.error;
     return null;
   }
 
@@ -118,7 +117,7 @@ async function resolvePaidCardApplicationTarget(
     .maybeSingle();
 
   if (cardRes.error || !cardRes.data) {
-    if (cardRes.error) console.error("[dating user report] paid card load failed", cardRes.error);
+    if (cardRes.error) throw cardRes.error;
     return null;
   }
 
@@ -145,7 +144,7 @@ async function resolveOneOnOneCardTarget(
     .maybeSingle();
 
   if (cardRes.error || !cardRes.data) {
-    if (cardRes.error) console.error("[dating user report] 1on1 card load failed", cardRes.error);
+    if (cardRes.error) throw cardRes.error;
     return null;
   }
 
@@ -159,7 +158,7 @@ async function resolveOneOnOneCardTarget(
     .limit(1);
 
   if (ownCardRes.error || (ownCardRes.data ?? []).length === 0) {
-    if (ownCardRes.error) console.error("[dating user report] own 1on1 card check failed", ownCardRes.error);
+    if (ownCardRes.error) throw ownCardRes.error;
     return null;
   }
 
@@ -178,7 +177,7 @@ async function resolveOneOnOneMatchTarget(
     .maybeSingle();
 
   if (matchRes.error || !matchRes.data) {
-    if (matchRes.error) console.error("[dating user report] 1on1 match load failed", matchRes.error);
+    if (matchRes.error) throw matchRes.error;
     return null;
   }
 
@@ -255,14 +254,14 @@ async function buildEvidenceSnapshot(
     target_type: targetType,
     target_id: targetId,
     target_card_id: targetCardId,
-    reporter_profile: reporterProfile,
-    reported_profile: reportedProfile,
-    target,
-    card,
+    reporter_profile: safeReportEvidence(reporterProfile),
+    reported_profile: safeReportEvidence(reportedProfile),
+    target: safeReportEvidence(target),
+    card: safeReportEvidence(card),
   };
 }
 
-export async function POST(req: Request) {
+async function submitReport(req: Request) {
   const originError = ensureAllowedMutationOrigin(req);
   if (originError) return originError;
 
@@ -282,9 +281,9 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: "신고 대상을 확인해 주세요." }, { status: 400 });
   }
 
-  const safeReasonCode: DatingCardReportReasonCode = isDatingCardReportReasonCode(reasonCode)
-    ? reasonCode
-    : "safety_risk";
+  if (!isDatingCardReportReasonCode(reasonCode)) {
+    return NextResponse.json({ ok: false, message: "신고 사유를 선택해 주세요." }, { status: 400 });
+  }
 
   const admin = createAdminClient();
   const resolved = await resolveReportTarget(admin, user.id, targetType, targetId);
@@ -293,7 +292,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ ok: false, message: "신고할 수 없는 대상입니다." }, { status: 403 });
   }
 
-  const reason = buildDatingCardReportReasonText(safeReasonCode, detail);
+  const reason = buildDatingCardReportReasonText(reasonCode, detail);
   const evidenceSnapshot = await buildEvidenceSnapshot(
     admin,
     user.id,
@@ -329,7 +328,13 @@ export async function POST(req: Request) {
     error = legacyRes.error;
   }
 
-  const alreadyReported = error?.code === "23505";
+  let alreadyReported = false;
+  if (error?.code === "23505") {
+    const existing = await admin.from("dating_user_reports").select("id")
+      .eq("reporter_user_id", user.id).eq("target_type", targetType).eq("target_id", targetId).maybeSingle();
+    if (existing.error) throw existing.error;
+    alreadyReported = Boolean(existing.data);
+  }
   if (error && !alreadyReported) {
     console.error("[POST /api/dating/user-reports] failed", error);
     return NextResponse.json(
@@ -342,41 +347,20 @@ export async function POST(req: Request) {
     );
   }
 
-  const blockRes = await admin.from("dating_user_blocks").upsert(
-    {
-      blocker_user_id: user.id,
-      blocked_user_id: resolved.reportedUserId,
-      reason: "신고 접수 자동 차단",
-    },
-    { onConflict: "blocker_user_id,blocked_user_id" }
-  );
-  const blocked = !blockRes.error;
-
-  if (blockRes.error) {
-    const log = isMissingDatingBlocksTableError(blockRes.error) ? console.warn : console.error;
-    log("[POST /api/dating/user-reports] automatic block failed", blockRes.error);
-  }
-
-  const nowIso = new Date().toISOString();
-  const cancelPendingRes = await admin
-    .from("dating_1on1_match_proposals")
-    .update({ state: "admin_canceled", updated_at: nowIso })
-    .or(
-      `and(source_user_id.eq.${user.id},candidate_user_id.eq.${resolved.reportedUserId}),and(source_user_id.eq.${resolved.reportedUserId},candidate_user_id.eq.${user.id})`
-    )
-    .in("state", ["proposed", "source_selected", "candidate_accepted"]);
-
-  if (cancelPendingRes.error) {
-    console.error("[POST /api/dating/user-reports] pending 1on1 cancellation failed", cancelPendingRes.error);
-  }
-
+  const followUp = await applyReportBlock(admin, user.id, resolved.reportedUserId);
   return NextResponse.json({
     ok: true,
-    blocked,
+    ...followUp,
     already_reported: alreadyReported,
-    pending_matches_canceled: !cancelPendingRes.error,
-    message: blocked
-      ? "신고가 접수됐고 해당 회원은 모든 매칭에서 즉시 차단됐습니다."
-      : "신고는 정상 접수됐습니다. 차단 처리에 실패해 관리자에게 함께 전달했습니다.",
+    message: reportResultMessage(alreadyReported, followUp.blocked, followUp.pending_matches_canceled),
   });
+}
+
+export async function POST(req: Request) {
+  try {
+    return await submitReport(req);
+  } catch (error) {
+    console.error("[dating user report] request failed", error);
+    return NextResponse.json({ ok: false, message: "신고 처리 결과를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });
+  }
 }

@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import DatingReportButton, { type DatingReportTargetType, type DatingReportResult } from "@/components/DatingReportButton";
 import { useRouter } from "next/navigation";
 import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
@@ -3432,6 +3433,7 @@ export default function OpenCardsPage() {
           processingAutoKeys={processingOneOnOneAutoKeys}
           refreshingRecommendationIds={refreshingOneOnOneRecommendationIds}
           onMatchAction={handleOneOnOneMatchAction}
+          onReported={() => { void reloadOneOnOneHome(); }}
           onContactCheckout={handleOneOnOneContactCheckout}
           onContactNudge={handleOneOnOneContactNudge}
           onAutoSelect={handleOneOnOneAutoSelect}
@@ -3640,6 +3642,7 @@ export default function OpenCardsPage() {
 }
 
 function OneOnOneHomePanel({
+  onReported,
   arrivedFromOnboarding,
   viewerLoggedIn,
   loading,
@@ -3657,6 +3660,7 @@ function OneOnOneHomePanel({
   onRefreshRecommendations,
 }: {
   arrivedFromOnboarding: boolean;
+  onReported: (result: DatingReportResult) => void;
   viewerLoggedIn: boolean;
   loading: boolean;
   error: string;
@@ -3892,6 +3896,8 @@ function OneOnOneHomePanel({
                     <OneOnOneCandidateCard
                       key={match.id}
                       card={match.counterparty_card}
+                      reportTarget={{ type: "one_on_one_match", id: match.id }}
+                      onReported={onReported}
                       badge={oneOnOneStateLabel(match.state)}
                       badgeClassName={match.action_required || match.state === "mutual_accepted" ? "bg-emerald-100 text-emerald-700" : "bg-white text-neutral-600"}
                       note={oneOnOneContactLabel(match.contact_exchange_status)}
@@ -3972,6 +3978,8 @@ function OneOnOneHomePanel({
                               <OneOnOneCandidateCard
                                 key={`${sourceCardId}:${candidateId || getOneOnOneDisplayName(candidate)}`}
                                 card={candidate}
+                                reportTarget={{ type: "one_on_one_card", id: candidateId }}
+                                onReported={onReported}
                                 badge="추천"
                                 badgeClassName="bg-rose-100 text-rose-700"
                                 note="선택하면 상대에게 수락 요청이 전달됩니다."
@@ -4004,6 +4012,8 @@ function OneOnOneHomePanel({
                                     <OneOnOneCandidateCard
                                       key={`${sourceCardId}:admin:${candidateId || getOneOnOneDisplayName(candidate)}`}
                                       card={candidate}
+                                      reportTarget={{ type: "one_on_one_card", id: candidateId }}
+                                      onReported={onReported}
                                       badge="추가 후보"
                                       badgeClassName="bg-emerald-100 text-emerald-700"
                                       note="선택하면 상대에게 수락 요청이 전달됩니다."
@@ -4049,6 +4059,8 @@ function OneOnOneHomePanel({
 }
 
 function OneOnOneCandidateCard({
+  reportTarget,
+  onReported,
   card,
   badge,
   badgeClassName,
@@ -4056,6 +4068,8 @@ function OneOnOneCandidateCard({
   children,
 }: {
   card?: OneOnOneCardPreview | null;
+  reportTarget?: { type: DatingReportTargetType; id: string };
+  onReported?: (result: DatingReportResult) => void;
   badge?: string;
   badgeClassName?: string;
   note?: string;
@@ -4106,6 +4120,9 @@ function OneOnOneCandidateCard({
             ) : null}
           </div>
           {note ? <p className="mt-2 text-xs font-semibold leading-5 text-sky-700">{note}</p> : null}
+          {reportTarget?.id ? <div className="mt-2 flex justify-end"><DatingReportButton
+            targetType={reportTarget.type} targetId={reportTarget.id} label={name} onReported={onReported}
+          /></div> : null}
         </div>
       </div>
 

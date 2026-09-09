@@ -1,5 +1,5 @@
-import { isAdminEmail } from "@/lib/admin";
-import { createClient, createAdminClient } from "@/lib/supabase/server";
+import { reportListOptions } from "@/lib/admin-report-list";
+import { requireAdminRoute } from "@/lib/admin-route";
 import { NextResponse } from "next/server";
 
 type ReportRow = {
@@ -26,28 +26,25 @@ type ProfileRow = {
 };
 
 export async function GET(req: Request) {
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user || !isAdminEmail(user.email)) {
-    return NextResponse.json({ error: "권한이 없습니다." }, { status: 403 });
-  }
+  const auth = await requireAdminRoute();
+  if (!auth.ok) return auth.response;
 
-  const { searchParams } = new URL(req.url);
-  const status = searchParams.get("status");
-  const adminClient = createAdminClient();
+  const { status, limit, offset } = reportListOptions(req);
+  const adminClient = auth.admin;
   let query = adminClient
     .from("dating_card_reports")
-    .select("id, card_id, reporter_user_id, reason, status, created_at")
+    .select("id, card_id, reporter_user_id, reason, status, created_at", { count: "exact" })
     .order("created_at", { ascending: false })
-    .limit(500);
+    .order("id", { ascending: false })
+    .range(offset, offset + limit - 1);
 
   if (status === "open" || status === "resolved" || status === "dismissed") {
     query = query.eq("status", status);
+  } else if (status === "closed") {
+    query = query.in("status", ["resolved", "dismissed"]);
   }
 
-  const { data, error } = await query;
+  const { data, error, count } = await query;
   if (error) {
     console.error("[GET /api/admin/dating/reports] failed", error);
     return NextResponse.json({ error: "신고 목록을 불러오지 못했습니다." }, { status: 500 });
@@ -88,7 +85,11 @@ export async function GET(req: Request) {
   const cardMap = new Map(((cardsRes.data ?? []) as CardRow[]).map((item) => [item.id, item]));
   const profileMap = new Map(((profilesRes.data ?? []) as ProfileRow[]).map((item) => [item.user_id, item]));
 
+  const openCount = await adminClient.from("dating_card_reports").select("id", { count: "exact", head: true }).eq("status", "open");
   return NextResponse.json({
+    total: count ?? null,
+    unresolved_total: openCount.error ? null : openCount.count,
+    has_more: count === null ? reports.length === limit : offset + reports.length < count,
     items: reports.map((report) => {
       const card = cardMap.get(report.card_id) ?? null;
       const reporter = profileMap.get(report.reporter_user_id) ?? null;

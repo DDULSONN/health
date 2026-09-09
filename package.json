@@ -17,6 +17,7 @@
     "check:payment-today": "node scripts/check-payment-today.cjs",
     "check:auth-session": "node scripts/check-auth-session-middleware.cjs",
     "check:account-recovery": "node scripts/check-account-recovery.cjs",
+    "check:dating-reports": "node --test scripts/check-dating-reports.cjs",
     "check:duplicate-phone-notice": "node scripts/check-duplicate-phone-notice.cjs",
     "check:contact-vcard": "node scripts/check-dating-contact-vcard.cjs",
     "check:contact-block-sync": "node scripts/check-dating-contact-block-sync.cjs",
