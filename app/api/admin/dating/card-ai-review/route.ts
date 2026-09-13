@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { requireAdminRoute } from "@/lib/admin-route";
 import { recordAdminAuditEvent } from "@/lib/admin-audit";
 import { reviewOneOnOneName } from "@/lib/dating-1on1-name-review";
+import { reviewDatingSexualText } from "@/lib/dating-sexual-text-review";
+import { reviewDatingIntroQuality } from "@/lib/dating-intro-quality-review";
 import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
 import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
 import { buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
@@ -20,6 +22,9 @@ type ReviewMode = "rules" | "ai";
 type SuspicionLevel = "clear" | "low" | "medium" | "high";
 type AdminClient = ReturnType<typeof createAdminClient>;
 const REVIEW_PAGE_SIZE = 1000;
+const REVIEW_TEXT_MAX_LENGTH = 2000;
+const REVIEW_RULES_VERSION = "2026-09-13-sexual-and-intro-quality";
+const SUSPICION_RANK = { clear: 0, low: 1, medium: 2, high: 3 } as const;
 
 type ReviewPayload = {
   source?: unknown;
@@ -101,7 +106,6 @@ const SOURCE_TYPES: SourceType[] = [
 ];
 const SUSPICIOUS_LEVELS = new Set<SuspicionLevel>(["medium", "high"]);
 const ONE_ON_ONE_EDIT_LOCK_TAG = "one_on_one_edit_locked";
-const TEST_TEXT_PATTERNS = [/테스트|test|asdf|qwer|ㄹㄹ|ㅁㄴㅇ|ㅇㅇㅇ/i];
 const EXTERNAL_CONTACT_PATTERNS = [
   /https?:\/\/|www\.|open\.kakao|t\.me|instagram\.com|bit\.ly|linktr\.ee/i,
   /오픈\s*카톡|오픈\s*채팅|카카오톡|카톡\s*(아이디|id|문의|주세요|ㄱ)|디엠|dm\s*(주세요|문의|ㄱ)|텔레그램|telegram|라인\s*(id|아이디)?|line\s*(id)?/i,
@@ -279,11 +283,6 @@ function likelyTextFlags(texts: Record<string, string>, sourceType?: SourceType)
   const merged = reviewTexts.join(" ").trim();
   const flags: string[] = [];
 
-  if (merged.length > 0 && merged.length < 8) flags.push("소개 문구가 거의 없음");
-  if (TEST_TEXT_PATTERNS.some((pattern) => pattern.test(merged))) {
-    flags.push("테스트/장난성 문구");
-  }
-  if (/([가-힣A-Za-z0-9])\1{4,}/u.test(merged)) flags.push("반복 문자 과다");
   if (/010[-\s]?\d{3,4}[-\s]?\d{4}/.test(merged)) flags.push("전화번호 직접 노출 의심");
   if (DIRECT_CONTACT_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("연락처/외부 계정 선노출 의심");
   if (
@@ -301,7 +300,9 @@ function likelyTextFlags(texts: Record<string, string>, sourceType?: SourceType)
 
 function ruleReview(card: CandidateCard): CardReview {
   const photoFlags: string[] = [];
-  const textFlags = likelyTextFlags(card.texts, card.sourceType);
+  const sexualReview = reviewDatingSexualText({ ...card.texts, displayName: card.displayName });
+  const qualityReview = reviewDatingIntroQuality(card.sourceType, card.texts);
+  const textFlags = [...sexualReview.flags, ...likelyTextFlags(card.texts, card.sourceType), ...qualityReview.flags];
   if (card.sourceType === "one_on_one" || card.sourceType === "one_on_one_application") {
     const nameReview = reviewOneOnOneName(card.texts.name ?? card.displayName);
     textFlags.push(...nameReview.flags.map((flag) => `이름: ${flag}`));
@@ -320,15 +321,15 @@ function ruleReview(card: CandidateCard): CardReview {
     }
   }
 
-  flags.push(...photoFlags, ...textFlags);
+  flags.push(...textFlags, ...photoFlags);
   const uniqueFlags = Array.from(new Set(flags)).slice(0, 10);
   const hasSeriousFlag = uniqueFlags.some((flag) =>
     ["연락처", "외부 계정", "광고", "상업", "전화번호", "링크"].some((keyword) => flag.includes(keyword))
   );
   const suspicionLevel: SuspicionLevel =
-    hasSeriousFlag || uniqueFlags.length >= 4
+    sexualReview.level === "high" || hasSeriousFlag || uniqueFlags.length >= 4
       ? "high"
-      : uniqueFlags.length >= 2
+      : sexualReview.level === "medium" || qualityReview.level === "medium" || uniqueFlags.length >= 2
         ? "medium"
         : uniqueFlags.length === 1
           ? "low"
@@ -343,7 +344,7 @@ function ruleReview(card: CandidateCard): CardReview {
         : `${sourceLabel(card.sourceType)} 일반 검수상 큰 이상 없음`,
     photoFlags,
     textFlags: Array.from(new Set(textFlags)).slice(0, 10),
-    raw: { provider: "rules", version: "2026-05-23-2" },
+    raw: { provider: "rules", version: REVIEW_RULES_VERSION },
   };
 }
 
@@ -412,6 +413,8 @@ async function analyzeWithGemini(admin: AdminClient, apiKey: string, model: stri
     "특히 1:1 매칭 신청서에 휴대폰 번호, 카카오톡/카톡 ID, 오픈채팅 링크, 인스타/IG 계정, DM 요청, 라인/텔레그램 ID 등 앱 밖 연락처를 적거나 유도하면 high로 판단한다.",
     "너는 소개팅 서비스의 관리자 검수 보조 AI다.",
     "절대 삭제, 거절, 유저 제재를 결정하지 말고 관리자에게 보여줄 의심 사유만 판단한다.",
+    "성적 행위·만남 제안, 음란물, 성적 대화·사진 요구, 노골적인 신체 묘사도 확인한다. 신체 사이즈를 성적으로 강조한 문구는 관리자 확인 대상으로 두되, 운동·건강 설명이나 성적 제안을 거절하는 문구와 구분한다.",
+    "자기소개가 지나치게 짧거나 인사말·반복 문자·임시 문구만 있는지도 확인한다. 간결해도 취미나 성격 등 구체적인 내용이 있는 소개, 짧은 이상형 조건은 길이만으로 문제 삼지 않는다. 작성자의 소개 필드만 판단하고 상대 이름·ID 등 메타데이터는 소개로 세지 않는다.",
     "검수 기준: 빈 사진/흰 화면/검은 화면/캡처/광고/로고/텍스트만 있는 이미지/사람 사진이 아닌 이미지/장난식 소개글/광고성 문구/외부 연락 유도/소개글 비어있음.",
     "외모 평가, 매력 평가, 본인 여부 단정, 성별/나이 추정은 하지 않는다.",
     "정상으로 보이면 clear를 반환한다. 애매하면 low, 실제 확인 필요하면 medium/high.",
@@ -451,10 +454,14 @@ async function analyzeWithGemini(admin: AdminClient, apiKey: string, model: stri
     const parsed = parseAiJson(extractGeminiText(payload));
     if (!parsed) return { ...heuristic, raw: { ...heuristic.raw, provider: "rules_fallback", geminiParseFailed: true } };
 
+    const retainRuleLevel = SUSPICION_RANK[heuristic.suspicionLevel] > SUSPICION_RANK[parsed.suspicionLevel];
     return {
       ...parsed,
+      suspicionLevel: retainRuleLevel ? heuristic.suspicionLevel : parsed.suspicionLevel,
+      summary: retainRuleLevel ? heuristic.summary : parsed.summary,
       flags: Array.from(new Set([...heuristic.flags, ...parsed.flags])).slice(0, 10),
-      raw: { provider: "gemini", model, result: parsed.raw, rulesFlags: heuristic.flags },
+      textFlags: Array.from(new Set([...heuristic.textFlags, ...parsed.textFlags])).slice(0, 10),
+      raw: { provider: "gemini", model, result: parsed.raw, rulesFlags: heuristic.flags, rulesVersion: REVIEW_RULES_VERSION },
     };
   } catch (error) {
     return {
@@ -486,8 +493,8 @@ async function fetchOpenCards(admin: AdminClient, limit: number): Promise<Candid
       region: cleanText(row.region, 80) || null,
       texts: {
         job: cleanText(row.job, 80),
-        idealType: cleanText(row.ideal_type, 500),
-        strengths: cleanText(row.strengths_text, 500),
+        idealType: cleanText(row.ideal_type, REVIEW_TEXT_MAX_LENGTH),
+        strengths: cleanText(row.strengths_text, REVIEW_TEXT_MAX_LENGTH),
         instagramId: cleanText(row.instagram_id, 80),
       },
       photoPaths,
@@ -520,9 +527,9 @@ async function fetchPaidCards(admin: AdminClient, limit: number): Promise<Candid
       region: cleanText(row.region, 80) || null,
       texts: {
         job: cleanText(row.job, 80),
-        strengths: cleanText(row.strengths_text, 500),
-        ideal: cleanText(row.ideal_text, 500),
-        intro: cleanText(row.intro_text, 500),
+        strengths: cleanText(row.strengths_text, REVIEW_TEXT_MAX_LENGTH),
+        ideal: cleanText(row.ideal_text, REVIEW_TEXT_MAX_LENGTH),
+        intro: cleanText(row.intro_text, REVIEW_TEXT_MAX_LENGTH),
         instagramId: cleanText(row.instagram_id, 80),
       },
       photoPaths,
@@ -563,9 +570,9 @@ async function fetchOneOnOneCards(admin: AdminClient, limit: number): Promise<Ca
       texts: {
         name: cleanText(row.name, 80),
         job: cleanText(row.job, 80),
-        intro: cleanText(row.intro_text, 500),
-        strengths: cleanText(row.strengths_text, 500),
-        preferredPartner: cleanText(row.preferred_partner_text, 500),
+        intro: cleanText(row.intro_text, REVIEW_TEXT_MAX_LENGTH),
+        strengths: cleanText(row.strengths_text, REVIEW_TEXT_MAX_LENGTH),
+        preferredPartner: cleanText(row.preferred_partner_text, REVIEW_TEXT_MAX_LENGTH),
       },
       photoPaths,
       bucket: "dating-1on1-photos",
@@ -601,7 +608,7 @@ async function fetchOpenCardApplications(admin: AdminClient, limit: number): Pro
         job: cleanText(row.job, 80),
         height: cleanText(row.height_cm, 20),
         trainingYears: cleanText(row.training_years, 20),
-        intro: cleanText(row.intro_text, 500),
+        intro: cleanText(row.intro_text, REVIEW_TEXT_MAX_LENGTH),
         instagramId: cleanText(row.instagram_id, 80),
       },
       photoPaths,
@@ -637,7 +644,7 @@ async function fetchPaidCardApplications(admin: AdminClient, limit: number): Pro
         job: cleanText(row.job, 80),
         height: cleanText(row.height_cm, 20),
         trainingYears: cleanText(row.training_years, 20),
-        intro: cleanText(row.intro_text, 500),
+        intro: cleanText(row.intro_text, REVIEW_TEXT_MAX_LENGTH),
         instagramId: cleanText(row.instagram_id, 80),
       },
       photoPaths,
@@ -705,9 +712,9 @@ async function fetchOneOnOneApplications(admin: AdminClient, limit: number): Pro
           candidateName: formatOneOnOneDisplayName(candidateRow?.name, candidateUserId ? nicknamesByUserId.get(candidateUserId) : null),
           candidateRegion: cleanText(candidateRow?.region, 80),
           job: cleanText(row.job, 80),
-          intro: cleanText(row.intro_text, 500),
-          strengths: cleanText(row.strengths_text, 500),
-          preferredPartner: cleanText(row.preferred_partner_text, 500),
+          intro: cleanText(row.intro_text, REVIEW_TEXT_MAX_LENGTH),
+          strengths: cleanText(row.strengths_text, REVIEW_TEXT_MAX_LENGTH),
+          preferredPartner: cleanText(row.preferred_partner_text, REVIEW_TEXT_MAX_LENGTH),
         },
         photoPaths,
         bucket: "dating-1on1-photos",
@@ -765,8 +772,8 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
       region: cleanText(row.region, 80) || null,
       texts: {
         job: cleanText(row.job, 80),
-        idealType: cleanText(row.ideal_type, 500),
-        strengths: cleanText(row.strengths_text, 500),
+        idealType: cleanText(row.ideal_type, REVIEW_TEXT_MAX_LENGTH),
+        strengths: cleanText(row.strengths_text, REVIEW_TEXT_MAX_LENGTH),
         instagramId: cleanText(row.instagram_id, 80),
       },
       photoPaths,
@@ -796,9 +803,9 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
       region: cleanText(row.region, 80) || null,
       texts: {
         job: cleanText(row.job, 80),
-        strengths: cleanText(row.strengths_text, 500),
-        ideal: cleanText(row.ideal_text, 500),
-        intro: cleanText(row.intro_text, 500),
+        strengths: cleanText(row.strengths_text, REVIEW_TEXT_MAX_LENGTH),
+        ideal: cleanText(row.ideal_text, REVIEW_TEXT_MAX_LENGTH),
+        intro: cleanText(row.intro_text, REVIEW_TEXT_MAX_LENGTH),
         instagramId: cleanText(row.instagram_id, 80),
       },
       photoPaths,
@@ -831,7 +838,7 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
         job: cleanText(row.job, 80),
         height: cleanText(row.height_cm, 20),
         trainingYears: cleanText(row.training_years, 20),
-        intro: cleanText(row.intro_text, 500),
+        intro: cleanText(row.intro_text, REVIEW_TEXT_MAX_LENGTH),
         instagramId: cleanText(row.instagram_id, 80),
       },
       photoPaths,
@@ -864,7 +871,7 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
         job: cleanText(row.job, 80),
         height: cleanText(row.height_cm, 20),
         trainingYears: cleanText(row.training_years, 20),
-        intro: cleanText(row.intro_text, 500),
+        intro: cleanText(row.intro_text, REVIEW_TEXT_MAX_LENGTH),
         instagramId: cleanText(row.instagram_id, 80),
       },
       photoPaths,
@@ -929,9 +936,9 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
         ),
         candidateRegion: cleanText(candidateRow?.region, 80),
         job: cleanText(row.job, 80),
-        intro: cleanText(row.intro_text, 500),
-        strengths: cleanText(row.strengths_text, 500),
-        preferredPartner: cleanText(row.preferred_partner_text, 500),
+        intro: cleanText(row.intro_text, REVIEW_TEXT_MAX_LENGTH),
+        strengths: cleanText(row.strengths_text, REVIEW_TEXT_MAX_LENGTH),
+        preferredPartner: cleanText(row.preferred_partner_text, REVIEW_TEXT_MAX_LENGTH),
       },
       photoPaths,
       bucket: "dating-1on1-photos",
@@ -964,9 +971,9 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
     texts: {
       name: cleanText(row.name, 80),
       job: cleanText(row.job, 80),
-      intro: cleanText(row.intro_text, 500),
-      strengths: cleanText(row.strengths_text, 500),
-      preferredPartner: cleanText(row.preferred_partner_text, 500),
+      intro: cleanText(row.intro_text, REVIEW_TEXT_MAX_LENGTH),
+      strengths: cleanText(row.strengths_text, REVIEW_TEXT_MAX_LENGTH),
+      preferredPartner: cleanText(row.preferred_partner_text, REVIEW_TEXT_MAX_LENGTH),
     },
     photoPaths,
     bucket: "dating-1on1-photos",
