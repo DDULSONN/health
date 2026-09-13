@@ -19,6 +19,7 @@
     "check:account-recovery": "node scripts/check-account-recovery.cjs",
     "check:dating-reports": "node --test scripts/check-dating-reports.cjs",
     "check:dating-text-review": "node --test scripts/check-dating-sexual-text-review.cjs",
+    "check:admin-review-ban": "node --test scripts/check-admin-review-ban.cjs",
     "check:duplicate-phone-notice": "node scripts/check-duplicate-phone-notice.cjs",
     "check:contact-vcard": "node scripts/check-dating-contact-vcard.cjs",
     "check:contact-block-sync": "node scripts/check-dating-contact-block-sync.cjs",

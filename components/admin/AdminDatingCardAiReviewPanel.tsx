@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 type SourceType =
   | "all"
@@ -66,6 +66,14 @@ type ActionResponse = {
   detail?: string;
   displayName?: string | null;
   editLocked?: boolean;
+};
+
+type BanResponse = {
+  ok?: boolean;
+  error?: string;
+  warning?: string;
+  user_id?: string;
+  profile?: { user_id?: string; is_banned?: boolean } | null;
 };
 
 type EditableFields = {
@@ -196,6 +204,8 @@ export default function AdminDatingCardAiReviewPanel() {
   const [editDrafts, setEditDrafts] = useState<Record<string, EditableFields>>({});
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
+  const [bannedUsers, setBannedUsers] = useState<Record<string, { warning: string }>>({});
+  const banInFlight = useRef(false);
 
   const loadLatest = useCallback(async () => {
     setError("");
@@ -217,6 +227,7 @@ export default function AdminDatingCardAiReviewPanel() {
   }, [loadLatest]);
 
   const runScan = async (mode: ReviewMode) => {
+    if (banInFlight.current || processingKey) return;
     setLoadingMode(mode);
     setError("");
     setInfo("");
@@ -248,6 +259,7 @@ export default function AdminDatingCardAiReviewPanel() {
   };
 
   const handleAction = async (item: ReviewItem, action: "delete_card" | "send_warning_email" | "set_one_on_one_edit_lock") => {
+    if (banInFlight.current) return;
     const sourceType = itemSource(item);
     const cardId = itemCardId(item);
     const review = itemReview(item);
@@ -305,6 +317,52 @@ export default function AdminDatingCardAiReviewPanel() {
     }
   };
 
+  const banUser = async (item: ReviewItem) => {
+    const userId = itemUserId(item).trim();
+    if (!userId || bannedUsers[userId] || banInFlight.current || processingKey || loadingMode) return;
+    const displayName = itemDisplayName(item);
+    const review = itemReview(item);
+    const reasonInput = window.prompt(
+      `${displayName} 회원의 계정 밴 사유를 입력해 주세요. (최대 300자)\n이 사유는 해당 회원에게 표시될 수 있습니다.`,
+      `${SOURCE_LABEL[itemSource(item)] ?? "프로필"} 검수: ${review.flags.slice(0, 3).join(", ") || "운영정책 위반 확인"}`.slice(0, 300)
+    );
+    if (reasonInput === null) return;
+    const reason = reasonInput.trim();
+    if (!reason || reason.length > 300) {
+      setError("밴 사유를 1~300자로 입력해 주세요. 아직 밴 처리하지 않았습니다.");
+      return;
+    }
+    if (!window.confirm(
+      `${displayName} 회원의 계정을 밴할까요?\n계정 ID: ${userId}\n사유: ${reason}\n\n이 카드만 삭제하는 것이 아니라 계정 이용을 제한하고 등록된 매칭 카드도 내립니다.\n지원 내역의 경우, 상대방이 아닌 이 지원서를 작성한 회원이 대상입니다.`
+    )) return;
+
+    banInFlight.current = true;
+    setProcessingKey(`ban:${userId}`);
+    setError("");
+    setInfo("");
+    try {
+      const res = await fetch("/api/admin/users/ban", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, banned: true, reason }),
+      });
+      const body = (await res.json().catch(() => ({}))) as BanResponse;
+      if (!res.ok || body.ok !== true) throw new Error(body.error || "밴 처리 결과를 확인하지 못했습니다. 회원관리에서 상태를 확인해 주세요.");
+      if (body.user_id !== userId || body.profile?.user_id !== userId || body.profile?.is_banned !== true) {
+        throw new Error("밴 처리 결과가 요청한 계정과 일치하지 않습니다. 회원관리에서 상태를 확인해 주세요.");
+      }
+      setBannedUsers((prev) => ({ ...prev, [userId]: { warning: body.warning || "" } }));
+      setInfo(`${displayName} 계정을 밴했습니다.`);
+      setEditingKey("");
+    } catch (err) {
+      const message = err instanceof Error ? err.message : "밴 처리 결과를 확인하지 못했습니다.";
+      setError(message.includes("회원관리") ? message : `${message} 회원관리에서 상태를 확인해 주세요.`);
+    } finally {
+      banInFlight.current = false;
+      setProcessingKey("");
+    }
+  };
+
   const startEdit = (item: ReviewItem) => {
     const key = itemKey(item);
     setEditingKey(key);
@@ -333,6 +391,7 @@ export default function AdminDatingCardAiReviewPanel() {
   };
 
   const saveEdit = async (item: ReviewItem) => {
+    if (banInFlight.current) return;
     const sourceType = itemSource(item);
     const cardId = itemCardId(item);
     const key = itemKey(item);
@@ -382,6 +441,7 @@ export default function AdminDatingCardAiReviewPanel() {
           <button
             type="button"
             onClick={() => void loadLatest()}
+            disabled={processingKey !== "" || loadingMode !== null}
             className="h-9 rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-700"
           >
             최근 결과
@@ -391,6 +451,7 @@ export default function AdminDatingCardAiReviewPanel() {
         <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_120px_auto]">
           <select
             value={source}
+            disabled={processingKey !== "" || loadingMode !== null}
             onChange={(event) => setSource(event.target.value as SourceType)}
             className="h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm"
           >
@@ -413,7 +474,7 @@ export default function AdminDatingCardAiReviewPanel() {
             <button
               type="button"
               onClick={() => void runScan("rules")}
-              disabled={loadingMode !== null}
+              disabled={loadingMode !== null || processingKey !== ""}
               className="h-11 rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white disabled:opacity-50"
             >
               {loadingMode === "rules" ? "검수 중..." : "일반 검수"}
@@ -421,7 +482,7 @@ export default function AdminDatingCardAiReviewPanel() {
             <button
               type="button"
               onClick={() => void runScan("ai")}
-              disabled={loadingMode !== null}
+              disabled={loadingMode !== null || processingKey !== ""}
               className="h-11 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white disabled:opacity-50"
             >
               {loadingMode === "ai" ? "AI 중..." : "AI 검수"}
@@ -433,6 +494,7 @@ export default function AdminDatingCardAiReviewPanel() {
           <input
             type="checkbox"
             checked={includeClear}
+            disabled={processingKey !== "" || loadingMode !== null}
             onChange={(event) => setIncludeClear(event.target.checked)}
             className="h-4 w-4 rounded border-neutral-300"
           />
@@ -461,6 +523,8 @@ export default function AdminDatingCardAiReviewPanel() {
             const updateKey = `update_fields:${key}`;
             const editLockKey = `set_one_on_one_edit_lock:${sourceType}:${cardId}`;
             const editLocked = itemEditLocked(item);
+            const userId = itemUserId(item).trim();
+            const banResult = bannedUsers[userId];
             const targetLabel = isApplicationSource(sourceType) ? "지원 삭제" : "카드 삭제";
             const draft = editDrafts[key] ?? editableFieldsFromItem(item);
             return (
@@ -542,7 +606,22 @@ export default function AdminDatingCardAiReviewPanel() {
                   >
                     {processingKey === deleteKey ? "삭제 중..." : targetLabel}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => void banUser(item)}
+                    disabled={processingKey !== "" || loadingMode !== null || !userId || Boolean(banResult)}
+                    className="h-9 rounded-xl bg-red-700 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
+                    title={!userId ? "연결된 회원 정보가 없어 계정을 밴할 수 없습니다." : "이 항목을 작성한 회원의 계정을 밴합니다."}
+                  >
+                    {processingKey === `ban:${userId}` ? "밴 처리 중..." : banResult ? "밴 완료" : "계정 밴"}
+                  </button>
                 </div>
+
+                {banResult ? (
+                  <p role={banResult.warning ? "alert" : "status"} className={`mt-3 rounded-xl px-3 py-2 text-xs ${banResult.warning ? "bg-amber-50 text-amber-800" : "bg-neutral-100 text-neutral-600"}`}>
+                    {banResult.warning || "이 계정은 현재 검수 화면에서 밴 처리했습니다. 해제는 회원관리에서 할 수 있습니다."}
+                  </p>
+                ) : null}
 
                 {editingKey === key ? (
                   <div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/50 p-3">

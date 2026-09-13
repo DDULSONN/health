@@ -232,11 +232,13 @@ for (const source of sources) {
     const response = await route.POST(request(source)), body = await response.json();
     assert.equal(response.status, 200);
     assert.equal(body.items.length, 1);
+    assert.equal(body.items[0].userId, owner, "Actions must target the author, not the recipient");
     assert.equal(body.items[0].review.flags.length, 1);
     assert.equal(body.items[0].review.suspicionLevel, "medium");
     assert.ok(body.items[0].review.flags[0].includes("인사말만"));
     const saved = await (await route.GET(new Request(`https://fixture.invalid/?source=${source}`))).json();
     assert.equal(saved.items.length, 1);
+    assert.equal(saved.items[0].user_id ?? saved.items[0].userId, owner, "Saved reviews must keep the author as action target");
     assert.equal(saved.items[0].texts[source === "open_card" ? "strengths" : "intro"], "안녕하세요 반갑습니다");
   });
   test(source + " concise substantive introduction stays out of the default list", async () => {

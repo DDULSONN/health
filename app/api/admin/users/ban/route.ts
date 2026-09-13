@@ -113,10 +113,14 @@ export async function POST(request: Request) {
     });
     return NextResponse.json({ error: "벤 상태 저장에 실패했습니다." }, { status: 500 });
   }
+  if (!updateRes.data?.user_id) {
+    return NextResponse.json({ error: "회원 정보가 변경되었거나 삭제되어 밴 상태를 저장하지 못했습니다." }, { status: 409 });
+  }
 
   let hiddenOpenCards = 0;
   let hiddenPaidCards = 0;
   let hiddenOneOnOneCards = 0;
+  let cardCleanupFailed = false;
   if (banned) {
     const [openCardsRes, paidCardsRes, oneOnOneCardsRes] = await Promise.all([
       auth.admin
@@ -140,6 +144,7 @@ export async function POST(request: Request) {
     ]);
 
     if (openCardsRes.error || paidCardsRes.error || oneOnOneCardsRes.error) {
+      cardCleanupFailed = true;
       console.error(
         "[POST /api/admin/users/ban] hide visible cards failed",
         openCardsRes.error ?? paidCardsRes.error ?? oneOnOneCardsRes.error
@@ -181,6 +186,7 @@ export async function POST(request: Request) {
       hidden_open_cards: hiddenOpenCards,
       hidden_paid_cards: hiddenPaidCards,
       hidden_one_on_one_cards: hiddenOneOnOneCards,
+      card_cleanup_failed: cardCleanupFailed,
     },
   });
 
@@ -191,5 +197,6 @@ export async function POST(request: Request) {
     hiddenOpenCards,
     hiddenPaidCards,
     hiddenOneOnOneCards,
+    warning: cardCleanupFailed ? "계정 밴은 완료됐지만 일부 카드 내리기에 실패했습니다. 회원관리에서 카드 상태를 확인해 주세요." : undefined,
   });
 }
