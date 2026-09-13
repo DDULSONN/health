@@ -4,6 +4,7 @@ import { recordAdminAuditEvent } from "@/lib/admin-audit";
 import { reviewOneOnOneName } from "@/lib/dating-1on1-name-review";
 import { reviewDatingSexualText } from "@/lib/dating-sexual-text-review";
 import { reviewDatingIntroQuality } from "@/lib/dating-intro-quality-review";
+import { reviewDatingProfanity } from "@/lib/dating-profanity-review";
 import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
 import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
 import { buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
@@ -23,7 +24,7 @@ type SuspicionLevel = "clear" | "low" | "medium" | "high";
 type AdminClient = ReturnType<typeof createAdminClient>;
 const REVIEW_PAGE_SIZE = 1000;
 const REVIEW_TEXT_MAX_LENGTH = 2000;
-const REVIEW_RULES_VERSION = "2026-09-13-sexual-slang-v2";
+const REVIEW_RULES_VERSION = "2026-09-13-sexual-slang-and-profanity-v3";
 const SUSPICION_RANK = { clear: 0, low: 1, medium: 2, high: 3 } as const;
 
 type ReviewPayload = {
@@ -302,7 +303,8 @@ function ruleReview(card: CandidateCard): CardReview {
   const photoFlags: string[] = [];
   const sexualReview = reviewDatingSexualText({ ...card.texts, displayName: card.displayName });
   const qualityReview = reviewDatingIntroQuality(card.sourceType, card.texts);
-  const textFlags = [...sexualReview.flags, ...likelyTextFlags(card.texts, card.sourceType), ...qualityReview.flags];
+  const profanityReview = reviewDatingProfanity({ ...card.texts, displayName: card.displayName });
+  const textFlags = [...profanityReview.flags, ...sexualReview.flags, ...likelyTextFlags(card.texts, card.sourceType), ...qualityReview.flags];
   if (card.sourceType === "one_on_one" || card.sourceType === "one_on_one_application") {
     const nameReview = reviewOneOnOneName(card.texts.name ?? card.displayName);
     textFlags.push(...nameReview.flags.map((flag) => `이름: ${flag}`));
@@ -327,9 +329,9 @@ function ruleReview(card: CandidateCard): CardReview {
     ["연락처", "외부 계정", "광고", "상업", "전화번호", "링크"].some((keyword) => flag.includes(keyword))
   );
   const suspicionLevel: SuspicionLevel =
-    sexualReview.level === "high" || hasSeriousFlag || uniqueFlags.length >= 4
+    sexualReview.level === "high" || profanityReview.level === "high" || hasSeriousFlag || uniqueFlags.length >= 4
       ? "high"
-      : sexualReview.level === "medium" || qualityReview.level === "medium" || uniqueFlags.length >= 2
+      : sexualReview.level === "medium" || profanityReview.level === "medium" || qualityReview.level === "medium" || uniqueFlags.length >= 2
         ? "medium"
         : uniqueFlags.length === 1
           ? "low"
@@ -414,6 +416,7 @@ async function analyzeWithGemini(admin: AdminClient, apiKey: string, model: stri
     "너는 소개팅 서비스의 관리자 검수 보조 AI다.",
     "절대 삭제, 거절, 유저 제재를 결정하지 말고 관리자에게 보여줄 의심 사유만 판단한다.",
     "성적 행위·만남 제안, 음란물, 성적 대화·사진 요구, 노골적인 신체 묘사도 확인한다. 신체 사이즈를 성적으로 강조한 문구는 관리자 확인 대상으로 두되, 운동·건강 설명이나 성적 제안을 거절하는 문구와 구분한다.",
+    "작성자의 욕설·비하 표현과 초성·기호 우회 욕설도 확인한다. 시발점, 전염병, 새끼손가락 등 정상 단어와 구분하고, 인용이나 거절 문맥은 괴롭힘으로 단정하지 말고 관리자에게 확인 사유만 표시한다. 상대방 이름이나 계정 ID는 작성자의 욕설로 판단하지 않는다.",
     "자기소개가 지나치게 짧거나 인사말·반복 문자·임시 문구만 있는지도 확인한다. 간결해도 취미나 성격 등 구체적인 내용이 있는 소개, 짧은 이상형 조건은 길이만으로 문제 삼지 않는다. 작성자의 소개 필드만 판단하고 상대 이름·ID 등 메타데이터는 소개로 세지 않는다.",
     "검수 기준: 빈 사진/흰 화면/검은 화면/캡처/광고/로고/텍스트만 있는 이미지/사람 사진이 아닌 이미지/장난식 소개글/광고성 문구/외부 연락 유도/소개글 비어있음.",
     "외모 평가, 매력 평가, 본인 여부 단정, 성별/나이 추정은 하지 않는다.",

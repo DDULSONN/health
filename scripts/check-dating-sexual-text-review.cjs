@@ -19,7 +19,57 @@ function compile(file, resolve = require, extras = "", injectedFetch) {
 
 const { reviewDatingSexualText } = compile("lib/dating-sexual-text-review.ts");
 const { reviewDatingIntroQuality } = compile("lib/dating-intro-quality-review.ts");
+const { reviewDatingProfanity } = compile("lib/dating-profanity-review.ts");
 const nameRules = compile("lib/dating-1on1-name-review.ts");
+
+for (const value of [
+  "씨발", "씨이발 씨발", "씨벌", "씨빨", "시발", "씨.발", "씨 발", "씨@발", "씨1발", "씨\u200b발", "씨\ufeff발",
+  "병신", "병 신", "병.신", "병1신", "개새끼", "개 새 끼", "개색기", "개새기", "지랄", "지1랄", "좆같네",
+  "존나", "미친놈", "미친 년", "씹새끼", "씹년", "씹창", "느금마", "니애미", "니애비", "염병",
+  "fuck", "fucking", "f.u.c.k", "f u c k", "f**k", "f*ck", "ｆｕｃｋ", "motherfucker",
+  "shit", "sh1t", "sh!t", "s.h.i.t", "bullshit", "bitch", "b1tch", "b!tch", "b.i.t.c.h", "asshole", "bastard", "cunt",
+  "fuck_you", "씨발 같은 욕설은 하지 않아요",
+]) {
+  test("profanity review flags explicit/obfuscated text: " + value, () => {
+    const result = reviewDatingProfanity({ intro: value });
+    assert.equal(result.level, "high");
+    assert.ok(result.flags.some((flag) => flag.startsWith("자기소개:") && flag.includes("욕설") && flag.includes("감지:")));
+  });
+}
+for (const value of ["ㅅㅂ", "ㅆㅂ", "ㅂㅅ", "ㅈㄹ", "ㅈㄴ", "ㄱㅅㄲ", "ㅅ.ㅂ", "ㅅ ㅂ", "ㅅ\u200bㅂ", "ㅅㅂㅋㅋ", "ㅋㅋㅅㅂ", "ㅅㅂㅅㅂ", "ㅅㅂ ㅂㅅ"]) {
+  test("ambiguous initials remain a visible medium signal: " + value, () => {
+    const result = reviewDatingProfanity({ intro: value });
+    assert.equal(result.level, "medium");
+    assert.ok(result.flags.some((flag) => flag.includes("초성 욕설 의심")));
+  });
+}
+for (const value of [
+  "운동을 시작한 시발점이에요", "시발역에서 출발합니다", "시발지와 도착지", "도시 발전 관련 업무를 해요",
+  "출시 발표를 맡았습니다", "수시 발생하는 일도 침착하게 처리해요", "정시 발송을 도와요", "택시 발권 서비스",
+  "질병 신호를 살펴요", "질병 신고 업무를 합니다", "발병 신고를 담당해요", "전염병 예방", "감염병 예방",
+  "신발 수집과 등산이 취미", "새끼손가락을 다쳐서 쉬어요", "새끼 고양이를 키워요", "새끼 강아지 좋아요",
+  "음식을 천천히 씹고 먹어요", "미친 듯이 운동했어요", "조나단과 존나단이라는 이름을 들어봤어요",
+  "어머니와 아버지를 존경해요", "ㅁㄴㅇㄹ", "ㄱㅅ", "ㅇㅂㅅㄱ", "swimming class", "assistant manager",
+  "I live in Scunthorpe", "shiitake mushrooms", "shitake mushrooms", "night shift", "favorite shirt", "Scunthorpe에서 살았어요",
+]) {
+  test("profanity false-positive regression: " + value, () => {
+    assert.deepEqual(reviewDatingProfanity({ intro: value }), { level: "clear", flags: [] });
+  });
+}
+for (const field of ["name", "displayName", "job", "intro", "strengths", "ideal", "idealType", "preferredPartner"]) {
+  test("profanity inspects only an author's allowed field: " + field, () => {
+    assert.equal(reviewDatingProfanity({ [field]: "씨발" }).level, "high");
+  });
+}
+test("profanity never attributes recipient/account metadata to the author", () => {
+  assert.deepEqual(reviewDatingProfanity({ candidateName: "씨발", candidateRegion: "병신", instagramId: "fuck", candidateUserId: "shit", targetCardId: "bitch", intro: null }), { level: "clear", flags: [] });
+});
+test("profanity signals are deterministic, capped and readable in Korean", () => {
+  for (let n = 0; n < 20; n++) assert.match(reviewDatingProfanity({ intro: "ㅅㅂ" }).flags[0], /감지: ㅅㅂ/);
+  const result = reviewDatingProfanity(Object.fromEntries(["name", "displayName", "job", "intro", "strengths", "ideal", "idealType", "preferredPartner"].map((key) => [key, "씨발 ㅅㅂ fuck"] )));
+  assert.equal(result.level, "high"); assert.equal(result.flags.length, 10);
+  assert.ok(result.flags.every((flag) => !flag.includes("\ufffd")));
+});
 
 const suspicious = [
   ["섹스할 분을 찾습니다", "high"], ["섹파 구해요", "high"],
@@ -251,6 +301,7 @@ function loadRoute(db, options = {}) {
     "@/lib/dating-1on1-name-review": nameRules,
     "@/lib/dating-sexual-text-review": { reviewDatingSexualText },
     "@/lib/dating-intro-quality-review": { reviewDatingIntroQuality },
+    "@/lib/dating-profanity-review": { reviewDatingProfanity },
     "@/lib/dating-cards-queue": { promotePendingCardsBySex: () => { throw new Error("Unexpected promotion"); } },
     "@/lib/dating-swipe": { sendDatingEmailToAddressDetailed: () => { throw new Error("Unexpected email"); } },
     "@/lib/images": { buildSignedImageUrlAllowRaw: () => "/fixture.webp", extractStorageObjectPathFromBuckets: (value) => value },
@@ -266,6 +317,31 @@ const request = (source, extra = {}) => new Request("https://fixture.invalid/api
 });
 
 for (const source of sources) {
+  for (const [value, level] of [["약속 잘 지키는데 씨.발이라는 말을 써요", "high"], ["약속 잘 지키는데 ㅅㅂ이라는 말을 써요", "medium"]]) {
+    test(source + " a single profanity finding is visible and stored: " + level, async () => {
+      const db = database(fixtures(value)), route = loadRoute(db);
+      const response = await route.POST(request(source)), body = await response.json();
+      assert.equal(response.status, 200); assert.equal(body.items.length, 1);
+      assert.equal(body.items[0].userId, owner);
+      assert.equal(body.items[0].review.flags.length, 1);
+      assert.equal(body.items[0].review.suspicionLevel, level);
+      assert.ok(body.items[0].review.flags[0].includes("욕설"));
+      const saved = await (await route.GET(new Request(`https://fixture.invalid/?source=${source}`))).json();
+      assert.equal(saved.items.length, 1);
+      assert.ok(saved.items[0].flags[0].includes("욕설"));
+    });
+  }
+  test(source + " profanity near the end of a long introduction is not missed", async () => {
+    const value = "등산과 수영을 좋아하고 약속을 잘 지킵니다. ".repeat(30) + " 씨발";
+    const db = database(fixtures(value)), route = loadRoute(db);
+    const body = await (await route.POST(request(source))).json();
+    assert.equal(body.items.length, 1);
+    assert.ok(body.items[0].review.flags.some((flag) => flag.includes("욕설")));
+  });
+  test(source + " ordinary similar words do not enter the default review list", async () => {
+    const db = database(fixtures("운동을 시작한 시발점은 건강입니다. 전염병 예방을 챙겨요.")), route = loadRoute(db);
+    assert.equal((await (await route.POST(request(source))).json()).items.length, 0);
+  });
   test(source + " new obfuscated slang is stored and visible in default review with the matched term", async () => {
     const db = database(fixtures("폰.섹 할 분. 차분한 성격입니다.")), route = loadRoute(db);
     const response = await route.POST(request(source)), body = await response.json();
@@ -382,5 +458,19 @@ test("AI clear result cannot erase a single introduction quality flag", async ()
   assert.equal(result.suspicionLevel, "medium");
   assert.equal(result.flags.length, 1);
   assert.ok(result.textFlags.some((flag) => flag.includes("인사말만")));
+  assert.notEqual(result.summary, "정상으로 추정");
+});
+
+test("AI clear cannot remove a single profanity finding", async () => {
+  const route = loadRoute(database(fixtures()), { fetch: async () => Response.json({ candidates: [{ content: { parts: [{ text: JSON.stringify({
+    suspicionLevel: "clear", flags: [], textFlags: [], photoFlags: [], summary: "정상으로 추정",
+  }) }] } }] }) });
+  const imageStub = { storage: { from: () => ({ download: async () => ({ data: null, error: null }) }) } };
+  const result = await route.testAnalyze(imageStub, "fixture-key", "fixture-model", {
+    sourceType: "one_on_one", displayName: "민수", texts: { name: "민수", intro: "등산과 수영을 좋아해요. 씨발", strengths: "배려하는 성격", preferredPartner: "다정한 분" },
+    photoPaths: ["fixture/a.webp", "fixture/b.webp"], bucket: "fixture",
+  });
+  assert.equal(result.suspicionLevel, "high"); assert.equal(result.flags.length, 1);
+  assert.ok(result.textFlags[0].includes("욕설"));
   assert.notEqual(result.summary, "정상으로 추정");
 });

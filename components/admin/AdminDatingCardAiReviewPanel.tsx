@@ -435,7 +435,7 @@ export default function AdminDatingCardAiReviewPanel() {
           <div>
             <p className="text-sm font-semibold text-violet-900">카드/지원 내역 검수</p>
             <p className="mt-1 text-xs text-neutral-500">
-              일반 검수는 성적인 문구·외부 연락 유도·광고·부실 소개를 확인하고, AI 검수는 사진까지 확인합니다. 검수 결과만으로 자동 삭제하거나 제재하지 않습니다.
+              일반 검수는 욕설·성적인 문구·외부 연락 유도·광고·부실 소개를 확인하고, AI 검수는 사진까지 확인합니다. 검수 결과만으로 자동 삭제하거나 제재하지 않습니다.
             </p>
           </div>
           <button
@@ -501,7 +501,7 @@ export default function AdminDatingCardAiReviewPanel() {
           정상/낮음 결과도 표시
         </label>
         <p className="mt-2 text-[11px] text-neutral-500">
-          성적 은어·초성·기호 우회 표현도 확인하고 감지한 단어를 사유에 표시합니다. 소개 8자 미만(공백·기호 제외), 인사말·반복·임시 문구도 확인합니다. 사유가 하나만 있어도 표시하며, 기존 글은 대상을 선택하고 일반 검수를 다시 실행해 주세요. 선택한 건수만 검사하며 AI 호출 비용은 없습니다.
+          욕설·성적 은어와 초성·기호 우회 표현을 확인하고 감지한 단어를 사유에 표시합니다. 소개 8자 미만(공백·기호 제외), 인사말·반복·임시 문구도 확인합니다. 사유가 하나만 있어도 표시하며, 기존 글은 대상을 선택하고 일반 검수를 다시 실행해 주세요. 선택한 건수만 검사하며 AI 호출 비용은 없습니다.
         </p>
         {info ? <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{info}</p> : null}
         {error ? <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}
