@@ -501,7 +501,7 @@ export default function AdminDatingCardAiReviewPanel() {
           정상/낮음 결과도 표시
         </label>
         <p className="mt-2 text-[11px] text-neutral-500">
-          성적 표현이나 부실 소개는 사유가 하나만 있어도 표시합니다. 소개 8자 미만(공백·기호 제외), 인사말만 있는 글, 반복·임시 문구를 확인합니다. 기존 글은 대상을 선택하고 일반 검수를 다시 실행해 주세요. 선택한 건수만 검사하며 AI 호출 비용은 없습니다.
+          성적 은어·초성·기호 우회 표현도 확인하고 감지한 단어를 사유에 표시합니다. 소개 8자 미만(공백·기호 제외), 인사말·반복·임시 문구도 확인합니다. 사유가 하나만 있어도 표시하며, 기존 글은 대상을 선택하고 일반 검수를 다시 실행해 주세요. 선택한 건수만 검사하며 AI 호출 비용은 없습니다.
         </p>
         {info ? <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{info}</p> : null}
         {error ? <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}

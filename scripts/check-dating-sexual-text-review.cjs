@@ -40,6 +40,27 @@ const suspicious = [
   ["자지 크기", "high"], ["보지", "high"],
   ["원나잇은 싫지만 섹파는 구합니다", "high"],
   ["19금 대화 가능해요", "high"], ["ㅅ.ㅅ 파트너", "high"],
+  ["섹친 구해요", "high"], ["쎽스 원해요", "high"], ["원나잇트 가능", "high"],
+  ["폰섹 할 분", "high"], ["캠섹 가능합니다", "high"], ["영섹 가능해요", "high"],
+  ["쓰리썸 원해요", "high"], ["3썸 가능", "high"], ["초대남 구합니다", "high"],
+  ["커플 스와핑 상대", "high"], ["돔/섭 성향", "high"], ["에셈 성향", "high"],
+  ["본디지 좋아해요", "high"], ["야한 톡 해요", "high"], ["야릇한 대화 가능", "high"],
+  ["알몸 사진 보내주세요", "high"], ["누드 사진을 교환해요", "high"], ["벗은 영상 주세요", "high"],
+  ["노팬티 사진 보내요", "high"], ["성기 사진", "high"], ["벗방 봐요", "high"],
+  ["몸캠 가능합니다", "high"], ["딜도 사용", "high"], ["오나홀 좋아요", "high"],
+  ["대물남 선호", "medium"], ["왕가슴 좋아요", "medium"], ["소추남 사절", "medium"],
+  ["ㅅㅍ 구함", "high"], ["ㅇㄴㅇ 가능", "high"], ["ㄴㅋ 만남", "high"],
+  ["ㅈㅈ 크기", "high"], ["ㅂㅈ 사이즈", "high"], ["야스 가능", "high"],
+  ["색스할 분", "high"], ["떡칠 분 구함", "high"], ["같이 떡치실 분", "high"],
+  ["질싸 가능", "high"], ["입싸 좋아해요", "high"], ["얼싸 가능", "high"],
+  ["섹1스", "high"], ["섹 1 스 원해요", "high"], ["ㅅ ㅔ ㄱ ㅅ ㅡ", "high"],
+  ["폰.섹 해요", "high"], ["섹@스", "high"], ["ｓ３ｘ partner", "high"],
+  ["s€x please", "high"], ["p0rn", "high"], ["FWB_partner wanted", "high"],
+  ["sexting please", "high"], ["fuck buddy", "high"], ["fuckbuddy", "high"],
+  ["sexpartner", "high"], ["threesome please", "high"], ["looking for hookups", "high"],
+  ["no FWB but sexting please", "high"], ["폰섹은 싫지만 초대남은 구해요", "high"],
+  ["정액 사진", "high"], ["자위 중독", "high"],
+  ["야.스 가능", "high"], ["색 스 할분", "high"],
 ];
 for (const [text, level] of suspicious) {
   test("sexual signal: " + text, () => {
@@ -62,6 +83,19 @@ const ordinary = [
   "조건만남 제안은 거절합니다", "야한 사진 요구는 하지 않아요",
   "가벼운 만남이 아닌 진지한 연애를 원합니다",
   "야동은 안 봐요", "성적인 취향을 강요하는 분은 싫어요",
+  "주말에 운동 파트너를 찾습니다", "밤에 운동을 자주 해요", "체력이 좋아서 야간 근무도 잘해요",
+  "성향이 차분하고 다정한 편입니다", "야스오 플레이를 즐겨요", "야스민 향을 좋아해요",
+  "빨간색 스타일을 좋아합니다", "대물 낚시가 취미예요", "정액권으로 헬스장에 다녀요",
+  "정액 결제로 구독 중입니다", "정액제와 정액 요금제", "정액 수당을 받고 있어요",
+  "가슴 운동과 등 운동을 꾸준히 해요", "자위대 관련 역사책을 읽어요", "개인 사정으로 이사했어요",
+  "후배 위로를 잘해요", "일반적인 스킨십도 대화하며 맞춰가고 싶어요", "키 169cm, 체중 69kg입니다",
+  "떡 치대는 일을 해요", "떡치는 기계를 만드는 회사에 다녀요", "입싸움보다는 대화를 해요",
+  "DOM 조작과 메모리 스와핑을 배우고 있어요", "SM 엔터 음악 팬입니다", "DTF 전사 인쇄가 직업이에요",
+  "여자친구의 성적 지향을 존중합니다", "동성애자이고 차분한 성격입니다", "수영 기록 경신 ㅅㅅ!",
+  "폰섹 안 해요", "폰섹은 좋아하지 않아요", "원나잇트 사절", "원나잇 할 생각 없어요",
+  "ㅅㅅ 파트너는 안 구합니다", "야스 사절입니다", "초대남 사절", "몸캠은 거절합니다",
+  "no FWB", "not looking for hookups", "not interested in sexting", "don't want sex", "FWB is not for me",
+  "야 스쿼트 같이 하자", "회색 스니커즈를 좋아해요", "야스 사절입니다. 주말엔 운동하고 있어요",
 ];
 for (const text of ordinary) {
   test("ordinary/refusal text stays unflagged: " + text, () => {
@@ -76,6 +110,11 @@ for (const field of ["name", "displayName", "job", "intro", "strengths", "ideal"
 }
 test("never attributes recipient names or account IDs to the author", () => {
   assert.equal(reviewDatingSexualText({ candidateName: "섹파", instagramId: "sex", sourceCardId: "sex", intro: null }).level, "clear");
+});
+test("flags include the matched expression for the admin, without copying unrelated private text", () => {
+  const result = reviewDatingSexualText({ intro: "폰섹 할 분. 이것은 unrelated_private_text", candidateName: "다른회원" });
+  assert.ok(result.flags.some((flag) => flag.includes("감지: 폰섹")));
+  assert.ok(result.flags.every((flag) => !flag.includes("unrelated_private_text") && !flag.includes("다른회원")));
 });
 test("repeated calls and fields are deterministic", () => {
   for (let i = 0; i < 20; i++) assert.equal(reviewDatingSexualText({ intro: "섹파" }).level, "high");
@@ -227,6 +266,17 @@ const request = (source, extra = {}) => new Request("https://fixture.invalid/api
 });
 
 for (const source of sources) {
+  test(source + " new obfuscated slang is stored and visible in default review with the matched term", async () => {
+    const db = database(fixtures("폰.섹 할 분. 차분한 성격입니다.")), route = loadRoute(db);
+    const response = await route.POST(request(source)), body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.items.length, 1);
+    assert.equal(body.items[0].review.suspicionLevel, "high");
+    assert.ok(body.items[0].review.flags.some((flag) => flag.includes("감지: 폰섹")));
+    const saved = await (await route.GET(new Request(`https://fixture.invalid/?source=${source}`))).json();
+    assert.equal(saved.items.length, 1);
+    assert.ok((saved.items[0].flags ?? saved.items[0].review.flags).some((flag) => flag.includes("감지: 폰섹")));
+  });
   test(source + " one low-effort flag is visible in the default scan and saved list", async () => {
     const db = database(fixtures("안녕하세요 반갑습니다")), route = loadRoute(db);
     const response = await route.POST(request(source)), body = await response.json();

@@ -23,7 +23,7 @@ type SuspicionLevel = "clear" | "low" | "medium" | "high";
 type AdminClient = ReturnType<typeof createAdminClient>;
 const REVIEW_PAGE_SIZE = 1000;
 const REVIEW_TEXT_MAX_LENGTH = 2000;
-const REVIEW_RULES_VERSION = "2026-09-13-sexual-and-intro-quality";
+const REVIEW_RULES_VERSION = "2026-09-13-sexual-slang-v2";
 const SUSPICION_RANK = { clear: 0, low: 1, medium: 2, high: 3 } as const;
 
 type ReviewPayload = {
