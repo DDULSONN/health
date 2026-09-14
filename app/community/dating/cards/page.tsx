@@ -3710,7 +3710,7 @@ function OneOnOneHomePanel({
     return String(b.created_at ?? "").localeCompare(String(a.created_at ?? ""));
   });
   return (
-    <section id="one-on-one-candidates" className="mb-5 rounded-2xl border border-rose-100 bg-white p-4 shadow-[0_10px_30px_rgba(190,24,93,0.05)] md:p-6">
+    <section id="one-on-one-candidates" className="mb-5 rounded-2xl border border-neutral-200 bg-white p-4 shadow-none md:p-6">
       {arrivedFromOnboarding ? (
         <div role="status" className="mb-4 rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3">
           <p className="text-sm font-black text-emerald-900">1:1 신청서 작성 완료</p>
@@ -3719,63 +3719,60 @@ function OneOnOneHomePanel({
           </p>
         </div>
       ) : null}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="inline-flex rounded-full bg-rose-50 px-3 py-1 text-xs font-black text-rose-700">1대1 매칭</span>
-            <button
-              type="button"
-              onClick={() => setMatchGuideOpen((open) => !open)}
-              aria-expanded={matchGuideOpen}
-              className="inline-flex h-6 items-center gap-1 rounded-md px-1.5 text-[10px] font-semibold text-neutral-400 transition hover:bg-neutral-100 hover:text-neutral-600"
-            >
-              <span className="grid h-3.5 w-3.5 place-items-center rounded-full border border-neutral-200 bg-white text-[9px] text-neutral-400" aria-hidden>?</span>
-              {matchGuideOpen ? "닫기" : "매칭 안내"}
-            </button>
-          </div>
-          <h2 className="mt-3 text-[26px] font-black tracking-tight text-neutral-950">내 후보를 보고 바로 진행하기</h2>
-          <p className="mt-2 max-w-2xl text-[15px] leading-7 text-neutral-500">
-            프로필 작성, 후보 확인, 수락, 번호 교환까지 이 탭에서 이어서 볼 수 있게 정리했어요.
-          </p>
+      <div>
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-[22px] font-bold leading-8 tracking-tight text-neutral-900">1대1 매칭</h2>
+          <button
+            type="button"
+            onClick={() => setMatchGuideOpen((open) => !open)}
+            aria-expanded={matchGuideOpen}
+            className="inline-flex min-h-[40px] shrink-0 items-center gap-1 rounded-lg px-2 text-[11px]! font-medium! text-neutral-500 transition hover:bg-neutral-50 hover:text-neutral-700"
+          >
+            <span className="grid h-3.5 w-3.5 place-items-center rounded-full border border-neutral-300 text-[9px]" aria-hidden>?</span>
+            {matchGuideOpen ? "닫기" : "매칭 안내"}
+          </button>
         </div>
-        <div className="flex flex-wrap gap-2">
+        <p className="mt-1 text-[13px] leading-6 text-neutral-500">
+          마음에 드는 후보에게 매칭을 신청해보세요.
+        </p>
+        <div className="mt-4 flex flex-wrap gap-2">
           <Link
             href="/dating/1on1"
-            className="inline-flex min-h-[44px] items-center justify-center rounded-2xl bg-neutral-950 px-4 text-sm font-bold text-white hover:bg-neutral-800"
+            className="inline-flex min-h-[40px] items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 px-3.5 text-xs font-semibold text-neutral-800 transition hover:bg-neutral-100"
           >
-            1대1 작성
+            프로필 작성
           </Link>
           <Link
             href="/mypage?section=matching"
-            className="inline-flex min-h-[44px] items-center justify-center rounded-2xl border border-neutral-200 bg-white px-4 text-sm font-bold text-neutral-700 hover:bg-neutral-50"
+            className="inline-flex min-h-[40px] items-center justify-center rounded-lg border border-neutral-200 bg-white px-3.5 text-xs font-medium text-neutral-600 transition hover:bg-neutral-50"
           >
-            전체 관리
+            매칭 관리
           </Link>
         </div>
       </div>
 
       {matchGuideOpen ? (
-        <div className="mt-4 rounded-xl border border-rose-100 bg-rose-50/60 px-4 py-3">
-          <p className="text-xs font-black text-rose-900">1:1 매칭은 이렇게 진행돼요</p>
-          <p className="mt-1.5 text-xs font-medium leading-5 text-rose-800">
+        <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3">
+          <p className="text-xs font-semibold text-neutral-800">1:1 매칭은 이렇게 진행돼요</p>
+          <p className="mt-1.5 text-xs font-normal leading-5 text-neutral-600">
             프로필 작성 → 추천 후보 선택 → 상대도 수락하면 쌍방 매칭 → 결제 후 연락처 공개
           </p>
         </div>
       ) : null}
 
       {viewerLoggedIn && hasOneOnOneCard ? (
-        <div className="mt-5 grid grid-cols-3 gap-2">
-          <div className="rounded-2xl bg-neutral-50 px-3 py-3">
-            <p className="text-[11px] font-bold text-neutral-400">내 프로필</p>
-            <p className="mt-1 text-lg font-black text-neutral-950">{activeCards.length}개</p>
+        <div className="mt-4 grid grid-cols-3 divide-x divide-neutral-100 border-y border-neutral-100 py-3">
+          <div className="px-2 text-center">
+            <p className="text-[11px] font-medium text-neutral-500">내 프로필</p>
+            <p className="mt-1 text-base font-semibold tabular-nums text-neutral-900">{activeCards.length}개</p>
           </div>
-          <div className="rounded-2xl bg-rose-50 px-3 py-3">
-            <p className="text-[11px] font-bold text-rose-500">추천 후보</p>
-            <p className="mt-1 text-lg font-black text-rose-800">{recommendationCount}명</p>
+          <div className="px-2 text-center">
+            <p className="text-[11px] font-medium text-neutral-500">추천 후보</p>
+            <p className="mt-1 text-base font-semibold tabular-nums text-neutral-900">{recommendationCount}명</p>
           </div>
-          <div className="rounded-2xl bg-emerald-50 px-3 py-3">
-            <p className="text-[11px] font-bold text-emerald-500">확인 필요</p>
-            <p className="mt-1 text-lg font-black text-emerald-800">{actionRequiredCount}건</p>
+          <div className="px-2 text-center">
+            <p className="text-[11px] font-medium text-neutral-500">확인 필요</p>
+            <p className="mt-1 text-base font-semibold tabular-nums text-neutral-900">{actionRequiredCount}건</p>
           </div>
         </div>
       ) : null}
@@ -3811,12 +3808,12 @@ function OneOnOneHomePanel({
         ) : (
           <div className="space-y-4">
             <details className="rounded-[24px] border border-neutral-100 bg-neutral-50/70 px-4 py-3">
-              <summary className="cursor-pointer select-none text-sm font-black text-neutral-900">내 1대1 프로필 보기</summary>
+              <summary className="cursor-pointer select-none text-sm font-semibold text-neutral-700">내 1대1 프로필 보기</summary>
               <div className="mt-3 space-y-2">
                 {activeCards.slice(0, 3).map((card) => (
                   <div key={card.id ?? getOneOnOneDisplayName(card)} className="rounded-2xl bg-white px-3 py-3">
-                    <p className="text-sm font-black text-neutral-900">{getOneOnOneDisplayName(card)}</p>
-                    <p className="mt-1 text-xs font-semibold text-neutral-500">{getOneOnOneMeta(card)}</p>
+                    <p className="text-sm font-semibold text-neutral-900">{getOneOnOneDisplayName(card)}</p>
+                    <p className="mt-1 text-xs font-normal text-neutral-500">{getOneOnOneMeta(card)}</p>
                     <span className="mt-2 inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
                       {card.status === "approved" ? "승인 완료" : card.status === "reviewing" ? "검토 중" : "접수 완료"}
                     </span>
@@ -3831,14 +3828,14 @@ function OneOnOneHomePanel({
               </div>
             </details>
 
-            <div className="relative overflow-hidden rounded-[22px] border border-amber-300 bg-[#fffaf0] p-4 shadow-[0_10px_30px_rgba(161,111,18,0.14)]">
-              <div aria-hidden="true" className="absolute inset-x-10 top-0 h-px bg-amber-200" />
+            <div className="relative overflow-hidden rounded-[22px] border border-neutral-200 bg-neutral-50 p-4 shadow-none">
+              <div aria-hidden="true" className="absolute inset-x-10 top-0 h-px bg-transparent" />
               <div className="relative flex items-start justify-between gap-3">
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-bold text-amber-800">PLUS</span>
-                    <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-black text-amber-900">개편</span>
-                    <p className="text-sm font-black text-neutral-950">1:1 매칭 플러스</p>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="shrink-0 whitespace-nowrap rounded-full border border-neutral-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-neutral-700">PLUS</span>
+                    <span className="shrink-0 whitespace-nowrap rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-600">개편</span>
+                    <p className="text-sm font-semibold text-neutral-900">1:1 매칭 플러스</p>
                   </div>
                   <p className="mt-2 text-xs leading-5 text-neutral-600">
                     {plusContactExchangeIncluded
@@ -3849,27 +3846,27 @@ function OneOnOneHomePanel({
                     <p className="mt-1 text-[11px] font-semibold text-neutral-500">번호교환은 기존처럼 건별 결제돼요.</p>
                   ) : null}
                   {plusActive && data?.plus?.expires_at ? (
-                    <p className="mt-1 text-[11px] font-semibold text-amber-800">
+                    <p className="mt-1 text-[11px] font-medium text-neutral-600">
                       {new Date(data.plus.expires_at).toLocaleString("ko-KR")}까지 이용 가능
                     </p>
                   ) : null}
                 </div>
                 {plusActive ? (
-                  <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-amber-300 bg-white px-3 text-xs font-bold text-amber-800 shadow-sm">
+                  <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 shadow-none">
                     적용 중
                   </span>
                 ) : (
                   <button
                     type="button"
                     onClick={() => setPlusGuideOpen((open) => !open)}
-                    className="h-9 shrink-0 rounded-full bg-[#8a5d0a] px-4 text-xs font-bold text-white shadow-[0_6px_18px_rgba(138,93,10,0.25)] transition hover:bg-[#704a06]"
+                    className="h-9 shrink-0 rounded-full bg-neutral-900 px-4 text-xs font-bold text-white shadow-none transition hover:bg-neutral-800"
                   >
                     {plusGuideOpen ? "닫기" : "혜택 보기"}
                   </button>
                 )}
               </div>
               {!plusActive && plusGuideOpen ? (
-                <div className="relative mt-4 border-t border-amber-200 pt-4">
+                <div className="relative mt-4 border-t border-neutral-200 pt-4">
                   <p className="mb-3 text-xs leading-5 text-neutral-600">짧게 먼저 써보거나, 두 매칭 플러스를 한 번에 시작할 수 있어요.</p>
                   <DatingPlusOffers
                     mode="one_on_one"
@@ -3880,13 +3877,13 @@ function OneOnOneHomePanel({
               ) : null}
             </div>
 
-            <div className="rounded-[26px] border border-black/5 bg-white p-4 shadow-[0_10px_28px_rgba(15,23,42,0.04)]">
+            <div className="rounded-[26px] border border-neutral-200 bg-white p-4 shadow-none">
               <div className="flex items-center justify-between gap-3">
                 <div>
-                  <p className="text-base font-black text-neutral-950">진행 중인 매칭</p>
+                  <p className="text-base font-bold text-neutral-900">진행 중인 매칭</p>
                   <p className="mt-1 text-xs leading-5 text-neutral-500">선택, 수락, 번호교환이 필요한 항목을 먼저 보여드려요.</p>
                 </div>
-                <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-bold text-neutral-500">{activeMatches.length}건</span>
+                <span className="shrink-0 whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-bold text-neutral-500">{activeMatches.length}건</span>
               </div>
               {activeMatches.length === 0 ? (
                 <p className="mt-3 rounded-2xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-500">아직 진행 중인 매칭이 없어요. 아래 추천 후보를 확인해보세요.</p>
@@ -3919,19 +3916,19 @@ function OneOnOneHomePanel({
               )}
             </div>
 
-            <div className="rounded-2xl border border-rose-100 bg-rose-50/50 p-4">
+            <div className="rounded-2xl border border-neutral-200 bg-white p-4">
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-base font-black text-rose-950">추천 후보</p>
-                  <p className="mt-1 text-xs leading-5 text-rose-700">
+                  <p className="text-base font-bold text-neutral-900">추천 후보</p>
+                  <p className="mt-1 text-xs leading-5 text-neutral-600">
                     프로필 기준으로 먼저 보여드리는 후보예요. 최근 24시간 동안 {plusActive ? "2회" : "1회"} 새로 섞을 수 있어요.
                   </p>
                 </div>
-                <span className="rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-rose-700">{recommendationCount}명</span>
+                <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-rose-700">{recommendationCount}명</span>
               </div>
 
               {recommendationGroups.length === 0 ? (
-                <p className="mt-3 rounded-xl bg-white/80 p-4 text-sm leading-6 text-rose-800">현재 보여줄 추천 후보가 없어요. 조건에 맞는 후보가 생기면 여기서 바로 볼 수 있습니다.</p>
+                <p className="mt-3 rounded-xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-600">현재 보여줄 추천 후보가 없어요. 조건에 맞는 후보가 생기면 여기서 바로 볼 수 있습니다.</p>
               ) : (
                 <div className="mt-3 space-y-4">
                   {recommendationGroups.map((group, groupIndex) => {
@@ -3946,10 +3943,10 @@ function OneOnOneHomePanel({
                     const nextRefreshLabel = group.next_refresh_at ? new Date(group.next_refresh_at).toLocaleString("ko-KR") : "";
 
                     return (
-                      <div key={sourceCardId || `group-${groupIndex}`} className="rounded-[24px] bg-white p-3 shadow-sm">
+                      <div key={sourceCardId || `group-${groupIndex}`} className="rounded-[24px] bg-white p-3 shadow-none">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
-                            <p className="text-sm font-black text-neutral-950">
+                            <p className="text-sm font-semibold text-neutral-900">
                               {sourceCard ? `${getOneOnOneDisplayName(sourceCard)} 기준 후보` : "추천 후보"}
                             </p>
                             <p className="mt-1 text-[11px] font-semibold text-neutral-500">
@@ -3964,7 +3961,7 @@ function OneOnOneHomePanel({
                             type="button"
                             disabled={!canRefresh || refreshing}
                             onClick={() => onRefreshRecommendations(sourceCardId)}
-                            className="inline-flex min-h-[36px] items-center rounded-xl border border-rose-200 bg-rose-50 px-3 text-xs font-black text-rose-700 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-rose-100"
+                            className="inline-flex min-h-[36px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-neutral-50"
                           >
                             {refreshing ? "새로고침 중..." : canRefresh ? `후보 새로고침 · ${refreshRemaining}회` : "24시간 이용 완료"}
                           </button>
@@ -3996,10 +3993,10 @@ function OneOnOneHomePanel({
                             );
                           })}
                           {adminRecommendations.length > 0 ? (
-                            <div className="rounded-2xl border border-emerald-100 bg-emerald-50/70 p-3">
+                            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-3">
                               <div className="mb-3">
-                                <p className="text-sm font-black text-emerald-950">오늘의 추가 후보</p>
-                                <p className="mt-1 text-xs leading-5 text-emerald-700">
+                                <p className="text-sm font-semibold text-neutral-900">오늘의 추가 후보</p>
+                                <p className="mt-1 text-xs leading-5 text-neutral-600">
                                   기본 추천 10명과 겹치지 않는 나이대 맞춤 후보예요. 매일 자동으로 바뀝니다.
                                 </p>
                               </div>
@@ -4015,14 +4012,14 @@ function OneOnOneHomePanel({
                                       reportTarget={{ type: "one_on_one_card", id: candidateId }}
                                       onReported={onReported}
                                       badge="추가 후보"
-                                      badgeClassName="bg-emerald-100 text-emerald-700"
+                                      badgeClassName="bg-neutral-100 text-neutral-600"
                                       note="선택하면 상대에게 수락 요청이 전달됩니다."
                                     >
                                       <button
                                         type="button"
                                         disabled={!canSelect || processingAutoKeys.includes(actionKey)}
                                         onClick={() => onAutoSelect(sourceCardId, candidateId)}
-                                        className="mt-3 inline-flex min-h-[40px] w-full items-center justify-center rounded-xl bg-emerald-600 px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-emerald-700"
+                                        className="mt-3 inline-flex min-h-[40px] w-full items-center justify-center rounded-xl bg-rose-600 px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-rose-700"
                                       >
                                         {processingAutoKeys.includes(actionKey) ? "선택 중..." : "이 후보 선택"}
                                       </button>
@@ -4081,7 +4078,7 @@ function OneOnOneCandidateCard({
   const meta = getOneOnOneMeta(card);
 
   return (
-    <article className="overflow-hidden rounded-[24px] border border-neutral-100 bg-neutral-50 p-3">
+    <article className="overflow-hidden rounded-[24px] border border-neutral-200 bg-white p-3">
       <div className="flex gap-3">
         <a
           href={primaryPhoto || undefined}
@@ -4110,8 +4107,8 @@ function OneOnOneCandidateCard({
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
-              <p className="truncate text-sm font-black text-neutral-950">{name}</p>
-              <p className="mt-1 text-xs font-semibold leading-5 text-neutral-500">{meta}</p>
+              <p className="truncate text-sm font-semibold text-neutral-900">{name}</p>
+              <p className="mt-1 text-xs font-normal leading-5 text-neutral-500">{meta}</p>
             </div>
             {badge ? (
               <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${badgeClassName ?? "bg-white text-neutral-600"}`}>
@@ -4119,7 +4116,7 @@ function OneOnOneCandidateCard({
               </span>
             ) : null}
           </div>
-          {note ? <p className="mt-2 text-xs font-semibold leading-5 text-sky-700">{note}</p> : null}
+          {note ? <p className="mt-2 text-xs font-normal leading-5 text-neutral-600">{note}</p> : null}
           {reportTarget?.id ? <div className="mt-2 flex justify-end"><DatingReportButton
             targetType={reportTarget.type} targetId={reportTarget.id} label={name} onReported={onReported}
           /></div> : null}
