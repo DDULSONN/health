@@ -88,6 +88,10 @@ const AdminNicknameReviewPanel = dynamic(() => import("@/components/admin/AdminN
   loading: () => <MyPageWidgetSkeleton className="h-64" />,
 });
 
+const AdminPublicReactionsPanel = dynamic(() => import("@/components/admin/AdminPublicReactionsPanel"), {
+  loading: () => <MyPageWidgetSkeleton className="h-64" />,
+});
+
 const AdminOneOnOneNameReviewPanel = dynamic(() => import("@/components/admin/AdminOneOnOneNameReviewPanel"), {
   loading: () => <MyPageWidgetSkeleton className="h-64" />,
 });
@@ -1140,6 +1144,7 @@ type AdminCardSort = "public_first" | "pending_first" | "newest" | "oldest";
 type AdminOpenCardSexFilter = "all" | "male" | "female";
 type AdminManageTab =
   | "site_dashboard"
+  | "public_reactions"
   | "payment_center"
   | "dating_stats"
   | "dating_insights"
@@ -11339,7 +11344,9 @@ export default function MyPage() {
         <section className="mb-5 rounded-2xl border border-violet-200 bg-violet-50/40 p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-bold text-violet-900">
-              {adminManageTab === "mail_center"
+              {adminManageTab === "public_reactions"
+                ? "짐툴 외부 반응 (관리자)"
+                : adminManageTab === "mail_center"
                 ? "회원 메일 발송 (관리자)"
                 : adminManageTab === "one_on_one_candidates"
                   ? "1:1 후보 발송 (관리자)"
@@ -11372,7 +11379,7 @@ export default function MyPage() {
               >
                 관리자 잠금 해제
               </Link>
-              {adminManageTab !== "app_testers" && adminManageTab !== "nickname_review" && adminManageTab !== "one_on_one_name_review" && adminManageTab !== "one_on_one_abuse_review" && adminManageTab !== "employment_verify" && adminManageTab !== "one_on_one_candidates" && (
+              {adminManageTab !== "public_reactions" && adminManageTab !== "app_testers" && adminManageTab !== "nickname_review" && adminManageTab !== "one_on_one_name_review" && adminManageTab !== "one_on_one_abuse_review" && adminManageTab !== "employment_verify" && adminManageTab !== "one_on_one_candidates" && (
               <button
                 type="button"
                 disabled={
@@ -11462,6 +11469,15 @@ export default function MyPage() {
               }`}
             >
               운영 현황
+            </button>
+            <button
+              type="button"
+              onClick={() => setAdminManageTab("public_reactions")}
+              className={`h-8 rounded-md border px-3 text-xs font-medium ${
+                adminManageTab === "public_reactions" ? "border-violet-600 bg-violet-600 text-white" : "border-violet-200 bg-white text-violet-800"
+              }`}
+            >
+              외부 반응
             </button>
             <button
               type="button"
@@ -11719,6 +11735,7 @@ export default function MyPage() {
             </button>
           </div>
 
+          {adminManageTab === "public_reactions" && <AdminPublicReactionsPanel />}
           {adminManageTab === "app_testers" && <AdminAppTestersPanel />}
           {adminManageTab === "nickname_review" && <AdminNicknameReviewPanel />}
           {adminManageTab === "one_on_one_name_review" && <AdminOneOnOneNameReviewPanel />}
