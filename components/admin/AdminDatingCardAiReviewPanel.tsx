@@ -12,6 +12,7 @@ type SourceType =
   | "one_on_one_application";
 type ReviewMode = "rules" | "ai";
 type SuspicionLevel = "clear" | "low" | "medium" | "high";
+type ConfirmationSnapshot = { contentFingerprint: string; findingsFingerprint: string };
 
 type ReviewItem = {
   sourceType?: Exclude<SourceType, "all">;
@@ -47,6 +48,10 @@ type ReviewItem = {
   text_flags?: string[];
   editLocked?: boolean;
   edit_locked?: boolean;
+  confirmationSnapshot?: ConfirmationSnapshot | null;
+  confirmationId?: string | null;
+  confirmedAt?: string | null;
+  confirmationCurrent?: boolean;
 };
 
 type ScanResponse = {
@@ -58,6 +63,9 @@ type ScanResponse = {
   items?: ReviewItem[];
   message?: string;
   detail?: string;
+  warning?: string;
+  confirmedCount?: number;
+  nextOffset?: number | null;
 };
 
 type ActionResponse = {
@@ -66,6 +74,9 @@ type ActionResponse = {
   detail?: string;
   displayName?: string | null;
   editLocked?: boolean;
+  sourceType?: string;
+  cardId?: string;
+  confirmationId?: string;
 };
 
 type BanResponse = {
@@ -179,6 +190,8 @@ function updateItemWithFields(item: ReviewItem, fields: EditableFields, displayN
     region: fields.region,
     texts: nextTexts,
     editableFields: fields,
+    confirmationSnapshot: null,
+    confirmationCurrent: false,
   };
 }
 
@@ -206,31 +219,59 @@ export default function AdminDatingCardAiReviewPanel() {
   const [info, setInfo] = useState("");
   const [bannedUsers, setBannedUsers] = useState<Record<string, { warning: string }>>({});
   const banInFlight = useRef(false);
+  const workInFlight = useRef(false);
+  const listEpoch = useRef(0);
+  const [view, setView] = useState<"pending" | "confirmed">("pending");
+  const [loadingList, setLoadingList] = useState(false);
+  const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const [warning, setWarning] = useState("");
 
-  const loadLatest = useCallback(async () => {
+  const loadLatest = useCallback(async (offset = 0) => {
+    if (workInFlight.current || banInFlight.current) return;
+    const epoch = ++listEpoch.current;
+    setLoadingList(true);
     setError("");
+    setWarning("");
     try {
       const query = new URLSearchParams();
       if (source !== "all") query.set("source", source);
       if (includeClear) query.set("includeClear", "true");
+      if (view === "confirmed") query.set("view", "confirmed");
+      if (offset) query.set("offset", String(offset));
       const res = await fetch(`/api/admin/dating/card-ai-review${query.size ? `?${query.toString()}` : ""}`, { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as ScanResponse;
+      if (epoch !== listEpoch.current) return;
       if (!res.ok || body.ok === false) throw new Error(body.message || "최근 검수 목록을 불러오지 못했습니다.");
-      setItems(body.items ?? []);
+      setItems((prev) => offset
+        ? [...new Map([...prev, ...(body.items ?? [])].map((item) => [itemKey(item), item])).values()]
+        : body.items ?? []);
+      setNextOffset(body.nextOffset ?? null);
+      setWarning(body.warning ?? "");
     } catch (err) {
+      if (epoch !== listEpoch.current) return;
       setError(err instanceof Error ? err.message : "최근 검수 목록을 불러오지 못했습니다.");
+      if (!offset) setItems([]);
+    } finally {
+      if (epoch === listEpoch.current) setLoadingList(false);
     }
-  }, [includeClear, source]);
+  }, [includeClear, source, view]);
 
+  const invalidateList = useCallback(() => { listEpoch.current++; }, []);
   useEffect(() => {
     void loadLatest();
-  }, [loadLatest]);
+    return invalidateList;
+  }, [loadLatest, invalidateList]);
 
   const runScan = async (mode: ReviewMode) => {
-    if (banInFlight.current || processingKey) return;
+    if (workInFlight.current || banInFlight.current || processingKey || loadingList) return;
+    workInFlight.current = true;
+    listEpoch.current++;
+    setView("pending");
+    setNextOffset(null);
     setLoadingMode(mode);
     setError("");
     setInfo("");
+    setWarning("");
     try {
       const res = await fetch("/api/admin/dating/card-ai-review", {
         method: "POST",
@@ -247,19 +288,22 @@ export default function AdminDatingCardAiReviewPanel() {
         throw new Error([body.message, body.detail].filter(Boolean).join(" ") || "카드 검수에 실패했습니다.");
       }
       setItems(body.items ?? []);
+      setWarning(body.warning ?? "");
       setInfo(
         `${modeLabel(mode)} 완료: ${body.scannedCount ?? 0}개 검사, 의심 ${body.suspiciousCount ?? 0}개 표시` +
+          (body.confirmedCount ? ` · 정상 확인 ${body.confirmedCount}개 제외` : "") +
           (body.model ? ` (${body.model})` : "")
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : "카드 검수에 실패했습니다.");
     } finally {
+      workInFlight.current = false;
       setLoadingMode(null);
     }
   };
 
   const handleAction = async (item: ReviewItem, action: "delete_card" | "send_warning_email" | "set_one_on_one_edit_lock") => {
-    if (banInFlight.current) return;
+    if (workInFlight.current || banInFlight.current || loadingList || loadingMode || processingKey) return;
     const sourceType = itemSource(item);
     const cardId = itemCardId(item);
     const review = itemReview(item);
@@ -272,6 +316,7 @@ export default function AdminDatingCardAiReviewPanel() {
     }
 
     const key = `${action}:${sourceType}:${cardId}`;
+    workInFlight.current = true;
     setProcessingKey(key);
     setError("");
     setInfo("");
@@ -313,13 +358,14 @@ export default function AdminDatingCardAiReviewPanel() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "처리에 실패했습니다.");
     } finally {
+      workInFlight.current = false;
       setProcessingKey("");
     }
   };
 
   const banUser = async (item: ReviewItem) => {
     const userId = itemUserId(item).trim();
-    if (!userId || bannedUsers[userId] || banInFlight.current || processingKey || loadingMode) return;
+    if (!userId || bannedUsers[userId] || workInFlight.current || banInFlight.current || processingKey || loadingMode || loadingList) return;
     const displayName = itemDisplayName(item);
     const review = itemReview(item);
     const reasonInput = window.prompt(
@@ -391,13 +437,14 @@ export default function AdminDatingCardAiReviewPanel() {
   };
 
   const saveEdit = async (item: ReviewItem) => {
-    if (banInFlight.current) return;
+    if (workInFlight.current || banInFlight.current || loadingList || loadingMode || processingKey) return;
     const sourceType = itemSource(item);
     const cardId = itemCardId(item);
     const key = itemKey(item);
     const fields = editDrafts[key] ?? editableFieldsFromItem(item);
     if (!cardId) return;
 
+    workInFlight.current = true;
     setProcessingKey(`update_fields:${key}`);
     setError("");
     setInfo("");
@@ -424,6 +471,37 @@ export default function AdminDatingCardAiReviewPanel() {
     } catch (err) {
       setError(err instanceof Error ? err.message : "수정 저장에 실패했습니다.");
     } finally {
+      workInFlight.current = false;
+      setProcessingKey("");
+    }
+  };
+
+  const confirmNormal = async (item: ReviewItem, undo = false) => {
+    if (workInFlight.current || banInFlight.current || loadingList || loadingMode || processingKey) return;
+    if (undo ? !item.confirmationId : !item.confirmationSnapshot) return;
+    const sourceType = itemSource(item), cardId = itemCardId(item), key = itemKey(item);
+    workInFlight.current = true;
+    listEpoch.current++;
+    setProcessingKey(`confirmation:${key}`);
+    setError("");
+    setInfo("");
+    try {
+      const res = await fetch("/api/admin/dating/card-ai-review", {
+        method: "PATCH", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: undo ? "undo_confirmation" : "confirm_normal", sourceType, cardId,
+          snapshot: item.confirmationSnapshot, confirmationId: item.confirmationId }),
+      });
+      const body = (await res.json().catch(() => ({}))) as ActionResponse;
+      if (!res.ok || body.ok !== true || body.sourceType !== sourceType || body.cardId !== cardId || (!undo && !body.confirmationId)) {
+        throw new Error(body.message || "정상 확인 처리 결과를 확인하지 못했습니다. 최근 결과를 다시 불러와 주세요.");
+      }
+      setItems((prev) => prev.filter((candidate) => itemKey(candidate) !== key));
+      setEditingKey("");
+      setInfo(body.message || (undo ? "정상 확인을 취소했습니다." : "정상으로 확인해 검수 목록에서 숨겼습니다."));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "정상 확인 처리에 실패했습니다.");
+    } finally {
+      workInFlight.current = false;
       setProcessingKey("");
     }
   };
@@ -441,7 +519,7 @@ export default function AdminDatingCardAiReviewPanel() {
           <button
             type="button"
             onClick={() => void loadLatest()}
-            disabled={processingKey !== "" || loadingMode !== null}
+            disabled={processingKey !== "" || loadingMode !== null || loadingList}
             className="h-9 rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-700"
           >
             최근 결과
@@ -451,7 +529,7 @@ export default function AdminDatingCardAiReviewPanel() {
         <div className="mt-4 grid gap-3 sm:grid-cols-[1fr_120px_auto]">
           <select
             value={source}
-            disabled={processingKey !== "" || loadingMode !== null}
+            disabled={processingKey !== "" || loadingMode !== null || loadingList}
             onChange={(event) => setSource(event.target.value as SourceType)}
             className="h-11 rounded-xl border border-neutral-200 bg-white px-3 text-sm"
           >
@@ -474,7 +552,7 @@ export default function AdminDatingCardAiReviewPanel() {
             <button
               type="button"
               onClick={() => void runScan("rules")}
-              disabled={loadingMode !== null || processingKey !== ""}
+              disabled={loadingMode !== null || processingKey !== "" || loadingList}
               className="h-11 rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white disabled:opacity-50"
             >
               {loadingMode === "rules" ? "검수 중..." : "일반 검수"}
@@ -482,7 +560,7 @@ export default function AdminDatingCardAiReviewPanel() {
             <button
               type="button"
               onClick={() => void runScan("ai")}
-              disabled={loadingMode !== null || processingKey !== ""}
+              disabled={loadingMode !== null || processingKey !== "" || loadingList}
               className="h-11 rounded-xl bg-violet-600 px-4 text-sm font-semibold text-white disabled:opacity-50"
             >
               {loadingMode === "ai" ? "AI 중..." : "AI 검수"}
@@ -490,11 +568,21 @@ export default function AdminDatingCardAiReviewPanel() {
           </div>
         </div>
 
+        <div className="mt-3 flex flex-wrap items-center gap-2" aria-label="검수 목록 구분">
+          {([ ["pending", "확인할 항목"], ["confirmed", "정상 확인 목록"] ] as const).map(([value, label]) => (
+            <button key={value} type="button" aria-pressed={view === value}
+              disabled={processingKey !== "" || loadingMode !== null || loadingList}
+              onClick={() => { if (view !== value) { setItems([]); setInfo(""); setNextOffset(null); setView(value); } }}
+              className={`h-8 rounded-lg border px-3 text-xs font-semibold disabled:opacity-50 ${view === value ? "border-neutral-800 bg-neutral-800 text-white" : "border-neutral-200 bg-white text-neutral-600"}`}>
+              {label}
+            </button>
+          ))}
+        </div>
         <label className="mt-3 flex items-center gap-2 text-xs font-semibold text-neutral-600">
           <input
             type="checkbox"
             checked={includeClear}
-            disabled={processingKey !== "" || loadingMode !== null}
+            disabled={processingKey !== "" || loadingMode !== null || loadingList || view === "confirmed"}
             onChange={(event) => setIncludeClear(event.target.checked)}
             className="h-4 w-4 rounded border-neutral-300"
           />
@@ -503,13 +591,17 @@ export default function AdminDatingCardAiReviewPanel() {
         <p className="mt-2 text-[11px] text-neutral-500">
           욕설·성적 은어와 초성·기호 우회 표현을 확인하고 감지한 단어를 사유에 표시합니다. 소개 8자 미만(공백·기호 제외), 인사말·반복·임시 문구도 확인합니다. 사유가 하나만 있어도 표시하며, 기존 글은 대상을 선택하고 일반 검수를 다시 실행해 주세요. 선택한 건수만 검사하며 AI 호출 비용은 없습니다.
         </p>
+        <p className="mt-1 text-[11px] text-neutral-500">
+          정상 확인한 내용은 검수 목록에서만 숨깁니다. 내용·사진 수정 또는 새 등록 후에는 재검수하며, 정상 확인 목록에서 취소할 수 있습니다.
+        </p>
         {info ? <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-xs text-emerald-700">{info}</p> : null}
+        {warning ? <p role="alert" className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs text-amber-800">{warning}</p> : null}
         {error ? <p className="mt-3 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p> : null}
       </div>
 
       {items.length === 0 ? (
         <div className="rounded-2xl border border-neutral-200 bg-white p-6 text-center text-sm text-neutral-500">
-          표시할 의심 카드/지원 내역이 없습니다.
+          {loadingList ? "검수 목록을 불러오는 중입니다." : view === "confirmed" ? "표시할 정상 확인 항목이 없습니다." : "표시할 의심 카드/지원 내역이 없습니다."}
         </div>
       ) : (
         <div className="grid gap-3">
@@ -568,10 +660,16 @@ export default function AdminDatingCardAiReviewPanel() {
                 </div>
 
                 <div className="mt-3 flex flex-wrap gap-2">
+                  <button type="button" onClick={() => void confirmNormal(item, view === "confirmed")}
+                    disabled={processingKey !== "" || loadingMode !== null || loadingList || (view === "confirmed" ? !item.confirmationId : !item.confirmationSnapshot)}
+                    title={view === "confirmed" ? "관리자의 정상 확인을 취소합니다. 실제 카드 공개 상태는 바뀌지 않습니다." : item.confirmationSnapshot ? "현재 확인한 내용만 검수 목록에서 숨깁니다." : "내용이 변경됐거나 이전 검수 결과입니다. 일반 검수를 다시 실행해 주세요."}
+                    className="h-9 rounded-xl border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50">
+                    {processingKey === `confirmation:${key}` ? "처리 중..." : view === "confirmed" ? "정상 확인 취소" : item.confirmationSnapshot ? "✓ 정상 확인" : "재검수 필요"}
+                  </button>
                   <button
                     type="button"
                     onClick={() => void handleAction(item, "send_warning_email")}
-                    disabled={processingKey !== "" || !itemUserId(item)}
+                    disabled={processingKey !== "" || loadingMode !== null || loadingList || !itemUserId(item)}
                     className="h-9 rounded-xl border border-amber-200 bg-amber-50 px-3 text-xs font-semibold text-amber-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {processingKey === warningKey ? "메일 발송 중..." : "수정 경고 메일"}
@@ -579,7 +677,7 @@ export default function AdminDatingCardAiReviewPanel() {
                   <button
                     type="button"
                     onClick={() => (editingKey === key ? setEditingKey("") : startEdit(item))}
-                    disabled={processingKey !== ""}
+                    disabled={processingKey !== "" || loadingMode !== null || loadingList}
                     className="h-9 rounded-xl border border-violet-200 bg-violet-50 px-3 text-xs font-semibold text-violet-800 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {editingKey === key ? "수정 닫기" : "카드 내용 수정"}
@@ -588,7 +686,7 @@ export default function AdminDatingCardAiReviewPanel() {
                     <button
                       type="button"
                       onClick={() => void handleAction(item, "set_one_on_one_edit_lock")}
-                      disabled={processingKey !== ""}
+                      disabled={processingKey !== "" || loadingMode !== null || loadingList}
                       className={`h-9 rounded-xl border px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50 ${
                         editLocked
                           ? "border-neutral-200 bg-white text-neutral-700"
@@ -601,7 +699,7 @@ export default function AdminDatingCardAiReviewPanel() {
                   <button
                     type="button"
                     onClick={() => void handleAction(item, "delete_card")}
-                    disabled={processingKey !== ""}
+                    disabled={processingKey !== "" || loadingMode !== null || loadingList}
                     className="h-9 rounded-xl border border-red-200 bg-red-50 px-3 text-xs font-semibold text-red-700 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {processingKey === deleteKey ? "삭제 중..." : targetLabel}
@@ -609,7 +707,7 @@ export default function AdminDatingCardAiReviewPanel() {
                   <button
                     type="button"
                     onClick={() => void banUser(item)}
-                    disabled={processingKey !== "" || loadingMode !== null || !userId || Boolean(banResult)}
+                    disabled={processingKey !== "" || loadingMode !== null || loadingList || !userId || Boolean(banResult)}
                     className="h-9 rounded-xl bg-red-700 px-3 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                     title={!userId ? "연결된 회원 정보가 없어 계정을 밴할 수 없습니다." : "이 항목을 작성한 회원의 계정을 밴합니다."}
                   >
@@ -617,6 +715,12 @@ export default function AdminDatingCardAiReviewPanel() {
                   </button>
                 </div>
 
+                {view === "confirmed" && item.confirmedAt ? (
+                  <p className="mt-2 text-[11px] text-neutral-500">
+                    정상 확인 {new Date(item.confirmedAt).toLocaleString("ko-KR")}
+                    {item.confirmationCurrent === false ? " · 이후 내용이 변경됐거나 재검수가 필요합니다." : " · 카드 공개 상태에는 영향이 없습니다."}
+                  </p>
+                ) : null}
                 {banResult ? (
                   <p role={banResult.warning ? "alert" : "status"} className={`mt-3 rounded-xl px-3 py-2 text-xs ${banResult.warning ? "bg-amber-50 text-amber-800" : "bg-neutral-100 text-neutral-600"}`}>
                     {banResult.warning || "이 계정은 현재 검수 화면에서 밴 처리했습니다. 해제는 회원관리에서 할 수 있습니다."}
@@ -692,7 +796,7 @@ export default function AdminDatingCardAiReviewPanel() {
                       <button
                         type="button"
                         onClick={() => void saveEdit(item)}
-                        disabled={processingKey !== ""}
+                        disabled={processingKey !== "" || loadingMode !== null || loadingList}
                         className="h-9 rounded-xl bg-violet-600 px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50"
                       >
                         {processingKey === updateKey ? "저장 중..." : "수정 저장"}
@@ -746,6 +850,13 @@ export default function AdminDatingCardAiReviewPanel() {
           })}
         </div>
       )}
+      {nextOffset !== null ? (
+        <button type="button" onClick={() => void loadLatest(nextOffset)}
+          disabled={loadingList || loadingMode !== null || processingKey !== ""}
+          className="h-10 w-full rounded-xl border border-neutral-200 bg-white text-xs font-semibold text-neutral-700 disabled:opacity-50">
+          {loadingList ? "불러오는 중..." : "다음 결과 더보기"}
+        </button>
+      ) : null}
     </div>
   );
 }

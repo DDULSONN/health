@@ -20,6 +20,7 @@ function compile(file, resolve = require, extras = "", injectedFetch) {
 const { reviewDatingSexualText } = compile("lib/dating-sexual-text-review.ts");
 const { reviewDatingIntroQuality } = compile("lib/dating-intro-quality-review.ts");
 const { reviewDatingProfanity } = compile("lib/dating-profanity-review.ts");
+const confirmationRules = compile("lib/dating-review-confirmation.ts");
 const nameRules = compile("lib/dating-1on1-name-review.ts");
 
 for (const value of [
@@ -253,6 +254,7 @@ function fixtures(text = "자연산 H컵입니다") {
     dating_1on1_match_proposals: [{ id: applicationId, source_card_id: cardId, source_user_id: owner, candidate_card_id: peerCardId,
       candidate_user_id: peer, state: "source_selected", created_at: card.created_at, source_selected_at: card.created_at }],
     admin_dating_card_ai_reviews: [],
+    admin_dating_review_confirmations: [],
   };
 }
 
@@ -268,18 +270,26 @@ function database(seed, options = {}) {
     b.range = (from, to) => { q.from = from; q.to = to; return b; };
     b.limit = (n) => { q.to = n - 1; return b; };
     b.maybeSingle = () => { q.single = true; return b; };
-    b.upsert = (rows) => { q.op = "upsert"; q.rows = rows; return b; };
+    b.upsert = (rows) => { q.op = "upsert"; q.rows = Array.isArray(rows) ? rows : [rows]; return b; };
+    b.delete = () => { q.op = "delete"; return b; };
     b.then = (yes, no) => Promise.resolve().then(() => {
       calls.push({ table, op: q.op });
+      if (options.fail?.(q)) return { data: null, error: { code: "XX000", message: "fixture database error" } };
+      options.beforeExec?.(q, tables);
       if (q.op !== "select") {
-        assert.equal(table, "admin_dating_card_ai_reviews", "Review must never mutate member/card/matching tables");
-        if (options.saveFailure) return { data: null, error: { code: "42P01", message: "fixture missing review table" } };
+        assert.ok(["admin_dating_card_ai_reviews", "admin_dating_review_confirmations"].includes(table), "Review must never mutate member/card/matching tables");
+        if (options.saveFailure && table === "admin_dating_card_ai_reviews") return { data: null, error: { code: "42P01", message: "fixture missing review table" } };
+        if (q.op === "delete") {
+          const removed = tables[table].filter((row) => q.filters.every((filter) => filter(row)));
+          tables[table] = tables[table].filter((row) => !removed.includes(row));
+          return { data: removed, error: null };
+        }
         for (const row of q.rows) {
           const existing = tables[table].find((entry) => entry.source_type === row.source_type && entry.card_id === row.card_id);
           if (existing) Object.assign(existing, row);
           else tables[table].push({ id: uid(100 + tables[table].length), ...row });
         }
-        return { data: null, error: null };
+        return { data: q.single ? q.rows[0] : q.rows, error: null };
       }
       let rows = (tables[table] ?? []).filter((row) => q.filters.every((filter) => filter(row)));
       for (const [key, config] of [...q.orders].reverse()) rows = rows.sort((a, b) => String(a[key]).localeCompare(String(b[key])) * (config?.ascending ? 1 : -1));
@@ -297,11 +307,16 @@ function loadRoute(db, options = {}) {
     "@/lib/admin-route": { requireAdminRoute: async () => options.denied
       ? { ok: false, response: Response.json({ error: "권한 없음" }, { status: 403 }) }
       : { ok: true, admin: db.admin, user: { id: owner } } },
-    "@/lib/admin-audit": { recordAdminAuditEvent: () => { throw new Error("Unexpected action audit"); } },
+    "@/lib/admin-audit": { recordAdminAuditEvent: (entry) => {
+      assert.ok(["dating_card_review_confirm_normal", "dating_card_review_undo_confirmation"].includes(entry.action));
+      db.calls.push({ table: "admin_audit_logs", op: "audit", action: entry.action });
+    } },
     "@/lib/dating-1on1-name-review": nameRules,
     "@/lib/dating-sexual-text-review": { reviewDatingSexualText },
     "@/lib/dating-intro-quality-review": { reviewDatingIntroQuality },
     "@/lib/dating-profanity-review": { reviewDatingProfanity },
+    "@/lib/dating-review-confirmation": confirmationRules,
+    "node:crypto": require("node:crypto"),
     "@/lib/dating-cards-queue": { promotePendingCardsBySex: () => { throw new Error("Unexpected promotion"); } },
     "@/lib/dating-swipe": { sendDatingEmailToAddressDetailed: () => { throw new Error("Unexpected email"); } },
     "@/lib/images": { buildSignedImageUrlAllowRaw: () => "/fixture.webp", extractStorageObjectPathFromBuckets: (value) => value },
@@ -473,4 +488,187 @@ test("AI clear cannot remove a single profanity finding", async () => {
   assert.equal(result.suspicionLevel, "high"); assert.equal(result.flags.length, 1);
   assert.ok(result.textFlags[0].includes("욕설"));
   assert.notEqual(result.summary, "정상으로 추정");
+});
+
+const confirmationTable = "admin_dating_review_confirmations";
+const reviewTable = "admin_dating_card_ai_reviews";
+const confirmationRequest = (item, extra = {}) => new Request("https://fixture.invalid/api/admin/dating/card-ai-review", {
+  method: "PATCH", body: JSON.stringify({ action: "confirm_normal", sourceType: item.sourceType, cardId: item.cardId, snapshot: item.confirmationSnapshot, ...extra }),
+});
+const listRequest = (source, confirmed = false, offset = 0) => new Request(`https://fixture.invalid/?source=${source}&view=${confirmed ? "confirmed" : "pending"}&offset=${offset}`);
+const sourceTables = { open_card: "dating_cards", paid_card: "dating_paid_cards", one_on_one: "dating_1on1_cards",
+  open_card_application: "dating_card_applications", paid_card_application: "dating_paid_card_applications", one_on_one_application: "dating_1on1_cards" };
+async function scanFixture(source = "one_on_one", options = {}) {
+  const db = database(fixtures("배려하는 성격인데 씨발이라는 말을 씁니다."), options), route = loadRoute(db);
+  const response = await route.POST(request(source)), body = await response.json();
+  assert.equal(response.status, 200); assert.equal(body.items.length, 1);
+  return { db, route, item: body.items[0] };
+}
+for (const source of sources) {
+  test(source + " normal confirmation persists across GET/rescan and is reversible without card mutations", async () => {
+    const { db, route, item } = await scanFixture(source);
+    const cardsBefore = structuredClone(Object.fromEntries(Object.entries(db.tables).filter(([table]) => !table.startsWith("admin_"))));
+    const response = await route.PATCH(confirmationRequest(item));
+    assert.equal(response.status, 200); const body = await response.json();
+    assert.ok(body.confirmationId); assert.equal(body.cardId, item.cardId); assert.equal(body.sourceType, source);
+    assert.equal((await (await route.GET(listRequest(source))).json()).items.length, 0);
+    const confirmed = (await (await route.GET(listRequest(source, true))).json()).items;
+    assert.equal(confirmed.length, 1); assert.equal(confirmed[0].confirmationCurrent, true);
+    assert.equal(confirmed[0].userId, owner); assert.equal(confirmed[0].confirmationId, body.confirmationId);
+    const repeat = await (await route.POST(request(source))).json();
+    assert.equal(repeat.items.length, 0); assert.equal(repeat.confirmedCount, 1);
+    assert.equal(db.tables[confirmationTable][0].id, body.confirmationId);
+    const undo = await route.PATCH(confirmationRequest(item, { action: "undo_confirmation", confirmationId: body.confirmationId }));
+    assert.equal(undo.status, 200); assert.equal(db.tables[confirmationTable].length, 0);
+    assert.equal((await (await route.GET(listRequest(source))).json()).items.length, 1);
+    assert.deepEqual(Object.fromEntries(Object.entries(db.tables).filter(([table]) => !table.startsWith("admin_"))), cardsBefore);
+    assert.equal(db.calls.filter((entry) => entry.op === "audit").length, 2);
+  });
+  for (const change of ["text", "photo", "name", "new_registration"]) {
+    test(source + " changed content is not hidden by old confirmation: " + change, async () => {
+      const { db, route, item } = await scanFixture(source);
+      assert.equal((await route.PATCH(confirmationRequest(item))).status, 200);
+      const row = db.tables[sourceTables[source]][0];
+      if (change === "text") row[source === "open_card" ? "strengths_text" : "intro_text"] += " 병신";
+      if (change === "photo") row.photo_paths = ["fixture/new-photo.webp", "fixture/b.webp"];
+      if (change === "name") { row.name = "새이름"; row.nickname = "새이름"; row.display_nickname = "새이름"; row.applicant_display_nickname = "새이름"; }
+      if (change === "new_registration") {
+        if (source === "one_on_one_application") db.tables.dating_1on1_match_proposals[0].id = uid(75);
+        else row.id = uid(75);
+      }
+      const body = await (await route.POST(request(source))).json();
+      assert.equal(body.items.length, 1); assert.equal(body.confirmedCount, 0);
+      assert.notDeepEqual(body.items[0].confirmationSnapshot, item.confirmationSnapshot);
+    });
+  }
+  test(source + " stale confirmation refuses author edits made after scanning", async () => {
+    const { db, route, item } = await scanFixture(source);
+    db.tables[sourceTables[source]][0].photo_paths = ["fixture/replaced.webp"];
+    assert.equal((await route.PATCH(confirmationRequest(item))).status, 409);
+    assert.equal(db.tables[confirmationTable].length, 0);
+    const listing = await (await route.GET(listRequest(source))).json();
+    assert.equal(listing.items[0].confirmationSnapshot, null);
+  });
+}
+test("ordinary publication state changes do not invalidate confirmation", async () => {
+  const { db, route, item } = await scanFixture("open_card");
+  assert.equal((await route.PATCH(confirmationRequest(item))).status, 200);
+  db.tables.dating_cards[0].status = "pending";
+  assert.equal((await (await route.POST(request("open_card"))).json()).items.length, 0);
+});
+test("improved clean content is not shown simply because the author edited it", async () => {
+  const { db, route, item } = await scanFixture();
+  await route.PATCH(confirmationRequest(item));
+  db.tables.dating_1on1_cards[0].intro_text = "등산과 수영을 좋아하고 약속을 잘 지킵니다.";
+  assert.equal((await (await route.POST(request("one_on_one"))).json()).items.length, 0);
+});
+test("stale result, forged snapshot and a newer administrator decision cannot be acknowledged/undone", async () => {
+  const { db, route, item } = await scanFixture();
+  assert.equal((await route.PATCH(confirmationRequest(item, { snapshot: { ...item.confirmationSnapshot, contentFingerprint: "a".repeat(64) } }))).status, 409);
+  const first = await (await route.PATCH(confirmationRequest(item))).json();
+  const second = await (await route.PATCH(confirmationRequest(item))).json();
+  assert.notEqual(first.confirmationId, second.confirmationId);
+  assert.equal((await route.PATCH(confirmationRequest(item, { action: "undo_confirmation", confirmationId: first.confirmationId }))).status, 409);
+  assert.equal(db.tables[confirmationTable][0].id, second.confirmationId);
+  db.tables[reviewTable][0].raw_result.confirmationSnapshot.findingsFingerprint = "b".repeat(64);
+  assert.equal((await route.PATCH(confirmationRequest(item))).status, 409);
+});
+test("a simultaneous author edit can only confirm the old fingerprint, never the new content", async () => {
+  const { route, item } = await scanFixture("one_on_one", { beforeExec: (q, tables) => {
+    if (q.table === confirmationTable && q.op === "upsert") tables.dating_1on1_cards[0].intro_text += " 병신";
+  } });
+  assert.equal((await route.PATCH(confirmationRequest(item))).status, 200);
+  const body = await (await route.POST(request("one_on_one"))).json();
+  assert.equal(body.items.length, 1); assert.equal(body.confirmedCount, 0);
+});
+test("missing confirmation schema keeps suspicious results visible and refuses to claim a saved confirmation", async () => {
+  const { db, route, item } = await scanFixture("one_on_one", { fail: (q) => q.table === confirmationTable });
+  assert.equal(item.confirmationSnapshot, null);
+  const scan = await (await route.POST(request("one_on_one"))).json();
+  assert.equal(scan.items.length, 1); assert.equal(scan.confirmationAvailable, false); assert.ok(scan.warning);
+  const pending = await (await route.GET(listRequest("one_on_one"))).json();
+  assert.equal(pending.items.length, 1); assert.equal(pending.items[0].confirmationSnapshot, null); assert.ok(pending.warning);
+  assert.equal((await route.GET(listRequest("one_on_one", true))).status, 503);
+  assert.equal((await route.PATCH(confirmationRequest(item, { snapshot: db.tables[reviewTable][0].raw_result.confirmationSnapshot }))).status, 500);
+  assert.equal(db.tables[confirmationTable].length, 0);
+});
+test("failed scan persistence cannot hide results or enable confirmation", async () => {
+  const { route, item } = await scanFixture("one_on_one", { saveFailure: true });
+  assert.equal(item.confirmationSnapshot, null);
+  assert.equal((await route.PATCH(confirmationRequest(item))).status, 400);
+});
+test("legacy review results require rescan, and normal users cannot confirm or undo", async () => {
+  const { db, route, item } = await scanFixture();
+  delete db.tables[reviewTable][0].raw_result.confirmationSnapshot;
+  const result = await (await route.GET(listRequest("one_on_one"))).json();
+  assert.equal(result.items[0].confirmationSnapshot, null);
+  assert.equal((await route.PATCH(confirmationRequest(item))).status, 409);
+  const denied = loadRoute(db, { denied: true });
+  assert.equal((await denied.PATCH(confirmationRequest(item))).status, 403);
+  assert.equal((await denied.PATCH(confirmationRequest(item, { action: "undo_confirmation", confirmationId: uid(99) }))).status, 403);
+  assert.equal((await denied.GET(listRequest("one_on_one", true))).status, 403);
+  assert.equal(db.tables[confirmationTable].length, 0);
+});
+test("older unconfirmed rows are reachable behind 300 confirmed rows without hydrating all photos", async () => {
+  const { db, route } = await scanFixture("open_card");
+  const template = db.tables[reviewTable][0];
+  db.tables[reviewTable] = Array.from({ length: 301 }, (_, i) => ({ ...structuredClone(template), id: uid(i + 1000), card_id: uid(i + 1000), scanned_at: new Date(Date.UTC(2026, 0, 1, 0, 0, 400 - i)).toISOString() }));
+  db.tables[confirmationTable] = db.tables[reviewTable].slice(0, 300).map((row) => ({ id: row.id, source_type: "open_card", card_id: row.card_id,
+    content_fingerprint: row.raw_result.confirmationSnapshot.contentFingerprint, findings_fingerprint: row.raw_result.confirmationSnapshot.findingsFingerprint, confirmed_at: row.scanned_at }));
+  const first = await (await route.GET(listRequest("open_card"))).json();
+  assert.equal(first.items.length, 0); assert.equal(first.nextOffset, 250);
+  const next = await (await route.GET(listRequest("open_card", false, first.nextOffset))).json();
+  assert.equal(next.items.length, 1); assert.equal(next.items[0].cardId, db.tables[reviewTable][300].card_id); assert.equal(next.nextOffset, null);
+});
+test("list offsets are validated", async () => {
+  const route = loadRoute(database(fixtures()));
+  for (const offset of [-1, 1.5, "oops", 1000001]) assert.equal((await route.GET(listRequest("open_card", false, offset))).status, 400);
+});
+test("confirmation fingerprints exclude expiring URLs/status/recipient metadata but include author, photos and new rules/findings", () => {
+  const card = { sourceType: "one_on_one", cardId, userId: owner, displayName: "민수", age: 30, region: "서울", texts: { intro: "씨발" }, photoPaths: ["a.webp"], bucket: "fixture", createdAt: "2026-09-13" };
+  const fingerprint = confirmationRules.reviewContentFingerprint(card);
+  assert.equal(confirmationRules.reviewContentFingerprint({ ...card, status: "pending", previewUrls: ["signed?new=1"], texts: { ...card.texts, candidateName: "새 상대" } }), fingerprint);
+  for (const changes of [{ cardId: uid(80) }, { userId: peer }, { displayName: "새 이름" }, { photoPaths: ["b.webp"] }, { texts: { intro: "다른 내용" } }]) {
+    assert.notEqual(confirmationRules.reviewContentFingerprint({ ...card, ...changes }), fingerprint);
+  }
+  const review = { suspicionLevel: "high", flags: ["b", "a"], textFlags: ["a"], photoFlags: [], raw: { provider: "rules" } };
+  const findings = confirmationRules.reviewFindingsFingerprint(review, "v1");
+  assert.equal(confirmationRules.reviewFindingsFingerprint({ ...review, summary: "다른 요약", flags: ["a", "b", "a"] }, "v1"), findings);
+  assert.notEqual(confirmationRules.reviewFindingsFingerprint(review, "v2"), findings);
+  assert.notEqual(confirmationRules.reviewFindingsFingerprint({ ...review, raw: { provider: "gemini" }, photoFlags: ["부적절 사진"] }, "v1"), findings);
+});
+
+const reviewPglitePath = process.env.REVIEW_TEST_PGLITE_PATH || process.env.REPORT_TEST_PGLITE_PATH;
+test("confirmation SQL runs twice, keeps existing data, denies all client access and supports service-role CAS undo", { skip: !reviewPglitePath }, async () => {
+  const { PGlite } = require(reviewPglitePath);
+  const db = new PGlite();
+  try {
+    await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
+      create schema auth; create table auth.users(id uuid primary key);
+      create table public.dating_cards(id uuid primary key, status text, intro text);
+      insert into auth.users values ('${owner}');
+      insert into public.dating_cards values ('${cardId}', 'public', '한글 프로필 원본');`);
+    const sql = fs.readFileSync(path.join(root, "supabase/sql/admin_dating_review_confirmations.sql"), "utf8");
+    await db.exec(sql); await db.exec(sql);
+    assert.deepEqual((await db.query("select status,intro from dating_cards")).rows, [{ status: "public", intro: "한글 프로필 원본" }]);
+    assert.equal((await db.query("select relrowsecurity from pg_class where relname = 'admin_dating_review_confirmations'")).rows[0].relrowsecurity, true);
+    for (const role of ["anon", "authenticated"]) {
+      await db.exec(`set role ${role}`);
+      await assert.rejects(db.query("select * from admin_dating_review_confirmations"), /permission denied/);
+      await assert.rejects(db.query(`insert into admin_dating_review_confirmations(source_type,card_id,content_fingerprint,findings_fingerprint) values ('open_card','${cardId}','${"a".repeat(64)}','${"b".repeat(64)}')`), /permission denied/);
+      await db.exec("reset role");
+    }
+    await db.exec("set role service_role");
+    const insert = await db.query(`insert into admin_dating_review_confirmations(source_type,card_id,content_fingerprint,findings_fingerprint,confirmed_by)
+      values ('open_card','${cardId}','${"a".repeat(64)}','${"b".repeat(64)}','${owner}') returning id`);
+    const oldId = insert.rows[0].id;
+    const changed = await db.query(`insert into admin_dating_review_confirmations(source_type,card_id,content_fingerprint,findings_fingerprint)
+      values ('open_card','${cardId}','${"c".repeat(64)}','${"d".repeat(64)}') on conflict(source_type,card_id) do update
+      set id=excluded.id,content_fingerprint=excluded.content_fingerprint,findings_fingerprint=excluded.findings_fingerprint returning id`);
+    assert.notEqual(oldId, changed.rows[0].id);
+    assert.equal((await db.query(`delete from admin_dating_review_confirmations where id='${oldId}' returning id`)).rows.length, 0);
+    assert.equal((await db.query(`delete from admin_dating_review_confirmations where id='${changed.rows[0].id}' returning id`)).rows.length, 1);
+    await assert.rejects(db.query(`insert into admin_dating_review_confirmations(source_type,card_id,content_fingerprint,findings_fingerprint) values ('unknown','${cardId}','${"a".repeat(64)}','${"b".repeat(64)}')`), /check constraint/);
+    await assert.rejects(db.query(`insert into admin_dating_review_confirmations(source_type,card_id,content_fingerprint,findings_fingerprint) values ('open_card','${cardId}','bad','${"b".repeat(64)}')`), /check constraint/);
+  } finally { await db.close(); }
 });

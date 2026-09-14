@@ -1,10 +1,15 @@
 import { NextResponse } from "next/server";
+import { randomUUID } from "node:crypto";
 import { requireAdminRoute } from "@/lib/admin-route";
 import { recordAdminAuditEvent } from "@/lib/admin-audit";
 import { reviewOneOnOneName } from "@/lib/dating-1on1-name-review";
 import { reviewDatingSexualText } from "@/lib/dating-sexual-text-review";
 import { reviewDatingIntroQuality } from "@/lib/dating-intro-quality-review";
 import { reviewDatingProfanity } from "@/lib/dating-profanity-review";
+import {
+  isReviewConfirmed, readReviewSnapshot, reviewConfirmationKey, reviewContentFingerprint,
+  reviewFindingsFingerprint, type ReviewConfirmation,
+} from "@/lib/dating-review-confirmation";
 import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
 import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
 import { buildSignedImageUrlAllowRaw, extractStorageObjectPathFromBuckets } from "@/lib/images";
@@ -44,6 +49,8 @@ type ReviewActionPayload = {
   flags?: unknown;
   fields?: unknown;
   locked?: unknown;
+  snapshot?: unknown;
+  confirmationId?: unknown;
 };
 
 type CandidateCard = {
@@ -200,6 +207,7 @@ function normalizeMode(value: unknown): ReviewMode {
 function normalizeAction(value: unknown) {
   const action = cleanText(value, 40);
   return action === "delete_card" || action === "send_warning_email" || action === "update_fields" || action === "set_one_on_one_edit_lock"
+    || action === "confirm_normal" || action === "undo_confirmation"
     ? action
     : "";
 }
@@ -827,7 +835,7 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
     if (error) throw error;
     if (!data) return null;
     const row = data as Record<string, unknown>;
-    const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-card-photos", "dating-photos"]);
+    const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-apply-photos", "dating-card-photos", "dating-photos"]);
     return {
       sourceType,
       cardId: cleanText(row.id, 80),
@@ -845,8 +853,8 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
         instagramId: cleanText(row.instagram_id, 80),
       },
       photoPaths,
-      bucket: "dating-card-photos",
-      previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-card-photos", path)),
+      bucket: "dating-apply-photos",
+      previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-apply-photos", path)),
       createdAt: cleanText(row.created_at, 80) || null,
     };
   }
@@ -860,7 +868,7 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
     if (error) throw error;
     if (!data) return null;
     const row = data as Record<string, unknown>;
-    const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-card-photos", "dating-photos"]);
+    const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-apply-photos", "dating-card-photos", "dating-photos"]);
     return {
       sourceType,
       cardId: cleanText(row.id, 80),
@@ -878,8 +886,8 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
         instagramId: cleanText(row.instagram_id, 80),
       },
       photoPaths,
-      bucket: "dating-card-photos",
-      previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-card-photos", path)),
+      bucket: "dating-apply-photos",
+      previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-apply-photos", path)),
       createdAt: cleanText(row.created_at, 80) || null,
     };
   }
@@ -1007,12 +1015,38 @@ function requiredText(value: string, fallback: string) {
   return value.trim() || fallback.trim();
 }
 
-async function hydrateReviewRows(admin: AdminClient, rows: Record<string, unknown>[]) {
+const CONFIRMATION_TABLE = "admin_dating_review_confirmations";
+const CONFIRMATION_UNAVAILABLE = "정상 확인 기록을 불러오지 못해 항목을 숨기지 않았습니다. 정상 확인 기능의 DB 설정과 연결을 확인해 주세요.";
+const REVIEW_UUID_PATTERN = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i;
+
+async function loadReviewConfirmations(admin: AdminClient, refs: { source: string; id: string }[]) {
+  const confirmations = new Map<string, ReviewConfirmation>();
+  for (const source of SOURCE_TYPES) {
+    const ids = [...new Set(refs.filter((ref) => ref.source === source).map((ref) => ref.id))];
+    for (let offset = 0; offset < ids.length; offset += 200) {
+      const { data, error } = await admin.from(CONFIRMATION_TABLE)
+        .select("id,source_type,card_id,content_fingerprint,findings_fingerprint,confirmed_at")
+        .eq("source_type", source).in("card_id", ids.slice(offset, offset + 200));
+      if (error) throw error;
+      for (const row of (data ?? []) as ReviewConfirmation[]) {
+        confirmations.set(reviewConfirmationKey(row.source_type, row.card_id), row);
+      }
+    }
+  }
+  return confirmations;
+}
+
+async function hydrateReviewRows(admin: AdminClient, rows: Record<string, unknown>[], confirmations = new Map<string, ReviewConfirmation>(), confirmationAvailable = true) {
   return Promise.all(
     rows.map(async (row) => {
       const sourceType = normalizeSource(row.source_type);
       const cardId = cleanText(row.card_id, 100);
       const current = sourceType === "all" || !cardId ? null : await loadCandidateById(admin, sourceType, cardId).catch(() => null);
+      const snapshot = readReviewSnapshot(row.raw_result);
+      const raw = (row.raw_result ?? {}) as Record<string, unknown>;
+      const snapshotCurrent = Boolean(current && snapshot && reviewContentFingerprint(current) === snapshot.contentFingerprint
+        && raw.confirmationRulesVersion === REVIEW_RULES_VERSION);
+      const confirmation = confirmations.get(reviewConfirmationKey(sourceType, cardId));
       return {
         ...row,
         sourceType: sourceType === "all" ? row.source_type : sourceType,
@@ -1027,6 +1061,10 @@ async function hydrateReviewRows(admin: AdminClient, rows: Record<string, unknow
         editableFields: editableFieldsFromCandidate(current),
         createdAt: current?.createdAt ?? null,
         editLocked: current?.editLocked ?? false,
+        confirmationSnapshot: confirmationAvailable && snapshotCurrent ? snapshot : null,
+        confirmationId: confirmation?.id ?? null,
+        confirmedAt: confirmation?.confirmed_at ?? null,
+        confirmationCurrent: snapshotCurrent && isReviewConfirmed(snapshot, confirmation),
       };
     })
   );
@@ -1049,6 +1087,47 @@ function buildReviewRows(adminUserId: string, cards: ReviewedCandidateCard[]) {
       scanned_at: scannedAt,
       admin_user_id: adminUserId,
     }));
+}
+
+async function handleReviewConfirmation(admin: AdminClient, adminUserId: string, source: SourceType, cardId: string, action: string, body: ReviewActionPayload) {
+  if (!REVIEW_UUID_PATTERN.test(cardId)) {
+    return NextResponse.json({ ok: false, message: "검수 항목을 확인해 주세요." }, { status: 400 });
+  }
+  if (action === "undo_confirmation") {
+    const id = cleanText(body.confirmationId, 80);
+    if (!REVIEW_UUID_PATTERN.test(id)) return NextResponse.json({ ok: false, message: "취소할 정상 확인 기록을 확인해 주세요." }, { status: 400 });
+    // CAS: a stale browser cannot remove another administrator's newer confirmation.
+    const { data, error } = await admin.from(CONFIRMATION_TABLE).delete()
+      .eq("source_type", source).eq("card_id", cardId).eq("id", id).select("id");
+    if (error) throw error;
+    if (!data?.length) return NextResponse.json({ ok: false, message: "확인 기록이 이미 변경됐습니다. 최근 결과를 다시 불러와 주세요." }, { status: 409 });
+    return NextResponse.json({ ok: true, sourceType: source, cardId, message: "정상 확인을 취소했습니다. 카드 공개 상태는 변경하지 않았습니다." });
+  }
+
+  const expected = readReviewSnapshot({ confirmationSnapshot: body.snapshot });
+  if (!expected) return NextResponse.json({ ok: false, message: "일반 검수를 다시 실행한 뒤 정상 확인해 주세요." }, { status: 400 });
+  const [card, saved] = await Promise.all([
+    loadCandidateById(admin, source, cardId),
+    admin.from("admin_dating_card_ai_reviews").select("raw_result")
+      .eq("source_type", source).eq("card_id", cardId).maybeSingle(),
+  ]);
+  if (saved.error) throw saved.error;
+  if (!card?.userId) return NextResponse.json({ ok: false, message: "현재 프로필을 찾지 못해 정상 확인하지 않았습니다." }, { status: 404 });
+  const snapshot = readReviewSnapshot(saved.data?.raw_result);
+  const raw = (saved.data?.raw_result ?? {}) as Record<string, unknown>;
+  if (!snapshot || snapshot.contentFingerprint !== expected.contentFingerprint || snapshot.findingsFingerprint !== expected.findingsFingerprint
+    || reviewContentFingerprint(card) !== expected.contentFingerprint || raw.confirmationRulesVersion !== REVIEW_RULES_VERSION) {
+    return NextResponse.json({ ok: false, message: "프로필 내용 또는 검수 결과가 바뀌었습니다. 다시 검수하고 확인해 주세요." }, { status: 409 });
+  }
+  const id = randomUUID();
+  const { data, error } = await admin.from(CONFIRMATION_TABLE).upsert({
+    id, source_type: source, card_id: cardId,
+    content_fingerprint: snapshot.contentFingerprint, findings_fingerprint: snapshot.findingsFingerprint,
+    confirmed_by: adminUserId, confirmed_at: new Date().toISOString(),
+  }, { onConflict: "source_type,card_id" }).select("id").maybeSingle();
+  if (error) throw error;
+  if (data?.id !== id) throw new Error("정상 확인 저장 결과를 확인하지 못했습니다.");
+  return NextResponse.json({ ok: true, sourceType: source, cardId, confirmationId: id, message: "이 내용은 정상으로 확인했습니다. 수정되거나 새로 등록되면 다시 검사합니다." });
 }
 
 async function saveReviews(admin: AdminClient, adminUserId: string, cards: ReviewedCandidateCard[]) {
@@ -1381,27 +1460,54 @@ export async function GET(req: Request) {
   const url = new URL(req.url);
   const source = normalizeSource(url.searchParams.get("source"));
   const includeClear = url.searchParams.get("includeClear") === "true";
-  let query = guard.admin
-    .from("admin_dating_card_ai_reviews")
-    .select("id,source_type,card_id,user_id,card_status,display_name,suspicion_level,flags,summary,photo_flags,text_flags,raw_result,scanned_at")
-    .order("scanned_at", { ascending: false })
-    .limit(50);
-
-  if (source !== "all") {
-    query = query.eq("source_type", source);
+  const confirmedView = url.searchParams.get("view") === "confirmed";
+  const offset = Number(url.searchParams.get("offset") ?? 0);
+  if (!Number.isSafeInteger(offset) || offset < 0 || offset > 1000000) {
+    return NextResponse.json({ ok: false, message: "목록 위치가 올바르지 않습니다." }, { status: 400 });
   }
-  if (!includeClear) {
-    query = query.in("suspicion_level", ["medium", "high"]);
+  try {
+    const visible: Record<string, unknown>[] = [];
+    const confirmations = new Map<string, ReviewConfirmation>();
+    let confirmationAvailable = true;
+    let nextOffset: number | null = offset;
+    // Filter before hydrating images/profiles. At most 250 lightweight review rows per request.
+    for (let page = 0; page < 5 && nextOffset !== null && visible.length < 50; page++) {
+      const start: number = nextOffset;
+      let query = guard.admin.from("admin_dating_card_ai_reviews")
+        .select("id,source_type,card_id,user_id,card_status,display_name,suspicion_level,flags,summary,photo_flags,text_flags,raw_result,scanned_at")
+        .order("scanned_at", { ascending: false }).order("id", { ascending: false }).range(start, start + 49);
+      if (source !== "all") query = query.eq("source_type", source);
+      if (!includeClear && !confirmedView) query = query.in("suspicion_level", ["medium", "high"]);
+      const { data, error } = await query;
+      if (error) throw error;
+      const rows = (data ?? []) as Record<string, unknown>[];
+      try {
+        const batch = await loadReviewConfirmations(guard.admin, rows.map((row) => ({ source: String(row.source_type), id: String(row.card_id) })));
+        for (const [key, value] of batch) confirmations.set(key, value);
+      } catch (error) {
+        console.warn("[admin card review] confirmation lookup failed", error);
+        confirmationAvailable = false;
+        if (confirmedView) return NextResponse.json({ ok: false, message: CONFIRMATION_UNAVAILABLE }, { status: 503 });
+      }
+      nextOffset = rows.length === 50 ? start + rows.length : null;
+      for (let index = 0; index < rows.length; index++) {
+        const row = rows[index];
+        const confirmation = confirmations.get(reviewConfirmationKey(String(row.source_type), String(row.card_id)));
+        const confirmed = confirmationAvailable && isReviewConfirmed(readReviewSnapshot(row.raw_result), confirmation);
+        if (confirmedView ? confirmed : !confirmed) visible.push(row);
+        if (visible.length === 50) {
+          nextOffset = index + 1 < rows.length || rows.length === 50 ? start + index + 1 : null;
+          break;
+        }
+      }
+    }
+    const items = await hydrateReviewRows(guard.admin, visible, confirmations, confirmationAvailable);
+    return NextResponse.json({ ok: true, items, nextOffset, confirmationAvailable,
+      warning: confirmationAvailable ? undefined : CONFIRMATION_UNAVAILABLE });
+  } catch (error) {
+    console.error("[admin card review] list failed", error);
+    return NextResponse.json({ ok: false, message: "검수 목록을 불러오지 못했습니다." }, { status: 500 });
   }
-
-  const { data, error } = await query;
-
-  if (error) {
-    return NextResponse.json({ ok: false, message: "검수 목록을 불러오지 못했습니다.", detail: error.message }, { status: 500 });
-  }
-
-  const items = await hydrateReviewRows(guard.admin, ((data ?? []) as Record<string, unknown>[]));
-  return NextResponse.json({ ok: true, items });
 }
 
 export async function PATCH(req: Request) {
@@ -1418,6 +1524,15 @@ export async function PATCH(req: Request) {
   }
 
   try {
+    if (action === "confirm_normal" || action === "undo_confirmation") {
+      const response = await handleReviewConfirmation(guard.admin, guard.user.id, sourceType, cardId, action, body);
+      if (response.ok) await recordAdminAuditEvent({
+        admin: guard.admin, adminUser: guard.user, request: req,
+        action: action === "confirm_normal" ? "dating_card_review_confirm_normal" : "dating_card_review_undo_confirmation",
+        targetType: sourceType, targetId: cardId,
+      });
+      return response;
+    }
     const card = await loadActionCard(guard.admin, sourceType, cardId);
     if (!card || !card.userId) {
       return NextResponse.json({ ok: false, message: "카드를 찾지 못했습니다." }, { status: 404 });
@@ -1569,15 +1684,33 @@ export async function POST(req: Request) {
 
     for (const card of candidates) {
       const review = mode === "rules" ? ruleReview(card) : await analyzeWithGemini(guard.admin, apiKey ?? "", model, card);
+      review.raw = { ...review.raw, confirmationRulesVersion: REVIEW_RULES_VERSION, confirmationSnapshot: {
+        contentFingerprint: reviewContentFingerprint(card),
+        findingsFingerprint: reviewFindingsFingerprint(review, REVIEW_RULES_VERSION),
+      } };
       scanned.push({ ...card, review });
     }
 
+    let confirmationAvailable = true;
+    let warning: string | undefined;
     await saveReviews(guard.admin, guard.user.id, scanned).catch((saveError) => {
       console.warn("[admin card review] bulk save failed; returning transient result", saveError);
+      confirmationAvailable = false;
+      warning = "검수 결과를 저장하지 못했습니다. 결과는 표시하지만 정상 확인은 다시 검수한 뒤 진행해 주세요.";
     });
+
+    let confirmations = new Map<string, ReviewConfirmation>();
+    try {
+      confirmations = await loadReviewConfirmations(guard.admin, scanned.map((item) => ({ source: item.sourceType, id: item.cardId })));
+    } catch (error) {
+      console.warn("[admin card review] confirmation lookup failed", error);
+      confirmationAvailable = false;
+      warning = CONFIRMATION_UNAVAILABLE;
+    }
 
     const items = scanned
       .filter((item) => includeClear || SUSPICIOUS_LEVELS.has(item.review.suspicionLevel))
+      .filter((item) => !confirmationAvailable || !isReviewConfirmed(readReviewSnapshot(item.review.raw), confirmations.get(reviewConfirmationKey(item.sourceType, item.cardId))))
       .map((item) => ({
         sourceType: item.sourceType,
         cardId: item.cardId,
@@ -1591,6 +1724,7 @@ export async function POST(req: Request) {
         editableFields: editableFieldsFromCandidate(item),
         createdAt: item.createdAt,
         editLocked: item.editLocked ?? false,
+        confirmationSnapshot: confirmationAvailable ? readReviewSnapshot(item.review.raw) : null,
         review: item.review,
       }));
 
@@ -1600,6 +1734,9 @@ export async function POST(req: Request) {
       model: mode === "ai" ? model : "rules",
       scannedCount: scanned.length,
       suspiciousCount: items.length,
+      confirmedCount: confirmationAvailable ? scanned.filter((item) => isReviewConfirmed(readReviewSnapshot(item.review.raw), confirmations.get(reviewConfirmationKey(item.sourceType, item.cardId)))).length : 0,
+      confirmationAvailable,
+      warning,
       items,
     });
   } catch (error) {
