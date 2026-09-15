@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { isEmailConfirmed } from "@/lib/auth-confirmed";
 import { safeInternalPath } from "@/lib/safe-internal-path";
 import { checkAccountRecoverySession } from "@/lib/account-recovery-client";
+import { getVerifiedLoginUser } from "@/lib/verified-login-user";
 
 const STORED_EMAIL_KEY = "recent_login_email";
 const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
@@ -123,20 +124,21 @@ function LoginContent() {
   }, [errorCode, errorDescription, errorParam, isFlowStateMissing, isOtpExpired]);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(STORED_EMAIL_KEY);
-    // The recently used address usually belongs to the just-created duplicate
-    // account. Never prefill it while the user is trying to recover an older one.
-    if (!isRecoveryFlow && stored) setEmail(stored);
+    try {
+      const stored = window.localStorage.getItem(STORED_EMAIL_KEY);
+      // Do not prefill a potentially different account during account recovery.
+      if (!isRecoveryFlow && stored) setEmail(stored);
+    } catch {
+      // A blocked browser storage must not stop Auth validation.
+    }
     setInAppBrowser(isInAppBrowser(navigator.userAgent));
 
     (async () => {
       try {
         const supabase = createClient();
-        const {
-          data: { session },
-        } = await supabase.auth.getSession();
+        const user = await getVerifiedLoginUser(supabase);
 
-        if (session?.user && isEmailConfirmed(session.user)) {
+        if (user && isEmailConfirmed(user)) {
           if (!(await finishPasswordRecoveryLogin(supabase))) return;
           setError(null);
           setSuccess("이미 로그인되어 있습니다. 이동 중...");
@@ -144,12 +146,15 @@ function LoginContent() {
           return;
         }
 
-        if (session?.user && !isEmailConfirmed(session.user)) {
+        if (user && !isEmailConfirmed(user)) {
           router.replace(`/verify-email?next=${encodeURIComponent(next || "/")}`);
           return;
         }
 
         setError(initialErrorMessage);
+      } catch {
+        // Do not sign active members out for a temporary network/Auth outage.
+        setError("로그인 상태 확인이 지연되고 있어요. 잠시 후 다시 시도해 주세요.");
       } finally {
         setSessionChecking(false);
       }

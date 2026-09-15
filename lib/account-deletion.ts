@@ -7,6 +7,12 @@ type InitiatedByRole = "self" | "admin";
 type ActiveOpenCardStatus = "pending" | "public";
 type OpenCardSex = "male" | "female";
 
+export function accountDeletionMessage(cleanupPending: boolean) {
+  return cleanupPending
+    ? "계정은 비활성화되었지만 일부 데이터 정리를 완료하지 못했습니다. 고객센터에 문의해 주세요."
+    : "회원 탈퇴가 처리되었습니다.";
+}
+
 type ActiveOpenCardSnapshot = {
   id: string;
   status: ActiveOpenCardStatus;
@@ -249,7 +255,7 @@ export async function performAccountDeletion(params: {
 
     await refillOpenCardSlots(admin, hiddenCards.cards);
 
-    return { ok: true as const, mode: "hard" as const, hiddenOpenCards: hiddenCards.cards.length };
+    return { ok: true as const, mode: "hard" as const, cleanupPending: false, hiddenOpenCards: hiddenCards.cards.length };
   }
 
   console.error("[account deletion] hard delete failed", hardDelete.error);
@@ -288,5 +294,12 @@ export async function performAccountDeletion(params: {
 
   await refillOpenCardSlots(admin, hiddenCards.cards);
 
-  return { ok: true as const, mode: "soft" as const, hiddenOpenCards: hiddenCards.cards.length };
+  // Soft deletion disables Auth but keeps its row and dependent business data.
+  // Sign the browser out without claiming that full cleanup is complete.
+  return {
+    ok: true as const,
+    mode: "soft" as const,
+    cleanupPending: true,
+    hiddenOpenCards: hiddenCards.cards.length,
+  };
 }

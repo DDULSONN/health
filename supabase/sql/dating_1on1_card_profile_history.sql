@@ -53,6 +53,14 @@ begin
     return null;
   end if;
 
+  -- Auth deletion cascades to cards. Do not recreate a history row whose
+  -- parent user has already been deleted in the same transaction.
+  if tg_op = 'DELETE' and not exists (
+    select 1 from auth.users u where u.id = target_row.user_id
+  ) then
+    return old;
+  end if;
+
   insert into public.dating_1on1_card_profile_history (
     card_id,
     user_id,

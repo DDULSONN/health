@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { getAccountDeletionConfigError, getRequestIp, performAccountDeletion } from "@/lib/account-deletion";
+import { accountDeletionMessage, getAccountDeletionConfigError, getRequestIp, performAccountDeletion } from "@/lib/account-deletion";
 import { requireAdminRoute } from "@/lib/admin-route";
 
 function isUuid(value: string): boolean {
@@ -103,6 +103,8 @@ export async function POST(request: Request) {
   return NextResponse.json({
     ok: true,
     mode: result.mode,
+    cleanup_pending: result.cleanupPending,
+    message: accountDeletionMessage(result.cleanupPending),
     hidden_open_cards: result.hiddenOpenCards,
     user_id: target.id,
     nickname: target.nickname,

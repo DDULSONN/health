@@ -4473,7 +4473,18 @@ export default function MyPage() {
     setAccountDeleteConfirmOpen(false);
     setDeletingAccount(true);
     try {
-      const res = await fetch("/api/mypage/account", { method: "DELETE" });
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      if (sessionError || !session) {
+        alert("로그인 상태를 확인하지 못했습니다. 다시 로그인한 뒤 탈퇴해 주세요.");
+        return;
+      }
+      const res = await fetch("/api/mypage/account", {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${session.access_token}`,
+          "x-account-user-id": session.user.id,
+        },
+      });
       const body = (await res.json().catch(() => ({}))) as {
         error?: string;
         ok?: boolean;
@@ -4485,14 +4496,15 @@ export default function MyPage() {
       }
 
       try {
-        await supabase.auth.signOut();
+        const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
+        if (signOutError) console.warn("[mypage] local sign out after account deletion failed", signOutError);
       } catch (error) {
         console.warn("[mypage] sign out after account deletion failed", error);
       }
 
       alert(body.message ?? "회원 탈퇴가 처리되었습니다.");
-      router.replace("/");
-      router.refresh();
+      // Discard the mounted member state and Next router cache after deletion.
+      window.location.replace("/");
     } catch (error) {
       console.error("[mypage] account deletion failed", error);
       alert(error instanceof Error ? error.message : "회원 탈퇴에 실패했습니다.");
@@ -7631,15 +7643,21 @@ export default function MyPage() {
         user_id?: string;
         nickname?: string | null;
         email?: string | null;
+        cleanup_pending?: boolean;
+        message?: string;
       };
 
       if (!res.ok || !body.ok) {
         throw new Error(body.error || "관리자 탈퇴 처리에 실패했습니다.");
       }
 
-      setAdminDeleteInfo(
-        `${body.nickname?.trim() || body.email?.trim() || trimmedIdentifier} 계정을 탈퇴 처리했습니다.`
-      );
+      if (body.cleanup_pending) {
+        setAdminDeleteError(body.message ?? "계정은 비활성화되었지만 데이터 정리를 완료하지 못했습니다.");
+      } else {
+        setAdminDeleteInfo(
+          `${body.nickname?.trim() || body.email?.trim() || trimmedIdentifier} 계정을 탈퇴 처리했습니다.`
+        );
+      }
       setAdminDeleteIdentifier("");
 
       const auditsRes = await fetch("/api/admin/account-deletion-audits", { cache: "no-store" });

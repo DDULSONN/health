@@ -27,13 +27,15 @@ async function check(config = {}) {
     from(table) {
       const filters = [];
       let patch;
+      let removing = false;
       const q = {
-        select: () => q, insert: () => q, delete: () => q,
+        select: () => q, insert: () => q, delete: () => { removing = true; return q; },
         update: (value) => { patch = value; return q; },
         eq: (key, value) => { filters.push((r) => r[key] === value); return q; },
         in: (key, values) => { filters.push((r) => values.includes(r[key])); return q; },
         then(ok, fail) {
           return Promise.resolve().then(() => {
+            if (table === 'profiles' && removing && config.profileDeleteError) return { error: { message: 'profile cleanup failed' } };
             if (table !== 'dating_1on1_cards') return { data: [], error: null };
             if (config.hideError && patch?.status === 'rejected') return { error: { message: 'hide failed' } };
             const rows = cards.filter((r) => filters.every((f) => f(r)));
@@ -57,11 +59,13 @@ async function check(config = {}) {
   } else {
     assert.equal(result.ok, true);
     assert.equal(result.mode, config.soft ? 'soft' : 'hard');
+    assert.equal(result.cleanupPending, Boolean(config.soft));
+    assert.equal(mod.exports.accountDeletionMessage(result.cleanupPending).includes('일부 데이터 정리'), Boolean(config.soft));
     assert.equal(cards[0].status, 'rejected');
     assert.equal(cards[1].status, 'rejected');
   }
 }
 (async () => {
-  for (const config of [{}, { soft: true }, { failBoth: true }, { hideError: true }]) await check(config);
+  for (const config of [{}, { soft: true }, { soft: true, profileDeleteError: true }, { failBoth: true }, { hideError: true }]) await check(config);
   console.log('PASS: hard/soft deletion hides 1:1 cards; failure restores; hide failure stops deletion; other users unchanged');
 })().catch((error) => { console.error(error); process.exitCode = 1; });
