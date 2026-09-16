@@ -26,7 +26,6 @@ import {
   isCandidateInSourceAgeRange,
   sortCandidatesForSource,
   takeBalancedRecommendations,
-  takeRecommendations,
 } from "@/lib/dating-1on1-recommendations";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
@@ -362,15 +361,19 @@ export async function GET(req: Request) {
       refreshLimit
     );
     const adminExcludeIds = new Set([...allShownRecommendationIds, ...handledPairIds]);
-    const adminRecommendations = takeRecommendations(
+    const extraRefreshSeed = refreshSeeds.filter((seed) => getActiveRecommendationRefresh(seed, nowMs))
+      .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? "initial";
+    const adminRecommendations = takeBalancedRecommendations(
+      sourceCard,
       sortCandidatesForSource(
         sourceCard,
-        unsavedCandidates.filter((candidate) => isCandidateInSourceAgeRange(sourceCard, candidate)),
-        `${adminRecommendationDate}:admin-extra`,
+        unsavedCandidates.filter((candidate) => isCandidateInSourceAgeRange(sourceCard, candidate) && !adminExcludeIds.has(candidate.id)),
+        `${adminRecommendationDate}:admin-extra:${extraRefreshSeed}`,
         nowMs
       ),
       ONE_ON_ONE_FREE_EXTRA_CANDIDATES,
-      adminExcludeIds
+      new Set(),
+      nowMs
     );
 
     return {

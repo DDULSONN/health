@@ -2,9 +2,9 @@
 
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { isSiteAnnouncementActive, SITE_ANNOUNCEMENT } from "@/lib/site-announcement";
 
-const ANNOUNCEMENT_ID = "one-on-one-refresh-fixed-2026-09-08";
-const STORAGE_KEY = `site-announcement:${ANNOUNCEMENT_ID}`;
+const STORAGE_KEY = `site-announcement:${SITE_ANNOUNCEMENT.id}`;
 const VISIBLE_PATH_PREFIXES = [
   "/community/dating",
   "/dating/",
@@ -42,8 +42,26 @@ export default function PaymentMethodAnnouncement() {
   useEffect(() => {
     if (!isVisiblePath(pathname) || hasAcknowledged()) return;
 
-    const timer = window.setTimeout(() => setOpen(true), 450);
-    return () => window.clearTimeout(timer);
+    const now = Date.now();
+    const remainingMs = Date.parse(SITE_ANNOUNCEMENT.endsAt) - now;
+    if (remainingMs <= 0) return;
+
+    const showTimer = window.setTimeout(() => {
+      if (isSiteAnnouncementActive() && !hasAcknowledged()) setOpen(true);
+    }, Math.max(450, Date.parse(SITE_ANNOUNCEMENT.startsAt) - now));
+    // Close even when the page stays open across the expiry time.
+    const expiryTimer = window.setTimeout(() => setOpen(false), remainingMs);
+    const checkVisibility = () => {
+      if (!isSiteAnnouncementActive() || hasAcknowledged()) setOpen(false);
+    };
+    document.addEventListener("visibilitychange", checkVisibility);
+    window.addEventListener("storage", checkVisibility);
+    return () => {
+      window.clearTimeout(showTimer);
+      window.clearTimeout(expiryTimer);
+      document.removeEventListener("visibilitychange", checkVisibility);
+      window.removeEventListener("storage", checkVisibility);
+    };
   }, [pathname]);
 
   const close = () => {
@@ -51,7 +69,7 @@ export default function PaymentMethodAnnouncement() {
     setOpen(false);
   };
 
-  if (!open) return null;
+  if (!open || !isVisiblePath(pathname) || !isSiteAnnouncementActive()) return null;
 
   return (
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 px-5 py-8">
@@ -63,10 +81,10 @@ export default function PaymentMethodAnnouncement() {
       >
         <p className="text-xs font-semibold text-rose-600">새 소식</p>
         <h2 id="site-announcement-title" className="mt-2 text-xl font-bold text-neutral-950">
-          1:1 후보 새로고침 개선
+          {SITE_ANNOUNCEMENT.title}
         </h2>
         <p className="mt-3 text-sm leading-6 text-neutral-600">
-          후보를 새로고침해도 같은 사람이 반복되던 문제를 수정했습니다.
+          {SITE_ANNOUNCEMENT.message}
         </p>
         <button
           type="button"
