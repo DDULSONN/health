@@ -2,13 +2,13 @@ import { NextResponse } from "next/server";
 import { randomUUID } from "node:crypto";
 import { requireAdminRoute } from "@/lib/admin-route";
 import { recordAdminAuditEvent } from "@/lib/admin-audit";
-import { reviewOneOnOneName } from "@/lib/dating-1on1-name-review";
-import { reviewDatingSexualText } from "@/lib/dating-sexual-text-review";
-import { reviewDatingIntroQuality } from "@/lib/dating-intro-quality-review";
-import { reviewDatingProfanity } from "@/lib/dating-profanity-review";
+import {
+  cleanText, formatOneOnOneDisplayName, oneOnOneReviewCandidate, ruleReview, withReviewSnapshot, REVIEW_RULES_VERSION,
+  type SourceType, type SuspicionLevel, type CandidateCard, type CardReview,
+} from "@/lib/dating-profile-review";
 import {
   isReviewConfirmed, readReviewSnapshot, reviewConfirmationKey, reviewContentFingerprint,
-  reviewFindingsFingerprint, type ReviewConfirmation,
+  type ReviewConfirmation,
 } from "@/lib/dating-review-confirmation";
 import { promotePendingCardsBySex } from "@/lib/dating-cards-queue";
 import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
@@ -17,19 +17,10 @@ import { createAdminClient } from "@/lib/supabase/server";
 
 export const maxDuration = 60;
 
-type SourceType =
-  | "open_card"
-  | "paid_card"
-  | "one_on_one"
-  | "open_card_application"
-  | "paid_card_application"
-  | "one_on_one_application";
 type ReviewMode = "rules" | "ai";
-type SuspicionLevel = "clear" | "low" | "medium" | "high";
 type AdminClient = ReturnType<typeof createAdminClient>;
 const REVIEW_PAGE_SIZE = 1000;
 const REVIEW_TEXT_MAX_LENGTH = 2000;
-const REVIEW_RULES_VERSION = "2026-09-13-sexual-slang-and-profanity-v3";
 const SUSPICION_RANK = { clear: 0, low: 1, medium: 2, high: 3 } as const;
 
 type ReviewPayload = {
@@ -51,31 +42,6 @@ type ReviewActionPayload = {
   locked?: unknown;
   snapshot?: unknown;
   confirmationId?: unknown;
-};
-
-type CandidateCard = {
-  sourceType: SourceType;
-  cardId: string;
-  userId: string | null;
-  status: string | null;
-  displayName: string;
-  age: number | null;
-  region: string | null;
-  texts: Record<string, string>;
-  photoPaths: string[];
-  bucket: string;
-  previewUrls: string[];
-  createdAt: string | null;
-  editLocked?: boolean;
-};
-
-type CardReview = {
-  suspicionLevel: SuspicionLevel;
-  flags: string[];
-  summary: string;
-  photoFlags: string[];
-  textFlags: string[];
-  raw: Record<string, unknown>;
 };
 
 type ReviewedCandidateCard = CandidateCard & { review: CardReview };
@@ -114,45 +80,6 @@ const SOURCE_TYPES: SourceType[] = [
 ];
 const SUSPICIOUS_LEVELS = new Set<SuspicionLevel>(["medium", "high"]);
 const ONE_ON_ONE_EDIT_LOCK_TAG = "one_on_one_edit_locked";
-const EXTERNAL_CONTACT_PATTERNS = [
-  /https?:\/\/|www\.|open\.kakao|t\.me|instagram\.com|bit\.ly|linktr\.ee/i,
-  /오픈\s*카톡|오픈\s*채팅|카카오톡|카톡\s*(아이디|id|문의|주세요|ㄱ)|디엠|dm\s*(주세요|문의|ㄱ)|텔레그램|telegram|라인\s*(id|아이디)?|line\s*(id)?/i,
-];
-const DIRECT_CONTACT_PATTERNS = [
-  /(?:010|011|016|017|018|019)[-\s.)]*(?:\d[-\s.]*){7,8}/,
-  /\b01[016789][^\d]{0,3}\d{3,4}[^\d]{0,3}\d{4}\b/,
-  /(카\s*톡|카\s*카\s*오|ㅋ\s*ㅌ|오\s*픈\s*(카\s*톡|채\s*팅)|오카|옾챗|오픈카톡|오픈채팅|open\s*(kakao|chat)|kakao|kakaotalk).{0,24}(아이디|id|검색|추가|친추|연락|주세요|주세용|보내|남겨|디엠|dm|@|[A-Za-z0-9._-]{3,})/i,
-  /(카\s*톡|카\s*카\s*오|ㅋ\s*ㅌ|kakao|kakaotalk)\s*[:：=은는]?\s*[A-Za-z0-9._-]{2,}/i,
-  /(인\s*스\s*타|인별|instagram|insta|ig|디엠|dm).{0,24}(아이디|id|계정|검색|팔로우|연락|주세요|주세용|보내|남겨|@|[A-Za-z0-9._-]{3,})/i,
-  /(^|[^A-Za-z0-9._])@[A-Za-z0-9._]{3,}/i,
-  /(라인|line|텔레그램|telegram|텔레)\s*[:：]?\s*[A-Za-z0-9._-]{2,}/i,
-  /(연락처|연락|번호|전화|문자).{0,16}(주세요|주세용|가능|해요|할게|남겨|교환|010|카톡|카카오|인스타|dm|디엠)/i,
-];
-const ONE_ON_ONE_DIRECT_CONTACT_PATTERNS = [
-  /(아이디|id|계정)\s*(은|는|:|：|=)?\s*[A-Za-z0-9._-]{3,}/i,
-  /[A-Za-z0-9][A-Za-z0-9._-]{2,}\s*(으로|로|여기로|쪽으로).{0,12}(연락|dm|디엠|보내|주세요|주세용)/i,
-  /(dm|디엠|메시지|쪽지).{0,16}(주세요|주세용|보내|가능|환영|해요|해주)/i,
-  /(카\s*톡|카\s*카\s*오|ㅋ\s*ㅌ|오카|옾챗|인\s*스\s*타|인별|insta|instagram|ig)\s*[A-Za-z0-9._-]{3,}/i,
-];
-
-const COMMERCIAL_PATTERNS = [
-  /(광고|홍보|협찬|제휴|업체)\s*(문의|가능|환영|주세요|받아요)/i,
-  /(부업|수익|투자|코인|토토|바카라|카지노|대출|리딩방|공구)\s*(문의|모집|가능|추천|링크)?/i,
-  /(이벤트|무료)\s*(참여|모집|신청|링크|쿠폰)/i,
-];
-const UNSAFE_PATTERNS = [/조건\s*만남|조건만남|스폰|성인\s*만남|19금|불법|계좌|입금|후원|대가\s*성/i];
-
-function cleanText(value: unknown, max = 500) {
-  return String(value ?? "").trim().slice(0, max);
-}
-
-function formatOneOnOneDisplayName(name: unknown, nickname: unknown) {
-  const cleanName = cleanText(name, 80);
-  const cleanNickname = cleanText(nickname, 80);
-  if (cleanName && cleanNickname && cleanName !== cleanNickname) return `${cleanName} (닉네임: ${cleanNickname})`;
-  return cleanName || cleanNickname;
-}
-
 async function fetchProfileNicknames(admin: AdminClient, userIds: string[]) {
   const ids = [...new Set(userIds.map((id) => cleanText(id, 80)).filter(Boolean))];
   if (ids.length === 0) return new Map<string, string>();
@@ -273,89 +200,6 @@ function normalizePhotoPath(raw: unknown, buckets: string[]) {
 function pathsFromUnknown(raw: unknown, buckets: string[]) {
   if (!Array.isArray(raw)) return [];
   return raw.map((item) => normalizePhotoPath(item, buckets)).filter(Boolean).slice(0, 3);
-}
-
-function sourceLabel(value: SourceType) {
-  if (value === "open_card") return "오픈카드";
-  if (value === "paid_card") return "유료카드";
-  if (value === "one_on_one") return "1대1 카드";
-  if (value === "open_card_application") return "오픈카드 지원";
-  if (value === "paid_card_application") return "유료카드 지원";
-  return "1대1 지원";
-}
-
-function likelyTextFlags(texts: Record<string, string>, sourceType?: SourceType) {
-  const reviewTexts = Object.entries(texts)
-    .filter(([key]) => !/instagram|job|^name$/i.test(key))
-    .map(([, value]) => value.trim())
-    .filter(Boolean);
-  const merged = reviewTexts.join(" ").trim();
-  const flags: string[] = [];
-
-  if (/010[-\s]?\d{3,4}[-\s]?\d{4}/.test(merged)) flags.push("전화번호 직접 노출 의심");
-  if (DIRECT_CONTACT_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("연락처/외부 계정 선노출 의심");
-  if (
-    (sourceType === "one_on_one" || sourceType === "one_on_one_application") &&
-    ONE_ON_ONE_DIRECT_CONTACT_PATTERNS.some((pattern) => pattern.test(merged))
-  ) {
-    flags.push("1대1 신청서 외부 계정 기재 의심");
-  }
-  if (EXTERNAL_CONTACT_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("외부 연락/링크 유도 의심");
-  if (COMMERCIAL_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("광고/상업성 문구 의심");
-  if (UNSAFE_PATTERNS.some((pattern) => pattern.test(merged))) flags.push("부적절/위험 키워드");
-
-  return flags;
-}
-
-function ruleReview(card: CandidateCard): CardReview {
-  const photoFlags: string[] = [];
-  const sexualReview = reviewDatingSexualText({ ...card.texts, displayName: card.displayName });
-  const qualityReview = reviewDatingIntroQuality(card.sourceType, card.texts);
-  const profanityReview = reviewDatingProfanity({ ...card.texts, displayName: card.displayName });
-  const textFlags = [...profanityReview.flags, ...sexualReview.flags, ...likelyTextFlags(card.texts, card.sourceType), ...qualityReview.flags];
-  if (card.sourceType === "one_on_one" || card.sourceType === "one_on_one_application") {
-    const nameReview = reviewOneOnOneName(card.texts.name ?? card.displayName);
-    textFlags.push(...nameReview.flags.map((flag) => `이름: ${flag}`));
-  }
-  const flags: string[] = [];
-  const requiredTextFields = Object.entries(card.texts).filter(([key]) => !/instagram|job/i.test(key));
-
-  if (!card.displayName) flags.push("닉네임/이름 없음");
-  if (card.photoPaths.length === 0) photoFlags.push("사진 없음");
-  if (card.photoPaths.length === 1) photoFlags.push("사진 1장만 등록");
-
-  for (const [key, value] of requiredTextFields) {
-    const trimmed = value.trim();
-    if (!trimmed) {
-      textFlags.push(`${key} 비어 있음`);
-    }
-  }
-
-  flags.push(...textFlags, ...photoFlags);
-  const uniqueFlags = Array.from(new Set(flags)).slice(0, 10);
-  const hasSeriousFlag = uniqueFlags.some((flag) =>
-    ["연락처", "외부 계정", "광고", "상업", "전화번호", "링크"].some((keyword) => flag.includes(keyword))
-  );
-  const suspicionLevel: SuspicionLevel =
-    sexualReview.level === "high" || profanityReview.level === "high" || hasSeriousFlag || uniqueFlags.length >= 4
-      ? "high"
-      : sexualReview.level === "medium" || profanityReview.level === "medium" || qualityReview.level === "medium" || uniqueFlags.length >= 2
-        ? "medium"
-        : uniqueFlags.length === 1
-          ? "low"
-          : "clear";
-
-  return {
-    suspicionLevel,
-    flags: uniqueFlags,
-    summary:
-      uniqueFlags.length > 0
-        ? `${sourceLabel(card.sourceType)} 일반 검수: ${uniqueFlags.slice(0, 3).join(", ")}`
-        : `${sourceLabel(card.sourceType)} 일반 검수상 큰 이상 없음`,
-    photoFlags,
-    textFlags: Array.from(new Set(textFlags)).slice(0, 10),
-    raw: { provider: "rules", version: REVIEW_RULES_VERSION },
-  };
 }
 
 function parseAiJson(text: string): CardReview | null {
@@ -561,37 +405,9 @@ async function fetchOneOnOneCards(admin: AdminClient, limit: number): Promise<Ca
       .range(from, to)
   );
 
-  const currentYear = new Date().getFullYear();
   const rows = (data ?? []) as Record<string, unknown>[];
-  const nicknamesByUserId = await fetchProfileNicknames(
-    admin,
-    rows.map((row) => cleanText(row.user_id, 80))
-  );
-  return rows.map((row) => {
-    const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-1on1-photos"]);
-    const userId = cleanText(row.user_id, 80) || null;
-    return {
-      sourceType: "one_on_one",
-      cardId: cleanText(row.id, 80),
-      userId,
-      status: cleanText(row.status, 40) || null,
-      displayName: formatOneOnOneDisplayName(row.name, userId ? nicknamesByUserId.get(userId) : null),
-      age: typeof row.birth_year === "number" ? currentYear - row.birth_year + 1 : null,
-      region: cleanText(row.region, 80) || null,
-      texts: {
-        name: cleanText(row.name, 80),
-        job: cleanText(row.job, 80),
-        intro: cleanText(row.intro_text, REVIEW_TEXT_MAX_LENGTH),
-        strengths: cleanText(row.strengths_text, REVIEW_TEXT_MAX_LENGTH),
-        preferredPartner: cleanText(row.preferred_partner_text, REVIEW_TEXT_MAX_LENGTH),
-      },
-      photoPaths,
-      bucket: "dating-1on1-photos",
-      previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-1on1-photos", path)),
-      createdAt: cleanText(row.created_at, 80) || null,
-      editLocked: isOneOnOneEditLocked(row.admin_tags),
-    };
-  });
+  const nicknamesByUserId = await fetchProfileNicknames(admin, rows.map(row => cleanText(row.user_id, 80)));
+  return rows.map(row => oneOnOneReviewCandidate(row, nicknamesByUserId.get(cleanText(row.user_id, 80))));
 }
 
 async function fetchOpenCardApplications(admin: AdminClient, limit: number): Promise<CandidateCard[]> {
@@ -967,31 +783,9 @@ async function loadCandidateById(admin: AdminClient, sourceType: SourceType, car
   if (error) throw error;
   if (!data) return null;
   const row = data as Record<string, unknown>;
-  const photoPaths = pathsFromUnknown(row.photo_paths, ["dating-1on1-photos"]);
-  const currentYear = new Date().getFullYear();
-  const userId = cleanText(row.user_id, 80) || null;
+  const userId = cleanText(row.user_id, 80);
   const nicknamesByUserId = await fetchProfileNicknames(admin, userId ? [userId] : []);
-  return {
-    sourceType,
-    cardId: cleanText(row.id, 80),
-    userId,
-    status: cleanText(row.status, 40) || null,
-    displayName: formatOneOnOneDisplayName(row.name, userId ? nicknamesByUserId.get(userId) : null),
-    age: typeof row.birth_year === "number" ? currentYear - row.birth_year + 1 : null,
-    region: cleanText(row.region, 80) || null,
-    texts: {
-      name: cleanText(row.name, 80),
-      job: cleanText(row.job, 80),
-      intro: cleanText(row.intro_text, REVIEW_TEXT_MAX_LENGTH),
-      strengths: cleanText(row.strengths_text, REVIEW_TEXT_MAX_LENGTH),
-      preferredPartner: cleanText(row.preferred_partner_text, REVIEW_TEXT_MAX_LENGTH),
-    },
-    photoPaths,
-    bucket: "dating-1on1-photos",
-    previewUrls: photoPaths.slice(0, 2).map((path) => buildSignedImageUrlAllowRaw("dating-1on1-photos", path)),
-    createdAt: cleanText(row.created_at, 80) || null,
-    editLocked: isOneOnOneEditLocked(row.admin_tags),
-  };
+  return oneOnOneReviewCandidate(row, nicknamesByUserId.get(userId));
 }
 
 function editableFieldsFromCandidate(card: CandidateCard | null): EditableFields {
@@ -1036,12 +830,30 @@ async function loadReviewConfirmations(admin: AdminClient, refs: { source: strin
   return confirmations;
 }
 
+function currentReviewRow(row: Record<string, unknown>, card: CandidateCard | null) {
+  const raw = (row.raw_result ?? {}) as Record<string, unknown>;
+  const snapshot = readReviewSnapshot(raw);
+  // Old AI findings cannot be attached to an unverified current photo. They still
+  // require an explicit AI rescan. Legacy rules can be evaluated safely in memory.
+  if (!card || raw.provider === "gemini" || (snapshot && raw.confirmationRulesVersion === REVIEW_RULES_VERSION
+    && snapshot.contentFingerprint === reviewContentFingerprint(card))) {
+    return { row, refreshedReview: null };
+  }
+  const review = withReviewSnapshot(card, ruleReview(card));
+  return { refreshedReview: review, row: { ...row,
+    suspicion_level: review.suspicionLevel, flags: review.flags, summary: review.summary,
+    photo_flags: review.photoFlags, text_flags: review.textFlags, raw_result: review.raw,
+  } };
+}
+
 async function hydrateReviewRows(admin: AdminClient, rows: Record<string, unknown>[], confirmations = new Map<string, ReviewConfirmation>(), confirmationAvailable = true) {
   return Promise.all(
-    rows.map(async (row) => {
+    rows.map(async (savedRow) => {
+      let row = savedRow;
       const sourceType = normalizeSource(row.source_type);
       const cardId = cleanText(row.card_id, 100);
       const current = sourceType === "all" || !cardId ? null : await loadCandidateById(admin, sourceType, cardId).catch(() => null);
+      row = currentReviewRow(row, current).row;
       const snapshot = readReviewSnapshot(row.raw_result);
       const raw = (row.raw_result ?? {}) as Record<string, unknown>;
       const snapshotCurrent = Boolean(current && snapshot && reviewContentFingerprint(current) === snapshot.contentFingerprint
@@ -1049,6 +861,7 @@ async function hydrateReviewRows(admin: AdminClient, rows: Record<string, unknow
       const confirmation = confirmations.get(reviewConfirmationKey(sourceType, cardId));
       return {
         ...row,
+        suspicion_level: row.suspicion_level as SuspicionLevel,
         sourceType: sourceType === "all" ? row.source_type : sourceType,
         cardId,
         userId: current?.userId ?? (cleanText(row.user_id, 100) || null),
@@ -1108,16 +921,30 @@ async function handleReviewConfirmation(admin: AdminClient, adminUserId: string,
   if (!expected) return NextResponse.json({ ok: false, message: "일반 검수를 다시 실행한 뒤 정상 확인해 주세요." }, { status: 400 });
   const [card, saved] = await Promise.all([
     loadCandidateById(admin, source, cardId),
-    admin.from("admin_dating_card_ai_reviews").select("raw_result")
+    admin.from("admin_dating_card_ai_reviews").select("id,scanned_at,raw_result,suspicion_level,flags,summary,photo_flags,text_flags")
       .eq("source_type", source).eq("card_id", cardId).maybeSingle(),
   ]);
   if (saved.error) throw saved.error;
   if (!card?.userId) return NextResponse.json({ ok: false, message: "현재 프로필을 찾지 못해 정상 확인하지 않았습니다." }, { status: 404 });
-  const snapshot = readReviewSnapshot(saved.data?.raw_result);
-  const raw = (saved.data?.raw_result ?? {}) as Record<string, unknown>;
+  if (!saved.data) return NextResponse.json({ ok: false, message: "검수 결과를 찾지 못했습니다. 다시 검수해 주세요." }, { status: 409 });
+  const prepared = currentReviewRow(saved.data, card);
+  const snapshot = readReviewSnapshot(prepared.row.raw_result);
+  const raw = (prepared.row.raw_result ?? {}) as Record<string, unknown>;
   if (!snapshot || snapshot.contentFingerprint !== expected.contentFingerprint || snapshot.findingsFingerprint !== expected.findingsFingerprint
     || reviewContentFingerprint(card) !== expected.contentFingerprint || raw.confirmationRulesVersion !== REVIEW_RULES_VERSION) {
     return NextResponse.json({ ok: false, message: "프로필 내용 또는 검수 결과가 바뀌었습니다. 다시 검수하고 확인해 주세요." }, { status: 409 });
+  }
+  // Persist the exact rules result that the administrator saw before recording
+  // confirmation. GET remains read-only; failed persistence never claims success.
+  if (prepared.refreshedReview) {
+    const [reviewRow] = buildReviewRows(adminUserId, [{ ...card, review: prepared.refreshedReview }]);
+    let query = admin.from("admin_dating_card_ai_reviews").update(reviewRow).eq("id", saved.data.id);
+    query = saved.data.scanned_at == null ? query.is("scanned_at", null) : query.eq("scanned_at", saved.data.scanned_at);
+    const upgraded = await query.select("id");
+    if (upgraded.error) throw upgraded.error;
+    if (!upgraded.data?.length) {
+      return NextResponse.json({ ok: false, message: "검수 결과가 변경됐습니다. 최근 결과를 다시 불러와 주세요." }, { status: 409 });
+    }
   }
   const id = randomUUID();
   const { data, error } = await admin.from(CONFIRMATION_TABLE).upsert({
@@ -1475,7 +1302,10 @@ export async function GET(req: Request) {
       const start: number = nextOffset;
       let query = guard.admin.from("admin_dating_card_ai_reviews")
         .select("id,source_type,card_id,user_id,card_status,display_name,suspicion_level,flags,summary,photo_flags,text_flags,raw_result,scanned_at")
-        .order("scanned_at", { ascending: false }).order("id", { ascending: false }).range(start, start + 49);
+        .order("scanned_at", { ascending: false }).order("id", { ascending: false }).range(start, start + 49)
+        // Legacy cron incorrectly wrote card IDs as application IDs. Retain the
+        // audit records but never present these nonexistent applications as profiles.
+        .or("source_type.neq.one_on_one_application,raw_result->>provider.is.null,raw_result->>provider.neq.rules_cron");
       if (source !== "all") query = query.eq("source_type", source);
       if (!includeClear && !confirmedView) query = query.in("suspicion_level", ["medium", "high"]);
       const { data, error } = await query;
@@ -1501,7 +1331,9 @@ export async function GET(req: Request) {
         }
       }
     }
-    const items = await hydrateReviewRows(guard.admin, visible, confirmations, confirmationAvailable);
+    const hydrated = await hydrateReviewRows(guard.admin, visible, confirmations, confirmationAvailable);
+    const items = hydrated.filter(item => confirmedView ? item.confirmationCurrent : !item.confirmationCurrent)
+      .filter(item => confirmedView || includeClear || SUSPICIOUS_LEVELS.has(item.suspicion_level as SuspicionLevel));
     return NextResponse.json({ ok: true, items, nextOffset, confirmationAvailable,
       warning: confirmationAvailable ? undefined : CONFIRMATION_UNAVAILABLE });
   } catch (error) {
@@ -1683,11 +1515,8 @@ export async function POST(req: Request) {
     const scanned: ReviewedCandidateCard[] = [];
 
     for (const card of candidates) {
-      const review = mode === "rules" ? ruleReview(card) : await analyzeWithGemini(guard.admin, apiKey ?? "", model, card);
-      review.raw = { ...review.raw, confirmationRulesVersion: REVIEW_RULES_VERSION, confirmationSnapshot: {
-        contentFingerprint: reviewContentFingerprint(card),
-        findingsFingerprint: reviewFindingsFingerprint(review, REVIEW_RULES_VERSION),
-      } };
+      const review = withReviewSnapshot(card,
+        mode === "rules" ? ruleReview(card) : await analyzeWithGemini(guard.admin, apiKey ?? "", model, card));
       scanned.push({ ...card, review });
     }
 

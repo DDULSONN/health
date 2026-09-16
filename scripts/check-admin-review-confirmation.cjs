@@ -58,6 +58,14 @@ for (const source of sourceTypes) test(source + " confirmation hides only that r
   assert.equal(view.buttons("✓ 정상 확인").length, 1);
   assert.ok(text(view.render()).includes("정상 확인 완료"));
 });
+
+for (const source of sourceTypes) test(source + ' original profile content is visible without opening a disclosure', async () => {
+  const view = ui([fixture(source)]); await view.load();
+  assert.equal(nodes(view.render()).some(node => node.type === 'details'), false);
+  const content = nodes(view.render()).find(node => node.type === 'section' && node.props['aria-label'] === '프로필 내용');
+  assert.ok(content); assert.ok(text(content).includes('자기소개')); assert.ok(text(content).includes('관리자가 확인할 원문'));
+  assert.ok(nodes(content).some(node => node.type === 'dd' && node.props.className.includes('whitespace-pre-wrap')));
+});
 for (const [label, reply] of [
   ["database failure", () => Response.json({ ok: false, message: "저장 실패" }, { status: 500 })],
   ["author changed content", () => Response.json({ ok: false, message: "다시 검수해 주세요." }, { status: 409 })],
@@ -71,6 +79,7 @@ for (const [label, reply] of [
   assert.equal(view.buttons("✓ 정상 확인").length, 1);
   assert.equal(view.buttons("✓ 정상 확인")[0].props.disabled, false);
   assert.equal(view.buttons("일반 검수")[0].props.disabled, false);
+  assert.ok(nodes(view.render()).some(node => node.props?.role === 'alert'), 'Errors are visible beside the affected profile, not only above the list');
 });
 test("double-click sends one request and prevents overlapping scans/ban while saving", async () => {
   let resolve;

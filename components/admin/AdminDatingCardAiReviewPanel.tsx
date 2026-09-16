@@ -114,6 +114,14 @@ const LEVEL_LABEL: Record<SuspicionLevel, string> = {
   high: "강한 의심",
 };
 
+const TEXT_LABEL: Record<string, string> = {
+  name: "이름", job: "직업", intro: "자기소개", strengths: "내 강점",
+  ideal: "원하는 상대", idealType: "원하는 상대", preferredPartner: "원하는 상대",
+  instagramId: "인스타그램", height: "키", trainingYears: "운동 경력",
+  targetCardId: "지원한 카드", sourceCardId: "작성자 카드", matchId: "매칭 내역",
+  candidateCardId: "상대 카드", candidateUserId: "상대 계정", candidateName: "상대 이름", candidateRegion: "상대 지역",
+};
+
 function itemSource(item: ReviewItem) {
   return item.sourceType ?? item.source_type ?? "open_card";
 }
@@ -225,6 +233,7 @@ export default function AdminDatingCardAiReviewPanel() {
   const [loadingList, setLoadingList] = useState(false);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const [warning, setWarning] = useState("");
+  const [confirmationError, setConfirmationError] = useState<{ key: string; message: string } | null>(null);
 
   const loadLatest = useCallback(async (offset = 0) => {
     if (workInFlight.current || banInFlight.current) return;
@@ -480,6 +489,7 @@ export default function AdminDatingCardAiReviewPanel() {
     if (workInFlight.current || banInFlight.current || loadingList || loadingMode || processingKey) return;
     if (undo ? !item.confirmationId : !item.confirmationSnapshot) return;
     const sourceType = itemSource(item), cardId = itemCardId(item), key = itemKey(item);
+    setConfirmationError(null);
     workInFlight.current = true;
     listEpoch.current++;
     setProcessingKey(`confirmation:${key}`);
@@ -499,7 +509,9 @@ export default function AdminDatingCardAiReviewPanel() {
       setEditingKey("");
       setInfo(body.message || (undo ? "정상 확인을 취소했습니다." : "정상으로 확인해 검수 목록에서 숨겼습니다."));
     } catch (err) {
-      setError(err instanceof Error ? err.message : "정상 확인 처리에 실패했습니다.");
+      const message = err instanceof Error ? err.message : "정상 확인 처리에 실패했습니다.";
+      setError(message);
+      setConfirmationError({ key, message });
     } finally {
       workInFlight.current = false;
       setProcessingKey("");
@@ -819,6 +831,11 @@ export default function AdminDatingCardAiReviewPanel() {
                 <p className="mt-3 rounded-xl bg-neutral-50 px-3 py-2 text-sm text-neutral-700">
                   {review.summary || "요약 없음"}
                 </p>
+                {confirmationError?.key === key ? (
+                  <p role="alert" className="mt-2 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-700">
+                    {confirmationError.message}
+                  </p>
+                ) : null}
 
                 {review.flags.length > 0 ? (
                   <div className="mt-3 flex flex-wrap gap-2">
@@ -831,19 +848,19 @@ export default function AdminDatingCardAiReviewPanel() {
                 ) : null}
 
                 {item.texts ? (
-                  <details className="mt-3 rounded-xl border border-neutral-100 bg-neutral-50 px-3 py-2 text-xs text-neutral-600">
-                    <summary className="cursor-pointer font-semibold text-neutral-800">입력 문구 보기</summary>
-                    <div className="mt-2 space-y-1">
+                  <section aria-label="프로필 내용" className="mt-3 min-w-0 rounded-xl border border-neutral-100 bg-neutral-50 px-3 py-3 text-sm text-neutral-700">
+                    <p className="text-xs font-semibold text-neutral-800">프로필 내용</p>
+                    <dl className="mt-2 space-y-3">
                       {Object.entries(item.texts).map(([key, value]) =>
                         value ? (
-                          <p key={key}>
-                            <span className="font-semibold">{key}: </span>
-                            {value}
-                          </p>
+                          <div key={key} className="min-w-0">
+                            <dt className="text-xs font-semibold text-neutral-500">{TEXT_LABEL[key] ?? key}</dt>
+                            <dd className="mt-1 whitespace-pre-wrap break-words leading-6">{value}</dd>
+                          </div>
                         ) : null
                       )}
-                    </div>
-                  </details>
+                    </dl>
+                  </section>
                 ) : null}
               </div>
             );

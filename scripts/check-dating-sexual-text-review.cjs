@@ -266,11 +266,18 @@ function database(seed, options = {}) {
     b.select = () => b;
     b.in = (key, values) => { q.filters.push((row) => values.includes(row[key])); return b; };
     b.eq = (key, value) => { q.filters.push((row) => row[key] === value); return b; };
+    b.is = b.eq;
+    b.or = (expression) => {
+      assert.equal(expression, 'source_type.neq.one_on_one_application,raw_result->>provider.is.null,raw_result->>provider.neq.rules_cron');
+      q.filters.push(row => row.source_type !== 'one_on_one_application' || row.raw_result?.provider !== 'rules_cron');
+      return b;
+    };
     b.order = (key, config) => { q.orders.push([key, config]); return b; };
     b.range = (from, to) => { q.from = from; q.to = to; return b; };
     b.limit = (n) => { q.to = n - 1; return b; };
     b.maybeSingle = () => { q.single = true; return b; };
-    b.upsert = (rows) => { q.op = "upsert"; q.rows = Array.isArray(rows) ? rows : [rows]; return b; };
+    b.upsert = (rows, config) => { q.op = "upsert"; q.rows = Array.isArray(rows) ? rows : [rows]; q.ignoreDuplicates = config?.ignoreDuplicates; return b; };
+    b.update = (row) => { q.op = "update"; q.row = row; return b; };
     b.delete = () => { q.op = "delete"; return b; };
     b.then = (yes, no) => Promise.resolve().then(() => {
       calls.push({ table, op: q.op });
@@ -279,6 +286,11 @@ function database(seed, options = {}) {
       if (q.op !== "select") {
         assert.ok(["admin_dating_card_ai_reviews", "admin_dating_review_confirmations"].includes(table), "Review must never mutate member/card/matching tables");
         if (options.saveFailure && table === "admin_dating_card_ai_reviews") return { data: null, error: { code: "42P01", message: "fixture missing review table" } };
+        if (q.op === 'update') {
+          const matches = tables[table].filter(row => q.filters.every(filter => filter(row)));
+          for (const row of matches) Object.assign(row, q.row);
+          return { data: matches, error: null };
+        }
         if (q.op === "delete") {
           const removed = tables[table].filter((row) => q.filters.every((filter) => filter(row)));
           tables[table] = tables[table].filter((row) => !removed.includes(row));
@@ -286,7 +298,8 @@ function database(seed, options = {}) {
         }
         for (const row of q.rows) {
           const existing = tables[table].find((entry) => entry.source_type === row.source_type && entry.card_id === row.card_id);
-          if (existing) Object.assign(existing, row);
+          if (existing && !q.ignoreDuplicates) Object.assign(existing, row);
+          else if (existing) continue;
           else tables[table].push({ id: uid(100 + tables[table].length), ...row });
         }
         return { data: q.single ? q.rows[0] : q.rows, error: null };
@@ -321,11 +334,16 @@ function loadRoute(db, options = {}) {
     "@/lib/dating-swipe": { sendDatingEmailToAddressDetailed: () => { throw new Error("Unexpected email"); } },
     "@/lib/images": { buildSignedImageUrlAllowRaw: () => "/fixture.webp", extractStorageObjectPathFromBuckets: (value) => value },
     "@/lib/supabase/server": { createAdminClient: () => db.admin },
+    "@/lib/cron-auth": { ensureCronAuthorized: () => options.denied ? Response.json({ error: 'Unauthorized' }, { status: 401 }) : null },
   };
-  return compile("app/api/admin/dating/card-ai-review/route.ts", (id) => {
+  deps['@/lib/dating-profile-review'] = compile('lib/dating-profile-review.ts', id => {
+    if (!(id in deps)) throw new Error('Unexpected shared review import: ' + id);
+    return deps[id];
+  });
+  return compile(options.cron ? "app/api/cron/dating-1on1-card-review/route.ts" : "app/api/admin/dating/card-ai-review/route.ts", (id) => {
     if (!(id in deps)) throw new Error("Unexpected import: " + id);
     return deps[id];
-  }, "\nexports.testRuleReview = ruleReview; exports.testAnalyze = analyzeWithGemini;", options.fetch);
+  }, options.cron ? '' : "\nexports.testRuleReview = ruleReview; exports.testAnalyze = analyzeWithGemini;", options.fetch);
 }
 const request = (source, extra = {}) => new Request("https://fixture.invalid/api/admin/dating/card-ai-review", {
   method: "POST", body: JSON.stringify({ mode: "rules", source, limit: 50, ...extra }),
@@ -547,7 +565,10 @@ for (const source of sources) {
     assert.equal((await route.PATCH(confirmationRequest(item))).status, 409);
     assert.equal(db.tables[confirmationTable].length, 0);
     const listing = await (await route.GET(listRequest(source))).json();
-    assert.equal(listing.items[0].confirmationSnapshot, null);
+    assert.ok(listing.items[0].confirmationSnapshot);
+    assert.notDeepEqual(listing.items[0].confirmationSnapshot, item.confirmationSnapshot);
+    // Reload explicitly shows the changed content and can then confirm that version.
+    assert.equal((await route.PATCH(confirmationRequest(listing.items[0]))).status, 200);
   });
 }
 test("ordinary publication state changes do not invalidate confirmation", async () => {
@@ -597,17 +618,127 @@ test("failed scan persistence cannot hide results or enable confirmation", async
   assert.equal(item.confirmationSnapshot, null);
   assert.equal((await route.PATCH(confirmationRequest(item))).status, 400);
 });
-test("legacy review results require rescan, and normal users cannot confirm or undo", async () => {
+test("legacy rules are prepared read-only and confirmable, while normal users still cannot confirm or undo", async () => {
   const { db, route, item } = await scanFixture();
   delete db.tables[reviewTable][0].raw_result.confirmationSnapshot;
+  const stored = structuredClone(db.tables[reviewTable]);
   const result = await (await route.GET(listRequest("one_on_one"))).json();
-  assert.equal(result.items[0].confirmationSnapshot, null);
-  assert.equal((await route.PATCH(confirmationRequest(item))).status, 409);
+  assert.ok(result.items[0].confirmationSnapshot);
+  assert.deepEqual(db.tables[reviewTable], stored, 'GET never writes an implicit administrator decision');
   const denied = loadRoute(db, { denied: true });
   assert.equal((await denied.PATCH(confirmationRequest(item))).status, 403);
   assert.equal((await denied.PATCH(confirmationRequest(item, { action: "undo_confirmation", confirmationId: uid(99) }))).status, 403);
   assert.equal((await denied.GET(listRequest("one_on_one", true))).status, 403);
   assert.equal(db.tables[confirmationTable].length, 0);
+  assert.equal((await route.PATCH(confirmationRequest(result.items[0]))).status, 200);
+  assert.ok(db.tables[reviewTable][0].raw_result.confirmationSnapshot);
+  assert.equal((await (await route.GET(listRequest('one_on_one'))).json()).items.length, 0);
+});
+
+test('legacy cron duplicates are excluded in the database page, without hiding real applications or deleting records', async () => {
+  const { db, route } = await scanFixture('one_on_one_application');
+  const real = structuredClone(db.tables[reviewTable][0]);
+  const ghost = { ...real, id: uid(90), card_id: cardId, raw_result: { provider: 'rules_cron' } };
+  db.tables[reviewTable].unshift(ghost);
+  const result = await (await route.GET(listRequest('one_on_one_application'))).json();
+  assert.deepEqual(result.items.map(item => item.cardId), [applicationId]);
+  assert.equal(db.tables[reviewTable].length, 2);
+});
+
+test('legacy AI output cannot be confirmed against photos it never fingerprinted', async () => {
+  const { db, route, item } = await scanFixture();
+  db.tables[reviewTable][0].raw_result = { provider: 'gemini', result: {} };
+  const result = await (await route.GET(listRequest('one_on_one'))).json();
+  assert.equal(result.items[0].confirmationSnapshot, null);
+  assert.equal((await route.PATCH(confirmationRequest(item))).status, 409);
+  assert.equal(db.tables[confirmationTable].length, 0);
+});
+
+test('failure to upgrade a legacy saved review never records confirmation', async () => {
+  let failSave = false;
+  const { db, route } = await scanFixture('one_on_one', { fail: q => failSave && q.table === reviewTable && q.op === 'update' });
+  db.tables[reviewTable][0].raw_result = { provider: 'rules_cron' };
+  const item = (await (await route.GET(listRequest('one_on_one'))).json()).items[0];
+  failSave = true;
+  assert.equal((await route.PATCH(confirmationRequest(item))).status, 500);
+  assert.equal(db.tables[confirmationTable].length, 0);
+});
+
+test('legacy confirmation upgrade cannot overwrite a newer manual AI scan', async () => {
+  let race = false;
+  const { db, route } = await scanFixture('one_on_one', { beforeExec: (q, tables) => {
+    if (race && q.table === reviewTable && q.op === 'update') {
+      tables[reviewTable][0].scanned_at = '2099-01-01T00:00:00.000Z';
+      tables[reviewTable][0].raw_result = { provider: 'gemini', photoReview: 'newer scan' };
+    }
+  } });
+  db.tables[reviewTable][0].raw_result = { provider: 'rules_cron' };
+  const item = (await (await route.GET(listRequest('one_on_one'))).json()).items[0];
+  race = true;
+  assert.equal((await route.PATCH(confirmationRequest(item))).status, 409);
+  assert.equal(db.tables[confirmationTable].length, 0);
+  assert.equal(db.tables[reviewTable][0].raw_result.provider, 'gemini');
+});
+
+test('scheduled review uses the same snapshot as manual review, preserves confirmation and exposes author edits', async () => {
+  const db = database(fixtures('부지런한 성격입니다. 씨발'));
+  const cron = loadRoute(db, { cron: true }), route = loadRoute(db);
+  const cronRequest = new Request('https://fixture.invalid/api/cron/dating-1on1-card-review');
+  assert.equal((await cron.GET(cronRequest)).status, 200);
+  assert.equal(db.tables[reviewTable].length, 1);
+  assert.equal(db.tables[reviewTable][0].source_type, 'one_on_one');
+  assert.ok(db.tables[reviewTable][0].raw_result.confirmationSnapshot);
+  const item = (await (await route.GET(listRequest('one_on_one'))).json()).items[0];
+  assert.equal((await route.PATCH(confirmationRequest(item))).status, 200);
+  const confirmed = structuredClone(db.tables[confirmationTable]);
+  const repeat = await (await cron.GET(cronRequest)).json();
+  assert.equal(repeat.reviewRows, 0); assert.equal(repeat.unchanged, 1);
+  assert.deepEqual(db.tables[confirmationTable], confirmed);
+  assert.equal((await (await route.GET(listRequest('one_on_one'))).json()).items.length, 0);
+  db.tables.dating_1on1_cards[0].strengths_text += ' 병신';
+  assert.equal((await (await cron.GET(cronRequest)).json()).reviewRows, 1);
+  const changed = (await (await route.GET(listRequest('one_on_one'))).json()).items;
+  assert.equal(changed.length, 1); assert.notDeepEqual(changed[0].confirmationSnapshot, item.confirmationSnapshot);
+  assert.equal((await route.PATCH(confirmationRequest(item))).status, 409);
+});
+
+test('scheduled review upgrades old cron rows without fabricating application records', async () => {
+  const { db, route } = await scanFixture();
+  db.tables[reviewTable][0].raw_result = { provider: 'rules_cron' };
+  const cron = loadRoute(db, { cron: true });
+  assert.equal((await (await cron.GET(new Request('https://fixture.invalid'))).json()).reviewRows, 1);
+  assert.deepEqual(db.tables[reviewTable].map(row => row.source_type), ['one_on_one']);
+  const item = (await (await route.GET(listRequest('one_on_one'))).json()).items[0];
+  assert.equal((await route.PATCH(confirmationRequest(item))).status, 200);
+});
+
+test('scheduled review preserves same-content AI photo findings and CAS protects a concurrent manual review', async () => {
+  const { db } = await scanFixture();
+  const row = db.tables[reviewTable][0];
+  row.raw_result.provider = 'gemini'; row.photo_flags = ['AI 사진 확인 필요'];
+  const before = structuredClone(row);
+  assert.equal((await (await loadRoute(db, { cron: true }).GET(new Request('https://fixture.invalid'))).json()).reviewRows, 0);
+  assert.deepEqual(row, before);
+
+  const race = await scanFixture('one_on_one', { beforeExec: (q, tables) => {
+    if (q.table === reviewTable && q.op === 'update') {
+      tables[reviewTable][0].scanned_at = '2099-01-01T00:00:00Z';
+      tables[reviewTable][0].raw_result = { provider: 'gemini', marker: 'concurrent-manual' };
+    }
+  } });
+  race.db.tables[reviewTable][0].raw_result = { provider: 'rules_cron' };
+  const response = await loadRoute(race.db, { cron: true }).GET(new Request('https://fixture.invalid'));
+  assert.equal((await response.json()).reviewRows, 0);
+  assert.equal(race.db.tables[reviewTable][0].raw_result.marker, 'concurrent-manual');
+});
+
+test('scheduled review remains cron-only and fails safely if nickname lookup fails', async () => {
+  const db = database(fixtures());
+  assert.equal((await loadRoute(db, { cron: true, denied: true }).GET(new Request('https://fixture.invalid'))).status, 401);
+  assert.equal(db.calls.length, 0);
+  const failing = database(fixtures(), { fail: q => q.table === 'profiles' });
+  assert.equal((await loadRoute(failing, { cron: true }).GET(new Request('https://fixture.invalid'))).status, 500);
+  assert.equal(failing.tables[reviewTable].length, 0);
 });
 test("older unconfirmed rows are reachable behind 300 confirmed rows without hydrating all photos", async () => {
   const { db, route } = await scanFixture("open_card");
