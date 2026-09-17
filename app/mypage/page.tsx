@@ -10,6 +10,7 @@ import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { timeAgo } from "@/lib/community";
 import { formatRemainingToKorean } from "@/lib/dating-open";
+import { buildOneOnOneRefreshConfirmation, buildOneOnOneRefreshSuccess, getOneOnOneRefreshCopy, ONE_ON_ONE_REFRESH_POLICY_COPY, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
 import { pickLoveFortuneFaceAsset } from "@/lib/love-fortune-face-assets";
 import { PROVINCE_ORDER } from "@/lib/region-city";
@@ -5424,9 +5425,7 @@ export default function MyPage() {
   const handleRefreshOneOnOneRecommendations = async (sourceCardId: string) => {
     if (refreshingOneOnOneRecommendationIds.includes(sourceCardId)) return;
     const recommendationGroup = myOneOnOneAutoRecommendations.find((group) => group.source_card_id === sourceCardId);
-    const refreshLimit = recommendationGroup?.refresh_limit ?? 1;
-    const refreshRemaining = recommendationGroup?.refresh_remaining ?? (recommendationGroup?.can_refresh ? 1 : 0);
-    if (!confirm(`자동 추천 후보를 최대 10명까지 새로 불러올까요? 후보가 적으면 일부가 다시 보일 수 있어요. 최근 24시간 기준 ${refreshLimit}회 중 ${refreshRemaining}회 남았습니다.`)) return;
+    if (!confirm(buildOneOnOneRefreshConfirmation(recommendationGroup))) return;
 
     setRefreshingOneOnOneRecommendationIds((prev) => [...prev, sourceCardId]);
     try {
@@ -5435,10 +5434,9 @@ export default function MyPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source_card_id: sourceCardId }),
       });
-      const body = (await res.json().catch(() => ({}))) as {
+      const body = (await res.json().catch(() => ({}))) as OneOnOneRefreshUsage & {
         ok?: boolean;
         error?: string;
-        refresh_remaining?: number;
         request_id?: string;
       };
       if (!res.ok || !body.ok) {
@@ -5448,11 +5446,7 @@ export default function MyPage() {
       }
 
       await reloadOneOnOneRecommendations();
-      alert(
-        body.refresh_remaining && body.refresh_remaining > 0
-          ? `새 후보를 불러왔습니다. 최근 24시간 기준 ${body.refresh_remaining}회 더 새로고침할 수 있습니다.`
-          : "새 후보를 불러왔습니다. 다음 이용 가능 시각은 화면에서 확인할 수 있습니다."
-      );
+      alert(buildOneOnOneRefreshSuccess(body));
     } catch (e) {
       alert(e instanceof Error ? e.message : "자동 추천 후보를 새로고침하지 못했습니다.");
     } finally {
@@ -9918,10 +9912,7 @@ export default function MyPage() {
               const autoRecommendations = autoRecommendationGroup?.recommendations ?? [];
               const adminAutoRecommendations = autoRecommendationGroup?.admin_recommendations ?? [];
               const canRefreshAutoRecommendations = autoRecommendationGroup?.can_refresh === true;
-              const autoRecommendationRefreshUsed = autoRecommendationGroup?.refresh_used === true;
-              const autoRecommendationRefreshLimit = autoRecommendationGroup?.refresh_limit ?? 1;
-              const autoRecommendationRefreshRemaining = autoRecommendationGroup?.refresh_remaining ?? (canRefreshAutoRecommendations ? 1 : 0);
-              const autoRecommendationNextRefreshAt = autoRecommendationGroup?.next_refresh_at ?? null;
+              const autoRecommendationRefreshCopy = getOneOnOneRefreshCopy(autoRecommendationGroup);
               const refreshingAutoRecommendations = refreshingOneOnOneRecommendationIds.includes(item.id);
               const incomingCandidates = relatedMatches.filter((match) => match.role === "source" && match.state === "proposed");
               const waitingCandidateResponses = relatedMatches.filter(
@@ -10084,8 +10075,8 @@ export default function MyPage() {
                           </div>
                           <p className="mt-2 text-xs leading-5 text-neutral-600">
                             {plusContactExchangeIncluded
-                              ? "기존 혜택 적용 중 · 번호교환 포함 · 후보 새로고침 하루 2회"
-                              : "7일 9,900원부터 · 후보 새로고침 하루 2회 · 프로필 우선 노출"}
+                              ? "기존 혜택 적용 중 · 번호교환 포함 · 새로고침 최근 24시간 2회"
+                              : "7일 9,900원부터 · 새로고침 최근 24시간 2회 · 프로필 우선 노출"}
                           </p>
                           {!plusContactExchangeIncluded ? (
                             <p className="mt-1 text-[11px] font-semibold text-neutral-500">번호교환은 기존처럼 건별 결제돼요.</p>
@@ -10126,7 +10117,7 @@ export default function MyPage() {
 
                   {["submitted", "reviewing", "approved"].includes(item.status) && (
                       <div className="mt-3 rounded-xl border border-pink-200 bg-pink-50/50 p-3">
-                        <div className="flex items-start justify-between gap-3">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <p className="text-sm font-semibold text-pink-900">자동 추천 후보 최대 10명</p>
                             <p className="mt-1 text-xs text-pink-700">
@@ -10141,23 +10132,15 @@ export default function MyPage() {
                           >
                             {refreshingAutoRecommendations
                               ? "새로고침 중..."
-                              : canRefreshAutoRecommendations
-                                ? `추천 새로고침 · ${autoRecommendationRefreshRemaining}회`
-                                : "24시간 이용 완료"}
+                              : autoRecommendationRefreshCopy.button}
                           </button>
                         </div>
                         <p className="mt-1 text-xs text-pink-700">
                           이 리스트 외에도 추가 후보를 확인할 수 있어요. 마음에 드는 후보는 여러 명 선택할 수 있고, 선택된 사람마다 수락 요청이 전달됩니다.
                         </p>
-                        {autoRecommendationRefreshUsed && (
-                          <p className="mt-1 text-xs text-pink-700">
-                            {canRefreshAutoRecommendations
-                              ? `최근 24시간 기준 ${autoRecommendationRefreshLimit}회 중 ${autoRecommendationRefreshRemaining}회 남았어요.`
-                              : autoRecommendationNextRefreshAt
-                                ? `다음 새로고침 가능 시각: ${new Date(autoRecommendationNextRefreshAt).toLocaleString("ko-KR")}`
-                                : "이 카드는 최근에 추천 새로고침을 사용했어요."}
-                          </p>
-                        )}
+                        <p className="mt-2 text-xs leading-5 text-pink-700">{autoRecommendationRefreshCopy.summary}</p>
+                        {autoRecommendationRefreshCopy.next ? <p className="mt-1 text-xs font-medium leading-5 text-pink-700">{autoRecommendationRefreshCopy.next}</p> : null}
+                        <p className="mt-1 text-[11px] leading-5 text-neutral-500">{ONE_ON_ONE_REFRESH_POLICY_COPY}</p>
                         {favoriteCandidates.length > 0 && (
                           <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
                             <div className="flex items-center justify-between gap-2">

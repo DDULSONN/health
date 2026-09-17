@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { ONE_ON_ONE_REFRESH_POLICY_COPY } from "@/lib/dating-1on1-refresh-copy";
 import {
   DATING_ALL_PASS_PRICE_KRW,
   ONE_ON_ONE_PLUS_7D_PRICE_KRW,
@@ -21,13 +22,13 @@ const ONE_ON_ONE_PLANS: PaidPlan[] = [
   {
     productType: "one_on_one_plus_7d",
     title: "7일 먼저 써보기",
-    description: "후보 새로고침 하루 2회 · 프로필 우선 노출",
+    description: "새로고침 최근 24시간 2회 · 프로필 우선 노출",
     amount: ONE_ON_ONE_PLUS_7D_PRICE_KRW,
   },
   {
     productType: "one_on_one_plus_30d",
     title: "1:1 플러스 30일",
-    description: "한 달 동안 새로고침 추가 · 프로필 우선 노출",
+    description: "새로고침 최근 24시간 2회 · 프로필 우선 노출",
     amount: ONE_ON_ONE_PLUS_PRICE_KRW,
     badge: "꾸준히 이용",
   },
@@ -159,6 +160,7 @@ export default function DatingPlusOffers({
           </span>
         </button>
       ))}
+      {mode === "one_on_one" ? <p className="px-1 text-[11px] leading-5 text-neutral-500">1:1 후보 새로고침은 {ONE_ON_ONE_REFRESH_POLICY_COPY}</p> : null}
       <p className="px-1 text-[10px] leading-4 text-neutral-500">번호교환은 기존과 동일하게 건별 결제됩니다.</p>
     </div>
   );

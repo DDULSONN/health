@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
 import { formatRemainingToKorean } from "@/lib/dating-open";
+import { buildOneOnOneRefreshConfirmation, buildOneOnOneRefreshSuccess, getOneOnOneRefreshCopy, ONE_ON_ONE_REFRESH_POLICY_COPY, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
 import {
   SWIPE_PREMIUM_DAILY_LIMIT,
   SWIPE_PREMIUM_DURATION_DAYS,
@@ -2675,6 +2676,8 @@ export default function OpenCardsPage() {
   const handleOneOnOneRecommendationRefresh = useCallback(
     async (sourceCardId: string) => {
       if (!sourceCardId || refreshingOneOnOneRecommendationIds.includes(sourceCardId)) return;
+      const group = oneOnOneHome?.recommendations.find((item) => item.source_card_id === sourceCardId);
+      if (!confirm(buildOneOnOneRefreshConfirmation(group))) return;
       setRefreshingOneOnOneRecommendationIds((prev) => [...prev, sourceCardId]);
       try {
         const res = await fetch("/api/dating/1on1/recommendations/refresh", {
@@ -2682,19 +2685,20 @@ export default function OpenCardsPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ source_card_id: sourceCardId }),
         });
-        const body = (await res.json().catch(() => ({}))) as { ok?: boolean; error?: string; request_id?: string };
+        const body = (await res.json().catch(() => ({}))) as OneOnOneRefreshUsage & { ok?: boolean; error?: string; request_id?: string };
         if (!res.ok || !body.ok) {
           const message = body.error ?? "추천 후보를 새로고침하지 못했습니다.";
           throw new Error(body.request_id ? `${message}\n문의 코드: ${body.request_id}` : message);
         }
         await reloadOneOnOneHome();
+        alert(buildOneOnOneRefreshSuccess(body));
       } catch (error) {
         alert(error instanceof Error ? error.message : "추천 후보를 새로고침하지 못했습니다.");
       } finally {
         setRefreshingOneOnOneRecommendationIds((prev) => prev.filter((id) => id !== sourceCardId));
       }
     },
-    [refreshingOneOnOneRecommendationIds, reloadOneOnOneHome]
+    [refreshingOneOnOneRecommendationIds, reloadOneOnOneHome, oneOnOneHome]
   );
 
   const openReelsApply = useCallback(
@@ -3839,8 +3843,8 @@ function OneOnOneHomePanel({
                   </div>
                   <p className="mt-2 text-xs leading-5 text-neutral-600">
                     {plusContactExchangeIncluded
-                      ? "기존 혜택 적용 중 · 번호교환 포함 · 후보 새로고침 하루 2회"
-                      : "7일 9,900원부터 · 후보 새로고침 하루 2회 · 프로필 우선 노출"}
+                      ? "기존 혜택 적용 중 · 번호교환 포함 · 새로고침 최근 24시간 2회"
+                      : "7일 9,900원부터 · 새로고침 최근 24시간 2회 · 프로필 우선 노출"}
                   </p>
                   {!plusContactExchangeIncluded ? (
                     <p className="mt-1 text-[11px] font-semibold text-neutral-500">번호교환은 기존처럼 건별 결제돼요.</p>
@@ -3938,9 +3942,7 @@ function OneOnOneHomePanel({
                     const adminRecommendations = group.admin_recommendations ?? [];
                     const refreshing = refreshingRecommendationIds.includes(sourceCardId);
                     const canRefresh = Boolean(sourceCardId && group.can_refresh);
-                    const refreshRemaining = group.refresh_remaining ?? (canRefresh ? 1 : 0);
-                    const refreshLimit = group.refresh_limit ?? (plusActive ? 2 : 1);
-                    const nextRefreshLabel = group.next_refresh_at ? new Date(group.next_refresh_at).toLocaleString("ko-KR") : "";
+                    const refreshCopy = getOneOnOneRefreshCopy(group);
 
                     return (
                       <div key={sourceCardId || `group-${groupIndex}`} className="rounded-[24px] bg-white p-3 shadow-none">
@@ -3950,11 +3952,7 @@ function OneOnOneHomePanel({
                               {sourceCard ? `${getOneOnOneDisplayName(sourceCard)} 기준 후보` : "추천 후보"}
                             </p>
                             <p className="mt-1 text-[11px] font-semibold text-neutral-500">
-                              {canRefresh
-                                ? `최근 24시간 ${refreshLimit}회 중 ${refreshRemaining}회 남았어요.`
-                                : nextRefreshLabel
-                                  ? `다음 새로고침: ${nextRefreshLabel}`
-                                  : "추천 상태를 확인 중입니다."}
+                              {refreshCopy.summary}
                             </p>
                           </div>
                           <button
@@ -3963,9 +3961,11 @@ function OneOnOneHomePanel({
                             onClick={() => onRefreshRecommendations(sourceCardId)}
                             className="inline-flex min-h-[36px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-neutral-50"
                           >
-                            {refreshing ? "새로고침 중..." : canRefresh ? `후보 새로고침 · ${refreshRemaining}회` : "24시간 이용 완료"}
+                            {refreshing ? "새로고침 중..." : refreshCopy.button}
                           </button>
                         </div>
+                        {refreshCopy.next ? <p className="mt-2 text-xs font-medium leading-5 text-neutral-700">{refreshCopy.next}</p> : null}
+                        <p className="mt-1 text-[11px] leading-5 text-neutral-500">{ONE_ON_ONE_REFRESH_POLICY_COPY}</p>
                         <div className="mt-3 space-y-3">
                           {recommendations.map((candidate) => {
                             const candidateId = String(candidate.id ?? "");
