@@ -12,7 +12,7 @@ export const SITE_GUIDE_MASCOT_OPTIONS: SiteGuideMascotOption[] = [
   {
     id: "default",
     label: "기본 짐냥이",
-    src: "/mascot/jimnyang-guide-v2.png",
+    src: "/mascot/jimnyang-guide-v2.webp",
   },
   {
     id: "summer",

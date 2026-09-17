@@ -582,7 +582,7 @@ const LOVE_ANXIETY_MOMENT_OPTIONS = [
 ];
 
 const LOVE_FORTUNE_MASCOT_SRC = "/mascot/love-fortune-cat.png";
-const DEFAULT_JIMNYANG_MASCOT_SRC = "/mascot/jimnyang-guide-v2.png";
+const DEFAULT_JIMNYANG_MASCOT_SRC = "/mascot/jimnyang-guide-v2.webp";
 
 const DETAIL_QUESTION_GROUPS = [
   {

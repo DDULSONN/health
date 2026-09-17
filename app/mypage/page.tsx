@@ -117,7 +117,7 @@ const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
 const OUTREACH_AUTO_BATCH_DELAY_MS = 1200;
 const OUTREACH_AUTO_MAX_BATCHES = 40;
 const LOVE_FORTUNE_MASCOT_SRC = "/mascot/love-fortune-cat.png";
-const DEFAULT_JIMNYANG_MASCOT_SRC = "/mascot/jimnyang-guide-v2.png";
+const DEFAULT_JIMNYANG_MASCOT_SRC = "/mascot/jimnyang-guide-v2.webp";
 
 function waitFor(ms: number) {
   return new Promise<void>((resolve) => {

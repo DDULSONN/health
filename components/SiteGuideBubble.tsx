@@ -45,7 +45,7 @@ type GuideSuggestion = {
 const HIDDEN_PATH_PREFIXES = ["/payments/success", "/payments/fail", "/account-deletion", "/login", "/signup", "/auth", "/landing"];
 const COLLAPSE_STORAGE_KEY = "site-guide-collapsed";
 const POSITION_STORAGE_KEY = "site-guide-position";
-const DEFAULT_MASCOT_SRC = "/mascot/jimnyang-guide-v2.png";
+const DEFAULT_MASCOT_SRC = "/mascot/jimnyang-guide-v2.webp";
 const isAllowedMascotSrc = (src: string) =>
   src.startsWith("/mascot/") || src.startsWith("/i/public-lite/community/site-guide-mascots/");
 
@@ -559,6 +559,7 @@ export default function SiteGuideBubble() {
             <div className="absolute inset-0 overflow-hidden rounded-2xl shadow-[0_8px_18px_rgba(15,23,42,0.1)] transition-transform duration-150 active:scale-95">
               <Image
                 src={mascotSrc}
+                unoptimized={mascotSrc === DEFAULT_MASCOT_SRC}
                 alt="짐냥이"
                 fill
                 className="object-cover object-center"

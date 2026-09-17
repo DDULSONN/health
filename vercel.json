@@ -6,10 +6,6 @@
       "schedule": "0 15 * * 0"
     },
     {
-      "path": "/api/cron/bodybattle-season",
-      "schedule": "5 * * * *"
-    },
-    {
       "path": "/api/cron/admin-outreach-mail-jobs",
       "schedule": "* * * * *"
     },
