@@ -48,9 +48,9 @@ for (const file of [
   });
 }
 
-test("only the pre-optimized default mascot skips runtime image transformations", () => {
+test("pre-optimized default and uploaded mascots skip runtime image transformations", () => {
   assert.ok(read("components/SiteGuideBubble.tsx").includes(
-    "unoptimized={mascotSrc === DEFAULT_MASCOT_SRC}"
+    'unoptimized={mascotSrc === DEFAULT_MASCOT_SRC || mascotSrc.startsWith("/i/public-lite/community/site-guide-mascots/")}'
   ));
 });
 

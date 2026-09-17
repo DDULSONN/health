@@ -559,12 +559,13 @@ export default function SiteGuideBubble() {
             <div className="absolute inset-0 overflow-hidden rounded-2xl shadow-[0_8px_18px_rgba(15,23,42,0.1)] transition-transform duration-150 active:scale-95">
               <Image
                 src={mascotSrc}
-                unoptimized={mascotSrc === DEFAULT_MASCOT_SRC}
+                unoptimized={mascotSrc === DEFAULT_MASCOT_SRC || mascotSrc.startsWith("/i/public-lite/community/site-guide-mascots/")}
                 alt="짐냥이"
                 fill
                 className="object-cover object-center"
                 sizes="170px"
                 priority={false}
+                onError={() => setMascotSrc((current) => current === DEFAULT_MASCOT_SRC ? current : DEFAULT_MASCOT_SRC)}
               />
             </div>
           </div>

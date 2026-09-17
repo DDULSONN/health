@@ -5,7 +5,7 @@
 - Keep the retired endpoint and middleware's 410 response for existing callers.
 - Use `public/mascot/jimnyang-guide-v2.webp` for the default mascot in the public setting, guide bubble, home fallbacks and admin/mypage fallbacks.
 - Retain the original PNG for compatibility with old clients and cached responses.
-- Bypass Next.js image transformations only for this already-optimized default asset; seasonal and administrator-uploaded images keep their existing behavior.
+- Bypass Next.js image transformations for the already-optimized default asset. The subsequent mascot display fix also bypasses transformations for administrator-uploaded WebP mascots, whose versioned URLs are otherwise rejected by the image optimizer. Built-in seasonal images keep their existing behavior.
 - No matching, payment, authentication, notification or database changes.
 
 ## Asset
