@@ -2,11 +2,14 @@
 
 import Link from "next/link";
 import NextImage from "next/image";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
-import { normalizeNickname, validateNickname } from "@/lib/nickname";
+import { normalizeNickname } from "@/lib/nickname";
 import { createClient } from "@/lib/supabase/client";
+import { type DraftFields } from "@/lib/dating-onboarding-draft";
+import { useDatingOnboardingDraft } from "@/lib/use-dating-onboarding-draft";
+import { onboardingFieldId, validateOnboardingStep, type OnboardingField, type OnboardingErrors } from "@/lib/dating-onboarding-validation";
 
 type TargetKey = "open" | "oneOnOne";
 type Sex = "male" | "female";
@@ -43,10 +46,6 @@ const INSTANT_OPEN_CARD_HREF = "/dating/paid?apply=1&source=open_card";
 
 function normalizeInstagramId(value: string) {
   return value.trim().replace(/^@+/, "").replace(/\s+/g, "").slice(0, 30);
-}
-
-function validInstagramId(value: string) {
-  return /^[A-Za-z0-9._]{1,30}$/.test(normalizeInstagramId(value));
 }
 
 function getExtension(name: string) {
@@ -124,6 +123,7 @@ export default function DatingOnboardingPage() {
   const router = useRouter();
   const supabase = useMemo(() => createClient(), []);
   const [checking, setChecking] = useState(true);
+  const [checkFailed, setCheckFailed] = useState(false);
   const [step, setStep] = useState(0);
   const [targets, setTargets] = useState<Record<TargetKey, boolean>>({ open: true, oneOnOne: true });
   const [available, setAvailable] = useState<Record<TargetKey, boolean>>({ open: false, oneOnOne: false });
@@ -165,6 +165,71 @@ export default function DatingOnboardingPage() {
   const [info, setInfo] = useState("");
   const [continueToInstantOpenCard, setContinueToInstantOpenCard] = useState(false);
 
+  const [draftUserId, setDraftUserId] = useState<string | null>(null);
+  const [attemptedSteps, setAttemptedSteps] = useState<number[]>([]);
+  const [focusField, setFocusField] = useState<OnboardingField | null>(null);
+  const [photoSelectionErrors, setPhotoSelectionErrors] = useState(["", ""]);
+  const submitLock = useRef(false);
+  const authIdentity = useRef<string | null | undefined>(undefined);
+  const authVersion = useRef(0);
+  const fields: DraftFields = {
+    sex, nickname, name, birthYear, heightCm, job, region, introText, strengthsText,
+    preferredPartnerText, smoking, workoutFrequency, trainingYears, instagramId, total3Lift, photoVisibility,
+  };
+  const selectedTargets = (Object.keys(targets) as TargetKey[]).filter((key) => targets[key] && (available[key] || completed[key]));
+  const allSelectedDone = selectedTargets.length > 0 && selectedTargets.every((key) => completed[key]);
+  const draft = useDatingOnboardingDraft(draftUserId, { step, targets, fields },
+    !checking && !allSelectedDone && (available.open || available.oneOnOne));
+  const finishDraft = draft.finish;
+
+  useEffect(() => {
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      const next = session?.user.id ?? null;
+      if (authIdentity.current !== undefined && authIdentity.current !== next) {
+        authVersion.current += 1;
+        finishDraft();
+        setChecking(true);
+        window.location.reload();
+      }
+      authIdentity.current = next;
+    });
+    return () => data.subscription.unsubscribe();
+  }, [supabase, finishDraft]);
+
+  useEffect(() => {
+    if (!focusField) return;
+    const frame = window.requestAnimationFrame(() => {
+      const field = document.getElementById(onboardingFieldId(focusField));
+      field?.focus({ preventScroll: true });
+      field?.scrollIntoView({ block: "center", behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+      setFocusField(null);
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [focusField, step]);
+
+  const resumeDraft = () => {
+    const saved = draft.pendingDraft;
+    if (!saved) return;
+    const f = saved.fields;
+    setSex(f.sex);
+    if (!nicknameSaved) setNickname(f.nickname);
+    setName(f.name); setBirthYear(f.birthYear); setHeightCm(f.heightCm);
+    setJob(f.job); setRegion(f.region); setIntroText(f.introText);
+    setStrengthsText(f.strengthsText); setPreferredPartnerText(f.preferredPartnerText);
+    setSmoking(f.smoking); setWorkoutFrequency(f.workoutFrequency);
+    setTrainingYears(f.trainingYears); setInstagramId(f.instagramId);
+    setTotal3Lift(f.total3Lift); setPhotoVisibility(f.photoVisibility);
+    const nextTargets = {
+      open: available.open && saved.targets.open,
+      oneOnOne: !continueToInstantOpenCard && available.oneOnOne && saved.targets.oneOnOne,
+    };
+    if (continueToInstantOpenCard) nextTargets.open = available.open;
+    if (nextTargets.open || nextTargets.oneOnOne) setTargets(nextTargets);
+    setStep(saved.step);
+    setInfo("이어서 작성 중이에요. 사진과 필수 동의는 다시 선택해 주세요.");
+    draft.resumed();
+  };
+
   useEffect(() => {
     const urls = photos.map((file) => (file ? URL.createObjectURL(file) : null));
     setPreviewUrls(urls);
@@ -173,21 +238,20 @@ export default function DatingOnboardingPage() {
 
   useEffect(() => {
     let active = true;
+    const version = authVersion.current;
     (async () => {
       const wantsInstantOpenCard = new URLSearchParams(window.location.search).get("next") === "instant_open_card";
       const onboardingPath = wantsInstantOpenCard
         ? "/onboarding/dating?next=instant_open_card"
         : "/onboarding/dating";
       setContinueToInstantOpenCard(wantsInstantOpenCard);
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        router.replace(`/login?redirect=${encodeURIComponent(onboardingPath)}`);
-        return;
-      }
-
       try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!active || version !== authVersion.current) return;
+        if (!user) {
+          router.replace(`/login?redirect=${encodeURIComponent(onboardingPath)}`);
+          return;
+        }
         const [oneResponse, openResponse, writeResponse, profileResponse] = await Promise.all([
           fetch("/api/dating/1on1/write-status", { cache: "no-store" }),
           fetch("/api/dating/cards/my", { cache: "no-store" }),
@@ -201,7 +265,7 @@ export default function DatingOnboardingPage() {
         const open = (await openResponse.json().catch(() => ({}))) as { items?: OpenCardItem[] };
         const write = (await writeResponse.json().catch(() => ({}))) as { enabled?: boolean };
         const profile = (await profileResponse.json().catch(() => ({}))) as { profile?: { nickname?: string | null } };
-        if (!active) return;
+        if (!active || version !== authVersion.current) return;
         if (!one.phoneVerified) {
           router.replace(`/phone-verification?next=${encodeURIComponent(onboardingPath)}`);
           return;
@@ -216,6 +280,7 @@ export default function DatingOnboardingPage() {
         const oneAvailable = one.canWrite === true;
         const profileNickname = normalizeNickname(String(profile.profile?.nickname ?? ""));
         const metadataNickname = normalizeNickname(String((user.user_metadata as { nickname?: unknown } | null)?.nickname ?? ""));
+        setDraftUserId(user.id);
         setNickname(profileNickname || metadataNickname);
         setNicknameSaved(Boolean(profileNickname || metadataNickname));
         setAvailable({ open: openAvailable, oneOnOne: oneAvailable });
@@ -232,10 +297,13 @@ export default function DatingOnboardingPage() {
               ? "현재 1:1 신청서 작성이 중단되어 있어요."
               : "",
         });
+        setChecking(false);
       } catch {
-        if (active) setError("등록 가능 상태를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
-      } finally {
-        if (active) setChecking(false);
+        if (active && version === authVersion.current) {
+          setCheckFailed(true);
+          setError("등록 가능 상태를 불러오지 못했습니다. 입력했던 내용은 변경하지 않았어요. 다시 시도해 주세요.");
+          setChecking(false);
+        }
       }
     })();
     return () => {
@@ -243,73 +311,22 @@ export default function DatingOnboardingPage() {
     };
   }, [router, supabase]);
 
-  const selectedTargets = (Object.keys(targets) as TargetKey[]).filter((key) => targets[key] && (available[key] || completed[key]));
-  const allSelectedDone = selectedTargets.length > 0 && selectedTargets.every((key) => completed[key]);
-
-  const validateStep = (targetStep: number) => {
-    if (selectedTargets.length === 0) return "등록할 서비스를 하나 이상 선택해 주세요.";
-    if (targetStep === 0) {
-      const year = Number(birthYear);
-      const height = Number(heightCm);
-      if (!sex) return "성별을 선택해 주세요.";
-      if (!nicknameSaved) {
-        const nicknameError = validateNickname(nickname);
-        if (nicknameError) return nicknameError;
-      }
-      if (targets.oneOnOne && !name.trim()) return "1:1 신청서에 사용할 이름을 입력해 주세요.";
-      if (targets.oneOnOne && name.trim().length > 30) return "이름은 30자 이하로 입력해 주세요.";
-      if (!Number.isInteger(year) || year < 1960 || year > MAX_ADULT_BIRTH_YEAR) {
-        return `만 18세 이상만 이용할 수 있어요. 출생연도 4자리를 입력해 주세요. 예: 1996`;
-      }
-      if (!Number.isInteger(height) || height < 120 || height > 230) return "키는 120~230cm 사이로 입력해 주세요.";
-      if (!job.trim()) return "직업을 입력해 주세요.";
-      if (!region.trim()) return "지역을 입력해 주세요.";
-      if (targets.open && job.trim().length > 50) return "오픈카드 직업은 50자 이하로 입력해 주세요.";
-      if (targets.open && region.trim().length > 30) return "오픈카드 지역은 30자 이하로 입력해 주세요.";
-      if (targets.oneOnOne && job.trim().length > 80) return "직업은 80자 이하로 입력해 주세요.";
-      if (targets.oneOnOne && region.trim().length > 80) return "지역은 80자 이하로 입력해 주세요.";
-    }
-    if (targetStep === 1) {
-      if (targets.oneOnOne && !introText.trim()) return "자기소개를 입력해 주세요.";
-      if (!strengthsText.trim()) return "내 강점을 입력해 주세요.";
-      if (!preferredPartnerText.trim()) return "원하는 상대에 대한 내용을 입력해 주세요.";
-      if (targets.oneOnOne && introText.trim().length > 2000) return "자기소개는 2,000자 이하로 입력해 주세요.";
-      if (targets.open && strengthsText.trim().length > 150) return "오픈카드 내 강점은 150자 이하로 입력해 주세요.";
-      if (targets.oneOnOne && strengthsText.trim().length > 1000) return "내 강점은 1,000자 이하로 입력해 주세요.";
-      if (preferredPartnerText.trim().length > 1000) return "원하는 상대는 1,000자 이하로 입력해 주세요.";
-    }
-    if (targetStep === 2 && targets.open) {
-      if (!validInstagramId(instagramId)) return "인스타그램 아이디를 @ 없이 정확히 입력해 주세요.";
-      const years = trainingYears ? Number(trainingYears) : 0;
-      if (!Number.isFinite(years) || years < 0 || years > 50) return "운동 경력은 0~50년 사이로 입력해 주세요.";
-    }
-    if (targetStep === 3) {
-      if (!photos[0] || !photos[1]) return "사진 두 장을 모두 선택해 주세요.";
-      for (let index = 0; index < photos.length; index += 1) {
-        const file = photos[index];
-        if (!file) continue;
-        const message = photoError(file);
-        if (message) return `${index + 1}번 사진: ${message}`;
-      }
-    }
-    if (targetStep === 4) {
-      if (targets.open && !consentOpenCard) return "오픈카드 공개 범위 안내를 확인해 주세요.";
-      if (
-        targets.oneOnOne &&
-        (!consentFakeInfo || !consentNoShow || !consentFee || !consentPrivacy || !consentNoDirectContact)
-      ) {
-        return "1:1 신청 필수 확인 항목을 모두 체크해 주세요.";
-      }
-    }
-    return "";
+  const validateStep = (targetStep: number): OnboardingErrors => validateOnboardingStep(targetStep, {
+    fields, targets, selectedCount: selectedTargets.length, nicknameSaved, maxBirthYear: MAX_ADULT_BIRTH_YEAR,
+    photos: photos.map((file, index) => photoSelectionErrors[index] || (file ? photoError(file) : `사진 ${index + 1}을 선택해 주세요.`)),
+    consents: { consentOpenCard, consentFakeInfo, consentNoShow, consentFee, consentPrivacy, consentNoDirectContact },
+  });
+  const fieldErrors = attemptedSteps.includes(step) ? validateStep(step) : {};
+  const fieldProps = (field: OnboardingField) => ({ id: onboardingFieldId(field), error: fieldErrors[field] });
+  const showStepErrors = (targetStep: number, errors: OnboardingErrors) => {
+    setAttemptedSteps((current) => current.includes(targetStep) ? current : [...current, targetStep]);
+    setStep(targetStep);
+    setError("");
+    setFocusField(Object.keys(errors)[0] as OnboardingField);
   };
-
   const moveNext = () => {
-    const message = validateStep(step);
-    if (message) {
-      setError(message);
-      return;
-    }
+    const errors = validateStep(step);
+    if (Object.keys(errors).length) { showStepErrors(step, errors); return; }
     setError("");
     setStep((current) => Math.min(STEP_LABELS.length - 1, current + 1));
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -375,16 +392,12 @@ export default function DatingOnboardingPage() {
   };
 
   const submit = async () => {
+    if (submitLock.current || checking || !draft.ready || draft.pendingDraft || allSelectedDone) return;
     for (let index = 0; index < STEP_LABELS.length; index += 1) {
-      const message = validateStep(index);
-      if (message) {
-        setStep(index);
-        setError(message);
-        window.scrollTo({ top: 0, behavior: "smooth" });
-        return;
-      }
+      const errors = validateStep(index);
+      if (Object.keys(errors).length) { showStepErrors(index, errors); return; }
     }
-
+    submitLock.current = true;
     const selectedFiles = photos.filter((file): file is File => Boolean(file));
     setSubmitting(true);
     setError("");
@@ -482,6 +495,7 @@ export default function DatingOnboardingPage() {
         }
       }
 
+      if (successes.length > 0 && failures.length === 0) finishDraft();
       if (successes.length > 0) setInfo(`${successes.join(" · ")} 등록을 완료했습니다.`);
       if (failures.length > 0) setError(`${failures.join("\n")} 성공한 등록은 유지되며 실패한 항목만 다시 시도할 수 있어요.`);
       if (continueToInstantOpenCard && successes.includes("오픈카드") && failures.length === 0) {
@@ -504,11 +518,25 @@ export default function DatingOnboardingPage() {
     } finally {
       setProgress("");
       setSubmitting(false);
+      submitLock.current = false;
     }
   };
 
   if (checking) {
     return <main className="mx-auto flex min-h-[70vh] max-w-lg items-center justify-center px-4"><p className="text-sm text-neutral-500">가입 정보를 확인하고 있어요...</p></main>;
+  }
+
+  if (checkFailed) {
+    return (
+      <main className="mx-auto min-h-[70vh] max-w-xl px-4 py-7">
+        <h1 className="text-xl font-bold">등록 상태를 확인하지 못했어요</h1>
+        <p role="alert" className="mt-3 text-sm leading-6 text-neutral-600">{error}</p>
+        <div className="mt-5 flex gap-3">
+          <button type="button" onClick={() => window.location.reload()} className="rounded-lg bg-neutral-950 px-4 py-3 text-sm font-bold text-white">다시 시도</button>
+          <Link href="/community/dating/cards" className="rounded-lg border border-neutral-200 px-4 py-3 text-sm text-neutral-600">홈으로</Link>
+        </div>
+      </main>
+    );
   }
 
   const nothingAvailable = continueToInstantOpenCard
@@ -524,10 +552,27 @@ export default function DatingOnboardingPage() {
             <h1 className="mt-1 text-2xl font-black">소개 프로필 작성</h1>
             <p className="mt-2 text-sm leading-6 text-neutral-600">오픈카드와 1:1 매칭에 함께 사용할 정보를 입력해 주세요.</p>
           </div>
-          <button type="button" onClick={() => router.replace("/community/dating/cards")} className="shrink-0 text-xs font-semibold text-neutral-500 underline underline-offset-4">나중에</button>
+          <button type="button" disabled={submitting} onClick={() => router.replace("/community/dating/cards")} className="shrink-0 text-xs font-semibold text-neutral-500 underline underline-offset-4">나중에</button>
         </div>
 
-        <section className="mt-5 border-y border-neutral-200 bg-white py-3">
+        {draft.pendingDraft && !nothingAvailable && (
+          <section className="mt-4 rounded-xl border border-neutral-200 bg-white p-4" aria-label="임시저장한 프로필">
+            <p className="text-sm font-bold">작성 중인 프로필이 있어요</p>
+            <p className="mt-1 text-xs leading-5 text-neutral-500">이 브라우저에 저장한 내용을 이어 쓸 수 있어요. 사진과 필수 동의는 다시 선택해 주세요.</p>
+            <div className="mt-3 flex gap-2">
+              <button type="button" onClick={resumeDraft} className="rounded-lg bg-neutral-950 px-4 py-2 text-sm font-bold text-white">이어서 작성</button>
+              <button type="button" onClick={draft.discard} className="rounded-lg border border-neutral-200 px-4 py-2 text-sm text-neutral-600">새로 작성</button>
+            </div>
+          </section>
+        )}
+        {!nothingAvailable && !draft.pendingDraft && (
+          <p className="mt-3 text-xs leading-5 text-neutral-500" role="status">
+            {draft.saveStatus === "unavailable" ? "이 브라우저에서는 임시저장이 안 돼요. 화면을 닫기 전에 등록을 완료해 주세요." : "입력한 글은 이 브라우저에 7일간 임시저장돼요. 사진·동의는 제외되며 로그아웃하면 삭제돼요."}
+          </p>
+        )}
+        {nothingAvailable && error && <p role="alert" className="mt-4 text-sm text-rose-700">{error}</p>}
+        <fieldset disabled={submitting || Boolean(draft.pendingDraft) || !draft.ready} aria-busy={submitting} className="min-w-0">
+        <section id={onboardingFieldId("targets")} tabIndex={-1} aria-describedby={fieldErrors.targets ? `${onboardingFieldId("targets")}-error` : undefined} className="mt-5 border-y border-neutral-200 bg-white py-3">
           <div className="grid grid-cols-2 gap-2">
             {(["open", "oneOnOne"] as TargetKey[]).map((key) => {
               const label = key === "open" ? "오픈카드" : "1:1 매칭";
@@ -550,6 +595,7 @@ export default function DatingOnboardingPage() {
           </div>
         </section>
 
+        <FieldError id={onboardingFieldId("targets")} error={fieldErrors.targets} />
         {nothingAvailable ? (
           <section className="mt-5 border border-neutral-200 bg-white p-5">
             <p className="text-base font-bold">
@@ -608,19 +654,20 @@ export default function DatingOnboardingPage() {
                 <div>
                   <StepHeading title="기본 정보" description="두 서비스에 공통으로 들어갈 정보예요." />
                   <div className="mt-5 grid gap-3 sm:grid-cols-2">
-                    {!nicknameSaved && <TextField value={nickname} onChange={(value) => setNickname(normalizeNickname(value).slice(0, 12))} label="닉네임" placeholder="사이트에서 사용할 닉네임" className="sm:col-span-2" maxLength={12} />}
+                    {!nicknameSaved && <TextField {...fieldProps("nickname")} value={nickname} onChange={(value) => setNickname(normalizeNickname(value).slice(0, 12))} label="닉네임" placeholder="사이트에서 사용할 닉네임" className="sm:col-span-2" maxLength={12} />}
                     <div className="sm:col-span-2">
                       <FieldLabel>성별 (필수)</FieldLabel>
-                      <div className="grid grid-cols-2 border border-neutral-200" role="group" aria-label="성별 선택">
+                      <div id={onboardingFieldId("sex")} tabIndex={-1} aria-describedby={fieldErrors.sex ? `${onboardingFieldId("sex")}-error` : undefined} className="grid grid-cols-2 border border-neutral-200" role="group" aria-label="성별 선택">
                         <Choice active={sex === "male"} onClick={() => setSex("male")}>남자</Choice>
                         <Choice active={sex === "female"} onClick={() => setSex("female")}>여자</Choice>
                       </div>
+                      <FieldError {...fieldProps("sex")} />
                     </div>
-                    {targets.oneOnOne && <TextField value={name} onChange={setName} label="이름" placeholder="1:1 운영 확인용 이름" className="sm:col-span-2" maxLength={30} />}
-                    <TextField value={birthYear} onChange={(value) => setBirthYear(value.replace(/\D/g, "").slice(0, 4))} label="출생연도" placeholder="예: 1996" inputMode="numeric" />
-                    <TextField value={heightCm} onChange={(value) => setHeightCm(value.replace(/\D/g, "").slice(0, 3))} label="키(cm)" placeholder="예: 175" inputMode="numeric" />
-                    <TextField value={job} onChange={setJob} label="직업" placeholder="직업" className="sm:col-span-2" maxLength={targets.open ? 50 : 80} />
-                    <TextField value={region} onChange={setRegion} label="지역" placeholder="예: 서울 마포구" className="sm:col-span-2" maxLength={targets.open ? 30 : 80} />
+                    {targets.oneOnOne && <TextField {...fieldProps("name")} value={name} onChange={setName} label="이름" placeholder="1:1 운영 확인용 이름" className="sm:col-span-2" maxLength={30} />}
+                    <TextField {...fieldProps("birthYear")} value={birthYear} onChange={(value) => setBirthYear(value.replace(/\D/g, "").slice(0, 4))} label="출생연도" placeholder="예: 1996" inputMode="numeric" />
+                    <TextField {...fieldProps("heightCm")} value={heightCm} onChange={(value) => setHeightCm(value.replace(/\D/g, "").slice(0, 3))} label="키(cm)" placeholder="예: 175" inputMode="numeric" />
+                    <TextField {...fieldProps("job")} value={job} onChange={setJob} label="직업" placeholder="직업" className="sm:col-span-2" maxLength={targets.open ? 50 : 80} />
+                    <TextField {...fieldProps("region")} value={region} onChange={setRegion} label="지역" placeholder="예: 서울 마포구" className="sm:col-span-2" maxLength={targets.open ? 30 : 80} />
                   </div>
                 </div>
               )}
@@ -629,9 +676,9 @@ export default function DatingOnboardingPage() {
                 <div>
                   <StepHeading title="내 소개" description="상대가 나를 이해하고 대화를 시작하기 쉬운 내용을 적어 주세요." />
                   <div className="mt-5 space-y-4">
-                    {targets.oneOnOne && <TextArea value={introText} onChange={setIntroText} label="요즘 나는 어떤 사람인가요?" placeholder="평소 일상, 주말에 하는 일, 좋아하는 것 등을 적어 주세요." maxLength={2000} />}
-                    <TextArea value={strengthsText} onChange={setStrengthsText} label="나와 만나면 어떤 점이 좋을까요?" placeholder="성격이나 관계에서의 장점을 구체적으로 적어 주세요." maxLength={targets.open ? 150 : 1000} />
-                    <TextArea value={preferredPartnerText} onChange={setPreferredPartnerText} label="어떤 사람을 만나고 싶나요?" placeholder="성격, 대화 방식, 함께 하고 싶은 일 등을 적어 주세요." maxLength={1000} />
+                    {targets.oneOnOne && <TextArea {...fieldProps("introText")} value={introText} onChange={setIntroText} label="요즘 나는 어떤 사람인가요?" placeholder="평소 일상, 주말에 하는 일, 좋아하는 것 등을 적어 주세요." maxLength={2000} />}
+                    <TextArea {...fieldProps("strengthsText")} value={strengthsText} onChange={setStrengthsText} label="나와 만나면 어떤 점이 좋을까요?" placeholder="성격이나 관계에서의 장점을 구체적으로 적어 주세요." maxLength={targets.open ? 150 : 1000} />
+                    <TextArea {...fieldProps("preferredPartnerText")} value={preferredPartnerText} onChange={setPreferredPartnerText} label="어떤 사람을 만나고 싶나요?" placeholder="성격, 대화 방식, 함께 하고 싶은 일 등을 적어 주세요." maxLength={1000} />
                     {targets.open && <p className="text-xs leading-5 text-neutral-500">내 강점과 원하는 상대 내용은 오픈카드에도 공개됩니다.</p>}
                   </div>
                 </div>
@@ -654,9 +701,9 @@ export default function DatingOnboardingPage() {
                   )}
                   {targets.open && (
                     <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                      <TextField value={trainingYears} onChange={(value) => setTrainingYears(value.replace(/\D/g, "").slice(0, 2))} label="운동 경력(년)" placeholder="예: 3" inputMode="numeric" />
-                      <TextField value={total3Lift} onChange={(value) => setTotal3Lift(value.replace(/\D/g, "").slice(0, 4))} label="3대 합계(선택)" placeholder="선택 입력" inputMode="numeric" />
-                      <TextField value={instagramId} onChange={(value) => setInstagramId(normalizeInstagramId(value))} label="인스타그램 아이디" placeholder="@ 제외" className="sm:col-span-2" />
+                      <TextField {...fieldProps("trainingYears")} value={trainingYears} onChange={(value) => setTrainingYears(value.replace(/\D/g, "").slice(0, 2))} label="운동 경력(년)" placeholder="예: 3" inputMode="numeric" />
+                      <TextField {...fieldProps("total3Lift")} value={total3Lift} onChange={(value) => setTotal3Lift(value.replace(/\D/g, "").slice(0, 4))} label="3대 합계(선택)" placeholder="선택 입력" inputMode="numeric" />
+                      <TextField {...fieldProps("instagramId")} value={instagramId} onChange={(value) => setInstagramId(normalizeInstagramId(value))} label="인스타그램 아이디" placeholder="@ 제외" className="sm:col-span-2" />
                     </div>
                   )}
                 </div>
@@ -667,24 +714,25 @@ export default function DatingOnboardingPage() {
                   <StepHeading title="사진 두 장" description="한 번 선택하면 오픈카드와 1:1에 각각 안전하게 저장해요." />
                   <div className="mt-5 grid grid-cols-2 gap-3">
                     {[0, 1].map((index) => (
-                      <label key={index} className="relative flex aspect-[4/5] cursor-pointer items-center justify-center overflow-hidden border border-dashed border-neutral-300 bg-neutral-50">
+                      <div key={index} className="min-w-0"><label className="relative flex aspect-[4/5] cursor-pointer items-center justify-center overflow-hidden border border-dashed border-neutral-300 bg-neutral-50">
                         {previewUrls[index] ? <NextImage src={previewUrls[index] ?? ""} alt={`사진 ${index + 1} 미리보기`} fill sizes="(max-width: 640px) 45vw, 250px" unoptimized className="object-contain" /> : <span className="text-sm font-bold text-neutral-500">사진 {index + 1} 선택</span>}
-                        <input type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(event) => {
+                        <input id={onboardingFieldId(`photo${index}`)} aria-label={`사진 ${index + 1}`} aria-invalid={Boolean(fieldErrors[index === 0 ? "photo0" : "photo1"] || photoSelectionErrors[index])} aria-describedby={(fieldErrors[index === 0 ? "photo0" : "photo1"] || photoSelectionErrors[index]) ? `${onboardingFieldId(`photo${index}`)}-error` : undefined} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(event) => {
                           const file = event.target.files?.[0] ?? null;
                           if (file) {
                             const message = photoError(file);
                             if (message) {
-                              setError(`${index + 1}번 사진: ${message}`);
+                              setPhotoSelectionErrors((current) => current.map((item, i) => i === index ? message : item));
                               event.currentTarget.value = "";
                               return;
                             }
                           }
                           setError("");
+                          setPhotoSelectionErrors((current) => current.map((item, i) => i === index ? "" : item));
                           setPhotos((current) => current.map((item, itemIndex) => itemIndex === index ? file : item));
                           setOpenAssets(null);
                           setOneOnOnePhotoPaths(null);
                         }} />
-                      </label>
+                      </label><FieldError id={onboardingFieldId(`photo${index}`)} error={photoSelectionErrors[index] || fieldErrors[index === 0 ? "photo0" : "photo1"]} /></div>
                     ))}
                   </div>
                   <p className="mt-3 text-xs leading-5 text-neutral-500">JPG, PNG, WebP · 장당 10MB 이하. HEIC는 캡처한 뒤 선택해 주세요.</p>
@@ -712,18 +760,15 @@ export default function DatingOnboardingPage() {
                   <StepHeading title="마지막 확인" description="등록되는 서비스와 개인정보 안내를 확인해 주세요." />
                   <div className="mt-5 space-y-3">
                     {targets.open && (
-                      <label className="flex min-h-12 items-start gap-3 border border-neutral-200 bg-neutral-50 p-3 text-sm leading-5 text-neutral-700">
-                        <input type="checkbox" checked={consentOpenCard} onChange={(event) => setConsentOpenCard(event.target.checked)} className="mt-1 accent-rose-500" />
-                        <span>오픈카드의 소개·강점·사진 공개 범위를 확인했고, 수락 후 인스타그램 아이디가 상대에게 공개되는 것에 동의합니다.</span>
-                      </label>
+                      <Consent {...fieldProps("consentOpenCard")} checked={consentOpenCard} onChange={setConsentOpenCard}>오픈카드의 소개·강점·사진 공개 범위를 확인했고, 수락 후 인스타그램 아이디가 상대에게 공개되는 것에 동의합니다.</Consent>
                     )}
                     {targets.oneOnOne && (
                       <>
-                        <Consent checked={consentFakeInfo} onChange={setConsentFakeInfo}>허위 정보 작성 시 이용이 제한될 수 있어요.</Consent>
-                        <Consent checked={consentNoShow} onChange={setConsentNoShow}>노쇼나 무단 취소 시 재이용이 제한될 수 있어요.</Consent>
-                        <Consent checked={consentFee} onChange={setConsentFee}>번호 교환 시 매칭비가 발생하고 연락처가 공개돼요.</Consent>
-                        <Consent checked={consentNoDirectContact} onChange={setConsentNoDirectContact}>신청서에는 휴대폰 번호, 카카오톡 ID, 인스타 계정, 오픈채팅 링크 등 외부 연락처를 적지 않아요.</Consent>
-                        <Consent checked={consentPrivacy} onChange={setConsentPrivacy}>개인정보는 1:1 매칭 진행, 운영 확인, 안전 관리 목적으로만 사용돼요.</Consent>
+                        <Consent {...fieldProps("consentFakeInfo")} checked={consentFakeInfo} onChange={setConsentFakeInfo}>허위 정보 작성 시 이용이 제한될 수 있어요.</Consent>
+                        <Consent {...fieldProps("consentNoShow")} checked={consentNoShow} onChange={setConsentNoShow}>노쇼나 무단 취소 시 재이용이 제한될 수 있어요.</Consent>
+                        <Consent {...fieldProps("consentFee")} checked={consentFee} onChange={setConsentFee}>번호 교환 시 매칭비가 발생하고 연락처가 공개돼요.</Consent>
+                        <Consent {...fieldProps("consentNoDirectContact")} checked={consentNoDirectContact} onChange={setConsentNoDirectContact}>신청서에는 휴대폰 번호, 카카오톡 ID, 인스타 계정, 오픈채팅 링크 등 외부 연락처를 적지 않아요.</Consent>
+                        <Consent {...fieldProps("consentPrivacy")} checked={consentPrivacy} onChange={setConsentPrivacy}>개인정보는 1:1 매칭 진행, 운영 확인, 안전 관리 목적으로만 사용돼요.</Consent>
                       </>
                     )}
                   </div>
@@ -731,7 +776,7 @@ export default function DatingOnboardingPage() {
                 </div>
               )}
 
-              {error && <p className="mt-5 whitespace-pre-line border border-rose-200 bg-rose-50 p-3 text-sm leading-6 text-rose-700">{error}</p>}
+              {error && <p role="alert" className="mt-5 whitespace-pre-line border border-rose-200 bg-rose-50 p-3 text-sm leading-6 text-rose-700">{error}</p>}
               {info && <p className="mt-5 border border-emerald-200 bg-emerald-50 p-3 text-sm leading-6 text-emerald-700">{info}</p>}
               {progress && <p className="mt-3 text-center text-xs font-semibold text-neutral-500">{progress}</p>}
 
@@ -754,6 +799,7 @@ export default function DatingOnboardingPage() {
             </section>
           </>
         )}
+        </fieldset>
       </div>
     </main>
   );
@@ -771,14 +817,20 @@ function Choice({ active, onClick, children }: { active: boolean; onClick: () =>
   return <button type="button" aria-pressed={active} onClick={onClick} className={`h-11 text-sm font-bold ${active ? "bg-rose-50 text-rose-700" : "bg-white text-neutral-500"}`}>{children}</button>;
 }
 
-function TextField({ value, onChange, label, placeholder, className = "", inputMode, maxLength }: { value: string; onChange: (value: string) => void; label: string; placeholder: string; className?: string; inputMode?: "text" | "numeric"; maxLength?: number }) {
-  return <label className={className}><span className="mb-2 block text-xs font-bold text-neutral-700">{label}</span><input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} inputMode={inputMode} maxLength={maxLength} className="h-12 w-full border border-neutral-300 bg-white px-3 text-sm text-neutral-900 outline-none focus:border-neutral-900" /></label>;
+type FieldFeedback = { id: string; error?: string };
+
+function FieldError({ id, error }: FieldFeedback) {
+  return error ? <p id={`${id}-error`} className="mt-1.5 text-xs leading-5 text-rose-700">{error}</p> : null;
 }
 
-function TextArea({ value, onChange, label, placeholder, maxLength }: { value: string; onChange: (value: string) => void; label: string; placeholder: string; maxLength: number }) {
-  return <label><span className="mb-2 flex items-center justify-between text-xs font-bold text-neutral-700"><span>{label}</span><span className="font-normal text-neutral-400">{value.length}/{maxLength}</span></span><textarea value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={maxLength} rows={4} className="w-full border border-neutral-300 bg-white px-3 py-3 text-sm leading-6 text-neutral-900 outline-none focus:border-neutral-900" /></label>;
+function TextField({ id, error, value, onChange, label, placeholder, className = "", inputMode, maxLength }: FieldFeedback & { value: string; onChange: (value: string) => void; label: string; placeholder: string; className?: string; inputMode?: "text" | "numeric"; maxLength?: number }) {
+  return <label className={className}><span className="mb-2 block text-xs font-bold text-neutral-700">{label}</span><input id={id} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} inputMode={inputMode} maxLength={maxLength} className={`h-12 w-full border ${error ? "border-rose-400" : "border-neutral-300"} bg-white px-3 text-sm text-neutral-900 outline-none focus:border-neutral-900`} /><FieldError id={id} error={error} /></label>;
 }
 
-function Consent({ checked, onChange, children }: { checked: boolean; onChange: (value: boolean) => void; children: ReactNode }) {
-  return <label className="flex min-h-12 items-start gap-3 border border-neutral-200 bg-neutral-50 p-3 text-sm leading-5 text-neutral-700"><input type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-1 accent-rose-500" /><span>{children}</span></label>;
+function TextArea({ id, error, value, onChange, label, placeholder, maxLength }: FieldFeedback & { value: string; onChange: (value: string) => void; label: string; placeholder: string; maxLength: number }) {
+  return <label className="block"><span className="mb-2 flex items-center justify-between text-xs font-bold text-neutral-700"><span>{label}</span><span className="font-normal text-neutral-400">{value.length}/{maxLength}</span></span><textarea id={id} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={maxLength} rows={4} className={`w-full border ${error ? "border-rose-400" : "border-neutral-300"} bg-white px-3 py-3 text-sm leading-6 text-neutral-900 outline-none focus:border-neutral-900`} /><FieldError id={id} error={error} /></label>;
+}
+
+function Consent({ id, error, checked, onChange, children }: FieldFeedback & { checked: boolean; onChange: (value: boolean) => void; children: ReactNode }) {
+  return <div><label className={`flex min-h-12 items-start gap-3 border ${error ? "border-rose-400" : "border-neutral-200"} bg-neutral-50 p-3 text-sm leading-5 text-neutral-700`}><input id={id} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} type="checkbox" checked={checked} onChange={(event) => onChange(event.target.checked)} className="mt-1 accent-rose-500" /><span>{children}</span></label><FieldError id={id} error={error} /></div>;
 }

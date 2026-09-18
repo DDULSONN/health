@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { clearDatingDraft } from "@/lib/dating-onboarding-draft";
 
 type HeaderUserMenuProps = {
   pathname: string;
@@ -110,7 +111,8 @@ export default function HeaderUserMenu({
     }
 
     void loadUser();
-    const { data: sub } = supabase.auth.onAuthStateChange(() => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event) => {
+      if (event === "SIGNED_OUT") clearDatingDraft();
       void loadUser();
       router.refresh();
     });

@@ -8,6 +8,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { createLatestRequest } from "@/lib/latest-request";
 import { timeAgo } from "@/lib/community";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import { buildOneOnOneRefreshConfirmation, buildOneOnOneRefreshSuccess, getOneOnOneRefreshCopy, ONE_ON_ONE_REFRESH_POLICY_COPY, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
@@ -4609,26 +4610,53 @@ export default function MyPage() {
     }
   };
 
-  const reloadOneOnOneMatches = async () => {
-    const res = await fetch("/api/dating/1on1/matches/my", { cache: "no-store" });
-    const body = (await res.json().catch(() => ({}))) as { items?: MyOneOnOneMatch[]; error?: string };
-    if (!res.ok) {
-      throw new Error(body.error ?? "1:1 매칭 후보를 다시 불러오지 못했습니다.");
-    }
-    setMyOneOnOneMatches(body.items ?? []);
-  };
+  const oneOnOneMatchesRequest = useMemo(() => createLatestRequest(), []);
+  const oneOnOneRecommendationsRequest = useMemo(() => createLatestRequest(), []);
 
-  const reloadOneOnOneRecommendations = async () => {
-    const res = await fetch("/api/dating/1on1/recommendations/my", { cache: "no-store" });
-    const body = (await res.json().catch(() => ({}))) as {
-      items?: MyOneOnOneAutoRecommendationGroup[];
-      error?: string;
+  useEffect(() => {
+    let identity: string | null | undefined;
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      const next = session?.user.id ?? null;
+      if (identity !== undefined && identity !== next) {
+        oneOnOneMatchesRequest.cancel();
+        oneOnOneRecommendationsRequest.cancel();
+        setMyOneOnOneMatches([]);
+        setMyOneOnOneAutoRecommendations([]);
+        window.location.reload();
+      }
+      identity = next;
+    });
+    return () => {
+      data.subscription.unsubscribe();
+      oneOnOneMatchesRequest.cancel();
+      oneOnOneRecommendationsRequest.cancel();
     };
-    if (!res.ok) {
-      throw new Error(body.error ?? "1:1 자동 추천 후보를 다시 불러오지 못했습니다.");
-    }
-    setMyOneOnOneAutoRecommendations(body.items ?? []);
-  };
+  }, [supabase, oneOnOneMatchesRequest, oneOnOneRecommendationsRequest]);
+
+  const reloadOneOnOneMatches = useCallback((fresh = true) => oneOnOneMatchesRequest.run({
+    replace: fresh,
+    load: async (signal) => {
+      const res = await fetch("/api/dating/1on1/matches/my", { cache: "no-store", signal });
+      const body = (await res.json().catch(() => ({}))) as { items?: MyOneOnOneMatch[]; error?: string };
+      if (!res.ok) throw new Error(body.error ?? "1:1 매칭 후보를 다시 불러오지 못했습니다.");
+      return body.items ?? [];
+    },
+    commit: setMyOneOnOneMatches,
+  }), [oneOnOneMatchesRequest]);
+
+  const reloadOneOnOneRecommendations = useCallback((fresh = true) => oneOnOneRecommendationsRequest.run({
+    replace: fresh,
+    load: async (signal) => {
+      const res = await fetch("/api/dating/1on1/recommendations/my", { cache: "no-store", signal });
+      const body = (await res.json().catch(() => ({}))) as {
+        items?: MyOneOnOneAutoRecommendationGroup[];
+        error?: string;
+      };
+      if (!res.ok) throw new Error(body.error ?? "1:1 자동 추천 후보를 다시 불러오지 못했습니다.");
+      return body.items ?? [];
+    },
+    commit: setMyOneOnOneAutoRecommendations,
+  }), [oneOnOneRecommendationsRequest]);
 
   const reloadOneOnOneAfterAction = async () => {
     const results = await Promise.allSettled([
@@ -5044,8 +5072,8 @@ export default function MyPage() {
         reloadOpenAppliedApplications(true),
         reloadPaidAppliedApplications(true),
         loadOneOnOneCards(),
-        reloadOneOnOneMatches(),
-        reloadOneOnOneRecommendations(),
+        reloadOneOnOneMatches(false),
+        reloadOneOnOneRecommendations(false),
         reloadOpenDatingConnections(),
         loadOpenCardSettings(),
       ]);
@@ -5069,7 +5097,7 @@ export default function MyPage() {
     }, pageSectionTab === "matching" ? 0 : 800);
 
     return () => window.clearTimeout(timer);
-  }, [accountBanStatus?.is_banned, loading, matchingDataLoaded, pageSectionTab]);
+  }, [accountBanStatus?.is_banned, loading, matchingDataLoaded, pageSectionTab, reloadOneOnOneMatches, reloadOneOnOneRecommendations]);
 
   useEffect(() => {
     if (
@@ -5273,6 +5301,7 @@ export default function MyPage() {
         return;
       }
       if (action === "source_cancel" || action === "cancel_mutual") {
+        oneOnOneMatchesRequest.cancel();
         setMyOneOnOneMatches((prev) =>
           prev.map((match) =>
             match.id === matchId
@@ -6495,6 +6524,7 @@ export default function MyPage() {
       setMyOneOnOneCards((prev) =>
         prev.map((item) => (item.id === cardId ? { ...item, status: "rejected", archived: true } : item))
       );
+      oneOnOneRecommendationsRequest.cancel();
       setMyOneOnOneAutoRecommendations((prev) => prev.filter((group) => group.source_card_id !== cardId));
       alert(body.message ?? "1:1 프로필을 내렸습니다. 기존 매칭 기록은 그대로 유지됩니다.");
     } catch (error) {
@@ -6572,6 +6602,7 @@ export default function MyPage() {
       }
 
       setMyOneOnOneCards((prev) => prev.filter((item) => item.id !== cardId));
+      oneOnOneRecommendationsRequest.cancel();
       setMyOneOnOneAutoRecommendations((prev) => prev.filter((group) => group.source_card_id !== cardId));
       alert(body.message ?? "1:1 프로필을 삭제했습니다.");
     } catch (error) {

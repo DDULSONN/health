@@ -16,6 +16,7 @@ import {
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 import { cacheOpenCardDetail, cachePaidCardDetail } from "@/lib/dating-detail-cache";
 import { createClient } from "@/lib/supabase/client";
+import { createLatestRequest } from "@/lib/latest-request";
 import { trackCheckoutStarted } from "@/lib/payment-analytics";
 import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
 import OneOnOneContactNudge from "@/components/dating/OneOnOneContactNudge";
@@ -1980,56 +1981,68 @@ export default function OpenCardsPage() {
     };
   }, [viewerLoggedIn]);
 
-  const reloadOneOnOneHome = useCallback(async () => {
+  const oneOnOneHomeRequest = useMemo(() => createLatestRequest(), []);
+
+  useEffect(() => {
+    let identity: string | null | undefined;
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      const next = session?.user.id ?? null;
+      if (identity !== undefined && identity !== next) {
+        oneOnOneHomeRequest.cancel();
+        setOneOnOneHome(null);
+        setOneOnOneHomeError("");
+        setOneOnOneHomeLoading(false);
+        // Discard all component-local member data at an account boundary.
+        window.location.reload();
+      }
+      identity = next;
+    });
+    return () => { data.subscription.unsubscribe(); oneOnOneHomeRequest.cancel(); };
+  }, [supabase, oneOnOneHomeRequest]);
+
+  const reloadOneOnOneHome = useCallback(async (fresh = true) => {
     if (!viewerLoggedIn) {
+      oneOnOneHomeRequest.cancel();
       setOneOnOneHome(null);
       setOneOnOneHomeError("");
+      setOneOnOneHomeLoading(false);
       return;
     }
 
-    setOneOnOneHomeLoading(true);
-    setOneOnOneHomeError("");
-    try {
-      const [statusRes, myCardsRes, matchesRes, recommendationsRes] = await Promise.all([
-        fetch("/api/dating/1on1/write-status", { cache: "no-store" }),
-        fetch("/api/dating/1on1/my", { cache: "no-store" }),
-        fetch("/api/dating/1on1/matches/my", { cache: "no-store" }),
-        fetch("/api/dating/1on1/recommendations/my", { cache: "no-store" }),
-      ]);
-
-      const [statusBody, myCardsBody, matchesBody, recommendationsBody] = await Promise.all([
-        statusRes.json().catch(() => ({})),
-        myCardsRes.json().catch(() => ({})),
-        matchesRes.json().catch(() => ({})),
-        recommendationsRes.json().catch(() => ({})),
-      ]);
-
-      if (!statusRes.ok) throw new Error(statusBody.error ?? "1:1 상태를 불러오지 못했습니다.");
-      if (!myCardsRes.ok) throw new Error(myCardsBody.error ?? "내 1:1 신청 내역을 불러오지 못했습니다.");
-
-      setOneOnOneHome({
-        status: statusBody,
-        myCards: Array.isArray(myCardsBody.items) ? myCardsBody.items : [],
-        matches: matchesRes.ok && Array.isArray(matchesBody.items) ? matchesBody.items : [],
-        recommendations: recommendationsRes.ok && Array.isArray(recommendationsBody.items) ? recommendationsBody.items : [],
-        plus: myCardsBody.plus && typeof myCardsBody.plus === "object" ? myCardsBody.plus : null,
-      });
-    } catch (error) {
-      setOneOnOneHomeError(error instanceof Error ? error.message : "1:1 정보를 불러오지 못했습니다.");
-    } finally {
-      setOneOnOneHomeLoading(false);
-    }
-  }, [viewerLoggedIn]);
+    return oneOnOneHomeRequest.run({
+      replace: fresh,
+      start: () => { setOneOnOneHomeLoading(true); setOneOnOneHomeError(""); },
+      load: async (signal) => {
+        const [statusRes, myCardsRes, matchesRes, recommendationsRes] = await Promise.all([
+          fetch("/api/dating/1on1/write-status", { cache: "no-store", signal }),
+          fetch("/api/dating/1on1/my", { cache: "no-store", signal }),
+          fetch("/api/dating/1on1/matches/my", { cache: "no-store", signal }),
+          fetch("/api/dating/1on1/recommendations/my", { cache: "no-store", signal }),
+        ]);
+        const [statusBody, myCardsBody, matchesBody, recommendationsBody] = await Promise.all([
+          statusRes.json().catch(() => ({})), myCardsRes.json().catch(() => ({})),
+          matchesRes.json().catch(() => ({})), recommendationsRes.json().catch(() => ({})),
+        ]);
+        if (!statusRes.ok) throw new Error(statusBody.error ?? "1:1 상태를 불러오지 못했습니다.");
+        if (!myCardsRes.ok) throw new Error(myCardsBody.error ?? "내 1:1 신청 내역을 불러오지 못했습니다.");
+        if (!matchesRes.ok) throw new Error(matchesBody.error ?? "1:1 매칭 상태를 불러오지 못했습니다.");
+        if (!recommendationsRes.ok) throw new Error(recommendationsBody.error ?? "1:1 추천 후보를 불러오지 못했습니다.");
+        return {
+          status: statusBody,
+          myCards: Array.isArray(myCardsBody.items) ? myCardsBody.items : [],
+          matches: Array.isArray(matchesBody.items) ? matchesBody.items : [],
+          recommendations: Array.isArray(recommendationsBody.items) ? recommendationsBody.items : [],
+          plus: myCardsBody.plus && typeof myCardsBody.plus === "object" ? myCardsBody.plus : null,
+        } satisfies OneOnOneHomeState;
+      },
+      commit: setOneOnOneHome,
+      fail: (error) => setOneOnOneHomeError(error instanceof Error ? error.message : "1:1 정보를 불러오지 못했습니다."),
+      finish: () => setOneOnOneHomeLoading(false),
+    });
+  }, [viewerLoggedIn, oneOnOneHomeRequest]);
 
   useEffect(() => {
-    if (homeFeatureTab !== "one_on_one") return;
-    let cancelled = false;
-    void reloadOneOnOneHome().finally(() => {
-      if (cancelled) return;
-    });
-    return () => {
-      cancelled = true;
-    };
+    if (homeFeatureTab === "one_on_one") void reloadOneOnOneHome(false);
   }, [homeFeatureTab, reloadOneOnOneHome]);
 
   useEffect(() => {
