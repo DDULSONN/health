@@ -3,8 +3,9 @@
 import dynamic from "next/dynamic";
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { OPEN_CARDS_HOME_HREF, ONE_ON_ONE_HOME_HREF, isOneOnOneDestination } from "@/lib/dating-navigation";
 
 const HeaderUserMenu = dynamic(() => import("@/components/HeaderUserMenu"), {
   ssr: false,
@@ -12,9 +13,9 @@ const HeaderUserMenu = dynamic(() => import("@/components/HeaderUserMenu"), {
 });
 
 const NAV_ITEMS = [
-  { href: "/community/dating/cards", label: "오픈카드" },
+  { href: OPEN_CARDS_HOME_HREF, label: "오픈카드" },
   { href: "/chat", label: "채팅" },
-  { href: "/dating/1on1", label: "1:1" },
+  { href: ONE_ON_ONE_HOME_HREF, label: "1:1" },
   { href: "/tools", label: "도구" },
 ];
 
@@ -28,11 +29,42 @@ type HeaderAd = {
   altText?: string;
 };
 
-function isActive(pathname: string, href: string) {
+function isActive(pathname: string, href: string, selectedTab: string | null) {
+  const oneOnOne = isOneOnOneDestination(pathname, selectedTab);
+  if (href === ONE_ON_ONE_HOME_HREF) return oneOnOne;
+  if (href === OPEN_CARDS_HOME_HREF) {
+    return !oneOnOne && (pathname === "/community/dating/cards" || pathname.startsWith("/community/dating/cards/"));
+  }
   if (href === "/tools") {
     return TOOL_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
   }
   return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+type HeaderNavProps = { pathname: string; mobile?: boolean; onNavigate?: () => void };
+
+function HeaderNavLinks({ pathname, mobile, onNavigate, selectedTab }: HeaderNavProps & { selectedTab: string | null }) {
+  return NAV_ITEMS.map((item) => {
+    const active = isActive(pathname, item.href, selectedTab);
+    return (
+      <Link
+        key={item.href}
+        href={item.href}
+        onClick={onNavigate}
+        aria-current={active ? "page" : undefined}
+        className={mobile
+          ? `inline-flex min-h-[48px] items-center rounded-2xl px-4 text-sm font-semibold transition ${active ? "bg-neutral-950 text-white" : "border border-black/5 bg-neutral-50 text-neutral-700 hover:bg-neutral-100"}`
+          : `inline-flex min-h-[42px] items-center rounded-full px-4 text-sm font-semibold transition ${active ? "bg-neutral-950 text-white shadow-[0_8px_22px_rgba(17,24,39,0.12)]" : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"}`}
+      >
+        {item.label}
+      </Link>
+    );
+  });
+}
+
+function HeaderNavSelection(props: HeaderNavProps) {
+  const searchParams = useSearchParams();
+  return <HeaderNavLinks {...props} selectedTab={searchParams.get("tab")} />;
 }
 
 export default function Header() {
@@ -152,22 +184,9 @@ export default function Header() {
         </div>
 
         <nav className="hidden items-center gap-2 md:flex">
-          {NAV_ITEMS.map((item) => {
-            const active = isActive(pathname, item.href);
-            return (
-              <Link
-                key={item.href}
-                href={item.href}
-                className={`inline-flex min-h-[42px] items-center rounded-full px-4 text-sm font-semibold transition ${
-                  active
-                    ? "bg-neutral-950 text-white shadow-[0_8px_22px_rgba(17,24,39,0.12)]"
-                    : "text-neutral-500 hover:bg-neutral-100 hover:text-neutral-900"
-                }`}
-              >
-                {item.label}
-              </Link>
-            );
-          })}
+          <Suspense fallback={<HeaderNavLinks pathname={pathname} selectedTab={null} />}>
+            <HeaderNavSelection pathname={pathname} />
+          </Suspense>
 
           <HeaderUserMenu pathname={pathname} />
         </nav>
@@ -191,23 +210,9 @@ export default function Header() {
       {mobileOpen ? (
         <nav className="border-t border-black/5 bg-white px-5 pb-4 pt-3 md:hidden">
           <div className="grid gap-2">
-            {NAV_ITEMS.map((item) => {
-              const active = isActive(pathname, item.href);
-              return (
-                <Link
-                  key={item.href}
-                  href={item.href}
-                  onClick={() => setMobileOpen(false)}
-                  className={`inline-flex min-h-[48px] items-center rounded-2xl px-4 text-sm font-semibold transition ${
-                    active
-                      ? "bg-neutral-950 text-white"
-                      : "border border-black/5 bg-neutral-50 text-neutral-700 hover:bg-neutral-100"
-                  }`}
-                >
-                  {item.label}
-                </Link>
-              );
-            })}
+            <Suspense fallback={<HeaderNavLinks pathname={pathname} mobile selectedTab={null} onNavigate={() => setMobileOpen(false)} />}>
+              <HeaderNavSelection pathname={pathname} mobile onNavigate={() => setMobileOpen(false)} />
+            </Suspense>
           </div>
 
           <div className="mt-3 border-t border-black/5 pt-3">

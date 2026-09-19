@@ -1,9 +1,10 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
-import { useCallback, useEffect, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import type { ReactNode } from "react";
+import { OPEN_CARDS_HOME_HREF, ONE_ON_ONE_HOME_HREF, isOneOnOneDestination } from "@/lib/dating-navigation";
 
 type TabItem = {
   href: string;
@@ -22,7 +23,7 @@ let chatBadgeCache: { value: ChatBadgeState; expiresAt: number } | null = null;
 
 const TABS: TabItem[] = [
   {
-    href: "/community/dating/cards",
+    href: OPEN_CARDS_HOME_HREF,
     label: "홈",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" className="h-5 w-5">
@@ -40,7 +41,7 @@ const TABS: TabItem[] = [
     ),
   },
   {
-    href: "/dating/1on1",
+    href: ONE_ON_ONE_HOME_HREF,
     label: "1:1",
     icon: (
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.9" className="h-5 w-5">
@@ -68,7 +69,12 @@ const TABS: TabItem[] = [
   },
 ];
 
-function isActive(pathname: string, href: string) {
+function isActive(pathname: string, href: string, selectedTab: string | null) {
+  const oneOnOne = isOneOnOneDestination(pathname, selectedTab);
+  if (href === ONE_ON_ONE_HOME_HREF) return oneOnOne;
+  if (href === OPEN_CARDS_HOME_HREF) {
+    return !oneOnOne && (pathname === "/community/dating/cards" || pathname.startsWith("/community/dating/cards/"));
+  }
   if (href === "/tools") {
     return TOOL_PATHS.some((path) => pathname === path || pathname.startsWith(`${path}/`));
   }
@@ -76,7 +82,12 @@ function isActive(pathname: string, href: string) {
 }
 
 export default function MobileBottomTabBar() {
+  return <Suspense fallback={null}><MobileBottomTabBarContent /></Suspense>;
+}
+
+function MobileBottomTabBarContent() {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [chatBadge, setChatBadge] = useState<ChatBadgeState>({ unreadCount: 0, availableCount: 0 });
 
   const loadChatBadge = useCallback(async (options?: { force?: boolean }) => {
@@ -143,12 +154,13 @@ export default function MobileBottomTabBar() {
     <nav className="fixed inset-x-0 bottom-0 z-50 border-t border-black/5 bg-white/95 shadow-[0_-10px_30px_rgba(15,23,42,0.06)] backdrop-blur-md md:hidden">
       <div className="grid h-[76px] grid-cols-5 px-2 pb-[max(10px,env(safe-area-inset-bottom))] pt-1.5">
         {TABS.map((tab) => {
-          const active = isActive(pathname, tab.href);
+          const active = isActive(pathname, tab.href, searchParams.get("tab"));
           const chatBadgeCount = tab.href === "/chat" ? chatBadge.unreadCount + chatBadge.availableCount : 0;
           return (
             <Link
               key={tab.href}
               href={tab.href}
+              aria-current={active ? "page" : undefined}
               className={`relative flex flex-col items-center justify-center gap-1 rounded-2xl text-[11px] font-semibold transition ${
                 active ? "text-rose-600" : "text-neutral-400 hover:text-neutral-700"
               }`}

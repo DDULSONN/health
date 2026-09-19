@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import DatingReportButton, { type DatingReportTargetType, type DatingReportResult } from "@/components/DatingReportButton";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { readDatingDraft } from "@/lib/dating-onboarding-draft";
+import { ONE_ON_ONE_HOME_HREF } from "@/lib/dating-navigation";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import { buildOneOnOneRefreshConfirmation, buildOneOnOneRefreshSuccess, getOneOnOneRefreshCopy, ONE_ON_ONE_REFRESH_POLICY_COPY, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
@@ -1640,6 +1642,11 @@ async function fetchBySex(
 }
 
 export default function OpenCardsPage() {
+  return <Suspense fallback={<p className="p-6 text-sm text-neutral-500">불러오는 중...</p>}><OpenCardsContent /></Suspense>;
+}
+
+function OpenCardsContent() {
+  const searchParams = useSearchParams();
   const supabase = useMemo(() => createClient(), []);
   const [restoredSnapshot, setRestoredSnapshot] = useState<OpenCardsSnapshot | null>(null);
   const [snapshotReady, setSnapshotReady] = useState(false);
@@ -1691,6 +1698,7 @@ export default function OpenCardsPage() {
   const [viewerLoggedIn, setViewerLoggedIn] = useState(false);
   const [viewerSessionReady, setViewerSessionReady] = useState(false);
   const [viewerPhoneVerified, setViewerPhoneVerified] = useState(false);
+  const [hasProfileDraft, setHasProfileDraft] = useState(false);
   const [myOpenCards, setMyOpenCards] = useState<MyOpenCard[]>([]);
   const [homeProfilePresenceReady, setHomeProfilePresenceReady] = useState(false);
   const [hasActiveOneOnOneProfile, setHasActiveOneOnOneProfile] = useState(false);
@@ -1717,7 +1725,9 @@ export default function OpenCardsPage() {
     intro_text: "",
     consent: false,
   });
-  const [homeFeatureTab, setHomeFeatureTab] = useState<HomeFeatureTab>("open_cards");
+  const [homeFeatureTab, setHomeFeatureTab] = useState<HomeFeatureTab>(
+    () => parseHomeFeatureTab(searchParams.get("tab")) ?? "open_cards"
+  );
   const [arrivedFromDatingOnboarding, setArrivedFromDatingOnboarding] = useState(false);
   const [isAdminPreviewUser, setIsAdminPreviewUser] = useState(false);
   const [adminPreviewResolved, setAdminPreviewResolved] = useState(false);
@@ -1739,15 +1749,13 @@ export default function OpenCardsPage() {
   useEffect(() => {
     const url = new URL(window.location.href);
     const requestedTab = parseHomeFeatureTab(url.searchParams.get("tab"));
-    if (requestedTab) {
-      setHomeFeatureTab(requestedTab);
-    }
+    setHomeFeatureTab(requestedTab ?? "open_cards");
     if (url.searchParams.get("from") === "onboarding") {
       setArrivedFromDatingOnboarding(true);
       url.searchParams.delete("from");
-      window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+      window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
     }
-  }, []);
+  }, [searchParams]);
 
   useLayoutEffect(() => {
     const scrollY = pendingSexTabScrollRef.current;
@@ -1819,7 +1827,9 @@ export default function OpenCardsPage() {
     setHomeFeatureTab(nextTab);
     const url = new URL(window.location.href);
     url.searchParams.set("tab", nextTab);
-    window.history.replaceState(window.history.state, "", `${url.pathname}${url.search}${url.hash}`);
+    // Next copies its internal history state and notifies useSearchParams.
+    // Passing history.state back would bypass that notification (__NA/_N).
+    window.history.replaceState(null, "", `${url.pathname}${url.search}${url.hash}`);
   }, []);
 
   useEffect(() => {
@@ -1888,6 +1898,7 @@ export default function OpenCardsPage() {
           data: { user },
         } = await supabase.auth.getUser();
         setViewerLoggedIn(Boolean(user));
+        setHasProfileDraft(Boolean(user && readDatingDraft(user.id)));
         if (!user) {
           setViewerPhoneVerified(false);
           return;
@@ -2855,6 +2866,7 @@ export default function OpenCardsPage() {
   const hasAnyOpenCardProfile = myOpenCards.length > 0;
   const registeredProfileServiceCount = Number(hasAnyOpenCardProfile) + Number(hasActiveOneOnOneProfile);
   const showProfileStartCard =
+    !showOneOnOneSection && !showLoveFortuneSection &&
     viewerSessionReady &&
     (!viewerLoggedIn || (homeProfilePresenceReady && registeredProfileServiceCount < 2));
   const showOpenCardManagement =
@@ -2885,8 +2897,10 @@ export default function OpenCardsPage() {
     ? "로그인하고 시작하기"
     : !viewerPhoneVerified
       ? "휴대폰 인증하기"
+      : hasProfileDraft
+        ? "이어서 작성하기"
       : registeredProfileServiceCount === 0
-        ? "프로필 완성하기"
+        ? "프로필 작성하기"
         : hasAnyOpenCardProfile
           ? "1:1 프로필 등록하기"
           : "오픈카드 등록하기";
@@ -2906,7 +2920,7 @@ export default function OpenCardsPage() {
   return (
     <main className="mx-auto max-w-5xl px-3 py-4 md:px-6 md:py-7">
       <DatingAdultNotice />
-      <section className="sticky top-[64px] z-30 mb-3 rounded-xl border border-neutral-200 bg-white/95 p-1 shadow-[0_6px_18px_rgba(15,23,42,0.06)] backdrop-blur">
+      <section aria-label="매칭 서비스 선택" className="sticky top-[64px] z-30 mb-3 rounded-xl border border-neutral-200 bg-white/95 p-1 shadow-[0_6px_18px_rgba(15,23,42,0.06)] backdrop-blur">
         <div className={`grid gap-1 ${visibleHomeFeatureTabs.length >= 4 ? "grid-cols-4" : "grid-cols-3"}`}>
           {visibleHomeFeatureTabs.map((tab) => {
             const active = homeFeatureTab === tab.key;
@@ -3441,7 +3455,9 @@ export default function OpenCardsPage() {
         <OneOnOneHomePanel
           arrivedFromOnboarding={arrivedFromDatingOnboarding}
           viewerLoggedIn={viewerLoggedIn}
-          loading={oneOnOneHomeLoading}
+          profileStartHref={profileStartHref}
+          profileStartCta={profileStartCta}
+          loading={!viewerSessionReady || oneOnOneHomeLoading}
           error={oneOnOneHomeError}
           data={oneOnOneHome}
           processingMatchIds={processingOneOnOneMatchIds}
@@ -3662,6 +3678,8 @@ function OneOnOneHomePanel({
   onReported,
   arrivedFromOnboarding,
   viewerLoggedIn,
+  profileStartHref,
+  profileStartCta,
   loading,
   error,
   data,
@@ -3679,6 +3697,8 @@ function OneOnOneHomePanel({
   arrivedFromOnboarding: boolean;
   onReported: (result: DatingReportResult) => void;
   viewerLoggedIn: boolean;
+  profileStartHref: string;
+  profileStartCta: string;
   loading: boolean;
   error: string;
   data: OneOnOneHomeState | null;
@@ -3752,20 +3772,14 @@ function OneOnOneHomePanel({
         <p className="mt-1 text-[13px] leading-6 text-neutral-500">
           마음에 드는 후보에게 매칭을 신청해보세요.
         </p>
-        <div className="mt-4 flex flex-wrap gap-2">
+        {viewerLoggedIn && hasOneOnOneCard ? <div className="mt-3 flex flex-wrap gap-2">
           <Link
-            href="/dating/1on1"
-            className="inline-flex min-h-[40px] items-center justify-center rounded-lg border border-neutral-200 bg-neutral-50 px-3.5 text-xs font-semibold text-neutral-800 transition hover:bg-neutral-100"
-          >
-            프로필 작성
-          </Link>
-          <Link
-            href="/mypage?section=matching"
+            href="/mypage?section=matching&match=one_on_one"
             className="inline-flex min-h-[40px] items-center justify-center rounded-lg border border-neutral-200 bg-white px-3.5 text-xs font-medium text-neutral-600 transition hover:bg-neutral-50"
           >
-            매칭 관리
+            내 프로필 · 매칭 관리
           </Link>
-        </div>
+        </div> : null}
       </div>
 
       {matchGuideOpen ? (
@@ -3795,18 +3809,18 @@ function OneOnOneHomePanel({
       ) : null}
 
       <div className="mt-5">
-        {!viewerLoggedIn ? (
+        {loading ? (
+          <p className="rounded-[24px] bg-neutral-50 p-5 text-sm text-neutral-500">1대1 정보를 불러오는 중...</p>
+        ) : !viewerLoggedIn ? (
           <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4">
             <p className="text-sm font-bold text-rose-900">로그인하면 내 1대1 진행 상태를 볼 수 있어요.</p>
             <Link
-              href={buildLoginRedirect("/community/dating/cards")}
+              href={buildLoginRedirect(ONE_ON_ONE_HOME_HREF)}
               className="mt-3 inline-flex min-h-[42px] items-center rounded-xl bg-rose-600 px-4 text-sm font-bold text-white hover:bg-rose-700"
             >
               로그인하기
             </Link>
           </div>
-        ) : loading ? (
-          <p className="rounded-[24px] bg-neutral-50 p-5 text-sm text-neutral-500">1대1 정보를 불러오는 중...</p>
         ) : error ? (
           <p className="rounded-[24px] border border-rose-100 bg-rose-50 p-5 text-sm font-semibold text-rose-700">{error}</p>
         ) : !hasOneOnOneCard ? (
@@ -3816,10 +3830,10 @@ function OneOnOneHomePanel({
               먼저 신청서를 작성하면 후보 확인과 매칭 진행을 이어갈 수 있어요. 신청은 무료입니다.
             </p>
             <Link
-              href="/dating/1on1"
+              href={profileStartHref}
               className="mt-4 inline-flex min-h-[46px] items-center justify-center rounded-xl bg-rose-600 px-5 text-sm font-black text-white hover:bg-rose-700"
             >
-              1대1 프로필 작성하기
+              {profileStartCta}
             </Link>
           </div>
         ) : (

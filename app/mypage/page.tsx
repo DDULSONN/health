@@ -4,6 +4,7 @@ import dynamic from "next/dynamic";
 import { DatingReportDialog, type DatingReportResult } from "@/components/DatingReportButton";
 import Image from "next/image";
 import Link from "next/link";
+import { showMatchingGroup } from "@/lib/dating-navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
@@ -1958,6 +1959,7 @@ export default function MyPage() {
   const [accountBanStatus, setAccountBanStatus] = useState<AccountBanStatus | null>(null);
   const [certRequests, setCertRequests] = useState<MyCertRequest[]>([]);
   const [myDatingCards, setMyDatingCards] = useState<MyDatingCard[]>([]);
+  const [openCardManagementOpen, setOpenCardManagementOpen] = useState(false);
   const [receivedApplications, setReceivedApplications] = useState<ReceivedCardApplication[]>([]);
   const [myAppliedCardApplications, setMyAppliedCardApplications] = useState<MyAppliedCardApplication[]>([]);
   const [myPaidCards, setMyPaidCards] = useState<MyPaidCard[]>([]);
@@ -7961,6 +7963,9 @@ export default function MyPage() {
   const oneOnOneActiveCount = myOneOnOneMatches.filter(
     (item) => item.state !== "admin_canceled" && item.state !== "source_declined" && item.state !== "candidate_rejected" && item.state !== "source_skipped",
   ).length;
+  const hasMatchingRecords = myPaidCards.length + myAppliedPaidApplications.length +
+    myOneOnOneCards.length + receivedApplications.length + myAppliedCardApplications.length + datingConnections.length > 0;
+  const hasQuickMatchRecords = myIncomingSwipeLikes.length + myOutgoingSwipeLikes.length + visibleSwipeMatchCount > 0;
   const scrollToMyPageTarget = (section: MyPageSectionTab, id: string) => {
     setPageSectionTab(section);
     let attempts = 0;
@@ -8329,7 +8334,11 @@ export default function MyPage() {
                   <>
                     <button
                       type="button"
-                      onClick={() => document.getElementById("my-open-card-status")?.scrollIntoView({ behavior: "smooth", block: "start" })}
+                      onClick={() => {
+                        setMatchingFilter("all");
+                        setOpenCardManagementOpen(true);
+                        scrollToMyPageTarget("matching", "my-open-card-status");
+                      }}
                       className="inline-flex min-h-[40px] flex-1 items-center justify-center rounded-lg border border-neutral-200 bg-white px-3.5 text-xs font-bold text-neutral-700 hover:bg-neutral-50 sm:flex-none"
                     >
                       카드 관리
@@ -8428,7 +8437,7 @@ export default function MyPage() {
             </div>
           </div>
 
-        {(matchingFilter === "all" || matchingFilter === "quick") && (
+        {(matchingFilter === "quick" || (matchingFilter === "all" && (hasQuickMatchRecords || swipeStatusPanelOpen))) && (
 
           <div id="swipe-status-panel" className="mt-3 rounded-xl border border-neutral-200 bg-white p-4">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -9695,7 +9704,13 @@ export default function MyPage() {
 
       {showMatchingSection && (
       <>
-      <section id="paid-card-received" className={`${matchingFilter === "all" || matchingFilter === "received" ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
+      {matchingFilter === "all" && matchingDataLoaded && !matchingDataError && !hasMatchingRecords && !hasQuickMatchRecords ? (
+        <div className="mb-4 rounded-xl border border-neutral-200 bg-white px-4 py-5">
+          <p className="text-sm font-semibold text-neutral-900">아직 매칭 내역이 없어요.</p>
+          <p className="mt-1 text-sm leading-6 text-neutral-500">지원하거나 받은 요청이 생기면 여기에 모아 보여드려요. 빠른매칭은 위 메뉴에서 따로 확인할 수 있어요.</p>
+        </div>
+      ) : null}
+      <section id="paid-card-received" className={`${showMatchingGroup(matchingFilter, "received", myPaidCards.length) ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
         <h2 className="mb-3 text-base font-bold text-neutral-950">대기 없이 등록 · 받은 지원</h2>
         {myPaidCards.length === 0 ? (
           <p className="text-sm text-neutral-500">등록된 유료카드가 없습니다.</p>
@@ -9835,7 +9850,7 @@ export default function MyPage() {
         )}
       </section>
 
-      <section id="paid-card-applied" className={`${matchingFilter === "all" || matchingFilter === "applied" ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
+      <section id="paid-card-applied" className={`${showMatchingGroup(matchingFilter, "applied", myAppliedPaidApplications.length) ? "" : "hidden"} mb-3 rounded-xl border-neutral-200 border bg-white p-4`}>
         <h2 className="mb-3 text-base font-bold text-neutral-950">대기 없이 등록 · 내 지원</h2>
         {myAppliedPaidApplications.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 지원한 내역이 없습니다.</p>
@@ -9911,7 +9926,7 @@ export default function MyPage() {
         )}
       </section>
 
-      <section id="one-on-one-status" className={`${matchingFilter === "all" || matchingFilter === "one_on_one" ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
+      <section id="one-on-one-status" className={`${showMatchingGroup(matchingFilter, "one_on_one", myOneOnOneCards.length) ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
         <h2 className="mb-3 text-base font-bold text-neutral-950">1:1 진행 내역</h2>
         <div className="mb-3 rounded-xl border border-neutral-200 bg-[#fbfaf8] px-3 py-3">
           <p className="text-xs font-semibold text-neutral-900">1:1 이용 안내</p>
@@ -10936,8 +10951,14 @@ export default function MyPage() {
         </p>
       </section>
 
-      <section id="my-open-card-status" className={`${matchingFilter === "all" ? "" : "hidden"} scroll-mt-24 mb-5 rounded-2xl border border-neutral-200 bg-white p-5`}>
-        <h2 className="text-lg font-bold text-neutral-900 mb-3">내 오픈카드 상태</h2>
+      <details
+        id="my-open-card-status"
+        open={openCardManagementOpen}
+        onToggle={(event) => setOpenCardManagementOpen(event.currentTarget.open)}
+        className={`${matchingFilter === "all" && myDatingCards.length > 0 ? "" : "hidden"} scroll-mt-24 mb-5 rounded-2xl border border-neutral-200 bg-white p-4`}
+      >
+        <summary className="cursor-pointer py-1 text-sm font-semibold text-neutral-900">오픈카드 상세 관리</summary>
+        <div className="mt-3">
         {myDatingCards.length === 0 ? (
           <p className="text-sm text-neutral-500">등록된 오픈카드가 없습니다.</p>
         ) : (
@@ -11087,9 +11108,10 @@ export default function MyPage() {
             오픈카드 보러가기
           </Link>
         </div>
-      </section>
+        </div>
+      </details>
 
-      <section id="open-card-received" className={`${matchingFilter === "all" || matchingFilter === "received" ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
+      <section id="open-card-received" className={`${showMatchingGroup(matchingFilter, "received", receivedApplications.length) ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
         <h2 className="mb-3 text-base font-bold text-neutral-950">오픈카드 · 받은 지원</h2>
         {receivedApplications.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 받은 지원서가 없습니다.</p>
@@ -11180,7 +11202,7 @@ export default function MyPage() {
         )}
       </section>
 
-      <section id="open-card-applied" className={`${matchingFilter === "all" || matchingFilter === "applied" ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
+      <section id="open-card-applied" className={`${showMatchingGroup(matchingFilter, "applied", myAppliedCardApplications.length) ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
         <h2 className="mb-3 text-base font-bold text-neutral-950">오픈카드 · 내 지원</h2>
         {myAppliedCardApplications.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 지원한 내역이 없습니다.</p>
@@ -11283,7 +11305,7 @@ export default function MyPage() {
         )}
       </section>
 
-      <section id="dating-connections" className={`${matchingFilter === "all" ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
+      <section id="dating-connections" className={`${matchingFilter === "all" && datingConnections.length > 0 ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
         <h2 className="mb-3 text-base font-bold text-neutral-950">연결된 인스타</h2>
         {datingConnections.length === 0 ? (
           <p className="text-sm text-neutral-500">아직 수락된 연결이 없습니다.</p>
