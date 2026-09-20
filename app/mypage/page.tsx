@@ -41,6 +41,7 @@ const AdminTodayPaymentSummary = dynamic(() => import("@/components/admin/AdminT
 
 const DatingPlusOffers = dynamic(() => import("@/components/dating/DatingPlusOffers"));
 const OneOnOneContactNudge = dynamic(() => import("@/components/dating/OneOnOneContactNudge"));
+const OneOnOneContactOffer = dynamic(() => import("@/components/dating/OneOnOneContactOffer"));
 const AdminDatingOnboardingTestLink = dynamic(
   () => import("@/components/admin/AdminDatingOnboardingTestLink")
 );
@@ -2123,6 +2124,7 @@ export default function MyPage() {
   const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
   const [confirmingOneOnOneCancelIds, setConfirmingOneOnOneCancelIds] = useState<string[]>([]);
   const oneOnOneMatchActionLocksRef = useRef<Set<string>>(new Set());
+  const oneOnOneContactCheckoutLocksRef = useRef<Set<string>>(new Set());
   const [processingOneOnOneContactExchangeIds, setProcessingOneOnOneContactExchangeIds] = useState<string[]>([]);
   const [processingOneOnOneNudgeIds, setProcessingOneOnOneNudgeIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
@@ -5344,7 +5346,8 @@ export default function MyPage() {
   };
 
   const handleRequestOneOnOneContactExchange = async (matchId: string) => {
-    if (processingOneOnOneContactExchangeIds.includes(matchId)) return;
+    if (oneOnOneContactCheckoutLocksRef.current.has(matchId)) return;
+    oneOnOneContactCheckoutLocksRef.current.add(matchId);
     setProcessingOneOnOneContactExchangeIds((prev) => [...prev, matchId]);
     try {
       const res = await fetch("/api/payments/toss/create", {
@@ -5384,6 +5387,7 @@ export default function MyPage() {
     } catch (e) {
       alert(e instanceof Error ? e.message : withPaymentCardNotice("번호 교환 결제를 시작하지 못했습니다."));
     } finally {
+      oneOnOneContactCheckoutLocksRef.current.delete(matchId);
       setProcessingOneOnOneContactExchangeIds((prev) => prev.filter((id) => id !== matchId));
     }
   };
@@ -10650,58 +10654,23 @@ export default function MyPage() {
                               <p className="mt-1 text-xs text-neutral-600">
                                 {card.height_cm}cm / {card.job} / {new Date(match.updated_at).toLocaleString("ko-KR")}
                               </p>
-                              <OneOnOneContactNudge
+                              {match.contact_exchange_status === "approved" || match.contact_exchange_status === "canceled" ? <OneOnOneContactNudge
                                 matchId={match.id}
                                 nudge={match.contact_nudge}
                                 processing={processingOneOnOneNudgeIds.includes(match.id)}
                                 onSend={(targetMatchId, presetKey) => void handleOneOnOneContactNudge(targetMatchId, presetKey)}
-                              />
+                              /> : null}
                               <div className="mt-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
                                 {(match.contact_exchange_status === "none" ||
                                   match.contact_exchange_status === "awaiting_applicant_payment" ||
                                   match.contact_exchange_status === "payment_pending_admin") ? (
-                                  <>
-                                    <p className="text-xs font-semibold text-neutral-900">
-                                      {plusContactExchangeIncluded ? "기존 플러스 무료 번호교환" : "번호 즉시 교환"}
-                                    </p>
-                                    <p className="mt-1 text-xs text-neutral-700">
-                                      {plusContactExchangeIncluded
-                                        ? "기존 플러스 혜택 적용 중이라 추가 결제 없이 상대 연락처가 바로 공개됩니다."
-                                        : "기존 쌍방 매칭도 지금 결제하면 상대 연락처가 바로 교환됩니다."}
-                                    </p>
-                                    {!plusContactExchangeIncluded ? (
-                                      <>
-                                        <p className="mt-2 text-[11px] text-neutral-500">
-                                          결제창에서 이용 가능한 결제수단을 선택해 바로 번호 교환할 수 있어요.
-                                        </p>
-                                        <p className="mt-1 text-[11px] text-neutral-500">
-                                          다른 방식은 오픈카톡으로 입금해주시면 관리자가 수동으로 승인해드려요. 매칭 ID {match.id}
-                                        </p>
-                                      </>
-                                    ) : null}
-                                    <div className="mt-2 flex flex-wrap gap-2">
-                                      {!plusContactExchangeIncluded ? (
-                                        <a
-                                          href={OPEN_KAKAO_URL}
-                                          target="_blank"
-                                          rel="noreferrer"
-                                          className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-700 hover:bg-amber-50"
-                                        >
-                                          오픈카톡 문의
-                                        </a>
-                                      ) : null}
-                                      <button
-                                        type="button"
-                                        disabled={contactProcessing}
-                                        onClick={() => void handleRequestOneOnOneContactExchange(match.id)}
-                                        className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
-                                      >
-                                        {contactProcessing
-                                          ? plusContactExchangeIncluded ? "교환 중..." : "결제 준비 중..."
-                                          : plusContactExchangeIncluded ? "무료로 번호교환" : "연락처 교환 진행하기"}
-                                      </button>
-                                    </div>
-                                  </>
+                                  <OneOnOneContactOffer matchId={match.id} name={card.name}
+                                    included={plusContactExchangeIncluded} processing={contactProcessing}
+                                    nudge={match.contact_nudge} nudgeProcessing={processingOneOnOneNudgeIds.includes(match.id)}
+                                    onExchange={(id) => void handleRequestOneOnOneContactExchange(id)}
+                                    onNudge={(id, preset) => void handleOneOnOneContactNudge(id, preset)}
+                                    help={<p className="mt-1 break-words">다른 결제 방법은 <a href={OPEN_KAKAO_URL} target="_blank" rel="noreferrer" className="underline">오픈카톡으로 문의</a>해 주세요. 매칭 ID {match.id}</p>}
+                                  />
                                 ) : null}
                                 {match.contact_exchange_status === "approved" ? (
                                   <>

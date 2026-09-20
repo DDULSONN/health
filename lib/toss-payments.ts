@@ -100,6 +100,7 @@ export type TossConfirmPaymentResponse = {
   status?: string;
   approvedAt?: string;
   cancels?: TossPaymentCancel[];
+  checkout?: { url?: string };
 };
 
 export type TossPaymentCancel = {
@@ -132,6 +133,13 @@ export async function confirmTossPayment(input: {
 export async function getTossPayment(paymentKey: string) {
   return tossFetch<TossConfirmPaymentResponse>(`/v1/payments/${encodeURIComponent(paymentKey)}`, {
     method: "GET",
+  });
+}
+
+export async function getTossPaymentByOrderId(orderId: string) {
+  return tossFetch<TossConfirmPaymentResponse>(`/v1/payments/orders/${encodeURIComponent(orderId)}`, {
+    method: "GET",
+    signal: AbortSignal.timeout(5000),
   });
 }
 

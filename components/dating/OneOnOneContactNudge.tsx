@@ -2,9 +2,11 @@
 
 import { useState } from "react";
 import {
+  ONE_ON_ONE_CONTACT_NUDGE_DELAY_HOURS,
   ONE_ON_ONE_CONTACT_NUDGE_PRESETS,
   type OneOnOneContactNudgePresetKey,
   type OneOnOneContactNudgeSummary,
+  type OneOnOneContactNudgeItem,
 } from "@/lib/dating-1on1-contact-nudge";
 
 type Props = {
@@ -12,42 +14,46 @@ type Props = {
   nudge?: OneOnOneContactNudgeSummary | null;
   processing: boolean;
   onSend: (matchId: string, presetKey: OneOnOneContactNudgePresetKey) => void;
+  hideReceived?: boolean;
 };
 
-export default function OneOnOneContactNudge({ matchId, nudge, processing, onSend }: Props) {
+export function ReceivedContactNudge({ item }: { item: OneOnOneContactNudgeItem }) {
+  const senderName = item.sender_display_name?.trim() ?? "";
+  return <>
+    <p className="text-[11px] font-semibold text-neutral-600">{senderName ? `${senderName}님이 보낸 1:1 한마디` : "상대가 보낸 1:1 한마디"}</p>
+    <p className="mt-1 break-words text-sm font-semibold leading-6 text-neutral-900">“{item.message_text}”</p>
+    <p className="mt-2 text-[11px] leading-5 text-neutral-500">연락처 교환 후 잠수하거나 상대방에게 불쾌한 언행을 할 경우 제재 대상입니다.</p>
+  </>;
+}
+
+export default function OneOnOneContactNudge({ matchId, nudge, processing, onSend, hideReceived = false }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
 
   if (!nudge?.available) return null;
-  const hasContent = Boolean(nudge.received_from_other || nudge.sent_by_me || nudge.can_send);
+  const received = !hideReceived ? nudge.received_from_other : null;
+  const hasContent = Boolean(received || nudge.sent_by_me || nudge.can_send);
   if (!hasContent) return null;
-  const senderName = nudge.received_from_other?.sender_display_name?.trim() ?? "";
 
   return (
     <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
-      {nudge.received_from_other ? (
+      {received ? (
         <div className="rounded-xl bg-white px-3 py-2.5">
-          <p className="text-[11px] font-black text-amber-800">
-            {senderName ? `${senderName}님이 보낸 1:1 한마디` : "상대가 보낸 1:1 한마디"}
-          </p>
-          <p className="mt-1 text-sm font-bold leading-6 text-neutral-900">“{nudge.received_from_other.message_text}”</p>
-          <p className="mt-2 text-[11px] font-bold leading-5 text-rose-600">
-            연락처 교환 후 잠수하거나 상대방에게 불쾌한 언행을 할 경우 제재 대상입니다.
-          </p>
+          <ReceivedContactNudge item={received} />
         </div>
       ) : null}
 
       {nudge.sent_by_me ? (
-        <div className={nudge.received_from_other ? "mt-2" : ""}>
+        <div className={received ? "mt-2" : ""}>
           <p className="text-xs font-bold text-amber-900">상대에게 한마디를 보냈어요.</p>
           <p className="mt-1 text-xs leading-5 text-amber-800">“{nudge.sent_by_me.message_text}”</p>
           <p className="mt-1 text-[11px] text-amber-700">같은 매칭에서는 한 번만 보낼 수 있어요.</p>
         </div>
       ) : nudge.can_send ? (
         <>
-          <div className={nudge.received_from_other ? "mt-2" : ""}>
+          <div className={received ? "mt-2" : ""}>
             <p className="text-xs font-black text-amber-950">연락처 교환 한마디</p>
             <p className="mt-1 text-[11px] leading-5 text-amber-800">
-              쌍방 수락 후 48시간이 지났어요. 부담 없는 문구를 한 번 보낼 수 있습니다.
+              쌍방 수락 후 {ONE_ON_ONE_CONTACT_NUDGE_DELAY_HOURS}시간이 지났어요. 부담 없는 문구를 한 번 보낼 수 있습니다.
             </p>
             <button
               type="button"

@@ -53,7 +53,7 @@ begin
     or match_row.contact_exchange_paid_at is not null
     or match_row.contact_exchange_paid_by_user_id is not null
     or mutual_at is null
-    or mutual_at > now() - interval '48 hours'
+    or mutual_at > now() - interval '24 hours'
   then
     raise exception 'NUDGE_NOT_ELIGIBLE' using errcode = '23514';
   end if;

@@ -22,6 +22,7 @@ import { createLatestRequest } from "@/lib/latest-request";
 import { trackCheckoutStarted } from "@/lib/payment-analytics";
 import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
 import OneOnOneContactNudge from "@/components/dating/OneOnOneContactNudge";
+import OneOnOneContactOffer from "@/components/dating/OneOnOneContactOffer";
 import type {
   OneOnOneContactNudgePresetKey,
   OneOnOneContactNudgeSummary,
@@ -1736,6 +1737,7 @@ function OpenCardsContent() {
   const [oneOnOneHome, setOneOnOneHome] = useState<OneOnOneHomeState | null>(null);
   const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
   const oneOnOneMatchActionLocksRef = useRef<Set<string>>(new Set());
+  const oneOnOneContactCheckoutLocksRef = useRef<Set<string>>(new Set());
   const pendingSexTabScrollRef = useRef<number | null>(null);
   const [processingOneOnOneContactIds, setProcessingOneOnOneContactIds] = useState<string[]>([]);
   const [processingOneOnOneNudgeIds, setProcessingOneOnOneNudgeIds] = useState<string[]>([]);
@@ -2616,7 +2618,8 @@ function OpenCardsContent() {
 
   const handleOneOnOneContactCheckout = useCallback(
     async (matchId: string) => {
-      if (processingOneOnOneContactIds.includes(matchId)) return;
+      if (oneOnOneContactCheckoutLocksRef.current.has(matchId)) return;
+      oneOnOneContactCheckoutLocksRef.current.add(matchId);
       setProcessingOneOnOneContactIds((prev) => [...prev, matchId]);
       try {
         const res = await fetch("/api/payments/toss/create", {
@@ -2654,10 +2657,11 @@ function OpenCardsContent() {
       } catch (error) {
         alert(error instanceof Error ? error.message : withPaymentCardNotice("번호 교환 결제를 시작하지 못했습니다."));
       } finally {
+        oneOnOneContactCheckoutLocksRef.current.delete(matchId);
         setProcessingOneOnOneContactIds((prev) => prev.filter((id) => id !== matchId));
       }
     },
-    [processingOneOnOneContactIds, reloadOneOnOneHome]
+    [reloadOneOnOneHome]
   );
 
   const handleOneOnOneAutoSelect = useCallback(
@@ -4335,26 +4339,11 @@ function OneOnOneMatchActions({
 
     return (
       <div className="mt-3 rounded-2xl border border-emerald-100 bg-white p-3">
-        <p className="text-xs font-black text-neutral-900">{contactExchangeIncluded ? "기존 플러스 무료 번호교환" : "번호 교환 가능"}</p>
-        <p className="mt-1 text-xs leading-5 text-neutral-600">
-          {contactExchangeIncluded
-            ? "기존 플러스 혜택 적용 중이라 추가 결제 없이 상대 연락처가 바로 공개됩니다."
-            : "결제 전 금액과 내용을 확인한 뒤 진행되며, 완료되면 상대 연락처가 바로 공개됩니다."}
-        </p>
-        {!contactExchangeIncluded ? (
-          <p className="mt-1 text-[11px] leading-5 text-neutral-400">결제 오류나 미반영은 마이페이지 결제 내역 또는 오픈카톡으로 확인 요청해주세요.</p>
-        ) : null}
+        <OneOnOneContactOffer matchId={match.id} name={match.counterparty_card?.name}
+          included={contactExchangeIncluded} processing={contactProcessing}
+          nudge={match.contact_nudge} nudgeProcessing={nudgeProcessing}
+          onExchange={onContactCheckout} onNudge={onContactNudge} />
         <div className="mt-2 flex flex-wrap gap-2">
-          <button
-            type="button"
-            disabled={contactProcessing}
-            onClick={() => onContactCheckout(match.id)}
-            className="inline-flex min-h-[34px] items-center rounded-xl bg-emerald-600 px-3 text-xs font-black text-white disabled:opacity-50"
-          >
-            {contactProcessing
-              ? contactExchangeIncluded ? "교환 중..." : "결제 준비 중..."
-              : contactExchangeIncluded ? "무료로 번호교환" : "연락처 교환 진행하기"}
-          </button>
           <Link href="/mypage?section=matching" className="inline-flex min-h-[34px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold text-neutral-600">
             상세 보기
           </Link>
@@ -4370,12 +4359,6 @@ function OneOnOneMatchActions({
             {processing ? "취소 중..." : "매칭 취소"}
           </button>
         </div>
-        <OneOnOneContactNudge
-          matchId={match.id}
-          nudge={match.contact_nudge}
-          processing={nudgeProcessing}
-          onSend={onContactNudge}
-        />
       </div>
     );
   }

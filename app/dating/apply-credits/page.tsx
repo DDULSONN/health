@@ -5,6 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
 import PaidPolicyNotice from "@/components/PaidPolicyNotice";
 import { createClient } from "@/lib/supabase/client";
+import { normalizeDatingApplyReturn } from "@/lib/dating-apply-return";
 
 type ApplyCreditsStatusResponse = {
   ok?: boolean;
@@ -110,7 +111,10 @@ export default function ApplyCreditsPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${accessToken}`,
         },
-        body: JSON.stringify({ productType: "apply_credits" }),
+        body: JSON.stringify({
+          productType: "apply_credits",
+          returnTo: normalizeDatingApplyReturn(new URLSearchParams(window.location.search).get("returnTo")),
+        }),
       });
       const body = (await res.json().catch(() => ({}))) as {
         ok?: boolean;

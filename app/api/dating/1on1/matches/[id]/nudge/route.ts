@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import type { DatingOneOnOneMatchRow } from "@/lib/dating-1on1";
 import {
+  ONE_ON_ONE_CONTACT_NUDGE_DELAY_HOURS,
   buildOneOnOneContactNudgeEmail,
   getOneOnOneContactNudgeEligibility,
   getOneOnOneContactNudgeMessage,
@@ -69,7 +70,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   if (!eligibility.eligible) {
     return NextResponse.json(
       {
-        error: "쌍방 수락 후 48시간 동안 결제가 없을 때만 문구를 보낼 수 있습니다.",
+        error: `쌍방 수락 후 ${ONE_ON_ONE_CONTACT_NUDGE_DELAY_HOURS}시간 동안 결제가 없을 때만 문구를 보낼 수 있습니다.`,
         eligibleAt: eligibility.eligibleAt,
       },
       { status: 409 },

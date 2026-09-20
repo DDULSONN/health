@@ -33,6 +33,9 @@ import {
   isTossConfigured,
 } from "@/lib/toss-payments";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
+import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
+import { normalizeFailureOrderId } from "@/lib/payment-guidance";
+import { getContactPaymentRecovery } from "@/lib/contact-payment-recovery";
 
 import { normalizeDatingApplyReturn } from "@/lib/dating-apply-return";
 import { getCityViewPurchasePreview } from "@/lib/dating-purchase-fulfillment";
@@ -77,6 +80,7 @@ type CreateBody = {
   resumedFromOrderId?: unknown;
   returnTo?: unknown;
   requireNewCandidates?: unknown;
+  recoveryOrderId?: unknown;
 };
 
 type OneOnOneMatchRow = {
@@ -115,7 +119,7 @@ const PRODUCT_CONFIG: Record<ProductType, { amount: number; orderName: string }>
     orderName: "가까운 후보 30명 보기",
   },
   one_on_one_contact_exchange: {
-    amount: 20000,
+    amount: ONE_ON_ONE_CONTACT_PRICE_KRW,
     orderName: "1:1 번호 교환",
   },
   one_on_one_priority_24h: {
@@ -330,6 +334,24 @@ export async function POST(req: Request) {
     let paymentAmount = config.amount;
     let orderNameOverride: string | null = null;
     const admin = createAdminClient();
+    if (body.recoveryOrderId !== undefined) {
+      const recoveryOrderId = normalizeFailureOrderId(body.recoveryOrderId);
+      if (productType !== "one_on_one_contact_exchange" || !recoveryOrderId) {
+        return json(400, { ok: false, code: "INVALID_RECOVERY", message: "다시 시도할 주문을 확인해 주세요." });
+      }
+      const recovery = await getContactPaymentRecovery(admin, user.id, recoveryOrderId);
+      if (!recovery || recovery.view.matchId !== body.matchId || recovery.view.state !== "retry") {
+        return json(409, { ok: false, code: "RECOVERY_NOT_READY", message: "결제 또는 매칭 상태가 변경되었어요. 결제 내역과 내 매칭을 확인해 주세요." });
+      }
+      if (recovery.checkoutUrl) {
+        // A benefit may have been granted after the failed attempt. Keep the
+        // existing free-fulfillment path instead of reopening a paid checkout.
+        const recoveryPlus = await getActiveOneOnOnePlus(admin, user.id);
+        if (!recoveryPlus?.contact_exchange_included) {
+          return json(200, { ok: true, checkoutUrl: recovery.checkoutUrl, amount: recovery.view.amount, reusedOrder: true });
+        }
+      }
+    }
     let productRefId: string | null = null;
     let productMeta: Record<string, unknown> = {};
 
@@ -1193,6 +1215,8 @@ export async function POST(req: Request) {
     successUrl.searchParams.set("productType", productType);
     const failUrl = new URL("/payments/fail", baseUrl);
     failUrl.searchParams.set("productType", productType);
+    // Toss may omit orderId when the customer closes the payment window.
+    failUrl.searchParams.set("failedOrderId", tossOrderId);
     const applyReturn = productType === "apply_credits" ? normalizeDatingApplyReturn(body.returnTo) : null;
     if (applyReturn) {
       successUrl.searchParams.set("returnTo", applyReturn);
