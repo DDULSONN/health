@@ -2140,6 +2140,8 @@ export default function MyPage() {
   const [showAllOutgoingSwipeLikes, setShowAllOutgoingSwipeLikes] = useState(false);
   const [showAllIncomingSwipeLikes, setShowAllIncomingSwipeLikes] = useState(false);
   const [refreshingOneOnOneRecommendationIds, setRefreshingOneOnOneRecommendationIds] = useState<string[]>([]);
+  const oneOnOneRefreshLocksRef = useRef<Set<string>>(new Set());
+  const [oneOnOneRefreshReadError, setOneOnOneRefreshReadError] = useState("");
   const [openCardWriteEnabled, setOpenCardWriteEnabled] = useState(true);
   const [openCardWriteSaving, setOpenCardWriteSaving] = useState(false);
   const [openCardHomeSubtitle, setOpenCardHomeSubtitle] = useState(DEFAULT_OPEN_CARD_HOME_SUBTITLE);
@@ -4648,7 +4650,9 @@ export default function MyPage() {
     commit: setMyOneOnOneMatches,
   }), [oneOnOneMatchesRequest]);
 
-  const reloadOneOnOneRecommendations = useCallback((fresh = true) => oneOnOneRecommendationsRequest.run({
+  const reloadOneOnOneRecommendations = useCallback(async (fresh = true, requireUpdated = false) => {
+    let updated = false;
+    await oneOnOneRecommendationsRequest.run({
     replace: fresh,
     load: async (signal) => {
       const res = await fetch("/api/dating/1on1/recommendations/my", { cache: "no-store", signal });
@@ -4657,10 +4661,13 @@ export default function MyPage() {
         error?: string;
       };
       if (!res.ok) throw new Error(body.error ?? "1:1 자동 추천 후보를 다시 불러오지 못했습니다.");
+      if (!Array.isArray(body.items)) throw new Error("후보 조회 응답을 확인하지 못했어요.");
       return body.items ?? [];
     },
-    commit: setMyOneOnOneAutoRecommendations,
-  }), [oneOnOneRecommendationsRequest]);
+    commit: (value) => { setMyOneOnOneAutoRecommendations(value); setOneOnOneRefreshReadError(""); updated = true; },
+    });
+    if (requireUpdated && !updated) throw new Error("새 후보 명단을 불러오지 못했어요.");
+  }, [oneOnOneRecommendationsRequest]);
 
   const reloadOneOnOneAfterAction = async () => {
     const results = await Promise.allSettled([
@@ -5458,11 +5465,13 @@ export default function MyPage() {
   };
 
   const handleRefreshOneOnOneRecommendations = async (sourceCardId: string) => {
-    if (refreshingOneOnOneRecommendationIds.includes(sourceCardId)) return;
+    if (oneOnOneRefreshLocksRef.current.has(sourceCardId) || oneOnOneRefreshReadError) return;
     const recommendationGroup = myOneOnOneAutoRecommendations.find((group) => group.source_card_id === sourceCardId);
     if (!confirm(buildOneOnOneRefreshConfirmation(recommendationGroup))) return;
 
+    oneOnOneRefreshLocksRef.current.add(sourceCardId);
     setRefreshingOneOnOneRecommendationIds((prev) => [...prev, sourceCardId]);
+    let consumed = false;
     try {
       const res = await fetch("/api/dating/1on1/recommendations/refresh", {
         method: "POST",
@@ -5474,17 +5483,24 @@ export default function MyPage() {
         error?: string;
         request_id?: string;
       };
+      if (res.status >= 500 || (res.ok && !body.ok)) throw new Error("새로고침 처리 결과를 확인하지 못했어요.");
       if (!res.ok || !body.ok) {
         const message = body.error ?? "자동 추천 후보를 새로고침하지 못했습니다.";
         alert(body.request_id ? `${message}\n문의 코드: ${body.request_id}` : message);
         return;
       }
 
-      await reloadOneOnOneRecommendations();
+      consumed = true;
+      await reloadOneOnOneRecommendations(true, true);
       alert(buildOneOnOneRefreshSuccess(body));
     } catch (e) {
-      alert(e instanceof Error ? e.message : "자동 추천 후보를 새로고침하지 못했습니다.");
+      const message = consumed
+        ? "새로고침 1회는 처리됐지만 새 후보 명단을 불러오지 못했어요. '명단 다시 불러오기'로 확인해 주세요. 추가 횟수는 사용되지 않아요."
+        : "새로고침 상태를 확인하지 못했어요. 다시 새로고침하지 말고 명단을 불러와 사용 횟수와 후보를 먼저 확인해 주세요.";
+      setOneOnOneRefreshReadError(message);
+      alert(consumed ? message : `${e instanceof Error ? e.message : "네트워크 오류"}\n${message}`);
     } finally {
+      oneOnOneRefreshLocksRef.current.delete(sourceCardId);
       setRefreshingOneOnOneRecommendationIds((prev) => prev.filter((id) => id !== sourceCardId));
     }
   };
@@ -10167,6 +10183,13 @@ export default function MyPage() {
 
                   {["submitted", "reviewing", "approved"].includes(item.status) && (
                       <div className="mt-3 rounded-xl border border-pink-200 bg-pink-50/50 p-3">
+                        {oneOnOneRefreshReadError ? <div role="alert" className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+                          <p>{oneOnOneRefreshReadError}</p>
+                          <button type="button" className="mt-2 min-h-[44px] rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700"
+                            onClick={() => { void reloadOneOnOneRecommendations(true, true).catch(() => setOneOnOneRefreshReadError("명단을 불러오지 못했어요. 네트워크 연결을 확인하고 다시 눌러 주세요. 횟수는 차감되지 않아요.")); }}>
+                            명단 다시 불러오기 · 횟수 차감 없음
+                          </button>
+                        </div> : null}
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
                             <p className="text-sm font-semibold text-pink-900">자동 추천 후보 최대 10명</p>
@@ -10177,7 +10200,7 @@ export default function MyPage() {
                           <button
                             type="button"
                             onClick={() => void handleRefreshOneOnOneRecommendations(item.id)}
-                            disabled={!canRefreshAutoRecommendations || refreshingAutoRecommendations}
+                            disabled={!canRefreshAutoRecommendations || refreshingAutoRecommendations || Boolean(oneOnOneRefreshReadError)}
                             className="inline-flex h-8 shrink-0 items-center rounded-md border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700 disabled:cursor-not-allowed disabled:opacity-50"
                           >
                             {refreshingAutoRecommendations

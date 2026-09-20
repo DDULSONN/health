@@ -1743,6 +1743,7 @@ function OpenCardsContent() {
   const [processingOneOnOneNudgeIds, setProcessingOneOnOneNudgeIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
   const [refreshingOneOnOneRecommendationIds, setRefreshingOneOnOneRecommendationIds] = useState<string[]>([]);
+  const oneOnOneRefreshLocksRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     activeSexRef.current = activeSex;
@@ -2013,16 +2014,18 @@ function OpenCardsContent() {
     return () => { data.subscription.unsubscribe(); oneOnOneHomeRequest.cancel(); };
   }, [supabase, oneOnOneHomeRequest]);
 
-  const reloadOneOnOneHome = useCallback(async (fresh = true) => {
+  const reloadOneOnOneHome = useCallback(async (fresh = true, requireUpdated = false) => {
     if (!viewerLoggedIn) {
       oneOnOneHomeRequest.cancel();
       setOneOnOneHome(null);
       setOneOnOneHomeError("");
       setOneOnOneHomeLoading(false);
+      if (requireUpdated) throw new Error("로그인 상태를 다시 확인해 주세요.");
       return;
     }
 
-    return oneOnOneHomeRequest.run({
+    let updated = false;
+    await oneOnOneHomeRequest.run({
       replace: fresh,
       start: () => { setOneOnOneHomeLoading(true); setOneOnOneHomeError(""); },
       load: async (signal) => {
@@ -2040,6 +2043,7 @@ function OpenCardsContent() {
         if (!myCardsRes.ok) throw new Error(myCardsBody.error ?? "내 1:1 신청 내역을 불러오지 못했습니다.");
         if (!matchesRes.ok) throw new Error(matchesBody.error ?? "1:1 매칭 상태를 불러오지 못했습니다.");
         if (!recommendationsRes.ok) throw new Error(recommendationsBody.error ?? "1:1 추천 후보를 불러오지 못했습니다.");
+        if (!Array.isArray(recommendationsBody.items)) throw new Error("후보 조회 응답을 확인하지 못했어요.");
         return {
           status: statusBody,
           myCards: Array.isArray(myCardsBody.items) ? myCardsBody.items : [],
@@ -2048,10 +2052,11 @@ function OpenCardsContent() {
           plus: myCardsBody.plus && typeof myCardsBody.plus === "object" ? myCardsBody.plus : null,
         } satisfies OneOnOneHomeState;
       },
-      commit: setOneOnOneHome,
+      commit: (value) => { setOneOnOneHome(value); updated = true; },
       fail: (error) => setOneOnOneHomeError(error instanceof Error ? error.message : "1:1 정보를 불러오지 못했습니다."),
       finish: () => setOneOnOneHomeLoading(false),
     });
+    if (requireUpdated && !updated) throw new Error("새 후보 명단을 불러오지 못했어요.");
   }, [viewerLoggedIn, oneOnOneHomeRequest]);
 
   useEffect(() => {
@@ -2703,10 +2708,12 @@ function OpenCardsContent() {
 
   const handleOneOnOneRecommendationRefresh = useCallback(
     async (sourceCardId: string) => {
-      if (!sourceCardId || refreshingOneOnOneRecommendationIds.includes(sourceCardId)) return;
+      if (!sourceCardId || oneOnOneRefreshLocksRef.current.has(sourceCardId)) return;
       const group = oneOnOneHome?.recommendations.find((item) => item.source_card_id === sourceCardId);
       if (!confirm(buildOneOnOneRefreshConfirmation(group))) return;
+      oneOnOneRefreshLocksRef.current.add(sourceCardId);
       setRefreshingOneOnOneRecommendationIds((prev) => [...prev, sourceCardId]);
+      let consumed = false;
       try {
         const res = await fetch("/api/dating/1on1/recommendations/refresh", {
           method: "POST",
@@ -2718,15 +2725,21 @@ function OpenCardsContent() {
           const message = body.error ?? "추천 후보를 새로고침하지 못했습니다.";
           throw new Error(body.request_id ? `${message}\n문의 코드: ${body.request_id}` : message);
         }
-        await reloadOneOnOneHome();
+        consumed = true;
+        await reloadOneOnOneHome(true, true);
         alert(buildOneOnOneRefreshSuccess(body));
       } catch (error) {
-        alert(error instanceof Error ? error.message : "추천 후보를 새로고침하지 못했습니다.");
+        const message = consumed
+          ? "새로고침 1회는 처리됐지만 새 후보 명단을 불러오지 못했어요. 아래 '명단 다시 불러오기'로 확인해 주세요. 추가 횟수는 사용되지 않아요."
+          : "새로고침 상태를 확인하지 못했어요. 다시 새로고침하지 말고 '명단 다시 불러오기'로 사용 횟수와 후보를 먼저 확인해 주세요.";
+        setOneOnOneHomeError(message);
+        alert(consumed ? message : `${error instanceof Error ? error.message : "네트워크 오류"}\n${message}`);
       } finally {
+        oneOnOneRefreshLocksRef.current.delete(sourceCardId);
         setRefreshingOneOnOneRecommendationIds((prev) => prev.filter((id) => id !== sourceCardId));
       }
     },
-    [refreshingOneOnOneRecommendationIds, reloadOneOnOneHome, oneOnOneHome]
+    [reloadOneOnOneHome, oneOnOneHome]
   );
 
   const openReelsApply = useCallback(
@@ -3471,6 +3484,7 @@ function OpenCardsContent() {
           refreshingRecommendationIds={refreshingOneOnOneRecommendationIds}
           onMatchAction={handleOneOnOneMatchAction}
           onReported={() => { void reloadOneOnOneHome(); }}
+          onReload={() => { void reloadOneOnOneHome(); }}
           onContactCheckout={handleOneOnOneContactCheckout}
           onContactNudge={handleOneOnOneContactNudge}
           onAutoSelect={handleOneOnOneAutoSelect}
@@ -3680,6 +3694,7 @@ function OpenCardsContent() {
 
 function OneOnOneHomePanel({
   onReported,
+  onReload,
   arrivedFromOnboarding,
   viewerLoggedIn,
   profileStartHref,
@@ -3700,6 +3715,7 @@ function OneOnOneHomePanel({
 }: {
   arrivedFromOnboarding: boolean;
   onReported: (result: DatingReportResult) => void;
+  onReload: () => void;
   viewerLoggedIn: boolean;
   profileStartHref: string;
   profileStartCta: string;
@@ -3826,7 +3842,10 @@ function OneOnOneHomePanel({
             </Link>
           </div>
         ) : error ? (
-          <p className="rounded-[24px] border border-rose-100 bg-rose-50 p-5 text-sm font-semibold text-rose-700">{error}</p>
+          <div className="rounded-[24px] border border-rose-100 bg-rose-50 p-5 text-sm text-rose-700" role="alert">
+            <p>{error}</p>
+            <button type="button" onClick={onReload} className="mt-3 min-h-[44px] rounded-xl border border-neutral-300 bg-white px-3 font-medium text-neutral-700">명단 다시 불러오기 · 횟수 차감 없음</button>
+          </div>
         ) : !hasOneOnOneCard ? (
           <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-5">
             <p className="text-lg font-black text-rose-950">아직 1대1 프로필이 없어요.</p>

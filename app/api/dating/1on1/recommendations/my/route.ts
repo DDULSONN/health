@@ -1,5 +1,6 @@
 import {
   DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES,
+  DATING_ONE_ON_ONE_PENDING_PAIR_TTL_MS,
   isDatingOneOnOnePendingPairExpired,
   toDatingOneOnOneAge,
 } from "@/lib/dating-1on1";
@@ -23,7 +24,7 @@ import {
   getRecommendationRecoverySeed,
   RECOMMENDATION_REFRESH_HISTORY_MS,
   replayRecommendationRefreshes,
-  isCandidateInSourceAgeRange,
+  isRecentlyHandledCandidate,
   sortCandidatesForSource,
   takeBalancedRecommendations,
 } from "@/lib/dating-1on1-recommendations";
@@ -251,6 +252,7 @@ export async function GET(req: Request) {
 
   const activeUserIds = new Set<string>();
   const handledUserIds = new Set<string>();
+  const lastHandledAtByUserId = new Map<string, number>();
   const permanentlyRejectedUserIds = new Set<string>();
   for (const row of pairRows) {
     const otherUserId = row.source_user_id === user.id ? row.candidate_user_id : row.source_user_id;
@@ -263,8 +265,19 @@ export async function GET(req: Request) {
     }
     const recyclable =
       RECYCLABLE_PAIR_STATES.has(row.state) || isDatingOneOnOnePendingPairExpired(row);
-    if (recyclable) handledUserIds.add(otherUserId);
+    if (recyclable) {
+      handledUserIds.add(otherUserId);
+      const pending = row.state === "proposed" || row.state === "source_selected";
+      const basis = pending
+        ? (row.state === "source_selected" ? row.source_selected_at ?? row.updated_at ?? row.created_at : row.created_at ?? row.updated_at)
+        : row.updated_at ?? row.created_at;
+      const parsed = Date.parse(basis ?? "");
+      // Unknown timestamps retain the conservative recent-history treatment.
+      const endedAt = Number.isFinite(parsed) ? Math.min(nowMs, parsed + (pending ? DATING_ONE_ON_ONE_PENDING_PAIR_TTL_MS : 0)) : nowMs;
+      lastHandledAtByUserId.set(otherUserId, Math.max(lastHandledAtByUserId.get(otherUserId) ?? 0, endedAt));
+    }
   }
+  const candidateRevisitTimes = new Map(candidateUniverse.map((card) => [card.id, lastHandledAtByUserId.get(card.user_id)]));
 
   const unavailableCardIds = new Set<string>();
   const buildItems = () => mySourceCards.map((sourceCard) => {
@@ -326,7 +339,11 @@ export async function GET(req: Request) {
     const favoriteCandidates = favoriteRows
       .filter((row) => row.source_card_id === sourceCard.id)
       .flatMap((row) => candidates.find((candidate) => candidate.id === row.candidate_card_id) ?? []);
-    const unsavedCandidates = candidates.filter((candidate) => !favoriteIds.has(candidate.id));
+    const unsavedCandidates = candidates.filter((candidate) => !favoriteIds.has(candidate.id)).map((candidate) => ({
+      ...candidate,
+      last_handled_at: candidateRevisitTimes.get(candidate.id) != null
+        ? new Date(candidateRevisitTimes.get(candidate.id)!).toISOString() : null,
+    }));
     const defaultSortedCandidates = sortCandidatesForSource(sourceCard, unsavedCandidates, `${adminRecommendationDate}:default`, nowMs);
     const defaultRecommendations = takeBalancedRecommendations(
       sourceCard,
@@ -349,14 +366,13 @@ export async function GET(req: Request) {
     const recoverySeed = getRecommendationRecoverySeed(recoveryRes.error ? null : recoveryRes.data?.refreshed_at, nowMs);
     if (recoverySeed) refreshSeeds.push(recoverySeed);
     const hasActiveRefresh = refreshSeeds.some((seed) => getActiveRecommendationRefresh(seed, nowMs));
-    const replay = hasActiveRefresh
-      ? replayRecommendationRefreshes(sourceCard, unsavedCandidates,
-        defaultRecommendations, refreshSeeds, handledPairIds, RECOMMENDATION_LIMIT, nowMs)
-      : { recommendations: defaultRecommendations, activeShownIds: new Set(defaultRecommendations.map((card) => card.id)) };
+    const recentHandledIds = new Set(unsavedCandidates.filter((card) => isRecentlyHandledCandidate(card, nowMs)).map((card) => card.id));
+    const replay = replayRecommendationRefreshes(sourceCard, unsavedCandidates,
+      defaultRecommendations, hasActiveRefresh ? refreshSeeds : [], handledPairIds, RECOMMENDATION_LIMIT, nowMs,
+      { limit: ONE_ON_ONE_FREE_EXTRA_CANDIDATES, excludeIds: recentHandledIds });
     const recommendations = hasActiveRefresh ? replay.recommendations : defaultRecommendations;
     // Extra candidates must not overlap today's main pages; old history is a
     // preference, not a reason to make the separate extra list disappear.
-    const allShownRecommendationIds = new Set([...replay.activeShownIds, ...recommendations.map((card) => card.id)]);
     const sourcePlus = plusByUserId.get(sourceCard.user_id) ?? null;
     const refreshLimit = sourcePlus ? ONE_ON_ONE_PLUS_REFRESH_LIMIT : ONE_ON_ONE_FREE_REFRESH_LIMIT;
     const refreshAvailability = getRefreshAvailability(
@@ -364,21 +380,7 @@ export async function GET(req: Request) {
       sourceCard.recommendation_refresh_used_at,
       refreshLimit
     );
-    const adminExcludeIds = new Set([...allShownRecommendationIds, ...handledPairIds]);
-    const extraRefreshSeed = refreshSeeds.filter((seed) => getActiveRecommendationRefresh(seed, nowMs))
-      .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? "initial";
-    const adminRecommendations = takeBalancedRecommendations(
-      sourceCard,
-      sortCandidatesForSource(
-        sourceCard,
-        unsavedCandidates.filter((candidate) => isCandidateInSourceAgeRange(sourceCard, candidate) && !adminExcludeIds.has(candidate.id)),
-        `${adminRecommendationDate}:admin-extra:${extraRefreshSeed}`,
-        nowMs
-      ),
-      ONE_ON_ONE_FREE_EXTRA_CANDIDATES,
-      new Set(),
-      nowMs
-    );
+    const adminRecommendations = replay.extraRecommendations;
 
     return {
       source_card_id: sourceCard.id,

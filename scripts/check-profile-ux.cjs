@@ -126,6 +126,7 @@ for (const surface of ['home', 'mypage']) for (const outcome of ['resolve', 'rej
     useCallback: fn => fn, viewerLoggedIn: true, oneOnOneHomeRequest: gate, oneOnOneRecommendationsRequest: gate,
     setOneOnOneHome: v => { value = v; }, setMyOneOnOneAutoRecommendations: v => { value = v; },
     setOneOnOneHomeError: v => { error = v; }, setOneOnOneHomeLoading: v => { loading = v; },
+    setOneOnOneRefreshReadError: () => {},
     fetch: async () => { calls++; const batch = fetchBatch; await queues[batch].promise; return { ok: true, json: async () => ({ items: [batch], canWrite: true }) }; },
   };
   const reload = evaluate('exports.reload = ' + initializer(file, name), bindings).reload;

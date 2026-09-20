@@ -3,6 +3,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const ts = require('typescript');
+const { execFileSync } = require('node:child_process');
 const root = path.resolve(__dirname, '..');
 require('@next/env').loadEnvConfig(process.env.AUDIT_ENV_DIR || root, false, { info() {}, error() {} });
 const userId = process.env.AUDIT_USER_ID;
@@ -28,7 +29,12 @@ function load(name) {
   if (!name.startsWith('@/')) return require(name);
   if (modules.has(name)) return modules.get(name).exports;
   const mod = { exports: {} }; modules.set(name, mod);
-  const src = fs.readFileSync(path.join(root, name.slice(2) + '.ts'), 'utf8');
+  const relative = name.slice(2) + '.ts';
+  const src = process.env.AUDIT_BASELINE_REF && [
+    'lib/dating-1on1-recommendations.ts', 'app/api/dating/1on1/recommendations/my/route.ts',
+  ].includes(relative)
+    ? execFileSync('git', ['show', process.env.AUDIT_BASELINE_REF + ':' + relative], { cwd: root, encoding: 'utf8' })
+    : fs.readFileSync(path.join(root, relative), 'utf8');
   new Function('require', 'module', 'exports', ts.transpileModule(src, { compilerOptions: {
     module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true,
   } }).outputText)(load, mod, mod.exports);
@@ -72,7 +78,10 @@ function load(name) {
     const replay = modules.get('@/lib/dating-1on1-recommendations').exports.replayRecommendationRefreshes;
     const args = replayArgs ?? [source, pool, group.recommendations, [], defaultArgs[3], 10, now];
     const a = group.recommendations;
-    const b = replay(args[0],args[1],args[2],[...args[3],new Date(now).toISOString()],args[4],args[5],now).recommendations;
-    console.log(JSON.stringify({ simulatedNextRefresh: { overlap: a.filter(c=>b.some(x=>x.id===c.id)).length, ...summarize(b), items: items(b) } }));
+    const result = replay(args[0],args[1],args[2],[...args[3],new Date(now).toISOString()],args[4],args[5],now,args[7]);
+    const b = result.recommendations;
+    const extra = result.extraRecommendations ?? [];
+    console.log(JSON.stringify({ simulatedNextRefresh: { overlap: a.filter(c=>b.some(x=>x.id===c.id)).length, ...summarize(b), items: items(b),
+      extra: args[7] ? { ...summarize(extra), overlap:group.admin_recommendations.filter(c=>extra.some(x=>x.id===c.id)).length } : null } }));
   }
 })().catch(e=>{console.error(e.message);process.exitCode=1;});

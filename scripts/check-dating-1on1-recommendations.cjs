@@ -645,6 +645,110 @@ test("a week of refreshes never trades compatible locals for unseen distant peop
   }
 });
 
+test("handled pairs do not erase exposure history: older pages rotate before a repeat", () => {
+  const pool = Array.from({ length: 90 }, (_, i) => card(`handled-${i}`, {
+    last_handled_at: new Date(now - 15 * day).toISOString(),
+  }));
+  const handled = new Set(ids(pool));
+  const defaults = rules.takeBalancedRecommendations(source, pool, 10, handled, now);
+  const seen = new Set(ids(defaults));
+  const stamps = [];
+  for (let i = 0; i < 6; i++) {
+    stamps.push(new Date(now - 60000 + i * 1000).toISOString());
+    const result = rules.replayRecommendationRefreshes(source, pool, defaults, stamps, handled, 10, now);
+    assert.equal(result.recommendations.length, 10);
+    assert.equal(result.recommendations.some(c => seen.has(c.id)), false);
+    for (const c of result.recommendations) seen.add(c.id);
+  }
+});
+
+test("recently handled locals wait behind other comparable locals without forcing distant matches", () => {
+  const recent = Array.from({length: 15}, (_,i)=>card(`recent-${i}`, { last_handled_at: new Date(now-day).toISOString() }));
+  const older = Array.from({length: 15}, (_,i)=>card(`older-${i}`, { region: '경기 수원', last_handled_at: new Date(now-10*day).toISOString() }));
+  const distant = Array.from({length: 15}, (_,i)=>card(`distant-${i}`, { region: '제주' }));
+  const sorted = rules.sortCandidatesForSource(source,[...recent,...older,...distant],'cooldown',now);
+  const result = rules.takeBalancedRecommendations(source,sorted,10,new Set([...ids(recent),...ids(older)]),now);
+  assert.ok(result.every(c=>c.id.startsWith('older-')));
+  const small = rules.takeBalancedRecommendations(source,rules.sortCandidatesForSource(source,[...recent,...distant],'small',now),10,new Set(ids(recent)),now);
+  assert.ok(small.every(c=>c.id.startsWith('recent-')));
+  assert.equal(rules.isRecentlyHandledCandidate(card('boundary',{last_handled_at:new Date(now-7*day).toISOString()}),now),false);
+});
+
+test("extras explicitly rotate past high-priority previous extras within the same local tier", async () => {
+  const tables = fixture(120);
+  const at = Date.parse('2026-09-20T04:00:00Z');
+  for (const [i,c] of tables.dating_1on1_cards.slice(1).entries()) {
+    c.region = ['서울 강남구','서울 동작구','경기 수원','서울 송파구'][i%4];
+    if (i < 20) c.recommendation_refresh_used_at = new Date(at-10000).toISOString();
+  }
+  tables.dating_1on1_plus_subscriptions = [{ user_id:'user-source',expires_at:new Date(at+day).toISOString() }];
+  tables.dating_1on1_recommendation_refresh_events = [];
+  let before=(await runApi(tables,{atTime:at})).body.items[0];
+  for(let i=0;i<2;i++) {
+    const t=at+1000+i*1000, stamp=new Date(t).toISOString();
+    tables.dating_1on1_cards[0].recommendation_refresh_used_at=stamp;
+    tables.dating_1on1_recommendation_refresh_events.push({card_id:'source',refreshed_at:stamp});
+    const result=await runApi(tables,{atTime:t+1}), after=result.body.items[0];
+    assert.equal(after.admin_recommendations.length,3);
+    assert.equal(after.admin_recommendations.some(c=>ids(before.admin_recommendations).includes(c.id)),false);
+    assert.equal(after.admin_recommendations.some(c=>ids(after.recommendations).includes(c.id)),false);
+    assert.equal(after.recommendations.some(c=>ids(before.admin_recommendations).includes(c.id)),false, 'extra-to-main repeats wait while equally suitable unseen people remain');
+    assert.equal(result.calls.some(c=>c.insert||c.update||c.delete),false);
+    before=after;
+  }
+});
+
+test("old recyclable pairs may fill local extras; recent and permanently rejected pairs cannot", async () => {
+  const tables=fixture(45), at=Date.parse('2026-09-20T04:00:00Z');
+  tables.dating_1on1_match_proposals=tables.dating_1on1_cards.slice(1).map((c,i)=>pair({
+    id:`history-${i}`,candidate_card_id:c.id,candidate_user_id:c.user_id,
+    state:i===0?'candidate_rejected':i===1?'source_declined':i<5?'source_skipped':'admin_canceled',
+    updated_at:new Date(at-(i<5?1:14)*day).toISOString(), created_at:new Date(at-20*day).toISOString(),
+  }));
+  const group=(await runApi(tables,{atTime:at})).body.items[0];
+  assert.equal(group.admin_recommendations.length,3);
+  assert.ok(group.admin_recommendations.every(c=>Number(c.id.slice(1))>=5));
+  assert.ok([...group.recommendations,...group.admin_recommendations].every(c=>!['c0','c1'].includes(c.id)));
+});
+
+test("extras in tiny and mixed-region pools remain unique, never overlap main or introduce rejected inputs", () => {
+  for(const size of [0,1,3,9,10,11,12,15,20,30,70]) {
+    const pool=Array.from({length:size},(_,i)=>card(`small-${i}`,{region:i%5===0?'부산':'서울 강남구'}));
+    const defaults=rules.takeBalancedRecommendations(source,rules.sortCandidatesForSource(source,pool,'d',now),10,new Set(),now);
+    const stamps=[new Date(now-10000).toISOString(),new Date(now-5000).toISOString()];
+    const result=rules.replayRecommendationRefreshes(source,pool,defaults,stamps,new Set(),10,now,{limit:3,excludeIds:new Set(['small-1'])});
+    assert.ok(result.extraRecommendations.length<=3);
+    assert.equal(new Set(ids(result.extraRecommendations)).size,result.extraRecommendations.length);
+    assert.ok(result.extraRecommendations.every(c=>!ids(result.recommendations).includes(c.id)&&c.id!=='small-1'));
+    assert.deepEqual(result,rules.replayRecommendationRefreshes(source,pool,defaults,stamps,new Set(),10,now,{limit:3,excludeIds:new Set(['small-1'])}));
+  }
+});
+
+test("extras rotate at midnight and refresh expiry for both sexes, without changing on repeated reads", async () => {
+  const start = Date.parse('2026-09-01T14:59:00Z');
+  for (const sex of ['male', 'female']) {
+    const tables = fixture(120);
+    tables.dating_1on1_cards[0].sex = sex;
+    for (const c of tables.dating_1on1_cards.slice(1)) {
+      c.sex = sex === 'male' ? 'female' : 'male'; c.birth_year = tables.dating_1on1_cards[0].birth_year;
+    }
+    tables.dating_1on1_recommendation_refresh_events = [];
+    for (const offset of [0, 120000, day + 121000, day + 181000, 7 * day + 183000]) {
+      const at = start + offset;
+      const before = (await runApi(tables, { atTime: at })).body.items[0];
+      const stamp = new Date(at + 1).toISOString();
+      tables.dating_1on1_cards[0].recommendation_refresh_used_at = stamp;
+      tables.dating_1on1_recommendation_refresh_events.push({ card_id: 'source', refreshed_at: stamp });
+      const after = (await runApi(tables, { atTime: at + 2 })).body.items[0];
+      const repeated = (await runApi(tables, { atTime: at + 3 })).body.items[0];
+      assert.equal(after.admin_recommendations.length, 3);
+      assert.equal(after.admin_recommendations.some(c => ids(before.admin_recommendations).includes(c.id)), false, `${sex}/${offset}`);
+      assert.deepEqual(ids(after.admin_recommendations), ids(repeated.admin_recommendations));
+      assert.equal(after.admin_recommendations.some(c => ids(after.recommendations).includes(c.id)), false);
+    }
+  }
+});
+
 test("soft handled history does not rank far-away people above enough compatible locals", () => {
   const locals = Array.from({ length: 20 }, (_, i) => card(`local-${i}`));
   const far = Array.from({ length: 20 }, (_, i) => card(`far-${i}`, { region: '제주' }));
@@ -758,10 +862,10 @@ test("history replay calculates geography once per candidate and never caches ac
   } })('@/lib/dating-1on1-recommendations');
   const pool = Array.from({ length: 500 }, (_, i) => card(`perf-${i}`));
   const seeds = Array.from({ length: 14 }, (_, i) => new Date(now - (14 - i) * 1000).toISOString());
-  instrumented.replayRecommendationRefreshes(source, pool, pool.slice(0, 10), seeds, new Set(), 10, now);
+  instrumented.replayRecommendationRefreshes(source, pool, pool.slice(0, 10), seeds, new Set(), 10, now, { limit: 3, excludeIds: new Set() });
   assert.equal(calls, pool.length);
   calls = 0;
-  instrumented.replayRecommendationRefreshes({ ...source, region: '부산' }, pool, pool.slice(0, 10), seeds, new Set(), 10, now);
+  instrumented.replayRecommendationRefreshes({ ...source, region: '부산' }, pool, pool.slice(0, 10), seeds, new Set(), 10, now, { limit: 3, excludeIds: new Set() });
   assert.equal(calls, pool.length);
 });
 

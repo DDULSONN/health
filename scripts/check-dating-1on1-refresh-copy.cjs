@@ -82,6 +82,8 @@ function handler(kind, options = {}) {
   const bindings = {
     ...copy,
     refreshingOneOnOneRecommendationIds: pending,
+    oneOnOneRefreshLocksRef: { current: new Set(pending) }, oneOnOneRefreshReadError: '',
+    setOneOnOneHomeError() {}, setOneOnOneRefreshReadError() {},
     oneOnOneHome: { recommendations: [usage] }, myOneOnOneAutoRecommendations: [usage],
     setRefreshingOneOnOneRecommendationIds: update => { pending = update(pending); states.push([...pending]); },
     confirm: message => { confirmations.push(message); return options.confirm !== false; },
@@ -123,7 +125,7 @@ for (const kind of ['home', 'mypage']) {
     assert.match(view.alerts[0], /fixture-id/); assert.ok(!view.alerts[0].includes('1회를 사용했어요'));
     assert.deepEqual(view.states.at(-1), []);
   });
-  test(`${kind}: network failure re-enables the control without automatic retries`, async () => {
+  test(`${kind}: network failure clears the pending indicator without automatic retries`, async () => {
     const view = handler(kind, { networkError: true }); await view.run();
     assert.deepEqual(view.calls, ['post']); assert.match(view.alerts[0], /network failure/);
     assert.deepEqual(view.states.at(-1), []);
@@ -161,6 +163,7 @@ for (const remaining of [0, 1]) test(`real mypage refresh button preserves avail
   const tree = evaluate('exports.tree = ' + node.getText(source) + ';', {
     item: { id: 'fixture-card' }, handleRefreshOneOnOneRecommendations() {},
     canRefreshAutoRecommendations: remaining > 0, refreshingAutoRecommendations: false,
+    oneOnOneRefreshReadError: '',
     autoRecommendationRefreshCopy: copy.getOneOnOneRefreshCopy(quota(remaining)),
   }).tree;
   assert.equal(tree.props.disabled, remaining === 0);
