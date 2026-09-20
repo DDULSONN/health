@@ -11,6 +11,7 @@ import { getUserBanResponse } from "@/lib/user-ban-guard";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { NextResponse } from "next/server";
 import { getActiveOneOnOnePlus } from "@/lib/dating-1on1-plus";
+import { getDatingBirthYearErrorMessage, parseDatingBirthYear } from "@/lib/dating-age";
 
 type InputPayload = {
   id?: string;
@@ -40,7 +41,6 @@ const ONE_ON_ONE_EDIT_LOCK_TAG = "one_on_one_edit_locked";
 const ONE_ON_ONE_USER_EDIT_USED_TAG = "one_on_one_user_edit_used";
 const ONE_ON_ONE_USER_DELETED_TAG = "one_on_one_user_deleted";
 const ONE_ON_ONE_USER_REMOVED_TAG = "one_on_one_user_removed";
-const BIRTH_YEAR_ERROR_MESSAGE = "나이가 아니라 출생연도 4자리를 입력해 주세요. 예: 1996";
 
 function normalizePath(raw: unknown): string {
   if (typeof raw !== "string") return "";
@@ -245,7 +245,7 @@ export async function PATCH(req: Request) {
 
   const sex = (body.sex ?? "").trim();
   const name = (body.name ?? "").trim();
-  const birthYear = toInt(body.birth_year);
+  const birthYear = parseDatingBirthYear(body.birth_year);
   const heightCm = toInt(body.height_cm);
   const job = (body.job ?? "").trim();
   const region = (body.region ?? "").trim();
@@ -265,8 +265,8 @@ export async function PATCH(req: Request) {
   if (!name || name.length > 30) {
     return NextResponse.json({ error: "Name must be 1-30 characters." }, { status: 400 });
   }
-  if (birthYear == null || birthYear < 1960 || birthYear > 2010) {
-    return NextResponse.json({ error: BIRTH_YEAR_ERROR_MESSAGE }, { status: 400 });
+  if (birthYear == null) {
+    return NextResponse.json({ error: getDatingBirthYearErrorMessage(), code: "DATING_AGE_INELIGIBLE" }, { status: 400 });
   }
   if (heightCm == null || heightCm < 120 || heightCm > 230) {
     return NextResponse.json({ error: "Height must be between 120 and 230 cm." }, { status: 400 });
@@ -394,7 +394,7 @@ export async function PUT(req: Request) {
     getProfilePhoneVerification(admin, user.id),
     admin
       .from("dating_1on1_cards")
-      .select("id,status,admin_tags")
+      .select("id,status,admin_tags,birth_year")
       .eq("id", cardId)
       .eq("user_id", user.id)
       .maybeSingle(),
@@ -420,6 +420,9 @@ export async function PUT(req: Request) {
   }
   if (!currentRes.data) {
     return NextResponse.json({ error: "복구할 프로필을 찾지 못했습니다." }, { status: 404 });
+  }
+  if (parseDatingBirthYear(currentRes.data.birth_year) == null) {
+    return NextResponse.json({ error: getDatingBirthYearErrorMessage(), code: "DATING_AGE_INELIGIBLE" }, { status: 409 });
   }
 
   const tags = Array.isArray(currentRes.data.admin_tags)

@@ -400,6 +400,16 @@ const PROVINCE_BY_CITY: Record<string, string> = {
 
 const PROVINCE_KEYS_DESC = Object.keys(PROVINCE_ALIASES).sort((a, b) => b.length - a.length);
 
+// Coordinate parsing needs the actual matched prefix, not just its canonical name.
+// Keep the existing region/city extraction used by purchases and forms unchanged.
+export function readRegionProvincePrefix(region: string): { province: string; rest: string } | null {
+  const raw = region.trim();
+  for (const alias of PROVINCE_KEYS_DESC) {
+    if (raw.startsWith(alias)) return { province: PROVINCE_ALIASES[alias], rest: raw.slice(alias.length).trim() };
+  }
+  return null;
+}
+
 function cleanToken(token: string): string {
   return token.trim().replace(/[()]/g, "").replace(/[^0-9A-Za-z가-힣]/g, "");
 }

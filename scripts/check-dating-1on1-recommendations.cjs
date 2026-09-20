@@ -192,6 +192,46 @@ function pair(overrides = {}) {
   };
 }
 
+test("underage/malformed sources receive no candidates and do not consume refreshes", async () => {
+  for (const year of [new Date().getFullYear() - 17, 2010, null, 1996.2, 9999, 1959]) {
+    const tables = fixture(); tables.dating_1on1_cards[0].birth_year = year;
+    const result = await runApi(tables);
+    assert.equal(result.response.status, 403);
+    assert.equal(result.body.code, 'DATING_AGE_INELIGIBLE');
+    assert.equal(result.calls.some(q => q.insert || q.update || q.delete), false);
+  }
+});
+test("existing underage cards are absent from main, extra and saved candidates", async () => {
+  const tables = fixture(20);
+  for (const row of tables.dating_1on1_cards.slice(1, 5)) row.birth_year = new Date().getFullYear() - 17;
+  tables.dating_1on1_candidate_favorites = [{ source_card_id: 'source', candidate_card_id: 'c0', user_id: 'user-source', created_at: new Date().toISOString() }];
+  const result = await runApi(tables);
+  assert.equal(result.response.status, 200);
+  for (const id of ['c0','c1','c2','c3']) assert.equal(JSON.stringify(result.body).includes(`"id":"${id}"`), false);
+  assert.equal(allCandidates(result.body).length, 13);
+});
+test("latest underage identity cannot expose an older adult card or be selected manually/by admin", async () => {
+  for (const sourceInvalid of [false, true]) {
+    const tables = fixture();
+    const row = tables.dating_1on1_cards[sourceInvalid ? 0 : 1];
+    tables.dating_1on1_cards.push({ ...row, id: 'new-age-invalid', birth_year: 2010, created_at: '2026-09-20T12:00:00Z' });
+    const result = await runApi(tables);
+    if (sourceInvalid) assert.equal(result.response.status, 403);
+    else assert.equal(allCandidates(result.body).some(c => c.user_id === row.user_id), false);
+    for (const admin of [false, true]) {
+      const selected = await runSelect(structuredClone(tables), { admin });
+      assert.equal(selected.response.status, 409);
+      assert.equal(selected.calls.some(q => q.insert), false);
+    }
+  }
+});
+test("birth year changed during photo hydration is not exposed", async () => {
+  const result = await runApi(fixture(), { intercept: query => query.table === 'dating_1on1_cards' && query.fields.includes('photo_paths')
+    ? { data: [{ ...fixture(1).dating_1on1_cards[1], birth_year: 2010 }], error: null } : null });
+  assert.equal(result.response.status, 200);
+  assert.equal(allCandidates(result.body).length, 0);
+});
+
 test("extra candidates never overlap main candidates, even in a small pool", () => {
   const candidates = Array.from({ length: 10 }, (_, i) => card(String(i)));
   assert.deepEqual(rules.takeRecommendations(candidates, 3, new Set(ids(candidates))), []);
@@ -1040,7 +1080,7 @@ test("selection still rejects banned, withdrawn, blocked and permanently rejecte
 
 test("new identity/history safety queries fail closed", async () => {
   const failure = { data: null, error: { code: "XX000", message: "backend unavailable" } };
-  for (const field of ["id,user_id,phone,created_at", "id,source_card_id,candidate_card_id,source_user_id,candidate_user_id,state,source_selected_at,updated_at,created_at"]) {
+  for (const field of ["id,user_id,phone,created_at,birth_year", "id,source_card_id,candidate_card_id,source_user_id,candidate_user_id,state,source_selected_at,updated_at,created_at"]) {
     const intercept = (query) => query.fields === field ? failure : null;
     assert.equal((await runApi(fixture(1), { intercept })).response.status, 500);
     for (const admin of [false, true]) {
@@ -1059,7 +1099,7 @@ test("selection preserves authentication, admin-role and source ownership bounda
 
 test("large pools validate only the displayed shortlist, without loading all identity rows", async () => {
   const result = await runApi(fixture(1005));
-  const ownerLookups = result.calls.filter((query) => query.fields === "id,user_id,phone,created_at" &&
+  const ownerLookups = result.calls.filter((query) => query.fields === "id,user_id,phone,created_at,birth_year" &&
     query.filters.some(([op, key]) => op === "in" && key === "user_id"));
   assert.equal(ownerLookups.length, 1);
   assert.equal(ownerLookups[0].filters.find(([op, key]) => op === "in" && key === "user_id")[2].length, 14);

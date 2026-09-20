@@ -45,6 +45,7 @@ import {
   type RecommendationCardRow,
 } from "@/lib/dating-1on1-recommendation-data";
 import { getCurrentOneOnOneCardIds } from "@/lib/dating-1on1-current-cards";
+import { DATING_AGE_INELIGIBLE_MESSAGE, parseDatingBirthYear } from "@/lib/dating-age";
 import { fetchOneOnOnePairHistory, type OneOnOnePairHistory } from "@/lib/dating-1on1-pair-history";
 
 const RECOMMENDATION_LIMIT = 10;
@@ -131,6 +132,9 @@ export async function GET(req: Request) {
     if (ownRows.length === 0) return NextResponse.json({ items: [] });
     // Only the newest active application determines the source's gender.
     ownRows = ownRows.slice(0, 1);
+    if (parseDatingBirthYear(ownRows[0].birth_year, nowMs) == null) {
+      return NextResponse.json({ error: DATING_AGE_INELIGIBLE_MESSAGE, code: "DATING_AGE_INELIGIBLE" }, { status: 403 });
+    }
     const sexes = [...new Set(ownRows.map((row) => row.sex === "male" ? "female" as const : "male" as const))];
     candidateRows = await fetchActiveRecommendationRows(admin, { sexes, excludeUserId: user.id });
     profiles = await fetchRecommendationProfiles(admin, [user.id, ...candidateRows.map((row) => row.user_id)]);
@@ -152,7 +156,7 @@ export async function GET(req: Request) {
   // Do not arbitrarily drop older profiles to make the query look faster.
   const candidateUniverse = dedupeOneOnOneCardsByIdentity(candidateRows
     .filter((row) => profiles.has(row.user_id) && !profiles.get(row.user_id)?.banned)
-    .map(normalize));
+    .map(normalize)).filter((row) => parseDatingBirthYear(row.birth_year, nowMs) != null);
 
   const sourceCardIds = mySourceCards.map((card) => card.id);
   const adminRecommendationDate = getKstDateString();

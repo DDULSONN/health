@@ -1,4 +1,5 @@
 import { validateNickname } from "@/lib/nickname";
+import { getDatingBirthYearErrorMessage, parseDatingBirthYear } from "@/lib/dating-age";
 import type { DraftFields } from "@/lib/dating-onboarding-draft";
 
 export type ConsentKey = "consentOpenCard" | "consentFakeInfo" | "consentNoShow" | "consentFee" | "consentNoDirectContact" | "consentPrivacy";
@@ -14,7 +15,7 @@ export type ValidationInput = {
   consents: Record<ConsentKey, boolean>;
 };
 
-/** Mirrors the existing registration rules; only the error presentation changes. */
+/** Shared form validation; birth-year eligibility matches the 1:1 server gates. */
 export function validateOnboardingStep(step: number, input: ValidationInput): OnboardingErrors {
   const { fields: f, targets, consents } = input;
   const errors: OnboardingErrors = {};
@@ -27,8 +28,8 @@ export function validateOnboardingStep(step: number, input: ValidationInput): On
     if (!f.sex) errors.sex = "성별을 선택해 주세요.";
     if (targets.oneOnOne && !f.name.trim()) errors.name = "1:1 신청서에 사용할 이름을 입력해 주세요.";
     if (targets.oneOnOne && f.name.trim().length > 30) errors.name = "이름은 30자 이하로 입력해 주세요.";
-    const year = Number(f.birthYear);
-    if (!Number.isInteger(year) || year < 1960 || year > input.maxBirthYear) errors.birthYear = "만 18세 이상만 이용할 수 있어요. 출생연도 4자리를 입력해 주세요. 예: 1996";
+    const year = parseDatingBirthYear(f.birthYear);
+    if (year == null || year > input.maxBirthYear) errors.birthYear = getDatingBirthYearErrorMessage();
     const height = Number(f.heightCm);
     if (!Number.isInteger(height) || height < 120 || height > 230) errors.heightCm = "키는 120~230cm 사이로 입력해 주세요.";
     if (!f.job.trim()) errors.job = "직업을 입력해 주세요.";

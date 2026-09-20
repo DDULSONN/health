@@ -1,5 +1,7 @@
 ﻿import { NextResponse } from "next/server";
 import { normalizeCardSex } from "@/lib/dating-more-view";
+import { isOneOnOnePairAgeEligible } from "@/lib/dating-1on1-age";
+import { DATING_AGE_INELIGIBLE_MESSAGE } from "@/lib/dating-age";
 import { getCityViewTargetSex, normalizeDatingCityViewSex } from "@/lib/dating-city-view";
 import { approveMoreViewRequest, grantMoreViewAccess, grantOneOnOneContactExchange } from "@/lib/dating-purchase-fulfillment";
 import {
@@ -79,6 +81,8 @@ type CreateBody = {
 
 type OneOnOneMatchRow = {
   id: string;
+  source_card_id: string;
+  candidate_card_id: string;
   source_user_id: string;
   candidate_user_id: string;
   state:
@@ -550,7 +554,7 @@ export async function POST(req: Request) {
 
       const matchRes = await admin
         .from("dating_1on1_match_proposals")
-        .select("id,source_user_id,candidate_user_id,state,contact_exchange_status")
+        .select("id,source_card_id,candidate_card_id,source_user_id,candidate_user_id,state,contact_exchange_status")
         .eq("id", matchId)
         .maybeSingle();
 
@@ -611,6 +615,9 @@ export async function POST(req: Request) {
         });
       }
 
+      if (!await isOneOnOnePairAgeEligible(admin, match)) {
+        return json(409, { ok: false, code: "DATING_AGE_INELIGIBLE", requestId, message: DATING_AGE_INELIGIBLE_MESSAGE });
+      }
       const activePlus = await getActiveOneOnOnePlus(admin, user.id);
       if (activePlus?.contact_exchange_included) {
         const fulfilled = await grantOneOnOneContactExchange(admin, {

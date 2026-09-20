@@ -1,4 +1,6 @@
 ﻿import { createAdminClient } from "@/lib/supabase/server";
+import { isOneOnOnePairAgeEligible } from "@/lib/dating-1on1-age";
+import { DATING_AGE_INELIGIBLE_MESSAGE } from "@/lib/dating-age";
 import {
   CITY_VIEW_ACCESS_HOURS,
   CITY_VIEW_CARD_LIMIT,
@@ -1201,7 +1203,7 @@ export async function grantOneOnOneContactExchange(admin: AdminClient, options: 
   const matchRes = await admin
     .from("dating_1on1_match_proposals")
     .select(
-      "id,source_user_id,candidate_user_id,state,contact_exchange_status,contact_exchange_paid_by_user_id"
+      "id,source_card_id,candidate_card_id,source_user_id,candidate_user_id,state,contact_exchange_status,contact_exchange_paid_by_user_id"
     )
     .eq("id", matchId)
     .maybeSingle();
@@ -1223,6 +1225,9 @@ export async function grantOneOnOneContactExchange(admin: AdminClient, options: 
   }
   if (matchRes.data.contact_exchange_status === "canceled") {
     throw new Error("취소된 1:1 매칭은 번호교환 결제를 진행할 수 없습니다.");
+  }
+  if (matchRes.data.contact_exchange_status !== "approved" && !await isOneOnOnePairAgeEligible(admin, matchRes.data)) {
+    throw new Error(DATING_AGE_INELIGIBLE_MESSAGE);
   }
 
   const cancelReadyOrdersRes = await admin

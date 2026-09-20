@@ -18,6 +18,7 @@ function evaluate(source, bindings = {}) {
 const { createLatestRequest } = evaluate(read('lib/latest-request.ts'));
 const draft = evaluate(read('lib/dating-onboarding-draft.ts'));
 const validation = evaluate(read('lib/dating-onboarding-validation.ts'));
+const agePolicy = evaluate(read('lib/dating-age.ts'));
 const deferred = () => { let resolve, reject; const promise = new Promise((a, b) => { resolve = a; reject = b; }); return { promise, resolve, reject }; };
 const tick = () => new Promise(resolve => setImmediate(resolve));
 
@@ -87,7 +88,7 @@ test('draft enum/length boundaries are clamped and missing optional fields get s
 });
 
 const consents = Object.fromEntries(['consentOpenCard','consentFakeInfo','consentNoShow','consentFee','consentNoDirectContact','consentPrivacy'].map(k => [k,true]));
-const validInput = extra => ({ fields: { ...fields }, targets: { open: true, oneOnOne: true }, selectedCount: 2, nicknameSaved: true, maxBirthYear: 2008, photos: ['', ''], consents: { ...consents }, ...extra });
+const validInput = extra => ({ fields: { ...fields }, targets: { open: true, oneOnOne: true }, selectedCount: 2, nicknameSaved: true, maxBirthYear: agePolicy.getMaxDatingBirthYear(), photos: ['', ''], consents: { ...consents }, ...extra });
 for (let step = 0; step < 5; step++) test(`valid step ${step} passes existing rules`, () => assert.deepEqual(validation.validateOnboardingStep(step, validInput()), {}));
 test('all invalid basic fields are identified separately in screen order', () => {
   const f = { ...fields, nickname: '', name: '', sex: null, birthYear: '2020', heightCm: '119', job: '', region: '' };
@@ -170,7 +171,7 @@ test('field feedback preserves the original accept/reject rules across boundary 
   for (const targets of [{open:true,oneOnOne:true},{open:true,oneOnOne:false},{open:false,oneOnOne:true}]) {
     for (const f of cases) for (const nicknameSaved of [true,false]) {
       const input = validInput({ fields:f, targets, nicknameSaved });
-      const old = oldValidate({ ...f, ...consents, targets, selectedTargets:['fixture'], nicknameSaved, MAX_ADULT_BIRTH_YEAR:2008, photos:[{},{}] });
+      const old = oldValidate({ ...f, ...consents, targets, selectedTargets:['fixture'], nicknameSaved, MAX_ADULT_BIRTH_YEAR:input.maxBirthYear, photos:[{},{}] });
       for (let step=0; step<5; step++) {
         assert.equal(Object.keys(validation.validateOnboardingStep(step,input)).length > 0, Boolean(old(step)), JSON.stringify({step,targets,f}));
         checked++;

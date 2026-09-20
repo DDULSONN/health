@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import { getDatingBirthYearErrorMessage, parseDatingBirthYear } from "@/lib/dating-age";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -329,9 +330,9 @@ function DatingOneOnOnePageContent() {
       return "";
     }
     if (step === 2) {
-      const parsedBirthYear = Number(birthYear);
-      if (!Number.isInteger(parsedBirthYear) || parsedBirthYear < 1960 || parsedBirthYear > 2010) {
-        return BIRTH_YEAR_HELP_MESSAGE;
+      const parsedBirthYear = parseDatingBirthYear(birthYear);
+      if (parsedBirthYear == null) {
+        return getDatingBirthYearErrorMessage();
       }
       const parsedHeight = Number(heightCm);
       if (!Number.isInteger(parsedHeight) || parsedHeight < 120 || parsedHeight > 230) {

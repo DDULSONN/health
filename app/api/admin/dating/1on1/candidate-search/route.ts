@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { NextRequest, NextResponse } from "next/server";
 import { requireAdminRoute } from "@/lib/admin-route";
+import { getMaxDatingBirthYear, MIN_DATING_BIRTH_YEAR, parseDatingBirthYear } from "@/lib/dating-age";
 
 export const runtime = "nodejs";
 
@@ -40,7 +41,8 @@ function cardQuery(
   let query = admin
     .from("dating_1on1_cards")
     .select(CARD_SELECT)
-    .in("status", [...ACTIVE_CARD_STATUSES]);
+    .in("status", [...ACTIVE_CARD_STATUSES])
+    .gte("birth_year", MIN_DATING_BIRTH_YEAR).lte("birth_year", getMaxDatingBirthYear());
 
   if (options.targetSex) query = query.eq("sex", options.targetSex);
   if (options.sourceCardId) query = query.neq("id", options.sourceCardId);
@@ -68,14 +70,14 @@ export async function GET(request: NextRequest) {
     }
     const sourceRes = await auth.admin
       .from("dating_1on1_cards")
-      .select("id,user_id,sex,status")
+      .select("id,user_id,sex,status,birth_year")
       .eq("id", sourceCardId)
       .maybeSingle();
     if (sourceRes.error) {
       console.error("[admin 1on1 candidate-search] source lookup failed", sourceRes.error);
       return NextResponse.json({ error: "기준 카드를 확인하지 못했습니다." }, { status: 500 });
     }
-    if (!sourceRes.data || !ACTIVE_CARD_STATUSES.includes(sourceRes.data.status)) {
+    if (!sourceRes.data || !ACTIVE_CARD_STATUSES.includes(sourceRes.data.status) || parseDatingBirthYear(sourceRes.data.birth_year) == null) {
       return NextResponse.json({ error: "현재 후보를 보낼 수 없는 기준 카드입니다." }, { status: 409 });
     }
     sourceUserId = String(sourceRes.data.user_id);

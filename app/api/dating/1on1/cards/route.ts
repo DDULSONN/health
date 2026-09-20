@@ -1,5 +1,6 @@
 import { isAllowedAdminUser } from "@/lib/admin";
 import { recordOneOnOneMetricEvent } from "@/lib/dating-1on1-metrics";
+import { getDatingBirthYearErrorMessage, parseDatingBirthYear } from "@/lib/dating-age";
 import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/images";
 import {
   DATING_ONE_ON_ONE_ACTIVE_STATUSES,
@@ -61,7 +62,6 @@ const SEX_VALUES = new Set(["male", "female"]);
 const SMOKING_VALUES = new Set(["non_smoker", "occasional", "smoker"]);
 const WORKOUT_VALUES = new Set(["none", "1_2", "3_4", "5_plus"]);
 const ADMIN_CARD_BATCH_SIZE = 1000;
-const BIRTH_YEAR_ERROR_MESSAGE = "나이가 아니라 출생연도 4자리를 입력해 주세요. 예: 1996";
 
 function toInt(value: number | string | undefined): number | null {
   if (typeof value === "number" && Number.isFinite(value)) return Math.round(value);
@@ -223,6 +223,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  const body = (await req.json().catch(() => null)) as InputPayload | null;
+  if (!body) return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
+  const birthYear = parseDatingBirthYear(body.birth_year);
+  if (birthYear == null) return NextResponse.json({ error: getDatingBirthYearErrorMessage(), code: "DATING_AGE_INELIGIBLE" }, { status: 400 });
+
   const admin = createAdminClient();
   const banResponse = await getUserBanResponse(admin, user.id);
   if (banResponse) return banResponse;
@@ -283,14 +288,8 @@ export async function POST(req: Request) {
     });
   }
 
-  const body = (await req.json().catch(() => null)) as InputPayload | null;
-  if (!body) {
-    return NextResponse.json({ error: "Invalid JSON body." }, { status: 400 });
-  }
-
   const sex = (body.sex ?? "").trim();
   const name = (body.name ?? "").trim();
-  const birthYear = toInt(body.birth_year);
   const heightCm = toInt(body.height_cm);
   const job = (body.job ?? "").trim();
   const region = (body.region ?? "").trim();
@@ -316,9 +315,6 @@ export async function POST(req: Request) {
   }
   if (!name || name.length > 30) {
     return NextResponse.json({ error: "Name must be 1-30 characters." }, { status: 400 });
-  }
-  if (birthYear == null || birthYear < 1960 || birthYear > 2010) {
-    return NextResponse.json({ error: BIRTH_YEAR_ERROR_MESSAGE }, { status: 400 });
   }
   if (heightCm == null || heightCm < 120 || heightCm > 230) {
     return NextResponse.json({ error: "Height must be between 120 and 230 cm." }, { status: 400 });

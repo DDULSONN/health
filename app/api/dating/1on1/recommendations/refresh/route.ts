@@ -1,4 +1,5 @@
 import { DATING_ONE_ON_ONE_ACTIVE_STATUSES } from "@/lib/dating-1on1";
+import { DATING_AGE_INELIGIBLE_MESSAGE, parseDatingBirthYear } from "@/lib/dating-age";
 import {
   ONE_ON_ONE_FREE_REFRESH_LIMIT,
   ONE_ON_ONE_PLUS_REFRESH_LIMIT,
@@ -235,7 +236,7 @@ export async function POST(req: Request) {
   const admin = createAdminClient();
   const cardRes = await admin
     .from("dating_1on1_cards")
-    .select("id,user_id,status,recommendation_refresh_used_at")
+    .select("id,user_id,status,recommendation_refresh_used_at,birth_year")
     .eq("id", sourceCardId)
     .maybeSingle();
 
@@ -258,6 +259,9 @@ export async function POST(req: Request) {
   }
   if (!DATING_ONE_ON_ONE_ACTIVE_STATUSES.includes(cardRes.data.status)) {
     return NextResponse.json({ error: "Source card is no longer active." }, { status: 409 });
+  }
+  if (parseDatingBirthYear(cardRes.data.birth_year) == null) {
+    return NextResponse.json({ error: DATING_AGE_INELIGIBLE_MESSAGE, code: "DATING_AGE_INELIGIBLE" }, { status: 403 });
   }
 
   let activePlus: Awaited<ReturnType<typeof getActiveOneOnOnePlus>>;

@@ -3,6 +3,7 @@ import {
   toDatingOneOnOneCardDetail,
 } from "@/lib/dating-1on1";
 import { normalizeDatingContactPhone } from "@/lib/dating-contact-blocks";
+import { parseDatingBirthYear } from "@/lib/dating-age";
 import type { createAdminClient } from "@/lib/supabase/server";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
@@ -83,6 +84,7 @@ export async function fetchRecommendationDetails(admin: AdminClient, cardIds: st
     if (error) throw error;
     for (const row of data ?? []) {
       // Generate image URLs only for the cards that will actually be returned.
+      if (parseDatingBirthYear(row.birth_year) == null) continue;
       details.set(row.id, toDatingOneOnOneCardDetail(row));
     }
   }

@@ -1,4 +1,5 @@
 import { isAllowedAdminUser } from "@/lib/admin";
+import { DATING_AGE_INELIGIBLE_MESSAGE, parseDatingBirthYear } from "@/lib/dating-age";
 import { createAdminClient, createClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
@@ -75,7 +76,7 @@ export async function PATCH(
   if (status) {
     const currentRes = await admin
       .from("dating_1on1_cards")
-      .select("id,status")
+      .select("id,status,birth_year")
       .eq("id", cardId)
       .maybeSingle();
     if (currentRes.error) {
@@ -86,6 +87,9 @@ export async function PATCH(
       return NextResponse.json({ error: "Card not found." }, { status: 404 });
     }
     const currentStatus = String(currentRes.data.status);
+    if (status === "approved" && parseDatingBirthYear(currentRes.data.birth_year) == null) {
+      return NextResponse.json({ error: DATING_AGE_INELIGIBLE_MESSAGE, code: "DATING_AGE_INELIGIBLE" }, { status: 409 });
+    }
     const allowed = ALLOWED_TRANSITIONS[currentStatus] ?? new Set<string>();
     if (!allowed.has(status)) {
       return NextResponse.json(

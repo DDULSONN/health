@@ -1,4 +1,5 @@
 import { recordAdminAuditEvent } from "@/lib/admin-audit";
+import { getDatingBirthYearErrorMessage, parseDatingBirthYear } from "@/lib/dating-age";
 import { requireAdminRoute } from "@/lib/admin-route";
 import { normalizeDatingContactPhone } from "@/lib/dating-contact-blocks";
 import { NextResponse } from "next/server";
@@ -130,7 +131,7 @@ export async function PATCH(
 
   const name = text(body.name, 30);
   const sex = text(body.sex, 10);
-  const birthYear = nullableInt(body.birth_year, 1960, new Date().getFullYear() - 19);
+  const birthYear = parseDatingBirthYear(body.birth_year);
   const heightCm = nullableInt(body.height_cm, 120, 230);
   const job = text(body.job, 80);
   const region = text(body.region, 80);
@@ -147,7 +148,10 @@ export async function PATCH(
   if (!SEX_VALUES.has(sex) || !CARD_STATUSES.has(status)) {
     return NextResponse.json({ ok: false, error: "성별 또는 상태 값이 올바르지 않습니다." }, { status: 400 });
   }
-  if (birthYear == null || heightCm == null) {
+  if (birthYear == null) {
+    return NextResponse.json({ ok: false, error: getDatingBirthYearErrorMessage(), code: "DATING_AGE_INELIGIBLE" }, { status: 400 });
+  }
+  if (heightCm == null) {
     return NextResponse.json({ ok: false, error: "출생연도 또는 키를 확인해 주세요." }, { status: 400 });
   }
   if (!SMOKING_VALUES.has(smoking) || !WORKOUT_VALUES.has(workoutFrequency)) {

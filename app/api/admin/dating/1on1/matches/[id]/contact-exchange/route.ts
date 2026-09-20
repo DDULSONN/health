@@ -5,6 +5,8 @@ import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
+import { isOneOnOnePairAgeEligible } from "@/lib/dating-1on1-age";
+import { DATING_AGE_INELIGIBLE_MESSAGE } from "@/lib/dating-age";
 
 type AdminContactExchangeAction = "approve" | "reset" | "cancel";
 
@@ -73,6 +75,16 @@ export async function POST(
   }
 
   const nowIso = new Date().toISOString();
+  if (action === "approve" && row.contact_exchange_status !== "approved") {
+    try {
+      if (!await isOneOnOnePairAgeEligible(admin, row)) {
+        return NextResponse.json({ error: DATING_AGE_INELIGIBLE_MESSAGE, code: "DATING_AGE_INELIGIBLE" }, { status: 409 });
+      }
+    } catch (error) {
+      console.error("[admin contact-exchange] age lookup failed", error);
+      return NextResponse.json({ error: "프로필 연령 정보를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });
+    }
+  }
   const nextPatch =
     action === "approve"
       ? {

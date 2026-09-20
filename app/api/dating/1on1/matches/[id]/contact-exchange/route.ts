@@ -9,6 +9,8 @@ import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
+import { isOneOnOnePairAgeEligible } from "@/lib/dating-1on1-age";
+import { DATING_AGE_INELIGIBLE_MESSAGE } from "@/lib/dating-age";
 
 async function getMatchRow(admin: ReturnType<typeof createAdminClient>, matchId: string) {
   const res = await admin
@@ -77,6 +79,9 @@ export async function POST(
   }
 
   try {
+    if (!await isOneOnOnePairAgeEligible(admin, row)) {
+      return NextResponse.json({ error: DATING_AGE_INELIGIBLE_MESSAGE, code: "DATING_AGE_INELIGIBLE" }, { status: 409 });
+    }
     const [memberBlocked, phoneBlocked] = await Promise.all([
       hasDatingBlockBetween(admin, row.source_user_id, row.candidate_user_id),
       hasDatingContactPhoneBlockBetween(admin, row.source_user_id, row.candidate_user_id),
@@ -86,7 +91,7 @@ export async function POST(
     }
   } catch (blockError) {
     console.error("[POST /api/dating/1on1/matches/[id]/contact-exchange] block check failed", blockError);
-    return NextResponse.json({ error: "지인 차단 설정을 확인하지 못했습니다." }, { status: 500 });
+    return NextResponse.json({ error: "번호 교환 조건을 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." }, { status: 500 });
   }
 
   const activePlus = await getActiveOneOnOnePlus(admin, user.id);

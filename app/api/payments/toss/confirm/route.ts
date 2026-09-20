@@ -1,4 +1,6 @@
 import { NextResponse } from "next/server";
+import { isOneOnOnePairAgeEligible } from "@/lib/dating-1on1-age";
+import { DATING_AGE_INELIGIBLE_MESSAGE } from "@/lib/dating-age";
 import {
   DATING_ALL_PASS_DURATION_DAYS,
   ONE_ON_ONE_PLUS_DURATION_DAYS,
@@ -358,7 +360,7 @@ async function ensureOneOnOneExchangeFulfilled(
 
   const matchRes = await admin
     .from("dating_1on1_match_proposals")
-    .select("id,source_user_id,candidate_user_id,state,contact_exchange_status")
+    .select("id,source_card_id,candidate_card_id,source_user_id,candidate_user_id,state,contact_exchange_status")
     .eq("id", matchId)
     .maybeSingle();
 
@@ -371,6 +373,8 @@ async function ensureOneOnOneExchangeFulfilled(
 
   const match = matchRes.data as {
     id: string;
+    source_card_id: string;
+    candidate_card_id: string;
     source_user_id: string;
     candidate_user_id: string;
     state: "candidate_accepted" | "mutual_accepted" | string;
@@ -389,6 +393,9 @@ async function ensureOneOnOneExchangeFulfilled(
   }
   if (match.contact_exchange_status === "canceled") {
     throw new Error("ONE_ON_ONE_CANCELED");
+  }
+  if (!await isOneOnOnePairAgeEligible(admin, match)) {
+    throw new Error(DATING_AGE_INELIGIBLE_MESSAGE);
   }
 
   const nowIso = new Date().toISOString();
@@ -922,6 +929,17 @@ export async function POST(req: Request) {
       });
     }
 
+    // Revalidate old ready orders before asking the payment provider to charge.
+    if (order.product_type === "one_on_one_contact_exchange") {
+      const matchId = (typeof order.product_meta?.matchId === "string" ? order.product_meta.matchId.trim() : "") || order.product_ref_id?.trim();
+      const pairRes = await admin.from("dating_1on1_match_proposals")
+        .select("source_card_id,candidate_card_id,source_user_id,candidate_user_id").eq("id", matchId ?? "").maybeSingle();
+      if (pairRes.error) throw pairRes.error;
+      if (!pairRes.data || ![pairRes.data.source_user_id, pairRes.data.candidate_user_id].includes(user.id) ||
+        !await isOneOnOnePairAgeEligible(admin, pairRes.data)) {
+        return json(409, { ok: false, code: "DATING_AGE_INELIGIBLE", requestId, message: DATING_AGE_INELIGIBLE_MESSAGE });
+      }
+    }
     const payment = await confirmOrRecoverTossPayment({ paymentKey, orderId, amount });
 
     const updateRes = await admin

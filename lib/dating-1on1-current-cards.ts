@@ -1,12 +1,13 @@
 import { DATING_ONE_ON_ONE_ACTIVE_STATUSES } from "@/lib/dating-1on1";
+import { parseDatingBirthYear } from "@/lib/dating-age";
 import { normalizePhoneForOneOnOneBlock } from "@/lib/dating-1on1-phone-blocks";
 import { fetchRecommendationProfiles } from "@/lib/dating-1on1-recommendation-data";
 import type { createAdminClient } from "@/lib/supabase/server";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
-type IdentityCard = { id: string; user_id: string; phone: string | null; created_at: string };
+type IdentityCard = { id: string; user_id: string; phone: string | null; created_at: string; birth_year: number | null };
 type CardInput = Pick<IdentityCard, "id" | "user_id" | "phone">;
-const FIELDS = "id,user_id,phone,created_at";
+const FIELDS = "id,user_id,phone,created_at,birth_year";
 const CHUNK = 200;
 const PAGE = 500;
 
@@ -79,7 +80,7 @@ export async function getCurrentOneOnOneCardIds(
   return new Set(cards.filter((row) => {
     const profile = profiles.get(row.user_id);
     const phone = normalizePhoneForOneOnOneBlock(profile?.phone ?? row.phone ?? "");
-    return profile && !profile.banned && latestUsers.get(row.user_id) === row.id &&
+    return profile && !profile.banned && parseDatingBirthYear(identities.get(row.id)?.birth_year) != null && latestUsers.get(row.user_id) === row.id &&
       (!phone || latestPhones.get(phone) === row.id);
   }).map((row) => row.id));
 }

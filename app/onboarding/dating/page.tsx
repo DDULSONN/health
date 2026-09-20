@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { getMaxDatingBirthYear } from "@/lib/dating-age";
 import NextImage from "next/image";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
@@ -40,7 +41,7 @@ const STEP_LABELS = ["기본 정보", "소개", "생활 정보", "사진", "확�
 const PHOTO_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 const PHOTO_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp"]);
 const PHOTO_MAX_BYTES = 10 * 1024 * 1024;
-const MAX_ADULT_BIRTH_YEAR = Math.min(2010, new Date().getFullYear() - 18);
+const MAX_ADULT_BIRTH_YEAR = getMaxDatingBirthYear();
 const ONE_ON_ONE_CANDIDATES_HREF = "/community/dating/cards?tab=one_on_one&from=onboarding";
 const INSTANT_OPEN_CARD_HREF = "/dating/paid?apply=1&source=open_card";
 

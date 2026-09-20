@@ -1,5 +1,5 @@
 import { KOREA_ADMIN_DIVISION_COORDS } from "@/lib/korea-admin-division-coords";
-import { extractProvinceFromRegion } from "@/lib/region-city";
+import { extractProvinceFromRegion, readRegionProvincePrefix } from "@/lib/region-city";
 
 type RegionCoordinate = {
   province: string;
@@ -38,17 +38,23 @@ function stripAdminSuffix(value: string): string {
 }
 
 function normalizeDivisionProvince(province: string, city: string): string {
+  // The legacy dataset groups both 경북/경남 under 경상. Do not overwrite 강원 고성군.
+  if (province === "경상" && city === "고성군") return "경남";
   return extractProvinceFromRegion(province) ?? extractProvinceFromRegion(city) ?? province;
 }
 
-const DIVISION_ROWS: DivisionRow[] = KOREA_ADMIN_DIVISION_COORDS.map(([province, city, longitude, latitude]) => ({
-  province: normalizeDivisionProvince(province, city),
-  city,
-  longitude,
-  latitude,
-}));
+const DIVISION_ROWS: DivisionRow[] = KOREA_ADMIN_DIVISION_COORDS
+  // Invalid legacy duplicate: 전라/광주시 has 경기 coordinates. Both real regions already have valid rows.
+  .filter(([province, city]) => !(province === "전라" && city === "광주시"))
+  .map(([province, city, longitude, latitude]) => ({
+    province: normalizeDivisionProvince(province, city),
+    city,
+    longitude,
+    latitude,
+  }));
 
 const DIVISION_LOOKUP = new Map<string, DivisionRow>();
+const DIVISION_PROVINCES = new Map<string, Set<string>>();
 const PROVINCE_CENTROIDS = new Map<string, RegionCoordinate>();
 const PROVINCE_REFERENCE_COORDS: Record<string, [number, number]> = {
   서울: [126.978, 37.5665],
@@ -71,10 +77,16 @@ const PROVINCE_REFERENCE_COORDS: Record<string, [number, number]> = {
 };
 
 for (const row of DIVISION_ROWS) {
+  if (!PROVINCE_REFERENCE_COORDS[row.province]) continue;
   const rawKey = `${row.province}:${normalizeLookupKey(row.city)}`;
   const strippedKey = `${row.province}:${normalizeLookupKey(stripAdminSuffix(row.city))}`;
   DIVISION_LOOKUP.set(rawKey, row);
   DIVISION_LOOKUP.set(strippedKey, row);
+  for (const key of [normalizeLookupKey(row.city), normalizeLookupKey(stripAdminSuffix(row.city))]) {
+    const provinces = DIVISION_PROVINCES.get(key) ?? new Set<string>();
+    provinces.add(row.province);
+    DIVISION_PROVINCES.set(key, provinces);
+  }
 }
 
 for (const province of [...new Set(DIVISION_ROWS.map((row) => row.province))]) {
@@ -90,50 +102,58 @@ for (const province of [...new Set(DIVISION_ROWS.map((row) => row.province))]) {
   });
 }
 
-function buildCandidateKeys(region: string, province: string | null): string[] {
-  const raw = String(region ?? "").trim();
-  if (!raw) return [];
+// These district/new-town names resolve only to their existing parent city coordinate.
+// Do not infer a precise coordinate for broad or overlapping areas such as 수도권/위례.
+const CITY_COORDINATE_ALIASES: Record<string, string> = {
+  분당: "성남시", 분당구: "성남시", 판교: "성남시", 동탄: "화성시", 일산: "고양시",
+};
 
-  const withoutSpaces = raw.replace(/\s+/g, "");
-  const parts = withoutSpaces.split(/[,\-/·]/).filter(Boolean);
-  const keys = new Set<string>();
+const UNIQUE_DIVISIONS = [...new Set(DIVISION_LOOKUP.values())];
 
-  const pushKey = (value: string) => {
-    const normalized = normalizeLookupKey(value);
-    if (normalized) keys.add(normalized);
-    const stripped = normalizeLookupKey(stripAdminSuffix(value));
-    if (stripped) keys.add(stripped);
-  };
-
-  pushKey(raw);
-  pushKey(withoutSpaces);
-
-  for (const part of parts) {
-    pushKey(part);
-  }
-
+function findDivision(value: string, province: string | null): DivisionRow | null {
+  const key = normalizeLookupKey(value);
+  if (!key) return null;
+  const cityKey = CITY_COORDINATE_ALIASES[key] ?? key;
   if (province) {
-    pushKey(raw.replace(province, ""));
-    pushKey(withoutSpaces.replace(province, ""));
+    // 부산 진구 / 부산광역시 진구 are common shorthand for 부산진구.
+    const exact = DIVISION_LOOKUP.get(`${province}:${cityKey}`) ?? DIVISION_LOOKUP.get(`${province}:${province}${cityKey}`);
+    if (exact) return exact;
+  } else {
+    const provinces = DIVISION_PROVINCES.get(cityKey);
+    if (provinces?.size === 1) return DIVISION_LOOKUP.get(`${[...provinces][0]}:${cityKey}`) ?? null;
   }
+  // Support 성남시분당구 / 서울강남구역삼동, without substring matches such as 광주 in 광주시민.
+  const matches = UNIQUE_DIVISIONS.filter((row) => (!province || row.province === province)
+    && key.startsWith(row.city) && /^[가-힣]+(?:구|읍|면|동|리)$/u.test(key.slice(row.city.length)));
+  return matches.length === 1 ? matches[0] : null;
+}
 
-  return [...keys];
+// Do not silently change the recommendation policy for existing free-form/multi-
+// location profiles. Until a primary/multiple-location policy is chosen, retain
+// their previous lookup/fallback instead of newly demoting them to unknown areas.
+function getLegacyRegionCoordinate(raw: string): RegionCoordinate | null {
+  const province = extractProvinceFromRegion(raw);
+  if (!province) return null;
+  const compact = raw.replace(/\s+/g, "");
+  const values = [raw, compact, ...compact.split(/[,\-/·]/).filter(Boolean), raw.replace(province, ""), compact.replace(province, "")];
+  for (const value of values) {
+    for (const key of [normalizeLookupKey(value), normalizeLookupKey(stripAdminSuffix(value))]) {
+      const row = DIVISION_LOOKUP.get(`${province}:${key}`);
+      if (row) return { ...row, precision: "city" };
+    }
+  }
+  return PROVINCE_CENTROIDS.get(province) ?? null;
 }
 
 export function getRegionCoordinate(region: string | null): RegionCoordinate | null {
   const raw = (region ?? "").trim();
   if (!raw) return null;
 
-  const province = extractProvinceFromRegion(raw);
-  if (!province) return null;
-
-  const provinceOnly =
-    normalizeLookupKey(stripAdminSuffix(raw)) === normalizeLookupKey(province) ||
-    normalizeLookupKey(raw) === normalizeLookupKey(province);
-  const reference = PROVINCE_REFERENCE_COORDS[province];
-  if (provinceOnly && reference) {
+  const prefix = readRegionProvincePrefix(raw);
+  const reference = prefix && !prefix.rest ? PROVINCE_REFERENCE_COORDS[prefix.province] : null;
+  if (prefix && reference) {
     return {
-      province,
+      province: prefix.province,
       city: null,
       longitude: reference[0],
       latitude: reference[1],
@@ -141,10 +161,36 @@ export function getRegionCoordinate(region: string | null): RegionCoordinate | n
     };
   }
 
-  const candidateKeys = buildCandidateKeys(raw, province);
-  for (const key of candidateKeys) {
-    const row = DIVISION_LOOKUP.get(`${province}:${key}`);
-    if (!row) continue;
+  const provinces = new Set<string>();
+  const cities = new Map<string, DivisionRow>();
+  let context: string | null = null;
+  const addCity = (row: DivisionRow) => {
+    provinces.add(row.province);
+    cities.set(`${row.province}:${row.city}`, row);
+    context = row.province;
+  };
+  const parts = raw.replace(/[()]/g, " ").split(/[\s,\\/·&|\-]+/u).filter(Boolean);
+  for (const part of parts) {
+    // An explicit province disambiguates 경기 광주시 / 광주광역시 and both 고성군s.
+    const local = context ? findDivision(part, context) : null;
+    if (local) { addCity(local); continue; }
+    const partPrefix = readRegionProvincePrefix(part);
+    const standalone = !partPrefix || (partPrefix.rest && DIVISION_PROVINCES.has(normalizeLookupKey(part)))
+      ? findDivision(part, null) : null;
+    if (standalone) { addCity(standalone); continue; }
+    if (partPrefix) {
+      context = partPrefix.province;
+      provinces.add(context);
+      if (partPrefix.rest) {
+        const row = findDivision(partPrefix.rest, context);
+        if (row) addCity(row);
+      }
+    }
+  }
+  if (provinces.size !== 1 || cities.size > 1) return getLegacyRegionCoordinate(raw);
+  const province = [...provinces][0];
+  if (cities.size === 1) {
+    const row = [...cities.values()][0];
     return {
       province,
       city: row.city,
@@ -154,7 +200,7 @@ export function getRegionCoordinate(region: string | null): RegionCoordinate | n
     };
   }
 
-  return PROVINCE_CENTROIDS.get(province) ?? null;
+  return getLegacyRegionCoordinate(raw);
 }
 
 function toRadians(value: number): number {
