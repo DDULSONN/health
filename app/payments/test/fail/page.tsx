@@ -3,26 +3,27 @@
 import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
+import PaymentCardNotice from "@/components/PaymentCardNotice";
 
 function PaymentFailContent() {
   const searchParams = useSearchParams();
   const code = searchParams.get("code") ?? "-";
   const message = searchParams.get("message") ?? "결제가 취소되었거나 승인되지 않았습니다.";
   const orderId = searchParams.get("orderId") ?? "-";
+  const canceled = code === "PAY_PROCESS_CANCELED";
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-bold text-neutral-900">결제 진행 실패</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">{canceled ? "결제를 중단했어요" : "결제 진행 실패"}</h1>
+        <PaymentCardNotice prominent className="mt-4" />
         <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <p className="font-semibold">코드: {code}</p>
           <p className="mt-1">메시지: {message}</p>
           <p className="mt-1">주문번호: {orderId}</p>
         </div>
 
-        <p className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.
-        </p>
+        <p className="mt-4 text-xs leading-5 text-neutral-500">승인 문자를 받았다면 다시 결제하기 전에 결제 내역을 먼저 확인해 주세요.</p>
 
         <div className="mt-6 flex flex-wrap gap-3">
           <Link

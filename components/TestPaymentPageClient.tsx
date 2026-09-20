@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { PAYMENT_CARD_NOTICE } from "@/lib/payment-card-notice";
 
 type ProductType = "apply_credits" | "paid_card";
 
@@ -8,9 +9,6 @@ type TestPaymentPageClientProps = {
   nickname: string;
   email: string;
 };
-
-const PAYMENT_CARD_UNAVAILABLE_MESSAGE =
-  "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
 
 const PRODUCTS: Array<{
   productType: ProductType;
@@ -37,7 +35,7 @@ function formatAmount(amount: number) {
 }
 
 function withPaymentCardNotice(message: string) {
-  return `${message}\n${PAYMENT_CARD_UNAVAILABLE_MESSAGE}`;
+  return `${message}\n${PAYMENT_CARD_NOTICE}`;
 }
 
 export default function TestPaymentPageClient({ nickname, email }: TestPaymentPageClientProps) {

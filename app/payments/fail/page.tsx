@@ -4,8 +4,7 @@ import { Suspense } from "react";
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 import { normalizeDatingApplyReturn } from "@/lib/dating-apply-return";
-
-const PAYMENT_CARD_UNAVAILABLE_MESSAGE = "현재 국민/우리/현대 카드는 결제가 되지 않습니다. 다른 카드나 다른 결제수단으로 다시 시도해 주세요.";
+import PaymentCardNotice from "@/components/PaymentCardNotice";
 
 function getPrimaryAction(productType?: string | null) {
   if (productType === "paid_card") {
@@ -37,11 +36,13 @@ function PaymentFailContent() {
   const productType = searchParams.get("productType");
   const applyReturn = productType === "apply_credits" ? normalizeDatingApplyReturn(searchParams.get("returnTo")) : null;
   const primaryAction = applyReturn ? { href: applyReturn, label: "작성하던 지원서로 돌아가기" } : getPrimaryAction(productType);
+  const canceled = code === "PAY_PROCESS_CANCELED";
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
       <section className="rounded-3xl border border-neutral-200 bg-white p-6 shadow-sm">
-        <h1 className="text-2xl font-bold text-neutral-900">결제가 진행되지 않았어요</h1>
+        <h1 className="text-2xl font-bold text-neutral-900">{canceled ? "결제를 중단했어요" : "결제가 진행되지 않았어요"}</h1>
+        <PaymentCardNotice prominent className="mt-4" />
         <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-700">
           <p className="font-semibold">코드: {code}</p>
           <p className="mt-1 break-words">메시지: {message}</p>
@@ -50,7 +51,7 @@ function PaymentFailContent() {
 
         <div className="mt-4 space-y-2 text-sm leading-6 text-neutral-500">
           <p>결제수단을 다시 선택해 시도해 보시고, 같은 문제가 이어지면 오픈카톡으로 문의해 주세요.</p>
-          <p className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-amber-800">{PAYMENT_CARD_UNAVAILABLE_MESSAGE}</p>
+          <p className="text-xs leading-5">승인 문자를 받았다면 다시 결제하기 전에 결제 내역을 먼저 확인해 주세요.</p>
         </div>
 
         <div className="mt-6 flex flex-wrap gap-3">
