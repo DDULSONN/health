@@ -153,7 +153,10 @@ async function runApi(tables, { intercept, signedIn = true, atTime } = {}) {
   }, atTime);
   const { GET } = apiLoad("@/app/api/dating/1on1/recommendations/my/route");
   const response = await GET(new Request("http://localhost/api/dating/1on1/recommendations/my"));
-  return { response, body: await response.json(), calls: db.calls };
+  const body = await response.json();
+  if (response.ok) assert.equal(apiLoad("@/lib/dating-1on1-refresh-response").isOneOnOneRecommendationPayload(body), true,
+    'Actual API output remains compatible with the client response guard');
+  return { response, body, calls: db.calls };
 }
 async function runSelect(tables, { intercept, sourceId = "source", candidateId = "c0", admin = false, signedIn = true, allowedAdmin = true } = {}) {
   const db = mockDatabase(tables, intercept);

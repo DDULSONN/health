@@ -123,17 +123,19 @@ for (const surface of ['home', 'mypage']) for (const outcome of ['resolve', 'rej
   const name = surface === 'home' ? 'reloadOneOnOneHome' : 'reloadOneOnOneRecommendations';
   const gate = createLatestRequest();
   const bindings = {
+    ...evaluate(read('lib/dating-1on1-refresh-response.ts')),
+    oneOnOneRefreshNeedsReloadRef: { current: false },
     useCallback: fn => fn, viewerLoggedIn: true, oneOnOneHomeRequest: gate, oneOnOneRecommendationsRequest: gate,
     setOneOnOneHome: v => { value = v; }, setMyOneOnOneAutoRecommendations: v => { value = v; },
     setOneOnOneHomeError: v => { error = v; }, setOneOnOneHomeLoading: v => { loading = v; },
     setOneOnOneRefreshReadError: () => {},
-    fetch: async () => { calls++; const batch = fetchBatch; await queues[batch].promise; return { ok: true, json: async () => ({ items: [batch], canWrite: true }) }; },
+    fetch: async () => { calls++; const batch = fetchBatch; await queues[batch].promise; return { ok: true, json: async () => ({ items: [{ source_card_id: `source-${batch}`, recommendations: [] }], canWrite: true }) }; },
   };
   const reload = evaluate('exports.reload = ' + initializer(file, name), bindings).reload;
   const old = reload(false); await tick(); fetchBatch = 1;
   const newer = reload(); await tick(); queues[1].resolve(); await newer;
   queues[0][outcome](outcome === 'resolve' ? undefined : Error('obsolete')); await old;
-  assert.deepEqual(surface === 'home' ? value.recommendations : value, [1]); assert.equal(error, ''); assert.equal(loading, false);
+  assert.deepEqual(surface === 'home' ? value.recommendations : value, [{ source_card_id: 'source-1', recommendations: [] }]); assert.equal(error, ''); assert.equal(loading, false);
   assert.equal(calls, surface === 'home' ? 8 : 2);
 });
 test('registration endpoint payloads and image upload code remain byte-for-byte identical to base', () => {

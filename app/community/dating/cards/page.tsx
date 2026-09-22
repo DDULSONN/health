@@ -10,6 +10,7 @@ import { ONE_ON_ONE_HOME_HREF } from "@/lib/dating-navigation";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import { buildOneOnOneRefreshConfirmation, buildOneOnOneRefreshSuccess, getOneOnOneRefreshCopy, ONE_ON_ONE_REFRESH_POLICY_COPY, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
+import { isOneOnOneRecommendationPayload } from "@/lib/dating-1on1-refresh-response";
 import {
   SWIPE_PREMIUM_DAILY_LIMIT,
   SWIPE_PREMIUM_DURATION_DAYS,
@@ -1744,6 +1745,7 @@ function OpenCardsContent() {
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
   const [refreshingOneOnOneRecommendationIds, setRefreshingOneOnOneRecommendationIds] = useState<string[]>([]);
   const oneOnOneRefreshLocksRef = useRef<Set<string>>(new Set());
+  const oneOnOneRefreshNeedsReloadRef = useRef(false);
 
   useEffect(() => {
     activeSexRef.current = activeSex;
@@ -2043,7 +2045,7 @@ function OpenCardsContent() {
         if (!myCardsRes.ok) throw new Error(myCardsBody.error ?? "내 1:1 신청 내역을 불러오지 못했습니다.");
         if (!matchesRes.ok) throw new Error(matchesBody.error ?? "1:1 매칭 상태를 불러오지 못했습니다.");
         if (!recommendationsRes.ok) throw new Error(recommendationsBody.error ?? "1:1 추천 후보를 불러오지 못했습니다.");
-        if (!Array.isArray(recommendationsBody.items)) throw new Error("후보 조회 응답을 확인하지 못했어요.");
+        if (!isOneOnOneRecommendationPayload(recommendationsBody)) throw new Error("후보 조회 응답을 확인하지 못했어요.");
         return {
           status: statusBody,
           myCards: Array.isArray(myCardsBody.items) ? myCardsBody.items : [],
@@ -2052,7 +2054,7 @@ function OpenCardsContent() {
           plus: myCardsBody.plus && typeof myCardsBody.plus === "object" ? myCardsBody.plus : null,
         } satisfies OneOnOneHomeState;
       },
-      commit: (value) => { setOneOnOneHome(value); updated = true; },
+      commit: (value) => { setOneOnOneHome(value); oneOnOneRefreshNeedsReloadRef.current = false; updated = true; },
       fail: (error) => setOneOnOneHomeError(error instanceof Error ? error.message : "1:1 정보를 불러오지 못했습니다."),
       finish: () => setOneOnOneHomeLoading(false),
     });
@@ -2708,7 +2710,7 @@ function OpenCardsContent() {
 
   const handleOneOnOneRecommendationRefresh = useCallback(
     async (sourceCardId: string) => {
-      if (!sourceCardId || oneOnOneRefreshLocksRef.current.has(sourceCardId)) return;
+      if (!sourceCardId || oneOnOneRefreshLocksRef.current.has(sourceCardId) || oneOnOneRefreshNeedsReloadRef.current) return;
       const group = oneOnOneHome?.recommendations.find((item) => item.source_card_id === sourceCardId);
       if (!confirm(buildOneOnOneRefreshConfirmation(group))) return;
       oneOnOneRefreshLocksRef.current.add(sourceCardId);
@@ -2721,14 +2723,15 @@ function OpenCardsContent() {
           body: JSON.stringify({ source_card_id: sourceCardId }),
         });
         const body = (await res.json().catch(() => ({}))) as OneOnOneRefreshUsage & { ok?: boolean; error?: string; request_id?: string };
-        if (!res.ok || !body.ok) {
-          const message = body.error ?? "추천 후보를 새로고침하지 못했습니다.";
-          throw new Error(body.request_id ? `${message}\n문의 코드: ${body.request_id}` : message);
+        if (!res.ok || body?.ok !== true) {
+          const message = body?.error ?? "추천 후보를 새로고침하지 못했습니다.";
+          throw new Error(body?.request_id ? `${message}\n문의 코드: ${body.request_id}` : message);
         }
         consumed = true;
         await reloadOneOnOneHome(true, true);
         alert(buildOneOnOneRefreshSuccess(body));
       } catch (error) {
+        oneOnOneRefreshNeedsReloadRef.current = true;
         const message = consumed
           ? "새로고침 1회는 처리됐지만 새 후보 명단을 불러오지 못했어요. 아래 '명단 다시 불러오기'로 확인해 주세요. 추가 횟수는 사용되지 않아요."
           : "새로고침 상태를 확인하지 못했어요. 다시 새로고침하지 말고 '명단 다시 불러오기'로 사용 횟수와 후보를 먼저 확인해 주세요.";

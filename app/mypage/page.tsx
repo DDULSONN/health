@@ -13,6 +13,7 @@ import { createLatestRequest } from "@/lib/latest-request";
 import { timeAgo } from "@/lib/community";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import { buildOneOnOneRefreshConfirmation, buildOneOnOneRefreshSuccess, getOneOnOneRefreshCopy, ONE_ON_ONE_REFRESH_POLICY_COPY, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
+import { isOneOnOneRecommendationPayload } from "@/lib/dating-1on1-refresh-response";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
 import { pickLoveFortuneFaceAsset } from "@/lib/love-fortune-face-assets";
 import { PROVINCE_ORDER } from "@/lib/region-city";
@@ -2141,6 +2142,7 @@ export default function MyPage() {
   const [showAllIncomingSwipeLikes, setShowAllIncomingSwipeLikes] = useState(false);
   const [refreshingOneOnOneRecommendationIds, setRefreshingOneOnOneRecommendationIds] = useState<string[]>([]);
   const oneOnOneRefreshLocksRef = useRef<Set<string>>(new Set());
+  const oneOnOneRefreshNeedsReloadRef = useRef(false);
   const [oneOnOneRefreshReadError, setOneOnOneRefreshReadError] = useState("");
   const [openCardWriteEnabled, setOpenCardWriteEnabled] = useState(true);
   const [openCardWriteSaving, setOpenCardWriteSaving] = useState(false);
@@ -4661,10 +4663,10 @@ export default function MyPage() {
         error?: string;
       };
       if (!res.ok) throw new Error(body.error ?? "1:1 자동 추천 후보를 다시 불러오지 못했습니다.");
-      if (!Array.isArray(body.items)) throw new Error("후보 조회 응답을 확인하지 못했어요.");
+      if (!isOneOnOneRecommendationPayload(body)) throw new Error("후보 조회 응답을 확인하지 못했어요.");
       return body.items ?? [];
     },
-    commit: (value) => { setMyOneOnOneAutoRecommendations(value); setOneOnOneRefreshReadError(""); updated = true; },
+    commit: (value) => { setMyOneOnOneAutoRecommendations(value); setOneOnOneRefreshReadError(""); oneOnOneRefreshNeedsReloadRef.current = false; updated = true; },
     });
     if (requireUpdated && !updated) throw new Error("새 후보 명단을 불러오지 못했어요.");
   }, [oneOnOneRecommendationsRequest]);
@@ -5465,7 +5467,7 @@ export default function MyPage() {
   };
 
   const handleRefreshOneOnOneRecommendations = async (sourceCardId: string) => {
-    if (oneOnOneRefreshLocksRef.current.has(sourceCardId) || oneOnOneRefreshReadError) return;
+    if (!sourceCardId || oneOnOneRefreshLocksRef.current.has(sourceCardId) || oneOnOneRefreshNeedsReloadRef.current || oneOnOneRefreshReadError) return;
     const recommendationGroup = myOneOnOneAutoRecommendations.find((group) => group.source_card_id === sourceCardId);
     if (!confirm(buildOneOnOneRefreshConfirmation(recommendationGroup))) return;
 
@@ -5483,10 +5485,10 @@ export default function MyPage() {
         error?: string;
         request_id?: string;
       };
-      if (res.status >= 500 || (res.ok && !body.ok)) throw new Error("새로고침 처리 결과를 확인하지 못했어요.");
-      if (!res.ok || !body.ok) {
-        const message = body.error ?? "자동 추천 후보를 새로고침하지 못했습니다.";
-        alert(body.request_id ? `${message}\n문의 코드: ${body.request_id}` : message);
+      if (res.status >= 500 || (res.ok && body?.ok !== true)) throw new Error("새로고침 처리 결과를 확인하지 못했어요.");
+      if (!res.ok || body?.ok !== true) {
+        const message = body?.error ?? "자동 추천 후보를 새로고침하지 못했습니다.";
+        alert(body?.request_id ? `${message}\n문의 코드: ${body.request_id}` : message);
         return;
       }
 
@@ -5494,6 +5496,7 @@ export default function MyPage() {
       await reloadOneOnOneRecommendations(true, true);
       alert(buildOneOnOneRefreshSuccess(body));
     } catch (e) {
+      oneOnOneRefreshNeedsReloadRef.current = true;
       const message = consumed
         ? "새로고침 1회는 처리됐지만 새 후보 명단을 불러오지 못했어요. '명단 다시 불러오기'로 확인해 주세요. 추가 횟수는 사용되지 않아요."
         : "새로고침 상태를 확인하지 못했어요. 다시 새로고침하지 말고 명단을 불러와 사용 횟수와 후보를 먼저 확인해 주세요.";

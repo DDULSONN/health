@@ -83,6 +83,7 @@ function handler(kind, options = {}) {
     ...copy,
     refreshingOneOnOneRecommendationIds: pending,
     oneOnOneRefreshLocksRef: { current: new Set(pending) }, oneOnOneRefreshReadError: '',
+    oneOnOneRefreshNeedsReloadRef: { current: false },
     setOneOnOneHomeError() {}, setOneOnOneRefreshReadError() {},
     oneOnOneHome: { recommendations: [usage] }, myOneOnOneAutoRecommendations: [usage],
     setRefreshingOneOnOneRecommendationIds: update => { pending = update(pending); states.push([...pending]); },

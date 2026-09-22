@@ -9,6 +9,8 @@
     "lint": "eslint",
     "check:image-proxy": "node scripts/check-no-direct-supabase-image-urls.mjs",
     "check:1on1-recommendations": "node scripts/check-dating-1on1-recommendations.cjs",
+    "check:1on1-refresh-safety": "node --test scripts/check-dating-1on1-recommendations.cjs scripts/check-recommendation-refresh-ui.cjs scripts/check-profile-ux.cjs scripts/check-dating-1on1-refresh-copy.cjs scripts/check-dating-age.cjs scripts/check-contact-payment-conversion.cjs scripts/check-region-distance.cjs scripts/check-dating-contact-block-sync.cjs",
+    "check:1on1-refresh-browser": "node scripts/check-recommendation-refresh-browser.cjs",
     "check:1on1-contact-nudge": "node scripts/check-dating-1on1-contact-nudge.cjs",
     "check:1on1-sms-message": "node scripts/check-dating-1on1-sms-message.cjs",
     "check:open-card-queue": "node scripts/check-dating-card-queue.cjs",
