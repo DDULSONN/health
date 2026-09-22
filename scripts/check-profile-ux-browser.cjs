@@ -37,12 +37,20 @@ async function main() {
   try {
     browser = await chromium.launch({ channel: 'msedge', headless: true });
     const context = await browser.newContext({ viewport: { width:390, height:844 } });
-    const page = await context.newPage(); const errors = []; const writes = [];
+    const page = await context.newPage(); const errors = []; const writes = []; const analytics = [];
     page.on('pageerror', e => errors.push(e.message));
     let existingOpen = false, allowOne = true, failOne = false, failBootstrap = '', phoneVerified = true;
     await context.route('**/api/**', async route => {
       const req = route.request(), url = new URL(req.url());
       assert.equal(url.origin, origin);
+      if (url.pathname === '/api/analytics/onboarding') {
+        const body = JSON.parse(req.postData());
+        assert.deepEqual(Object.keys(body), ['event']);
+        assert.match(body.event, /^(profile_|validation_|submit_|upload_failed$|photo_rejected$)/);
+        analytics.push(body.event);
+        // Deliberate outage: analytics cannot block any form behavior.
+        await route.abort(); return;
+      }
       if (req.method() === 'GET' && url.pathname === failBootstrap) {
         await route.fulfill({status:503,json:{error:'fixture unavailable'}}); return;
       }
@@ -170,6 +178,10 @@ async function main() {
     await page.getByRole('button',{name:'다음',exact:true}).click();
     await page.waitForFunction(() => document.activeElement?.id === 'onboarding-field-sex');
     assert.deepEqual(errors,[]);
+    for (const code of ['profile_basic', 'profile_intro', 'profile_lifestyle', 'profile_photos', 'profile_review',
+      'validation_basic', 'validation_lifestyle', 'validation_photos', 'validation_review', 'submit_started', 'submit_failed']) {
+      assert.ok(analytics.includes(code), 'missing diagnostic: ' + code);
+    }
     console.log('PASS: mobile/desktop real React/browser validation, Korean reload/flush, photo/consent reset, partial success retry, double-click lock, success cleanup, logout/account isolation, normal token renewal, all four prerequisite failures/retries, phone/instant-registration redirects, storage denial; no runtime errors.');
     console.log('Screenshots: '+output);
   } finally {

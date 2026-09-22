@@ -3,6 +3,7 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { trackOnboardingEvent } from "@/lib/onboarding-analytics";
 import {
   buildAccountRecoveryHref,
   buildExistingAccountLoginHref,
@@ -34,6 +35,7 @@ function PhoneVerificationContent() {
   const next = useMemo(() => safeNextPath(searchParams.get("next")), [searchParams]);
 
   const [checking, setChecking] = useState(true);
+  const [analyticsUserId, setAnalyticsUserId] = useState<string | null>(null);
   const [phone, setPhone] = useState("");
   const [pendingPhone, setPendingPhone] = useState<string | null>(null);
   const [code, setCode] = useState("");
@@ -55,6 +57,7 @@ function PhoneVerificationContent() {
         router.replace(buildLoginRedirect(next));
         return;
       }
+      setAnalyticsUserId(user.id);
 
       const res = await fetch("/api/mypage/summary?profileOnly=1", { cache: "no-store" }).catch(() => null);
       if (res?.status === 401) {
@@ -71,6 +74,7 @@ function PhoneVerificationContent() {
         router.replace(next);
         return;
       }
+      trackOnboardingEvent(user.id, "phone_view");
       setChecking(false);
     })();
   }, [next, router]);
@@ -109,6 +113,7 @@ function PhoneVerificationContent() {
         resendAfterSec?: number;
       };
       if (!res.ok) {
+        trackOnboardingEvent(analyticsUserId, isPhoneAlreadyUsedCode(body.code) ? "phone_duplicate" : "phone_send_failed");
         setErrorCode(isPhoneAlreadyUsedCode(body.code) ? PHONE_ALREADY_USED_CODE : body.code ?? null);
         setError(body.error ?? "인증번호 발송에 실패했습니다.");
         return;
@@ -117,6 +122,7 @@ function PhoneVerificationContent() {
       setResendAfterSec(body.resendAfterSec ?? 60);
       setInfo(body.message ?? "인증번호를 보냈습니다.");
     } catch (err) {
+      trackOnboardingEvent(analyticsUserId, "phone_send_failed");
       setError(err instanceof Error ? err.message : "인증번호 발송에 실패했습니다.");
     } finally {
       setSending(false);
@@ -145,6 +151,7 @@ function PhoneVerificationContent() {
       });
       const body = (await res.json().catch(() => ({}))) as { error?: string; code?: string; phone_verified?: boolean };
       if (!res.ok || body.phone_verified !== true) {
+        trackOnboardingEvent(analyticsUserId, isPhoneAlreadyUsedCode(body.code) ? "phone_duplicate" : "phone_verify_failed");
         setErrorCode(isPhoneAlreadyUsedCode(body.code) ? PHONE_ALREADY_USED_CODE : body.code ?? null);
         setError(body.error ?? "인증번호 확인에 실패했습니다.");
         return;
@@ -152,6 +159,7 @@ function PhoneVerificationContent() {
       setInfo("휴대폰 인증이 완료되었습니다.");
       router.replace(next);
     } catch (err) {
+      trackOnboardingEvent(analyticsUserId, "phone_verify_failed");
       setError(err instanceof Error ? err.message : "인증번호 확인에 실패했습니다.");
     } finally {
       setVerifying(false);

@@ -39,6 +39,7 @@ const AdminCertReviewPanel = dynamic(() => import("@/components/AdminCertReviewP
 });
 
 const AdminTodayPaymentSummary = dynamic(() => import("@/components/admin/AdminTodayPaymentSummary"));
+const AdminOnboardingFunnelPanel = dynamic(() => import("@/components/admin/AdminOnboardingFunnelPanel"));
 
 const DatingPlusOffers = dynamic(() => import("@/components/dating/DatingPlusOffers"));
 const OneOnOneContactNudge = dynamic(() => import("@/components/dating/OneOnOneContactNudge"));
@@ -11393,7 +11394,9 @@ export default function MyPage() {
         <section className="mb-5 rounded-2xl border border-violet-200 bg-violet-50/40 p-5">
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <h2 className="text-lg font-bold text-violet-900">
-              {adminManageTab === "public_reactions"
+              {adminManageTab === "dating_stats"
+                ? "소개팅 통계 · 가입·작성 현황 (관리자)"
+                : adminManageTab === "public_reactions"
                 ? "짐툴 외부 반응 (관리자)"
                 : adminManageTab === "mail_center"
                 ? "회원 메일 발송 (관리자)"
@@ -12441,6 +12444,7 @@ export default function MyPage() {
           </div>
           )}
 
+          {adminManageTab === "dating_stats" && <AdminOnboardingFunnelPanel />}
           {adminManageTab === "dating_stats" && adminDatingStats && (
           <div className="mb-3 space-y-3">
             <div className="rounded-xl border border-violet-200 bg-white p-4">

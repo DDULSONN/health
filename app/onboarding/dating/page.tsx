@@ -11,6 +11,8 @@ import { createClient } from "@/lib/supabase/client";
 import { type DraftFields } from "@/lib/dating-onboarding-draft";
 import { useDatingOnboardingDraft } from "@/lib/use-dating-onboarding-draft";
 import { onboardingFieldId, validateOnboardingStep, type OnboardingField, type OnboardingErrors } from "@/lib/dating-onboarding-validation";
+import { trackOnboardingEvent } from "@/lib/onboarding-analytics";
+import { PROFILE_STAGE_EVENTS, VALIDATION_STAGE_EVENTS, type OnboardingEvent } from "@/lib/onboarding-funnel";
 
 type TargetKey = "open" | "oneOnOne";
 type Sex = "male" | "female";
@@ -184,6 +186,13 @@ export default function DatingOnboardingPage() {
   const finishDraft = draft.finish;
 
   useEffect(() => {
+    if (!checking && !checkFailed && draft.ready && !draft.pendingDraft && !allSelectedDone &&
+        (available.open || available.oneOnOne)) {
+      trackOnboardingEvent(draftUserId, PROFILE_STAGE_EVENTS[step]);
+    }
+  }, [checking, checkFailed, draft.ready, draft.pendingDraft, allSelectedDone, available.open, available.oneOnOne, draftUserId, step]);
+
+  useEffect(() => {
     const { data } = supabase.auth.onAuthStateChange((_event, session) => {
       const next = session?.user.id ?? null;
       if (authIdentity.current !== undefined && authIdentity.current !== next) {
@@ -320,6 +329,7 @@ export default function DatingOnboardingPage() {
   const fieldErrors = attemptedSteps.includes(step) ? validateStep(step) : {};
   const fieldProps = (field: OnboardingField) => ({ id: onboardingFieldId(field), error: fieldErrors[field] });
   const showStepErrors = (targetStep: number, errors: OnboardingErrors) => {
+    trackOnboardingEvent(draftUserId, VALIDATION_STAGE_EVENTS[targetStep]);
     setAttemptedSteps((current) => current.includes(targetStep) ? current : [...current, targetStep]);
     setStep(targetStep);
     setError("");
@@ -399,6 +409,8 @@ export default function DatingOnboardingPage() {
       if (Object.keys(errors).length) { showStepErrors(index, errors); return; }
     }
     submitLock.current = true;
+    trackOnboardingEvent(draftUserId, "submit_started");
+    let failureStage: OnboardingEvent = "submit_failed";
     const selectedFiles = photos.filter((file): file is File => Boolean(file));
     setSubmitting(true);
     setError("");
@@ -422,6 +434,7 @@ export default function DatingOnboardingPage() {
 
       let nextOpenAssets = openAssets;
       let nextOneOnOnePaths = oneOnOnePhotoPaths;
+      failureStage = "upload_failed";
       if (targets.open && !completed.open && !nextOpenAssets) {
         nextOpenAssets = await uploadOpenCardPhotos(selectedFiles);
         setOpenAssets(nextOpenAssets);
@@ -431,6 +444,7 @@ export default function DatingOnboardingPage() {
         setOneOnOnePhotoPaths(nextOneOnOnePaths);
       }
 
+      failureStage = "submit_failed";
       if (targets.open && !completed.open && nextOpenAssets) {
         setProgress("오픈카드 등록 중");
         try {
@@ -458,6 +472,7 @@ export default function DatingOnboardingPage() {
           setCompleted((current) => ({ ...current, open: true }));
           successes.push("오픈카드");
         } catch (openError) {
+          trackOnboardingEvent(draftUserId, "submit_failed");
           failures.push(`오픈카드: ${openError instanceof Error ? openError.message : "등록 실패"}`);
         }
       }
@@ -492,6 +507,7 @@ export default function DatingOnboardingPage() {
           setCompleted((current) => ({ ...current, oneOnOne: true }));
           successes.push("1:1 신청서");
         } catch (oneError) {
+          trackOnboardingEvent(draftUserId, "submit_failed");
           failures.push(`1:1 신청서: ${oneError instanceof Error ? oneError.message : "등록 실패"}`);
         }
       }
@@ -511,6 +527,7 @@ export default function DatingOnboardingPage() {
         router.replace(ONE_ON_ONE_CANDIDATES_HREF);
       }
     } catch (uploadError) {
+      trackOnboardingEvent(draftUserId, failureStage);
       if (uploadError instanceof DOMException && uploadError.name === "AbortError") {
         setError("사진 처리 시간이 초과되었습니다. 네트워크를 확인하고 다시 시도해 주세요.");
       } else {
@@ -722,6 +739,7 @@ export default function DatingOnboardingPage() {
                           if (file) {
                             const message = photoError(file);
                             if (message) {
+                              trackOnboardingEvent(draftUserId, "photo_rejected");
                               setPhotoSelectionErrors((current) => current.map((item, i) => i === index ? message : item));
                               event.currentTarget.value = "";
                               return;

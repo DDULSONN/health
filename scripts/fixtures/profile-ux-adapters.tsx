@@ -8,6 +8,8 @@ const fixtureWindow = () => window as unknown as {
 };
 const router = { replace: (url: string) => { fixtureWindow().fixtureRedirect = url; } };
 export const useRouter = () => router;
+const params = new URLSearchParams(window.location.search);
+export const useSearchParams = () => params;
 const client = { auth: {
   getUser: async () => ({ data: { user: { id: fixtureWindow().fixtureUser || "fixture-member", user_metadata: { nickname: "테스트" } } } }),
   onAuthStateChange: (listener: (event: string, session: unknown) => void) => {
