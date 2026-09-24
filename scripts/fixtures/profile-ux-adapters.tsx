@@ -25,8 +25,8 @@ const client = { auth: {
   },
 } };
 export const createClient = () => client;
-export default function Adapter(props: { children?: ReactNode; href?: string; src?: string; alt?: string }) {
+export default function Adapter(props: { children?: ReactNode; href?: string; src?: string; alt?: string; className?: string; onClick?: () => void }) {
   if (props.src) return <img src={props.src} alt={props.alt || ""} style={{ width: "100%", height: "100%", objectFit: "contain" }} />;
-  if (props.href) return <a href={props.href}>{props.children}</a>;
+  if (props.href) return <a href={props.href} className={props.className} onClick={props.onClick}>{props.children}</a>;
   return <>{props.children}</>;
 }

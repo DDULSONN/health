@@ -12,6 +12,7 @@ import { type DraftFields } from "@/lib/dating-onboarding-draft";
 import { useDatingOnboardingDraft } from "@/lib/use-dating-onboarding-draft";
 import { onboardingFieldId, validateOnboardingStep, type OnboardingField, type OnboardingErrors } from "@/lib/dating-onboarding-validation";
 import { trackOnboardingEvent } from "@/lib/onboarding-analytics";
+import GuidedIntroductionField from "@/components/dating/GuidedIntroductionField";
 import { PROFILE_STAGE_EVENTS, VALIDATION_STAGE_EVENTS, type OnboardingEvent } from "@/lib/onboarding-funnel";
 
 type TargetKey = "open" | "oneOnOne";
@@ -692,11 +693,11 @@ export default function DatingOnboardingPage() {
 
               {step === 1 && (
                 <div>
-                  <StepHeading title="내 소개" description="상대가 나를 이해하고 대화를 시작하기 쉬운 내용을 적어 주세요." />
+                  <StepHeading title="내 소개" description="멋진 문장보다 평소 내 모습이 드러나는 이야기면 좋아요." />
                   <div className="mt-5 space-y-4">
-                    {targets.oneOnOne && <TextArea {...fieldProps("introText")} value={introText} onChange={setIntroText} label="요즘 나는 어떤 사람인가요?" placeholder="평소 일상, 주말에 하는 일, 좋아하는 것 등을 적어 주세요." maxLength={2000} />}
-                    <TextArea {...fieldProps("strengthsText")} value={strengthsText} onChange={setStrengthsText} label="나와 만나면 어떤 점이 좋을까요?" placeholder="성격이나 관계에서의 장점을 구체적으로 적어 주세요." maxLength={targets.open ? 150 : 1000} />
-                    <TextArea {...fieldProps("preferredPartnerText")} value={preferredPartnerText} onChange={setPreferredPartnerText} label="어떤 사람을 만나고 싶나요?" placeholder="성격, 대화 방식, 함께 하고 싶은 일 등을 적어 주세요." maxLength={1000} />
+                    {targets.oneOnOne && <GuidedIntroductionField {...fieldProps("introText")} value={introText} onChange={setIntroText} label="평소 어떻게 지내세요?" hint="일상이나 취미 중 나다운 모습 하나를 떠올려 보세요." placeholder="평일의 일상, 주말에 하는 일, 요즘 좋아하는 것" example="평일에는 일하고, 주말에는 산책하며 새로운 카페를 찾아다녀요. 집에서 영화 보는 날도 좋아해요." maxLength={2000} />}
+                    <GuidedIntroductionField {...fieldProps("strengthsText")} value={strengthsText} onChange={setStrengthsText} label="내가 생각하는 내 장점은?" hint="성격이나 상대를 대하는 태도를 적어 주세요." placeholder="친구들이 말해 주는 내 성격, 내가 잘 챙기는 것" example="작은 약속도 잘 지키는 편이에요. 상대의 이야기를 듣고, 좋아하는 걸 기억해 두는 걸 좋아해요." maxLength={targets.open ? 150 : 1000} />
+                    <GuidedIntroductionField {...fieldProps("preferredPartnerText")} value={preferredPartnerText} onChange={setPreferredPartnerText} label="어떤 사람과 잘 맞나요?" hint="함께하고 싶은 일이나 편한 대화 방식을 적어 주세요." placeholder="잘 맞는 성격, 서로에게 바라는 점, 함께하고 싶은 일" example="서로의 시간을 존중하면서 소소한 일상을 나눌 수 있는 분이면 좋겠어요. 주말에 같이 맛있는 것도 먹으러 가고 싶어요." maxLength={1000} />
                     {targets.open && <p className="text-xs leading-5 text-neutral-500">내 강점과 원하는 상대 내용은 오픈카드에도 공개됩니다.</p>}
                   </div>
                 </div>
@@ -844,10 +845,6 @@ function FieldError({ id, error }: FieldFeedback) {
 
 function TextField({ id, error, value, onChange, label, placeholder, className = "", inputMode, maxLength }: FieldFeedback & { value: string; onChange: (value: string) => void; label: string; placeholder: string; className?: string; inputMode?: "text" | "numeric"; maxLength?: number }) {
   return <label className={className}><span className="mb-2 block text-xs font-bold text-neutral-700">{label}</span><input id={id} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} inputMode={inputMode} maxLength={maxLength} className={`h-12 w-full border ${error ? "border-rose-400" : "border-neutral-300"} bg-white px-3 text-sm text-neutral-900 outline-none focus:border-neutral-900`} /><FieldError id={id} error={error} /></label>;
-}
-
-function TextArea({ id, error, value, onChange, label, placeholder, maxLength }: FieldFeedback & { value: string; onChange: (value: string) => void; label: string; placeholder: string; maxLength: number }) {
-  return <label className="block"><span className="mb-2 flex items-center justify-between text-xs font-bold text-neutral-700"><span>{label}</span><span className="font-normal text-neutral-400">{value.length}/{maxLength}</span></span><textarea id={id} aria-invalid={Boolean(error)} aria-describedby={error ? `${id}-error` : undefined} value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} maxLength={maxLength} rows={4} className={`w-full border ${error ? "border-rose-400" : "border-neutral-300"} bg-white px-3 py-3 text-sm leading-6 text-neutral-900 outline-none focus:border-neutral-900`} /><FieldError id={id} error={error} /></label>;
 }
 
 function Consent({ id, error, checked, onChange, children }: FieldFeedback & { checked: boolean; onChange: (value: boolean) => void; children: ReactNode }) {

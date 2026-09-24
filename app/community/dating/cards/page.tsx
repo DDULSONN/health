@@ -5,7 +5,9 @@ import DatingReportButton, { type DatingReportTargetType, type DatingReportResul
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import { readDatingDraft } from "@/lib/dating-onboarding-draft";
+import { useDatingDraftResume } from "@/lib/use-dating-draft-resume";
+import { canResumeDatingDraft } from "@/lib/dating-draft-resume";
+import DatingDraftResumeCard from "@/components/dating/DatingDraftResumeCard";
 import { ONE_ON_ONE_HOME_HREF } from "@/lib/dating-navigation";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
 import { formatRemainingToKorean } from "@/lib/dating-open";
@@ -1700,7 +1702,8 @@ function OpenCardsContent() {
   const [viewerLoggedIn, setViewerLoggedIn] = useState(false);
   const [viewerSessionReady, setViewerSessionReady] = useState(false);
   const [viewerPhoneVerified, setViewerPhoneVerified] = useState(false);
-  const [hasProfileDraft, setHasProfileDraft] = useState(false);
+  const [draftUserId, setDraftUserId] = useState<string | null>(null);
+  const profileDraft = useDatingDraftResume(draftUserId, supabase.auth);
   const [myOpenCards, setMyOpenCards] = useState<MyOpenCard[]>([]);
   const [homeProfilePresenceReady, setHomeProfilePresenceReady] = useState(false);
   const [hasActiveOneOnOneProfile, setHasActiveOneOnOneProfile] = useState(false);
@@ -1903,7 +1906,7 @@ function OpenCardsContent() {
           data: { user },
         } = await supabase.auth.getUser();
         setViewerLoggedIn(Boolean(user));
-        setHasProfileDraft(Boolean(user && readDatingDraft(user.id)));
+        setDraftUserId(user?.id ?? null);
         if (!user) {
           setViewerPhoneVerified(false);
           return;
@@ -2885,8 +2888,11 @@ function OpenCardsContent() {
     : null;
   const hasAnyOpenCardProfile = myOpenCards.length > 0;
   const registeredProfileServiceCount = Number(hasAnyOpenCardProfile) + Number(hasActiveOneOnOneProfile);
+  const hasProfileDraft = canResumeDatingDraft(profileDraft, { open: hasAnyOpenCardProfile, oneOnOne: hasActiveOneOnOneProfile });
+  const showDraftResumeCard = !showLoveFortuneSection && viewerSessionReady && viewerLoggedIn &&
+    viewerPhoneVerified && homeProfilePresenceReady && hasProfileDraft;
   const showProfileStartCard =
-    !showOneOnOneSection && !showLoveFortuneSection &&
+    !showOneOnOneSection && !showLoveFortuneSection && !showDraftResumeCard &&
     viewerSessionReady &&
     (!viewerLoggedIn || (homeProfilePresenceReady && registeredProfileServiceCount < 2));
   const showOpenCardManagement =
@@ -2965,6 +2971,7 @@ function OpenCardsContent() {
           })}
         </div>
       </section>
+      {showDraftResumeCard && profileDraft ? <DatingDraftResumeCard draft={profileDraft} href={profileStartHref} /> : null}
       {showProfileStartCard ? (
         <section className="mb-4 overflow-hidden rounded-2xl border border-rose-100 bg-[#fffafb] shadow-[0_8px_24px_rgba(190,24,93,0.06)]">
           <div className="px-4 py-4 sm:px-5 sm:py-5">
