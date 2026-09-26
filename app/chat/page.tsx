@@ -1,9 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createLatestRequest } from "@/lib/latest-request";
+import { fetchClientJson } from "@/lib/client-json-request";
 import { DATING_CHAT_REPORT_REASONS } from "@/lib/dating-chat-report-reasons";
 import { createClient } from "@/lib/supabase/client";
+import ChatPeerProfile from "@/components/ChatPeerProfile";
+import { isChatPagination, mergeChatMessages, mergeLatestChatPage, type ChatMessage, type ChatPagination } from "@/lib/chat-messages";
 
 type ChatSourceKind = "open" | "paid" | "swipe";
 
@@ -43,19 +47,9 @@ type ThreadDetail = {
     status: "open" | "closed";
     created_at: string;
   };
-  messages: Array<{
-    id: string;
-    thread_id: string;
-    sender_id: string;
-    receiver_id: string;
-    content: string;
-    is_read: boolean;
-    created_at: string;
-    optimistic?: boolean;
-  }>;
+  messages: ChatMessage[];
+  pagination?: ChatPagination;
 };
-
-type ChatMessage = ThreadDetail["messages"][number];
 
 type SelectedState =
   | { kind: "thread"; threadId: string }
@@ -82,18 +76,8 @@ function formatDateTime(value: string | null | undefined) {
 }
 
 async function fetchJsonWithTimeout<T>(input: RequestInfo | URL, init?: RequestInit, timeoutMs = 8000) {
-  const controller = new AbortController();
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs);
-  try {
-    const response = await fetch(input, {
-      ...init,
-      signal: controller.signal,
-    });
-    const body = (await response.json().catch(() => ({}))) as T;
-    return { response, body };
-  } finally {
-    window.clearTimeout(timer);
-  }
+  const { response, body } = await fetchClientJson<T>(input, init, timeoutMs);
+  return { response, body: (body ?? {}) as T };
 }
 
 function avatarTone(seed: string) {
@@ -128,6 +112,9 @@ export default function ChatPage() {
   const [selected, setSelected] = useState<SelectedState>(null);
   const [threadDetail, setThreadDetail] = useState<ThreadDetail | null>(null);
   const [threadLoading, setThreadLoading] = useState(false);
+  const [threadError, setThreadError] = useState("");
+  const [olderLoading, setOlderLoading] = useState(false);
+  const [olderError, setOlderError] = useState("");
   const [compose, setCompose] = useState("");
   const [pendingSendCount, setPendingSendCount] = useState(0);
   const [leaving, setLeaving] = useState(false);
@@ -137,8 +124,36 @@ export default function ChatPage() {
     DATING_CHAT_REPORT_REASONS[0]
   );
   const [reportDetails, setReportDetails] = useState("");
-  const messagesEndRef = useRef<HTMLDivElement | null>(null);
+  const messagesViewport = useRef<HTMLDivElement | null>(null);
+  const nearBottom = useRef(true);
+  const forceBottom = useRef(true);
+  const scrollAnchor = useRef<{ threadId: string; id: string; offset: number } | null>(null);
   const requestedConnectionAppliedRef = useRef(false);
+  const selectedRef = useRef<SelectedState>(null);
+  const currentDetail = useRef<ThreadDetail | null>(null);
+  const threadRequest = useMemo(() => createLatestRequest(), []);
+  const olderRequest = useMemo(() => createLatestRequest(), []);
+  useLayoutEffect(() => { currentDetail.current = threadDetail; }, [threadDetail]);
+
+  // Invalidate the previous room before paint. Rendering also masks mismatched details.
+  useLayoutEffect(() => {
+    selectedRef.current = selected;
+    threadRequest.cancel();
+    olderRequest.cancel();
+    setOlderLoading(false);
+    setOlderError("");
+    scrollAnchor.current = null;
+    forceBottom.current = true;
+    nearBottom.current = true;
+    setThreadLoading(false);
+    setThreadError("");
+    setReportPanelOpen(false);
+    return () => {
+      selectedRef.current = null;
+      threadRequest.cancel();
+      olderRequest.cancel();
+    };
+  }, [selected, threadRequest, olderRequest]);
 
   const sending = pendingSendCount > 0;
 
@@ -247,75 +262,62 @@ export default function ChatPage() {
   );
 
   const syncThreadSilently = useCallback(async (threadId: string) => {
-    let result: { response: Response; body: ThreadDetail & { message?: string } };
-    try {
-      result = await fetchJsonWithTimeout<ThreadDetail & { message?: string }>(
-        `/api/dating/chat/thread?thread_id=${encodeURIComponent(threadId)}`,
-        { cache: "no-store" }
-      );
-    } catch (error) {
-      if (error instanceof DOMException && error.name === "AbortError") {
-        throw new Error("채팅 내용을 불러오는 중 시간이 초과되었습니다. 다시 시도해 주세요.");
-      }
-      throw error;
-    }
-
-    const { response: res, body } = result;
-
-    if (!res.ok) {
-      if (res.status === 404) {
-        setThreadDetail((prev) => (prev?.thread.id === threadId ? null : prev));
-        setSelected((prev) => (prev?.kind === "thread" && prev.threadId === threadId ? null : prev));
-        void loadInboxAndAvailable();
-        return;
-      }
-      throw new Error(body.message ?? "채팅 내용을 불러오지 못했습니다.");
-    }
-
-    const latestMessage = body.messages[body.messages.length - 1] ?? null;
-
-    setThreadDetail((prev) => {
-      if (!prev || prev.thread.id !== threadId) return body;
-      const prevLastId = prev.messages[prev.messages.length - 1]?.id ?? "";
-      const nextLastId = body.messages[body.messages.length - 1]?.id ?? "";
-      const prevCount = prev.messages.length;
-      const nextCount = body.messages.length;
-      if (prevLastId === nextLastId && prevCount === nextCount) {
-        return prev;
-      }
-      const remoteIds = new Set(body.messages.map((message) => message.id));
-      const pendingLocalMessages = prev.messages.filter((message) => message.optimistic && !remoteIds.has(message.id));
-      return pendingLocalMessages.length > 0
-        ? {
-            ...body,
-            messages: [...body.messages, ...pendingLocalMessages].sort(
-              (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
-            ),
-          }
-        : body;
+    const isSelected = () => selectedRef.current?.kind === "thread" && selectedRef.current.threadId === threadId;
+    if (!isSelected()) return;
+    await threadRequest.run({
+      start: () => { setThreadLoading(true); setThreadError(""); },
+      load: async (signal) => {
+        const result = await fetchJsonWithTimeout<ThreadDetail & { message?: string }>(
+          `/api/dating/chat/thread?thread_id=${encodeURIComponent(threadId)}&paged=1`,
+          { cache: "no-store", signal }
+        );
+        if (result.response.ok && (result.body.thread?.id !== threadId ||
+          (result.body.pagination !== undefined && !isChatPagination(result.body.pagination)) ||
+          !Array.isArray(result.body.messages) || result.body.messages.some((message) =>
+            !message || message.thread_id !== threadId || typeof message.id !== "string" || typeof message.content !== "string"))) {
+          throw new Error("채팅 응답을 확인하지 못했습니다. 다시 시도해 주세요.");
+        }
+        if (!result.response.ok && result.response.status !== 404) {
+          throw new Error(result.body.message ?? "채팅 내용을 불러오지 못했습니다.");
+        }
+        return result;
+      },
+      commit: ({ response: res, body }) => {
+        if (!isSelected()) return;
+        if (res.status === 404) {
+          setThreadDetail((prev) => (prev?.thread.id === threadId ? null : prev));
+          setSelected((prev) => (prev?.kind === "thread" && prev.threadId === threadId ? null : prev));
+          void loadInboxAndAvailable();
+          return;
+        }
+        const latestMessage = body.messages[body.messages.length - 1] ?? null;
+        setThreadDetail((prev) => {
+          if (!prev || prev.thread.id !== threadId) return body;
+          return { ...body, ...mergeLatestChatPage(prev, body) };
+        });
+        if (latestMessage) {
+          setInbox((prev) => {
+            const current = prev.find((item) => item.thread_id === threadId);
+            if (!current) return prev;
+            const updated = { ...current, last_message: latestMessage.content, last_message_at: latestMessage.created_at };
+            return [updated, ...prev.filter((item) => item.thread_id !== threadId)];
+          });
+        }
+        if (document.visibilityState === "visible") {
+          markThreadReadSilently(threadId);
+          setInbox((prev) => prev.map((item) => item.thread_id === threadId ? { ...item, unread_count: 0 } : item));
+        }
+      },
+      fail: (error) => {
+        if (!isSelected()) return;
+        setThreadError(error instanceof DOMException && error.name === "AbortError"
+          ? "채팅 내용을 불러오는 중 시간이 초과되었습니다. 다시 시도해 주세요."
+          : error instanceof TypeError ? "채팅 내용을 불러오지 못했습니다. 인터넷 연결을 확인한 뒤 다시 시도해 주세요."
+          : error instanceof Error ? error.message : "채팅 내용을 불러오지 못했습니다.");
+      },
+      finish: () => { if (isSelected()) setThreadLoading(false); },
     });
-
-    if (latestMessage) {
-      setInbox((prev) => {
-        const current = prev.find((item) => item.thread_id === threadId);
-        if (!current) return prev;
-        const updated: InboxItem = {
-          ...current,
-          last_message: latestMessage.content,
-          last_message_at: latestMessage.created_at,
-          unread_count: 0,
-        };
-        const rest = prev.filter((item) => item.thread_id !== threadId);
-        return [updated, ...rest];
-      });
-    }
-
-    markThreadReadSilently(threadId);
-
-    setInbox((prev) =>
-      prev.map((item) => (item.thread_id === threadId ? { ...item, unread_count: 0 } : item))
-    );
-  }, [loadInboxAndAvailable, markThreadReadSilently]);
+  }, [threadRequest, loadInboxAndAvailable, markThreadReadSilently]);
 
   useEffect(() => {
     let active = true;
@@ -335,44 +337,14 @@ export default function ChatPage() {
   }, [loadInboxAndAvailable]);
 
   useEffect(() => {
-    if (!selected || selected.kind !== "thread") {
-      setThreadDetail(null);
-      setReportPanelOpen(false);
-      return;
-    }
-
-    let cancelled = false;
-    const shouldShowLoading = threadDetail?.thread.id !== selected.threadId;
-
-    const run = async () => {
-      if (shouldShowLoading) {
-        setThreadLoading(true);
-      }
-      try {
-        if (!cancelled) {
-          await syncThreadSilently(selected.threadId);
-        }
-      } catch (e) {
-        if (!cancelled) {
-          setError(e instanceof Error ? e.message : "채팅 내용을 불러오지 못했습니다.");
-        }
-      } finally {
-        if (!cancelled && shouldShowLoading) {
-          setThreadLoading(false);
-        }
-      }
-    };
-
-    void run();
-    return () => {
-      cancelled = true;
-    };
-  }, [selected, syncThreadSilently, threadDetail?.thread.id]);
+    if (selected?.kind === "thread") void syncThreadSilently(selected.threadId);
+  }, [selected, syncThreadSilently]);
 
   useEffect(() => {
     if (!selected || selected.kind !== "thread") return;
 
     const threadId = selected.threadId;
+    let subscribed = true;
     const channel = supabase
       .channel(`dating-chat-thread:${threadId}`)
       .on(
@@ -384,6 +356,7 @@ export default function ChatPage() {
           filter: `thread_id=eq.${threadId}`,
         },
         async (payload) => {
+          if (!subscribed || selectedRef.current?.kind !== "thread" || selectedRef.current.threadId !== threadId) return;
           const newMessage = payload.new as ChatMessage;
 
           setThreadDetail((prev) => {
@@ -406,7 +379,7 @@ export default function ChatPage() {
             }
             return {
               ...prev,
-              messages: [...prev.messages, newMessage],
+              messages: mergeChatMessages(prev.messages, [newMessage]),
             };
           });
 
@@ -441,6 +414,7 @@ export default function ChatPage() {
           filter: `id=eq.${threadId}`,
         },
         (payload) => {
+          if (!subscribed || selectedRef.current?.kind !== "thread" || selectedRef.current.threadId !== threadId) return;
           const nextThread = payload.new as { status?: "open" | "closed" };
           const nextStatus = nextThread.status;
           if (!nextStatus) return;
@@ -462,6 +436,7 @@ export default function ChatPage() {
       .subscribe();
 
     return () => {
+      subscribed = false;
       void supabase.removeChannel(channel);
     };
   }, [selected, supabase, currentUserId, markThreadReadSilently]);
@@ -469,6 +444,7 @@ export default function ChatPage() {
   useEffect(() => {
     if (!currentUserId) return;
 
+    let subscribed = true;
     const channel = supabase
       .channel(`dating-chat-incoming:${currentUserId}`)
       .on(
@@ -480,6 +456,7 @@ export default function ChatPage() {
           filter: `receiver_id=eq.${currentUserId}`,
         },
         async (payload) => {
+          if (!subscribed) return;
           const newMessage = payload.new as ChatMessage;
 
           setInbox((prev) => {
@@ -506,6 +483,7 @@ export default function ChatPage() {
       .subscribe();
 
     return () => {
+      subscribed = false;
       void supabase.removeChannel(channel);
     };
   }, [currentUserId, supabase, selected, syncThreadSilently, loadInboxAndAvailable]);
@@ -527,10 +505,6 @@ export default function ChatPage() {
     };
   }, [loadInboxAndAvailable, selected, syncThreadSilently]);
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ block: "end" });
-  }, [selected, threadDetail?.messages.length]);
-
   const availableWithoutThread = useMemo(() => {
     const existing = new Set(inbox.map((item) => `${item.source_kind}:${item.source_id}`));
     return available.filter((item) => !existing.has(`${item.sourceKind}:${item.sourceId}`));
@@ -545,15 +519,62 @@ export default function ChatPage() {
     return thread ? thread.peer_nickname : "채팅";
   }, [selected, inbox]);
 
-  const isClosedThread = selected?.kind === "thread" && threadDetail?.thread.status === "closed";
+  const activeThreadDetail = selected?.kind === "thread" && threadDetail?.thread.id === selected.threadId ? threadDetail : null;
+  const isClosedThread = selected?.kind === "thread" && activeThreadDetail?.thread.status === "closed";
+
+  useLayoutEffect(() => {
+    const viewport = messagesViewport.current;
+    if (!viewport || !activeThreadDetail) return;
+    const anchor = scrollAnchor.current;
+    if (anchor && anchor.threadId === activeThreadDetail.thread.id) {
+      const element = [...viewport.querySelectorAll<HTMLElement>("[data-message-id]")].find(row => row.dataset.messageId === anchor.id);
+      if (element) viewport.scrollTop += element.getBoundingClientRect().top - viewport.getBoundingClientRect().top - anchor.offset;
+      scrollAnchor.current = null;
+    } else if (forceBottom.current || nearBottom.current) {
+      viewport.scrollTop = viewport.scrollHeight;
+      forceBottom.current = false;
+    }
+  }, [activeThreadDetail]);
+
+  const loadOlder = async () => {
+    const selection = selectedRef.current;
+    const cursor = activeThreadDetail?.pagination?.older_cursor;
+    if (selection?.kind !== "thread" || !cursor || !activeThreadDetail?.pagination?.has_more) return;
+    await olderRequest.run({
+      start: () => { setOlderLoading(true); setOlderError(""); },
+      load: async signal => {
+        const { response, body } = await fetchJsonWithTimeout<ThreadDetail & { message?: string }>(`/api/dating/chat/thread?thread_id=${encodeURIComponent(selection.threadId)}&paged=1&before=${encodeURIComponent(cursor)}`, { signal, cache: "no-store" });
+        if (!response.ok) throw new Error(body.message ?? "이전 대화를 불러오지 못했어요.");
+        if (body.thread?.id !== selection.threadId || !Array.isArray(body.messages) || !isChatPagination(body.pagination) ||
+          body.messages.some(row => !row || row.thread_id !== selection.threadId || typeof row.id !== "string" || typeof row.content !== "string")) throw new Error("이전 대화 응답을 확인하지 못했어요.");
+        return body;
+      },
+      commit: body => {
+        if (selectedRef.current !== selection || currentDetail.current?.pagination?.older_cursor !== cursor) return;
+        const viewport = messagesViewport.current;
+        const top = viewport?.getBoundingClientRect().top ?? 0;
+        const anchor = viewport && [...viewport.querySelectorAll<HTMLElement>("[data-message-id]")].find(row => row.getBoundingClientRect().bottom > top);
+        if (anchor) scrollAnchor.current = { threadId: selection.threadId, id: anchor.dataset.messageId!, offset: anchor.getBoundingClientRect().top - top };
+        setThreadDetail(prev => {
+          if (prev?.thread.id !== selection.threadId || prev.pagination?.older_cursor !== cursor) return prev;
+          return { ...prev, messages: mergeChatMessages(body.messages, prev.messages), pagination: body.pagination };
+        });
+      },
+      fail: () => { if (selectedRef.current === selection) setOlderError("이전 대화를 불러오지 못했어요. 다시 눌러 시도해 주세요."); },
+      finish: () => { if (selectedRef.current === selection) setOlderLoading(false); },
+    });
+  };
 
   const handleSend = async () => {
     const content = compose.trim();
     if (!content || !selected || (selected.kind === "available" && sending)) return;
+    if (selected.kind === "thread" && (!activeThreadDetail || isClosedThread || threadError)) return;
+    const selectionAtSend = selectedRef.current;
+    const stillSelected = () => selectedRef.current === selectionAtSend;
 
     const previousCompose = compose;
     const baseCreatedAt = new Date().toISOString();
-    const optimisticMessageId = `local-${Date.now()}`;
+    const optimisticMessageId = `local-${crypto.randomUUID()}`;
     let usedOptimisticAppend = false;
 
     if (selected.kind === "thread" && threadDetail?.thread.id === selected.threadId) {
@@ -573,6 +594,7 @@ export default function ChatPage() {
       };
 
       usedOptimisticAppend = true;
+      forceBottom.current = true;
       setCompose("");
       setThreadDetail((prev) =>
         prev && prev.thread.id === selected.threadId
@@ -623,7 +645,7 @@ export default function ChatPage() {
       const nextThreadId = body.thread_id ?? (selected.kind === "thread" ? selected.threadId : "");
       const createdAt = body.created_at ?? baseCreatedAt;
 
-      if (!usedOptimisticAppend) {
+      if (!usedOptimisticAppend && stillSelected()) {
         setCompose("");
       }
 
@@ -664,7 +686,7 @@ export default function ChatPage() {
 
       if (selected.kind === "thread") {
         setThreadDetail((prev) => {
-          if (!prev || prev.thread.id !== selected.threadId) return prev;
+          if (!stillSelected() || !prev || prev.thread.id !== selected.threadId) return prev;
 
           if (usedOptimisticAppend) {
             const confirmedId = body.message_id ?? optimisticMessageId;
@@ -717,11 +739,11 @@ export default function ChatPage() {
         setAvailable((prev) =>
           prev.filter((item) => !(item.sourceKind === selected.sourceKind && item.sourceId === selected.sourceId))
         );
-        setThreadDetail(null);
+        if (stillSelected()) setThreadDetail(null);
       }
 
       if (
-        nextThreadId &&
+        stillSelected() && nextThreadId &&
         (selected.kind !== "thread" || selected.threadId !== nextThreadId)
       ) {
         setSelected({ kind: "thread", threadId: nextThreadId });
@@ -737,7 +759,7 @@ export default function ChatPage() {
               }
             : prev
         );
-        setCompose(previousCompose);
+        if (stillSelected()) setCompose((current) => current || previousCompose);
       }
     } finally {
       setPendingSendCount((prev) => Math.max(0, prev - 1));
@@ -747,6 +769,7 @@ export default function ChatPage() {
   const handleLeave = async () => {
     if (!selected || selected.kind !== "thread" || leaving) return;
     if (!confirm("이 채팅방에서 나갈까요? 내 목록에서만 숨겨집니다.")) return;
+    const selectionAtLeave = selectedRef.current;
 
     setLeaving(true);
     try {
@@ -761,8 +784,10 @@ export default function ChatPage() {
         throw new Error(body.message ?? "채팅 나가기에 실패했습니다.");
       }
 
-      setThreadDetail(null);
-      setSelected(null);
+      if (selectedRef.current === selectionAtLeave) {
+        setThreadDetail(null);
+        setSelected(null);
+      }
       await loadInboxAndAvailable({ withLoading: true });
     } catch (e) {
       alert(e instanceof Error ? e.message : "채팅 나가기에 실패했습니다.");
@@ -774,6 +799,7 @@ export default function ChatPage() {
   const handleReport = async () => {
     if (!selected || selected.kind !== "thread" || reporting) return;
     if (!confirm("이 채팅을 신고할까요? 최근 대화 내용이 함께 운영진에게 전달됩니다.")) return;
+    const selectionAtReport = selectedRef.current;
 
     setReporting(true);
     try {
@@ -792,8 +818,10 @@ export default function ChatPage() {
         throw new Error(body.message ?? "채팅 신고에 실패했습니다.");
       }
 
-      setReportDetails("");
-      setReportPanelOpen(false);
+      if (selectedRef.current === selectionAtReport) {
+        setReportDetails("");
+        setReportPanelOpen(false);
+      }
       alert("채팅 신고가 접수되었습니다. 운영진이 확인할게요.");
     } catch (e) {
       alert(e instanceof Error ? e.message : "채팅 신고에 실패했습니다.");
@@ -962,15 +990,14 @@ export default function ChatPage() {
               </div>
             ) : (
               <div className="flex h-full min-h-0 flex-col">
-                <div className="shrink-0 flex items-start justify-between gap-3 border-b border-neutral-100 pb-3">
-                  <div>
-                    <p className="text-lg font-black text-neutral-950">{selectedTitle}</p>
-                    <p className="mt-1 text-xs text-neutral-500">
-                      {isClosedThread ? "상대 또는 내가 채팅을 종료했어요" : "편하게 대화를 이어가 보세요"}
-                    </p>
+                <div className="shrink-0 border-b border-neutral-100 pb-3">
+                  <div className="flex items-center justify-between gap-3">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-lg font-black text-neutral-950">{selectedTitle}</p>
                   </div>
                   {selected.kind === "thread" ? (
-                    <div className="flex flex-wrap items-center justify-end gap-2">
+                    <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
+                      <ChatPeerProfile key={selected.threadId} query={`thread_id=${encodeURIComponent(selected.threadId)}`} />
                       <button
                         type="button"
                         onClick={() => void handleLeave()}
@@ -980,27 +1007,39 @@ export default function ChatPage() {
                         {leaving ? "처리 중..." : "나가기"}
                       </button>
                     </div>
-                  ) : null}
+                  ) : <ChatPeerProfile key={`${selected.sourceKind}:${selected.sourceId}`} query={`source_kind=${selected.sourceKind}&source_id=${encodeURIComponent(selected.sourceId)}`} />}
+                  </div>
+                  <p className="mt-2 text-xs text-neutral-500">{isClosedThread ? "상대 또는 내가 채팅을 종료했어요" : "편하게 대화를 이어가 보세요"}</p>
                 </div>
 
-                <div className="min-h-0 flex-1 space-y-3 overflow-y-auto py-4">
+                <div ref={messagesViewport} aria-label="대화 내용" onScroll={() => { const element = messagesViewport.current; if (element) nearBottom.current = element.scrollHeight - element.scrollTop - element.clientHeight < 80; }} className="min-h-0 flex-1 space-y-3 overflow-y-auto py-4">
+                  {activeThreadDetail?.pagination?.has_more && <div className="text-center"><button type="button" disabled={olderLoading} onClick={() => void loadOlder()} className="min-h-10 rounded-full border border-neutral-200 bg-white px-4 text-xs font-semibold text-neutral-600 disabled:opacity-50">{olderLoading ? "불러오는 중..." : "이전 대화 보기"}</button>{olderError && <p role="alert" className="mt-2 text-xs text-rose-700">{olderError}</p>}</div>}
                   {selected.kind === "available" ? (
                     <div className="rounded-[20px] bg-neutral-50 px-4 py-5 text-sm text-neutral-600">
                       아직 시작된 채팅은 없습니다. 아래에서 첫 메시지를 보내면 채팅방이 바로 열립니다.
                     </div>
-                  ) : threadLoading ? (
+                  ) : threadLoading && !activeThreadDetail ? (
                     <div className="rounded-[20px] bg-neutral-50 px-4 py-5 text-sm text-neutral-500">
                       대화를 불러오는 중...
                     </div>
-                  ) : (threadDetail?.messages ?? []).length === 0 ? (
+                  ) : threadError ? (
+                    <div role="alert" className="rounded-[20px] border border-rose-200 bg-rose-50 px-4 py-4 text-sm text-rose-700">
+                      <p>{threadError}</p>
+                      <button type="button" disabled={threadLoading} onClick={() => { if (selected.kind === "thread") void syncThreadSilently(selected.threadId); }} className="mt-3 min-h-10 rounded-lg border border-rose-200 bg-white px-3 font-semibold disabled:opacity-50">
+                        {threadLoading ? "불러오는 중..." : "대화 다시 불러오기"}
+                      </button>
+                    </div>
+                  ) : !activeThreadDetail ? (
+                    <p className="text-sm text-neutral-500">대화를 불러오는 중...</p>
+                  ) : activeThreadDetail.messages.length === 0 ? (
                     <div className="rounded-[20px] bg-neutral-50 px-4 py-5 text-sm text-neutral-500">
                       아직 메시지가 없습니다.
                     </div>
                   ) : (
-                    threadDetail?.messages.map((message) => {
-                      const mine = message.sender_id === threadDetail?.thread.current_user_id;
+                    activeThreadDetail.messages.map((message) => {
+                      const mine = message.sender_id === activeThreadDetail.thread.current_user_id;
                       return (
-                        <div key={message.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
+                        <div key={message.id} data-message-id={message.id} className={`flex ${mine ? "justify-end" : "justify-start"}`}>
                           <div
                             className={`max-w-[80%] rounded-[20px] px-4 py-3 text-sm leading-6 transition-opacity ${
                               mine ? "bg-rose-600 text-white" : "bg-neutral-100 text-neutral-800"
@@ -1015,7 +1054,6 @@ export default function ChatPage() {
                       );
                     })
                   )}
-                  <div ref={messagesEndRef} />
                 </div>
 
                 <div className="shrink-0 border-t border-neutral-100 pt-3">
@@ -1041,7 +1079,7 @@ export default function ChatPage() {
                     />
                     <button
                       type="button"
-                      disabled={!compose.trim() || !!isClosedThread || (selected.kind === "available" && sending)}
+                      disabled={!compose.trim() || !!isClosedThread || (selected.kind === "thread" && (!activeThreadDetail || !!threadError)) || (selected.kind === "available" && sending)}
                       onClick={() => void handleSend()}
                       className="min-w-[92px] rounded-[18px] bg-rose-600 px-4 py-3 text-sm font-bold text-white disabled:opacity-50"
                     >

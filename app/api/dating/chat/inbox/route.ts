@@ -17,15 +17,23 @@ type ThreadRow = {
   created_at: string;
 };
 
-type MessageRow = {
-  id: string;
-  thread_id: string;
-  sender_id: string;
-  receiver_id: string;
-  content: string;
-  is_read: boolean;
-  created_at: string;
-};
+// Only unread counters need message rows. Previews already live on the thread.
+async function loadUnreadCounts(admin: ReturnType<typeof createAdminClient>, userId: string, threadIds: string[]) {
+  const visible = new Set(threadIds);
+  const counts = new Map<string, number>();
+  let after = "";
+  for (;;) {
+    let query = admin.from("dating_chat_messages").select("id,thread_id")
+      .in("thread_id", threadIds).eq("receiver_id", userId).eq("is_read", false).order("id", { ascending: true }).limit(500);
+    if (after) query = query.gt("id", after);
+    const result = await query;
+    if (result.error) return { counts, error: result.error };
+    const rows = result.data ?? [];
+    for (const row of rows) if (visible.has(row.thread_id)) counts.set(row.thread_id, (counts.get(row.thread_id) ?? 0) + 1);
+    if (rows.length < 500) return { counts, error: null };
+    after = rows[rows.length - 1].id;
+  }
+}
 
 export async function GET(req: Request) {
   const { user } = await getRequestAuthContext(req);
@@ -63,11 +71,7 @@ export async function GET(req: Request) {
 
   const threadIds = threads.map((thread) => thread.id);
   const [messagesRes, profilesRes] = await Promise.all([
-    admin
-      .from("dating_chat_messages")
-      .select("id,thread_id,sender_id,receiver_id,content,is_read,created_at")
-      .in("thread_id", threadIds)
-      .order("created_at", { ascending: false }),
+    loadUnreadCounts(admin, user.id, threadIds),
     admin
       .from("profiles")
       .select("user_id,nickname")
@@ -89,21 +93,10 @@ export async function GET(req: Request) {
   const nicknameMap = new Map(
     (profilesRes.data ?? []).map((row) => [String(row.user_id), String(row.nickname ?? "익명").trim() || "익명"])
   );
-  const lastByThread = new Map<string, MessageRow>();
-  const unreadByThread = new Map<string, number>();
-
-  for (const row of (messagesRes.data ?? []) as MessageRow[]) {
-    if (!lastByThread.has(row.thread_id)) {
-      lastByThread.set(row.thread_id, row);
-    }
-    if (row.receiver_id === user.id && !row.is_read) {
-      unreadByThread.set(row.thread_id, (unreadByThread.get(row.thread_id) ?? 0) + 1);
-    }
-  }
+  const unreadByThread = messagesRes.counts;
 
   const items = threads.map((thread) => {
     const peerUserId = thread.user_a_id === user.id ? thread.user_b_id : thread.user_a_id;
-    const lastMessage = lastByThread.get(thread.id);
     return {
       thread_id: thread.id,
       source_kind: thread.source_kind,
@@ -112,8 +105,8 @@ export async function GET(req: Request) {
       peer_nickname: nicknameMap.get(peerUserId) ?? "익명",
       status: thread.status,
       unread_count: unreadByThread.get(thread.id) ?? 0,
-      last_message: lastMessage?.content ?? thread.last_message_preview ?? "",
-      last_message_at: lastMessage?.created_at ?? thread.last_message_at ?? thread.created_at,
+      last_message: thread.last_message_preview ?? "",
+      last_message_at: thread.last_message_at ?? thread.created_at,
       created_at: thread.created_at,
     };
   });
@@ -122,5 +115,5 @@ export async function GET(req: Request) {
     ok: true,
     unreadCount: items.reduce((sum, item) => sum + item.unread_count, 0),
     items,
-  });
+  }, { headers: { "Cache-Control": "private, no-store" } });
 }

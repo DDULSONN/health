@@ -3,6 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "check:chat-profile-history": "node --test scripts/check-chat-profile-history.cjs",
+    "check:chat-notification-safety": "node --test scripts/check-chat-notification-safety.cjs",
+    "check:chat-notification-browser": "node scripts/check-chat-notification-browser.cjs",
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
