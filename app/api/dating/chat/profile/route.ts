@@ -67,7 +67,8 @@ export async function GET(req: Request) {
 
     let row: Record<string, unknown> | null = null;
     let application = false;
-    const common = "age,region,height_cm,job,training_years,intro_text";
+    // Open cards store strengths/ideal_type, not intro_text. Only applications and paid cards have it.
+    const common = "age,region,height_cm,job,training_years";
     if (sourceKind === "open" || sourceKind === "paid") {
       const paid = sourceKind === "paid";
       const cardKey = paid ? "paid_card_id" : "card_id";
@@ -79,13 +80,13 @@ export async function GET(req: Request) {
       if (app.applicant_user_id === peerId) {
         application = true;
         const result = await admin.from(paid ? "dating_paid_card_applications" : "dating_card_applications")
-          .select(`applicant_display_nickname,${common},photo_paths`).eq("id", sourceId).eq("status", "accepted").eq("applicant_user_id", peerId).maybeSingle();
+          .select(`applicant_display_nickname,${common},intro_text,photo_paths`).eq("id", sourceId).eq("status", "accepted").eq("applicant_user_id", peerId).maybeSingle();
         if (result.error) throw result.error;
         row = result.data as unknown as Record<string, unknown> | null;
       } else {
         if (app.applicant_user_id !== user.id) return unavailable();
         const result = await admin.from(paid ? "dating_paid_cards" : "dating_cards")
-          .select(paid ? `nickname,${common},strengths_text,ideal_text,photo_visibility,photo_paths,blur_thumb_path,status,expires_at` : `display_nickname,${common},strengths_text,ideal_type,photo_visibility,photo_paths,blur_paths,blur_thumb_path,status`)
+          .select(paid ? `nickname,${common},intro_text,strengths_text,ideal_text,photo_visibility,photo_paths,blur_thumb_path,status,expires_at` : `display_nickname,${common},strengths_text,ideal_type,photo_visibility,photo_paths,blur_paths,blur_thumb_path,status`)
           .eq("id", String(app[cardKey])).eq(paid ? "user_id" : "owner_user_id", peerId).maybeSingle();
         if (result.error) throw result.error;
         row = result.data as unknown as Record<string, unknown> | null;
