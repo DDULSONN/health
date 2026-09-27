@@ -11,7 +11,10 @@ import DatingDraftResumeCard from "@/components/dating/DatingDraftResumeCard";
 import { ONE_ON_ONE_HOME_HREF } from "@/lib/dating-navigation";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
 import { formatRemainingToKorean } from "@/lib/dating-open";
-import { buildOneOnOneRefreshConfirmation, buildOneOnOneRefreshSuccess, getOneOnOneRefreshCopy, ONE_ON_ONE_REFRESH_POLICY_COPY, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
+import { buildOneOnOneRefreshSuccess, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
+import OneOnOneRefreshControl, { useOneOnOneRefreshConfirmation, type OneOnOneRefreshNotice } from "@/components/dating/OneOnOneRefreshControl";
+import OneOnOnePlusStatus from "@/components/dating/OneOnOnePlusStatus";
+import { fetchClientJson } from "@/lib/client-json-request";
 import { isOneOnOneRecommendationPayload } from "@/lib/dating-1on1-refresh-response";
 import {
   SWIPE_PREMIUM_DAILY_LIMIT,
@@ -1747,6 +1750,8 @@ function OpenCardsContent() {
   const [processingOneOnOneNudgeIds, setProcessingOneOnOneNudgeIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
   const [refreshingOneOnOneRecommendationIds, setRefreshingOneOnOneRecommendationIds] = useState<string[]>([]);
+  const { confirmOneOnOneRefresh, refreshConfirmationDialog } = useOneOnOneRefreshConfirmation();
+  const [oneOnOneRefreshNotice, setOneOnOneRefreshNotice] = useState<OneOnOneRefreshNotice | null>(null);
   const oneOnOneRefreshLocksRef = useRef<Set<string>>(new Set());
   const oneOnOneRefreshNeedsReloadRef = useRef(false);
 
@@ -2715,37 +2720,40 @@ function OpenCardsContent() {
     async (sourceCardId: string) => {
       if (!sourceCardId || oneOnOneRefreshLocksRef.current.has(sourceCardId) || oneOnOneRefreshNeedsReloadRef.current) return;
       const group = oneOnOneHome?.recommendations.find((item) => item.source_card_id === sourceCardId);
-      if (!confirm(buildOneOnOneRefreshConfirmation(group))) return;
+      // Lock before awaiting consent so rapid taps cannot open multiple dialogs or send twice.
       oneOnOneRefreshLocksRef.current.add(sourceCardId);
-      setRefreshingOneOnOneRecommendationIds((prev) => [...prev, sourceCardId]);
       let consumed = false;
+      let started = false;
       try {
-        const res = await fetch("/api/dating/1on1/recommendations/refresh", {
+        if (!await confirmOneOnOneRefresh(group)) return;
+        started = true;
+        setOneOnOneRefreshNotice(null);
+        setRefreshingOneOnOneRecommendationIds((prev) => [...prev, sourceCardId]);
+        const { response: res, body } = await fetchClientJson<OneOnOneRefreshUsage & { ok?: boolean; error?: string; request_id?: string }>("/api/dating/1on1/recommendations/refresh", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ source_card_id: sourceCardId }),
-        });
-        const body = (await res.json().catch(() => ({}))) as OneOnOneRefreshUsage & { ok?: boolean; error?: string; request_id?: string };
+        }, 30_000);
         if (!res.ok || body?.ok !== true) {
           const message = body?.error ?? "추천 후보를 새로고침하지 못했습니다.";
           throw new Error(body?.request_id ? `${message}\n문의 코드: ${body.request_id}` : message);
         }
         consumed = true;
         await reloadOneOnOneHome(true, true);
-        alert(buildOneOnOneRefreshSuccess(body));
+        setOneOnOneRefreshNotice({ sourceCardId, kind: "success", message: buildOneOnOneRefreshSuccess(body) });
       } catch (error) {
         oneOnOneRefreshNeedsReloadRef.current = true;
         const message = consumed
           ? "새로고침 1회는 처리됐지만 새 후보 명단을 불러오지 못했어요. 아래 '명단 다시 불러오기'로 확인해 주세요. 추가 횟수는 사용되지 않아요."
           : "새로고침 상태를 확인하지 못했어요. 다시 새로고침하지 말고 '명단 다시 불러오기'로 사용 횟수와 후보를 먼저 확인해 주세요.";
-        setOneOnOneHomeError(message);
-        alert(consumed ? message : `${error instanceof Error ? error.message : "네트워크 오류"}\n${message}`);
+        const reason = error instanceof Error && error.name !== "AbortError" ? error.message : "연결이 지연되었거나 끊겼어요.";
+        setOneOnOneHomeError(consumed ? message : `${reason}\n${message}`);
       } finally {
         oneOnOneRefreshLocksRef.current.delete(sourceCardId);
-        setRefreshingOneOnOneRecommendationIds((prev) => prev.filter((id) => id !== sourceCardId));
+        if (started) setRefreshingOneOnOneRecommendationIds((prev) => prev.filter((id) => id !== sourceCardId));
       }
     },
-    [reloadOneOnOneHome, oneOnOneHome]
+    [reloadOneOnOneHome, oneOnOneHome, confirmOneOnOneRefresh]
   );
 
   const openReelsApply = useCallback(
@@ -2945,6 +2953,7 @@ function OpenCardsContent() {
   );
   return (
     <main className="mx-auto max-w-5xl px-3 py-4 md:px-6 md:py-7">
+      {refreshConfirmationDialog}
       <DatingAdultNotice />
       <section aria-label="매칭 서비스 선택" className="sticky top-[64px] z-30 mb-3 rounded-xl border border-neutral-200 bg-white/95 p-1 shadow-[0_6px_18px_rgba(15,23,42,0.06)] backdrop-blur">
         <div className={`grid gap-1 ${visibleHomeFeatureTabs.length >= 4 ? "grid-cols-4" : "grid-cols-3"}`}>
@@ -3499,6 +3508,7 @@ function OpenCardsContent() {
           onContactNudge={handleOneOnOneContactNudge}
           onAutoSelect={handleOneOnOneAutoSelect}
           onRefreshRecommendations={handleOneOnOneRecommendationRefresh}
+          refreshNotice={oneOnOneRefreshNotice}
         />
       ) : null}
 
@@ -3703,6 +3713,7 @@ function OpenCardsContent() {
 }
 
 function OneOnOneHomePanel({
+  refreshNotice,
   onReported,
   onReload,
   arrivedFromOnboarding,
@@ -3745,6 +3756,7 @@ function OneOnOneHomePanel({
   onContactNudge: (matchId: string, presetKey: OneOnOneContactNudgePresetKey) => void;
   onAutoSelect: (sourceCardId: string, candidateCardId: string) => void;
   onRefreshRecommendations: (sourceCardId: string) => void;
+  refreshNotice: OneOnOneRefreshNotice | null;
 }) {
   const [plusGuideOpen, setPlusGuideOpen] = useState(false);
   const [matchGuideOpen, setMatchGuideOpen] = useState(false);
@@ -3892,13 +3904,12 @@ function OneOnOneHomePanel({
               </div>
             </details>
 
-            <div className="relative overflow-hidden rounded-[22px] border border-neutral-200 bg-neutral-50 p-4 shadow-none">
+            {plusActive && data?.plus?.expires_at ? <OneOnOnePlusStatus expiresAt={data.plus.expires_at} contactExchangeIncluded={plusContactExchangeIncluded} /> : <div className="relative overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 p-4 shadow-none">
               <div aria-hidden="true" className="absolute inset-x-10 top-0 h-px bg-transparent" />
               <div className="relative flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <span className="shrink-0 whitespace-nowrap rounded-full border border-neutral-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-neutral-700">PLUS</span>
-                    <span className="shrink-0 whitespace-nowrap rounded-full bg-neutral-200 px-2 py-0.5 text-[10px] font-medium text-neutral-600">개편</span>
                     <p className="text-sm font-semibold text-neutral-900">1:1 매칭 플러스</p>
                   </div>
                   <p className="mt-2 text-xs leading-5 text-neutral-600">
@@ -3939,9 +3950,9 @@ function OneOnOneHomePanel({
                   />
                 </div>
               ) : null}
-            </div>
+            </div>}
 
-            <div className="rounded-[26px] border border-neutral-200 bg-white p-4 shadow-none">
+            <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-none">
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-base font-bold text-neutral-900">진행 중인 매칭</p>
@@ -4002,7 +4013,6 @@ function OneOnOneHomePanel({
                     const adminRecommendations = group.admin_recommendations ?? [];
                     const refreshing = refreshingRecommendationIds.includes(sourceCardId);
                     const canRefresh = Boolean(sourceCardId && group.can_refresh);
-                    const refreshCopy = getOneOnOneRefreshCopy(group);
 
                     return (
                       <div key={sourceCardId || `group-${groupIndex}`} className="rounded-[24px] bg-white p-3 shadow-none">
@@ -4011,21 +4021,11 @@ function OneOnOneHomePanel({
                             <p className="text-sm font-semibold text-neutral-900">
                               {sourceCard ? `${getOneOnOneDisplayName(sourceCard)} 기준 후보` : "추천 후보"}
                             </p>
-                            <p className="mt-1 text-[11px] font-semibold text-neutral-500">
-                              {refreshCopy.summary}
-                            </p>
                           </div>
-                          <button
-                            type="button"
-                            disabled={!canRefresh || refreshing}
-                            onClick={() => onRefreshRecommendations(sourceCardId)}
-                            className="inline-flex min-h-[36px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-semibold text-neutral-700 disabled:cursor-not-allowed disabled:opacity-50 hover:bg-neutral-50"
-                          >
-                            {refreshing ? "새로고침 중..." : refreshCopy.button}
-                          </button>
                         </div>
-                        {refreshCopy.next ? <p className="mt-2 text-xs font-medium leading-5 text-neutral-700">{refreshCopy.next}</p> : null}
-                        <p className="mt-1 text-[11px] leading-5 text-neutral-500">{ONE_ON_ONE_REFRESH_POLICY_COPY}</p>
+                        <OneOnOneRefreshControl usage={group} busy={refreshing} blocked={!canRefresh}
+                          notice={refreshNotice?.sourceCardId === sourceCardId ? refreshNotice : null}
+                          onRequest={() => onRefreshRecommendations(sourceCardId)} />
                         <div className="mt-3 space-y-3">
                           {recommendations.map((candidate) => {
                             const candidateId = String(candidate.id ?? "");
@@ -4038,14 +4038,14 @@ function OneOnOneHomePanel({
                                 reportTarget={{ type: "one_on_one_card", id: candidateId }}
                                 onReported={onReported}
                                 badge="추천"
-                                badgeClassName="bg-rose-100 text-rose-700"
+                                badgeClassName="bg-neutral-100 text-neutral-600"
                                 note="선택하면 상대에게 수락 요청이 전달됩니다."
                               >
                                 <button
                                   type="button"
                                   disabled={!canSelect || processingAutoKeys.includes(actionKey)}
                                   onClick={() => onAutoSelect(sourceCardId, candidateId)}
-                                  className="mt-3 inline-flex min-h-[40px] w-full items-center justify-center rounded-xl bg-rose-600 px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-rose-700"
+                                  className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-[#f0003d] px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-[#d90037]"
                                 >
                                   {processingAutoKeys.includes(actionKey) ? "선택 중..." : "이 후보 선택"}
                                 </button>
@@ -4079,7 +4079,7 @@ function OneOnOneHomePanel({
                                         type="button"
                                         disabled={!canSelect || processingAutoKeys.includes(actionKey)}
                                         onClick={() => onAutoSelect(sourceCardId, candidateId)}
-                                        className="mt-3 inline-flex min-h-[40px] w-full items-center justify-center rounded-xl bg-rose-600 px-4 text-xs font-black text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-rose-700"
+                                        className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-[#f0003d] px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-[#d90037]"
                                       >
                                         {processingAutoKeys.includes(actionKey) ? "선택 중..." : "이 후보 선택"}
                                       </button>

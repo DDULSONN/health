@@ -59,19 +59,21 @@ function fixture(surface, outcome = 'ok', confirmation = true) {
     oneOnOneHome: { recommendations: [{ source_card_id: 'source' }] },
     myOneOnOneAutoRecommendations: [{ source_card_id: 'source' }],
     setRefreshingOneOnOneRecommendationIds: () => {},
-    confirm: () => confirmation, alert: message => state.alerts.push(message),
+    confirmOneOnOneRefresh: async () => confirmation,
+    setOneOnOneRefreshNotice: notice => { if (notice) state.alerts.push(notice.message); },
+    fetchClientJson: async (url, init) => { const response = await post(url, init); return { response, body: await response.json().catch(() => null) }; },
     buildOneOnOneRefreshConfirmation: () => 'CONFIRM',
     buildOneOnOneRefreshSuccess: () => 'SUCCESS',
     reloadOneOnOneHome: reload, reloadOneOnOneRecommendations: reload,
-    fetch: async (_url, init) => {
+  }).fn;
+  async function post(_url, init) {
       assert.equal(init.method, 'POST'); state.posts++;
       await Promise.resolve();
       if (state.outcome === 'lost-post') throw Error('POST response lost');
       if (state.outcome === 'null-post') return Response.json(null);
       if (state.outcome === 'string-ok') return Response.json({ ok: 'true' });
       return Response.json(state.outcome === 'bad-post' ? {} : { ok: true, refresh_remaining: 1 }, { status: state.outcome === 'server-error' ? 503 : 200 });
-    },
-  }).fn;
+  }
   return { state, handler, reload, gate, lock, recovery };
 }
 for (const surface of ['home', 'mypage']) {

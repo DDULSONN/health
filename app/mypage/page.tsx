@@ -12,7 +12,10 @@ import { createClient } from "@/lib/supabase/client";
 import { createLatestRequest } from "@/lib/latest-request";
 import { timeAgo } from "@/lib/community";
 import { formatRemainingToKorean } from "@/lib/dating-open";
-import { buildOneOnOneRefreshConfirmation, buildOneOnOneRefreshSuccess, getOneOnOneRefreshCopy, ONE_ON_ONE_REFRESH_POLICY_COPY, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
+import { buildOneOnOneRefreshSuccess, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
+import OneOnOneRefreshControl, { useOneOnOneRefreshConfirmation, type OneOnOneRefreshNotice } from "@/components/dating/OneOnOneRefreshControl";
+import OneOnOnePlusStatus from "@/components/dating/OneOnOnePlusStatus";
+import { fetchClientJson } from "@/lib/client-json-request";
 import { isOneOnOneRecommendationPayload } from "@/lib/dating-1on1-refresh-response";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
 import { pickLoveFortuneFaceAsset } from "@/lib/love-fortune-face-assets";
@@ -2145,6 +2148,8 @@ export default function MyPage() {
   const oneOnOneRefreshLocksRef = useRef<Set<string>>(new Set());
   const oneOnOneRefreshNeedsReloadRef = useRef(false);
   const [oneOnOneRefreshReadError, setOneOnOneRefreshReadError] = useState("");
+  const { confirmOneOnOneRefresh, refreshConfirmationDialog } = useOneOnOneRefreshConfirmation();
+  const [oneOnOneRefreshNotice, setOneOnOneRefreshNotice] = useState<OneOnOneRefreshNotice | null>(null);
   const [openCardWriteEnabled, setOpenCardWriteEnabled] = useState(true);
   const [openCardWriteSaving, setOpenCardWriteSaving] = useState(false);
   const [openCardHomeSubtitle, setOpenCardHomeSubtitle] = useState(DEFAULT_OPEN_CARD_HOME_SUBTITLE);
@@ -5470,42 +5475,39 @@ export default function MyPage() {
   const handleRefreshOneOnOneRecommendations = async (sourceCardId: string) => {
     if (!sourceCardId || oneOnOneRefreshLocksRef.current.has(sourceCardId) || oneOnOneRefreshNeedsReloadRef.current || oneOnOneRefreshReadError) return;
     const recommendationGroup = myOneOnOneAutoRecommendations.find((group) => group.source_card_id === sourceCardId);
-    if (!confirm(buildOneOnOneRefreshConfirmation(recommendationGroup))) return;
-
     oneOnOneRefreshLocksRef.current.add(sourceCardId);
-    setRefreshingOneOnOneRecommendationIds((prev) => [...prev, sourceCardId]);
     let consumed = false;
+    let started = false;
     try {
-      const res = await fetch("/api/dating/1on1/recommendations/refresh", {
+      if (!await confirmOneOnOneRefresh(recommendationGroup)) return;
+      started = true;
+      setOneOnOneRefreshNotice(null);
+      setRefreshingOneOnOneRecommendationIds((prev) => [...prev, sourceCardId]);
+      const { response: res, body } = await fetchClientJson<OneOnOneRefreshUsage & { ok?: boolean; error?: string; request_id?: string }>("/api/dating/1on1/recommendations/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ source_card_id: sourceCardId }),
-      });
-      const body = (await res.json().catch(() => ({}))) as OneOnOneRefreshUsage & {
-        ok?: boolean;
-        error?: string;
-        request_id?: string;
-      };
+      }, 30_000);
       if (res.status >= 500 || (res.ok && body?.ok !== true)) throw new Error("새로고침 처리 결과를 확인하지 못했어요.");
       if (!res.ok || body?.ok !== true) {
         const message = body?.error ?? "자동 추천 후보를 새로고침하지 못했습니다.";
-        alert(body?.request_id ? `${message}\n문의 코드: ${body.request_id}` : message);
+        setOneOnOneRefreshNotice({ sourceCardId, kind: "error", message: body?.request_id ? `${message}\n문의 코드: ${body.request_id}` : message });
         return;
       }
 
       consumed = true;
       await reloadOneOnOneRecommendations(true, true);
-      alert(buildOneOnOneRefreshSuccess(body));
+      setOneOnOneRefreshNotice({ sourceCardId, kind: "success", message: buildOneOnOneRefreshSuccess(body) });
     } catch (e) {
       oneOnOneRefreshNeedsReloadRef.current = true;
       const message = consumed
         ? "새로고침 1회는 처리됐지만 새 후보 명단을 불러오지 못했어요. '명단 다시 불러오기'로 확인해 주세요. 추가 횟수는 사용되지 않아요."
         : "새로고침 상태를 확인하지 못했어요. 다시 새로고침하지 말고 명단을 불러와 사용 횟수와 후보를 먼저 확인해 주세요.";
-      setOneOnOneRefreshReadError(message);
-      alert(consumed ? message : `${e instanceof Error ? e.message : "네트워크 오류"}\n${message}`);
+      const reason = e instanceof Error && e.name !== "AbortError" ? e.message : "연결이 지연되었거나 끊겼어요.";
+      setOneOnOneRefreshReadError(consumed ? message : `${reason}\n${message}`);
     } finally {
       oneOnOneRefreshLocksRef.current.delete(sourceCardId);
-      setRefreshingOneOnOneRecommendationIds((prev) => prev.filter((id) => id !== sourceCardId));
+      if (started) setRefreshingOneOnOneRecommendationIds((prev) => prev.filter((id) => id !== sourceCardId));
     }
   };
 
@@ -8072,6 +8074,7 @@ export default function MyPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 pt-8 pb-[calc(120px+env(safe-area-inset-bottom))] md:pb-10">
+      {refreshConfirmationDialog}
       {datingUserReportDraft && (
         <DatingReportDialog
           targetType={datingUserReportDraft.targetType}
@@ -9982,7 +9985,6 @@ export default function MyPage() {
               const autoRecommendations = autoRecommendationGroup?.recommendations ?? [];
               const adminAutoRecommendations = autoRecommendationGroup?.admin_recommendations ?? [];
               const canRefreshAutoRecommendations = autoRecommendationGroup?.can_refresh === true;
-              const autoRecommendationRefreshCopy = getOneOnOneRefreshCopy(autoRecommendationGroup);
               const refreshingAutoRecommendations = refreshingOneOnOneRecommendationIds.includes(item.id);
               const incomingCandidates = relatedMatches.filter((match) => match.role === "source" && match.state === "proposed");
               const waitingCandidateResponses = relatedMatches.filter(
@@ -10133,14 +10135,12 @@ export default function MyPage() {
                     </div>
                   )}
 
-                  {canBuyPriorityBoost && (
-                    <div className="relative mt-3 overflow-hidden rounded-xl border border-amber-300 bg-[#fffaf0] p-4 shadow-[0_10px_30px_rgba(161,111,18,0.14)]">
-                      <div aria-hidden="true" className="absolute inset-x-10 top-0 h-px bg-amber-200" />
+                  {canBuyPriorityBoost && (priorityBoostActive && item.plus_expires_at ? <OneOnOnePlusStatus expiresAt={item.plus_expires_at} contactExchangeIncluded={plusContactExchangeIncluded} /> : (
+                    <div className="relative mt-3 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 p-4">
                       <div className="relative flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0">
                           <div className="flex items-center gap-2">
-                            <span className="rounded-full border border-amber-300 bg-white px-2 py-0.5 text-[10px] font-bold text-amber-800">PLUS</span>
-                            <span className="rounded-full bg-amber-200 px-2 py-0.5 text-[10px] font-black text-amber-900">개편</span>
+                            <span className="rounded-md border border-neutral-200 bg-white px-2 py-0.5 text-[10px] font-bold text-neutral-700">PLUS</span>
                             <p className="text-sm font-bold text-neutral-950">1:1 매칭 플러스</p>
                           </div>
                           <p className="mt-2 text-xs leading-5 text-neutral-600">
@@ -10166,14 +10166,14 @@ export default function MyPage() {
                             type="button"
                             disabled={priorityBoostSubmitting}
                             onClick={() => setOneOnOnePriorityDetailCardId((prev) => (prev === item.id ? null : item.id))}
-                            className="h-9 shrink-0 rounded-full bg-[#8a5d0a] px-4 text-xs font-bold text-white shadow-[0_6px_18px_rgba(138,93,10,0.25)] transition hover:bg-[#704a06] disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500 disabled:shadow-none"
+                            className="min-h-[44px] shrink-0 rounded-xl bg-neutral-900 px-4 text-xs font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500"
                           >
                             {priorityBoostSubmitting ? "결제 준비 중..." : priorityBoostDetailOpen ? "혜택 닫기" : "혜택 보기"}
                           </button>
                         )}
                       </div>
                       {!priorityBoostActive && priorityBoostDetailOpen && (
-                        <div className="relative mt-4 border-t border-amber-200 pt-4">
+                        <div className="relative mt-4 border-t border-neutral-200 pt-4">
                           <p className="mb-3 text-xs leading-5 text-neutral-600">7일권으로 먼저 써보거나, 빠른매칭까지 묶어서 시작할 수 있어요.</p>
                           <DatingPlusOffers
                             mode="one_on_one"
@@ -10183,10 +10183,10 @@ export default function MyPage() {
                         </div>
                       )}
                     </div>
-                  )}
+                  ))}
 
                   {["submitted", "reviewing", "approved"].includes(item.status) && (
-                      <div className="mt-3 rounded-xl border border-pink-200 bg-pink-50/50 p-3">
+                      <div className="mt-3 rounded-xl border border-neutral-200 bg-white p-3">
                         {oneOnOneRefreshReadError ? <div role="alert" className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                           <p>{oneOnOneRefreshReadError}</p>
                           <button type="button" className="mt-2 min-h-[44px] rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700"
@@ -10196,35 +10196,23 @@ export default function MyPage() {
                         </div> : null}
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>
-                            <p className="text-sm font-semibold text-pink-900">자동 추천 후보 최대 10명</p>
-                            <p className="mt-1 text-xs text-pink-700">
+                            <p className="text-sm font-semibold text-neutral-900">추천 후보</p>
+                            <p className="mt-1 text-xs leading-5 text-neutral-500">
                               나이와 가까운 지역을 고려해 추천해요. 조건이 비슷하면 최근 1:1 활동이 있는 회원을 먼저 보여줘요.
                             </p>
                           </div>
-                          <button
-                            type="button"
-                            onClick={() => void handleRefreshOneOnOneRecommendations(item.id)}
-                            disabled={!canRefreshAutoRecommendations || refreshingAutoRecommendations || Boolean(oneOnOneRefreshReadError)}
-                            className="inline-flex h-8 shrink-0 items-center rounded-md border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700 disabled:cursor-not-allowed disabled:opacity-50"
-                          >
-                            {refreshingAutoRecommendations
-                              ? "새로고침 중..."
-                              : autoRecommendationRefreshCopy.button}
-                          </button>
                         </div>
-                        <p className="mt-1 text-xs text-pink-700">
-                          이 리스트 외에도 추가 후보를 확인할 수 있어요. 마음에 드는 후보는 여러 명 선택할 수 있고, 선택된 사람마다 수락 요청이 전달됩니다.
-                        </p>
-                        <p className="mt-2 text-xs leading-5 text-pink-700">{autoRecommendationRefreshCopy.summary}</p>
-                        {autoRecommendationRefreshCopy.next ? <p className="mt-1 text-xs font-medium leading-5 text-pink-700">{autoRecommendationRefreshCopy.next}</p> : null}
-                        <p className="mt-1 text-[11px] leading-5 text-neutral-500">{ONE_ON_ONE_REFRESH_POLICY_COPY}</p>
+                        <OneOnOneRefreshControl usage={autoRecommendationGroup} busy={refreshingAutoRecommendations}
+                          blocked={!canRefreshAutoRecommendations || Boolean(oneOnOneRefreshReadError)}
+                          notice={oneOnOneRefreshNotice?.sourceCardId === item.id ? oneOnOneRefreshNotice : null}
+                          onRequest={() => void handleRefreshOneOnOneRecommendations(item.id)} />
                         {favoriteCandidates.length > 0 && (
-                          <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/70 p-3">
+                          <div className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
                             <div className="flex items-center justify-between gap-2">
-                              <p className="text-sm font-semibold text-amber-950">찜한 후보 {favoriteCandidates.length}명</p>
-                              <span className="text-[11px] font-medium text-amber-700">최대 10명</span>
+                              <p className="text-sm font-semibold text-neutral-900">찜한 후보 {favoriteCandidates.length}명</p>
+                              <span className="text-[11px] font-medium text-neutral-500">최대 10명</span>
                             </div>
-                            <p className="mt-1 text-[11px] leading-5 text-amber-800">
+                            <p className="mt-1 text-[11px] leading-5 text-neutral-500">
                               찜은 상대에게 알려지지 않으며 예약을 보장하지 않아요. 선택할 때 현재 상태를 다시 확인합니다.
                             </p>
                             <div className="mt-3 space-y-2">
@@ -10233,7 +10221,7 @@ export default function MyPage() {
                                 const selecting = processingOneOnOneAutoKeys.includes(actionKey);
                                 const saving = processingOneOnOneFavoriteKeys.includes(actionKey);
                                 return (
-                                  <div key={`${item.id}-favorite-${card.id}`} className="rounded-lg border border-amber-200 bg-white p-3">
+                                  <div key={`${item.id}-favorite-${card.id}`} className="rounded-xl border border-neutral-200 bg-white p-3">
                                     <div className="flex items-center justify-between gap-2">
                                       <p className="text-sm font-medium text-neutral-900">
                                         {card.name} / {card.age ?? "-"}세 / {card.region}
@@ -10264,7 +10252,7 @@ export default function MyPage() {
                                         type="button"
                                         disabled={selecting || saving}
                                         onClick={() => void handleOneOnOneAutoRecommendationSelect(item.id, card.id)}
-                                        className="inline-flex h-8 items-center rounded-md bg-pink-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                                        className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-3 text-xs font-semibold text-white hover:bg-[#d90037] disabled:opacity-50"
                                       >
                                         {selecting ? "처리 중..." : "이 후보 선택"}
                                       </button>
@@ -10272,7 +10260,7 @@ export default function MyPage() {
                                         type="button"
                                         disabled={selecting || saving}
                                         onClick={() => void handleToggleOneOnOneFavorite(item.id, card.id, true)}
-                                        className="inline-flex h-8 items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-800 disabled:opacity-50"
+                                        className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 disabled:opacity-50"
                                       >
                                         {saving ? "처리 중..." : "찜 해제"}
                                       </button>
@@ -10288,7 +10276,7 @@ export default function MyPage() {
                           </div>
                         )}
                         {favoriteCandidates.length === 0 && autoRecommendations.length === 0 && adminAutoRecommendations.length === 0 ? (
-                        <div className="mt-3 rounded-lg border border-dashed border-pink-200 bg-white p-3 text-sm text-neutral-500">
+                        <div className="mt-3 rounded-xl border border-dashed border-neutral-200 bg-white p-3 text-sm text-neutral-500">
                           지금 바로 보여줄 자동 추천 후보가 없어요. 이미 진행 중인 매칭이 있거나, 조건에 맞는 후보가 새로 잡히면 여기서 보여드릴게요.
                         </div>
                       ) : (
@@ -10297,12 +10285,12 @@ export default function MyPage() {
                             const actionKey = `${item.id}:${card.id}`;
                             const processing = processingOneOnOneAutoKeys.includes(actionKey);
                             return (
-                              <div key={`${item.id}-${card.id}`} className="rounded-lg border border-pink-200 bg-white p-3">
+                              <div key={`${item.id}-${card.id}`} className="rounded-xl border border-neutral-200 bg-white p-3">
                                 <div className="flex items-center justify-between gap-2">
                                   <p className="text-sm font-medium text-neutral-900">
                                     {card.name} / {card.age ?? "-"}세 / {card.region}
                                   </p>
-                                  <span className="inline-flex rounded-full bg-pink-100 px-2 py-0.5 text-[11px] font-medium text-pink-700">
+                                  <span className="inline-flex shrink-0 whitespace-nowrap rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
                                     자동 추천
                                   </span>
                                 </div>
@@ -10330,7 +10318,7 @@ export default function MyPage() {
                                     type="button"
                                     disabled={processing}
                                     onClick={() => void handleOneOnOneAutoRecommendationSelect(item.id, card.id)}
-                                    className="inline-flex h-8 items-center rounded-md bg-pink-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                                    className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-3 text-xs font-semibold text-white hover:bg-[#d90037] disabled:opacity-50"
                                   >
                                     {processing ? "처리 중..." : "이 후보 선택"}
                                   </button>
@@ -10338,7 +10326,7 @@ export default function MyPage() {
                                     type="button"
                                     disabled={processing || processingOneOnOneFavoriteKeys.includes(actionKey)}
                                     onClick={() => void handleToggleOneOnOneFavorite(item.id, card.id, false)}
-                                    className="inline-flex h-8 items-center rounded-md border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700 disabled:opacity-50"
+                                    className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 disabled:opacity-50"
                                   >
                                     {processingOneOnOneFavoriteKeys.includes(actionKey) ? "저장 중..." : "♡ 찜"}
                                   </button>
@@ -10351,11 +10339,11 @@ export default function MyPage() {
                             );
                           })}
                           {adminAutoRecommendations.length > 0 && (
-                            <div className="rounded-lg border border-emerald-200 bg-emerald-50/70 p-3">
-                              <p className="text-sm font-semibold text-emerald-900">
+                            <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+                              <p className="text-sm font-semibold text-neutral-900">
                                 오늘의 추가 후보 {adminAutoRecommendations.length}명
                               </p>
-                              <p className="mt-1 text-xs text-emerald-700">
+                              <p className="mt-1 text-xs leading-5 text-neutral-500">
                                 기본 추천과 겹치지 않는 나이대 맞춤 후보를 최대 3명까지 보여줘요. 매일 다시 선정하며, 후보가 적으면 전날과 같을 수 있어요.
                               </p>
                               <div className="mt-3 space-y-2">
@@ -10363,12 +10351,12 @@ export default function MyPage() {
                                   const actionKey = `${item.id}:${card.id}`;
                                   const processing = processingOneOnOneAutoKeys.includes(actionKey);
                                   return (
-                                    <div key={`${item.id}-admin-${card.id}`} className="rounded-lg border border-emerald-200 bg-white p-3">
+                                    <div key={`${item.id}-admin-${card.id}`} className="rounded-xl border border-neutral-200 bg-white p-3">
                                       <div className="flex items-center justify-between gap-2">
                                         <p className="text-sm font-medium text-neutral-900">
                                           {card.name} / {card.age ?? "-"}세 / {card.region}
                                         </p>
-                                        <span className="inline-flex rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-medium text-emerald-700">
+                                        <span className="inline-flex shrink-0 whitespace-nowrap rounded-full bg-neutral-100 px-2 py-0.5 text-[11px] font-medium text-neutral-600">
                                           추가 후보
                                         </span>
                                       </div>
@@ -10396,7 +10384,7 @@ export default function MyPage() {
                                           type="button"
                                           disabled={processing}
                                           onClick={() => void handleOneOnOneAutoRecommendationSelect(item.id, card.id)}
-                                          className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                                          className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-3 text-xs font-semibold text-white hover:bg-[#d90037] disabled:opacity-50"
                                         >
                                           {processing ? "처리 중..." : "이 후보 선택"}
                                         </button>
@@ -10404,7 +10392,7 @@ export default function MyPage() {
                                           type="button"
                                           disabled={processing || processingOneOnOneFavoriteKeys.includes(actionKey)}
                                           onClick={() => void handleToggleOneOnOneFavorite(item.id, card.id, false)}
-                                          className="inline-flex h-8 items-center rounded-md border border-emerald-300 bg-white px-3 text-xs font-medium text-emerald-700 disabled:opacity-50"
+                                          className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 disabled:opacity-50"
                                         >
                                           {processingOneOnOneFavoriteKeys.includes(actionKey) ? "저장 중..." : "♡ 찜"}
                                         </button>

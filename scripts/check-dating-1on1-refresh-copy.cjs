@@ -84,20 +84,23 @@ function handler(kind, options = {}) {
     refreshingOneOnOneRecommendationIds: pending,
     oneOnOneRefreshLocksRef: { current: new Set(pending) }, oneOnOneRefreshReadError: '',
     oneOnOneRefreshNeedsReloadRef: { current: false },
-    setOneOnOneHomeError() {}, setOneOnOneRefreshReadError() {},
+    setOneOnOneHomeError: message => { if (message) alerts.push(message); },
+    setOneOnOneRefreshReadError: message => { if (message) alerts.push(message); },
     oneOnOneHome: { recommendations: [usage] }, myOneOnOneAutoRecommendations: [usage],
     setRefreshingOneOnOneRecommendationIds: update => { pending = update(pending); states.push([...pending]); },
-    confirm: message => { confirmations.push(message); return options.confirm !== false; },
-    alert: message => alerts.push(message),
+    confirmOneOnOneRefresh: async usage => { confirmations.push(copy.buildOneOnOneRefreshConfirmation(usage)); return options.confirm !== false; },
+    setOneOnOneRefreshNotice: notice => { if (notice) alerts.push(notice.message); },
     reloadOneOnOneHome: async () => calls.push('reload'),
     reloadOneOnOneRecommendations: async () => calls.push('reload'),
-    fetch: async (url, init) => {
+    fetchClientJson: async (url, init, timeout) => {
+      assert.equal(timeout, 30000);
       calls.push('post');
       assert.equal(url, '/api/dating/1on1/recommendations/refresh');
       assert.equal(init.method, 'POST');
       assert.deepEqual(JSON.parse(init.body), { source_card_id: 'fixture-card' });
       if (options.networkError) throw new Error('fixture network failure');
-      return Response.json(options.body ?? { ok: true, ...quota(0) }, { status: options.status ?? 200 });
+      const body = options.body ?? { ok: true, ...quota(0) };
+      return { response: Response.json(body, { status: options.status ?? 200 }), body };
     },
   };
   const run = evaluate('exports.run = ' + fn.getText(ast(file)) + ';', bindings).run;
@@ -149,32 +152,81 @@ for (const remaining of [0, 1, 2]) test(`real home result markup shows ${remaini
   const call = find(source, n => ts.isCallExpression(n) && n.expression.getText(source) === 'recommendationGroups.map');
   const render = evaluate('exports.render = ' + call.arguments[0].getText(source) + ';', {
     ...copy, activeCards: [], refreshingRecommendationIds: [], onRefreshRecommendations() {},
+    OneOnOneRefreshControl: 'RefreshControl', refreshNotice: null,
   }).render;
   const tree = render({ ...quota(remaining), recommendations: [], admin_recommendations: [] }, 0);
-  const button = nodes(tree).find(n => n.type === 'button');
-  assert.equal(button.props.disabled, remaining === 0);
-  assert.match(text(tree), new RegExp(`2회 중 ${remaining}회`));
-  assert.ok(text(tree).includes(copy.ONE_ON_ONE_REFRESH_POLICY_COPY));
-  if (remaining === 0) assert.match(text(tree), /오후 11:56:36/);
+  const control = nodes(tree).find(n => n.type === 'RefreshControl');
+  assert.equal(control.props.blocked, remaining === 0);
+  assert.equal(control.props.usage.refresh_remaining, remaining);
+  assert.equal(control.props.busy, false);
 });
 for (const remaining of [0, 1]) test(`real mypage refresh button preserves availability ${remaining}`, () => {
   const source = ast(myFile);
-  const node = find(source, n => ts.isJsxElement(n) && n.openingElement.tagName.getText() === 'button'
+  const node = find(source, n => ts.isJsxSelfClosingElement(n) && n.tagName.getText() === 'OneOnOneRefreshControl'
     && n.getText(source).includes('handleRefreshOneOnOneRecommendations(item.id)'));
   const tree = evaluate('exports.tree = ' + node.getText(source) + ';', {
     item: { id: 'fixture-card' }, handleRefreshOneOnOneRecommendations() {},
     canRefreshAutoRecommendations: remaining > 0, refreshingAutoRecommendations: false,
     oneOnOneRefreshReadError: '',
-    autoRecommendationRefreshCopy: copy.getOneOnOneRefreshCopy(quota(remaining)),
+    OneOnOneRefreshControl: 'RefreshControl', autoRecommendationGroup: quota(remaining), oneOnOneRefreshNotice: null,
   }).tree;
-  assert.equal(tree.props.disabled, remaining === 0);
-  assert.equal(text(tree), copy.getOneOnOneRefreshCopy(quota(remaining)).button);
+  assert.equal(tree.props.blocked, remaining === 0);
+  assert.equal(tree.props.usage.refresh_remaining, remaining);
 });
 test('all affected customer copy drops ambiguous calendar-day/completion wording', () => {
   for (const file of [homeFile, myFile, 'components/dating/DatingPlusOffers.tsx']) {
     const source = read(file);
     assert.ok(!source.includes('24시간 이용 완료'));
     assert.ok(!source.includes('후보 새로고침 하루 2회'));
-    assert.ok(source.includes('ONE_ON_ONE_REFRESH_POLICY_COPY'));
   }
+  assert.ok(read('components/dating/OneOnOneRefreshControl.tsx').includes('ONE_ON_ONE_REFRESH_POLICY_COPY'));
+});
+
+const controlSource = ast('components/dating/OneOnOneRefreshControl.tsx');
+const controlFn = find(controlSource, n => ts.isFunctionDeclaration(n) && n.name?.text === 'OneOnOneRefreshControl');
+const renderControl = evaluate('exports.render = ' + controlFn.getText(controlSource).replace('export default ', '') + ';', copy).render;
+for (const remaining of [0, 1, 2]) test(`shared refresh control preserves quota, 44px target and policy: ${remaining}`, () => {
+  const tree = renderControl({ usage: quota(remaining), busy: false, onRequest() {} });
+  const button = nodes(tree).find(n => n.type === 'button');
+  assert.equal(button.props.disabled, remaining === 0);
+  assert.ok(button.props.className.includes('min-h-[44px]'));
+  assert.match(text(tree), new RegExp(`${remaining}회 남음`));
+  assert.ok(text(tree).includes(copy.ONE_ON_ONE_REFRESH_POLICY_COPY));
+  assert.equal(nodes(tree).find(n => n.type === 'details').props.open, undefined);
+  if (remaining === 0) assert.match(text(tree), /오후 11:56:36/);
+  assert.equal(nodes(renderControl({ usage: quota(remaining), busy: true, onRequest() {} })).find(n => n.type === 'button').props.disabled, true);
+  assert.equal(nodes(renderControl({ usage: quota(remaining), blocked: true, busy: false, onRequest() {} })).find(n => n.type === 'button').props.disabled, true);
+});
+test('unknown quota stays disabled; inline failure is an alert and success is a status', () => {
+  assert.equal(nodes(renderControl({ busy: false, onRequest() {} })).find(n => n.type === 'button').props.disabled, true);
+  for (const [kind, role] of [['error', 'alert'], ['success', 'status']]) {
+    const tree = renderControl({ usage: quota(1), busy: false, notice: { kind, message: '한글 안내' }, onRequest() {} });
+    assert.equal(nodes(tree).find(n => n.props?.role === role).props.children, '한글 안내');
+  }
+});
+const plus = evaluate(read('components/dating/OneOnOnePlusStatus.tsx')).default;
+test('compact Plus stays collapsed, formats KST expiry and preserves legacy exchange entitlement', () => {
+  for (const included of [true, false]) {
+    const tree = plus({ expiresAt: '2026-10-03T18:42:08.92441+00:00', contactExchangeIncluded: included });
+    assert.equal(tree.type, 'details'); assert.equal(tree.props.open, undefined);
+    assert.match(text(tree), /10\. 4\./);
+    assert.match(text(tree), /(?:0?3:42:08|3시 42분 8초)/);
+    assert.ok(text(tree).includes(included ? '번호교환이 포함' : '번호교환은 별도로'));
+  }
+  assert.ok(!text(plus({ expiresAt: 'invalid', contactExchangeIncluded: false })).includes('Invalid Date'));
+});
+
+test('confirmation hook rejects a second prompt and safely cancels a pending request on unmount', async () => {
+  const hook = find(controlSource, n => ts.isFunctionDeclaration(n) && n.name?.text === 'useOneOnOneRefreshConfirmation');
+  const cleanups = [];
+  const run = evaluate('exports.run = ' + hook.getText(controlSource).replace('export ', '') + ';', {
+    ...copy, useState: () => [null, () => {}], useRef: value => ({ current: value }), useId: () => 'fixture-id',
+    useCallback: fn => fn, useEffect: fn => { const cleanup = fn(); if (cleanup) cleanups.push(cleanup); },
+  }).run;
+  const result = run();
+  const first = result.confirmOneOnOneRefresh(quota(2));
+  assert.equal(await result.confirmOneOnOneRefresh(quota(2)), false);
+  cleanups.forEach(cleanup => cleanup());
+  assert.equal(await first, false);
+  cleanups.forEach(cleanup => cleanup()); // repeated cleanup cannot accept or consume
 });
