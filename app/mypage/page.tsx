@@ -42,6 +42,7 @@ const AdminCertReviewPanel = dynamic(() => import("@/components/AdminCertReviewP
 });
 
 const AdminTodayPaymentSummary = dynamic(() => import("@/components/admin/AdminTodayPaymentSummary"));
+const AdminUserContactExchangesPanel = dynamic(() => import("@/components/admin/AdminUserContactExchangesPanel"));
 const AdminOnboardingFunnelPanel = dynamic(() => import("@/components/admin/AdminOnboardingFunnelPanel"));
 
 const DatingPlusOffers = dynamic(() => import("@/components/dating/DatingPlusOffers"));
@@ -14363,6 +14364,26 @@ export default function MyPage() {
                       openCards={adminUserActivityResult.details?.open_cards ?? []}
                       oneOnOneCards={adminUserActivityResult.details?.one_on_one_cards ?? []}
                       onChanged={handleAdminLoadUserActivity}
+                    />
+                  ) : null}
+
+                  {adminUserActivityResult.user ? (
+                    <AdminUserContactExchangesPanel
+                      userId={adminUserActivityResult.user.id}
+                      onClosed={(matchId) => {
+                        const viewedUserId = adminUserActivityResult.user?.id;
+                        setAdminUserActivityResult(current => {
+                          if (!current?.details || current.user?.id !== viewedUserId) return current;
+                          const closed = { state: "admin_canceled", contact_exchange_status: "canceled" };
+                          return { ...current, details: { ...current.details,
+                            one_on_one_matches: (current.details.one_on_one_matches ?? []).map(match => match.id === matchId ? { ...match, ...closed } : match),
+                            payments: (current.details.payments ?? []).map(order => {
+                              const match = order.one_on_one_match as Record<string, unknown> | undefined;
+                              return match?.id === matchId ? { ...order, one_on_one_match: { ...match, ...closed } } : order;
+                            }),
+                          } };
+                        });
+                      }}
                     />
                   ) : null}
 

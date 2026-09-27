@@ -3,6 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "check:admin-contact-exchanges": "node --test scripts/check-admin-contact-exchanges.cjs",
+    "check:admin-contact-exchanges-browser": "node scripts/check-admin-contact-exchanges-browser.cjs",
     "check:chat-profile-history": "node --test scripts/check-chat-profile-history.cjs",
     "check:chat-notification-safety": "node --test scripts/check-chat-notification-safety.cjs",
     "check:chat-notification-browser": "node scripts/check-chat-notification-browser.cjs",
