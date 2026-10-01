@@ -1,0 +1,46 @@
+name: Critical regression
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: critical-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  critical-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      CI: "true"
+      NEXT_TELEMETRY_DISABLED: "1"
+      TMPDIR: ${{ runner.temp }}
+      NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: test-only-not-a-production-key
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      # npm prebuild runs the offline unit/SQL gate before compilation.
+      - run: npm run build
+      # Browser failures also need this job required in branch protection/deployment checks.
+      # The Vercel prebuild gate independently enforces the offline unit/SQL checks.
+      - run: npm run check:critical-browser
+      - name: WebKit mobile photo interactions (not a real iPhone codec test)
+        run: npm run check:photos-browser
+        env:
+          TEST_BROWSER: webkit
+      - name: Save isolated fixture screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: critical-regression-screenshots
+          path: ${{ runner.temp }}/gymtools-*/*.png
+          if-no-files-found: ignore
+          retention-days: 7

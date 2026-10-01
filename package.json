@@ -3,6 +3,11 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
+    "check:critical": "node scripts/check-critical.cjs",
+    "check:critical-browser": "node scripts/check-critical.cjs --browser",
+    "check:photos": "node --test scripts/check-dating-photo-preparation.cjs",
+    "check:photos-browser": "node scripts/check-dating-photo-browser.cjs",
+    "prebuild": "npm run check:critical",
     "check:admin-contact-exchanges": "node --test scripts/check-admin-contact-exchanges.cjs",
     "check:admin-contact-exchanges-browser": "node scripts/check-admin-contact-exchanges-browser.cjs",
     "check:chat-profile-history": "node --test scripts/check-chat-profile-history.cjs",
@@ -61,6 +66,8 @@
     "solapi": "^6.0.1"
   },
   "devDependencies": {
+    "@electric-sql/pglite": "0.5.8",
+    "playwright": "1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/qrcode": "^1.5.6",

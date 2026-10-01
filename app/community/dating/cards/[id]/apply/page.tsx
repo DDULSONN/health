@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
+import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
+import PhotoPreparationStatus from "@/components/dating/PhotoPreparationStatus";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import { saveApplyCheckoutDraft, readApplyCheckoutDraft, clearApplyCheckoutDraft } from "@/lib/dating-apply-draft";
@@ -98,8 +101,11 @@ export default function DatingCardApplyPage() {
   const [instagramId, setInstagramId] = useState("");
   const [consent, setConsent] = useState(false);
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
+  const photoPreparation = useDatingPhotoPreparation(MAX_FILE_SIZE);
 
   const fillFromLatestApplication = (item: LatestApplicationPrefill) => {
+    photoPreparation.cancel(0);
+    photoPreparation.cancel(1);
     uploadedPathsRef.current = item.photo_paths;
     setAge(item.age ? String(item.age) : "");
     setHeightCm(item.height_cm ? String(item.height_cm) : "");
@@ -187,9 +193,7 @@ export default function DatingCardApplyPage() {
 
   const handlePhotoChange = (index: number, file: File | null) => {
     uploadedPathsRef.current = [];
-    const next = [...photos];
-    next[index] = file;
-    setPhotos(next);
+    setPhotos(current => current.map((photo, slot) => slot === index ? file : photo));
     if (file) {
       setReuseLastPhotos(false);
     }
@@ -202,6 +206,7 @@ export default function DatingCardApplyPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (photoPreparation.isProcessing()) { setError(PHOTO_PROCESSING_MESSAGE); return; }
     if (submitting || creditCheckoutInFlightRef.current) return;
     setError("");
     setErrorCode("");
@@ -446,6 +451,8 @@ export default function DatingCardApplyPage() {
                 <button
                   type="button"
                   onClick={() => {
+                    photoPreparation.cancel(0);
+                    photoPreparation.cancel(1);
                     setReuseLastPhotos(true);
                     setPhotos([null, null]);
                   }}
@@ -494,14 +501,26 @@ export default function DatingCardApplyPage() {
         </Field>
 
         <Field label="지원 사진 1" required={!reuseLastPhotos}>
-          <input type="file" accept="image/jpeg,image/png,image/webp" required={!reuseLastPhotos} onChange={(e) => handlePhotoChange(0, e.target.files?.[0] ?? null)} />
+          <input type="file" accept={DATING_PHOTO_ACCEPT} disabled={submitting} onChange={(e) => {
+            const file = e.target.files?.[0] ?? null;
+            e.currentTarget.value = "";
+            void photoPreparation.select(0, file, prepared => handlePhotoChange(0, prepared));
+          }} />
+          {photos[0] && <p className="mt-1 break-all text-xs text-neutral-600">선택한 사진: {photos[0].name}</p>}
         </Field>
 
         <Field label="지원 사진 2" required={!reuseLastPhotos}>
-          <input type="file" accept="image/jpeg,image/png,image/webp" required={!reuseLastPhotos} onChange={(e) => handlePhotoChange(1, e.target.files?.[0] ?? null)} />
+          <input type="file" accept={DATING_PHOTO_ACCEPT} disabled={submitting} onChange={(e) => {
+            const file = e.target.files?.[0] ?? null;
+            e.currentTarget.value = "";
+            void photoPreparation.select(1, file, prepared => handlePhotoChange(1, prepared));
+          }} />
+          {photos[1] && <p className="mt-1 break-all text-xs text-neutral-600">선택한 사진: {photos[1].name}</p>}
+          <PhotoPreparationStatus pending={photoPreparation.pending} errors={photoPreparation.errors} />
+          <p className="mt-2 text-xs leading-5 text-neutral-500">{HEIC_HELP}</p>
         </Field>
 
-        <p className="text-xs text-neutral-500">사진은 JPG, PNG, WebP 형식만 가능하며 한 장당 10MB 이하로 업로드해 주세요.</p>
+        <p className="text-xs text-neutral-500">JPG, PNG, WebP, HEIC · 사진당 10MB 이하로 선택해 주세요.</p>
 
         <label className="flex items-start gap-2 text-sm text-neutral-700">
           <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-1" />
@@ -545,7 +564,7 @@ export default function DatingCardApplyPage() {
 
         <button
           type="submit"
-          disabled={submitting || creditRequesting}
+          disabled={submitting || creditRequesting || photoPreparation.busy}
           className="w-full min-h-[46px] rounded-xl bg-pink-500 text-sm font-medium text-white hover:bg-pink-600 disabled:opacity-50"
         >
           {submitting ? "지원 중..." : "지원하기"}

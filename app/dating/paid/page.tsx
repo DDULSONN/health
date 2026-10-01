@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
+import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
+import PhotoPreparationStatus from "@/components/dating/PhotoPreparationStatus";
 import { useEffect, useMemo, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { DATING_PAID_FIXED_BADGE_LABEL, DATING_PAID_FIXED_HOURS, DATING_PAID_FIXED_LABEL, DATING_PAID_FIXED_SHORT_LABEL } from "@/lib/dating-paid";
@@ -174,6 +177,7 @@ export default function DatingPaidPage() {
   const [photoVisibility, setPhotoVisibility] = useState<"blur" | "public">("blur");
   const [displayMode, setDisplayMode] = useState<"priority_24h" | "instant_public">("priority_24h");
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
+  const photoPreparation = useDatingPhotoPreparation(MAX_FILE_SIZE);
   const [previewUrls, setPreviewUrls] = useState<(string | null)[]>([null, null]);
   const [previewFailed, setPreviewFailed] = useState<boolean[]>([false, false]);
   const [existingRawPaths, setExistingRawPaths] = useState<string[]>([]);
@@ -214,6 +218,7 @@ export default function DatingPaidPage() {
   }, [photos]);
 
   const handlePhotoChange = (index: 0 | 1, file: File | null) => {
+    if (!file) photoPreparation.cancel(index);
     setPhotos((prev) => {
       const next = [...prev] as (File | null)[];
       next[index] = file;
@@ -402,6 +407,7 @@ export default function DatingPaidPage() {
   };
 
   const submitPaidRequest = async (requestedSubmitMode: SubmitMode) => {
+    if (photoPreparation.isProcessing()) { setError(PHOTO_PROCESSING_MESSAGE); return; }
     if (submitting) return;
     setSubmitMode(requestedSubmitMode);
     setError("");
@@ -942,10 +948,12 @@ export default function DatingPaidPage() {
                         <input
                           className="mt-3 block w-full text-sm text-neutral-600 file:mr-3 file:rounded-lg file:border-0 file:bg-neutral-900 file:px-3 file:py-2 file:text-sm file:font-semibold file:text-white"
                           type="file"
-                          accept="image/jpeg,image/png,image/webp"
+                          accept={DATING_PHOTO_ACCEPT}
+                          disabled={submitting}
                           onChange={(e) => {
-                            handlePhotoChange(index, e.target.files?.[0] ?? null);
-                            if (isEditMode) e.currentTarget.value = "";
+                            const file = e.target.files?.[0] ?? null;
+                            e.currentTarget.value = "";
+                            void photoPreparation.select(index, file, prepared => handlePhotoChange(index, prepared));
                           }}
                         />
                         {isEditMode && (
@@ -959,7 +967,8 @@ export default function DatingPaidPage() {
                   })}
                 </div>
                 {isEditMode && <p className="rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">새 사진을 선택하지 않은 칸은 화면에 보이는 기존 사진 그대로 유지됩니다.</p>}
-                <p className="text-xs leading-5 text-neutral-500">JPG, PNG, WebP 파일을 장당 12MB 이하로 올려주세요.</p>
+                <PhotoPreparationStatus pending={photoPreparation.pending} errors={photoPreparation.errors} />
+                <p className="text-xs leading-5 text-neutral-500">사진당 12MB 이하. {HEIC_HELP}</p>
               </div>
             )}
 
@@ -1036,11 +1045,11 @@ export default function DatingPaidPage() {
                 </button>
               )}
               {formStep < PAID_FORM_STEPS.length ? (
-                <button type="button" onClick={handleNextFormStep} disabled={editLoading || sourcePrefillLoading} className="h-11 flex-1 rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white disabled:opacity-50">
+                <button type="button" onClick={handleNextFormStep} disabled={editLoading || sourcePrefillLoading || photoPreparation.busy} className="h-11 flex-1 rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white disabled:opacity-50">
                   다음
                 </button>
               ) : (
-                <button type="submit" disabled={submitting || editLoading || sourcePrefillLoading} className="h-11 flex-1 rounded-xl bg-rose-500 px-4 text-sm font-semibold text-white hover:bg-rose-600 disabled:opacity-50">
+                <button type="submit" disabled={submitting || editLoading || sourcePrefillLoading || photoPreparation.busy} className="h-11 flex-1 rounded-xl bg-rose-500 px-4 text-sm font-semibold text-white hover:bg-rose-600 disabled:opacity-50">
                   {submitting && submitMode === "kakaopay" ? "처리 중..." : isEditMode ? "수정 저장" : "10,000원 결제하고 등록"}
                 </button>
               )}
@@ -1049,7 +1058,7 @@ export default function DatingPaidPage() {
             {formStep === PAID_FORM_STEPS.length && !isEditMode && (
               <div className="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-neutral-200 px-3 py-2 text-xs text-neutral-500">
                 <span>온라인 결제가 어려우면 수동 신청도 가능해요.</span>
-                <button type="button" onClick={() => void submitPaidRequest("manual")} disabled={submitting || editLoading} className="min-h-9 rounded-lg border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-700 disabled:opacity-50">
+                <button type="button" onClick={() => void submitPaidRequest("manual")} disabled={submitting || editLoading || photoPreparation.busy} className="min-h-9 rounded-lg border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-700 disabled:opacity-50">
                   {submitting && submitMode === "manual" ? "신청 접수 중..." : "수동 신청"}
                 </button>
               </div>

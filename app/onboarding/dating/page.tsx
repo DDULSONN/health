@@ -1,6 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
+import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
+import PhotoPreparationStatus from "@/components/dating/PhotoPreparationStatus";
 import { getMaxDatingBirthYear } from "@/lib/dating-age";
 import NextImage from "next/image";
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
@@ -172,7 +175,8 @@ export default function DatingOnboardingPage() {
   const [draftUserId, setDraftUserId] = useState<string | null>(null);
   const [attemptedSteps, setAttemptedSteps] = useState<number[]>([]);
   const [focusField, setFocusField] = useState<OnboardingField | null>(null);
-  const [photoSelectionErrors, setPhotoSelectionErrors] = useState(["", ""]);
+  const photoPreparation = useDatingPhotoPreparation(PHOTO_MAX_BYTES);
+  const photoSelectionErrors = photoPreparation.errors;
   const submitLock = useRef(false);
   const authIdentity = useRef<string | null | undefined>(undefined);
   const authVersion = useRef(0);
@@ -404,6 +408,7 @@ export default function DatingOnboardingPage() {
   };
 
   const submit = async () => {
+    if (photoPreparation.isProcessing()) { setError(PHOTO_PROCESSING_MESSAGE); return; }
     if (submitLock.current || checking || !draft.ready || draft.pendingDraft || allSelectedDone) return;
     for (let index = 0; index < STEP_LABELS.length; index += 1) {
       const errors = validateStep(index);
@@ -735,27 +740,21 @@ export default function DatingOnboardingPage() {
                     {[0, 1].map((index) => (
                       <div key={index} className="min-w-0"><label className="relative flex aspect-[4/5] cursor-pointer items-center justify-center overflow-hidden border border-dashed border-neutral-300 bg-neutral-50">
                         {previewUrls[index] ? <NextImage src={previewUrls[index] ?? ""} alt={`사진 ${index + 1} 미리보기`} fill sizes="(max-width: 640px) 45vw, 250px" unoptimized className="object-contain" /> : <span className="text-sm font-bold text-neutral-500">사진 {index + 1} 선택</span>}
-                        <input id={onboardingFieldId(`photo${index}`)} aria-label={`사진 ${index + 1}`} aria-invalid={Boolean(fieldErrors[index === 0 ? "photo0" : "photo1"] || photoSelectionErrors[index])} aria-describedby={(fieldErrors[index === 0 ? "photo0" : "photo1"] || photoSelectionErrors[index]) ? `${onboardingFieldId(`photo${index}`)}-error` : undefined} type="file" accept="image/jpeg,image/png,image/webp" className="sr-only" onChange={(event) => {
+                        <input id={onboardingFieldId(`photo${index}`)} aria-label={`사진 ${index + 1}`} aria-invalid={Boolean(fieldErrors[index === 0 ? "photo0" : "photo1"] || photoSelectionErrors[index])} aria-describedby={(fieldErrors[index === 0 ? "photo0" : "photo1"] || photoSelectionErrors[index]) ? `${onboardingFieldId(`photo${index}`)}-error` : undefined} type="file" accept={DATING_PHOTO_ACCEPT} className="sr-only" onChange={(event) => {
                           const file = event.target.files?.[0] ?? null;
-                          if (file) {
-                            const message = photoError(file);
-                            if (message) {
-                              trackOnboardingEvent(draftUserId, "photo_rejected");
-                              setPhotoSelectionErrors((current) => current.map((item, i) => i === index ? message : item));
-                              event.currentTarget.value = "";
-                              return;
-                            }
-                          }
-                          setError("");
-                          setPhotoSelectionErrors((current) => current.map((item, i) => i === index ? "" : item));
-                          setPhotos((current) => current.map((item, itemIndex) => itemIndex === index ? file : item));
-                          setOpenAssets(null);
-                          setOneOnOnePhotoPaths(null);
+                          event.currentTarget.value = "";
+                          void photoPreparation.select(index, file, (prepared) => {
+                            setError("");
+                            setPhotos((current) => current.map((item, itemIndex) => itemIndex === index ? prepared : item));
+                            setOpenAssets(null);
+                            setOneOnOnePhotoPaths(null);
+                          }, () => trackOnboardingEvent(draftUserId, "photo_rejected"));
                         }} />
                       </label><FieldError id={onboardingFieldId(`photo${index}`)} error={photoSelectionErrors[index] || fieldErrors[index === 0 ? "photo0" : "photo1"]} /></div>
                     ))}
                   </div>
-                  <p className="mt-3 text-xs leading-5 text-neutral-500">JPG, PNG, WebP · 장당 10MB 이하. HEIC는 캡처한 뒤 선택해 주세요.</p>
+                  <PhotoPreparationStatus pending={photoPreparation.pending} errors={["", ""]} />
+                  <p className="mt-3 text-xs leading-5 text-neutral-500">장당 10MB 이하. {HEIC_HELP}</p>
                   {targets.open && (
                     <div className="mt-5 border-t border-neutral-200 pt-5">
                       <FieldLabel>오픈카드 사진 공개</FieldLabel>
@@ -803,7 +802,7 @@ export default function DatingOnboardingPage() {
               <div className="mt-6 grid grid-cols-[auto_1fr] gap-2">
                 <button type="button" disabled={submitting || step === 0} onClick={() => setStep((current) => Math.max(0, current - 1))} className="h-12 border border-neutral-300 bg-white px-5 text-sm font-bold text-neutral-700 disabled:opacity-30">이전</button>
                 {step < STEP_LABELS.length - 1 ? (
-                  <button type="button" onClick={moveNext} className="h-12 bg-neutral-950 px-5 text-sm font-bold text-white">다음</button>
+                  <button type="button" disabled={photoPreparation.busy} onClick={moveNext} className="h-12 bg-neutral-950 px-5 text-sm font-bold text-white disabled:opacity-50">다음</button>
                 ) : allSelectedDone ? (
                   <button
                     type="button"
@@ -813,7 +812,7 @@ export default function DatingOnboardingPage() {
                     {completed.oneOnOne ? "1:1 추천 후보 확인하기" : "오픈카드 홈으로"}
                   </button>
                 ) : (
-                  <button type="button" disabled={submitting} onClick={() => void submit()} className="h-12 bg-rose-500 px-5 text-sm font-bold text-white disabled:opacity-50">{submitting ? "등록 중..." : completed.open || completed.oneOnOne ? "남은 등록 다시 시도" : "선택한 프로필 등록하기"}</button>
+                  <button type="button" disabled={submitting || photoPreparation.busy} onClick={() => void submit()} className="h-12 bg-rose-500 px-5 text-sm font-bold text-white disabled:opacity-50">{submitting ? "등록 중..." : completed.open || completed.oneOnOne ? "남은 등록 다시 시도" : "선택한 프로필 등록하기"}</button>
                 )}
               </div>
             </section>

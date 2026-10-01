@@ -7,8 +7,7 @@ const path = require('node:path');
 const http = require('node:http');
 const webpack = require('webpack');
 const root = path.resolve(__dirname, '..');
-const runtime = process.env.CODEX_NODE_PACKAGES || 'C:/Users/DDULSONN/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules';
-const { chromium } = require(path.join(runtime, 'playwright'));
+const { chromium } = require('./test-browser-runtime.cjs');
 async function main() {
   const output = fs.mkdtempSync(path.join(os.tmpdir(), 'gymtools-refresh-browser-'));
   const adapter = path.join(__dirname, 'fixtures/recommendation-refresh-adapters.tsx');

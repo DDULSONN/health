@@ -3,6 +3,9 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
+import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
+import PhotoPreparationStatus from "@/components/dating/PhotoPreparationStatus";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const UNSUPPORTED_IPHONE_PHOTO_TYPES = ["image/heic", "image/heif"];
@@ -144,6 +147,7 @@ export default function NewDatingCardPage() {
   const [photoVisibility, setPhotoVisibility] = useState<"blur" | "public">("blur");
   const [total3Lift, setTotal3Lift] = useState("");
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
+  const photoPreparation = useDatingPhotoPreparation(MAX_FILE_SIZE);
   const [previewUrls, setPreviewUrls] = useState<(string | null)[]>([null, null]);
   const [existingRawPaths, setExistingRawPaths] = useState<string[]>([]);
   const [existingPreviewUrls, setExistingPreviewUrls] = useState<string[]>([]);
@@ -284,12 +288,14 @@ export default function NewDatingCardPage() {
   };
 
   const setPhotoSlot = (slot: number, file: File | null) => {
+    photoPreparation.cancel(slot);
     setPhotos((current) => current.map((item, index) => (index === slot ? file : item)));
     setError("");
   };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (photoPreparation.isProcessing()) { setError(PHOTO_PROCESSING_MESSAGE); return; }
     setError("");
 
     for (let step = 1; step <= 3; step += 1) {
@@ -560,7 +566,14 @@ export default function NewDatingCardPage() {
                     <span className="m-auto text-center text-sm font-black text-neutral-500"><span className="block text-2xl">+</span><span className="mt-2 block">사진 {slot + 1} 선택</span></span>
                   )}
                   <span className="absolute left-2 top-2 rounded-full bg-black/70 px-2 py-1 text-[11px] font-black text-white">{isNew ? "새 사진" : previewUrl ? "기존 사진" : `사진 ${slot + 1}`}</span>
-                  <input type="file" accept="image/jpeg,image/png,image/webp" onChange={(e) => { setPhotoSlot(slot, e.target.files?.[0] ?? null); e.currentTarget.value = ""; }} className="sr-only" />
+                  <input type="file" accept={DATING_PHOTO_ACCEPT} disabled={submitting} onChange={(e) => {
+                    const file = e.target.files?.[0] ?? null;
+                    e.currentTarget.value = "";
+                    void photoPreparation.select(slot, file, (prepared) => {
+                      setPhotos(current => current.map((item, index) => index === slot ? prepared : item));
+                      setError("");
+                    });
+                  }} className="sr-only" />
                 </label>
               );
             })}
@@ -571,7 +584,8 @@ export default function NewDatingCardPage() {
             ) : <span key={slot} />)}
           </div>
           {isEditMode && <p className="mt-3 rounded-xl bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-800">새 사진을 선택하지 않은 칸은 화면에 보이는 기존 사진 그대로 유지됩니다.</p>}
-          <p className="mt-3 text-xs leading-5 text-neutral-500">JPG, PNG, WebP / 사진당 10MB 이하. HEIC 사진은 캡처 후 올려주세요.</p>
+          <PhotoPreparationStatus pending={photoPreparation.pending} errors={photoPreparation.errors} />
+          <p className="mt-3 text-xs leading-5 text-neutral-500">사진당 10MB 이하. {HEIC_HELP}</p>
         </div>
         </div>}
 
@@ -599,9 +613,9 @@ export default function NewDatingCardPage() {
         <div className="mt-7 flex gap-2">
           {formStep > 1 && <button type="button" onClick={() => moveToStep(formStep - 1)} disabled={submitting} className="h-14 min-w-24 rounded-full border border-neutral-200 bg-white px-5 text-sm font-black text-neutral-700 disabled:opacity-50">이전</button>}
           {formStep < FORM_STEPS.length ? (
-            <button type="button" onClick={handleNextStep} disabled={editLoading} className="h-14 flex-1 rounded-full bg-neutral-950 px-5 text-base font-black text-white disabled:opacity-50">다음</button>
+            <button type="button" onClick={handleNextStep} disabled={editLoading || photoPreparation.busy} className="h-14 flex-1 rounded-full bg-neutral-950 px-5 text-base font-black text-white disabled:opacity-50">다음</button>
           ) : (
-            <button type="submit" disabled={submitting || editLoading || (!isEditMode && (writeSettingLoading || !writeEnabled))} className="h-14 flex-1 rounded-full bg-rose-500 px-5 text-base font-black text-white shadow-lg shadow-rose-100 disabled:opacity-50">
+            <button type="submit" disabled={submitting || photoPreparation.busy || editLoading || (!isEditMode && (writeSettingLoading || !writeEnabled))} className="h-14 flex-1 rounded-full bg-rose-500 px-5 text-base font-black text-white shadow-lg shadow-rose-100 disabled:opacity-50">
               {submitting ? "처리 중..." : isEditMode ? "수정 저장" : "오픈카드 등록"}
             </button>
           )}

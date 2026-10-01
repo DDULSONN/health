@@ -1,8 +1,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const assert = require('node:assert/strict'), path = require('node:path');
 const { startPreview } = require('./preview-profile-writing.cjs');
-const runtime = process.env.CODEX_NODE_PACKAGES || 'C:/Users/DDULSONN/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules';
-const { chromium } = require(path.join(runtime, 'playwright'));
+const { chromium } = require('./test-browser-runtime.cjs');
 const makeDraft = extra => ({ version: 1, userId: 'fixture-member', savedAt: Date.now(), step: 1,
   targets: { open: true, oneOnOne: true }, fields: {
     nickname: '테스트', sex: 'female', name: '비공개 이름', birthYear: '1996', heightCm: '165', job: '회사원', region: '서울',

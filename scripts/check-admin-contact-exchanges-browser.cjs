@@ -4,8 +4,7 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os'), http = require('node:http');
 const webpack = require('webpack');
 const root = path.resolve(__dirname, '..');
-const runtime = process.env.CODEX_NODE_PACKAGES || 'C:/Users/DDULSONN/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules';
-const { chromium } = require(path.join(runtime, 'playwright'));
+const { chromium } = require('./test-browser-runtime.cjs');
 const uid = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 async function main() {
   const output = fs.mkdtempSync(path.join(os.tmpdir(), 'gymtools-contact-close-browser-'));

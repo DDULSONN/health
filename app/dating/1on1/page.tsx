@@ -1,6 +1,9 @@
 ﻿"use client";
 
 import Link from "next/link";
+import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
+import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
+import PhotoPreparationStatus from "@/components/dating/PhotoPreparationStatus";
 import { getDatingBirthYearErrorMessage, parseDatingBirthYear } from "@/lib/dating-age";
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -271,6 +274,7 @@ function DatingOneOnOnePageContent() {
   const [workoutFrequency, setWorkoutFrequency] = useState("");
   const [photoSlotOne, setPhotoSlotOne] = useState<File | null>(null);
   const [photoSlotTwo, setPhotoSlotTwo] = useState<File | null>(null);
+  const photoPreparation = useDatingPhotoPreparation(PHOTO_MAX_FILE_SIZE);
   const [existingPhotoUrls, setExistingPhotoUrls] = useState<string[]>([]);
 
   const [consentFakeInfo, setConsentFakeInfo] = useState(false);
@@ -479,27 +483,15 @@ function DatingOneOnOnePageContent() {
 
   const handleSlotChange = (slot: 1 | 2, files: FileList | null) => {
     const picked = files?.[0] ?? null;
-    if (picked) {
-      const photoError = getOneOnOnePhotoError(picked);
-      if (photoError) {
-        setError(`사진 ${slot}: ${photoError}`);
-        if (slot === 1) {
-          setPhotoSlotOne(null);
-        } else {
-          setPhotoSlotTwo(null);
-        }
-        return;
-      }
+    void photoPreparation.select(slot - 1, picked, (prepared) => {
       setError("");
-    }
-    if (slot === 1) {
-      setPhotoSlotOne(picked);
-      return;
-    }
-    setPhotoSlotTwo(picked);
+      if (slot === 1) setPhotoSlotOne(prepared);
+      else setPhotoSlotTwo(prepared);
+    });
   };
 
   const clearSlot = (slot: 1 | 2) => {
+    photoPreparation.cancel(slot - 1);
     if (slot === 1) {
       setPhotoSlotOne(null);
       return;
@@ -518,6 +510,7 @@ function DatingOneOnOnePageContent() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (photoPreparation.isProcessing()) { setError(PHOTO_PROCESSING_MESSAGE); return; }
     if (submitting) return;
     setError("");
     setInfo("");
@@ -890,12 +883,13 @@ function DatingOneOnOnePageContent() {
                       <span className="flex h-10 w-10 items-center justify-center rounded-full bg-white text-xl text-neutral-500 shadow-sm">+</span>
                       <span className="mt-3 text-sm font-black text-neutral-700">사진 {slot}</span>
                       <span className="mt-1 max-w-full truncate text-xs text-neutral-400">{file ? file.name : "눌러서 선택"}</span>
-                      <input type="file" accept="image/*" onChange={(e) => { handleSlotChange(slot, e.target.files); if (e.target.files?.[0] && getOneOnOnePhotoError(e.target.files[0])) e.currentTarget.value = ""; }} className="sr-only" />
+                      <input type="file" accept={DATING_PHOTO_ACCEPT} disabled={submitting} onChange={(e) => { handleSlotChange(slot, e.target.files); e.currentTarget.value = ""; }} className="sr-only" />
                       {file && <button type="button" onClick={(e) => { e.preventDefault(); clearSlot(slot); }} className="mt-3 text-xs font-black text-rose-600 underline">선택 취소</button>}
                     </label>
                   ))}
                 </div>
-                <p className="mt-3 text-xs leading-5 text-neutral-500">JPG, PNG, WebP / 사진당 12MB 이하. HEIC 사진은 캡처 후 올려주세요.</p>
+                <PhotoPreparationStatus pending={photoPreparation.pending} errors={photoPreparation.errors} />
+                <p className="mt-3 text-xs leading-5 text-neutral-500">사진당 12MB 이하. {HEIC_HELP}</p>
                 {isEditMode && existingPhotoUrls.length > 0 && (
                   <div className="mt-4">
                     <p className="text-xs text-neutral-500">새 사진을 선택하지 않으면 아래 기존 사진이 유지됩니다.</p>
@@ -969,11 +963,11 @@ function DatingOneOnOnePageContent() {
               </button>
             )}
             {formStep < 5 ? (
-              <button type="button" onClick={handleNextStep} className="h-14 flex-1 rounded-full bg-neutral-950 px-5 text-base font-black text-white">
+              <button type="button" disabled={photoPreparation.busy} onClick={handleNextStep} className="h-14 flex-1 rounded-full bg-neutral-950 px-5 text-base font-black text-white disabled:opacity-50">
                 다음
               </button>
             ) : (
-              <button type="submit" disabled={!allConsented || !canSubmitForm || submitting} className="h-14 flex-1 rounded-full bg-rose-500 px-4 text-base font-black text-white shadow-lg shadow-rose-200 disabled:cursor-not-allowed disabled:opacity-50">
+              <button type="submit" disabled={!allConsented || !canSubmitForm || submitting || photoPreparation.busy} className="h-14 flex-1 rounded-full bg-rose-500 px-4 text-base font-black text-white shadow-lg shadow-rose-200 disabled:cursor-not-allowed disabled:opacity-50">
                 {submitting ? "처리 중..." : isEditMode ? "수정 저장" : "신청서 제출"}
               </button>
             )}
