@@ -16,7 +16,6 @@ jobs:
     env:
       CI: "true"
       NEXT_TELEMETRY_DISABLED: "1"
-      TMPDIR: ${{ runner.temp }}
       NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
       NEXT_PUBLIC_SUPABASE_ANON_KEY: test-only-not-a-production-key
     steps:
@@ -41,6 +40,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: critical-regression-screenshots
-          path: ${{ runner.temp }}/gymtools-*/*.png
+          path: /tmp/gymtools-*/*.png
           if-no-files-found: ignore
           retention-days: 7
