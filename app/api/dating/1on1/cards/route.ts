@@ -11,7 +11,8 @@ import { reconcileOneOnOnePhoneIdentity } from "@/lib/dating-1on1-identity";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { getUserBanResponse } from "@/lib/user-ban-guard";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
+import { grantReturnProfileRewardSafely } from "@/lib/return-profile-reward-server";
 
 type InputPayload = {
   sex?: string;
@@ -397,5 +398,11 @@ export async function POST(req: Request) {
     console.error("[POST /api/dating/1on1/cards] metric event failed", metricError);
   }
 
+  // Optional benefit: never turn a successful registration into a failure.
+  try {
+    after(() => grantReturnProfileRewardSafely(admin, user.id));
+  } catch {
+    console.warn("[return-profile-reward] deferred to next authenticated visit");
+  }
   return NextResponse.json({ id: data.id }, { status: 201 });
 }

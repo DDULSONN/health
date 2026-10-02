@@ -8,6 +8,7 @@ import Footer from "@/components/Footer";
 import MobileBottomTabBar from "@/components/MobileBottomTabBar";
 import PaymentMethodAnnouncement from "@/components/PaymentMethodAnnouncement";
 import SiteGuideBubble from "@/components/SiteGuideBubble";
+import ReturnProfileRewardBanner from "@/components/ReturnProfileRewardBanner";
 
 const DeferredAdSenseBootstrap = dynamic(() => import("@/components/AdSenseBootstrap"), {});
 const googleAnalyticsId = "G-QTWFQ6S6C5";
@@ -115,6 +116,7 @@ export default function RootLayout({
         <Header />
         <SiteGuideBubble />
         <PaymentMethodAnnouncement />
+        <ReturnProfileRewardBanner />
         <div className="flex-1 pb-20 md:pb-0">{children}</div>
         <MobileBottomTabBar />
         <Footer />
