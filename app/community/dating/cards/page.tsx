@@ -7,6 +7,7 @@ import type { ReactNode } from "react";
 import { Suspense, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useDatingDraftResume } from "@/lib/use-dating-draft-resume";
 import { canResumeDatingDraft } from "@/lib/dating-draft-resume";
+import { ONE_ON_ONE_ONBOARDING_HREF } from "@/lib/dating-onboarding-entry";
 import DatingDraftResumeCard from "@/components/dating/DatingDraftResumeCard";
 import { ONE_ON_ONE_HOME_HREF } from "@/lib/dating-navigation";
 import DatingAdultNotice from "@/components/DatingAdultNotice";
@@ -2907,9 +2908,9 @@ function OpenCardsContent() {
     viewerLoggedIn &&
     homeProfilePresenceReady &&
     Boolean(hasActiveMyOpenCard || reactivatableOpenCard || firstQueueBoostCard);
-  const profileStartHref = viewerLoggedIn
-    ? "/onboarding/dating"
-    : buildLoginRedirect("/onboarding/dating");
+  const profileStartPath = showOneOnOneSection || (hasAnyOpenCardProfile && !hasActiveOneOnOneProfile)
+    ? ONE_ON_ONE_ONBOARDING_HREF : "/onboarding/dating";
+  const profileStartHref = viewerLoggedIn ? profileStartPath : buildLoginRedirect(profileStartPath);
   const profileStartLabel = !viewerLoggedIn || registeredProfileServiceCount === 0
     ? "내 프로필"
     : hasAnyOpenCardProfile
@@ -2925,7 +2926,7 @@ function OpenCardsContent() {
   const profileStartBody = !viewerLoggedIn || registeredProfileServiceCount === 0
     ? "사진 2장 · 기본 정보 · 자기소개"
     : hasAnyOpenCardProfile
-      ? "추천 후보를 확인하려면 1:1 프로필이 필요해요."
+      ? "오픈카드 내용을 가져와 1:1 프로필을 작성할 수 있어요. 기존 오픈카드는 그대로 유지돼요."
       : "다른 회원에게 먼저 지원받으려면 오픈카드가 필요해요.";
   const profileStartCta = !viewerLoggedIn
     ? "로그인하고 시작하기"
@@ -2936,7 +2937,7 @@ function OpenCardsContent() {
       : registeredProfileServiceCount === 0
         ? "프로필 작성하기"
         : hasAnyOpenCardProfile
-          ? "1:1 프로필 등록하기"
+          ? "기존 프로필로 시작하기"
           : "오픈카드 등록하기";
   const profileStatusLabel = !viewerLoggedIn || registeredProfileServiceCount === 0
     ? "시작 전"
@@ -2980,7 +2981,7 @@ function OpenCardsContent() {
           })}
         </div>
       </section>
-      {showDraftResumeCard && profileDraft ? <DatingDraftResumeCard draft={profileDraft} href={profileStartHref} /> : null}
+      {showDraftResumeCard && profileDraft ? <DatingDraftResumeCard draft={profileDraft} href="/onboarding/dating" /> : null}
       {showProfileStartCard ? (
         <section className="mb-4 overflow-hidden rounded-2xl border border-rose-100 bg-[#fffafb] shadow-[0_8px_24px_rgba(190,24,93,0.06)]">
           <div className="px-4 py-4 sm:px-5 sm:py-5">

@@ -35,6 +35,10 @@ jobs:
         run: npm run check:photos-browser
         env:
           TEST_BROWSER: webkit
+      - name: WebKit onboarding profile reuse
+        run: node scripts/check-onboarding-entry-browser.cjs
+        env:
+          TEST_BROWSER: webkit
       - name: Save isolated fixture screenshots
         if: always()
         uses: actions/upload-artifact@v4

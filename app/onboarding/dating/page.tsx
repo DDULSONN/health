@@ -12,6 +12,8 @@ import DatingAdultNotice from "@/components/DatingAdultNotice";
 import { normalizeNickname } from "@/lib/nickname";
 import { createClient } from "@/lib/supabase/client";
 import { type DraftFields } from "@/lib/dating-onboarding-draft";
+import { onboardingEntry, onboardingEntryHref, onboardingTargets, openCardPrefill, pickOwnOpenCard, type OnboardingEntry } from "@/lib/dating-onboarding-entry";
+import { importOwnOpenCardPhoto } from "@/lib/dating-open-card-photo-import";
 import { useDatingOnboardingDraft } from "@/lib/use-dating-onboarding-draft";
 import { onboardingFieldId, validateOnboardingStep, type OnboardingField, type OnboardingErrors } from "@/lib/dating-onboarding-validation";
 import { trackOnboardingEvent } from "@/lib/onboarding-analytics";
@@ -171,6 +173,11 @@ export default function DatingOnboardingPage() {
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [continueToInstantOpenCard, setContinueToInstantOpenCard] = useState(false);
+  const [entry, setEntry] = useState<OnboardingEntry>("combined");
+  const [hasReusableOpenCard, setHasReusableOpenCard] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importNotice, setImportNotice] = useState("");
+  const importController = useRef<AbortController | null>(null);
 
   const [draftUserId, setDraftUserId] = useState<string | null>(null);
   const [attemptedSteps, setAttemptedSteps] = useState<number[]>([]);
@@ -190,6 +197,11 @@ export default function DatingOnboardingPage() {
     !checking && !allSelectedDone && (available.open || available.oneOnOne));
   const finishDraft = draft.finish;
 
+  useEffect(() => () => {
+    importController.current?.abort();
+    importController.current = null;
+  }, []);
+
   useEffect(() => {
     if (!checking && !checkFailed && draft.ready && !draft.pendingDraft && !allSelectedDone &&
         (available.open || available.oneOnOne)) {
@@ -202,6 +214,8 @@ export default function DatingOnboardingPage() {
       const next = session?.user.id ?? null;
       if (authIdentity.current !== undefined && authIdentity.current !== next) {
         authVersion.current += 1;
+        importController.current?.abort();
+        importController.current = null;
         finishDraft();
         setChecking(true);
         window.location.reload();
@@ -234,12 +248,7 @@ export default function DatingOnboardingPage() {
     setSmoking(f.smoking); setWorkoutFrequency(f.workoutFrequency);
     setTrainingYears(f.trainingYears); setInstagramId(f.instagramId);
     setTotal3Lift(f.total3Lift); setPhotoVisibility(f.photoVisibility);
-    const nextTargets = {
-      open: available.open && saved.targets.open,
-      oneOnOne: !continueToInstantOpenCard && available.oneOnOne && saved.targets.oneOnOne,
-    };
-    if (continueToInstantOpenCard) nextTargets.open = available.open;
-    if (nextTargets.open || nextTargets.oneOnOne) setTargets(nextTargets);
+    setTargets(onboardingTargets(entry, available, saved.targets));
     setStep(saved.step);
     setInfo("이어서 작성 중이에요. 사진과 필수 동의는 다시 선택해 주세요.");
     draft.resumed();
@@ -255,10 +264,10 @@ export default function DatingOnboardingPage() {
     let active = true;
     const version = authVersion.current;
     (async () => {
-      const wantsInstantOpenCard = new URLSearchParams(window.location.search).get("next") === "instant_open_card";
-      const onboardingPath = wantsInstantOpenCard
-        ? "/onboarding/dating?next=instant_open_card"
-        : "/onboarding/dating";
+      const nextEntry = onboardingEntry(window.location.search);
+      const wantsInstantOpenCard = nextEntry === "instant_open_card";
+      const onboardingPath = onboardingEntryHref(nextEntry);
+      setEntry(nextEntry);
       setContinueToInstantOpenCard(wantsInstantOpenCard);
       try {
         const { data: { user } } = await supabase.auth.getUser();
@@ -299,10 +308,8 @@ export default function DatingOnboardingPage() {
         setNickname(profileNickname || metadataNickname);
         setNicknameSaved(Boolean(profileNickname || metadataNickname));
         setAvailable({ open: openAvailable, oneOnOne: oneAvailable });
-        setTargets({
-          open: openAvailable,
-          oneOnOne: wantsInstantOpenCard ? false : oneAvailable,
-        });
+        setTargets(onboardingTargets(nextEntry, { open: openAvailable, oneOnOne: oneAvailable }));
+        setHasReusableOpenCard(Boolean(pickOwnOpenCard(open.items, user.id)));
         setCompleted({ open: hasActiveOpen, oneOnOne: Boolean(one.activeRequestStatus) });
         setAvailabilityNote({
           open: hasActiveOpen ? "이미 등록된 오픈카드가 있어요." : write.enabled === false ? "현재 오픈카드 작성이 중단되어 있어요." : "",
@@ -326,6 +333,60 @@ export default function DatingOnboardingPage() {
     };
   }, [router, supabase]);
 
+  const importOpenCard = async () => {
+    if (!draftUserId || importController.current || submitting || checking || !draft.ready || draft.pendingDraft ||
+        !targets.oneOnOne || !available.oneOnOne || completed.oneOnOne || photoPreparation.isProcessing()) return;
+    const controller = new AbortController();
+    importController.current = controller;
+    const version = authVersion.current;
+    const isCurrent = () => importController.current === controller && authVersion.current === version;
+    const timer = window.setTimeout(() => controller.abort(), 20000);
+    setImporting(true);
+    setImportNotice("");
+    try {
+      // Refresh the owner-only response when explicitly requested, never on every render.
+      const response = await fetch("/api/dating/cards/my", { cache: "no-store", credentials: "same-origin", redirect: "error", signal: controller.signal });
+      if (!response.ok) throw new Error("오픈카드를 불러오지 못했어요. 다시 시도하거나 직접 작성해 주세요.");
+      const body = await response.json().catch(() => null) as { items?: unknown } | null;
+      const card = pickOwnOpenCard(body?.items, draftUserId);
+      if (!card) throw new Error("가져올 본인 오픈카드가 없어요. 직접 작성해 주세요.");
+      if (!isCurrent() || controller.signal.aborted) return;
+      const values = openCardPrefill(card);
+      // Preserve typed/restored fields. Names, ages, contacts and consents are not guessed.
+      setSex(current => current ?? values.sex ?? null);
+      setHeightCm(current => current.trim() ? current : values.heightCm ?? "");
+      setJob(current => current.trim() ? current : values.job ?? "");
+      setRegion(current => current.trim() ? current : values.region ?? "");
+      setStrengthsText(current => current.trim() ? current : values.strengthsText ?? "");
+      setPreferredPartnerText(current => current.trim() ? current : values.preferredPartnerText ?? "");
+      const urls = Array.isArray(card.photo_preview_urls) ? card.photo_preview_urls : [];
+      const imported = await Promise.all([0, 1].map(async slot => {
+        if (photos[slot]) return null;
+        try { return await importOwnOpenCardPhoto(urls[slot], draftUserId, slot, PHOTO_MAX_BYTES, controller.signal); }
+        catch { return null; }
+      }));
+      if (!isCurrent()) return;
+      if (controller.signal.aborted) throw new Error("사진 가져오기가 중단됐어요. 가져온 글은 유지되며 사진은 직접 선택할 수 있어요.");
+      if (imported.some(Boolean)) {
+        imported.forEach((file, slot) => { if (file) photoPreparation.cancel(slot); });
+        setPhotos(current => current.map((file, slot) => file ?? imported[slot]));
+        setOpenAssets(null);
+        setOneOnOnePhotoPaths(null);
+      }
+      const missing = [0, 1].filter(slot => !photos[slot] && !imported[slot]).length;
+      setImportNotice(missing
+        ? `오픈카드 내용을 가져왔어요. 사진 ${missing}장은 가져오지 못했으니 사진 단계에서 직접 선택해 주세요. 기존 오픈카드는 그대로 유지돼요.`
+        : "오픈카드 내용을 가져왔어요. 이름·출생연도·자기소개와 나머지 항목을 확인해 주세요. 기존 오픈카드는 그대로 유지돼요.");
+    } catch (reason) {
+      if (isCurrent()) setImportNotice(controller.signal.aborted
+        ? "가져오기가 중단됐어요. 입력한 내용은 유지되며 직접 작성을 계속할 수 있어요."
+        : reason instanceof Error ? reason.message : "가져오지 못했어요. 직접 작성해 주세요.");
+    } finally {
+      window.clearTimeout(timer);
+      if (isCurrent()) { importController.current = null; setImporting(false); }
+    }
+  };
+
   const validateStep = (targetStep: number): OnboardingErrors => validateOnboardingStep(targetStep, {
     fields, targets, selectedCount: selectedTargets.length, nicknameSaved, maxBirthYear: MAX_ADULT_BIRTH_YEAR,
     photos: photos.map((file, index) => photoSelectionErrors[index] || (file ? photoError(file) : `사진 ${index + 1}을 선택해 주세요.`)),
@@ -341,6 +402,7 @@ export default function DatingOnboardingPage() {
     setFocusField(Object.keys(errors)[0] as OnboardingField);
   };
   const moveNext = () => {
+    if (importController.current) return;
     const errors = validateStep(step);
     if (Object.keys(errors).length) { showStepErrors(step, errors); return; }
     setError("");
@@ -408,6 +470,7 @@ export default function DatingOnboardingPage() {
   };
 
   const submit = async () => {
+    if (importController.current) return;
     if (photoPreparation.isProcessing()) { setError(PHOTO_PROCESSING_MESSAGE); return; }
     if (submitLock.current || checking || !draft.ready || draft.pendingDraft || allSelectedDone) return;
     for (let index = 0; index < STEP_LABELS.length; index += 1) {
@@ -565,6 +628,7 @@ export default function DatingOnboardingPage() {
 
   const nothingAvailable = continueToInstantOpenCard
     ? !available.open
+    : entry === "one_on_one" ? !available.oneOnOne
     : !available.open && !available.oneOnOne;
 
   return (
@@ -573,8 +637,11 @@ export default function DatingOnboardingPage() {
         <div className="flex items-start justify-between gap-4">
           <div>
             <p className="text-xs font-bold text-rose-600">프로필 등록</p>
-            <h1 className="mt-1 text-2xl font-black">소개 프로필 작성</h1>
-            <p className="mt-2 text-sm leading-6 text-neutral-600">오픈카드와 1:1 매칭에 함께 사용할 정보를 입력해 주세요.</p>
+            <h1 className="mt-1 text-2xl font-black">{entry === "one_on_one" ? "1:1 프로필 작성" : "소개 프로필 작성"}</h1>
+            <p className="mt-2 text-sm leading-6 text-neutral-600">{entry === "one_on_one"
+              ? completed.open ? "기존 오픈카드는 그대로 두고, 1:1 프로필을 추가해요."
+                : available.open ? "1:1 매칭부터 시작해요. 오픈카드 등록은 선택사항이에요." : "1:1 매칭에 사용할 정보를 입력해 주세요."
+              : "오픈카드와 1:1 매칭에 사용할 정보를 입력해 주세요."}</p>
           </div>
           <button type="button" disabled={submitting} onClick={() => router.replace("/community/dating/cards")} className="shrink-0 text-xs font-semibold text-neutral-500 underline underline-offset-4">나중에</button>
         </div>
@@ -595,7 +662,19 @@ export default function DatingOnboardingPage() {
           </p>
         )}
         {nothingAvailable && error && <p role="alert" className="mt-4 text-sm text-rose-700">{error}</p>}
-        <fieldset disabled={submitting || Boolean(draft.pendingDraft) || !draft.ready} aria-busy={submitting} className="min-w-0">
+        {hasReusableOpenCard && available.oneOnOne && targets.oneOnOne && !completed.oneOnOne && !nothingAvailable && !draft.pendingDraft && (step === 0 || step === 3) && (
+          <section aria-label="오픈카드 내용 가져오기" className="mt-4 rounded-xl border border-neutral-200 bg-white p-4">
+            <div className="flex items-center justify-between gap-3">
+              <p className="text-sm font-bold leading-5 text-neutral-900">오픈카드 내용 가져오기</p>
+              {importing ? <button type="button" onClick={() => importController.current?.abort()} className="min-h-11 shrink-0 px-2 text-xs text-neutral-500 underline">취소</button>
+                : <button type="button" aria-label="오픈카드 내용 가져오기" disabled={submitting || photoPreparation.busy || !draft.ready} onClick={() => void importOpenCard()} className="min-h-11 shrink-0 rounded-lg border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-900 disabled:opacity-50">{importNotice ? "다시 가져오기" : "가져오기"}</button>}
+            </div>
+            {importing ? <p role="status" className="mt-1 text-xs leading-5 text-neutral-500">내용과 사진을 가져오고 있어요…</p>
+              : !importNotice && <p className="mt-1 text-xs leading-5 text-neutral-500">기존 카드의 사진·지역·키·직업·강점·이상형을 빈 항목에 채워요. 기존 오픈카드는 변경되지 않아요.</p>}
+            {importNotice && <p role="status" className="mt-2 text-xs leading-5 text-neutral-600">{importNotice}</p>}
+          </section>
+        )}
+        <fieldset disabled={submitting || importing || Boolean(draft.pendingDraft) || !draft.ready} aria-busy={submitting || importing} className="min-w-0">
         <section id={onboardingFieldId("targets")} tabIndex={-1} aria-describedby={fieldErrors.targets ? `${onboardingFieldId("targets")}-error` : undefined} className="mt-5 border-y border-neutral-200 bg-white py-3">
           <div className="grid grid-cols-2 gap-2">
             {(["open", "oneOnOne"] as TargetKey[]).map((key) => {
@@ -607,6 +686,7 @@ export default function DatingOnboardingPage() {
                 <button
                   key={key}
                   type="button"
+                  aria-pressed={selected}
                   disabled={!enabled}
                   onClick={() => setTargets((current) => ({ ...current, [key]: !current[key] }))}
                   className={`min-h-14 border px-3 text-left transition ${selected ? "border-neutral-950 bg-neutral-950 text-white" : "border-neutral-200 bg-white text-neutral-700"} disabled:bg-neutral-100 disabled:text-neutral-400`}
@@ -617,17 +697,19 @@ export default function DatingOnboardingPage() {
               );
             })}
           </div>
+          {entry === "one_on_one" && available.open && <p className="mt-2 px-1 text-xs leading-5 text-neutral-500">오픈카드 등록은 선택사항이에요. 선택하지 않으면 오픈카드에는 등록되지 않아요.</p>}
         </section>
 
         <FieldError id={onboardingFieldId("targets")} error={fieldErrors.targets} />
         {nothingAvailable ? (
           <section className="mt-5 border border-neutral-200 bg-white p-5">
             <p className="text-base font-bold">
-              {continueToInstantOpenCard && !completed.open ? "지금은 오픈카드를 등록할 수 없어요" : "이미 준비가 끝났어요"}
+              {continueToInstantOpenCard && !completed.open ? "지금은 오픈카드를 등록할 수 없어요" : entry === "one_on_one" && !completed.oneOnOne ? "지금은 1:1 프로필을 등록할 수 없어요" : "이미 준비가 끝났어요"}
             </p>
             <p className="mt-2 text-sm leading-6 text-neutral-600">
               {continueToInstantOpenCard && !completed.open
                 ? availabilityNote.open || "오픈카드 작성이 다시 열리면 대기 없이 등록도 이어서 이용할 수 있습니다."
+                : entry === "one_on_one" && !completed.oneOnOne ? availabilityNote.oneOnOne || "등록 가능 상태를 확인해 주세요."
                 : completed.oneOnOne
                 ? "작성한 1:1 프로필로 추천 후보를 바로 확인할 수 있습니다."
                 : "등록된 카드와 진행 상태는 마이페이지에서 확인할 수 있습니다."}
@@ -676,7 +758,7 @@ export default function DatingOnboardingPage() {
             <section className="bg-white px-4 py-5 sm:px-5">
               {step === 0 && (
                 <div>
-                  <StepHeading title="기본 정보" description="두 서비스에 공통으로 들어갈 정보예요." />
+                  <StepHeading title="기본 정보" description="선택한 서비스에 사용할 정보예요." />
                   <div className="mt-5 grid gap-3 sm:grid-cols-2">
                     {!nicknameSaved && <TextField {...fieldProps("nickname")} value={nickname} onChange={(value) => setNickname(normalizeNickname(value).slice(0, 12))} label="닉네임" placeholder="사이트에서 사용할 닉네임" className="sm:col-span-2" maxLength={12} />}
                     <div className="sm:col-span-2">
@@ -735,7 +817,7 @@ export default function DatingOnboardingPage() {
 
               {step === 3 && (
                 <div>
-                  <StepHeading title="사진 두 장" description="한 번 선택하면 오픈카드와 1:1에 각각 안전하게 저장해요." />
+                  <StepHeading title="사진 두 장" description="마지막에 등록을 완료하면 선택한 서비스에 사진이 저장돼요." />
                   <div className="mt-5 grid grid-cols-2 gap-3">
                     {[0, 1].map((index) => (
                       <div key={index} className="min-w-0"><label className="relative flex aspect-[4/5] cursor-pointer items-center justify-center overflow-hidden border border-dashed border-neutral-300 bg-neutral-50">
@@ -777,6 +859,7 @@ export default function DatingOnboardingPage() {
               {step === 4 && (
                 <div>
                   <StepHeading title="마지막 확인" description="등록되는 서비스와 개인정보 안내를 확인해 주세요." />
+                  <p className="mt-3 rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-3 text-sm font-semibold text-neutral-900">등록할 서비스: {[targets.open && !completed.open ? "오픈카드" : "", targets.oneOnOne && !completed.oneOnOne ? "1:1 매칭" : ""].filter(Boolean).join(" · ") || "등록 완료"}</p>
                   <div className="mt-5 space-y-3">
                     {targets.open && (
                       <Consent {...fieldProps("consentOpenCard")} checked={consentOpenCard} onChange={setConsentOpenCard}>오픈카드의 소개·강점·사진 공개 범위를 확인했고, 수락 후 인스타그램 아이디가 상대에게 공개되는 것에 동의합니다.</Consent>
@@ -812,7 +895,7 @@ export default function DatingOnboardingPage() {
                     {completed.oneOnOne ? "1:1 추천 후보 확인하기" : "오픈카드 홈으로"}
                   </button>
                 ) : (
-                  <button type="button" disabled={submitting || photoPreparation.busy} onClick={() => void submit()} className="h-12 bg-rose-500 px-5 text-sm font-bold text-white disabled:opacity-50">{submitting ? "등록 중..." : completed.open || completed.oneOnOne ? "남은 등록 다시 시도" : "선택한 프로필 등록하기"}</button>
+                  <button type="button" disabled={submitting || photoPreparation.busy} onClick={() => void submit()} className="h-12 bg-rose-500 px-5 text-sm font-bold text-white disabled:opacity-50">{submitting ? "등록 중..." : (available.open && completed.open) || (available.oneOnOne && completed.oneOnOne) ? "남은 등록 다시 시도" : "선택한 프로필 등록하기"}</button>
                 )}
               </div>
             </section>

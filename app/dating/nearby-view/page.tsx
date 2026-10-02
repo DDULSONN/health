@@ -407,7 +407,7 @@ export default function NearbyViewPage() {
                       ? "오픈카드와 1:1 프로필을 먼저 작성해주세요."
                       : !status.weeklyBenefit.hasOpenCard ? "오픈카드를 작성하면 무료 열람을 이용할 수 있어요." : "1:1 프로필을 작성하면 무료 열람을 이용할 수 있어요."}</p>
                     <Link
-                      href={!status.weeklyBenefit.hasOpenCard && !status.weeklyBenefit.hasOneOnOneCard ? "/onboarding/dating" : !status.weeklyBenefit.hasOpenCard ? "/dating/card/new" : "/dating/1on1"}
+                      href={!status.weeklyBenefit.hasOpenCard && !status.weeklyBenefit.hasOneOnOneCard ? "/onboarding/dating" : !status.weeklyBenefit.hasOpenCard ? "/dating/card/new" : "/onboarding/dating?target=one_on_one"}
                       className="mt-2 inline-flex min-h-[40px] items-center rounded-xl border border-neutral-300 bg-white px-3 font-medium text-neutral-700 hover:bg-neutral-100"
                     >
                       {!status.weeklyBenefit.hasOpenCard && !status.weeklyBenefit.hasOneOnOneCard ? "프로필 작성하기" : !status.weeklyBenefit.hasOpenCard ? "오픈카드 작성하기" : "1:1 프로필 작성하기"}

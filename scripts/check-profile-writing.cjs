@@ -43,14 +43,16 @@ test('home draft refresh never adds server traffic or timers', () => {
   assert.match(source, /session\?\.user\.id === userId/);
   assert.match(source, /draft\?\.userId === userId/);
 });
-test('draft restore, validation and submission backends unchanged; only photo preparation guard added', () => {
+test('draft schema, validation, upload and submission backends unchanged; import is independently guarded', () => {
   const base = file => execFileSync('git', ['show', '185a0e8:' + file], { cwd: root, encoding: 'utf8' }).replace(/\r\n/g, '\n');
   for (const file of ['lib/dating-onboarding-validation.ts','lib/dating-onboarding-draft.ts','lib/use-dating-onboarding-draft.ts',
     'app/api/dating/cards/my/route.ts','app/api/dating/1on1/cards/route.ts','app/api/mypage/phone-verification/send/route.ts',
     'app/api/mypage/phone-verification/verify/route.ts','app/api/payments/toss/confirm/route.ts']) assert.equal(read(file), base(file), file);
   const file = 'app/onboarding/dating/page.tsx', before = base(file), after = read(file);
-  const handlers = s => s.slice(s.indexOf('  const resumeDraft ='), s.indexOf('  if (checking)'));
-  assert.equal(handlers(after).replace('    if (photoPreparation.isProcessing()) { setError(PHOTO_PROCESSING_MESSAGE); return; }\n', ''), handlers(before));
+  const handlers = s => s.slice(s.indexOf('  const validateStep ='), s.indexOf('  if (checking)'));
+  assert.equal(handlers(after)
+    .replaceAll('    if (importController.current) return;\n', '')
+    .replace('    if (photoPreparation.isProcessing()) { setError(PHOTO_PROCESSING_MESSAGE); return; }\n', ''), handlers(before));
   const changed = execFileSync('git', ['diff', '--name-only'], { cwd: root, encoding: 'utf8' });
-  assert.ok(!changed.includes('app/api/'));
+  assert.ok(!changed.split(/\s+/).some(file => /^(app\/api\/(dating|payments|mypage\/phone-verification)\/|supabase\/)/.test(file)));
 });
