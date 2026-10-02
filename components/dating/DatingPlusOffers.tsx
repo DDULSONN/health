@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
+import { fetchClientJson } from "@/lib/client-json-request";
+import { ALL_PASS_PROFILE_DISCOUNT_LABEL, isAllPassProfileOffer, type AllPassProfileOffer } from "@/lib/all-pass-profile-offer";
 import { ONE_ON_ONE_REFRESH_POLICY_COPY } from "@/lib/dating-1on1-refresh-copy";
 import {
   DATING_ALL_PASS_PRICE_KRW,
@@ -72,7 +75,35 @@ export default function DatingPlusOffers({
   disabled?: boolean;
   className?: string;
 }) {
-  const plans = mode === "one_on_one" ? ONE_ON_ONE_PLANS : SWIPE_PLANS;
+  const [offer, setOffer] = useState<AllPassProfileOffer | null>(null);
+  const supabase = useMemo(() => createClient(), []);
+  useEffect(() => {
+    let id: string | null = null, version = 0, timer: ReturnType<typeof setTimeout> | undefined;
+    let controller: AbortController | null = null;
+    const refresh = async () => {
+      const userId = id, stamp = ++version;
+      controller?.abort(); controller = new AbortController(); clearTimeout(timer); setOffer(null);
+      if (!userId) return;
+      try {
+        const result = await fetchClientJson<{ userId: string; offer: AllPassProfileOffer | null }>("/api/dating/all-pass-offer", { cache: "no-store", signal: controller.signal });
+        if (stamp !== version || id !== userId || !result.response.ok || result.body?.userId !== userId) return;
+        const current = result.body.offer;
+        if (!isAllPassProfileOffer(current) || current.state !== "active") return;
+        const ms = Date.parse(current.expiresAt!) - Date.parse(current.serverNow);
+        if (ms <= 0) return;
+        setOffer(current); timer = setTimeout(() => setOffer(null), ms);
+      } catch { /* optional display; checkout revalidates the real price */ }
+    };
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      const next = session?.user.id ?? null;
+      if (next === id) return; id = next; void refresh();
+    });
+    const changed = () => { void refresh(); };
+    window.addEventListener("all-pass-profile-offer-updated", changed);
+    return () => { version++; controller?.abort(); clearTimeout(timer); data.subscription.unsubscribe(); window.removeEventListener("all-pass-profile-offer-updated", changed); };
+  }, [supabase]);
+  const plans = useMemo(() => (mode === "one_on_one" ? ONE_ON_ONE_PLANS : SWIPE_PLANS).map(plan =>
+    plan.productType === "dating_all_pass_30d" && offer ? { ...plan, amount: offer.amount, badge: ALL_PASS_PROFILE_DISCOUNT_LABEL } : plan), [mode, offer]);
   const [submitting, setSubmitting] = useState<PaidPlan["productType"] | null>(null);
 
   useEffect(() => {
@@ -104,6 +135,7 @@ export default function DatingPlusOffers({
           productType: plan.productType,
           cardId: oneOnOneCardId ?? undefined,
           offerPlacement: placement,
+          ...(plan.productType === "dating_all_pass_30d" && offer ? { allPassOfferId: offer.offerId } : {}),
         }),
       });
       const body = (await res.json().catch(() => ({}))) as {
@@ -111,6 +143,7 @@ export default function DatingPlusOffers({
         message?: string;
         error?: string;
         checkoutUrl?: string;
+        amount?: number;
       };
       if (!res.ok || body.ok === false || !body.checkoutUrl) {
         throw new Error(body.message ?? body.error ?? "결제창을 열지 못했습니다.");
@@ -118,7 +151,7 @@ export default function DatingPlusOffers({
       trackCheckoutStarted({
         itemId: plan.productType,
         itemName: plan.title,
-        amount: plan.amount,
+        amount: typeof body.amount === "number" ? body.amount : plan.amount,
         placement,
       });
       window.location.href = body.checkoutUrl;

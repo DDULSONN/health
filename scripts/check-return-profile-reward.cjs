@@ -2,7 +2,7 @@
 const assert = require('node:assert/strict');
 const { test } = require('node:test');
 const fs = require('node:fs'), path = require('node:path'), ts = require('typescript');
-const { execFileSync } = require('node:child_process');
+const { createHash } = require('node:crypto');
 const { PGlite } = require('@electric-sql/pglite');
 const root = path.resolve(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
@@ -70,11 +70,12 @@ test('server integration: optional SQL hidden, invalid payload rejected, grant f
 
 test('profile validation/upload/matching flow is unchanged except isolated post-response grant', () => {
   const file = 'app/api/dating/1on1/cards/route.ts';
-  const baseline = execFileSync('git', ['show','0a63505ca60374c3aaac1d95f4dbc4334a173c6e:' + file], { cwd: root, encoding: 'utf8' }).replace(/\r\n/g, '\n');
+  // SHA-256 of LF-normalized 0a63505 source; works without historical Git objects in deployment.
+  const baseline = '04c5fa9b5565815ef277f24eb1d86d67eeeac80a9d9f81a62ec2b2a9b8203073';
   const normalized = read(file)
     .replace('import { after, NextResponse } from "next/server";\nimport { grantReturnProfileRewardSafely } from "@/lib/return-profile-reward-server";', 'import { NextResponse } from "next/server";')
     .replace(/  \/\/ Optional benefit: never turn a successful registration into a failure\.\n  try \{\n    after\(\(\) => grantReturnProfileRewardSafely\(admin, user.id\)\);\n  \} catch \{\n    console.warn\("\[return-profile-reward\] deferred to next authenticated visit"\);\n  \}\n/, '');
-  assert.equal(normalized, baseline);
+  assert.equal(createHash('sha256').update(normalized).digest('hex'), baseline);
 });
 
 test('real local PostgreSQL: frozen cohort, safety gates, atomic once-only credits, permissions, rollback', async () => {

@@ -36,6 +36,7 @@ import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
 import { normalizeFailureOrderId } from "@/lib/payment-guidance";
 import { getContactPaymentRecovery } from "@/lib/contact-payment-recovery";
+import { AllPassOfferError, createAllPassProfileOfferCheckout, readAllPassProfileOffer } from "@/lib/all-pass-profile-offer-server";
 
 import { normalizeDatingApplyReturn } from "@/lib/dating-apply-return";
 import { getCityViewPurchasePreview } from "@/lib/dating-purchase-fulfillment";
@@ -81,6 +82,7 @@ type CreateBody = {
   returnTo?: unknown;
   requireNewCandidates?: unknown;
   recoveryOrderId?: unknown;
+  allPassOfferId?: unknown;
 };
 
 type OneOnOneMatchRow = {
@@ -224,6 +226,8 @@ async function cancelReadyOrders(admin: ReturnType<typeof createAdminClient>, or
       updated_at: new Date().toISOString(),
     })
     .in("id", orderIds)
+    // Discount retries retain one authoritative order until the provider confirms expiry.
+    .is("product_meta->>profileAllPassOfferKey", null)
     .eq("status", "ready");
 
   if (res.error) {
@@ -334,6 +338,14 @@ export async function POST(req: Request) {
     let paymentAmount = config.amount;
     let orderNameOverride: string | null = null;
     const admin = createAdminClient();
+    if (body.allPassOfferId !== undefined) {
+      if (productType !== "dating_all_pass_30d") return json(400, { ok: false, code: "INVALID_OFFER_PRODUCT", message: "올패스 할인 상품을 확인해 주세요." });
+      return json(200, await createAllPassProfileOfferCheckout(admin, user, body.allPassOfferId, getBaseUrl(req)));
+    }
+    if (productType === "dating_all_pass_30d") {
+      const offer = await readAllPassProfileOffer(admin, user.id);
+      if (offer?.state === "active") return json(200, await createAllPassProfileOfferCheckout(admin, user, offer.offerId, getBaseUrl(req)));
+    }
     if (body.recoveryOrderId !== undefined) {
       const recoveryOrderId = normalizeFailureOrderId(body.recoveryOrderId);
       if (productType !== "one_on_one_contact_exchange" || !recoveryOrderId) {
@@ -1274,6 +1286,7 @@ export async function POST(req: Request) {
       checkoutMode: getTossCheckoutMode(),
     });
   } catch (error) {
+    if (error instanceof AllPassOfferError) return json(error.status, { ok: false, code: error.code, message: error.message });
     console.error("[toss-create] unhandled", error);
     return json(500, {
       ok: false,

@@ -47,7 +47,7 @@ test('draft/schema/upload unchanged; registration only adds the separately teste
   const base = file => execFileSync('git', ['show', '185a0e8:' + file], { cwd: root, encoding: 'utf8' }).replace(/\r\n/g, '\n');
   for (const file of ['lib/dating-onboarding-validation.ts','lib/dating-onboarding-draft.ts','lib/use-dating-onboarding-draft.ts',
     'app/api/dating/cards/my/route.ts','app/api/dating/1on1/cards/route.ts','app/api/mypage/phone-verification/send/route.ts',
-    'app/api/mypage/phone-verification/verify/route.ts','app/api/payments/toss/confirm/route.ts']) {
+    'app/api/mypage/phone-verification/verify/route.ts']) {
     const source = file === 'app/api/dating/1on1/cards/route.ts' ? read(file)
       .replace('import { after, NextResponse } from "next/server";\nimport { grantReturnProfileRewardSafely } from "@/lib/return-profile-reward-server";', 'import { NextResponse } from "next/server";')
       .replace(/  \/\/ Optional benefit: never turn a successful registration into a failure\.\n  try \{\n    after\(\(\) => grantReturnProfileRewardSafely\(admin, user.id\)\);\n  \} catch \{\n    console.warn\("\[return-profile-reward\] deferred to next authenticated visit"\);\n  \}\n/, '') : read(file);
@@ -59,5 +59,8 @@ test('draft/schema/upload unchanged; registration only adds the separately teste
     .replaceAll('    if (importController.current) return;\n', '')
     .replace('    if (photoPreparation.isProcessing()) { setError(PHOTO_PROCESSING_MESSAGE); return; }\n', ''), handlers(before));
   const changed = execFileSync('git', ['diff', '--name-only'], { cwd: root, encoding: 'utf8' });
-  assert.ok(!changed.split(/\s+/).some(file => file !== 'app/api/dating/1on1/cards/route.ts' && /^(app\/api\/(dating|payments|mypage\/phone-verification)\/|supabase\/)/.test(file)));
+  // Payment confirmation now has an exact-baseline check in check-all-pass-profile-offer.cjs.
+  const isolatedAdditions = new Set(['app/api/dating/1on1/cards/route.ts', 'app/api/payments/toss/create/route.ts',
+    'app/api/payments/toss/confirm/route.ts', 'app/api/dating/all-pass-offer/route.ts', 'supabase/sql/all_pass_profile_offer.sql']);
+  assert.ok(!changed.split(/\s+/).some(file => !isolatedAdditions.has(file) && /^(app\/api\/(dating|payments|mypage\/phone-verification)\/|supabase\/)/.test(file)));
 });

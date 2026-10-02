@@ -28,6 +28,7 @@ import { createClient } from "@/lib/supabase/client";
 import { createLatestRequest } from "@/lib/latest-request";
 import { trackCheckoutStarted } from "@/lib/payment-analytics";
 import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
+import AllPassProfileOfferBanner from "@/components/dating/AllPassProfileOfferBanner";
 import OneOnOneContactNudge from "@/components/dating/OneOnOneContactNudge";
 import OneOnOneContactOffer from "@/components/dating/OneOnOneContactOffer";
 import type {
@@ -2982,6 +2983,7 @@ function OpenCardsContent() {
         </div>
       </section>
       {showDraftResumeCard && profileDraft ? <DatingDraftResumeCard draft={profileDraft} href="/onboarding/dating" /> : null}
+      <AllPassProfileOfferBanner placement="matching_home_profile_complete" />
       {showProfileStartCard ? (
         <section className="mb-4 overflow-hidden rounded-2xl border border-rose-100 bg-[#fffafb] shadow-[0_8px_24px_rgba(190,24,93,0.06)]">
           <div className="px-4 py-4 sm:px-5 sm:py-5">

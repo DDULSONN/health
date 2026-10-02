@@ -34,6 +34,8 @@ import {
   type TossConfirmPaymentResponse,
 } from "@/lib/toss-payments";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
+import { AllPassOfferError, checkAllPassProfileOfferPayment } from "@/lib/all-pass-profile-offer-server";
+import { ALL_PASS_PROFILE_DISCOUNT_PRICE } from "@/lib/all-pass-profile-offer";
 
 type ConfirmBody = {
   paymentKey?: unknown;
@@ -940,7 +942,9 @@ export async function POST(req: Request) {
         return json(409, { ok: false, code: "DATING_AGE_INELIGIBLE", requestId, message: DATING_AGE_INELIGIBLE_MESSAGE });
       }
     }
-    const payment = await confirmOrRecoverTossPayment({ paymentKey, orderId, amount });
+    const recoveredOfferPayment = order.product_type === "dating_all_pass_30d" && (order.product_meta?.profileAllPassOfferKey || order.amount === ALL_PASS_PROFILE_DISCOUNT_PRICE)
+      ? await checkAllPassProfileOfferPayment(admin, order, paymentKey) : null;
+    const payment = recoveredOfferPayment ?? await confirmOrRecoverTossPayment({ paymentKey, orderId, amount });
 
     const updateRes = await admin
       .from("toss_test_payment_orders")
@@ -998,6 +1002,7 @@ export async function POST(req: Request) {
       creditsAfter: fulfillment.creditsAfter,
     });
   } catch (error) {
+    if (error instanceof AllPassOfferError) return json(error.status, { ok: false, code: error.code, message: error.message });
     console.error("[toss-confirm] unhandled", error);
     if (error instanceof Error && error.message === "MORE_VIEW_METADATA_MISSING") {
       return json(500, {

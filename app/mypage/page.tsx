@@ -46,6 +46,7 @@ const AdminUserContactExchangesPanel = dynamic(() => import("@/components/admin/
 const AdminOnboardingFunnelPanel = dynamic(() => import("@/components/admin/AdminOnboardingFunnelPanel"));
 
 const DatingPlusOffers = dynamic(() => import("@/components/dating/DatingPlusOffers"));
+const AllPassProfileOfferBanner = dynamic(() => import("@/components/dating/AllPassProfileOfferBanner"));
 const OneOnOneContactNudge = dynamic(() => import("@/components/dating/OneOnOneContactNudge"));
 const OneOnOneContactOffer = dynamic(() => import("@/components/dating/OneOnOneContactOffer"));
 const AdminDatingOnboardingTestLink = dynamic(
@@ -8322,6 +8323,7 @@ export default function MyPage() {
 
         {showMatchingSection && (
         <>
+          <AllPassProfileOfferBanner placement="mypage_matching_profile_complete" />
           <section className="mb-3 rounded-2xl border border-rose-100 bg-[#fffafb] p-4 shadow-[0_6px_20px_rgba(190,24,93,0.05)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">

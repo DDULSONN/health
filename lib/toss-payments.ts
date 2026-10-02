@@ -110,11 +110,11 @@ export type TossPaymentCancel = {
   transactionKey?: string;
 };
 
-export async function createTossPayment(params: TossCreatePaymentParams) {
+export async function createTossPayment(params: TossCreatePaymentParams, options?: { idempotencyKey: string }) {
   return tossFetch<TossCreatePaymentResponse>("/v1/payments", {
     method: "POST",
     body: JSON.stringify(params),
-    idempotencyKey: crypto.randomUUID(),
+    idempotencyKey: options?.idempotencyKey ?? crypto.randomUUID(),
   });
 }
 
