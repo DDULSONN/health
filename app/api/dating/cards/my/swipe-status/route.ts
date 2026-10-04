@@ -9,6 +9,7 @@ import {
 } from "@/lib/dating-swipe";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
+import { swipeDismissalVersionKey, isSwipeDismissalsSchemaMissing } from "@/lib/dating-swipe-dismissals";
 
 type SwipeRow = {
   id: string;
@@ -55,6 +56,7 @@ type CardRow = {
 type ProfileRow = {
   user_id: string;
   nickname: string | null;
+  swipe_profile_visible?: boolean | null;
 };
 
 function isMissingRelationError(error: unknown): boolean {
@@ -114,6 +116,26 @@ async function loadCardsWithFallback(admin: ReturnType<typeof createAdminClient>
     })),
     error: null as unknown,
   };
+}
+
+async function loadIncomingDismissals(admin: ReturnType<typeof createAdminClient>, userId: string, swipeIds: string[]) {
+  const rows: Array<{ swipe_id: string; swipe_created_at: string }> = [];
+  const ids = [...new Set(swipeIds)];
+  // Query only displayed likes in bounded URL batches. Older dismissal records
+  // must not fill PostgREST's page limit and make deleted items reappear.
+  for (let start = 0; start < ids.length; start += 100) {
+    for (let offset = 0; ; offset += 500) {
+      const result = await admin.from("dating_swipe_incoming_dismissals")
+        .select("swipe_id, swipe_created_at").eq("user_id", userId)
+        .in("swipe_id", ids.slice(start, start + 100))
+        .order("swipe_id", { ascending: true }).order("swipe_created_at", { ascending: true })
+        .range(offset, offset + 499);
+      if (result.error) return { data: null, error: result.error };
+      rows.push(...result.data);
+      if (result.data.length < 500) break;
+    }
+  }
+  return { data: rows, error: null };
 }
 
 export async function GET(req: Request) {
@@ -227,7 +249,19 @@ export async function GET(req: Request) {
     pairCreatedAt.set(otherUserId, row.created_at);
   }
 
-  const incomingLikes = incomingLikesRaw.filter((row) => !matchedUserIds.has(row.actor_user_id));
+  const dismissalsRes = await loadIncomingDismissals(admin, user.id, incomingLikesRaw.map((row) => row.id));
+  if (dismissalsRes.error && !isSwipeDismissalsSchemaMissing(dismissalsRes.error)) {
+    console.error("[GET /api/dating/cards/my/swipe-status] dismissals failed", dismissalsRes.error);
+    return NextResponse.json({ error: "받은 라이크 목록을 불러오지 못했습니다." }, { status: 500 });
+  }
+  const canDismissIncoming = !dismissalsRes.error;
+  const dismissedVersions = new Set<string>(
+    (dismissalsRes.data ?? []).map((row: { swipe_id: string; swipe_created_at: string }) =>
+      swipeDismissalVersionKey(row.swipe_id, row.swipe_created_at))
+  );
+  const incomingLikes = incomingLikesRaw.filter((row) =>
+    !matchedUserIds.has(row.actor_user_id) && !dismissedVersions.has(swipeDismissalVersionKey(row.id, row.created_at))
+  );
 
   const cardIds = [
     ...new Set([
@@ -250,19 +284,25 @@ export async function GET(req: Request) {
     ]),
   ];
 
-  const profilesRes =
+  let profilesRes: { data: ProfileRow[] | null; error: { code?: string; message: string } | null } =
     profileIds.length > 0
-      ? await admin.from("profiles").select("user_id, nickname").in("user_id", profileIds)
+      ? await admin.from("profiles").select("user_id, nickname, swipe_profile_visible").in("user_id", profileIds)
       : { data: [], error: null };
 
+  if (profilesRes.error && isMissingColumnError(profilesRes.error, "swipe_profile_visible")) {
+    profilesRes = await admin.from("profiles").select("user_id, nickname").in("user_id", profileIds);
+  }
   if (profilesRes.error) {
     console.error("[GET /api/dating/cards/my/swipe-status] profiles failed", profilesRes.error);
     return NextResponse.json({ error: "빠른매칭을 불러올 수 없습니다." }, { status: 500 });
   }
 
   const profileMap = new Map(((profilesRes.data ?? []) as ProfileRow[]).map((row) => [row.user_id, row.nickname]));
+  const hiddenUsers = new Set(((profilesRes.data ?? []) as ProfileRow[])
+    .filter((row) => row.swipe_profile_visible === false).map((row) => row.user_id));
 
   return NextResponse.json({
+    can_dismiss_incoming: canDismissIncoming,
     summary: {
       outgoing_pending: outgoingLikes.filter((row) => !matchedUserIds.has(row.target_user_id)).length,
       incoming_pending: incomingLikes.length,
@@ -299,11 +339,16 @@ export async function GET(req: Request) {
     }),
     incoming_likes: incomingLikes.map((row) => {
       const card = cardsById.get(row.actor_card_id) ?? null;
+      const unavailableReason = hiddenUsers.has(row.actor_user_id)
+        ? "상대가 빠른매칭을 숨긴 상태라 맞라이크를 진행할 수 없어요."
+        : !card?.sex ? "상대 프로필을 확인할 수 없어 맞라이크를 진행할 수 없어요." : null;
       const otherNickname = String(profileMap.get(row.actor_user_id) ?? card?.display_nickname ?? "익명").trim() || "익명";
       return {
         swipe_id: row.id,
         created_at: row.created_at,
         other_user_id: row.actor_user_id,
+        can_like: !unavailableReason,
+        unavailable_reason: unavailableReason,
         expires_at: getSwipeLikeExpiresAtIso(row.created_at),
         card: card
           ? {
@@ -323,5 +368,5 @@ export async function GET(req: Request) {
           : null,
       };
     }),
-  });
+  }, { headers: { "Cache-Control": "private, no-store" } });
 }

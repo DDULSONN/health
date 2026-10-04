@@ -15,6 +15,7 @@ import { formatRemainingToKorean } from "@/lib/dating-open";
 import { buildOneOnOneRefreshSuccess, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
 import OneOnOneRefreshControl, { useOneOnOneRefreshConfirmation, type OneOnOneRefreshNotice } from "@/components/dating/OneOnOneRefreshControl";
 import OneOnOnePlusStatus from "@/components/dating/OneOnOnePlusStatus";
+import IncomingSwipeLikeActions from "@/components/dating/IncomingSwipeLikeActions";
 import { fetchClientJson } from "@/lib/client-json-request";
 import { isOneOnOneRecommendationPayload } from "@/lib/dating-1on1-refresh-response";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
@@ -600,10 +601,13 @@ type SwipeStatusItem = {
   matched?: boolean;
   matched_at?: string | null;
   expires_at?: string | null;
+  can_like?: boolean;
+  unavailable_reason?: string | null;
   card: SwipeStatusCard | null;
 };
 
 type SwipeStatusResponse = {
+  can_dismiss_incoming?: boolean;
   summary?: {
     outgoing_pending: number;
     incoming_pending: number;
@@ -1983,6 +1987,8 @@ export default function MyPage() {
   const [swipeStatusSummary, setSwipeStatusSummary] = useState<SwipeStatusResponse["summary"] | null>(null);
   const [myOutgoingSwipeLikes, setMyOutgoingSwipeLikes] = useState<SwipeStatusItem[]>([]);
   const [myIncomingSwipeLikes, setMyIncomingSwipeLikes] = useState<SwipeStatusItem[]>([]);
+  const [canDismissIncomingSwipe, setCanDismissIncomingSwipe] = useState(false);
+  const swipeStatusRequestVersionRef = useRef(0);
   const [swipeStatusPanelOpen, setSwipeStatusPanelOpen] = useState(false);
   const [swipeStatusLoaded, setSwipeStatusLoaded] = useState(false);
   const [swipeStatusLoading, setSwipeStatusLoading] = useState(false);
@@ -4928,6 +4934,7 @@ export default function MyPage() {
   };
 
   const reloadSwipeStatus = useCallback(async () => {
+    const requestVersion = ++swipeStatusRequestVersionRef.current;
     setSwipeStatusLoading(true);
     try {
       const res = await fetch("/api/dating/cards/my/swipe-status", { cache: "no-store" });
@@ -4935,14 +4942,16 @@ export default function MyPage() {
       if (!res.ok) {
         throw new Error(body.error ?? "빠른매칭 상태를 다시 불러오지 못했습니다.");
       }
+      if (requestVersion !== swipeStatusRequestVersionRef.current) return;
       setSwipeStatusSummary(body.summary ?? null);
       setMyOutgoingSwipeLikes(body.outgoing_likes ?? []);
       setMyIncomingSwipeLikes(body.incoming_likes ?? []);
+      setCanDismissIncomingSwipe(body.can_dismiss_incoming === true);
       setShowAllOutgoingSwipeLikes(false);
       setShowAllIncomingSwipeLikes(false);
       setSwipeStatusLoaded(true);
     } finally {
-      setSwipeStatusLoading(false);
+      if (requestVersion === swipeStatusRequestVersionRef.current) setSwipeStatusLoading(false);
     }
   }, []);
 
@@ -5243,6 +5252,7 @@ export default function MyPage() {
 
   const handleSwipeLikeBack = async (item: SwipeStatusItem) => {
     if (processingSwipeLikeBackIds.includes(item.swipe_id)) return;
+    if (item.can_like === false) return;
     if (!item.card?.id || !item.card.sex) {
       alert("상대 카드 정보를 찾지 못했습니다.");
       return;
@@ -5264,6 +5274,12 @@ export default function MyPage() {
         match?: { other_nickname?: string; other_instagram_id?: string | null };
       };
       if (!res.ok) {
+        if (res.status === 410) {
+          setMyIncomingSwipeLikes((prev) => prev.map((row) => row.swipe_id === item.swipe_id
+            ? { ...row, can_like: false, unavailable_reason: "상대가 빠른매칭을 숨긴 상태라 맞라이크를 진행할 수 없어요." }
+            : row));
+          void reloadSwipeStatus().catch((error) => console.error("[mypage] swipe status refresh failed", error));
+        }
         alert(body.error ?? "맞라이크 처리에 실패했습니다.");
         return;
       }
@@ -8740,7 +8756,6 @@ export default function MyPage() {
                   ) : (
                     <div className="mt-3 space-y-2">
                       {(showAllIncomingSwipeLikes ? myIncomingSwipeLikes : myIncomingSwipeLikes.slice(0, 6)).map((item) => {
-                        const processing = processingSwipeLikeBackIds.includes(item.swipe_id);
                         return (
                           <div key={item.swipe_id} className="rounded-lg border border-pink-200 bg-pink-50/40 p-3">
                             <div className="flex gap-3">
@@ -8753,9 +8768,9 @@ export default function MyPage() {
                                 )}
                               </div>
                               <div className="min-w-0 flex-1">
-                                <div className="flex items-center justify-between gap-2">
-                                  <p className="text-sm font-medium text-neutral-900">{item.card?.display_nickname ?? "익명"}</p>
-                                  <span className="inline-flex rounded-full bg-pink-100 px-2 py-0.5 text-[11px] font-medium text-pink-700">
+                                <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                                  <p className="min-w-0 break-words text-sm font-medium text-neutral-900">{item.card?.display_nickname ?? "익명"}</p>
+                                  <span className="inline-flex shrink-0 whitespace-nowrap rounded-full bg-pink-100 px-2 py-0.5 text-[11px] font-medium text-pink-700">
                                     나를 라이크함
                                   </span>
                                 </div>
@@ -8785,19 +8800,24 @@ export default function MyPage() {
                                     </p>
                                   </>
                                 ) : null}
-                                <div className="mt-3 flex flex-wrap gap-2">
-                                  <button
-                                    type="button"
-                                    disabled={processing || !item.card?.id || !item.card.sex}
-                                    onClick={() => void handleSwipeLikeBack(item)}
-                                    className="h-8 rounded-md bg-pink-500 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50"
-                                  >
-                                    {processing ? "처리 중..." : "바로 라이크"}
-                                  </button>
-                                  <span className="inline-flex items-center text-[11px] text-neutral-500">
-                                    지금 맞라이크하면 바로 쌍방 매칭이 될 수 있어요.
-                                  </span>
-                                </div>
+                                <IncomingSwipeLikeActions
+                                  swipeId={item.swipe_id}
+                                  createdAt={item.created_at}
+                                  canLike={item.can_like !== false && Boolean(item.card?.id && item.card.sex)}
+                                  canDelete={canDismissIncomingSwipe}
+                                  unavailableReason={item.unavailable_reason}
+                                  onLike={() => handleSwipeLikeBack(item)}
+                                  onRefresh={reloadSwipeStatus}
+                                  onDeleted={(swipeId) => {
+                                    ++swipeStatusRequestVersionRef.current;
+                                    setMyIncomingSwipeLikes((prev) => prev.filter((row) => row.swipe_id !== swipeId));
+                                    setSwipeStatusSummary((prev) => prev ? {
+                                      ...prev, incoming_pending: Math.max(0, prev.incoming_pending - 1),
+                                    } : prev);
+                                    void reloadSwipeStatus().catch((error) =>
+                                      console.error("[mypage] swipe status refresh after deletion failed", error));
+                                  }}
+                                />
                               </div>
                             </div>
                           </div>

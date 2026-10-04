@@ -371,8 +371,8 @@ export async function GET(req: Request) {
       defaultRecommendations, hasActiveRefresh ? refreshSeeds : [], handledPairIds, RECOMMENDATION_LIMIT, nowMs,
       { limit: ONE_ON_ONE_FREE_EXTRA_CANDIDATES, excludeIds: recentHandledIds });
     const recommendations = hasActiveRefresh ? replay.recommendations : defaultRecommendations;
-    // Extra candidates must not overlap today's main pages; old history is a
-    // preference, not a reason to make the separate extra list disappear.
+    // Extras cannot overlap the current main page. Earlier pages are a soft
+    // preference, not a reason to replace compatible local people with remote ones.
     const sourcePlus = plusByUserId.get(sourceCard.user_id) ?? null;
     const refreshLimit = sourcePlus ? ONE_ON_ONE_PLUS_REFRESH_LIMIT : ONE_ON_ONE_FREE_REFRESH_LIMIT;
     const refreshAvailability = getRefreshAvailability(

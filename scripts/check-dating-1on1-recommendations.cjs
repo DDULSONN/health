@@ -38,6 +38,38 @@ const card = (id, overrides = {}) => ({
 const source = card("source", { sex: "male", age: 30 });
 const ids = (cards) => cards.map((candidate) => candidate.id);
 
+test("extra candidates prefer compatible locals from earlier pages over distant unseen people", () => {
+  for (const sex of ["male", "female"]) {
+    const src = card("local-source", { sex, age: 28 });
+    const peerSex = sex === "male" ? "female" : "male";
+    const locals = Array.from({ length: 15 }, (_, i) => card("local-" + i, { sex: peerSex }));
+    const far = Array.from({ length: 35 }, (_, i) => card("far-" + i, { sex: peerSex, region: "부산 해운대구" }));
+    const pool = [...locals, ...far];
+    const defaults = rules.takeBalancedRecommendations(src, rules.sortCandidatesForSource(src, pool, "default", now), 10, new Set(), now);
+    const result = rules.replayRecommendationRefreshes(src, pool, defaults,
+      [new Date(now - 3600000).toISOString()], new Set(), 10, now, { limit: 3, excludeIds: new Set() });
+    assert.equal(result.recommendations.length, 10);
+    assert.equal(result.extraRecommendations.length, 3);
+    assert.ok(result.extraRecommendations.every(c => c.id.startsWith("local-")), "historical main is a soft preference, not a hard exclusion");
+    assert.equal(result.extraRecommendations.some(c => ids(result.recommendations).includes(c.id)), false);
+  }
+});
+
+test("extra fallback never restores recent handled people, and remains stable on ordinary GET", () => {
+  for (const size of [10, 11, 12, 13, 15, 25, 90]) {
+    const locals = Array.from({ length: size }, (_, i) => card("near-" + i));
+    const far = Array.from({ length: 30 }, (_, i) => card("remote-" + i, { region: "부산" }));
+    const pool = [...locals, ...far], exclude = new Set(["near-0"]);
+    const stamps = [now - 86400000 * 2, now - 3600000].map(n => new Date(n).toISOString());
+    const run = () => rules.replayRecommendationRefreshes(source, pool, locals.slice(0, 10), stamps, exclude, 10, now, { limit: 3, excludeIds: exclude });
+    const result = run();
+    const availableLocals = locals.filter(c => !exclude.has(c.id) && !ids(result.recommendations).includes(c.id));
+    assert.equal(result.extraRecommendations.filter(c => c.id.startsWith("near-")).length, Math.min(3, availableLocals.length));
+    assert.ok(result.extraRecommendations.every(c => !exclude.has(c.id) && !ids(result.recommendations).includes(c.id)));
+    assert.deepEqual(result, run());
+  }
+});
+
 function mockDatabase(tables, intercept) {
   const calls = [];
   return {

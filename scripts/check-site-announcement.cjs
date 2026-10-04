@@ -66,8 +66,9 @@ function button(node) {
 test('new Korean notice replaces the old release and has a fixed 48-hour window', () => {
   assert.equal(end - start, 48 * 3600000);
   assert.notEqual(notice.id, 'one-on-one-refresh-fixed-2026-09-08');
-  assert.equal(notice.title, '1:1 매칭 후보 추천이 개선됐어요');
-  assert.equal(notice.message, '지역과 나이를 더 고려하고, 새로고침 시 후보가 반복되는 문제를 보완했어요.');
+  assert.equal(notice.title, '1:1 추가 후보 추천을 개선했어요');
+  assert.match(notice.message, /가까운 지역과 나이/);
+  assert.match(notice.message, /새로고침 횟수는 차감되지 않아요/);
   assert.equal(/\uFFFD/.test(notice.title + notice.message), false);
   assert.equal(policy.isSiteAnnouncementActive(start - 1), false);
   assert.equal(policy.isSiteAnnouncementActive(start), true);
@@ -75,7 +76,7 @@ test('new Korean notice replaces the old release and has a fixed 48-hour window'
   assert.equal(policy.isSiteAnnouncementActive(end), false);
 });
 test('new notice still appears after acknowledging the previous notice, but only once itself', () => {
-  const storage = new Map([['site-announcement:one-on-one-refresh-fixed-2026-09-08', '1']]);
+  const storage = new Map([['site-announcement:one-on-one-recommendations-improved-2026-09-16', '1']]);
   const page = browser({ storage }); page.mount(); page.advance(start + 1450);
   assert.ok(page.render()); button(page.render()).props.onClick();
   assert.equal(page.render(), null); assert.equal(storage.get(key), '1');

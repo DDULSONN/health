@@ -297,7 +297,7 @@ export function replayRecommendationRefreshes<T extends RecommendationCandidate>
   let extraRecommendations: T[] = [];
   const extraPoolAt = (pool: T[]) => pool.filter((card) =>
     readMeta(card).ageMatch && !extraOptions?.excludeIds.has(card.id) &&
-    !activeShownIds.has(card.id) && !recommendations.some((main) => main.id === card.id));
+    !recommendations.some((main) => main.id === card.id));
   const rotateExtras = (pool: T[], seed: string, at: number) => {
     if (!extraOptions?.limit) return;
     const previousIds = new Set(extraRecommendations.map((card) => card.id));
@@ -306,6 +306,7 @@ export function replayRecommendationRefreshes<T extends RecommendationCandidate>
     const pickedIds = new Set<string>();
     for (const group of groupByRelevance(sorted, readMeta)) {
       for (const preference of [
+        group.filter((card) => !activeShownIds.has(card.id) && !extraSeenIds.has(card.id) && !previousIds.has(card.id)),
         group.filter((card) => !extraSeenIds.has(card.id) && !previousIds.has(card.id)),
         group.filter((card) => !previousIds.has(card.id)),
         group,
@@ -381,16 +382,24 @@ export function replayRecommendationRefreshes<T extends RecommendationCandidate>
     for (const card of recommendations) { shownIds.add(card.id); activeShownIds.add(card.id); }
   }
   if (extraOptions?.limit) {
-    // New main profiles or eligibility changes may remove an extra. Retain the
-    // others on ordinary GETs; do not silently rotate without a refresh event.
+    // Never show today's main cards twice. Historical main pages are only a
+    // soft preference: excluding them sent extras far away even when compatible
+    // locals remained. Preserve existing extras within each relevance tier.
     const pool = extraPoolAt(candidates);
     const eligible = new Set(pool.map((card) => card.id));
-    extraRecommendations = extraRecommendations.filter((card) => eligible.has(card.id));
-    const used = new Set(extraRecommendations.map((card) => card.id));
-    extraRecommendations.push(...takeBalancedRecommendations(source,
-      sortCandidatesForSource(source, pool.filter((card) => !used.has(card.id)),
-        `${getKstDateString(new Date(nowMs))}:admin-extra:fill`, nowMs, readMeta),
-      extraOptions.limit - extraRecommendations.length, extraSeenIds, nowMs, readMeta));
+    const retained = extraRecommendations.filter((card) => eligible.has(card.id));
+    const used = new Set(retained.map((card) => card.id));
+    const sorted = sortCandidatesForSource(source, pool,
+      `${getKstDateString(new Date(nowMs))}:admin-extra:fill`, nowMs, readMeta);
+    extraRecommendations = [];
+    for (const group of groupByRelevance(sorted, readMeta)) {
+      const groupIds = new Set(group.map((card) => card.id));
+      extraRecommendations.push(...takeRecommendations(retained.filter((card) => groupIds.has(card.id)),
+        extraOptions.limit - extraRecommendations.length));
+      extraRecommendations.push(...takeBalancedRecommendations(source, group.filter((card) => !used.has(card.id)),
+        extraOptions.limit - extraRecommendations.length, new Set([...extraSeenIds, ...activeShownIds]), nowMs, readMeta));
+      if (extraRecommendations.length >= extraOptions.limit) break;
+    }
   }
   return { recommendations, shownIds, activeShownIds, seeds, extraRecommendations };
 }
