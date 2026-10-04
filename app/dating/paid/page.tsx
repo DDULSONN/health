@@ -1,10 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
 import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
 import PhotoPreparationStatus from "@/components/dating/PhotoPreparationStatus";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { DATING_PAID_FIXED_BADGE_LABEL, DATING_PAID_FIXED_HOURS, DATING_PAID_FIXED_LABEL, DATING_PAID_FIXED_SHORT_LABEL } from "@/lib/dating-paid";
 import { formatRemainingToKorean } from "@/lib/dating-open";
@@ -149,6 +150,14 @@ async function createBlurThumbnailFile(source: File): Promise<File> {
 }
 
 export default function DatingPaidPage() {
+  return <Suspense fallback={<p className="px-4 py-6 text-sm text-neutral-500">불러오는 중...</p>}><DatingPaidContent /></Suspense>;
+}
+
+function DatingPaidContent() {
+  const searchParams = useSearchParams();
+  const requestedEditId = searchParams.get("editId") ?? "";
+  const shouldOpenForm = searchParams.get("apply") === "1" || searchParams.get("apply") === "true";
+  const shouldReuseOpenCard = searchParams.get("source") === "open_card";
   const [editId, setEditId] = useState("");
   const isEditMode = editId.length > 0;
   const supabase = useMemo(() => createClient(), []);
@@ -156,7 +165,9 @@ export default function DatingPaidPage() {
 
   const [items, setItems] = useState<PaidItem[]>([]);
   const [loading, setLoading] = useState(true);
+  const [listError, setListError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const submissionInFlightRef = useRef(false);
   const [submitMode, setSubmitMode] = useState<SubmitMode>("kakaopay");
   const [error, setError] = useState("");
   const [successId, setSuccessId] = useState("");
@@ -191,12 +202,15 @@ export default function DatingPaidPage() {
 
   const loadItems = async () => {
     setLoading(true);
+    setListError("");
     try {
       const res = await fetch("/api/dating/paid/list", { cache: "no-store" });
       const body = (await res.json().catch(() => ({}))) as { items?: PaidItem[] };
-      setItems(Array.isArray(body.items) ? body.items : []);
+      if (!res.ok || !Array.isArray(body.items)) throw new Error("paid-list-unavailable");
+      setItems(body.items);
     } catch {
       setItems([]);
+      setListError("공개 카드를 불러오지 못했습니다. 다시 시도해 주세요.");
     } finally {
       setLoading(false);
     }
@@ -237,11 +251,9 @@ export default function DatingPaidPage() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const params = new URLSearchParams(window.location.search);
-    const nextId = params.get("editId") ?? "";
-    const shouldOpenForm = params.get("apply") === "1" || params.get("apply") === "true";
-    const shouldReuseOpenCard = params.get("source") === "open_card";
+    const nextId = requestedEditId;
+    let cancelled = false;
+    setSourcePrefillLoading(false);
     setEditId(nextId);
     if (shouldOpenForm) {
       setFormStep(1);
@@ -254,6 +266,7 @@ export default function DatingPaidPage() {
         try {
           const res = await fetch("/api/dating/paid/create?source=open_card", { cache: "no-store" });
           const body = (await res.json().catch(() => ({}))) as { card?: SourceOpenCard; code?: string; message?: string };
+          if (cancelled) return;
           if (!res.ok || !body.card) {
             if (res.status === 401 || body.code === "UNAUTHORIZED") {
               const nextPath = "/onboarding/dating?next=instant_open_card";
@@ -298,16 +311,18 @@ export default function DatingPaidPage() {
               : "기존 오픈카드 내용으로 즉시 공개 카드를 별도 등록합니다."
           );
         } catch (prefillError) {
+          if (cancelled) return;
           setDisplayMode("instant_public");
           setSourcePrefillMessage(
             prefillError instanceof Error ? prefillError.message : "기존 오픈카드를 불러오지 못했습니다."
           );
         } finally {
-          setSourcePrefillLoading(false);
+          if (!cancelled) setSourcePrefillLoading(false);
         }
       });
     }
-  }, []);
+    return () => { cancelled = true; };
+  }, [requestedEditId, shouldOpenForm, shouldReuseOpenCard]);
 
   useEffect(() => {
     if (!isEditMode || !editId) return;
@@ -406,7 +421,7 @@ export default function DatingPaidPage() {
     moveToFormStep(formStep + 1);
   };
 
-  const submitPaidRequest = async (requestedSubmitMode: SubmitMode) => {
+  const performPaidRequest = async (requestedSubmitMode: SubmitMode) => {
     if (photoPreparation.isProcessing()) { setError(PHOTO_PROCESSING_MESSAGE); return; }
     if (submitting) return;
     setSubmitMode(requestedSubmitMode);
@@ -705,14 +720,30 @@ export default function DatingPaidPage() {
     }
   };
 
+  const submitPaidRequest = async (requestedSubmitMode: SubmitMode) => {
+    if (submissionInFlightRef.current || editLoading || sourcePrefillLoading || formStep !== PAID_FORM_STEPS.length) return;
+    // Lock before auth/photo awaits; state alone does not guard rapid repeated clicks.
+    submissionInFlightRef.current = true;
+    try {
+      await performPaidRequest(requestedSubmitMode);
+    } catch {
+      setError("연결을 확인하고 잠시 후 다시 시도해 주세요.");
+    } finally {
+      submissionInFlightRef.current = false;
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (formStep < PAID_FORM_STEPS.length) {
+      handleNextFormStep();
+      return;
+    }
     void submitPaidRequest("kakaopay");
   };
 
-  const fixedItems = useMemo(() => items.filter((item) => item.display_mode !== "instant_public"), [items]);
-  const maleItems = useMemo(() => fixedItems.filter((item) => item.gender === "M"), [fixedItems]);
-  const femaleItems = useMemo(() => fixedItems.filter((item) => item.gender === "F"), [fixedItems]);
+  const maleItems = useMemo(() => items.filter((item) => item.gender === "M"), [items]);
+  const femaleItems = useMemo(() => items.filter((item) => item.gender === "F"), [items]);
   const nowTick = useMemo(() => tick, [tick]);
   void nowTick;
 
@@ -738,9 +769,10 @@ export default function DatingPaidPage() {
 
       <section className="rounded-2xl border border-rose-200 bg-gradient-to-br from-white via-rose-50/70 to-orange-50/70 p-4 shadow-sm">
         <div className="mb-3 flex items-center justify-between">
-          <h1 className="text-xl font-bold text-neutral-900">{DATING_PAID_FIXED_BADGE_LABEL} 신청</h1>
+          <h1 className="text-xl font-bold text-neutral-900">{displayMode === "instant_public" ? "대기 없이 등록" : DATING_PAID_FIXED_BADGE_LABEL} 신청</h1>
           <Link
             href="/dating/paid?apply=1&source=open_card"
+            onClick={() => setFormOpen(true)}
             className="rounded-lg bg-rose-500 px-3 py-2 text-sm font-medium text-white hover:bg-rose-600"
           >
             신청하기
@@ -1045,11 +1077,11 @@ export default function DatingPaidPage() {
                 </button>
               )}
               {formStep < PAID_FORM_STEPS.length ? (
-                <button type="button" onClick={handleNextFormStep} disabled={editLoading || sourcePrefillLoading || photoPreparation.busy} className="h-11 flex-1 rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white disabled:opacity-50">
+                <button key="next-step" type="button" onClick={handleNextFormStep} disabled={editLoading || sourcePrefillLoading || photoPreparation.busy} className="h-11 flex-1 rounded-xl bg-neutral-900 px-4 text-sm font-semibold text-white disabled:opacity-50">
                   다음
                 </button>
               ) : (
-                <button type="submit" disabled={submitting || editLoading || sourcePrefillLoading || photoPreparation.busy} className="h-11 flex-1 rounded-xl bg-rose-500 px-4 text-sm font-semibold text-white hover:bg-rose-600 disabled:opacity-50">
+                <button key="submit-request" type="submit" disabled={submitting || editLoading || sourcePrefillLoading || photoPreparation.busy} className="h-11 flex-1 rounded-xl bg-rose-500 px-4 text-sm font-semibold text-white hover:bg-rose-600 disabled:opacity-50">
                   {submitting && submitMode === "kakaopay" ? "처리 중..." : isEditMode ? "수정 저장" : "10,000원 결제하고 등록"}
                 </button>
               )}
@@ -1112,15 +1144,20 @@ export default function DatingPaidPage() {
       </section>
 
       <section className="mt-5">
-        <h2 className="text-lg font-bold text-neutral-900">확인된 36시간 고정</h2>
+        <h2 className="text-lg font-bold text-neutral-900">공개 중인 유료카드</h2>
         {loading ? (
           <p className="mt-2 text-sm text-neutral-500">불러오는 중...</p>
-        ) : fixedItems.length === 0 ? (
-          <p className="mt-2 text-sm text-neutral-500">현재 공개 중인 고정 카드가 없습니다.</p>
+        ) : listError ? (
+          <div role="status" className="mt-2 text-sm text-neutral-600">
+            <p>{listError}</p>
+            <button type="button" onClick={() => void loadItems()} className="mt-2 min-h-10 rounded-lg border border-neutral-300 px-3">다시 불러오기</button>
+          </div>
+        ) : items.length === 0 ? (
+          <p className="mt-2 text-sm text-neutral-500">현재 공개 중인 유료카드가 없습니다.</p>
         ) : (
           <div className="mt-3 space-y-6">
-            <GenderSection title="남자 36시간 고정" items={maleItems} />
-            <GenderSection title="여자 36시간 고정" items={femaleItems} />
+            {maleItems.length > 0 && <GenderSection title="남자 카드" items={maleItems} />}
+            {femaleItems.length > 0 && <GenderSection title="여자 카드" items={femaleItems} />}
           </div>
         )}
       </section>

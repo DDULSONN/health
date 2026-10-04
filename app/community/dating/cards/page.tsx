@@ -27,6 +27,7 @@ import { cacheOpenCardDetail, cachePaidCardDetail } from "@/lib/dating-detail-ca
 import { createClient } from "@/lib/supabase/client";
 import { createLatestRequest } from "@/lib/latest-request";
 import { trackCheckoutStarted } from "@/lib/payment-analytics";
+import { readDatingJson } from "@/lib/dating-read-json";
 import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
 import AllPassProfileOfferBanner from "@/components/dating/AllPassProfileOfferBanner";
 import OneOnOneContactNudge from "@/components/dating/OneOnOneContactNudge";
@@ -1701,6 +1702,11 @@ function OpenCardsContent() {
     reason: null,
   });
   const activeSexRef = useRef<DatingSex>(activeSex);
+  const initialCardsRequestRef = useRef(0);
+  const secondaryCardsRequestRef = useRef(0);
+  const profilePresenceRequestRef = useRef(0);
+  const [paidCardsError, setPaidCardsError] = useState("");
+  const [paidCardsLoading, setPaidCardsLoading] = useState(false);
   const loadedOpenCardSexesRef = useRef<Record<DatingSex, boolean>>({ male: false, female: false });
   const swipeCacheRef = useRef<Partial<Record<"male" | "female", SwipeState>>>({});
   const swipeRequestIdRef = useRef({ male: 0, female: 0 });
@@ -1711,6 +1717,8 @@ function OpenCardsContent() {
   const profileDraft = useDatingDraftResume(draftUserId, supabase.auth);
   const [myOpenCards, setMyOpenCards] = useState<MyOpenCard[]>([]);
   const [homeProfilePresenceReady, setHomeProfilePresenceReady] = useState(false);
+  const [openCardPresenceReady, setOpenCardPresenceReady] = useState(false);
+  const [openCardPresenceError, setOpenCardPresenceError] = useState(false);
   const [hasActiveOneOnOneProfile, setHasActiveOneOnOneProfile] = useState(false);
   const [reactivatingHomeOpenCardId, setReactivatingHomeOpenCardId] = useState("");
   const [boostingFirstQueueCardId, setBoostingFirstQueueCardId] = useState("");
@@ -1933,38 +1941,39 @@ function OpenCardsContent() {
   }, [supabase]);
 
   const reloadMyOpenCards = useCallback(async () => {
+    const requestId = ++profilePresenceRequestRef.current;
+    const isCurrent = () => requestId === profilePresenceRequestRef.current;
+    setOpenCardPresenceError(false);
     if (!viewerLoggedIn) {
       setMyOpenCards([]);
       setHasActiveOneOnOneProfile(false);
       setHomeProfilePresenceReady(false);
+      setOpenCardPresenceReady(false);
       return;
     }
 
     setHomeProfilePresenceReady(false);
-    const [openCardsResponse, oneOnOneResponse] = await Promise.all([
-      fetch("/api/dating/cards/my", { cache: "no-store" }).catch(() => null),
-      fetch("/api/dating/1on1/write-status", { cache: "no-store" }).catch(() => null),
+    const [openReady, oneOnOneReady] = await Promise.all([
+      readDatingJson<{ items?: MyOpenCard[] }>("/api/dating/cards/my").then((body) => {
+        const ready = Array.isArray(body?.items);
+        if (isCurrent()) {
+          setMyOpenCards(Array.isArray(body?.items) ? body.items : []);
+          setOpenCardPresenceReady(ready);
+          setOpenCardPresenceError(!ready);
+        }
+        return ready;
+      }),
+      readDatingJson<{ activeRequestStatus?: string | null }>("/api/dating/1on1/write-status").then((body) => {
+        if (isCurrent()) setHasActiveOneOnOneProfile(Boolean(body?.activeRequestStatus));
+        return body !== null;
+      }),
     ]);
-
-    if (!openCardsResponse?.ok) {
-      setMyOpenCards([]);
-    } else {
-      const body = (await openCardsResponse.json().catch(() => ({}))) as { items?: MyOpenCard[] };
-      setMyOpenCards(Array.isArray(body.items) ? body.items : []);
-    }
-
-    if (!oneOnOneResponse?.ok) {
-      setHasActiveOneOnOneProfile(false);
-    } else {
-      const body = (await oneOnOneResponse.json().catch(() => ({}))) as { activeRequestStatus?: string | null };
-      setHasActiveOneOnOneProfile(Boolean(body.activeRequestStatus));
-    }
-
-    setHomeProfilePresenceReady(Boolean(openCardsResponse?.ok && oneOnOneResponse?.ok));
+    if (isCurrent()) setHomeProfilePresenceReady(openReady && oneOnOneReady);
   }, [viewerLoggedIn]);
 
   useEffect(() => {
     void reloadMyOpenCards();
+    return () => { profilePresenceRequestRef.current += 1; };
   }, [reloadMyOpenCards]);
 
   useEffect(() => {
@@ -2164,74 +2173,51 @@ function OpenCardsContent() {
 
   const refreshSecondary = useCallback(async (preferredSex?: DatingSex) => {
     const visibleSex = preferredSex ?? activeSexRef.current;
-    try {
-      const [qsRes, paidRes, mvStatusRes] = await Promise.all([
-        fetch("/api/dating/cards/queue-stats", { cache: "no-store" }),
-        fetch(`/api/dating/paid/list?sex=${visibleSex}`, { cache: "no-store" }),
-        fetch("/api/dating/cards/more-view/status", { cache: "no-store" }),
-      ]);
-      if (qsRes.ok) {
-        const qsBody = (await qsRes.json()) as QueueStats;
-        setQueueStats(qsBody);
-      } else {
-        setQueueStats(null);
-      }
-      if (paidRes.ok) {
-        const paidBody = (await paidRes.json()) as { items?: PaidCard[] };
-        setPaidItems(Array.isArray(paidBody.items) ? paidBody.items : []);
-      } else {
-        setPaidItems([]);
-      }
-
-      const mvStatusBody = (await mvStatusRes.json().catch(() => ({}))) as MoreViewStatusResponse;
-      const nextStatus = {
-        loggedIn: mvStatusBody.loggedIn === true,
-        male: mvStatusBody.male ?? "none",
-        female: mvStatusBody.female ?? "none",
-      };
-      setMoreViewStatus(nextStatus);
-
-      const pendingFetches: Promise<void>[] = [];
-      if (nextStatus.male === "approved" && visibleSex === "male") {
-        pendingFetches.push(
-          fetch("/api/dating/cards/more-view/list?sex=male", { cache: "no-store" })
-            .then(async (res) => {
-              if (!res.ok) return;
-              const body = (await res.json()) as { items?: PublicCard[] };
-              setMoreViewMale(Array.isArray(body.items) ? body.items : []);
-            })
-            .catch(() => undefined)
-        );
-      } else {
+    const requestId = ++secondaryCardsRequestRef.current;
+    const isCurrent = () => requestId === secondaryCardsRequestRef.current;
+    setPaidCardsLoading(true);
+    setPaidCardsError("");
+    // Settle independently: queue/more-view delays must not hide paid cards.
+    await Promise.all([
+      readDatingJson<QueueStats>("/api/dating/cards/queue-stats").then((body) => {
+        if (isCurrent()) setQueueStats(body);
+      }),
+      readDatingJson<{ items?: PaidCard[] }>(`/api/dating/paid/list?sex=${visibleSex}`).then((body) => {
+        if (!isCurrent()) return;
+        setPaidItems(Array.isArray(body?.items) ? body.items : []);
+        setPaidCardsError(Array.isArray(body?.items) ? "" : "대기 없이 등록 카드를 불러오지 못했습니다.");
+        setPaidCardsLoading(false);
+      }),
+      readDatingJson<MoreViewStatusResponse>("/api/dating/cards/more-view/status").then(async (body) => {
+        if (!isCurrent()) return;
+        const nextStatus = {
+          loggedIn: body?.loggedIn === true,
+          male: body?.male ?? "none",
+          female: body?.female ?? "none",
+        };
+        setMoreViewStatus(nextStatus);
         setMoreViewMale([]);
-      }
-      if (nextStatus.female === "approved" && visibleSex === "female") {
-        pendingFetches.push(
-          fetch("/api/dating/cards/more-view/list?sex=female", { cache: "no-store" })
-            .then(async (res) => {
-              if (!res.ok) return;
-              const body = (await res.json()) as { items?: PublicCard[] };
-              setMoreViewFemale(Array.isArray(body.items) ? body.items : []);
-            })
-            .catch(() => undefined)
-        );
-      } else {
         setMoreViewFemale([]);
-      }
-      await Promise.all(pendingFetches);
-    } catch (e) {
-      console.error("open cards secondary load failed", e);
-    }
+        if (nextStatus[visibleSex] !== "approved") return;
+        const cards = await readDatingJson<{ items?: PublicCard[] }>(`/api/dating/cards/more-view/list?sex=${visibleSex}`);
+        if (!isCurrent()) return;
+        const setItems = visibleSex === "male" ? setMoreViewMale : setMoreViewFemale;
+        setItems(Array.isArray(cards?.items) ? cards.items : []);
+      }),
+    ]);
   }, []);
 
   const loadInitial = useCallback(
     async (options?: { silent?: boolean; sex?: DatingSex }) => {
+      const requestId = ++initialCardsRequestRef.current;
+      secondaryCardsRequestRef.current += 1;
       if (!options?.silent) {
         setLoading(true);
       }
       try {
         const requestedSex = options?.sex ?? activeSexRef.current;
         const result = await fetchBySex(requestedSex, 0, null, null);
+        if (requestId !== initialCardsRequestRef.current) return;
         const audience = result.audience ?? null;
         const effectiveSex = audience?.targetSex ?? requestedSex;
         setCardsAudience(audience);
@@ -2269,8 +2255,10 @@ function OpenCardsContent() {
           }
         }
         setLoading(false);
+        activeSexRef.current = effectiveSex;
         void refreshSecondary(effectiveSex);
       } catch (e) {
+        if (requestId !== initialCardsRequestRef.current) return;
         console.error("open cards load failed", e);
         setLoading(false);
       }
@@ -2285,6 +2273,8 @@ function OpenCardsContent() {
       setActiveSex(nextSex);
       activeSexRef.current = nextSex;
       if (loadedOpenCardSexesRef.current[nextSex]) {
+        initialCardsRequestRef.current += 1;
+        setLoading(false);
         void refreshSecondary(nextSex);
         return;
       }
@@ -2907,7 +2897,7 @@ function OpenCardsContent() {
     (!viewerLoggedIn || (homeProfilePresenceReady && registeredProfileServiceCount < 2));
   const showOpenCardManagement =
     viewerLoggedIn &&
-    homeProfilePresenceReady &&
+    openCardPresenceReady &&
     Boolean(hasActiveMyOpenCard || reactivatableOpenCard || firstQueueBoostCard);
   const profileStartPath = showOneOnOneSection || (hasAnyOpenCardProfile && !hasActiveOneOnOneProfile)
     ? ONE_ON_ONE_ONBOARDING_HREF : "/onboarding/dating";
@@ -2945,7 +2935,7 @@ function OpenCardsContent() {
     : "미등록";
   const instantOpenCardOnboardingHref = "/onboarding/dating?next=instant_open_card";
   const instantOpenCardHref = viewerLoggedIn
-    ? homeProfilePresenceReady && hasAnyOpenCardProfile
+    ? openCardPresenceReady && hasAnyOpenCardProfile
       ? "/dating/paid?apply=1&source=open_card"
       : instantOpenCardOnboardingHref
     : buildLoginRedirect(instantOpenCardOnboardingHref);
@@ -3002,7 +2992,13 @@ function OpenCardsContent() {
           </div>
         </section>
       ) : null}
-      {showOpenCardSection && homeProfilePresenceReady && hasAnyOpenCardProfile && !showOpenCardManagement ? (
+      {showOpenCardSection && openCardPresenceError ? (
+        <div role="status" className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-600">
+          <span>내 오픈카드를 확인하지 못했어요.</span>
+          <button type="button" onClick={() => void reloadMyOpenCards()} className="min-h-10 shrink-0 px-2 font-semibold">다시 확인</button>
+        </div>
+      ) : null}
+      {showOpenCardSection && openCardPresenceReady && hasAnyOpenCardProfile && !showOpenCardManagement ? (
         <section className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-100 bg-white px-4 py-3 shadow-[0_6px_18px_rgba(190,24,93,0.04)]">
           <div className="min-w-0">
             <p className="text-sm font-black text-neutral-950">기다리지 않고 바로 공개</p>
@@ -3059,9 +3055,9 @@ function OpenCardsContent() {
               </p>
             </div>
             <div className="flex shrink-0 flex-wrap gap-2">
-              {viewerLoggedIn && !homeProfilePresenceReady ? (
+              {viewerLoggedIn && !openCardPresenceReady ? (
                 <span className="inline-flex min-h-[42px] items-center rounded-lg bg-neutral-100 px-4 text-xs font-bold text-neutral-400">
-                  내 카드 확인 중...
+                  {openCardPresenceError ? "내 카드 확인 필요" : "내 카드 확인 중..."}
                 </span>
               ) : hasActiveMyOpenCard ? (
                 <Link
@@ -3080,7 +3076,7 @@ function OpenCardsContent() {
                   {reactivatingHomeOpenCardId === reactivatableOpenCard.id ? "등록 중..." : "기존 카드 다시 공개"}
                 </button>
               ) : null}
-              {hasActiveMyOpenCard ? (
+              {openCardPresenceReady && hasAnyOpenCardProfile ? (
                 <Link
                   href={instantOpenCardHref}
                   className="inline-flex min-h-[42px] items-center justify-center rounded-lg bg-rose-600 px-4 text-sm font-bold text-white transition hover:bg-rose-700"
@@ -3212,7 +3208,7 @@ function OpenCardsContent() {
               >
                 오픈카드 작성하기
               </Link>
-              {homeProfilePresenceReady && hasAnyOpenCardProfile ? (
+              {openCardPresenceReady && hasAnyOpenCardProfile ? (
                 <Link
                   href={instantOpenCardHref}
                   className="inline-flex min-h-[40px] items-center rounded-2xl border border-rose-200 bg-white px-4 text-sm font-bold text-rose-700 hover:bg-rose-50"
@@ -3349,12 +3345,12 @@ function OpenCardsContent() {
                     <Link
                       href="/dating/card/new"
                       className={`inline-flex min-h-[54px] items-center justify-center rounded-[18px] border border-neutral-200 bg-white px-4 text-base font-bold text-neutral-600 ${
-                        homeProfilePresenceReady && hasAnyOpenCardProfile ? "" : "col-span-2"
+                        openCardPresenceReady && hasAnyOpenCardProfile ? "" : "col-span-2"
                       }`}
                     >
                       오픈카드 작성
                     </Link>
-                    {homeProfilePresenceReady && hasAnyOpenCardProfile ? (
+                    {openCardPresenceReady && hasAnyOpenCardProfile ? (
                       <Link
                         href={instantOpenCardHref}
                         className="inline-flex min-h-[54px] items-center justify-center rounded-[18px] bg-rose-600 px-4 text-base font-bold text-white"
@@ -3574,12 +3570,21 @@ function OpenCardsContent() {
         </section>
       ) : null}
 
+      {showOpenCardSection && !openCardsAudienceBlocked && paidCardsError ? (
+        <div role="status" className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-600">
+          <span>{paidCardsError}</span>
+          <button type="button" onClick={() => void refreshSecondary()} className="min-h-10 shrink-0 px-2 font-semibold">다시 불러오기</button>
+        </div>
+      ) : null}
+      {showOpenCardSection && !openCardsAudienceBlocked && paidCardsLoading ? (
+        <p role="status" className="mb-2 text-xs text-neutral-500">대기 없이 등록 카드 불러오는 중...</p>
+      ) : null}
       {showOpenCardSection && loading ? (
         <p className="text-neutral-400 text-center py-10">불러오는 중...</p>
       ) : showOpenCardSection && !openCardsAudienceBlocked ? (
         <Section
           title={activeSex === "male" ? "남자 오픈카드" : "여자 오픈카드"}
-          currentCount={activeCurrentCount}
+          currentCount={activeCurrentCount + activePaidItems.length}
           paidItems={activePaidItems}
           items={activeOpenItems}
           hasMore={activeHasMore}

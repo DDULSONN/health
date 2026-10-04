@@ -8,6 +8,7 @@ import { kvGetString, kvSetString } from "@/lib/edge-kv";
 import { shouldRunAtMostEvery } from "@/lib/throttled-task";
 import { ensureBlurThumbFromRaw } from "@/lib/dating-blur-thumb";
 import { NextResponse } from "next/server";
+import { isAllowedAdminUser } from "@/lib/admin";
 import { normalizeDatingSex, resolveDatingViewerSex, type DatingSex } from "@/lib/dating-viewer-sex";
 
 const LITE_PUBLIC_BUCKET = "dating-card-lite";
@@ -150,7 +151,8 @@ export async function GET(req: Request) {
     const { user } = await getRequestAuthContext(req);
     const requestedSex = normalizeDatingSex(new URL(req.url).searchParams.get("sex"));
     let targetSex: DatingSex | null = requestedSex;
-    if (user) {
+    // Match the ordinary open-card list: only allowlisted admins may choose either sex.
+    if (user && !isAllowedAdminUser(user.id, user.email)) {
       const resolution = await resolveDatingViewerSex(admin, user);
       if (resolution.status === "missing" || resolution.status === "conflict") {
         return jsonNoStore(200, { ok: true, requestId, items: [], audienceStatus: resolution.status });
