@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import dynamic from "next/dynamic";
 import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
 import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
 import PhotoPreparationStatus from "@/components/dating/PhotoPreparationStatus";
@@ -10,6 +11,7 @@ import { saveApplyCheckoutDraft, readApplyCheckoutDraft, clearApplyCheckoutDraft
 
 import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 import { createClient } from "@/lib/supabase/client";
+const ReferralInvitePanel = dynamic(() => import("@/components/ReferralInvitePanel"));
 
 type CardDetail = {
   id: string;
@@ -557,6 +559,7 @@ export default function DatingCardApplyPage() {
                     오픈카톡 문의
                   </a>
                 </div>
+                <div className="mt-2"><ReferralInvitePanel compact placement="credits_empty" /></div>
               </div>
             )}
           </div>

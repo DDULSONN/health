@@ -61,6 +61,7 @@ assert.equal(server.readSignupEmailConsentToken(token, { ...user, app_metadata: 
     if (id === "next/navigation") return { useRouter: () => ({ replace: () => {} }) };
     if (id.endsWith("supabase/client")) return { createClient: () => supabase };
     if (id.endsWith("/signup-email-consent")) return copy;
+    if (id.endsWith("/growth-analytics")) return load("lib/growth-analytics.ts");
     if (id.endsWith("/nickname")) return { normalizeNickname: (s) => s, validateNickname: () => null };
     if (id.endsWith("/referral-code")) return { normalizeReferralCode: (s) => s || "", isValidReferralCode: () => false };
     throw new Error(id);

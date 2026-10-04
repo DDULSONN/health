@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { recordGrowthProfileCreated } from "@/lib/growth-analytics";
 import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
 import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
 import PhotoPreparationStatus from "@/components/dating/PhotoPreparationStatus";
@@ -539,6 +540,7 @@ export default function DatingOnboardingPage() {
           });
           if (!response.ok) throw new Error(await responseError(response, "오픈카드 등록에 실패했습니다."));
           setCompleted((current) => ({ ...current, open: true }));
+          recordGrowthProfileCreated("open_card", draftUserId ?? undefined);
           successes.push("오픈카드");
         } catch (openError) {
           trackOnboardingEvent(draftUserId, "submit_failed");
@@ -574,6 +576,7 @@ export default function DatingOnboardingPage() {
           });
           if (!response.ok) throw new Error(await responseError(response, "1:1 신청서 등록에 실패했습니다."));
           setCompleted((current) => ({ ...current, oneOnOne: true }));
+          recordGrowthProfileCreated("one_on_one", draftUserId ?? undefined);
           successes.push("1:1 신청서");
         } catch (oneError) {
           trackOnboardingEvent(draftUserId, "submit_failed");

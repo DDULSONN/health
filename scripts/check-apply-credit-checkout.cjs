@@ -32,6 +32,7 @@ const Page = load("app/community/dating/cards/[id]/apply/page.tsx", (id) => {
   if (id === "next/link") return ({ children, href }) => React.createElement("a", { href }, children);
   if (id === "next/navigation") return { useParams: () => ({ id: cardId }), useRouter: () => router, useSearchParams: () => new URLSearchParams("from=nearby") };
   if (id.endsWith("supabase/client")) return { createClient: () => supabase };
+  if (id.endsWith("use-dating-photo-preparation")) return { useDatingPhotoPreparation: () => ({ cancel() {}, isProcessing: () => false, busy: false, pending: [], errors: ["", ""] }) };
   if (id.endsWith("dating-apply-draft")) return { ...drafts, saveApplyCheckoutDraft: (...args) => { if (storageFails) throw new Error("disabled"); return drafts.saveApplyCheckoutDraft(...args); } };
   return () => null;
 }).default;
@@ -79,6 +80,8 @@ async function mount() { states = []; refs = []; render(); for (const effect of 
     if (id.endsWith("supabase/request")) return { getRequestAuthContext: async () => ({ user: { id: "viewer", email: "viewer@example.test" } }) };
     if (id.endsWith("supabase/server")) return { createAdminClient: () => paymentDb };
     if (id.endsWith("request-origin")) return { ensureAllowedMutationOrigin: () => null };
+    if (id.endsWith("all-pass-profile-offer-server")) return { AllPassOfferError: class extends Error {} };
+    if (id.endsWith("payment-guidance")) return { normalizeFailureOrderId: () => null };
     if (id.endsWith("dating-city-view")) return { getCityViewTargetSex: async () => "female", normalizeDatingCityViewSex: (value) => value === "female" || value === "male" ? value : null };
     if (id.endsWith("dating-purchase-fulfillment")) return { getCityViewPurchasePreview: async () => { if (previewFails) throw new Error("lookup failed"); return { newCount }; } };
     if (id.endsWith("dating-apply-return")) return load("lib/dating-apply-return.ts");

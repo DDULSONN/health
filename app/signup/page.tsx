@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
 import { isValidReferralCode, normalizeReferralCode } from "@/lib/referral-code";
 import { EMAIL_CONSENT_LABEL, EMAIL_CONSENT_DESCRIPTION } from "@/lib/signup-email-consent";
+import { beginGrowthSignup, cancelGrowthSignup, recordGrowthEmailSignup } from "@/lib/growth-analytics";
 
 const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
 const STORED_EMAIL_KEY = "recent_login_email";
@@ -183,6 +184,7 @@ export default function SignupPage() {
       const supabase = createClient();
       const cleanReferralCode = normalizeReferralCode(referralCode);
       const consentToken = await prepareEmailConsent("email", normalized);
+      beginGrowthSignup("email");
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: normalized,
         password,
@@ -204,6 +206,7 @@ export default function SignupPage() {
         identities.length === 0;
 
       if (duplicateFromMessage || duplicateFromUserShape) {
+        cancelGrowthSignup();
         window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
         setSubmittedEmail(normalized);
         setStep("existing_account");
@@ -212,10 +215,12 @@ export default function SignupPage() {
       }
 
       if (signUpError) {
+        cancelGrowthSignup();
         setError(signUpError.message);
         return;
       }
 
+      recordGrowthEmailSignup(data.user);
       window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
       setSubmittedEmail(normalized);
       if (data.session && cleanReferralCode) {
@@ -234,6 +239,7 @@ export default function SignupPage() {
       setStep("pending_verify");
       setInfo(`가입 요청이 완료되었습니다. 메일함에서 인증 후 로그인하세요.${emailMarketingConsent && !consentToken ? " 광고성 이메일 수신 동의는 저장되지 않았습니다." : ""}`);
     } catch (e) {
+      cancelGrowthSignup();
       setError(e instanceof Error ? e.message : "회원가입 처리 중 오류가 발생했습니다.");
     } finally {
       setLoading(false);
@@ -310,6 +316,7 @@ export default function SignupPage() {
       } else {
         window.localStorage.removeItem(PENDING_REFERRAL_KEY);
       }
+      beginGrowthSignup(provider);
       const { error: authError } = await supabase.auth.signInWithOAuth({
         provider,
         options: {
@@ -317,11 +324,13 @@ export default function SignupPage() {
         },
       });
       if (authError) {
+        cancelGrowthSignup();
         window.localStorage.removeItem(PENDING_REFERRAL_KEY);
         setError(mapSocialAuthError(providerLabel, authError.message));
         setLoading(false);
       }
     } catch (e) {
+      cancelGrowthSignup();
       window.localStorage.removeItem(PENDING_REFERRAL_KEY);
       setError(e instanceof Error ? e.message : `${providerLabel} 회원가입 중 오류가 발생했습니다.`);
       setLoading(false);

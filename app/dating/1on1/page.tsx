@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import { recordGrowthProfileCreated } from "@/lib/growth-analytics";
 import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
 import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
 import PhotoPreparationStatus from "@/components/dating/PhotoPreparationStatus";
@@ -599,6 +600,7 @@ function DatingOneOnOnePageContent() {
         throw new Error(message);
       }
 
+      if (!isEditMode) recordGrowthProfileCreated("one_on_one");
       setInfo(
         isEditMode
           ? editingArchivedProfile

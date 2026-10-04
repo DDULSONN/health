@@ -3,6 +3,7 @@
 import { type ReactNode, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
+import { recordGrowthProfileCreated } from "@/lib/growth-analytics";
 import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
 import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
 import PhotoPreparationStatus from "@/components/dating/PhotoPreparationStatus";
@@ -455,6 +456,7 @@ export default function NewDatingCardPage() {
       }
       const body = (await res.json().catch(() => ({}))) as { error?: string; message?: string };
 
+      if (!isEditMode) recordGrowthProfileCreated("open_card");
       alert(body.message ?? (isEditMode ? "오픈카드를 수정했습니다." : "오픈카드를 생성했습니다."));
       router.push("/mypage");
     } catch {

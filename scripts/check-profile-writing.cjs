@@ -56,6 +56,7 @@ test('draft/schema/upload unchanged; registration only adds the separately teste
   const file = 'app/onboarding/dating/page.tsx', before = base(file), after = read(file);
   const handlers = s => s.slice(s.indexOf('  const validateStep ='), s.indexOf('  if (checking)'));
   assert.equal(handlers(after)
+    .replace(/^          recordGrowthProfileCreated\([^\n]+\);\n/gm, '')
     .replaceAll('    if (importController.current) return;\n', '')
     .replace('    if (photoPreparation.isProcessing()) { setError(PHOTO_PROCESSING_MESSAGE); return; }\n', ''), handlers(before));
   const changed = execFileSync('git', ['diff', '--name-only'], { cwd: root, encoding: 'utf8' });
