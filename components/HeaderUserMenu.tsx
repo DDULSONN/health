@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { clearDatingDraft } from "@/lib/dating-onboarding-draft";
+import { isNotificationCount, NOTIFICATION_COUNT_EVENT, NOTIFICATION_COUNT_INVALIDATED_EVENT, publishNotificationCount } from "@/lib/notification-count";
 
 type HeaderUserMenuProps = {
   pathname: string;
@@ -12,7 +13,6 @@ type HeaderUserMenuProps = {
   onNavigate?: () => void;
 };
 
-const NOTIFICATION_COUNT_EVENT = "dating-notification-count";
 const NOTIFICATION_POLL_INTERVAL_MS = 5 * 60_000;
 const NOTIFICATION_FOCUS_REFRESH_GAP_MS = 60_000;
 
@@ -36,27 +36,25 @@ export default function HeaderUserMenu({
     let mounted = true;
     let hasUser = false;
     let lastNotificationRefreshAt = 0;
+    let notificationGeneration = 0;
+    let userGeneration = 0;
 
     async function loadUnreadCount() {
+      const generation = ++notificationGeneration;
       lastNotificationRefreshAt = Date.now();
       try {
         const response = await fetch("/api/notifications?limit=1", {
           cache: "no-store",
         });
-        if (!mounted) return;
+        if (!mounted || generation !== notificationGeneration || !hasUser) return;
         if (!response.ok) {
           if (response.status === 401) setUnreadCount(0);
           return;
         }
         const body = (await response.json()) as { unread_count?: number };
-        if (mounted) {
-          const nextCount = Number(body.unread_count ?? 0);
-          setUnreadCount(nextCount);
-          window.dispatchEvent(
-            new CustomEvent<number>(NOTIFICATION_COUNT_EVENT, {
-              detail: nextCount,
-            })
-          );
+        if (mounted && generation === notificationGeneration && hasUser && isNotificationCount(body?.unread_count)) {
+          setUnreadCount(body.unread_count);
+          publishNotificationCount(body.unread_count);
         }
       } catch {
         // Keep the last known count during temporary network failures.
@@ -64,11 +62,13 @@ export default function HeaderUserMenu({
     }
 
     async function loadUser() {
+      const generation = ++userGeneration;
+      notificationGeneration += 1;
       try {
         const {
           data: { user },
         } = await supabase.auth.getUser();
-        if (!mounted) return;
+        if (!mounted || generation !== userGeneration) return;
 
         if (!user) {
           hasUser = false;
@@ -88,7 +88,7 @@ export default function HeaderUserMenu({
           fetch("/api/admin/me", { cache: "no-store" }),
         ]);
 
-        if (!mounted) return;
+        if (!mounted || generation !== userGeneration) return;
 
         if (profileResult.status === "fulfilled") {
           setNickname(profileResult.value.data?.nickname ?? null);
@@ -100,13 +100,13 @@ export default function HeaderUserMenu({
 
         if (adminResult.status === "fulfilled" && adminResult.value.ok) {
           const admin = (await adminResult.value.json()) as { isAdmin?: boolean };
-          if (!mounted) return;
+          if (!mounted || generation !== userGeneration) return;
           setIsAdmin(Boolean(admin.isAdmin));
         } else {
           setIsAdmin(false);
         }
       } finally {
-        if (mounted) setAuthChecked(true);
+        if (mounted && generation === userGeneration) setAuthChecked(true);
       }
     }
 
@@ -127,7 +127,14 @@ export default function HeaderUserMenu({
     };
     const syncNotificationCount = (event: Event) => {
       const nextCount = (event as CustomEvent<number>).detail;
-      if (Number.isFinite(nextCount)) setUnreadCount(nextCount);
+      if (hasUser && isNotificationCount(nextCount)) {
+        notificationGeneration += 1;
+        setUnreadCount(nextCount);
+      }
+    };
+    const invalidateCount = () => {
+      notificationGeneration += 1;
+      if (hasUser) void loadUnreadCount();
     };
     const intervalId = mobile
       ? null
@@ -137,6 +144,7 @@ export default function HeaderUserMenu({
       document.addEventListener("visibilitychange", refreshVisibleNotifications);
     }
     window.addEventListener(NOTIFICATION_COUNT_EVENT, syncNotificationCount);
+    window.addEventListener(NOTIFICATION_COUNT_INVALIDATED_EVENT, invalidateCount);
 
     return () => {
       mounted = false;
@@ -146,6 +154,7 @@ export default function HeaderUserMenu({
         document.removeEventListener("visibilitychange", refreshVisibleNotifications);
       }
       window.removeEventListener(NOTIFICATION_COUNT_EVENT, syncNotificationCount);
+      window.removeEventListener(NOTIFICATION_COUNT_INVALIDATED_EVENT, invalidateCount);
       sub.subscription.unsubscribe();
     };
   }, [mobile, router, supabase]);

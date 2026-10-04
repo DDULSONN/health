@@ -252,26 +252,26 @@ export async function GET(req: Request) {
     }
     const ownerIds = [...new Set(rows.map((row) => String(row.user_id ?? "")).filter((id) => id.length > 0))];
     const phoneVerifiedByOwner = new Map<string, boolean>();
-    const bannedOwnerIds = new Set<string>();
+    const visibleOwnerIds = new Set<string>();
     if (ownerIds.length > 0) {
       const profileRes = await admin
         .from("profiles")
         .select("user_id,phone_verified,is_banned")
         .in("user_id", ownerIds);
-      if (!profileRes.error && Array.isArray(profileRes.data)) {
-        for (const profile of profileRes.data as Array<{
-          user_id: string;
-          phone_verified: boolean | null;
-          is_banned: boolean | null;
-        }>) {
-          phoneVerifiedByOwner.set(String(profile.user_id), profile.phone_verified === true);
-          if (profile.is_banned === true) bannedOwnerIds.add(String(profile.user_id));
-        }
+      if (profileRes.error || !Array.isArray(profileRes.data)) {
+        console.error(`[dating-paid-list] ${requestId} owner status lookup failed`, profileRes.error);
+        return jsonNoStore(503, { ok: false, code: "OWNER_STATUS_UNAVAILABLE", requestId, message: "회원 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." });
+      }
+      for (const profile of profileRes.data as Array<{
+        user_id: string;
+        phone_verified: boolean | null;
+        is_banned: boolean | null;
+      }>) {
+        phoneVerifiedByOwner.set(String(profile.user_id), profile.phone_verified === true);
+        if (profile.is_banned !== true) visibleOwnerIds.add(String(profile.user_id));
       }
     }
-    if (bannedOwnerIds.size > 0) {
-      rows = rows.filter((row) => !bannedOwnerIds.has(String(row.user_id ?? "")));
-    }
+    rows = rows.filter((row) => visibleOwnerIds.has(String(row.user_id ?? "")));
 
     const items = await Promise.all(
       rows.map(async (row) => {

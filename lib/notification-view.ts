@@ -33,6 +33,11 @@ export function notificationHref(link: string | null | undefined): string | null
   if (!link || !link.startsWith("/") || link.startsWith("//") || /[\\\u0000-\u0020]/.test(link)) return null;
   try {
     const parsed = new URL(link, "https://notification.invalid");
-    return parsed.origin === "https://notification.invalid" ? parsed.pathname + parsed.search + parsed.hash : null;
+    if (parsed.origin !== "https://notification.invalid") return null;
+    // Older 1:1 alarms pointed at the profile-writing page, not matching results.
+    if (parsed.pathname === "/dating/1on1" && !parsed.search && !parsed.hash) {
+      return "/community/dating/cards?tab=one_on_one";
+    }
+    return parsed.pathname + parsed.search + parsed.hash;
   } catch { return null; }
 }

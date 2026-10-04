@@ -60,8 +60,11 @@ test('draft/schema/upload unchanged; registration only adds the separately teste
     .replaceAll('    if (importController.current) return;\n', '')
     .replace('    if (photoPreparation.isProcessing()) { setError(PHOTO_PROCESSING_MESSAGE); return; }\n', ''), handlers(before));
   const changed = execFileSync('git', ['diff', '--name-only'], { cwd: root, encoding: 'utf8' });
-  // Payment confirmation now has an exact-baseline check in check-all-pass-profile-offer.cjs.
+  // Payment confirmation has an exact-baseline check in check-all-pass-profile-offer.cjs.
+  // Paid-card safety changes are exercised against the real handlers by check-site-audit-fixes.cjs.
   const isolatedAdditions = new Set(['app/api/dating/1on1/cards/route.ts', 'app/api/payments/toss/create/route.ts',
-    'app/api/payments/toss/confirm/route.ts', 'app/api/dating/all-pass-offer/route.ts', 'supabase/sql/all_pass_profile_offer.sql']);
+    'app/api/payments/toss/confirm/route.ts', 'app/api/dating/all-pass-offer/route.ts', 'supabase/sql/all_pass_profile_offer.sql',
+    'app/api/dating/paid/create/route.ts', 'app/api/dating/paid/list/route.ts',
+    'app/api/dating/paid/[id]/route.ts', 'app/api/dating/paid/apply/route.ts']);
   assert.ok(!changed.split(/\s+/).some(file => !isolatedAdditions.has(file) && /^(app\/api\/(dating|payments|mypage\/phone-verification)\/|supabase\/)/.test(file)));
 });

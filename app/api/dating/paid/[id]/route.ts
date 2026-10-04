@@ -125,9 +125,20 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   }
 
   const now = Date.now();
-  if (data.status !== "approved" || !data.expires_at || new Date(data.expires_at).getTime() <= now) {
+  const expiresAt = data.expires_at ? new Date(data.expires_at).getTime() : Number.NaN;
+  if (data.status !== "approved" || !Number.isFinite(expiresAt) || expiresAt <= now) {
     return NextResponse.json({ error: "지원 가능한 카드가 아닙니다." }, { status: 403 });
   }
+
+  // Check before signing any photos, including direct links to older cards.
+  const profileRes = await admin.from("profiles").select("phone_verified,is_banned").eq("user_id", data.user_id).maybeSingle();
+  if (profileRes.error) {
+    return NextResponse.json({ error: "회원 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." }, { status: 503, headers: { "Cache-Control": "private, no-store" } });
+  }
+  if (!profileRes.data || profileRes.data.is_banned === true) {
+    return NextResponse.json({ error: "카드를 찾을 수 없습니다." }, { status: 404, headers: { "Cache-Control": "private, no-store" } });
+  }
+  const isPhoneVerified = profileRes.data.phone_verified === true;
 
   if (user?.id) {
     const ownerUserId = String(data.user_id ?? "");
@@ -219,11 +230,6 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
   console.log(
     `[signedUrl.stats] requestId=${requestId} path=/api/dating/paid/[id] signCalls=${signCalls} cacheHit=${cacheHit} cacheMiss=${cacheMiss}`
   );
-  let isPhoneVerified = false;
-  if (data.user_id) {
-    const profileRes = await admin.from("profiles").select("phone_verified").eq("user_id", data.user_id).maybeSingle();
-    isPhoneVerified = profileRes.data?.phone_verified === true;
-  }
 
   return NextResponse.json({
     card: {
@@ -243,5 +249,5 @@ export async function GET(req: Request, { params }: { params: Promise<{ id: stri
       image_urls: imageUrls,
       photo_visibility: data.photo_visibility === "public" ? "public" : "blur",
     },
-  });
+  }, { headers: { "Cache-Control": "private, no-store" } });
 }

@@ -202,6 +202,7 @@ export default function PaidCardApplyPage() {
       </Link>
 
       <h1 className="text-2xl font-bold text-neutral-900 mt-3">36시간 고정 지원하기</h1>
+      <p className="mt-2 text-xs leading-5 text-neutral-500">지원권 소모 없이 지원할 수 있어요.</p>
 
       <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-3">
         <div className="flex items-center justify-between">

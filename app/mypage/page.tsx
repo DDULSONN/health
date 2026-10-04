@@ -1,6 +1,10 @@
 ﻿"use client";
 
 import dynamic from "next/dynamic";
+import PaidRegistrationStatus from "@/components/dating/PaidRegistrationStatus";
+import { usePaidRegistrationStatus } from "@/lib/use-paid-registration-status";
+import { paidRegistrationPresentation, PAID_REGISTRATION_MANAGE_HREF } from "@/lib/paid-registration-status";
+import { getMypageMatchingAnchorFilter } from "@/lib/mypage-matching-anchor";
 import { DatingReportDialog, type DatingReportResult } from "@/components/DatingReportButton";
 import Image from "next/image";
 import Link from "next/link";
@@ -2217,6 +2221,7 @@ export default function MyPage() {
   const [isAdmin, setIsAdmin] = useState(false);
   const [activeTab, setActiveTab] = useState<MyPageTab>("my_cert");
   const [pageSectionTab, setPageSectionTab] = useState<MyPageSectionTab>("profile");
+  const paidRegistration = usePaidRegistrationStatus(!loading && !accountBanStatus?.is_banned && pageSectionTab === "matching");
   const [navigationStateReady, setNavigationStateReady] = useState(false);
   const [matchingDataLoaded, setMatchingDataLoaded] = useState(false);
   const [matchingDataLoading, setMatchingDataLoading] = useState(false);
@@ -3648,16 +3653,18 @@ export default function MyPage() {
       const section = params.get("section");
       const match = params.get("match");
       const settings = params.get("settings");
+      const anchorFilter = getMypageMatchingAnchorFilter(window.location.hash);
+      const hasExplicitSection = Boolean(section && MY_PAGE_SECTION_TABS.has(section as MyPageSectionTab));
 
       setPageSectionTab(
         section && MY_PAGE_SECTION_TABS.has(section as MyPageSectionTab)
           ? (section as MyPageSectionTab)
-          : "profile",
+          : anchorFilter ? "matching" : "profile",
       );
       setMatchingFilter(
         match && MY_PAGE_MATCHING_FILTERS.has(match as MatchingFilter)
           ? (match as MatchingFilter)
-          : "all",
+          : !hasExplicitSection && anchorFilter ? anchorFilter : "all",
       );
       setActiveTab(
         settings && MY_PAGE_CERT_TABS.has(settings as MyPageTab)
@@ -3669,7 +3676,11 @@ export default function MyPage() {
 
     applyNavigationFromUrl();
     window.addEventListener("popstate", applyNavigationFromUrl);
-    return () => window.removeEventListener("popstate", applyNavigationFromUrl);
+    window.addEventListener("hashchange", applyNavigationFromUrl);
+    return () => {
+      window.removeEventListener("popstate", applyNavigationFromUrl);
+      window.removeEventListener("hashchange", applyNavigationFromUrl);
+    };
   }, []);
 
   useEffect(() => {
@@ -6536,7 +6547,7 @@ export default function MyPage() {
 
       setMyPaidCards((prev) => prev.filter((card) => card.id !== cardId));
       setReceivedPaidApplications((prev) => prev.filter((app) => app.card_id !== cardId));
-      await Promise.all([reloadPaidAppliedApplications(), reloadOpenDatingConnections()]);
+      await Promise.all([reloadPaidAppliedApplications(), reloadOpenDatingConnections(), paidRegistration.reload()]);
       alert(body.message ?? "유료카드를 삭제했습니다.");
     } finally {
       setDeletingPaidCardIds((prev) => prev.filter((id) => id !== cardId));
@@ -8340,11 +8351,12 @@ export default function MyPage() {
         {showMatchingSection && (
         <>
           <AllPassProfileOfferBanner placement="mypage_matching_profile_complete" />
+          <PaidRegistrationStatus state={paidRegistration} />
           <section className="mb-3 rounded-2xl border border-rose-100 bg-[#fffafb] p-4 shadow-[0_6px_20px_rgba(190,24,93,0.05)]">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div className="min-w-0">
                 <div className="flex flex-wrap items-center gap-2">
-                  <h2 className="text-base font-bold text-neutral-950">내 오픈카드</h2>
+                  <h2 className="text-base font-bold text-neutral-950">{paidRegistration.presentation?.active ? "일반 오픈카드" : "내 오픈카드"}</h2>
                   {matchingDataLoaded && primaryMyOpenCard ? (
                     <span className={`rounded-full px-2.5 py-1 text-[11px] font-bold ${
                       primaryMyOpenCard.status === "public"
@@ -8390,10 +8402,10 @@ export default function MyPage() {
                       카드 관리
                     </button>
                     <Link
-                      href="/dating/paid?apply=1&source=open_card"
+                      href={paidRegistration.loading || paidRegistration.error || paidRegistration.presentation?.active ? PAID_REGISTRATION_MANAGE_HREF : "/dating/paid?apply=1&source=open_card"}
                       className="inline-flex min-h-[40px] flex-1 items-center justify-center rounded-lg bg-rose-600 px-3.5 text-xs font-bold text-white hover:bg-rose-700 sm:flex-none"
                     >
-                      대기 없이 등록
+                      {paidRegistration.loading || paidRegistration.error || paidRegistration.presentation?.active ? "등록 상태 확인" : "대기 없이 등록"}
                     </Link>
                   </>
                 ) : matchingDataLoaded ? (
@@ -9773,13 +9785,13 @@ export default function MyPage() {
                     {card.nickname} / {card.gender === "M" ? "남자" : "여자"}
                   </p>
                   <span className="inline-flex rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
-                    {card.status}
+                    {paidRegistrationPresentation(card, Date.now()).label}
                   </span>
                 </div>
                 <p className="mt-1 text-xs text-neutral-500">
                   생성일 {new Date(card.created_at).toLocaleDateString("ko-KR")}
                 </p>
-                {card.status === "approved" && card.expires_at && (
+                {paidRegistrationPresentation(card, Date.now()).active && card.expires_at && (
                   <p className="mt-1 text-sm font-medium text-amber-700">
                     노출 종료까지 남은 시간 {formatRemainingToKorean(card.expires_at)}
                   </p>
@@ -9798,7 +9810,7 @@ export default function MyPage() {
                   </div>
                 )}
                 <div className="mt-2 flex flex-wrap items-center gap-2">
-                  {card.status === "approved" ? (
+                  {paidRegistrationPresentation(card, Date.now()).active ? (
                     <span className="inline-flex rounded-full bg-rose-100 px-2.5 py-1 text-[11px] font-semibold text-rose-700">
                       {card.display_mode === "instant_public" ? "즉시공개" : "36시간 상단고정"}
                     </span>

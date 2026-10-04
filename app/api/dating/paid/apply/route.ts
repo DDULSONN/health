@@ -153,8 +153,17 @@ export async function POST(req: Request) {
     if (blocked || contactBlocked) {
       return NextResponse.json({ ok: false, code: "FORBIDDEN", requestId, message: "차단된 상대에게는 지원할 수 없습니다." }, { status: 403 });
     }
-    if (card.status !== "approved" || !card.expires_at || new Date(card.expires_at).getTime() <= Date.now()) {
+    const expiresAt = card.expires_at ? new Date(card.expires_at).getTime() : Number.NaN;
+    if (card.status !== "approved" || !Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
       return NextResponse.json({ ok: false, code: "CARD_EXPIRED", requestId, message: "카드가 만료되었거나 비공개입니다." }, { status: 410 });
+    }
+
+    const ownerProfile = await adminClient.from("profiles").select("is_banned").eq("user_id", card.user_id).maybeSingle();
+    if (ownerProfile.error) {
+      return NextResponse.json({ ok: false, code: "OWNER_STATUS_UNAVAILABLE", requestId, message: "회원 상태를 확인하지 못했습니다. 잠시 후 다시 시도해 주세요." }, { status: 503 });
+    }
+    if (!ownerProfile.data || ownerProfile.data.is_banned === true) {
+      return NextResponse.json({ ok: false, code: "CARD_NOT_FOUND", requestId, message: "카드를 찾을 수 없습니다." }, { status: 404 });
     }
 
     const insertRes = await supabase

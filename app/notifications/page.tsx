@@ -6,6 +6,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createLatestRequest } from "@/lib/latest-request";
 import { fetchClientJson } from "@/lib/client-json-request";
 import { notificationHref, parseNotificationPage, type NotificationItem } from "@/lib/notification-view";
+import { invalidateNotificationCount, publishNotificationCount } from "@/lib/notification-count";
 
 export default function NotificationsPage() {
   const router = useRouter();
@@ -37,6 +38,7 @@ export default function NotificationsPage() {
       },
       commit: (data) => {
         setItems(data.items); setUnreadCount(data.unread_count);
+        publishNotificationCount(data.unread_count);
         acknowledged.current = new Set(data.items.filter((item) => item.is_read).map((item) => item.id));
       },
       fail: (error) => setLoadError(error instanceof Error && error.name !== "AbortError" && !(error instanceof TypeError)
@@ -62,6 +64,7 @@ export default function NotificationsPage() {
         body: JSON.stringify({ mark_all: true }),
       });
       if (!response.ok || body?.ok !== true) throw new Error("READ_FAILED");
+      invalidateNotificationCount();
       if (!mounted.current) return;
       request.cancel(); setLoading(false);
       items.forEach((item) => acknowledged.current.add(item.id));
@@ -85,6 +88,7 @@ export default function NotificationsPage() {
         body: JSON.stringify({ id: item.id }),
       });
       if (!response.ok || body?.ok !== true) throw new Error("READ_FAILED");
+      invalidateNotificationCount();
       if (!mounted.current) return;
       request.cancel(); setLoading(false);
       if (!acknowledged.current.has(item.id)) {

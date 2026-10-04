@@ -33,6 +33,9 @@ async function main() {
   const css = fs.existsSync(cssRoot) ? fs.readdirSync(cssRoot).filter(p => p.endsWith('.css'))
     .map(p => fs.readFileSync(path.join(cssRoot, p), 'utf8')).join('\n') : '';
   const now = new Date().toISOString();
+  const paidCard = { id: '00000000-0000-4000-8000-000000000001', nickname: '유료 등록 검증', gender: 'F',
+    status: 'approved', display_mode: 'instant_public', created_at: now, paid_at: now,
+    expires_at: new Date(Date.now() + 23.5 * 3600000).toISOString(), photo_signed_urls: ['/fixture-photo.png'] };
   const openCard = { id: 'fixture-open', sex: 'female', display_nickname: '검증 오픈카드', age: 29,
     region: '서울', photo_visibility: 'public', status: 'public', applicant_count: 1,
     auto_requeue_count: 0, created_at: now, published_at: now,
@@ -55,6 +58,8 @@ async function main() {
       }
       let body = { ok: true, items: [], cards: [], applications: [] };
       switch (url.pathname) {
+        case '/api/dating/paid/my/status': body = {card: populated ? paidCard : null,checked_at:new Date().toISOString()}; break;
+        case '/api/dating/paid/my/received': body = {cards: populated ? [paidCard] : [], applications: []}; break;
         case '/api/mypage/summary': body = { profile: { email: 'fixture@example.invalid', nickname: '검증회원',
           nickname_changed_count: 0, nickname_change_credits: 0, phone_verified: true, swipe_profile_visible: true },
           account: { is_banned: false }, isAdmin: false, weekly_win_count: 0, bodycheck_posts: [] }; break;

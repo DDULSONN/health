@@ -3,6 +3,7 @@ import { NextResponse } from "next/server";
 import { getOneOnOneContactNudgeSenderDisplayName } from "@/lib/dating-1on1-contact-nudge";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
+import { notificationHref } from "@/lib/notification-view";
 
 type NotificationRow = {
   id: string;
@@ -42,6 +43,29 @@ type OneOnOneCardIdentity = {
 function getNotificationApplicationId(item: NotificationRow): string {
   const value = item.meta_json?.application_id;
   return typeof value === "string" ? value.trim() : "";
+}
+
+function getNotificationApplicationIds(item: NotificationRow): string[] {
+  const group = Array.isArray(item.meta_json?.application_ids) ? item.meta_json.application_ids : [];
+  return [...new Set([getNotificationApplicationId(item), ...group]
+    .filter((id): id is string => typeof id === "string" && Boolean(id.trim()))
+    .map((id) => id.trim()))];
+}
+
+function isApplicationNotification(item: NotificationRow): boolean {
+  return ["dating_application_received", "dating_application_accepted", "dating_application_rejected"].includes(item.type);
+}
+
+async function loadApplicationStates(admin: ReturnType<typeof createAdminClient>, table: string, ids: string[]) {
+  const data: DatingCardApplicationState[] = [];
+  // Bound large legacy reminder groups; never treat an incomplete lookup as deleted.
+  if (ids.length > 1000) return { data, error: new Error("APPLICATION_STATE_LIMIT") };
+  for (let offset = 0; offset < ids.length; offset += 200) {
+    const result = await admin.from(table).select("id,status").in("id", ids.slice(offset, offset + 200));
+    if (result.error) return { data: [], error: result.error };
+    data.push(...(result.data ?? []) as DatingCardApplicationState[]);
+  }
+  return { data, error: null };
 }
 
 function getNotificationReminderKind(item: NotificationRow): string {
@@ -102,15 +126,25 @@ function buildNotificationPresentation(
   actorNickname: string | null,
   oneOnOneCardName: string | null = null,
   applicationState: DatingCardApplicationState | null = null,
-  applicationMissing = false
+  applicationMissing = false,
+  applicationLookupFailed = false,
+  reminderPendingCount: number | null = null
 ): { title: string; body: string; link: string | null } {
   const metaTitle = getNotificationMetaText(item, "notification_title");
   const metaBody = getNotificationMetaText(item, "notification_body");
   const metaRoute = getNotificationMetaText(item, "notification_route");
-  const appStatus =
-    applicationState?.status ||
-    getNotificationApplicationStatus(item) ||
-    (applicationMissing ? "canceled" : null);
+  const appStatus = applicationMissing ? "canceled" : applicationState?.status || getNotificationApplicationStatus(item) || null;
+  const receivedRoute = getNotificationSourceKind(item) === "paid" ? "/mypage#paid-card-received" : "/mypage#open-card-received";
+  const appliedRoute = getNotificationSourceKind(item) === "paid" ? "/mypage#paid-card-applied" : "/mypage#open-card-applied";
+  if (applicationLookupFailed && isApplicationNotification(item)) {
+    return { title: "지원 상태 확인 필요", body: "최신 지원 상태를 확인하지 못했어요. 매칭 내역에서 확인해 주세요.",
+      link: item.type === "dating_application_received" ? receivedRoute : appliedRoute };
+  }
+  if (reminderPendingCount !== null) {
+    return reminderPendingCount > 0
+      ? { title: "지원 답변이 기다리고 있어요", body: `이 알림의 지원 중 ${reminderPendingCount}건이 아직 대기 중이에요. 확인 후 수락하거나 거절해 주세요.`, link: receivedRoute }
+      : { title: "대기 중인 지원이 없습니다", body: "이 알림의 지원은 답변 완료 또는 취소되어 더 이상 대기 중이지 않아요.", link: receivedRoute };
+  }
   const preferCurrentApplicationState =
     appStatus === "canceled" ||
     (item.type === "dating_application_received" && (appStatus === "accepted" || appStatus === "rejected"));
@@ -145,8 +179,6 @@ function buildNotificationPresentation(
   }
 
   if (item.type === "dating_application_received") {
-    const receivedRoute =
-      getNotificationSourceKind(item) === "paid" ? "/mypage#paid-card-received" : "/mypage#open-card-received";
     if (appStatus === "canceled") {
       return {
         title: "지원이 취소됐습니다",
@@ -198,7 +230,7 @@ function buildNotificationPresentation(
         body: actorNickname
           ? `${actorNickname}님과의 연결이 현재 취소된 상태입니다.`
           : "수락됐던 연결이 현재 취소된 상태입니다.",
-        link: "/mypage#open-card-applied",
+        link: appliedRoute,
       };
     }
 
@@ -216,7 +248,7 @@ function buildNotificationPresentation(
       return {
         title: "지원이 취소됐습니다",
         body: "지원이 현재 취소된 상태입니다.",
-        link: "/mypage#open-card-applied",
+        link: appliedRoute,
       };
     }
 
@@ -225,7 +257,7 @@ function buildNotificationPresentation(
       body: actorNickname
         ? `${actorNickname}님이 내 지원 결과를 보냈습니다.`
         : "내 지원 결과가 도착했습니다.",
-      link: "/mypage#open-card-applied",
+      link: appliedRoute,
     };
   }
 
@@ -239,7 +271,8 @@ function buildNotificationPresentation(
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
   const unreadOnly = searchParams.get("unread_only") === "1";
-  const limit = Math.max(1, Math.min(100, Number(searchParams.get("limit") ?? 30)));
+  const requestedLimit = Number(searchParams.get("limit") ?? 30);
+  const limit = Number.isFinite(requestedLimit) ? Math.max(1, Math.min(100, Math.floor(requestedLimit))) : 30;
 
   const { client: supabase, user } = await getRequestAuthContext(request);
   if (!user) {
@@ -261,9 +294,7 @@ export async function GET(request: Request) {
 
   const notificationRows = (data ?? []) as NotificationRow[];
   const actorIds = [...new Set(notificationRows.map((item) => item.actor_id).filter(Boolean))] as string[];
-  const applicationNotifications = notificationRows.filter((item) =>
-    ["dating_application_received", "dating_application_accepted", "dating_application_rejected"].includes(item.type)
-  );
+  const applicationNotifications = notificationRows.filter(isApplicationNotification);
   const oneOnOneNudgeMatchIds = [
     ...new Set(notificationRows.filter(isOneOnOneContactNudge).map(getNotificationMatchId).filter(Boolean)),
   ];
@@ -271,7 +302,7 @@ export async function GET(request: Request) {
     ...new Set(
       applicationNotifications
         .filter((item) => getNotificationSourceKind(item) === "open")
-        .map(getNotificationApplicationId)
+        .flatMap(getNotificationApplicationIds)
         .filter(Boolean)
     ),
   ];
@@ -279,7 +310,7 @@ export async function GET(request: Request) {
     ...new Set(
       applicationNotifications
         .filter((item) => getNotificationSourceKind(item) === "paid")
-        .map(getNotificationApplicationId)
+        .flatMap(getNotificationApplicationIds)
         .filter(Boolean)
     ),
   ];
@@ -295,16 +326,12 @@ export async function GET(request: Request) {
   const oneOnOneMatchMap = new Map<string, OneOnOneMatchIdentity>();
   const oneOnOneNudgeSenderMap = new Map<string, string>();
   const oneOnOneCardNameMap = new Map<string, string>();
-  let applicationStateLookupSucceeded = true;
+  const applicationStateLookupSucceeded = { open: true, paid: true };
   if (openApplicationIds.length > 0 || paidApplicationIds.length > 0 || oneOnOneNudgeMatchIds.length > 0) {
     const admin = createAdminClient();
     const [openAppsResult, paidAppsResult, oneOnOneMatchesResult, oneOnOneNudgesResult] = await Promise.all([
-      openApplicationIds.length > 0
-        ? admin.from("dating_card_applications").select("id,status").in("id", openApplicationIds)
-        : Promise.resolve({ data: [], error: null }),
-      paidApplicationIds.length > 0
-        ? admin.from("dating_paid_card_applications").select("id,status").in("id", paidApplicationIds)
-        : Promise.resolve({ data: [], error: null }),
+      loadApplicationStates(admin, "dating_card_applications", openApplicationIds),
+      loadApplicationStates(admin, "dating_paid_card_applications", paidApplicationIds),
       oneOnOneNudgeMatchIds.length > 0
         ? admin
             .from("dating_1on1_match_proposals")
@@ -319,16 +346,13 @@ export async function GET(request: Request) {
         : Promise.resolve({ data: [], error: null }),
     ]);
 
-    if (!openAppsResult.error && !paidAppsResult.error) {
-      for (const app of [...(openAppsResult.data ?? []), ...(paidAppsResult.data ?? [])] as DatingCardApplicationState[]) {
-        applicationStateMap.set(app.id, app);
+    for (const [source, result] of [["open", openAppsResult], ["paid", paidAppsResult]] as const) {
+      applicationStateLookupSucceeded[source] = !result.error;
+      if (!result.error) {
+        for (const app of result.data) applicationStateMap.set(`${source}:${app.id}`, app);
+      } else {
+        console.error("[GET /api/notifications] application state load failed", { source, error: result.error });
       }
-    } else {
-      applicationStateLookupSucceeded = false;
-      console.error("[GET /api/notifications] application state load failed", {
-        openError: openAppsResult.error,
-        paidError: paidAppsResult.error,
-      });
     }
 
     if (!oneOnOneMatchesResult.error) {
@@ -362,11 +386,15 @@ export async function GET(request: Request) {
     }
   }
 
-  const { count: unreadCountRaw } = await supabase
+  const { count: unreadCountRaw, error: countError } = await supabase
     .from("notifications")
     .select("id", { count: "exact", head: true })
     .eq("user_id", user.id)
     .eq("is_read", false);
+  if (countError || !Number.isSafeInteger(unreadCountRaw) || (unreadCountRaw ?? -1) < 0) {
+    return NextResponse.json({ error: "알림 수를 확인하지 못했어요. 잠시 후 다시 시도해 주세요." },
+      { status: 503, headers: { "Cache-Control": "private, no-store" } });
+  }
 
   return NextResponse.json({
     items: notificationRows.map((notification) => {
@@ -380,26 +408,35 @@ export async function GET(request: Request) {
           )
         : "";
       const applicationId = getNotificationApplicationId(notification);
+      const source = getNotificationSourceKind(notification);
+      const relatedIds = isApplicationNotification(notification) ? getNotificationApplicationIds(notification) : [];
       const applicationState = applicationId
-        ? applicationStateMap.get(applicationId) ?? null
+        ? applicationStateMap.get(`${source}:${applicationId}`) ?? null
         : null;
+      const stateLoaded = applicationStateLookupSucceeded[source];
+      const isGroupReminder = notification.type === "dating_application_received" &&
+        ["pending_24h", "pending_72h"].includes(getNotificationReminderKind(notification)) && relatedIds.length > 1;
+      const pendingCount = isGroupReminder && stateLoaded
+        ? relatedIds.filter((id) => applicationStateMap.get(`${source}:${id}`)?.status === "submitted").length : null;
       const presentation = buildNotificationPresentation(
         notification,
         actorNickname,
         oneOnOneSenderCardName || null,
         applicationState,
-        Boolean(applicationId && applicationStateLookupSucceeded && !applicationState)
+        Boolean(relatedIds.length && applicationId && stateLoaded && !applicationState),
+        Boolean(relatedIds.length && !stateLoaded),
+        pendingCount
       );
       return {
         ...notification,
         actor_profile: notification.actor_id ? profileMap.get(notification.actor_id) ?? null : null,
         title: presentation.title,
         body: presentation.body,
-        link: presentation.link,
+        link: notificationHref(presentation.link),
       };
     }),
-    unread_count: unreadCountRaw ?? 0,
-  });
+    unread_count: unreadCountRaw,
+  }, { headers: { "Cache-Control": "private, no-store" } });
 }
 
 export async function PATCH(request: Request) {
@@ -408,9 +445,16 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }
 
-  const body = (await request.json().catch(() => ({}))) as { id?: string; mark_all?: boolean };
+  const payload: unknown = await request.json().catch(() => null);
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return NextResponse.json({ error: "invalid request" }, { status: 400 });
+  }
+  const body = payload as { id?: unknown; mark_all?: unknown };
+  if (body.mark_all !== undefined && typeof body.mark_all !== "boolean") {
+    return NextResponse.json({ error: "invalid mark_all" }, { status: 400 });
+  }
 
-  if (body.mark_all) {
+  if (body.mark_all === true) {
     const { error } = await supabase
       .from("notifications")
       .update({ is_read: true })
@@ -420,7 +464,7 @@ export async function PATCH(request: Request) {
     return NextResponse.json({ ok: true });
   }
 
-  if (!body.id) {
+  if (typeof body.id !== "string" || !body.id.trim() || body.id.length > 100) {
     return NextResponse.json({ error: "id required" }, { status: 400 });
   }
 

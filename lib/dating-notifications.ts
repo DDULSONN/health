@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendExpoPushToUser } from "@/lib/expo-push";
+import { notificationHref } from "@/lib/notification-view";
 
 type DatingNotificationInput = {
   userId: string;
@@ -25,12 +26,13 @@ export async function notifyDatingUser(
   adminClient: SupabaseClient,
   input: DatingNotificationInput
 ) {
+  const route = notificationHref(input.route) ?? "/notifications";
   const metaJson = {
     ...(input.meta ?? {}),
     notification_type: input.type,
     notification_title: input.title,
     notification_body: input.body,
-    notification_route: input.route,
+    notification_route: route,
   };
 
   let insertRes = await adminClient.from("notifications").insert({
@@ -66,9 +68,9 @@ export async function notifyDatingUser(
     title: input.title,
     body: input.body,
     data: {
-      type: input.type,
-      route: input.route,
       ...(input.meta ?? {}),
+      type: input.type,
+      route,
     },
   }).catch((error) => {
     console.error("[notifyDatingUser] push failed", {

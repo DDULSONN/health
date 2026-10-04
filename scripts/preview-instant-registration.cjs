@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-// Isolated localhost fixture: production UI, fake reads, ALL writes disabled, no credentials.
+// Isolated localhost fixture: production UI, fake reads/confirmation, no real writes or credentials.
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os'), http = require('node:http'), webpack = require('webpack');
 const root = path.resolve(__dirname, '..');
 async function startPreview(port=3152) {
@@ -25,9 +25,14 @@ async function startPreview(port=3152) {
     if(url.pathname==='/preview-photo.svg'){res.setHeader('Content-Type','image/svg+xml');res.end('<svg xmlns="http://www.w3.org/2000/svg" width="240" height="300"><rect width="240" height="300" fill="#f3f4f6"/><text x="35" y="155" font-size="20" fill="#555">TEST PHOTO</text></svg>');return;}
     if(url.pathname.startsWith('/api/')){
       res.setHeader('Content-Type','application/json; charset=utf-8');
+      if(url.pathname==='/api/payments/toss/confirm'&&req.method==='POST'){res.end(JSON.stringify({ok:true,orderId:'fixture-order',productType:'paid_card',amount:10000,orderName:'가상 등록 검증'}));return;}
       if(req.method!=='GET'){console.log('BLOCKED_LOCAL_WRITE',req.method,url.pathname);res.statusCode=405;res.end(JSON.stringify({error:'로컬 검증에서는 등록/결제를 실행하지 않습니다.'}));return;}
       const scenario=new URL(req.headers.referer||'http://localhost').searchParams.get('scenario');
       let body={ok:true,items:[],cards:[],applications:[],loggedIn:true};
+      if(url.pathname==='/api/dating/paid/my/status'){
+        body={card:scenario==='no-profile'?null:{id:'00000000-0000-4000-8000-000000000001',status:scenario==='status-pending'?'pending':scenario==='status-expired'?'expired':'approved',display_mode:scenario==='status-priority'?'priority_24h':'instant_public',expires_at:new Date(Date.now()+(scenario==='status-expired'?-1:23*3600000+1800000)).toISOString()},checked_at:new Date().toISOString()};
+        if(scenario==='status-error'){res.statusCode=503;body={error:'가상 상태 조회 오류'};}
+      }
       if(url.pathname==='/api/mypage/summary')body={profile:{nickname:'테스트',phone_verified:true}};
       if(url.pathname==='/api/dating/1on1/write-status'){res.statusCode=503;body={error:'의도적으로 만든 별도 1:1 조회 오류'};}
       if(url.pathname==='/api/dating/cards/my')body={items:scenario==='no-profile'?[]:[{...source,status:scenario==='expired'?'expired':'pending'}]};

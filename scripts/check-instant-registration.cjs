@@ -23,6 +23,18 @@ function callback(name, ctx) {
 }
 const deferred = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 const flush = () => new Promise(r => setImmediate(r));
+
+for (const page of ['app/dating/paid/[id]/page.tsx', 'app/dating/paid/[id]/apply/page.tsx']) {
+  test(`paid card free-application hint is compact and only appears after the card loads: ${page}`, () => {
+    const source = read(page);
+    const hint = '<p className="mt-2 text-xs leading-5 text-neutral-500">지원권 소모 없이 지원할 수 있어요.</p>';
+    assert.equal(source.split(hint).length - 1, 1);
+    assert.ok(source.indexOf(hint) > source.indexOf('if (loading'));
+    assert.ok(source.indexOf(hint) < source.lastIndexOf('지원하기'));
+    assert.doesNotMatch(source, /alert\([^)]*지원권 소모 없이/);
+  });
+}
+
 function context(extra = {}) {
   const state = {};
   const ctx = { console, viewerLoggedIn: true, activeSexRef: { current: 'male' }, secondaryCardsRequestRef: { current: 0 }, profilePresenceRequestRef: { current: 0 }, ...extra };

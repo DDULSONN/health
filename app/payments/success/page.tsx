@@ -2,6 +2,9 @@
 
 import { Suspense, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
+import PaidRegistrationStatus from "@/components/dating/PaidRegistrationStatus";
+import { usePaidRegistrationStatus } from "@/lib/use-paid-registration-status";
+import { PAID_REGISTRATION_MANAGE_HREF } from "@/lib/paid-registration-status";
 import { useSearchParams } from "next/navigation";
 import { pickLoveFortuneFaceAsset } from "@/lib/love-fortune-face-assets";
 import { trackPurchaseCompleted } from "@/lib/payment-analytics";
@@ -125,7 +128,7 @@ function isOpenCardReopenOrder(orderName?: string | null) {
 
 function formatProductType(productType?: string, orderName?: string | null) {
   if (productType === "apply_credits") return "오픈카드 지원권";
-  if (productType === "paid_card") return isOpenCardReopenOrder(orderName) ? "오픈카드 다시 노출" : "대기 없이 등록";
+  if (productType === "paid_card") return isOpenCardReopenOrder(orderName) ? "오픈카드 다시 노출" : "유료 오픈카드";
   if (productType === "more_view") return "이상형 더보기";
   if (productType === "city_view") return "가까운 후보 30명 보기";
   if (productType === "one_on_one_contact_exchange") return "1:1 번호 즉시 교환";
@@ -143,7 +146,7 @@ function getPrimaryAction(productType?: string, orderName?: string | null, provi
   if (productType === "paid_card") {
     return isOpenCardReopenOrder(orderName)
       ? { href: "/mypage?section=matching", label: "마이페이지에서 확인하기" }
-      : { href: "/dating/paid", label: "대기 없이 등록으로 돌아가기" };
+      : { href: PAID_REGISTRATION_MANAGE_HREF, label: "등록 상태 확인" };
   }
   if (productType === "one_on_one_contact_exchange") return { href: "/mypage", label: "마이페이지로 돌아가기" };
   if (productType === "one_on_one_priority_24h") return { href: "/mypage?section=matching", label: "1:1 매칭으로 돌아가기" };
@@ -573,6 +576,8 @@ function PaymentSuccessContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [result, setResult] = useState<ConfirmResponse | null>(null);
+  const isPaidRegistration = !loading && !error && result?.productType === "paid_card" && !isOpenCardReopenOrder(result.orderName);
+  const paidRegistration = usePaidRegistrationStatus(Boolean(isPaidRegistration && result?.orderId), result?.orderId);
   const [fortuneLoading, setFortuneLoading] = useState(false);
   const [fortuneLoadingStep, setFortuneLoadingStep] = useState(0);
   const [fortuneGenerateAttempted, setFortuneGenerateAttempted] = useState(false);
@@ -759,7 +764,7 @@ function PaymentSuccessContent() {
             <div className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
                 <p className="text-xs font-medium text-neutral-500">상품</p>
-                <p className="mt-1 font-semibold text-neutral-900">{formatProductType(result.productType, result.orderName)}</p>
+                <p className="mt-1 font-semibold text-neutral-900">{isPaidRegistration && paidRegistration.presentation ? paidRegistration.presentation.product : formatProductType(result.productType, result.orderName)}</p>
               </div>
               <div className="rounded-2xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-700">
                 <p className="text-xs font-medium text-neutral-500">결제 금액</p>
@@ -779,7 +784,7 @@ function PaymentSuccessContent() {
                     : result.productType === "paid_card"
                       ? isOpenCardReopenOrder(result.orderName)
                         ? "오픈카드가 다시 노출됐어요"
-                        : "대기 없이 등록 결제가 반영됐어요"
+                        : paidRegistration.presentation?.active ? `${paidRegistration.presentation.product} · 공개 중` : "결제 확인 · 공개 상태 별도 확인"
                       : result.productType === "one_on_one_contact_exchange"
                         ? "상대 연락처 즉시 공개"
                         : result.productType === "one_on_one_plus_7d"
@@ -803,6 +808,7 @@ function PaymentSuccessContent() {
           </div>
         ) : null}
 
+        {isPaidRegistration ? <PaidRegistrationStatus state={paidRegistration} afterPayment /> : null}
         {isLoveFortune && fortuneLoading ? (
           <div className="mt-6 overflow-hidden rounded-3xl border border-amber-200 bg-[radial-gradient(circle_at_16%_0%,rgba(245,158,11,0.22),transparent_34%),linear-gradient(135deg,#fff7ed,#fef3c7)] p-5 shadow-[0_18px_45px_rgba(146,64,14,0.12)]">
             <div className="flex flex-wrap items-start justify-between gap-3">

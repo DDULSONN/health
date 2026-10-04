@@ -61,5 +61,18 @@ export async function sendExpoPushToUser(
     throw new Error(`Expo push request failed: ${response.status} ${text}`.trim());
   }
 
+  // HTTP 200 can still contain a rejected Expo ticket (e.g. DeviceNotRegistered).
+  const body: unknown = await response.json().catch(() => null);
+  const result = body && typeof body === "object" ? body as { data?: unknown; errors?: unknown } : null;
+  const tickets = Array.isArray(result?.data) ? result.data : result?.data ? [result.data] : [];
+  const accepted = tickets.length === 1 && tickets.every((ticket: unknown) =>
+    ticket !== null && typeof ticket === "object" &&
+    (ticket as { status?: unknown }).status === "ok" &&
+    typeof (ticket as { id?: unknown }).id === "string" && Boolean((ticket as { id?: string }).id)
+  );
+  if (!accepted || (Array.isArray(result?.errors) && result.errors.length > 0)) {
+    return { sent: false as const, reason: "ticket_rejected" as const };
+  }
+  // A ticket confirms provider acceptance, not delivery to the handset.
   return { sent: true as const };
 }

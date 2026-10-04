@@ -60,6 +60,21 @@ function normalizeInstagramId(value: unknown) {
   return value.trim().replace(/^@+/, "").replace(/\s+/g, "");
 }
 
+function numericValidationMessage(body: CreateBody): string | null {
+  const fields = [
+    { value: body.age, min: 19, max: 99, message: "나이는 19세부터 99세까지 입력해 주세요." },
+    { value: body.height_cm, min: 120, max: 230, message: "키는 120cm부터 230cm까지 입력해 주세요." },
+    { value: body.training_years, min: 0, max: 50, message: "운동 경력은 0년부터 50년까지 입력해 주세요." },
+  ];
+  for (const { value, min, max, message } of fields) {
+    // These fields remain optional, matching the existing form.
+    if (value == null || (typeof value === "string" && !value.trim())) continue;
+    const number = typeof value === "number" || typeof value === "string" ? Number(value) : Number.NaN;
+    if (!Number.isInteger(number) || number < min || number > max) return message;
+  }
+  return null;
+}
+
 function json(status: number, payload: Record<string, unknown>) {
   return NextResponse.json(payload, {
     status,
@@ -250,6 +265,8 @@ export async function POST(req: Request) {
     if (banResponse) return banResponse;
 
     const body = ((await req.json().catch(() => null)) ?? {}) as CreateBody;
+    const numericError = numericValidationMessage(body);
+    if (numericError) return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: numericError });
     const parsed = parsePayload(body);
     const {
       gender,
@@ -414,6 +431,8 @@ export async function PATCH(req: Request) {
     }
 
     const body = ((await req.json().catch(() => null)) ?? {}) as CreateBody;
+    const numericError = numericValidationMessage(body);
+    if (numericError) return json(400, { ok: false, code: "VALIDATION_ERROR", requestId, message: numericError });
     const parsed = parsePayload(body);
     const {
       id,
@@ -446,7 +465,29 @@ export async function PATCH(req: Request) {
     }
 
     const adminClient = createAdminClient();
-    if (displayMode === "instant_public") {
+    const banResponse = await getUserBanResponse(adminClient, user.id);
+    if (banResponse) return banResponse;
+    const rowRes = await adminClient
+      .from("dating_paid_cards")
+      .select("id,status,expires_at")
+      .eq("id", id)
+      .eq("user_id", user.id)
+      .maybeSingle();
+    if (rowRes.error || !rowRes.data) {
+      return json(404, { ok: false, code: "NOT_FOUND", requestId, message: "유료 카드를 찾을 수 없습니다." });
+    }
+    if (!["pending", "approved"].includes(rowRes.data.status)) {
+      return json(400, { ok: false, code: "NOT_EDITABLE", requestId, message: "대기중 또는 결제 완료된 유료카드만 수정할 수 있습니다." });
+    }
+    if (rowRes.data.status === "approved") {
+      const expiresAt = rowRes.data.expires_at ? new Date(rowRes.data.expires_at).getTime() : Number.NaN;
+      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
+        return json(400, { ok: false, code: "PAID_CARD_EXPIRED", requestId, message: "노출 기간이 끝난 유료카드는 다시 결제 후 등록할 수 있습니다." });
+      }
+    }
+    // Paid, active cards remain independent of the original open card.
+    // New/unpaid requests must still satisfy the original registration rule.
+    if (displayMode === "instant_public" && rowRes.data.status !== "approved") {
       const sourceCardRes = await adminClient
         .from("dating_cards")
         .select("id")
@@ -461,24 +502,6 @@ export async function PATCH(req: Request) {
       }
       if (!sourceCardRes.data) {
         return json(400, { ok: false, code: "OPEN_CARD_REQUIRED", requestId, message: "오픈카드 등록 후 대기 없이 등록할 수 있습니다." });
-      }
-    }
-    const rowRes = await adminClient
-      .from("dating_paid_cards")
-    .select("id,status,expires_at")
-      .eq("id", id)
-      .eq("user_id", user.id)
-      .maybeSingle();
-    if (rowRes.error || !rowRes.data) {
-      return json(404, { ok: false, code: "NOT_FOUND", requestId, message: "유료 카드를 찾을 수 없습니다." });
-    }
-    if (!["pending", "approved"].includes(rowRes.data.status)) {
-      return json(400, { ok: false, code: "NOT_EDITABLE", requestId, message: "대기중 또는 결제 완료된 유료카드만 수정할 수 있습니다." });
-    }
-    if (rowRes.data.status === "approved") {
-      const expiresAt = rowRes.data.expires_at ? new Date(rowRes.data.expires_at).getTime() : Number.NaN;
-      if (!Number.isFinite(expiresAt) || expiresAt <= Date.now()) {
-        return json(400, { ok: false, code: "PAID_CARD_EXPIRED", requestId, message: "노출 기간이 끝난 유료카드는 다시 결제 후 등록할 수 있습니다." });
       }
     }
 

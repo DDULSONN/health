@@ -110,6 +110,8 @@ export default function PaidCardDetailPage() {
           </span>
         </div>
 
+        <p className="mt-2 text-xs leading-5 text-neutral-500">지원권 소모 없이 지원할 수 있어요.</p>
+
         {card.image_urls.length > 0 ? (
           <div
             className={`mt-3 overflow-hidden rounded-xl border border-neutral-100 bg-neutral-50 ${

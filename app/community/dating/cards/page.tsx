@@ -1,6 +1,9 @@
 ﻿"use client";
 
 import Link from "next/link";
+import PaidRegistrationStatus from "@/components/dating/PaidRegistrationStatus";
+import { usePaidRegistrationStatus } from "@/lib/use-paid-registration-status";
+import { PAID_REGISTRATION_MANAGE_HREF } from "@/lib/paid-registration-status";
 import DatingReportButton, { type DatingReportTargetType, type DatingReportResult } from "@/components/DatingReportButton";
 import { useRouter, useSearchParams } from "next/navigation";
 import type { ReactNode } from "react";
@@ -1711,6 +1714,7 @@ function OpenCardsContent() {
   const swipeCacheRef = useRef<Partial<Record<"male" | "female", SwipeState>>>({});
   const swipeRequestIdRef = useRef({ male: 0, female: 0 });
   const [viewerLoggedIn, setViewerLoggedIn] = useState(false);
+  const paidRegistration = usePaidRegistrationStatus(viewerLoggedIn);
   const [viewerSessionReady, setViewerSessionReady] = useState(false);
   const [viewerPhoneVerified, setViewerPhoneVerified] = useState(false);
   const [draftUserId, setDraftUserId] = useState<string | null>(null);
@@ -2934,7 +2938,9 @@ function OpenCardsContent() {
     ? "시작 전"
     : "미등록";
   const instantOpenCardOnboardingHref = "/onboarding/dating?next=instant_open_card";
-  const instantOpenCardHref = viewerLoggedIn
+  const checkPaidRegistration = paidRegistration.loading || paidRegistration.error || paidRegistration.presentation?.active;
+  const instantOpenCardLabel = checkPaidRegistration ? "등록 상태 확인" : "대기 없이 등록";
+  const instantOpenCardHref = checkPaidRegistration ? PAID_REGISTRATION_MANAGE_HREF : viewerLoggedIn
     ? openCardPresenceReady && hasAnyOpenCardProfile
       ? "/dating/paid?apply=1&source=open_card"
       : instantOpenCardOnboardingHref
@@ -2992,6 +2998,7 @@ function OpenCardsContent() {
           </div>
         </section>
       ) : null}
+      {showOpenCardSection && viewerLoggedIn ? <PaidRegistrationStatus state={paidRegistration} /> : null}
       {showOpenCardSection && openCardPresenceError ? (
         <div role="status" className="mb-3 flex items-center justify-between gap-2 rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs text-neutral-600">
           <span>내 오픈카드를 확인하지 못했어요.</span>
@@ -3001,14 +3008,14 @@ function OpenCardsContent() {
       {showOpenCardSection && openCardPresenceReady && hasAnyOpenCardProfile && !showOpenCardManagement ? (
         <section className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-rose-100 bg-white px-4 py-3 shadow-[0_6px_18px_rgba(190,24,93,0.04)]">
           <div className="min-w-0">
-            <p className="text-sm font-black text-neutral-950">기다리지 않고 바로 공개</p>
-            <p className="mt-0.5 truncate text-xs font-medium text-neutral-500">작성한 프로필을 그대로 불러와 등록해요.</p>
+            <p className="text-sm font-black text-neutral-950">{paidRegistration.presentation?.active ? "내 공개 카드" : "기다리지 않고 바로 공개"}</p>
+            <p className="mt-0.5 truncate text-xs font-medium text-neutral-500">{paidRegistration.presentation?.active ? "공개 상태와 받은 지원을 확인해요." : "작성한 프로필을 그대로 불러와 등록해요."}</p>
           </div>
           <Link
             href={instantOpenCardHref}
             className="inline-flex min-h-[40px] shrink-0 items-center justify-center rounded-lg bg-rose-600 px-3.5 text-xs font-black text-white transition hover:bg-rose-700"
           >
-            대기 없이 등록
+            {instantOpenCardLabel}
           </Link>
         </section>
       ) : null}
@@ -3043,7 +3050,7 @@ function OpenCardsContent() {
           <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div className="min-w-0">
               <div className="flex items-center gap-2">
-                <p className="text-base font-black text-neutral-950">내 오픈카드</p>
+                <p className="text-base font-black text-neutral-950">{paidRegistration.presentation?.active ? "일반 오픈카드" : "내 오픈카드"}</p>
                 <span className="rounded-full bg-rose-50 px-2.5 py-1 text-[11px] font-extrabold text-rose-700">
                   {hasActiveMyOpenCard ? "등록됨" : "비공개"}
                 </span>
@@ -3081,7 +3088,7 @@ function OpenCardsContent() {
                   href={instantOpenCardHref}
                   className="inline-flex min-h-[42px] items-center justify-center rounded-lg bg-rose-600 px-4 text-sm font-bold text-white transition hover:bg-rose-700"
                 >
-                  대기 없이 등록
+                  {instantOpenCardLabel}
                 </Link>
               ) : null}
             </div>
@@ -3213,7 +3220,7 @@ function OpenCardsContent() {
                   href={instantOpenCardHref}
                   className="inline-flex min-h-[40px] items-center rounded-2xl border border-rose-200 bg-white px-4 text-sm font-bold text-rose-700 hover:bg-rose-50"
                 >
-                  대기 없이 등록
+                  {instantOpenCardLabel}
                 </Link>
               ) : null}
             </div>
@@ -3355,7 +3362,7 @@ function OpenCardsContent() {
                         href={instantOpenCardHref}
                         className="inline-flex min-h-[54px] items-center justify-center rounded-[18px] bg-rose-600 px-4 text-base font-bold text-white"
                       >
-                        대기 없이 등록
+                        {instantOpenCardLabel}
                       </Link>
                     ) : null}
                   </>

@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { type ReactNode, useEffect, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { recordGrowthProfileCreated } from "@/lib/growth-analytics";
@@ -155,6 +155,7 @@ export default function NewDatingCardPage() {
   const [existingBlurPaths, setExistingBlurPaths] = useState<string[]>([]);
   const [existingBlurThumbPath, setExistingBlurThumbPath] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const submissionInFlightRef = useRef(false);
   const [error, setError] = useState("");
   const [formStep, setFormStep] = useState(1);
 
@@ -247,6 +248,7 @@ export default function NewDatingCardPage() {
   };
 
   const moveToStep = (step: number) => {
+    if (submissionInFlightRef.current) return;
     setError("");
     setFormStep(Math.min(FORM_STEPS.length, Math.max(1, step)));
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -296,6 +298,7 @@ export default function NewDatingCardPage() {
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (formStep !== FORM_STEPS.length || editLoading || writeSettingLoading || submissionInFlightRef.current) return;
     if (photoPreparation.isProcessing()) { setError(PHOTO_PROCESSING_MESSAGE); return; }
     setError("");
 
@@ -335,6 +338,7 @@ export default function NewDatingCardPage() {
       }
     }
 
+    submissionInFlightRef.current = true;
     setSubmitting(true);
 
     try {
@@ -461,9 +465,10 @@ export default function NewDatingCardPage() {
       router.push("/mypage");
     } catch {
       setError("업로드 중 오류가 났어요. 캡쳐본으로 다시 올려주세요.");
+    } finally {
+      submissionInFlightRef.current = false;
+      setSubmitting(false);
     }
-
-    setSubmitting(false);
   };
 
   return (
@@ -615,9 +620,9 @@ export default function NewDatingCardPage() {
         <div className="mt-7 flex gap-2">
           {formStep > 1 && <button type="button" onClick={() => moveToStep(formStep - 1)} disabled={submitting} className="h-14 min-w-24 rounded-full border border-neutral-200 bg-white px-5 text-sm font-black text-neutral-700 disabled:opacity-50">이전</button>}
           {formStep < FORM_STEPS.length ? (
-            <button type="button" onClick={handleNextStep} disabled={editLoading || photoPreparation.busy} className="h-14 flex-1 rounded-full bg-neutral-950 px-5 text-base font-black text-white disabled:opacity-50">다음</button>
+            <button key="next-step" type="button" onClick={handleNextStep} disabled={submitting || editLoading || photoPreparation.busy} className="h-14 flex-1 rounded-full bg-neutral-950 px-5 text-base font-black text-white disabled:opacity-50">다음</button>
           ) : (
-            <button type="submit" disabled={submitting || photoPreparation.busy || editLoading || (!isEditMode && (writeSettingLoading || !writeEnabled))} className="h-14 flex-1 rounded-full bg-rose-500 px-5 text-base font-black text-white shadow-lg shadow-rose-100 disabled:opacity-50">
+            <button key="submit-card" type="submit" disabled={submitting || photoPreparation.busy || editLoading || (!isEditMode && (writeSettingLoading || !writeEnabled))} className="h-14 flex-1 rounded-full bg-rose-500 px-5 text-base font-black text-white shadow-lg shadow-rose-100 disabled:opacity-50">
               {submitting ? "처리 중..." : isEditMode ? "수정 저장" : "오픈카드 등록"}
             </button>
           )}

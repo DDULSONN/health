@@ -5,11 +5,12 @@ const { createHash } = require('node:crypto');
 const root = path.resolve(__dirname, '..');
 const read = p => fs.readFileSync(path.join(root,p),'utf8').replace(/\r\n/g,'\n');
 const prefix = 'gymtools:growth:v1:';
-// Exact LF-normalized c2b090b baselines, also available in shallow/no-Git deployment builds.
+// Exact LF-normalized baselines, also available in shallow/no-Git deployment builds.
+// c2b090b except the reviewed open-card save guards covered by check-site-audit-fixes.cjs.
 const baselines = {
  'app/onboarding/dating/page.tsx': 'c6cf2e04d0504cbe346a4a6c806d82d88e5ee530a0b14db9e0dc01bd068d83a2',
  'app/dating/1on1/page.tsx': '4594d2f8d889979fc2a10ea59cf701a5ec5c67ad23900d68bb9ab77d298102bc',
- 'app/community/dating/cards/new/page.tsx': '7157cd4cfddab4bc03c90d95d134a403c15d73f43d2d5b4db6f86f1ee946d7fe',
+ 'app/community/dating/cards/new/page.tsx': '89363bb447feb8d0d0793b02cfafd67338b62e87473165c56ac38cfd44c63299',
  'app/api/dating/cards/my/route.ts': 'b832effc2aeb9fb3918b040bf8cf70e7e31c698c02e6ee14628543d3d9642412',
  'app/api/dating/1on1/cards/route.ts': '498240e6c2b59b9fcf2737c6cc756cbfc2f6cc003066e7fa0bf9bdd9dc24a846',
  'app/api/payments/toss/create/route.ts': 'a6d250de0ca3dbc374a988815f80622d0c9331382e5507746fd5ec2c52ced60a',
@@ -89,7 +90,7 @@ test('timestamps in future or malformed stored payloads fail closed',()=>{
   const s=setup();s.shared.set(prefix+'invite',JSON.stringify(payload));assert.equal(s.api.shouldShowCompletionInvite('a'),false);
  }
 });
-test('registration handlers differ only by optional post-success analytics; redirects/payments/auth APIs unchanged',()=>{
+test('reviewed registration guards preserve post-success analytics; redirects/payments/auth APIs unchanged',()=>{
  for(const p of ['app/onboarding/dating/page.tsx','app/dating/1on1/page.tsx','app/community/dating/cards/new/page.tsx']){
   const normalized=read(p).replace(/^import \{ recordGrowthProfileCreated \} from "@\/lib\/growth-analytics";\n/m,'')
    .replace(/^\s*recordGrowthProfileCreated\([^\n]+\);\n/gm,'').replace(/^      if \(!isEditMode\) recordGrowthProfileCreated\([^\n]+\);\n/gm,'');
