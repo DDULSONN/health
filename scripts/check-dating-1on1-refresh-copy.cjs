@@ -70,6 +70,13 @@ test('success never mistakes an unknown balance for zero or repeats the pre-use 
   assert.ok(!copy.buildOneOnOneRefreshSuccess({}).includes('0회'));
 });
 
+test('no-change success preserves quota wording and changed success shows the actual new people count', () => {
+  const text = copy.buildOneOnOneRefreshSuccess({ refresh_consumed: false, changed_candidate_count: 0, refresh_remaining: 2 });
+  assert.match(text, /횟수를 사용하지 않았어요/); assert.match(text, /2회 그대로/);
+  assert.doesNotMatch(text, /1회를 사용했어요/);
+  assert.match(copy.buildOneOnOneRefreshSuccess({ refresh_consumed: true, changed_candidate_count: 7, refresh_remaining: 1 }), /후보 7명이 바뀌었어요/);
+});
+
 function handler(kind, options = {}) {
   const file = kind === 'home' ? homeFile : myFile;
   const name = kind === 'home' ? 'handleOneOnOneRecommendationRefresh' : 'handleRefreshOneOnOneRecommendations';
@@ -97,7 +104,7 @@ function handler(kind, options = {}) {
       calls.push('post');
       assert.equal(url, '/api/dating/1on1/recommendations/refresh');
       assert.equal(init.method, 'POST');
-      assert.deepEqual(JSON.parse(init.body), { source_card_id: 'fixture-card' });
+      assert.deepEqual(JSON.parse(init.body), { source_card_id: 'fixture-card', refresh_contract: 2 });
       if (options.networkError) throw new Error('fixture network failure');
       const body = options.body ?? { ok: true, ...quota(0) };
       return { response: Response.json(body, { status: options.status ?? 200 }), body };

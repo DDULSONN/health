@@ -2719,6 +2719,7 @@ function OpenCardsContent() {
       // Lock before awaiting consent so rapid taps cannot open multiple dialogs or send twice.
       oneOnOneRefreshLocksRef.current.add(sourceCardId);
       let consumed = false;
+      let confirmedNotConsumed = false;
       let started = false;
       try {
         if (!await confirmOneOnOneRefresh(group)) return;
@@ -2728,18 +2729,21 @@ function OpenCardsContent() {
         const { response: res, body } = await fetchClientJson<OneOnOneRefreshUsage & { ok?: boolean; error?: string; request_id?: string }>("/api/dating/1on1/recommendations/refresh", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ source_card_id: sourceCardId }),
+          body: JSON.stringify({ source_card_id: sourceCardId, refresh_contract: 2 }),
         }, 30_000);
         if (!res.ok || body?.ok !== true) {
           const message = body?.error ?? "추천 후보를 새로고침하지 못했습니다.";
           throw new Error(body?.request_id ? `${message}\n문의 코드: ${body.request_id}` : message);
         }
-        consumed = true;
+        consumed = body.refresh_consumed !== false;
+        confirmedNotConsumed = body.refresh_consumed === false;
         await reloadOneOnOneHome(true, true);
         setOneOnOneRefreshNotice({ sourceCardId, kind: "success", message: buildOneOnOneRefreshSuccess(body) });
       } catch (error) {
         oneOnOneRefreshNeedsReloadRef.current = true;
-        const message = consumed
+        const message = confirmedNotConsumed
+          ? "새로고침 횟수는 사용하지 않았어요. 명단을 불러오지 못해 '명단 다시 불러오기'로 확인해 주세요."
+          : consumed
           ? "새로고침 1회는 처리됐지만 새 후보 명단을 불러오지 못했어요. 아래 '명단 다시 불러오기'로 확인해 주세요. 추가 횟수는 사용되지 않아요."
           : "새로고침 상태를 확인하지 못했어요. 다시 새로고침하지 말고 '명단 다시 불러오기'로 사용 횟수와 후보를 먼저 확인해 주세요.";
         const reason = error instanceof Error && error.name !== "AbortError" ? error.message : "연결이 지연되었거나 끊겼어요.";

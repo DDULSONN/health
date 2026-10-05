@@ -128,3 +128,30 @@ test("a late list response cannot replace the latest list response", async () =>
   pending[0](Response.json({ ok: true, items: [] })); await settle();
   assert.equal(view.buttons("✓ 정상 확인").length, 1);
 });
+
+test('stale confirmation replaces just that item, shows new findings, and requires a second explicit click', async () => {
+  const item = { ...fixture(), review: { suspicionLevel: 'high', flags: ['OLD FINDING'], summary: 'OLD SUMMARY' } };
+  const fresh = { ...fixture(), texts: { intro: '수정된 원문' }, flags: ['NEW FINDING'], summary: 'NEW SUMMARY',
+    confirmationSnapshot: { ...snapshot, contentFingerprint: 'c'.repeat(64) } };
+  let writes = 0;
+  const view = ui([item, { ...fixture(), cardId: 'other' }], { reply: body => {
+    if (++writes === 1) return Response.json({ ok: false, code: 'REVIEW_CHANGED', sourceType: item.sourceType,
+      cardId: item.cardId, item: fresh, message: '최신 내용을 확인하고 다시 눌러 주세요.' }, { status: 409 });
+    assert.deepEqual(body.snapshot, fresh.confirmationSnapshot);
+    return Response.json({ ok: true, sourceType: item.sourceType, cardId: item.cardId, confirmationId: 'saved' });
+  } });
+  await view.load(); view.buttons('✓ 정상 확인')[0].props.onClick(); await settle();
+  assert.equal(writes, 1); assert.equal(view.buttons('✓ 정상 확인').length, 2);
+  assert.ok(text(view.render()).includes('NEW FINDING')); assert.ok(text(view.render()).includes('수정된 원문'));
+  assert.ok(!text(view.render()).includes('OLD FINDING'));
+  view.buttons('✓ 정상 확인')[0].props.onClick(); await settle();
+  assert.equal(writes, 2); assert.equal(view.buttons('✓ 정상 확인').length, 1);
+});
+
+test('mismatched conflict item never replaces a different profile', async () => {
+  const view = ui([fixture()], { reply: () => Response.json({ ok: false, code: 'REVIEW_CHANGED',
+    sourceType: fixture().sourceType, cardId: fixture().cardId, item: { ...fixture(), cardId: 'wrong', texts: { intro: 'WRONG CONTENT' } },
+  }, { status: 409 }) });
+  await view.load(); view.buttons('✓ 정상 확인')[0].props.onClick(); await settle();
+  assert.ok(!text(view.render()).includes('WRONG CONTENT')); assert.equal(view.buttons('✓ 정상 확인').length, 1);
+});

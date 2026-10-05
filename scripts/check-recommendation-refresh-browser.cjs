@@ -45,7 +45,8 @@ async function main() {
   try {
     browser = await chromium.launch({ channel: 'msedge', headless: true });
     for (const surface of ['home', 'mypage']) for (const width of [360, 1280]) {
-      for (const scenario of ['success', 'read-failure', 'bad-read', 'lost-post', 'timeout-post', 'slow-post', 'cancel', 'escape', 'non-plus', 'legacy-plus']) {
+      for (const scenario of ['success', 'no-change', 'no-change-read-failure', 'read-failure', 'bad-read', 'lost-post', 'timeout-post', 'slow-post', 'cancel', 'escape', 'non-plus', 'legacy-plus']) {
+        const noChange = scenario.startsWith('no-change');
         const context = await browser.newContext({ viewport: { width, height: 844 } });
         const page = await context.newPage();
         page.setDefaultTimeout(10000);
@@ -78,7 +79,9 @@ async function main() {
             if (scenario === 'slow-post') await postGate;
             if (scenario === 'timeout-post') return;
             if (scenario === 'lost-post') { await route.abort(); return; }
-            await route.fulfill({ json: { ok: true, source_card_id: profile.id, refresh_limit: 2, refresh_remaining: 1, refresh_used_count: 1, refresh_used_at: now } }); return;
+            await route.fulfill({ json: { ok: true, source_card_id: profile.id, refresh_limit: 2,
+              refresh_consumed: !noChange, changed_candidate_count: noChange ? 0 : 1,
+              refresh_remaining: noChange ? 2 : 1, refresh_used_count: noChange ? 0 : 1, refresh_used_at: noChange ? null : now } }); return;
           }
           switch (url.pathname) {
             case '/api/dating/cards/queue-stats': body = { male: { public_count: 0, pending_count: 0, slot_limit: 45 }, female: { public_count: 0, pending_count: 0, slot_limit: 45 } }; break;
@@ -88,14 +91,14 @@ async function main() {
             case '/api/dating/1on1/my': body = { items: [profile], plus: { expires_at: profile.plus_expires_at, contact_exchange_included: profile.plus_contact_exchange_included } }; break;
             case '/api/dating/1on1/write-status': body = { canWrite: false, phoneVerified: true, writeStatus: 'approved', activeRequestStatus: 'approved' }; break;
             case '/api/dating/1on1/recommendations/my':
-              if (posts && !recover && scenario === 'read-failure') { await route.fulfill({ status: 503, json: { error: '로컬 조회 실패' } }); return; }
+              if (posts && !recover && ['read-failure', 'no-change-read-failure'].includes(scenario)) { await route.fulfill({ status: 503, json: { error: '로컬 조회 실패' } }); return; }
               if (posts && !recover && scenario === 'bad-read') { await route.fulfill({ json: { items: [null] } }); return; }
               body = { items: [{ source_card_id: profile.id, source_card_status: 'approved', recommendations: [{
-                ...profile, id: posts ? 'candidate-new' : 'candidate-old', user_id: 'other', sex: 'male',
-                name: posts ? '새 후보' : '이전 후보',
+                ...profile, id: posts && !noChange ? 'candidate-new' : 'candidate-old', user_id: 'other', sex: 'male',
+                name: posts && !noChange ? '새 후보' : '이전 후보',
               }], admin_recommendations: [], favorite_candidates: [],
-                refresh_limit: 2, refresh_used_count: posts ? 1 : 0, refresh_remaining: posts ? 1 : 2, can_refresh: true,
-                refresh_used_at: posts ? now : null }] }; break;
+                refresh_limit: 2, refresh_used_count: posts && !noChange ? 1 : 0, refresh_remaining: posts && !noChange ? 1 : 2, can_refresh: true,
+                refresh_used_at: posts && !noChange ? now : null }] }; break;
             case '/api/dating/cards/viewer-sex': body = { status: 'resolved', viewerSex: 'female', targetSex: 'male', source: 'one_on_one', canSwitchSex: false, requiresSexSelection: false }; break;
             case '/api/dating/cards/my/swipe-status': body = { outgoing_likes: [], incoming_likes: [], summary: { incoming_pending: 0, outgoing_pending: 0 } }; break;
             case '/api/dating/cards/write-enabled': body = { enabled: true }; break;
@@ -151,10 +154,11 @@ async function main() {
             assert.equal(posts, 1);
             releasePost();
           }
-          const needsRecovery = ['read-failure', 'bad-read', 'lost-post', 'timeout-post'].includes(scenario);
+          const needsRecovery = ['read-failure', 'no-change-read-failure', 'bad-read', 'lost-post', 'timeout-post'].includes(scenario);
           if (needsRecovery) {
             const recovery = page.getByRole('button', { name: '명단 다시 불러오기 · 횟수 차감 없음', exact: true });
             await recovery.waitFor();
+            if (noChange) await page.getByText(/새로고침 횟수는 사용하지 않았어요/).first().waitFor();
             assert.equal(posts, 1);
             assert.ok(!alerts.some(text => text.startsWith('새로고침 1회를 사용했어요.')));
             assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'mobile overflow');
@@ -162,11 +166,11 @@ async function main() {
             recover = true;
             await recovery.click();
           }
-          await page.getByText('새 후보', { exact: false }).first().waitFor();
-          await page.getByRole('button', { name: /후보 새로고침 · 1회/ }).first().waitFor();
+          await page.getByText(noChange ? '이전 후보' : '새 후보', { exact: false }).first().waitFor();
+          await page.getByRole('button', { name: noChange ? /후보 새로고침 · 2회/ : /후보 새로고침 · 1회/ }).first().waitFor();
           assert.equal(posts, 1, 'GET recovery cannot consume an additional refresh');
           assert.equal(alerts.length, 0, 'no native confirm or alert dependency');
-          if (!needsRecovery) await page.getByRole('status').filter({ hasText: '새로고침 1회를 사용했어요.' }).waitFor();
+          if (!needsRecovery) await page.getByRole('status').filter({ hasText: noChange ? '횟수를 사용하지 않았어요.' : '새로고침 1회를 사용했어요.' }).waitFor();
           assert.equal(errors.length, 0, errors.join('\n'));
           assert.equal(blocked, 0, 'unexpected external request');
           assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'page overflow');

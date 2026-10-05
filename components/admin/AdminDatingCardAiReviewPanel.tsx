@@ -77,6 +77,8 @@ type ActionResponse = {
   sourceType?: string;
   cardId?: string;
   confirmationId?: string;
+  code?: string;
+  item?: ReviewItem;
 };
 
 type BanResponse = {
@@ -502,6 +504,15 @@ export default function AdminDatingCardAiReviewPanel() {
           snapshot: item.confirmationSnapshot, confirmationId: item.confirmationId }),
       });
       const body = (await res.json().catch(() => ({}))) as ActionResponse;
+      if (res.status === 409 && body.code === "REVIEW_CHANGED" && body.sourceType === sourceType
+        && body.cardId === cardId && body.item && itemKey(body.item) === key) {
+        const refreshedItem = body.item;
+        // Replace instead of merging: POST results use `review`, GET uses flat fields.
+        // Merging would keep the old review text even while submitting the new snapshot.
+        setItems((prev) => prev.map((candidate) => itemKey(candidate) === key ? refreshedItem : candidate));
+        setEditingKey("");
+        setEditDrafts((prev) => { const next = { ...prev }; delete next[key]; return next; });
+      }
       if (!res.ok || body.ok !== true || body.sourceType !== sourceType || body.cardId !== cardId || (!undo && !body.confirmationId)) {
         throw new Error(body.message || "정상 확인 처리 결과를 확인하지 못했습니다. 최근 결과를 다시 불러와 주세요.");
       }

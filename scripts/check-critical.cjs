@@ -8,6 +8,9 @@ for (const key of Object.keys(env)) {
   if (/SUPABASE|SOLAPI|RESEND|TOSS|KAKAO|SERVICE_ROLE|CRON_SECRET|PAYMENT_SECRET|SMTP/i.test(key)) delete env[key];
 }
 const unitFiles = [
+  'check-admin-review-confirmation.cjs',
+  'check-dating-sexual-text-review.cjs',
+  'check-dating-1on1-checked-refresh-sql.cjs',
   'check-city-view-region-priority.cjs',
   'check-notification-reliability.cjs',
   'check-paid-registration-status.cjs',
@@ -63,7 +66,7 @@ if (process.argv.includes('--browser')) {
   for (const file of browserFiles) run([path.join(__dirname, file)], 10 * 60_000);
 } else {
   const pglite = require.resolve('@electric-sql/pglite');
-  for (const key of ['ACCOUNT_DELETION_PGLITE_PATH', 'PAYMENT_RECOVERY_PGLITE_PATH', 'PRIVACY_TEST_PGLITE_PATH']) env[key] = pglite;
+  for (const key of ['ACCOUNT_DELETION_PGLITE_PATH', 'PAYMENT_RECOVERY_PGLITE_PATH', 'PRIVACY_TEST_PGLITE_PATH', 'REVIEW_TEST_PGLITE_PATH', 'REFRESH_TEST_PGLITE_PATH']) env[key] = pglite;
   run(['--require', path.join(__dirname, 'test-no-network.cjs'), '--test', '--test-concurrency=1',
     ...unitFiles.map(file => path.join(__dirname, file))], 5 * 60_000);
   run(['scripts/check-no-direct-supabase-image-urls.mjs'], 30_000);

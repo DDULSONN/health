@@ -284,7 +284,10 @@ export function replayRecommendationRefreshes<T extends RecommendationCandidate>
   nowMs = Date.now(),
   extraOptions?: { limit: number; excludeIds: Set<string> }
 ) {
-  const seeds = [...new Set(refreshTimes)].filter((value) => {
+  // SQL returns +00:00 while the server plans with Z. Equal instants must replay
+  // the same list; otherwise a checked plan could differ immediately after saving.
+  const seeds = [...new Set(refreshTimes.flatMap((value) => Number.isFinite(Date.parse(value))
+    ? [new Date(value).toISOString()] : []))].filter((value) => {
     const ms = Date.parse(value);
     return Number.isFinite(ms) && ms <= nowMs && ms > nowMs - RECOMMENDATION_REFRESH_HISTORY_MS;
   }).sort((a, b) => Date.parse(a) - Date.parse(b)).slice(-32);

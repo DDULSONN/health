@@ -577,6 +577,23 @@ test("ordinary publication state changes do not invalidate confirmation", async 
   db.tables.dating_cards[0].status = "pending";
   assert.equal((await (await route.POST(request("open_card"))).json()).items.length, 0);
 });
+
+for (const source of sources) test(source + ' stale confirmation recovers the current snapshot without approving unseen content', async () => {
+  const { db, route, item } = await scanFixture(source);
+  const record = db.tables[sourceTables[source]][0];
+  for (const field of ['intro', 'intro_text', 'strengths_text', 'applicant_intro']) {
+    if (typeof record[field] === 'string') record[field] += ' 수정된 내용';
+  }
+  // A stale/forged snapshot is safe too: never save it, return the real server snapshot.
+  const stale = { ...item, confirmationSnapshot: { ...item.confirmationSnapshot, contentFingerprint: 'e'.repeat(64) } };
+  const response = await route.PATCH(confirmationRequest(stale));
+  const body = await response.json();
+  assert.equal(response.status, 409); assert.equal(body.code, 'REVIEW_CHANGED');
+  assert.equal(body.item.cardId, item.cardId); assert.equal(body.item.sourceType, source);
+  assert.ok(body.item.confirmationSnapshot); assert.equal(db.tables[confirmationTable].length, 0);
+  assert.equal((await route.PATCH(confirmationRequest(body.item))).status, 200);
+  assert.equal((await (await route.GET(listRequest(source))).json()).items.length, 0);
+});
 test("improved clean content is not shown simply because the author edited it", async () => {
   const { db, route, item } = await scanFixture();
   await route.PATCH(confirmationRequest(item));

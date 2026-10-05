@@ -58,20 +58,40 @@ export async function fetchActiveRecommendationRows(
 
 export async function fetchRecommendationProfiles(admin: AdminClient, userIds: string[]) {
   const uniqueIds = [...new Set(userIds)];
-  const profiles = new Map<string, { phone: string | null; banned: boolean }>();
+  const profiles = new Map<string, { phone: string | null; banned: boolean; lastActiveAt?: string | null }>();
+  let hasActivityColumn = true;
   for (let start = 0; start < uniqueIds.length; start += USER_BATCH_SIZE) {
-    const { data, error } = await admin.from("profiles").select("user_id,phone_e164,is_banned")
+    const read = () => admin.from("profiles")
+      .select(`user_id,phone_e164,is_banned${hasActivityColumn ? ",last_meaningful_activity_at" : ""}`)
       .in("user_id", uniqueIds.slice(start, start + USER_BATCH_SIZE));
+    let result = await read();
+    if (hasActivityColumn && result.error && ["42703", "PGRST204"].includes(result.error.code)
+      && result.error.message.includes("last_meaningful_activity_at")) {
+      hasActivityColumn = false;
+      result = await read();
+    }
+    const { data, error } = result;
     // Eligibility checks fail closed. Do not treat a failed ban lookup as safe.
     if (error) throw error;
-    for (const row of data ?? []) {
+    const rows = (data ?? []) as unknown as Array<{
+      user_id: string; phone_e164: string | null; is_banned: boolean | null; last_meaningful_activity_at?: string | null;
+    }>;
+    for (const row of rows) {
       profiles.set(row.user_id, {
         phone: normalizeDatingContactPhone(String(row.phone_e164 ?? "")) || null,
         banned: row.is_banned === true,
+        lastActiveAt: typeof row.last_meaningful_activity_at === "string" ? row.last_meaningful_activity_at : null,
       });
     }
   }
   return profiles;
+}
+
+// Activity is a ranking hint only. Invalid/future timestamps must not outrank real actions.
+export function latestRecommendationActivity(nowMs: number, ...values: (string | null | undefined)[]) {
+  return values.filter((value): value is string => typeof value === "string"
+    && Number.isFinite(Date.parse(value)) && Date.parse(value) <= nowMs)
+    .sort((a, b) => Date.parse(b) - Date.parse(a))[0] ?? null;
 }
 
 export async function fetchRecommendationDetails(admin: AdminClient, cardIds: string[]) {

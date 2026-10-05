@@ -190,6 +190,140 @@ async function runApi(tables, { intercept, signedIn = true, atTime } = {}) {
     'Actual API output remains compatible with the client response guard');
   return { response, body, calls: db.calls };
 }
+
+async function runRefresh(tables, { intercept, signedIn = true, atTime = now, sourceId = 'source', rpc, legacyClient = false } = {}) {
+  const db = mockDatabase(tables, intercept), rpcCalls = [];
+  db.rpc = async (name, args) => {
+    assert.equal(name, 'consume_dating_1on1_recommendation_refresh_checked'); rpcCalls.push(args);
+    if (rpc) return rpc(args);
+    const source = tables.dating_1on1_cards.find(row => row.id === args.p_card_id);
+    assert.equal(source.recommendation_refresh_used_at, args.p_expected_refresh_at);
+    // PostgreSQL serializes timestamptz differently from JavaScript's ISO string.
+    const stamp = args.p_refresh_at.replace('Z', '+00:00');
+    source.recommendation_refresh_used_at = stamp;
+    tables.dating_1on1_recommendation_refresh_events ??= [];
+    tables.dating_1on1_recommendation_refresh_events.push({ card_id: args.p_card_id, user_id: args.p_user_id, refreshed_at: stamp });
+    return { data: [{ allowed: true, reason: 'consumed', used_count: 1, remaining_count: args.p_limit - 1, refreshed_at: stamp, next_refresh_at: null }], error: null };
+  };
+  const apiLoad = createLoader({
+    '@/lib/supabase/server': { createAdminClient: () => db },
+    '@/lib/supabase/request': { getRequestAuthContext: async () => ({ user: signedIn ? { id: 'user-source' } : null }) },
+    '@/lib/request-origin': { ensureAllowedMutationOrigin: () => null },
+  }, atTime);
+  const response = await apiLoad('@/app/api/dating/1on1/recommendations/refresh/route').POST(new Request('http://localhost/api/dating/1on1/recommendations/refresh', {
+    method: 'POST', body: JSON.stringify({ source_card_id: sourceId, refresh_contract: legacyClient ? undefined : 2, changed_candidate_count: 999, refresh_limit: 99 }),
+  }));
+  return { response, body: await response.json(), calls: db.calls, rpcCalls };
+}
+
+for (const size of [0, 1, 3, 10, 11, 12, 13]) test('checked refresh with ' + size + ' eligible people never charges just for reordering', async () => {
+  const tables = fixture(size), before = structuredClone(tables);
+  const result = await runRefresh(tables);
+  assert.equal(result.response.status, 200); assert.equal(result.body.refresh_consumed, false);
+  assert.equal(result.body.changed_candidate_count, 0); assert.equal(result.body.refresh_remaining, 1);
+  assert.equal(result.rpcCalls.length, 0); assert.deepEqual(tables, before);
+  assert.ok(result.calls.every(call => !call.insert && !call.update && !call.delete));
+});
+
+for (const size of [14, 15, 26, 80]) test('checked refresh reports actual new people after database timestamp serialization, pool=' + size, async () => {
+  const tables = fixture(size);
+  const before = await runApi(tables, { atTime: now + 573 });
+  const priorIds = new Set(allCandidates(before.body).map(c => c.user_id));
+  const result = await runRefresh(tables, { atTime: now + 573 });
+  const after = await runApi(tables, { atTime: now + 574 });
+  const changes = allCandidates(after.body).filter(c => !priorIds.has(c.user_id)).length;
+  assert.equal(result.response.status, 200); assert.equal(result.body.changed_candidate_count, changes);
+  assert.ok(changes > 0); assert.equal(result.body.refresh_consumed, true);
+  assert.equal(result.rpcCalls.length, 1); assert.equal(result.rpcCalls[0].p_limit, 1);
+});
+
+test('checked refresh preserves small-pool Plus allowance and never calls any write RPC', async () => {
+  const tables = fixture(13);
+  tables.dating_1on1_plus_subscriptions = [{ user_id: 'user-source', starts_at: new Date(now-day).toISOString(), expires_at: new Date(now+day).toISOString() }];
+  const result = await runRefresh(tables);
+  assert.equal(result.body.refresh_remaining, 2); assert.equal(result.body.refresh_limit, 2);
+  assert.equal(result.rpcCalls.length, 0);
+});
+
+test('old tabs receive an explicit no-charge rejection instead of misreporting one consumed use', async () => {
+  const noChange = await runRefresh(fixture(13), { legacyClient: true });
+  assert.equal(noChange.response.status, 409); assert.equal(noChange.body.code, 'REFRESH_UNCHANGED');
+  assert.match(noChange.body.error, /횟수를 사용하지 않았어요/); assert.equal(noChange.rpcCalls.length, 0);
+  const changed = await runRefresh(fixture(80), { legacyClient: true });
+  assert.equal(changed.response.status, 200); assert.equal(changed.body.refresh_consumed, true);
+  assert.equal(changed.rpcCalls.length, 1);
+});
+
+test('checked refresh fails closed for auth, stale source, banned account and lookup failure', async () => {
+  for (const mode of ['auth', 'wrong-source', 'banned', 'db-error', 'exhausted']) {
+    const tables = fixture(50);
+    if (mode === 'banned') tables.profiles[0].is_banned = true;
+    if (mode === 'exhausted') tables.dating_1on1_cards[0].recommendation_refresh_used_at = new Date(now-10000).toISOString();
+    const result = await runRefresh(tables, { signedIn: mode !== 'auth', sourceId: mode === 'wrong-source' ? 'c0' : 'source',
+      intercept: mode === 'db-error' ? q => q.table === 'profiles' ? { error: { code: 'XX000', message: 'offline' } } : null : undefined });
+    assert.ok(result.response.status >= 400, mode); assert.equal(result.rpcCalls.length, 0, mode);
+  }
+});
+
+test('checked refresh never retries a failed or ambiguous transaction with a second quota write', async () => {
+  for (const result of [
+    { error: { code: 'PGRST202', message: 'RPC not installed' }, data: null },
+    { error: { code: 'XX000', message: 'response lost' }, data: null },
+    { error: null, data: null },
+    { error: null, data: [{ allowed: false, reason: 'stale', used_count: 1, remaining_count: 1 }] },
+  ]) {
+    const res = await runRefresh(fixture(80), { rpc: () => result });
+    assert.ok(res.response.status >= 400); assert.equal(res.rpcCalls.length, 1);
+    assert.ok(res.calls.every(call => !call.insert && !call.update && !call.delete));
+  }
+});
+
+for (const dependency of ['favorites', 'activity', 'recovery', 'refresh-schema']) {
+  test('checked refresh never consumes an incomplete candidate plan: ' + dependency, async () => {
+    const tables = fixture(80), before = structuredClone(tables);
+    const intercept = q => {
+      const fails = dependency === 'favorites' ? q.table === 'dating_1on1_candidate_favorites'
+        : dependency === 'recovery' ? q.table === 'dating_1on1_recommendation_recoveries'
+        : dependency === 'refresh-schema' ? q.table === 'dating_1on1_recommendation_refresh_events'
+        : q.table === 'dating_1on1_match_proposals' && q.filters.some(([op]) => op === 'gte');
+      return fails ? { data: null, error: { code: 'PGRST205', message: q.table + ' schema cache unavailable' } } : null;
+    };
+    const result = await runRefresh(tables, { intercept });
+    assert.ok(result.response.status >= 400); assert.equal(result.rpcCalls.length, 0);
+    assert.deepEqual(tables, before);
+    const readOnly = await runApi(tables, { intercept, atTime: now });
+    assert.equal(readOnly.response.status, 200, 'ordinary GET retains its graceful fallback');
+  });
+}
+
+test('meaningful site activity uses the existing profile query and cannot override geography/age safety', async () => {
+  const tables = fixture(30);
+  tables.profiles.find(p => p.user_id === 'user-c29').last_meaningful_activity_at = new Date(now-10000).toISOString();
+  tables.dating_1on1_cards.find(c => c.id === 'c0').region = '부산 해운대구';
+  tables.profiles.find(p => p.user_id === 'user-c0').last_meaningful_activity_at = new Date(now-10000).toISOString();
+  const { body, calls } = await runApi(tables, { atTime: now });
+  assert.ok(body.items[0].recommendations.some(c => c.id === 'c29'));
+  assert.ok(!allCandidates(body).some(c => c.id === 'c0'));
+  const activityLookups = calls.filter(q => q.table === 'profiles' && q.fields.includes('last_meaningful_activity_at'));
+  assert.equal(activityLookups.length, 1);
+  assert.ok(allCandidates(body).every(c => !Object.hasOwn(c, 'last_meaningful_activity_at')));
+});
+
+test('missing optional activity column falls back without dropping ban protection', async () => {
+  const tables = fixture(10); tables.profiles[1].is_banned = true;
+  const res = await runApi(tables, { intercept: q => q.fields.includes('last_meaningful_activity_at')
+    ? { error: { code: '42703', message: 'profiles.last_meaningful_activity_at does not exist' }, data: null } : null });
+  assert.equal(res.response.status, 200); assert.ok(!allCandidates(res.body).some(c => c.id === 'c0'));
+  const failed = await runApi(tables, { intercept: q => q.table === 'profiles'
+    ? { error: { code: '42703', message: 'is_banned does not exist' }, data: null } : null });
+  assert.equal(failed.response.status, 500);
+});
+
+test('invalid/future activity is ignored and the latest real signal wins', () => {
+  const latest = load('@/lib/dating-1on1-recommendation-data').latestRecommendationActivity;
+  assert.equal(latest(now, null, 'invalid', new Date(now+100).toISOString()), null);
+  assert.equal(latest(now, new Date(now-1000).toISOString(), new Date(now-100).toISOString()), new Date(now-100).toISOString());
+});
 async function runSelect(tables, { intercept, sourceId = "source", candidateId = "c0", admin = false, signedIn = true, allowedAdmin = true } = {}) {
   const db = mockDatabase(tables, intercept);
   const apiLoad = createLoader({

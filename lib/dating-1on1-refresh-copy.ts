@@ -4,6 +4,8 @@ export type OneOnOneRefreshUsage = {
   refresh_remaining?: number;
   can_refresh?: boolean;
   next_refresh_at?: string | null;
+  refresh_consumed?: boolean;
+  changed_candidate_count?: number;
 };
 
 export const ONE_ON_ONE_REFRESH_POLICY_COPY =
@@ -57,6 +59,7 @@ export function buildOneOnOneRefreshConfirmation(usage?: OneOnOneRefreshUsage | 
     ? `사용 전 ${remaining}회 → 이번 사용 후 ${remaining - 1}회 남아요.`
     : "이용 가능 횟수는 요청 시 확인하며, 성공하면 1회가 사용돼요.";
   return ["후보 새로고침 1회를 사용할까요?", "", quota,
+    "추천 후보와 추가 후보에 새로 들어오는 사람이 없으면 횟수는 사용하지 않아요.",
     limit !== null ? `최근 24시간 기준 최대 ${limit}회 이용할 수 있어요.` : "",
     ONE_ON_ONE_REFRESH_POLICY_COPY].filter((line, index) => line || index === 1).join("\n");
 }
@@ -65,7 +68,13 @@ export function buildOneOnOneRefreshSuccess(usage: OneOnOneRefreshUsage) {
   // Only the POST response tells us the actual post-consumption balance.
   const remaining = count(usage.refresh_remaining);
   const next = formatOneOnOneNextRefresh(usage.next_refresh_at);
-  return ["새로고침 1회를 사용했어요.",
+  if (usage.refresh_consumed === false) {
+    return ["이번에는 후보 명단이 바뀌지 않아 횟수를 사용하지 않았어요.",
+      remaining !== null ? `${remaining}회 그대로 남아 있어요.` : "남은 횟수는 화면에서 확인해 주세요.",
+    ].join("\n");
+  }
+  const changed = count(usage.changed_candidate_count, 1);
+  return [changed !== null ? `후보 ${changed}명이 바뀌었어요.` : "", "새로고침 1회를 사용했어요.",
     remaining !== null ? `사용 후 ${remaining}회 남았어요.` : "남은 횟수는 화면에서 확인해 주세요.",
     remaining === 0 ? next ? `다음 이용: ${next}부터 (한국 시간)`
       : "다음 이용 가능 시각은 화면에서 확인해 주세요." : "",

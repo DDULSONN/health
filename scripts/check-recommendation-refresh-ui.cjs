@@ -41,7 +41,7 @@ function fixture(surface, outcome = 'ok', confirmation = true) {
     fetch: async (_url, init) => {
       assert.notEqual(init?.method, 'POST');
       state.reads++;
-      if (state.outcome === 'read-error') throw Error('offline');
+      if (state.outcome === 'read-error' || state.outcome === 'no-charge-read-error') throw Error('offline');
       if (state.outcome === 'aborted-read') gate.cancel();
       if (state.outcome === 'null-group') return Response.json({ items: [null] });
       if (state.outcome === 'bad-extra') return Response.json({ items: [{ source_card_id: 'source', recommendations: [], admin_recommendations: 'not-a-list' }] });
@@ -72,11 +72,19 @@ function fixture(surface, outcome = 'ok', confirmation = true) {
       if (state.outcome === 'lost-post') throw Error('POST response lost');
       if (state.outcome === 'null-post') return Response.json(null);
       if (state.outcome === 'string-ok') return Response.json({ ok: 'true' });
+      if (state.outcome.startsWith('no-charge')) return Response.json({ ok: true, refresh_consumed: false, changed_candidate_count: 0, refresh_remaining: 2 });
       return Response.json(state.outcome === 'bad-post' ? {} : { ok: true, refresh_remaining: 1 }, { status: state.outcome === 'server-error' ? 503 : 200 });
   }
   return { state, handler, reload, gate, lock, recovery };
 }
 for (const surface of ['home', 'mypage']) {
+  test(surface + ': no-charge response followed by failed read never claims quota was consumed', async () => {
+    const f = fixture(surface, 'no-charge-read-error'); await f.handler('source');
+    assert.equal(f.state.posts, 1); assert.equal(f.state.commits, 0);
+    assert.match(f.state.error, /횟수는 사용하지 않았어요/); assert.doesNotMatch(f.state.error, /1회는 처리/);
+    await f.handler('source'); assert.equal(f.state.posts, 1);
+    f.state.outcome = 'ok'; await f.reload(true, true); assert.equal(f.state.posts, 1);
+  });
   test(surface + ': successful double-click consumes once and displays success only after a committed read', async () => {
     const f = fixture(surface);
     await Promise.all([f.handler('source'), f.handler('source')]);

@@ -932,7 +932,14 @@ async function handleReviewConfirmation(admin: AdminClient, adminUserId: string,
   const raw = (prepared.row.raw_result ?? {}) as Record<string, unknown>;
   if (!snapshot || snapshot.contentFingerprint !== expected.contentFingerprint || snapshot.findingsFingerprint !== expected.findingsFingerprint
     || reviewContentFingerprint(card) !== expected.contentFingerprint || raw.confirmationRulesVersion !== REVIEW_RULES_VERSION) {
-    return NextResponse.json({ ok: false, message: "프로필 내용 또는 검수 결과가 바뀌었습니다. 다시 검수하고 확인해 주세요." }, { status: 409 });
+    // Do not repeat a stale snapshot forever or silently acknowledge unseen changes.
+    // Return this one refreshed item for an explicit second review; never auto-retry the write.
+    const [item] = await hydrateReviewRows(admin, [{ ...saved.data, source_type: source, card_id: cardId }]);
+    return NextResponse.json({ ok: false, code: "REVIEW_CHANGED", sourceType: source, cardId, item,
+      message: item.confirmationSnapshot
+        ? "내용이 바뀌어 최신 프로필과 검수 결과로 갱신했습니다. 아래 내용을 확인한 뒤 정상 확인을 다시 눌러 주세요."
+        : "내용이 바뀌어 최신 프로필로 갱신했습니다. 사진 AI 검수는 다시 실행한 뒤 확인해 주세요.",
+    }, { status: 409 });
   }
   // Persist the exact rules result that the administrator saw before recording
   // confirmation. GET remains read-only; failed persistence never claims success.
