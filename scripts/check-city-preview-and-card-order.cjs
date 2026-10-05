@@ -99,7 +99,8 @@ const list = load("app/api/dating/cards/city-view/list/route.ts", (id) => {
   assert.equal(cursors.parseCursorTs("not a date"), null);
   let previewRows = [];
   const fulfillment = load("lib/dating-purchase-fulfillment.ts", (id) => {
-    if (id.endsWith("dating-city-view-candidates")) return { fetchCityViewCandidateRows: async () => previewRows, sortCityViewCandidates: (values) => values };
+    if (id.endsWith("dating-city-view-candidates")) return { fetchCityViewCandidateRows: async () => previewRows, sortCityViewCandidates: (values) => values,
+      buildRegionFirstCityViewCardIds: (values, _, __, count) => [...new Set(values.map((row) => row.id))].slice(0, count) };
     if (id.endsWith("dating-city-view")) return { ...city, getCityViewTargetSex: async () => "female" };
     if (id.endsWith("dating-city-view-policy")) return policy;
     if (id.endsWith("region-city")) return region;

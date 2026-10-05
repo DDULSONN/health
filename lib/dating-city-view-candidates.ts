@@ -59,7 +59,9 @@ export async function fetchCityViewCandidateRows(admin: AdminClient) {
     fetchStatusRows(admin, "public", nowIso),
   ]);
 
-  if (pending.error && publicCards.error) {
+  // A partial pool can incorrectly look like there are no local candidates.
+  // Do not grant or persist an out-of-region snapshot from an incomplete read.
+  if (pending.error || publicCards.error) {
     throw pending.error ?? publicCards.error;
   }
 
@@ -67,7 +69,19 @@ export async function fetchCityViewCandidateRows(admin: AdminClient) {
   for (const row of [...pending.rows, ...publicCards.rows]) {
     if (row.id) rowsById.set(row.id, row);
   }
-  return [...rowsById.values()];
+  const rows = [...rowsById.values()];
+  const ownerIds = [...new Set(rows.map((row) => row.owner_user_id).filter((id): id is string => Boolean(id)))];
+  const availableOwners = new Set<string>();
+  // Legacy pending cards can survive a deleted account. They must not consume
+  // a local slot or be granted to another member, even if the card is pending.
+  for (let index = 0; index < ownerIds.length; index += 200) {
+    const profiles = await admin.from("profiles").select("user_id,is_banned").in("user_id", ownerIds.slice(index, index + 200));
+    if (profiles.error) throw profiles.error;
+    for (const profile of profiles.data ?? []) {
+      if (profile.is_banned !== true) availableOwners.add(String(profile.user_id));
+    }
+  }
+  return rows.filter((row) => row.owner_user_id && availableOwners.has(row.owner_user_id));
 }
 
 export function sortCityViewCandidates(

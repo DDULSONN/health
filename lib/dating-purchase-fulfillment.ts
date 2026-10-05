@@ -8,7 +8,7 @@ import {
   normalizeDatingCityViewSex,
   type DatingCityViewSex,
 } from "@/lib/dating-city-view";
-import { fetchCityViewCandidateRows, sortCityViewCandidates } from "@/lib/dating-city-view-candidates";
+import { buildRegionFirstCityViewCardIds, fetchCityViewCandidateRows, sortCityViewCandidates } from "@/lib/dating-city-view-candidates";
 import { isWeeklyCityViewPreview, WEEKLY_CITY_VIEW_LIMIT } from "@/lib/dating-city-view-policy";
 import { getDatingBlockedUserIds } from "@/lib/dating-blocks";
 import { filterDatingCardsByContactBlocks } from "@/lib/dating-contact-blocks";
@@ -430,7 +430,7 @@ async function buildCityViewSnapshotCardIds(
     .filter((row) => String(row.owner_user_id ?? "") !== userId)
     .filter((row) => !targetSex || row.sex === targetSex)
     .filter((row) => row.status === "pending" || (row.status === "public" && row.expires_at && new Date(row.expires_at).getTime() > now))
-    .filter((row) => Boolean(normalizeCityProvince(row.region)))
+    .filter((row) => Boolean(extractProvinceFromRegion(row.region)))
     .filter((row) => !blockedUserIds.has(String(row.owner_user_id ?? "")));
 
   eligibleRows = await filterDatingCardsByContactBlocks(admin, userId, eligibleRows);
@@ -443,9 +443,15 @@ async function buildCityViewSnapshotCardIds(
     province
   );
 
-  return [...freshRows, ...fallbackRows]
-    .slice(0, CITY_VIEW_CARD_LIMIT)
-    .map((row) => row.id);
+  // Region takes precedence over novelty: a previously viewed local candidate
+  // must not lose every slot to unseen candidates from another province.
+  // Fresh candidates still come first within the local/fallback groups.
+  return buildRegionFirstCityViewCardIds(
+    [...freshRows, ...fallbackRows],
+    province,
+    [],
+    CITY_VIEW_CARD_LIMIT
+  );
 }
 
 async function safeBuildCityViewSnapshotCardIds(

@@ -576,7 +576,7 @@ export default function NearbyViewPage() {
               </button>
             </div>
             <CardSection
-              title={activeSex === "male" ? `${selectedProvince} 남자 카드` : `${selectedProvince} 여자 카드`}
+              title={activeSex === "male" ? `${selectedProvince} 우선 · 남자 카드` : `${selectedProvince} 우선 · 여자 카드`}
               items={activeSex === "male" ? maleItems : femaleItems}
               onNavigateAway={() =>
                 writeNearbyViewSnapshot({

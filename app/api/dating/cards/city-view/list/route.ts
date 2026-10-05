@@ -262,7 +262,13 @@ export async function GET(req: Request) {
     try {
       const usedIds = await getPreviousCityViewSnapshotIds(admin, user.id, province, true);
       for (const id of [...activeGrant.snapshotCardIds, ...activeGrant.snapshotSeenCardIds]) usedIds.add(id);
-      purchasePreview = { newCount: Math.min(CITY_VIEW_CARD_LIMIT, eligibleRows.filter((row) => !usedIds.has(row.id)).length) };
+      const purchaseCardIds = buildRegionFirstCityViewCardIds(
+        [...eligibleRows.filter((row) => !usedIds.has(row.id)), ...eligibleRows.filter((row) => usedIds.has(row.id))],
+        province,
+        [],
+        CITY_VIEW_CARD_LIMIT
+      );
+      purchasePreview = { newCount: purchaseCardIds.filter((id) => !usedIds.has(id)).length };
     } catch {
       // An optional purchase offer must never interrupt existing access.
     }
