@@ -19,6 +19,8 @@ import { formatRemainingToKorean } from "@/lib/dating-open";
 import { buildOneOnOneRefreshSuccess, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
 import OneOnOneRefreshControl, { useOneOnOneRefreshConfirmation, type OneOnOneRefreshNotice } from "@/components/dating/OneOnOneRefreshControl";
 import OneOnOnePlusStatus from "@/components/dating/OneOnOnePlusStatus";
+import OneOnOneActionNotice from "@/components/dating/OneOnOneActionNotice";
+import { buildOneOnOneRequestSentMessage, getOneOnOneActionSummary, getOneOnOneMatchLabel } from "@/lib/dating-1on1-action-copy";
 import IncomingSwipeLikeActions from "@/components/dating/IncomingSwipeLikeActions";
 import { fetchClientJson } from "@/lib/client-json-request";
 import { isOneOnOneRecommendationPayload } from "@/lib/dating-1on1-refresh-response";
@@ -2145,6 +2147,7 @@ export default function MyPage() {
   const [processingOneOnOneContactExchangeIds, setProcessingOneOnOneContactExchangeIds] = useState<string[]>([]);
   const [processingOneOnOneNudgeIds, setProcessingOneOnOneNudgeIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
+  const [oneOnOneActionNotice, setOneOnOneActionNotice] = useState("");
   const [processingOneOnOneFavoriteKeys, setProcessingOneOnOneFavoriteKeys] = useState<string[]>([]);
   const [datingUserReportDraft, setDatingUserReportDraft] = useState<DatingUserReportDraft | null>(null);
   const reportingDatingTargetKeys = datingUserReportDraft ? [`${datingUserReportDraft.targetType}:${datingUserReportDraft.targetId}`] : [];
@@ -4655,6 +4658,7 @@ export default function MyPage() {
         oneOnOneRecommendationsRequest.cancel();
         setMyOneOnOneMatches([]);
         setMyOneOnOneAutoRecommendations([]);
+        setOneOnOneActionNotice("");
         window.location.reload();
       }
       identity = next;
@@ -5328,6 +5332,7 @@ export default function MyPage() {
   ) => {
     if (oneOnOneMatchActionLocksRef.current.has(matchId)) return;
     oneOnOneMatchActionLocksRef.current.add(matchId);
+    if (action === "select_candidate") setOneOnOneActionNotice("");
     setProcessingOneOnOneMatchIds((prev) => [...prev, matchId]);
     try {
       const res = await fetch(`/api/dating/1on1/matches/${matchId}`, {
@@ -5361,6 +5366,9 @@ export default function MyPage() {
               : match
           )
         );
+      }
+      if (action === "select_candidate") {
+        setOneOnOneActionNotice(buildOneOnOneRequestSentMessage(myOneOnOneMatches.find((match) => match.id === matchId)?.counterparty_card?.name));
       }
       try {
         await reloadOneOnOneAfterAction();
@@ -5436,9 +5444,10 @@ export default function MyPage() {
     }
   };
 
-  const handleOneOnOneAutoRecommendationSelect = async (sourceCardId: string, candidateCardId: string) => {
+  const handleOneOnOneAutoRecommendationSelect = async (sourceCardId: string, candidateCardId: string, candidateName?: string | null) => {
     const actionKey = `${sourceCardId}:${candidateCardId}`;
     if (processingOneOnOneAutoKeys.includes(actionKey)) return;
+    setOneOnOneActionNotice("");
     setProcessingOneOnOneAutoKeys((prev) => [...prev, actionKey]);
     try {
       const res = await fetch("/api/dating/1on1/matches/auto", {
@@ -5462,12 +5471,18 @@ export default function MyPage() {
           await reloadOneOnOneRecommendations();
           return;
         }
-        alert(body.error ?? "자동 추천 후보 선택에 실패했습니다.");
+        alert(body.error ?? "매칭 요청을 보내지 못했어요. 다시 시도해 주세요.");
         return;
       }
-      await reloadOneOnOneAfterAction();
+      setOneOnOneActionNotice(buildOneOnOneRequestSentMessage(candidateName));
+      try {
+        await reloadOneOnOneAfterAction();
+      } catch (reloadError) {
+        console.error("[mypage] 1on1 request sent but reload failed", reloadError);
+        setOneOnOneActionNotice(`${buildOneOnOneRequestSentMessage(candidateName)} 목록을 불러오지 못했어요. 다시 요청하지 말고 화면을 새로고침해 주세요.`);
+      }
     } catch (e) {
-      alert(e instanceof Error ? e.message : "자동 추천 후보 선택에 실패했습니다.");
+      alert(e instanceof Error ? e.message : "매칭 요청을 보내지 못했어요. 다시 시도해 주세요.");
     } finally {
       setProcessingOneOnOneAutoKeys((prev) => prev.filter((key) => key !== actionKey));
     }
@@ -7873,16 +7888,6 @@ export default function MyPage() {
     matched: "bg-emerald-100 text-emerald-700",
     rejected: "bg-red-100 text-red-700",
   };
-  const oneOnOneMatchStateText: Record<MyOneOnOneMatch["state"], string> = {
-    proposed: "후보 도착",
-    source_selected: "상대 응답 대기",
-    source_skipped: "지원 취소",
-    candidate_accepted: "쌍방 수락 완료",
-    candidate_rejected: "상대 거절",
-    source_declined: "최종 거절",
-    admin_canceled: "매칭 취소",
-    mutual_accepted: "쌍방 수락 완료",
-  };
   const oneOnOneMatchStateColor: Record<MyOneOnOneMatch["state"], string> = {
     proposed: "bg-sky-100 text-sky-700",
     source_selected: "bg-amber-100 text-amber-700",
@@ -8018,7 +8023,7 @@ export default function MyPage() {
   const receivedPaidPendingCount = receivedPaidApplications.filter((item) => item.status === "submitted").length;
   const appliedOpenActiveCount = myAppliedCardApplications.filter((item) => item.status === "submitted" || item.status === "accepted").length;
   const appliedPaidActiveCount = myAppliedPaidApplications.filter((item) => item.status === "submitted" || item.status === "accepted").length;
-  const oneOnOneActionCount = myOneOnOneMatches.filter((item) => item.action_required).length;
+  const oneOnOneActionSummary = getOneOnOneActionSummary(myOneOnOneMatches);
   const oneOnOneActiveCount = myOneOnOneMatches.filter(
     (item) => item.state !== "admin_canceled" && item.state !== "source_declined" && item.state !== "candidate_rejected" && item.state !== "source_skipped",
   ).length;
@@ -8063,7 +8068,7 @@ export default function MyPage() {
     {
       label: "1:1 진행",
       value: oneOnOneActiveCount,
-      detail: oneOnOneActionCount > 0 ? `확인 필요 ${oneOnOneActionCount}` : "확인 필요 없음",
+      detail: oneOnOneActionSummary.detail,
       accent: "bg-violet-500",
       onClick: () => openMatchingFilter("one_on_one"),
     },
@@ -8108,6 +8113,7 @@ export default function MyPage() {
   return (
     <main className="mx-auto max-w-2xl px-4 pt-8 pb-[calc(120px+env(safe-area-inset-bottom))] md:pb-10">
       {refreshConfirmationDialog}
+      {pageSectionTab === "matching" ? <OneOnOneActionNotice message={oneOnOneActionNotice} onDismiss={() => setOneOnOneActionNotice("")} /> : null}
       {datingUserReportDraft && (
         <DatingReportDialog
           targetType={datingUserReportDraft.targetType}
@@ -10290,10 +10296,10 @@ export default function MyPage() {
                                       <button
                                         type="button"
                                         disabled={selecting || saving}
-                                        onClick={() => void handleOneOnOneAutoRecommendationSelect(item.id, card.id)}
+                                        onClick={() => void handleOneOnOneAutoRecommendationSelect(item.id, card.id, card.name)}
                                         className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-3 text-xs font-semibold text-white hover:bg-[#d90037] disabled:opacity-50"
                                       >
-                                        {selecting ? "처리 중..." : "이 후보 선택"}
+                                        {selecting ? "요청 보내는 중..." : "매칭 요청 보내기"}
                                       </button>
                                       <button
                                         type="button"
@@ -10356,10 +10362,10 @@ export default function MyPage() {
                                   <button
                                     type="button"
                                     disabled={processing}
-                                    onClick={() => void handleOneOnOneAutoRecommendationSelect(item.id, card.id)}
+                                    onClick={() => void handleOneOnOneAutoRecommendationSelect(item.id, card.id, card.name)}
                                     className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-3 text-xs font-semibold text-white hover:bg-[#d90037] disabled:opacity-50"
                                   >
-                                    {processing ? "처리 중..." : "이 후보 선택"}
+                                    {processing ? "요청 보내는 중..." : "매칭 요청 보내기"}
                                   </button>
                                   <button
                                     type="button"
@@ -10422,10 +10428,10 @@ export default function MyPage() {
                                         <button
                                           type="button"
                                           disabled={processing}
-                                          onClick={() => void handleOneOnOneAutoRecommendationSelect(item.id, card.id)}
+                                          onClick={() => void handleOneOnOneAutoRecommendationSelect(item.id, card.id, card.name)}
                                           className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-3 text-xs font-semibold text-white hover:bg-[#d90037] disabled:opacity-50"
                                         >
-                                          {processing ? "처리 중..." : "이 후보 선택"}
+                                          {processing ? "요청 보내는 중..." : "매칭 요청 보내기"}
                                         </button>
                                         <button
                                           type="button"
@@ -10454,7 +10460,7 @@ export default function MyPage() {
                   {incomingCandidates.length > 0 && (
                     <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/50 p-3">
                       <p className="text-sm font-semibold text-sky-900">추가 후보</p>
-                      <p className="mt-1 text-xs text-sky-700">원하는 후보를 여러 명 선택할 수 있고, 선택된 사람마다 수락 요청이 전달됩니다.</p>
+                      <p className="mt-1 text-xs text-sky-700">마음에 드는 분에게 각각 요청을 보낼 수 있어요. 상대가 내 프로필을 보고 수락 여부를 결정해요.</p>
                       <div className="mt-3 space-y-2">
                         {incomingCandidates.map((match) => {
                           const processing = processingOneOnOneMatchIds.includes(match.id);
@@ -10471,7 +10477,7 @@ export default function MyPage() {
                                     oneOnOneMatchStateColor[match.state]
                                   }`}
                                 >
-                                  {oneOnOneMatchStateText[match.state]}
+                                  <span className="whitespace-nowrap">{getOneOnOneMatchLabel(match)}</span>
                                 </span>
                               </div>
                               <p className="mt-1 text-xs text-neutral-600">
@@ -10498,7 +10504,7 @@ export default function MyPage() {
                                   onClick={() => void handleOneOnOneMatchAction(match.id, "select_candidate")}
                                   className="inline-flex h-8 items-center rounded-md bg-sky-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                                 >
-                                  {processing ? "처리 중..." : "이 후보 선택"}
+                                  {processing ? "요청 보내는 중..." : "매칭 요청 보내기"}
                                 </button>
                                 <SmallDatingReportButton
                                   disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}
@@ -10514,7 +10520,7 @@ export default function MyPage() {
 
                   {candidateDecisionRequests.length > 0 && (
                     <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
-                      <p className="text-sm font-semibold text-amber-900">상대가 나를 선택함</p>
+                      <p className="text-sm font-semibold text-amber-900">받은 매칭 요청</p>
                       <p className="mt-1 text-xs text-amber-700">프로필을 확인한 뒤 수락 여부를 결정해주세요.</p>
                       <div className="mt-3 space-y-2">
                         {candidateDecisionRequests.map((match) => {
@@ -10532,7 +10538,7 @@ export default function MyPage() {
                                     oneOnOneMatchStateColor[match.state]
                                   }`}
                                 >
-                                  {oneOnOneMatchStateText[match.state]}
+                                  <span className="whitespace-nowrap">{getOneOnOneMatchLabel(match)}</span>
                                 </span>
                               </div>
                               <p className="mt-1 text-xs text-neutral-600">
@@ -10585,7 +10591,7 @@ export default function MyPage() {
 
                   {waitingCandidateResponses.length > 0 && (
                     <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3">
-                      <p className="text-sm font-semibold text-amber-900">내가 선택한 후보</p>
+                      <p className="text-sm font-semibold text-amber-900">보낸 요청 · 상대 응답 대기</p>
                       <div className="mt-2 space-y-2">
                         {waitingCandidateResponses.map((match) => {
                           const processing = processingOneOnOneMatchIds.includes(match.id);
@@ -10599,7 +10605,7 @@ export default function MyPage() {
                                   {card.name} / {card.age ?? "-"}세 / {card.region}
                                 </p>
                                 <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${oneOnOneMatchStateColor[match.state]}`}>
-                                  {oneOnOneMatchStateText[match.state]}
+                                  <span className="whitespace-nowrap">{getOneOnOneMatchLabel(match)}</span>
                                 </span>
                               </div>
                               <p className="mt-1 text-xs text-neutral-600">상대가 수락하면 바로 번호 교환 단계로 넘어갑니다.</p>
@@ -10630,7 +10636,7 @@ export default function MyPage() {
 
                   {finalAcceptRequests.length > 0 && (
                     <div className="mt-3 rounded-xl border border-violet-200 bg-violet-50/50 p-3">
-                      <p className="text-sm font-semibold text-violet-900">최종 수락 요청</p>
+                      <p className="text-sm font-semibold text-violet-900">상대가 수락한 요청</p>
                       <div className="mt-3 space-y-2">
                         {finalAcceptRequests.map((match) => {
                           const processing = processingOneOnOneMatchIds.includes(match.id);
@@ -10639,7 +10645,7 @@ export default function MyPage() {
                           return (
                             <div key={match.id} className="rounded-lg border border-violet-200 bg-white p-3">
                               <p className="text-sm font-medium text-neutral-900">
-                                {card.name}님이 수락했습니다. 당신도 최종 수락할까요?
+                                {card.name}님이 수락했어요. 나도 수락하면 연락처 교환 단계로 넘어가요.
                               </p>
                               <p className="mt-1 text-xs text-neutral-600">
                                 {card.age ?? "-"}세 / {card.region} / {card.job}
@@ -10651,7 +10657,7 @@ export default function MyPage() {
                                   onClick={() => void handleOneOnOneMatchAction(match.id, "source_accept")}
                                   className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
                                 >
-                                  {processing ? "처리 중..." : "최종 수락"}
+                                  {processing ? "처리 중..." : "나도 수락하기"}
                                 </button>
                                 <button
                                   type="button"
@@ -10694,7 +10700,7 @@ export default function MyPage() {
                                       oneOnOneMatchStateColor[match.state]
                                     }`}
                                   >
-                                    {oneOnOneMatchStateText[match.state]}
+                                    <span className="whitespace-nowrap">{getOneOnOneMatchLabel(match)}</span>
                                   </span>
                                   <span
                                     className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
@@ -10812,7 +10818,7 @@ export default function MyPage() {
                                 </p>
                                 <div className="flex shrink-0 items-center gap-2">
                                   <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${oneOnOneMatchStateColor[match.state]}`}>
-                                    {oneOnOneMatchStateText[match.state]}
+                                    <span className="whitespace-nowrap">{getOneOnOneMatchLabel(match)}</span>
                                   </span>
                                   <SmallDatingReportButton
                                     disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}

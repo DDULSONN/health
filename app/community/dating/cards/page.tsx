@@ -35,6 +35,8 @@ import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
 import AllPassProfileOfferBanner from "@/components/dating/AllPassProfileOfferBanner";
 import OneOnOneContactNudge from "@/components/dating/OneOnOneContactNudge";
 import OneOnOneContactOffer from "@/components/dating/OneOnOneContactOffer";
+import OneOnOneActionNotice from "@/components/dating/OneOnOneActionNotice";
+import { buildOneOnOneRequestSentMessage, getOneOnOneActionSummary, getOneOnOneMatchLabel } from "@/lib/dating-1on1-action-copy";
 import type {
   OneOnOneContactNudgePresetKey,
   OneOnOneContactNudgeSummary,
@@ -416,18 +418,6 @@ function getOneOnOneMeta(card?: OneOnOneCardPreview | null) {
   if (!card) return "후보 정보를 확인 중";
   const age = getOneOnOneAge(card);
   return [age ? `${age}세` : null, card.region, card.height_cm ? `${card.height_cm}cm` : null, card.job].filter(Boolean).join(" · ") || "상세 정보 확인";
-}
-
-function oneOnOneStateLabel(state?: string) {
-  if (state === "proposed") return "후보 제안";
-  if (state === "source_selected") return "내 선택 완료";
-  if (state === "candidate_accepted") return "상대 수락";
-  if (state === "mutual_accepted") return "쌍방 수락";
-  if (state === "candidate_rejected") return "상대 거절";
-  if (state === "source_declined") return "내 거절";
-  if (state === "source_skipped") return "지원 취소";
-  if (state === "admin_canceled") return "관리자 종료";
-  return "진행 중";
 }
 
 function oneOnOneContactLabel(status?: string) {
@@ -1763,6 +1753,7 @@ function OpenCardsContent() {
   const [processingOneOnOneContactIds, setProcessingOneOnOneContactIds] = useState<string[]>([]);
   const [processingOneOnOneNudgeIds, setProcessingOneOnOneNudgeIds] = useState<string[]>([]);
   const [processingOneOnOneAutoKeys, setProcessingOneOnOneAutoKeys] = useState<string[]>([]);
+  const [oneOnOneActionNotice, setOneOnOneActionNotice] = useState("");
   const [refreshingOneOnOneRecommendationIds, setRefreshingOneOnOneRecommendationIds] = useState<string[]>([]);
   const { confirmOneOnOneRefresh, refreshConfirmationDialog } = useOneOnOneRefreshConfirmation();
   const [oneOnOneRefreshNotice, setOneOnOneRefreshNotice] = useState<OneOnOneRefreshNotice | null>(null);
@@ -2031,6 +2022,7 @@ function OpenCardsContent() {
         setOneOnOneHome(null);
         setOneOnOneHomeError("");
         setOneOnOneHomeLoading(false);
+        setOneOnOneActionNotice("");
         // Discard all component-local member data at an account boundary.
         window.location.reload();
       }
@@ -2587,6 +2579,7 @@ function OpenCardsContent() {
     ) => {
       if (oneOnOneMatchActionLocksRef.current.has(matchId)) return;
       oneOnOneMatchActionLocksRef.current.add(matchId);
+      if (action === "select_candidate") setOneOnOneActionNotice("");
       setProcessingOneOnOneMatchIds((prev) => [...prev, matchId]);
       try {
         const res = await fetch(`/api/dating/1on1/matches/${matchId}`, {
@@ -2616,6 +2609,9 @@ function OpenCardsContent() {
               : prev
           );
         }
+        if (action === "select_candidate") {
+          setOneOnOneActionNotice(buildOneOnOneRequestSentMessage(oneOnOneHome?.matches.find((match) => match.id === matchId)?.counterparty_card?.name));
+        }
         await reloadOneOnOneHome();
       } catch (error) {
         alert(error instanceof Error ? error.message : "1:1 매칭 처리에 실패했습니다.");
@@ -2624,7 +2620,7 @@ function OpenCardsContent() {
         setProcessingOneOnOneMatchIds((prev) => prev.filter((id) => id !== matchId));
       }
     },
-    [reloadOneOnOneHome]
+    [reloadOneOnOneHome, oneOnOneHome]
   );
 
   const handleOneOnOneContactCheckout = useCallback(
@@ -2676,9 +2672,10 @@ function OpenCardsContent() {
   );
 
   const handleOneOnOneAutoSelect = useCallback(
-    async (sourceCardId: string, candidateCardId: string) => {
+    async (sourceCardId: string, candidateCardId: string, candidateName?: string | null) => {
       const actionKey = `${sourceCardId}:${candidateCardId}`;
       if (processingOneOnOneAutoKeys.includes(actionKey)) return;
+      setOneOnOneActionNotice("");
       setProcessingOneOnOneAutoKeys((prev) => [...prev, actionKey]);
       try {
         const res = await fetch("/api/dating/1on1/matches/auto", {
@@ -2700,11 +2697,12 @@ function OpenCardsContent() {
             await reloadOneOnOneHome();
             return;
           }
-          throw new Error(body.error ?? "후보 선택에 실패했습니다.");
+          throw new Error(body.error ?? "매칭 요청을 보내지 못했어요. 다시 시도해 주세요.");
         }
+        setOneOnOneActionNotice(buildOneOnOneRequestSentMessage(candidateName));
         await reloadOneOnOneHome();
       } catch (error) {
-        alert(error instanceof Error ? error.message : "후보 선택에 실패했습니다.");
+        alert(error instanceof Error ? error.message : "매칭 요청을 보내지 못했어요. 다시 시도해 주세요.");
       } finally {
         setProcessingOneOnOneAutoKeys((prev) => prev.filter((key) => key !== actionKey));
       }
@@ -2956,6 +2954,7 @@ function OpenCardsContent() {
   return (
     <main className="mx-auto max-w-5xl px-3 py-4 md:px-6 md:py-7">
       {refreshConfirmationDialog}
+      {viewerLoggedIn && homeFeatureTab === "one_on_one" ? <OneOnOneActionNotice message={oneOnOneActionNotice} onDismiss={() => setOneOnOneActionNotice("")} /> : null}
       <DatingAdultNotice />
       <section aria-label="매칭 서비스 선택" className="sticky top-[64px] z-30 mb-3 rounded-xl border border-neutral-200 bg-white/95 p-1 shadow-[0_6px_18px_rgba(15,23,42,0.06)] backdrop-blur">
         <div className={`grid gap-1 ${visibleHomeFeatureTabs.length >= 4 ? "grid-cols-4" : "grid-cols-3"}`}>
@@ -3773,7 +3772,7 @@ function OneOnOneHomePanel({
   ) => void;
   onContactCheckout: (matchId: string) => void;
   onContactNudge: (matchId: string, presetKey: OneOnOneContactNudgePresetKey) => void;
-  onAutoSelect: (sourceCardId: string, candidateCardId: string) => void;
+  onAutoSelect: (sourceCardId: string, candidateCardId: string, candidateName?: string | null) => void;
   onRefreshRecommendations: (sourceCardId: string) => void;
   refreshNotice: OneOnOneRefreshNotice | null;
 }) {
@@ -3793,14 +3792,7 @@ function OneOnOneHomePanel({
   );
   const activeCards = myCards.filter((card) => card.status !== "rejected");
   const hasOneOnOneCard = activeCards.length > 0;
-  const actionRequiredCount = activeMatches.filter((match) => {
-    if (match.action_required) return true;
-    return (
-      (match.role === "source" && match.state === "candidate_accepted") ||
-      match.state === "mutual_accepted" ||
-      match.contact_exchange_status === "approved"
-    );
-  }).length;
+  const actionSummary = getOneOnOneActionSummary(activeMatches);
   const sortedMatches = [...activeMatches].sort((a, b) => {
     const aImportant = a.action_required || a.state === "candidate_accepted" || a.state === "mutual_accepted" ? 1 : 0;
     const bImportant = b.action_required || b.state === "candidate_accepted" || b.state === "mutual_accepted" ? 1 : 0;
@@ -3847,7 +3839,7 @@ function OneOnOneHomePanel({
         <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3">
           <p className="text-xs font-semibold text-neutral-800">1:1 매칭은 이렇게 진행돼요</p>
           <p className="mt-1.5 text-xs font-normal leading-5 text-neutral-600">
-            프로필 작성 → 추천 후보 선택 → 상대도 수락하면 쌍방 매칭 → 결제 후 연락처 공개
+            프로필 작성 → 매칭 요청 보내기 → 상대가 수락하면 매칭 완료 → 결제 후 연락처 공개
           </p>
         </div>
       ) : null}
@@ -3863,11 +3855,12 @@ function OneOnOneHomePanel({
             <p className="mt-1 text-base font-semibold tabular-nums text-neutral-900">{recommendationCount}명</p>
           </div>
           <div className="px-2 text-center">
-            <p className="text-[11px] font-medium text-neutral-500">확인 필요</p>
-            <p className="mt-1 text-base font-semibold tabular-nums text-neutral-900">{actionRequiredCount}건</p>
+            <p className="text-[11px] font-medium text-neutral-500">{actionSummary.primary.label}</p>
+            <p className="mt-1 text-base font-semibold tabular-nums text-neutral-900">{actionSummary.primary.count}건</p>
           </div>
         </div>
       ) : null}
+      {viewerLoggedIn && hasOneOnOneCard && actionSummary.otherDetail ? <p className="mt-2 break-words text-[11px] leading-5 text-neutral-500">{actionSummary.otherDetail}</p> : null}
 
       <div className="mt-5">
         {loading ? (
@@ -3975,7 +3968,7 @@ function OneOnOneHomePanel({
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-base font-bold text-neutral-900">진행 중인 매칭</p>
-                  <p className="mt-1 text-xs leading-5 text-neutral-500">선택, 수락, 번호교환이 필요한 항목을 먼저 보여드려요.</p>
+                  <p className="mt-1 text-xs leading-5 text-neutral-500">요청 보내기, 수락, 연락처 교환이 필요한 항목을 먼저 보여드려요.</p>
                 </div>
                 <span className="shrink-0 whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-bold text-neutral-500">{activeMatches.length}건</span>
               </div>
@@ -3989,7 +3982,7 @@ function OneOnOneHomePanel({
                       card={match.counterparty_card}
                       reportTarget={{ type: "one_on_one_match", id: match.id }}
                       onReported={onReported}
-                      badge={oneOnOneStateLabel(match.state)}
+                      badge={getOneOnOneMatchLabel(match)}
                       badgeClassName={match.action_required || match.state === "mutual_accepted" ? "bg-emerald-100 text-emerald-700" : "bg-white text-neutral-600"}
                       note={oneOnOneContactLabel(match.contact_exchange_status)}
                     >
@@ -4058,15 +4051,15 @@ function OneOnOneHomePanel({
                                 onReported={onReported}
                                 badge="추천"
                                 badgeClassName="bg-neutral-100 text-neutral-600"
-                                note="선택하면 상대에게 수락 요청이 전달됩니다."
+                                note="요청을 보내면 상대가 내 프로필을 보고 수락 여부를 결정해요."
                               >
                                 <button
                                   type="button"
                                   disabled={!canSelect || processingAutoKeys.includes(actionKey)}
-                                  onClick={() => onAutoSelect(sourceCardId, candidateId)}
+                                  onClick={() => onAutoSelect(sourceCardId, candidateId, candidate.name)}
                                   className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-[#f0003d] px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-[#d90037]"
                                 >
-                                  {processingAutoKeys.includes(actionKey) ? "선택 중..." : "이 후보 선택"}
+                                  {processingAutoKeys.includes(actionKey) ? "요청 보내는 중..." : "매칭 요청 보내기"}
                                 </button>
                               </OneOnOneCandidateCard>
                             );
@@ -4092,15 +4085,15 @@ function OneOnOneHomePanel({
                                       onReported={onReported}
                                       badge="추가 후보"
                                       badgeClassName="bg-neutral-100 text-neutral-600"
-                                      note="선택하면 상대에게 수락 요청이 전달됩니다."
+                                      note="요청을 보내면 상대가 내 프로필을 보고 수락 여부를 결정해요."
                                     >
                                       <button
                                         type="button"
                                         disabled={!canSelect || processingAutoKeys.includes(actionKey)}
-                                        onClick={() => onAutoSelect(sourceCardId, candidateId)}
+                                        onClick={() => onAutoSelect(sourceCardId, candidateId, candidate.name)}
                                         className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-[#f0003d] px-4 text-xs font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-[#d90037]"
                                       >
-                                        {processingAutoKeys.includes(actionKey) ? "선택 중..." : "이 후보 선택"}
+                                        {processingAutoKeys.includes(actionKey) ? "요청 보내는 중..." : "매칭 요청 보내기"}
                                       </button>
                                     </OneOnOneCandidateCard>
                                   );
@@ -4267,7 +4260,7 @@ function OneOnOneMatchActions({
           onClick={() => onMatchAction(match.id, "select_candidate")}
           className="inline-flex min-h-[34px] items-center rounded-xl bg-sky-600 px-3 text-xs font-black text-white disabled:opacity-50"
         >
-          {processing ? "처리 중..." : "후보 선택"}
+          {processing ? "요청 보내는 중..." : "매칭 요청 보내기"}
         </button>
         <Link href="/mypage?section=matching" className="inline-flex min-h-[34px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold text-neutral-600">
           자세히
@@ -4321,13 +4314,14 @@ function OneOnOneMatchActions({
   if (match.role === "source" && match.state === "candidate_accepted") {
     return (
       <div className="mt-3 flex flex-wrap gap-2">
+        <p className="w-full text-xs leading-5 text-neutral-600">상대가 수락했어요. 나도 수락하면 연락처 교환 단계로 넘어가요.</p>
         <button
           type="button"
           disabled={processing}
           onClick={() => onMatchAction(match.id, "source_accept")}
           className="inline-flex min-h-[34px] items-center rounded-xl bg-emerald-600 px-3 text-xs font-black text-white disabled:opacity-50"
         >
-          {processing ? "처리 중..." : "최종 수락"}
+          {processing ? "처리 중..." : "나도 수락하기"}
         </button>
         <button
           type="button"
@@ -4344,7 +4338,7 @@ function OneOnOneMatchActions({
   if (match.role === "candidate" && match.state === "candidate_accepted") {
     return (
       <p className="mt-3 rounded-xl border border-amber-100 bg-amber-50 px-3 py-2 text-xs font-semibold leading-5 text-amber-800">
-        내가 수락했어요. 상대가 최종 수락하면 번호 교환 단계로 넘어갑니다.
+        수락했어요. 상대도 확인하면 연락처 교환 단계로 넘어가요.
       </p>
     );
   }
