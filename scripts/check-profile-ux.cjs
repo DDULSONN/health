@@ -138,9 +138,9 @@ for (const surface of ['home', 'mypage']) for (const outcome of ['resolve', 'rej
   assert.deepEqual(surface === 'home' ? value.recommendations : value, [{ source_card_id: 'source-1', recommendations: [] }]); assert.equal(error, ''); assert.equal(loading, false);
   assert.equal(calls, surface === 'home' ? 8 : 2);
 });
-test('registration endpoint payloads and image upload code remain byte-for-byte identical to base', () => {
+test('registration payloads and photo code remain unchanged from deployed photo-fix baseline', () => {
   const file = 'app/onboarding/dating/page.tsx';
-  const before = execFileSync('git', ['show', 'b50e5d2:' + file], { cwd: root, encoding: 'utf8' }).replace(/\r\n/g,'\n');
+  const before = execFileSync('git', ['show', '242ec6c:' + file], { cwd: root, encoding: 'utf8' }).replace(/\r\n/g,'\n');
   const after = read(file).replace(/\r\n/g,'\n');
   for (const endpoint of ['/api/dating/cards/my', '/api/dating/1on1/cards']) {
     const payload = text => text.slice(text.indexOf('const response = await fetchWithTimeout("' + endpoint), text.indexOf('if (!response.ok)', text.indexOf('const response = await fetchWithTimeout("' + endpoint)));

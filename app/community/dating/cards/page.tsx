@@ -29,6 +29,7 @@ import PhoneVerifiedBadge from "@/components/PhoneVerifiedBadge";
 import { cacheOpenCardDetail, cachePaidCardDetail } from "@/lib/dating-detail-cache";
 import { createClient } from "@/lib/supabase/client";
 import { createLatestRequest } from "@/lib/latest-request";
+import { createViewerSessionRecovery, VIEWER_SESSION_ERROR } from "@/lib/viewer-session-recovery";
 import { trackCheckoutStarted } from "@/lib/payment-analytics";
 import { readDatingJson } from "@/lib/dating-read-json";
 import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
@@ -1706,6 +1707,8 @@ function OpenCardsContent() {
   const [viewerLoggedIn, setViewerLoggedIn] = useState(false);
   const paidRegistration = usePaidRegistrationStatus(viewerLoggedIn);
   const [viewerSessionReady, setViewerSessionReady] = useState(false);
+  const [viewerSessionError, setViewerSessionError] = useState(false);
+  const viewerSessionRetryRef = useRef<(() => void) | null>(null);
   const [viewerPhoneVerified, setViewerPhoneVerified] = useState(false);
   const [draftUserId, setDraftUserId] = useState<string | null>(null);
   const profileDraft = useDatingDraftResume(draftUserId, supabase.auth);
@@ -1746,6 +1749,7 @@ function OpenCardsContent() {
   const [oneOnOneHomeLoading, setOneOnOneHomeLoading] = useState(false);
   const [oneOnOneHomeError, setOneOnOneHomeError] = useState("");
   const [oneOnOneHome, setOneOnOneHome] = useState<OneOnOneHomeState | null>(null);
+  const oneOnOneHomeRequest = useMemo(() => createLatestRequest(), []);
   const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
   const oneOnOneMatchActionLocksRef = useRef<Set<string>>(new Set());
   const oneOnOneContactCheckoutLocksRef = useRef<Set<string>>(new Set());
@@ -1910,30 +1914,53 @@ function OpenCardsContent() {
   }, []);
 
   useEffect(() => {
-    queueMicrotask(async () => {
-      try {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        setViewerLoggedIn(Boolean(user));
-        setDraftUserId(user?.id ?? null);
-        if (!user) {
-          setViewerPhoneVerified(false);
-          return;
-        }
-
-        const summaryRes = await fetch("/api/mypage/summary?profileOnly=1", { cache: "no-store" }).catch(() => null);
-        if (!summaryRes?.ok) {
-          setViewerPhoneVerified(false);
-          return;
-        }
-        const summaryBody = (await summaryRes.json().catch(() => ({}))) as { profile?: { phone_verified?: boolean } };
-        setViewerPhoneVerified(summaryBody.profile?.phone_verified === true);
-      } finally {
-        setViewerSessionReady(true);
-      }
+    const recovery = createViewerSessionRecovery({
+      auth: supabase.auth,
+      onState: (state) => {
+        setViewerLoggedIn(state.status === "authenticated");
+        setDraftUserId(state.userId);
+        setViewerSessionReady(state.status !== "checking");
+        setViewerSessionError(state.status === "error");
+      },
+      onIdentityChange: () => {
+        oneOnOneHomeRequest.cancel();
+        setOneOnOneHome(null);
+        setOneOnOneHomeError("");
+        setOneOnOneHomeLoading(false);
+        setOneOnOneActionNotice("");
+        // Discard all component-local member data at an account boundary.
+        window.location.reload();
+      },
     });
-  }, [supabase]);
+    viewerSessionRetryRef.current = recovery.retry;
+    const onVisible = () => { if (document.visibilityState === "visible") recovery.recoverOnReturn(); };
+    // Defer Auth reads outside React setup and Auth event callbacks.
+    queueMicrotask(recovery.start);
+    window.addEventListener("focus", recovery.recoverOnReturn);
+    window.addEventListener("online", recovery.recoverOnReturn);
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      recovery.stop();
+      oneOnOneHomeRequest.cancel();
+      viewerSessionRetryRef.current = null;
+      window.removeEventListener("focus", recovery.recoverOnReturn);
+      window.removeEventListener("online", recovery.recoverOnReturn);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [supabase, oneOnOneHomeRequest]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setViewerPhoneVerified(false);
+    if (draftUserId) {
+      void fetchClientJson<{ profile?: { phone_verified?: boolean } }>(
+        "/api/mypage/summary?profileOnly=1", { cache: "no-store", signal: controller.signal }
+      ).then(({ response, body }) => {
+        if (!controller.signal.aborted && response.ok) setViewerPhoneVerified(body?.profile?.phone_verified === true);
+      }).catch(() => { /* No phone-verification claim on a failed read. */ });
+    }
+    return () => controller.abort();
+  }, [draftUserId]);
 
   const reloadMyOpenCards = useCallback(async () => {
     const requestId = ++profilePresenceRequestRef.current;
@@ -2010,26 +2037,6 @@ function OpenCardsContent() {
       cancelled = true;
     };
   }, [viewerLoggedIn]);
-
-  const oneOnOneHomeRequest = useMemo(() => createLatestRequest(), []);
-
-  useEffect(() => {
-    let identity: string | null | undefined;
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      const next = session?.user.id ?? null;
-      if (identity !== undefined && identity !== next) {
-        oneOnOneHomeRequest.cancel();
-        setOneOnOneHome(null);
-        setOneOnOneHomeError("");
-        setOneOnOneHomeLoading(false);
-        setOneOnOneActionNotice("");
-        // Discard all component-local member data at an account boundary.
-        window.location.reload();
-      }
-      identity = next;
-    });
-    return () => { data.subscription.unsubscribe(); oneOnOneHomeRequest.cancel(); };
-  }, [supabase, oneOnOneHomeRequest]);
 
   const reloadOneOnOneHome = useCallback(async (fresh = true, requireUpdated = false) => {
     if (!viewerLoggedIn) {
@@ -2899,7 +2906,7 @@ function OpenCardsContent() {
     viewerPhoneVerified && homeProfilePresenceReady && hasProfileDraft;
   const showProfileStartCard =
     !showOneOnOneSection && !showLoveFortuneSection && !showDraftResumeCard &&
-    viewerSessionReady &&
+    viewerSessionReady && !viewerSessionError &&
     (!viewerLoggedIn || (homeProfilePresenceReady && registeredProfileServiceCount < 2));
   const showOpenCardManagement =
     viewerLoggedIn &&
@@ -2956,6 +2963,12 @@ function OpenCardsContent() {
       {refreshConfirmationDialog}
       {viewerLoggedIn && homeFeatureTab === "one_on_one" ? <OneOnOneActionNotice message={oneOnOneActionNotice} onDismiss={() => setOneOnOneActionNotice("")} /> : null}
       <DatingAdultNotice />
+      {viewerSessionError && !showOneOnOneSection ? (
+        <div role="alert" className="mb-3 rounded-xl border border-neutral-200 bg-white p-4 text-sm text-neutral-600">
+          <p>{VIEWER_SESSION_ERROR}</p>
+          <button type="button" onClick={() => viewerSessionRetryRef.current?.()} className="mt-2 min-h-[44px] rounded-lg border border-neutral-300 px-3 font-semibold text-neutral-800">로그인 상태 다시 확인</button>
+        </div>
+      ) : null}
       <section aria-label="매칭 서비스 선택" className="sticky top-[64px] z-30 mb-3 rounded-xl border border-neutral-200 bg-white/95 p-1 shadow-[0_6px_18px_rgba(15,23,42,0.06)] backdrop-blur">
         <div className={`grid gap-1 ${visibleHomeFeatureTabs.length >= 4 ? "grid-cols-4" : "grid-cols-3"}`}>
           {visibleHomeFeatureTabs.map((tab) => {
@@ -3502,7 +3515,9 @@ function OpenCardsContent() {
           viewerLoggedIn={viewerLoggedIn}
           profileStartHref={profileStartHref}
           profileStartCta={profileStartCta}
-          loading={!viewerSessionReady || oneOnOneHomeLoading}
+          loading={!viewerSessionReady || oneOnOneHomeLoading || (viewerLoggedIn && !oneOnOneHome && !oneOnOneHomeError)}
+          sessionError={viewerSessionError}
+          onRetrySession={() => viewerSessionRetryRef.current?.()}
           error={oneOnOneHomeError}
           data={oneOnOneHome}
           processingMatchIds={processingOneOnOneMatchIds}
@@ -3739,6 +3754,8 @@ function OneOnOneHomePanel({
   profileStartHref,
   profileStartCta,
   loading,
+  sessionError,
+  onRetrySession,
   error,
   data,
   processingMatchIds,
@@ -3759,6 +3776,8 @@ function OneOnOneHomePanel({
   profileStartHref: string;
   profileStartCta: string;
   loading: boolean;
+  sessionError: boolean;
+  onRetrySession: () => void;
   error: string;
   data: OneOnOneHomeState | null;
   processingMatchIds: string[];
@@ -3865,6 +3884,11 @@ function OneOnOneHomePanel({
       <div className="mt-5">
         {loading ? (
           <p className="rounded-[24px] bg-neutral-50 p-5 text-sm text-neutral-500">1대1 정보를 불러오는 중...</p>
+        ) : sessionError ? (
+          <div role="alert" className="rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-sm text-neutral-600">
+            <p>{VIEWER_SESSION_ERROR}</p>
+            <button type="button" onClick={onRetrySession} className="mt-3 min-h-[44px] rounded-lg border border-neutral-300 bg-white px-3 font-semibold text-neutral-800">로그인 상태 다시 확인</button>
+          </div>
         ) : !viewerLoggedIn ? (
           <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4">
             <p className="text-sm font-bold text-rose-900">로그인하면 내 1대1 진행 상태를 볼 수 있어요.</p>

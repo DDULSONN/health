@@ -94,12 +94,18 @@ for (const search of ['?tab=one_on_one', '?tab=open_cards', '?tab=quick_match', 
 const panel = homeTree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'OneOnOneHomePanel');
 const panelSource = `const {useState} = require('react');
 const Link = require('next/link');
+const {getOneOnOneActionSummary} = require('action-copy');
+const {VIEWER_SESSION_ERROR} = require('session-copy');
 const ONE_ON_ONE_HOME_HREF = ${JSON.stringify(nav.ONE_ON_ONE_HOME_HREF)};
 const buildLoginRedirect = path => '/login?redirect=' + encodeURIComponent(path);
 ${panel.getText(homeTree)}
 module.exports = OneOnOneHomePanel;`;
-const Panel = evaluate(panelSource, { 'next/link': Link });
+const Panel = evaluate(panelSource, { 'next/link': Link,
+  'action-copy': evaluate(read('lib/dating-1on1-action-copy.ts')),
+  'session-copy': evaluate(read('lib/viewer-session-recovery.ts')),
+});
 const panelProps = { arrivedFromOnboarding: false, viewerLoggedIn: true, loading: false, error: '', data: { myCards: [] },
+  sessionError: false, onRetrySession() {},
   profileStartHref: '/onboarding/dating', profileStartCta: '프로필 작성하기',
   processingMatchIds: [], processingContactIds: [], processingNudgeIds: [], processingAutoKeys: [], refreshingRecommendationIds: [] };
 for (const label of ['프로필 작성하기', '이어서 작성하기', '휴대폰 인증하기']) test(`one clear profile action: ${label}`, () => {
@@ -117,7 +123,14 @@ test('unresolved authentication shows loading, not a premature login prompt', ()
   const markup = renderToStaticMarkup(React.createElement(Panel, { ...panelProps, viewerLoggedIn: false, loading: true }));
   assert.ok(markup.includes('1대1 정보를 불러오는 중'));
   assert.ok(!markup.includes('로그인하기'));
-  assert.match(home, /loading=\{!viewerSessionReady \|\| oneOnOneHomeLoading\}/);
+  assert.match(home, /loading=\{!viewerSessionReady \|\| oneOnOneHomeLoading \|\| \(viewerLoggedIn && !oneOnOneHome && !oneOnOneHomeError\)\}/);
+});
+
+test('transient identity failure offers recovery instead of login or profile creation', () => {
+  const markup = renderToStaticMarkup(React.createElement(Panel, { ...panelProps, viewerLoggedIn: false, sessionError: true }));
+  assert.ok(markup.includes('로그인 상태 다시 확인'));
+  assert.ok(!markup.includes('로그인하기'));
+  assert.ok(!markup.includes('href="/onboarding/dating"'));
 });
 test('initial rendering reads the selected tab before effects run', () => {
   assert.match(home, /useState<HomeFeatureTab>\(\s*\(\) => parseHomeFeatureTab\(searchParams\.get\("tab"\)\) \?\? "open_cards"/);
@@ -169,8 +182,16 @@ test('card management remains accessible from every filter; existing operations 
   assert.match(mypage, /onToggle=\{\(event\) => setOpenCardManagementOpen\(event.currentTarget.open\)\}/);
   for (const operation of ['handleDeleteMyOpenCard(card.id)', 'handleReactivateMyOpenCard(card)', 'handleReopenMyOpenCard(card)', 'handleToggleMyOpenCardPhotoVisibility(']) assert.ok(mypage.includes(operation));
 });
-for (const file of [homeFile, mypageFile, 'components/Header.tsx', 'components/MobileBottomTabBar.tsx']) test(`all API calls unchanged from deployed baseline: ${file}`, () => {
-  const baseline = execFileSync('git', ['show', `612fb1d:${file}`], { cwd: root, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
-  assert.deepEqual(fetchCalls(read(file)), fetchCalls(baseline));
+for (const file of [homeFile, mypageFile, 'components/Header.tsx', 'components/MobileBottomTabBar.tsx']) test(`API calls preserved against the deployed pre-auth-recovery baseline: ${file}`, () => {
+  // Pin the reviewed deployment, including previously shipped photo/matching changes.
+  const baseline = execFileSync('git', ['show', `242ec6c:${file}`], { cwd: root, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
+  const beforeCalls = fetchCalls(baseline);
+  if (file === homeFile) {
+    // The only migrated read gains timeout + stale-account cancellation. No mutation is exempted.
+    const summaryCall = 'fetch("/api/mypage/summary?profileOnly=1", { cache: "no-store" })';
+    assert.equal(beforeCalls.filter(call => call === summaryCall).length, 1);
+    assert.match(read(file), /fetchClientJson<\{ profile\?: \{ phone_verified\?: boolean \} \}>\(\s*"\/api\/mypage\/summary\?profileOnly=1", \{ cache: "no-store", signal: controller.signal \}/);
+    assert.deepEqual(fetchCalls(read(file)), beforeCalls.filter(call => call !== summaryCall));
+  } else assert.deepEqual(fetchCalls(read(file)), beforeCalls);
   assert.equal(ast(read(file)).parseDiagnostics.length, 0);
 });
