@@ -2,6 +2,8 @@ import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
 import Home from "../../app/community/dating/cards/page";
 import Onboarding from "../../app/onboarding/dating/page";
+import Signup from "../../app/signup/page";
+import PhoneVerification from "../../app/phone-verification/page";
 import DatingDraftResumeCard from "../../components/dating/DatingDraftResumeCard";
 import { useDatingDraftResume } from "../../lib/use-dating-draft-resume";
 import { createClient } from "@/lib/supabase/client";
@@ -24,5 +26,7 @@ function DraftOnly() {
 }
 createRoot(document.getElementById("root")!).render(<StrictMode>
   {location.pathname === "/preview/draft-hook" ? <DraftOnly /> :
+    location.pathname === "/signup" ? <Signup /> :
+    location.pathname === "/phone-verification" ? <PhoneVerification /> :
     location.pathname === "/onboarding/dating" ? <Onboarding /> : <Home />}
 </StrictMode>);

@@ -65,7 +65,7 @@ async function main() {
       await route.fulfill({ json:body });
     });
     await page.goto(origin);
-    const next = () => page.getByRole('button',{ name:'다음',exact:true }).click();
+    const next = () => page.locator('[data-onboarding-next]').click();
     await next();
     await page.waitForFunction(() => document.activeElement?.id === 'onboarding-field-sex');
     assert.equal(await page.locator('[aria-invalid="true"]').count(), 5);
@@ -88,7 +88,7 @@ async function main() {
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6z0MAAAAASUVORK5CYII=','base64');
     for (const i of [0,1]) await page.locator('#onboarding-field-photo'+i).setInputFiles({name:'fixture.png',mimeType:'image/png',buffer:png});
     await next();
-    await page.getByRole('button',{name:'선택한 프로필 등록하기',exact:true}).click();
+    await page.locator('[data-onboarding-submit]').click();
     await page.waitForFunction(() => document.activeElement?.id === 'onboarding-field-consentOpenCard');
     assert.equal(await page.locator('input[type=checkbox][aria-invalid=true]').count(),6);
     await page.screenshot({path:path.join(output,'mobile-consent-errors.png'),fullPage:true});
@@ -102,7 +102,7 @@ async function main() {
     assert.equal(await page.locator('input[type=checkbox]:checked').count(),0);
     for (const checkbox of await page.locator('input[type=checkbox]').all()) await checkbox.check();
     failOne = true;
-    await page.getByRole('button',{name:'선택한 프로필 등록하기',exact:true}).click();
+    await page.locator('[data-onboarding-submit]').click();
     await page.getByRole('alert').filter({hasText:'테스트 등록 실패'}).waitFor();
     assert.equal(writes.filter(w => w.url === '/api/dating/cards/my').length,1);
     assert.equal(writes.filter(w => w.url === '/api/dating/1on1/cards').length,1);
@@ -175,7 +175,7 @@ async function main() {
     await page.addInitScript(() => { Storage.prototype.setItem = () => { throw new DOMException('fixture full','QuotaExceededError'); }; });
     await page.reload(); await page.locator('#onboarding-field-job').fill('저장 공간 부족');
     await page.getByRole('status').filter({hasText:'임시저장이 안 돼요'}).waitFor();
-    await page.getByRole('button',{name:'다음',exact:true}).click();
+    await page.locator('[data-onboarding-next]').click();
     await page.waitForFunction(() => document.activeElement?.id === 'onboarding-field-sex');
     assert.deepEqual(errors,[]);
     for (const code of ['profile_basic', 'profile_intro', 'profile_lifestyle', 'profile_photos', 'profile_review',

@@ -53,12 +53,10 @@ test('draft/schema/upload unchanged; registration only adds the separately teste
       .replace(/  \/\/ Optional benefit: never turn a successful registration into a failure\.\n  try \{\n    after\(\(\) => grantReturnProfileRewardSafely\(admin, user.id\)\);\n  \} catch \{\n    console.warn\("\[return-profile-reward\] deferred to next authenticated visit"\);\n  \}\n/, '') : read(file);
     assert.equal(source, base(file), file);
   }
-  const file = 'app/onboarding/dating/page.tsx', before = base(file), after = read(file);
+  // Pin handlers to the deployed photo/auth fixes; keep the older schema checks above.
+  const file = 'app/onboarding/dating/page.tsx', before = execFileSync('git', ['show', 'c22d36b:' + file], { cwd: root, encoding: 'utf8' }).replace(/\r\n/g, '\n'), after = read(file);
   const handlers = s => s.slice(s.indexOf('  const validateStep ='), s.indexOf('  if (checking)'));
-  assert.equal(handlers(after)
-    .replace(/^          recordGrowthProfileCreated\([^\n]+\);\n/gm, '')
-    .replaceAll('    if (importController.current) return;\n', '')
-    .replace('    if (photoPreparation.isProcessing()) { setError(PHOTO_PROCESSING_MESSAGE); return; }\n', ''), handlers(before));
+  assert.equal(handlers(after), handlers(before));
   const changed = execFileSync('git', ['diff', '--name-only'], { cwd: root, encoding: 'utf8' });
   // Payment confirmation has an exact-baseline check in check-all-pass-profile-offer.cjs.
   // Paid-card safety changes are exercised against the real handlers by check-site-audit-fixes.cjs.

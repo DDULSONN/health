@@ -60,7 +60,7 @@ const freshPath = '/onboarding/dating?target=one_on_one';
     return { context, page, requests, errors, posts, get reads() { return reads; }, get imageReads() { return imageReads; } };
   }
   const field = (page, name) => page.locator('#onboarding-field-' + name);
-  const next = page => page.getByRole('button', { name: '다음', exact: true }).click();
+  const next = page => page.locator('[data-onboarding-next]').click();
   const importButton = page => page.getByRole('button', { name: '오픈카드 내용 가져오기', exact: true });
   async function toPhotos(page) {
     await field(page, 'name').fill('테스트 이름'); await field(page, 'birthYear').fill('1996');
@@ -95,7 +95,7 @@ const freshPath = '/onboarding/dating?target=one_on_one';
       await next(page);
       await page.getByText('등록할 서비스: 1:1 매칭', { exact: true }).waitFor();
       assert.equal(await page.locator('input[type=checkbox]:checked').count(), 0, 'no auto-consent');
-      const submit = page.getByRole('button', { name: '선택한 프로필 등록하기', exact: true });
+      const submit = page.locator('[data-onboarding-submit]');
       await submit.click(); assert.equal(f.posts.length, 0, 'missing consent blocks all uploads');
       for (const checkbox of await page.getByRole('checkbox').all()) await checkbox.check();
       await page.screenshot({ path: path.join(output, 'reuse-review-' + width + '.png'), fullPage: true });
@@ -118,7 +118,7 @@ const freshPath = '/onboarding/dating?target=one_on_one';
       } else if (scenario === 'existing' || scenario === 'paused') {
         await page.getByText(scenario === 'existing' ? '이미 준비가 끝났어요' : '지금은 1:1 프로필을 등록할 수 없어요', { exact: true }).waitFor();
         assert.equal(await importButton(page).count(), 0);
-        assert.equal(await page.getByRole('button', { name: '다음', exact: true }).count(), 0);
+        assert.equal(await page.locator('[data-onboarding-next]').count(), 0);
       } else if (scenario === 'none') {
         await page.getByRole('heading', { name: '기본 정보', exact: true }).waitFor();
         const open = page.getByRole('button', { name: /^오픈카드\s*내 카드/ });
@@ -166,7 +166,7 @@ const freshPath = '/onboarding/dating?target=one_on_one';
       assert.equal(await page.getByAltText('사진 1 미리보기').getAttribute('src'), before, 'manual photo is preserved');
       await next(page);
       for (const checkbox of await page.getByRole('checkbox').all()) await checkbox.check();
-      await page.getByRole('button', { name: '선택한 프로필 등록하기', exact: true }).click();
+      await page.locator('[data-onboarding-submit]').click();
       await page.waitForFunction(() => window.fixtureRedirect?.includes('from=onboarding'));
       assert.ok(f.posts[0].file.includes('my-new-photo.png'), 'the user-selected file is uploaded, not the imported file');
       assert.deepEqual(f.errors, []); passed++; await f.context.close();

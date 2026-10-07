@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import SignupProgress from "@/components/dating/SignupProgress";
+import { readOnboardingUser } from "@/lib/onboarding-user";
 import { recordGrowthProfileCreated } from "@/lib/growth-analytics";
 import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
 import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
@@ -135,6 +137,7 @@ export default function DatingOnboardingPage() {
   const supabase = useMemo(() => createClient(), []);
   const [checking, setChecking] = useState(true);
   const [checkFailed, setCheckFailed] = useState(false);
+  const [checkAttempt, setCheckAttempt] = useState(0);
   const [step, setStep] = useState(0);
   const [targets, setTargets] = useState<Record<TargetKey, boolean>>({ open: true, oneOnOne: true });
   const [available, setAvailable] = useState<Record<TargetKey, boolean>>({ open: false, oneOnOne: false });
@@ -264,7 +267,11 @@ export default function DatingOnboardingPage() {
 
   useEffect(() => {
     let active = true;
+    const controller = new AbortController();
     const version = authVersion.current;
+    setChecking(true);
+    setCheckFailed(false);
+    setError("");
     (async () => {
       const nextEntry = onboardingEntry(window.location.search);
       const wantsInstantOpenCard = nextEntry === "instant_open_card";
@@ -272,7 +279,7 @@ export default function DatingOnboardingPage() {
       setEntry(nextEntry);
       setContinueToInstantOpenCard(wantsInstantOpenCard);
       try {
-        const { data: { user } } = await supabase.auth.getUser();
+        const user = await readOnboardingUser(supabase.auth, { signal: controller.signal });
         if (!active || version !== authVersion.current) return;
         if (!user) {
           router.replace(`/login?redirect=${encodeURIComponent(onboardingPath)}`);
@@ -332,8 +339,9 @@ export default function DatingOnboardingPage() {
     })();
     return () => {
       active = false;
+      controller.abort();
     };
-  }, [router, supabase]);
+  }, [router, supabase, checkAttempt]);
 
   const importOpenCard = async () => {
     if (!draftUserId || importController.current || submitting || checking || !draft.ready || draft.pendingDraft ||
@@ -612,7 +620,7 @@ export default function DatingOnboardingPage() {
         <h1 className="text-xl font-bold">등록 상태를 확인하지 못했어요</h1>
         <p role="alert" className="mt-3 text-sm leading-6 text-neutral-600">{error}</p>
         <div className="mt-5 flex gap-3">
-          <button type="button" onClick={() => window.location.reload()} className="rounded-lg bg-neutral-950 px-4 py-3 text-sm font-bold text-white">다시 시도</button>
+          <button type="button" onClick={() => setCheckAttempt((value) => value + 1)} className="rounded-lg bg-neutral-950 px-4 py-3 text-sm font-bold text-white">다시 시도</button>
           <Link href="/community/dating/cards" className="rounded-lg border border-neutral-200 px-4 py-3 text-sm text-neutral-600">홈으로</Link>
         </div>
       </main>
@@ -627,9 +635,9 @@ export default function DatingOnboardingPage() {
   return (
     <main className="min-h-screen bg-neutral-50 px-4 py-7 text-neutral-950">
       <div className="mx-auto max-w-xl">
+        {!nothingAvailable && <SignupProgress current={2} />}
         <div className="flex items-start justify-between gap-4">
           <div>
-            <p className="text-xs font-bold text-rose-600">프로필 등록</p>
             <h1 className="mt-1 text-2xl font-black">{entry === "one_on_one" ? "1:1 프로필 작성" : "소개 프로필 작성"}</h1>
             <p className="mt-2 text-sm leading-6 text-neutral-600">{entry === "one_on_one"
               ? completed.open ? "기존 오픈카드는 그대로 두고, 1:1 프로필을 추가해요."
@@ -650,9 +658,12 @@ export default function DatingOnboardingPage() {
           </section>
         )}
         {!nothingAvailable && !draft.pendingDraft && (
-          <p className="mt-3 text-xs leading-5 text-neutral-500" role="status">
-            {draft.saveStatus === "unavailable" ? "이 브라우저에서는 임시저장이 안 돼요. 화면을 닫기 전에 등록을 완료해 주세요." : "입력한 글은 이 브라우저에 7일간 임시저장돼요. 사진·동의는 제외되며 로그아웃하면 삭제돼요."}
-          </p>
+          draft.saveStatus === "unavailable"
+            ? <p className="mt-3 text-xs leading-5 text-neutral-500" role="status">이 브라우저에서는 임시저장이 안 돼요. 화면을 닫기 전에 등록을 완료해 주세요.</p>
+            : <details className="mt-3 text-xs leading-5 text-neutral-500">
+                <summary className="cursor-pointer">작성 중인 글은 자동 저장돼요</summary>
+                <p className="mt-1">이 브라우저에 7일간 보관해요. 사진·동의는 제외되며 로그아웃하면 삭제돼요.</p>
+              </details>
         )}
         {nothingAvailable && error && <p role="alert" className="mt-4 text-sm text-rose-700">{error}</p>}
         {hasReusableOpenCard && available.oneOnOne && targets.oneOnOne && !completed.oneOnOne && !nothingAvailable && !draft.pendingDraft && (step === 0 || step === 3) && (
@@ -669,6 +680,7 @@ export default function DatingOnboardingPage() {
         )}
         <fieldset disabled={submitting || importing || Boolean(draft.pendingDraft) || !draft.ready} aria-busy={submitting || importing} className="min-w-0">
         <section id={onboardingFieldId("targets")} tabIndex={-1} aria-describedby={fieldErrors.targets ? `${onboardingFieldId("targets")}-error` : undefined} className="mt-5 border-y border-neutral-200 bg-white py-3">
+          <p className="mb-2 text-xs font-semibold text-neutral-700">등록할 서비스 선택{available.open && available.oneOnOne && !completed.open && !completed.oneOnOne && !continueToInstantOpenCard && <span className="font-normal text-neutral-400"> · 둘 다 선택 가능</span>}</p>
           <div className="grid grid-cols-2 gap-2">
             {(["open", "oneOnOne"] as TargetKey[]).map((key) => {
               const label = key === "open" ? "오픈카드" : "1:1 매칭";
@@ -682,15 +694,19 @@ export default function DatingOnboardingPage() {
                   aria-pressed={selected}
                   disabled={!enabled}
                   onClick={() => setTargets((current) => ({ ...current, [key]: !current[key] }))}
-                  className={`min-h-14 border px-3 text-left transition ${selected ? "border-neutral-950 bg-neutral-950 text-white" : "border-neutral-200 bg-white text-neutral-700"} disabled:bg-neutral-100 disabled:text-neutral-400`}
+                  className={`min-h-14 rounded-lg border px-3 text-left transition ${selected ? "border-neutral-950 bg-neutral-950 text-white" : "border-neutral-200 bg-white text-neutral-700"} disabled:bg-neutral-100 disabled:text-neutral-400`}
                 >
                   <span className="block text-sm font-bold">{done ? `${label} 등록됨` : label}</span>
-                  <span className="mt-1 block text-[11px] opacity-75">{availabilityNote[key] || (key === "open" ? "내 카드 공개 후 지원 받기" : "추천 후보 확인하고 지원하기")}</span>
+                  <span className="mt-1 block text-[11px] opacity-75">{availabilityNote[key] || (key === "open" ? "내 카드 공개하기" : "추천 후보에게 지원")}</span>
                 </button>
               );
             })}
           </div>
           {entry === "one_on_one" && available.open && <p className="mt-2 px-1 text-xs leading-5 text-neutral-500">오픈카드 등록은 선택사항이에요. 선택하지 않으면 오픈카드에는 등록되지 않아요.</p>}
+          <details className="mt-2 px-1 text-xs leading-5 text-neutral-500">
+            <summary className="cursor-pointer">프로필은 어디에 보이나요?</summary>
+            <p className="mt-1">오픈카드는 공개 차례가 되면 카드 목록에 보여요. 1:1 프로필은 다른 회원의 추천 후보나 매칭 요청에 표시될 수 있어요.</p>
+          </details>
         </section>
 
         <FieldError id={onboardingFieldId("targets")} error={fieldErrors.targets} />
@@ -732,6 +748,8 @@ export default function DatingOnboardingPage() {
                   <button
                     key={label}
                     type="button"
+                    aria-label={label}
+                    style={{ fontSize: 12, fontWeight: 600 }}
                     disabled={index > step}
                     onClick={() => index <= step && setStep(index)}
                     className={`min-h-8 truncate rounded-md px-1 text-[10px] font-bold ${
@@ -742,7 +760,7 @@ export default function DatingOnboardingPage() {
                           : "text-neutral-300"
                     } disabled:cursor-default`}
                   >
-                    {label}
+                    {["기본", "소개", "생활", "사진", "확인"][index]}
                   </button>
                 ))}
               </div>
@@ -762,7 +780,7 @@ export default function DatingOnboardingPage() {
                       </div>
                       <FieldError {...fieldProps("sex")} />
                     </div>
-                    {targets.oneOnOne && <TextField {...fieldProps("name")} value={name} onChange={setName} label="이름" placeholder="1:1 운영 확인용 이름" className="sm:col-span-2" maxLength={30} />}
+                    {targets.oneOnOne && <TextField {...fieldProps("name")} value={name} onChange={setName} label="이름" placeholder="1:1 프로필에 표시되는 이름" className="sm:col-span-2" maxLength={30} />}
                     <TextField {...fieldProps("birthYear")} value={birthYear} onChange={(value) => setBirthYear(value.replace(/\D/g, "").slice(0, 4))} label="출생연도" placeholder="예: 1996" inputMode="numeric" />
                     <TextField {...fieldProps("heightCm")} value={heightCm} onChange={(value) => setHeightCm(value.replace(/\D/g, "").slice(0, 3))} label="키(cm)" placeholder="예: 175" inputMode="numeric" />
                     <TextField {...fieldProps("job")} value={job} onChange={setJob} label="직업" placeholder="직업" className="sm:col-span-2" maxLength={targets.open ? 50 : 80} />
@@ -876,19 +894,19 @@ export default function DatingOnboardingPage() {
               {progress && <p className="mt-3 text-center text-xs font-semibold text-neutral-500">{progress}</p>}
 
               <div className="mt-6 grid grid-cols-[auto_1fr] gap-2">
-                <button type="button" disabled={submitting || step === 0} onClick={() => setStep((current) => Math.max(0, current - 1))} className="h-12 border border-neutral-300 bg-white px-5 text-sm font-bold text-neutral-700 disabled:opacity-30">이전</button>
+                <button type="button" disabled={submitting || step === 0} onClick={() => setStep((current) => Math.max(0, current - 1))} className="h-12 rounded-xl border border-neutral-300 bg-white px-5 text-sm font-bold text-neutral-700 disabled:opacity-30">이전</button>
                 {step < STEP_LABELS.length - 1 ? (
-                  <button type="button" disabled={photoPreparation.busy} onClick={moveNext} className="h-12 bg-neutral-950 px-5 text-sm font-bold text-white disabled:opacity-50">다음</button>
+                  <button type="button" data-onboarding-next disabled={photoPreparation.busy} onClick={moveNext} className="h-12 rounded-xl bg-neutral-950 px-4 text-sm font-bold text-white disabled:opacity-50">{["소개 작성하기", "생활 정보 입력하기", "사진 선택하기", "등록 내용 확인"][step]}</button>
                 ) : allSelectedDone ? (
                   <button
                     type="button"
                     onClick={() => router.replace(completed.oneOnOne ? ONE_ON_ONE_CANDIDATES_HREF : "/community/dating/cards")}
-                    className="h-12 bg-emerald-600 px-5 text-sm font-bold text-white"
+                    className="h-12 rounded-xl bg-neutral-950 px-5 text-sm font-bold text-white"
                   >
                     {completed.oneOnOne ? "1:1 추천 후보 확인하기" : "오픈카드 홈으로"}
                   </button>
                 ) : (
-                  <button type="button" disabled={submitting || photoPreparation.busy} onClick={() => void submit()} className="h-12 bg-rose-500 px-5 text-sm font-bold text-white disabled:opacity-50">{submitting ? "등록 중..." : (available.open && completed.open) || (available.oneOnOne && completed.oneOnOne) ? "남은 등록 다시 시도" : "선택한 프로필 등록하기"}</button>
+                  <button type="button" data-onboarding-submit disabled={submitting || photoPreparation.busy} onClick={() => void submit()} className="h-12 rounded-xl bg-rose-600 px-4 text-sm font-bold text-white disabled:opacity-50">{submitting ? "등록 중..." : (available.open && completed.open) || (available.oneOnOne && completed.oneOnOne) ? "남은 등록 다시 시도" : continueToInstantOpenCard ? "등록 후 결제로 이동" : targets.open && targets.oneOnOne ? "두 프로필 등록하기" : targets.oneOnOne ? "1:1 프로필 등록하기" : "오픈카드 등록하기"}</button>
                 )}
               </div>
             </section>

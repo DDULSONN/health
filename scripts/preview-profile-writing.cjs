@@ -14,7 +14,7 @@ async function startPreview(port = 0) {
         'next/link': adapter, 'next/image': adapter, 'next/navigation': adapter,
         '@/lib/supabase/client': adapter, '@/components/DatingAdultNotice': adapter, '@': root,
       } },
-      plugins: [new webpack.DefinePlugin({ 'process.env.NEXT_PUBLIC_OPENKAKAO_URL': 'undefined' })],
+      plugins: [new webpack.DefinePlugin({ 'process.env.NEXT_PUBLIC_OPENKAKAO_URL': 'undefined', 'process.env.NEXT_PUBLIC_SITE_URL': JSON.stringify('http://127.0.0.1') })],
       module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: path.join(__dirname, 'fixtures/profile-ux-loader.cjs') }] },
     });
     compiler.run((error, stats) => { compiler.close(() => {}); if (error || stats.hasErrors()) reject(error || Error(stats.toString({ all: false, errors: true }))); else resolve(); });
@@ -31,7 +31,7 @@ async function startPreview(port = 0) {
       if (url.pathname === '/api/analytics/onboarding') { res.writeHead(204); res.end(); return; }
       if (req.method !== 'GET') { res.writeHead(405, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: '로컬 미리보기에서는 실제 등록을 하지 않아요.' })); return; }
       let body = { ok: true, items: [], cards: [], applications: [], loggedIn: true };
-      if (url.pathname === '/api/mypage/summary') body = { profile: { nickname: '테스트', phone_verified: true }, isAdmin: false };
+      if (url.pathname === '/api/mypage/summary') body = { profile: { nickname: '테스트', phone_verified: !String(req.headers.referer || '').includes('/phone-verification') }, isAdmin: false };
       if (url.pathname === '/api/dating/1on1/write-status') body = { phoneVerified: true, canWrite: true, writeStatus: 'approved', activeRequestStatus: null };
       if (url.pathname === '/api/dating/cards/write-enabled') body = { enabled: true };
       if (url.pathname === '/api/dating/cards/queue-stats') body = { male: { public_count: 0, pending_count: 0, slot_limit: 45 }, female: { public_count: 0, pending_count: 0, slot_limit: 45 } };
@@ -40,7 +40,7 @@ async function startPreview(port = 0) {
       res.setHeader('Content-Type', 'application/json; charset=utf-8'); res.end(JSON.stringify(body)); return;
     }
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.end('<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"><body><aside style="padding:8px 12px;background:#f5f5f5;color:#525252;font:12px sans-serif;text-align:center">로컬 미리보기 · 가상 회원 · 실제 등록/결제 없음</aside><div id="root"></div><script src="/fixture.js"></script></body></html>');
+    res.end('<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"><body><aside style="padding:8px 12px;background:#f5f5f5;color:#525252;font:12px sans-serif;text-align:center">로컬 미리보기 · 실제 가입·문자·등록·결제 없음</aside><div id="root"></div><script src="/fixture.js"></script></body></html>');
   });
   await new Promise(resolve => server.listen(port, '127.0.0.1', resolve));
   return { server, output, origin: 'http://127.0.0.1:' + server.address().port };

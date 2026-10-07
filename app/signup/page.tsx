@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
+import SignupProgress from "@/components/dating/SignupProgress";
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -339,8 +340,9 @@ export default function SignupPage() {
 
   return (
     <main className="mx-auto max-w-sm px-4 py-12 sm:py-16">
+      <SignupProgress current={0} />
       <h1 className="text-2xl font-bold text-neutral-900 mb-2">회원가입</h1>
-      <p className="mb-6 text-sm leading-6 text-neutral-500">소셜 계정으로 빠르게 시작하거나 이메일로 가입할 수 있어요.</p>
+      <p className="mb-6 text-sm leading-6 text-neutral-500">가입 후 휴대폰을 인증하고, 소개 프로필을 작성해요.</p>
 
       {error && <p role="alert" className="mb-4 rounded-xl bg-red-50 p-3 text-sm text-red-600">{error}</p>}
       {info && <p role="status" aria-live="polite" className="mb-4 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-700">{info}</p>}

@@ -67,7 +67,7 @@ const root = path.resolve(__dirname, '..');
       // Real PNG bytes deliberately use .heic to exercise actual canvas output, not claim a HEIC decoder test.
       await first.setInputFiles({ name: 'slow.heic', mimeType: 'image/heic', buffer });
       await page.getByText('사진 1 처리 중…', { exact: true }).waitFor();
-      assert.equal(await page.getByRole('button', { name: '다음', exact: true }).isDisabled(), true);
+      assert.equal(await page.locator('[data-onboarding-next]').isDisabled(), true);
       await first.setInputFiles(png('latest.png'));
       await page.waitForFunction(() => window.fixtureFiles.some(file => file.name === 'latest.png'));
       await page.waitForTimeout(850);

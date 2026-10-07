@@ -3,6 +3,9 @@
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import SignupProgress from "@/components/dating/SignupProgress";
+import { readOnboardingUser } from "@/lib/onboarding-user";
+import { fetchClientJson } from "@/lib/client-json-request";
 import { trackOnboardingEvent } from "@/lib/onboarding-analytics";
 import {
   buildAccountRecoveryHref,
@@ -35,6 +38,9 @@ function PhoneVerificationContent() {
   const next = useMemo(() => safeNextPath(searchParams.get("next")), [searchParams]);
 
   const [checking, setChecking] = useState(true);
+  const [checkFailed, setCheckFailed] = useState(false);
+  const [checkAttempt, setCheckAttempt] = useState(0);
+  const continuesToProfile = next.split("?")[0] === "/onboarding/dating";
   const [analyticsUserId, setAnalyticsUserId] = useState<string | null>(null);
   const [phone, setPhone] = useState("");
   const [pendingPhone, setPendingPhone] = useState<string | null>(null);
@@ -49,35 +55,39 @@ function PhoneVerificationContent() {
 
   useEffect(() => {
     const supabase = createClient();
+    const controller = new AbortController();
+    setChecking(true);
+    setCheckFailed(false);
+    setError("");
     (async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        router.replace(buildLoginRedirect(next));
-        return;
-      }
-      setAnalyticsUserId(user.id);
-
-      const res = await fetch("/api/mypage/summary?profileOnly=1", { cache: "no-store" }).catch(() => null);
-      if (res?.status === 401) {
-        router.replace(buildLoginRedirect(next));
-        return;
-      }
-      if (res && !res.ok) {
-        setError("인증 상태를 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.");
+      try {
+        const user = await readOnboardingUser(supabase.auth, { signal: controller.signal });
+        if (controller.signal.aborted) return;
+        if (!user) {
+          router.replace(buildLoginRedirect(next));
+          return;
+        }
+        setAnalyticsUserId(user.id);
+        const { response, body } = await fetchClientJson<{ profile?: { phone_verified?: boolean } }>(
+          "/api/mypage/summary?profileOnly=1", { cache: "no-store", signal: controller.signal },
+        );
+        if (controller.signal.aborted) return;
+        if (!response.ok || !body) throw new Error("profile_unavailable");
+        if (body.profile?.phone_verified === true) {
+          router.replace(next);
+          return;
+        }
+        trackOnboardingEvent(user.id, "phone_view");
         setChecking(false);
-        return;
+      } catch {
+        if (controller.signal.aborted) return;
+        setCheckFailed(true);
+        setError("인증 상태를 확인하지 못했어요. 다시 확인해 주세요.");
+        setChecking(false);
       }
-      const body = res ? ((await res.json().catch(() => ({}))) as { profile?: { phone_verified?: boolean } }) : {};
-      if (body.profile?.phone_verified === true) {
-        router.replace(next);
-        return;
-      }
-      trackOnboardingEvent(user.id, "phone_view");
-      setChecking(false);
     })();
-  }, [next, router]);
+    return () => controller.abort();
+  }, [next, router, checkAttempt]);
 
   useEffect(() => {
     if (resendAfterSec <= 0) return;
@@ -191,15 +201,19 @@ function PhoneVerificationContent() {
 
   return (
     <main className="mx-auto max-w-sm px-4 py-14">
+      {continuesToProfile && <SignupProgress current={1} />}
       <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-        <p className="text-xs font-bold text-emerald-700">마지막 단계</p>
         <h1 className="mt-2 text-2xl font-black text-neutral-950">휴대폰 인증</h1>
         <p className="mt-2 text-sm leading-6 text-neutral-600">
-          안전한 이용을 위해 가입 후 휴대폰 인증이 필요합니다.
+          {continuesToProfile ? "본인 확인이 끝나면 프로필 작성으로 이어져요." : "안전한 이용을 위해 본인 확인이 필요해요."}
         </p>
 
+        {checkFailed ? (
+          <button type="button" onClick={() => setCheckAttempt((value) => value + 1)} className="mt-5 h-12 w-full rounded-xl bg-neutral-950 text-sm font-bold text-white">다시 확인</button>
+        ) : (
         <div className="mt-6 space-y-3">
           <input
+            aria-label="휴대폰 번호"
             type="tel"
             inputMode="tel"
             autoComplete="tel"
@@ -213,7 +227,7 @@ function PhoneVerificationContent() {
               setInfo("");
             }}
             placeholder="01012345678"
-            className="h-12 w-full rounded-xl border border-neutral-300 px-3 text-base outline-none focus:border-emerald-500"
+            className="h-12 w-full rounded-xl border border-neutral-300 px-3 text-base outline-none focus:border-neutral-950"
           />
           <button
             type="button"
@@ -227,24 +241,27 @@ function PhoneVerificationContent() {
           {pendingPhone && (
             <div className="grid grid-cols-[1fr_auto] gap-2">
               <input
+                aria-label="인증번호"
+                autoComplete="one-time-code"
                 type="text"
                 inputMode="numeric"
                 value={code}
                 onChange={(event) => setCode(event.target.value)}
                 placeholder="인증번호"
-                className="h-12 rounded-xl border border-neutral-300 px-3 text-base outline-none focus:border-emerald-500"
+                className="h-12 min-w-0 rounded-xl border border-neutral-300 px-3 text-base outline-none focus:border-neutral-950"
               />
               <button
                 type="button"
                 onClick={verifyCode}
                 disabled={verifying}
-                className="h-12 rounded-xl bg-emerald-600 px-4 text-sm font-bold text-white disabled:opacity-50"
+                className="h-12 rounded-xl bg-neutral-950 px-4 text-sm font-bold text-white disabled:opacity-50"
               >
                 {verifying ? "확인 중..." : "확인"}
               </button>
             </div>
           )}
         </div>
+        )}
 
         {errorCode === PHONE_ALREADY_USED_CODE ? (
           <div role="alert" className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4">

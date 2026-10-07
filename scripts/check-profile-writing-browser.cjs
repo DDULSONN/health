@@ -48,14 +48,14 @@ const makeDraft = extra => ({ version: 1, userId: 'fixture-member', savedAt: Dat
       await page.screenshot({ path: path.join(output, 'intro-example-' + width + '.png'), fullPage: true });
       await example.click(); assert.equal(await example.getAttribute('aria-expanded'), 'false');
       assert.equal(await page.locator('#onboarding-field-strengthsText').getAttribute('maxlength'), '150');
-      await page.getByRole('button', { name: '다음', exact: true }).click();
+      await page.locator('[data-onboarding-next]').click();
       await page.waitForFunction(() => document.activeElement?.id === 'onboarding-field-strengthsText');
       assert.equal(await page.locator('textarea[aria-invalid="true"]').count(), 2);
       await page.locator('#onboarding-field-strengthsText').fill('약속을 잘 지키고 상대 이야기를 들어요.');
       await page.locator('#onboarding-field-preferredPartnerText').fill('함께 걷고 대화하는 것을 좋아하는 분');
       await page.screenshot({ path: path.join(output, 'intro-' + width + '.png'), fullPage: true });
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
-      await page.getByRole('button', { name: '다음', exact: true }).click();
+      await page.locator('[data-onboarding-next]').click();
       await page.getByRole('heading', { name: '생활 정보', exact: true }).waitFor();
       assert.deepEqual(errors, []); passed++;
       await context.close();
