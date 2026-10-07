@@ -1,5 +1,8 @@
-// Browser-only preparation. Original JPEG/PNG/WebP files keep the existing upload path.
+// Browser-only preparation. Small JPEG/PNG/WebP files keep the existing upload path.
 // HEIC is decoded locally using the OS codec; no photo is sent to an external converter.
+// Leave headroom for multipart framing below Vercel's 4.5 MB request body limit.
+export const DATING_PHOTO_UPLOAD_MAX_BYTES = 3 * 1024 * 1024;
+export const PHOTO_PREPARATION_HELP = "사진을 처리하지 못했어요. 다른 사진이나 캡처한 사진으로 다시 선택해 주세요.";
 export const DATING_PHOTO_ACCEPT = "image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp,.heic,.heif";
 export const HEIC_HELP = "HEIC는 지원되는 브라우저에서 JPG로 자동 변환돼요. 변환이 안 되면 사진을 캡처하거나 JPG로 선택해 주세요.";
 export const PHOTO_PROCESSING_MESSAGE = "사진을 처리 중이에요. 잠시만 기다려 주세요.";
@@ -23,7 +26,10 @@ export async function prepareDatingPhoto(file: File, maxBytes: number, signal?: 
   const error = datingPhotoError(file, maxBytes, true);
   if (error) throw new Error(error);
   if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
-  if (!isHeicPhoto(file)) return file;
+  const heic = isHeicPhoto(file);
+  if (!heic && TYPES.has(file.type.toLowerCase()) && file.size <= DATING_PHOTO_UPLOAD_MAX_BYTES) return file;
+  const help = heic ? HEIC_HELP : PHOTO_PREPARATION_HELP;
+  const uploadLimit = Math.min(maxBytes, DATING_PHOTO_UPLOAD_MAX_BYTES);
 
   const url = URL.createObjectURL(file);
   const img = new Image();
@@ -37,8 +43,8 @@ export async function prepareDatingPhoto(file: File, maxBytes: number, signal?: 
       const fail = (reason: Error) => { if (!finished) { finished = true; reject(reason); } };
       abort = () => fail(new DOMException("Cancelled", "AbortError"));
       signal?.addEventListener("abort", abort, { once: true });
-      timer = setTimeout(() => fail(new Error(HEIC_HELP)), 15000);
-      img.onerror = () => fail(new Error(HEIC_HELP));
+      timer = setTimeout(() => fail(new Error(help)), 15000);
+      img.onerror = () => fail(new Error(help));
       img.onload = () => {
         if (finished) return;
         try {
@@ -49,14 +55,20 @@ export async function prepareDatingPhoto(file: File, maxBytes: number, signal?: 
           canvas.width = Math.max(1, Math.round(width * scale));
           canvas.height = Math.max(1, Math.round(height * scale));
           const context = canvas.getContext("2d");
-          if (!context) throw new Error(HEIC_HELP);
+          if (!context) throw new Error(help);
           context.fillStyle = "#ffffff";
           context.fillRect(0, 0, canvas.width, canvas.height);
           context.drawImage(img, 0, 0, canvas.width, canvas.height);
-          canvas.toBlob((blob) => {
+          const encode = (attempt: number) => canvas!.toBlob((blob) => {
             if (finished) return;
-            if (!blob || blob.type !== "image/jpeg" || !blob.size || blob.size > maxBytes) {
-              fail(new Error(HEIC_HELP));
+            if (!blob || blob.type !== "image/jpeg" || !blob.size) {
+              fail(new Error(help));
+              return;
+            }
+            if (blob.size > uploadLimit) {
+              if (attempt < 2) {
+                try { encode(attempt + 1); } catch { fail(new Error(help)); }
+              } else fail(new Error("사진 용량을 충분히 줄이지 못했어요. 캡처한 사진으로 다시 선택해 주세요."));
               return;
             }
             try {
@@ -65,11 +77,12 @@ export async function prepareDatingPhoto(file: File, maxBytes: number, signal?: 
               finished = true;
               resolve(result);
             } catch {
-              fail(new Error(HEIC_HELP));
+              fail(new Error(help));
             }
-          }, "image/jpeg", 0.88);
+          }, "image/jpeg", [0.88, 0.78, 0.68][attempt]);
+          encode(0);
         } catch (reason) {
-          fail(reason instanceof Error ? reason : new Error(HEIC_HELP));
+          fail(reason instanceof Error ? reason : new Error(help));
         }
       };
       img.src = url;

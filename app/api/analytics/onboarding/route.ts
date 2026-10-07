@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
-import { parseOnboardingEvent } from "@/lib/onboarding-funnel";
+import { parseOnboardingEvent, parseUploadDiagnostic } from "@/lib/onboarding-funnel";
 import { checkRateLimit } from "@/lib/request-rate-limit";
 
 const empty = () => new NextResponse(null, { status: 204, headers: { "Cache-Control": "private, no-store" } });
@@ -26,11 +26,16 @@ export async function POST(request: Request) {
     let offset = 0;
     for (const chunk of chunks) { payload.set(chunk, offset); offset += chunk.byteLength; }
     const text = new TextDecoder().decode(payload);
-    const event = parseOnboardingEvent(JSON.parse(text));
+    const body = JSON.parse(text);
+    const event = parseOnboardingEvent(body);
     if (!event) return empty();
     const { user } = await getRequestAuthContext(request);
     if (!user) return empty();
     if (!checkRateLimit("onboarding-diagnostics:" + user.id, 30, 60_000).allowed) return empty();
+    const diagnostic = event === "upload_failed" ? parseUploadDiagnostic(body.upload) : null;
+    // Fixed enums only: no user ID, filename, photo, request body, error message or URL.
+    // Optional server logs work without a schema migration and never block an upload.
+    if (diagnostic) console.warn("[onboarding-photo-failure]", diagnostic);
     // First occurrence only; at most the fixed event count per existing member.
     // Missing optional SQL, deleted accounts or diagnostics outages never affect the caller.
     await createAdminClient().from("onboarding_funnel_events").upsert(

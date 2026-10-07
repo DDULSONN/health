@@ -111,6 +111,28 @@ const root = path.resolve(__dirname, '..');
         result.colors.forEach((color, i) => color.forEach((value, j) => assert.ok(Math.abs(value - expected[i][j]) <= 12, 'corners must not rotate, crop or corrupt')));
         geometryChecks++;
       }
+      // Actual large JPG/PNG/WebP files (valid encoded image + inert trailing bytes)
+      // must be decoded/re-encoded before any API sees the original 5 MiB payload.
+      for (const type of ['image/jpeg','image/png','image/webp','']) {
+        const ext=type.split('/')[1]||'jpg',name='large-'+(ext==='jpeg'?'jpg':ext)+'-'+(type?'known':'unknown');
+        const bytes=await page.evaluate(async mime=>{
+          const canvas=document.createElement('canvas');canvas.width=600;canvas.height=800;
+          const ctx=canvas.getContext('2d');ctx.fillStyle='#e21e36';ctx.fillRect(0,0,600,800);
+          const blob=await new Promise(resolve=>canvas.toBlob(resolve,mime||'image/jpeg',0.95));
+          return Array.from(new Uint8Array(await blob.arrayBuffer()));
+        },type);
+        const original=Buffer.alloc(5*1024*1024);Buffer.from(bytes).copy(original);
+        await first.setInputFiles({name:name+'.'+ext,mimeType:type,buffer:original});
+        await page.waitForFunction(filename=>window.fixtureFiles.some(f=>f.name===filename&&f.type==='image/jpeg'&&f.file.size<3*1024*1024),name+'.jpg');
+        const result=await page.evaluate(async filename=>{
+          const file=window.fixtureFiles.find(f=>f.name===filename&&f.file.size<3*1024*1024).file;
+          const image=new Image(),url=URL.createObjectURL(file);
+          try{await new Promise((resolve,reject)=>{image.onload=resolve;image.onerror=reject;image.src=url;});
+            return {width:image.naturalWidth,height:image.naturalHeight,size:file.size};
+          }finally{URL.revokeObjectURL(url);}
+        },name+'.jpg');
+        assert.deepEqual([result.width,result.height],[600,800]);assert.ok(result.size<3*1024*1024);geometryChecks++;
+      }
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       assert.deepEqual(errors, []);
       await page.screenshot({ path: path.join(output, 'photos-' + width + '.png'), fullPage: true });

@@ -16,10 +16,21 @@ export const VALIDATION_STAGE_EVENTS: OnboardingEvent[] = [
 export function isOnboardingEvent(value: unknown): value is OnboardingEvent {
   return typeof value === "string" && allowedEvents.has(value);
 }
+const UPLOAD_STAGES = ["open_raw", "open_lite", "open_blur", "one_on_one", "processing"] as const;
+const UPLOAD_REASONS = ["too_large", "auth", "rejected", "rate_limited", "server", "network", "timeout", "invalid_response", "processing"] as const;
+export type UploadDiagnostic = { stage: typeof UPLOAD_STAGES[number]; reason: typeof UPLOAD_REASONS[number] };
+export function parseUploadDiagnostic(value: unknown): UploadDiagnostic | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  if (Object.keys(value).some(key => key !== "stage" && key !== "reason")) return null;
+  const item = value as UploadDiagnostic;
+  return UPLOAD_STAGES.includes(item.stage) && UPLOAD_REASONS.includes(item.reason)
+    ? { stage: item.stage, reason: item.reason } : null;
+}
 export function parseOnboardingEvent(body: unknown): OnboardingEvent | null {
   if (!body || typeof body !== "object" || Array.isArray(body)) return null;
-  if (Object.keys(body).some((key) => key !== "event")) return null;
-  const event = (body as { event?: unknown }).event;
+  if (Object.keys(body).some((key) => key !== "event" && key !== "upload")) return null;
+  const { event, upload } = body as { event?: unknown; upload?: unknown };
+  if ("upload" in body && (event !== "upload_failed" || !parseUploadDiagnostic(upload))) return null;
   return isOnboardingEvent(event) ? event : null;
 }
 export const FUNNEL_STAGES = [

@@ -6,7 +6,7 @@ const read = file => fs.readFileSync(path.join(root, file), 'utf8');
 function load(file) {
   const loaded = { exports: {} };
   const js = ts.transpileModule(read(file), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText;
-  new Function('require', 'module', 'exports', js)(require, loaded, loaded.exports);
+  new Function('require', 'module', 'exports', js)(name => name.startsWith('@/') ? load(name.slice(2) + '.ts') : require(name), loaded, loaded.exports);
   return loaded.exports;
 }
 const entry = load('lib/dating-onboarding-entry.ts');

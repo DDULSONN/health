@@ -7,8 +7,10 @@ const read = p => fs.readFileSync(path.join(root,p),'utf8').replace(/\r\n/g,'\n'
 const prefix = 'gymtools:growth:v1:';
 // Exact LF-normalized baselines, also available in shallow/no-Git deployment builds.
 // c2b090b except the reviewed open-card save guards covered by check-site-audit-fixes.cjs.
+// Onboarding photo transport/diagnostics reviewed separately; actual failure/retry and
+// post-success registration payloads are exercised by check-dating-photo-upload-browser.cjs.
 const baselines = {
- 'app/onboarding/dating/page.tsx': 'c6cf2e04d0504cbe346a4a6c806d82d88e5ee530a0b14db9e0dc01bd068d83a2',
+ 'app/onboarding/dating/page.tsx': '66520ae237626657e432e818fffe3efab30e51ceada5c69d665a7e18110f7463',
  'app/dating/1on1/page.tsx': '4594d2f8d889979fc2a10ea59cf701a5ec5c67ad23900d68bb9ab77d298102bc',
  'app/community/dating/cards/new/page.tsx': '89363bb447feb8d0d0793b02cfafd67338b62e87473165c56ac38cfd44c63299',
  'app/api/dating/cards/my/route.ts': 'b832effc2aeb9fb3918b040bf8cf70e7e31c698c02e6ee14628543d3d9642412',

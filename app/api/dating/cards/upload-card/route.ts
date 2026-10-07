@@ -212,7 +212,7 @@ export async function POST(req: Request) {
   }
 
   const safeAssetId = assetIdRaw.replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 80);
-  const ext = kind === "blur" ? "webp" : file.type === "image/png" ? "png" : file.type === "webp" ? "webp" : "jpg";
+  const ext = kind === "blur" ? "webp" : file.type === "image/png" ? "png" : file.type === "image/webp" ? "webp" : "jpg";
   const folder = kind === "blur" ? "blur" : kind === "lite" ? "lite" : "raw";
   const baseName = safeAssetId || `${Date.now()}`;
   const path = `cards/${user.id}/${folder}/${baseName}-${index}.${ext}`;
@@ -237,39 +237,45 @@ export async function POST(req: Request) {
     }
 
     if (kind === "lite" || kind === "blur") {
-      const litePublicRes = await uploadLitePublicPhoto(adminClient, path, file, blurUploadOverride);
-      if (litePublicRes.error) {
-        console.warn("[POST /api/dating/cards/upload-card] public mirror upload failed", {
-          pathTail: path.split("/").slice(-2).join("/"),
-          message: litePublicRes.error.message ?? null,
-        });
-      } else {
-        await kvSetString(`litepublic:${path}`, "1", 365 * 24 * 60 * 60);
-      }
-
-      if (kind === "lite") {
-        const thumbPath = toThumbPath(path);
-        const thumbBytes = await generateThumbBytes(file);
-        if (!thumbBytes) {
-          console.warn("[POST /api/dating/cards/upload-card] thumb generation failed", {
-            pathTail: thumbPath.split("/").slice(-2).join("/"),
+      try {
+        const litePublicRes = await uploadLitePublicPhoto(adminClient, path, file, blurUploadOverride);
+        if (litePublicRes.error) {
+          console.warn("[POST /api/dating/cards/upload-card] public mirror upload failed", {
+            pathTail: path.split("/").slice(-2).join("/"),
+            message: litePublicRes.error.message ?? null,
           });
         } else {
-          const privateOk = await uploadBytesToBucket(adminClient, CARD_BUCKET, thumbPath, thumbBytes, "3600");
-          if (!privateOk) {
-            console.warn("[POST /api/dating/cards/upload-card] thumb private upload failed", {
-              pathTail: thumbPath.split("/").slice(-2).join("/"),
-            });
-          }
-          const publicOk = await uploadBytesToBucket(adminClient, LITE_PUBLIC_BUCKET, thumbPath, thumbBytes, "31536000");
-          if (!publicOk) {
-            console.warn("[POST /api/dating/cards/upload-card] thumb public upload failed", {
+          await kvSetString(`litepublic:${path}`, "1", 365 * 24 * 60 * 60);
+        }
+
+        if (kind === "lite") {
+          const thumbPath = toThumbPath(path);
+          const thumbBytes = await generateThumbBytes(file);
+          if (!thumbBytes) {
+            console.warn("[POST /api/dating/cards/upload-card] thumb generation failed", {
               pathTail: thumbPath.split("/").slice(-2).join("/"),
             });
           } else {
-            await kvSetString(`litepublic:${thumbPath}`, "1", 365 * 24 * 60 * 60);
+            const privateOk = await uploadBytesToBucket(adminClient, CARD_BUCKET, thumbPath, thumbBytes, "3600");
+            if (!privateOk) {
+              console.warn("[POST /api/dating/cards/upload-card] thumb private upload failed", {
+                pathTail: thumbPath.split("/").slice(-2).join("/"),
+              });
+            }
+            const publicOk = await uploadBytesToBucket(adminClient, LITE_PUBLIC_BUCKET, thumbPath, thumbBytes, "31536000");
+            if (!publicOk) {
+              console.warn("[POST /api/dating/cards/upload-card] thumb public upload failed", {
+                pathTail: thumbPath.split("/").slice(-2).join("/"),
+              });
+            } else {
+              await kvSetString(`litepublic:${thumbPath}`, "1", 365 * 24 * 60 * 60);
+            }
           }
         }
+      } catch {
+        // Private photo is already stored. Public mirrors/thumbnails are optional;
+        // signed-photo fallback must remain usable even if an optimization fails.
+        console.warn("[POST /api/dating/cards/upload-card] optional preview generation unavailable", { kind });
       }
     }
 

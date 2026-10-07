@@ -4,6 +4,7 @@ import Link from "next/link";
 import { recordGrowthProfileCreated } from "@/lib/growth-analytics";
 import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
 import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
+import { DatingPhotoUploadError, uploadDatingPhoto } from "@/lib/dating-photo-upload";
 import PhotoPreparationStatus from "@/components/dating/PhotoPreparationStatus";
 import { getMaxDatingBirthYear } from "@/lib/dating-age";
 import NextImage from "next/image";
@@ -424,11 +425,7 @@ export default function DatingOnboardingPage() {
       rawForm.append("kind", "raw");
       rawForm.append("asset_id", assetId);
       rawForm.append("index", String(index));
-      const rawResponse = await fetchWithTimeout("/api/dating/cards/upload-card", { method: "POST", body: rawForm });
-      if (!rawResponse.ok) throw new Error(await responseError(rawResponse, `${index + 1}번 원본 사진 업로드에 실패했습니다.`));
-      const rawBody = (await rawResponse.json().catch(() => ({}))) as { path?: string };
-      if (!rawBody.path) throw new Error(`${index + 1}번 원본 사진 저장 정보를 받지 못했습니다.`);
-      rawPaths[index] = rawBody.path;
+      rawPaths[index] = await uploadDatingPhoto("/api/dating/cards/upload-card", rawForm, "open_raw");
 
       const [liteFile, blurFile] = await Promise.all([
         imageFileFromCanvas(file, { webp: true }),
@@ -439,18 +436,13 @@ export default function DatingOnboardingPage() {
       liteForm.append("kind", "lite");
       liteForm.append("asset_id", assetId);
       liteForm.append("index", String(index));
-      const liteResponse = await fetchWithTimeout("/api/dating/cards/upload-card", { method: "POST", body: liteForm });
-      if (!liteResponse.ok) throw new Error(await responseError(liteResponse, `${index + 1}번 최적화 사진 업로드에 실패했습니다.`));
+      await uploadDatingPhoto("/api/dating/cards/upload-card", liteForm, "open_lite");
 
       const blurForm = new FormData();
       blurForm.append("file", blurFile);
       blurForm.append("kind", "blur");
       blurForm.append("index", String(index));
-      const blurResponse = await fetchWithTimeout("/api/dating/cards/upload-card", { method: "POST", body: blurForm });
-      if (!blurResponse.ok) throw new Error(await responseError(blurResponse, `${index + 1}번 블러 사진 업로드에 실패했습니다.`));
-      const blurBody = (await blurResponse.json().catch(() => ({}))) as { path?: string };
-      if (!blurBody.path) throw new Error(`${index + 1}번 블러 사진 저장 정보를 받지 못했습니다.`);
-      blurPaths[index] = blurBody.path;
+      blurPaths[index] = await uploadDatingPhoto("/api/dating/cards/upload-card", blurForm, "open_blur");
     }
     return { rawPaths, blurPaths, blurThumbPath: blurPaths[0] };
   };
@@ -461,11 +453,7 @@ export default function DatingOnboardingPage() {
       setProgress(`1:1 사진 ${index + 1}/2 처리 중`);
       const form = new FormData();
       form.append("file", files[index]);
-      const response = await fetchWithTimeout("/api/dating/1on1/upload", { method: "POST", body: form });
-      if (!response.ok) throw new Error(await responseError(response, `${index + 1}번 1:1 사진 업로드에 실패했습니다.`));
-      const body = (await response.json().catch(() => ({}))) as { path?: string };
-      if (!body.path) throw new Error(`${index + 1}번 1:1 사진 저장 정보를 받지 못했습니다.`);
-      paths[index] = body.path;
+      paths[index] = await uploadDatingPhoto("/api/dating/1on1/upload", form, "one_on_one");
     }
     return paths;
   };
@@ -599,7 +587,9 @@ export default function DatingOnboardingPage() {
         router.replace(ONE_ON_ONE_CANDIDATES_HREF);
       }
     } catch (uploadError) {
-      trackOnboardingEvent(draftUserId, failureStage);
+      trackOnboardingEvent(draftUserId, failureStage, failureStage === "upload_failed"
+        ? uploadError instanceof DatingPhotoUploadError ? uploadError.diagnostic : { stage: "processing", reason: "processing" }
+        : undefined);
       if (uploadError instanceof DOMException && uploadError.name === "AbortError") {
         setError("사진 처리 시간이 초과되었습니다. 네트워크를 확인하고 다시 시도해 주세요.");
       } else {

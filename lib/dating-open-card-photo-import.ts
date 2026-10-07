@@ -1,3 +1,5 @@
+import { prepareDatingPhoto } from "@/lib/dating-photo-preparation";
+
 const IMAGE_EXTENSIONS: Record<string, string> = { "image/jpeg": "jpg", "image/png": "png", "image/webp": "webp" };
 
 export function ownOpenCardPhotoUrl(raw: unknown, userId: string, origin: string): string | null {
@@ -62,5 +64,5 @@ export async function importOwnOpenCardPhoto(raw: unknown, userId: string, slot:
   if (!size) throw new Error("비어 있는 사진이에요. 직접 선택해 주세요.");
   const file = new File(chunks, `open-card-${slot + 1}.${IMAGE_EXTENSIONS[type]}`, { type });
   await validateImage(file, signal);
-  return file;
+  return prepareDatingPhoto(file, maxBytes, signal);
 }
