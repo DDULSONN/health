@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import SignupProgress from "@/components/dating/SignupProgress";
+import SignupStories from "@/components/SignupStories";
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
@@ -591,6 +592,7 @@ export default function SignupPage() {
           로그인
         </Link>
       </p>
+      {step === "form" && <SignupStories />}
     </main>
   );
 }

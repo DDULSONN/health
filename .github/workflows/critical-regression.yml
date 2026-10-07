@@ -39,6 +39,10 @@ jobs:
         run: node scripts/check-onboarding-entry-browser.cjs
         env:
           TEST_BROWSER: webkit
+      - name: WebKit signup stories and form isolation
+        run: node scripts/check-signup-stories-browser.cjs
+        env:
+          TEST_BROWSER: webkit
       - name: Save isolated fixture screenshots
         if: always()
         uses: actions/upload-artifact@v4

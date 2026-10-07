@@ -27,6 +27,12 @@ async function startPreview(port = 0) {
     const url = new URL(req.url, 'http://localhost');
     if (url.pathname === '/fixture.js') { res.setHeader('Content-Type', 'text/javascript'); res.end(fs.readFileSync(path.join(output, 'fixture.js'))); return; }
     if (url.pathname === '/fixture.css') { res.setHeader('Content-Type', 'text/css'); res.end(css); return; }
+    if (/^\/landing\/reviews\/review-\d{2}\.webp$/.test(url.pathname)) {
+      const imagePath = path.join(root, 'public', url.pathname);
+      if (!fs.existsSync(imagePath)) { res.writeHead(404); res.end(); return; }
+      res.writeHead(200, { 'Content-Type': 'image/webp', 'Cache-Control': 'public, max-age=3600' });
+      res.end(fs.readFileSync(imagePath)); return;
+    }
     if (url.pathname.startsWith('/api/')) {
       if (url.pathname === '/api/analytics/onboarding') { res.writeHead(204); res.end(); return; }
       if (req.method !== 'GET') { res.writeHead(405, { 'Content-Type': 'application/json' }); res.end(JSON.stringify({ error: '로컬 미리보기에서는 실제 등록을 하지 않아요.' })); return; }

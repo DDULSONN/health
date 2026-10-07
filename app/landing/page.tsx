@@ -5,6 +5,7 @@ import { buildSignedImageUrl, extractStorageObjectPathFromBuckets } from "@/lib/
 import { createAdminClient } from "@/lib/supabase/server";
 import LandingSeenMarker from "./LandingSeenMarker";
 import styles from "./LandingPage.module.css";
+import { LANDING_REVIEWS as reviewProofs } from "@/lib/landing-reviews";
 
 export const dynamic = "force-dynamic";
 
@@ -12,19 +13,6 @@ export const metadata: Metadata = {
   title: "짐툴 소개팅",
   description: "오픈카드와 1:1 매칭으로 내 방식에 맞게 자연스럽게 시작하는 소개팅.",
 };
-
-const reviewProofs = [
-  { src: "/landing/reviews/review-01.webp", width: 935, height: 178 },
-  { src: "/landing/reviews/review-02.webp", width: 751, height: 397 },
-  { src: "/landing/reviews/review-03.webp", width: 1440, height: 532 },
-  { src: "/landing/reviews/review-04.webp", width: 1440, height: 569 },
-  { src: "/landing/reviews/review-05.webp", width: 735, height: 291 },
-  { src: "/landing/reviews/review-06.webp", width: 1080, height: 263 },
-  { src: "/landing/reviews/review-07.webp", width: 961, height: 496 },
-  { src: "/landing/reviews/review-08.webp", width: 946, height: 370 },
-  { src: "/landing/reviews/review-09.webp", width: 812, height: 585 },
-  { src: "/landing/reviews/review-10.webp", width: 888, height: 370 },
-];
 
 const differences = [
   {
