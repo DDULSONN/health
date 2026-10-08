@@ -37,7 +37,9 @@ import AllPassProfileOfferBanner from "@/components/dating/AllPassProfileOfferBa
 import OneOnOneContactNudge from "@/components/dating/OneOnOneContactNudge";
 import OneOnOneContactOffer from "@/components/dating/OneOnOneContactOffer";
 import OneOnOneActionNotice from "@/components/dating/OneOnOneActionNotice";
-import { buildOneOnOneRequestSentMessage, getOneOnOneActionSummary, getOneOnOneMatchLabel } from "@/lib/dating-1on1-action-copy";
+import OneOnOneProfileSummary from "@/components/dating/OneOnOneProfileSummary";
+import OneOnOneIncomingRequests from "@/components/dating/OneOnOneIncomingRequests";
+import { buildOneOnOneRequestSentMessage, getOneOnOneActionSummary, getOneOnOneMatchLabel, isIncomingOneOnOneRequest } from "@/lib/dating-1on1-action-copy";
 import type {
   OneOnOneContactNudgePresetKey,
   OneOnOneContactNudgeSummary,
@@ -3812,7 +3814,8 @@ function OneOnOneHomePanel({
   const activeCards = myCards.filter((card) => card.status !== "rejected");
   const hasOneOnOneCard = activeCards.length > 0;
   const actionSummary = getOneOnOneActionSummary(activeMatches);
-  const sortedMatches = [...activeMatches].sort((a, b) => {
+  const incomingRequests = activeMatches.filter(isIncomingOneOnOneRequest);
+  const sortedMatches = activeMatches.filter((match) => !isIncomingOneOnOneRequest(match)).sort((a, b) => {
     const aImportant = a.action_required || a.state === "candidate_accepted" || a.state === "mutual_accepted" ? 1 : 0;
     const bImportant = b.action_required || b.state === "candidate_accepted" || b.state === "mutual_accepted" ? 1 : 0;
     if (aImportant !== bImportant) return bImportant - aImportant;
@@ -3919,6 +3922,32 @@ function OneOnOneHomePanel({
           </div>
         ) : (
           <div className="space-y-4">
+            <OneOnOneIncomingRequests requests={incomingRequests} renderRequest={(match) => match.counterparty_card ? (
+              <OneOnOneCandidateCard
+                compact
+                card={match.counterparty_card}
+                reportTarget={{ type: "one_on_one_match", id: match.id }}
+                onReported={onReported}
+                badge={getOneOnOneMatchLabel(match)}
+                badgeClassName="bg-rose-50 text-rose-700"
+              >
+                <OneOnOneMatchActions
+                  match={match}
+                  contactExchangeIncluded={plusContactExchangeIncluded}
+                  processing={processingMatchIds.includes(match.id)}
+                  contactProcessing={processingContactIds.includes(match.id)}
+                  nudgeProcessing={processingNudgeIds.includes(match.id)}
+                  onMatchAction={onMatchAction}
+                  onContactCheckout={onContactCheckout}
+                  onContactNudge={onContactNudge}
+                />
+              </OneOnOneCandidateCard>
+            ) : (
+              <div className="text-xs text-neutral-500">
+                <p>상대 프로필을 확인할 수 없습니다.</p>
+                <button type="button" onClick={onReload} className="mt-1 min-h-[44px] underline underline-offset-2">명단 다시 불러오기 · 횟수 차감 없음</button>
+              </div>
+            )} />
             <details className="rounded-[24px] border border-neutral-100 bg-neutral-50/70 px-4 py-3">
               <summary className="cursor-pointer select-none text-sm font-semibold text-neutral-700">내 1대1 프로필 보기</summary>
               <div className="mt-3 space-y-2">
@@ -3994,15 +4023,16 @@ function OneOnOneHomePanel({
                   <p className="text-base font-bold text-neutral-900">진행 중인 매칭</p>
                   <p className="mt-1 text-xs leading-5 text-neutral-500">요청 보내기, 수락, 연락처 교환이 필요한 항목을 먼저 보여드려요.</p>
                 </div>
-                <span className="shrink-0 whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-bold text-neutral-500">{activeMatches.length}건</span>
+                <span className="shrink-0 whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-bold text-neutral-500">{sortedMatches.length}건</span>
               </div>
-              {activeMatches.length === 0 ? (
-                <p className="mt-3 rounded-2xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-500">아직 진행 중인 매칭이 없어요. 아래 추천 후보를 확인해보세요.</p>
+              {sortedMatches.length === 0 ? (
+                <p className="mt-3 rounded-2xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-500">보낸 요청과 서로 수락한 매칭은 여기에 표시돼요.</p>
               ) : (
                 <div className="mt-3 space-y-3">
                   {sortedMatches.slice(0, 8).map((match) => (
                     <OneOnOneCandidateCard
                       key={match.id}
+                      compact={match.state === "proposed"}
                       card={match.counterparty_card}
                       reportTarget={{ type: "one_on_one_match", id: match.id }}
                       onReported={onReported}
@@ -4069,13 +4099,13 @@ function OneOnOneHomePanel({
                             const canSelect = Boolean(sourceCardId && candidateId);
                             return (
                               <OneOnOneCandidateCard
+                                compact
                                 key={`${sourceCardId}:${candidateId || getOneOnOneDisplayName(candidate)}`}
                                 card={candidate}
                                 reportTarget={{ type: "one_on_one_card", id: candidateId }}
                                 onReported={onReported}
                                 badge="추천"
                                 badgeClassName="bg-neutral-100 text-neutral-600"
-                                note="요청을 보내면 상대가 내 프로필을 보고 수락 여부를 결정해요."
                               >
                                 <button
                                   type="button"
@@ -4103,13 +4133,13 @@ function OneOnOneHomePanel({
                                   const canSelect = Boolean(sourceCardId && candidateId);
                                   return (
                                     <OneOnOneCandidateCard
+                                      compact
                                       key={`${sourceCardId}:admin:${candidateId || getOneOnOneDisplayName(candidate)}`}
                                       card={candidate}
                                       reportTarget={{ type: "one_on_one_card", id: candidateId }}
                                       onReported={onReported}
                                       badge="추가 후보"
                                       badgeClassName="bg-neutral-100 text-neutral-600"
-                                      note="요청을 보내면 상대가 내 프로필을 보고 수락 여부를 결정해요."
                                     >
                                       <button
                                         type="button"
@@ -4152,6 +4182,7 @@ function OneOnOneHomePanel({
 }
 
 function OneOnOneCandidateCard({
+  compact = false,
   reportTarget,
   onReported,
   card,
@@ -4160,6 +4191,7 @@ function OneOnOneCandidateCard({
   note,
   children,
 }: {
+  compact?: boolean;
   card?: OneOnOneCardPreview | null;
   reportTarget?: { type: DatingReportTargetType; id: string };
   onReported?: (result: DatingReportResult) => void;
@@ -4170,13 +4202,14 @@ function OneOnOneCandidateCard({
 }) {
   const photos = Array.isArray(card?.photo_signed_urls) ? card.photo_signed_urls.filter(Boolean).slice(0, 4) : [];
   const primaryPhoto = photos[0] ?? "";
+  const visiblePhotos = compact ? photos : photos.slice(1);
   const name = getOneOnOneDisplayName(card);
   const meta = getOneOnOneMeta(card);
 
   return (
     <article className="overflow-hidden rounded-[24px] border border-neutral-200 bg-white p-3">
       <div className="flex gap-3">
-        <a
+        {!compact ? <a
           href={primaryPhoto || undefined}
           target={primaryPhoto ? "_blank" : undefined}
           rel={primaryPhoto ? "noreferrer" : undefined}
@@ -4199,7 +4232,7 @@ function OneOnOneCandidateCard({
               사진
             </div>
           )}
-        </a>
+        </a> : null}
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-start justify-between gap-2">
             <div className="min-w-0">
@@ -4219,15 +4252,17 @@ function OneOnOneCandidateCard({
         </div>
       </div>
 
-      {card?.intro_text ? <p className="mt-3 whitespace-pre-wrap break-words text-xs leading-6 text-neutral-700">{card.intro_text}</p> : null}
-      {card?.strengths_text ? <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-neutral-700">장점: {card.strengths_text}</p> : null}
-      {card?.preferred_partner_text ? (
+      {!compact && card?.intro_text ? <p className="mt-3 whitespace-pre-wrap break-words text-xs leading-6 text-neutral-700">{card.intro_text}</p> : null}
+      {!compact && card?.strengths_text ? <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-neutral-700">장점: {card.strengths_text}</p> : null}
+      {!compact && card?.preferred_partner_text ? (
         <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-neutral-700">원하는 점: {card.preferred_partner_text}</p>
       ) : null}
 
-      {photos.length > 1 ? (
-        <div className="mt-3 grid grid-cols-3 gap-2">
-          {photos.slice(1).map((url, idx) => (
+      <OneOnOneProfileSummary intro={compact ? card?.intro_text : undefined}
+        strengths={compact ? card?.strengths_text : undefined} preferredPartner={compact ? card?.preferred_partner_text : undefined}>
+      {visiblePhotos.length > 0 ? (
+        <div className={`mt-3 grid gap-2 ${compact ? "grid-cols-2" : "grid-cols-3"}`}>
+          {visiblePhotos.map((url, idx) => (
             <a
               key={`${url}-${idx}`}
               href={url}
@@ -4238,7 +4273,7 @@ function OneOnOneCandidateCard({
               <img src={url} alt="" loading="lazy" decoding="async" className="absolute inset-0 h-full w-full object-cover opacity-20 blur-md" />
               <img
                 src={url}
-                alt={`${name} 추가 사진 ${idx + 2}`}
+                alt={compact ? `${name} 후보 사진 ${idx + 1}` : `${name} 추가 사진 ${idx + 2}`}
                 loading="lazy"
                 decoding="async"
                 className="relative z-10 h-full w-full object-contain p-1"
@@ -4249,6 +4284,7 @@ function OneOnOneCandidateCard({
       ) : null}
 
       {children}
+      </OneOnOneProfileSummary>
     </article>
   );
 }
@@ -4300,7 +4336,7 @@ function OneOnOneMatchActions({
           type="button"
           disabled={processing}
           onClick={() => onMatchAction(match.id, "candidate_accept")}
-          className="inline-flex min-h-[34px] items-center rounded-xl bg-emerald-600 px-3 text-xs font-black text-white disabled:opacity-50"
+          className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-4 text-xs font-semibold text-white hover:bg-[#d90037] disabled:opacity-50"
         >
           {processing ? "처리 중..." : "수락"}
         </button>
@@ -4308,7 +4344,7 @@ function OneOnOneMatchActions({
           type="button"
           disabled={processing}
           onClick={() => onMatchAction(match.id, "candidate_reject")}
-          className="inline-flex min-h-[34px] items-center rounded-xl border border-rose-200 bg-white px-3 text-xs font-bold text-rose-700 disabled:opacity-50"
+          className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-4 text-xs font-medium text-neutral-700 disabled:opacity-50"
         >
           거절
         </button>

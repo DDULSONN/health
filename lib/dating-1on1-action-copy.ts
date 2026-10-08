@@ -5,6 +5,10 @@ type MatchDisplayState = {
   contact_exchange_status?: string;
 };
 
+export function isIncomingOneOnOneRequest(match: MatchDisplayState) {
+  return match.role === "candidate" && match.state === "source_selected";
+}
+
 export function getOneOnOneMatchLabel(match: MatchDisplayState) {
   const { role, state } = match;
   if (state === "proposed") return "추천받은 후보";
@@ -32,7 +36,7 @@ export function getOneOnOneActionSummary(matches: readonly MatchDisplayState[]) 
     { label: "추천받은 후보", count: 0 },
   ];
   for (const match of matches) {
-    if (match.state === "source_selected" && match.role === "candidate") groups[0].count++;
+    if (isIncomingOneOnOneRequest(match)) groups[0].count++;
     else if (match.state === "candidate_accepted" && match.role === "source") groups[1].count++;
     else if (match.state === "mutual_accepted" && match.contact_exchange_status === "awaiting_applicant_payment") groups[2].count++;
     else if (match.state === "source_selected" && match.role === "source") groups[3].count++;

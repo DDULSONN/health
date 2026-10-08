@@ -20,7 +20,9 @@ import { buildOneOnOneRefreshSuccess, type OneOnOneRefreshUsage } from "@/lib/da
 import OneOnOneRefreshControl, { useOneOnOneRefreshConfirmation, type OneOnOneRefreshNotice } from "@/components/dating/OneOnOneRefreshControl";
 import OneOnOnePlusStatus from "@/components/dating/OneOnOnePlusStatus";
 import OneOnOneActionNotice from "@/components/dating/OneOnOneActionNotice";
-import { buildOneOnOneRequestSentMessage, getOneOnOneActionSummary, getOneOnOneMatchLabel } from "@/lib/dating-1on1-action-copy";
+import OneOnOneProfileSummary from "@/components/dating/OneOnOneProfileSummary";
+import OneOnOneIncomingRequests from "@/components/dating/OneOnOneIncomingRequests";
+import { buildOneOnOneRequestSentMessage, getOneOnOneActionSummary, getOneOnOneMatchLabel, isIncomingOneOnOneRequest } from "@/lib/dating-1on1-action-copy";
 import IncomingSwipeLikeActions from "@/components/dating/IncomingSwipeLikeActions";
 import { fetchClientJson } from "@/lib/client-json-request";
 import { isOneOnOneRecommendationPayload } from "@/lib/dating-1on1-refresh-response";
@@ -8360,6 +8362,47 @@ export default function MyPage() {
 
         {showMatchingSection && (
         <>
+          {matchingDataLoaded && !matchingDataLoading ? (
+            <OneOnOneIncomingRequests
+              requests={myOneOnOneMatches.filter(isIncomingOneOnOneRequest)}
+              renderRequest={(match) => {
+                const processing = processingOneOnOneMatchIds.includes(match.id);
+                const card = match.counterparty_card;
+                if (!card) return <p className="text-xs text-neutral-500">상대 프로필을 확인할 수 없습니다. 목록을 다시 불러와 주세요.</p>;
+                return (
+                  <article className="rounded-xl border border-neutral-200 bg-white p-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <p className="break-words text-sm font-semibold text-neutral-900">{card.name} / {card.age ?? "-"}세 / {card.region}</p>
+                      <span className="rounded-full bg-rose-50 px-2 py-1 text-[11px] font-medium text-rose-700">{getOneOnOneMatchLabel(match)}</span>
+                    </div>
+                    <p className="mt-1 text-xs leading-5 text-neutral-500">{card.height_cm}cm / {card.job}</p>
+                    <p className="mt-1 text-[11px] text-neutral-400">{new Date(match.created_at).toLocaleString("ko-KR")}</p>
+                    <OneOnOneProfileSummary intro={card.intro_text} strengths={card.strengths_text} preferredPartner={card.preferred_partner_text}>
+                      {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 ? (
+                        <div className="mt-2 grid grid-cols-2 gap-2">
+                          {card.photo_signed_urls.map((url, idx) => (
+                            <MatchPhotoPreview key={`${match.id}-candidate-${idx}`} src={url} alt={`선택된 상대 사진 ${idx + 1}`}
+                              className="flex h-24 w-full items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50"
+                              imageClassName="max-h-full max-w-full object-contain" />
+                          ))}
+                        </div>
+                      ) : null}
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        <button type="button" disabled={processing} onClick={() => void handleOneOnOneMatchAction(match.id, "candidate_accept")}
+                          className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-4 text-xs font-semibold text-white hover:bg-[#d90037] disabled:opacity-50">
+                          {processing ? "처리 중..." : "수락"}
+                        </button>
+                        <button type="button" disabled={processing} onClick={() => void handleOneOnOneMatchAction(match.id, "candidate_reject")}
+                          className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-4 text-xs font-medium text-neutral-700 disabled:opacity-50">거절</button>
+                        <SmallDatingReportButton disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}
+                          onClick={() => void handleDatingUserReport("one_on_one_match", match.id, "1:1 상대")} />
+                      </div>
+                    </OneOnOneProfileSummary>
+                  </article>
+                );
+              }}
+            />
+          ) : null}
           <AllPassProfileOfferBanner placement="mypage_matching_profile_complete" />
           <PaidRegistrationStatus state={paidRegistration} />
           <section className="mb-3 rounded-2xl border border-rose-100 bg-[#fffafb] p-4 shadow-[0_6px_20px_rgba(190,24,93,0.05)]">
@@ -10036,9 +10079,6 @@ export default function MyPage() {
                 (match) => match.role === "source" && match.state === "source_selected"
               );
               const finalAcceptRequests: MyOneOnOneMatch[] = [];
-              const candidateDecisionRequests = relatedMatches.filter(
-                (match) => match.role === "candidate" && match.state === "source_selected"
-              );
               const mutualAcceptedMatches = relatedMatches.filter((match) =>
                 match.state === "mutual_accepted" || match.state === "candidate_accepted"
               );
@@ -10276,9 +10316,7 @@ export default function MyPage() {
                                       </span>
                                     </div>
                                     <p className="mt-1 text-xs text-neutral-600">{card.height_cm}cm / {card.job}</p>
-                                    <p className="mt-2 whitespace-pre-wrap break-words text-xs text-neutral-700">{card.intro_text}</p>
-                                    <p className="mt-2 text-xs text-neutral-700">장점: {card.strengths_text}</p>
-                                    <p className="mt-1 text-xs text-neutral-700">원하는 점: {card.preferred_partner_text}</p>
+                                    <OneOnOneProfileSummary intro={card.intro_text} strengths={card.strengths_text} preferredPartner={card.preferred_partner_text}>
                                     {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
                                       <div className="mt-2 grid grid-cols-2 gap-2">
                                         {card.photo_signed_urls.map((url, idx) => (
@@ -10314,6 +10352,7 @@ export default function MyPage() {
                                         onClick={() => void handleDatingUserReport("one_on_one_card", card.id, "1:1 찜한 후보")}
                                       />
                                     </div>
+                                    </OneOnOneProfileSummary>
                                   </div>
                                 );
                               })}
@@ -10342,9 +10381,7 @@ export default function MyPage() {
                                 <p className="mt-1 text-xs text-neutral-600">
                                   {card.height_cm}cm / {card.job}
                                 </p>
-                                <p className="mt-2 text-xs text-neutral-700 whitespace-pre-wrap break-words">{card.intro_text}</p>
-                                <p className="mt-2 text-xs text-neutral-700">장점: {card.strengths_text}</p>
-                                <p className="mt-1 text-xs text-neutral-700">원하는 점: {card.preferred_partner_text}</p>
+                                <OneOnOneProfileSummary intro={card.intro_text} strengths={card.strengths_text} preferredPartner={card.preferred_partner_text}>
                                 {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
                                   <div className="mt-2 grid grid-cols-2 gap-2">
                                     {card.photo_signed_urls.map((url, idx) => (
@@ -10380,6 +10417,7 @@ export default function MyPage() {
                                     onClick={() => void handleDatingUserReport("one_on_one_card", card.id, "1:1 추천 후보")}
                                   />
                                 </div>
+                                </OneOnOneProfileSummary>
                               </div>
                             );
                           })}
@@ -10408,9 +10446,7 @@ export default function MyPage() {
                                       <p className="mt-1 text-xs text-neutral-600">
                                         {card.height_cm}cm / {card.job}
                                       </p>
-                                      <p className="mt-2 text-xs text-neutral-700 whitespace-pre-wrap break-words">{card.intro_text}</p>
-                                      <p className="mt-2 text-xs text-neutral-700">장점: {card.strengths_text}</p>
-                                      <p className="mt-1 text-xs text-neutral-700">원하는 점: {card.preferred_partner_text}</p>
+                                      <OneOnOneProfileSummary intro={card.intro_text} strengths={card.strengths_text} preferredPartner={card.preferred_partner_text}>
                                       {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
                                         <div className="mt-2 grid grid-cols-2 gap-2">
                                           {card.photo_signed_urls.map((url, idx) => (
@@ -10446,6 +10482,7 @@ export default function MyPage() {
                                           onClick={() => void handleDatingUserReport("one_on_one_card", card.id, "1:1 추가 후보")}
                                         />
                                       </div>
+                                      </OneOnOneProfileSummary>
                                     </div>
                                   );
                                 })}
@@ -10483,7 +10520,7 @@ export default function MyPage() {
                               <p className="mt-1 text-xs text-neutral-600">
                                 {card.height_cm}cm / {card.job} / {new Date(match.created_at).toLocaleString("ko-KR")}
                               </p>
-                              <p className="mt-2 text-xs text-neutral-700 whitespace-pre-wrap break-words">{card.intro_text}</p>
+                              <OneOnOneProfileSummary intro={card.intro_text} strengths={card.strengths_text} preferredPartner={card.preferred_partner_text}>
                               {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
                                 <div className="mt-2 grid grid-cols-2 gap-2">
                                   {card.photo_signed_urls.map((url, idx) => (
@@ -10511,6 +10548,7 @@ export default function MyPage() {
                                   onClick={() => void handleDatingUserReport("one_on_one_match", match.id, "1:1 후보")}
                                 />
                               </div>
+                              </OneOnOneProfileSummary>
                             </div>
                           );
                         })}
@@ -10518,76 +10556,6 @@ export default function MyPage() {
                     </div>
                   )}
 
-                  {candidateDecisionRequests.length > 0 && (
-                    <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
-                      <p className="text-sm font-semibold text-amber-900">받은 매칭 요청</p>
-                      <p className="mt-1 text-xs text-amber-700">프로필을 확인한 뒤 수락 여부를 결정해주세요.</p>
-                      <div className="mt-3 space-y-2">
-                        {candidateDecisionRequests.map((match) => {
-                          const processing = processingOneOnOneMatchIds.includes(match.id);
-                          const card = match.counterparty_card;
-                          if (!card) return null;
-                          return (
-                            <div key={match.id} className="rounded-lg border border-amber-200 bg-white p-3">
-                              <div className="flex items-center justify-between gap-2">
-                                <p className="text-sm font-medium text-neutral-900">
-                                  {card.name} / {card.age ?? "-"}세 / {card.region}
-                                </p>
-                                <span
-                                  className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                                    oneOnOneMatchStateColor[match.state]
-                                  }`}
-                                >
-                                  <span className="whitespace-nowrap">{getOneOnOneMatchLabel(match)}</span>
-                                </span>
-                              </div>
-                              <p className="mt-1 text-xs text-neutral-600">
-                                {card.height_cm}cm / {card.job} / {new Date(match.created_at).toLocaleString("ko-KR")}
-                              </p>
-                              <p className="mt-2 text-xs text-neutral-700 whitespace-pre-wrap break-words">{card.intro_text}</p>
-                              <p className="mt-2 text-xs text-neutral-700">장점: {card.strengths_text}</p>
-                              <p className="mt-1 text-xs text-neutral-700">원하는 점: {card.preferred_partner_text}</p>
-                              {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
-                                <div className="mt-2 grid grid-cols-2 gap-2">
-                                  {card.photo_signed_urls.map((url, idx) => (
-                                    <MatchPhotoPreview
-                                      key={`${match.id}-candidate-${idx}`}
-                                      src={url}
-                                      alt={`선택된 상대 사진 ${idx + 1}`}
-                                      className="flex h-24 w-full items-center justify-center overflow-hidden rounded-lg border border-neutral-200 bg-neutral-50"
-                                      imageClassName="max-h-full max-w-full object-contain"
-                                    />
-                                  ))}
-                                </div>
-                              )}
-                              <div className="mt-3 flex gap-2">
-                                <button
-                                  type="button"
-                                  disabled={processing}
-                                  onClick={() => void handleOneOnOneMatchAction(match.id, "candidate_accept")}
-                                  className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
-                                >
-                                  {processing ? "처리 중..." : "수락"}
-                                </button>
-                                <button
-                                  type="button"
-                                  disabled={processing}
-                                  onClick={() => void handleOneOnOneMatchAction(match.id, "candidate_reject")}
-                                  className="inline-flex h-8 items-center rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-700 disabled:opacity-50"
-                                >
-                                  거절
-                                </button>
-                                <SmallDatingReportButton
-                                  disabled={reportingDatingTargetKeys.includes(`one_on_one_match:${match.id}`)}
-                                  onClick={() => void handleDatingUserReport("one_on_one_match", match.id, "1:1 상대")}
-                                />
-                              </div>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
 
                   {waitingCandidateResponses.length > 0 && (
                     <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50/40 p-3">

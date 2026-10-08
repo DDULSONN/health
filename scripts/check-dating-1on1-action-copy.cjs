@@ -14,6 +14,11 @@ function evaluate(source, bindings = {}) {
   return mod.exports;
 }
 const copy = evaluate(read('lib/dating-1on1-action-copy.ts'));
+test('received request shortcut only includes requests awaiting this candidate, never sent, closed or mutually accepted matches', () => {
+  for (const role of ['source', 'candidate', undefined]) for (const state of ['proposed', 'source_selected', 'candidate_accepted', 'mutual_accepted', 'candidate_rejected', 'source_declined', 'source_skipped', 'admin_canceled', undefined]) {
+    assert.equal(copy.isIncomingOneOnOneRequest({ role, state }), role === 'candidate' && state === 'source_selected');
+  }
+});
 for (const [state, source, candidate] of [
   ['source_selected', '상대 응답 대기', '내 수락 대기'],
   ['candidate_accepted', '내 수락 대기', '상대 확인 대기'],
