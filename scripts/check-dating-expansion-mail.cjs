@@ -16,7 +16,8 @@ function loader(overrides = {}, globals = {}) {
   }
   return load;
 }
-const load = loader();
+// Test the default config without inheriting deployment URLs or rollout overrides.
+const load = loader({}, { process: { env: {} } });
 const { EXPANSION_MAIL: mail, isExpansionMailRecipient: eligible } = load('@/lib/dating-expansion-mail');
 function db(options = {}) {
   const queries = [];
@@ -82,6 +83,14 @@ test('queue is preview-only by default, checks deployment/count and prevents dup
   assert.ok(source.includes("UNAUTHORIZED_MUTATION") && source.includes("method === 'POST'"));
   const { jobId } = require('./queue-dating-expansion-mail.cjs');
   assert.match(jobId, /^[a-f0-9-]{36}$/);
+});
+test('unsubscribe uses the configured deployment host, including www and preview domains', () => {
+  for (const origin of ['https://www.helchang.com', 'https://fixture.vercel.app']) {
+    const marketing = loader({}, { process: { env: { NEXT_PUBLIC_SITE_URL: origin } } })('@/lib/marketing-email');
+    const url = new URL(marketing.buildEmailUnsubscribeUrl({ userId: 'member', email: 'member@example.test', campaignKey: mail.campaign }));
+    assert.equal(url.origin, origin);
+    assert.equal(marketing.verifyEmailUnsubscribeToken({ userId: 'member', email: 'member@example.test', campaignKey: mail.campaign, token: url.searchParams.get('token') }), true);
+  }
 });
 test('real mail sender preserves Korean in UTF-8 JSON, plain text and HTML with only one addressee', async () => {
   const marketing = load('@/lib/marketing-email');
