@@ -4,6 +4,7 @@ import { sendDatingEmailToAddressDetailed } from "@/lib/dating-swipe";
 import { appendMarketingEmailFooter, fetchEmailMarketingExcludedUserIds } from "@/lib/marketing-email";
 import { createAdminClient } from "@/lib/supabase/server";
 import { isOpenCardOnlyMailRecipient } from "@/lib/open-card-profile-reuse-mail";
+import { isExpansionMailRecipient } from "@/lib/dating-expansion-mail";
 
 const JOB_TABLE = "admin_outreach_mail_jobs";
 const LOG_TABLE = "admin_open_card_outreach_mail_logs";
@@ -148,8 +149,11 @@ async function processJob(admin: ReturnType<typeof createAdminClient>, job: Outr
           activity_at: item.activity_at ?? null,
         };
 
-        const cohortEligible = job.filters?.require_open_without_one_on_one !== true || !item.email || excluded.has(item.user_id)
+        const openCardCohortEligible = job.filters?.require_open_without_one_on_one !== true || !item.email || excluded.has(item.user_id)
           ? true : await isOpenCardOnlyMailRecipient(admin, item.user_id, item.email);
+        const expansionCohortEligible = job.filters?.require_expansion_eligible !== true || !item.email || excluded.has(item.user_id)
+          ? true : await isExpansionMailRecipient(admin, item.user_id, item.email);
+        const cohortEligible = openCardCohortEligible && expansionCohortEligible;
         if (!item.email || excluded.has(item.user_id) || !cohortEligible) {
           const reason = !item.email ? "EMAIL_MISSING" : excluded.has(item.user_id) ? "EMAIL_CONSENT_NOT_CONFIRMED" : "COHORT_NO_LONGER_ELIGIBLE";
           return {
