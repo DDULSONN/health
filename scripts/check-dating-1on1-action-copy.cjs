@@ -4,7 +4,9 @@ const { test } = require('node:test');
 const fs = require('node:fs');
 const path = require('node:path');
 const ts = require('typescript');
-const { execFileSync } = require('node:child_process');
+// Freeze the exact original fetch expressions, not entire private/member pages.
+// Vercel shallow clones and source archives must keep all checks without Git history/network.
+const requestContracts = require('./fixtures/dating-1on1-request-contracts.json');
 const root = path.resolve(__dirname, '..');
 const read = p => fs.readFileSync(path.join(root, p), 'utf8');
 function evaluate(source, bindings = {}) {
@@ -67,22 +69,42 @@ function initializer(source, name) {
   const ast = ts.createSourceFile('page.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   return find(ast, n => ts.isVariableDeclaration(n) && n.name.getText(ast) === name).initializer.getText(ast);
 }
+function fetches(text, name) {
+  const ast = ts.createSourceFile('handler.tsx', initializer(text, name), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const items = [];
+  function visit(n) { if (ts.isCallExpression(n) && n.expression.getText(ast) === 'fetch') items.push(n.getText(ast).replace(/\r\n/g, '\n')); ts.forEachChild(n, visit); }
+  visit(ast); return items;
+}
+test('request contracts retain the original baseline and all six nonempty handlers', () => {
+  assert.equal(requestContracts.baseline_commit, 'cff3189a34f40ea7f12038b2b4e0da3813707ece');
+  assert.deepEqual(Object.keys(requestContracts.surfaces), ['home', 'mypage']);
+  for (const surface of Object.values(requestContracts.surfaces)) {
+    assert.equal(Object.keys(surface.handlers).length, 3);
+    for (const calls of Object.values(surface.handlers)) {
+      assert.equal(calls.length, 1); assert.match(calls[0], /^fetch\(/);
+    }
+  }
+});
 for (const surface of ['home', 'mypage']) {
   const file = surface === 'home' ? 'app/community/dating/cards/page.tsx' : 'app/mypage/page.tsx';
   const source = read(file);
   const autoName = surface === 'home' ? 'handleOneOnOneAutoSelect' : 'handleOneOnOneAutoRecommendationSelect';
   test(`${surface}: existing matching and payment request payloads are unchanged`, () => {
-    const before = execFileSync('git', ['show', 'cff3189:' + file], { cwd: root, encoding: 'utf8' });
+    const baseline = requestContracts.surfaces[surface];
+    assert.equal(baseline.file, file);
     for (const name of [autoName, 'handleOneOnOneMatchAction', surface === 'home' ? 'handleOneOnOneContactCheckout' : 'handleRequestOneOnOneContactExchange']) {
-      const fetches = text => {
-        const ast = ts.createSourceFile('handler.tsx', initializer(text, name), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
-        const items = [];
-        function visit(n) { if (ts.isCallExpression(n) && n.expression.getText(ast) === 'fetch') items.push(n.getText(ast).replace(/\r\n/g, '\n')); ts.forEachChild(n, visit); }
-        visit(ast); return items;
-      };
-      assert.deepEqual(fetches(source), fetches(before));
+      assert.deepEqual(fetches(source, name), baseline.handlers[name]);
     }
     assert.ok(!source.includes('이 후보 선택'));
+  });
+  test(`${surface}: the stored contract still detects method, endpoint, body and missing-request regressions`, () => {
+    for (const [name, calls] of Object.entries(requestContracts.surfaces[surface].handlers)) {
+      for (const mutated of [calls[0].replace('POST', 'DELETE'), calls[0].replace('/api/', '/changed/'),
+        calls[0].replace('JSON.stringify', 'JSON.changed'), 'Promise.resolve()']) {
+        const fake = `const ${name} = async () => { await ${mutated}; };`;
+        assert.notDeepEqual(fetches(fake, name), calls);
+      }
+    }
   });
   for (const scenario of ['success', 'rejected', 'already-handled', 'network-error', 'read-failure']) {
     test(`${surface}: actual request handler notice is accurate for ${scenario}`, async () => {

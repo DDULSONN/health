@@ -1,0 +1,33 @@
+{
+  "baseline_commit": "cff3189a34f40ea7f12038b2b4e0da3813707ece",
+  "surfaces": {
+    "home": {
+      "file": "app/community/dating/cards/page.tsx",
+      "handlers": {
+        "handleOneOnOneAutoSelect": [
+          "fetch(\"/api/dating/1on1/matches/auto\", {\n          method: \"POST\",\n          headers: { \"Content-Type\": \"application/json\" },\n          body: JSON.stringify({\n            source_card_id: sourceCardId,\n            candidate_card_id: candidateCardId,\n          }),\n        })"
+        ],
+        "handleOneOnOneMatchAction": [
+          "fetch(`/api/dating/1on1/matches/${matchId}`, {\n          method: \"POST\",\n          headers: { \"Content-Type\": \"application/json\" },\n          body: JSON.stringify({ action }),\n        })"
+        ],
+        "handleOneOnOneContactCheckout": [
+          "fetch(\"/api/payments/toss/create\", {\n          method: \"POST\",\n          headers: { \"Content-Type\": \"application/json\" },\n          body: JSON.stringify({\n            productType: \"one_on_one_contact_exchange\",\n            matchId,\n          }),\n        })"
+        ]
+      }
+    },
+    "mypage": {
+      "file": "app/mypage/page.tsx",
+      "handlers": {
+        "handleOneOnOneAutoRecommendationSelect": [
+          "fetch(\"/api/dating/1on1/matches/auto\", {\n        method: \"POST\",\n        headers: { \"Content-Type\": \"application/json\" },\n        body: JSON.stringify({\n          source_card_id: sourceCardId,\n          candidate_card_id: candidateCardId,\n        }),\n      })"
+        ],
+        "handleOneOnOneMatchAction": [
+          "fetch(`/api/dating/1on1/matches/${matchId}`, {\n        method: \"POST\",\n        headers: { \"Content-Type\": \"application/json\" },\n        body: JSON.stringify({ action }),\n      })"
+        ],
+        "handleRequestOneOnOneContactExchange": [
+          "fetch(\"/api/payments/toss/create\", {\n        method: \"POST\",\n        headers: { \"Content-Type\": \"application/json\" },\n        body: JSON.stringify({\n          productType: \"one_on_one_contact_exchange\",\n          matchId,\n        }),\n      })"
+        ]
+      }
+    }
+  }
+}
