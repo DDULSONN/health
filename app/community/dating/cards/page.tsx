@@ -39,6 +39,7 @@ import OneOnOneContactOffer from "@/components/dating/OneOnOneContactOffer";
 import OneOnOneActionNotice from "@/components/dating/OneOnOneActionNotice";
 import OneOnOneProfileSummary from "@/components/dating/OneOnOneProfileSummary";
 import OneOnOneIncomingRequests from "@/components/dating/OneOnOneIncomingRequests";
+import OneOnOneExpansionPanel from "@/components/dating/OneOnOneExpansionPanel";
 import { buildOneOnOneRequestSentMessage, getOneOnOneActionSummary, getOneOnOneMatchLabel, isIncomingOneOnOneRequest } from "@/lib/dating-1on1-action-copy";
 import type {
   OneOnOneContactNudgePresetKey,
@@ -231,6 +232,7 @@ type OneOnOneCardPreview = {
 };
 
 type OneOnOneRecommendationGroup = {
+  expansion_enabled?: boolean;
   source_card_id?: string;
   source_card_status?: string;
   refresh_used?: boolean;
@@ -3793,7 +3795,7 @@ function OneOnOneHomePanel({
   ) => void;
   onContactCheckout: (matchId: string) => void;
   onContactNudge: (matchId: string, presetKey: OneOnOneContactNudgePresetKey) => void;
-  onAutoSelect: (sourceCardId: string, candidateCardId: string, candidateName?: string | null) => void;
+  onAutoSelect: (sourceCardId: string, candidateCardId: string, candidateName?: string | null) => void | Promise<void>;
   onRefreshRecommendations: (sourceCardId: string) => void;
   refreshNotice: OneOnOneRefreshNotice | null;
 }) {
@@ -4156,6 +4158,9 @@ function OneOnOneHomePanel({
                             </div>
                           ) : null}
                         </div>
+                        <OneOnOneExpansionPanel enabled={group.expansion_enabled === true} sourceCardId={sourceCardId}
+                          revision={group} blocked={refreshing || processingAutoKeys.length > 0}
+                          onSelect={(candidateId, name) => onAutoSelect(sourceCardId, candidateId, name)} onReported={onReported} />
                       </div>
                     );
                   })}

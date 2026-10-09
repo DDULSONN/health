@@ -191,7 +191,7 @@ async function runApi(tables, { intercept, signedIn = true, atTime } = {}) {
   return { response, body, calls: db.calls };
 }
 
-async function runRefresh(tables, { intercept, signedIn = true, atTime = now, sourceId = 'source', rpc, legacyClient = false } = {}) {
+async function runRefresh(tables, { intercept, signedIn = true, atTime = now, sourceId = 'source', rpc, legacyClient = false, expansionEnabled = false } = {}) {
   const db = mockDatabase(tables, intercept), rpcCalls = [];
   db.rpc = async (name, args) => {
     assert.equal(name, 'consume_dating_1on1_recommendation_refresh_checked'); rpcCalls.push(args);
@@ -209,6 +209,7 @@ async function runRefresh(tables, { intercept, signedIn = true, atTime = now, so
     '@/lib/supabase/server': { createAdminClient: () => db },
     '@/lib/supabase/request': { getRequestAuthContext: async () => ({ user: signedIn ? { id: 'user-source' } : null }) },
     '@/lib/request-origin': { ensureAllowedMutationOrigin: () => null },
+    '@/lib/dating-1on1-expansion': { ...load('@/lib/dating-1on1-expansion'), isExpansionEnabled: () => expansionEnabled },
   }, atTime);
   const response = await apiLoad('@/app/api/dating/1on1/recommendations/refresh/route').POST(new Request('http://localhost/api/dating/1on1/recommendations/refresh', {
     method: 'POST', body: JSON.stringify({ source_card_id: sourceId, refresh_contract: legacyClient ? undefined : 2, changed_candidate_count: 999, refresh_limit: 99 }),
@@ -352,6 +353,79 @@ async function runSelect(tables, { intercept, sourceId = "source", candidateId =
 function allCandidates(body) {
   return body.items.flatMap((item) => [...item.recommendations, ...item.admin_recommendations]);
 }
+
+async function runExpansion(tables, snapshotIds, intercept) {
+  const db = mockDatabase(tables, intercept);
+  const response = await createLoader({}, now)('@/lib/dating-1on1-recommendation-service')
+    .loadOneOnOneRecommendations(db, { id: 'user-source' }, undefined, { candidateIds: snapshotIds });
+  return { response, body: await response.json(), calls: db.calls };
+}
+const activeFixture = size => {
+  const tables = fixture(size);
+  tables.profiles.forEach(p => { p.last_meaningful_activity_at = new Date(now - 1000).toISOString(); });
+  return tables;
+};
+for (const size of [0, 3, 10, 13, 14, 16, 80]) test('expansion is additive, read-only and does not duplicate main/extra: pool ' + size, async () => {
+  const tables = activeFixture(size), before = structuredClone(tables);
+  const main = await runApi(tables, { atTime: now });
+  const result = await runExpansion(tables);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.candidates.length, Math.min(3, Math.max(0, size - 13)));
+  assert.ok(result.body.candidates.every(c => !allCandidates(main.body).some(existing => existing.id === c.id)));
+  assert.deepEqual(tables, before);
+  assert.ok(result.calls.every(q => !q.insert && !q.update && !q.delete));
+  const after = await runApi(tables, { atTime: now }); assert.deepEqual(after.body, main.body);
+  for (const candidate of result.body.candidates) {
+    assert.equal(candidate.name, '테스트 ' + candidate.id);
+    assert.ok(!Object.hasOwn(candidate, 'phone')); assert.ok(!Object.hasOwn(candidate, 'phone_e164'));
+    assert.equal(candidate.photo_signed_urls.length, 1);
+  }
+});
+for (const mode of ['ban', 'withdrawn', 'hidden', 'favorite', 'user-block', 'reverse-block', 'admin-block',
+  'phone-block', 'contact-block', 'rejected', 'matched', 'old-activity', 'new-identity', 'phone-unverified']) {
+  test('stored expansion revalidates ' + mode + ' without refilling', async () => {
+    const tables = activeFixture(50);
+    const first = await runExpansion(tables); assert.equal(first.body.candidates.length, 3);
+    const snapshot = first.body.candidates.map(c => c.id), id = snapshot[0], user = 'user-' + id;
+    const row = tables.dating_1on1_cards.find(c => c.id === id), profile = tables.profiles.find(p => p.user_id === user);
+    if (mode === 'ban') profile.is_banned = true;
+    if (mode === 'withdrawn') tables.profiles = tables.profiles.filter(p => p.user_id !== user);
+    if (mode === 'hidden') row.status = 'rejected';
+    if (mode === 'favorite') tables.dating_1on1_candidate_favorites = [{ user_id: 'user-source', source_card_id: 'source', candidate_card_id: id }];
+    if (mode === 'user-block' || mode === 'reverse-block') tables.dating_user_blocks = [{ blocker_user_id: mode === 'user-block' ? 'user-source' : user, blocked_user_id: mode === 'user-block' ? user : 'user-source' }];
+    if (mode === 'admin-block') tables.dating_1on1_admin_user_blocks = [{ user_a_id: user, user_b_id: 'user-source' }];
+    if (mode === 'phone-block') tables.dating_1on1_phone_blocks = [{ user_id: 'user-source', phone_hash: load('@/lib/dating-1on1-phone-blocks').hashOneOnOneBlockedPhone(profile.phone_e164) }];
+    if (mode === 'contact-block') tables.dating_contact_blocks = [{ user_id: user, block_type: 'phone', value_hash: load('@/lib/dating-contact-blocks').hashDatingContactBlockValue('phone', tables.profiles[0].phone_e164) }];
+    if (mode === 'rejected' || mode === 'matched') tables.dating_1on1_match_proposals = [pair({ candidate_card_id: id, candidate_user_id: user, state: mode === 'rejected' ? 'candidate_rejected' : 'mutual_accepted' })];
+    if (mode === 'old-activity') profile.last_meaningful_activity_at = '2025-01-01';
+    if (mode === 'new-identity') tables.dating_1on1_cards.push({ ...row, id: 'new-' + id, created_at: new Date(now - 100).toISOString() });
+    if (mode === 'phone-unverified') profile.phone_e164 = null;
+    const result = await runExpansion(tables, snapshot);
+    assert.equal(result.response.status, 200);
+    assert.ok(result.body.candidates.every(c => c.id !== id && snapshot.includes(c.id)));
+    assert.ok(result.body.candidates.length <= 2);
+  });
+}
+test('expansion errors cannot silently bypass eligibility or consume quota', async () => {
+  for (const table of ['profiles', 'dating_user_blocks', 'dating_1on1_candidate_favorites', 'dating_1on1_match_proposals', 'dating_1on1_recommendation_refresh_events', 'dating_1on1_recommendation_recoveries']) {
+    const result = await runExpansion(activeFixture(20), undefined, q => q.table === table ? { data: null, error: { code: 'XX000', message: 'test failure' } } : null);
+    assert.ok(result.response.status >= 400, table); assert.equal(result.body.candidates, undefined);
+    assert.ok(result.calls.every(q => !q.insert && !q.update && !q.delete));
+  }
+});
+test('expansion requires a currently verified source without altering legacy recommendation reads', async () => {
+  const tables = activeFixture(20); tables.profiles[0].phone_e164 = null;
+  assert.equal((await runExpansion(tables)).response.status, 403);
+  assert.equal((await runApi(tables, { atTime: now })).response.status, 200);
+});
+test('a refresh cannot charge only for people already seen in an expansion batch', async () => {
+  const tables = activeFixture(16);
+  const expanded = await runExpansion(tables);
+  tables.dating_1on1_expansion_batches = [{ user_id: 'user-source', day_key: '2026-08-31', candidate_ids: expanded.body.candidates.map(c => c.id) }];
+  const result = await runRefresh(tables, { expansionEnabled: true });
+  assert.equal(result.response.status, 200); assert.equal(result.body.refresh_consumed, false);
+  assert.equal(result.body.changed_candidate_count, 0); assert.equal(result.rpcCalls.length, 0);
+});
 function pair(overrides = {}) {
   return {
     id: "pair", source_card_id: "source", candidate_card_id: "c0",

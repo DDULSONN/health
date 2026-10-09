@@ -44,7 +44,10 @@ async function main() {
   let browser, passed = 0;
   try {
     browser = await chromium.launch({ channel: 'msedge', headless: true });
-    for (const surface of ['home', 'mypage']) for (const width of [360, 1280]) {
+    if (process.argv.includes('--expansion')) {
+      passed = await require('./test-expansion-browser.cjs')({ browser, origin, output });
+    }
+    for (const surface of process.argv.includes('--expansion') ? [] : ['home', 'mypage']) for (const width of [360, 1280]) {
       for (const scenario of ['success', 'no-change', 'no-change-read-failure', 'read-failure', 'bad-read', 'lost-post', 'timeout-post', 'slow-post', 'cancel', 'escape', 'non-plus', 'legacy-plus']) {
         const noChange = scenario.startsWith('no-change');
         const context = await browser.newContext({ viewport: { width, height: 844 } });

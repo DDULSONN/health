@@ -8,6 +8,7 @@ for (const key of Object.keys(env)) {
   if (/SUPABASE|SOLAPI|RESEND|TOSS|KAKAO|SERVICE_ROLE|CRON_SECRET|PAYMENT_SECRET|SMTP/i.test(key)) delete env[key];
 }
 const unitFiles = [
+  'check-dating-1on1-expansion.cjs',
   'check-signup-stories.cjs',
   'check-onboarding-user.cjs',
   'check-viewer-session-recovery.cjs',
@@ -74,6 +75,7 @@ if (process.argv.includes('--browser')) {
   env.CONTACT_CONVERSION_CSS_DIR = path.join(root, '.next/static/css');
   env.PROFILE_UX_CSS_DIR = env.CONTACT_CONVERSION_CSS_DIR;
   for (const file of browserFiles) run([path.join(__dirname, file)], 10 * 60_000);
+  run([path.join(__dirname, 'check-recommendation-refresh-browser.cjs'), '--expansion'], 10 * 60_000);
 } else {
   const pglite = require.resolve('@electric-sql/pglite');
   for (const key of ['ACCOUNT_DELETION_PGLITE_PATH', 'PAYMENT_RECOVERY_PGLITE_PATH', 'PRIVACY_TEST_PGLITE_PATH', 'REVIEW_TEST_PGLITE_PATH', 'REFRESH_TEST_PGLITE_PATH']) env[key] = pglite;

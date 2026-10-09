@@ -21,6 +21,7 @@ import OneOnOneRefreshControl, { useOneOnOneRefreshConfirmation, type OneOnOneRe
 import OneOnOnePlusStatus from "@/components/dating/OneOnOnePlusStatus";
 import OneOnOneActionNotice from "@/components/dating/OneOnOneActionNotice";
 import OneOnOneProfileSummary from "@/components/dating/OneOnOneProfileSummary";
+import OneOnOneExpansionPanel from "@/components/dating/OneOnOneExpansionPanel";
 import OneOnOneIncomingRequests from "@/components/dating/OneOnOneIncomingRequests";
 import { buildOneOnOneRequestSentMessage, getOneOnOneActionSummary, getOneOnOneMatchLabel, isIncomingOneOnOneRequest } from "@/lib/dating-1on1-action-copy";
 import IncomingSwipeLikeActions from "@/components/dating/IncomingSwipeLikeActions";
@@ -1041,6 +1042,7 @@ type MyOneOnOneAutoRecommendationGroup = {
   refresh_limit?: number;
   next_refresh_at?: string | null;
   can_refresh?: boolean;
+  expansion_enabled?: boolean;
   favorite_candidates?: MyOneOnOneMatchCard[];
   recommendations: MyOneOnOneMatchCard[];
   admin_recommendation_date?: string | null;
@@ -10493,6 +10495,11 @@ export default function MyPage() {
                       )}
                     </div>
                   )}
+
+                  {!isArchivedOneOnOneCard && autoRecommendationGroup?.expansion_enabled === true && <OneOnOneExpansionPanel
+                    enabled sourceCardId={item.id} revision={autoRecommendationGroup}
+                    blocked={refreshingAutoRecommendations || processingOneOnOneAutoKeys.length > 0 || mutatingOneOnOneCard}
+                    onSelect={(candidateId, name) => handleOneOnOneAutoRecommendationSelect(item.id, candidateId, name)} />}
 
                   {incomingCandidates.length > 0 && (
                     <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/50 p-3">

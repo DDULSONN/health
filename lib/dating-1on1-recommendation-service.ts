@@ -48,6 +48,7 @@ import {
 import { getCurrentOneOnOneCardIds } from "@/lib/dating-1on1-current-cards";
 import { DATING_AGE_INELIGIBLE_MESSAGE, parseDatingBirthYear } from "@/lib/dating-age";
 import { fetchOneOnOnePairHistory, type OneOnOnePairHistory } from "@/lib/dating-1on1-pair-history";
+import { EXPANSION_TABLE, isExpansionEnabled, selectExpansionCandidates } from "@/lib/dating-1on1-expansion";
 
 const RECOMMENDATION_LIMIT = 10;
 const FAVORITE_TABLE = "dating_1on1_candidate_favorites";
@@ -130,7 +131,8 @@ export type RecommendationRefreshPlan = {
 // Only server code may request a plan. Public GET has no seed/preview overrides.
 // Both display and consumption use exactly the same safety filters and ranking.
 export async function loadOneOnOneRecommendations(admin: ReturnType<typeof createAdminClient>, user: { id: string },
-  refreshPlan?: { sourceCardId: string; at: string }) {
+  refreshPlan?: { sourceCardId: string; at: string }, expansion?: { candidateIds?: readonly string[] }) {
+  if (refreshPlan && expansion) throw new Error("Expansion cannot consume a refresh.");
   const nowMs = refreshPlan ? Date.parse(refreshPlan.at) : Date.now();
   let ownRows: RecommendationCardRow[];
   let candidateRows: RecommendationCardRow[];
@@ -153,6 +155,9 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
   }
   if (!profiles.has(user.id) || profiles.get(user.id)?.banned) {
     return NextResponse.json({ error: "Account is not eligible for recommendations." }, { status: 403 });
+  }
+  if (expansion && !profiles.get(user.id)?.phone) {
+    return NextResponse.json({ error: "휴대폰 인증 상태를 확인한 뒤 다시 시도해 주세요." }, { status: 403 });
   }
   const normalize = (row: RecommendationCardRow): RecommendationCard => ({
     ...row,
@@ -187,10 +192,10 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
   if (recoveryRes.error && !["42P01", "PGRST205"].includes(recoveryRes.error.code)) {
     console.warn("[GET /api/dating/1on1/recommendations/my] optional recovery unavailable", recoveryRes.error);
   }
-  if (refreshPlan && recoveryRes.error) {
+  if ((refreshPlan || expansion) && recoveryRes.error) {
     return NextResponse.json({ error: "후보 이력을 확인하지 못했습니다. 횟수는 사용하지 않았으니 잠시 후 다시 시도해 주세요." }, { status: 503 });
   }
-  if (refreshEventsRes.error && (refreshPlan || !isMissingRefreshEventSchema(refreshEventsRes.error))) {
+  if (refreshEventsRes.error && (refreshPlan || expansion || !isMissingRefreshEventSchema(refreshEventsRes.error))) {
     console.error("[GET /api/dating/1on1/recommendations/my] refresh events failed", refreshEventsRes.error);
     return NextResponse.json({ error: "Failed to load recommendation refresh usage." }, { status: 500 });
   }
@@ -208,7 +213,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     .order("created_at", { ascending: false });
   let favoriteRows: FavoriteRow[] = [];
   if (favoriteRowsRes.error) {
-    if (refreshPlan) {
+    if (refreshPlan || expansion) {
       return NextResponse.json({ error: "찜한 후보를 확인하지 못했습니다. 횟수는 사용하지 않았으니 잠시 후 다시 시도해 주세요." }, { status: 503 });
     }
     if (!isMissingFavoriteSchema(favoriteRowsRes.error)) {
@@ -246,7 +251,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       fetchRecommendationActivity(admin, candidateUniverse.map((card) => card.user_id), nowMs).catch((error) => {
         // GET can degrade gracefully, but a quota write needs the full ranking
         // context. Otherwise recovering optional reads could undo the predicted change.
-        if (refreshPlan) throw error;
+        if (refreshPlan || expansion) throw error;
         // Activity is a ranking hint, not an eligibility check. Keep recommendations
         // available if this optional signal is unavailable; safety queries still fail closed.
         console.warn("[GET /api/dating/1on1/recommendations/my] activity unavailable", error);
@@ -395,6 +400,12 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       refreshLimit
     );
     const adminRecommendations = replay.extraRecommendations;
+    const expansionExclusions = expansion ? new Set([...favoriteIds, ...recommendations.map(card => card.id), ...adminRecommendations.map(card => card.id),
+      // A new batch should not recycle a known earlier page. A stored batch is
+      // only revalidated, never reranked/refilled as history changes.
+      ...(expansion.candidateIds ? [] : replay.shownIds)]) : new Set<string>();
+    const expansionCandidates = expansion ? selectExpansionCandidates(sourceCard, unsavedCandidates.filter(card => profiles.get(card.user_id)?.phone),
+      expansionExclusions, adminRecommendationDate, nowMs, expansion.candidateIds) : [];
 
     return {
       source_card_id: sourceCard.id,
@@ -414,6 +425,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       admin_recommendation_date: adminRecommendationDate,
       admin_recommendations: adminRecommendations,
       admin_recommendation_limit: ONE_ON_ONE_FREE_EXTRA_CANDIDATES,
+      ...(expansion ? { expansion_candidates: expansionCandidates } : {}),
     };
   });
 
@@ -427,7 +439,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     while (true) {
       const pending = [...new Map([
         ...mySourceCards,
-        ...[...items, ...plannedItems].flatMap((item) => [...item.favorite_candidates, ...item.recommendations, ...item.admin_recommendations]),
+        ...[...items, ...plannedItems].flatMap((item) => [...item.favorite_candidates, ...item.recommendations, ...item.admin_recommendations, ...(item.expansion_candidates ?? [])]),
       ].filter((card) => !checkedCardIds.has(card.id)).map((card) => [card.id, card])).values()];
       if (pending.length === 0) break;
       const currentIds = await getCurrentOneOnOneCardIds(admin, pending, profiles);
@@ -440,12 +452,16 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       plannedItems = refreshPlan ? buildItems(true) : [];
     }
     const details = await fetchRecommendationDetails(admin, [...items, ...plannedItems].flatMap((item) =>
-      [...item.favorite_candidates, ...item.recommendations, ...item.admin_recommendations].map((card) => card.id)));
+      [...item.favorite_candidates, ...item.recommendations, ...item.admin_recommendations, ...(item.expansion_candidates ?? [])].map((card) => card.id)));
     const hydrate = (cards: RecommendationCard[]) => cards.flatMap((card) => {
       const detail = details.get(card.id);
       // Status is rechecked by the detail query; also drop identities/sex changed mid-request.
       return detail && detail.user_id === card.user_id && detail.sex === card.sex ? [detail] : [];
     });
+    if (expansion) {
+      const item = items[0];
+      return NextResponse.json({ source_card_id: item?.source_card_id ?? null, candidates: hydrate(item?.expansion_candidates ?? []) });
+    }
     if (refreshPlan) {
       const before = items.find((item) => item.source_card_id === refreshPlan.sourceCardId);
       const after = plannedItems.find((item) => item.source_card_id === refreshPlan.sourceCardId);
@@ -453,6 +469,17 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       // Compare people across main + extras, not positions. Moving the same person
       // between the two sections is NOT a new candidate and must not consume quota.
       const oldIds = new Set(hydrate([...before.recommendations, ...before.admin_recommendations]).map((card) => card.user_id));
+      if (isExpansionEnabled(user.id)) {
+        const seen = await admin.from(EXPANSION_TABLE).select("candidate_ids")
+          .eq("user_id", user.id).gte("day_key", getKstDateString(new Date(nowMs - RECOMMENDATION_REFRESH_HISTORY_MS)));
+        if (seen.error && !["42P01", "PGRST205"].includes(seen.error.code)) {
+          return NextResponse.json({ error: "추가 후보 이력을 확인하지 못했어요. 새로고침 횟수는 사용하지 않았어요." }, { status: 503 });
+        }
+        const seenIds = new Set((seen.data ?? []).flatMap(row => Array.isArray(row.candidate_ids) ? row.candidate_ids as string[] : []));
+        // Moving an already revealed expansion candidate into the main page is
+        // not a new person and must not consume a paid refresh allowance alone.
+        for (const card of candidateUniverse) if (seenIds.has(card.id)) oldIds.add(card.user_id);
+      }
       const newIds = new Set(hydrate([...after.recommendations, ...after.admin_recommendations]).map((card) => card.user_id));
       const plan: RecommendationRefreshPlan = {
         source_card_id: before.source_card_id, expected_refresh_used_at: before.refresh_used_at,

@@ -160,6 +160,7 @@ for (const remaining of [0, 1, 2]) test(`real home result markup shows ${remaini
   const render = evaluate('exports.render = ' + call.arguments[0].getText(source) + ';', {
     ...copy, activeCards: [], refreshingRecommendationIds: [], onRefreshRecommendations() {},
     OneOnOneRefreshControl: 'RefreshControl', refreshNotice: null,
+    OneOnOneExpansionPanel: 'ExpansionPanel', processingAutoKeys: [], onReported() {}, onAutoSelect() {},
   }).render;
   const tree = render({ ...quota(remaining), recommendations: [], admin_recommendations: [] }, 0);
   const control = nodes(tree).find(n => n.type === 'RefreshControl');
