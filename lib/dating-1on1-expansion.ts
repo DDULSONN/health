@@ -4,8 +4,8 @@ import { isCandidateInSourceAgeRange, isRecentlyHandledCandidate, sortCandidates
 export const EXPANSION_LIMIT = 3;
 export const EXPANSION_TABLE = "dating_1on1_expansion_batches";
 
-// Server-only rollout. Default off until the SQL migration and release are verified.
-export function isExpansionEnabled(userId: string, percentage = process.env.DATING_EXPANSION_PERCENT): boolean {
+// Migration verified before general release. Keep an explicit server-side 0 kill switch.
+export function isExpansionEnabled(userId: string, percentage = process.env.DATING_EXPANSION_PERCENT ?? "100"): boolean {
   if (!userId || !percentage || !/^\d{1,3}$/.test(percentage)) return false;
   const amount = Number(percentage);
   if (amount < 1 || amount > 100) return false;

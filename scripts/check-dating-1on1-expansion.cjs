@@ -6,7 +6,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const ts = require('typescript');
 const root = path.resolve(__dirname, '..');
-function loader(overrides = {}) {
+function loader(overrides = {}, environment = process.env) {
   const cache = new Map();
   function load(name) {
     if (Object.hasOwn(overrides, name)) return overrides[name];
@@ -16,7 +16,7 @@ function loader(overrides = {}) {
     const js = ts.transpileModule(fs.readFileSync(path.join(root, name.slice(2) + '.ts'), 'utf8'), {
       compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2020, esModuleInterop: true },
     }).outputText;
-    new Function('require', 'module', 'exports', js)(load, mod, mod.exports);
+    new Function('require', 'module', 'exports', 'process', js)(load, mod, mod.exports, { ...process, env: environment });
     return mod.exports;
   }
   return load;
@@ -27,7 +27,16 @@ const card = (id, rest = {}) => ({ id, user_id: 'u-' + id, sex: 'female', age: 2
   region: '서울 강남구', created_at: new Date(now - 86400000).toISOString(), ...rest });
 const source = card('source', { sex: 'male', age: 30 });
 
-test('rollout is server controlled, off by default, stable and bounded', () => {
+test('general release defaults to all members, preserves explicit off and excludes anonymous users', () => {
+  const defaults = loader({}, {})('@/lib/dating-1on1-expansion');
+  const disabled = loader({}, { DATING_EXPANSION_PERCENT: '0' })('@/lib/dating-1on1-expansion');
+  assert.equal(defaults.isExpansionEnabled(''), false);
+  for (let i = 0; i < 1000; i++) {
+    assert.equal(defaults.isExpansionEnabled('member-' + i), true);
+    assert.equal(disabled.isExpansionEnabled('member-' + i), false);
+  }
+});
+test('rollout is server controlled, stable and bounded', () => {
   for (const value of ['', '0', '-1', '101', '20.5', ' 20', 'NaN']) assert.equal(rules.isExpansionEnabled('member', value), false);
   assert.equal(rules.isExpansionEnabled('', '100'), false);
   let enabled = 0;
