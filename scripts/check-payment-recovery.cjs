@@ -255,7 +255,7 @@ test("payment creation preserves the failure order ID without modifying success 
 });
 
 test("both contact checkout surfaces use the shared offer; free exchanges remain exempt", () => {
-  for (const file of ["app/mypage/page.tsx", "app/community/dating/cards/page.tsx"]) {
+  for (const file of ["app/mypage/page.tsx", "components/dating/OneOnOneHomePanel.tsx"]) {
     assert.ok(source(file).includes("<OneOnOneContactOffer"), file);
   }
   assert.ok(source("app/mypage/page.tsx").includes("included={plusContactExchangeIncluded}"));

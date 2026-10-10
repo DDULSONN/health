@@ -205,7 +205,7 @@ test('a newly granted included benefit never reopens a paid READY checkout', asy
   assert.equal(body.fulfilledWithoutPayment, true); assert.equal(body.checkoutUrl, undefined); assert.equal(fulfilled, 1);
 });
 test('both matching surfaces use the same offer without altering approved phone rendering', () => {
-  for (const file of ['app/mypage/page.tsx', 'app/community/dating/cards/page.tsx']) {
+  for (const file of ['app/mypage/page.tsx', 'components/dating/OneOnOneHomePanel.tsx']) {
     const src = read(file); assert.ok(src.includes('<OneOnOneContactOffer')); assert.ok(src.includes('match.counterparty_phone'));
   }
 });

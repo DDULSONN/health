@@ -91,14 +91,15 @@ for (const search of ['?tab=one_on_one', '?tab=open_cards', '?tab=quick_match', 
     assert.equal(replacement, '/community/dating/cards?tab=one_on_one#one-on-one-candidates');
   } else assert.equal(replacement, undefined);
 });
-const panel = homeTree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'OneOnOneHomePanel');
+const panelTree = ast(read('components/dating/OneOnOneHomePanel.tsx'));
+const panel = panelTree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'OneOnOneHomePanel');
 const panelSource = `const {useState} = require('react');
 const Link = require('next/link');
-const {getOneOnOneActionSummary} = require('action-copy');
+const {getOneOnOneActionSummary, isIncomingOneOnOneRequest} = require('action-copy');
 const {VIEWER_SESSION_ERROR} = require('session-copy');
 const ONE_ON_ONE_HOME_HREF = ${JSON.stringify(nav.ONE_ON_ONE_HOME_HREF)};
 const buildLoginRedirect = path => '/login?redirect=' + encodeURIComponent(path);
-${panel.getText(homeTree)}
+${panel.getText(panelTree).replace('export default function', 'function')}
 module.exports = OneOnOneHomePanel;`;
 const Panel = evaluate(panelSource, { 'next/link': Link,
   'action-copy': evaluate(read('lib/dating-1on1-action-copy.ts')),
@@ -187,11 +188,25 @@ for (const file of [homeFile, mypageFile, 'components/Header.tsx', 'components/M
   const baseline = execFileSync('git', ['show', `242ec6c:${file}`], { cwd: root, encoding: 'utf8', maxBuffer: 8 * 1024 * 1024 });
   const beforeCalls = fetchCalls(baseline);
   if (file === homeFile) {
-    // The only migrated read gains timeout + stale-account cancellation. No mutation is exempted.
+    // Explicit read-only migrations. No mutation is exempted from baseline comparison.
     const summaryCall = 'fetch("/api/mypage/summary?profileOnly=1", { cache: "no-store" })';
     assert.equal(beforeCalls.filter(call => call === summaryCall).length, 1);
     assert.match(read(file), /fetchClientJson<\{ profile\?: \{ phone_verified\?: boolean \} \}>\(\s*"\/api\/mypage\/summary\?profileOnly=1", \{ cache: "no-store", signal: controller.signal \}/);
-    assert.deepEqual(fetchCalls(read(file)), beforeCalls.filter(call => call !== summaryCall));
+    const oldPoll = [
+      'fetch("/api/dating/cards/more-view/status", { cache: "no-store" })',
+      'fetch("/api/dating/cards/queue-stats", { cache: "no-store" })',
+      'fetch("/api/dating/cards/more-view/list?sex=male", { cache: "no-store" })',
+      'fetch("/api/dating/cards/more-view/list?sex=female", { cache: "no-store" })',
+    ];
+    const newPoll = [
+      'fetch("/api/dating/cards/more-view/status", { cache: "no-store", signal: controller.signal })',
+      'fetch("/api/dating/cards/queue-stats", { cache: "no-store", signal: controller.signal })',
+      'fetch(`/api/dating/cards/more-view/list?sex=${visibleSex}`, {\n            cache: "no-store", signal: controller.signal,\n          })',
+    ];
+    const afterCalls = fetchCalls(read(file));
+    for (const call of oldPoll) assert.equal(beforeCalls.filter(c => c === call).length, 1);
+    for (const call of newPoll) assert.equal(afterCalls.filter(c => c === call).length, 1);
+    assert.deepEqual(afterCalls.filter(call => !newPoll.includes(call)), beforeCalls.filter(call => call !== summaryCall && !oldPoll.includes(call)));
   } else assert.deepEqual(fetchCalls(read(file)), beforeCalls);
   assert.equal(ast(read(file)).parseDiagnostics.length, 0);
 });

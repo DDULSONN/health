@@ -155,7 +155,7 @@ function text(tree) {
   return Array.isArray(tree) ? tree.map(text).join('') : tree && typeof tree === 'object' ? text(tree.props?.children) : String(tree ?? '');
 }
 for (const remaining of [0, 1, 2]) test(`real home result markup shows ${remaining} remaining and preserves button permission`, () => {
-  const source = ast(homeFile);
+  const source = ast('components/dating/OneOnOneHomePanel.tsx');
   const call = find(source, n => ts.isCallExpression(n) && n.expression.getText(source) === 'recommendationGroups.map');
   const render = evaluate('exports.render = ' + call.arguments[0].getText(source) + ';', {
     ...copy, activeCards: [], refreshingRecommendationIds: [], onRefreshRecommendations() {},
@@ -182,7 +182,7 @@ for (const remaining of [0, 1]) test(`real mypage refresh button preserves avail
   assert.equal(tree.props.usage.refresh_remaining, remaining);
 });
 test('all affected customer copy drops ambiguous calendar-day/completion wording', () => {
-  for (const file of [homeFile, myFile, 'components/dating/DatingPlusOffers.tsx']) {
+  for (const file of [homeFile, 'components/dating/OneOnOneHomePanel.tsx', myFile, 'components/dating/DatingPlusOffers.tsx']) {
     const source = read(file);
     assert.ok(!source.includes('24시간 이용 완료'));
     assert.ok(!source.includes('후보 새로고침 하루 2회'));

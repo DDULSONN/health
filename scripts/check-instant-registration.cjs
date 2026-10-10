@@ -37,7 +37,7 @@ for (const page of ['app/dating/paid/[id]/page.tsx', 'app/dating/paid/[id]/apply
 
 function context(extra = {}) {
   const state = {};
-  const ctx = { console, viewerLoggedIn: true, activeSexRef: { current: 'male' }, secondaryCardsRequestRef: { current: 0 }, profilePresenceRequestRef: { current: 0 }, ...extra };
+  const ctx = { console, viewerLoggedIn: true, homeFeatureTabRef: { current: 'open_cards' }, activeSexRef: { current: 'male' }, secondaryCardsRequestRef: { current: 0 }, profilePresenceRequestRef: { current: 0 }, ...extra };
   for (const key of ['PaidItems','PaidCardsError','PaidCardsLoading','QueueStats','MoreViewStatus','MoreViewMale','MoreViewFemale','MyOpenCards','HomeProfilePresenceReady','OpenCardPresenceReady','OpenCardPresenceError','HasActiveOneOnOneProfile']) ctx['set'+key] = value => { state[key] = value; };
   return { ctx, state };
 }
