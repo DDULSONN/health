@@ -9,7 +9,7 @@ async function startPreview(port = 0) {
   await new Promise((resolve, reject) => {
     const compiler = webpack({ mode: 'development', devtool: false,
       entry: path.join(__dirname, 'fixtures/profile-writing-browser.tsx'),
-      output: { path: output, filename: 'fixture.js' },
+      output: { path: output, filename: 'fixture.js', chunkFilename: '[name].chunk.js', publicPath: '/' },
       resolve: { extensions: ['.tsx', '.ts', '.js'], fallback: { crypto: false }, alias: {
         'next/link': adapter, 'next/image': adapter, 'next/navigation': adapter,
         '@/lib/supabase/client': adapter, '@/components/DatingAdultNotice': adapter, '@': root,
@@ -25,7 +25,10 @@ async function startPreview(port = 0) {
   const server = http.createServer((req, res) => {
     res.setHeader('Content-Security-Policy', "default-src 'self'; connect-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'");
     const url = new URL(req.url, 'http://localhost');
-    if (url.pathname === '/fixture.js') { res.setHeader('Content-Type', 'text/javascript'); res.end(fs.readFileSync(path.join(output, 'fixture.js'))); return; }
+    const scriptName = url.pathname.slice(1);
+    if (/^[A-Za-z0-9_.-]+\.js$/.test(scriptName) && fs.existsSync(path.join(output, scriptName))) {
+      res.setHeader('Content-Type', 'text/javascript'); res.end(fs.readFileSync(path.join(output, scriptName))); return;
+    }
     if (url.pathname === '/fixture.css') { res.setHeader('Content-Type', 'text/css'); res.end(css); return; }
     if (/^\/landing\/reviews\/review-\d{2}\.webp$/.test(url.pathname)) {
       const imagePath = path.join(root, 'public', url.pathname);
