@@ -3,17 +3,17 @@
 import Link from "next/link";
 import SignupProgress from "@/components/dating/SignupProgress";
 import SignupStories from "@/components/SignupStories";
-import { useEffect, useState, type FormEvent } from "react";
+import SignupEmailVerification from "@/components/SignupEmailVerification";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { normalizeNickname, validateNickname } from "@/lib/nickname";
 import { isValidReferralCode, normalizeReferralCode } from "@/lib/referral-code";
 import { EMAIL_CONSENT_LABEL, EMAIL_CONSENT_DESCRIPTION } from "@/lib/signup-email-consent";
 import { beginGrowthSignup, cancelGrowthSignup, recordGrowthEmailSignup } from "@/lib/growth-analytics";
+import { clearPendingSignup, newPendingSignup, readPendingSignup, readSignupEmail, rememberSignupEmail, rememberSignupReferral, savePendingSignup, type PendingSignup } from "@/lib/signup-verification";
 
 const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
-const STORED_EMAIL_KEY = "recent_login_email";
-const PENDING_REFERRAL_KEY = "pending_signup_referral";
 const NICKNAME_MAX = 12;
 const SIGNUP_NEXT = "/onboarding/dating";
 
@@ -64,13 +64,23 @@ export default function SignupPage() {
   const [referralCodeMessage, setReferralCodeMessage] = useState("");
 
   const [loading, setLoading] = useState(false);
-  const [resending, setResending] = useState(false);
+  // Lock synchronously, before referral validation or consent preparation awaits.
+  const signupLock = useRef(false);
+  const referralValidationVersion = useRef(0);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
-  const [submittedEmail, setSubmittedEmail] = useState("");
+  const [pendingVerification, setPendingVerification] = useState<PendingSignup | null>(null);
 
   useEffect(() => {
-    const stored = window.localStorage.getItem(STORED_EMAIL_KEY) ?? "";
+    const pending = readPendingSignup();
+    if (pending) {
+      setPendingVerification(pending);
+      setEmail(pending.email);
+      setReferralCode(pending.referralCode);
+      setStep("pending_verify");
+      return;
+    }
+    const stored = readSignupEmail();
     if (stored) setEmail(stored);
 
     const codeFromUrl = normalizeReferralCode(new URLSearchParams(window.location.search).get("ref"));
@@ -79,6 +89,7 @@ export default function SignupPage() {
     setReferralCode(codeFromUrl);
     setReferralFormOpen(true);
     setReferralCodeStatus("checking");
+    const version = ++referralValidationVersion.current;
     const controller = new AbortController();
     void fetch(`/api/referrals/validate?code=${encodeURIComponent(codeFromUrl)}`, {
       cache: "no-store",
@@ -90,6 +101,7 @@ export default function SignupPage() {
           inviterNickname?: string | null;
           message?: string;
         };
+        if (controller.signal.aborted || version !== referralValidationVersion.current) return;
         if (!response.ok || body.valid !== true) {
           setReferralCodeStatus("invalid");
           setReferralCodeMessage(body.message ?? "유효하지 않은 추천 코드입니다.");
@@ -101,6 +113,7 @@ export default function SignupPage() {
         );
       })
       .catch((requestError) => {
+        if (controller.signal.aborted || version !== referralValidationVersion.current) return;
         if (requestError instanceof DOMException && requestError.name === "AbortError") return;
         setReferralCodeStatus("invalid");
         setReferralCodeMessage("추천 코드를 확인하지 못했습니다. 다시 시도해 주세요.");
@@ -110,6 +123,7 @@ export default function SignupPage() {
   }, []);
 
   const validateCurrentReferralCode = async () => {
+    const version = ++referralValidationVersion.current;
     const code = normalizeReferralCode(referralCode);
     if (!code) {
       setReferralCodeStatus("idle");
@@ -128,12 +142,14 @@ export default function SignupPage() {
     try {
       const response = await fetch(`/api/referrals/validate?code=${encodeURIComponent(code)}`, {
         cache: "no-store",
+        signal: AbortSignal.timeout(10000),
       });
       const body = (await response.json().catch(() => ({}))) as {
         valid?: boolean;
         inviterNickname?: string | null;
         message?: string;
       };
+      if (version !== referralValidationVersion.current) return false;
       if (!response.ok || body.valid !== true) {
         setReferralCodeStatus("invalid");
         setReferralCodeMessage(body.message ?? "유효하지 않은 추천 코드입니다.");
@@ -145,6 +161,7 @@ export default function SignupPage() {
       );
       return true;
     } catch {
+      if (version !== referralValidationVersion.current) return false;
       setReferralCodeStatus("invalid");
       setReferralCodeMessage("추천 코드를 확인하지 못했습니다. 다시 시도해 주세요.");
       return false;
@@ -153,7 +170,7 @@ export default function SignupPage() {
 
   const handleSignup = async (event?: FormEvent<HTMLFormElement>) => {
     event?.preventDefault();
-    if (loading) return;
+    if (signupLock.current) return;
     const normalized = email.trim().toLowerCase();
     const cleanNickname = normalizeNickname(nickname);
     if (!normalized) {
@@ -173,16 +190,16 @@ export default function SignupPage() {
       setError("비밀번호 확인이 일치하지 않습니다.");
       return;
     }
-    if (!(await validateCurrentReferralCode())) {
-      setError("추천 코드를 다시 확인하거나 입력란을 비워주세요.");
-      return;
-    }
-
+    signupLock.current = true;
     setLoading(true);
     setError(null);
     setInfo(null);
 
     try {
+      if (!(await validateCurrentReferralCode())) {
+        setError("추천 코드를 다시 확인하거나 입력란을 비워주세요.");
+        return;
+      }
       const supabase = createClient();
       const cleanReferralCode = normalizeReferralCode(referralCode);
       const consentToken = await prepareEmailConsent("email", normalized);
@@ -209,8 +226,8 @@ export default function SignupPage() {
 
       if (duplicateFromMessage || duplicateFromUserShape) {
         cancelGrowthSignup();
-        window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
-        setSubmittedEmail(normalized);
+        rememberSignupEmail(normalized);
+        clearPendingSignup();
         setStep("existing_account");
         setError("이미 가입된 이메일입니다. 로그인해 주세요.");
         return;
@@ -223,13 +240,13 @@ export default function SignupPage() {
       }
 
       recordGrowthEmailSignup(data.user);
-      window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
-      setSubmittedEmail(normalized);
+      rememberSignupEmail(normalized);
       if (data.session && cleanReferralCode) {
         await fetch("/api/referrals/claim", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ code: cleanReferralCode }),
+          signal: AbortSignal.timeout(4000),
         }).catch(() => null);
       }
       if (data.session && consentToken) {
@@ -238,47 +255,19 @@ export default function SignupPage() {
           body: JSON.stringify({ action: "record", token: consentToken }), signal: AbortSignal.timeout(4000),
         }).catch(() => null);
       }
+      const pending = newPendingSignup(normalized, cleanReferralCode);
+      savePendingSignup(pending);
+      setPendingVerification(pending);
+      setPassword("");
+      setPasswordConfirm("");
       setStep("pending_verify");
-      setInfo(`가입 요청이 완료되었습니다. 메일함에서 인증 후 로그인하세요.${emailMarketingConsent && !consentToken ? " 광고성 이메일 수신 동의는 저장되지 않았습니다." : ""}`);
+      setInfo(emailMarketingConsent && !consentToken ? "가입 요청은 완료됐지만, 광고성 이메일 수신 동의는 저장되지 않았습니다." : null);
     } catch (e) {
       cancelGrowthSignup();
       setError(e instanceof Error ? e.message : "회원가입 처리 중 오류가 발생했습니다.");
     } finally {
+      signupLock.current = false;
       setLoading(false);
-    }
-  };
-
-  const handleResend = async () => {
-    const targetEmail = (submittedEmail || email).trim().toLowerCase();
-    if (!targetEmail) {
-      setError("이메일을 입력해 주세요.");
-      return;
-    }
-
-    setResending(true);
-    setError(null);
-
-    try {
-      const supabase = createClient();
-      const { error: resendError } = await supabase.auth.resend({
-        type: "signup",
-        email: targetEmail,
-        options: {
-          emailRedirectTo: buildCanonicalCallbackUrl(SIGNUP_NEXT, referralCode),
-        },
-      });
-
-      if (resendError) {
-        setError(resendError.message);
-        return;
-      }
-
-      window.localStorage.setItem(STORED_EMAIL_KEY, targetEmail);
-      setInfo("인증 메일을 다시 보냈습니다. 메일함을 확인해 주세요.");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "인증 메일 재발송에 실패했습니다.");
-    } finally {
-      setResending(false);
     }
   };
 
@@ -295,29 +284,24 @@ export default function SignupPage() {
   };
 
   const handleSocialSignup = async (provider: SocialProvider) => {
-    if (loading) return;
+    if (signupLock.current) return;
     const providerLabel = provider === "apple" ? "Apple" : "Google";
-    if (!(await validateCurrentReferralCode())) {
-      setError("추천 코드를 다시 확인하거나 입력란을 비워주세요.");
-      return;
-    }
+    signupLock.current = true;
     setLoading(true);
     setError(null);
     setInfo(null);
 
+    let leavingForProvider = false;
     try {
+      if (!(await validateCurrentReferralCode())) {
+        setError("추천 코드를 다시 확인하거나 입력란을 비워주세요.");
+        return;
+      }
       const supabase = createClient();
       const cleanReferralCode = normalizeReferralCode(referralCode);
       const consentToken = await prepareEmailConsent(provider);
       if (emailMarketingConsent && !consentToken) alert("광고성 이메일 수신 동의는 저장되지 않았습니다. 회원가입은 계속 진행합니다.");
-      if (isValidReferralCode(cleanReferralCode)) {
-        window.localStorage.setItem(
-          PENDING_REFERRAL_KEY,
-          JSON.stringify({ code: cleanReferralCode, createdAt: Date.now() })
-        );
-      } else {
-        window.localStorage.removeItem(PENDING_REFERRAL_KEY);
-      }
+      rememberSignupReferral(isValidReferralCode(cleanReferralCode) ? cleanReferralCode : "");
       beginGrowthSignup(provider);
       const { error: authError } = await supabase.auth.signInWithOAuth({
         provider,
@@ -327,15 +311,18 @@ export default function SignupPage() {
       });
       if (authError) {
         cancelGrowthSignup();
-        window.localStorage.removeItem(PENDING_REFERRAL_KEY);
+        rememberSignupReferral("");
         setError(mapSocialAuthError(providerLabel, authError.message));
-        setLoading(false);
-      }
+      } else leavingForProvider = true;
     } catch (e) {
       cancelGrowthSignup();
-      window.localStorage.removeItem(PENDING_REFERRAL_KEY);
+      rememberSignupReferral("");
       setError(e instanceof Error ? e.message : `${providerLabel} 회원가입 중 오류가 발생했습니다.`);
-      setLoading(false);
+    } finally {
+      if (!leavingForProvider) {
+        signupLock.current = false;
+        setLoading(false);
+      }
     }
   };
 
@@ -380,6 +367,7 @@ export default function SignupPage() {
               type="button"
               aria-expanded={emailFormOpen}
               aria-controls="email-signup-form"
+              disabled={loading}
               onClick={() => {
                 setEmailFormOpen((open) => !open);
                 setError(null);
@@ -399,6 +387,7 @@ export default function SignupPage() {
               </label>
               <input
                 id="signup-email"
+                disabled={loading}
                 name="email"
                 type="email"
                 value={email}
@@ -418,6 +407,7 @@ export default function SignupPage() {
               </label>
               <input
                 id="signup-nickname"
+                disabled={loading}
                 name="nickname"
                 type="text"
                 value={nickname}
@@ -435,6 +425,7 @@ export default function SignupPage() {
               </label>
               <input
                 id="signup-password"
+                disabled={loading}
                 name="password"
                 type="password"
                 value={password}
@@ -451,6 +442,7 @@ export default function SignupPage() {
               </label>
               <input
                 id="signup-password-confirm"
+                disabled={loading}
                 name="password-confirm"
                 type="password"
                 value={passwordConfirm}
@@ -491,6 +483,7 @@ export default function SignupPage() {
               type="button"
               aria-expanded={referralFormOpen}
               aria-controls="signup-referral-form"
+              disabled={loading}
               onClick={() => {
                 setReferralFormOpen((open) => !open);
                 setError(null);
@@ -507,16 +500,18 @@ export default function SignupPage() {
                 </label>
                 <input
                   id="signup-referral-code"
+                  disabled={loading}
                   name="referral-code"
                   type="text"
                   value={referralCode}
                   onChange={(event) => {
+                    referralValidationVersion.current++;
                     setReferralCode(normalizeReferralCode(event.target.value));
                     setReferralCodeStatus("idle");
                     setReferralCodeMessage("");
                     setError(null);
                   }}
-                  onBlur={() => void validateCurrentReferralCode()}
+                  onBlur={() => { if (!signupLock.current) void validateCurrentReferralCode(); }}
                   placeholder="추천 코드 입력"
                   maxLength={16}
                   autoCapitalize="characters"
@@ -547,24 +542,20 @@ export default function SignupPage() {
         </div>
       )}
 
-      {step === "pending_verify" && (
-        <div className="space-y-2">
-          <button
-            type="button"
-            onClick={() => router.replace(`/login?tab=password&next=${encodeURIComponent(SIGNUP_NEXT)}`)}
-            className="w-full min-h-[48px] rounded-xl bg-emerald-600 text-white font-medium"
-          >
-            로그인으로 이동
-          </button>
-          <button
-            type="button"
-            onClick={handleResend}
-            disabled={resending}
-            className="w-full min-h-[48px] rounded-xl border border-neutral-300 text-neutral-700 font-medium disabled:opacity-50"
-          >
-            {resending ? "재발송 중..." : "인증 메일 다시 보내기"}
-          </button>
-        </div>
+      {step === "pending_verify" && pendingVerification && (
+        <SignupEmailVerification
+          pending={pendingVerification}
+          callbackUrl={buildCanonicalCallbackUrl(SIGNUP_NEXT, pendingVerification.referralCode)}
+          onResent={setPendingVerification}
+          onChangeEmail={() => {
+            clearPendingSignup();
+            setPendingVerification(null);
+            setStep("form");
+            setEmailFormOpen(true);
+            setError(null);
+            setInfo("이메일 주소를 수정하고 가입을 다시 진행해 주세요. 이전 주소로 보낸 가입 요청은 변경되지 않습니다.");
+          }}
+        />
       )}
 
       {step === "existing_account" && (
@@ -586,12 +577,12 @@ export default function SignupPage() {
         </div>
       )}
 
-      <p className="mt-6 text-sm text-neutral-600">
+      {step !== "pending_verify" && <p className="mt-6 text-sm text-neutral-600">
         이미 계정이 있나요?{" "}
         <Link href={`/login?tab=password&next=${encodeURIComponent(SIGNUP_NEXT)}`} className="text-emerald-700 underline">
           로그인
         </Link>
-      </p>
+      </p>}
       {step === "form" && <SignupStories />}
     </main>
   );

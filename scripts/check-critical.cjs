@@ -8,6 +8,8 @@ for (const key of Object.keys(env)) {
   if (/SUPABASE|SOLAPI|RESEND|TOSS|KAKAO|SERVICE_ROLE|CRON_SECRET|PAYMENT_SECRET|SMTP/i.test(key)) delete env[key];
 }
 const unitFiles = [
+  'check-signup-verification.cjs',
+  'check-signup-email-consent.cjs',
   'check-home-performance.cjs',
   'check-dating-expansion-mail.cjs',
   'check-dating-1on1-expansion.cjs',
@@ -51,6 +53,7 @@ const unitFiles = [
   'check-profiles-authority-write-guard.cjs',
 ];
 const browserFiles = [
+  'check-signup-verification-browser.cjs',
   'check-home-performance-browser.cjs',
   'check-signup-stories-browser.cjs',
   'check-signup-profile-journey-browser.cjs',

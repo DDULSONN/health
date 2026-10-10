@@ -59,14 +59,33 @@ test('pre-aborted checks never read auth', async () => {
   const controller = new AbortController(); controller.abort();
   await assert.rejects(readOnboardingUser({ getUser() { assert.fail('unexpected read'); } }, { signal: controller.signal }), { name: 'AbortError' });
 });
-test('signup handlers, OTP mutations, profile submission and upload handlers remain byte-identical', () => {
+test('OTP mutations, profile submission and upload handlers remain byte-identical', () => {
   // LF-normalized c22d36b handlers; works in shallow/no-Git deployment builds too.
   for (const [file, start, end, hash] of [
-    ['app/signup/page.tsx', '  const handle', '\n  return (', '8a5798198d3fd5082a3c4918303d520d5483b1f37f7ca3818aab1a493d428370'],
     ['app/phone-verification/page.tsx', '  const sendCode =', '\n  if (checking)', 'ebe190d836898a7caf65ea1eefed6adac07b8a8227f75ba423acc8f30c89769e'],
     ['app/onboarding/dating/page.tsx', '  const importOpenCard =', '\n  if (checking)', 'fd9d533dd719c82c1c5e111971352b9934bb4be2fd3173252df9d62185c3caac'],
   ]) {
     const slice = source => { assert.ok(source.includes(start)); return source.slice(source.indexOf(start), source.indexOf(end, source.indexOf(start))); };
     assert.equal(createHash('sha256').update(slice(read(file))).digest('hex'), hash, file);
   }
+});
+
+test('signup safety UI changes preserve the exact email/OAuth auth request payloads', () => {
+  // Signup handlers now intentionally add locks/storage safety. Pin the actual SDK
+  // mutation arguments from f9a0327 instead of freezing the entire UI handler.
+  const source = read('app/signup/page.tsx');
+  const ast = ts.createSourceFile('page.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const expected = new Map([
+    ['supabase.auth.signUp', 'df51e1506a3416be41a587df01cdcc7d56f4e8d86b66b679e8a15decd9cb3367'],
+    ['supabase.auth.signInWithOAuth', 'cbc2b215646c586fccc03bfc6e065edc13eb03d3ca5a48f4cb75eab2dcb26c84'],
+  ]);
+  let checked = 0;
+  const visit = node => {
+    if (ts.isCallExpression(node) && expected.has(node.expression.getText(ast))) {
+      assert.equal(createHash('sha256').update(node.arguments[0].getText(ast)).digest('hex'), expected.get(node.expression.getText(ast)));
+      checked++;
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(ast); assert.equal(checked, 2);
 });

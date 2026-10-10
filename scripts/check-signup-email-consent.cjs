@@ -55,11 +55,13 @@ assert.equal(server.readSignupEmailConsentToken(token, { ...user, app_metadata: 
   global.alert = () => {};
   global.fetch = async (_, options) => { if (failPrepare) throw new Error("offline"); const body = JSON.parse(options.body); return { ok: true, json: async () => ({ token: `choice-${body.consented}` }) }; };
   const Page = load("app/signup/page.tsx", (id) => {
-    if (id === "react") return { ...React, useEffect: () => {}, useState: (initial) => { const i = index++; if (!(i in states)) states[i] = initial; return [states[i], (value) => { states[i] = typeof value === "function" ? value(states[i]) : value; }]; } };
+    if (id === "react") return { ...React, useEffect: () => {}, useRef: initial => { const i = index++; if (!(i in states)) states[i] = { current: initial }; return states[i]; }, useState: (initial) => { const i = index++; if (!(i in states)) states[i] = initial; return [states[i], (value) => { states[i] = typeof value === "function" ? value(states[i]) : value; }]; } };
     if (id === "react/jsx-runtime") return require(id);
     if (id === "next/link") return ({ children, href }) => React.createElement("a", { href }, children);
     if (id === "next/navigation") return { useRouter: () => ({ replace: () => {} }) };
     if (id.endsWith("supabase/client")) return { createClient: () => supabase };
+    if (id.startsWith("@/components/")) return () => null;
+    if (id.endsWith("/signup-verification")) return load("lib/signup-verification.ts");
     if (id.endsWith("/signup-email-consent")) return copy;
     if (id.endsWith("/growth-analytics")) return load("lib/growth-analytics.ts");
     if (id.endsWith("/nickname")) return { normalizeNickname: (s) => s, validateNickname: () => null };
