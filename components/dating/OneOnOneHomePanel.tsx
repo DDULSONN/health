@@ -130,6 +130,8 @@ export default function OneOnOneHomePanel({
   sessionError,
   onRetrySession,
   error,
+  recommendationsLoading = false,
+  recommendationsError = "",
   data,
   processingMatchIds,
   processingContactIds,
@@ -153,6 +155,8 @@ export default function OneOnOneHomePanel({
   sessionError: boolean;
   onRetrySession: () => void;
   error: string;
+  recommendationsLoading?: boolean;
+  recommendationsError?: string;
   data: OneOnOneHomeState | null;
   processingMatchIds: string[];
   processingContactIds: string[];
@@ -174,6 +178,11 @@ export default function OneOnOneHomePanel({
   const [visibleMatchCount, setVisibleMatchCount] = useState(8);
   const focusedMatchRef = useRef<HTMLDivElement>(null);
   const scrolledMatchId = useRef<string | null>(null);
+  const profileSectionRef = useRef<HTMLDetailsElement>(null);
+  const recommendationSectionRef = useRef<HTMLDivElement>(null);
+  const incomingSectionRef = useRef<HTMLDivElement>(null);
+  const nextStepsSectionRef = useRef<HTMLDivElement>(null);
+  const matchesSectionRef = useRef<HTMLDivElement>(null);
   const targetMatchId = normalizeOneOnOneMatchId(focusedMatchId);
   const myCards = data?.myCards ?? [];
   const matches = data?.matches ?? [];
@@ -207,6 +216,30 @@ export default function OneOnOneHomePanel({
     if (aImportant !== bImportant) return bImportant - aImportant;
     return String(b.created_at ?? "").localeCompare(String(a.created_at ?? ""));
   });
+  // Shortcuts only move focus/scroll; they never refresh candidates or submit an action.
+  function jumpToSection(section: HTMLElement | null) {
+    if (!section) return;
+    section.scrollIntoView({ block: "start", behavior: "auto" });
+    section.focus({ preventScroll: true });
+  }
+  function jumpToProfile() {
+    if (profileSectionRef.current) profileSectionRef.current.open = true;
+    jumpToSection(profileSectionRef.current);
+  }
+  function jumpToMatchSummary() {
+    if (actionSummary.primary.label === "받은 요청" && actionSummary.primary.count > 0) {
+      // Open only the inbox header, never a profile or match-action button.
+      if (incomingRequests.length > 0) {
+        incomingSectionRef.current?.querySelector<HTMLButtonElement>(':scope > section > button[aria-expanded="false"]')?.click();
+      }
+      jumpToSection(incomingRequests.length > 0 ? incomingSectionRef.current : focusedMatchRef.current);
+    } else if (["내 수락 대기", "연락처 교환 대기"].includes(actionSummary.primary.label) && nextStepsSectionRef.current?.firstElementChild) {
+      jumpToSection(nextStepsSectionRef.current);
+    } else {
+      jumpToSection(matchesSectionRef.current);
+    }
+  }
+  const shortcutsDisabled = loading || sessionError || Boolean(error);
   return (
     <section id="one-on-one-candidates" className="mb-5 rounded-2xl border border-neutral-200 bg-white p-4 shadow-none md:p-6">
       {arrivedFromOnboarding ? (
@@ -253,20 +286,23 @@ export default function OneOnOneHomePanel({
       ) : null}
 
       {viewerLoggedIn && hasOneOnOneCard ? (
-        <div className="mt-4 grid grid-cols-3 divide-x divide-neutral-100 border-y border-neutral-100 py-3">
-          <div className="px-2 text-center">
-            <p className="text-[11px] font-medium text-neutral-500">내 프로필</p>
-            <p className="mt-1 text-base font-semibold tabular-nums text-neutral-900">{activeCards.length}개</p>
-          </div>
-          <div className="px-2 text-center">
-            <p className="text-[11px] font-medium text-neutral-500">추천 후보</p>
-            <p className="mt-1 text-base font-semibold tabular-nums text-neutral-900">{recommendationCount}명</p>
-          </div>
-          <div className="px-2 text-center">
-            <p className="text-[11px] font-medium text-neutral-500">{actionSummary.primary.label}</p>
-            <p className="mt-1 text-base font-semibold tabular-nums text-neutral-900">{actionSummary.primary.count}건</p>
-          </div>
-        </div>
+        <nav aria-label="1대1 바로가기" className="mt-4 grid grid-cols-3 divide-x divide-neutral-100 border-y border-neutral-100 py-1">
+          <button type="button" disabled={shortcutsDisabled} onClick={jumpToProfile}
+            className="min-h-[64px] rounded-lg px-2 py-2 text-center hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-rose-500 disabled:opacity-50">
+            <span className="block text-[11px] font-medium text-neutral-600">내 프로필 <span aria-hidden="true">›</span></span>
+            <span className="mt-1 block text-base font-semibold tabular-nums text-neutral-900">{activeCards.length}개</span>
+          </button>
+          <button type="button" disabled={shortcutsDisabled} onClick={() => jumpToSection(recommendationSectionRef.current)}
+            className="min-h-[64px] rounded-lg px-2 py-2 text-center hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-rose-500 disabled:opacity-50">
+            <span className="block text-[11px] font-medium text-neutral-600">추천 후보 <span aria-hidden="true">›</span></span>
+            <span className="mt-1 block text-base font-semibold tabular-nums text-neutral-900">{recommendationCount}명</span>
+          </button>
+          <button type="button" disabled={shortcutsDisabled} onClick={jumpToMatchSummary}
+            className="min-h-[64px] rounded-lg px-2 py-2 text-center hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-rose-500 disabled:opacity-50">
+            <span className="block text-[11px] font-medium text-neutral-600">{actionSummary.primary.label} <span aria-hidden="true">›</span></span>
+            <span className="mt-1 block text-base font-semibold tabular-nums text-neutral-900">{actionSummary.primary.count}건</span>
+          </button>
+        </nav>
       ) : null}
       {viewerLoggedIn && hasOneOnOneCard && actionSummary.otherDetail ? <p className="mt-2 break-words text-[11px] leading-5 text-neutral-500">{actionSummary.otherDetail}</p> : null}
 
@@ -293,7 +329,9 @@ export default function OneOnOneHomePanel({
             <p>{error}</p>
             <button type="button" onClick={onReload} className="mt-3 min-h-[44px] rounded-xl border border-neutral-300 bg-white px-3 font-medium text-neutral-700">명단 다시 불러오기 · 횟수 차감 없음</button>
           </div>
-        ) : !hasOneOnOneCard && matches.length === 0 ? (
+        ) : (
+          <div className="flex flex-col gap-5">
+            {!hasOneOnOneCard ? (
           <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-5">
             <p className="text-lg font-black text-rose-950">아직 1대1 프로필이 없어요.</p>
             <p className="mt-2 text-sm leading-6 text-rose-900">
@@ -306,10 +344,9 @@ export default function OneOnOneHomePanel({
               {profileStartCta}
             </Link>
           </div>
-        ) : (
-          <div className="space-y-4">
+            ) : null}
             {targetMatchId ? <div id="selected-one-on-one-match" ref={focusedMatchRef} tabIndex={-1}
-              className="scroll-mt-28 rounded-2xl border border-rose-200 bg-rose-50/30 p-3 outline-none focus-visible:ring-2 focus-visible:ring-rose-300">
+              className="scroll-mt-40 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-rose-300">
               <p className="mb-2 text-xs font-semibold text-neutral-700">선택한 매칭</p>
               {focusedMatch?.counterparty_card ? <OneOnOneCandidateCard compact
                 card={focusedMatch.counterparty_card} reportTarget={{ type: "one_on_one_match", id: focusedMatch.id }}
@@ -321,7 +358,10 @@ export default function OneOnOneHomePanel({
                   onContactCheckout={onContactCheckout} onContactNudge={onContactNudge} />
               </OneOnOneCandidateCard> : <p className="text-xs leading-5 text-neutral-600">이 매칭을 확인할 수 없어요. 종료·삭제되었거나 현재 계정에서 볼 수 없는 매칭일 수 있어요.</p>}
             </div> : null}
-            <OneOnOneNextSteps matches={activeMatches} />
+            <div ref={nextStepsSectionRef} tabIndex={-1} data-one-on-one-section="next-steps" className="scroll-mt-40 rounded-xl outline-none empty:hidden focus-visible:ring-2 focus-visible:ring-rose-300">
+              <OneOnOneNextSteps matches={activeMatches} />
+            </div>
+            <div ref={incomingSectionRef} tabIndex={-1} data-one-on-one-section="incoming" className="scroll-mt-40 rounded-xl outline-none empty:hidden focus-visible:ring-2 focus-visible:ring-rose-300">
             <OneOnOneIncomingRequests requests={incomingRequests} renderRequest={(match) => match.counterparty_card ? (
               <OneOnOneCandidateCard
                 compact
@@ -348,120 +388,8 @@ export default function OneOnOneHomePanel({
                 <button type="button" onClick={onReload} className="mt-1 min-h-[44px] underline underline-offset-2">명단 다시 불러오기 · 횟수 차감 없음</button>
               </div>
             )} />
-            <details className="rounded-[24px] border border-neutral-100 bg-neutral-50/70 px-4 py-3">
-              <summary className="cursor-pointer select-none text-sm font-semibold text-neutral-700">내 1대1 프로필 보기</summary>
-              <div className="mt-3 space-y-2">
-                {activeCards.slice(0, 3).map((card) => (
-                  <div key={card.id ?? getOneOnOneDisplayName(card)} className="rounded-2xl bg-white px-3 py-3">
-                    <p className="text-sm font-semibold text-neutral-900">{getOneOnOneDisplayName(card)}</p>
-                    <p className="mt-1 text-xs font-normal text-neutral-500">{getOneOnOneMeta(card)}</p>
-                    <span className="mt-2 inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
-                      {card.status === "approved" ? "승인 완료" : card.status === "reviewing" ? "검토 중" : "접수 완료"}
-                    </span>
-                  </div>
-                ))}
-                <Link
-                  href="/mypage?section=matching"
-                  className="inline-flex min-h-[40px] w-full items-center justify-center rounded-2xl border border-neutral-200 bg-white text-sm font-bold text-neutral-700 hover:bg-neutral-100"
-                >
-                  마이페이지에서 전체 관리
-                </Link>
-              </div>
-            </details>
-
-            {plusActive && data?.plus?.expires_at ? <OneOnOnePlusStatus expiresAt={data.plus.expires_at} contactExchangeIncluded={plusContactExchangeIncluded} /> : <div className="relative overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 p-4 shadow-none">
-              <div aria-hidden="true" className="absolute inset-x-10 top-0 h-px bg-transparent" />
-              <div className="relative flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <span className="shrink-0 whitespace-nowrap rounded-full border border-neutral-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-neutral-700">PLUS</span>
-                    <p className="text-sm font-semibold text-neutral-900">1:1 매칭 플러스</p>
-                  </div>
-                  <p className="mt-2 text-xs leading-5 text-neutral-600">
-                    {plusContactExchangeIncluded
-                      ? "기존 혜택 적용 중 · 번호교환 포함 · 새로고침 최근 24시간 2회"
-                      : "7일 9,900원부터 · 새로고침 최근 24시간 2회 · 프로필 우선 노출"}
-                  </p>
-                  {!plusContactExchangeIncluded ? (
-                    <p className="mt-1 text-[11px] font-semibold text-neutral-500">번호교환은 기존처럼 건별 결제돼요.</p>
-                  ) : null}
-                  {plusActive && data?.plus?.expires_at ? (
-                    <p className="mt-1 text-[11px] font-medium text-neutral-600">
-                      {new Date(data.plus.expires_at).toLocaleString("ko-KR")}까지 이용 가능
-                    </p>
-                  ) : null}
-                </div>
-                {plusActive ? (
-                  <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 shadow-none">
-                    적용 중
-                  </span>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setPlusGuideOpen((open) => !open)}
-                    className="h-9 shrink-0 rounded-full bg-neutral-900 px-4 text-xs font-bold text-white shadow-none transition hover:bg-neutral-800"
-                  >
-                    {plusGuideOpen ? "닫기" : "혜택 보기"}
-                  </button>
-                )}
-              </div>
-              {!plusActive && plusGuideOpen ? (
-                <div className="relative mt-4 border-t border-neutral-200 pt-4">
-                  <p className="mb-3 text-xs leading-5 text-neutral-600">짧게 먼저 써보거나, 두 매칭 플러스를 한 번에 시작할 수 있어요.</p>
-                  <DatingPlusOffers
-                    mode="one_on_one"
-                    placement="open_card_one_on_one_panel"
-                    oneOnOneCardId={String(activeCards[0]?.id ?? "")}
-                  />
-                </div>
-              ) : null}
-            </div>}
-
-            <div className="rounded-2xl border border-neutral-200 bg-white p-4 shadow-none">
-              <div className="flex items-center justify-between gap-3">
-                <div>
-                  <p className="text-base font-bold text-neutral-900">진행 중인 매칭</p>
-                  <p className="mt-1 text-xs leading-5 text-neutral-500">요청 보내기, 수락, 연락처 교환이 필요한 항목을 먼저 보여드려요.</p>
-                </div>
-                <span className="shrink-0 whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-bold text-neutral-500">{sortedMatches.length}건</span>
-              </div>
-              {sortedMatches.length === 0 ? (
-                <p className="mt-3 rounded-2xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-500">보낸 요청과 서로 수락한 매칭은 여기에 표시돼요.</p>
-              ) : (
-                <div className="mt-3 space-y-3">
-                  {sortedMatches.slice(0, visibleMatchCount).map((match) => (
-                    <OneOnOneCandidateCard
-                      key={match.id}
-                      compact={match.state === "proposed"}
-                      card={match.counterparty_card}
-                      reportTarget={{ type: "one_on_one_match", id: match.id }}
-                      onReported={onReported}
-                      badge={getOneOnOneMatchLabel(match)}
-                      badgeClassName={match.action_required || match.state === "mutual_accepted" ? "bg-emerald-100 text-emerald-700" : "bg-white text-neutral-600"}
-                      note={oneOnOneContactLabel(match.contact_exchange_status)}
-                    >
-                      {match.counterparty_phone ? <p className="mt-2 text-sm font-black text-emerald-700">{match.counterparty_phone}</p> : null}
-                      <OneOnOneMatchActions
-                        match={match}
-                        contactExchangeIncluded={plusContactExchangeIncluded}
-                        processing={processingMatchIds.includes(match.id)}
-                        contactProcessing={processingContactIds.includes(match.id)}
-                        nudgeProcessing={processingNudgeIds.includes(match.id)}
-                        onMatchAction={onMatchAction}
-                        onContactCheckout={onContactCheckout}
-                        onContactNudge={onContactNudge}
-                      />
-                    </OneOnOneCandidateCard>
-                  ))}
-                  {sortedMatches.length > visibleMatchCount ? <button type="button" onClick={() => setVisibleMatchCount((count) => count + 8)}
-                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 text-xs font-medium text-neutral-600">
-                    진행 중 매칭 더보기 · {sortedMatches.length - visibleMatchCount}건
-                  </button> : null}
-                </div>
-              )}
             </div>
-
-            <div className="rounded-2xl border border-neutral-200 bg-white p-4">
+            {hasOneOnOneCard ? <div ref={recommendationSectionRef} tabIndex={-1} data-one-on-one-section="recommendations" className="scroll-mt-40 rounded-xl outline-none focus-visible:ring-2 focus-visible:ring-rose-300">
               <div className="flex items-start justify-between gap-3">
                 <div>
                   <p className="text-base font-bold text-neutral-900">추천 후보</p>
@@ -472,7 +400,15 @@ export default function OneOnOneHomePanel({
                 <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-rose-700">{recommendationCount}명</span>
               </div>
 
-              {recommendationGroups.length === 0 ? (
+              {recommendationsLoading ? (
+                <p role="status" className="mt-3 rounded-xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-600">추천 후보를 불러오는 중이에요.</p>
+              ) : recommendationsError ? (
+                <div role="alert" className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-4 text-sm leading-6 text-neutral-600">
+                  <p>{recommendationsError}</p>
+                  <p className="mt-1 text-xs">진행 중인 매칭과 교환된 연락처는 계속 확인할 수 있어요.</p>
+                  <button type="button" data-recommendation-retry onClick={onReload} className="mt-2 min-h-[44px] text-xs font-medium text-neutral-700 underline underline-offset-2">추천 후보 다시 불러오기 · 횟수 차감 없음</button>
+                </div>
+              ) : recommendationGroups.length === 0 ? (
                 <p className="mt-3 rounded-xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-600">현재 보여줄 추천 후보가 없어요. 조건에 맞는 후보가 생기면 여기서 바로 볼 수 있습니다.</p>
               ) : (
                 <div className="mt-3 space-y-4">
@@ -485,7 +421,7 @@ export default function OneOnOneHomePanel({
                     const canRefresh = Boolean(sourceCardId && group.can_refresh);
 
                     return (
-                      <div key={sourceCardId || `group-${groupIndex}`} className="rounded-[24px] bg-white p-3 shadow-none">
+                      <div key={sourceCardId || `group-${groupIndex}`} className="bg-white">
                         <div className="flex flex-wrap items-center justify-between gap-2">
                           <div>
                             <p className="text-sm font-semibold text-neutral-900">
@@ -523,7 +459,7 @@ export default function OneOnOneHomePanel({
                             );
                           })}
                           {adminRecommendations.length > 0 ? (
-                            <div className="rounded-2xl border border-neutral-100 bg-neutral-50 p-3">
+                            <div className="border-t border-neutral-200 pt-4">
                               <div className="mb-3">
                                 <p className="text-sm font-semibold text-neutral-900">오늘의 추가 후보</p>
                                 <p className="mt-1 text-xs leading-5 text-neutral-600">
@@ -568,7 +504,122 @@ export default function OneOnOneHomePanel({
                   })}
                 </div>
               )}
+            </div> : null}
+
+            {hasOneOnOneCard ? <details ref={profileSectionRef} tabIndex={-1} data-one-on-one-section="profile" className="scroll-mt-40 rounded-xl bg-neutral-50 px-3 py-2 outline-none focus-visible:ring-2 focus-visible:ring-rose-300">
+              <summary className="min-h-[44px] cursor-pointer select-none content-center text-sm font-medium text-neutral-700">내 1대1 프로필 보기</summary>
+              <div className="mt-3 space-y-2">
+                {activeCards.slice(0, 3).map((card) => (
+                  <div key={card.id ?? getOneOnOneDisplayName(card)} className="rounded-2xl bg-white px-3 py-3">
+                    <p className="text-sm font-semibold text-neutral-900">{getOneOnOneDisplayName(card)}</p>
+                    <p className="mt-1 text-xs font-normal text-neutral-500">{getOneOnOneMeta(card)}</p>
+                    <span className="mt-2 inline-flex rounded-full bg-emerald-50 px-2.5 py-1 text-[11px] font-bold text-emerald-700">
+                      {card.status === "approved" ? "승인 완료" : card.status === "reviewing" ? "검토 중" : "접수 완료"}
+                    </span>
+                  </div>
+                ))}
+                <Link
+                  href="/mypage?section=matching"
+                  className="inline-flex min-h-[40px] w-full items-center justify-center rounded-2xl border border-neutral-200 bg-white text-sm font-bold text-neutral-700 hover:bg-neutral-100"
+                >
+                  마이페이지에서 전체 관리
+                </Link>
+              </div>
+            </details> : null}
+
+            {hasOneOnOneCard ? (plusActive && data?.plus?.expires_at ? <OneOnOnePlusStatus expiresAt={data.plus.expires_at} contactExchangeIncluded={plusContactExchangeIncluded} /> : <div className="relative overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 p-4 shadow-none">
+              <div aria-hidden="true" className="absolute inset-x-10 top-0 h-px bg-transparent" />
+              <div className="relative flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <span className="shrink-0 whitespace-nowrap rounded-full border border-neutral-200 bg-white px-2 py-0.5 text-[10px] font-semibold text-neutral-700">PLUS</span>
+                    <p className="text-sm font-semibold text-neutral-900">1:1 매칭 플러스</p>
+                  </div>
+                  <p className="mt-2 text-xs leading-5 text-neutral-600">
+                    {plusContactExchangeIncluded
+                      ? "기존 혜택 적용 중 · 번호교환 포함 · 새로고침 최근 24시간 2회"
+                      : "7일 9,900원부터 · 새로고침 최근 24시간 2회 · 프로필 우선 노출"}
+                  </p>
+                  {!plusContactExchangeIncluded ? (
+                    <p className="mt-1 text-[11px] font-semibold text-neutral-500">번호교환은 기존처럼 건별 결제돼요.</p>
+                  ) : null}
+                  {plusActive && data?.plus?.expires_at ? (
+                    <p className="mt-1 text-[11px] font-medium text-neutral-600">
+                      {new Date(data.plus.expires_at).toLocaleString("ko-KR")}까지 이용 가능
+                    </p>
+                  ) : null}
+                </div>
+                {plusActive ? (
+                  <span className="inline-flex h-8 shrink-0 items-center rounded-full border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 shadow-none">
+                    적용 중
+                  </span>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setPlusGuideOpen((open) => !open)}
+                    className="min-h-[44px] shrink-0 rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 transition hover:bg-neutral-100"
+                  >
+                    {plusGuideOpen ? "닫기" : "혜택 보기"}
+                  </button>
+                )}
+              </div>
+              {!plusActive && plusGuideOpen ? (
+                <div className="relative mt-4 border-t border-neutral-200 pt-4">
+                  <p className="mb-3 text-xs leading-5 text-neutral-600">짧게 먼저 써보거나, 두 매칭 플러스를 한 번에 시작할 수 있어요.</p>
+                  <DatingPlusOffers
+                    mode="one_on_one"
+                    placement="open_card_one_on_one_panel"
+                    oneOnOneCardId={String(activeCards[0]?.id ?? "")}
+                  />
+                </div>
+              ) : null}
+            </div>) : null}
+
+            <div ref={matchesSectionRef} tabIndex={-1} data-one-on-one-section="matches" className="scroll-mt-40 rounded-xl border-t border-neutral-200 pt-4 outline-none focus-visible:ring-2 focus-visible:ring-rose-300">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-base font-bold text-neutral-900">진행 중인 매칭</p>
+                  <p className="mt-1 text-xs leading-5 text-neutral-500">요청 보내기, 수락, 연락처 교환이 필요한 항목을 먼저 보여드려요.</p>
+                </div>
+                <span className="shrink-0 whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-bold text-neutral-500">{sortedMatches.length}건</span>
+              </div>
+              {sortedMatches.length === 0 ? (
+                <p className="mt-3 rounded-2xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-500">보낸 요청과 서로 수락한 매칭은 여기에 표시돼요.</p>
+              ) : (
+                <div className="mt-3 space-y-3">
+                  {sortedMatches.slice(0, visibleMatchCount).map((match) => (
+                    <OneOnOneCandidateCard
+                      key={match.id}
+                      compact={match.state === "proposed"}
+                      card={match.counterparty_card}
+                      reportTarget={{ type: "one_on_one_match", id: match.id }}
+                      onReported={onReported}
+                      badge={getOneOnOneMatchLabel(match)}
+                      badgeClassName={match.action_required || match.state === "mutual_accepted" ? "bg-emerald-100 text-emerald-700" : "bg-white text-neutral-600"}
+                      note={oneOnOneContactLabel(match.contact_exchange_status)}
+                    >
+                      {match.counterparty_phone ? <p className="mt-2 text-sm font-black text-emerald-700">{match.counterparty_phone}</p> : null}
+                      <OneOnOneMatchActions
+                        match={match}
+                        contactExchangeIncluded={plusContactExchangeIncluded}
+                        processing={processingMatchIds.includes(match.id)}
+                        contactProcessing={processingContactIds.includes(match.id)}
+                        nudgeProcessing={processingNudgeIds.includes(match.id)}
+                        onMatchAction={onMatchAction}
+                        onContactCheckout={onContactCheckout}
+                        onContactNudge={onContactNudge}
+                      />
+                    </OneOnOneCandidateCard>
+                  ))}
+                  {sortedMatches.length > visibleMatchCount ? <button type="button" onClick={() => setVisibleMatchCount((count) => count + 8)}
+                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 text-xs font-medium text-neutral-600">
+                    진행 중 매칭 더보기 · {sortedMatches.length - visibleMatchCount}건
+                  </button> : null}
+                </div>
+              )}
             </div>
+
+
           </div>
         )}
       </div>
@@ -614,7 +665,7 @@ function OneOnOneCandidateCard({
   const meta = getOneOnOneMeta(card);
 
   return (
-    <article className="overflow-hidden rounded-[24px] border border-neutral-200 bg-white p-3">
+    <article className="overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3">
       <div className="flex gap-3">
         {!compact ? <a
           href={primaryPhoto || undefined}
@@ -725,11 +776,11 @@ function OneOnOneMatchActions({
           type="button"
           disabled={processing}
           onClick={() => onMatchAction(match.id, "select_candidate")}
-          className="inline-flex min-h-[34px] items-center rounded-xl bg-sky-600 px-3 text-xs font-black text-white disabled:opacity-50"
+          className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-4 text-xs font-semibold text-white hover:bg-[#d90037] disabled:opacity-50"
         >
           {processing ? "요청 보내는 중..." : "매칭 요청 보내기"}
         </button>
-        <Link href="/mypage?section=matching" className="inline-flex min-h-[34px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold text-neutral-600">
+        <Link href="/mypage?section=matching" className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-600 hover:bg-neutral-50">
           자세히
         </Link>
       </div>
@@ -786,7 +837,7 @@ function OneOnOneMatchActions({
           type="button"
           disabled={processing}
           onClick={() => onMatchAction(match.id, "source_accept")}
-          className="inline-flex min-h-[34px] items-center rounded-xl bg-emerald-600 px-3 text-xs font-black text-white disabled:opacity-50"
+          className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-4 text-xs font-semibold text-white hover:bg-[#d90037] disabled:opacity-50"
         >
           {processing ? "처리 중..." : "나도 수락하기"}
         </button>
@@ -794,7 +845,7 @@ function OneOnOneMatchActions({
           type="button"
           disabled={processing}
           onClick={() => onMatchAction(match.id, "source_reject")}
-          className="inline-flex min-h-[34px] items-center rounded-xl border border-rose-200 bg-white px-3 text-xs font-bold text-rose-700 disabled:opacity-50"
+          className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-4 text-xs font-medium text-neutral-700 disabled:opacity-50"
         >
           거절
         </button>
@@ -814,7 +865,7 @@ function OneOnOneMatchActions({
     if (match.contact_exchange_status === "approved") {
       const canCancelMatch = canCancelOneOnOneMatchPreview(match);
       return (
-        <div className="mt-3 rounded-xl border border-emerald-100 bg-white px-3 py-2">
+        <div className="mt-3 border-t border-neutral-200 pt-3">
           <p className="text-xs font-semibold text-emerald-700">
             번호 교환이 완료됐어요. 공개된 연락처는 안전하게 이용해주세요.
           </p>
@@ -837,7 +888,7 @@ function OneOnOneMatchActions({
               >
                 {processing ? "취소 중..." : "매칭 취소"}
               </button>
-              <Link href="/mypage?section=matching" className="inline-flex min-h-[34px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold text-neutral-600">
+              <Link href="/mypage?section=matching" className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-600 hover:bg-neutral-50">
                 상세 보기
               </Link>
             </div>
@@ -849,13 +900,13 @@ function OneOnOneMatchActions({
     if (!canOfferOneOnOneContact(match)) return <OneOnOneContactPending status={match.contact_exchange_status} />;
 
     return (
-      <div className="mt-3 rounded-2xl border border-emerald-100 bg-white p-3">
+      <div className="mt-3 border-t border-neutral-200 pt-3">
         <OneOnOneContactOffer matchId={match.id} name={match.counterparty_card?.name}
           included={contactExchangeIncluded} processing={contactProcessing}
           nudge={match.contact_nudge} nudgeProcessing={nudgeProcessing}
           onExchange={onContactCheckout} onNudge={onContactNudge} />
         <div className="mt-2 flex flex-wrap gap-2">
-          <Link href="/mypage?section=matching" className="inline-flex min-h-[34px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-bold text-neutral-600">
+          <Link href="/mypage?section=matching" className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-600 hover:bg-neutral-50">
             상세 보기
           </Link>
           <button

@@ -99,8 +99,10 @@ const root=path.resolve(__dirname,'..');
    await page.locator('[aria-controls="email-signup-form"]').click();
    for(const [id,value]of [['email','fixture@example.test'],['nickname','테스트'],['password','fixture-secret-123'],['password-confirm','fixture-secret-123']])await page.locator('#signup-'+id).fill(value);
    await page.locator('form').getByRole('button',{name:/가입/}).click();
-   await page.getByText(/가입 요청이 완료되었습니다/).waitFor();
-   await page.evaluate(()=>window.fixtureSignIn({id:'new-email',created_at:new Date().toISOString(),email_confirmed_at:new Date().toISOString()}));
+   const verification=page.getByRole('region',{name:'이메일 인증 대기'});
+   await verification.getByText('fixture@example.test',{exact:true}).waitFor();
+   await verification.getByRole('button',{name:'인증했어요 · 계속하기'}).waitFor();
+   await page.evaluate(()=>window.fixtureSignIn({id:'new-email',email:'fixture@example.test',created_at:new Date().toISOString(),email_confirmed_at:new Date().toISOString()}));
    if(analytics!=='throw'){
     await page.waitForFunction(()=>window.events.some(x=>x[1]==='sign_up'));
     const events=await page.evaluate(()=>window.events);assert.equal(events.filter(x=>x[1]==='sign_up').length,1);assert.ok(!JSON.stringify(events).includes('fixture@example.test'));assert.ok(!JSON.stringify(events).includes('fixture-secret'));

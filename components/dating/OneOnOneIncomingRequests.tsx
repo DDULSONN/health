@@ -14,20 +14,20 @@ export default function OneOnOneIncomingRequests<T extends { id: string }>({
   if (!requests.length) return null;
 
   return (
-    <section aria-label="받은 1:1 매칭 요청" className="mb-3 overflow-hidden rounded-xl border border-rose-200 bg-white">
+    <section aria-label="받은 1:1 매칭 요청" className="mb-3 border-y border-neutral-200 bg-white">
       <button
         type="button"
         aria-expanded={expanded}
         aria-controls={listId}
         onClick={() => setExpanded((value) => !value)}
-        className="flex min-h-[52px] w-full items-center justify-between gap-3 bg-rose-50/60 px-3 py-2 text-left"
+        className="flex min-h-[52px] w-full items-center justify-between gap-3 py-2 text-left"
       >
         <span className="text-sm font-semibold text-neutral-900">나에게 온 요청 <span className="text-[#f0003d]">{requests.length}건</span></span>
         <span className="shrink-0 text-xs font-medium text-rose-700">{expanded ? "접기" : "확인하기"} <span aria-hidden="true">{expanded ? "⌃" : "›"}</span></span>
       </button>
       <div id={listId} hidden={!expanded}>
         {expanded ? (
-          <div className="space-y-3 p-3">
+          <div className="space-y-3 pb-3 pt-1">
             <p className="text-xs leading-5 text-neutral-500">상대 프로필을 보고 수락 여부를 결정해 주세요.</p>
             {requests.slice(0, visibleCount).map((request) => <div key={request.id}>{renderRequest(request)}</div>)}
             {requests.length > visibleCount ? (

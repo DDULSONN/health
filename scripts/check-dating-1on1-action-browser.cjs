@@ -10,6 +10,8 @@ const { chromium } = require('./test-browser-runtime.cjs');
 const root = path.resolve(__dirname, '..');
 async function main() {
   const journeyOnly = process.argv.includes('--journey');
+  const polishOnly = process.argv.includes('--ui-polish');
+  const resilienceOnly = process.argv.includes('--resilience');
   const output = fs.mkdtempSync(path.join(os.tmpdir(), 'gymtools-action-copy-browser-'));
   const adapter = path.join(__dirname, 'fixtures/recommendation-refresh-adapters.tsx');
   await new Promise((resolve, reject) => {
@@ -32,14 +34,18 @@ async function main() {
     else if (req.url === '/fixture.css') { res.setHeader('Content-Type', 'text/css'); res.end(css); }
     else if (req.url === '/fixture-photo.png') { res.setHeader('Content-Type', 'image/png'); res.end(fs.readFileSync(path.join(root, 'public/icon-192x192.png'))); }
     else if (req.url.startsWith('/api/')) { res.writeHead(500); res.end('Unmocked API'); }
-    else { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end('<html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fixture.css"><div id="root"></div><script src="/fixture.js"></script></html>'); }
+    else { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end('<html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="stylesheet" href="/fixture.css">' + (polishOnly ? '<header aria-label="검증용 사이트 헤더" style="height:64px;position:sticky;top:0;z-index:50;background:white;border-bottom:1px solid #f5f5f5;display:flex;align-items:center;padding:0 20px;font:700 20px sans-serif">짐툴</header>' : '') + '<div id="root"></div><script src="/fixture.js"></script></html>'); }
   });
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
   const origin = 'http://127.0.0.1:' + server.address().port;
   let browser, passed = 0;
   try {
     browser = await chromium.launch({ headless: true });
-    for (const surface of ['home', 'mypage']) for (const width of [320, 390, 1280]) for (const scenario of (journeyOnly
+    for (const surface of (polishOnly || resilienceOnly ? ['home'] : ['home', 'mypage'])) for (const width of [320, 390, 1280]) for (const scenario of (resilienceOnly
+      ? ['resilience-outage', 'resilience-malformed', 'resilience-slow', 'resilience-timeout', 'resilience-unauthorized', 'resilience-match-error', 'resilience-no-profile-closed', 'resilience-rejected-profile', 'resilience-no-profile-active', 'resilience-no-profile-empty']
+      : polishOnly
+      ? ['polish-incoming', 'polish-next', 'polish-final-accept', 'polish-waiting', 'polish-empty', 'polish-no-candidates', 'polish-read-error', 'polish-focused']
+      : journeyOnly
       ? surface === 'home' ? ['journey-incoming', 'journey-checkout', 'journey-paid', 'journey-pending', 'journey-approved', 'journey-closed', 'journey-missing', 'journey-load-error', 'journey-many'] : ['journey-shortcut', 'journey-pending', 'journey-paid']
       : [
       'success', 'failure', 'proposed', 'read-failure', 'partial-read-failure', 'additional',
@@ -48,8 +54,11 @@ async function main() {
     ])) {
       const context = await browser.newContext({ viewport: { width, height: 844 } });
       const page = await context.newPage(); page.setDefaultTimeout(12000);
+      if (scenario === 'resilience-timeout') await page.clock.install();
       const errors = [], alerts = [];
-      let posts = 0, blocked = 0, release, responseAction = '';
+      let posts = 0, blocked = 0, release, responseAction = '', matchingReads = 0;
+      let recommendationReads = 0;
+      const noProfile = scenario.includes('no-profile') || scenario === 'resilience-rejected-profile';
       const gate = new Promise(resolve => { release = resolve; });
       const now = new Date().toISOString();
       const profile = { id: 'fixture-one', user_id: 'fixture-member', name: '검증 프로필', sex: 'female', age: 29, birth_year: 1998,
@@ -74,6 +83,7 @@ async function main() {
         const req = route.request(), url = new URL(req.url());
         if (url.origin !== origin) { blocked++; await route.abort(); return; }
         if (!url.pathname.startsWith('/api/')) { await route.continue(); return; }
+        if (req.method() === 'GET' && url.pathname.startsWith('/api/dating/1on1/')) matchingReads++;
         let body = { ok: true, items: [], cards: [], applications: [], loggedIn: true };
         if (req.method() !== 'GET') {
           assert.equal(req.method(), 'POST'); posts++;
@@ -98,9 +108,25 @@ async function main() {
             break;
           case '/api/dating/cards/queue-stats': body = { male: { public_count: 0, pending_count: 0, slot_limit: 45 }, female: { public_count: 0, pending_count: 0, slot_limit: 45 } }; break;
           case '/api/mypage/summary': body = { profile: { email: 'fixture@example.invalid', nickname: '검증회원', phone_verified: true, nickname_changed_count: 0, nickname_change_credits: 0, swipe_profile_visible: true }, account: { is_banned: false }, isAdmin: false, weekly_win_count: 0, bodycheck_posts: [] }; break;
-          case '/api/dating/1on1/my': body = { items: [profile], plus: { expires_at: profile.plus_expires_at, contact_exchange_included: false } }; break;
-          case '/api/dating/1on1/write-status': body = { canWrite: false, phoneVerified: true, writeStatus: 'approved' }; break;
+          case '/api/dating/1on1/my': body = { items: noProfile ? (scenario === 'resilience-rejected-profile' ? [{ ...profile, status: 'rejected' }] : []) : [profile], plus: { expires_at: profile.plus_expires_at, contact_exchange_included: false } }; break;
+          case '/api/dating/1on1/write-status': body = { canWrite: noProfile, phoneVerified: true, activeRequestStatus: noProfile ? null : 'approved' }; break;
           case '/api/dating/1on1/matches/my':
+            if (resilienceOnly) {
+              if (scenario === 'resilience-match-error') { await route.fulfill({ status: 503, json: { error: '로컬 매칭 조회 실패' } }); return; }
+              const closed = noProfile && scenario !== 'resilience-no-profile-active';
+              const item = match(focusedId, 'candidate', closed ? 'admin_canceled' : 'mutual_accepted', '교환완료상대', closed ? 'canceled' : 'approved');
+              item.counterparty_phone = closed ? null : '010-0000-0000';
+              body = { items: scenario === 'resilience-no-profile-empty' ? [] : [item] }; break;
+            }
+            if (scenario === 'polish-read-error') { await route.fulfill({ status: 503, json: { error: '로컬 매칭 조회 실패' } }); return; }
+            if (polishOnly) {
+              body = { items: scenario === 'polish-empty' ? [] : [
+                ...(['polish-incoming', 'polish-no-candidates', 'polish-focused'].includes(scenario) ? [match(scenario === 'polish-focused' ? focusedId : 'incoming', 'candidate', 'source_selected', '요청한회원')] : []),
+                ...(scenario === 'polish-next' ? [match(focusedId, 'source', 'mutual_accepted', '교환대기회원', 'awaiting_applicant_payment')] : []),
+                ...(scenario === 'polish-final-accept' ? [match(focusedId, 'source', 'candidate_accepted', '수락할회원')] : []),
+                match('waiting', 'source', 'source_selected', '기다리는회원'),
+              ] }; break;
+            }
             if (scenario === 'journey-load-error') { await route.fulfill({ status: 503, json: { error: '로컬 매칭 조회 실패' } }); return; }
             if (journeyOnly) {
               const status = { 'journey-paid': 'paid', 'journey-pending': 'payment_pending_admin', 'journey-approved': 'approved', 'journey-closed': 'canceled' }[scenario] || 'awaiting_applicant_payment';
@@ -123,6 +149,14 @@ async function main() {
             ...(scenario === 'proposed' ? [match('proposal', 'source', posts ? 'source_selected' : 'proposed', candidate.name)] : []),
           ] }; break;
           case '/api/dating/1on1/recommendations/my':
+            recommendationReads++;
+            if (resilienceOnly && recommendationReads === 1) {
+              if (scenario === 'resilience-outage' || scenario === 'resilience-unauthorized') { await route.fulfill({ status: scenario === 'resilience-outage' ? 503 : 401, json: { error: 'Fixture unavailable' } }); return; }
+              if (scenario === 'resilience-malformed') { await route.fulfill({ json: { items: [null] } }); return; }
+              if (['resilience-slow', 'resilience-timeout'].includes(scenario)) await gate;
+            }
+            if (noProfile) { body = { items: [] }; break; }
+            if (scenario === 'polish-no-candidates') { body = { items: [] }; break; }
             if (posts && ['read-failure', 'partial-read-failure'].includes(scenario)) { await route.fulfill({ status: 503, json: { error: '로컬 목록 조회 실패' } }); return; }
             body = { items: [{ source_card_id: profile.id, source_card_status: 'approved',
             recommendations: ['proposed', 'additional', 'favorite'].includes(scenario) || (posts && scenario === 'success') ? [] : [candidate],
@@ -133,10 +167,103 @@ async function main() {
           case '/api/dating/cards/write-enabled': body = { enabled: true }; break;
           case '/api/dating/apply-credits/status': body = { creditsRemaining: 5 }; break;
         }
-        await route.fulfill({ json: body });
+        await route.fulfill({ json: body }).catch(error => { if (scenario !== 'resilience-timeout') throw error; });
       });
       try {
-        await page.goto(origin + (surface === 'home' ? journeyOnly && scenario !== 'journey-many' ? focusedHref : '/community/dating/cards?tab=one_on_one' : '/mypage?section=matching&match=one_on_one'));
+        await page.goto(origin + (surface === 'home' ? (journeyOnly && scenario !== 'journey-many') || scenario === 'polish-focused' || (resilienceOnly && !noProfile) || scenario === 'resilience-no-profile-active' ? focusedHref : '/community/dating/cards?tab=one_on_one' : '/mypage?section=matching&match=one_on_one'));
+        if (resilienceOnly) {
+          const panel = page.locator('#one-on-one-candidates');
+          const phone = panel.getByText('010-0000-0000', { exact: true });
+          if (['resilience-unauthorized', 'resilience-match-error'].includes(scenario)) {
+            await panel.getByRole('alert').filter({ hasText: scenario === 'resilience-unauthorized' ? '로그인 상태와 이용 권한' : '로컬 매칭 조회 실패' }).waitFor();
+            assert.equal(await phone.count(), 0); assert.equal(await panel.getByRole('button', { name: /연락처 교환 ·/ }).count(), 0);
+          } else if (noProfile) {
+            await panel.getByText('아직 1대1 프로필이 없어요.', { exact: true }).waitFor();
+            const start = panel.getByRole('link', { name: '프로필 작성하기', exact: true });
+            assert.ok((await start.getAttribute('href')).startsWith('/onboarding/dating'));
+            assert.equal(await panel.getByText(/조건에 맞는 후보가 생기면/).count(), 0);
+            assert.equal(await panel.locator('[data-one-on-one-section="profile"]').count(), 0);
+            if (scenario === 'resilience-no-profile-active') await phone.waitFor();
+            else assert.equal(await phone.count(), 0);
+          } else {
+            await phone.waitFor();
+            if (['resilience-slow', 'resilience-timeout'].includes(scenario)) {
+              await panel.getByText('추천 후보를 불러오는 중이에요.', { exact: true }).waitFor();
+              assert.equal(await panel.getByRole('button', { name: '매칭 요청 보내기', exact: true }).count(), 0);
+              if (scenario === 'resilience-slow') release();
+              else await page.clock.fastForward(16000);
+            }
+            if (scenario !== 'resilience-slow') {
+              await panel.getByRole('alert').filter({ hasText: '추천 후보를 불러오지 못했어요.' }).waitFor();
+              assert.equal(await phone.count(), 1);
+              await panel.getByRole('button', { name: '추천 후보 다시 불러오기 · 횟수 차감 없음', exact: true }).click();
+              release();
+            }
+            await panel.getByRole('button', { name: '매칭 요청 보내기', exact: true }).waitFor();
+            await phone.waitFor(); assert.equal(await panel.getByRole('alert').count(), 0);
+            assert.equal(recommendationReads, scenario === 'resilience-slow' ? 1 : 2);
+          }
+          assert.equal(posts, 0, 'view and retry never create a payment, match or quota mutation');
+          assert.equal(blocked, 0); assert.deepEqual(errors, []);
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+          if (width === 390) await page.screenshot({ path: path.join(output, scenario + '.png'), fullPage: true });
+          console.log(`PASS ${surface} ${width}px ${scenario}`); passed++; continue;
+        }
+        if (polishOnly) {
+          const shortcuts = page.getByRole('navigation', { name: '1대1 바로가기' });
+          if (scenario === 'polish-read-error') {
+            await page.getByRole('alert').filter({ hasText: '로컬 매칭 조회 실패' }).waitFor();
+            if (await shortcuts.count()) for (const button of await shortcuts.getByRole('button').all()) assert.equal(await button.isDisabled(), true);
+            assert.equal(await page.getByRole('button', { name: '매칭 요청 보내기', exact: true }).count(), 0);
+          } else {
+            await shortcuts.waitFor();
+            const recommendations = page.locator('[data-one-on-one-section="recommendations"]'); await recommendations.waitFor();
+            const initialReads = matchingReads, initialUrl = page.url();
+            const order = await page.locator('[data-one-on-one-section]').evaluateAll(nodes => nodes.map(n => n.dataset.oneOnOneSection));
+            assert.deepEqual(order, ['next-steps', 'incoming', 'recommendations', 'profile', 'matches']);
+            if (width === 390 && scenario === 'polish-incoming') { await page.evaluate(() => scrollTo(0, 0)); await page.screenshot({ path: path.join(output, 'ui-polish-top-mobile.png') }); }
+            await shortcuts.getByRole('button', { name: /추천 후보/ }).click();
+            assert.equal(await page.evaluate(() => document.activeElement?.dataset.oneOnOneSection), 'recommendations');
+            assert.ok((await recommendations.boundingBox()).y >= 140, 'sticky tabs do not hide the target heading');
+            if (scenario === 'polish-no-candidates') await recommendations.getByText(/현재 보여줄 추천 후보가 없어요/).waitFor();
+            else {
+              const request = recommendations.getByRole('button', { name: '매칭 요청 보내기', exact: true });
+              assert.ok((await request.boundingBox()).height >= 44);
+              const photos = recommendations.locator('article img[alt]:not([alt=""])');
+              assert.equal(await photos.count(), 2);
+              for (const photo of await photos.all()) { await photo.scrollIntoViewIfNeeded(); await page.waitForFunction(el => el.complete && el.naturalWidth > 0, await photo.elementHandle()); }
+              assert.equal(await request.evaluate(el => getComputedStyle(el).backgroundColor), 'rgb(240, 0, 61)');
+              if (width === 390 && scenario === 'polish-incoming') { await recommendations.evaluate(el => el.scrollIntoView({ block: 'start' })); await page.screenshot({ path: path.join(output, 'ui-polish-candidates-mobile.png') }); }
+            }
+            await shortcuts.getByRole('button', { name: /내 프로필/ }).focus();
+            await page.keyboard.press('Enter');
+            const ownProfile = page.locator('[data-one-on-one-section="profile"]');
+            assert.equal(await ownProfile.evaluate(el => el.open), true);
+            assert.equal(await page.evaluate(() => document.activeElement?.dataset.oneOnOneSection), 'profile');
+            assert.ok((await ownProfile.boundingBox()).y >= 140);
+            if (['polish-incoming', 'polish-no-candidates'].includes(scenario)) {
+              await page.getByRole('region', { name: '받은 1:1 매칭 요청' }).getByRole('button', { name: /나에게 온 요청/ }).click();
+              assert.equal(await page.getByRole('button', { name: '수락', exact: true }).count(), 0);
+            }
+            await shortcuts.getByRole('button').nth(2).click();
+            if (['polish-incoming', 'polish-no-candidates'].includes(scenario)) {
+              assert.equal(await page.getByRole('button', { name: '수락', exact: true }).count(), 1, 'a shortcut reopens the collapsed inbox without accepting');
+              assert.equal(await page.getByRole('button', { name: '소개 더보기' }).first().getAttribute('aria-expanded'), 'false', 'profile text is not opened by the inbox shortcut');
+            }
+            const target = scenario === 'polish-focused' ? '#selected-one-on-one-match'
+              : ['polish-incoming', 'polish-no-candidates'].includes(scenario) ? '[data-one-on-one-section="incoming"]'
+              : ['polish-next', 'polish-final-accept'].includes(scenario) ? '[data-one-on-one-section="next-steps"]'
+              : '[data-one-on-one-section="matches"]';
+            assert.equal(await page.locator(target).evaluate(el => el === document.activeElement), true);
+            assert.equal(page.url(), initialUrl, 'shortcuts preserve the tab and existing deep link');
+            assert.equal(matchingReads, initialReads, 'scroll shortcuts do not reload/consume candidates');
+            for (const button of await shortcuts.getByRole('button').all()) assert.ok((await button.boundingBox()).height >= 44);
+            if (width === 390 && scenario === 'polish-next') await page.screenshot({ path: path.join(output, 'ui-polish-next-steps-mobile.png') });
+          }
+          assert.equal(posts, 0); assert.equal(blocked, 0); assert.deepEqual(errors, []);
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+          console.log(`PASS ${surface} ${width}px ${scenario}`); passed++; continue;
+        }
         if (journeyOnly) {
           if (surface === 'mypage' && scenario === 'journey-shortcut') {
             const shortcut = page.getByRole('region', { name: '이어서 진행할 1:1 매칭' }).getByRole('link', { name: /알림에서찾은상대/ });

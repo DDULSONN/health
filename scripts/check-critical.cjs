@@ -11,6 +11,7 @@ const unitFiles = [
   'check-signup-verification.cjs',
   'check-signup-email-consent.cjs',
   'check-home-performance.cjs',
+  'check-home-one-on-one-resilience.cjs',
   'check-dating-expansion-mail.cjs',
   'check-dating-1on1-expansion.cjs',
   'check-signup-stories.cjs',
@@ -18,6 +19,7 @@ const unitFiles = [
   'check-viewer-session-recovery.cjs',
   'check-dating-1on1-action-copy.cjs',
   'check-dating-1on1-match-journey.cjs',
+  'check-dating-1on1-ui-polish.cjs',
   'check-admin-review-confirmation.cjs',
   'check-dating-sexual-text-review.cjs',
   'check-dating-1on1-checked-refresh-sql.cjs',
@@ -83,6 +85,8 @@ if (process.argv.includes('--browser')) {
   env.PROFILE_UX_CSS_DIR = env.CONTACT_CONVERSION_CSS_DIR;
   for (const file of browserFiles) run([path.join(__dirname, file)], 10 * 60_000);
   run([path.join(__dirname, 'check-dating-1on1-action-browser.cjs'), '--journey'], 10 * 60_000);
+  run([path.join(__dirname, 'check-dating-1on1-action-browser.cjs'), '--ui-polish'], 10 * 60_000);
+  run([path.join(__dirname, 'check-dating-1on1-action-browser.cjs'), '--resilience'], 10 * 60_000);
   run([path.join(__dirname, 'check-recommendation-refresh-browser.cjs'), '--expansion'], 10 * 60_000);
 } else {
   const pglite = require.resolve('@electric-sql/pglite');

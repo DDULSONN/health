@@ -29,13 +29,17 @@ function initializer(file, name) {
 function fixture(surface, outcome = 'ok', confirmation = true) {
   const state = { posts: 0, reads: 0, commits: 0, alerts: [], error: '', outcome };
   const file = surface === 'home' ? 'app/community/dating/cards/page.tsx' : 'app/mypage/page.tsx';
-  const gate = latest.createLatestRequest();
+  const rawGate = latest.createLatestRequest();
+  const gate = { ...rawGate, run: options => rawGate.run({ ...options, commit: value => { state.commits++; options.commit(value); } }) };
+  const coreGate = latest.createLatestRequest();
   const recovery = { current: false };
   const common = {
     ...payloadRules, oneOnOneRefreshNeedsReloadRef: recovery,
     useCallback: fn => fn, viewerLoggedIn: true,
-    oneOnOneHomeRequest: gate, oneOnOneRecommendationsRequest: gate,
-    setOneOnOneHome: () => { state.commits++; }, setMyOneOnOneAutoRecommendations: () => { state.commits++; },
+    oneOnOneHomeRequest: coreGate, oneOnOneRecommendationsRequest: gate,
+    setOneOnOneHome: () => {}, setMyOneOnOneAutoRecommendations: () => {},
+    setOneOnOneRecommendations: () => {}, setOneOnOneRecommendationsLoading: () => {},
+    setOneOnOneRecommendationsError: value => { state.error = value; },
     setOneOnOneHomeError: value => { state.error = value; }, setOneOnOneRefreshReadError: value => { state.error = value; },
     setOneOnOneHomeLoading: () => {},
     fetch: async (_url, init) => {
@@ -50,6 +54,7 @@ function fixture(surface, outcome = 'ok', confirmation = true) {
       return Response.json(state.outcome === 'bad-read' ? {} : { items: [{ source_card_id: 'source', recommendations: [] }] });
     },
   };
+  common.fetchClientJson = async (url, init) => { const response = await common.fetch(url, init); return { response, body: await response.json() }; };
   const reloadName = surface === 'home' ? 'reloadOneOnOneHome' : 'reloadOneOnOneRecommendations';
   const reload = evaluate('exports.fn = ' + initializer(file, reloadName), common).fn;
   const handleName = surface === 'home' ? 'handleOneOnOneRecommendationRefresh' : 'handleRefreshOneOnOneRecommendations';

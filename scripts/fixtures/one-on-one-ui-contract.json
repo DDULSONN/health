@@ -1,0 +1,52 @@
+{
+  "commit": "4792201",
+  "functions": {
+    "OneOnOneCandidateCard": "77e40a762f4c6426bd7d2a523150acec44917fdde20c58c52764001f607e1650",
+    "OneOnOneMatchActions": "4164283b6dae92b4d5c7a4e6a92d86ccd57d1c6e966a2b2cd7d3074ecfd261f3",
+    "OneOnOneContactOffer": "d959d40d31bc555e300951e0e38ef58d0e1c65f6a89d9a38631399b770812919",
+    "OneOnOneIncomingRequests": "e63979deff971f7c57f33080f4145549c9db299ed0db031c5db4d8a0e23205fa"
+  },
+  "panel": {
+    "bindings": {
+      "activeMatches": "5541f32ab5c2ac4628780afe278aa004834b02617363f1301dfbea4f63912adf",
+      "recommendationGroups": "2734b6f389efe7221f6c0e638a60fc35063e9efaab422ddeeadda9bfc95c3a90",
+      "plusActive": "12ad572fa2bca4294418233ed51789fb1b1e4c0e1ec8da1e11d5371d4bc58a03",
+      "plusContactExchangeIncluded": "5a8d3d654fc75205aea150a634ddc87b949698b2278e65b7626f27071a0f9377",
+      "recommendationCount": "996343133454d208b52769ae5527f3081c945b7cdd8d2376edb994c11fbcb489",
+      "activeCards": "10b773887f13529290d20e84d0f3d6bb4d4bae1daa0e4f06afc83942ab87fb6b",
+      "incomingRequests": "eaf1a81d8616bd476f23319b1951e1d3c37f0090f39109d2026088b81f33116d",
+      "sortedMatches": "a2648ba7d7283662d73c41769e1148724ff6e0e496aaf896aedf82caf3283b83"
+    },
+    "callbacks": [
+      "onClick={() => onAutoSelect(sourceCardId, candidateId, candidate.name)}",
+      "onClick={() => onAutoSelect(sourceCardId, candidateId, candidate.name)}",
+      "onClick={() => setMatchGuideOpen((open) => !open)}",
+      "onClick={() => setPlusGuideOpen((open) => !open)}",
+      "onClick={() => setVisibleMatchCount((count) => count + 8)}",
+      "onClick={onReload}",
+      "onClick={onReload}",
+      "onClick={onRetrySession}",
+      "onContactCheckout={onContactCheckout}",
+      "onContactCheckout={onContactCheckout}",
+      "onContactCheckout={onContactCheckout}",
+      "onContactNudge={onContactNudge}",
+      "onContactNudge={onContactNudge}",
+      "onContactNudge={onContactNudge}",
+      "onMatchAction={onMatchAction}",
+      "onMatchAction={onMatchAction}",
+      "onMatchAction={onMatchAction}",
+      "onReported={onReported}",
+      "onReported={onReported}",
+      "onReported={onReported}",
+      "onReported={onReported}",
+      "onReported={onReported}",
+      "onReported={onReported}",
+      "onRequest={() => onRefreshRecommendations(sourceCardId)}",
+      "onSelect={(candidateId, name) => onAutoSelect(sourceCardId, candidateId, name)}"
+    ],
+    "disabled": [
+      "disabled={!canSelect || processingAutoKeys.includes(actionKey)}",
+      "disabled={!canSelect || processingAutoKeys.includes(actionKey)}"
+    ]
+  }
+}

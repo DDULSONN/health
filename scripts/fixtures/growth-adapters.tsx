@@ -3,9 +3,10 @@ export { default } from "./profile-ux-adapters";
 export const usePathname = () => location.pathname;
 export const useRouter = () => ({ replace() {} });
 const listeners = new Set<(event: string, session: unknown) => void>();
-type FixtureUser = { id: string; created_at?: string; email_confirmed_at?: string | null };
+type FixtureUser = { id: string; email?: string; created_at?: string; email_confirmed_at?: string | null };
 const win = () => window as unknown as { fixtureUser?: FixtureUser | null; fixtureSignIn?: (user: unknown) => void; fixtureAuthUnavailable?: boolean };
 const client = { auth: {
+  async getUser() { return { data: { user: win().fixtureUser ?? null }, error: null }; },
   onAuthStateChange(fn: (event: string, session: unknown) => void) {
     listeners.add(fn);
     queueMicrotask(() => { if (listeners.has(fn)) fn("INITIAL_SESSION", win().fixtureUser ? { user: win().fixtureUser } : null); });

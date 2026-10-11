@@ -1662,8 +1662,15 @@ function OpenCardsContent() {
   const [adminPreviewResolved, setAdminPreviewResolved] = useState(false);
   const [oneOnOneHomeLoading, setOneOnOneHomeLoading] = useState(false);
   const [oneOnOneHomeError, setOneOnOneHomeError] = useState("");
-  const [oneOnOneHome, setOneOnOneHome] = useState<OneOnOneHomeState | null>(null);
+  const [oneOnOneHomeBase, setOneOnOneHome] = useState<OneOnOneHomeState | null>(null);
+  const [oneOnOneRecommendations, setOneOnOneRecommendations] = useState<OneOnOneHomeState["recommendations"]>([]);
+  const [oneOnOneRecommendationsLoading, setOneOnOneRecommendationsLoading] = useState(false);
+  const [oneOnOneRecommendationsError, setOneOnOneRecommendationsError] = useState("");
+  const oneOnOneHome = useMemo(() => oneOnOneHomeBase
+    ? { ...oneOnOneHomeBase, recommendations: oneOnOneRecommendations } : null,
+  [oneOnOneHomeBase, oneOnOneRecommendations]);
   const oneOnOneHomeRequest = useMemo(() => createLatestRequest(), []);
+  const oneOnOneRecommendationsRequest = useMemo(() => createLatestRequest(), []);
   const [processingOneOnOneMatchIds, setProcessingOneOnOneMatchIds] = useState<string[]>([]);
   const oneOnOneMatchActionLocksRef = useRef<Set<string>>(new Set());
   const oneOnOneContactCheckoutLocksRef = useRef<Set<string>>(new Set());
@@ -1839,7 +1846,11 @@ function OpenCardsContent() {
       },
       onIdentityChange: () => {
         oneOnOneHomeRequest.cancel();
+        oneOnOneRecommendationsRequest.cancel();
         setOneOnOneHome(null);
+        setOneOnOneRecommendations([]);
+        setOneOnOneRecommendationsError("");
+        setOneOnOneRecommendationsLoading(false);
         setOneOnOneHomeError("");
         setOneOnOneHomeLoading(false);
         setOneOnOneActionNotice("");
@@ -1857,12 +1868,13 @@ function OpenCardsContent() {
     return () => {
       recovery.stop();
       oneOnOneHomeRequest.cancel();
+      oneOnOneRecommendationsRequest.cancel();
       viewerSessionRetryRef.current = null;
       window.removeEventListener("focus", recovery.recoverOnReturn);
       window.removeEventListener("online", recovery.recoverOnReturn);
       document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [supabase, oneOnOneHomeRequest]);
+  }, [supabase, oneOnOneHomeRequest, oneOnOneRecommendationsRequest]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1957,7 +1969,11 @@ function OpenCardsContent() {
   const reloadOneOnOneHome = useCallback(async (fresh = true, requireUpdated = false) => {
     if (!viewerLoggedIn) {
       oneOnOneHomeRequest.cancel();
+      oneOnOneRecommendationsRequest.cancel();
       setOneOnOneHome(null);
+      setOneOnOneRecommendations([]);
+      setOneOnOneRecommendationsError("");
+      setOneOnOneRecommendationsLoading(false);
       setOneOnOneHomeError("");
       setOneOnOneHomeLoading(false);
       if (requireUpdated) throw new Error("로그인 상태를 다시 확인해 주세요.");
@@ -1965,39 +1981,71 @@ function OpenCardsContent() {
     }
 
     let updated = false;
-    await oneOnOneHomeRequest.run({
+    let recommendationsUpdated = false;
+    // Keep authenticated match/contact reads independent of recommendation outages.
+    // Both coordinators still discard late reads after logout or a newer request.
+    await Promise.all([oneOnOneHomeRequest.run({
       replace: fresh,
       start: () => { setOneOnOneHomeLoading(true); setOneOnOneHomeError(""); },
       load: async (signal) => {
-        const [statusRes, myCardsRes, matchesRes, recommendationsRes] = await Promise.all([
+        const [statusRes, myCardsRes, matchesRes] = await Promise.all([
           fetch("/api/dating/1on1/write-status", { cache: "no-store", signal }),
           fetch("/api/dating/1on1/my", { cache: "no-store", signal }),
           fetch("/api/dating/1on1/matches/my", { cache: "no-store", signal }),
-          fetch("/api/dating/1on1/recommendations/my", { cache: "no-store", signal }),
         ]);
-        const [statusBody, myCardsBody, matchesBody, recommendationsBody] = await Promise.all([
+        const [statusBody, myCardsBody, matchesBody] = await Promise.all([
           statusRes.json().catch(() => ({})), myCardsRes.json().catch(() => ({})),
-          matchesRes.json().catch(() => ({})), recommendationsRes.json().catch(() => ({})),
+          matchesRes.json().catch(() => ({})),
         ]);
         if (!statusRes.ok) throw new Error(statusBody.error ?? "1:1 상태를 불러오지 못했습니다.");
         if (!myCardsRes.ok) throw new Error(myCardsBody.error ?? "내 1:1 신청 내역을 불러오지 못했습니다.");
         if (!matchesRes.ok) throw new Error(matchesBody.error ?? "1:1 매칭 상태를 불러오지 못했습니다.");
-        if (!recommendationsRes.ok) throw new Error(recommendationsBody.error ?? "1:1 추천 후보를 불러오지 못했습니다.");
-        if (!isOneOnOneRecommendationPayload(recommendationsBody)) throw new Error("후보 조회 응답을 확인하지 못했어요.");
+        if (!Array.isArray(myCardsBody.items) || !Array.isArray(matchesBody.items)) {
+          throw new Error("내 프로필과 매칭 조회 응답을 확인하지 못했어요.");
+        }
         return {
           status: statusBody,
           myCards: Array.isArray(myCardsBody.items) ? myCardsBody.items : [],
           matches: Array.isArray(matchesBody.items) ? matchesBody.items : [],
-          recommendations: Array.isArray(recommendationsBody.items) ? recommendationsBody.items : [],
+          recommendations: [],
           plus: myCardsBody.plus && typeof myCardsBody.plus === "object" ? myCardsBody.plus : null,
         } satisfies OneOnOneHomeState;
       },
-      commit: (value) => { setOneOnOneHome(value); oneOnOneRefreshNeedsReloadRef.current = false; updated = true; },
+      commit: (value) => { setOneOnOneHome(value); updated = true; },
       fail: (error) => setOneOnOneHomeError(error instanceof Error ? error.message : "1:1 정보를 불러오지 못했습니다."),
       finish: () => setOneOnOneHomeLoading(false),
-    });
-    if (requireUpdated && !updated) throw new Error("새 후보 명단을 불러오지 못했어요.");
-  }, [viewerLoggedIn, oneOnOneHomeRequest]);
+    }), oneOnOneRecommendationsRequest.run({
+      replace: fresh,
+      start: () => {
+        setOneOnOneRecommendationsLoading(true);
+        setOneOnOneRecommendationsError("");
+        setOneOnOneRecommendations([]);
+      },
+      load: async (signal) => {
+        const { response, body } = await fetchClientJson<unknown>(
+          "/api/dating/1on1/recommendations/my", { cache: "no-store", signal }, 15000,
+        );
+        // Authentication/permission failures are not treated as a partial outage.
+        if (response.status === 401 || response.status === 403) {
+          throw new Error("one_on_one_auth_required");
+        }
+        if (!response.ok || !isOneOnOneRecommendationPayload(body)) {
+          throw new Error("후보 조회 응답을 확인하지 못했어요.");
+        }
+        return (body as { items: OneOnOneHomeState["recommendations"] }).items;
+      },
+      commit: (items) => { setOneOnOneRecommendations(items); recommendationsUpdated = true; },
+      fail: (error) => {
+        if (error instanceof Error && error.message === "one_on_one_auth_required") {
+          setOneOnOneHomeError("로그인 상태와 이용 권한을 다시 확인해 주세요.");
+        }
+        setOneOnOneRecommendationsError("추천 후보를 불러오지 못했어요. 잠시 후 다시 확인해 주세요.");
+      },
+      finish: () => setOneOnOneRecommendationsLoading(false),
+    })]);
+    if (updated && recommendationsUpdated) oneOnOneRefreshNeedsReloadRef.current = false;
+    if (requireUpdated && (!updated || !recommendationsUpdated)) throw new Error("새 후보 명단을 불러오지 못했어요.");
+  }, [viewerLoggedIn, oneOnOneHomeRequest, oneOnOneRecommendationsRequest]);
 
   useEffect(() => {
     if (homeFeatureTab === "one_on_one") void reloadOneOnOneHome(false);
@@ -3454,6 +3502,8 @@ function OpenCardsContent() {
           sessionError={viewerSessionError}
           onRetrySession={() => viewerSessionRetryRef.current?.()}
           error={oneOnOneHomeError}
+          recommendationsLoading={oneOnOneRecommendationsLoading}
+          recommendationsError={oneOnOneRecommendationsError}
           data={oneOnOneHome}
           processingMatchIds={processingOneOnOneMatchIds}
           processingContactIds={processingOneOnOneContactIds}

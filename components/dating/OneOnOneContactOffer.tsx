@@ -34,12 +34,12 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
         </div>
       ) : null}
       <button type="button" disabled={processing} onClick={() => onExchange(matchId)}
-        className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-neutral-900 px-3 py-2 text-sm font-semibold text-white hover:bg-neutral-800 disabled:opacity-50">
+        className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-[#f0003d] px-3 py-2 text-sm font-semibold text-white hover:bg-[#d90037] disabled:opacity-50">
         {processing ? (included ? "교환 중..." : "결제 준비 중...") : included ? "무료로 번호교환" : `연락처 교환 · ${ONE_ON_ONE_CONTACT_PRICE_KRW.toLocaleString("ko-KR")}원`}
       </button>
       {!included ? (
         <details className="mt-2 text-[11px] leading-5 text-neutral-500">
-          <summary className="cursor-pointer py-1">연락처 교환 안내</summary>
+          <summary className="min-h-[44px] cursor-pointer content-center py-2">연락처 교환 안내</summary>
           <p className="mt-1">한 분이 결제를 완료하면 두 분 모두 연락처를 확인할 수 있어요. 각각 결제할 필요는 없어요.</p>
           {help}
         </details>
