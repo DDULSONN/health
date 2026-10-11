@@ -1,10 +1,11 @@
 "use client";
 
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import PaymentCardNotice from "@/components/PaymentCardNotice";
 import OneOnOneContactNudge, { ReceivedContactNudge } from "@/components/dating/OneOnOneContactNudge";
 import type { OneOnOneContactNudgePresetKey, OneOnOneContactNudgeSummary } from "@/lib/dating-1on1-contact-nudge";
 import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
+import { isContactIntroOffer, type ContactIntroOffer } from "@/lib/contact-intro-offer";
 
 type Props = {
   matchId: string;
@@ -13,12 +14,39 @@ type Props = {
   processing: boolean;
   nudge?: OneOnOneContactNudgeSummary | null;
   nudgeProcessing: boolean;
-  onExchange: (matchId: string) => void;
+  onExchange: (matchId: string, offerId?: string) => void;
   onNudge: (matchId: string, preset: OneOnOneContactNudgePresetKey) => void;
   help?: ReactNode;
 };
 
 export default function OneOnOneContactOffer({ matchId, name, included, processing, nudge, nudgeProcessing, onExchange, onNudge, help }: Props) {
+  const [offer, setOffer] = useState<ContactIntroOffer | null>(null);
+  useEffect(() => {
+    if (included) return;
+    let disposed = false;
+    let controller: AbortController | null = null;
+    const load = async () => {
+      controller?.abort();
+      const request = new AbortController(); controller = request;
+      const timeout = window.setTimeout(() => request.abort(), 4500);
+      try {
+        const res = await fetch(`/api/dating/1on1/contact-intro-offer?matchId=${encodeURIComponent(matchId)}`, {
+          cache: "no-store", credentials: "same-origin", signal: request.signal,
+        });
+        const body = await res.json();
+        if (disposed || request.signal.aborted) return;
+        setOffer(res.ok && isContactIntroOffer(body.offer) && body.offer.matchId === matchId ? body.offer : null);
+      } catch { if (!disposed && !request.signal.aborted) setOffer(null); }
+      finally { window.clearTimeout(timeout); }
+    };
+    void load();
+    window.addEventListener("focus", load);
+    return () => { disposed = true; controller?.abort(); window.removeEventListener("focus", load); };
+  }, [matchId, included]);
+  // A stale quote is still submitted by ID: the server rejects it instead of
+  // silently charging 20,000. No member information is cached across accounts.
+  const discount = !included && offer?.matchId === matchId ? offer : null;
+  const amount = discount?.amount ?? ONE_ON_ONE_CONTACT_PRICE_KRW;
   return (
     <div className="min-w-0">
       <p className="break-words text-sm font-semibold text-neutral-900">
@@ -33,9 +61,13 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
           <ReceivedContactNudge item={nudge.received_from_other} />
         </div>
       ) : null}
-      <button type="button" disabled={processing} onClick={() => onExchange(matchId)}
+      {discount ? <p className="mt-2 text-xs font-semibold text-[#f0003d]">
+        {discount.active ? <>첫 교환 25% 할인 <span className="ml-1 font-normal text-neutral-400 line-through">20,000원</span>
+          <span className="ml-1 font-normal text-neutral-500">· {new Date(discount.expiresAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}까지</span></> : "진행 중인 할인 주문 · 기존 금액 유지"}
+      </p> : null}
+      <button type="button" disabled={processing} onClick={() => onExchange(matchId, discount?.offerId)}
         className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-[#f0003d] px-3 py-2 text-sm font-semibold text-white hover:bg-[#d90037] disabled:opacity-50">
-        {processing ? (included ? "교환 중..." : "결제 준비 중...") : included ? "무료로 번호교환" : `연락처 교환 · ${ONE_ON_ONE_CONTACT_PRICE_KRW.toLocaleString("ko-KR")}원`}
+        {processing ? (included ? "교환 중..." : "결제 준비 중...") : included ? "무료로 번호교환" : `연락처 교환 · ${amount.toLocaleString("ko-KR")}원`}
       </button>
       {!included ? (
         <details className="mt-2 text-[11px] leading-5 text-neutral-500">

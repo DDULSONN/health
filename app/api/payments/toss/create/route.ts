@@ -37,6 +37,8 @@ import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
 import { normalizeFailureOrderId } from "@/lib/payment-guidance";
 import { getContactPaymentRecovery } from "@/lib/contact-payment-recovery";
 import { AllPassOfferError, createAllPassProfileOfferCheckout, readAllPassProfileOffer } from "@/lib/all-pass-profile-offer-server";
+import { ContactIntroError, createContactIntroCheckout, readContactIntroOffer } from "@/lib/contact-intro-offer-server";
+import { isContactIntroId } from "@/lib/contact-intro-offer";
 
 import { normalizeDatingApplyReturn } from "@/lib/dating-apply-return";
 import { getCityViewPurchasePreview } from "@/lib/dating-purchase-fulfillment";
@@ -83,6 +85,7 @@ type CreateBody = {
   requireNewCandidates?: unknown;
   recoveryOrderId?: unknown;
   allPassOfferId?: unknown;
+  contactIntroOfferId?: unknown;
 };
 
 type OneOnOneMatchRow = {
@@ -338,6 +341,23 @@ export async function POST(req: Request) {
     let paymentAmount = config.amount;
     let orderNameOverride: string | null = null;
     const admin = createAdminClient();
+    if (body.contactIntroOfferId !== undefined && productType !== "one_on_one_contact_exchange") {
+      return json(400, { ok: false, code: "INVALID_OFFER_PRODUCT", message: "연락처 교환 할인 상품을 확인해 주세요." });
+    }
+    if (productType === "one_on_one_contact_exchange" && isContactIntroId(body.matchId)) {
+      const offer = await readContactIntroOffer(admin, user.id, body.matchId, true);
+      const includedContact = offer ? (await getActiveOneOnOnePlus(admin, user.id))?.contact_exchange_included === true : false;
+      if (!includedContact && body.contactIntroOfferId !== undefined && (!offer || body.contactIntroOfferId !== offer.offerId || (!offer.active && !offer.hasOrder))) {
+        throw new ContactIntroError("CONTACT_INTRO_UNAVAILABLE", "할인 기간 또는 매칭 상태가 변경됐어요. 새로고침 후 확인해 주세요.");
+      }
+      // Before the generic recovery/cancel-ready path: pilot orders are immutable
+      // and serialized per pair. Expired existing orders retain their own price.
+      if (!includedContact && offer && (offer.active || offer.hasOrder)) {
+        return json(200, await createContactIntroCheckout(admin, user, offer, getBaseUrl(req)));
+      }
+    } else if (body.contactIntroOfferId !== undefined) {
+      return json(400, { ok: false, code: "INVALID_OFFER_MATCH", message: "매칭 정보를 확인해 주세요." });
+    }
     if (body.allPassOfferId !== undefined) {
       if (productType !== "dating_all_pass_30d") return json(400, { ok: false, code: "INVALID_OFFER_PRODUCT", message: "올패스 할인 상품을 확인해 주세요." });
       return json(200, await createAllPassProfileOfferCheckout(admin, user, body.allPassOfferId, getBaseUrl(req)));
@@ -671,7 +691,7 @@ export async function POST(req: Request) {
 
       const duplicateOrderRes = await admin
         .from("toss_test_payment_orders")
-        .select("id,status,created_at")
+        .select("id,status,created_at,amount")
         .eq("product_type", "one_on_one_contact_exchange")
         .eq("product_ref_id", matchId)
         .in("status", ["ready", "paid"])
@@ -689,6 +709,11 @@ export async function POST(req: Request) {
       }
 
       const duplicateOrders = duplicateOrderRes.data ?? [];
+      // A missing/temporarily unavailable pilot RPC must not let the generic
+      // flow cancel a discounted order and silently replace it at full price.
+      if (duplicateOrders.some(row => Number(row.amount) === 15000)) {
+        throw new ContactIntroError("CONTACT_INTRO_PAYMENT_CHECK", "기존 할인 주문을 확인해야 해요. 추가 결제하지 말고 잠시 후 다시 확인해 주세요.");
+      }
       const hasPaidOrder = duplicateOrders.some((row) => row.status === "paid");
       if (hasPaidOrder) {
         return json(409, {
@@ -1286,6 +1311,7 @@ export async function POST(req: Request) {
       checkoutMode: getTossCheckoutMode(),
     });
   } catch (error) {
+    if (error instanceof ContactIntroError) return json(error.status, { ok: false, code: error.code, message: error.message });
     if (error instanceof AllPassOfferError) return json(error.status, { ok: false, code: error.code, message: error.message });
     console.error("[toss-create] unhandled", error);
     return json(500, {

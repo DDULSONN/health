@@ -70,6 +70,9 @@ function initializer(source, name) {
   return find(ast, n => ts.isVariableDeclaration(n) && n.name.getText(ast) === name).initializer.getText(ast);
 }
 function fetches(text, name) {
+  // The pilot adds only an optional server-validated offer ID. Ordinary calls
+  // still send the exact pre-pilot payload; pilot calls are executed in its suite.
+  text = text.replace(/\r\n/g, '\n').replace(/^[ \t]*\.\.\.\(contactIntroOfferId \? \{ contactIntroOfferId \} : \{\}\),\n/gm, '');
   const ast = ts.createSourceFile('handler.tsx', initializer(text, name), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const items = [];
   function visit(n) { if (ts.isCallExpression(n) && n.expression.getText(ast) === 'fetch') items.push(n.getText(ast).replace(/\r\n/g, '\n')); ts.forEachChild(n, visit); }

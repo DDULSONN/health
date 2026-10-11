@@ -4,6 +4,8 @@ import { isOneOnOnePairAgeEligible } from "@/lib/dating-1on1-age";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { hasDatingContactPhoneBlockBetween } from "@/lib/dating-contact-blocks";
 import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
+import { CONTACT_INTRO_PRICE } from "@/lib/contact-intro-offer";
+import { readContactIntroOffer } from "@/lib/contact-intro-offer-server";
 import { getTossPaymentByOrderId } from "@/lib/toss-payments";
 
 export type ContactPaymentRecovery = {
@@ -29,11 +31,16 @@ function safeCheckoutUrl(raw: string | undefined): string | null {
 // A provider outage/unknown state must never be treated as an unpaid order.
 export async function getContactPaymentRecovery(admin: SupabaseClient, userId: string, orderId: string) {
   const orderRes = await admin.from("toss_test_payment_orders")
-    .select("id,user_id,product_ref_id,product_type,toss_order_id,amount,status,created_at")
+    .select("id,user_id,product_ref_id,product_type,product_meta,toss_order_id,amount,status,created_at")
     .eq("toss_order_id", orderId).eq("user_id", userId).maybeSingle();
   if (orderRes.error) throw orderRes.error;
   const order = orderRes.data;
   if (!order || order.product_type !== "one_on_one_contact_exchange" || !order.product_ref_id) return null;
+  if (Number(order.amount) !== ONE_ON_ONE_CONTACT_PRICE_KRW) {
+    if (Number(order.amount) !== CONTACT_INTRO_PRICE) return null;
+    const offer = await readContactIntroOffer(admin, userId, order.product_ref_id, true);
+    if (!offer?.hasOrder || offer.offerId !== order.product_meta?.contactIntroOfferId) return null;
+  }
   // Do not reopen old or refunded purchases as a new payment.
   if (Date.now() - Date.parse(order.created_at) > 7 * 86400000 || !Number.isFinite(Date.parse(order.created_at))) return null;
   const matchRes = await admin.from("dating_1on1_match_proposals")
@@ -56,7 +63,7 @@ export async function getContactPaymentRecovery(admin: SupabaseClient, userId: s
   if (!card || card.user_id !== otherId || card.status === "rejected") return null;
   const view: ContactPaymentRecovery = {
     matchId: match.id, name: card.name, region: card.region, age: card.age,
-    photoUrl: card.photo_signed_urls[0] ?? null, amount: ONE_ON_ONE_CONTACT_PRICE_KRW, state: "unavailable",
+    photoUrl: card.photo_signed_urls[0] ?? null, amount: Number(order.amount), state: "unavailable",
   };
   if (order.status === "paid" || match.contact_exchange_status === "approved" || match.contact_exchange_paid_at) {
     view.state = "paid";
@@ -88,7 +95,7 @@ export async function getContactPaymentRecovery(admin: SupabaseClient, userId: s
       if (row.status === "canceled") continue;
       // Reopen the SAME order: refreshes/double clicks cannot create another charge.
       const url = safeCheckoutUrl(payment.checkout?.url);
-      if (row.user_id !== userId || row.status !== "ready" || Number(row.amount) !== ONE_ON_ONE_CONTACT_PRICE_KRW || !url) pending = true;
+      if (row.user_id !== userId || row.status !== "ready" || Number(row.amount) !== view.amount || !url) pending = true;
       else checkoutUrl ??= url;
     } else if (!["ABORTED", "EXPIRED"].includes(payment.status ?? "")) {
       return { view, checkoutUrl: null };

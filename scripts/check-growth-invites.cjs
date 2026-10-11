@@ -101,9 +101,19 @@ test('reviewed registration guards preserve post-success analytics; redirects/pa
  }
  for(const p of ['app/api/dating/cards/my/route.ts','app/api/dating/1on1/cards/route.ts','app/api/payments/toss/create/route.ts','app/api/payments/toss/confirm/route.ts','app/api/mypage/phone-verification/verify/route.ts','app/auth/callback/complete/route.ts','supabase/sql/referral_rewards.sql']) {
   // Only remove the reviewed response-only contact destination; approval stays byte-for-byte guarded.
-  const source = p.endsWith('/toss/confirm/route.ts') ? read(p)
+  let source = p.endsWith('/toss/confirm/route.ts') ? read(p)
    .replace('import { normalizeOneOnOneMatchId } from "@/lib/dating-1on1-match-navigation";\n','')
    .replace(/^[ \t]*matchId: order\.product_type === "one_on_one_contact_exchange"\n[ \t]*\? normalizeOneOnOneMatchId\(order\.product_meta\?\.matchId\) \?\? normalizeOneOnOneMatchId\(order\.product_ref_id\) : undefined,\n/gm,'') : read(p);
+  if (p.endsWith('/toss/create/route.ts')) {
+    // Remove only the explicitly tested pilot preflight + duplicate-discount
+    // guard. All existing product creation/fulfillment logic stays pinned.
+    source=source.replace(/^import .* from "@\/lib\/contact-intro-offer(?:-server)?";\n/gm,'')
+      .replace('  contactIntroOfferId?: unknown;\n','')
+      .replace(/    if \(body\.contactIntroOfferId !== undefined && productType !== "one_on_one_contact_exchange"\) \{[\s\S]*?(?=    if \(body\.allPassOfferId !== undefined\))/, '')
+      .replace('.select("id,status,created_at,amount")\n        .eq("product_type", "one_on_one_contact_exchange")', '.select("id,status,created_at")\n        .eq("product_type", "one_on_one_contact_exchange")')
+      .replace(/      \/\/ A missing\/temporarily unavailable pilot RPC[\s\S]*?(?=      const hasPaidOrder)/, '')
+      .replace('    if (error instanceof ContactIntroError) return json(error.status, { ok: false, code: error.code, message: error.message });\n','');
+  }
   assert.equal(hash(source),baselines[p],p);
  }
  assert.match(read('app/community/dating/cards/[id]/apply/page.tsx'),/errorCode === "DAILY_APPLY_LIMIT"[\s\S]+placement="credits_empty"/);

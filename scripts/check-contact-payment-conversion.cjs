@@ -23,6 +23,7 @@ const nudge = load('lib/dating-1on1-contact-nudge.ts');
 const nudgeUI = load('components/dating/OneOnOneContactNudge.tsx', { '@/lib/dating-1on1-contact-nudge': nudge });
 const notice = load('components/PaymentCardNotice.tsx', { '@/lib/payment-card-notice': load('lib/payment-card-notice.ts') });
 const Offer = load('components/dating/OneOnOneContactOffer.tsx', {
+  '@/lib/contact-intro-offer': load('lib/contact-intro-offer.ts'),
   '@/components/PaymentCardNotice': notice, '@/components/dating/OneOnOneContactNudge': nudgeUI, '@/lib/dating-contact-price': price,
 }).default;
 const defaults = { matchId: 'match', name: '테스트상대', included: false, processing: false, nudgeProcessing: false, onExchange() { throw Error('No automatic checkout'); }, onNudge() { throw Error('No automatic send'); } };
@@ -85,6 +86,8 @@ function fixture(options = {}) {
     }; return q;
   } };
   const helper = load('lib/contact-payment-recovery.ts', {
+    '@/lib/contact-intro-offer': load('lib/contact-intro-offer.ts'),
+    '@/lib/contact-intro-offer-server': { readContactIntroOffer: async () => options.offer ?? null },
     '@/lib/dating-1on1': { getDatingOneOnOneCardsByIds: async () => new Map(options.missingCard ? [] : [['c2', card]]) },
     '@/lib/dating-1on1-age': { isOneOnOnePairAgeEligible: async () => options.ageEligible !== false },
     '@/lib/dating-blocks': { hasDatingBlockBetween: async () => !!options.blocked },
@@ -164,6 +167,7 @@ for (const [options, status] of [[{},200], [{ anonymous:true },401], [{ order: {
 });
 
 function actualCreate(globals) {
+  globals = { ...load('lib/contact-intro-offer.ts'), ContactIntroError: class extends Error {}, ...globals };
   const file = ts.createSourceFile('route.ts', read('app/api/payments/toss/create/route.ts'), ts.ScriptTarget.Latest, true);
   const fn = file.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'POST');
   const compiled = ts.transpileModule(fn.getText(file).replace(/^export /, ''), { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText;
@@ -239,22 +243,48 @@ test('terminal provider failure can create one new checkout; a newly paid DB ord
 });
 
 for (const [file,name] of [['app/mypage/page.tsx','handleRequestOneOnOneContactExchange'], ['app/community/dating/cards/page.tsx','handleOneOnOneContactCheckout']]) {
+  test(`actual ${name}: a quoted discount must never open a full-price or missing-price checkout`,async()=>{
+    const ast=ts.createSourceFile(file,read(file),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let initializer;
+    function visit(n){if(ts.isVariableDeclaration(n)&&n.name.getText(ast)===name)initializer=n.initializer.getText(ast);ts.forEachChild(n,visit);}visit(ast);
+    const compiled=ts.transpileModule('const handler = '+initializer,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
+    for(const amount of [15000,20000,undefined]){
+      const destination={href:'unchanged'},analytics=[],alerts=[];
+      const globals={useCallback:fn=>fn,oneOnOneContactCheckoutLocksRef:{current:new Set()},reloadOneOnOneHome:async()=>{},
+        setProcessingOneOnOneContactExchangeIds:()=>{},setProcessingOneOnOneContactIds:()=>{},withPaymentCardNotice:v=>v,
+        window:{location:destination},trackCheckoutStarted:value=>analytics.push(value),alert:value=>alerts.push(value),
+        fetch:async()=>Response.json({ok:true,amount,checkoutUrl:'https://api.tosspayments.com/fixture'})};
+      const handler=new Function(...Object.keys(globals),compiled+';return handler;')(...Object.values(globals));
+      await handler('match','discount');
+      assert.equal(destination.href,amount===15000?'https://api.tosspayments.com/fixture':'unchanged');
+      assert.equal(analytics.length,amount===15000?1:0);assert.equal(alerts.length,amount===15000?0:1);
+      if(analytics.length)assert.equal(analytics[0].amount,15000);
+    }
+  });
   test(`actual ${name} prevents concurrent clicks and unlocks a failed attempt`, async () => {
     const ast = ts.createSourceFile(file, read(file), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
     let initializer;
     function visit(n) { if (ts.isVariableDeclaration(n) && n.name.getText(ast) === name) initializer=n.initializer.getText(ast); ts.forEachChild(n,visit); }
     visit(ast); assert.ok(initializer);
     const compiled = ts.transpileModule('const handler = '+initializer, {compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
-    let resolveFetch, calls=0;
+    let resolveFetch, calls=0; const payloads=[];
     const locks={current:new Set()};
     const globals={
       useCallback:fn=>fn,oneOnOneContactCheckoutLocksRef:locks,reloadOneOnOneHome:async()=>{},
       setProcessingOneOnOneContactExchangeIds:()=>{},setProcessingOneOnOneContactIds:()=>{},
-      withPaymentCardNotice:v=>v,alert:()=>{},fetch:()=>{calls++;return new Promise(resolve=>{resolveFetch=resolve;});},
+      withPaymentCardNotice:v=>v,alert:()=>{},fetch:(_url,options)=>{calls++;payloads.push(JSON.parse(options.body));return new Promise(resolve=>{resolveFetch=resolve;});},
     };
     const handler = new Function(...Object.keys(globals),compiled+';return handler;')(...Object.values(globals));
     const first=handler('match'), second=handler('match'); assert.equal(calls,1);
     resolveFetch(Response.json({ok:false,message:'fixture failure'},{status:409}));await Promise.all([first,second]);assert.equal(locks.current.size,0);
-    const third=handler('match');assert.equal(calls,2);resolveFetch(Response.json({ok:false},{status:409}));await third;assert.equal(locks.current.size,0);
+    const third=handler('match','discount-offer');assert.equal(calls,2);resolveFetch(Response.json({ok:false},{status:409}));await third;assert.equal(locks.current.size,0);
+    assert.deepEqual(payloads[0],{productType:'one_on_one_contact_exchange',matchId:'match'});
+    assert.deepEqual(payloads[1],{productType:'one_on_one_contact_exchange',matchId:'match',contactIntroOfferId:'discount-offer'});
   });
 }
+
+test('discount payment recovery displays and reuses the stored 15000 only with a private offer binding',async()=>{
+  const offer={offerId:'discount',hasOrder:true};
+  const options={offer,order:{amount:15000,product_meta:{contactIntroOfferId:'discount'}},payment:{totalAmount:15000,status:'READY'}};
+  const result=await fixture(options).run();assert.equal(result.view.amount,15000);assert.equal(result.view.state,'retry');assert.ok(result.checkoutUrl);
+  for(const bad of [{offer:null},{order:{amount:1}},{offer:{offerId:'other',hasOrder:true}}])assert.equal(await fixture({...options,...bad}).run(),null);
+});

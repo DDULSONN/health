@@ -181,6 +181,7 @@ test('normal fulfillment/confirmation is unchanged outside the explicit offer pr
 
 // Execute the real route bodies, replacing only database/provider boundaries.
 function actualFunction(file,name,bindings) {
+ bindings={ContactIntroError:class extends Error {},...bindings};
  const source=read(file),ast=ts.createSourceFile(file,source,ts.ScriptTarget.Latest,true);
  const declaration=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text===name);
  assert(declaration,name);const m={exports:{}};

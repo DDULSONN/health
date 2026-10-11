@@ -21,6 +21,7 @@ function loader(overrides = {}) {
 }
 // Execute the actual function body when isolating payment-provider boundaries.
 function actualFunction(file, name, bindings) {
+  bindings = { ...loader()('@/lib/contact-intro-offer'), ContactIntroError: class extends Error {}, ...bindings };
   const text = read(file), ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true);
   const declaration = ast.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === name);
   assert.ok(declaration, name);

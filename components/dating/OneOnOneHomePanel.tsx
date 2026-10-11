@@ -167,7 +167,7 @@ export default function OneOnOneHomePanel({
     matchId: string,
     action: "select_candidate" | "source_cancel" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
   ) => void;
-  onContactCheckout: (matchId: string) => void;
+  onContactCheckout: (matchId: string, offerId?: string) => void;
   onContactNudge: (matchId: string, presetKey: OneOnOneContactNudgePresetKey) => void;
   onAutoSelect: (sourceCardId: string, candidateCardId: string, candidateName?: string | null) => void | Promise<void>;
   onRefreshRecommendations: (sourceCardId: string) => void;
@@ -766,7 +766,7 @@ function OneOnOneMatchActions({
     matchId: string,
     action: "select_candidate" | "source_cancel" | "candidate_accept" | "candidate_reject" | "source_accept" | "source_reject" | "cancel_mutual"
   ) => void;
-  onContactCheckout: (matchId: string) => void;
+  onContactCheckout: (matchId: string, offerId?: string) => void;
   onContactNudge: (matchId: string, presetKey: OneOnOneContactNudgePresetKey) => void;
 }) {
   if (match.role === "source" && match.state === "proposed") {

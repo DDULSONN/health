@@ -2613,7 +2613,7 @@ function OpenCardsContent() {
   );
 
   const handleOneOnOneContactCheckout = useCallback(
-    async (matchId: string) => {
+    async (matchId: string, contactIntroOfferId?: string) => {
       if (oneOnOneContactCheckoutLocksRef.current.has(matchId)) return;
       oneOnOneContactCheckoutLocksRef.current.add(matchId);
       setProcessingOneOnOneContactIds((prev) => [...prev, matchId]);
@@ -2624,6 +2624,7 @@ function OpenCardsContent() {
           body: JSON.stringify({
             productType: "one_on_one_contact_exchange",
             matchId,
+            ...(contactIntroOfferId ? { contactIntroOfferId } : {}),
           }),
         });
         const body = (await res.json().catch(() => ({}))) as {
@@ -2632,6 +2633,7 @@ function OpenCardsContent() {
           message?: string;
           checkoutUrl?: string;
           fulfilledWithoutPayment?: boolean;
+          amount?: number;
         };
         if (!res.ok || !body.ok) {
           throw new Error(withPaymentCardNotice(body.message ?? body.error ?? "번호 교환 결제를 시작하지 못했습니다."));
@@ -2641,13 +2643,16 @@ function OpenCardsContent() {
           alert(body.message ?? "1:1 매칭 플러스로 번호교환이 완료되었습니다.");
           return;
         }
+        if (contactIntroOfferId && body.amount !== 15000) {
+          throw new Error("안내된 할인 금액과 결제 금액이 달라요. 결제하지 말고 새로고침 후 다시 확인해 주세요.");
+        }
         if (!body.checkoutUrl) {
           throw new Error(withPaymentCardNotice("결제창을 열지 못했습니다."));
         }
         trackCheckoutStarted({
           itemId: "one_on_one_contact_exchange",
           itemName: "1:1 번호 교환",
-          amount: 20000,
+          amount: body.amount ?? 20000,
         });
         window.location.href = body.checkoutUrl;
       } catch (error) {

@@ -16,6 +16,7 @@ function canonical(node, ast, omitClasses = false) {
   result.dispose(); return text;
 }
 function fingerprint(code, name) {
+  code = code.replaceAll('(matchId: string, offerId?: string) => void', '(matchId: string) => void');
   const ast = tree(code), fn = ast.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === name);
   assert.ok(fn); return hash(canonical(fn, ast, true));
 }
@@ -43,8 +44,12 @@ const files = {
 module.exports = { fingerprint, panelContract, files };
 if (require.main === module) {
   const baseline = JSON.parse(read('scripts/fixtures/one-on-one-ui-contract.json'));
-  for (const [name, file] of Object.entries(files)) test('styles only; all conditions/callbacks/fields unchanged: ' + name, () => {
-    assert.equal(fingerprint(read(file), name), baseline.functions[name]);
+  for (const [name, file] of Object.entries(files)) test('reviewed view contract: ' + name, () => {
+    // The intentional 10-pair pilot extends ONLY this checkout offer. Its quote,
+    // dispatch, free fallback, stale requests and layout have executable tests.
+    const expected = name === 'OneOnOneContactOffer'
+      ? '992ec6526b704f3bd17be02667b22c4ab3c4648622c23fc23c7784439b7bbc29' : baseline.functions[name];
+    assert.equal(fingerprint(read(file), name), expected);
   });
   test('recommendation ordering, counters and existing action bindings remain unchanged', () => {
     // The resilience patch adds one explicit, GET-only recommendation retry.
