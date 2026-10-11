@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { isOneOnOnePairAgeEligible } from "@/lib/dating-1on1-age";
+import { normalizeOneOnOneMatchId } from "@/lib/dating-1on1-match-navigation";
 import { DATING_AGE_INELIGIBLE_MESSAGE } from "@/lib/dating-age";
 import {
   DATING_ALL_PASS_DURATION_DAYS,
@@ -913,6 +914,8 @@ export async function POST(req: Request) {
         requestId,
         alreadyConfirmed: true,
         productType: order.product_type,
+        matchId: order.product_type === "one_on_one_contact_exchange"
+          ? normalizeOneOnOneMatchId(order.product_meta?.matchId) ?? normalizeOneOnOneMatchId(order.product_ref_id) : undefined,
         orderName: order.order_name,
         readingId: order.product_type === "love_fortune_detail" ? order.product_ref_id : undefined,
         orderId,
@@ -994,6 +997,8 @@ export async function POST(req: Request) {
       orderId,
       paymentKey,
       productType: order.product_type,
+      matchId: order.product_type === "one_on_one_contact_exchange"
+        ? normalizeOneOnOneMatchId(order.product_meta?.matchId) ?? normalizeOneOnOneMatchId(order.product_ref_id) : undefined,
       orderName: order.order_name,
       readingId: order.product_type === "love_fortune_detail" ? order.product_ref_id : undefined,
       amount,

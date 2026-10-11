@@ -9,6 +9,7 @@ const webpack = require('webpack');
 const { chromium } = require('./test-browser-runtime.cjs');
 const root = path.resolve(__dirname, '..');
 async function main() {
+  const journeyOnly = process.argv.includes('--journey');
   const output = fs.mkdtempSync(path.join(os.tmpdir(), 'gymtools-action-copy-browser-'));
   const adapter = path.join(__dirname, 'fixtures/recommendation-refresh-adapters.tsx');
   await new Promise((resolve, reject) => {
@@ -38,11 +39,13 @@ async function main() {
   let browser, passed = 0;
   try {
     browser = await chromium.launch({ headless: true });
-    for (const surface of ['home', 'mypage']) for (const width of [320, 390, 1280]) for (const scenario of [
+    for (const surface of ['home', 'mypage']) for (const width of [320, 390, 1280]) for (const scenario of (journeyOnly
+      ? surface === 'home' ? ['journey-incoming', 'journey-checkout', 'journey-paid', 'journey-pending', 'journey-approved', 'journey-closed', 'journey-missing', 'journey-load-error', 'journey-many'] : ['journey-shortcut', 'journey-pending', 'journey-paid']
+      : [
       'success', 'failure', 'proposed', 'read-failure', 'partial-read-failure', 'additional',
       ...(surface === 'mypage' ? ['favorite', 'incoming-other-error'] : []),
       'incoming-accept', 'incoming-reject', 'incoming-failure', 'incoming-many', 'incoming-none', 'incoming-read-error', 'incoming-missing-profile',
-    ]) {
+    ])) {
       const context = await browser.newContext({ viewport: { width, height: 844 } });
       const page = await context.newPage(); page.setDefaultTimeout(12000);
       const errors = [], alerts = [];
@@ -56,6 +59,8 @@ async function main() {
       const candidate = { ...profile, id: 'candidate-card', user_id: 'candidate-user', name: '추천상대', sex: 'male',
         intro_text: '주말에는 산책하고 맛있는 커피를 마시는 걸 좋아해요.\n'.repeat(16) + '끝까지 보이는 소개입니다.' };
       const incomingCase = scenario.startsWith('incoming-');
+      const focusedId = '00000000-0000-4000-8000-000000000099';
+      const focusedHref = `/community/dating/cards?tab=one_on_one&matchId=${focusedId}#selected-one-on-one-match`;
       function match(id, role, state, name, contact_exchange_status = 'none') {
         return { id, role, state, contact_exchange_status, source_card_id: role === 'source' ? profile.id : candidate.id,
           candidate_card_id: role === 'candidate' ? profile.id : candidate.id, created_at: now,
@@ -96,6 +101,17 @@ async function main() {
           case '/api/dating/1on1/my': body = { items: [profile], plus: { expires_at: profile.plus_expires_at, contact_exchange_included: false } }; break;
           case '/api/dating/1on1/write-status': body = { canWrite: false, phoneVerified: true, writeStatus: 'approved' }; break;
           case '/api/dating/1on1/matches/my':
+            if (scenario === 'journey-load-error') { await route.fulfill({ status: 503, json: { error: '로컬 매칭 조회 실패' } }); return; }
+            if (journeyOnly) {
+              const status = { 'journey-paid': 'paid', 'journey-pending': 'payment_pending_admin', 'journey-approved': 'approved', 'journey-closed': 'canceled' }[scenario] || 'awaiting_applicant_payment';
+              const state = scenario === 'journey-incoming' ? 'source_selected' : scenario === 'journey-closed' ? 'admin_canceled' : 'mutual_accepted';
+              const target = match(focusedId, 'candidate', state, '알림에서찾은상대', status);
+              target.counterparty_phone = status === 'approved' ? '010-0000-0000' : null;
+              body = { items: [
+                ...Array.from({ length: 12 }, (_, i) => match('waiting-' + i, 'source', 'source_selected', `대기회원${i}`)),
+                ...(scenario === 'journey-missing' ? [] : [target]),
+              ] }; break;
+            }
             if (scenario === 'incoming-read-error') { await route.fulfill({ status: 503, json: { error: '로컬 받은 요청 조회 실패' } }); return; }
             if (posts && scenario === 'read-failure') { await route.fulfill({ status: 503, json: { error: '로컬 목록 조회 실패' } }); return; }
             body = { items: [
@@ -120,7 +136,63 @@ async function main() {
         await route.fulfill({ json: body });
       });
       try {
-        await page.goto(origin + (surface === 'home' ? '/community/dating/cards?tab=one_on_one' : '/mypage?section=matching&matching=one_on_one'));
+        await page.goto(origin + (surface === 'home' ? journeyOnly && scenario !== 'journey-many' ? focusedHref : '/community/dating/cards?tab=one_on_one' : '/mypage?section=matching&match=one_on_one'));
+        if (journeyOnly) {
+          if (surface === 'mypage' && scenario === 'journey-shortcut') {
+            const shortcut = page.getByRole('region', { name: '이어서 진행할 1:1 매칭' }).getByRole('link', { name: /알림에서찾은상대/ });
+            await shortcut.waitFor(); assert.equal(await shortcut.getAttribute('href'), focusedHref);
+            await shortcut.click();
+          }
+          if (scenario === 'journey-load-error') {
+            await page.getByRole('alert').filter({ hasText: '로컬 매칭 조회 실패' }).waitFor();
+            assert.equal(await page.locator('#selected-one-on-one-match').count(), 0);
+            assert.equal(await page.getByRole('region', { name: '이어서 진행할 1:1 매칭' }).count(), 0);
+          } else if (scenario === 'journey-many') {
+            const more = page.getByRole('button', { name: /진행 중 매칭 더보기/ }); await more.waitFor();
+            await more.click(); await page.getByText('대기회원11', { exact: true }).waitFor();
+            assert.equal(await more.count(), 0, 'all active matches reachable beyond eight');
+          } else if (surface === 'mypage' && ['journey-pending', 'journey-paid'].includes(scenario)) {
+            await page.getByText('결제·번호 공개 상태를 확인 중이에요.', { exact: false }).waitFor();
+            assert.equal(await page.getByRole('button', { name: /연락처 교환 ·/ }).count(), 0);
+          } else {
+            const focused = page.locator('#selected-one-on-one-match'); await focused.waitFor();
+            if (scenario === 'journey-missing') {
+              await focused.getByText(/이 매칭을 확인할 수 없어요/).waitFor();
+              assert.equal(await focused.getByRole('button').count(), 0);
+            } else {
+              await focused.getByText('알림에서찾은상대', { exact: true }).waitFor();
+              assert.equal(await focused.getByText('알림에서찾은상대', { exact: true }).count(), 1);
+              if (scenario === 'journey-incoming') {
+                assert.equal(await focused.getByRole('button', { name: '수락', exact: true }).count(), 1);
+                assert.equal(await focused.getByRole('button', { name: '거절', exact: true }).count(), 1);
+              } else if (['journey-checkout', 'journey-shortcut'].includes(scenario)) {
+                await focused.getByRole('button', { name: '연락처 교환 · 20,000원' }).waitFor();
+              } else {
+                assert.equal(await focused.getByRole('button', { name: /연락처 교환 ·/ }).count(), 0);
+                if (scenario === 'journey-approved') await focused.getByText('010-0000-0000').waitFor();
+                else assert.equal(await focused.getByText('010-0000-0000').count(), 0);
+              }
+              const images = focused.getByRole('img');
+              for (const img of await images.all()) { await img.scrollIntoViewIfNeeded(); await page.waitForFunction(el => el.complete && el.naturalWidth > 0, await img.elementHandle()); }
+            }
+            await focused.evaluate(el => el.scrollIntoView({ block: 'start' }));
+            if (['journey-incoming', 'journey-checkout', 'journey-shortcut'].includes(scenario)) {
+              const button = focused.getByRole('button', { name: scenario === 'journey-incoming' ? '수락' : '연락처 교환 · 20,000원', exact: true });
+              const startBox = await focused.boundingBox(), buttonBox = await button.boundingBox();
+              assert.ok(buttonBox.y - startBox.y < 650, 'long introduction cannot bury the next action');
+              const expand = focused.getByRole('button', { name: '소개 더보기' }); await expand.click();
+              await focused.getByText('끝까지 보이는 소개입니다.', { exact: false }).last().waitFor();
+              await focused.getByRole('button', { name: '소개 접기' }).click();
+            }
+            if (width === 390) await page.screenshot({ path: path.join(output, `${surface}-${scenario}.png`) });
+            await page.reload(); await page.locator('#selected-one-on-one-match').waitFor();
+            assert.ok(page.url().includes(`matchId=${focusedId}`), 'refresh preserves the selected match');
+          }
+          assert.equal(posts, 0, 'navigation, reload and status views never auto-accept or pay');
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+          assert.equal(blocked, 0); assert.deepEqual(errors, []);
+          console.log(`PASS ${surface} ${width}px ${scenario}`); passed++; continue;
+        }
         if (incomingCase) {
           const inbox = page.getByRole('region', { name: '받은 1:1 매칭 요청' });
           if (scenario === 'incoming-none' || scenario === 'incoming-read-error') {
@@ -129,8 +201,9 @@ async function main() {
             assert.equal(await inbox.count(), 0, 'no false request shortcut after empty/failed read');
           } else {
             const shortcut = inbox.getByRole('button', { name: /나에게 온 요청/ }); await shortcut.waitFor();
-            assert.equal(await shortcut.getAttribute('aria-expanded'), 'false');
-            assert.equal(await inbox.getByRole('button', { name: '수락', exact: true }).count(), 0, 'collapsed requests do not mount hidden action buttons');
+            assert.equal(await shortcut.getAttribute('aria-expanded'), 'true', 'first requests are directly visible');
+            await shortcut.click();
+            assert.equal(await inbox.getByRole('button', { name: '수락', exact: true }).count(), 0, 'manually collapsed requests unmount their action buttons');
             await shortcut.click();
             if (scenario === 'incoming-missing-profile') {
               await inbox.getByText(/상대 프로필을 확인할 수 없습니다/).waitFor();
@@ -196,7 +269,7 @@ async function main() {
         if (width === 390 && scenario === 'success') {
           await summary.scrollIntoViewIfNeeded(); await page.screenshot({ path: path.join(output, `${surface}-compact-mobile.png`) });
         }
-        await page.getByRole('button', { name: /나에게 온 요청/ }).click();
+        assert.equal(await page.getByRole('button', { name: /나에게 온 요청/ }).getAttribute('aria-expanded'), 'true');
         await page.getByText('내 수락 대기', { exact: true }).first().waitFor();
         await page.getByText('상대 응답 대기', { exact: true }).first().waitFor();
         assert.equal(await page.getByText('확인 필요', { exact: true }).count(), 0);

@@ -163,6 +163,7 @@ for(const kind of ['toss','store/plus']) test(`${kind} fulfillment validates age
 });
 test('old ready Toss orders cannot reach provider confirmation when age is ineligible',async()=>{
   const fn=actualFunction('app/api/payments/toss/confirm/route.ts','POST',{
+    normalizeOneOnOneMatchId: (value) => typeof value === 'string' && /^[0-9a-f-]{36}$/i.test(value) ? value : null,
     ...pairAge,...age,ensureAllowedMutationOrigin:()=>null,getRequestAuthContext:async()=>({user:{id:'self'}}),isTossConfigured:()=>true,
     toAmount:Number,json:(status,body)=>NextResponse.json(body,{status}),
     createAdminClient:()=>{const tables=fixture(2010);tables.toss_test_payment_orders=[{id:'order',user_id:'self',product_type:'one_on_one_contact_exchange',product_ref_id:'match',toss_order_id:'order',amount:100,status:'ready'}];return database(tables);},
@@ -200,6 +201,7 @@ test('normal adult payment confirmation and paid retry preserve approval and cha
   const db=database(tables);let providerCalls=0;
   const fulfill=actualFunction('app/api/payments/toss/confirm/route.ts','ensureOneOnOneExchangeFulfilled',{...pairAge,...age});
   const fn=actualFunction('app/api/payments/toss/confirm/route.ts','POST',{
+    normalizeOneOnOneMatchId: (value) => typeof value === 'string' && /^[0-9a-f-]{36}$/i.test(value) ? value : null,
     ...pairAge,...age,ensureAllowedMutationOrigin:()=>null,getRequestAuthContext:async()=>({user:{id:'self'}}),isTossConfigured:()=>true,
     toAmount:Number,json:(status,body)=>NextResponse.json(body,{status}),createAdminClient:()=>db,
     confirmOrRecoverTossPayment:async()=>{providerCalls++;return {method:'CARD'};},

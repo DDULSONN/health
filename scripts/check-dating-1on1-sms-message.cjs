@@ -12,7 +12,7 @@ test("1:1 request SMS stays valid Korean UTF-8 and concise", () => {
   const message = JSON.parse(match[1]);
   assert.equal(
     message,
-    "[짐툴] 1:1 요청이 도착했어요. 마이페이지에서 확인해주세요.\nhelchang.com/mypage",
+    "[짐툴] 1:1 요청이 도착했어요. 상대 프로필을 확인해 주세요.\nhelchang.com/mypage?section=matching",
   );
   assert.equal(Buffer.from(message, "utf8").toString("utf8"), message);
   assert.equal(message.includes("�"), false);

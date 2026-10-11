@@ -8,7 +8,7 @@ export default function OneOnOneIncomingRequests<T extends { id: string }>({
   requests: readonly T[];
   renderRequest: (request: T) => ReactNode;
 }) {
-  const [expanded, setExpanded] = useState(false);
+  const [expanded, setExpanded] = useState(true);
   const [visibleCount, setVisibleCount] = useState(3);
   const listId = useId();
   if (!requests.length) return null;

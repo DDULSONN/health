@@ -4,6 +4,7 @@ import { getOneOnOneContactNudgeSenderDisplayName } from "@/lib/dating-1on1-cont
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { notificationHref } from "@/lib/notification-view";
+import { oneOnOneNotificationHref } from "@/lib/dating-1on1-match-navigation";
 
 type NotificationRow = {
   id: string;
@@ -432,7 +433,10 @@ export async function GET(request: Request) {
         actor_profile: notification.actor_id ? profileMap.get(notification.actor_id) ?? null : null,
         title: presentation.title,
         body: presentation.body,
-        link: notificationHref(presentation.link),
+        link: oneOnOneNotificationHref(
+          getNotificationMetaText(notification, "notification_type") || notification.type,
+          getNotificationMatchId(notification),
+        ) ?? notificationHref(presentation.link),
       };
     }),
     unread_count: unreadCountRaw,

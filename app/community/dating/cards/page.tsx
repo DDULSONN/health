@@ -3445,6 +3445,7 @@ function OpenCardsContent() {
 
       {showOneOnOneSection ? (
         <OneOnOneHomePanel
+          focusedMatchId={searchParams.get("matchId")}
           arrivedFromOnboarding={arrivedFromDatingOnboarding}
           viewerLoggedIn={viewerLoggedIn}
           profileStartHref={profileStartHref}

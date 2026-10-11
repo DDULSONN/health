@@ -9,7 +9,7 @@ type AdminClient = ReturnType<typeof createAdminClient>;
 
 const DELIVERY_TABLE = "dating_1on1_sms_deliveries";
 export const ONE_ON_ONE_SELECTION_SMS_TEXT =
-  "[\uC9D0\uD234] 1:1 \uC694\uCCAD\uC774 \uB3C4\uCC29\uD588\uC5B4\uC694. \uB9C8\uC774\uD398\uC774\uC9C0\uC5D0\uC11C \uD655\uC778\uD574\uC8FC\uC138\uC694.\nhelchang.com/mypage";
+  "[짐툴] 1:1 요청이 도착했어요. 상대 프로필을 확인해 주세요.\nhelchang.com/mypage?section=matching";
 
 function isMissingSmsDeliverySchema(error: unknown) {
   const code = String((error as { code?: unknown } | null)?.code ?? "");

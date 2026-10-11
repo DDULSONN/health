@@ -99,7 +99,13 @@ test('reviewed registration guards preserve post-success analytics; redirects/pa
    .replace(/^\s*recordGrowthProfileCreated\([^\n]+\);\n/gm,'').replace(/^      if \(!isEditMode\) recordGrowthProfileCreated\([^\n]+\);\n/gm,'');
   assert.equal(hash(normalized),baselines[p],p);
  }
- for(const p of ['app/api/dating/cards/my/route.ts','app/api/dating/1on1/cards/route.ts','app/api/payments/toss/create/route.ts','app/api/payments/toss/confirm/route.ts','app/api/mypage/phone-verification/verify/route.ts','app/auth/callback/complete/route.ts','supabase/sql/referral_rewards.sql'])assert.equal(hash(read(p)),baselines[p],p);
+ for(const p of ['app/api/dating/cards/my/route.ts','app/api/dating/1on1/cards/route.ts','app/api/payments/toss/create/route.ts','app/api/payments/toss/confirm/route.ts','app/api/mypage/phone-verification/verify/route.ts','app/auth/callback/complete/route.ts','supabase/sql/referral_rewards.sql']) {
+  // Only remove the reviewed response-only contact destination; approval stays byte-for-byte guarded.
+  const source = p.endsWith('/toss/confirm/route.ts') ? read(p)
+   .replace('import { normalizeOneOnOneMatchId } from "@/lib/dating-1on1-match-navigation";\n','')
+   .replace(/^[ \t]*matchId: order\.product_type === "one_on_one_contact_exchange"\n[ \t]*\? normalizeOneOnOneMatchId\(order\.product_meta\?\.matchId\) \?\? normalizeOneOnOneMatchId\(order\.product_ref_id\) : undefined,\n/gm,'') : read(p);
+  assert.equal(hash(source),baselines[p],p);
+ }
  assert.match(read('app/community/dating/cards/[id]/apply/page.tsx'),/errorCode === "DAILY_APPLY_LIMIT"[\s\S]+placement="credits_empty"/);
  assert.ok(!/fetch\(|setInterval|auth\.getUser|auth\.getSession/.test(read('components/GrowthPrompts.tsx')));
 });

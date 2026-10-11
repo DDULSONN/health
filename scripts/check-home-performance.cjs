@@ -143,12 +143,13 @@ test('1:1 view is a conditional dynamic import, not a static runtime import', ()
   assert.match(home, /\{showOneOnOneSection \? \(\s*<OneOnOneHomePanel/);
   assert.doesNotMatch(home, /import OneOnOneHomePanel from/);
 });
-// Exact function hashes from deployed af0ee5b before the mechanical extraction.
+// Exact function hashes from deployed af0ee5b; panel/actions updated for reviewed
+// match deep links, bounded next steps, and pending-payment presentation (Oct 11).
 // Future intentional view edits should update these reviewed baselines explicitly.
 const movedFunctions = {
-  OneOnOneHomePanel: 'c86e0995598265c7212bba1c7c5236d3ab05ff31178f6d6ab17b35c82723d4ec',
+  OneOnOneHomePanel: '34f09385528ef4e69e48f1117d283e064b1bda0d93c98edce8948284f773e3f4',
   OneOnOneCandidateCard: '487a01e43341fe6dbf238595514a7af4f2d3178968ab175b25a8237898cf7bb1',
-  OneOnOneMatchActions: '3f514f345366b8714d510c5ca8497c5e5a7be7da654e1653b1bdf45e7bcac6e5',
+  OneOnOneMatchActions: '90e8c25725ca89993960b948567bac5bbc3127a86b58b05e06390081905c92ac',
   canCancelOneOnOneMatchPreview: '0ec3faad4e8701ea4622ea220af8ebaddaf725cfa52a70fc686b82a37444036c',
   getOneOnOneDisplayName: 'cb337ea077c58b6fe6105cb1d3cb1079f5d0e8f3113e7a8bbd482dd3544ee0e9',
   getOneOnOneAge: 'c069134d53c6fc6f79762fd0e6cc9522c953f489bcbd85bef3cae9c4ae72aa84',

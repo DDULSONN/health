@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import DatingReportButton, { type DatingReportTargetType, type DatingReportResult } from "@/components/DatingReportButton";
 import OneOnOneRefreshControl, { type OneOnOneRefreshNotice } from "@/components/dating/OneOnOneRefreshControl";
 import OneOnOnePlusStatus from "@/components/dating/OneOnOnePlusStatus";
@@ -10,6 +10,9 @@ import OneOnOneContactNudge from "@/components/dating/OneOnOneContactNudge";
 import OneOnOneContactOffer from "@/components/dating/OneOnOneContactOffer";
 import OneOnOneProfileSummary from "@/components/dating/OneOnOneProfileSummary";
 import OneOnOneIncomingRequests from "@/components/dating/OneOnOneIncomingRequests";
+import OneOnOneNextSteps from "@/components/dating/OneOnOneNextSteps";
+import OneOnOneContactPending from "@/components/dating/OneOnOneContactPending";
+import { canOfferOneOnOneContact, normalizeOneOnOneMatchId, oneOnOneMatchHref } from "@/lib/dating-1on1-match-navigation";
 import OneOnOneExpansionPanel from "@/components/dating/OneOnOneExpansionPanel";
 import { getOneOnOneActionSummary, getOneOnOneMatchLabel, isIncomingOneOnOneRequest } from "@/lib/dating-1on1-action-copy";
 import { VIEWER_SESSION_ERROR } from "@/lib/viewer-session-recovery";
@@ -115,6 +118,7 @@ function buildLoginRedirect(path: string) {
 }
 
 export default function OneOnOneHomePanel({
+  focusedMatchId,
   refreshNotice,
   onReported,
   onReload,
@@ -138,6 +142,7 @@ export default function OneOnOneHomePanel({
   onAutoSelect,
   onRefreshRecommendations,
 }: {
+  focusedMatchId?: string | null;
   arrivedFromOnboarding: boolean;
   onReported: (result: DatingReportResult) => void;
   onReload: () => void;
@@ -166,8 +171,22 @@ export default function OneOnOneHomePanel({
 }) {
   const [plusGuideOpen, setPlusGuideOpen] = useState(false);
   const [matchGuideOpen, setMatchGuideOpen] = useState(false);
+  const [visibleMatchCount, setVisibleMatchCount] = useState(8);
+  const focusedMatchRef = useRef<HTMLDivElement>(null);
+  const scrolledMatchId = useRef<string | null>(null);
+  const targetMatchId = normalizeOneOnOneMatchId(focusedMatchId);
   const myCards = data?.myCards ?? [];
   const matches = data?.matches ?? [];
+  // Only highlight a record already returned by the authenticated participant API.
+  // A URL alone never loads a profile or grants permission to act on it.
+  const focusedMatch = targetMatchId ? matches.find((match) => match.id === targetMatchId) : null;
+  useEffect(() => {
+    if (!targetMatchId) { scrolledMatchId.current = null; return; }
+    if (loading || sessionError || error || !viewerLoggedIn || !focusedMatchRef.current || scrolledMatchId.current === targetMatchId) return;
+    focusedMatchRef.current.scrollIntoView({ block: "start", behavior: "auto" });
+    focusedMatchRef.current.focus({ preventScroll: true });
+    scrolledMatchId.current = targetMatchId;
+  }, [targetMatchId, focusedMatch, loading, sessionError, error, viewerLoggedIn]);
   const activeMatches = matches.filter((match) =>
     ["proposed", "source_selected", "candidate_accepted", "mutual_accepted"].includes(String(match.state ?? ""))
   );
@@ -181,8 +200,8 @@ export default function OneOnOneHomePanel({
   const activeCards = myCards.filter((card) => card.status !== "rejected");
   const hasOneOnOneCard = activeCards.length > 0;
   const actionSummary = getOneOnOneActionSummary(activeMatches);
-  const incomingRequests = activeMatches.filter(isIncomingOneOnOneRequest);
-  const sortedMatches = activeMatches.filter((match) => !isIncomingOneOnOneRequest(match)).sort((a, b) => {
+  const incomingRequests = activeMatches.filter((match) => match.id !== focusedMatch?.id && isIncomingOneOnOneRequest(match));
+  const sortedMatches = activeMatches.filter((match) => match.id !== focusedMatch?.id && !isIncomingOneOnOneRequest(match)).sort((a, b) => {
     const aImportant = a.action_required || a.state === "candidate_accepted" || a.state === "mutual_accepted" ? 1 : 0;
     const bImportant = b.action_required || b.state === "candidate_accepted" || b.state === "mutual_accepted" ? 1 : 0;
     if (aImportant !== bImportant) return bImportant - aImportant;
@@ -263,7 +282,7 @@ export default function OneOnOneHomePanel({
           <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4">
             <p className="text-sm font-bold text-rose-900">로그인하면 내 1대1 진행 상태를 볼 수 있어요.</p>
             <Link
-              href={buildLoginRedirect(ONE_ON_ONE_HOME_HREF)}
+              href={buildLoginRedirect(targetMatchId ? oneOnOneMatchHref(targetMatchId) : ONE_ON_ONE_HOME_HREF)}
               className="mt-3 inline-flex min-h-[42px] items-center rounded-xl bg-rose-600 px-4 text-sm font-bold text-white hover:bg-rose-700"
             >
               로그인하기
@@ -274,7 +293,7 @@ export default function OneOnOneHomePanel({
             <p>{error}</p>
             <button type="button" onClick={onReload} className="mt-3 min-h-[44px] rounded-xl border border-neutral-300 bg-white px-3 font-medium text-neutral-700">명단 다시 불러오기 · 횟수 차감 없음</button>
           </div>
-        ) : !hasOneOnOneCard ? (
+        ) : !hasOneOnOneCard && matches.length === 0 ? (
           <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-5">
             <p className="text-lg font-black text-rose-950">아직 1대1 프로필이 없어요.</p>
             <p className="mt-2 text-sm leading-6 text-rose-900">
@@ -289,6 +308,20 @@ export default function OneOnOneHomePanel({
           </div>
         ) : (
           <div className="space-y-4">
+            {targetMatchId ? <div id="selected-one-on-one-match" ref={focusedMatchRef} tabIndex={-1}
+              className="scroll-mt-28 rounded-2xl border border-rose-200 bg-rose-50/30 p-3 outline-none focus-visible:ring-2 focus-visible:ring-rose-300">
+              <p className="mb-2 text-xs font-semibold text-neutral-700">선택한 매칭</p>
+              {focusedMatch?.counterparty_card ? <OneOnOneCandidateCard compact
+                card={focusedMatch.counterparty_card} reportTarget={{ type: "one_on_one_match", id: focusedMatch.id }}
+                onReported={onReported} badge={getOneOnOneMatchLabel(focusedMatch)} note={oneOnOneContactLabel(focusedMatch.contact_exchange_status)}>
+                {focusedMatch.counterparty_phone ? <p className="mt-2 text-sm font-black text-emerald-700">{focusedMatch.counterparty_phone}</p> : null}
+                <OneOnOneMatchActions match={focusedMatch} contactExchangeIncluded={plusContactExchangeIncluded}
+                  processing={processingMatchIds.includes(focusedMatch.id)} contactProcessing={processingContactIds.includes(focusedMatch.id)}
+                  nudgeProcessing={processingNudgeIds.includes(focusedMatch.id)} onMatchAction={onMatchAction}
+                  onContactCheckout={onContactCheckout} onContactNudge={onContactNudge} />
+              </OneOnOneCandidateCard> : <p className="text-xs leading-5 text-neutral-600">이 매칭을 확인할 수 없어요. 종료·삭제되었거나 현재 계정에서 볼 수 없는 매칭일 수 있어요.</p>}
+            </div> : null}
+            <OneOnOneNextSteps matches={activeMatches} />
             <OneOnOneIncomingRequests requests={incomingRequests} renderRequest={(match) => match.counterparty_card ? (
               <OneOnOneCandidateCard
                 compact
@@ -396,7 +429,7 @@ export default function OneOnOneHomePanel({
                 <p className="mt-3 rounded-2xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-500">보낸 요청과 서로 수락한 매칭은 여기에 표시돼요.</p>
               ) : (
                 <div className="mt-3 space-y-3">
-                  {sortedMatches.slice(0, 8).map((match) => (
+                  {sortedMatches.slice(0, visibleMatchCount).map((match) => (
                     <OneOnOneCandidateCard
                       key={match.id}
                       compact={match.state === "proposed"}
@@ -420,6 +453,10 @@ export default function OneOnOneHomePanel({
                       />
                     </OneOnOneCandidateCard>
                   ))}
+                  {sortedMatches.length > visibleMatchCount ? <button type="button" onClick={() => setVisibleMatchCount((count) => count + 8)}
+                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 text-xs font-medium text-neutral-600">
+                    진행 중 매칭 더보기 · {sortedMatches.length - visibleMatchCount}건
+                  </button> : null}
                 </div>
               )}
             </div>
@@ -808,6 +845,8 @@ function OneOnOneMatchActions({
         </div>
       );
     }
+
+    if (!canOfferOneOnOneContact(match)) return <OneOnOneContactPending status={match.contact_exchange_status} />;
 
     return (
       <div className="mt-3 rounded-2xl border border-emerald-100 bg-white p-3">

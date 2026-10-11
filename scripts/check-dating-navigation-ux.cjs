@@ -93,7 +93,8 @@ for (const search of ['?tab=one_on_one', '?tab=open_cards', '?tab=quick_match', 
 });
 const panelTree = ast(read('components/dating/OneOnOneHomePanel.tsx'));
 const panel = panelTree.statements.find(node => ts.isFunctionDeclaration(node) && node.name?.text === 'OneOnOneHomePanel');
-const panelSource = `const {useState} = require('react');
+const panelSource = `const {useState, useEffect, useRef} = require('react');
+const {normalizeOneOnOneMatchId, oneOnOneMatchHref} = require('match-navigation');
 const Link = require('next/link');
 const {getOneOnOneActionSummary, isIncomingOneOnOneRequest} = require('action-copy');
 const {VIEWER_SESSION_ERROR} = require('session-copy');
@@ -102,6 +103,7 @@ const buildLoginRedirect = path => '/login?redirect=' + encodeURIComponent(path)
 ${panel.getText(panelTree).replace('export default function', 'function')}
 module.exports = OneOnOneHomePanel;`;
 const Panel = evaluate(panelSource, { 'next/link': Link,
+  'match-navigation': evaluate(read('lib/dating-1on1-match-navigation.ts')),
   'action-copy': evaluate(read('lib/dating-1on1-action-copy.ts')),
   'session-copy': evaluate(read('lib/viewer-session-recovery.ts')),
 });

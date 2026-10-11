@@ -9,12 +9,14 @@ import { useSearchParams } from "next/navigation";
 import { pickLoveFortuneFaceAsset } from "@/lib/love-fortune-face-assets";
 import { trackPurchaseCompleted } from "@/lib/payment-analytics";
 import { normalizeDatingApplyReturn } from "@/lib/dating-apply-return";
+import { oneOnOneMatchHref } from "@/lib/dating-1on1-match-navigation";
 
 type ConfirmResponse = {
   ok?: boolean;
   orderId?: string;
   paymentKey?: string;
   productType?: string;
+  matchId?: string | null;
   orderName?: string | null;
   readingId?: string | null;
   amount?: number;
@@ -142,13 +144,13 @@ function formatProductType(productType?: string, orderName?: string | null) {
   return "-";
 }
 
-function getPrimaryAction(productType?: string, orderName?: string | null, province?: string | null) {
+function getPrimaryAction(productType?: string, orderName?: string | null, province?: string | null, matchId?: string | null) {
   if (productType === "paid_card") {
     return isOpenCardReopenOrder(orderName)
       ? { href: "/mypage?section=matching", label: "마이페이지에서 확인하기" }
       : { href: PAID_REGISTRATION_MANAGE_HREF, label: "등록 상태 확인" };
   }
-  if (productType === "one_on_one_contact_exchange") return { href: "/mypage", label: "마이페이지로 돌아가기" };
+  if (productType === "one_on_one_contact_exchange") return { href: oneOnOneMatchHref(matchId), label: "상대 연락처 확인하기" };
   if (productType === "one_on_one_priority_24h") return { href: "/mypage?section=matching", label: "1:1 매칭으로 돌아가기" };
   if (productType === "one_on_one_plus_7d") return { href: "/mypage?section=matching", label: "1:1 매칭으로 돌아가기" };
   if (productType === "one_on_one_plus_30d") return { href: "/mypage?section=matching", label: "1:1 매칭으로 돌아가기" };
@@ -731,7 +733,7 @@ function PaymentSuccessContent() {
     ? { href: applyReturn, label: "보던 상대에게 지원 이어가기" }
     : result?.productType === "apply_credits"
       ? { href: "/community/dating/cards", label: "오픈카드 보러 가기" }
-      : getPrimaryAction(result?.productType, result?.orderName, searchParams.get("province"));
+      : getPrimaryAction(result?.productType, result?.orderName, searchParams.get("province"), result?.matchId);
   const isLoveFortune = result?.productType === "love_fortune_detail";
   const activeFortuneLoadingStep = LOVE_FORTUNE_LOADING_STEPS[fortuneLoadingStep] ?? LOVE_FORTUNE_LOADING_STEPS[0];
   const fortuneLoadingProgress = Math.min(

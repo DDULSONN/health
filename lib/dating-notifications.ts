@@ -1,6 +1,7 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendExpoPushToUser } from "@/lib/expo-push";
 import { notificationHref } from "@/lib/notification-view";
+import { oneOnOneNotificationHref } from "@/lib/dating-1on1-match-navigation";
 
 type DatingNotificationInput = {
   userId: string;
@@ -26,7 +27,7 @@ export async function notifyDatingUser(
   adminClient: SupabaseClient,
   input: DatingNotificationInput
 ) {
-  const route = notificationHref(input.route) ?? "/notifications";
+  const route = oneOnOneNotificationHref(input.type, input.meta?.match_id) ?? notificationHref(input.route) ?? "/notifications";
   const metaJson = {
     ...(input.meta ?? {}),
     notification_type: input.type,

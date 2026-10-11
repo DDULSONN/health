@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import type { ContactPaymentRecovery as Recovery } from "@/lib/contact-payment-recovery";
+import { oneOnOneMatchHref } from "@/lib/dating-1on1-match-navigation";
 
 export default function ContactPaymentRecovery({ orderId }: { orderId: string }) {
   const [result, setResult] = useState<{ orderId: string; recovery: Recovery } | null>(null);
@@ -40,7 +41,7 @@ export default function ContactPaymentRecovery({ orderId }: { orderId: string })
       const body = await res.json();
       if (!res.ok || !body.ok) throw new Error(body.message || "결제 상태를 다시 확인해 주세요.");
       if (body.fulfilledWithoutPayment) {
-        window.location.assign("/mypage?section=matching&match=one_on_one");
+        window.location.assign(oneOnOneMatchHref(recovery.matchId));
         return;
       }
       const url = new URL(body.checkoutUrl);
@@ -74,7 +75,7 @@ export default function ContactPaymentRecovery({ orderId }: { orderId: string })
           {processing ? "결제 상태 확인 중..." : `다른 카드로 다시 시도 · ${recovery.amount.toLocaleString("ko-KR")}원`}
         </button>
       </> : <p className="mt-3 text-sm leading-6 text-neutral-700">{recovery.state === "paid" ? "이미 결제가 확인됐어요. 추가 결제하지 말고 내 매칭과 결제 내역을 확인해 주세요." : recovery.state === "pending" ? "진행 중인 결제가 있어요. 중복 결제를 막기 위해 결제 상태를 먼저 확인해 주세요." : "바로 재결제하기 어려운 상태예요. 결제 내역을 먼저 확인해 주세요."}</p>}
-      <Link href="/mypage?section=matching&match=one_on_one" className="mt-2 inline-flex min-h-[44px] items-center text-xs text-neutral-600 underline">내 1:1 매칭 확인</Link>
+      <Link href={oneOnOneMatchHref(recovery.matchId)} className="mt-2 inline-flex min-h-[44px] items-center text-xs text-neutral-600 underline">이 상대와의 매칭 확인</Link>
     </> : null}
     {error ? <p className="mt-2 text-sm leading-6 text-rose-700" role="alert">{error}</p> : null}
   </div>;

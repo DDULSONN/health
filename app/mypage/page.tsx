@@ -23,6 +23,9 @@ import OneOnOneActionNotice from "@/components/dating/OneOnOneActionNotice";
 import OneOnOneProfileSummary from "@/components/dating/OneOnOneProfileSummary";
 import OneOnOneExpansionPanel from "@/components/dating/OneOnOneExpansionPanel";
 import OneOnOneIncomingRequests from "@/components/dating/OneOnOneIncomingRequests";
+import OneOnOneNextSteps from "@/components/dating/OneOnOneNextSteps";
+import OneOnOneContactPending from "@/components/dating/OneOnOneContactPending";
+import { canOfferOneOnOneContact } from "@/lib/dating-1on1-match-navigation";
 import { buildOneOnOneRequestSentMessage, getOneOnOneActionSummary, getOneOnOneMatchLabel, isIncomingOneOnOneRequest } from "@/lib/dating-1on1-action-copy";
 import IncomingSwipeLikeActions from "@/components/dating/IncomingSwipeLikeActions";
 import { fetchClientJson } from "@/lib/client-json-request";
@@ -3619,7 +3622,7 @@ export default function MyPage() {
           error?: string;
         };
         if (summaryRes.status === 401) {
-          router.replace("/login?redirect=/mypage");
+          router.replace(`/login?redirect=${encodeURIComponent(`/mypage${window.location.search}${window.location.hash}`)}`);
           return;
         }
         if (!summaryRes.ok) {
@@ -8364,6 +8367,7 @@ export default function MyPage() {
 
         {showMatchingSection && (
         <>
+          {matchingDataLoaded && !matchingDataLoading ? <OneOnOneNextSteps matches={myOneOnOneMatches} /> : null}
           {matchingDataLoaded && !matchingDataLoading ? (
             <OneOnOneIncomingRequests
               requests={myOneOnOneMatches.filter(isIncomingOneOnOneRequest)}
@@ -10696,9 +10700,7 @@ export default function MyPage() {
                                 onSend={(targetMatchId, presetKey) => void handleOneOnOneContactNudge(targetMatchId, presetKey)}
                               /> : null}
                               <div className="mt-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-3">
-                                {(match.contact_exchange_status === "none" ||
-                                  match.contact_exchange_status === "awaiting_applicant_payment" ||
-                                  match.contact_exchange_status === "payment_pending_admin") ? (
+                                {canOfferOneOnOneContact(match) ? (
                                   <OneOnOneContactOffer matchId={match.id} name={card.name}
                                     included={plusContactExchangeIncluded} processing={contactProcessing}
                                     nudge={match.contact_nudge} nudgeProcessing={processingOneOnOneNudgeIds.includes(match.id)}
@@ -10707,6 +10709,8 @@ export default function MyPage() {
                                     help={<p className="mt-1 break-words">다른 결제 방법은 <a href={OPEN_KAKAO_URL} target="_blank" rel="noreferrer" className="underline">오픈카톡으로 문의</a>해 주세요. 매칭 ID {match.id}</p>}
                                   />
                                 ) : null}
+                                {!canOfferOneOnOneContact(match) && match.contact_exchange_status !== "approved" ?
+                                  <OneOnOneContactPending status={match.contact_exchange_status} /> : null}
                                 {match.contact_exchange_status === "approved" ? (
                                   <>
                                     <p className="text-xs font-semibold text-neutral-900">번호 교환 완료</p>
