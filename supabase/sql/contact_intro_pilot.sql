@@ -225,7 +225,11 @@ begin
   select * into f from public.contact_intro_offers where match_id=new.product_ref_id;
   if not found then return new; end if;
   select * into c from public.contact_intro_campaign where id;
-  if f.order_id is not null or (c.starts_at<=now() and c.expires_at>now() and c.stopped_at is null) then
+  -- If no discounted order exists and the member has since used their first
+  -- exchange elsewhere, allow the normal checkout after server revalidation.
+  -- An existing reservation must still never be replaced at full price.
+  if f.order_id is not null or (c.starts_at<=now() and c.expires_at>now() and c.stopped_at is null
+    and public.contact_intro_eligible(new.product_ref_id,false)) then
     if new.amount<>15000 or new.product_meta->>'contactIntroOfferId' is distinct from f.offer_id::text
       or exists(select 1 from public.toss_test_payment_orders where id=f.order_id and status in('ready','paid')) then
       raise exception 'CONTACT_INTRO_ORDER_CHECK_REQUIRED';

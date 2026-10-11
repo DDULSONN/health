@@ -175,6 +175,21 @@ test('PostgreSQL strict 10-pair cap, stable one-time campaign, shared-member ded
   } finally { await db.close(); }
 });
 
+test('assigned pair losing first-exchange eligibility before reservation can still use normal checkout', async () => {
+  const { db, q, rpc, pair } = await database();
+  try {
+    const p = await pair(1);
+    await rpc('activate_contact_intro_pilot');
+    const quote = await rpc('read_contact_intro_offer',p.a,p.match,false);
+    assert(quote?.active);
+    await q("insert into toss_test_payment_orders(user_id,product_type,toss_order_id,order_name,amount,status) values($1,'one_on_one_contact_exchange','other-exchange','other',20000,'paid')", [p.a]);
+    assert.equal(await rpc('read_contact_intro_offer',p.a,p.match,false),null);
+    await assert.rejects(rpc('reserve_contact_intro_order',p.a,p.match,quote.offerId,null),/UNAVAILABLE/);
+    await q("insert into toss_test_payment_orders(user_id,product_type,product_ref_id,toss_order_id,order_name,amount) values($1,'one_on_one_contact_exchange',$2,'normal-after-ineligible','normal',20000)", [p.a,p.match]);
+    assert.equal((await q('select order_id from contact_intro_offers')).rows[0].order_id,null);
+  } finally { await db.close(); }
+});
+
 function helperFixture(options = {}) {
   const calls = [], current = { id: id(20), orderId: 'a'.repeat(32), amount: 15000, orderName: '1:1 첫 연락처 교환 · 25% 할인', expiresAt: offer().expiresAt, reused: false, owned: true, ...options.order };
   const db = { rpc(name, args) { calls.push({ name, args }); return { abortSignal: async () => ({ data: name === 'read_contact_intro_offer' ? options.quote === undefined ? offer() : options.quote : args.p_replace_order_id ? { ...current, id: id(21), orderId: 'b'.repeat(32), reused: false, owned: true } : current, error: options.rpcError ?? null }) }; } };
