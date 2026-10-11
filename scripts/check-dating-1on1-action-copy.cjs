@@ -106,10 +106,12 @@ for (const surface of ['home', 'mypage']) {
       }
     }
   });
-  for (const scenario of ['success', 'rejected', 'already-handled', 'network-error', 'read-failure']) {
+  for (const scenario of ['success', 'rejected', 'already-handled', 'pair-active', 'network-error', 'read-failure']) {
     test(`${surface}: actual request handler notice is accurate for ${scenario}`, async () => {
       let notice = '이전 요청 성공 안내', posts = 0, reloads = 0;
       const alerts = [];
+      const duplicate = ['already-handled', 'pair-active'].includes(scenario);
+      const duplicateMessage = '이미 진행 중인 상대예요. 기존 매칭은 그대로 유지돼요.';
       const reload = async () => { reloads++; if (scenario === 'read-failure' && surface === 'mypage') throw Error('Read failed'); };
       const handler = evaluate('exports.handler = ' + initializer(source, autoName), {
         ...copy, useCallback: fn => fn, processingOneOnOneAutoKeys: [], setProcessingOneOnOneAutoKeys() {},
@@ -120,14 +122,19 @@ for (const surface of ['home', 'mypage']) {
           posts++; assert.equal(url, '/api/dating/1on1/matches/auto');
           assert.deepEqual(JSON.parse(options.body), { source_card_id: 'source', candidate_card_id: 'target' });
           if (scenario === 'network-error') throw Error('Network failed');
-          const ok = !['rejected', 'already-handled'].includes(scenario);
-          return { ok, json: async () => ({ ok, error: 'Request rejected', code: scenario === 'already-handled' ? 'CANDIDATE_ALREADY_HANDLED' : undefined }) };
+          const ok = scenario !== 'rejected' && !duplicate;
+          return { ok, json: async () => ({ ok, error: duplicate ? duplicateMessage : 'Request rejected',
+            code: scenario === 'already-handled' ? 'CANDIDATE_ALREADY_HANDLED' : scenario === 'pair-active' ? 'CANDIDATE_PAIR_ACTIVE' : undefined }) };
         },
       }).handler;
       await handler('source', 'target', '테스트상대');
       assert.equal(posts, 1);
       if (['success', 'read-failure'].includes(scenario)) {
         assert.ok(notice.startsWith('테스트상대님에게 매칭 요청을 보냈어요.'));
+        assert.equal(alerts.length, 0); assert.equal(reloads, 1);
+      } else if (duplicate) {
+        assert.equal(notice, duplicateMessage, 'keep the existing match instead of claiming a new request');
+        assert.ok(!notice.includes('매칭 요청을 보냈어요.'));
         assert.equal(alerts.length, 0); assert.equal(reloads, 1);
       } else assert.equal(notice, '', 'failed POST cannot show a success notice');
     });

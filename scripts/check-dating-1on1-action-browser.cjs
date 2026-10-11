@@ -12,6 +12,7 @@ async function main() {
   const journeyOnly = process.argv.includes('--journey');
   const polishOnly = process.argv.includes('--ui-polish');
   const resilienceOnly = process.argv.includes('--resilience');
+  const duplicatesOnly = process.argv.includes('--duplicates');
   const output = fs.mkdtempSync(path.join(os.tmpdir(), 'gymtools-action-copy-browser-'));
   const adapter = path.join(__dirname, 'fixtures/recommendation-refresh-adapters.tsx');
   await new Promise((resolve, reject) => {
@@ -41,14 +42,16 @@ async function main() {
   let browser, passed = 0;
   try {
     browser = await chromium.launch({ headless: true });
-    for (const surface of (polishOnly || resilienceOnly ? ['home'] : ['home', 'mypage'])) for (const width of [320, 390, 1280]) for (const scenario of (resilienceOnly
+    for (const surface of (polishOnly || resilienceOnly ? ['home'] : ['home', 'mypage'])) for (const width of [320, 390, 1280]) for (const scenario of (duplicatesOnly
+      ? ['duplicate', 'duplicate-active']
+      : resilienceOnly
       ? ['resilience-outage', 'resilience-malformed', 'resilience-slow', 'resilience-timeout', 'resilience-unauthorized', 'resilience-match-error', 'resilience-no-profile-closed', 'resilience-rejected-profile', 'resilience-no-profile-active', 'resilience-no-profile-empty']
       : polishOnly
       ? ['polish-incoming', 'polish-next', 'polish-final-accept', 'polish-waiting', 'polish-empty', 'polish-no-candidates', 'polish-read-error', 'polish-focused']
       : journeyOnly
       ? surface === 'home' ? ['journey-incoming', 'journey-checkout', 'journey-paid', 'journey-pending', 'journey-approved', 'journey-closed', 'journey-missing', 'journey-load-error', 'journey-many'] : ['journey-shortcut', 'journey-pending', 'journey-paid']
       : [
-      'success', 'failure', 'proposed', 'read-failure', 'partial-read-failure', 'additional',
+      'success', 'failure', 'duplicate', 'duplicate-active', 'proposed', 'read-failure', 'partial-read-failure', 'additional',
       ...(surface === 'mypage' ? ['favorite', 'incoming-other-error'] : []),
       'incoming-accept', 'incoming-reject', 'incoming-failure', 'incoming-many', 'incoming-none', 'incoming-read-error', 'incoming-missing-profile',
     ])) {
@@ -68,6 +71,7 @@ async function main() {
       const candidate = { ...profile, id: 'candidate-card', user_id: 'candidate-user', name: '추천상대', sex: 'male',
         intro_text: '주말에는 산책하고 맛있는 커피를 마시는 걸 좋아해요.\n'.repeat(16) + '끝까지 보이는 소개입니다.' };
       const incomingCase = scenario.startsWith('incoming-');
+      const duplicateCase = scenario.startsWith('duplicate');
       const focusedId = '00000000-0000-4000-8000-000000000099';
       const focusedHref = `/community/dating/cards?tab=one_on_one&matchId=${focusedId}#selected-one-on-one-match`;
       function match(id, role, state, name, contact_exchange_status = 'none') {
@@ -99,6 +103,12 @@ async function main() {
             assert.deepEqual(JSON.parse(req.postData()), { source_card_id: profile.id, candidate_card_id: candidate.id });
           }
           await gate;
+          if (duplicateCase) {
+            await route.fulfill({ status: 409, json: {
+              error: '이미 진행 중인 상대예요. 기존 매칭은 그대로 유지돼요.',
+              code: scenario === 'duplicate-active' ? 'CANDIDATE_PAIR_ACTIVE' : 'CANDIDATE_ALREADY_HANDLED',
+            } }); return;
+          }
           const failed = ['failure', 'incoming-failure'].includes(scenario);
           await route.fulfill({ status: failed ? 409 : 200, json: failed ? { error: '테스트 요청 거절' } : { ok: true, id: 'sent-match' } }); return;
         }
@@ -159,7 +169,7 @@ async function main() {
             if (scenario === 'polish-no-candidates') { body = { items: [] }; break; }
             if (posts && ['read-failure', 'partial-read-failure'].includes(scenario)) { await route.fulfill({ status: 503, json: { error: '로컬 목록 조회 실패' } }); return; }
             body = { items: [{ source_card_id: profile.id, source_card_status: 'approved',
-            recommendations: ['proposed', 'additional', 'favorite'].includes(scenario) || (posts && scenario === 'success') ? [] : [candidate],
+            recommendations: ['proposed', 'additional', 'favorite'].includes(scenario) || (posts && (scenario === 'success' || duplicateCase)) ? [] : [candidate],
             admin_recommendations: scenario === 'additional' ? [candidate] : [], favorite_candidates: scenario === 'favorite' ? [candidate] : [],
             refresh_limit: 2, refresh_remaining: 2, refresh_used_count: 0, can_refresh: true }] }; break;
           case '/api/dating/cards/viewer-sex': body = { status: 'resolved', viewerSex: 'female', targetSex: 'male', source: 'one_on_one', canSwitchSex: false, requiresSexSelection: false }; break;
@@ -405,7 +415,17 @@ async function main() {
         assert.equal(await sending.isDisabled(), true);
         assert.equal(await page.getByRole('status').filter({ hasText: '매칭 요청을 보냈어요.' }).count(), 0, 'no premature success');
         release();
-        if (scenario === 'failure') {
+        if (duplicateCase) {
+          const notice = page.getByRole('status').filter({ hasText: '기존 매칭은 그대로 유지돼요.' }); await notice.waitFor();
+          await button.waitFor({ state: 'hidden' });
+          assert.ok(recommendationReads >= 2, 'stale candidates are reloaded without sending a second request');
+          assert.equal(alerts.length, 0);
+          assert.equal(await page.getByRole('status').filter({ hasText: '매칭 요청을 보냈어요.' }).count(), 0, 'duplicate is not reported as a new request');
+          assert.ok(await page.getByText('상대 응답 대기', { exact: true }).count() > 0, 'existing pending match remains');
+          assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'duplicate notice fits narrow screens');
+          if (width === 390) await page.screenshot({ path: path.join(output, `${surface}-${scenario}-mobile.png`) });
+          await page.getByRole('button', { name: '요청 전송 안내 닫기' }).click(); await notice.waitFor({ state: 'hidden' });
+        } else if (scenario === 'failure') {
           await button.waitFor(); assert.equal(alerts.length, 1);
           assert.equal(await page.getByRole('status').filter({ hasText: '매칭 요청을 보냈어요.' }).count(), 0);
         } else {

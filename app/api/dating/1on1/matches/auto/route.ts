@@ -2,7 +2,6 @@ import {
   DATING_ONE_ON_ONE_ACTIVE_STATUSES,
   DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES,
   getDatingOneOnOneCardsByIds,
-  isDatingOneOnOnePendingPairExpired,
 } from "@/lib/dating-1on1";
 import {
   getOneOnOnePhoneBlockMapForUsers,
@@ -203,41 +202,15 @@ export async function POST(req: Request) {
   if (!activePairRows) {
     return NextResponse.json({ error: "Failed to validate existing pair." }, { status: 500 });
   }
-  // Check all rows before expiring anything. In particular, an expired row must
-  // not hide another still-live match for the same two members.
-  if (activePairRows.some((row) => !isDatingOneOnOnePendingPairExpired(row))) {
+  // Match the recommendation and matching-list rules, including old cards and
+  // reverse-direction requests. Never cancel an existing request just to resend it.
+  if (activePairRows.length > 0) {
     return NextResponse.json({
-      error: "이미 진행 중인 상대입니다. 후보 목록을 다시 불러와 주세요.",
+      error: "이미 진행 중인 상대예요. 기존 매칭은 그대로 유지돼요.",
       code: "CANDIDATE_ALREADY_HANDLED",
     }, { status: 409 });
   }
   const nowIso = new Date().toISOString();
-
-  for (const pairRow of activePairRows) {
-    if (!isDatingOneOnOnePendingPairExpired(pairRow)) continue;
-
-    const expireRes = await admin
-      .from("dating_1on1_match_proposals")
-      .update({ state: "admin_canceled", updated_at: nowIso })
-      .eq("id", pairRow.id)
-      .eq("state", pairRow.state)
-      .eq("updated_at", pairRow.updated_at)
-      .select("id")
-      .maybeSingle();
-    if (expireRes.error) {
-      console.error("[POST /api/dating/1on1/matches/auto] stale pair cleanup failed", expireRes.error);
-      return NextResponse.json({ error: "Failed to refresh stale candidate pair." }, { status: 500 });
-    }
-    if (!expireRes.data) {
-      return NextResponse.json(
-        {
-          error: "후보 상태가 변경되었습니다. 목록을 다시 불러와 주세요.",
-          code: "CANDIDATE_PAIR_CHANGED",
-        },
-        { status: 409 }
-      );
-    }
-  }
 
   const insertRes = await admin
     .from("dating_1on1_match_proposals")

@@ -2,7 +2,6 @@ import {
   DATING_ONE_ON_ONE_ACTIVE_STATUSES,
   DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES,
   DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES,
-  isDatingOneOnOnePendingPairExpired,
 } from "@/lib/dating-1on1";
 import {
   getOneOnOnePhoneBlockMapForUsers,
@@ -118,10 +117,7 @@ export async function POST(req: Request) {
     });
     const hasUnavailablePairHistory = pairHistory.some((row) =>
       (DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES as readonly string[]).includes(row.state) ||
-      (
-        (DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES as readonly string[]).includes(row.state) &&
-        !isDatingOneOnOnePendingPairExpired(row)
-      ),
+      (DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES as readonly string[]).includes(row.state),
     );
     if (
       !sourceProfile ||

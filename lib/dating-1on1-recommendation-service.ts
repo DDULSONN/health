@@ -1,7 +1,6 @@
 import {
+  DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES,
   DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES,
-  DATING_ONE_ON_ONE_PENDING_PAIR_TTL_MS,
-  isDatingOneOnOnePendingPairExpired,
   toDatingOneOnOneAge,
 } from "@/lib/dating-1on1";
 import {
@@ -53,7 +52,7 @@ import { EXPANSION_TABLE, isExpansionEnabled, selectExpansionCandidates } from "
 const RECOMMENDATION_LIMIT = 10;
 const FAVORITE_TABLE = "dating_1on1_candidate_favorites";
 const RECOMMENDATION_REFRESH_COOLDOWN_MS = 24 * 60 * 60 * 1000;
-const ACTIVE_PAIR_STATES = new Set(["proposed", "source_selected", "candidate_accepted", "mutual_accepted"]);
+const ACTIVE_PAIR_STATES = new Set<string>(DATING_ONE_ON_ONE_MATCH_ACTIVE_PAIR_STATES);
 const RECYCLABLE_PAIR_STATES = new Set(["source_skipped", "admin_canceled"]);
 
 type RecommendationCard = RecommendationCardRow & {
@@ -277,21 +276,16 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     if ((DATING_ONE_ON_ONE_MATCH_PERMANENT_REJECTION_STATES as readonly string[]).includes(row.state)) {
       permanentlyRejectedUserIds.add(otherUserId);
     }
-    if (ACTIVE_PAIR_STATES.has(row.state) && !isDatingOneOnOnePendingPairExpired(row)) {
+    if (ACTIVE_PAIR_STATES.has(row.state)) {
       activeUserIds.add(otherUserId);
       continue;
     }
-    const recyclable =
-      RECYCLABLE_PAIR_STATES.has(row.state) || isDatingOneOnOnePendingPairExpired(row);
-    if (recyclable) {
+    if (RECYCLABLE_PAIR_STATES.has(row.state)) {
       handledUserIds.add(otherUserId);
-      const pending = row.state === "proposed" || row.state === "source_selected";
-      const basis = pending
-        ? (row.state === "source_selected" ? row.source_selected_at ?? row.updated_at ?? row.created_at : row.created_at ?? row.updated_at)
-        : row.updated_at ?? row.created_at;
+      const basis = row.updated_at ?? row.created_at;
       const parsed = Date.parse(basis ?? "");
       // Unknown timestamps retain the conservative recent-history treatment.
-      const endedAt = Number.isFinite(parsed) ? Math.min(nowMs, parsed + (pending ? DATING_ONE_ON_ONE_PENDING_PAIR_TTL_MS : 0)) : nowMs;
+      const endedAt = Number.isFinite(parsed) ? Math.min(nowMs, parsed) : nowMs;
       lastHandledAtByUserId.set(otherUserId, Math.max(lastHandledAtByUserId.get(otherUserId) ?? 0, endedAt));
     }
   }

@@ -325,8 +325,9 @@ test('invalid/future activity is ignored and the latest real signal wins', () =>
   assert.equal(latest(now, null, 'invalid', new Date(now+100).toISOString()), null);
   assert.equal(latest(now, new Date(now-1000).toISOString(), new Date(now-100).toISOString()), new Date(now-100).toISOString());
 });
-async function runSelect(tables, { intercept, sourceId = "source", candidateId = "c0", admin = false, signedIn = true, allowedAdmin = true } = {}) {
+async function runSelect(tables, { intercept, sourceId = "source", candidateId = "c0", admin = false, signedIn = true, allowedAdmin = true, atTime } = {}) {
   const db = mockDatabase(tables, intercept);
+  const notifications = [];
   const apiLoad = createLoader({
     "@/lib/supabase/server": { createAdminClient: () => db },
     "@/lib/supabase/request": { getRequestAuthContext: async () => ({ user: signedIn ? { id: "user-source" } : null }) },
@@ -339,14 +340,27 @@ async function runSelect(tables, { intercept, sourceId = "source", candidateId =
         pushBody: "test",
       }),
     },
-    "@/lib/dating-swipe": { sendDatingEmailNotification: async () => true },
-    "@/lib/dating-notifications": { notifyDatingUser: async () => true },
-    "@/lib/dating-1on1-sms": { sendOneOnOneSelectionSms: async () => false },
-  });
+    "@/lib/dating-swipe": { sendDatingEmailNotification: async () => { notifications.push("email"); return true; } },
+    "@/lib/dating-notifications": { notifyDatingUser: async () => { notifications.push("site"); return true; } },
+    "@/lib/dating-1on1-sms": { sendOneOnOneSelectionSms: async () => { notifications.push("sms"); return false; } },
+  }, atTime);
   const { POST } = apiLoad(`@/app/api/dating/1on1/matches/${admin ? "admin" : "auto"}/route`);
   const response = await POST(new Request("http://localhost/api/dating/1on1/matches/auto", {
     method: "POST", headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ source_card_id: sourceId, ...(admin ? { candidate_card_ids: [candidateId] } : { candidate_card_id: candidateId }) }),
+  }));
+  return { response, body: await response.json(), calls: db.calls, notifications };
+}
+async function runFavorite(tables) {
+  const db = mockDatabase(tables);
+  const apiLoad = createLoader({
+    "@/lib/supabase/server": { createAdminClient: () => db },
+    "@/lib/supabase/request": { getRequestAuthContext: async () => ({ user: { id: "user-source" } }) },
+    "@/lib/request-origin": { ensureAllowedMutationOrigin: () => null },
+  });
+  const response = await apiLoad("@/app/api/dating/1on1/favorites/route").POST(new Request("http://localhost/api/dating/1on1/favorites", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_card_id: "source", candidate_card_id: "c0" }),
   }));
   return { response, body: await response.json(), calls: db.calls };
 }
@@ -382,7 +396,7 @@ for (const size of [0, 3, 10, 13, 14, 16, 80]) test('expansion is additive, read
   }
 });
 for (const mode of ['ban', 'withdrawn', 'hidden', 'favorite', 'user-block', 'reverse-block', 'admin-block',
-  'phone-block', 'contact-block', 'rejected', 'matched', 'old-activity', 'new-identity', 'phone-unverified']) {
+  'phone-block', 'contact-block', 'rejected', 'matched', 'old-pending', 'old-activity', 'new-identity', 'phone-unverified']) {
   test('stored expansion revalidates ' + mode + ' without refilling', async () => {
     const tables = activeFixture(50);
     const first = await runExpansion(tables); assert.equal(first.body.candidates.length, 3);
@@ -397,6 +411,7 @@ for (const mode of ['ban', 'withdrawn', 'hidden', 'favorite', 'user-block', 'rev
     if (mode === 'phone-block') tables.dating_1on1_phone_blocks = [{ user_id: 'user-source', phone_hash: load('@/lib/dating-1on1-phone-blocks').hashOneOnOneBlockedPhone(profile.phone_e164) }];
     if (mode === 'contact-block') tables.dating_contact_blocks = [{ user_id: user, block_type: 'phone', value_hash: load('@/lib/dating-contact-blocks').hashDatingContactBlockValue('phone', tables.profiles[0].phone_e164) }];
     if (mode === 'rejected' || mode === 'matched') tables.dating_1on1_match_proposals = [pair({ candidate_card_id: id, candidate_user_id: user, state: mode === 'rejected' ? 'candidate_rejected' : 'mutual_accepted' })];
+    if (mode === 'old-pending') tables.dating_1on1_match_proposals = [pair({ candidate_card_id: id, candidate_user_id: user, source_selected_at: new Date(now - 30 * day).toISOString() })];
     if (mode === 'old-activity') profile.last_meaningful_activity_at = '2025-01-01';
     if (mode === 'new-identity') tables.dating_1on1_cards.push({ ...row, id: 'new-' + id, created_at: new Date(now - 100).toISOString() });
     if (mode === 'phone-unverified') profile.phone_e164 = null;
@@ -644,11 +659,11 @@ for (const reverse of [false, true]) {
     assert.deepEqual(ids(allCandidates((await runApi(tables)).body)), ["c2"]);
   });
 }
-test("expired pending pairs can refill a small main pool but never create duplicate extras", async () => {
+test("old pending pairs stay excluded even when the main and extra pool would otherwise be empty", async () => {
   const tables = fixture(1);
   tables.dating_1on1_match_proposals = [pair({ source_selected_at: new Date(Date.now() - 3 * day).toISOString() })];
   const result = await runApi(tables);
-  assert.deepEqual(ids(result.body.items[0].recommendations), ["c0"]);
+  assert.deepEqual(result.body.items[0].recommendations, []);
   assert.deepEqual(result.body.items[0].admin_recommendations, []);
 });
 test("safe schema fallback retains opposite-sex filtering and avoids detail fields", async () => {
@@ -1317,13 +1332,19 @@ for (const reverse of [false, true]) {
       tables.dating_1on1_match_proposals = [pair({ state,
         source_card_id: reverse ? "old-c0" : "old-source", candidate_card_id: reverse ? "old-source" : "old-c0",
         source_user_id: reverse ? "user-c0" : "user-source", candidate_user_id: reverse ? "user-source" : "user-c0",
+        source_selected_at: new Date(Date.now() - 30 * day).toISOString(),
+        created_at: new Date(Date.now() - 30 * day).toISOString(),
       })];
+      const before = structuredClone(tables);
       assert.deepEqual(ids(allCandidates((await runApi(tables)).body)), ["c1"]);
       for (const admin of [false, true]) {
         const selected = await runSelect(tables, { admin });
         assert.equal(selected.response.status, 409);
         assert.equal(selected.calls.some((query) => query.insert || query.update), false);
+        assert.deepEqual(selected.notifications, []);
       }
+      assert.equal((await runFavorite(tables)).response.status, 409);
+      assert.deepEqual(tables, before);
     });
   }
 }
@@ -1371,33 +1392,97 @@ test("same-timestamp latest identity uses the same deterministic ID tie-break fo
   assert.equal((await runSelect(tables, { candidateId: "z-new" })).response.status, 200);
 });
 
-test("all historical rows are checked: an expired row cannot conceal a live duplicate after 1000 rows", async () => {
+test("all historical rows are checked: closed rows cannot conceal an old pending request after 1000 rows", async () => {
   const tables = fixture(1);
-  tables.dating_1on1_match_proposals = Array.from({ length: 1001 }, (_, i) => pair({ id: `expired-${i}`, source_selected_at: new Date(Date.now() - 3 * day).toISOString() }));
-  tables.dating_1on1_match_proposals.push(pair({ id: "live", state: "mutual_accepted", candidate_card_id: "old-c0", created_at: "2025-01-01T00:00:00Z" }));
+  tables.dating_1on1_match_proposals = Array.from({ length: 1001 }, (_, i) => pair({ id: `closed-${i}`, state: "admin_canceled" }));
+  tables.dating_1on1_match_proposals.push(pair({ id: "live", candidate_card_id: "old-c0", source_selected_at: "2025-01-01T00:00:00Z", created_at: "2025-01-01T00:00:00Z" }));
   assert.deepEqual(allCandidates((await runApi(tables)).body), []);
   const result = await runSelect(tables);
   assert.equal(result.response.status, 409);
   assert.equal(result.calls.some((query) => query.update || query.insert), false);
 });
 
-test("expired pairs allow retry, without sacrificing small-pool candidate re-exposure", async () => {
-  const tables = fixture(1);
-  tables.dating_1on1_match_proposals = [pair({ source_selected_at: new Date(Date.now() - 3 * day).toISOString() })];
-  assert.deepEqual(ids(allCandidates((await runApi(tables)).body)), ["c0"]);
-  const result = await runSelect(tables);
-  assert.equal(result.response.status, 200);
-  assert.equal(tables.dating_1on1_match_proposals[0].state, "admin_canceled");
-  assert.equal(tables.dating_1on1_match_proposals[1].state, "source_selected");
+for (const reverse of [false, true]) test(`pending requests never expire through recommendations or resend (${reverse ? "reverse" : "direct"})`, async () => {
+  for (const stamp of [new Date(now - 2 * day + 1).toISOString(), new Date(now - 2 * day).toISOString(),
+    new Date(now - 2 * day - 1).toISOString(), new Date(now - 90 * day).toISOString(), null, "invalid", new Date(now + day).toISOString()]) {
+    const tables = fixture(2);
+    tables.dating_1on1_match_proposals = [pair({ source_selected_at: stamp, updated_at: stamp, created_at: stamp,
+      source_card_id: reverse ? "c0" : "source", candidate_card_id: reverse ? "source" : "c0",
+      source_user_id: reverse ? "user-c0" : "user-source", candidate_user_id: reverse ? "user-source" : "user-c0",
+    })];
+    tables.dating_1on1_candidate_favorites = [{ id: "saved", user_id: "user-source", source_card_id: "source", candidate_card_id: "c0", created_at: new Date(now).toISOString() }];
+    const before = structuredClone(tables);
+    const recommendations = await runApi(tables, { atTime: now });
+    assert.equal(recommendations.response.status, 200);
+    assert.deepEqual(ids(allCandidates(recommendations.body)), ["c1"]);
+    assert.deepEqual(recommendations.body.items[0].favorite_candidates, []);
+    const result = await runSelect(tables, { atTime: now });
+    assert.equal(result.response.status, 409);
+    assert.equal(result.body.code, "CANDIDATE_ALREADY_HANDLED");
+    assert.match(result.body.error, /기존 매칭은 그대로 유지/);
+    assert.deepEqual(result.notifications, []);
+    assert.ok(result.calls.every(q => !q.insert && !q.update && !q.delete));
+    assert.equal((await runFavorite(tables)).response.status, 409);
+    assert.deepEqual(tables, before);
+  }
 });
 
-test("expired-pair cleanup aborts when the pair changed concurrently", async () => {
+for (const plus of [false, true]) test(`refresh excludes old pending requests without extra quota writes (Plus=${plus})`, async () => {
+  const tables = fixture(80);
+  if (plus) tables.dating_1on1_plus_subscriptions = [{ user_id: "user-source", starts_at: new Date(now - day).toISOString(), expires_at: new Date(now + day).toISOString() }];
+  tables.dating_1on1_match_proposals = Array.from({ length: 20 }, (_, i) => pair({
+    id: `pending-${i}`, candidate_card_id: `c${i}`, candidate_user_id: `user-c${i}`, source_selected_at: new Date(now - 30 * day).toISOString(),
+  }));
+  const pairsBefore = structuredClone(tables.dating_1on1_match_proposals);
+  const result = await runRefresh(tables);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.refresh_consumed, true);
+  assert.equal(result.rpcCalls.length, 1);
+  assert.equal(result.rpcCalls[0].p_limit, plus ? 2 : 1);
+  const after = await runApi(tables, { atTime: now + 1 });
+  assert.ok(allCandidates(after.body).every(c => Number(c.id.slice(1)) >= 20));
+  assert.equal(allCandidates(after.body).length, 13);
+  assert.deepEqual(tables.dating_1on1_match_proposals, pairsBefore);
+});
+
+test("an entirely pending pool never consumes a refresh or recycles a request", async () => {
   const tables = fixture(1);
-  tables.dating_1on1_match_proposals = [pair({ source_selected_at: new Date(Date.now() - 3 * day).toISOString() })];
-  const result = await runSelect(tables, { intercept: (query) => query.update ? { data: null, error: null } : null });
+  tables.dating_1on1_match_proposals = [pair({ source_selected_at: new Date(now - 30 * day).toISOString() })];
+  const before = structuredClone(tables);
+  const result = await runRefresh(tables);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.refresh_consumed, false);
+  assert.equal(result.rpcCalls.length, 0);
+  assert.deepEqual(tables, before);
+});
+
+test("explicitly canceled pairs remain recyclable without rewriting their history", async () => {
+  for (const state of ["source_skipped", "admin_canceled"]) {
+    const tables = fixture(1);
+    tables.dating_1on1_match_proposals = [pair({ state, updated_at: new Date(now - 30 * day).toISOString() })];
+    const closed = structuredClone(tables.dating_1on1_match_proposals[0]);
+    assert.deepEqual(ids(allCandidates((await runApi(tables, { atTime: now })).body)), ["c0"]);
+    const result = await runSelect(tables, { atTime: now });
+    assert.equal(result.response.status, 200);
+    assert.deepEqual(tables.dating_1on1_match_proposals[0], closed);
+    assert.equal(tables.dating_1on1_match_proposals[1].state, "source_selected");
+    assert.deepEqual(result.notifications.sort(), ["email", "site", "sms"]);
+    const repeat = await runSelect(tables, { atTime: now });
+    assert.equal(repeat.response.status, 409);
+    assert.deepEqual(repeat.notifications, []);
+    assert.equal(tables.dating_1on1_match_proposals.length, 2);
+  }
+});
+
+test("a concurrent insert conflict never cancels history or sends notifications", async () => {
+  const tables = fixture(1);
+  const before = structuredClone(tables);
+  const result = await runSelect(tables, { intercept: query => query.insert ? { data: null, error: { code: "23505", message: "duplicate pair" } } : null });
   assert.equal(result.response.status, 409);
-  assert.equal(result.body.code, "CANDIDATE_PAIR_CHANGED");
-  assert.equal(result.calls.some((query) => query.insert), false);
+  assert.equal(result.body.code, "CANDIDATE_PAIR_ACTIVE");
+  assert.deepEqual(result.notifications, []);
+  assert.ok(result.calls.every(q => !q.update && !q.delete));
+  assert.deepEqual(tables, before);
 });
 
 test("normal selection succeeds, but replay cannot insert a second user-pair", async () => {

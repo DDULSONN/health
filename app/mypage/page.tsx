@@ -5475,6 +5475,7 @@ export default function MyPage() {
           body.code === "STALE_SOURCE_IDENTITY" ||
           body.code === "CANDIDATE_PREVIOUSLY_REJECTED"
         ) {
+          setOneOnOneActionNotice(body.error ?? "후보 상태가 바뀌었어요. 목록을 다시 확인해 주세요.");
           await reloadOneOnOneRecommendations();
           return;
         }
