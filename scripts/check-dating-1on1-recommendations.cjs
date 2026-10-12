@@ -903,6 +903,106 @@ test("a week of refreshes never trades compatible locals for unseen distant peop
   }
 });
 
+test("repeated refreshes leave an exhausted top tier for a bounded number of nearby compatible alternatives", () => {
+  for (const sex of ['male', 'female']) {
+    const src = card('regional-source', { sex, age: 31, region: '양산(경남)' });
+    const peerSex = sex === 'male' ? 'female' : 'male';
+    const closest = Array.from({ length: 19 }, (_, i) => card('ideal-' + i, { sex: peerSex, age: 31, region: '부산 해운대구' }));
+    const similar = Array.from({ length: 22 }, (_, i) => card('similar-' + i, { sex: peerSex, age: sex === 'male' ? 33 : 29, region: '부산 해운대구' }));
+    const distant = Array.from({ length: 80 }, (_, i) => card('remote-' + i, { sex: peerSex, age: 31, region: '서울 강남구' }));
+    const wrongAge = Array.from({ length: 20 }, (_, i) => card('wrong-age-' + i, { sex: peerSex, age: 50, region: '부산 해운대구' }));
+    const pool = [...closest, ...similar, ...distant, ...wrongAge];
+    const defaults = rules.takeBalancedRecommendations(src, rules.sortCandidatesForSource(src, pool, 'default', now), 10, new Set(), now);
+    const initial = rules.replayRecommendationRefreshes(src, pool, defaults, [], new Set(), 10, now, { limit: 3, excludeIds: new Set() });
+    const encountered = new Set([...ids(initial.recommendations), ...ids(initial.extraRecommendations)]);
+    const stamps = [];
+    for (let index = 0; index < 4; index++) {
+      stamps.push(new Date(now - 60000 + index * 1000).toISOString());
+      const result = rules.replayRecommendationRefreshes(src, pool, defaults, stamps, new Set(), 10, now, { limit: 3, excludeIds: new Set() });
+      const fresh = result.recommendations.filter(c => !encountered.has(c.id));
+      assert.ok(fresh.length >= 4, `round ${index}: genuinely unseen similar locals remain`);
+      assert.ok(result.recommendations.filter(c => c.id.startsWith('ideal-')).length >= 6);
+      assert.ok(result.recommendations.every(c => /^(ideal|similar)-/.test(c.id)));
+      assert.equal(new Set(ids(result.recommendations)).size, 10);
+      assert.equal(result.extraRecommendations.some(c => ids(result.recommendations).includes(c.id)), false);
+      assert.deepEqual(result, rules.replayRecommendationRefreshes(src, pool, defaults, stamps, new Set(), 10, now, { limit: 3, excludeIds: new Set() }));
+      for (const c of [...result.recommendations, ...result.extraRecommendations]) encountered.add(c.id);
+    }
+    assert.ok(encountered.size > 19, 'must not stay trapped within the same 19 people');
+  }
+});
+
+test("refresh keeps unseen best matches first and never widens for remote, unknown-age or recently handled alternatives", () => {
+  const best = Array.from({ length: 50 }, (_, i) => card('best-' + i));
+  const similar = Array.from({ length: 20 }, (_, i) => card('similar-' + i, { age: 32 }));
+  const run = (pool, defaults) => rules.replayRecommendationRefreshes(source, pool, defaults,
+    [new Date(now - 1000).toISOString()], new Set(), 10, now, { limit: 3, excludeIds: new Set() });
+  assert.ok(run([...best, ...similar], best.slice(0, 10)).recommendations.every(c => c.id.startsWith('best-')));
+  const unsafe = [
+    card('far', { region: '부산' }), card('unknown-region', { region: '모름' }),
+    card('wrong-age', { age: 50 }), card('unknown-age', { age: null }),
+    card('recent-handled', { age: 32, last_handled_at: new Date(now - 1000).toISOString() }),
+  ];
+  assert.ok(run([...best.slice(0, 13), ...unsafe], best.slice(0, 10)).recommendations.every(c => c.id.startsWith('best-')));
+});
+
+for (const sex of ['male', 'female']) test(`regional rotation agrees with charged plans across three days and Plus refreshes (${sex})`, async () => {
+  const tables = fixture(80);
+  for (const [i, c] of tables.dating_1on1_cards.entries()) {
+    c.sex = i === 0 ? sex : sex === 'male' ? 'female' : 'male';
+    c.birth_year = 1996;
+    c.region = i === 0 ? '양산(경남)' : i <= 41 ? '부산 해운대구' : '서울 강남구';
+    if (i > 19 && i <= 41) c.birth_year = sex === 'male' ? 1994 : 1998;
+  }
+  tables.dating_1on1_plus_subscriptions = [{ user_id: 'user-source', starts_at: new Date(now-day).toISOString(), expires_at: new Date(now+7*day).toISOString() }];
+  const seen = new Set();
+  for (const offset of [0, 25 * 3600000, 50 * 3600000, 54 * 3600000]) {
+    const atTime = now + offset + 573;
+    const before = (await runApi(tables, { atTime })).body;
+    const beforeIds = new Set(allCandidates(before).map(c => c.user_id));
+    for (const c of allCandidates(before)) seen.add(c.user_id);
+    const result = await runRefresh(tables, { atTime });
+    const after = (await runApi(tables, { atTime: atTime + 1 })).body;
+    const repeatedRead = (await runApi(tables, { atTime: atTime + 2 })).body;
+    const changed = allCandidates(after).filter(c => !beforeIds.has(c.user_id));
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.refresh_consumed, true);
+    assert.equal(result.body.changed_candidate_count, changed.length);
+    assert.ok(changed.length >= 4);
+    assert.equal(result.rpcCalls.length, 1);
+    assert.equal(after.items[0].refresh_used_count, before.items[0].refresh_used_count + 1);
+    assert.equal(after.items[0].refresh_remaining, before.items[0].refresh_remaining - 1);
+    assert.deepEqual(ids(allCandidates(after)), ids(allCandidates(repeatedRead)));
+    assert.ok(after.items[0].recommendations.filter(c => c.birth_year === 1996).length >= 6);
+    assert.ok(allCandidates(after).every(c => c.region === '부산 해운대구'));
+    for (const c of allCandidates(after)) seen.add(c.user_id);
+  }
+  assert.ok(seen.size > 19);
+  const exhausted = await runRefresh(tables, { atTime: now + 54 * 3600000 + 1000 });
+  assert.equal(exhausted.response.status, 409);
+  assert.equal(exhausted.rpcCalls.length, 0, 'variety never grants extra Plus allowance');
+});
+
+test('new nearby variety slots retain bans, blocks, pending requests, rejections and favorites', async () => {
+  const tables = fixture(40);
+  tables.dating_1on1_cards.slice(14).forEach(c => { c.birth_year -= 4; }); // outside preferred age, but within six years
+  const blocked = ['c13', 'c14', 'c15', 'c16', 'c17', 'c18'];
+  tables.profiles.find(p => p.user_id === 'user-c13').is_banned = true;
+  tables.dating_user_blocks = [{ blocker_user_id: 'user-source', blocked_user_id: 'user-c14' }];
+  tables.dating_1on1_cards.find(c => c.id === 'c15').status = 'hidden';
+  tables.dating_1on1_match_proposals = [
+    { source_user_id: 'user-c16', candidate_user_id: 'user-source', state: 'source_selected', source_card_id: 'c16', candidate_card_id: 'source' },
+    { source_user_id: 'user-source', candidate_user_id: 'user-c17', state: 'candidate_rejected', source_card_id: 'source', candidate_card_id: 'c17' },
+  ];
+  tables.dating_1on1_candidate_favorites = [{ user_id: 'user-source', source_card_id: 'source', candidate_card_id: 'c18', created_at: new Date(now-1000).toISOString() }];
+  const result = await runRefresh(tables, { atTime: now });
+  assert.equal(result.body.refresh_consumed, true);
+  const after = (await runApi(tables, { atTime: now + 1 })).body;
+  assert.ok(allCandidates(after).every(c => !blocked.includes(c.id)));
+  assert.equal(after.items[0].recommendations.filter(c => Number(c.id.slice(1)) > 18).length, 4);
+  assert.deepEqual(ids(after.items[0].favorite_candidates), ['c18']);
+});
+
 test("handled pairs do not erase exposure history: older pages rotate before a repeat", () => {
   const pool = Array.from({ length: 90 }, (_, i) => card(`handled-${i}`, {
     last_handled_at: new Date(now - 15 * day).toISOString(),

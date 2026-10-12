@@ -4,6 +4,7 @@ import { getKstDateString } from "@/lib/weekly";
 const DAY_MS = 24 * 60 * 60 * 1000;
 const AGE_MATCH_MIN_QUOTA = 6;
 const RECENT_MIN_QUOTA = 4;
+const REFRESH_NEARBY_VARIETY_LIMIT = 4;
 export const RECOMMENDATION_REFRESH_HISTORY_MS = 7 * DAY_MS;
 export const RECOMMENDATION_REVISIT_COOLDOWN_MS = 7 * DAY_MS;
 // A persisted, once-per-account correction, separate from charged refresh events.
@@ -66,8 +67,8 @@ function isCloseRegion(source: RecommendationCandidate, candidate: Recommendatio
   return distance != null && distance <= 90;
 }
 
-// Repetition is only a preference within a compatibility tier, not a reason
-// to send a member hundreds of kilometres away from compatible local people.
+// Default ranking keeps compatibility first. Refresh may reserve a few unseen
+// nearby alternatives, but must not jump to distant or unknown-location people.
 export function getRecommendationRelevanceTier(source: RecommendationCandidate, candidate: RecommendationCandidate) {
   const km = getRegionDistanceMeta(source.region, candidate.region).distanceKm;
   return relevanceTierAtDistance(source, candidate, km);
@@ -353,9 +354,24 @@ export function replayRecommendationRefreshes<T extends RecommendationCandidate>
     for (const card of recommendations) { excluded.add(card.id); shownIds.add(card.id); }
     const previousIds = new Set(recommendations.map((card) => card.id));
     const sorted = sortCandidatesForSource(source, historicalPool, `refresh:${seed}`, nowMs, readMeta);
+    const groups = groupByRelevance(sorted, readMeta);
+    const bestTier = groups[0]?.[0] ? readMeta(groups[0][0]).tier : null;
+    const unseenBestCount = (groups[0] ?? []).filter((card) => !excluded.has(card.id)).length;
+    // A small best-fit pool otherwise traps every refresh inside the same people.
+    // Keep at least six best-fit slots in a ten-card page; only borrow up to four
+    // slots when unseen best fits run short. Alternatives must still be nearby:
+    // <=90 km / age gap <=6, or <=180 km / the normal age range (tiers 1 and 2).
+    // All safety filters have already run; recent handled pairs are not variety.
+    const variety = takeBalancedRecommendations(source, sorted.filter((card) => {
+      const tier = readMeta(card).tier;
+      return bestTier != null && tier > bestTier && tier <= 2 &&
+        !excluded.has(card.id) && !isRecentlyHandledCandidate(card, nowMs);
+    }), Math.min(REFRESH_NEARBY_VARIETY_LIMIT, Math.max(0, limit - unseenBestCount)), new Set(), nowMs, readMeta);
+    const varietyIds = new Set(variety.map((card) => card.id));
+    const primaryLimit = limit - variety.length;
     recommendations = [];
     const pickedIds = new Set<string>();
-    for (const group of groupByRelevance(sorted, readMeta)) {
+    for (const group of groups) {
       // Unseen, older pages, previous page — inside the same compatibility tier.
       for (const pool of [
         group.filter((card) => !excluded.has(card.id) && !previousIds.has(card.id)),
@@ -365,14 +381,17 @@ export function replayRecommendationRefreshes<T extends RecommendationCandidate>
         group.filter((card) => !previousIds.has(card.id)),
         group,
       ]) {
-        const picked = takeBalancedRecommendations(source, pool.filter((card) => !pickedIds.has(card.id)),
-          limit - recommendations.length, new Set(), nowMs, readMeta);
+        const picked = takeBalancedRecommendations(source, pool.filter((card) => !pickedIds.has(card.id) && !varietyIds.has(card.id)),
+          primaryLimit - recommendations.length, new Set(), nowMs, readMeta);
         recommendations.push(...picked);
         for (const card of picked) pickedIds.add(card.id);
-        if (recommendations.length >= limit) break;
+        if (recommendations.length >= primaryLimit) break;
       }
-      if (recommendations.length >= limit) break;
+      if (recommendations.length >= primaryLimit) break;
     }
+    recommendations.push(...variety);
+    const order = new Map(sorted.map((card, index) => [card.id, index]));
+    recommendations.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
     for (const card of recommendations) { excluded.add(card.id); shownIds.add(card.id); }
     if (getActiveRecommendationRefresh(seed, nowMs)) {
       for (const card of recommendations) activeShownIds.add(card.id);
