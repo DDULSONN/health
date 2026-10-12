@@ -13,6 +13,8 @@ async function main() {
   const polishOnly = process.argv.includes('--ui-polish');
   const resilienceOnly = process.argv.includes('--resilience');
   const duplicatesOnly = process.argv.includes('--duplicates');
+  const inboxOnly = process.argv.includes('--inbox-refresh');
+  const inboxScenarios = ['inbox-delayed-open', 'inbox-revisit', 'inbox-bfcache', 'inbox-tab-return', 'inbox-retry', 'inbox-retain', 'inbox-malformed', 'inbox-timeout', 'inbox-auth'];
   const output = fs.mkdtempSync(path.join(os.tmpdir(), 'gymtools-action-copy-browser-'));
   const adapter = path.join(__dirname, 'fixtures/recommendation-refresh-adapters.tsx');
   await new Promise((resolve, reject) => {
@@ -42,7 +44,7 @@ async function main() {
   let browser, passed = 0;
   try {
     browser = await chromium.launch({ headless: true });
-    for (const surface of (polishOnly || resilienceOnly ? ['home'] : ['home', 'mypage'])) for (const width of [320, 390, 1280]) for (const scenario of (duplicatesOnly
+    for (const surface of (inboxOnly ? ['mypage'] : polishOnly || resilienceOnly ? ['home'] : ['home', 'mypage'])) for (const width of [320, 390, 1280]) for (const scenario of (inboxOnly ? inboxScenarios : duplicatesOnly
       ? ['duplicate', 'duplicate-active']
       : resilienceOnly
       ? ['resilience-outage', 'resilience-malformed', 'resilience-slow', 'resilience-timeout', 'resilience-unauthorized', 'resilience-match-error', 'resilience-no-profile-closed', 'resilience-rejected-profile', 'resilience-no-profile-active', 'resilience-no-profile-empty']
@@ -53,14 +55,17 @@ async function main() {
       : [
       'success', 'failure', 'duplicate', 'duplicate-active', 'proposed', 'read-failure', 'partial-read-failure', 'additional',
       ...(surface === 'mypage' ? ['favorite', 'incoming-other-error'] : []),
+      ...(surface === 'mypage' ? inboxScenarios : []),
       'incoming-accept', 'incoming-reject', 'incoming-failure', 'incoming-many', 'incoming-none', 'incoming-read-error', 'incoming-missing-profile',
     ])) {
       const context = await browser.newContext({ viewport: { width, height: 844 } });
       const page = await context.newPage(); page.setDefaultTimeout(12000);
-      if (scenario === 'resilience-timeout') await page.clock.install();
+      if (scenario === 'resilience-timeout' || scenario === 'inbox-timeout') await page.clock.install();
       const errors = [], alerts = [];
       let posts = 0, blocked = 0, release, responseAction = '', matchingReads = 0;
       let recommendationReads = 0;
+      let matchListReads = 0, incomingArrived = false, failInboxRead = ['inbox-retry', 'inbox-malformed'].includes(scenario);
+      const inboxCase = scenario.startsWith('inbox-');
       const noProfile = scenario.includes('no-profile') || scenario === 'resilience-rejected-profile';
       const gate = new Promise(resolve => { release = resolve; });
       const now = new Date().toISOString();
@@ -114,13 +119,22 @@ async function main() {
         }
         switch (url.pathname) {
           case '/api/dating/cards/my/applied':
+            if (scenario === 'inbox-delayed-open') await gate;
             if (scenario === 'incoming-other-error') { await route.fulfill({ status: 503, json: { error: '로컬 오픈카드 조회 실패' } }); return; }
             break;
           case '/api/dating/cards/queue-stats': body = { male: { public_count: 0, pending_count: 0, slot_limit: 45 }, female: { public_count: 0, pending_count: 0, slot_limit: 45 } }; break;
           case '/api/mypage/summary': body = { profile: { email: 'fixture@example.invalid', nickname: '검증회원', phone_verified: true, nickname_changed_count: 0, nickname_change_credits: 0, swipe_profile_visible: true }, account: { is_banned: false }, isAdmin: false, weekly_win_count: 0, bodycheck_posts: [] }; break;
-          case '/api/dating/1on1/my': body = { items: noProfile ? (scenario === 'resilience-rejected-profile' ? [{ ...profile, status: 'rejected' }] : []) : [profile], plus: { expires_at: profile.plus_expires_at, contact_exchange_included: false } }; break;
+          case '/api/dating/1on1/my':
+            if (scenario === 'inbox-delayed-open') await gate;
+            body = { items: noProfile ? (scenario === 'resilience-rejected-profile' ? [{ ...profile, status: 'rejected' }] : []) : [profile], plus: { expires_at: profile.plus_expires_at, contact_exchange_included: false } }; break;
           case '/api/dating/1on1/write-status': body = { canWrite: noProfile, phoneVerified: true, activeRequestStatus: noProfile ? null : 'approved' }; break;
           case '/api/dating/1on1/matches/my':
+            matchListReads++;
+            if (scenario === 'inbox-timeout' && matchListReads === 1) await gate;
+            if (inboxCase && failInboxRead) {
+              await route.fulfill({ status: scenario === 'inbox-malformed' ? 200 : scenario === 'inbox-auth' ? 401 : 503,
+                json: scenario === 'inbox-malformed' ? { items: [null] } : { error: 'fixture failure' } }); return;
+            }
             if (resilienceOnly) {
               if (scenario === 'resilience-match-error') { await route.fulfill({ status: 503, json: { error: '로컬 매칭 조회 실패' } }); return; }
               const closed = noProfile && scenario !== 'resilience-no-profile-active';
@@ -151,7 +165,7 @@ async function main() {
             if (scenario === 'incoming-read-error') { await route.fulfill({ status: 503, json: { error: '로컬 받은 요청 조회 실패' } }); return; }
             if (posts && scenario === 'read-failure') { await route.fulfill({ status: 503, json: { error: '로컬 목록 조회 실패' } }); return; }
             body = { items: [
-            ...(scenario === 'incoming-none' ? [] : [match('incoming', 'candidate',
+            ...(scenario === 'incoming-none' || (['inbox-revisit', 'inbox-bfcache', 'inbox-tab-return'].includes(scenario) && !incomingArrived) ? [] : [match('incoming', 'candidate',
               posts && incomingCase && scenario !== 'incoming-failure' ? (responseAction === 'candidate_accept' ? 'mutual_accepted' : 'candidate_rejected') : 'source_selected', '요청한회원')]),
             ...(scenario === 'incoming-many' ? Array.from({ length: 8 }, (_, i) => match('more-' + i, 'candidate', 'source_selected', '추가요청회원' + i)) : []),
             match('waiting', 'source', 'source_selected', '기다리는회원'),
@@ -177,10 +191,52 @@ async function main() {
           case '/api/dating/cards/write-enabled': body = { enabled: true }; break;
           case '/api/dating/apply-credits/status': body = { creditsRemaining: 5 }; break;
         }
-        await route.fulfill({ json: body }).catch(error => { if (scenario !== 'resilience-timeout') throw error; });
+        await route.fulfill({ json: body }).catch(error => { if (!['resilience-timeout','inbox-timeout'].includes(scenario)) throw error; });
       });
       try {
         await page.goto(origin + (surface === 'home' ? (journeyOnly && scenario !== 'journey-many') || scenario === 'polish-focused' || (resilienceOnly && !noProfile) || scenario === 'resilience-no-profile-active' ? focusedHref : '/community/dating/cards?tab=one_on_one' : '/mypage?section=matching&match=one_on_one'));
+        if (inboxCase) {
+          const inbox = page.getByRole('region', { name: '받은 1:1 매칭 요청' });
+          const reload = page.getByRole('button', { name: '요청 다시 확인', exact: true });
+          const issue = page.getByRole('alert').filter({ hasText: /1:1 요청|로그인 상태/ });
+          if (scenario === 'inbox-delayed-open') {
+            await inbox.waitFor();
+            assert.equal(await page.getByRole('button', {name:'수락',exact:true}).count(),1);
+            assert.equal(await page.getByText('카드 상태를 확인하고 있어요.',{exact:true}).count(),1,'other data is still pending');
+            assert.equal(await page.locator('#one-on-one-status').getByText(profile.name,{exact:true}).count(),0);
+            const bounds=await inbox.boundingBox(); assert.ok(bounds.y < 600,'received requests are above other matching sections');
+            if(width===390) await page.screenshot({path:path.join(output,'mypage-inbox-independent-mobile.png')});
+            release();
+          } else if (['inbox-revisit','inbox-bfcache','inbox-tab-return'].includes(scenario)) {
+            await page.getByText('새로 받은 1:1 요청이 없어요.',{exact:true}).waitFor();
+            const reads=matchListReads, recommendations=recommendationReads; incomingArrived=true;
+            if(scenario==='inbox-tab-return') {
+              await page.getByRole('tab',{name:'내 정보',exact:true}).click();
+              await page.getByRole('tab',{name:'매칭',exact:true}).click();
+            } else await page.evaluate(persisted=>{
+              if(persisted) window.dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true}));
+              else { window.dispatchEvent(new Event('focus')); document.dispatchEvent(new Event('visibilitychange')); }
+            },scenario==='inbox-bfcache');
+            await inbox.waitFor();
+            assert.equal(matchListReads,reads+1,'return events coalesce into a single match GET');
+            assert.equal(recommendationReads,recommendations,'never consumes candidate refresh or reloads recommendations');
+          } else {
+            if(['inbox-retain','inbox-auth'].includes(scenario)) {
+              await inbox.waitFor(); failInboxRead=true; await reload.click();
+            } else if(scenario==='inbox-timeout') {
+              await page.getByRole('button',{name:'확인 중',exact:true}).waitFor();
+              await page.clock.runFor(15100);
+            }
+            await issue.waitFor();
+            assert.equal(await page.getByText('새로 받은 1:1 요청이 없어요.',{exact:true}).count(),0,'read errors are not empty-success');
+            assert.equal(await inbox.count(),scenario==='inbox-retain'?1:0,'retain on outage, clear on auth failure');
+            failInboxRead=false; release(); await reload.click(); await inbox.waitFor();
+            assert.equal(await issue.count(),0);
+          }
+          assert.equal(posts,0); assert.equal(blocked,0); assert.deepEqual(errors,[]);
+          assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'no mobile overflow');
+          console.log(`PASS ${surface} ${width}px ${scenario}`); passed++; continue;
+        }
         if (resilienceOnly) {
           const panel = page.locator('#one-on-one-candidates');
           const phone = panel.getByText('010-0000-0000', { exact: true });
@@ -334,7 +390,7 @@ async function main() {
           const inbox = page.getByRole('region', { name: '받은 1:1 매칭 요청' });
           if (scenario === 'incoming-none' || scenario === 'incoming-read-error') {
             if (scenario === 'incoming-none') await page.getByRole('button', { name: '매칭 요청 보내기', exact: true }).first().waitFor();
-            else await page.getByText(/로컬 받은 요청 조회 실패|매칭 정보를 불러오지 못|일부 매칭/).first().waitFor();
+            else await page.getByText(/로컬 받은 요청 조회 실패|매칭 정보를 불러오지 못|일부 매칭|1:1 요청을 불러오지 못/).first().waitFor();
             assert.equal(await inbox.count(), 0, 'no false request shortcut after empty/failed read');
           } else {
             const shortcut = inbox.getByRole('button', { name: /나에게 온 요청/ }); await shortcut.waitFor();

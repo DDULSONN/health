@@ -14,6 +14,7 @@ import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { createLatestRequest } from "@/lib/latest-request";
+import { subscribeVisiblePageRefresh } from "@/lib/visible-page-refresh";
 import { timeAgo } from "@/lib/community";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import { buildOneOnOneRefreshSuccess, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
@@ -4655,6 +4656,10 @@ export default function MyPage() {
 
   const oneOnOneMatchesRequest = useMemo(() => createLatestRequest(), []);
   const oneOnOneRecommendationsRequest = useMemo(() => createLatestRequest(), []);
+  const [oneOnOneMatchesLoaded, setOneOnOneMatchesLoaded] = useState(false);
+  const [oneOnOneMatchesLoading, setOneOnOneMatchesLoading] = useState(false);
+  const [oneOnOneMatchesError, setOneOnOneMatchesError] = useState("");
+  const oneOnOneMatchesLastRequestAtRef = useRef(0);
 
   useEffect(() => {
     let identity: string | null | undefined;
@@ -4664,6 +4669,9 @@ export default function MyPage() {
         oneOnOneMatchesRequest.cancel();
         oneOnOneRecommendationsRequest.cancel();
         setMyOneOnOneMatches([]);
+        setOneOnOneMatchesLoaded(false);
+        setOneOnOneMatchesLoading(false);
+        setOneOnOneMatchesError("");
         setMyOneOnOneAutoRecommendations([]);
         setOneOnOneActionNotice("");
         window.location.reload();
@@ -4679,14 +4687,55 @@ export default function MyPage() {
 
   const reloadOneOnOneMatches = useCallback((fresh = true) => oneOnOneMatchesRequest.run({
     replace: fresh,
-    load: async (signal) => {
-      const res = await fetch("/api/dating/1on1/matches/my", { cache: "no-store", signal });
-      const body = (await res.json().catch(() => ({}))) as { items?: MyOneOnOneMatch[]; error?: string };
-      if (!res.ok) throw new Error(body.error ?? "1:1 매칭 후보를 다시 불러오지 못했습니다.");
-      return body.items ?? [];
+    start: () => {
+      oneOnOneMatchesLastRequestAtRef.current = Date.now();
+      setOneOnOneMatchesLoading(true);
+      setOneOnOneMatchesError("");
     },
-    commit: setMyOneOnOneMatches,
+    load: async (signal) => {
+      const { response: res, body } = await fetchClientJson<{ items?: MyOneOnOneMatch[]; error?: string }>(
+        "/api/dating/1on1/matches/my", { cache: "no-store", signal }, 15000,
+      );
+      if (res.status === 401 || res.status === 403) {
+        const error = new Error("로그인 상태를 확인한 뒤 다시 시도해 주세요.");
+        error.name = "OneOnOneMatchAuthError";
+        throw error;
+      }
+      if (!res.ok) throw new Error("1:1 요청을 불러오지 못했어요. 다시 확인해 주세요.");
+      if (!Array.isArray(body?.items) || body.items.some((item) => !item || typeof item.id !== "string" ||
+        typeof item.state !== "string" || !["source", "candidate"].includes(item.role))) {
+        throw new Error("1:1 요청 응답을 확인하지 못했어요. 다시 확인해 주세요.");
+      }
+      return body.items;
+    },
+    commit: (items) => {
+      setMyOneOnOneMatches(items);
+      setOneOnOneMatchesLoaded(true);
+    },
+    fail: (error) => {
+      if (error instanceof Error && error.name === "OneOnOneMatchAuthError") {
+        setMyOneOnOneMatches([]);
+        setOneOnOneMatchesLoaded(false);
+      }
+      setOneOnOneMatchesError(error instanceof Error && (error.name === "OneOnOneMatchAuthError" || error.message.startsWith("1:1 요청"))
+        ? error.message : "1:1 요청을 불러오지 못했어요. 다시 확인해 주세요.");
+      throw error;
+    },
+    finish: () => setOneOnOneMatchesLoading(false),
   }), [oneOnOneMatchesRequest]);
+
+  useEffect(() => {
+    if (loading || accountBanStatus?.is_banned || pageSectionTab !== "matching") return;
+    return subscribeVisiblePageRefresh(
+      () => {
+        // A successful action already reloads this list. Do not race a pending mutation.
+        if (oneOnOneMatchActionLocksRef.current.size > 0) return;
+        void reloadOneOnOneMatches(false).catch(() => {});
+      },
+      () => oneOnOneMatchesLastRequestAtRef.current,
+      oneOnOneMatchesLastRequestAtRef.current > 0,
+    );
+  }, [loading, accountBanStatus?.is_banned, pageSectionTab, reloadOneOnOneMatches]);
 
   const reloadOneOnOneRecommendations = useCallback(async (fresh = true, requireUpdated = false) => {
     let updated = false;
@@ -5093,6 +5142,8 @@ export default function MyPage() {
       matchingDataLoadingRef.current = true;
       setMatchingDataLoading(true);
       setMatchingDataError("");
+      // The inbox owns its loading/error state, independently of open cards and recommendations.
+      void reloadOneOnOneMatches(false).catch(() => {});
 
       void (async () => {
       const loadOneOnOneCards = async () => {
@@ -5124,7 +5175,6 @@ export default function MyPage() {
         reloadOpenAppliedApplications(true),
         reloadPaidAppliedApplications(true),
         loadOneOnOneCards(),
-        reloadOneOnOneMatches(false),
         reloadOneOnOneRecommendations(false),
         reloadOpenDatingConnections(),
         loadOpenCardSettings(),
@@ -8374,8 +8424,23 @@ export default function MyPage() {
 
         {showMatchingSection && (
         <>
-          {matchingDataLoaded && !matchingDataLoading ? <OneOnOneNextSteps matches={myOneOnOneMatches} /> : null}
-          {matchingDataLoaded && !matchingDataLoading ? (
+          <div className="mb-2 flex items-center justify-between gap-3">
+            {oneOnOneMatchesError ? (
+              <p role="alert" className="text-xs leading-5 text-amber-800">{oneOnOneMatchesError}</p>
+            ) : (
+              <p role="status" className="text-xs leading-5 text-neutral-500">
+                {oneOnOneMatchesLoading || !oneOnOneMatchesLoaded ? "받은 1:1 요청을 확인하고 있어요."
+                  : myOneOnOneMatches.some(isIncomingOneOnOneRequest) ? "새로 받은 1:1 요청을 먼저 확인해 주세요."
+                  : "새로 받은 1:1 요청이 없어요."}
+              </p>
+            )}
+            <button type="button" disabled={oneOnOneMatchesLoading}
+              onClick={() => void reloadOneOnOneMatches(false).catch(() => {})}
+              className="min-h-[44px] shrink-0 rounded-lg border border-neutral-200 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50">
+              {oneOnOneMatchesLoading ? "확인 중" : "요청 다시 확인"}
+            </button>
+          </div>
+          {oneOnOneMatchesLoaded ? (
             <OneOnOneIncomingRequests
               requests={myOneOnOneMatches.filter(isIncomingOneOnOneRequest)}
               renderRequest={(match) => {
@@ -8416,6 +8481,7 @@ export default function MyPage() {
               }}
             />
           ) : null}
+          {oneOnOneMatchesLoaded ? <OneOnOneNextSteps matches={myOneOnOneMatches} /> : null}
           <AllPassProfileOfferBanner placement="mypage_matching_profile_complete" />
           <PaidRegistrationStatus state={paidRegistration} />
           <section className="mb-3 rounded-2xl border border-rose-100 bg-[#fffafb] p-4 shadow-[0_6px_20px_rgba(190,24,93,0.05)]">
