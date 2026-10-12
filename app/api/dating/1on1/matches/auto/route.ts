@@ -24,6 +24,7 @@ import { buildOneOnOneSelectionReceivedNotification } from "@/lib/dating-email-t
 import { sendDatingEmailNotification } from "@/lib/dating-swipe";
 import { notifyDatingUser } from "@/lib/dating-notifications";
 import { sendOneOnOneSelectionSms } from "@/lib/dating-1on1-sms";
+import { isCurrentOneOnOneNotification } from "@/lib/dating-1on1-notification-guard";
 
 type CreateAutoMatchPayload = {
   source_card_id?: string;
@@ -247,6 +248,7 @@ export async function POST(req: Request) {
       const notification = buildOneOnOneSelectionReceivedNotification(
         cards.get(sourceCardId)?.name ?? "상대",
         cards.get(candidateCardId)?.name ?? "내 카드",
+        matchId,
       );
       await Promise.all([
         sendDatingEmailNotification(
@@ -254,6 +256,7 @@ export async function POST(req: Request) {
           candidateRes.data.user_id,
           notification.emailSubject,
           notification.emailText,
+          () => isCurrentOneOnOneNotification(admin, matchId, "dating_1on1_selection_received", candidateRes.data!.user_id),
         ),
         notifyDatingUser(admin, {
           userId: candidateRes.data.user_id,

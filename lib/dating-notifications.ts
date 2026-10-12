@@ -2,6 +2,7 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { sendExpoPushToUser } from "@/lib/expo-push";
 import { notificationHref } from "@/lib/notification-view";
 import { oneOnOneNotificationHref } from "@/lib/dating-1on1-match-navigation";
+import { isCurrentOneOnOneNotification } from "@/lib/dating-1on1-notification-guard";
 
 type DatingNotificationInput = {
   userId: string;
@@ -27,6 +28,8 @@ export async function notifyDatingUser(
   adminClient: SupabaseClient,
   input: DatingNotificationInput
 ) {
+  if (!await isCurrentOneOnOneNotification(adminClient, input.meta?.match_id, input.type, input.userId))
+    return { stored: false, pushed: false };
   const route = oneOnOneNotificationHref(input.type, input.meta?.match_id) ?? notificationHref(input.route) ?? "/notifications";
   const metaJson = {
     ...(input.meta ?? {}),
@@ -65,6 +68,8 @@ export async function notifyDatingUser(
     });
   }
 
+  if (!await isCurrentOneOnOneNotification(adminClient, input.meta?.match_id, input.type, input.userId))
+    return { stored: !insertRes.error, pushed: false };
   const pushResult = await sendExpoPushToUser(adminClient, input.userId, {
     title: input.title,
     body: input.body,

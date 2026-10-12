@@ -144,10 +144,12 @@ test('1:1 view is a conditional dynamic import, not a static runtime import', ()
   assert.doesNotMatch(home, /import OneOnOneHomePanel from/);
 });
 // Exact function hashes from deployed af0ee5b; reviewed UI updates include deep links
-// and section/shortcut styling. check-dating-1on1-ui-polish separately pins behavior to 4792201.
+// and section/shortcut styling. The home panel also includes reviewed, read-only
+// notification-ending notices; action/checkout contracts remain pinned separately.
+// check-dating-1on1-ui-polish separately pins behavior to 4792201.
 // Future intentional view edits should update these reviewed baselines explicitly.
 const movedFunctions = {
-  OneOnOneHomePanel: '383bc9da633981e61e9503546b4c835c8d81632600d062e68c9211ec3e0b73a9',
+  OneOnOneHomePanel: 'c7eb4446a4dc90cbc168e020c5682be36b3ceb5926a4e33cd21ad81d27fdac5f',
   OneOnOneCandidateCard: '6195c138083537a1d9fa9cd2814b6f32705eb3c96fef2e2802264abad5789091',
   OneOnOneMatchActions: '6408ac6467228e01cf370b4942e9d42f19e7e34b937ad4e701ba82e1d1cceab4',
   canCancelOneOnOneMatchPreview: '0ec3faad4e8701ea4622ea220af8ebaddaf725cfa52a70fc686b82a37444036c',

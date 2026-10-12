@@ -3,6 +3,13 @@ const fs = require("node:fs");
 const path = require("node:path");
 const test = require("node:test");
 const ts = require("typescript");
+function plainModule(file) {
+  const mod={exports:{}};
+  new Function('exports', ts.transpileModule(fs.readFileSync(path.join(process.cwd(),file),'utf8'),{
+    compilerOptions:{module:ts.ModuleKind.CommonJS,target:ts.ScriptTarget.ES2020},
+  }).outputText)(mod.exports);
+  return mod.exports;
+}
 
 const source = fs.readFileSync(path.join(process.cwd(), "lib/dating-1on1-sms.ts"), "utf8");
 const match = source.match(/ONE_ON_ONE_SELECTION_SMS_TEXT\s*=\s*("(?:[^"\\]|\\.)*")/);
@@ -38,7 +45,11 @@ function createDeliveryAdmin() {
   return {
     deliveries,
     statusUpdates,
+    matchState: 'source_selected',
     from(table) {
+      if (table === 'dating_1on1_match_proposals') return {
+        select(){return this;},eq(){return this;},maybeSingle:async()=>({data:{source_user_id:'source',candidate_user_id:'recipient',state:this.matchState},error:null}),
+      };
       assert.equal(table, "dating_1on1_sms_deliveries");
       const query = { filters: [] };
       const builder = {
@@ -73,6 +84,8 @@ function createSmsHarness({ memberBlocked = false, contactBlocked = false, unsub
   } } };
   const sent = [];
   const sms = loadSmsModule({
+    '@/lib/dating-1on1-match-navigation': plainModule('lib/dating-1on1-match-navigation.ts'),
+    '@/lib/dating-1on1-notification-guard': plainModule('lib/dating-1on1-notification-guard.ts'),
     "@/lib/dating-1on1": {
       getProfilePhoneVerification: async () => ({ phoneVerified: true, phoneE164: "+821012345678" }),
     },
@@ -133,4 +146,18 @@ test("deleted, missing and unverifiable accounts never receive SMS", async () =>
     assert.equal(harness.sent.length, 0);
     assert.equal(harness.admin.statusUpdates.at(-1).provider_error, "RECIPIENT_UNAVAILABLE");
   }
+});
+
+test('request ended after reservation never sends an obsolete SMS',async()=>{
+  const harness=createSmsHarness();harness.admin.matchState='source_skipped';
+  assert.equal(await harness.send(),false);assert.equal(harness.sent.length,0);
+  assert.equal(harness.admin.statusUpdates.at(-1).provider_error,'MATCH_NO_LONGER_PENDING');
+});
+test('real match SMS stays short, UTF-8 and leads to its own match',()=>{
+  const {buildOneOnOneSelectionSms}=loadSmsModule({
+    '@/lib/dating-1on1-match-navigation':plainModule('lib/dating-1on1-match-navigation.ts'),
+    '@/lib/dating-1on1-notification-guard':{}, '@/lib/dating-1on1':{},'@/lib/dating-blocks':{},'@/lib/dating-contact-blocks':{},'@/lib/marketing-email':{},'@/lib/solapi-phone-verification':{},
+  });
+  const id='00000000-0000-4000-8000-000000000012',text=buildOneOnOneSelectionSms(id);
+  assert.ok(text.length<=80);assert.equal(Buffer.from(text).toString(),text);assert.ok(text.endsWith('/m/'+id));
 });

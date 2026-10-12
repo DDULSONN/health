@@ -4,12 +4,18 @@ import { hasDatingContactPhoneBlockBetween } from "@/lib/dating-contact-blocks";
 import { fetchMarketingUnsubscribedUserIds } from "@/lib/marketing-email";
 import { isSolapiPhoneOtpConfigured, sendSolapiTextMessage } from "@/lib/solapi-phone-verification";
 import type { createAdminClient } from "@/lib/supabase/server";
+import { isCurrentOneOnOneNotification } from "@/lib/dating-1on1-notification-guard";
+import { normalizeOneOnOneMatchId } from "@/lib/dating-1on1-match-navigation";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
 const DELIVERY_TABLE = "dating_1on1_sms_deliveries";
 export const ONE_ON_ONE_SELECTION_SMS_TEXT =
   "[짐툴] 1:1 요청이 도착했어요. 상대 프로필을 확인해 주세요.\nhelchang.com/mypage?section=matching";
+export function buildOneOnOneSelectionSms(matchId: string) {
+  const id = normalizeOneOnOneMatchId(matchId);
+  return id ? `[짐툴] 1:1 요청이 도착했어요.\nhelchang.com/m/${id}` : ONE_ON_ONE_SELECTION_SMS_TEXT;
+}
 
 function isMissingSmsDeliverySchema(error: unknown) {
   const code = String((error as { code?: unknown } | null)?.code ?? "");
@@ -71,7 +77,12 @@ export async function sendOneOnOneSelectionSms(
           .eq("id", reserveRes.data.id).eq("status", "sending");
         return false;
       }
-      await sendSolapiTextMessage({ phoneE164: phone.phoneE164, text: ONE_ON_ONE_SELECTION_SMS_TEXT });
+      if (!await isCurrentOneOnOneNotification(admin, input.matchId, "dating_1on1_selection_received", input.recipientUserId, input.sourceUserId)) {
+        await admin.from(DELIVERY_TABLE).update({ status: "failed", provider_error: "MATCH_NO_LONGER_PENDING" })
+          .eq("id", reserveRes.data.id).eq("status", "sending");
+        return false;
+      }
+      await sendSolapiTextMessage({ phoneE164: phone.phoneE164, text: buildOneOnOneSelectionSms(input.matchId) });
       const sentRes = await admin
         .from(DELIVERY_TABLE)
         .update({ status: "sent", sent_at: new Date().toISOString(), provider_error: null })

@@ -4,7 +4,8 @@ import { getOneOnOneContactNudgeSenderDisplayName } from "@/lib/dating-1on1-cont
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { notificationHref } from "@/lib/notification-view";
-import { oneOnOneNotificationHref } from "@/lib/dating-1on1-match-navigation";
+import { normalizeOneOnOneMatchId, oneOnOneNotificationHref } from "@/lib/dating-1on1-match-navigation";
+import { ONE_ON_ONE_NOTICE_TYPES, oneOnOneCurrentNotice, oneOnOneEndedNotice, oneOnOneLookupNotice } from "@/lib/dating-1on1-notification-status";
 
 type NotificationRow = {
   id: string;
@@ -29,6 +30,8 @@ type OneOnOneMatchIdentity = {
   source_user_id: string;
   candidate_card_id: string;
   candidate_user_id: string;
+  state?: string;
+  contact_exchange_status?: string;
 };
 
 type OneOnOneNudgeSender = {
@@ -299,6 +302,10 @@ export async function GET(request: Request) {
   const oneOnOneNudgeMatchIds = [
     ...new Set(notificationRows.filter(isOneOnOneContactNudge).map(getNotificationMatchId).filter(Boolean)),
   ];
+  const oneOnOneMatchIds = [...new Set(notificationRows.filter(item =>
+    ONE_ON_ONE_NOTICE_TYPES.includes(getNotificationMetaText(item, "notification_type") || item.type),
+  ).map(getNotificationMatchId).filter(id => normalizeOneOnOneMatchId(id) !== null))];
+  const lookupMatchIds = [...new Set([...oneOnOneMatchIds, ...oneOnOneNudgeMatchIds])];
   const openApplicationIds = [
     ...new Set(
       applicationNotifications
@@ -328,16 +335,17 @@ export async function GET(request: Request) {
   const oneOnOneNudgeSenderMap = new Map<string, string>();
   const oneOnOneCardNameMap = new Map<string, string>();
   const applicationStateLookupSucceeded = { open: true, paid: true };
-  if (openApplicationIds.length > 0 || paidApplicationIds.length > 0 || oneOnOneNudgeMatchIds.length > 0) {
+  let oneOnOneLookupSucceeded = true;
+  if (openApplicationIds.length > 0 || paidApplicationIds.length > 0 || lookupMatchIds.length > 0) {
     const admin = createAdminClient();
     const [openAppsResult, paidAppsResult, oneOnOneMatchesResult, oneOnOneNudgesResult] = await Promise.all([
       loadApplicationStates(admin, "dating_card_applications", openApplicationIds),
       loadApplicationStates(admin, "dating_paid_card_applications", paidApplicationIds),
-      oneOnOneNudgeMatchIds.length > 0
+      lookupMatchIds.length > 0
         ? admin
             .from("dating_1on1_match_proposals")
-            .select("id,source_card_id,source_user_id,candidate_card_id,candidate_user_id")
-            .in("id", oneOnOneNudgeMatchIds)
+            .select("id,source_card_id,source_user_id,candidate_card_id,candidate_user_id,state,contact_exchange_status")
+            .in("id", lookupMatchIds)
         : Promise.resolve({ data: [], error: null }),
       oneOnOneNudgeMatchIds.length > 0
         ? admin
@@ -357,11 +365,13 @@ export async function GET(request: Request) {
     }
 
     if (!oneOnOneMatchesResult.error) {
-      const matches = (oneOnOneMatchesResult.data ?? []) as OneOnOneMatchIdentity[];
+      const matches = ((oneOnOneMatchesResult.data ?? []) as OneOnOneMatchIdentity[])
+        .filter(match => match.source_user_id === user.id || match.candidate_user_id === user.id);
       for (const match of matches) oneOnOneMatchMap.set(match.id, match);
 
       const cardIds = [
-        ...new Set(matches.flatMap((match) => [match.source_card_id, match.candidate_card_id]).filter(Boolean)),
+        ...new Set(matches.filter(match => oneOnOneNudgeMatchIds.includes(match.id))
+          .flatMap((match) => [match.source_card_id, match.candidate_card_id]).filter(Boolean)),
       ];
       if (cardIds.length > 0) {
         const cardsResult = await admin.from("dating_1on1_cards").select("id,name").in("id", cardIds);
@@ -375,6 +385,7 @@ export async function GET(request: Request) {
         }
       }
     } else {
+      oneOnOneLookupSucceeded = false;
       console.error("[GET /api/notifications] 1:1 match identity load failed", oneOnOneMatchesResult.error);
     }
 
@@ -419,7 +430,7 @@ export async function GET(request: Request) {
         ["pending_24h", "pending_72h"].includes(getNotificationReminderKind(notification)) && relatedIds.length > 1;
       const pendingCount = isGroupReminder && stateLoaded
         ? relatedIds.filter((id) => applicationStateMap.get(`${source}:${id}`)?.status === "submitted").length : null;
-      const presentation = buildNotificationPresentation(
+      let presentation = buildNotificationPresentation(
         notification,
         actorNickname,
         oneOnOneSenderCardName || null,
@@ -428,9 +439,26 @@ export async function GET(request: Request) {
         Boolean(relatedIds.length && !stateLoaded),
         pendingCount
       );
+      const oneOnOneId = getNotificationMatchId(notification);
+      let suppressOldIdentity = false;
+      if (oneOnOneMatchIds.includes(oneOnOneId)) {
+        const match = oneOnOneMatchMap.get(oneOnOneId);
+        const ended = match ? oneOnOneEndedNotice(match.state, match.source_user_id === user.id ? "source" : "candidate") : null;
+        suppressOldIdentity = oneOnOneLookupSucceeded && (!match || Boolean(ended));
+        const current = !oneOnOneLookupSucceeded ? oneOnOneLookupNotice() : match
+          ? ended ?? ((getNotificationMetaText(notification, "notification_type") || notification.type) === "dating_1on1_selection_received"
+            ? oneOnOneCurrentNotice(match, match.source_user_id === user.id ? "source" : "candidate") : null)
+          : oneOnOneEndedNotice(notification.meta_json?.notification_end_reason, String(notification.meta_json?.notification_end_role ?? ""))
+            ?? oneOnOneEndedNotice("removed");
+        if (current) presentation = { ...current, link: presentation.link };
+      }
       return {
         ...notification,
-        actor_profile: notification.actor_id ? profileMap.get(notification.actor_id) ?? null : null,
+        ...(suppressOldIdentity ? { actor_id: null, meta_json: {
+          match_id: oneOnOneId, notification_type: getNotificationMetaText(notification, "notification_type") || notification.type,
+          notification_title: presentation.title, notification_body: presentation.body,
+        } } : {}),
+        actor_profile: !suppressOldIdentity && notification.actor_id ? profileMap.get(notification.actor_id) ?? null : null,
         title: presentation.title,
         body: presentation.body,
         link: oneOnOneNotificationHref(

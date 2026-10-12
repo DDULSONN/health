@@ -28,6 +28,8 @@ function handler(file, name, context) {
 }
 const view = load('lib/notification-view.ts');
 const matchNavigation = load('lib/dating-1on1-match-navigation.ts');
+const matchStatus = load('lib/dating-1on1-notification-status.ts');
+const notificationGuard = load('lib/dating-1on1-notification-guard.ts');
 const nudge = load('lib/dating-1on1-contact-nudge.ts');
 const notice = (id = 'notice', meta = {}, type = 'dating_application_received') => ({
   id, user_id: 'viewer', actor_id: 'actor', type, post_id: null, comment_id: null,
@@ -66,6 +68,7 @@ function fixture(options = {}) {
     '@/lib/dating-1on1-contact-nudge': nudge,
     '@/lib/notification-view': view,
     '@/lib/dating-1on1-match-navigation': matchNavigation,
+    '@/lib/dating-1on1-notification-status': matchStatus,
     '@/lib/supabase/request': { getRequestAuthContext: async () => ({ client: db, user: options.anonymous ? null : { id: 'viewer' } }) },
     '@/lib/supabase/server': { createAdminClient: () => db },
   });
@@ -201,7 +204,7 @@ for (const body of [{ data: { status: 'ok', id: 'ticket' } }, { data: [{ status:
 }
 test('new notifications and push share repaired route; fallback type still works', async () => {
   const inserts = [], pushes = [];
-  const notify = load('lib/dating-notifications.ts', { '@/lib/notification-view': view, '@/lib/dating-1on1-match-navigation': matchNavigation, '@/lib/expo-push': { sendExpoPushToUser: async (_db, _id, payload) => { pushes.push(payload); return { sent: true }; } } }).notifyDatingUser;
+  const notify = load('lib/dating-notifications.ts', { '@/lib/notification-view': view, '@/lib/dating-1on1-match-navigation': matchNavigation, '@/lib/dating-1on1-notification-guard': notificationGuard, '@/lib/expo-push': { sendExpoPushToUser: async (_db, _id, payload) => { pushes.push(payload); return { sent: true }; } } }).notifyDatingUser;
   const db = { from: () => ({ insert: async row => { inserts.push(row); return { error: inserts.length === 1 ? { code: '23514', message: 'notifications_type_check' } : null }; } }) };
   const result = await notify(db, { userId: 'viewer', type: 'dating_1on1_selected', title: '새 요청', body: '확인해 주세요', route: '/dating/1on1', meta: { route: '//bad.invalid' } });
   assert.equal(result.stored, true); assert.equal(inserts[1].type, 'comment'); assert.equal(inserts[1].meta_json.notification_route, '/community/dating/cards?tab=one_on_one');
@@ -221,11 +224,38 @@ test('existing and fallback-type 1:1 notifications link to their own match witho
   }
 });
 
+for (const [state,word] of [['source_skipped','철회'],['candidate_rejected','거절'],['admin_canceled','취소'],['mutual_accepted','서로 수락']]) test('1:1 old request notification reflects current '+state,async()=>{
+  const id='00000000-0000-4000-8000-000000000012';
+  const f=fixture({notices:[notice('n',{match_id:id,notification_type:'dating_1on1_selection_received',notification_title:'새 요청',notification_body:'옛 이름님 요청'},'comment')],
+    matches:[{id,source_user_id:'actor',candidate_user_id:'viewer',state,contact_exchange_status:'none'}]});
+  const {body}=await get(f);assert.match(JSON.stringify(body.items[0].title+body.items[0].body),new RegExp(word));
+  assert.equal(f.writes.length,0);
+  if(state!=='mutual_accepted')assert.doesNotMatch(JSON.stringify(body.items[0]),/옛 이름/);
+});
+for(const reason of ['account_deleted','profile_deleted',undefined])test('1:1 deleted notice uses only recorded reason: '+reason,async()=>{
+  const id='00000000-0000-4000-8000-000000000012';
+  const f=fixture({notices:[{...notice('n',{match_id:id,notification_type:'dating_1on1_match_accepted',notification_title:'옛 이름 수락',notification_body:'옛 이름님',notification_end_reason:reason},'comment'),actor_id:null}]});
+  const {body}=await get(f);assert.match(body.items[0].body,reason==='account_deleted'?/탈퇴/:reason==='profile_deleted'?/프로필이 삭제/:/정확한 삭제 사유/);
+  assert.doesNotMatch(JSON.stringify(body.items[0]),/옛 이름/);
+});
+test('failed 1:1 state lookup never becomes a deletion claim',async()=>{
+  const f=fixture({failedTable:'dating_1on1_match_proposals',notices:[notice('n',{match_id:'00000000-0000-4000-8000-000000000012',notification_type:'dating_1on1_match_accepted'},'comment')]});
+  const {body}=await get(f);assert.equal(body.items[0].title,'1:1 상태 확인 필요');
+});
+test('active mutual nudge preserves sender and actual message instead of generic accepted text',async()=>{
+  const id='00000000-0000-4000-8000-000000000012';
+  const f=fixture({notices:[notice('n',{match_id:id,notification_type:'dating_1on1_contact_nudge',notification_body:'첫 커피는 제가 살게요 ☕'},'comment')],
+    matches:[{id,source_user_id:'actor',candidate_user_id:'viewer',source_card_id:'c',candidate_card_id:'mine',state:'mutual_accepted'}],cards:[{id:'c',name:'보낸이'}]});
+  const {body}=await get(f);assert.match(body.items[0].body,/보낸이님: 첫 커피/);
+});
+
 test('new 1:1 notification and push retain the same validated match destination', async () => {
   const inserts = [], pushes = [], id = '00000000-0000-4000-8000-000000000012';
   const notify = load('lib/dating-notifications.ts', { '@/lib/notification-view': view, '@/lib/dating-1on1-match-navigation': matchNavigation,
+    '@/lib/dating-1on1-notification-guard': notificationGuard,
     '@/lib/expo-push': { sendExpoPushToUser: async (_db, _id, payload) => { pushes.push(payload); return { sent: true }; } } }).notifyDatingUser;
-  await notify({ from: () => ({ insert: async row => { inserts.push(row); return { error: null }; } }) },
+  await notify({ from: () => ({ insert: async row => { inserts.push(row); return { error: null }; },
+    select(){return this;},eq(){return this;},maybeSingle:async()=>({data:{state:'source_selected',source_user_id:'sender',candidate_user_id:'viewer'},error:null}) }) },
     { userId: 'viewer', type: 'dating_1on1_selection_received', title: '새 요청', body: '상대 프로필 확인', route: '/dating/1on1', meta: { match_id: id } });
   assert.equal(inserts[0].meta_json.notification_route, matchNavigation.oneOnOneMatchHref(id));
   assert.equal(pushes[0].data.route, matchNavigation.oneOnOneMatchHref(id));

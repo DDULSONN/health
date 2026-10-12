@@ -645,7 +645,8 @@ export async function sendDatingEmailNotification(
   adminClient: AdminClient,
   userId: string,
   subject: string,
-  text: string
+  text: string,
+  beforeSend?: () => Promise<boolean>,
 ): Promise<boolean> {
   const userRes = await adminClient.auth.admin.getUserById(userId).catch(() => null);
   const to = userRes?.data?.user?.email?.trim();
@@ -667,7 +668,7 @@ export async function sendDatingEmailNotification(
     label: "오픈카드·1:1 소개팅 알림 메일을 더 이상 받고 싶지 않다면 아래 링크에서 수신거부할 수 있습니다.",
   });
 
-  return sendDatingEmailToAddress(to, subject, textWithFooter);
+  return (await sendDatingEmailToAddressDetailed(to, subject, textWithFooter, { beforeSend })).ok;
 }
 
 export type DatingEmailSendResult = {
@@ -679,6 +680,7 @@ export type DatingEmailSendResult = {
 
 type DatingEmailSendOptions = {
   idempotencyKey?: string;
+  beforeSend?: () => Promise<boolean>;
 };
 
 export async function sendDatingEmailToAddress(
@@ -714,7 +716,11 @@ export async function sendDatingEmailToAddressDetailed(
 
   const htmlBody = normalizedText
     .split("\n")
-    .map((line) => line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"))
+    .map((line) => {
+      const escaped = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      return /^https:\/\/helchang\.com\/community\/dating\/cards\?tab=one_on_one&matchId=[0-9a-f-]{36}#selected-one-on-one-match$/i.test(line)
+        ? `<a href="${escaped}">매칭 상태 확인</a>` : escaped;
+    })
     .join("<br />");
 
   const html = [
@@ -742,6 +748,8 @@ export async function sendDatingEmailToAddressDetailed(
   const maxAttempts = 3;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    if (options.beforeSend && !await options.beforeSend().catch(() => false))
+      return { ok: false, error: "MATCH_NO_LONGER_CURRENT", retryable: false };
     let res: Response | null = null;
     try {
       const headers: Record<string, string> = {

@@ -14,6 +14,7 @@ import { notifyDatingUser } from "@/lib/dating-notifications";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { sendDatingEmailNotification } from "@/lib/dating-swipe";
 import { sendOneOnOneSelectionSms } from "@/lib/dating-1on1-sms";
+import { isCurrentOneOnOneNotification } from "@/lib/dating-1on1-notification-guard";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
 import { NextResponse } from "next/server";
@@ -68,14 +69,17 @@ async function getMatchRow(admin: ReturnType<typeof createAdminClient>, matchId:
 async function sendOneOnOneReminderEmail(
   admin: ReturnType<typeof createAdminClient>,
   targetUserId: string,
-  buildNotification: () => { emailSubject: string; emailText: string }
+  buildNotification: () => { emailSubject: string; emailText: string },
+  matchId: string,
+  type: string,
 ) {
   const notification = buildNotification();
   await sendDatingEmailNotification(
     admin,
     targetUserId,
     notification.emailSubject,
-    notification.emailText
+    notification.emailText,
+    () => isCurrentOneOnOneNotification(admin, matchId, type, targetUserId),
   ).catch((error) => {
     console.error("[POST /api/dating/1on1/matches/[id]] reminder email failed", error);
     return false;
@@ -177,11 +181,11 @@ export async function POST(
       const candidateCard = cards.get(row.candidate_card_id);
       const notification = buildOneOnOneSelectionReceivedNotification(
         sourceCard?.name ?? "상대",
-        candidateCard?.name ?? "내 카드"
+        candidateCard?.name ?? "내 카드", matchId,
       );
 
       await Promise.all([
-        sendOneOnOneReminderEmail(admin, row.candidate_user_id, () => notification),
+        sendOneOnOneReminderEmail(admin, row.candidate_user_id, () => notification, matchId, "dating_1on1_selection_received"),
         sendOneOnOneSelectionSms(admin, {
           matchId,
           sourceUserId: row.source_user_id,
@@ -243,19 +247,7 @@ export async function POST(
       );
     }
 
-    const notificationDeleteRes = await admin
-      .from("notifications")
-      .delete()
-      .eq("user_id", row.candidate_user_id)
-      .eq("actor_id", row.source_user_id)
-      .eq("meta_json->>match_id", matchId)
-      .eq("meta_json->>notification_type", "dating_1on1_selection_received");
-    if (notificationDeleteRes.error) {
-      console.error(
-        "[POST /api/dating/1on1/matches/[id]] source cancel notification cleanup failed",
-        notificationDeleteRes.error
-      );
-    }
+    // Keep the historical notification: the read API now explains the withdrawal.
   }
 
   if (body.action === "candidate_accept") {
@@ -311,11 +303,11 @@ export async function POST(
       const cards = await getDatingOneOnOneCardsByIds(admin, [row.source_card_id, row.candidate_card_id]);
       const candidateCard = cards.get(row.candidate_card_id);
       const sourceCard = cards.get(row.source_card_id);
-      const sourceNotification = buildOneOnOneAcceptedNotification(candidateCard?.name ?? "상대");
-      const candidateNotification = buildOneOnOneAcceptedNotification(sourceCard?.name ?? "상대");
+      const sourceNotification = buildOneOnOneAcceptedNotification(candidateCard?.name ?? "상대", matchId);
+      const candidateNotification = buildOneOnOneAcceptedNotification(sourceCard?.name ?? "상대", matchId);
 
       await Promise.all([
-        sendOneOnOneReminderEmail(admin, row.source_user_id, () => sourceNotification),
+        sendOneOnOneReminderEmail(admin, row.source_user_id, () => sourceNotification, matchId, "dating_1on1_match_accepted"),
         notifyDatingUser(admin, {
           userId: row.source_user_id,
           actorId: row.candidate_user_id,

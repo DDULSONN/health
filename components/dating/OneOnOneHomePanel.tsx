@@ -12,6 +12,8 @@ import OneOnOneProfileSummary from "@/components/dating/OneOnOneProfileSummary";
 import OneOnOneIncomingRequests from "@/components/dating/OneOnOneIncomingRequests";
 import OneOnOneNextSteps from "@/components/dating/OneOnOneNextSteps";
 import OneOnOneContactPending from "@/components/dating/OneOnOneContactPending";
+import OneOnOneUnavailableNotice from "@/components/dating/OneOnOneUnavailableNotice";
+import { oneOnOneEndedNotice } from "@/lib/dating-1on1-notification-status";
 import { canOfferOneOnOneContact, normalizeOneOnOneMatchId, oneOnOneMatchHref } from "@/lib/dating-1on1-match-navigation";
 import OneOnOneExpansionPanel from "@/components/dating/OneOnOneExpansionPanel";
 import { getOneOnOneActionSummary, getOneOnOneMatchLabel, isIncomingOneOnOneRequest } from "@/lib/dating-1on1-action-copy";
@@ -189,6 +191,7 @@ export default function OneOnOneHomePanel({
   // Only highlight a record already returned by the authenticated participant API.
   // A URL alone never loads a profile or grants permission to act on it.
   const focusedMatch = targetMatchId ? matches.find((match) => match.id === targetMatchId) : null;
+  const focusedEnding = focusedMatch ? oneOnOneEndedNotice(focusedMatch.state, focusedMatch.role) : null;
   useEffect(() => {
     if (!targetMatchId) { scrolledMatchId.current = null; return; }
     if (loading || sessionError || error || !viewerLoggedIn || !focusedMatchRef.current || scrolledMatchId.current === targetMatchId) return;
@@ -348,7 +351,10 @@ export default function OneOnOneHomePanel({
             {targetMatchId ? <div id="selected-one-on-one-match" ref={focusedMatchRef} tabIndex={-1}
               className="scroll-mt-40 rounded-2xl outline-none focus-visible:ring-2 focus-visible:ring-rose-300">
               <p className="mb-2 text-xs font-semibold text-neutral-700">선택한 매칭</p>
-              {focusedMatch?.counterparty_card ? <OneOnOneCandidateCard compact
+              {focusedEnding ? <div role="status" className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+                <p className="text-sm font-semibold text-neutral-700">{focusedEnding.title}</p>
+                <p className="mt-2 text-xs leading-5 text-neutral-600">{focusedEnding.body}</p>
+              </div> : focusedMatch?.counterparty_card ? <OneOnOneCandidateCard compact
                 card={focusedMatch.counterparty_card} reportTarget={{ type: "one_on_one_match", id: focusedMatch.id }}
                 onReported={onReported} badge={getOneOnOneMatchLabel(focusedMatch)} note={oneOnOneContactLabel(focusedMatch.contact_exchange_status)}>
                 {focusedMatch.counterparty_phone ? <p className="mt-2 text-sm font-black text-emerald-700">{focusedMatch.counterparty_phone}</p> : null}
@@ -356,7 +362,7 @@ export default function OneOnOneHomePanel({
                   processing={processingMatchIds.includes(focusedMatch.id)} contactProcessing={processingContactIds.includes(focusedMatch.id)}
                   nudgeProcessing={processingNudgeIds.includes(focusedMatch.id)} onMatchAction={onMatchAction}
                   onContactCheckout={onContactCheckout} onContactNudge={onContactNudge} />
-              </OneOnOneCandidateCard> : <p className="text-xs leading-5 text-neutral-600">이 매칭을 확인할 수 없어요. 종료·삭제되었거나 현재 계정에서 볼 수 없는 매칭일 수 있어요.</p>}
+              </OneOnOneCandidateCard> : <OneOnOneUnavailableNotice key={targetMatchId} matchId={targetMatchId} />}
             </div> : null}
             <div ref={nextStepsSectionRef} tabIndex={-1} data-one-on-one-section="next-steps" className="scroll-mt-40 rounded-xl outline-none empty:hidden focus-visible:ring-2 focus-visible:ring-rose-300">
               <OneOnOneNextSteps matches={activeMatches} />

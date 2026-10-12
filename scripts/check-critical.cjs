@@ -19,6 +19,7 @@ const unitFiles = [
   'check-viewer-session-recovery.cjs',
   'check-dating-1on1-action-copy.cjs',
   'check-mypage-incoming-requests.cjs',
+  'check-one-on-one-notification-status.cjs',
   'check-dating-1on1-match-journey.cjs',
   'check-dating-1on1-ui-polish.cjs',
   'check-admin-review-confirmation.cjs',

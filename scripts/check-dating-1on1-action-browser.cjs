@@ -51,7 +51,7 @@ async function main() {
       : polishOnly
       ? ['polish-incoming', 'polish-next', 'polish-final-accept', 'polish-waiting', 'polish-empty', 'polish-no-candidates', 'polish-read-error', 'polish-focused']
       : journeyOnly
-      ? surface === 'home' ? ['journey-incoming', 'journey-checkout', 'journey-paid', 'journey-pending', 'journey-approved', 'journey-closed', 'journey-missing', 'journey-load-error', 'journey-many'] : ['journey-shortcut', 'journey-pending', 'journey-paid']
+      ? surface === 'home' ? ['journey-incoming', 'journey-checkout', 'journey-paid', 'journey-pending', 'journey-approved', 'journey-closed', 'journey-missing', 'journey-deleted', 'journey-profile-deleted', 'journey-status-error', 'journey-status-auth', 'journey-status-foreign', 'journey-load-error', 'journey-many'] : ['journey-shortcut', 'journey-pending', 'journey-paid']
       : [
       'success', 'failure', 'duplicate', 'duplicate-active', 'proposed', 'read-failure', 'partial-read-failure', 'additional',
       ...(surface === 'mypage' ? ['favorite', 'incoming-other-error'] : []),
@@ -64,6 +64,9 @@ async function main() {
       const errors = [], alerts = [];
       let posts = 0, blocked = 0, release, responseAction = '', matchingReads = 0;
       let recommendationReads = 0;
+      let statusReads = 0;
+      let allowStatusSuccess = false;
+      const missingJourney = ['journey-missing','journey-deleted','journey-profile-deleted','journey-status-error','journey-status-auth','journey-status-foreign'].includes(scenario);
       let matchListReads = 0, incomingArrived = false, failInboxRead = ['inbox-retry', 'inbox-malformed'].includes(scenario);
       const inboxCase = scenario.startsWith('inbox-');
       const noProfile = scenario.includes('no-profile') || scenario === 'resilience-rejected-profile';
@@ -94,6 +97,12 @@ async function main() {
         if (!url.pathname.startsWith('/api/')) { await route.continue(); return; }
         if (req.method() === 'GET' && url.pathname.startsWith('/api/dating/1on1/')) matchingReads++;
         let body = { ok: true, items: [], cards: [], applications: [], loggedIn: true };
+        if (/\/api\/dating\/1on1\/matches\/[^/]+\/status$/.test(url.pathname)) {
+          assert.equal(req.method(),'GET');statusReads++;
+          const title=scenario==='journey-deleted'?'상대 회원이 탈퇴했어요':scenario==='journey-profile-deleted'?'프로필이 삭제된 매칭':scenario==='journey-status-foreign'?'확인할 수 없는 매칭':'삭제된 1:1 매칭 내역';
+          const status=!allowStatusSuccess&&scenario==='journey-status-error'?503:!allowStatusSuccess&&scenario==='journey-status-auth'?401:scenario==='journey-status-foreign'?404:200;
+          await route.fulfill({status,json:{notice:{title,body:'현재 상태에 대한 안내입니다. 이미 받은 문자와 메일은 그대로 남을 수 있어요.'}}});return;
+        }
         if (req.method() !== 'GET') {
           assert.equal(req.method(), 'POST'); posts++;
           if (incomingCase) {
@@ -159,7 +168,7 @@ async function main() {
               target.counterparty_phone = status === 'approved' ? '010-0000-0000' : null;
               body = { items: [
                 ...Array.from({ length: 12 }, (_, i) => match('waiting-' + i, 'source', 'source_selected', `대기회원${i}`)),
-                ...(scenario === 'journey-missing' ? [] : [target]),
+                ...(missingJourney ? [] : [target]),
               ] }; break;
             }
             if (scenario === 'incoming-read-error') { await route.fulfill({ status: 503, json: { error: '로컬 받은 요청 조회 실패' } }); return; }
@@ -349,9 +358,22 @@ async function main() {
             assert.equal(await page.getByRole('button', { name: /연락처 교환 ·/ }).count(), 0);
           } else {
             const focused = page.locator('#selected-one-on-one-match'); await focused.waitFor();
-            if (scenario === 'journey-missing') {
-              await focused.getByText(/이 매칭을 확인할 수 없어요/).waitFor();
+            if (missingJourney) {
+              if(['journey-status-error','journey-status-auth'].includes(scenario)) {
+                await focused.getByText(scenario==='journey-status-error'?'1:1 상태 확인 필요':'로그인 상태를 확인해 주세요',{exact:true}).waitFor();
+                allowStatusSuccess=true;
+                await focused.getByRole('button',{name:'상태 다시 확인',exact:true}).click();
+              }
+              const title=scenario==='journey-deleted'?'상대 회원이 탈퇴했어요':scenario==='journey-profile-deleted'?'프로필이 삭제된 매칭':scenario==='journey-status-foreign'?'확인할 수 없는 매칭':'삭제된 1:1 매칭 내역';
+              await focused.getByText(title,{exact:true}).waitFor();
+              assert.equal(await focused.getByRole('img').count(),0);
+              assert.equal(await focused.getByText('010-0000-0000').count(),0);
               assert.equal(await focused.getByRole('button').count(), 0);
+              assert.ok(statusReads<=3,'StrictMode initial replay and at most one manual retry; no polling');
+            } else if (scenario==='journey-closed') {
+              await focused.getByText('취소된 1:1 매칭',{exact:true}).waitFor();
+              assert.equal(await focused.getByRole('img').count(),0);
+              assert.equal(await focused.getByRole('button').count(),0);
             } else {
               await focused.getByText('알림에서찾은상대', { exact: true }).waitFor();
               assert.equal(await focused.getByText('알림에서찾은상대', { exact: true }).count(), 1);
