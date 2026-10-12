@@ -25,6 +25,7 @@ const unitFiles = [
   'check-admin-review-confirmation.cjs',
   'check-dating-sexual-text-review.cjs',
   'check-dating-1on1-checked-refresh-sql.cjs',
+  'check-dating-1on1-impressions.cjs',
   'check-city-view-region-priority.cjs',
   'check-notification-reliability.cjs',
   'check-paid-registration-status.cjs',
@@ -92,6 +93,7 @@ if (process.argv.includes('--browser')) {
   run([path.join(__dirname, 'check-dating-1on1-action-browser.cjs'), '--ui-polish'], 10 * 60_000);
   run([path.join(__dirname, 'check-dating-1on1-action-browser.cjs'), '--resilience'], 10 * 60_000);
   run([path.join(__dirname, 'check-recommendation-refresh-browser.cjs'), '--expansion'], 10 * 60_000);
+  run([path.join(__dirname, 'check-recommendation-refresh-browser.cjs'), '--impressions'], 10 * 60_000);
 } else {
   const pglite = require.resolve('@electric-sql/pglite');
   for (const key of ['ACCOUNT_DELETION_PGLITE_PATH', 'PAYMENT_RECOVERY_PGLITE_PATH', 'PRIVACY_TEST_PGLITE_PATH', 'REVIEW_TEST_PGLITE_PATH', 'REFRESH_TEST_PGLITE_PATH']) env[key] = pglite;

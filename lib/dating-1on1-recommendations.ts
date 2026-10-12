@@ -7,6 +7,11 @@ const RECENT_MIN_QUOTA = 4;
 const REFRESH_NEARBY_VARIETY_LIMIT = 4;
 export const RECOMMENDATION_REFRESH_HISTORY_MS = 7 * DAY_MS;
 export const RECOMMENDATION_REVISIT_COOLDOWN_MS = 7 * DAY_MS;
+export type ObservedCandidate = { id: string; at: number };
+// Use history BEFORE the page's generation, never acknowledgements of that page.
+export function observedCandidateIdsAt(observations: ObservedCandidate[], at: number) {
+  return new Set(observations.filter(row => Number.isFinite(row.at) && row.at < at && row.at >= at - 30 * DAY_MS).map(row => row.id));
+}
 // A persisted, once-per-account correction, separate from charged refresh events.
 // Replay it like a normal refresh; reading candidates never grants another one.
 export function getRecommendationRecoverySeed(refreshedAt: string | null | undefined, nowMs = Date.now()) {
@@ -227,6 +232,30 @@ export function takeBalancedRecommendations<T extends RecommendationCandidate>(
   return picked.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
 }
 
+export function takeObservedRecommendations<T extends RecommendationCandidate>(
+  source: RecommendationCandidate, sorted: T[], limit: number, observed: Set<string>,
+  previous: Set<string>, handled: Set<string>, nowMs: number
+) {
+  const meta = createRecommendationMetaReader(source);
+  if (limit <= 0 || !sorted.length) return [];
+  const bestTier = sorted.reduce((best, card) => Math.min(best, meta(card).tier), Infinity);
+  // Before repeating locals, broaden only to the existing safe nearby tiers:
+  // <=90 km / age gap <=6, or <=180 km / the normal age range. Do not fill with
+  // arbitrary distant/unknown-age people just to make the refresh look different.
+  const suitable = (card: T) => meta(card).tier <= Math.max(2, bestTier);
+  const fresh = (card: T) => suitable(card) && !observed.has(card.id) && !isRecentlyHandledCandidate(card, nowMs);
+  const picked: T[] = [];
+  const used = new Set<string>();
+  for (const pool of [sorted.filter(card => fresh(card) && !previous.has(card.id)), sorted.filter(fresh),
+    sorted.filter(card => suitable(card) && !previous.has(card.id)), sorted.filter(suitable), sorted]) {
+    const next = takeBalancedRecommendations(source, pool.filter(card => !used.has(card.id)), limit - picked.length, handled, nowMs, meta);
+    picked.push(...next); for (const card of next) used.add(card.id);
+    if (picked.length >= limit) break;
+  }
+  const order = new Map(sorted.map((card, index) => [card.id, index]));
+  return picked.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
+}
+
 export function getRefreshExcludeIds<T extends RecommendationCandidate>(
   source: RecommendationCandidate,
   defaults: T[],
@@ -283,7 +312,8 @@ export function replayRecommendationRefreshes<T extends RecommendationCandidate>
   handledIds: Set<string>,
   limit: number,
   nowMs = Date.now(),
-  extraOptions?: { limit: number; excludeIds: Set<string> }
+  extraOptions?: { limit: number; excludeIds: Set<string> },
+  observations: ObservedCandidate[] = []
 ) {
   // SQL returns +00:00 while the server plans with Z. Equal instants must replay
   // the same list; otherwise a checked plan could differ immediately after saving.
@@ -302,10 +332,16 @@ export function replayRecommendationRefreshes<T extends RecommendationCandidate>
   const extraPoolAt = (pool: T[]) => pool.filter((card) =>
     readMeta(card).ageMatch && !extraOptions?.excludeIds.has(card.id) &&
     !recommendations.some((main) => main.id === card.id));
-  const rotateExtras = (pool: T[], seed: string, at: number) => {
+  const rotateExtras = (pool: T[], seed: string, at: number, observationAt = at) => {
     if (!extraOptions?.limit) return;
     const previousIds = new Set(extraRecommendations.map((card) => card.id));
     const sorted = sortCandidatesForSource(source, extraPoolAt(pool), seed, at, readMeta);
+    const observed = observedCandidateIdsAt(observations, observationAt);
+    if (observed.size > 0) {
+      extraRecommendations = takeObservedRecommendations(source, sorted, extraOptions.limit, observed, previousIds, handledIds, at);
+      for (const card of extraRecommendations) { extraSeenIds.add(card.id); shownIds.add(card.id); excluded.add(card.id); }
+      return;
+    }
     extraRecommendations = [];
     const pickedIds = new Set<string>();
     for (const group of groupByRelevance(sorted, readMeta)) {
@@ -332,8 +368,9 @@ export function replayRecommendationRefreshes<T extends RecommendationCandidate>
     }
   };
   const initialAt = seeds.length ? Date.parse(seeds[0]) : nowMs;
+  const dailyPageAt = Date.parse(`${getKstDateString(new Date(nowMs))}T00:00:00+09:00`);
   rotateExtras(candidates.filter((card) => existedAt(card, initialAt)),
-    `${getKstDateString(new Date(initialAt))}:admin-extra:initial`, initialAt);
+    `${getKstDateString(new Date(initialAt))}:admin-extra:initial`, initialAt, seeds.length ? initialAt : dailyPageAt);
   let previousSeedMs: number | null = null;
   for (const seed of seeds) {
     const seedMs = Date.parse(seed);
@@ -354,6 +391,18 @@ export function replayRecommendationRefreshes<T extends RecommendationCandidate>
     for (const card of recommendations) { excluded.add(card.id); shownIds.add(card.id); }
     const previousIds = new Set(recommendations.map((card) => card.id));
     const sorted = sortCandidatesForSource(source, historicalPool, `refresh:${seed}`, nowMs, readMeta);
+    const observed = observedCandidateIdsAt(observations, seedMs);
+    if (observed.size > 0) {
+      // Observed history is authoritative for this generation. Replayed lists
+      // may contain people never scrolled into view; do not mark those as seen.
+      recommendations = takeObservedRecommendations(source, sorted, limit, observed,
+        new Set([...previousIds, ...extraRecommendations.map(card => card.id)]), handledIds, nowMs);
+      for (const card of recommendations) { excluded.add(card.id); shownIds.add(card.id); }
+      if (getActiveRecommendationRefresh(seed, nowMs)) for (const card of recommendations) activeShownIds.add(card.id);
+      rotateExtras(historicalPool, `${getKstDateString(new Date(seedMs))}:admin-extra:${seed}`, seedMs);
+      previousSeedMs = seedMs;
+      continue;
+    }
     const groups = groupByRelevance(sorted, readMeta);
     const bestTier = groups[0]?.[0] ? readMeta(groups[0][0]).tier : null;
     const unseenBestCount = (groups[0] ?? []).filter((card) => !excluded.has(card.id)).length;
@@ -413,6 +462,12 @@ export function replayRecommendationRefreshes<T extends RecommendationCandidate>
     const used = new Set(retained.map((card) => card.id));
     const sorted = sortCandidatesForSource(source, pool,
       `${getKstDateString(new Date(nowMs))}:admin-extra:fill`, nowMs, readMeta);
+    const observed = observedCandidateIdsAt(observations, previousSeedMs ?? dailyPageAt);
+    if (observed.size > 0) {
+      extraRecommendations = [...retained, ...takeObservedRecommendations(source, sorted.filter(card => !used.has(card.id)),
+        extraOptions.limit - retained.length, observed, new Set(), handledIds, nowMs)];
+      return { recommendations, shownIds, activeShownIds, seeds, extraRecommendations };
+    }
     extraRecommendations = [];
     for (const group of groupByRelevance(sorted, readMeta)) {
       const groupIds = new Set(group.map((card) => card.id));

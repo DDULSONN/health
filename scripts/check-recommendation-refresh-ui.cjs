@@ -34,6 +34,7 @@ function fixture(surface, outcome = 'ok', confirmation = true) {
   const coreGate = latest.createLatestRequest();
   const recovery = { current: false };
   const common = {
+    flushCandidateImpressions: async () => {},
     ...payloadRules, oneOnOneRefreshNeedsReloadRef: recovery,
     useCallback: fn => fn, viewerLoggedIn: true,
     oneOnOneHomeRequest: coreGate, oneOnOneRecommendationsRequest: gate,

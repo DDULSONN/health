@@ -38,6 +38,41 @@ const card = (id, overrides = {}) => ({
 const source = card("source", { sex: "male", age: 30 });
 const ids = (cards) => cards.map((candidate) => candidate.id);
 
+test('actual observations broaden to unseen compatible nearby candidates before local repeats', () => {
+  const locals = Array.from({ length: 20 }, (_, i) => card('seen-' + i));
+  const nearby = Array.from({ length: 20 }, (_, i) => card('fresh-' + i, { region: '충남 천안시' }));
+  const remote = Array.from({ length: 20 }, (_, i) => card('remote-' + i, { region: '부산' }));
+  const sorted = rules.sortCandidatesForSource(source, [...locals, ...nearby, ...remote], 'observed', now);
+  const seen = new Set(ids(locals));
+  const result = rules.takeObservedRecommendations(source, sorted, 10, seen, new Set(), new Set(), now);
+  assert.equal(result.length, 10);
+  assert.ok(result.every(c => c.id.startsWith('fresh-')));
+  const exhausted = rules.takeObservedRecommendations(source, sorted, 10, new Set([...ids(locals), ...ids(nearby)]), new Set(), new Set(), now);
+  assert.ok(exhausted.every(c => c.id.startsWith('seen-')), 'do not jump arbitrarily far to fake novelty');
+  assert.deepEqual(rules.takeObservedRecommendations(source, sorted, 0, seen, new Set(), new Set(), now), []);
+});
+
+test('observations count only actual past views within the 30-day generation cutoff', () => {
+  assert.deepEqual([...rules.observedCandidateIdsAt([
+    { id: 'old', at: now-31*day }, { id: 'boundary', at: now-30*day }, { id: 'seen', at: now-1 },
+    { id: 'current', at: now }, { id: 'future', at: now+1 }, { id: 'bad', at: NaN },
+  ], now)], ['boundary', 'seen']);
+});
+
+test('acknowledging the current recommendation page never rotates it on a subsequent GET', () => {
+  const pool = Array.from({ length: 80 }, (_, i) => card('obs-' + i));
+  const observations = pool.slice(0, 25).map(c => ({ id: c.id, at: now-100000 }));
+  const seeds = [new Date(now-1000).toISOString()];
+  const run = history => rules.replayRecommendationRefreshes(source, pool, pool.slice(0, 10), seeds, new Set(), 10, now,
+    { limit: 3, excludeIds: new Set() }, history);
+  const before = run(observations);
+  const displayed = [...before.recommendations, ...before.extraRecommendations];
+  const after = run([...observations, ...displayed.map(c => ({ id: c.id, at: now-500 }))]);
+  assert.deepEqual(after, before);
+  assert.equal(new Set(ids(displayed)).size, 13);
+  assert.ok(displayed.every(c => !observations.some(o => o.id === c.id)));
+});
+
 test("extra candidates prefer compatible locals from earlier pages over distant unseen people", () => {
   for (const sex of ["male", "female"]) {
     const src = card("local-source", { sex, age: 28 });
@@ -224,6 +259,103 @@ for (const size of [0, 1, 3, 10, 11, 12, 13]) test('checked refresh with ' + siz
   assert.equal(result.body.changed_candidate_count, 0); assert.equal(result.body.refresh_remaining, 1);
   assert.equal(result.rpcCalls.length, 0); assert.deepEqual(tables, before);
   assert.ok(result.calls.every(call => !call.insert && !call.update && !call.delete));
+});
+
+test('incident credits are separate, account-scoped and survive lapsed activity without reordering candidates', async () => {
+  const tables=fixture(80),before=(await runApi(tables)).body.items[0];
+  tables.dating_1on1_refresh_compensations=[{user_id:'user-source',granted_count:2,used_count:0},
+    {user_id:'someone-else',granted_count:20,used_count:0}];
+  const {body,response}=await runApi(tables),after=body.items[0];
+  assert.equal(response.status,200);assert.equal(after.refresh_remaining,before.refresh_remaining+2);
+  assert.equal(after.refresh_bonus_remaining,2);assert.equal(after.refresh_limit,1);
+  assert.deepEqual(ids(after.recommendations),ids(before.recommendations));
+  assert.equal(after.can_refresh,true);assert.equal(after.next_refresh_at,null);
+  tables.dating_1on1_refresh_compensations[0].used_count=2;
+  assert.equal((await runApi(tables)).body.items[0].refresh_remaining,before.refresh_remaining);
+});
+
+test('unchanged refresh never spends incident credits; compensation read failures fail before consumption', async () => {
+  const tables=fixture(10);tables.dating_1on1_refresh_compensations=[{user_id:'user-source',granted_count:2,used_count:0}];
+  const result=await runRefresh(tables);
+  assert.equal(result.body.refresh_consumed,false);assert.equal(result.body.refresh_bonus_remaining,2);
+  assert.equal(result.body.refresh_remaining,3);assert.equal(result.rpcCalls.length,0);
+  const failed=await runRefresh(tables,{intercept:q=>q.table==='dating_1on1_refresh_compensations'?{data:null,error:{code:'57014',message:'timeout'}}:null});
+  assert.equal(failed.response.status,503);assert.equal(failed.rpcCalls.length,0);
+  for(const code of ['42P01','PGRST205']){
+    const missing=await runApi(tables,{intercept:q=>q.table==='dating_1on1_refresh_compensations'?{data:null,error:{code,message:'missing table'}}:null});
+    assert.equal(missing.response.status,200);assert.equal(missing.body.items[0].refresh_bonus_remaining,0);
+  }
+});
+
+test('real API observation history changes the next refresh, not the current page or its quota', async () => {
+  const tables = fixture(80);
+  const before = await runApi(tables, { atTime: now-10000 });
+  const displayed = allCandidates(before.body);
+  tables.dating_1on1_candidate_impressions = displayed.map(c => ({ viewer_user_id: 'user-source', candidate_user_id: c.user_id,
+    first_seen_at: new Date(now-9000).toISOString() }));
+  const repeat = await runApi(tables, { atTime: now-8000 });
+  assert.deepEqual(allCandidates(repeat.body).map(c => c.id), displayed.map(c => c.id));
+  const result = await runRefresh(tables, { atTime: now });
+  assert.equal(result.response.status, 200); assert.equal(result.body.refresh_consumed, true);
+  const after = await runApi(tables, { atTime: now+1 });
+  assert.ok(allCandidates(after.body).every(c => !displayed.some(old => old.user_id === c.user_id)));
+  assert.equal(result.body.changed_candidate_count, allCandidates(after.body).length);
+  tables.dating_1on1_candidate_impressions.push(...allCandidates(after.body).map(c => ({ viewer_user_id: 'user-source', candidate_user_id: c.user_id,
+    first_seen_at: new Date(now+2).toISOString() })));
+  const afterAck = await runApi(tables, { atTime: now+3 });
+  assert.deepEqual(allCandidates(afterAck.body).map(c => c.id), allCandidates(after.body).map(c => c.id));
+  assert.ok(afterAck.calls.every(q => !q.insert && !q.update && !q.delete));
+  assert.equal(result.rpcCalls.length, 1);
+});
+
+test('impression read failure preserves viewing but prevents an unsafe refresh charge', async () => {
+  const intercept = q => q.table === 'dating_1on1_candidate_impressions' ? { data: null, error: { code: 'XX000' } } : null;
+  const tables = fixture(80), before = structuredClone(tables);
+  assert.equal((await runApi(tables, { intercept, atTime: now })).response.status, 200);
+  const refresh = await runRefresh(tables, { intercept });
+  assert.equal(refresh.response.status, 503); assert.equal(refresh.rpcCalls.length, 0);
+  assert.deepEqual(tables, before);
+});
+
+test('uninstalled impression SQL retains existing behavior during rollout', async () => {
+  for (const code of ['42P01', 'PGRST205']) {
+    const intercept = q => q.table === 'dating_1on1_candidate_impressions' ? { data: null, error: { code } } : null;
+    const tables = fixture(80);
+    const api = await runApi(tables, { intercept, atTime: now });
+    assert.equal(api.response.status, 200); assert.equal(api.body.items[0].impression_ticket, null);
+    assert.equal((await runRefresh(tables, { intercept })).response.status, 200);
+  }
+});
+
+for (const size of [1, 10, 13]) test('observed small pools never consume quota just to reorder, pool=' + size, async () => {
+  const tables = fixture(size);
+  tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1).map(c => ({ viewer_user_id: 'user-source',
+    candidate_user_id: c.user_id, first_seen_at: new Date(now-day).toISOString() }));
+  const result = await runRefresh(tables);
+  assert.equal(result.response.status, 200); assert.equal(result.body.refresh_consumed, false);
+  assert.equal(result.rpcCalls.length, 0);
+});
+
+test('observed selection preserves current-pair and ban protections', async () => {
+  const tables = fixture(50);
+  tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1, 20).map(c => ({ viewer_user_id: 'user-source',
+    candidate_user_id: c.user_id, first_seen_at: new Date(now-day).toISOString() }));
+  tables.profiles.find(p => p.user_id === 'user-c49').is_banned = true;
+  tables.dating_1on1_match_proposals = Array.from({ length: 20 }, (_, i) => pair({ id: 'pending-'+i,
+    candidate_card_id: 'c'+(i+29), candidate_user_id: 'user-c'+(i+29) }));
+  const result = await runRefresh(tables); assert.equal(result.response.status, 200);
+  const after = await runApi(tables, { atTime: now+1 });
+  assert.ok(allCandidates(after.body).every(c => Number(c.id.slice(1)) < 29));
+  assert.equal((await runSelect(tables, { candidateId: 'c48', atTime: now+1 })).response.status, 409);
+});
+
+test('seen state follows the member when a candidate recreates their card', async () => {
+  const tables = fixture(40);
+  tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1, 21).map(c => ({ viewer_user_id: 'user-source',
+    candidate_user_id: c.user_id, first_seen_at: new Date(now-day).toISOString() }));
+  tables.dating_1on1_cards.find(c => c.id === 'c0').id = 'recreated-c0';
+  const { body } = await runApi(tables, { atTime: now });
+  assert.ok(allCandidates(body).every(c => !tables.dating_1on1_candidate_impressions.some(o => o.candidate_user_id === c.user_id)));
 });
 
 for (const size of [14, 15, 26, 80]) test('checked refresh reports actual new people after database timestamp serialization, pool=' + size, async () => {
@@ -763,6 +895,46 @@ test("a second Plus refresh excludes both the default and first refreshed candid
   assert.equal(firstRecommendations.length, 10);
   assert.equal(secondRecommendations.length, 10);
   assert.equal(secondRecommendations.some((candidate) => ids(firstRecommendations).includes(candidate.id)), false);
+});
+
+test('support quota refunds preserve exact candidate seeds and restore only the refunded charges', async () => {
+  const tables = fixture(80);
+  const stamps = [now - 3600000, now - 1800000].map(value => new Date(value).toISOString());
+  tables.dating_1on1_cards[0].recommendation_refresh_used_at = stamps[1];
+  tables.dating_1on1_recommendation_refresh_events = stamps.map(refreshed_at => ({ card_id: 'source', refreshed_at }));
+  tables.dating_1on1_plus_subscriptions = [{ user_id: 'user-source', expires_at: new Date(now+day).toISOString() }];
+  const original = (await runApi(tables, { atTime: now })).body.items[0];
+  assert.equal(original.refresh_remaining, 0);
+  for (let refunded = 1; refunded <= 2; refunded++) {
+    tables.dating_1on1_recommendation_refresh_events[refunded-1].quota_refunded_at = new Date(now-1000).toISOString();
+    const result = await runApi(tables, { atTime: now });
+    assert.equal(result.response.status, 200);
+    const item = result.body.items[0];
+    assert.equal(item.refresh_remaining, refunded); assert.equal(item.refresh_used_count, 2-refunded);
+    assert.equal(item.refresh_limit, 2); assert.equal(item.refresh_used_at, stamps[1]);
+    assert.equal(item.can_refresh, true); assert.equal(item.next_refresh_at, null);
+    assert.deepEqual(item.recommendations, original.recommendations);
+    assert.deepEqual(item.admin_recommendations, original.admin_recommendations);
+    assert.deepEqual(item.plus, original.plus);
+    assert.ok(result.calls.every(c=>!c.insert&&!c.update&&!c.delete));
+  }
+  const refresh = await runRefresh(tables, { atTime: now });
+  assert.equal(refresh.response.status, 200); assert.equal(refresh.body.refresh_consumed, true);
+  const after = (await runApi(tables, { atTime: now+1 })).body.items[0];
+  assert.equal(after.refresh_remaining, 1); assert.equal(after.refresh_used_count, 1);
+  assert.equal(tables.dating_1on1_recommendation_refresh_events.length, 3);
+  assert.deepEqual(tables.dating_1on1_recommendation_refresh_events.slice(0,2).map(e=>e.refreshed_at), stamps);
+});
+
+test('missing refund column during rollout retains the original charged quota', async () => {
+  const tables = fixture(50);
+  const stamp = new Date(now-1000).toISOString();
+  tables.dating_1on1_cards[0].recommendation_refresh_used_at = stamp;
+  tables.dating_1on1_recommendation_refresh_events = [{ card_id:'source',refreshed_at:stamp }];
+  const result = await runApi(tables, { atTime:now, intercept:q=>q.table==='dating_1on1_recommendation_refresh_events'&&q.fields.includes('quota_refunded_at')
+    ? {data:null,error:{code:'42703',message:'column quota_refunded_at does not exist'}} : null });
+  assert.equal(result.response.status,200); assert.equal(result.body.items[0].refresh_remaining,0);
+  assert.equal(result.calls.filter(q=>q.table==='dating_1on1_recommendation_refresh_events').length,2);
 });
 
 test("a second Plus refresh safely refills a genuinely small pool", async () => {

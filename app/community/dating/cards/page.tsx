@@ -17,6 +17,7 @@ import DatingAdultNotice from "@/components/DatingAdultNotice";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import { buildOneOnOneRefreshSuccess, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
 import { useOneOnOneRefreshConfirmation, type OneOnOneRefreshNotice } from "@/components/dating/OneOnOneRefreshControl";
+import { flushCandidateImpressions } from "@/lib/dating-1on1-impressions-client";
 import { fetchClientJson } from "@/lib/client-json-request";
 import { isOneOnOneRecommendationPayload } from "@/lib/dating-1on1-refresh-response";
 import {
@@ -2719,6 +2720,7 @@ function OpenCardsContent() {
         started = true;
         setOneOnOneRefreshNotice(null);
         setRefreshingOneOnOneRecommendationIds((prev) => [...prev, sourceCardId]);
+        await flushCandidateImpressions();
         const { response: res, body } = await fetchClientJson<OneOnOneRefreshUsage & { ok?: boolean; error?: string; request_id?: string }>("/api/dating/1on1/recommendations/refresh", {
           method: "POST",
           headers: { "Content-Type": "application/json" },

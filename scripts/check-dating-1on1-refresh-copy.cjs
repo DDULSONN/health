@@ -33,6 +33,14 @@ const nextAt = '2026-09-17T14:56:35.484405+00:00';
 const quota = (remaining = 1, limit = 2) => ({ source_card_id: 'fixture-card', refresh_limit: limit,
   refresh_remaining: remaining, can_refresh: remaining > 0, next_refresh_at: remaining === 0 ? nextAt : null });
 
+test('compensation copy separates bonus from rolling quota without inventing a larger subscription', () => {
+  const input={...quota(4,2),refresh_bonus_remaining:2};
+  assert.match(copy.getOneOnOneRefreshCopy(input).summary,/일반 2회 \+ 보상 2회/);
+  assert.match(copy.getOneOnOneRefreshCopy(input).summary,/사용 전까지 유지/);
+  assert.doesNotMatch(copy.getOneOnOneRefreshCopy(input).summary,/2회 중 4회/);
+  assert.match(copy.buildOneOnOneRefreshConfirmation(input),/일반 횟수부터/);
+});
+
 for (const limit of [1, 2]) for (let remaining = 1; remaining <= limit; remaining++) {
   test(`confirmation clearly distinguishes before/after: ${remaining}/${limit}`, () => {
     const result = copy.buildOneOnOneRefreshConfirmation(quota(remaining, limit));
@@ -87,6 +95,7 @@ function handler(kind, options = {}) {
   let pending = options.busy ? ['fixture-card'] : [];
   const usage = options.usage ?? quota(1);
   const bindings = {
+    flushCandidateImpressions: async () => {},
     ...copy,
     refreshingOneOnOneRecommendationIds: pending,
     oneOnOneRefreshLocksRef: { current: new Set(pending) }, oneOnOneRefreshReadError: '',

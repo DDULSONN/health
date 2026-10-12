@@ -77,6 +77,9 @@ export default function OneOnOneRefreshControl({ usage, busy, blocked = false, n
       </button>
       {remaining !== null && <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium tabular-nums text-neutral-600">{remaining}회 남음</span>}
     </div>
+    {typeof usage?.refresh_bonus_remaining === "number" && usage.refresh_bonus_remaining > 0 && (
+      <p className="text-xs leading-5 text-neutral-600">보상 새로고침 {usage.refresh_bonus_remaining}회 포함 · 사용 전까지 유지</p>
+    )}
     {copy.next && <p className="text-xs leading-5 text-neutral-600">{copy.next}</p>}
     <details className="text-xs leading-5 text-neutral-500">
       <summary className="w-fit cursor-pointer py-1 underline decoration-neutral-300 underline-offset-4">새로고침 이용 안내</summary>

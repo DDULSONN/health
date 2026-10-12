@@ -23,6 +23,8 @@ import OneOnOnePlusStatus from "@/components/dating/OneOnOnePlusStatus";
 import OneOnOneActionNotice from "@/components/dating/OneOnOneActionNotice";
 import OneOnOneProfileSummary from "@/components/dating/OneOnOneProfileSummary";
 import OneOnOneExpansionPanel from "@/components/dating/OneOnOneExpansionPanel";
+import CandidateImpression from "@/components/dating/CandidateImpression";
+import { flushCandidateImpressions } from "@/lib/dating-1on1-impressions-client";
 import OneOnOneIncomingRequests from "@/components/dating/OneOnOneIncomingRequests";
 import OneOnOneNextSteps from "@/components/dating/OneOnOneNextSteps";
 import OneOnOneContactPending from "@/components/dating/OneOnOneContactPending";
@@ -1037,12 +1039,14 @@ function canCancelOneOnOneMatch(match: Pick<MyOneOnOneMatch, "state" | "contact_
 }
 
 type MyOneOnOneAutoRecommendationGroup = {
+  impression_ticket?: string | null;
   source_card_id: string;
   source_card_status?: "submitted" | "reviewing" | "approved" | "rejected";
   refresh_used?: boolean;
   refresh_used_at?: string | null;
   refresh_used_count?: number;
   refresh_remaining?: number;
+  refresh_bonus_remaining?: number;
   refresh_limit?: number;
   next_refresh_at?: string | null;
   can_refresh?: boolean;
@@ -5592,6 +5596,7 @@ export default function MyPage() {
       started = true;
       setOneOnOneRefreshNotice(null);
       setRefreshingOneOnOneRecommendationIds((prev) => [...prev, sourceCardId]);
+      await flushCandidateImpressions();
       const { response: res, body } = await fetchClientJson<OneOnOneRefreshUsage & { ok?: boolean; error?: string; request_id?: string }>("/api/dating/1on1/recommendations/refresh", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -10448,7 +10453,7 @@ export default function MyPage() {
                             const actionKey = `${item.id}:${card.id}`;
                             const processing = processingOneOnOneAutoKeys.includes(actionKey);
                             return (
-                              <div key={`${item.id}-${card.id}`} className="rounded-xl border border-neutral-200 bg-white p-3">
+                              <CandidateImpression key={`${item.id}-${card.id}`} ticket={autoRecommendationGroup?.impression_ticket} candidateId={card.id} className="rounded-xl border border-neutral-200 bg-white p-3">
                                 <div className="flex items-center justify-between gap-2">
                                   <p className="text-sm font-medium text-neutral-900">
                                     {card.name} / {card.age ?? "-"}세 / {card.region}
@@ -10497,7 +10502,7 @@ export default function MyPage() {
                                   />
                                 </div>
                                 </OneOnOneProfileSummary>
-                              </div>
+                              </CandidateImpression>
                             );
                           })}
                           {adminAutoRecommendations.length > 0 && (
@@ -10513,7 +10518,7 @@ export default function MyPage() {
                                   const actionKey = `${item.id}:${card.id}`;
                                   const processing = processingOneOnOneAutoKeys.includes(actionKey);
                                   return (
-                                    <div key={`${item.id}-admin-${card.id}`} className="rounded-xl border border-neutral-200 bg-white p-3">
+                                    <CandidateImpression key={`${item.id}-admin-${card.id}`} ticket={autoRecommendationGroup?.impression_ticket} candidateId={card.id} className="rounded-xl border border-neutral-200 bg-white p-3">
                                       <div className="flex items-center justify-between gap-2">
                                         <p className="text-sm font-medium text-neutral-900">
                                           {card.name} / {card.age ?? "-"}세 / {card.region}
@@ -10562,7 +10567,7 @@ export default function MyPage() {
                                         />
                                       </div>
                                       </OneOnOneProfileSummary>
-                                    </div>
+                                    </CandidateImpression>
                                   );
                                 })}
                               </div>

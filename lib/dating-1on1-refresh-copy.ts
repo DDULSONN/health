@@ -2,6 +2,7 @@
 export type OneOnOneRefreshUsage = {
   refresh_limit?: number;
   refresh_remaining?: number;
+  refresh_bonus_remaining?: number;
   can_refresh?: boolean;
   next_refresh_at?: string | null;
   refresh_consumed?: boolean;
@@ -37,11 +38,13 @@ export function getOneOnOneRefreshCopy(usage?: OneOnOneRefreshUsage | null) {
   const remaining = count(usage?.refresh_remaining)
     ?? (typeof usage?.can_refresh === "boolean" ? (usage.can_refresh ? 1 : 0) : null);
   const next = formatOneOnOneNextRefresh(usage?.next_refresh_at);
+  const bonus = Math.min(count(usage?.refresh_bonus_remaining) ?? 0, remaining ?? 0);
   return {
     button: usage?.can_refresh === true
       ? `후보 새로고침 · ${remaining ?? 1}회`
       : remaining === 0 ? "다음 이용 대기" : "이용 상태 확인 중",
     summary: remaining === null ? "새로고침 이용 상태를 불러오는 중이에요."
+      : bonus > 0 ? `일반 ${remaining - bonus}회 + 보상 ${bonus}회 남았어요. 보상은 사용 전까지 유지돼요.`
       : limit !== null ? `최근 24시간 기준 ${limit}회 중 ${remaining}회 남았어요.`
       : `새로고침 ${remaining}회 남았어요.`,
     next: remaining === 0
@@ -60,7 +63,9 @@ export function buildOneOnOneRefreshConfirmation(usage?: OneOnOneRefreshUsage | 
     : "이용 가능 횟수는 요청 시 확인하며, 성공하면 1회가 사용돼요.";
   return ["후보 새로고침 1회를 사용할까요?", "", quota,
     "추천 후보와 추가 후보에 새로 들어오는 사람이 없으면 횟수는 사용하지 않아요.",
-    limit !== null ? `최근 24시간 기준 최대 ${limit}회 이용할 수 있어요.` : "",
+    (count(usage?.refresh_bonus_remaining) ?? 0) > 0
+      ? "일반 횟수부터 사용하고, 다 쓰면 보상 횟수를 사용해요. 보상은 사용 전까지 유지돼요."
+      : limit !== null ? `최근 24시간 기준 최대 ${limit}회 이용할 수 있어요.` : "",
     ONE_ON_ONE_REFRESH_POLICY_COPY].filter((line, index) => line || index === 1).join("\n");
 }
 

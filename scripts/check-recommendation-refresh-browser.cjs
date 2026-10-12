@@ -47,9 +47,13 @@ async function main() {
     if (process.argv.includes('--expansion')) {
       passed = await require('./test-expansion-browser.cjs')({ browser, origin, output });
     }
-    for (const surface of process.argv.includes('--expansion') ? [] : ['home', 'mypage']) for (const width of [360, 1280]) {
-      for (const scenario of ['success', 'no-change', 'no-change-read-failure', 'read-failure', 'bad-read', 'lost-post', 'timeout-post', 'slow-post', 'cancel', 'escape', 'non-plus', 'legacy-plus']) {
+    if (process.argv.includes('--impressions')) {
+      passed = await require('./test-impressions-browser.cjs')({ browser, origin, output });
+    }
+    for (const surface of process.argv.includes('--expansion') || process.argv.includes('--impressions') ? [] : ['home', 'mypage']) for (const width of [360, 1280]) {
+      for (const scenario of ['success', 'no-change', 'no-change-read-failure', 'read-failure', 'bad-read', 'lost-post', 'timeout-post', 'slow-post', 'cancel', 'escape', 'non-plus', 'legacy-plus', 'compensation', 'no-change-compensation']) {
         const noChange = scenario.startsWith('no-change');
+        const compensated = scenario.includes('compensation');
         const context = await browser.newContext({ viewport: { width, height: 844 } });
         const page = await context.newPage();
         page.setDefaultTimeout(10000);
@@ -84,7 +88,8 @@ async function main() {
             if (scenario === 'lost-post') { await route.abort(); return; }
             await route.fulfill({ json: { ok: true, source_card_id: profile.id, refresh_limit: 2,
               refresh_consumed: !noChange, changed_candidate_count: noChange ? 0 : 1,
-              refresh_remaining: noChange ? 2 : 1, refresh_used_count: noChange ? 0 : 1, refresh_used_at: noChange ? null : now } }); return;
+              refresh_remaining: noChange ? 2 : 1, refresh_used_count: compensated ? 2 : noChange ? 0 : 1,
+              refresh_bonus_remaining: compensated ? noChange ? 2 : 1 : 0, refresh_used_at: noChange ? null : now } }); return;
           }
           switch (url.pathname) {
             case '/api/dating/cards/queue-stats': body = { male: { public_count: 0, pending_count: 0, slot_limit: 45 }, female: { public_count: 0, pending_count: 0, slot_limit: 45 } }; break;
@@ -101,6 +106,7 @@ async function main() {
                 name: posts && !noChange ? '새 후보' : '이전 후보',
               }], admin_recommendations: [], favorite_candidates: [],
                 refresh_limit: 2, refresh_used_count: posts && !noChange ? 1 : 0, refresh_remaining: posts && !noChange ? 1 : 2, can_refresh: true,
+                refresh_bonus_remaining: compensated ? posts && !noChange ? 1 : 2 : 0,
                 refresh_used_at: posts && !noChange ? now : null }] }; break;
             case '/api/dating/cards/viewer-sex': body = { status: 'resolved', viewerSex: 'female', targetSex: 'male', source: 'one_on_one', canSwitchSex: false, requiresSexSelection: false }; break;
             case '/api/dating/cards/my/swipe-status': body = { outgoing_likes: [], incoming_likes: [], summary: { incoming_pending: 0, outgoing_pending: 0 } }; break;
@@ -136,6 +142,7 @@ async function main() {
           await confirmation.waitFor();
           assert.equal(posts, 0, 'no request before explicit consent');
           await confirmation.getByText(/사용 전 2회 → 이번 사용 후 1회/).waitFor();
+          if (compensated) await confirmation.getByText(/보상은 사용 전까지 유지돼요/).waitFor();
           assert.equal(await confirmation.getByRole('button', { name: '취소', exact: true }).evaluate(el => document.activeElement === el), true);
           if (width === 360 && scenario === 'success') await page.screenshot({ path: path.join(output, surface + '-mobile-confirm.png') });
           if (scenario === 'cancel' || scenario === 'escape') {

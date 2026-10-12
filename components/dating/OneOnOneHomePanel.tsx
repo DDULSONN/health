@@ -16,6 +16,7 @@ import OneOnOneUnavailableNotice from "@/components/dating/OneOnOneUnavailableNo
 import { oneOnOneEndedNotice } from "@/lib/dating-1on1-notification-status";
 import { canOfferOneOnOneContact, normalizeOneOnOneMatchId, oneOnOneMatchHref } from "@/lib/dating-1on1-match-navigation";
 import OneOnOneExpansionPanel from "@/components/dating/OneOnOneExpansionPanel";
+import CandidateImpression from "@/components/dating/CandidateImpression";
 import { getOneOnOneActionSummary, getOneOnOneMatchLabel, isIncomingOneOnOneRequest } from "@/lib/dating-1on1-action-copy";
 import { VIEWER_SESSION_ERROR } from "@/lib/viewer-session-recovery";
 import { ONE_ON_ONE_HOME_HREF } from "@/lib/dating-navigation";
@@ -41,6 +42,7 @@ type OneOnOneCardPreview = {
 };
 
 type OneOnOneRecommendationGroup = {
+  impression_ticket?: string | null;
   expansion_enabled?: boolean;
   source_card_id?: string;
   source_card_status?: string;
@@ -48,6 +50,7 @@ type OneOnOneRecommendationGroup = {
   refresh_used_at?: string | null;
   refresh_used_count?: number;
   refresh_remaining?: number;
+  refresh_bonus_remaining?: number;
   refresh_limit?: number;
   next_refresh_at?: string | null;
   can_refresh?: boolean;
@@ -446,6 +449,7 @@ export default function OneOnOneHomePanel({
                             return (
                               <OneOnOneCandidateCard
                                 compact
+                                impressionTicket={group.impression_ticket}
                                 key={`${sourceCardId}:${candidateId || getOneOnOneDisplayName(candidate)}`}
                                 card={candidate}
                                 reportTarget={{ type: "one_on_one_card", id: candidateId }}
@@ -480,6 +484,7 @@ export default function OneOnOneHomePanel({
                                   return (
                                     <OneOnOneCandidateCard
                                       compact
+                                      impressionTicket={group.impression_ticket}
                                       key={`${sourceCardId}:admin:${candidateId || getOneOnOneDisplayName(candidate)}`}
                                       card={candidate}
                                       reportTarget={{ type: "one_on_one_card", id: candidateId }}
@@ -646,6 +651,7 @@ export default function OneOnOneHomePanel({
 }
 
 function OneOnOneCandidateCard({
+  impressionTicket,
   compact = false,
   reportTarget,
   onReported,
@@ -655,6 +661,7 @@ function OneOnOneCandidateCard({
   note,
   children,
 }: {
+  impressionTicket?: string | null;
   compact?: boolean;
   card?: OneOnOneCardPreview | null;
   reportTarget?: { type: DatingReportTargetType; id: string };
@@ -671,7 +678,7 @@ function OneOnOneCandidateCard({
   const meta = getOneOnOneMeta(card);
 
   return (
-    <article className="overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3">
+    <CandidateImpression as="article" ticket={impressionTicket} candidateId={card?.id} className="overflow-hidden rounded-2xl border border-neutral-200 bg-white p-3">
       <div className="flex gap-3">
         {!compact ? <a
           href={primaryPhoto || undefined}
@@ -749,7 +756,7 @@ function OneOnOneCandidateCard({
 
       {children}
       </OneOnOneProfileSummary>
-    </article>
+    </CandidateImpression>
   );
 }
 

@@ -148,9 +148,11 @@ test('1:1 view is a conditional dynamic import, not a static runtime import', ()
 // notification-ending notices; action/checkout contracts remain pinned separately.
 // check-dating-1on1-ui-polish separately pins behavior to 4792201.
 // Future intentional view edits should update these reviewed baselines explicitly.
+// Impression tracking only replaces the existing article with the same DOM tag
+// and forwards a receipt; action, photo and checkout contracts stay unchanged.
 const movedFunctions = {
-  OneOnOneHomePanel: 'c7eb4446a4dc90cbc168e020c5682be36b3ceb5926a4e33cd21ad81d27fdac5f',
-  OneOnOneCandidateCard: '6195c138083537a1d9fa9cd2814b6f32705eb3c96fef2e2802264abad5789091',
+  OneOnOneHomePanel: 'c2a82a5eb0f417ba2d1df28c3159675843085fab9316c8555c2e92c887ee421a',
+  OneOnOneCandidateCard: 'ec822f2fd3159af9b2ce34520527e294c73a86cd8c5bbfd79eca906c2a37c8bd',
   OneOnOneMatchActions: '6408ac6467228e01cf370b4942e9d42f19e7e34b937ad4e701ba82e1d1cceab4',
   canCancelOneOnOneMatchPreview: '0ec3faad4e8701ea4622ea220af8ebaddaf725cfa52a70fc686b82a37444036c',
   getOneOnOneDisplayName: 'cb337ea077c58b6fe6105cb1d3cb1079f5d0e8f3113e7a8bbd482dd3544ee0e9',

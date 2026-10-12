@@ -4,13 +4,14 @@ import { useEffect, useRef, useState } from "react";
 import { fetchClientJson } from "@/lib/client-json-request";
 import DatingReportButton, { type DatingReportResult } from "@/components/DatingReportButton";
 import OneOnOneProfileSummary from "@/components/dating/OneOnOneProfileSummary";
+import CandidateImpression from "@/components/dating/CandidateImpression";
 
 type Candidate = {
   id: string; name: string; age: number | null; region: string; height_cm: number | null; job: string;
   intro_text?: string | null; strengths_text?: string | null; preferred_partner_text?: string | null;
   photo_signed_urls: string[];
 };
-type Payload = { source_card_id: string; day_key: string; expires_at: string; candidates: Candidate[] };
+type Payload = { source_card_id: string; day_key: string; expires_at: string; candidates: Candidate[]; impression_ticket?: string | null };
 function validPayload(value: unknown, source: string): value is Payload {
   if (!value || typeof value !== "object") return false;
   const p = value as Payload;
@@ -81,7 +82,7 @@ export default function OneOnOneExpansionPanel({ enabled, sourceCardId, revision
       {busy && <p role="status" className="mt-2 text-xs text-neutral-500">추가 후보를 확인하고 있어요.</p>}
       {error && <div role="alert" className="mt-2 text-xs leading-5 text-rose-700">{error}<button type="button" className="ml-2 min-h-11 underline" onClick={() => { setOpen(false); setError(""); }}>닫고 다시 시도</button></div>}
       {data?.candidates.length === 0 && <p role="status" className="mt-2 rounded-xl bg-neutral-50 p-3 text-xs leading-5 text-neutral-600">오늘 더 보여드릴 후보가 없어요. 차단·매칭 진행 등으로 확인 가능한 후보가 줄어들 수 있어요.</p>}
-      <div className="mt-2 space-y-3">{data?.candidates.map(candidate => <article key={candidate.id} className="min-w-0 break-words rounded-xl border border-neutral-200 bg-white p-3">
+      <div className="mt-2 space-y-3">{data?.candidates.map(candidate => <CandidateImpression as="article" key={candidate.id} ticket={data.impression_ticket} candidateId={candidate.id} className="min-w-0 break-words rounded-xl border border-neutral-200 bg-white p-3">
         <p className="text-sm font-semibold text-neutral-900">{candidate.name} / {candidate.age ?? "-"}세 / {candidate.region}</p>
         <p className="mt-1 text-xs text-neutral-500">{candidate.height_cm ?? "-"}cm / {candidate.job}</p>
         <OneOnOneProfileSummary intro={candidate.intro_text} strengths={candidate.strengths_text} preferredPartner={candidate.preferred_partner_text}>
@@ -103,7 +104,7 @@ export default function OneOnOneExpansionPanel({ enabled, sourceCardId, revision
               onReported={result => { setData(null); setOpen(false); onReported?.(result); }} />
           </div>
         </OneOnOneProfileSummary>
-      </article>)}</div>
+      </CandidateImpression>)}</div>
     </div>}
   </section>;
 }

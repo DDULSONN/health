@@ -13,6 +13,8 @@ test('checked refresh SQL is repeatable, atomic, CAS guarded and service-role on
   const db = new PGlite();
   try {
     await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
+      create schema auth; create table auth.users(id uuid primary key);
+      insert into auth.users values('${owner}'),('${other}');
       create table profiles(user_id uuid primary key, is_banned boolean);
       create table dating_1on1_cards(id uuid primary key, user_id uuid, status text, recommendation_refresh_used_at timestamptz, updated_at timestamptz, intro_text text);
       create table dating_1on1_recommendation_refresh_events(id bigint generated always as identity,card_id uuid,user_id uuid,refreshed_at timestamptz);
@@ -27,11 +29,14 @@ test('checked refresh SQL is repeatable, atomic, CAS guarded and service-role on
       'select * from consume_dating_1on1_recommendation_refresh_checked($1,$2,$3,$4,$5)',
       [id, user, limit, expected, at || await stamp()])).rows[0];
     const reset = async () => db.exec(`delete from dating_1on1_recommendation_refresh_events;
+      delete from dating_1on1_refresh_compensations;
       delete from dating_1on1_plus_subscriptions; update profiles set is_banned=false;
       update dating_1on1_cards set recommendation_refresh_used_at=null,status='approved';`);
 
     for (const role of ['anon', 'authenticated']) {
       await db.exec('set role ' + role);
+      await assert.rejects(db.exec('select * from dating_1on1_refresh_compensations'), /permission denied/);
+      await assert.rejects(db.exec(`insert into dating_1on1_refresh_compensations(user_id,campaign_key,granted_count,evidence) values('${owner}','forged',2,'{}')`), /permission denied/);
       await assert.rejects(call(), /permission denied/); await db.exec('reset role');
     }
     await db.exec('set role service_role');
@@ -62,6 +67,27 @@ test('checked refresh SQL is repeatable, atomic, CAS guarded and service-role on
     const second = await call({ limit: 2, expected: concurrentAt, at: new Date(Date.parse(concurrentAt)+1).toISOString() });
     assert.equal(second.allowed, true); assert.equal(second.remaining_count, 0); assert.equal(await count(), 2);
 
+    // Release two charges without deleting seeds or resetting the source card.
+    const history = await get('select id,card_id,user_id,refreshed_at from dating_1on1_recommendation_refresh_events order by id');
+    const sourceBeforeRefund = await get('select * from dating_1on1_cards');
+    await db.exec('update dating_1on1_recommendation_refresh_events set quota_refunded_at=clock_timestamp()');
+    assert.deepEqual(await get('select id,card_id,user_id,refreshed_at from dating_1on1_recommendation_refresh_events order by id'), history);
+    assert.deepEqual(await get('select * from dating_1on1_cards'), sourceBeforeRefund);
+    const refundedFirstAt = new Date(Date.parse(await stamp()) + 1).toISOString();
+    const refundedFirst = await call({ limit: 2, expected: second.refreshed_at, at: refundedFirstAt });
+    assert.equal(refundedFirst.allowed, true); assert.equal(refundedFirst.used_count, 1); assert.equal(refundedFirst.remaining_count, 1);
+    const refundedSecondAt = new Date(Date.parse(refundedFirstAt) + 1).toISOString();
+    const refundedSecond = await call({ limit: 2, expected: refundedFirstAt, at: refundedSecondAt });
+    assert.equal(refundedSecond.allowed, true); assert.equal(refundedSecond.used_count, 2); assert.equal(refundedSecond.remaining_count, 0);
+    assert.equal(await count(), 4);
+    const refundedThird = await call({ limit: 2, expected: refundedSecondAt, at: new Date(Date.parse(refundedSecondAt)+1).toISOString() });
+    assert.equal(refundedThird.allowed, false); assert.equal(refundedThird.reason, 'limit'); assert.equal(await count(), 4);
+    for (const role of ['anon', 'authenticated']) {
+      await db.exec('set role ' + role);
+      await assert.rejects(db.exec('update dating_1on1_recommendation_refresh_events set quota_refunded_at=now()'), /permission denied/);
+      await db.exec('reset role');
+    }
+
     await reset();
     for (const options of [{ user: other }, { id: other }, { limit: 99 }, { limit: 2 },
       { at: new Date(Date.now()-300000).toISOString() }, { at: new Date(Date.now()+60000).toISOString() }]) {
@@ -72,10 +98,58 @@ test('checked refresh SQL is repeatable, atomic, CAS guarded and service-role on
     await reset(); await db.exec('delete from profiles'); await assert.rejects(call(), /account is not eligible/);
     await db.exec(`insert into profiles values('${owner}',false)`);
 
-    // A post-insert failure rolls the event and card update back in one transaction.
+    // Credits are account-scoped, durable, idempotent and consumed only after normal quota.
+    for (const limit of [1, 2]) {
+      await reset();
+      if (limit === 2) await db.exec(`insert into dating_1on1_plus_subscriptions values('${owner}',now()+interval '7 days')`);
+      const grant = `insert into dating_1on1_refresh_compensations(user_id,campaign_key,granted_count,granted_at,evidence)
+        values('${owner}','incident',2,now()-interval '90 days','{"source":"fixture"}') on conflict do nothing`;
+      await db.exec(grant); await db.exec(grant);
+      const balance = async () => (await get('select granted_count-used_count n from dating_1on1_refresh_compensations'))[0].n;
+      assert.equal(await balance(), 2);
+      let expected = null;
+      for (let i=0; i<limit+2; i++) {
+        const at = new Date(Date.parse(await stamp())+i+1).toISOString();
+        const res = await call({ limit, expected, at }); expected=at;
+        assert.equal(res.allowed, true); assert.equal(res.remaining_count, limit+1-i);
+        assert.equal(res.used_count, Math.min(i+1,limit));
+        assert.equal(await balance(), Math.max(0,2-Math.max(0,i+1-limit)));
+        if (res.remaining_count) assert.equal(res.next_refresh_at, null);
+      }
+      await db.exec(grant); assert.equal(await balance(),0,'re-running grant must not replenish spent credits');
+      assert.equal((await call({limit,expected,at:new Date(Date.parse(expected)+1).toISOString()})).reason,'limit');
+      assert.equal((await get("select count(*)::int n from dating_1on1_recommendation_refresh_events where compensation_campaign='incident' and quota_refunded_at is not null"))[0].n,2);
+      assert.equal((await get('select intro_text from dating_1on1_cards'))[0].intro_text,'한글 원문 그대로');
+    }
+
+    await reset();
+    await db.exec(`insert into dating_1on1_refresh_compensations(user_id,campaign_key,granted_count,evidence) values('${owner}','incident',2,'{}');
+      update dating_1on1_cards set recommendation_refresh_used_at=now()-interval '1 hour';`);
+    const legacyForBonus=(await get('select recommendation_refresh_used_at::text t from dating_1on1_cards'))[0].t;
+    const sameAt=await stamp();
+    const racing=await Promise.all([call({expected:legacyForBonus,at:sameAt}),call({expected:legacyForBonus,at:sameAt})]);
+    assert.deepEqual(racing.map(r=>r.reason).sort(),['consumed','stale']);
+    assert.equal((await get('select used_count n from dating_1on1_refresh_compensations'))[0].n,1);
+
+    // A second active source cannot double-spend the last account-level credit.
+    await db.exec(`insert into dating_1on1_cards values('${other}','${owner}','approved',now()-interval '1 hour',null,'별도 테스트');`);
+    const otherStamp=(await get(`select recommendation_refresh_used_at::text t from dating_1on1_cards where id='${other}'`))[0].t;
+    const crossAt=new Date(Date.parse(sameAt)+2).toISOString();
+    const cross=await Promise.all([call({expected:sameAt,at:crossAt}),call({id:other,expected:otherStamp,at:crossAt})]);
+    assert.deepEqual(cross.map(r=>r.reason).sort(),['consumed','limit']);
+    assert.equal((await get('select used_count n from dating_1on1_refresh_compensations'))[0].n,2);
+    await db.exec(`delete from dating_1on1_cards where id='${other}';
+      update dating_1on1_refresh_compensations set used_count=1;
+      update dating_1on1_cards set recommendation_refresh_used_at='${sameAt}';`);
+
+    // A post-insert failure rolls the bonus, event and card update back together.
+    const eventsBeforeFailure=await count();
+    const sourceBeforeFailure=(await get('select recommendation_refresh_used_at from dating_1on1_cards'))[0].recommendation_refresh_used_at;
     await db.exec(`create function fail_refresh_write() returns trigger language plpgsql as $$ begin raise exception 'fixture write failure'; end $$;
       create trigger fixture_fail before update on dating_1on1_cards for each row execute function fail_refresh_write();`);
-    await assert.rejects(call(), /fixture write failure/); assert.equal(await count(), 0);
-    assert.equal((await get('select recommendation_refresh_used_at from dating_1on1_cards'))[0].recommendation_refresh_used_at, null);
+    await assert.rejects(call({expected:sameAt,at:new Date(Date.parse(sameAt)+1).toISOString()}), /fixture write failure/);
+    assert.equal(await count(),eventsBeforeFailure);
+    assert.deepEqual((await get('select recommendation_refresh_used_at from dating_1on1_cards'))[0].recommendation_refresh_used_at,sourceBeforeFailure);
+    assert.equal((await get('select used_count n from dating_1on1_refresh_compensations'))[0].n,1);
   } finally { await db.close(); }
 });

@@ -59,6 +59,7 @@ export async function POST(req: Request) {
         result.candidates.some((candidate: { id: string }) => !batch!.candidate_ids.includes(candidate.id))) return unavailable();
     if (getKstDateString() !== day) return reply({ error: "날짜가 바뀌었어요. 추가 후보를 다시 확인해 주세요." }, 409);
     return reply({ source_card_id: sourceId, day_key: day, candidates: result.candidates,
+      impression_ticket: result.impression_ticket ?? null,
       expires_at: new Date(Date.parse(`${day}T00:00:00+09:00`) + 86400000).toISOString() });
   } catch (error) {
     console.error("[dating-expansion] unavailable", { code: (error as { code?: string })?.code });

@@ -48,7 +48,9 @@ if (require.main === module) {
     // The intentional 10-pair pilot extends ONLY this checkout offer. Its quote,
     // dispatch, free fallback, stale requests and layout have executable tests.
     const expected = name === 'OneOnOneContactOffer'
-      ? '992ec6526b704f3bd17be02667b22c4ab3c4648622c23fc23c7784439b7bbc29' : baseline.functions[name];
+      ? '992ec6526b704f3bd17be02667b22c4ab3c4648622c23fc23c7784439b7bbc29'
+      // Same article/children/buttons, with a visibility-only observation hook.
+      : name === 'OneOnOneCandidateCard' ? '31f6f4a089163a4631d1cd45be6017b561e93e9a69114a68d27ad2927a07d6e3' : baseline.functions[name];
     assert.equal(fingerprint(read(file), name), expected);
   });
   test('recommendation ordering, counters and existing action bindings remain unchanged', () => {

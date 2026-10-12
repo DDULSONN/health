@@ -3,6 +3,7 @@ import { getRequestAuthContext } from "@/lib/supabase/request";
 import { createAdminClient } from "@/lib/supabase/server";
 import { loadOneOnOneRecommendations, type RecommendationRefreshPlan } from "@/lib/dating-1on1-recommendation-service";
 import { NextResponse } from "next/server";
+import { compensationFromRefreshResult } from "@/lib/dating-1on1-refresh-compensation";
 
 type RefreshResult = {
   allowed: boolean;
@@ -37,7 +38,7 @@ export async function POST(req: Request) {
       return NextResponse.json({
         error: `후보 새로고침은 최근 24시간 동안 ${plan.refresh_limit}회까지 가능합니다.`,
         refresh_limit: plan.refresh_limit, refresh_used_count: plan.refresh_used_count,
-        refresh_remaining: 0, next_refresh_at: plan.next_refresh_at,
+        refresh_remaining: 0, refresh_bonus_remaining: 0, next_refresh_at: plan.next_refresh_at,
       }, { status: 409 });
     }
     if (plan.changed_candidate_count === 0) {
@@ -47,12 +48,14 @@ export async function POST(req: Request) {
       if (body?.refresh_contract !== 2) {
         return NextResponse.json({ error: "후보 명단이 바뀌지 않아 횟수를 사용하지 않았어요. 화면을 새로고침한 뒤 확인해 주세요.",
           code: "REFRESH_UNCHANGED", refresh_consumed: false, refresh_remaining: plan.refresh_remaining,
+          refresh_bonus_remaining: plan.refresh_bonus_remaining,
         }, { status: 409 });
       }
       return NextResponse.json({
         ok: true, source_card_id: sourceCardId, refresh_consumed: false, changed_candidate_count: 0,
         refresh_used_at: plan.expected_refresh_used_at, refresh_limit: plan.refresh_limit,
         refresh_used_count: plan.refresh_used_count, refresh_remaining: plan.refresh_remaining,
+        refresh_bonus_remaining: plan.refresh_bonus_remaining,
         next_refresh_at: plan.next_refresh_at, plus_active: plan.plus_active,
       });
     }
@@ -72,6 +75,7 @@ export async function POST(req: Request) {
         code: row.reason === "stale" ? "REFRESH_PLAN_CHANGED" : "REFRESH_LIMIT",
         refresh_limit: plan.refresh_limit, refresh_used_count: row.used_count,
         refresh_remaining: row.remaining_count, next_refresh_at: row.next_refresh_at,
+        refresh_bonus_remaining: compensationFromRefreshResult(plan.refresh_limit, row.used_count, row.remaining_count),
       }, { status: 409 });
     }
     if (row.reason !== "consumed" || Date.parse(row.refreshed_at ?? "") !== Date.parse(plan.refresh_at)) {
@@ -82,6 +86,7 @@ export async function POST(req: Request) {
       changed_candidate_count: plan.changed_candidate_count, refresh_used_at: row.refreshed_at,
       refresh_limit: plan.refresh_limit, refresh_used_count: row.used_count,
       refresh_remaining: row.remaining_count, next_refresh_at: row.next_refresh_at, plus_active: plan.plus_active,
+      refresh_bonus_remaining: compensationFromRefreshResult(plan.refresh_limit, row.used_count, row.remaining_count),
     });
   } catch (error) {
     console.error("[POST /api/dating/1on1/recommendations/refresh] checked refresh failed", { requestId, error });
