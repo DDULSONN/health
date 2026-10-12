@@ -66,11 +66,12 @@ function button(node) {
 test('new Korean notice replaces the old release and has a fixed 48-hour window', () => {
   assert.equal(end - start, 48 * 3600000);
   assert.notEqual(notice.id, 'one-on-one-refresh-fixed-2026-09-08');
-  assert.equal(notice.title, '1:1 후보를 더 확인해 보세요');
-  assert.match(notice.message, /후보 넓혀보기/);
-  assert.match(notice.message, /하루 최대 3명/);
-  assert.match(notice.message, /나이 조건은 유지/);
-  assert.match(notice.message, /새로고침 횟수는 차감되지 않아요/);
+  assert.equal(notice.title, '1:1 후보 반복 오류 수정');
+  assert.match(notice.message, /일부 계정/);
+  assert.match(notice.message, /재추천을 완료한 회원께는 별도로 안내/);
+  assert.match(notice.message, /기존 매칭 내역은 그대로/);
+  assert.match(notice.message, /불편을 드려 죄송/);
+  assert.doesNotMatch(notice.message, /모든 회원|전부 새로운|100%/);
   assert.equal(/\uFFFD/.test(notice.title + notice.message), false);
   assert.equal(policy.isSiteAnnouncementActive(start - 1), false);
   assert.equal(policy.isSiteAnnouncementActive(start), true);
@@ -78,7 +79,7 @@ test('new Korean notice replaces the old release and has a fixed 48-hour window'
   assert.equal(policy.isSiteAnnouncementActive(end), false);
 });
 test('new notice still appears after acknowledging the previous notice, but only once itself', () => {
-  const storage = new Map([['site-announcement:one-on-one-extra-locality-2026-10-04', '1']]);
+  const storage = new Map([['site-announcement:one-on-one-candidate-expansion-2026-10-10', '1']]);
   const page = browser({ storage }); page.mount(); page.advance(start + 1450);
   assert.ok(page.render()); button(page.render()).props.onClick();
   assert.equal(page.render(), null); assert.equal(storage.get(key), '1');
