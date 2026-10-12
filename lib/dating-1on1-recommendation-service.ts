@@ -98,8 +98,11 @@ function getRefreshAvailability(
 
   const usedCount = refreshTimes.length;
   const remainingCount = Math.max(refreshLimit - usedCount, 0);
-  const nextRefreshMs = remainingCount === 0 && refreshTimes[0]
-    ? refreshTimes[0] + RECOMMENDATION_REFRESH_COOLDOWN_MS
+  // After Plus expires, usage can exceed the new limit. Wait until enough
+  // charges expire to free a slot, not merely until the oldest charge expires.
+  const nextChargeMs = refreshTimes[Math.max(0, usedCount - refreshLimit)];
+  const nextRefreshMs = remainingCount === 0 && nextChargeMs != null
+    ? nextChargeMs + RECOMMENDATION_REFRESH_COOLDOWN_MS
     : null;
   return {
     refreshUsed: usedCount > 0,

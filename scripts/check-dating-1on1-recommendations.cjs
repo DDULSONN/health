@@ -926,6 +926,30 @@ test('support quota refunds preserve exact candidate seeds and restore only the 
   assert.deepEqual(tables.dating_1on1_recommendation_refresh_events.slice(0,2).map(e=>e.refreshed_at), stamps);
 });
 
+test('Plus expiry waits for enough normal charges to expire; bonus credits stay independent', async () => {
+  const tables = fixture(40);
+  const stamps = [now - 7200000, now - 3600000].map(value => new Date(value).toISOString());
+  tables.dating_1on1_cards[0].recommendation_refresh_used_at = stamps[1];
+  tables.dating_1on1_recommendation_refresh_events = stamps.map(refreshed_at => ({ card_id: 'source', refreshed_at }));
+  tables.dating_1on1_plus_subscriptions = [{ user_id: 'user-source', expires_at: new Date(now-1000).toISOString() }];
+  const before = structuredClone(tables);
+  for (const atTime of [now, Date.parse(stamps[0])+day]) {
+    const item = (await runApi(tables, { atTime })).body.items[0];
+    assert.equal(item.refresh_limit, 1); assert.equal(item.refresh_remaining, 0);
+    assert.equal(item.next_refresh_at, new Date(Date.parse(stamps[1])+day).toISOString());
+    assert.equal(item.can_refresh, false);
+  }
+  const restored = (await runApi(tables, { atTime: Date.parse(stamps[1])+day })).body.items[0];
+  assert.equal(restored.refresh_remaining, 1); assert.equal(restored.can_refresh, true);
+  assert.deepEqual(tables, before, 'time-based allowance checks never mutate history');
+  tables.dating_1on1_refresh_compensations = [{ user_id: 'user-source', granted_count: 2, used_count: 1 }];
+  const withBonus = (await runApi(tables, { atTime: now })).body.items[0];
+  assert.equal(withBonus.refresh_remaining, 1); assert.equal(withBonus.refresh_bonus_remaining, 1);
+  assert.equal(withBonus.next_refresh_at, null); assert.equal(withBonus.can_refresh, true);
+  const afterRollover = (await runApi(tables, { atTime: Date.parse(stamps[1])+day })).body.items[0];
+  assert.equal(afterRollover.refresh_remaining, 2); assert.equal(afterRollover.refresh_bonus_remaining, 1);
+});
+
 test('missing refund column during rollout retains the original charged quota', async () => {
   const tables = fixture(50);
   const stamp = new Date(now-1000).toISOString();

@@ -122,6 +122,32 @@ test('checked refresh SQL is repeatable, atomic, CAS guarded and service-role on
       assert.equal((await get('select intro_text from dating_1on1_cards'))[0].intro_text,'한글 원문 그대로');
     }
 
+    // A lapsed Plus member can have two normal charges but a current limit of one.
+    // They cannot use another normal refresh until BOTH charges leave the window.
+    await reset();
+    const expiredPlusTimes = await get("select (clock_timestamp()-interval '2 hours')::text older, (clock_timestamp()-interval '1 hour')::text newer");
+    const { older, newer } = expiredPlusTimes[0];
+    await db.query(`insert into dating_1on1_recommendation_refresh_events(card_id,user_id,refreshed_at)
+      values($1,$2,$3),($1,$2,$4)`, [card,owner,older,newer]);
+    await db.query('update dating_1on1_cards set recommendation_refresh_used_at=$1', [newer]);
+    await db.exec(`insert into dating_1on1_plus_subscriptions values('${owner}',now()-interval '1 minute')`);
+    const downgraded = await call({ expected: newer });
+    assert.equal(downgraded.reason, 'limit'); assert.equal(downgraded.used_count, 2);
+    assert.equal(new Date(downgraded.next_refresh_at).getTime(), Date.parse(newer)+86400000);
+    await db.exec(`insert into dating_1on1_refresh_compensations(user_id,campaign_key,granted_count,used_count,evidence)
+      values('${owner}','incident',2,1,'{}')`);
+    // An expired Plus plan may not consume even a bonus credit with its stale limit.
+    await assert.rejects(call({ limit: 2, expected: newer }), /plus membership changed/);
+    assert.equal((await get('select used_count n from dating_1on1_refresh_compensations'))[0].n,1);
+    const lastBonus = await call({ expected: newer });
+    assert.equal(lastBonus.allowed,true); assert.equal(lastBonus.remaining_count,0);
+    assert.equal(new Date(lastBonus.next_refresh_at).getTime(),Date.parse(newer)+86400000);
+    // Only normal charges age out. A recent bonus seed must never become a legacy charge.
+    await db.exec("update dating_1on1_recommendation_refresh_events set refreshed_at=refreshed_at-interval '2 days' where quota_refunded_at is null");
+    const restored = await call({ expected:lastBonus.refreshed_at, at:new Date(Date.parse(await stamp())+1).toISOString() });
+    assert.equal(restored.allowed,true); assert.equal(restored.used_count,1);
+    assert.equal((await get('select used_count n from dating_1on1_refresh_compensations'))[0].n,2,'spent bonuses never recharge');
+
     await reset();
     await db.exec(`insert into dating_1on1_refresh_compensations(user_id,campaign_key,granted_count,evidence) values('${owner}','incident',2,'{}');
       update dating_1on1_cards set recommendation_refresh_used_at=now()-interval '1 hour';`);

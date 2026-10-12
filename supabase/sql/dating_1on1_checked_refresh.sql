@@ -74,6 +74,15 @@ begin
       where e.card_id = p_card_id and e.refreshed_at = v_card.recommendation_refresh_used_at
         and e.quota_refunded_at is not null);
   if v_legacy then v_used := 1; v_oldest := v_card.recommendation_refresh_used_at; end if;
+  -- Plus expiry can reduce the limit below recent usage. The next free slot
+  -- appears only when enough normal charges expire, not just the oldest one.
+  if v_used > p_limit then
+    select e.refreshed_at into v_oldest
+      from public.dating_1on1_recommendation_refresh_events e
+      where e.card_id = p_card_id and e.refreshed_at > v_now - interval '24 hours'
+        and e.quota_refunded_at is null
+      order by e.refreshed_at offset (v_used - p_limit) limit 1;
+  end if;
   if v_card.recommendation_refresh_used_at is distinct from p_expected_refresh_at
     or p_refresh_at <= v_card.recommendation_refresh_used_at then
     return query select false, 'stale'::text, v_used, greatest(p_limit - v_used, 0) + v_bonus, null::timestamptz,
