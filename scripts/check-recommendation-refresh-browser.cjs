@@ -142,7 +142,7 @@ async function main() {
           await confirmation.waitFor();
           assert.equal(posts, 0, 'no request before explicit consent');
           await confirmation.getByText(/사용 전 2회 → 이번 사용 후 1회/).waitFor();
-          if (compensated) await confirmation.getByText(/보상은 사용 전까지 유지돼요/).waitFor();
+          if (compensated) await confirmation.getByText(/보상은 사용 전까지 유지되며, 사용하면 다시 충전되지 않아요/).waitFor();
           assert.equal(await confirmation.getByRole('button', { name: '취소', exact: true }).evaluate(el => document.activeElement === el), true);
           if (width === 360 && scenario === 'success') await page.screenshot({ path: path.join(output, surface + '-mobile-confirm.png') });
           if (scenario === 'cancel' || scenario === 'escape') {

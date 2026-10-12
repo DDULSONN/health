@@ -10,7 +10,7 @@ export type OneOnOneRefreshUsage = {
 };
 
 export const ONE_ON_ONE_REFRESH_POLICY_COPY =
-  "자정에 초기화되지 않아요. 사용한 횟수는 각각 24시간 후 다시 이용할 수 있어요.";
+  "자정에 초기화되지 않아요. 기본·플러스 횟수는 사용한 시점부터 각각 24시간 후 다시 이용할 수 있어요.";
 
 function count(value: unknown, minimum = 0): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= minimum ? value : null;
@@ -64,7 +64,7 @@ export function buildOneOnOneRefreshConfirmation(usage?: OneOnOneRefreshUsage | 
   return ["후보 새로고침 1회를 사용할까요?", "", quota,
     "추천 후보와 추가 후보에 새로 들어오는 사람이 없으면 횟수는 사용하지 않아요.",
     (count(usage?.refresh_bonus_remaining) ?? 0) > 0
-      ? "일반 횟수부터 사용하고, 다 쓰면 보상 횟수를 사용해요. 보상은 사용 전까지 유지돼요."
+      ? "일반 횟수부터 사용하고, 다 쓰면 보상 횟수를 사용해요. 보상은 사용 전까지 유지되며, 사용하면 다시 충전되지 않아요."
       : limit !== null ? `최근 24시간 기준 최대 ${limit}회 이용할 수 있어요.` : "",
     ONE_ON_ONE_REFRESH_POLICY_COPY].filter((line, index) => line || index === 1).join("\n");
 }

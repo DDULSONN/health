@@ -39,6 +39,8 @@ test('compensation copy separates bonus from rolling quota without inventing a l
   assert.match(copy.getOneOnOneRefreshCopy(input).summary,/사용 전까지 유지/);
   assert.doesNotMatch(copy.getOneOnOneRefreshCopy(input).summary,/2회 중 4회/);
   assert.match(copy.buildOneOnOneRefreshConfirmation(input),/일반 횟수부터/);
+  assert.match(copy.buildOneOnOneRefreshConfirmation(input),/다시 충전되지 않아요/);
+  assert.match(copy.ONE_ON_ONE_REFRESH_POLICY_COPY,/기본·플러스 횟수는/);
 });
 
 for (const limit of [1, 2]) for (let remaining = 1; remaining <= limit; remaining++) {
