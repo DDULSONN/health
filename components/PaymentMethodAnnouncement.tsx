@@ -5,16 +5,19 @@ import { useEffect, useState } from "react";
 import { isSiteAnnouncementActive, SITE_ANNOUNCEMENT } from "@/lib/site-announcement";
 
 const STORAGE_KEY = `site-announcement:${SITE_ANNOUNCEMENT.id}`;
-const VISIBLE_PATH_PREFIXES = [
-  "/community/dating",
-  "/dating/",
-  "/mypage",
+// Site-wide notice, but never interrupt authentication, verification, checkout
+// or an in-progress profile/application form. Keep the same acknowledgement ID.
+const EXCLUDED_PATH_PREFIXES = [
+  "/api", "/admin", "/mypage/admin", "/payments", "/auth", "/login", "/signup",
+  "/account-recovery", "/phone-verification", "/verify-email", "/onboarding",
+  "/community/write",
 ];
 
 let acknowledgedInMemory = false;
 
 function isVisiblePath(pathname: string) {
-  return VISIBLE_PATH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(prefix));
+  return !EXCLUDED_PATH_PREFIXES.some((prefix) => pathname === prefix || pathname.startsWith(`${prefix}/`))
+    && !/\/(?:new|edit|apply)\/?$/.test(pathname);
 }
 
 function hasAcknowledged() {

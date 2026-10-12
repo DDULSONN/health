@@ -68,7 +68,9 @@ test('new Korean notice replaces the old release and has a fixed 48-hour window'
   assert.notEqual(notice.id, 'one-on-one-refresh-fixed-2026-09-08');
   assert.equal(notice.title, '1:1 후보 반복 오류 수정');
   assert.match(notice.message, /일부 계정/);
-  assert.match(notice.message, /재추천을 완료한 회원께는 별도로 안내/);
+  assert.match(notice.message, /실제로 확인한 후보 기록/);
+  assert.match(notice.message, /과거 이용 기록까지 넓혀/);
+  assert.match(notice.message, /중복 없이 메일/);
   assert.match(notice.message, /기존 매칭 내역은 그대로/);
   assert.match(notice.message, /불편을 드려 죄송/);
   assert.doesNotMatch(notice.message, /모든 회원|전부 새로운|100%/);
@@ -85,6 +87,24 @@ test('new notice still appears after acknowledging the previous notice, but only
   assert.equal(page.render(), null); assert.equal(storage.get(key), '1');
   page.navigate('/dating/1on1'); page.advance(start + 2000); assert.equal(page.render(), null);
   const reload = browser({ storage }); reload.mount(); reload.advance(start + 2000); assert.equal(reload.render(), null);
+});
+test('site-wide expansion retains the same incident acknowledgement and fixed expiry', () => {
+  assert.equal(notice.id, 'one-on-one-repeat-repair-2026-10-12');
+  assert.equal(notice.endsAt, '2026-10-14T19:30:00+09:00');
+  for (const pathname of ['/', '/landing', '/community', '/community/dating/cards', '/dating/1on1', '/mypage', '/chat', '/notifications', '/tools', '/1rm', '/protein']) {
+    const page = browser({ pathname }); page.mount(); page.advance(start+1450);
+    assert.ok(page.render(), pathname);
+    const acknowledged = browser({ pathname, storage:new Map([[key,'1']]) });
+    acknowledged.mount(); acknowledged.advance(start+1450); assert.equal(acknowledged.render(),null,pathname);
+  }
+});
+test('site-wide notice never interrupts checkout, account recovery, verification or profile forms', () => {
+  for (const pathname of ['/payments/success', '/payments/fail', '/login', '/signup', '/auth/callback', '/account-recovery',
+    '/phone-verification', '/verify-email', '/onboarding/dating', '/dating/card/new', '/dating/paid/card-id/apply',
+    '/community/write', '/community/post-id/edit', '/admin', '/mypage/admin/dating-1on1', '/api/dating/1on1/my']) {
+    const page=browser({ pathname }); page.mount(); page.advance(start+1450);
+    assert.equal(page.render(),null,pathname); assert.equal(page.timers.size,0,pathname);
+  }
 });
 test('expired visitors do not mount a notice or timers', () => {
   for (const at of [end, end + 86400000]) {
@@ -121,4 +141,45 @@ test('unrelated paths never display it, and navigation/unmount cleans up timers'
   page.navigate('/community/dating/cards'); page.advance(start + 1900); assert.ok(page.render());
   page.navigate('/login'); assert.equal(page.render(), null); assert.equal(page.timers.size, 0);
   page.navigate('/mypage'); page.unmount(); assert.equal(page.timers.size, 0);
+});
+
+const incident = evaluate('lib/candidate-repeat-incident-notice.ts', {});
+test('historical incident includes lapsed and removed profiles but never mere registrations or post-fix use', () => {
+  const start='2026-03-26T13:21:30Z', end='2026-10-12T11:51:46Z';
+  const cards=[
+    {id:'old',user_id:'lapsed',created_at:'2026-04-01T00:00:00Z',status:'hidden',recommendation_refresh_used_at:'2026-04-02T00:00:00Z'},
+    {id:'new',user_id:'signup-only',created_at:'2026-04-01T00:00:00Z',status:'approved',recommendation_refresh_used_at:null},
+    {id:'fixed',user_id:'post-fix',created_at:'2026-04-01T00:00:00Z',status:'approved',recommendation_refresh_used_at:end},
+    {id:'invalid',user_id:'invalid',created_at:'2026-04-03T00:00:00Z',status:'approved',recommendation_refresh_used_at:'2026-04-02T00:00:00Z'},
+  ];
+  const events=[
+    {id:1,user_id:'legacy',card_id:'removed-profile',refreshed_at:'2026-07-16T00:00:00Z'},
+    {id:1,user_id:'legacy',card_id:'removed-profile',refreshed_at:'2026-07-16T00:00:00Z'},
+    {id:2,user_id:'wrong-owner',card_id:'old',refreshed_at:'2026-07-16T00:00:00Z'},
+    {id:3,user_id:'bonus-only',card_id:'bonus',refreshed_at:'2026-07-16T00:00:00Z',compensation_campaign:'incident'},
+    {id:4,user_id:'outside',card_id:'outside',refreshed_at:'2026-03-22T00:00:00Z'},
+  ];
+  const rows=incident.historicalRefreshEvidence(cards,events,start,end);
+  assert.deepEqual(rows.map(r=>r.userId),['lapsed','legacy']);
+  assert.equal(rows.find(r=>r.userId==='legacy').eventCount,1);
+  assert.deepEqual(rows.find(r=>r.userId==='lapsed').legacyCardIds,['old']);
+  assert.throws(()=>incident.historicalRefreshEvidence([],[],end,start));
+});
+test('same incident notices deduplicate across old campaigns and channels, not unrelated feature announcements', () => {
+  for(const row of [
+    {campaign_key:'nearby-variety-repair-notice-2026-10-12'}, {campaign_key:'nearby-variety-repair-notice-2026-10-12-sms'},
+    {campaign_key:incident.REPEAT_INCIDENT_CAMPAIGN}, {subject:'[짐툴 문의 답변] 추천목록의 후보 반복 관련 안내'},
+    {campaign_key:'one_on_one_outreach',subject:'(광고) 짐툴 1:1 후보 반복 노출 관련 개선 안내'},
+  ]) assert.equal(incident.isPriorRepeatIncidentNotice(row),true);
+  for(const subject of ['사진 업로드 오류 개선 안내','1:1 요청이 도착했어요','1:1, 하루 최대 3명의 후보를 더 확인해 보세요'])
+    assert.equal(incident.isPriorRepeatIncidentNotice({subject}),false);
+});
+test('incident email distinguishes possible impact, preserves Korean and does not promise individual repair or rewards', () => {
+  const text=incident.REPEAT_INCIDENT_BODY;
+  assert.match(text,/가능성이 있는 이용자/); assert.match(text,/단정하는 것은 아닙니다/);
+  assert.match(text,/실제로 화면에서 확인한 후보/); assert.match(text,/차감하지 않도록/);
+  assert.match(text,/기존 매칭 요청·수락 내역/); assert.match(text,/브라우저의 페이지 새로고침/);
+  assert.doesNotMatch(text,/할인|지원권|무료|둘러보|복귀|신규 가입|보상.*지급|회원님.*재추천.*완료/);
+  assert.doesNotMatch(text,/\uFFFD|\u0000/);
+  assert.equal(Buffer.from(text,'utf8').toString('utf8'),text);
 });
