@@ -62,6 +62,7 @@ export function buildOneOnOneRefreshConfirmation(usage?: OneOnOneRefreshUsage | 
     ? `사용 전 ${remaining}회 → 이번 사용 후 ${remaining - 1}회 남아요.`
     : "이용 가능 횟수는 요청 시 확인하며, 성공하면 1회가 사용돼요.";
   return ["후보 새로고침 1회를 사용할까요?", "", quota,
+    "가까운 후보를 이미 봤다면, 나이가 맞는 다른 지역 후보도 보여드려요.",
     "추천 후보와 추가 후보에 새로 들어오는 사람이 없으면 횟수는 사용하지 않아요.",
     (count(usage?.refresh_bonus_remaining) ?? 0) > 0
       ? "일반 횟수부터 사용하고, 다 쓰면 보상 횟수를 사용해요. 보상은 사용 전까지 유지되며, 사용하면 다시 충전되지 않아요."
@@ -74,7 +75,7 @@ export function buildOneOnOneRefreshSuccess(usage: OneOnOneRefreshUsage) {
   const remaining = count(usage.refresh_remaining);
   const next = formatOneOnOneNextRefresh(usage.next_refresh_at);
   if (usage.refresh_consumed === false) {
-    return ["이번에는 후보 명단이 바뀌지 않아 횟수를 사용하지 않았어요.",
+    return ["새로 보여드릴 후보를 찾지 못해 횟수를 사용하지 않았어요.",
       remaining !== null ? `${remaining}회 그대로 남아 있어요.` : "남은 횟수는 화면에서 확인해 주세요.",
     ].join("\n");
   }

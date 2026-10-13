@@ -59,6 +59,25 @@ test('observations count only actual past views within the 30-day generation cut
   ], now)], ['boundary', 'seen']);
 });
 
+test('explicit refresh widens to unseen age-compatible regions after nearby views are exhausted', () => {
+  const local = Array.from({ length: 32 }, (_, i) => card('local-seen-' + i));
+  const wider = Array.from({ length: 45 }, (_, i) => card('wider-new-' + i, { region: '부산' }));
+  const inappropriate = Array.from({ length: 20 }, (_, i) => card('bad-age-' + i, { age: 65, region: '부산' }));
+  const pool = [...local, ...wider, ...inappropriate];
+  const seen = new Set(ids(local));
+  const sorted = rules.sortCandidatesForSource(source, pool, 'widen', now);
+  assert.ok(rules.takeObservedRecommendations(source, sorted, 10, seen, new Set(), new Set(), now)
+    .every(c => c.id.startsWith('local-seen-')), 'ordinary daily browsing keeps nearby-first behavior');
+  let previous = new Set(ids(local.slice(0, 10)));
+  for (let step = 0; step < 4; step++) {
+    const page = rules.takeObservedRecommendations(source, sorted, 10, seen, previous, new Set(), now, true);
+    assert.equal(page.length, 10);
+    assert.ok(page.every(c => c.id.startsWith('wider-new-') && !seen.has(c.id)), 'must not charge for recycling locals while compatible unseen people remain');
+    for (const c of page) seen.add(c.id);
+    previous = new Set(ids(page));
+  }
+});
+
 test('acknowledging the current recommendation page never rotates it on a subsequent GET', () => {
   const pool = Array.from({ length: 80 }, (_, i) => card('obs-' + i));
   const observations = pool.slice(0, 25).map(c => ({ id: c.id, at: now-100000 }));
@@ -259,6 +278,43 @@ for (const size of [0, 1, 3, 10, 11, 12, 13]) test('checked refresh with ' + siz
   assert.equal(result.body.changed_candidate_count, 0); assert.equal(result.body.refresh_remaining, 1);
   assert.equal(result.rpcCalls.length, 0); assert.deepEqual(tables, before);
   assert.ok(result.calls.every(call => !call.insert && !call.update && !call.delete));
+});
+
+test('refresh cannot charge for a different page made entirely of previously observed people', async () => {
+  const tables = fixture(50);
+  tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1).map(c => ({
+    viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now - 3600000).toISOString(),
+  }));
+  const before = structuredClone(tables);
+  const result = await runRefresh(tables);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.refresh_consumed, false);
+  assert.equal(result.body.changed_candidate_count, 0);
+  assert.equal(result.rpcCalls.length, 0);
+  assert.deepEqual(tables, before);
+});
+
+test('API refresh escapes an exhausted nearby pool and produces a stable wider unseen page', async () => {
+  const tables = fixture(90);
+  for (const c of tables.dating_1on1_cards.slice(21)) c.region = '부산';
+  tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1, 21).map(c => ({
+    viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now - 3600000).toISOString(),
+  }));
+  const seen = new Set(tables.dating_1on1_candidate_impressions.map(o => o.candidate_user_id));
+  const result = await runRefresh(tables);
+  assert.equal(result.response.status, 200); assert.equal(result.body.refresh_consumed, true);
+  assert.equal(result.rpcCalls.length, 1);
+  const first = await runApi(tables, { atTime: now + 1 });
+  assert.equal(first.response.status, 200);
+  const page = first.body.items[0];
+  assert.equal(page.recommendations.length, 10);
+  assert.ok(page.recommendations.every(c => c.region === '부산' && !seen.has(c.user_id)));
+  assert.equal(new Set([...page.recommendations, ...page.admin_recommendations].map(c => c.user_id)).size, 13);
+  tables.dating_1on1_candidate_impressions.push(...page.recommendations.map(c => ({
+    viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now + 2).toISOString(),
+  })));
+  const after = await runApi(tables, { atTime: now + 1000 });
+  assert.deepEqual(ids(after.body.items[0].recommendations), ids(page.recommendations), 'recording new views must not reshuffle the saved generation');
 });
 
 test('incident credits are separate, account-scoped and survive lapsed activity without reordering candidates', async () => {

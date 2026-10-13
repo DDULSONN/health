@@ -514,6 +514,13 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       // Compare people across main + extras, not positions. Moving the same person
       // between the two sections is NOT a new candidate and must not consume quota.
       const oldIds = new Set(hydrate([...before.recommendations, ...before.admin_recommendations]).map((card) => card.user_id));
+      // A different page is not necessarily a new person. Members with exhausted
+      // local pools were paying to alternate between already-viewed pages.
+      // Use the same 30-day history as ranking, at the planned generation cutoff.
+      for (const row of impressionResult?.rows ?? []) {
+        const seenAt = Date.parse(row.first_seen_at);
+        if (seenAt < nowMs && seenAt >= nowMs - 30 * 86400000) oldIds.add(row.candidate_user_id);
+      }
       if (isExpansionEnabled(user.id)) {
         const seen = await admin.from(EXPANSION_TABLE).select("candidate_ids")
           .eq("user_id", user.id).gte("day_key", getKstDateString(new Date(nowMs - RECOMMENDATION_REFRESH_HISTORY_MS)));

@@ -43,6 +43,14 @@ test('compensation copy separates bonus from rolling quota without inventing a l
   assert.match(copy.ONE_ON_ONE_REFRESH_POLICY_COPY,/기본·플러스 횟수는/);
 });
 
+test('refresh explains age-compatible wider regions and does not call an old page new', () => {
+  assert.match(copy.buildOneOnOneRefreshConfirmation(quota()), /가까운 후보를 이미 봤다면, 나이가 맞는 다른 지역/);
+  const text = copy.buildOneOnOneRefreshSuccess({ refresh_consumed: false, refresh_remaining: 2 });
+  assert.match(text, /새로 보여드릴 후보를 찾지 못해 횟수를 사용하지 않았어요/);
+  assert.match(text, /2회 그대로/);
+  assert.doesNotMatch(text, /후보 \d+명이 바뀌었어요/);
+});
+
 for (const limit of [1, 2]) for (let remaining = 1; remaining <= limit; remaining++) {
   test(`confirmation clearly distinguishes before/after: ${remaining}/${limit}`, () => {
     const result = copy.buildOneOnOneRefreshConfirmation(quota(remaining, limit));
