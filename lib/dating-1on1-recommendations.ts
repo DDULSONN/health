@@ -5,6 +5,13 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 const AGE_MATCH_MIN_QUOTA = 6;
 const RECENT_MIN_QUOTA = 4;
 const REFRESH_NEARBY_VARIETY_LIMIT = 4;
+// Approximate straight-line distances between registered regions, not travel
+// distances. Keep variety within a band; expand one band at a time when scarce.
+const RECOMMENDATION_DISTANCE_BANDS_KM = [40, 90, 180, 250, 330, 450, Infinity];
+function distanceBand(km: number | null) {
+  return km == null ? RECOMMENDATION_DISTANCE_BANDS_KM.length
+    : RECOMMENDATION_DISTANCE_BANDS_KM.findIndex(upper => km <= upper);
+}
 export const RECOMMENDATION_REFRESH_HISTORY_MS = 7 * DAY_MS;
 export const RECOMMENDATION_REVISIT_COOLDOWN_MS = 7 * DAY_MS;
 export type ObservedCandidate = { id: string; at: number };
@@ -72,8 +79,8 @@ function isCloseRegion(source: RecommendationCandidate, candidate: Recommendatio
   return distance != null && distance <= 90;
 }
 
-// Default ranking keeps compatibility first. Refresh may reserve a few unseen
-// nearby alternatives, but must not jump to distant or unknown-location people.
+// Default ranking keeps compatibility first. Refresh may widen known regions
+// after nearby unseen candidates run out, but must retain age compatibility.
 export function getRecommendationRelevanceTier(source: RecommendationCandidate, candidate: RecommendationCandidate) {
   const km = getRegionDistanceMeta(source.region, candidate.region).distanceKm;
   return relevanceTierAtDistance(source, candidate, km);
@@ -110,13 +117,20 @@ function createRecommendationMetaReader(source: RecommendationCandidate) {
 }
 type RecommendationMetaReader = ReturnType<typeof createRecommendationMetaReader>;
 
-function groupByRelevance<T extends RecommendationCandidate>(candidates: T[], readMeta: RecommendationMetaReader) {
+function groupByRelevance<T extends RecommendationCandidate>(
+  candidates: T[], readMeta: RecommendationMetaReader, splitWiderDistanceBands = true
+) {
   const groups = new Map<number, T[]>();
   for (const candidate of candidates) {
-    const tier = readMeta(candidate).tier;
-    const group = groups.get(tier) ?? [];
+    const { tier, km } = readMeta(candidate);
+    // Quotas must operate inside the widened distance band too: sorting alone
+    // lets activity/age quotas pull faraway people past a still-available band.
+    // Existing nearby tiers and their variety behavior remain unchanged.
+    const key = tier * (RECOMMENDATION_DISTANCE_BANDS_KM.length + 1) +
+      (splitWiderDistanceBands && tier === 3 ? distanceBand(km) : 0);
+    const group = groups.get(key) ?? [];
     group.push(candidate);
-    groups.set(tier, group);
+    groups.set(key, group);
   }
   return [...groups].sort(([a], [b]) => a - b).map(([, group]) => group);
 }
@@ -141,7 +155,7 @@ export function sortCandidatesForSource<T extends RecommendationCandidate>(
       ranks: [
         meta.tier,
         isRecentlyHandledCandidate(candidate, nowMs) ? 1 : 0,
-        km == null ? 4 : km <= 40 ? 0 : km <= 90 ? 1 : km <= 180 ? 2 : 3,
+        distanceBand(km),
         meta.ageMatch ? 0 : 1,
         activityRank,
         boost ? 0 : 1,
@@ -209,10 +223,10 @@ export function takeBalancedRecommendations<T extends RecommendationCandidate>(
     }
   };
   const fill = (pool: T[]) => {
-    // Give newly registered, compatible local profiles a small entrance slot,
-    // including for members who have not used manual refresh yet.
+    // Give newly registered, compatible profiles a small entrance slot inside
+    // the current relevance/distance group, never jumping over a nearer group.
     addMatching(pool, (card) => isRecent(card.created_at, nowMs) &&
-      readMeta(card).ageMatch && readMeta(card).close, Math.min(limit, 2));
+      readMeta(card).ageMatch && readMeta(card).km != null, Math.min(limit, 2));
     // Preserve the age quota as well. Count matching cards, not total picks.
     addMatching(pool, (card) => readMeta(card).ageMatch, Math.min(limit, AGE_MATCH_MIN_QUOTA));
     addMatching(pool, (card) => (isRecent(card.last_active_at, nowMs) || isRecent(card.created_at, nowMs)) &&
@@ -290,11 +304,20 @@ function existedAt(candidate: RecommendationCandidate, timestamp: number) {
 
 function includeNewRelevantCandidates<T extends RecommendationCandidate>(
   source: RecommendationCandidate, candidates: T[], previous: T[], since: number, at: number, limit: number,
-  handledIds: Set<string>, readMeta: RecommendationMetaReader
+  handledIds: Set<string>, readMeta: RecommendationMetaReader, observedBeforeSeed: Set<string>
 ) {
+  // A scarce-region member may already be browsing beyond 90 km. Allow new
+  // compatible people up to that page's known distance band, not just locals,
+  // but never widen an existing page solely because a remote newcomer joined.
+  const pageBand = previous.reduce((band, card) => {
+    const km = readMeta(card).km;
+    return km == null ? band : Math.max(band, distanceBand(km));
+  }, distanceBand(90));
   const newcomers = takeRecommendations(sortCandidatesForSource(source, candidates.filter((card) => {
     const created = Date.parse(card.created_at);
-    return created > since && created <= at && readMeta(card).tier === 0 && !handledIds.has(card.id);
+    const meta = readMeta(card);
+    return created > since && created <= at && meta.ageMatch && meta.km != null && distanceBand(meta.km) <= pageBand &&
+      !handledIds.has(card.id) && !observedBeforeSeed.has(card.id) && !isRecentlyHandledCandidate(card, at);
   }), `new:${since}`, at, readMeta), Math.min(2, limit));
   const newcomerIds = new Set(newcomers.map((card) => card.id));
   const merged = [...newcomers, ...previous.filter((card) => !newcomerIds.has(card.id))].slice(0, limit);
@@ -351,7 +374,9 @@ export function replayRecommendationRefreshes<T extends RecommendationCandidate>
     }
     extraRecommendations = [];
     const pickedIds = new Set<string>();
-    for (const group of groupByRelevance(sorted, readMeta)) {
+    // Prefer unseen history across the wider tier before repeating a nearer
+    // band. takeBalancedRecommendations then chooses nearest within that pool.
+    for (const group of groupByRelevance(sorted, readMeta, false)) {
       for (const preference of [
         group.filter((card) => !activeShownIds.has(card.id) && !extraSeenIds.has(card.id) && !previousIds.has(card.id)),
         group.filter((card) => !extraSeenIds.has(card.id) && !previousIds.has(card.id)),
@@ -393,7 +418,8 @@ export function replayRecommendationRefreshes<T extends RecommendationCandidate>
       // The visible daily page (including extras) has reset after 24 hours.
       rotateExtras(historicalPool, `${getKstDateString(new Date(seedMs))}:admin-extra:initial`, seedMs);
     } else if (previousSeedMs != null) {
-      recommendations = includeNewRelevantCandidates(source, historicalPool, recommendations, previousSeedMs, seedMs, limit, handledIds, readMeta);
+      recommendations = includeNewRelevantCandidates(source, historicalPool, recommendations, previousSeedMs, seedMs, limit, handledIds, readMeta,
+        observedCandidateIdsAt(observations, previousSeedMs));
     }
     for (const card of recommendations) { excluded.add(card.id); shownIds.add(card.id); }
     const previousIds = new Set(recommendations.map((card) => card.id));
@@ -410,7 +436,7 @@ export function replayRecommendationRefreshes<T extends RecommendationCandidate>
       previousSeedMs = seedMs;
       continue;
     }
-    const groups = groupByRelevance(sorted, readMeta);
+    const groups = groupByRelevance(sorted, readMeta, false);
     const bestTier = groups[0]?.[0] ? readMeta(groups[0][0]).tier : null;
     const unseenBestCount = (groups[0] ?? []).filter((card) => !excluded.has(card.id)).length;
     // A small best-fit pool otherwise traps every refresh inside the same people.
@@ -456,7 +482,8 @@ export function replayRecommendationRefreshes<T extends RecommendationCandidate>
     previousSeedMs = seedMs;
   }
   if (previousSeedMs != null) {
-    recommendations = includeNewRelevantCandidates(source, candidates, recommendations, previousSeedMs, nowMs, limit, handledIds, readMeta);
+    recommendations = includeNewRelevantCandidates(source, candidates, recommendations, previousSeedMs, nowMs, limit, handledIds, readMeta,
+      observedCandidateIdsAt(observations, previousSeedMs));
     for (const card of recommendations) { shownIds.add(card.id); activeShownIds.add(card.id); }
   }
   if (extraOptions?.limit) {

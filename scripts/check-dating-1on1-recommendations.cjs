@@ -92,6 +92,97 @@ test('acknowledging the current recommendation page never rotates it on a subseq
   assert.ok(displayed.every(c => !observations.some(o => o.id === c.id)));
 });
 
+test('Gyeongsang refresh expands through nearer unseen distance bands before nationwide candidates', () => {
+  const src = { ...source, region: '양산(경남)' };
+  const groups = ['부산', '경북 안동시', '대전', '경기 수원시'].map((region, band) =>
+    Array.from({ length: 13 }, (_, i) => card(`ring-${band}-${i}`, {
+      region, age: band === 2 ? 26 : 28,
+      // Activity/Plus and age quotas must not let the farthest band skip nearer people.
+      last_active_at: band === 3 ? new Date(now).toISOString() : null,
+      plus_expires_at: band === 3 ? new Date(now + day).toISOString() : null,
+    })));
+  const seen = new Set(ids(groups[0]));
+  const pool = groups.flat();
+  for (let band = 1; band < groups.length; band++) {
+    const sorted = rules.sortCandidatesForSource(src, pool, `rings-${band}`, now);
+    const main = rules.takeObservedRecommendations(src, sorted, 10, seen, new Set(), new Set(), now, true);
+    const extras = rules.takeObservedRecommendations(src, sorted.filter(c => !ids(main).includes(c.id)), 3,
+      seen, new Set(), new Set(), now, true);
+    assert.equal(main.length, 10); assert.equal(extras.length, 3);
+    assert.deepEqual(new Set(ids([...main, ...extras])), new Set(ids(groups[band])));
+    for (const c of [...main, ...extras]) seen.add(c.id);
+  }
+});
+
+test('partial distance bands fill only the missing slots from the next band', () => {
+  const src = { ...source, region: '양산(경남)' };
+  const near = Array.from({ length: 4 }, (_, i) => card(`near-ring-${i}`, { region: '대전', age: 26 }));
+  const next = Array.from({ length: 12 }, (_, i) => card(`next-ring-${i}`, { region: '경기 수원시' }));
+  const far = Array.from({ length: 20 }, (_, i) => card(`far-ring-${i}`, { region: '경기 파주시', last_active_at: new Date(now).toISOString() }));
+  for (let seed = 0; seed < 12; seed++) {
+    const sorted = rules.sortCandidatesForSource(src, [...far, ...next, ...near], String(seed), now);
+    const selected = rules.takeBalancedRecommendations(src, sorted, 10, new Set(), now);
+    assert.equal(selected.filter(c => c.id.startsWith('near-ring')).length, 4);
+    assert.equal(selected.filter(c => c.id.startsWith('next-ring')).length, 6);
+    assert.equal(selected.some(c => c.id.startsWith('far-ring')), false);
+  }
+});
+
+test('distance-band boundaries are inclusive and unknown locations remain last', () => {
+  const regionalRules = createLoader({ '@/lib/region-distance': {
+    getRegionDistanceMeta: (_source, region) => ({ distanceKm: region === 'unknown' ? null : Number(region) }),
+  } })('@/lib/dating-1on1-recommendations');
+  for (const boundary of [180, 250, 330, 450]) {
+    const inner = Array.from({ length: 10 }, (_, i) => card(`inner-${i}`, { region: String(boundary), age: 26 }));
+    const outer = Array.from({ length: 20 }, (_, i) => card(`outer-${i}`, {
+      region: String(boundary + 0.001), last_active_at: new Date(now).toISOString(),
+    }));
+    const sorted = regionalRules.sortCandidatesForSource(source, [...outer, card('unknown', { region: 'unknown' }), ...inner], 'boundary', now);
+    assert.deepEqual(new Set(ids(regionalRules.takeBalancedRecommendations(source, sorted, 10, new Set(), now))), new Set(ids(inner)));
+  }
+});
+
+test('new compatible profiles enter an expanded page without widening it further or charging a refresh', () => {
+  const src = { ...source, region: '양산(경남)' };
+  const pool = Array.from({ length: 40 }, (_, i) => card(`expanded-${i}`, { region: '대전' }));
+  const fresh = ['경북 안동시', '전북 전주시', '서울', 'unknown'].map((region, i) =>
+    card(`new-ring-${i}`, { region, created_at: new Date(now - 500).toISOString() }));
+  fresh.push(card('new-wrong-age', { region: '부산', age: 60, created_at: fresh[0].created_at }));
+  const stamps = [new Date(now - 1000).toISOString()];
+  const observations = pool.slice(0, 13).map(c => ({ id: c.id, at: now - 2000 }));
+  const run = (candidates, views = observations) => rules.replayRecommendationRefreshes(src, candidates, pool.slice(0, 10),
+    stamps, new Set(), 10, now, { limit: 3, excludeIds: new Set() }, views);
+  const before = run(pool), after = run([...pool, ...fresh]);
+  assert.ok(ids(after.recommendations).includes('new-ring-0'));
+  assert.ok(ids(after.recommendations).includes('new-ring-1'));
+  assert.equal(after.recommendations.filter(c => ids(before.recommendations).includes(c.id)).length, 8);
+  assert.equal(after.recommendations.some(c => ['new-ring-2', 'new-ring-3', 'new-wrong-age'].includes(c.id)), false);
+  assert.equal(new Set(ids([...after.recommendations, ...after.extraRecommendations])).size, 13);
+  assert.deepEqual(after.seeds, before.seeds);
+  assert.deepEqual(run([...pool, ...fresh], [...observations,
+    ...after.recommendations.map(c => ({ id: c.id, at: now - 1 }))]), after, 'acknowledgement must not remove a newcomer');
+});
+
+test('new profiles in a sparse region receive entrance slots even without manual refresh', () => {
+  const src = { ...source, region: '양산(경남)' };
+  for (const region of ['경북 안동시', '대전', '경기 수원시']) {
+    const active = Array.from({ length: 30 }, (_, i) => card(`active-${i}`, { region, last_active_at: new Date(now).toISOString() }));
+    const fresh = Array.from({ length: 4 }, (_, i) => card(`fresh-${i}`, { region, created_at: new Date(now - 1000).toISOString() }));
+    const sorted = rules.sortCandidatesForSource(src, [...active, ...fresh], 'day', now);
+    assert.equal(rules.takeBalancedRecommendations(src, sorted, 10, new Set(), now).filter(c => c.id.startsWith('fresh-')).length, 2);
+  }
+});
+
+test('legacy history without impressions can still leave an exhausted wider band', () => {
+  const src = { ...source, region: '양산(경남)' };
+  const inner = Array.from({ length: 13 }, (_, i) => card(`legacy-inner-${i}`, { region: '대전' }));
+  const outer = Array.from({ length: 26 }, (_, i) => card(`legacy-outer-${i}`, { region: '경기 수원시' }));
+  const result = rules.replayRecommendationRefreshes(src, [...inner, ...outer], inner.slice(0, 10),
+    [new Date(now - 1000).toISOString()], new Set(), 10, now, { limit: 3, excludeIds: new Set() });
+  assert.equal(result.recommendations.length, 10);
+  assert.ok(result.recommendations.every(c => c.id.startsWith('legacy-outer')), 'splitting distance bands must not trap legacy refreshes in a 13-person loop');
+});
+
 test("extra candidates prefer compatible locals from earlier pages over distant unseen people", () => {
   for (const sex of ["male", "female"]) {
     const src = card("local-source", { sex, age: 28 });
@@ -315,6 +406,66 @@ test('API refresh escapes an exhausted nearby pool and produces a stable wider u
   })));
   const after = await runApi(tables, { atTime: now + 1000 });
   assert.deepEqual(ids(after.body.items[0].recommendations), ids(page.recommendations), 'recording new views must not reshuffle the saved generation');
+});
+
+test('real API refresh advances through distance bands, preserves response shape and charges only new people', async () => {
+  const tables = fixture(65);
+  tables.dating_1on1_refresh_compensations = [{ user_id: 'user-source', granted_count: 5, used_count: 0 }];
+  tables.dating_1on1_cards[0].region = '양산(경남)';
+  const regions = ['부산', '경북 안동시', '대전', '경기 수원시', '경기 파주시'];
+  tables.dating_1on1_cards.slice(1).forEach((c, i) => { c.region = regions[Math.floor(i / 13)]; });
+  tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1, 14).map(c => ({
+    viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now - 10000).toISOString(),
+  }));
+  for (let band = 1; band < regions.length; band++) {
+    const at = now + band * 10000;
+    const refreshed = await runRefresh(tables, { atTime: at });
+    assert.equal(refreshed.response.status, 200); assert.equal(refreshed.body.refresh_consumed, true);
+    assert.equal(refreshed.body.changed_candidate_count, 13);
+    const result = await runApi(tables, { atTime: at + 1 });
+    const page = allCandidates(result.body);
+    assert.equal(page.length, 13); assert.equal(new Set(page.map(c => c.user_id)).size, 13);
+    assert.ok(page.every(c => c.region === regions[band]));
+    assert.ok(page.every(c => c.photo_signed_urls.length > 0), 'distance ranking must still hydrate images');
+    tables.dating_1on1_candidate_impressions.push(...page.map(c => ({
+      viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(at + 2).toISOString(),
+    })));
+    assert.deepEqual(ids(allCandidates((await runApi(tables, { atTime: at + 3 })).body)), ids(page));
+  }
+  const exhausted = await runRefresh(tables, { atTime: now + 50000 });
+  assert.equal(exhausted.body.refresh_consumed, false); assert.equal(exhausted.rpcCalls.length, 0);
+});
+
+test('API inserts eligible new regional profiles on read without touching usage or restoring unsafe profiles', async () => {
+  const tables = fixture(60);
+  tables.dating_1on1_cards[0].region = '양산(경남)';
+  for (const c of tables.dating_1on1_cards.slice(1)) c.region = '대전';
+  const stamp = new Date(now - 60000).toISOString();
+  tables.dating_1on1_cards[0].recommendation_refresh_used_at = stamp;
+  tables.dating_1on1_recommendation_refresh_events = [{ card_id: 'source', refreshed_at: stamp }];
+  const before = (await runApi(tables, { atTime: now - 2000 })).body.items[0];
+  for (const c of tables.dating_1on1_cards.slice(1, 9)) {
+    c.created_at = new Date(now - 1000).toISOString(); c.region = '경북 안동시';
+  }
+  tables.dating_user_blocks = [{ blocker_user_id: 'user-c0', blocked_user_id: 'user-source' }];
+  tables.profiles.find(p => p.user_id === 'user-c1').is_banned = true;
+  tables.profiles = tables.profiles.filter(p => p.user_id !== 'user-c2');
+  tables.dating_1on1_candidate_favorites = [{ user_id: 'user-source', source_card_id: 'source', candidate_card_id: 'c3', created_at: stamp }];
+  tables.dating_1on1_match_proposals = [
+    pair({ candidate_card_id: 'c4', candidate_user_id: 'user-c4', state: 'mutual_accepted' }),
+    pair({ id: 'regional-rejected', candidate_card_id: 'c5', candidate_user_id: 'user-c5', state: 'candidate_rejected' }),
+  ];
+  tables.dating_1on1_candidate_impressions = [{ viewer_user_id: 'user-source', candidate_user_id: 'user-c7', first_seen_at: new Date(now - day).toISOString() }];
+  const snapshot = structuredClone(tables);
+  const result = await runApi(tables, { atTime: now });
+  const after = result.body.items[0];
+  assert.ok(ids(after.recommendations).includes('c6'));
+  assert.equal(after.recommendations.some(c => c.id === 'c7'), false, 'an already-seen recreated card is not a new registration');
+  assert.equal(allCandidates(result.body).some(c => ['c0', 'c1', 'c2', 'c3', 'c4', 'c5'].includes(c.id)), false);
+  assert.equal(after.refresh_remaining, before.refresh_remaining);
+  assert.equal(after.refresh_used_count, before.refresh_used_count);
+  assert.equal(after.refresh_used_at, before.refresh_used_at);
+  assert.deepEqual(tables, snapshot); assert.equal(result.calls.some(q => q.insert || q.update || q.delete), false);
 });
 
 test('incident credits are separate, account-scoped and survive lapsed activity without reordering candidates', async () => {
