@@ -38,6 +38,7 @@ import { pickLoveFortuneFaceAsset } from "@/lib/love-fortune-face-assets";
 import { PROVINCE_ORDER } from "@/lib/region-city";
 import { trackCheckoutStarted } from "@/lib/payment-analytics";
 import type { AdminTodayPaymentData } from "@/components/admin/AdminTodayPaymentSummary";
+import { isRegistrationFeatureKey, type RegistrationSexBreakdown } from "@/lib/admin-registration-counts";
 import type {
   OneOnOneContactNudgePresetKey,
   OneOnOneContactNudgeSummary,
@@ -58,6 +59,7 @@ const AdminCertReviewPanel = dynamic(() => import("@/components/AdminCertReviewP
 });
 
 const AdminTodayPaymentSummary = dynamic(() => import("@/components/admin/AdminTodayPaymentSummary"));
+const AdminRegistrationSexCounts = dynamic(() => import("@/components/admin/AdminRegistrationSexCounts"));
 const AdminUserContactExchangesPanel = dynamic(() => import("@/components/admin/AdminUserContactExchangesPanel"));
 const AdminOnboardingFunnelPanel = dynamic(() => import("@/components/admin/AdminOnboardingFunnelPanel"));
 
@@ -1645,6 +1647,7 @@ type AdminSiteDashboard = {
   note: string;
   featureLabels: Record<AdminSiteDashboardFeatureKey, string>;
   today: Record<AdminSiteDashboardFeatureKey, number>;
+  todayRegistrationsBySex?: RegistrationSexBreakdown;
   todayTopFeatures: Array<{
     key: AdminSiteDashboardFeatureKey;
     label: string;
@@ -1654,6 +1657,7 @@ type AdminSiteDashboard = {
     dateKey: string;
     label: string;
     counts: Record<AdminSiteDashboardFeatureKey, number>;
+    registrationsBySex?: RegistrationSexBreakdown;
   }>;
   current: {
     totalUsers: number;
@@ -11933,6 +11937,7 @@ export default function MyPage() {
                   <p className="mt-2 text-2xl font-black text-neutral-900">
                     {adminSiteDashboard.today.open_card_created.toLocaleString("ko-KR")}건
                   </p>
+                  <AdminRegistrationSexCounts counts={adminSiteDashboard.todayRegistrationsBySex?.open_card_created} />
                 </div>
               </div>
             ) : null}
@@ -11970,7 +11975,7 @@ export default function MyPage() {
                     { key: "new_users", label: "오늘 신규 가입" },
                     { key: "open_card_created", label: "오늘 오픈카드 등록" },
                     { key: "open_card_applied", label: "오늘 오픈카드 지원" },
-                    { key: "one_on_one_created", label: "오늘 1:1 신청" },
+                    { key: "one_on_one_created", label: "오늘 1:1 프로필 등록" },
                     { key: "support_inquiries", label: "오늘 1:1 문의" },
                     { key: "swipe_likes", label: "오늘 빠른매칭 라이크" },
                   ].map((item) => (
@@ -11979,6 +11984,9 @@ export default function MyPage() {
                       <p className="mt-2 text-2xl font-black text-neutral-900">
                         {adminSiteDashboard.today[item.key as AdminSiteDashboardFeatureKey].toLocaleString("ko-KR")}
                       </p>
+                      {isRegistrationFeatureKey(item.key) ? (
+                        <AdminRegistrationSexCounts counts={adminSiteDashboard.todayRegistrationsBySex?.[item.key]} />
+                      ) : null}
                     </div>
                   ))}
                 </div>
@@ -12121,7 +12129,7 @@ export default function MyPage() {
                           value: adminSiteDashboard.recent7d.reduce((sum, day) => sum + day.counts.open_card_applied, 0),
                         },
                         {
-                          label: "최근 7일 1:1 신청",
+                          label: "최근 7일 1:1 프로필 등록",
                           value: adminSiteDashboard.recent7d.reduce((sum, day) => sum + day.counts.one_on_one_created, 0),
                         },
                         {
@@ -12180,6 +12188,9 @@ export default function MyPage() {
                                 className="border-b border-neutral-100 px-3 py-2 text-right text-neutral-600"
                               >
                                 {day.counts[key as AdminSiteDashboardFeatureKey].toLocaleString("ko-KR")}
+                                {isRegistrationFeatureKey(key) ? (
+                                  <AdminRegistrationSexCounts counts={day.registrationsBySex?.[key]} />
+                                ) : null}
                               </td>
                             ))}
                           </tr>

@@ -1,5 +1,11 @@
 import { requireAdminRoute } from "@/lib/admin-route";
 import {
+  addRegistrationSexCount,
+  createRegistrationSexBreakdown,
+  isRegistrationFeatureKey,
+  type RegistrationSexBreakdown,
+} from "@/lib/admin-registration-counts";
+import {
   countCumulativeOpenCardMatches,
   countCumulativeSwipeMatches,
   fetchRecentSwipeMatchTimestampRows,
@@ -29,12 +35,14 @@ type FeatureKey =
 
 type TimestampRow = {
   created_at?: string | null;
+  sex?: string | null;
 };
 
 type Recent7dBucket = {
   dateKey: string;
   label: string;
   counts: Record<FeatureKey, number>;
+  registrationsBySex: RegistrationSexBreakdown;
 };
 
 const FEATURE_CONFIG: Array<{ key: FeatureKey; label: string; table: string; timestampColumn?: string }> = [
@@ -43,7 +51,7 @@ const FEATURE_CONFIG: Array<{ key: FeatureKey; label: string; table: string; tim
   { key: "open_card_applied", label: "오픈카드 지원", table: "dating_card_applications" },
   { key: "paid_card_created", label: "유료카드 등록", table: "dating_paid_cards" },
   { key: "paid_card_applied", label: "유료카드 지원", table: "dating_paid_card_applications" },
-  { key: "one_on_one_created", label: "1:1 소개팅 신청", table: "dating_1on1_cards" },
+  { key: "one_on_one_created", label: "1:1 프로필 등록", table: "dating_1on1_cards" },
   { key: "more_view_requested", label: "이상형 더보기 신청", table: "dating_more_view_requests" },
   { key: "city_view_requested", label: "가까운 이상형 신청", table: "dating_city_view_requests" },
   { key: "swipe_likes", label: "빠른매칭 라이크", table: "dating_card_swipes" },
@@ -55,8 +63,8 @@ const FEATURE_CONFIG: Array<{ key: FeatureKey; label: string; table: string; tim
   { key: "bodybattle_votes", label: "바디배틀 투표", table: "bodybattle_votes" },
 ];
 
-function getKstDayStart(dayOffset = 0) {
-  const shiftedNow = new Date(Date.now() + KST_OFFSET_MS);
+function getKstDayStart(dayOffset = 0, nowMs = Date.now()) {
+  const shiftedNow = new Date(nowMs + KST_OFFSET_MS);
   shiftedNow.setUTCDate(shiftedNow.getUTCDate() + dayOffset);
   shiftedNow.setUTCHours(0, 0, 0, 0);
   return new Date(shiftedNow.getTime() - KST_OFFSET_MS);
@@ -127,16 +135,19 @@ async function fetchRecentTimestampRows(
   admin: SupabaseClient,
   table: string,
   sinceIso: string,
-  timestampColumn = "created_at"
+  timestampColumn = "created_at",
+  includeSex = false
 ) {
-  return fetchAllRows<TimestampRow>((from, to) =>
-    admin
+  return fetchAllRows<TimestampRow>((from, to) => {
+    const query = admin
       .from(table)
-      .select(timestampColumn)
+      .select(includeSex ? `${timestampColumn},sex` : timestampColumn)
       .gte(timestampColumn, sinceIso)
-      .order(timestampColumn, { ascending: true })
-      .range(from, to) as PromiseLike<{ data: TimestampRow[] | null; error: unknown }>
-  );
+      .order(timestampColumn, { ascending: true });
+    // Registration timestamps can tie across pages; keep totals and sex counts aligned.
+    return (includeSex ? query.order("id", { ascending: true }) : query)
+      .range(from, to) as PromiseLike<{ data: TimestampRow[] | null; error: unknown }>;
+  });
 }
 
 async function fetchIdsByStatus(
@@ -178,35 +189,43 @@ export async function GET() {
 
   try {
     const { admin } = adminGuard;
-    const todayStart = getKstDayStart(0);
-    const tomorrowStart = getKstDayStart(1);
-    const weekStart = getKstDayStart(-6);
-    const nowIso = new Date().toISOString();
+    const nowMs = Date.now();
+    const todayStart = getKstDayStart(0, nowMs);
+    const tomorrowStart = getKstDayStart(1, nowMs);
+    const weekStart = getKstDayStart(-6, nowMs);
+    const nowIso = new Date(nowMs).toISOString();
     const todayStartIso = todayStart.toISOString();
     const tomorrowStartIso = tomorrowStart.toISOString();
     const weekStartIso = weekStart.toISOString();
 
-    const featureRows = await Promise.all(
+    const featureRows: Array<{ key: FeatureKey; label: string; rows: TimestampRow[] }> = await Promise.all(
       FEATURE_CONFIG.map(async (feature) => ({
         key: feature.key,
         label: feature.label,
         rows:
           feature.key === "swipe_matches"
             ? await fetchRecentSwipeMatchTimestampRows(admin, weekStartIso)
-            : await fetchRecentTimestampRows(admin, feature.table, weekStartIso, feature.timestampColumn),
+            : await fetchRecentTimestampRows(
+                admin,
+                feature.table,
+                weekStartIso,
+                feature.timestampColumn,
+                isRegistrationFeatureKey(feature.key)
+              ),
       }))
     );
 
     const dailyKeys: string[] = [];
     const recent7d: Recent7dBucket[] = [];
     for (let offset = -6; offset <= 0; offset += 1) {
-      const dayStart = getKstDayStart(offset);
+      const dayStart = getKstDayStart(offset, nowMs);
       const key = getKstDateKey(dayStart.toISOString());
       dailyKeys.push(key);
       recent7d.push({
         dateKey: key,
         label: getKstDateLabel(dayStart),
         counts: Object.fromEntries(FEATURE_CONFIG.map((feature) => [feature.key, 0])) as Record<FeatureKey, number>,
+        registrationsBySex: createRegistrationSexBreakdown(),
       });
     }
 
@@ -220,6 +239,9 @@ export async function GET() {
         const bucket = recent7dByKey.get(dateKey);
         if (!bucket) continue;
         bucket.counts[feature.key] += 1;
+        if (isRegistrationFeatureKey(feature.key)) {
+          addRegistrationSexCount(bucket.registrationsBySex[feature.key], row.sex);
+        }
       }
     }
 
@@ -323,6 +345,7 @@ export async function GET() {
       note: "오늘 유입은 현재 방문 로그가 아닌 신규 가입 기준입니다.",
       featureLabels: Object.fromEntries(FEATURE_CONFIG.map((feature) => [feature.key, feature.label])) as Record<FeatureKey, string>,
       today,
+      todayRegistrationsBySex: recent7d[recent7d.length - 1].registrationsBySex,
       todayTopFeatures,
       recent7d,
       current: {
