@@ -1,4 +1,5 @@
 import { requireAdminRoute } from "@/lib/admin-route";
+import { fetchActiveOneOnOneCounts } from "@/lib/admin-active-one-on-one-counts";
 import {
   addRegistrationSexCount,
   createRegistrationSexBreakdown,
@@ -298,6 +299,7 @@ export async function GET() {
       totalOpenCardMatches,
       totalSwipeMatches,
       todayAnsweredSupport,
+      activeOneOnOneProfiles,
     ] = await Promise.all([
       fetchExactCountSafe(admin.from("profiles").select("id", { count: "exact", head: true })),
       fetchExactCountSafe(admin.from("profiles").select("id", { count: "exact", head: true }).eq("role", "admin")),
@@ -336,6 +338,10 @@ export async function GET() {
           .gte("answered_at", todayStartIso)
           .lt("answered_at", tomorrowStartIso)
       ),
+      fetchActiveOneOnOneCounts(admin, nowMs).catch(() => {
+        console.error("[GET /api/admin/site-dashboard] active 1:1 count failed", { requestId });
+        return null;
+      }),
     ]);
 
     return NextResponse.json({
@@ -362,6 +368,7 @@ export async function GET() {
         totalPaidCardApplications,
         approvedOneOnOneCards,
         pendingOneOnOneCards,
+        activeOneOnOneProfiles,
         activeMoreView,
         activeCityView,
         openSupport,
@@ -384,7 +391,7 @@ export async function GET() {
         paidCardApplicationsPerApprovedCard:
           publicPaidCardIds.length > 0 ? Number((publicPaidCardApplicationCount / publicPaidCardIds.length).toFixed(2)) : 0,
       },
-    });
+    }, { headers: { "Cache-Control": "private, no-store" } });
   } catch (error) {
     console.error("[GET /api/admin/site-dashboard] failed", error);
     return NextResponse.json(

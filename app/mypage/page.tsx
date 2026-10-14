@@ -60,6 +60,7 @@ const AdminCertReviewPanel = dynamic(() => import("@/components/AdminCertReviewP
 
 const AdminTodayPaymentSummary = dynamic(() => import("@/components/admin/AdminTodayPaymentSummary"));
 const AdminRegistrationSexCounts = dynamic(() => import("@/components/admin/AdminRegistrationSexCounts"));
+const AdminActiveOneOnOneCounts = dynamic(() => import("@/components/admin/AdminActiveOneOnOneCounts"));
 const AdminUserContactExchangesPanel = dynamic(() => import("@/components/admin/AdminUserContactExchangesPanel"));
 const AdminOnboardingFunnelPanel = dynamic(() => import("@/components/admin/AdminOnboardingFunnelPanel"));
 
@@ -1674,6 +1675,7 @@ type AdminSiteDashboard = {
     totalPaidCardApplications: number;
     approvedOneOnOneCards: number;
     pendingOneOnOneCards: number;
+    activeOneOnOneProfiles?: { total: number; male: number; female: number } | null;
     activeMoreView: number;
     activeCityView: number;
     openSupport: number;
@@ -11915,7 +11917,7 @@ export default function MyPage() {
             </div>
 
             {adminSiteDashboard ? (
-              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+              <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
                 <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
                   <p className="text-xs font-semibold uppercase tracking-[0.14em] text-amber-700">Open Card Queue</p>
                   <p className="mt-2 text-sm font-semibold text-neutral-800">현재 오픈카드 대기</p>
@@ -11940,6 +11942,7 @@ export default function MyPage() {
                   </p>
                   <AdminRegistrationSexCounts counts={adminSiteDashboard.todayRegistrationsBySex?.open_card_created} />
                 </div>
+                <AdminActiveOneOnOneCounts counts={adminSiteDashboard.current.activeOneOnOneProfiles} />
               </div>
             ) : null}
 

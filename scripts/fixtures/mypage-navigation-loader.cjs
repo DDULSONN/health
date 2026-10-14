@@ -2,12 +2,19 @@
 const ts = require('typescript');
 module.exports = function (source) {
   const preserveHomeLazy = this.getOptions?.().preserveHomeLazy === true;
+  const renderAdminCounts = this.getOptions?.().renderAdminCounts === true;
   return ts.transpileModule(source, {
     compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
     // Unchanged lazy admin/payment widgets are outside this presentation fixture.
     transformers: { before: [context => {
       const visit = node => {
         if (ts.isCallExpression(node) && ts.isIdentifier(node.expression) && node.expression.text === 'dynamic') {
+          if (renderAdminCounts) {
+            const adminPath = ['@/components/admin/AdminActiveOneOnOneCounts', '@/components/admin/AdminRegistrationSexCounts']
+              .find(name => node.arguments[0]?.getText().includes(name));
+            if (adminPath) return ts.factory.createPropertyAccessExpression(ts.factory.createCallExpression(
+              ts.factory.createIdentifier('require'), undefined, [ts.factory.createStringLiteral(adminPath)]), 'default');
+          }
           if (node.arguments[0]?.getText().includes('@/components/dating/OneOnOneHomePanel')) {
             if (preserveHomeLazy) return node;
             // Existing behavior fixtures still render the real extracted panel.

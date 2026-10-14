@@ -35,6 +35,7 @@
     "check:open-card-activity-route": "node scripts/check-dating-open-card-activity-route.cjs",
     "check:payment-today": "node scripts/check-payment-today.cjs",
     "check:admin-registration-counts": "node --require ./scripts/test-no-network.cjs --test scripts/check-admin-registration-counts.cjs",
+    "check:admin-active-counts-browser": "node scripts/check-recommendation-refresh-browser.cjs --admin-counts",
     "check:auth-session": "node scripts/check-auth-session-middleware.cjs",
     "check:account-recovery": "node scripts/check-account-recovery.cjs",
     "check:dating-reports": "node --test scripts/check-dating-reports.cjs",

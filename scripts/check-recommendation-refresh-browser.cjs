@@ -21,7 +21,7 @@ async function main() {
         '@/lib/supabase/client': adapter, '@/components/DatingAdultNotice': adapter, '@': root,
       } },
       plugins: [new webpack.DefinePlugin({ 'process.env.NEXT_PUBLIC_OPENKAKAO_URL': 'undefined' })],
-      module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: path.join(__dirname, 'fixtures/mypage-navigation-loader.cjs') }] },
+      module: { rules: [{ test: /\.tsx?$/, exclude: /node_modules/, use: { loader: path.join(__dirname, 'fixtures/mypage-navigation-loader.cjs'), options: { renderAdminCounts: process.argv.includes('--admin-counts') } } }] },
     });
     compiler.run((error, stats) => {
       compiler.close(() => {});
@@ -53,7 +53,10 @@ async function main() {
     if (process.argv.includes('--region-notice')) {
       passed = await require('./test-recommendation-region-notice-browser.cjs')({ browser, origin, output });
     }
-    for (const surface of process.argv.includes('--expansion') || process.argv.includes('--impressions') || process.argv.includes('--region-notice') ? [] : ['home', 'mypage']) for (const width of [360, 1280]) {
+    if (process.argv.includes('--admin-counts')) {
+      passed = await require('./test-admin-active-counts-browser.cjs')({ browser, origin, output });
+    }
+    for (const surface of process.argv.includes('--expansion') || process.argv.includes('--impressions') || process.argv.includes('--region-notice') || process.argv.includes('--admin-counts') ? [] : ['home', 'mypage']) for (const width of [360, 1280]) {
       for (const scenario of ['success', 'no-change', 'no-change-read-failure', 'read-failure', 'bad-read', 'lost-post', 'timeout-post', 'slow-post', 'cancel', 'escape', 'non-plus', 'legacy-plus', 'compensation', 'no-change-compensation']) {
         const noChange = scenario.startsWith('no-change');
         const compensated = scenario.includes('compensation');
