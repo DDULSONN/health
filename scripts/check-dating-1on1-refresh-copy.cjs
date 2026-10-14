@@ -212,6 +212,16 @@ test('all affected customer copy drops ambiguous calendar-day/completion wording
 const controlSource = ast('components/dating/OneOnOneRefreshControl.tsx');
 const controlFn = find(controlSource, n => ts.isFunctionDeclaration(n) && n.name?.text === 'OneOnOneRefreshControl');
 const renderControl = evaluate('exports.render = ' + controlFn.getText(controlSource).replace('export default ', '') + ';', copy).render;
+test('wider-region notice is compact, read-only, and absent on local or legacy responses', () => {
+  for (const widened of [undefined, false, true, 'true', 1]) {
+    const tree = renderControl({ usage: { ...quota(), recommendation_region_widened: widened }, busy: false, onRequest() {} });
+    const paragraphs = nodes(tree).filter(n => n.type === 'p' && text(n) === copy.ONE_ON_ONE_WIDER_REGION_COPY);
+    assert.equal(paragraphs.length, widened === true ? 1 : 0);
+    if (widened === true) assert.match(paragraphs[0].props.className, /text-xs.*text-neutral-500/);
+    assert.equal(nodes(tree).filter(n => n.type === 'button').length, 1, 'no region selector or extra action');
+  }
+  assert.match(copy.ONE_ON_ONE_WIDER_REGION_COPY, /가까운 새 후보는 우선 추천/);
+});
 for (const remaining of [0, 1, 2]) test(`shared refresh control preserves quota, 44px target and policy: ${remaining}`, () => {
   const tree = renderControl({ usage: quota(remaining), busy: false, onRequest() {} });
   const button = nodes(tree).find(n => n.type === 'button');

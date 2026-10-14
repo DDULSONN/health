@@ -13,6 +13,14 @@ function distanceBand(km: number | null) {
     : RECOMMENDATION_DISTANCE_BANDS_KM.findIndex(upper => km <= upper);
 }
 export const RECOMMENDATION_REFRESH_HISTORY_MS = 7 * DAY_MS;
+// Presentation only: describe the final visible main/extra list, never favorites.
+// Unknown regions are not evidence of geographic expansion.
+export function hasWiderRecommendationRegion(source: { region: string }, candidates: readonly { region: string }[]) {
+  return candidates.some(candidate => {
+    const km = getRegionDistanceMeta(source.region, candidate.region).distanceKm;
+    return km != null && km > 180;
+  });
+}
 export const RECOMMENDATION_REVISIT_COOLDOWN_MS = 7 * DAY_MS;
 export type ObservedCandidate = { id: string; at: number };
 // Use history BEFORE the page's generation, never acknowledgements of that page.

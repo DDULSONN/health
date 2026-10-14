@@ -1041,6 +1041,7 @@ function canCancelOneOnOneMatch(match: Pick<MyOneOnOneMatch, "state" | "contact_
 }
 
 type MyOneOnOneAutoRecommendationGroup = {
+  recommendation_region_widened?: boolean;
   impression_ticket?: string | null;
   source_card_id: string;
   source_card_status?: "submitted" | "reviewing" | "approved" | "rejected";

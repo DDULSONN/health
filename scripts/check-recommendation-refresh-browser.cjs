@@ -50,7 +50,10 @@ async function main() {
     if (process.argv.includes('--impressions')) {
       passed = await require('./test-impressions-browser.cjs')({ browser, origin, output });
     }
-    for (const surface of process.argv.includes('--expansion') || process.argv.includes('--impressions') ? [] : ['home', 'mypage']) for (const width of [360, 1280]) {
+    if (process.argv.includes('--region-notice')) {
+      passed = await require('./test-recommendation-region-notice-browser.cjs')({ browser, origin, output });
+    }
+    for (const surface of process.argv.includes('--expansion') || process.argv.includes('--impressions') || process.argv.includes('--region-notice') ? [] : ['home', 'mypage']) for (const width of [360, 1280]) {
       for (const scenario of ['success', 'no-change', 'no-change-read-failure', 'read-failure', 'bad-read', 'lost-post', 'timeout-post', 'slow-post', 'cancel', 'escape', 'non-plus', 'legacy-plus', 'compensation', 'no-change-compensation']) {
         const noChange = scenario.startsWith('no-change');
         const compensated = scenario.includes('compensation');

@@ -1,5 +1,6 @@
 // Presentation only. Eligibility and consumption remain server-authoritative.
 export type OneOnOneRefreshUsage = {
+  recommendation_region_widened?: boolean;
   refresh_limit?: number;
   refresh_remaining?: number;
   refresh_bonus_remaining?: number;
@@ -11,6 +12,9 @@ export type OneOnOneRefreshUsage = {
 
 export const ONE_ON_ONE_REFRESH_POLICY_COPY =
   "자정에 초기화되지 않아요. 기본·플러스 횟수는 사용한 시점부터 각각 24시간 후 다시 이용할 수 있어요.";
+
+export const ONE_ON_ONE_WIDER_REGION_COPY =
+  "주변 새 후보가 적어 지역을 넓혔어요. 가까운 새 후보는 우선 추천해요.";
 
 function count(value: unknown, minimum = 0): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= minimum ? value : null;

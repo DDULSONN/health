@@ -38,6 +38,49 @@ const card = (id, overrides = {}) => ({
 const source = card("source", { sex: "male", age: 30 });
 const ids = (cards) => cards.map((candidate) => candidate.id);
 
+test('wider-region notice uses the existing 180km boundary and never guesses unknown distances', () => {
+  const helpers = createLoader({ '@/lib/region-distance': {
+    getRegionDistanceMeta: (_source, region) => ({ distanceKm: region === 'unknown' ? null : Number(region) }),
+  } })('@/lib/dating-1on1-recommendations');
+  for (const [regions, expected] of [[[], false], [['unknown'], false], [['0', '90', '180'], false],
+    [['180.001'], true], [['unknown', '330'], true]]) {
+    assert.equal(helpers.hasWiderRecommendationRegion(source, regions.map(region => ({ region }))), expected);
+  }
+  assert.equal(rules.hasWiderRecommendationRegion({ region: '지역 미상' }, [{ region: '부산' }]), false);
+});
+
+test('API notice describes visible main and extra candidates without extra queries or writes', async () => {
+  const local = fixture(13), wide = structuredClone(local);
+  for (const c of wide.dating_1on1_cards.slice(1)) c.region = '부산';
+  const snapshots = [structuredClone(local), structuredClone(wide)];
+  const nearbyResult = await runApi(local, { atTime: now });
+  const widerResult = await runApi(wide, { atTime: now });
+  assert.equal(nearbyResult.body.items[0].recommendation_region_widened, false);
+  assert.equal(widerResult.body.items[0].recommendation_region_widened, true);
+  assert.equal(allCandidates(widerResult.body).length, 13);
+  assert.equal(widerResult.calls.length, nearbyResult.calls.length);
+  for (const result of [nearbyResult, widerResult]) assert.ok(result.calls.every(q => !q.insert && !q.update && !q.delete));
+  assert.deepEqual([local, wide], snapshots);
+});
+
+test('remote extras trigger the notice, but saved or removed remote cards do not', async () => {
+  const tables = fixture(11);
+  tables.dating_1on1_cards.at(-1).region = '부산';
+  const result = await runApi(tables, { atTime: now });
+  assert.ok(result.body.items[0].recommendations.every(c => c.region !== '부산'));
+  assert.ok(result.body.items[0].admin_recommendations.some(c => c.region === '부산'));
+  assert.equal(result.body.items[0].recommendation_region_widened, true);
+  tables.dating_1on1_candidate_favorites = [{ user_id: 'user-source', source_card_id: 'source', candidate_card_id: 'c10', created_at: new Date(now).toISOString() }];
+  const saved = await runApi(tables, { atTime: now });
+  assert.equal(saved.body.items[0].favorite_candidates[0].region, '부산');
+  assert.equal(saved.body.items[0].recommendation_region_widened, false);
+  const remoteOnly = fixture(1); remoteOnly.dating_1on1_cards[1].region = '부산';
+  const removed = await runApi(remoteOnly, { atTime: now,
+    intercept: q => q.fields.includes('photo_paths') ? { data: [], error: null } : null });
+  assert.deepEqual(allCandidates(removed.body), []);
+  assert.equal(removed.body.items[0].recommendation_region_widened, false);
+});
+
 test('actual observations broaden to unseen compatible nearby candidates before local repeats', () => {
   const locals = Array.from({ length: 20 }, (_, i) => card('seen-' + i));
   const nearby = Array.from({ length: 20 }, (_, i) => card('fresh-' + i, { region: '충남 천안시' }));
@@ -398,6 +441,7 @@ test('API refresh escapes an exhausted nearby pool and produces a stable wider u
   const first = await runApi(tables, { atTime: now + 1 });
   assert.equal(first.response.status, 200);
   const page = first.body.items[0];
+  assert.equal(page.recommendation_region_widened, true);
   assert.equal(page.recommendations.length, 10);
   assert.ok(page.recommendations.every(c => c.region === '부산' && !seen.has(c.user_id)));
   assert.equal(new Set([...page.recommendations, ...page.admin_recommendations].map(c => c.user_id)).size, 13);
@@ -460,6 +504,7 @@ test('API inserts eligible new regional profiles on read without touching usage 
   const result = await runApi(tables, { atTime: now });
   const after = result.body.items[0];
   assert.ok(ids(after.recommendations).includes('c6'));
+  assert.equal(after.recommendations[0].id, 'c6', 'new compatible nearby member is prioritized on ordinary GET');
   assert.equal(after.recommendations.some(c => c.id === 'c7'), false, 'an already-seen recreated card is not a new registration');
   assert.equal(allCandidates(result.body).some(c => ['c0', 'c1', 'c2', 'c3', 'c4', 'c5'].includes(c.id)), false);
   assert.equal(after.refresh_remaining, before.refresh_remaining);

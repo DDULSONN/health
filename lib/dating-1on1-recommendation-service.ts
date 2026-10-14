@@ -28,6 +28,7 @@ import {
   takeBalancedRecommendations,
   takeObservedRecommendations,
   observedCandidateIdsAt,
+  hasWiderRecommendationRegion,
 } from "@/lib/dating-1on1-recommendations";
 import type { createAdminClient } from "@/lib/supabase/server";
 import { getKstDateString } from "@/lib/weekly";
@@ -544,14 +545,22 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       };
       return NextResponse.json({ plan });
     }
-    return NextResponse.json({ items: items.map((item) => ({
-      ...item,
-      favorite_candidates: hydrate(item.favorite_candidates),
-      recommendations: hydrate(item.recommendations),
-      admin_recommendations: hydrate(item.admin_recommendations),
-      impression_ticket: impressionResult?.available ? createImpressionTicket(user.id, item.source_card_id,
-        hydrate([...item.recommendations, ...item.admin_recommendations]).map(card => card.id), nowMs) : null,
-    })) });
+    return NextResponse.json({ items: items.map((item) => {
+      const recommendations = hydrate(item.recommendations);
+      const adminRecommendations = hydrate(item.admin_recommendations);
+      const visibleCandidates = [...recommendations, ...adminRecommendations];
+      const source = mySourceCards.find(card => card.id === item.source_card_id);
+      return {
+        ...item,
+        favorite_candidates: hydrate(item.favorite_candidates),
+        recommendations,
+        admin_recommendations: adminRecommendations,
+        // Compute after final status/identity checks so removed cards cannot trigger the notice.
+        recommendation_region_widened: source ? hasWiderRecommendationRegion(source, visibleCandidates) : false,
+        impression_ticket: impressionResult?.available ? createImpressionTicket(user.id, item.source_card_id,
+          visibleCandidates.map(card => card.id), nowMs) : null,
+      };
+    }) });
   } catch (error) {
     console.error("[GET /api/dating/1on1/recommendations/my] details failed", error);
     return NextResponse.json({ error: "Failed to load recommendation details." }, { status: 500 });

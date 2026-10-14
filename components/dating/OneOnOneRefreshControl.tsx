@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
-import { buildOneOnOneRefreshConfirmation, getOneOnOneRefreshCopy, ONE_ON_ONE_REFRESH_POLICY_COPY, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
+import { buildOneOnOneRefreshConfirmation, getOneOnOneRefreshCopy, ONE_ON_ONE_REFRESH_POLICY_COPY, ONE_ON_ONE_WIDER_REGION_COPY, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
 
 export type OneOnOneRefreshNotice = { sourceCardId: string; kind: "success" | "error"; message: string };
 type Confirmation = { message: string; resolve: (confirmed: boolean) => void };
@@ -81,6 +81,9 @@ export default function OneOnOneRefreshControl({ usage, busy, blocked = false, n
       <p className="text-xs leading-5 text-neutral-600">보상 새로고침 {usage.refresh_bonus_remaining}회 포함 · 사용 전까지 유지</p>
     )}
     {copy.next && <p className="text-xs leading-5 text-neutral-600">{copy.next}</p>}
+    {usage?.recommendation_region_widened === true && (
+      <p className="text-xs leading-5 text-neutral-500">{ONE_ON_ONE_WIDER_REGION_COPY}</p>
+    )}
     <details className="text-xs leading-5 text-neutral-500">
       <summary className="w-fit cursor-pointer py-1 underline decoration-neutral-300 underline-offset-4">새로고침 이용 안내</summary>
       <p className="mt-1">{copy.summary} {ONE_ON_ONE_REFRESH_POLICY_COPY}</p>

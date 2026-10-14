@@ -42,6 +42,7 @@ type OneOnOneCardPreview = {
 };
 
 type OneOnOneRecommendationGroup = {
+  recommendation_region_widened?: boolean;
   impression_ticket?: string | null;
   expansion_enabled?: boolean;
   source_card_id?: string;
