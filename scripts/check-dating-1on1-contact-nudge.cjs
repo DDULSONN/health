@@ -73,13 +73,13 @@ const match = (overrides = {}) => ({
   created_at: new Date(fixedNow - 72 * hour).toISOString(), ...overrides,
 });
 
-test("24-hour threshold opens at the exact boundary, never at 23:59:59.999", () => {
-  assert.equal(helpers.ONE_ON_ONE_CONTACT_NUDGE_DELAY_HOURS, 24);
-  assert.equal(helpers.ONE_ON_ONE_CONTACT_NUDGE_DELAY_MS, 24 * hour);
-  for (const elapsed of [24 * hour - 1, 24 * hour, 24 * hour + 1, 30 * hour, 48 * hour]) {
+test("immediate threshold opens at mutual acceptance, never before it", () => {
+  assert.equal(helpers.ONE_ON_ONE_CONTACT_NUDGE_DELAY_HOURS, 0);
+  assert.equal(helpers.ONE_ON_ONE_CONTACT_NUDGE_DELAY_MS, 0);
+  for (const elapsed of [-1, 0, 1, 24 * hour - 1, 24 * hour, 30 * hour, 48 * hour]) {
     const result = helpers.getOneOnOneContactNudgeEligibility(match({source_final_responded_at: new Date(fixedNow-elapsed).toISOString()}));
-    assert.equal(result.eligible, elapsed >= 24 * hour);
-    assert.equal(result.eligibleAt, new Date(fixedNow-elapsed+24*hour).toISOString());
+    assert.equal(result.eligible, elapsed >= 0);
+    assert.equal(result.eligibleAt, new Date(fixedNow-elapsed).toISOString());
   }
 });
 
@@ -114,10 +114,10 @@ function loadFile(file, overrides) {
   return mod.exports;
 }
 
-for (const scenario of ["before24", "at24", "after30", "blocked", "paid", "canceled", "stranger", "anonymous", "duplicate", "databaseRace"]) {
+for (const scenario of ["future", "before24", "at24", "after30", "legacyPolicy", "blocked", "paid", "canceled", "stranger", "anonymous", "duplicate", "databaseRace"]) {
   test(`actual send API: ${scenario}`,async()=>{
     let inserts=0,notifications=0,emails=0;
-    const row=match(scenario==="before24"?{source_final_responded_at:new Date(fixedNow-24*hour+1).toISOString()}:scenario==="after30"?{source_final_responded_at:new Date(fixedNow-30*hour).toISOString()}:scenario==="paid"?{contact_exchange_paid_at:new Date(fixedNow).toISOString()}:scenario==="canceled"?{state:"admin_canceled"}:{});
+    const row=match(scenario==="future"?{source_final_responded_at:new Date(fixedNow+1).toISOString()}:["before24","legacyPolicy"].includes(scenario)?{source_final_responded_at:new Date(fixedNow).toISOString()}:scenario==="after30"?{source_final_responded_at:new Date(fixedNow-30*hour).toISOString()}:scenario==="paid"?{contact_exchange_paid_at:new Date(fixedNow).toISOString()}:scenario==="canceled"?{state:"admin_canceled"}:{});
     const db={from(table){let patch;const q={select(){return q;},eq(){return q;},maybeSingle(){return q;},single(){return q;},insert(value){patch=value;inserts++;return q;},then(ok,bad){return Promise.resolve().then(()=>{
       if(table==="dating_1on1_match_proposals")return {data:row,error:null};
       if(table==="dating_1on1_cards")return {data:{name:"매칭 이름"},error:null};
@@ -129,6 +129,7 @@ for (const scenario of ["before24", "at24", "after30", "blocked", "paid", "cance
     }).then(ok,bad);}};return q;}};
     const route=loadFile("app/api/dating/1on1/matches/[id]/nudge/route.ts",{
       "@/lib/dating-1on1-contact-nudge":helpers,
+      "@/lib/dating-1on1-contact-nudge-policy":{loadOneOnOneContactNudgeDelayHours:async()=>scenario==="legacyPolicy"?24:0},
       "@/lib/dating-blocks":{hasDatingBlockBetween:async()=>scenario==="blocked"},
       "@/lib/dating-contact-blocks":{hasDatingContactPhoneBlockBetween:async()=>false},
       "@/lib/dating-notifications":{notifyDatingUser:async(_db,payload)=>{notifications++;assert.match(payload.title,/매칭 이름님이/);assert.equal(payload.meta.match_id,"match");}},
@@ -139,17 +140,17 @@ for (const scenario of ["before24", "at24", "after30", "blocked", "paid", "cance
       "@/lib/dating-swipe":{sendDatingEmailNotification:async(_db,id,subject,text)=>{emails++;assert.equal(id,"candidate");assert.match(subject,/매칭 이름님이/);assert.ok(text.includes("첫 커피는 제가 살게요 ☕"));return true;}},
     });
     const res=await route.POST(new Request("https://example.test/nudge",{method:"POST",body:JSON.stringify({presetKey:"coffee_on_me"})}),{params:Promise.resolve({id:"match"})});
-    const success=["at24","after30"].includes(scenario);
+    const success=["before24","at24","after30"].includes(scenario);
     assert.equal(res.status,success?200:scenario==="stranger"?403:scenario==="anonymous"?401:409);
     assert.equal(notifications,success?1:0);assert.equal(emails,success?1:0);
     assert.equal(inserts,success||["duplicate","databaseRace"].includes(scenario)?1:0);
-    if(scenario==="before24")assert.match((await res.json()).error,/24시간/);
+    if(scenario==="legacyPolicy")assert.match((await res.json()).error,/24시간/);
   });
 }
 
-for(const scenario of ["before24","at24","after30","alreadySent","approved","schemaMissing","blocked"]){
+for(const scenario of ["before24","at24","after30","legacyPolicy","alreadySent","approved","schemaMissing","blocked"]){
   test(`actual matching list response: ${scenario}`,async()=>{
-    const row=match(scenario==="before24"?{source_final_responded_at:new Date(fixedNow-24*hour+1).toISOString()}:scenario==="after30"?{source_final_responded_at:new Date(fixedNow-30*hour).toISOString()}:scenario==="approved"?{contact_exchange_status:"approved",contact_exchange_approved_at:new Date(fixedNow-47*hour).toISOString()}:{});
+    const row=match(["before24","legacyPolicy"].includes(scenario)?{source_final_responded_at:new Date(fixedNow).toISOString()}:scenario==="after30"?{source_final_responded_at:new Date(fixedNow-30*hour).toISOString()}:scenario==="approved"?{contact_exchange_status:"approved",contact_exchange_approved_at:new Date(fixedNow-47*hour).toISOString()}:{});
     const sent={match_id:"match",sender_user_id:"source",recipient_user_id:"candidate",preset_key:"coffee_on_me",message_text:"기존 한마디 ☕",created_at:new Date(fixedNow-2*hour).toISOString()};
     const db={from(table){let states;const q={select(){return q;},or(){return q;},order(){return q;},range(){return q;},in(key,values){if(key==="state")states=values;return q;},then(ok,bad){return Promise.resolve().then(()=>{
       if(table==="dating_1on1_match_proposals")return {data:states.includes(row.state)?[row]:[],error:null};
@@ -158,6 +159,7 @@ for(const scenario of ["before24","at24","after30","alreadySent","approved","sch
     }).then(ok,bad);}};return q;}};
     const route=loadFile("app/api/dating/1on1/matches/my/route.ts",{
       "@/lib/dating-1on1-contact-nudge":helpers,
+      "@/lib/dating-1on1-contact-nudge-policy":{loadOneOnOneContactNudgeDelayHours:async()=>scenario==="legacyPolicy"?24:0},
       "@/lib/dating-1on1":{getDatingOneOnOneCardsByIds:async()=>new Map([["source-card",{name:"본인"}],["candidate-card",{name:"상대"}]]),getDatingOneOnOneCardPhonesByIds:async(_db,ids)=>{if(scenario!=="approved")assert.deepEqual(ids,[]);return new Map();}},
       "@/lib/supabase/server":{createAdminClient:()=>db},
       "@/lib/supabase/request":{getRequestAuthContext:async()=>({user:{id:"source"}})},
@@ -167,18 +169,18 @@ for(const scenario of ["before24","at24","after30","alreadySent","approved","sch
     const res=await route.GET(new Request("https://example.test/matches/my"));assert.equal(res.status,200);
     const {items}=await res.json();
     if(scenario==="blocked"){assert.deepEqual(items,[]);return;}
-    assert.equal(items[0].contact_nudge.can_send,["at24","after30"].includes(scenario));
+    assert.equal(items[0].contact_nudge.can_send,["before24","at24","after30"].includes(scenario));
     assert.equal(items[0].counterparty_phone,scenario==="approved"?"01000000002":null);
     if(scenario==="alreadySent")assert.equal(items[0].contact_nudge.sent_by_me.message_text,sent.message_text);
   });
 }
 
-test("shared UI uses 24 hours; paid/sent/hidden summaries do not reopen the send button",()=>{
+test("shared UI offers an optional preset; paid/sent/hidden summaries do not reopen the send button",()=>{
   const React=require("react"),{renderToStaticMarkup}=require("react-dom/server");
   const Component=loadFile("components/dating/OneOnOneContactNudge.tsx",{"@/lib/dating-1on1-contact-nudge":helpers}).default;
   const render=nudge=>renderToStaticMarkup(React.createElement(Component,{matchId:"match",nudge,processing:false,onSend(){throw Error("Must not send while rendering");}}));
   const visible=render({available:true,can_send:true});
-  assert.match(visible,/24시간/);assert.doesNotMatch(visible,/48시간/);assert.match(visible,/한마디 보내기/);
+  assert.match(visible,/선택 사항/);assert.doesNotMatch(visible,/[0248]+시간/);assert.match(visible,/한마디 보내기/);
   assert.equal(render({available:true,can_send:false}),"");
   assert.equal(render({available:false,can_send:true}),"");
   assert.doesNotMatch(render({available:true,can_send:false,sent_by_me:{message_text:"이미 보낸 문구"}}),/한마디 보내기/);

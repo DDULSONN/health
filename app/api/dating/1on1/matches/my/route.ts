@@ -18,6 +18,7 @@ import {
   normalizeDatingContactPhone,
 } from "@/lib/dating-contact-blocks";
 import { NextResponse } from "next/server";
+import { loadOneOnOneContactNudgeDelayHours } from "@/lib/dating-1on1-contact-nudge-policy";
 
 const MY_MATCH_BATCH_SIZE = 500;
 const CLOSED_MATCH_LIMIT = 80;
@@ -185,6 +186,8 @@ export async function GET(req: Request) {
     }
   }
 
+  const nudgeDelayHours = nudgeSchemaAvailable && rows.some((row) => row.state === "mutual_accepted" && row.contact_exchange_status === "awaiting_applicant_payment")
+    ? await loadOneOnOneContactNudgeDelayHours(admin) : 24;
   const nudgesByMatchId = new Map<string, ContactNudgeRow[]>();
   for (const nudge of nudgeRows) {
     const items = nudgesByMatchId.get(nudge.match_id) ?? [];
@@ -207,7 +210,7 @@ export async function GET(req: Request) {
       const nudges = nudgesByMatchId.get(row.id) ?? [];
       const sentByMe = nudges.find((nudge) => nudge.sender_user_id === user.id) ?? null;
       const receivedFromOther = nudges.find((nudge) => nudge.recipient_user_id === user.id) ?? null;
-      const nudgeEligibility = getOneOnOneContactNudgeEligibility(row);
+      const nudgeEligibility = getOneOnOneContactNudgeEligibility(row, Date.now(), nudgeDelayHours);
       return {
         ...row,
         role,

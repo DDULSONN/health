@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { buildOneOnOneRefreshConfirmation, getOneOnOneRefreshCopy, ONE_ON_ONE_REFRESH_POLICY_COPY, ONE_ON_ONE_WIDER_REGION_COPY, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
+import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
+import { shouldOfferOneOnOnePlus } from "@/lib/dating-1on1-refresh-copy";
 
 export type OneOnOneRefreshNotice = { sourceCardId: string; kind: "success" | "error"; message: string };
 type Confirmation = { message: string; resolve: (confirmed: boolean) => void };
@@ -57,13 +59,15 @@ export function useOneOnOneRefreshConfirmation() {
   return { confirmOneOnOneRefresh, refreshConfirmationDialog };
 }
 
-export default function OneOnOneRefreshControl({ usage, busy, blocked = false, notice, onRequest }: {
+export default function OneOnOneRefreshControl({ usage, busy, blocked = false, notice, onRequest, plusOffer }: {
   usage?: OneOnOneRefreshUsage | null;
   busy: boolean;
   blocked?: boolean;
   notice?: OneOnOneRefreshNotice | null;
   onRequest: () => void;
+  plusOffer?: { cardId: string; active: boolean };
 }) {
+  const [offerOpen, setOfferOpen] = useState(false);
   const copy = getOneOnOneRefreshCopy(usage);
   const ready = usage?.can_refresh === true;
   const remaining = typeof usage?.refresh_remaining === "number" && Number.isSafeInteger(usage.refresh_remaining) && usage.refresh_remaining >= 0
@@ -81,6 +85,18 @@ export default function OneOnOneRefreshControl({ usage, busy, blocked = false, n
       <p className="text-xs leading-5 text-neutral-600">보상 새로고침 {usage.refresh_bonus_remaining}회 포함 · 사용 전까지 유지</p>
     )}
     {copy.next && <p className="text-xs leading-5 text-neutral-600">{copy.next}</p>}
+    {plusOffer?.cardId && !busy && shouldOfferOneOnOnePlus(usage, plusOffer.active) ? (
+      <div className="rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2">
+        <button type="button" aria-expanded={offerOpen} onClick={() => setOfferOpen((open) => !open)}
+          className="flex min-h-[44px] w-full items-center justify-between gap-2 text-left text-xs text-neutral-700">
+          <span>플러스는 최근 24시간 2회 · 7일 9,900원</span><span className="shrink-0 font-semibold">{offerOpen ? "닫기" : "혜택 보기"}</span>
+        </button>
+        {offerOpen ? <div className="pb-1 pt-2">
+          <p className="mb-2 text-[11px] leading-5 text-neutral-500">기본 1회에 1회가 더해져 최대 2회예요. 사용한 횟수는 유지되며, 새 후보가 부족할 수 있어요.</p>
+          <DatingPlusOffers mode="one_on_one" placement="one_on_one_refresh_limit" oneOnOneCardId={plusOffer.cardId} />
+        </div> : null}
+      </div>
+    ) : null}
     {usage?.recommendation_region_widened === true && (
       <p className="text-xs leading-5 text-neutral-500">{ONE_ON_ONE_WIDER_REGION_COPY}</p>
     )}

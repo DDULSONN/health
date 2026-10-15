@@ -147,16 +147,17 @@ function api({ user = "user-1", owner = "user-1", originBlocked = false, orderEr
       select(fields) { queries.push({ table, fields, filters }); return builder; },
       eq(key, value) { filters.push([key, value]); return builder; },
       gte(key, value) { filters.push([key, value]); return builder; },
+      abortSignal() { return builder; },
       async maybeSingle() {
         assert.equal(table, "toss_test_payment_orders");
         assert.ok(filters.some(([key, value]) => key === "user_id" && value === user));
         assert.ok(filters.some(([key]) => key === "created_at"));
         return { data: owner === user && !oldOrder ? { id: "order-uuid", product_type: "paid_card", status } : null, error: orderError ? { code: "XX000" } : null };
       },
-      async upsert(row, options) {
+      upsert(row, options) {
         assert.equal(table, "payment_checkout_failures", "Order ledger writes are forbidden");
         writes.push({ row, options });
-        return { error: insertError ? { code: "42P01" } : null };
+        return { abortSignal: async () => ({ error: insertError ? { code: "42P01" } : null }) };
       },
     };
     return builder;
@@ -175,8 +176,8 @@ test("unauthenticated, cross-origin and other-user reports cannot write or revea
   for (const options of [{ user: null }, { originBlocked: true }, { owner: "another-user" }, { oldOrder: true }, { orderError: true }]) {
     const route = api(options);
     const result = await route.POST(request());
-    assert.equal(result.status, options.originBlocked ? 403 : 204);
-    assert.equal(await result.text(), "");
+    assert.equal(result.status, options.originBlocked ? 403 : options.orderError ? 503 : 204);
+    if (!options.orderError) assert.equal(await result.text(), "");
     assert.equal(route.writes.length, 0);
   }
 });
@@ -209,7 +210,7 @@ test("user cancellation is not counted as card failure; paid orders are never ov
 
 test("missing diagnostic table does not break recovery", async () => {
   const route = api({ insertError: true });
-  assert.equal((await route.POST(request())).status, 204);
+  assert.equal((await route.POST(request())).status, 503);
 });
 
 function client({ storageBroken = false, networkBroken = false } = {}) {
@@ -222,7 +223,7 @@ function client({ storageBroken = false, networkBroken = false } = {}) {
     fetch: async (url, init) => {
       calls.push({ url, init });
       if (networkBroken) throw new Error("offline");
-      return new Response(null, { status: 204 });
+      return Response.json({ recorded: true });
     },
   });
   return { ...reporter, calls };
@@ -260,6 +261,7 @@ test("both contact checkout surfaces use the shared offer; free exchanges remain
   }
   assert.ok(source("app/mypage/page.tsx").includes("included={plusContactExchangeIncluded}"));
   assert.ok(source("components/dating/OneOnOneContactOffer.tsx").includes("!included && <PaymentCardNotice"));
+  assert.ok(source("components/dating/OneOnOneContactOffer.tsx").includes('compact={compact}'));
 });
 
 test("PostgreSQL migration is idempotent, private, deduplicated and leaves payment state alone", { skip: !process.env.PAYMENT_RECOVERY_PGLITE_PATH }, async () => {

@@ -1,4 +1,6 @@
 begin;
+set local lock_timeout = '3s';
+set local statement_timeout = '15s';
 
 -- Browser-reported diagnostics, NOT an authoritative payment ledger.
 create table if not exists public.payment_checkout_failures (

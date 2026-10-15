@@ -6,6 +6,7 @@ import OneOnOneContactNudge, { ReceivedContactNudge } from "@/components/dating/
 import type { OneOnOneContactNudgePresetKey, OneOnOneContactNudgeSummary } from "@/lib/dating-1on1-contact-nudge";
 import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
 import { isContactIntroOffer, type ContactIntroOffer } from "@/lib/contact-intro-offer";
+import { useContactPaymentTracking } from "@/lib/use-contact-payment-tracking";
 
 type Props = {
   matchId: string;
@@ -17,9 +18,10 @@ type Props = {
   onExchange: (matchId: string, offerId?: string) => void;
   onNudge: (matchId: string, preset: OneOnOneContactNudgePresetKey) => void;
   help?: ReactNode;
+  compact?: boolean;
 };
 
-export default function OneOnOneContactOffer({ matchId, name, included, processing, nudge, nudgeProcessing, onExchange, onNudge, help }: Props) {
+export default function OneOnOneContactOffer({ matchId, name, included, processing, nudge, nudgeProcessing, onExchange, onNudge, help, compact = false }: Props) {
   const [offer, setOffer] = useState<ContactIntroOffer | null>(null);
   useEffect(() => {
     if (included) return;
@@ -47,15 +49,16 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
   // silently charging 20,000. No member information is cached across accounts.
   const discount = !included && offer?.matchId === matchId ? offer : null;
   const amount = discount?.amount ?? ONE_ON_ONE_CONTACT_PRICE_KRW;
+  const { buttonRef, trackClick } = useContactPaymentTracking(matchId, amount, !included && !processing);
   return (
     <div className="min-w-0">
-      <p className="break-words text-sm font-semibold text-neutral-900">
+      {!compact ? <p className="break-words text-sm font-semibold text-neutral-900">
         {name?.trim() ? `${name.trim()}님과 서로 수락했어요` : "서로 수락했어요"}
-      </p>
+      </p> : null}
       <p className="mt-1 text-xs leading-5 text-neutral-600">
-        {included ? "기존 플러스 혜택으로 추가 결제 없이 연락처를 교환할 수 있어요." : "결제 완료 후 서로의 연락처가 공개돼요."}
+        {included ? "기존 플러스 혜택으로 추가 결제 없이 연락처를 교환할 수 있어요." : compact ? "서로 수락했어요. 결제 후 연락처가 공개돼요." : "결제 완료 후 서로의 연락처가 공개돼요."}
       </p>
-      {!included && <PaymentCardNotice className="mt-2" />}
+      {!included && <PaymentCardNotice className="mt-2" compact={compact} />}
       {nudge?.available && nudge.received_from_other ? (
         <div className="mt-3 rounded-xl border border-neutral-200 bg-white p-3">
           <ReceivedContactNudge item={nudge.received_from_other} />
@@ -65,7 +68,11 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
         {discount.active ? <>첫 교환 25% 할인 <span className="ml-1 font-normal text-neutral-400 line-through">20,000원</span>
           <span className="ml-1 font-normal text-neutral-500">· {new Date(discount.expiresAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}까지</span></> : "진행 중인 할인 주문 · 기존 금액 유지"}
       </p> : null}
-      <button type="button" disabled={processing} onClick={() => onExchange(matchId, discount?.offerId)}
+      <button ref={buttonRef} type="button" disabled={processing} onClick={() => {
+        // Measurement is fire-and-forget; it must never gate payment or free exchanges.
+        trackClick();
+        onExchange(matchId, discount?.offerId);
+      }}
         className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-[#f0003d] px-3 py-2 text-sm font-semibold text-white hover:bg-[#d90037] disabled:opacity-50">
         {processing ? (included ? "교환 중..." : "결제 준비 중...") : included ? "무료로 번호교환" : `연락처 교환 · ${amount.toLocaleString("ko-KR")}원`}
       </button>
@@ -76,7 +83,7 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
           {help}
         </details>
       ) : null}
-      <OneOnOneContactNudge matchId={matchId} nudge={nudge} hideReceived processing={nudgeProcessing} onSend={onNudge} />
+      <OneOnOneContactNudge matchId={matchId} nudge={nudge} hideReceived compact={compact} processing={nudgeProcessing} onSend={onNudge} />
     </div>
   );
 }

@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import {
-  ONE_ON_ONE_CONTACT_NUDGE_DELAY_HOURS,
   ONE_ON_ONE_CONTACT_NUDGE_PRESETS,
   type OneOnOneContactNudgePresetKey,
   type OneOnOneContactNudgeSummary,
@@ -15,6 +14,7 @@ type Props = {
   processing: boolean;
   onSend: (matchId: string, presetKey: OneOnOneContactNudgePresetKey) => void;
   hideReceived?: boolean;
+  compact?: boolean;
 };
 
 export function ReceivedContactNudge({ item }: { item: OneOnOneContactNudgeItem }) {
@@ -26,7 +26,7 @@ export function ReceivedContactNudge({ item }: { item: OneOnOneContactNudgeItem 
   </>;
 }
 
-export default function OneOnOneContactNudge({ matchId, nudge, processing, onSend, hideReceived = false }: Props) {
+export default function OneOnOneContactNudge({ matchId, nudge, processing, onSend, hideReceived = false, compact = false }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
 
   if (!nudge?.available) return null;
@@ -35,7 +35,7 @@ export default function OneOnOneContactNudge({ matchId, nudge, processing, onSen
   if (!hasContent) return null;
 
   return (
-    <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50/70 p-3">
+    <div className={compact ? "mt-2 border-t border-neutral-100 pt-2" : "mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3"}>
       {received ? (
         <div className="rounded-xl bg-white px-3 py-2.5">
           <ReceivedContactNudge item={received} />
@@ -44,28 +44,30 @@ export default function OneOnOneContactNudge({ matchId, nudge, processing, onSen
 
       {nudge.sent_by_me ? (
         <div className={received ? "mt-2" : ""}>
-          <p className="text-xs font-bold text-amber-900">상대에게 한마디를 보냈어요.</p>
-          <p className="mt-1 text-xs leading-5 text-amber-800">“{nudge.sent_by_me.message_text}”</p>
-          <p className="mt-1 text-[11px] text-amber-700">같은 매칭에서는 한 번만 보낼 수 있어요.</p>
+          <p className="text-xs font-semibold text-neutral-800">상대에게 한마디를 보냈어요.</p>
+          <p className="mt-1 text-xs leading-5 text-neutral-600">“{nudge.sent_by_me.message_text}”</p>
+          <p className="mt-1 text-[11px] text-neutral-500">같은 매칭에서는 한 번만 보낼 수 있어요.</p>
         </div>
       ) : nudge.can_send ? (
         <>
           <div className={received ? "mt-2" : ""}>
-            <p className="text-xs font-black text-amber-950">연락처 교환 한마디</p>
-            <p className="mt-1 text-[11px] leading-5 text-amber-800">
-              쌍방 수락 후 {ONE_ON_ONE_CONTACT_NUDGE_DELAY_HOURS}시간이 지났어요. 부담 없는 문구를 한 번 보낼 수 있습니다.
-            </p>
+            {!compact ? <p className="text-xs font-semibold text-neutral-900">먼저 한마디 건네볼까요?</p> : null}
+            {!compact ? <p className="mt-1 text-[11px] leading-5 text-neutral-500">
+              연락처 교환 전에 정해진 문구를 한 번 보낼 수 있어요. 선택 사항이에요.
+            </p> : null}
             <button
               type="button"
               onClick={() => setPickerOpen((open) => !open)}
               disabled={processing}
-              className="mt-2 inline-flex min-h-[38px] items-center rounded-xl bg-amber-700 px-3 text-xs font-black text-white disabled:opacity-50"
+              aria-expanded={pickerOpen}
+              className="mt-2 inline-flex min-h-[44px] items-center rounded-lg border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-700 disabled:opacity-50"
             >
               {processing ? "보내는 중..." : pickerOpen ? "문구 닫기" : "한마디 보내기"}
             </button>
+            {compact ? <span className="ml-2 text-[11px] text-neutral-500">선택 · 매칭당 1회</span> : null}
           </div>
           {pickerOpen ? (
-            <div className="mt-3 space-y-2 border-t border-amber-200 pt-3">
+            <div className="mt-3 space-y-2 border-t border-neutral-200 pt-3">
               <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-bold leading-5 text-rose-700">
                 연락처 교환 후 잠수하거나 상대방에게 불쾌한 언행을 할 경우 제재 대상입니다.
               </p>
@@ -83,7 +85,7 @@ export default function OneOnOneContactNudge({ matchId, nudge, processing, onSen
                     setPickerOpen(false);
                     onSend(matchId, preset.key);
                   }}
-                  className="block min-h-[42px] w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-left text-xs font-bold leading-5 text-neutral-800 hover:bg-amber-50 disabled:opacity-50"
+                  className="block min-h-[44px] w-full rounded-xl border border-neutral-200 bg-white px-3 py-2 text-left text-xs font-medium leading-5 text-neutral-800 hover:bg-neutral-100 disabled:opacity-50"
                 >
                   {preset.message}
                 </button>

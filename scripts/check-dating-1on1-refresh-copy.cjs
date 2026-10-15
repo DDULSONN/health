@@ -178,7 +178,7 @@ for (const remaining of [0, 1, 2]) test(`real home result markup shows ${remaini
   const call = find(source, n => ts.isCallExpression(n) && n.expression.getText(source) === 'recommendationGroups.map');
   const render = evaluate('exports.render = ' + call.arguments[0].getText(source) + ';', {
     ...copy, activeCards: [], refreshingRecommendationIds: [], onRefreshRecommendations() {},
-    OneOnOneRefreshControl: 'RefreshControl', refreshNotice: null,
+    OneOnOneRefreshControl: 'RefreshControl', refreshNotice: null, plusActive: false,
     OneOnOneExpansionPanel: 'ExpansionPanel', processingAutoKeys: [], onReported() {}, onAutoSelect() {},
   }).render;
   const tree = render({ ...quota(remaining), recommendations: [], admin_recommendations: [] }, 0);
@@ -194,7 +194,7 @@ for (const remaining of [0, 1]) test(`real mypage refresh button preserves avail
   const tree = evaluate('exports.tree = ' + node.getText(source) + ';', {
     item: { id: 'fixture-card' }, handleRefreshOneOnOneRecommendations() {},
     canRefreshAutoRecommendations: remaining > 0, refreshingAutoRecommendations: false,
-    oneOnOneRefreshReadError: '',
+    oneOnOneRefreshReadError: '', priorityBoostActive: false,
     OneOnOneRefreshControl: 'RefreshControl', autoRecommendationGroup: quota(remaining), oneOnOneRefreshNotice: null,
   }).tree;
   assert.equal(tree.props.blocked, remaining === 0);
@@ -211,7 +211,7 @@ test('all affected customer copy drops ambiguous calendar-day/completion wording
 
 const controlSource = ast('components/dating/OneOnOneRefreshControl.tsx');
 const controlFn = find(controlSource, n => ts.isFunctionDeclaration(n) && n.name?.text === 'OneOnOneRefreshControl');
-const renderControl = evaluate('exports.render = ' + controlFn.getText(controlSource).replace('export default ', '') + ';', copy).render;
+const renderControl = evaluate('exports.render = ' + controlFn.getText(controlSource).replace('export default ', '') + ';', { ...copy, useState: value => [value, () => {}] }).render;
 test('wider-region notice is compact, read-only, and absent on local or legacy responses', () => {
   for (const widened of [undefined, false, true, 'true', 1]) {
     const tree = renderControl({ usage: { ...quota(), recommendation_region_widened: widened }, busy: false, onRequest() {} });

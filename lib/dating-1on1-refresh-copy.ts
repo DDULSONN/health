@@ -16,6 +16,12 @@ export const ONE_ON_ONE_REFRESH_POLICY_COPY =
 export const ONE_ON_ONE_WIDER_REGION_COPY =
   "주변 새 후보가 적어 지역을 넓혔어요. 가까운 새 후보는 우선 추천해요.";
 
+// Disabled can mean loading/error/invalid card, not just an exhausted allowance.
+export function shouldOfferOneOnOnePlus(usage: OneOnOneRefreshUsage | null | undefined, plusActive: boolean) {
+  return !plusActive && usage?.refresh_limit === 1 && usage.refresh_remaining === 0 && usage.can_refresh === false &&
+    (usage.refresh_bonus_remaining ?? 0) === 0;
+}
+
 function count(value: unknown, minimum = 0): number | null {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= minimum ? value : null;
 }

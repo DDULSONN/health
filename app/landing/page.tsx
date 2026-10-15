@@ -17,18 +17,18 @@ export const metadata: Metadata = {
 const differences = [
   {
     no: "01",
-    title: "프로필보다 분위기",
-    description: "사진과 소개를 보고, 어떤 사람인지 먼저 느껴봅니다.",
+    title: "마음에 드는 사람에게 먼저",
+    description: "사진과 소개를 등록하고, 마음에 드는 후보에게 요청해 보세요.",
   },
   {
     no: "02",
-    title: "서로 마음이 있을 때",
-    description: "한쪽만 앞서가지 않게, 서로 관심이 생긴 뒤 이어집니다.",
+    title: "서로 수락하면 연락처 교환",
+    description: "1:1 요청을 주고받고, 서로 수락하면 연락처 교환으로 이어져요.",
   },
   {
     no: "03",
-    title: "천천히 보는 속도",
-    description: "바로 넘기기보다 보고, 생각하고, 마음이 가면 시작합니다.",
+    title: "오픈카드도 함께 이용",
+    description: "공개된 카드를 보고 지원하거나, 내 카드를 등록해 지원을 받아보세요.",
   },
 ];
 
@@ -168,8 +168,34 @@ export default async function LandingPage() {
               <Image className={styles.brandIcon} src="/icon-96x96.png" alt="" width={96} height={96} priority />
               <span>짐툴</span>
             </div>
-            <p className={styles.brandNote}>운동하는 사람 많은 소개팅</p>
+            <p className={styles.brandNote}>마음에 드는 사람에게 먼저, 짐툴</p>
           </header>
+
+          <section className={styles.reviewSection} aria-label="이용자 후기">
+            <div className={styles.reviewHeader}>
+              <strong>실제 리뷰</strong>
+            </div>
+            <div className={styles.reviewRail}>
+              <div className={styles.reviewTrack}>
+                <span className={styles.reviewSpacer} aria-hidden="true" />
+                {[...reviewProofs, ...reviewProofs].map((review, index) => (
+                  <article className={styles.reviewCard} key={`${review.src}-${index}`}>
+                    <Image
+                      className={styles.reviewImage}
+                      src={review.src}
+                      alt={`짐툴 실제 리뷰 스크린샷 ${(index % reviewProofs.length) + 1}`}
+                      width={review.width}
+                      height={review.height}
+                      sizes="(max-width: 820px) 74vw, 320px"
+                    />
+                  </article>
+                ))}
+              </div>
+            </div>
+            <p className={styles.reviewNote}>
+              리뷰 속 유기견은 인스타그램 크리에이터 일반사람이 쓰는 표현으로, 헬스는 열심히 하지만 아직 연애는 못 하고 있는 사람을 뜻하는 농담이에요.
+            </p>
+          </section>
 
           <div className={styles.heroBody}>
             <div className={styles.copyBlock}>
@@ -197,7 +223,7 @@ export default async function LandingPage() {
                   <li><span>2</span><strong>번호 인증</strong></li>
                   <li><span>3</span><strong>통합 프로필 작성</strong></li>
                 </ol>
-                <p>작성한 내용은 오픈카드와 1:1 매칭에 맞게 나누어 등록됩니다.</p>
+                <p>이용할 서비스를 선택해 등록해요. 1:1 프로필을 완성하면 추천 후보에게 바로 요청할 수 있어요.</p>
               </section>
               <div className={styles.ctaRow}>
                 <Link className={styles.primaryCta} href="/signup">
@@ -227,31 +253,6 @@ export default async function LandingPage() {
             </div>
           </div>
 
-          <section className={styles.reviewSection} aria-label="이용자 후기">
-            <div className={styles.reviewHeader}>
-              <strong>실제 리뷰</strong>
-            </div>
-            <div className={styles.reviewRail}>
-              <div className={styles.reviewTrack}>
-                <span className={styles.reviewSpacer} aria-hidden="true" />
-                {[...reviewProofs, ...reviewProofs].map((review, index) => (
-                  <article className={styles.reviewCard} key={`${review.src}-${index}`}>
-                    <Image
-                      className={styles.reviewImage}
-                      src={review.src}
-                      alt={`짐툴 실제 리뷰 스크린샷 ${(index % reviewProofs.length) + 1}`}
-                      width={review.width}
-                      height={review.height}
-                      sizes="(max-width: 820px) 74vw, 320px"
-                    />
-                  </article>
-                ))}
-              </div>
-            </div>
-            <p className={styles.reviewNote}>
-              리뷰 속 유기견은 인스타그램 크리에이터 일반사람이 쓰는 표현으로, 헬스는 열심히 하지만 아직 연애는 못 하고 있는 사람을 뜻하는 농담이에요.
-            </p>
-          </section>
         </div>
 
       </section>

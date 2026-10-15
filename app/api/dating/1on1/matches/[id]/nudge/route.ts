@@ -1,11 +1,11 @@
 import { NextResponse } from "next/server";
 import type { DatingOneOnOneMatchRow } from "@/lib/dating-1on1";
 import {
-  ONE_ON_ONE_CONTACT_NUDGE_DELAY_HOURS,
   buildOneOnOneContactNudgeEmail,
   getOneOnOneContactNudgeEligibility,
   getOneOnOneContactNudgeMessage,
 } from "@/lib/dating-1on1-contact-nudge";
+import { loadOneOnOneContactNudgeDelayHours } from "@/lib/dating-1on1-contact-nudge-policy";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { hasDatingContactPhoneBlockBetween } from "@/lib/dating-contact-blocks";
 import { notifyDatingUser } from "@/lib/dating-notifications";
@@ -66,11 +66,12 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     return NextResponse.json({ error: "이 매칭의 참여자만 문구를 보낼 수 있습니다." }, { status: 403 });
   }
 
-  const eligibility = getOneOnOneContactNudgeEligibility(match);
+  const delayHours = await loadOneOnOneContactNudgeDelayHours(admin);
+  const eligibility = getOneOnOneContactNudgeEligibility(match, Date.now(), delayHours);
   if (!eligibility.eligible) {
     return NextResponse.json(
       {
-        error: `쌍방 수락 후 ${ONE_ON_ONE_CONTACT_NUDGE_DELAY_HOURS}시간 동안 결제가 없을 때만 문구를 보낼 수 있습니다.`,
+        error: delayHours > 0 ? `쌍방 수락 후 ${delayHours}시간이 지나고 연락처 교환 전일 때 보낼 수 있어요.` : "서로 수락하고 아직 연락처를 교환하지 않은 매칭에만 보낼 수 있어요.",
         eligibleAt: eligibility.eligibleAt,
       },
       { status: 409 },

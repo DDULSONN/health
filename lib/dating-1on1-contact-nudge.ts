@@ -1,4 +1,4 @@
-export const ONE_ON_ONE_CONTACT_NUDGE_DELAY_HOURS = 24;
+export const ONE_ON_ONE_CONTACT_NUDGE_DELAY_HOURS = 0;
 export const ONE_ON_ONE_CONTACT_NUDGE_DELAY_MS = ONE_ON_ONE_CONTACT_NUDGE_DELAY_HOURS * 60 * 60 * 1000;
 
 export const ONE_ON_ONE_CONTACT_NUDGE_PRESETS = [
@@ -85,10 +85,10 @@ type ContactNudgeMatchState = {
   created_at?: string | null;
 };
 
-export function getOneOnOneContactNudgeEligibility(match: ContactNudgeMatchState, nowMs = Date.now()) {
+export function getOneOnOneContactNudgeEligibility(match: ContactNudgeMatchState, nowMs = Date.now(), delayHours = ONE_ON_ONE_CONTACT_NUDGE_DELAY_HOURS) {
   const basis = match.source_final_responded_at ?? match.updated_at ?? match.created_at ?? "";
   const basisMs = Date.parse(basis);
-  const eligibleAtMs = Number.isFinite(basisMs) ? basisMs + ONE_ON_ONE_CONTACT_NUDGE_DELAY_MS : Number.NaN;
+  const eligibleAtMs = Number.isFinite(basisMs) ? basisMs + delayHours * 60 * 60 * 1000 : Number.NaN;
   const unpaid = !match.contact_exchange_paid_at && !match.contact_exchange_paid_by_user_id;
   const pending =
     match.state === "mutual_accepted" &&

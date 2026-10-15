@@ -8493,7 +8493,15 @@ export default function MyPage() {
               }}
             />
           ) : null}
-          {oneOnOneMatchesLoaded ? <OneOnOneNextSteps matches={myOneOnOneMatches} /> : null}
+          {oneOnOneMatchesLoaded ? <OneOnOneNextSteps matches={myOneOnOneMatches} renderContact={(match) => {
+            const ownCard = myOneOnOneCards.find((card) => card.id === (match.role === "source" ? match.source_card_id : match.candidate_card_id));
+            // Do not advertise a paid price while legacy included benefits are still unknown.
+            return ownCard ? <OneOnOneContactOffer compact matchId={match.id} name={match.counterparty_card?.name}
+              included={ownCard.plus_contact_exchange_included === true} processing={processingOneOnOneContactExchangeIds.includes(match.id)}
+              nudge={match.contact_nudge} nudgeProcessing={processingOneOnOneNudgeIds.includes(match.id)}
+              onExchange={(id, offerId) => void handleRequestOneOnOneContactExchange(id, offerId)}
+              onNudge={(id, preset) => void handleOneOnOneContactNudge(id, preset)} /> : null;
+          }} /> : null}
           <AllPassProfileOfferBanner placement="mypage_matching_profile_complete" />
           <PaidRegistrationStatus state={paidRegistration} />
           <section className="mb-3 rounded-2xl border border-rose-100 bg-[#fffafb] p-4 shadow-[0_6px_20px_rgba(190,24,93,0.05)]">
@@ -8568,7 +8576,7 @@ export default function MyPage() {
             </div>
             {matchingDataLoaded && myDatingCards.some((card) => card.status === "pending") ? (
               <p className="mt-3 border-t border-rose-100 pt-3 text-[11px] leading-5 text-rose-700">
-                대기 없이 등록해도 현재 대기 중인 오픈카드는 삭제되거나 순번이 바뀌지 않습니다.
+                기다리는 동안 별도 유료 카드로 먼저 공개할 수 있어요. 기존 오픈카드의 대기 순번은 그대로 유지됩니다.
               </p>
             ) : null}
           </section>
@@ -10379,6 +10387,7 @@ export default function MyPage() {
                           </div>
                         </div>
                         <OneOnOneRefreshControl usage={autoRecommendationGroup} busy={refreshingAutoRecommendations}
+                          plusOffer={!oneOnOneRefreshReadError ? { cardId: item.id, active: priorityBoostActive } : undefined}
                           blocked={!canRefreshAutoRecommendations || Boolean(oneOnOneRefreshReadError)}
                           notice={oneOnOneRefreshNotice?.sourceCardId === item.id ? oneOnOneRefreshNotice : null}
                           onRequest={() => void handleRefreshOneOnOneRecommendations(item.id)} />
@@ -10789,7 +10798,7 @@ export default function MyPage() {
                                   <OneOnOneContactOffer matchId={match.id} name={card.name}
                                     included={plusContactExchangeIncluded} processing={contactProcessing}
                                     nudge={match.contact_nudge} nudgeProcessing={processingOneOnOneNudgeIds.includes(match.id)}
-                                    onExchange={(id) => void handleRequestOneOnOneContactExchange(id)}
+                                    onExchange={(id, offerId) => void handleRequestOneOnOneContactExchange(id, offerId)}
                                     onNudge={(id, preset) => void handleOneOnOneContactNudge(id, preset)}
                                     help={<p className="mt-1 break-words">다른 결제 방법은 <a href={OPEN_KAKAO_URL} target="_blank" rel="noreferrer" className="underline">오픈카톡으로 문의</a>해 주세요. 매칭 ID {match.id}</p>}
                                   />

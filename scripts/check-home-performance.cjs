@@ -151,7 +151,9 @@ test('1:1 view is a conditional dynamic import, not a static runtime import', ()
 // Impression tracking only replaces the existing article with the same DOM tag
 // and forwards a receipt; action, photo and checkout contracts stay unchanged.
 const movedFunctions = {
-  OneOnOneHomePanel: 'c2a82a5eb0f417ba2d1df28c3159675843085fab9316c8555c2e92c887ee421a',
+  // Reviewed top contact shortcut, contextual Plus entry and post-registration copy.
+  // Candidate/order/refresh/payment authority contracts are still pinned separately.
+  OneOnOneHomePanel: 'e0f812779b2705871ac6d387f22956baad67529c4d413c51dc61392913735c17',
   OneOnOneCandidateCard: 'ec822f2fd3159af9b2ce34520527e294c73a86cd8c5bbfd79eca906c2a37c8bd',
   OneOnOneMatchActions: '6408ac6467228e01cf370b4942e9d42f19e7e34b937ad4e701ba82e1d1cceab4',
   canCancelOneOnOneMatchPreview: '0ec3faad4e8701ea4622ea220af8ebaddaf725cfa52a70fc686b82a37444036c',

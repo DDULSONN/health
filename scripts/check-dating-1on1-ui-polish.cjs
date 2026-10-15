@@ -45,17 +45,17 @@ module.exports = { fingerprint, panelContract, files };
 if (require.main === module) {
   const baseline = JSON.parse(read('scripts/fixtures/one-on-one-ui-contract.json'));
   for (const [name, file] of Object.entries(files)) test('reviewed view contract: ' + name, () => {
-    // The intentional 10-pair pilot extends ONLY this checkout offer. Its quote,
-    // dispatch, free fallback, stale requests and layout have executable tests.
+    // Reviewed compact variant reuses the same quote/dispatch and free benefits.
+    // Browser + SQL tests cover top actions, preset sends and diagnostic failure.
     const expected = name === 'OneOnOneContactOffer'
-      ? '992ec6526b704f3bd17be02667b22c4ab3c4648622c23fc23c7784439b7bbc29'
+      ? '7e15b3fcec00c53a8a90aa6a3e67bb2724d9ef9b9c9de2eaa8ac462dbfced71d'
       // Same article/children/buttons, with a visibility-only observation hook.
       : name === 'OneOnOneCandidateCard' ? '31f6f4a089163a4631d1cd45be6017b561e93e9a69114a68d27ad2927a07d6e3' : baseline.functions[name];
     assert.equal(fingerprint(read(file), name), expected);
   });
   test('recommendation ordering, counters and existing action bindings remain unchanged', () => {
     // The resilience patch adds one explicit, GET-only recommendation retry.
-    const expected = { ...baseline.panel, callbacks: [...baseline.panel.callbacks, 'onClick={onReload}'].sort() };
+    const expected = { ...baseline.panel, callbacks: [...baseline.panel.callbacks, 'onClick={onReload}', 'onExchange={onContactCheckout}', 'onNudge={onContactNudge}'].sort() };
     assert.deepEqual(panelContract(read(files.OneOnOneCandidateCard)), expected);
   });
   test('candidate section is before profile/plus/sent history, after incoming requests', () => {

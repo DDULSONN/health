@@ -22,8 +22,10 @@ export async function POST(request: Request) {
       .eq("toss_order_id", orderId)
       .eq("user_id", user.id)
       .gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
+      .abortSignal(AbortSignal.timeout(4000))
       .maybeSingle();
-    if (order.error || !order.data) return new NextResponse(null, { status: 204 });
+    if (order.error) return NextResponse.json({ recorded: false }, { status: 503 });
+    if (!order.data) return new NextResponse(null, { status: 204 });
 
     // A browser callback is untrusted. Store separately, once per order, and
     // NEVER update an order, cancel a payment, or grant/revoke a matching benefit.
@@ -34,7 +36,7 @@ export async function POST(request: Request) {
       provider_code: code,
       outcome: code === "PAY_PROCESS_CANCELED" ? "user_canceled" : "failed",
       source: "client_redirect",
-    }, { onConflict: "order_id", ignoreDuplicates: true });
+    }, { onConflict: "order_id", ignoreDuplicates: true }).abortSignal(AbortSignal.timeout(4000));
     if (result.error) {
       // Keep a minimal fallback log during migration; no phone, email, card
       // details, provider message or payment key is collected.
@@ -42,9 +44,11 @@ export async function POST(request: Request) {
         orderId: order.data.id, productType: order.data.product_type, providerCode: code,
         storageCode: result.error.code,
       });
+      return NextResponse.json({ recorded: false }, { status: 503 });
     }
+    return NextResponse.json({ recorded: true }, { headers: { "Cache-Control": "private, no-store" } });
   } catch {
     // Analytics failure must never interfere with payment recovery.
+    return NextResponse.json({ recorded: false }, { status: 503 });
   }
-  return new NextResponse(null, { status: 204 });
 }

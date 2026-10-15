@@ -23,6 +23,7 @@ const nudge = load('lib/dating-1on1-contact-nudge.ts');
 const nudgeUI = load('components/dating/OneOnOneContactNudge.tsx', { '@/lib/dating-1on1-contact-nudge': nudge });
 const notice = load('components/PaymentCardNotice.tsx', { '@/lib/payment-card-notice': load('lib/payment-card-notice.ts') });
 const Offer = load('components/dating/OneOnOneContactOffer.tsx', {
+  '@/lib/use-contact-payment-tracking': { useContactPaymentTracking: () => ({ buttonRef: { current: null }, trackClick() {} }) },
   '@/lib/contact-intro-offer': load('lib/contact-intro-offer.ts'),
   '@/components/PaymentCardNotice': notice, '@/components/dating/OneOnOneContactNudge': nudgeUI, '@/lib/dating-contact-price': price,
 }).default;
@@ -57,7 +58,7 @@ test('legacy included exchanges stay free and pending checkout disables its only
 test('long/Korean names and preset text are escaped; outgoing nudge controls remain available separately', () => {
   const html = offer({ name: '<script>테스트</script>', nudge: { ...summary, can_send: true } });
   assert.ok(html.includes('&lt;script&gt;')); assert.ok(!html.includes('<script>'));
-  assert.ok(html.includes('한마디 보내기')); assert.ok(html.includes('24시간'));
+  assert.ok(html.includes('한마디 보내기')); assert.ok(html.includes('선택 사항'));
   assert.ok(!offer({ nudge: { ...summary, sent_by_me: received } }).includes('한마디 보내기'));
 });
 

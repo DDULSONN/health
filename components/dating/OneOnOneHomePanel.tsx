@@ -369,7 +369,12 @@ export default function OneOnOneHomePanel({
               </OneOnOneCandidateCard> : <OneOnOneUnavailableNotice key={targetMatchId} matchId={targetMatchId} />}
             </div> : null}
             <div ref={nextStepsSectionRef} tabIndex={-1} data-one-on-one-section="next-steps" className="scroll-mt-40 rounded-xl outline-none empty:hidden focus-visible:ring-2 focus-visible:ring-rose-300">
-              <OneOnOneNextSteps matches={activeMatches} />
+              <OneOnOneNextSteps matches={activeMatches} renderContact={(match) => (
+                <OneOnOneContactOffer compact matchId={match.id} name={match.counterparty_card?.name}
+                  included={plusContactExchangeIncluded} processing={processingContactIds.includes(match.id)}
+                  nudge={match.contact_nudge} nudgeProcessing={processingNudgeIds.includes(match.id)}
+                  onExchange={onContactCheckout} onNudge={onContactNudge} />
+              )} />
             </div>
             <div ref={incomingSectionRef} tabIndex={-1} data-one-on-one-section="incoming" className="scroll-mt-40 rounded-xl outline-none empty:hidden focus-visible:ring-2 focus-visible:ring-rose-300">
             <OneOnOneIncomingRequests requests={incomingRequests} renderRequest={(match) => match.counterparty_card ? (
@@ -406,6 +411,7 @@ export default function OneOnOneHomePanel({
                   <p className="mt-1 text-xs leading-5 text-neutral-600">
                     프로필 기준으로 먼저 보여드리는 후보예요. 최근 24시간 동안 {plusActive ? "2회" : "1회"} 새로 섞을 수 있어요.
                   </p>
+                  {arrivedFromOnboarding ? <p className="mt-2 text-xs font-medium leading-5 text-neutral-700">프로필이 준비됐어요. 마음에 드는 후보에게 먼저 요청해 보세요.</p> : null}
                 </div>
                 <span className="shrink-0 whitespace-nowrap rounded-full bg-white px-2.5 py-1 text-[11px] font-bold text-rose-700">{recommendationCount}명</span>
               </div>
@@ -440,6 +446,7 @@ export default function OneOnOneHomePanel({
                           </div>
                         </div>
                         <OneOnOneRefreshControl usage={group} busy={refreshing} blocked={!canRefresh}
+                          plusOffer={{ cardId: sourceCardId, active: plusActive }}
                           notice={refreshNotice?.sourceCardId === sourceCardId ? refreshNotice : null}
                           onRequest={() => onRefreshRecommendations(sourceCardId)} />
                         <div className="mt-3 space-y-3">
