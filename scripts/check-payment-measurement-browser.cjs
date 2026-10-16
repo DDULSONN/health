@@ -31,7 +31,7 @@ const root=path.resolve(__dirname,'..');
   try{
     browser=await chromium.launch({headless:true});const page=await browser.newPage({viewport:{width:390,height:844}}),errors=[];
     page.on('pageerror',e=>errors.push(e.message));await page.route('**/*',route=>{assert.equal(new URL(route.request().url()).origin,origin,'No outside requests');return route.continue();});
-    const button=page.getByRole('button',{name:'연락처 교환 · 20,000원',exact:true});
+    const button=page.getByRole('button',{name:'연락처 교환하기',exact:true});
     await page.goto(origin+'/mypage');await button.waitFor();await page.waitForTimeout(950);assert.equal(await total('view_item','mypage_matching'),0,'below fold is not a view');
     await button.scrollIntoViewIfNeeded();await waitFor(async()=>await total('view_item','mypage_matching')===1);
     await button.click();await page.getByLabel('기존 교환 핸들러 호출').filter({hasText:'1'}).waitFor();await waitFor(async()=>await total('select_item','mypage_matching')===1);
@@ -55,7 +55,7 @@ const root=path.resolve(__dirname,'..');
       },observerMode);
       const p=await isolated.newPage();p.on('pageerror',e=>errors.push(e.message));
       await p.route('**/*',route=>{assert.equal(new URL(route.request().url()).origin,origin);return route.continue();});
-      await p.goto(origin+'/mypage');const b=p.getByRole('button',{name:'연락처 교환 · 20,000원',exact:true});
+      await p.goto(origin+'/mypage');const b=p.getByRole('button',{name:'연락처 교환하기',exact:true});
       await b.scrollIntoViewIfNeeded();await p.waitForTimeout(900);const beforeClick=apiCalls;
       await b.click();assert.equal(await p.getByLabel('기존 교환 핸들러 호출').innerText(),'1');
       await waitFor(async()=>apiCalls>beforeClick);await p.waitForTimeout(150);await isolated.close();

@@ -251,7 +251,7 @@ async function main() {
           const phone = panel.getByText('010-0000-0000', { exact: true });
           if (['resilience-unauthorized', 'resilience-match-error'].includes(scenario)) {
             await panel.getByRole('alert').filter({ hasText: scenario === 'resilience-unauthorized' ? '로그인 상태와 이용 권한' : '로컬 매칭 조회 실패' }).waitFor();
-            assert.equal(await phone.count(), 0); assert.equal(await panel.getByRole('button', { name: /연락처 교환 ·/ }).count(), 0);
+            assert.equal(await phone.count(), 0); assert.equal(await panel.getByRole('button', { name: '연락처 교환하기', exact: true }).count(), 0);
           } else if (noProfile) {
             await panel.getByText('아직 1대1 프로필이 없어요.', { exact: true }).waitFor();
             const start = panel.getByRole('link', { name: '프로필 작성하기', exact: true });
@@ -355,7 +355,7 @@ async function main() {
             assert.equal(await more.count(), 0, 'all active matches reachable beyond eight');
           } else if (surface === 'mypage' && ['journey-pending', 'journey-paid'].includes(scenario)) {
             await page.getByText('결제·번호 공개 상태를 확인 중이에요.', { exact: false }).waitFor();
-            assert.equal(await page.getByRole('button', { name: /연락처 교환 ·/ }).count(), 0);
+            assert.equal(await page.getByRole('button', { name: '연락처 교환하기', exact: true }).count(), 0);
           } else {
             const focused = page.locator('#selected-one-on-one-match'); await focused.waitFor();
             if (missingJourney) {
@@ -381,9 +381,10 @@ async function main() {
                 assert.equal(await focused.getByRole('button', { name: '수락', exact: true }).count(), 1);
                 assert.equal(await focused.getByRole('button', { name: '거절', exact: true }).count(), 1);
               } else if (['journey-checkout', 'journey-shortcut'].includes(scenario)) {
-                await focused.getByRole('button', { name: '연락처 교환 · 20,000원' }).waitFor();
+                await focused.getByRole('button', { name: '연락처 교환하기', exact: true }).waitFor();
+                await focused.getByText('20,000원', { exact: true }).waitFor();
               } else {
-                assert.equal(await focused.getByRole('button', { name: /연락처 교환 ·/ }).count(), 0);
+                assert.equal(await focused.getByRole('button', { name: '연락처 교환하기', exact: true }).count(), 0);
                 if (scenario === 'journey-approved') await focused.getByText('010-0000-0000').waitFor();
                 else assert.equal(await focused.getByText('010-0000-0000').count(), 0);
               }
@@ -392,7 +393,7 @@ async function main() {
             }
             await focused.evaluate(el => el.scrollIntoView({ block: 'start' }));
             if (['journey-incoming', 'journey-checkout', 'journey-shortcut'].includes(scenario)) {
-              const button = focused.getByRole('button', { name: scenario === 'journey-incoming' ? '수락' : '연락처 교환 · 20,000원', exact: true });
+              const button = focused.getByRole('button', { name: scenario === 'journey-incoming' ? '수락' : '연락처 교환하기', exact: true });
               const startBox = await focused.boundingBox(), buttonBox = await button.boundingBox();
               assert.ok(buttonBox.y - startBox.y < 650, 'long introduction cannot bury the next action');
               const expand = focused.getByRole('button', { name: '소개 더보기' }); await expand.click();

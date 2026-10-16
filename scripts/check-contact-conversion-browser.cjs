@@ -55,7 +55,13 @@ async function main() {
       assert.equal(await page.getByText('테스트상대님이 보낸 1:1 한마디').count(),1);
       const offer = page.getByRole('region',{name:'교환 안내'});
       const msgBox = await offer.getByText('“연락처 교환해 주시면 첫 커피는 제가 살게요 ☕”').boundingBox();
-      const buttonBox = await offer.getByRole('button',{name:'연락처 교환 · 20,000원'}).boundingBox();
+      const button = offer.getByRole('button',{name:'연락처 교환하기',exact:true});
+      const buttonBox = await button.boundingBox();
+      const price = offer.getByText('20,000원',{exact:true}); await price.waitFor();
+      const priceBox = await price.boundingBox();
+      assert.equal(await button.getAttribute('aria-describedby'),await price.getAttribute('id'));
+      assert.ok(priceBox.y >= buttonBox.y + buttonBox.height, 'price stays visible directly below the CTA');
+      assert.ok(priceBox.y - (buttonBox.y + buttonBox.height) <= 8);
       assert.ok(msgBox.y < buttonBox.y); assert.ok(buttonBox.height >= 44);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth),false,'No horizontal overflow');
       await page.getByRole('img').waitFor({ state:'hidden' });

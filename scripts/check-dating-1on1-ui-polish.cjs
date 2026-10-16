@@ -45,10 +45,11 @@ module.exports = { fingerprint, panelContract, files };
 if (require.main === module) {
   const baseline = JSON.parse(read('scripts/fixtures/one-on-one-ui-contract.json'));
   for (const [name, file] of Object.entries(files)) test('reviewed view contract: ' + name, () => {
-    // Reviewed compact variant reuses the same quote/dispatch and free benefits.
-    // Browser + SQL tests cover top actions, preset sends and diagnostic failure.
+    // Reviewed CTA separates its visible, aria-describedby-linked price below the button.
+    // Quote/dispatch, disabled states and free benefits are unchanged; conversion tests
+    // assert full/compact prices, unique descriptions and existing payment callbacks.
     const expected = name === 'OneOnOneContactOffer'
-      ? '7e15b3fcec00c53a8a90aa6a3e67bb2724d9ef9b9c9de2eaa8ac462dbfced71d'
+      ? '22bca1832e0b0b35c8bffa45c87d7108d12b73bf2206dcae9083c930ce6396ef'
       // Same article/children/buttons, with a visibility-only observation hook.
       : name === 'OneOnOneCandidateCard' ? '31f6f4a089163a4631d1cd45be6017b561e93e9a69114a68d27ad2927a07d6e3' : baseline.functions[name];
     assert.equal(fingerprint(read(file), name), expected);

@@ -36,10 +36,25 @@ test('matching offer displays the real name and server-shared price, with paymen
   const html = offer();
   assert.ok(html.includes('테스트상대님과 서로 수락했어요'));
   assert.ok(html.includes('결제 완료 후 서로의 연락처가 공개돼요.'));
-  assert.ok(html.includes('연락처 교환 · 20,000원'));
+  assert.match(html, /<button[^>]*>연락처 교환하기<\/button>/);
+  assert.match(html, /<\/button><p[^>]*>20,000원<\/p><details/);
   assert.ok(html.indexOf('한 분이') > html.indexOf('<details'));
   assert.ok(!html.includes('�'));
   assert.ok(read('app/api/payments/toss/create/route.ts').includes('amount: ONE_ON_ONE_CONTACT_PRICE_KRW'));
+});
+
+test('full and compact offers associate the visible price below the button for screen readers', () => {
+  for (const compact of [false, true]) {
+    const html = offer({ compact });
+    const descriptionId = html.match(/<button[^>]*aria-describedby="([^"]+)"/)?.[1];
+    assert.ok(descriptionId);
+    assert.ok(html.includes(`<p id="${descriptionId}" class="mt-1 text-center text-xs font-medium text-neutral-600">20,000원</p>`));
+    assert.ok(html.indexOf('20,000원') < html.indexOf('<details'));
+  }
+  const html = renderToStaticMarkup(React.createElement(React.Fragment, null,
+    React.createElement(Offer, defaults), React.createElement(Offer, { ...defaults, compact: true })));
+  const ids = [...html.matchAll(/<button[^>]*aria-describedby="([^"]+)"/g)].map(match => match[1]);
+  assert.equal(ids.length, 2); assert.equal(new Set(ids).size, 2, 'multiple offers must not share a price description ID');
 });
 test('received message appears exactly once above checkout; no received message is invented', () => {
   const html = offer({ nudge: summary });
@@ -53,7 +68,11 @@ test('legacy included exchanges stay free and pending checkout disables its only
   const html = offer({ included: true, processing: true, nudge: summary });
   assert.ok(html.includes('교환 중...')); assert.ok(html.includes('disabled=""'));
   assert.ok(!html.includes('20,000')); assert.ok(!html.includes('현대·KB국민·우리카드'));
+  assert.ok(!html.includes('aria-describedby'));
   assert.ok(offer({ included: true }).includes('무료로 번호교환'));
+  const paid = offer({ processing: true });
+  assert.match(paid, /<button[^>]*disabled=""[^>]*>결제 준비 중\.\.\.<\/button>/);
+  assert.match(paid, /<\/button><p[^>]*>20,000원<\/p>/);
 });
 test('long/Korean names and preset text are escaped; outgoing nudge controls remain available separately', () => {
   const html = offer({ name: '<script>테스트</script>', nudge: { ...summary, can_send: true } });
