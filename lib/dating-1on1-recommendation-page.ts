@@ -25,7 +25,7 @@ export function restoreRecommendationPage<T extends RecommendationCandidate>(
   // Let eligible newcomers enter without a charged refresh; preserve all safety
   // filtering and keep the historical page stable when views are acknowledged.
   const recommendations = includeNewRelevantCandidates(source, candidates, main, seedAt, at,
-    context.limit, context.handled, undefined, observed);
+    context.limit, context.handled, undefined, observed, true);
   const selected = new Set(recommendations.map(c => c.id));
   const extraPool = sorted.filter(c => !selected.has(c.id) && !context.extraExcluded.has(c.id) && isCandidateInSourceAgeRange(source, c));
   const extraById = new Map(extraPool.map(c => [c.id, c]));
@@ -44,9 +44,9 @@ export function nextRecommendationPage<T extends RecommendationCandidate>(
   const actual = observedCandidateIdsAt(context.observations, at);
   const observed = actual.size ? actual : new Set([...replayedIds, ...previousIds]);
   const sorted = sortCandidatesForSource(source, candidates, `refresh:${seed}`, at);
-  const recommendations = takeObservedRecommendations(source, sorted, context.limit, observed, previousIds, context.handled, at, true);
+  const recommendations = takeObservedRecommendations(source, sorted, context.limit, observed, previousIds, context.handled, at, true, undefined, true);
   const mainIds = new Set(recommendations.map(c => c.id));
   const extraPool = sorted.filter(c => !mainIds.has(c.id) && !context.extraExcluded.has(c.id) && isCandidateInSourceAgeRange(source, c));
   return { recommendations, extraRecommendations: takeObservedRecommendations(source, extraPool,
-    context.extraLimit, observed, previousIds, context.handled, at, true) };
+    context.extraLimit, observed, previousIds, context.handled, at, true, undefined, true) };
 }

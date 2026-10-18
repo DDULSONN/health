@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import DatingReportButton, { type DatingReportTargetType, type DatingReportResult } from "@/components/DatingReportButton";
 import OneOnOneRefreshControl, { type OneOnOneRefreshNotice } from "@/components/dating/OneOnOneRefreshControl";
+import OneOnOneCandidateRegionNotice from "@/components/dating/OneOnOneCandidateRegionNotice";
 import OneOnOnePlusStatus from "@/components/dating/OneOnOnePlusStatus";
 import DatingPlusOffers from "@/components/dating/DatingPlusOffers";
 import OneOnOneContactNudge from "@/components/dating/OneOnOneContactNudge";
@@ -23,6 +24,7 @@ import { ONE_ON_ONE_HOME_HREF } from "@/lib/dating-navigation";
 import type { OneOnOneContactNudgePresetKey, OneOnOneContactNudgeSummary } from "@/lib/dating-1on1-contact-nudge";
 
 type OneOnOneCardPreview = {
+  recommendation_region_widened?: boolean;
   id?: string;
   user_id?: string;
   name?: string | null;
@@ -717,6 +719,7 @@ function OneOnOneCandidateCard({
             <div className="min-w-0">
               <p className="truncate text-sm font-semibold text-neutral-900">{name}</p>
               <p className="mt-1 text-xs font-normal leading-5 text-neutral-500">{meta}</p>
+              <OneOnOneCandidateRegionNotice widened={card?.recommendation_region_widened} />
             </div>
             {badge ? (
               <span className={`shrink-0 rounded-full px-2.5 py-1 text-[11px] font-bold ${badgeClassName ?? "bg-white text-neutral-600"}`}>

@@ -12,13 +12,14 @@ function distanceBand(km: number | null) {
     : RECOMMENDATION_DISTANCE_BANDS_KM.findIndex(upper => km <= upper);
 }
 export const RECOMMENDATION_REFRESH_HISTORY_MS = 7 * DAY_MS;
+export function isWiderRecommendationRegion(source: { region: string }, candidate: { region: string }) {
+  const km = getRegionDistanceMeta(source.region, candidate.region).distanceKm;
+  return km != null && km > 180;
+}
 // Presentation only: describe the final visible main/extra list, never favorites.
 // Unknown regions are not evidence of geographic expansion.
 export function hasWiderRecommendationRegion(source: { region: string }, candidates: readonly { region: string }[]) {
-  return candidates.some(candidate => {
-    const km = getRegionDistanceMeta(source.region, candidate.region).distanceKm;
-    return km != null && km > 180;
-  });
+  return candidates.some(candidate => isWiderRecommendationRegion(source, candidate));
 }
 export const RECOMMENDATION_REVISIT_COOLDOWN_MS = 7 * DAY_MS;
 export type ObservedCandidate = { id: string; at: number };
@@ -279,7 +280,7 @@ export function takeBalancedRecommendations<T extends RecommendationCandidate>(
 export function takeObservedRecommendations<T extends RecommendationCandidate>(
   source: RecommendationCandidate, sorted: T[], limit: number, observed: Set<string>,
   previous: Set<string>, handled: Set<string>, nowMs: number, allowWiderUnseen = false,
-  meta = createRecommendationMetaReader(source)
+  meta = createRecommendationMetaReader(source), mixNearbyRevisits = false
 ) {
   if (limit <= 0 || !sorted.length) return [];
   const bestTier = sorted.reduce((best, card) => Math.min(best, meta(card).tier), Infinity);
@@ -301,9 +302,28 @@ export function takeObservedRecommendations<T extends RecommendationCandidate>(
   // Resolve wider groups lazily: a full nearby page needs no nationwide sorts.
   function* pools() {
     yield sorted.filter(card => fresh(card) && !previous.has(card.id));
-    // A manual refresh must leave the current page (main AND extras) first.
-    // Missing/partial impression delivery is not evidence that it is a new page.
+    // New exact-page refreshes may reserve up to half for compatible locals
+    // instead of replacing everyone with distant strangers. Opt in only when
+    // planning a persisted page: changing historical replay would silently
+    // rewrite old pages and break plan/GET agreement on legacy deployments.
     if (allowWiderUnseen) {
+      if (mixNearbyRevisits && sorted.some(card => broaderFresh(card) && meta(card).ageMatch &&
+        meta(card).km != null && meta(card).km! > 180)) {
+        const nearby = (card: T) => meta(card).close && meta(card).ageGap <= 6;
+        const quota = Math.min(limit - picked.length,
+          Math.max(0, Math.floor(limit / 2) - picked.filter(nearby).length));
+        const locals = sorted.filter(card => nearby(card) && !used.has(card.id) &&
+          !handled.has(card.id) && !isRecentlyHandledCandidate(card, nowMs));
+        // Prefer nearby people outside BOTH currently visible sections. Only
+        // reuse a current local when that small pool is exhausted. The remaining
+        // slots still rotate to unseen, age-compatible people by distance band.
+        const revisits = takeBalancedRecommendations(source, locals.filter(card => !previous.has(card.id)),
+          quota, handled, nowMs, meta);
+        revisits.push(...takeBalancedRecommendations(source, locals.filter(card => previous.has(card.id)),
+          quota - revisits.length, handled, nowMs, meta));
+        yield revisits;
+      }
+      // Missing/partial impressions must not label a current card as unseen.
       yield* groupBroaderCandidates(sorted.filter(broaderFresh), meta);
       // All eligible people may already have been shown. Still permit another
       // page; the API distinguishes a free repeat rotation from a new-person use.
@@ -355,7 +375,8 @@ function existedAt(candidate: RecommendationCandidate, timestamp: number) {
 
 export function includeNewRelevantCandidates<T extends RecommendationCandidate>(
   source: RecommendationCandidate, candidates: T[], previous: T[], since: number, at: number, limit: number,
-  handledIds: Set<string>, readMeta: RecommendationMetaReader = createRecommendationMetaReader(source), observedBeforeSeed: Set<string> = new Set()
+  handledIds: Set<string>, readMeta: RecommendationMetaReader = createRecommendationMetaReader(source), observedBeforeSeed: Set<string> = new Set(),
+  preserveCloserCandidates = false
 ) {
   // A scarce-region member may already be browsing beyond 90 km. Allow new
   // compatible people up to that page's known distance band, not just locals,
@@ -371,7 +392,34 @@ export function includeNewRelevantCandidates<T extends RecommendationCandidate>(
       !handledIds.has(card.id) && !observedBeforeSeed.has(card.id) && !isRecentlyHandledCandidate(card, at);
   }), `new:${since}`, at, readMeta), Math.min(2, limit));
   const newcomerIds = new Set(newcomers.map((card) => card.id));
-  const merged = [...newcomers, ...previous.filter((card) => !newcomerIds.has(card.id))].slice(0, limit);
+  let merged = [...newcomers, ...previous.filter((card) => !newcomerIds.has(card.id))].slice(0, limit);
+  if (preserveCloserCandidates) {
+    // Exact pages may come from older rankings with locals at the end. Do not
+    // drop those locals merely to prepend a distant newcomer. Keep the saved
+    // order, replacing the farthest eligible slot; never expand a page's band.
+    // Legacy replay stays unchanged to preserve pre-snapshot plan/GET agreement.
+    const retained = previous.slice(0, limit);
+    const promoted: T[] = [];
+    for (const newcomer of newcomers) {
+      const existing = retained.findIndex(card => card.id === newcomer.id);
+      if (existing >= 0) retained.splice(existing, 1);
+      else if (retained.length + promoted.length >= limit) {
+        const incoming = readMeta(newcomer);
+        let replace = -1;
+        let farthestBand = -1;
+        for (let index = 0; index < retained.length; index++) {
+          const band = distanceBand(readMeta(retained[index]).km);
+          if ((incoming.close || band >= distanceBand(incoming.km)) && band >= farthestBand) {
+            replace = index; farthestBand = band;
+          }
+        }
+        if (replace < 0) continue;
+        retained.splice(replace, 1);
+      }
+      promoted.push(newcomer);
+    }
+    merged = [...promoted, ...retained];
+  }
   // The historical pool may have been smaller. Reserve two fresh slots, but
   // never leave the rest empty when eligible people registered afterwards.
   if (merged.length < limit) {

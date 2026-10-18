@@ -163,7 +163,14 @@ const movedFunctions = {
   oneOnOneContactLabel: 'c7bcaf1620f1111c3b164ec6f71a6fb090a751162a2048cca29473e6a949d577',
 };
 for (const [name, hash] of Object.entries(movedFunctions)) test('extraction preserves rendering/behavior byte-for-byte: ' + name, () => {
-  const code = read('components/dating/OneOnOneHomePanel.tsx').replaceAll('(matchId: string, offerId?: string) => void', '(matchId: string) => void');
+  let code = read('components/dating/OneOnOneHomePanel.tsx').replace(/\r\n/g, '\n').replaceAll('(matchId: string, offerId?: string) => void', '(matchId: string) => void');
+  if (name === 'OneOnOneCandidateCard') {
+    // Allow only the separately tested region notice, preserving the old
+    // byte-for-byte contract for every existing photo and action control.
+    const notice = '              <OneOnOneCandidateRegionNotice widened={card?.recommendation_region_widened} />\n';
+    assert.equal(code.split(notice).length, 2);
+    code = code.replace(notice, '');
+  }
   const ast = ts.createSourceFile('panel.tsx', code, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const node = ast.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === name); assert.ok(node);
   const text = node.getText(ast).replace(/^export default /, '').replace(/\r\n/g, '\n');

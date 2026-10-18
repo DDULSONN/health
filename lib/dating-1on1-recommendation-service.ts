@@ -29,6 +29,7 @@ import {
   takeObservedRecommendations,
   observedCandidateIdsAt,
   hasWiderRecommendationRegion,
+  isWiderRecommendationRegion,
 } from "@/lib/dating-1on1-recommendations";
 import type { createAdminClient } from "@/lib/supabase/server";
 import { getKstDateString } from "@/lib/weekly";
@@ -586,10 +587,15 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       return NextResponse.json({ plan });
     }
     return NextResponse.json({ items: items.map((item) => {
-      const recommendations = hydrate(item.recommendations);
-      const adminRecommendations = hydrate(item.admin_recommendations);
-      const visibleCandidates = [...recommendations, ...adminRecommendations];
       const source = mySourceCards.find(card => card.id === item.source_card_id);
+      // Add presentation metadata only after the final status/identity check.
+      // No extra queries or client-side region database, and no exact locations.
+      const withRegionNotice = (cards: RecommendationCard[]) => hydrate(cards).map(card => ({
+        ...card, recommendation_region_widened: source ? isWiderRecommendationRegion(source, card) : false,
+      }));
+      const recommendations = withRegionNotice(item.recommendations);
+      const adminRecommendations = withRegionNotice(item.admin_recommendations);
+      const visibleCandidates = [...recommendations, ...adminRecommendations];
       return {
         ...item,
         favorite_candidates: hydrate(item.favorite_candidates),

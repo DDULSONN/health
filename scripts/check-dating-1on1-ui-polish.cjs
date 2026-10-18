@@ -53,6 +53,13 @@ if (require.main === module) {
       // Same article/children/buttons, with a visibility-only observation hook.
       : name === 'OneOnOneCandidateCard' ? '31f6f4a089163a4631d1cd45be6017b561e93e9a69114a68d27ad2927a07d6e3' : baseline.functions[name];
     let source = read(file);
+    if (name === 'OneOnOneCandidateCard') {
+      // The small, read-only region notice is tested separately. Keep the
+      // original card/photo/action fingerprint pinned around that one addition.
+      const notice = '              <OneOnOneCandidateRegionNotice widened={card?.recommendation_region_widened} />\n';
+      assert.equal(source.split(notice).length, 2);
+      source = source.replace(notice, '');
+    }
     if (name === 'OneOnOneContactOffer') {
       // Only the reviewed, read-on-open support guide may be added. Keep the
       // original payment callback/price/disabled-state fingerprint unchanged.

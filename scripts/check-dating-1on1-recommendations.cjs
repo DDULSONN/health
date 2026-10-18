@@ -38,6 +38,146 @@ const card = (id, overrides = {}) => ({
 const source = card("source", { sex: "male", age: 30 });
 const ids = (cards) => cards.map((candidate) => candidate.id);
 
+for (const sex of ['male', 'female']) for (const history of ['none', 'partial', 'complete']) {
+  test(`exact refresh mixes nearby revisits with new age-compatible people (${sex}/${history})`, () => {
+    const pages = load('@/lib/dating-1on1-recommendation-page');
+    const src = card('mix-source', { sex, age: 30, region: '광주 서구' });
+    const peerSex = sex === 'male' ? 'female' : 'male';
+    const locals = Array.from({ length: 13 }, (_, i) => card(`mix-local-${i}`, { age: 30, sex: peerSex, region: '광주 북구' }));
+    const remote = Array.from({ length: 40 }, (_, i) => card(`mix-new-${i}`, { age: 30, sex: peerSex, region: '부산' }));
+    const inappropriate = Array.from({ length: 15 }, (_, i) => card(`mix-old-age-${i}`, { age: 65, sex: peerSex, region: '광주' }));
+    const unknown = card('mix-unknown', { age: 30, sex: peerSex, region: '어딘가' });
+    const observations = locals.slice(0, history === 'none' ? 0 : history === 'partial' ? 1 : 13).map(c => ({ id: c.id, at: now - 1000 }));
+    const context = { handled: new Set(), extraExcluded: new Set(), observations, limit: 10, extraLimit: 3 };
+    const previous = { recommendations: locals.slice(0, 10), extraRecommendations: locals.slice(10) };
+    const pool = [...locals, ...remote, ...inappropriate, unknown];
+    const stamp = new Date(now).toISOString();
+    const next = pages.nextRecommendationPage(src, pool, previous, stamp, now, context);
+    assert.equal(next.recommendations.filter(c => c.id.startsWith('mix-local')).length, 5);
+    assert.equal(next.extraRecommendations.filter(c => c.id.startsWith('mix-local')).length, 1);
+    const all = [...next.recommendations, ...next.extraRecommendations];
+    assert.equal(all.filter(c => c.id.startsWith('mix-new')).length, 7);
+    assert.equal(new Set(ids(all)).size, 13);
+    assert.ok(all.every(c => c.age === 30 && c.id !== unknown.id));
+    assert.deepEqual(next, pages.nextRecommendationPage(src, pool, previous, stamp, now, context));
+    const restored = pages.restoreRecommendationPage(src, pool, {
+      source_card_id: src.id, refreshed_at: stamp, main_candidate_ids: ids(next.recommendations), extra_candidate_ids: ids(next.extraRecommendations),
+    }, now + 10, { ...context, observations: [...observations, ...all.map(c => ({ id: c.id, at: now + 1 }))] });
+    assert.deepEqual(restored, next, 'acknowledgement cannot reshuffle a mixed persisted page');
+  });
+}
+
+test('nearby mix keeps all-new nearby pages and prefers off-page locals before current locals', () => {
+  const pages = load('@/lib/dating-1on1-recommendation-page');
+  const locals = Array.from({ length: 30 }, (_, i) => card(`mix-near-${i}`));
+  const far = Array.from({ length: 30 }, (_, i) => card(`mix-far-${i}`, { region: '부산' }));
+  const previous = { recommendations: locals.slice(0, 10), extraRecommendations: locals.slice(10, 13) };
+  const base = { handled: new Set(), extraExcluded: new Set(), limit: 10, extraLimit: 3 };
+  const run = observed => pages.nextRecommendationPage(source, [...locals, ...far], previous, new Date(now).toISOString(), now,
+    { ...base, observations: observed.map(c => ({ id: c.id, at: now - 1000 })) });
+  const fresh = run(locals.slice(0, 13));
+  assert.ok([...fresh.recommendations, ...fresh.extraRecommendations].every(c => c.id.startsWith('mix-near') && !ids(locals.slice(0, 13)).includes(c.id)));
+  const mixed = run(locals);
+  const all = [...mixed.recommendations, ...mixed.extraRecommendations];
+  assert.equal(all.filter(c => c.id.startsWith('mix-near')).length, 6);
+  assert.ok(all.every(c => !ids(locals.slice(0, 13)).includes(c.id)), 'do not repeat the current local page when other compatible locals exist');
+});
+
+test('nearby mix respects distance/age boundaries, handled exclusions, and fills scarce slots', () => {
+  const custom = createLoader({ '@/lib/region-distance': {
+    getRegionDistanceMeta: (_source, region) => ({ distanceKm: region === 'unknown' ? null : Number(region) }),
+  } });
+  const pages = custom('@/lib/dating-1on1-recommendation-page');
+  const locals = [card('near-preferred', { region: '90' }), card('near-gap6', { region: '40', age: 36 }),
+    card('near-gap7', { region: '10', age: 37 }), card('not-near', { region: '91' }),
+    card('near-handled', { region: '10' }), card('near-recent', { region: '10', last_handled_at: new Date(now - 1000).toISOString() })];
+  const far = Array.from({ length: 20 }, (_, i) => card(`new-compatible-${i}`, { region: i < 10 ? '220' : '330' }));
+  const context = { handled: new Set(['near-handled']), extraExcluded: new Set(['near-handled', 'near-recent']),
+    observations: locals.map(c => ({ id: c.id, at: now - 2000 })), limit: 10, extraLimit: 3 };
+  const next = pages.nextRecommendationPage(source, [...locals, ...far], { recommendations: locals, extraRecommendations: [] },
+    new Date(now).toISOString(), now, context);
+  assert.equal(next.recommendations.length, 10);
+  assert.deepEqual(new Set(ids(next.recommendations).filter(id => !id.startsWith('new-compatible'))), new Set(['near-preferred', 'near-gap6']));
+  assert.ok(next.recommendations.filter(c => c.id.startsWith('new-compatible')).every(c => c.region === '220'));
+  assert.equal(new Set(ids([...next.recommendations, ...next.extraRecommendations])).size, 13);
+  for (const size of [0, 1, 3, 7]) {
+    const pool = [...far].slice(0, size);
+    const scarce = pages.nextRecommendationPage(source, pool, { recommendations: [], extraRecommendations: [] },
+      new Date(now).toISOString(), now, context);
+    assert.equal(new Set(ids([...scarce.recommendations, ...scarce.extraRecommendations])).size, size);
+  }
+});
+
+test('mixed persisted API page counts only new people and preserves photos, exclusions and match actions', async () => {
+  const tables = fixture(80); tables.dating_1on1_recommendation_pages = [];
+  tables.dating_1on1_cards.slice(21).forEach(c => { c.region = '부산'; });
+  tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1, 21).map(c => ({
+    viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now - day).toISOString(),
+  }));
+  tables.dating_user_blocks = [{ blocker_user_id: 'user-c0', blocked_user_id: 'user-source' }];
+  tables.profiles.find(p => p.user_id === 'user-c1').is_banned = true;
+  tables.dating_1on1_match_proposals = [
+    pair({ candidate_card_id: 'c2', candidate_user_id: 'user-c2', state: 'mutual_accepted' }),
+    pair({ id: 'declined', candidate_card_id: 'c3', candidate_user_id: 'user-c3', state: 'candidate_rejected' }),
+  ];
+  const pairsBefore = structuredClone(tables.dating_1on1_match_proposals);
+  const before = allCandidates((await runApi(tables, { atTime: now - 1 })).body);
+  const refreshed = await runRefresh(tables, { atTime: now });
+  assert.equal(refreshed.response.status, 200); assert.equal(refreshed.body.refresh_consumed, true);
+  assert.equal(refreshed.rpcCalls.length, 1); assert.equal(refreshed.body.changed_candidate_count, 7);
+  const after = await runApi(tables, { atTime: now + 1 });
+  const page = allCandidates(after.body);
+  assert.equal(page.length, 13); assert.equal(new Set(ids(page)).size, 13);
+  assert.equal(page.filter(c => c.region === '부산').length, 7);
+  assert.ok(page.every(c => !['c0', 'c1', 'c2', 'c3'].includes(c.id) && c.photo_signed_urls.length > 0 && !Object.hasOwn(c, 'phone')));
+  assert.deepEqual(tables.dating_1on1_match_proposals, pairsBefore);
+  assert.equal(after.calls.some(q => q.insert || q.update || q.delete), false);
+  assert.equal(refreshed.body.rotated_candidate_count, page.filter(c => !ids(before).includes(c.id)).length);
+  for (const c of page) tables.dating_1on1_candidate_impressions.push({ viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now + 2).toISOString() });
+  assert.deepEqual(ids(allCandidates((await runApi(tables, { atTime: now + 3 })).body)), ids(page));
+  const selected = await runSelect(tables, { candidateId: page[0].id, atTime: now + 4 });
+  assert.equal(selected.response.status, 200);
+  const duplicate = await runSelect(tables, { candidateId: page[0].id, atTime: now + 5 });
+  assert.equal(duplicate.response.status, 409);
+  assert.deepEqual(tables.dating_1on1_match_proposals.slice(0, 2), pairsBefore);
+});
+
+test('successive daily mixed exact pages keep discovering people, then rotate without consuming when all are seen', async () => {
+  const tables = fixture(48); tables.dating_1on1_recommendation_pages = [];
+  tables.dating_1on1_cards.slice(21).forEach(c => { c.region = '부산'; });
+  tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1, 21).map(c => ({
+    viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now - day).toISOString(),
+  }));
+  const discovered = new Set(tables.dating_1on1_candidate_impressions.map(c => c.candidate_user_id));
+  for (let round = 0; round < 5; round++) {
+    // The shared RPC mock models the normal daily allowance, not bonus spending.
+    const at = now + round * (day + 31000);
+    const before = (await runApi(tables, { atTime: at - 1 })).body.items[0];
+    const result = await runRefresh(tables, { atTime: at });
+    assert.equal(result.response.status, 200);
+    const after = (await runApi(tables, { atTime: at + 1 })).body.items[0];
+    const all = [...after.recommendations, ...after.admin_recommendations];
+    assert.equal(new Set(ids(all)).size, 13);
+    const newlySeen = all.filter(c => !discovered.has(c.user_id));
+    assert.equal(result.body.changed_candidate_count, newlySeen.length);
+    assert.equal(result.body.refresh_consumed, newlySeen.length > 0);
+    assert.equal(after.refresh_remaining, before.refresh_remaining - (newlySeen.length > 0 ? 1 : 0));
+    if (round < 4) {
+      assert.equal(newlySeen.length, 7, `round ${round}: nearby revisits cannot trap the new-candidate slots`);
+      assert.equal(after.recommendations.filter(c => c.region !== '부산').length, 5);
+    } else {
+      assert.equal(newlySeen.length, 0);
+      assert.ok(result.body.rotated_candidate_count > 0);
+    }
+    for (const c of newlySeen) {
+      discovered.add(c.user_id);
+      tables.dating_1on1_candidate_impressions.push({ viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(at + 2).toISOString() });
+    }
+    assert.deepEqual(ids(allCandidates((await runApi(tables, { atTime: at + 3 })).body)), ids(all));
+  }
+  assert.equal(discovered.size, 48);
+});
+
 for (const history of ['none', 'partial', 'complete']) test(`manual refresh leaves the current main/extra page before refilling it (${history} observations)`, () => {
   const local = Array.from({ length: 13 }, (_, i) => card(`current-${i}`));
   const wider = Array.from({ length: 30 }, (_, i) => card(`wider-${i}`, { region: '대전 서구' }));
@@ -221,6 +361,78 @@ test('changing source region invalidates the saved ordering without spending a r
   assert.deepEqual(tables, before); assert.ok(after.calls.every(q => !q.insert && !q.update && !q.delete));
 });
 
+test('nearby newcomers replace distant slots, not the locals at the end of an older saved page', () => {
+  const pages = load('@/lib/dating-1on1-recommendation-page');
+  const far = Array.from({ length: 5 }, (_, i) => card(`arrival-far-${i}`, { region: '부산' }));
+  const local = Array.from({ length: 5 }, (_, i) => card(`arrival-local-${i}`));
+  const newLocal = [card('arrival-new-local', { created_at: new Date(now + 100).toISOString() })];
+  const newFar = [card('arrival-new-far', { region: '부산', created_at: new Date(now + 100).toISOString() })];
+  const previous = [...far, ...local];
+  const saved = { source_card_id: source.id, refreshed_at: new Date(now).toISOString(),
+    main_candidate_ids: ids(previous), extra_candidate_ids: [] };
+  const context = { handled: new Set(), extraExcluded: new Set(), observations: [], limit: 10, extraLimit: 0 };
+  const before = structuredClone(saved);
+  const result = pages.restoreRecommendationPage(source, [...previous, ...newLocal, ...newFar], saved, now + 200, context);
+  assert.equal(result.recommendations[0].id, 'arrival-new-local');
+  assert.ok(local.every(c => ids(result.recommendations).includes(c.id)));
+  assert.equal(result.recommendations.length, 10);
+  assert.equal(new Set(ids(result.recommendations)).size, 10);
+  assert.deepEqual(saved, before);
+  assert.deepEqual(pages.restoreRecommendationPage(source, [...previous, ...newLocal, ...newFar], saved, now + 300,
+    { ...context, observations: result.recommendations.map(c => ({ id: c.id, at: now + 250 })) }), result);
+  assert.deepEqual(pages.restoreRecommendationPage(source, previous, saved, now + 200, context).recommendations, previous,
+    'no new eligible profile means no reordering of the saved page');
+});
+
+test('remote newcomers cannot remove closer saved candidates or widen the saved distance band', () => {
+  const custom = createLoader({ '@/lib/region-distance': {
+    getRegionDistanceMeta: (_source, region) => ({ distanceKm: region === 'unknown' ? null : Number(region) }),
+  } });
+  const pages = custom('@/lib/dating-1on1-recommendation-page');
+  const previous = [card('existing-far', { region: '220' }), ...Array.from({ length: 9 }, (_, i) => card(`existing-near-${i}`, { region: '30' }))];
+  const newcomers = ['230', '240', '300', 'unknown'].map((region, i) => card(`new-arrival-${i}`, { region, created_at: new Date(now + 1).toISOString() }));
+  const saved = { source_card_id: source.id, refreshed_at: new Date(now).toISOString(), main_candidate_ids: ids(previous), extra_candidate_ids: [] };
+  const result = pages.restoreRecommendationPage(source, [...previous, ...newcomers], saved, now + 100,
+    { handled: new Set(), extraExcluded: new Set(), observations: [], limit: 10, extraLimit: 0 });
+  assert.equal(result.recommendations.length, 10);
+  assert.equal(result.recommendations.filter(c => c.id.startsWith('existing-near')).length, 9);
+  assert.equal(result.recommendations.filter(c => c.id.startsWith('new-arrival')).length, 1);
+  assert.ok(result.recommendations.every(c => c.region !== '300' && c.region !== 'unknown'));
+});
+
+for (const change of ['eligible', 'ban', 'hidden', 'blocked', 'rejected', 'matched', 'favorite', 'withdrawn']) {
+  test(`new nearby saved-page arrival respects ${change} without touching quota or requests`, async () => {
+    const tables = fixture(35); tables.dating_1on1_recommendation_pages = [];
+    tables.dating_1on1_cards.slice(1).forEach(c => { c.region = '부산'; });
+    await runRefresh(tables, { atTime: now });
+    const newCard = { ...tables.dating_1on1_cards[1], id: 'new-nearby-safe', user_id: 'new-nearby-user',
+      phone: '+821099999992', region: '서울 강남구', created_at: new Date(now + 1000).toISOString() };
+    tables.dating_1on1_cards.push(newCard);
+    if (change !== 'withdrawn') tables.profiles.push({ user_id: newCard.user_id, phone_e164: newCard.phone, is_banned: change === 'ban' });
+    if (change === 'hidden') newCard.status = 'hidden';
+    if (change === 'blocked') tables.dating_user_blocks = [{ blocker_user_id: newCard.user_id, blocked_user_id: 'user-source' }];
+    if (change === 'favorite') tables.dating_1on1_candidate_favorites = [{ user_id: 'user-source', source_card_id: 'source', candidate_card_id: newCard.id }];
+    if (change === 'rejected' || change === 'matched') tables.dating_1on1_match_proposals.push(pair({
+      candidate_card_id: newCard.id, candidate_user_id: newCard.user_id, state: change === 'matched' ? 'source_selected' : 'candidate_rejected',
+    }));
+    const snapshot = structuredClone(tables);
+    const result = await runApi(tables, { atTime: now + 2000 });
+    assert.equal(result.response.status, 200);
+    const shown = allCandidates(result.body);
+    assert.equal(shown.some(c => c.id === newCard.id), change === 'eligible');
+    if (change === 'eligible') {
+      assert.equal(result.body.items[0].recommendations[0].id, newCard.id);
+      assert.equal(shown.find(c => c.id === newCard.id).recommendation_region_widened, false);
+      assert.ok(shown.find(c => c.id === newCard.id).photo_signed_urls.length > 0);
+    }
+    assert.equal(result.body.items[0].refresh_remaining, 0);
+    assert.equal(new Set(ids(shown)).size, 13);
+    assert.ok(shown.every(c => !Object.hasOwn(c, 'phone')));
+    assert.deepEqual(tables, snapshot);
+    assert.ok(result.calls.every(q => !q.insert && !q.update && !q.delete));
+  });
+}
+
 test('new compatible nearby member enters a saved wider page, without a quota charge or photo leak', async () => {
   const tables = fixture(40); tables.dating_1on1_recommendation_pages = [];
   tables.dating_1on1_cards.slice(1).forEach(c => { c.region = '부산'; });
@@ -255,6 +467,8 @@ test('API notice describes visible main and extra candidates without extra queri
   const widerResult = await runApi(wide, { atTime: now });
   assert.equal(nearbyResult.body.items[0].recommendation_region_widened, false);
   assert.equal(widerResult.body.items[0].recommendation_region_widened, true);
+  assert.ok(allCandidates(nearbyResult.body).every(c => c.recommendation_region_widened === false));
+  assert.ok(allCandidates(widerResult.body).every(c => c.recommendation_region_widened === true));
   assert.equal(allCandidates(widerResult.body).length, 13);
   assert.equal(widerResult.calls.length, nearbyResult.calls.length);
   for (const result of [nearbyResult, widerResult]) assert.ok(result.calls.every(q => !q.insert && !q.update && !q.delete));
@@ -268,9 +482,12 @@ test('remote extras trigger the notice, but saved or removed remote cards do not
   assert.ok(result.body.items[0].recommendations.every(c => c.region !== '부산'));
   assert.ok(result.body.items[0].admin_recommendations.some(c => c.region === '부산'));
   assert.equal(result.body.items[0].recommendation_region_widened, true);
+  assert.ok(result.body.items[0].recommendations.every(c => c.recommendation_region_widened === false));
+  assert.ok(result.body.items[0].admin_recommendations.filter(c => c.region === '부산').every(c => c.recommendation_region_widened === true));
   tables.dating_1on1_candidate_favorites = [{ user_id: 'user-source', source_card_id: 'source', candidate_card_id: 'c10', created_at: new Date(now).toISOString() }];
   const saved = await runApi(tables, { atTime: now });
   assert.equal(saved.body.items[0].favorite_candidates[0].region, '부산');
+  assert.equal(saved.body.items[0].favorite_candidates[0].recommendation_region_widened, undefined);
   assert.equal(saved.body.items[0].recommendation_region_widened, false);
   const remoteOnly = fixture(1); remoteOnly.dating_1on1_cards[1].region = '부산';
   const removed = await runApi(remoteOnly, { atTime: now,

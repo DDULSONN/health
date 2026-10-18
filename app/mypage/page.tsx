@@ -19,6 +19,7 @@ import { timeAgo } from "@/lib/community";
 import { formatRemainingToKorean } from "@/lib/dating-open";
 import { buildOneOnOneRefreshSuccess, type OneOnOneRefreshUsage } from "@/lib/dating-1on1-refresh-copy";
 import OneOnOneRefreshControl, { useOneOnOneRefreshConfirmation, type OneOnOneRefreshNotice } from "@/components/dating/OneOnOneRefreshControl";
+import OneOnOneCandidateRegionNotice from "@/components/dating/OneOnOneCandidateRegionNotice";
 import OneOnOnePlusStatus from "@/components/dating/OneOnOnePlusStatus";
 import OneOnOneActionNotice from "@/components/dating/OneOnOneActionNotice";
 import OneOnOneProfileSummary from "@/components/dating/OneOnOneProfileSummary";
@@ -975,6 +976,7 @@ function isOneOnOneUserEditLocked(card: Pick<MyOneOnOneCard, "admin_tags">) {
 }
 
 type MyOneOnOneMatchCard = {
+  recommendation_region_widened?: boolean;
   id: string;
   sex: "male" | "female";
   name: string;
@@ -10484,6 +10486,7 @@ export default function MyPage() {
                                 <p className="mt-1 text-xs text-neutral-600">
                                   {card.height_cm}cm / {card.job}
                                 </p>
+                                <OneOnOneCandidateRegionNotice widened={card.recommendation_region_widened} />
                                 <OneOnOneProfileSummary intro={card.intro_text} strengths={card.strengths_text} preferredPartner={card.preferred_partner_text}>
                                 {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
                                   <div className="mt-2 grid grid-cols-2 gap-2">
@@ -10549,6 +10552,7 @@ export default function MyPage() {
                                       <p className="mt-1 text-xs text-neutral-600">
                                         {card.height_cm}cm / {card.job}
                                       </p>
+                                      <OneOnOneCandidateRegionNotice widened={card.recommendation_region_widened} />
                                       <OneOnOneProfileSummary intro={card.intro_text} strengths={card.strengths_text} preferredPartner={card.preferred_partner_text}>
                                       {Array.isArray(card.photo_signed_urls) && card.photo_signed_urls.length > 0 && (
                                         <div className="mt-2 grid grid-cols-2 gap-2">
