@@ -53,6 +53,8 @@ import { fetchOneOnOnePairHistory, type OneOnOnePairHistory } from "@/lib/dating
 import { EXPANSION_TABLE, isExpansionEnabled, selectExpansionCandidates } from "@/lib/dating-1on1-expansion";
 import { createImpressionTicket, readCandidateImpressions } from "@/lib/dating-1on1-impressions";
 import { readRefreshCompensation } from "@/lib/dating-1on1-refresh-compensation";
+import { readRecommendationPage, recommendationSourceKey } from "@/lib/dating-1on1-recommendation-page-store";
+import { nextRecommendationPage, restoreRecommendationPage } from "@/lib/dating-1on1-recommendation-page";
 
 const RECOMMENDATION_LIMIT = 10;
 const FAVORITE_TABLE = "dating_1on1_candidate_favorites";
@@ -138,6 +140,10 @@ export type RecommendationRefreshPlan = {
   refresh_bonus_remaining: number;
   next_refresh_at: string | null;
   plus_active: boolean;
+  persist_page: boolean;
+  source_profile_key: string;
+  main_candidate_ids: string[];
+  extra_candidate_ids: string[];
 };
 
 // Only server code may request a plan. Public GET has no seed/preview overrides.
@@ -189,7 +195,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
   const refreshEventsByCardId = new Map<string, string[]>();
   const refundedEventsByCardId = new Map<string, string[]>();
 
-  const [initialRefreshEventsRes, recoveryRes, impressionResult, bonusRemaining] = await Promise.all([
+  const [initialRefreshEventsRes, recoveryRes, impressionResult, bonusRemaining, savedPageResult] = await Promise.all([
     admin.from("dating_1on1_recommendation_refresh_events")
       .select("card_id,refreshed_at,quota_refunded_at")
       .in("card_id", sourceCardIds)
@@ -203,7 +209,11 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       .maybeSingle(),
     readCandidateImpressions(admin, user.id, nowMs).catch(() => null),
     readRefreshCompensation(admin, user.id).catch(() => null),
+    readRecommendationPage(admin, user.id).catch(() => null),
   ]);
+  if (!savedPageResult) {
+    return NextResponse.json({ error: "현재 후보 명단을 확인하지 못했어요. 횟수는 사용하지 않았으니 잠시 후 다시 시도해 주세요." }, { status: 503 });
+  }
   if (bonusRemaining === null) {
     return NextResponse.json({ error: "새로고침 이용 횟수를 확인하지 못했어요. 횟수는 사용하지 않았으니 잠시 후 다시 시도해 주세요." }, { status: 503 });
   }
@@ -425,13 +435,37 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
 
     const recoverySeed = getRecommendationRecoverySeed(recoveryRes.error ? null : recoveryRes.data?.refreshed_at, nowMs);
     if (recoverySeed) refreshSeeds.push(recoverySeed);
-    if (simulateRefresh && refreshPlan && sourceCard.id === refreshPlan.sourceCardId) refreshSeeds.push(refreshPlan.at);
+    if (simulateRefresh && refreshPlan && sourceCard.id === refreshPlan.sourceCardId && !savedPageResult?.available) refreshSeeds.push(refreshPlan.at);
     const hasActiveRefresh = refreshSeeds.some((seed) => getActiveRecommendationRefresh(seed, nowMs));
     const recentHandledIds = new Set(unsavedCandidates.filter((card) => isRecentlyHandledCandidate(card, nowMs)).map((card) => card.id));
-    const replay = replayRecommendationRefreshes(sourceCard, unsavedCandidates,
+    const savedPage = savedPageResult.page;
+    const hasSavedPage = savedPage && savedPage.source_card_id === sourceCard.id && activeRefresh &&
+      Date.parse(savedPage.refreshed_at) === Date.parse(activeRefresh) &&
+      savedPage.source_profile_key === recommendationSourceKey(sourceCard) &&
+      (!recoverySeed || Date.parse(recoverySeed) <= Date.parse(savedPage.refreshed_at));
+    // Once an exact page and real observations exist, replaying 32 historical
+    // pages only to throw them away adds CPU cost and no information.
+    const replay = hasSavedPage && observations.length > 0
+      ? { recommendations: [] as typeof defaultRecommendations, extraRecommendations: [] as typeof defaultRecommendations,
+        shownIds: observedCandidateIdsAt(observations, nowMs) }
+      : replayRecommendationRefreshes(sourceCard, unsavedCandidates,
       defaultRecommendations, hasActiveRefresh ? refreshSeeds : [], handledPairIds, RECOMMENDATION_LIMIT, nowMs,
       { limit: ONE_ON_ONE_FREE_EXTRA_CANDIDATES, excludeIds: recentHandledIds }, observations);
-    const recommendations = hasActiveRefresh ? replay.recommendations : defaultRecommendations;
+    let recommendations = hasActiveRefresh ? replay.recommendations : defaultRecommendations;
+    let adminRecommendations = replay.extraRecommendations;
+    const pageContext = { handled: handledPairIds, extraExcluded: recentHandledIds, observations,
+      limit: RECOMMENDATION_LIMIT, extraLimit: ONE_ON_ONE_FREE_EXTRA_CANDIDATES };
+    if (hasSavedPage) {
+      const restored = restoreRecommendationPage(sourceCard, unsavedCandidates, savedPage, nowMs, pageContext);
+      recommendations = restored.recommendations;
+      adminRecommendations = restored.extraRecommendations;
+    }
+    if (simulateRefresh && refreshPlan && sourceCard.id === refreshPlan.sourceCardId && savedPageResult?.available) {
+      const next = nextRecommendationPage(sourceCard, unsavedCandidates, { recommendations, extraRecommendations: adminRecommendations },
+        refreshPlan.at, nowMs, pageContext, replay.shownIds);
+      recommendations = next.recommendations;
+      adminRecommendations = next.extraRecommendations;
+    }
     // Extras cannot overlap the current main page. Earlier pages are a soft
     // preference, not a reason to replace compatible local people with remote ones.
     const sourcePlus = plusByUserId.get(sourceCard.user_id) ?? null;
@@ -442,7 +476,6 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       refreshLimit,
       refundedEventsByCardId.get(sourceCard.id) ?? []
     );
-    const adminRecommendations = replay.extraRecommendations;
     const expansionExclusions = expansion ? new Set([...favoriteIds, ...recommendations.map(card => card.id), ...adminRecommendations.map(card => card.id),
       // A new batch should not recycle a known earlier page. A stored batch is
       // only revalidated, never reranked/refilled as history changes.
@@ -545,6 +578,10 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
         refresh_remaining: before.refresh_remaining, refresh_bonus_remaining: before.refresh_bonus_remaining,
         next_refresh_at: before.next_refresh_at,
         plus_active: Boolean(before.plus),
+        persist_page: savedPageResult?.available === true,
+        source_profile_key: recommendationSourceKey(mySourceCards.find(card => card.id === before.source_card_id)!),
+        main_candidate_ids: hydrate(after.recommendations).map(card => card.id),
+        extra_candidate_ids: hydrate(after.admin_recommendations).map(card => card.id),
       };
       return NextResponse.json({ plan });
     }

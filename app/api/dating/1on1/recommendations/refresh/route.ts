@@ -63,11 +63,14 @@ export async function POST(req: Request) {
 
     // Repeat-only browsing persists the seed atomically without touching normal
     // quota or compensation. Never consume then refund in separate requests.
-    const result = await admin.rpc(repeatRotation
+    const result = await admin.rpc(plan.persist_page ? "commit_dating_1on1_recommendation_page" : repeatRotation
       ? "rotate_dating_1on1_recommendations_without_charge"
       : "consume_dating_1on1_recommendation_refresh_checked", {
       p_card_id: sourceCardId, p_user_id: user.id, p_limit: plan.refresh_limit,
       p_expected_refresh_at: plan.expected_refresh_used_at, p_refresh_at: plan.refresh_at,
+      ...(plan.persist_page ? { p_main_candidate_ids: plan.main_candidate_ids,
+        p_extra_candidate_ids: plan.extra_candidate_ids, p_repeat_only: repeatRotation,
+        p_source_profile_key: plan.source_profile_key } : {}),
     });
     if (result.error) throw result.error;
     const row = (Array.isArray(result.data) ? result.data[0] : result.data) as RefreshResult | null;

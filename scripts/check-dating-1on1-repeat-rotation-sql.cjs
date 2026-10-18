@@ -6,6 +6,82 @@ const { PGlite } = require(process.env.REFRESH_TEST_PGLITE_PATH || '@electric-sq
 const sql = name => fs.readFileSync(path.join(__dirname, '../supabase/sql/' + name + '.sql'), 'utf8');
 const owner = '00000000-0000-4000-8000-000000000001', card = '00000000-0000-4000-8000-000000000002';
 const other = '00000000-0000-4000-8000-000000000003';
+
+test('saved recommendation page commits with quota atomically, with private roles and no fallback write', async () => {
+  const db = new PGlite();
+  const candidate = '00000000-0000-4000-8000-000000000004';
+  try {
+    await db.exec(`create role anon; create role authenticated; create role service_role bypassrls;
+      create schema auth; create table auth.users(id uuid primary key);
+      insert into auth.users values('${owner}'),('${other}');
+      create table profiles(user_id uuid primary key, is_banned boolean);
+      create table dating_1on1_cards(id uuid primary key, user_id uuid, sex text, status text, recommendation_refresh_used_at timestamptz, updated_at timestamptz, intro_text text, birth_year integer default 1996, region text default '서울 강남구');
+      create table dating_1on1_recommendation_refresh_events(id bigint generated always as identity,card_id uuid,user_id uuid,refreshed_at timestamptz);
+      create table dating_1on1_plus_subscriptions(user_id uuid,expires_at timestamptz);
+      insert into profiles values('${owner}',false),('${other}',false);
+      insert into dating_1on1_cards(id,user_id,sex,status,recommendation_refresh_used_at,updated_at,intro_text) values('${card}','${owner}','male','approved',null,null,'프로필 원문'),
+        ('${candidate}','${other}','female','approved',null,null,'상대 프로필');`);
+    await db.exec(sql('dating_1on1_checked_refresh')); await db.exec(sql('dating_1on1_repeat_rotation'));
+    await db.exec(sql('dating_1on1_recommendation_pages')); await db.exec(sql('dating_1on1_recommendation_pages'));
+    const rows = async q => (await db.query(q)).rows;
+    const stamp = async () => (await rows("select date_trunc('milliseconds',clock_timestamp())::text t"))[0].t;
+    const sourceKey = require('node:crypto').createHash('md5').update('male:1996:서울 강남구').digest('hex');
+    const call = async ({ main = [candidate], extra = [], repeat = false, expected = null, at, user = owner, key = sourceKey } = {}) =>
+      (await db.query('select * from commit_dating_1on1_recommendation_page($1,$2,$3,$4,$5,$6::uuid[],$7::uuid[],$8,$9)',
+        [card, user, 1, expected, at || await stamp(), main, extra, repeat, key])).rows[0];
+    const reset = async () => db.exec(`delete from dating_1on1_recommendation_pages; delete from dating_1on1_recommendation_refresh_events;
+      delete from dating_1on1_refresh_compensations; update dating_1on1_cards set recommendation_refresh_used_at=null,status='approved'; update profiles set is_banned=false;`);
+    const snapshot = async () => ({ pages: await rows('select * from dating_1on1_recommendation_pages'),
+      events: await rows('select * from dating_1on1_recommendation_refresh_events'),
+      cards: await rows('select id,recommendation_refresh_used_at,intro_text from dating_1on1_cards order by id'),
+      credits: await rows('select granted_count,used_count from dating_1on1_refresh_compensations') });
+    for (const role of ['anon', 'authenticated']) {
+      await db.exec('set role ' + role);
+      await assert.rejects(call(), /permission denied/);
+      await assert.rejects(rows('select * from dating_1on1_recommendation_pages'), /permission denied/);
+      await db.exec('reset role');
+    }
+    await db.exec('set role service_role'); const saved = await call(); await db.exec('reset role');
+    assert.equal(saved.reason, 'consumed'); assert.equal(saved.remaining_count, 0);
+    assert.deepEqual((await snapshot()).pages[0].main_candidate_ids, [candidate]);
+    assert.equal((await snapshot()).pages[0].refreshed_at.getTime(), saved.refreshed_at.getTime());
+    const prior = await snapshot();
+    assert.equal((await call()).reason, 'stale'); assert.deepEqual(await snapshot(), prior);
+    await reset();
+    const free = await call({ repeat: true }); assert.equal(free.reason, 'rotated'); assert.equal(free.remaining_count, 1);
+    assert.equal((await snapshot()).events[0].rotation_only, true);
+    assert.equal((await snapshot()).pages.length, 1);
+    await reset();
+    for (const input of [{ main: [] }, { main: [candidate], extra: [candidate] }, { main: [null] },
+      { main: Array(11).fill(candidate) }, { extra: Array(4).fill(candidate) }, { main: [card] }, { user: other }, { key: 'outdated-source-settings' }]) {
+      const before = await snapshot(); await assert.rejects(call(input)); assert.deepEqual(await snapshot(), before);
+    }
+    // Eligibility changes AFTER planning roll back the delegated quota/seed writes too.
+    for (const update of [`update profiles set is_banned=true where user_id='${other}'`,
+      `update dating_1on1_cards set status='rejected' where id='${candidate}'`]) {
+      await reset(); await db.exec(update); const before = await snapshot();
+      await assert.rejects(call(), /identities changed/); assert.deepEqual(await snapshot(), before);
+    }
+    await reset();
+    await db.exec(`create function fixture_page_fail() returns trigger language plpgsql as $$ begin raise exception 'page save failed'; end $$;
+      create trigger fixture_page_fail before insert or update on dating_1on1_recommendation_pages for each row execute function fixture_page_fail();`);
+    const before = await snapshot(); await assert.rejects(call(), /page save failed/); assert.deepEqual(await snapshot(), before);
+    await assert.rejects(call({ repeat: true }), /page save failed/); assert.deepEqual(await snapshot(), before);
+    await db.exec(`update dating_1on1_cards set recommendation_refresh_used_at=clock_timestamp()-interval '1 hour' where id='${card}';
+      insert into dating_1on1_recommendation_refresh_events(card_id,user_id,refreshed_at)
+        select id,user_id,recommendation_refresh_used_at from dating_1on1_cards where id='${card}';
+      insert into dating_1on1_refresh_compensations(user_id,campaign_key,granted_count,used_count,evidence)
+        values('${owner}','snapshot-test',2,0,'{}');`);
+    const bonusBefore = await snapshot(), legacy = bonusBefore.cards.find(c => c.id === card).recommendation_refresh_used_at;
+    await assert.rejects(call({ expected: legacy }), /page save failed/); assert.deepEqual(await snapshot(), bonusBefore);
+    await db.exec('drop trigger fixture_page_fail on dating_1on1_recommendation_pages');
+    await reset();
+    const at = await stamp(), racing = await Promise.all([call({ at }), call({ at })]);
+    assert.equal(racing.filter(r => r.allowed).length, 1);
+    assert.equal((await snapshot()).events.length, 1); assert.equal((await snapshot()).pages.length, 1);
+    await db.exec(`delete from auth.users where id='${owner}'`); assert.equal((await snapshot()).pages.length, 0);
+  } finally { await db.close(); }
+});
 test('repeat-only rotation is atomic, quota-neutral, bounded and compatible with normal/bonus refreshes', async () => {
   const db = new PGlite();
   try {

@@ -38,6 +38,204 @@ const card = (id, overrides = {}) => ({
 const source = card("source", { sex: "male", age: 30 });
 const ids = (cards) => cards.map((candidate) => candidate.id);
 
+for (const history of ['none', 'partial', 'complete']) test(`manual refresh leaves the current main/extra page before refilling it (${history} observations)`, () => {
+  const local = Array.from({ length: 13 }, (_, i) => card(`current-${i}`));
+  const wider = Array.from({ length: 30 }, (_, i) => card(`wider-${i}`, { region: '대전 서구' }));
+  const pool = [...local, ...wider];
+  const defaults = rules.takeBalancedRecommendations(source, rules.sortCandidatesForSource(source, pool, 'default', now), 10, new Set(), now);
+  const options = { limit: 3, excludeIds: new Set() };
+  const initial = rules.replayRecommendationRefreshes(source, pool, defaults, [], new Set(), 10, now - 1000, options);
+  const visible = [...initial.recommendations, ...initial.extraRecommendations];
+  const observations = visible.slice(0, history === 'none' ? 0 : history === 'partial' ? 1 : 13)
+    .map(c => ({ id: c.id, at: now - 900 }));
+  const result = rules.replayRecommendationRefreshes(source, pool, defaults, [new Date(now).toISOString()], new Set(), 10, now, options, observations);
+  const next = [...result.recommendations, ...result.extraRecommendations];
+  assert.equal(next.length, 13);
+  assert.equal(new Set(ids(next)).size, 13);
+  assert.ok(next.every(c => !ids(visible).includes(c.id)), 'eligible alternatives must precede the page just refreshed');
+  assert.deepEqual(result, rules.replayRecommendationRefreshes(source, pool, defaults,
+    [new Date(now).toISOString()], new Set(), 10, now + 1, options, observations));
+});
+
+test('mixed-region rotation maximizes different people and stays stable across 1512 sparse/dense/history cases', () => {
+  let cases = 0;
+  const regions = ['서울 강남구', '경기 수원', '대전', '부산', '광주', '강원 춘천', '제주'];
+  for (const sex of ['male', 'female']) for (const region of regions) for (const age of [22, 31, 44]) {
+    for (const size of [10, 13, 20, 26, 52, 120]) for (const mode of ['none', 'partial']) {
+      const src = card('matrix-source', { sex, region, age });
+      const pool = Array.from({ length: size }, (_, i) => card(`matrix-${i}`, {
+        sex: sex === 'male' ? 'female' : 'male', age, region: regions[Math.floor(i / 13) % regions.length],
+      }));
+      const defaults = rules.takeBalancedRecommendations(src, rules.sortCandidatesForSource(src, pool, 'matrix-default', now), 10, new Set(), now);
+      const options = { limit: 3, excludeIds: new Set() }, observations = [], seeds = [];
+      let page = rules.replayRecommendationRefreshes(src, pool, defaults, seeds, new Set(), 10, now, options, observations);
+      for (let round = 1; round <= 3; round++) {
+        const visible = [...page.recommendations, ...page.extraRecommendations];
+        const stamp = now + round * 10000;
+        if (mode === 'partial') observations.push(...visible.slice(0, 2).map(c => ({ id: c.id, at: stamp - 1 })));
+        seeds.push(new Date(stamp).toISOString());
+        page = rules.replayRecommendationRefreshes(src, pool, defaults, seeds, new Set(), 10, stamp, options, observations);
+        const next = [...page.recommendations, ...page.extraRecommendations];
+        assert.equal(next.length, Math.min(13, size));
+        assert.equal(new Set(ids(next)).size, next.length);
+        assert.equal(next.filter(c => !ids(visible).includes(c.id)).length, Math.min(13, size - visible.length),
+          `${sex}/${region}/${age}/${size}/${mode}/${round}`);
+        assert.deepEqual(page, rules.replayRecommendationRefreshes(src, pool, defaults, seeds, new Set(), 10, stamp + 1, options, observations));
+        cases++;
+      }
+    }
+  }
+  assert.equal(cases, 1512);
+});
+
+test('repeat-only browsing does not become a fixed page when the replay window reaches its bound', () => {
+  const pool = Array.from({ length: 26 }, (_, i) => card(`bounded-${i}`));
+  const defaults = rules.takeBalancedRecommendations(source, pool, 10, new Set(), now);
+  const options = { limit: 3, excludeIds: new Set() };
+  const observations = pool.map(c => ({ id: c.id, at: now - day / 2 }));
+  const pages = load('@/lib/dating-1on1-recommendation-page');
+  const context = { handled: new Set(), extraExcluded: new Set(), observations, limit: 10, extraLimit: 3 };
+  let previous = rules.replayRecommendationRefreshes(source, pool, defaults, [], new Set(), 10, now, options, observations);
+  for (let round = 0; round < 70; round++) {
+    const at = now + round * 31000, stamp = new Date(at).toISOString();
+    const result = pages.nextRecommendationPage(source, pool, previous, stamp, at, context);
+    const current = [...result.recommendations, ...result.extraRecommendations];
+    assert.equal(current.filter(c => ![...previous.recommendations, ...previous.extraRecommendations].some(p => p.id === c.id)).length, 13, `round ${round + 1}`);
+    previous = pages.restoreRecommendationPage(source, pool, { source_card_id: source.id, refreshed_at: stamp,
+      main_candidate_ids: ids(result.recommendations), extra_candidate_ids: ids(result.extraRecommendations) }, at + 1, context);
+    assert.deepEqual(ids(previous.recommendations), ids(result.recommendations));
+    assert.deepEqual(ids(previous.extraRecommendations), ids(result.extraRecommendations));
+  }
+});
+
+for (const mode of ['none', 'partial', 'complete']) test(`widened recommendation can be selected once without canceling previous matches (${mode})`, async () => {
+  const tables = fixture(45);
+  tables.dating_1on1_cards.slice(14).forEach(c => { c.region = '대전'; });
+  tables.dating_1on1_match_proposals.push(pair({ id: 'existing-unrelated', candidate_card_id: 'already-matched', candidate_user_id: 'other-person', state: 'mutual_accepted' }));
+  const before = allCandidates((await runApi(tables, { atTime: now - 1000 })).body);
+  tables.dating_1on1_candidate_impressions = before.slice(0, mode === 'none' ? 0 : mode === 'partial' ? 1 : 13).map(c => ({
+    viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now - 500).toISOString(),
+  }));
+  const refreshed = await runRefresh(tables, { atTime: now });
+  assert.equal(refreshed.response.status, 200);
+  const after = allCandidates((await runApi(tables, { atTime: now + 1 })).body);
+  assert.equal(refreshed.body.changed_candidate_count, after.filter(c => !ids(before).includes(c.id)).length);
+  const candidate = after.find(c => !ids(before).includes(c.id)); assert.ok(candidate);
+  assert.equal(candidate.photo_signed_urls.length, 1);
+  assert.equal(Object.hasOwn(candidate, 'phone'), false);
+  const original = structuredClone(tables.dating_1on1_match_proposals[0]);
+  const selected = await runSelect(tables, { candidateId: candidate.id, atTime: now + 2 });
+  assert.equal(selected.response.status, 200);
+  assert.deepEqual(tables.dating_1on1_match_proposals[0], original);
+  const duplicate = await runSelect(tables, { candidateId: candidate.id, atTime: now + 3 });
+  assert.equal(duplicate.response.status, 409);
+  assert.equal(duplicate.calls.some(q => q.insert || q.update || q.delete), false);
+  assert.deepEqual(duplicate.notifications, []);
+  assert.ok(allCandidates((await runApi(tables, { atTime: now + 4 })).body).every(c => c.id !== candidate.id));
+});
+
+test('snapshot-backed refresh survives history pruning, activity changes and acknowledgement without reshuffling', async () => {
+  const tables = fixture(80); tables.dating_1on1_recommendation_pages = [];
+  const initial = (await runApi(tables, { atTime: now })).body;
+  const refresh = await runRefresh(tables, { atTime: now + 1 });
+  assert.equal(refresh.response.status, 200); assert.equal(refresh.rpcCalls.length, 1);
+  assert.ok(Array.isArray(refresh.rpcCalls[0].p_main_candidate_ids));
+  const page = allCandidates((await runApi(tables, { atTime: now + 2 })).body);
+  assert.equal(page.filter(c => !ids(allCandidates(initial)).includes(c.id)).length, refresh.body.changed_candidate_count);
+  assert.deepEqual(ids(page), [...tables.dating_1on1_recommendation_pages[0].main_candidate_ids, ...tables.dating_1on1_recommendation_pages[0].extra_candidate_ids]);
+  tables.dating_1on1_recommendation_refresh_events = []; // retained page does not depend on replay length
+  tables.dating_1on1_candidate_impressions = page.map(c => ({ viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now + 3).toISOString() }));
+  tables.profiles.forEach(p => { p.last_meaningful_activity_at = new Date(now + 4).toISOString(); });
+  const again = (await runApi(tables, { atTime: now + 5 })).body;
+  assert.deepEqual(ids(allCandidates(again)), ids(page));
+  assert.ok(!JSON.stringify(again).includes('main_candidate_ids'), 'private receipt is never added to the public response');
+  const second = await runRefresh(tables, { atTime: now + day + 100 });
+  assert.equal(second.response.status, 200);
+  assert.equal((await runApi(tables, { atTime: now + day + 101 })).body.items[0].refresh_remaining, 0);
+});
+
+test('snapshot-backed API rotates after 64 retained events without consuming a repeat-only allowance', async () => {
+  const tables = fixture(26); tables.dating_1on1_recommendation_pages = [];
+  tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1).map(c => ({
+    viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now - 100000).toISOString(),
+  }));
+  await runRefresh(tables, { atTime: now });
+  let previous = allCandidates((await runApi(tables, { atTime: now + 1 })).body);
+  for (let i = 1; i <= 65; i++) tables.dating_1on1_recommendation_refresh_events.unshift({
+    card_id: 'source', user_id: 'user-source', refreshed_at: new Date(now - i * 31000).toISOString(), quota_refunded_at: new Date(now).toISOString(), rotation_only: true,
+  });
+  for (let round = 1; round <= 3; round++) {
+    tables.dating_1on1_recommendation_refresh_events = tables.dating_1on1_recommendation_refresh_events.slice(-64);
+    const at = now + round * 31000, refresh = await runRefresh(tables, { atTime: at });
+    assert.equal(refresh.response.status, 200); assert.equal(refresh.body.refresh_consumed, false);
+    assert.equal(refresh.body.rotated_candidate_count, 13); assert.equal(refresh.body.refresh_remaining, 1);
+    const next = allCandidates((await runApi(tables, { atTime: at + 1 })).body);
+    assert.equal(next.filter(c => !ids(previous).includes(c.id)).length, 13);
+    previous = next;
+  }
+});
+
+for (const change of ['ban', 'hidden', 'blocked', 'rejected', 'matched', 'favorite', 'withdrawn']) test(`saved page revalidates ${change} and refills without any write`, async () => {
+  const tables = fixture(70); tables.dating_1on1_recommendation_pages = [];
+  await runRefresh(tables, { atTime: now });
+  const page = allCandidates((await runApi(tables, { atTime: now + 1 })).body), selected = page[0];
+  if (change === 'ban') tables.profiles.find(p => p.user_id === selected.user_id).is_banned = true;
+  if (change === 'hidden') tables.dating_1on1_cards.find(c => c.id === selected.id).status = 'hidden';
+  if (change === 'withdrawn') tables.profiles = tables.profiles.filter(p => p.user_id !== selected.user_id);
+  if (change === 'blocked') tables.dating_user_blocks = [{ blocker_user_id: selected.user_id, blocked_user_id: 'user-source' }];
+  if (change === 'favorite') tables.dating_1on1_candidate_favorites = [{ user_id: 'user-source', source_card_id: 'source', candidate_card_id: selected.id }];
+  if (change === 'rejected' || change === 'matched') tables.dating_1on1_match_proposals.push(pair({
+    candidate_card_id: selected.id, candidate_user_id: selected.user_id, state: change === 'matched' ? 'mutual_accepted' : 'candidate_rejected',
+  }));
+  const before = structuredClone(tables), result = await runApi(tables, { atTime: now + 2 });
+  assert.equal(result.response.status, 200);
+  const after = allCandidates(result.body);
+  assert.equal(after.length, 13); assert.equal(new Set(ids(after)).size, 13);
+  assert.ok(after.every(c => c.id !== selected.id));
+  assert.deepEqual(tables, before); assert.ok(result.calls.every(q => !q.insert && !q.update && !q.delete));
+});
+
+test('snapshot read/write failure never falls back to another quota write or a misleading old page', async () => {
+  const tables = fixture(60); tables.dating_1on1_recommendation_pages = [];
+  const intercept = q => q.table === 'dating_1on1_recommendation_pages' ? { data: null, error: { code: '57014', message: 'timeout' } } : null;
+  assert.equal((await runApi(tables, { atTime: now, intercept })).response.status, 503);
+  const unread = await runRefresh(tables, { atTime: now, intercept });
+  assert.equal(unread.response.status, 503); assert.equal(unread.rpcCalls.length, 0);
+  for (const code of ['PGRST202', '57014']) {
+    const failed = await runRefresh(tables, { atTime: now, rpc: async (_, name) => {
+      assert.equal(name, 'commit_dating_1on1_recommendation_page'); return { data: null, error: { code } };
+    } });
+    assert.equal(failed.response.status, 503); assert.equal(failed.rpcCalls.length, 1);
+    assert.equal(tables.dating_1on1_cards[0].recommendation_refresh_used_at, null);
+  }
+});
+
+test('changing source region invalidates the saved ordering without spending a refresh', async () => {
+  const tables = fixture(60); tables.dating_1on1_recommendation_pages = [];
+  tables.dating_1on1_cards.slice(31).forEach(c => { c.region = '부산'; });
+  await runRefresh(tables, { atTime: now });
+  tables.dating_1on1_cards[0].region = '부산';
+  const before = structuredClone(tables), after = await runApi(tables, { atTime: now + 1 });
+  assert.equal(after.response.status, 200);
+  assert.ok(allCandidates(after.body).every(c => c.region === '부산'));
+  assert.deepEqual(tables, before); assert.ok(after.calls.every(q => !q.insert && !q.update && !q.delete));
+});
+
+test('new compatible nearby member enters a saved wider page, without a quota charge or photo leak', async () => {
+  const tables = fixture(40); tables.dating_1on1_recommendation_pages = [];
+  tables.dating_1on1_cards.slice(1).forEach(c => { c.region = '부산'; });
+  await runRefresh(tables, { atTime: now });
+  tables.dating_1on1_cards.push({ ...tables.dating_1on1_cards[1], id: 'new-local', user_id: 'new-user', phone: '+821099999991',
+    created_at: new Date(now + 1000).toISOString(), region: '서울 강남구' });
+  tables.profiles.push({ user_id: 'new-user', phone_e164: '+821099999991', is_banned: false });
+  const before = structuredClone(tables), result = await runApi(tables, { atTime: now + 2000 });
+  assert.equal(result.body.items[0].recommendations[0].id, 'new-local');
+  assert.equal(allCandidates(result.body).length, 13);
+  assert.deepEqual(tables, before);
+  const snapshot = tables.dating_1on1_recommendation_pages[0];
+  assert.ok(!snapshot.main_candidate_ids.includes('new-local'), 'GET never mutates the saved receipt');
+});
+
 test('wider-region notice uses the existing 180km boundary and never guesses unknown distances', () => {
   const helpers = createLoader({ '@/lib/region-distance': {
     getRegionDistanceMeta: (_source, region) => ({ distanceKm: region === 'unknown' ? null : Number(region) }),
@@ -226,7 +424,7 @@ test('legacy history without impressions can still leave an exhausted wider band
   assert.ok(result.recommendations.every(c => c.id.startsWith('legacy-outer')), 'splitting distance bands must not trap legacy refreshes in a 13-person loop');
 });
 
-test("extra candidates prefer compatible locals from earlier pages over distant unseen people", () => {
+test("initial extras stay local, while explicit refresh widens after exhausting unseen locals", () => {
   for (const sex of ["male", "female"]) {
     const src = card("local-source", { sex, age: 28 });
     const peerSex = sex === "male" ? "female" : "male";
@@ -234,11 +432,14 @@ test("extra candidates prefer compatible locals from earlier pages over distant 
     const far = Array.from({ length: 35 }, (_, i) => card("far-" + i, { sex: peerSex, region: "부산 해운대구" }));
     const pool = [...locals, ...far];
     const defaults = rules.takeBalancedRecommendations(src, rules.sortCandidatesForSource(src, pool, "default", now), 10, new Set(), now);
+    const initial = rules.replayRecommendationRefreshes(src, pool, defaults, [], new Set(), 10, now, { limit: 3, excludeIds: new Set() });
+    assert.ok(initial.extraRecommendations.every(c => c.id.startsWith('local-')));
     const result = rules.replayRecommendationRefreshes(src, pool, defaults,
       [new Date(now - 3600000).toISOString()], new Set(), 10, now, { limit: 3, excludeIds: new Set() });
     assert.equal(result.recommendations.length, 10);
     assert.equal(result.extraRecommendations.length, 3);
-    assert.ok(result.extraRecommendations.every(c => c.id.startsWith("local-")), "historical main is a soft preference, not a hard exclusion");
+    assert.equal([...result.recommendations, ...result.extraRecommendations].filter(c => c.id.startsWith('local-')).length, 2,
+      'the two not-yet-shown locals precede wider candidates; the old thirteen are not forced back in');
     assert.equal(result.extraRecommendations.some(c => ids(result.recommendations).includes(c.id)), false);
   }
 });
@@ -251,8 +452,7 @@ test("extra fallback never restores recent handled people, and remains stable on
     const stamps = [now - 86400000 * 2, now - 3600000].map(n => new Date(n).toISOString());
     const run = () => rules.replayRecommendationRefreshes(source, pool, locals.slice(0, 10), stamps, exclude, 10, now, { limit: 3, excludeIds: exclude });
     const result = run();
-    const availableLocals = locals.filter(c => !exclude.has(c.id) && !ids(result.recommendations).includes(c.id));
-    assert.equal(result.extraRecommendations.filter(c => c.id.startsWith("near-")).length, Math.min(3, availableLocals.length));
+    assert.equal(result.extraRecommendations.length, 3);
     assert.ok(result.extraRecommendations.every(c => !exclude.has(c.id) && !ids(result.recommendations).includes(c.id)));
     assert.deepEqual(result, run());
   }
@@ -286,6 +486,9 @@ function mockDatabase(tables, intercept) {
             calls.push(structuredClone(query));
             const override = intercept?.(query, tables);
             if (override) return override;
+            if (table === 'dating_1on1_recommendation_pages' && !Object.hasOwn(tables, table)) {
+              return { data: null, error: { code: '42P01', message: 'page migration not installed' } };
+            }
             if (query.insert) {
               tables[table] ??= [];
               tables[table].push(...query.insert.map((row, i) => ({ id: `inserted-${tables[table].length + i}`, ...row })));
@@ -382,9 +585,9 @@ async function runApi(tables, { intercept, signedIn = true, atTime } = {}) {
 async function runRefresh(tables, { intercept, signedIn = true, atTime = now, sourceId = 'source', rpc, legacyClient = false, expansionEnabled = false } = {}) {
   const db = mockDatabase(tables, intercept), rpcCalls = [];
   db.rpc = async (name, args) => {
-    assert.ok(['consume_dating_1on1_recommendation_refresh_checked', 'rotate_dating_1on1_recommendations_without_charge'].includes(name)); rpcCalls.push(args);
+    assert.ok(['consume_dating_1on1_recommendation_refresh_checked', 'rotate_dating_1on1_recommendations_without_charge', 'commit_dating_1on1_recommendation_page'].includes(name)); rpcCalls.push(args);
     if (rpc) return rpc(args, name);
-    const repeatOnly = name === 'rotate_dating_1on1_recommendations_without_charge';
+    const repeatOnly = name === 'rotate_dating_1on1_recommendations_without_charge' || args.p_repeat_only === true;
     const source = tables.dating_1on1_cards.find(row => row.id === args.p_card_id);
     assert.equal(source.recommendation_refresh_used_at, args.p_expected_refresh_at);
     // PostgreSQL serializes timestamptz differently from JavaScript's ISO string.
@@ -393,6 +596,11 @@ async function runRefresh(tables, { intercept, signedIn = true, atTime = now, so
     tables.dating_1on1_recommendation_refresh_events ??= [];
     tables.dating_1on1_recommendation_refresh_events.push({ card_id: args.p_card_id, user_id: args.p_user_id, refreshed_at: stamp,
       ...(repeatOnly ? { quota_refunded_at: stamp, rotation_only: true } : {}) });
+    if (name === 'commit_dating_1on1_recommendation_page') {
+      tables.dating_1on1_recommendation_pages = [{ user_id: args.p_user_id, source_card_id: args.p_card_id,
+        refreshed_at: stamp, source_profile_key: args.p_source_profile_key,
+        main_candidate_ids: args.p_main_candidate_ids, extra_candidate_ids: args.p_extra_candidate_ids }];
+    }
     return { data: [{ allowed: true, reason: repeatOnly ? 'rotated' : 'consumed', used_count: repeatOnly ? 0 : 1,
       remaining_count: args.p_limit - (repeatOnly ? 0 : 1), refreshed_at: stamp, next_refresh_at: null }], error: null };
   };
@@ -1062,6 +1270,21 @@ test("recent candidates count toward both quotas when applicable", () => {
   assert.equal(result.filter((candidate) => candidate.last_active_at).length, 4);
   assert.equal(result.length, 10);
 });
+
+test('equally suitable nearby active candidates receive a majority without jumping age or distance tiers', () => {
+  const inactive = Array.from({ length: 30 }, (_, i) => card(`inactive-${i}`));
+  const active = Array.from({ length: 12 }, (_, i) => card(`active-${i}`, { region: '경기 수원', last_active_at: new Date(now - day).toISOString() }));
+  const distant = Array.from({ length: 20 }, (_, i) => card(`distant-${i}`, { region: '부산', last_active_at: new Date(now - 1000).toISOString() }));
+  const wrongAge = Array.from({ length: 20 }, (_, i) => card(`wrong-age-${i}`, { age: 48, last_active_at: new Date(now - 1000).toISOString() }));
+  for (let seed = 0; seed < 20; seed++) {
+    const result = rules.takeBalancedRecommendations(source,
+      rules.sortCandidatesForSource(source, [...inactive, ...active, ...distant, ...wrongAge], String(seed), now), 10, new Set(), now);
+    assert.equal(result.length, 10);
+    assert.ok(result.filter(c => c.id.startsWith('active-')).length >= 6);
+    assert.ok(result.every(c => rules.isCandidateInSourceAgeRange(source, c)));
+    assert.ok(result.every(c => !/^(distant|wrong-age)-/.test(c.id)));
+  }
+});
 test("daily variety does not move remote candidates ahead of equally suitable local candidates", () => {
   const candidates = [card("local"), card("remote", { region: "부산 해운대구" })];
   for (let i = 0; i < 30; i += 1) {
@@ -1492,7 +1715,10 @@ test("real GET expiry and KST midnight transitions match the page being refreshe
       const after = result.body.items[0];
       assert.equal(before.can_refresh, true);
       assert.equal(after.recommendations.length, 10);
-      assert.equal(after.recommendations.filter(c => ids(before.recommendations).includes(c.id)).length, 0, `${sex}/${offset}`);
+      const oldPage = [...before.recommendations, ...before.admin_recommendations];
+      const newPage = [...after.recommendations, ...after.admin_recommendations];
+      assert.equal(newPage.filter(c => !ids(oldPage).includes(c.id)).length,
+        Math.min(newPage.length, 20 - oldPage.length), `${sex}/${offset}: count different people, not section moves`);
       assert.equal(after.refresh_used_count, before.refresh_used_count + 1);
       assert.equal(after.refresh_remaining, before.refresh_remaining - 1);
       assert.equal(after.admin_recommendations.some(c => ids(after.recommendations).includes(c.id)), false);
@@ -1501,24 +1727,28 @@ test("real GET expiry and KST midnight transitions match the page being refreshe
   }
 });
 
-test("a week of refreshes never trades compatible locals for unseen distant people", () => {
+test("legacy refreshes exhaust unshown compatible locals before widening to unshown distant people", () => {
   const locals = Array.from({ length: 45 }, (_, i) => card(`local-${i}`));
   const remote = Array.from({ length: 80 }, (_, i) => card(`remote-${i}`, { region: '부산 해운대구' }));
   const pool = [...locals, ...remote];
   const defaults = rules.takeBalancedRecommendations(source, rules.sortCandidatesForSource(source, pool, 'day', now), 10, new Set(), now);
   let previous = defaults;
+  const encountered = new Set(ids(defaults));
   const times = [];
   for (let index = 0; index < 10; index++) {
     times.push(new Date(now - 6 * day + index * 1000).toISOString());
     const result = rules.replayRecommendationRefreshes(source, pool, defaults, times, new Set(locals.slice(0, 25).map(c => c.id)), 10, now);
     assert.equal(result.recommendations.length, 10);
-    assert.ok(result.recommendations.every(c => c.id.startsWith('local-')));
+    const remainingLocal = locals.filter(c => !encountered.has(c.id));
+    assert.equal(result.recommendations.filter(c => remainingLocal.some(x => x.id === c.id)).length, Math.min(10, remainingLocal.length));
+    assert.ok(result.recommendations.every(c => !encountered.has(c.id)), 'never repeat a replayed page while eligible alternatives remain');
     assert.equal(result.recommendations.some(c => ids(previous).includes(c.id)), false);
     previous = result.recommendations;
+    for (const c of result.recommendations) encountered.add(c.id);
   }
 });
 
-test("repeated refreshes leave an exhausted top tier for a bounded number of nearby compatible alternatives", () => {
+test("repeated refreshes leave exhausted nearby tiers before repeating them", () => {
   for (const sex of ['male', 'female']) {
     const src = card('regional-source', { sex, age: 31, region: '양산(경남)' });
     const peerSex = sex === 'male' ? 'female' : 'male';
@@ -1536,8 +1766,9 @@ test("repeated refreshes leave an exhausted top tier for a bounded number of nea
       const result = rules.replayRecommendationRefreshes(src, pool, defaults, stamps, new Set(), 10, now, { limit: 3, excludeIds: new Set() });
       const fresh = result.recommendations.filter(c => !encountered.has(c.id));
       assert.ok(fresh.length >= 4, `round ${index}: genuinely unseen similar locals remain`);
-      assert.ok(result.recommendations.filter(c => c.id.startsWith('ideal-')).length >= 6);
-      assert.ok(result.recommendations.every(c => /^(ideal|similar)-/.test(c.id)));
+      const remainingNearby = [...closest, ...similar].filter(c => !encountered.has(c.id));
+      assert.equal(result.recommendations.filter(c => remainingNearby.some(x => x.id === c.id)).length, Math.min(10, remainingNearby.length));
+      assert.ok(result.recommendations.every(c => !c.id.startsWith('wrong-age-')));
       assert.equal(new Set(ids(result.recommendations)).size, 10);
       assert.equal(result.extraRecommendations.some(c => ids(result.recommendations).includes(c.id)), false);
       assert.deepEqual(result, rules.replayRecommendationRefreshes(src, pool, defaults, stamps, new Set(), 10, now, { limit: 3, excludeIds: new Set() }));
@@ -1547,7 +1778,7 @@ test("repeated refreshes leave an exhausted top tier for a bounded number of nea
   }
 });
 
-test("refresh keeps unseen best matches first and never widens for remote, unknown-age or recently handled alternatives", () => {
+test("refresh keeps unseen best matches first, broadens exhausted pools, and defers recently handled profiles", () => {
   const best = Array.from({ length: 50 }, (_, i) => card('best-' + i));
   const similar = Array.from({ length: 20 }, (_, i) => card('similar-' + i, { age: 32 }));
   const run = (pool, defaults) => rules.replayRecommendationRefreshes(source, pool, defaults,
@@ -1558,7 +1789,11 @@ test("refresh keeps unseen best matches first and never widens for remote, unkno
     card('wrong-age', { age: 50 }), card('unknown-age', { age: null }),
     card('recent-handled', { age: 32, last_handled_at: new Date(now - 1000).toISOString() }),
   ];
-  assert.ok(run([...best.slice(0, 13), ...unsafe], best.slice(0, 10)).recommendations.every(c => c.id.startsWith('best-')));
+  const widened = run([...best.slice(0, 13), ...unsafe], best.slice(0, 10)).recommendations;
+  assert.ok(widened.some(c => c.id === 'far'));
+  assert.ok(widened.every(c => c.id !== 'recent-handled'));
+  // This pure ranking helper is not an eligibility gate. API tests separately
+  // prove malformed/underage/blocked candidates cannot enter any of its pools.
 });
 
 for (const sex of ['male', 'female']) test(`regional rotation agrees with charged plans across three days and Plus refreshes (${sex})`, async () => {
@@ -1588,8 +1823,7 @@ for (const sex of ['male', 'female']) test(`regional rotation agrees with charge
     assert.equal(after.items[0].refresh_used_count, before.items[0].refresh_used_count + 1);
     assert.equal(after.items[0].refresh_remaining, before.items[0].refresh_remaining - 1);
     assert.deepEqual(ids(allCandidates(after)), ids(allCandidates(repeatedRead)));
-    assert.ok(after.items[0].recommendations.filter(c => c.birth_year === 1996).length >= 6);
-    assert.ok(allCandidates(after).every(c => c.region === '부산 해운대구'));
+    assert.ok(after.items[0].recommendations.every(c => Math.abs(c.birth_year - 1996) <= 2));
     for (const c of allCandidates(after)) seen.add(c.user_id);
   }
   assert.ok(seen.size > 19);
@@ -1614,7 +1848,7 @@ test('new nearby variety slots retain bans, blocks, pending requests, rejections
   assert.equal(result.body.refresh_consumed, true);
   const after = (await runApi(tables, { atTime: now + 1 })).body;
   assert.ok(allCandidates(after).every(c => !blocked.includes(c.id)));
-  assert.equal(after.items[0].recommendations.filter(c => Number(c.id.slice(1)) > 18).length, 4);
+  assert.equal(after.items[0].recommendations.filter(c => Number(c.id.slice(1)) > 18).length, 10);
   assert.deepEqual(ids(after.items[0].favorite_candidates), ['c18']);
 });
 
