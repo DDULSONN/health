@@ -73,7 +73,7 @@ export function buildOneOnOneRefreshConfirmation(usage?: OneOnOneRefreshUsage | 
     ? `사용 전 ${remaining}회 → 이번 사용 후 ${remaining - 1}회 남아요.`
     : "이용 가능 횟수는 요청 시 확인하며, 성공하면 1회가 사용돼요.";
   return ["후보 새로고침 1회를 사용할까요?", "", quota,
-    "추천 후보를 이미 봤다면, 가까운 지역부터 범위를 넓혀 다른 후보를 보여드려요.",
+    "추천 후보를 이미 봤다면, 나이가 맞는 후보부터 가까운 지역순으로 범위를 넓혀요.",
     "이미 본 후보만 다시 보여드릴 때는 횟수를 사용하지 않아요.",
     (count(usage?.refresh_bonus_remaining) ?? 0) > 0
       ? "일반 횟수부터 사용하고, 다 쓰면 보상 횟수를 사용해요. 보상은 사용 전까지 유지되며, 사용하면 다시 충전되지 않아요."

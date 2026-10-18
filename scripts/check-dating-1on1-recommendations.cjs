@@ -450,7 +450,7 @@ test('manual refresh continues to unseen broader candidates before repeating pre
   assert.equal(result.response.status, 200); assert.equal(result.body.refresh_consumed, true);
   assert.equal(result.body.changed_candidate_count, 10);
   const after = (await runApi(tables, { atTime: now + 1 })).body;
-  assert.ok(after.items[0].recommendations.every(c => c.birth_year <= sourceYear - 8), 'broader adults remain reachable after preferred candidates are exhausted');
+  assert.ok(after.items[0].recommendations.every(c => c.birth_year === sourceYear - 8), 'choose the smallest available age gap before 12/25-year gaps');
   assert.ok(after.items[0].recommendations.every(c => c.photo_signed_urls.length > 0));
   const seenIds = new Set(tables.dating_1on1_candidate_impressions.map(r => r.candidate_user_id));
   assert.ok(after.items[0].recommendations.every(c => !seenIds.has(c.user_id)));
@@ -460,7 +460,7 @@ test('manual refresh continues to unseen broader candidates before repeating pre
   assert.deepEqual(ids((await runApi(tables, { atTime: now + 3 })).body.items[0].recommendations), ids(after.items[0].recommendations));
 });
 
-test('broader fallback exhausts nearer distance bands before far age-compatible or unknown-region candidates', () => {
+test('broader fallback keeps age compatibility while widening distance, then relaxes age gradually', () => {
   const helpers = createLoader({ '@/lib/region-distance': {
     getRegionDistanceMeta: (_source, region) => ({ distanceKm: region === 'unknown' ? null : Number(region) }),
   } })('@/lib/dating-1on1-recommendations');
@@ -472,11 +472,70 @@ test('broader fallback exhausts nearer distance bands before far age-compatible 
   const sorted = helpers.sortCandidatesForSource(source, [...locals, ...near, ...next, ...far, unknown], 'broader', now);
   const result = helpers.takeObservedRecommendations(source, sorted, 10, new Set(ids(locals)), new Set(ids(locals)), new Set(), now, true);
   assert.equal(result.length, 10);
-  assert.deepEqual(new Set(ids(result.slice(0, 6))), new Set(ids(near)));
-  assert.ok(result.slice(6).every(c => c.id.startsWith('next-broad-')));
-  const allSeen = new Set(ids([...locals, ...near, ...next]));
+  assert.ok(result.every(c => c.id.startsWith('far-age-')), 'age-compatible wider candidates precede nearby 8/9-year gaps');
+  const allSeen = new Set(ids([...locals, ...far]));
   const widened = helpers.takeObservedRecommendations(source, sorted, 10, allSeen, new Set(ids(result)), new Set(), now, true);
-  assert.ok(widened.every(c => c.id.startsWith('far-age-')));
+  assert.deepEqual(new Set(ids(widened.slice(0, 6))), new Set(ids(near)));
+  assert.ok(widened.slice(6).every(c => c.id.startsWith('next-broad-')));
+});
+
+test('age-compatible wider candidates still expand through distance bands for both source sexes', () => {
+  const helpers = createLoader({ '@/lib/region-distance': {
+    getRegionDistanceMeta: (_source, region) => ({ distanceKm: region === 'unknown' ? null : Number(region) }),
+  } })('@/lib/dating-1on1-recommendations');
+  for (const sex of ['male', 'female']) {
+    const src = { ...source, sex };
+    const age = sex === 'male' ? 28 : 32;
+    const seen = Array.from({ length: 13 }, (_, i) => card('seen-' + i, { age, region: '10' }));
+    const nearWide = Array.from({ length: 6 }, (_, i) => card('wide-first-' + i, { age, region: '200' }));
+    const further = Array.from({ length: 10 }, (_, i) => card('wide-next-' + i, { age, region: '300' }));
+    const unrelated = Array.from({ length: 10 }, (_, i) => card('wrong-age-' + i, { age: 50, region: '190' }));
+    const pool = helpers.sortCandidatesForSource(src, [...unrelated, ...seen, ...further, ...nearWide], 'widen', now);
+    const result = helpers.takeObservedRecommendations(src, pool, 10, new Set(ids(seen)), new Set(ids(seen)), new Set(), now, true);
+    assert.deepEqual(new Set(ids(result.slice(0, 6))), new Set(ids(nearWide)));
+    assert.ok(result.slice(6).every(c => c.id.startsWith('wide-next-')));
+  }
+});
+
+test('a sparse broader pool with no preferred tier still ranks age before distance without dropping candidates', () => {
+  const helpers = createLoader({ '@/lib/region-distance': {
+    getRegionDistanceMeta: (_source, region) => ({ distanceKm: region === 'unknown' ? null : Number(region) }),
+  } })('@/lib/dating-1on1-recommendations');
+  const pool = [card('gap-8-far', { age: 38, region: '300' }), card('gap-8-nearer', { age: 38, region: '100' }),
+    card('gap-20-close', { age: 50, region: '10' }), card('unknown-fit', { region: 'unknown' })];
+  const sorted = helpers.sortCandidatesForSource(source, pool, 'scarce', now);
+  const result = helpers.takeObservedRecommendations(source, sorted, 10, new Set(['earlier']), new Set(), new Set(), now, true);
+  assert.deepEqual(ids(result), ['gap-8-nearer', 'gap-8-far', 'gap-20-close', 'unknown-fit']);
+  // The all-seen, no-charge rotation must use the same age-aware ordering.
+  const repeated = helpers.takeObservedRecommendations(source, sorted, 10, new Set(ids(pool)), new Set(), new Set(), now, true);
+  assert.deepEqual(ids(repeated), ids(result));
+});
+
+test('API refresh prioritizes age-compatible wider candidates and persists the same list on subsequent GET', async () => {
+  const tables = fixture(60);
+  const sourceYear = tables.dating_1on1_cards[0].birth_year;
+  for (const [i, c] of tables.dating_1on1_cards.slice(1).entries()) {
+    if (i >= 20 && i < 40) c.birth_year = sourceYear - 15;
+    if (i >= 40) c.region = '부산';
+  }
+  tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1, 21).map(c => ({
+    viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now - 3600000).toISOString(),
+  }));
+  const result = await runRefresh(tables);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.refresh_consumed, true);
+  assert.equal(result.rpcCalls.length, 1);
+  const after = (await runApi(tables, { atTime: now + 1 })).body.items[0];
+  assert.ok(after.recommendations.every(c => c.region === '부산' && c.birth_year > sourceYear - 15));
+  assert.equal(after.recommendation_region_widened, true);
+  assert.ok(after.recommendations.every(c => c.photo_signed_urls.length > 0));
+  const both = [...after.recommendations, ...after.admin_recommendations];
+  assert.equal(new Set(ids(both)).size, both.length);
+  tables.dating_1on1_candidate_impressions.push(...both.map(c => ({ viewer_user_id: 'user-source',
+    candidate_user_id: c.user_id, first_seen_at: new Date(now + 2).toISOString() })));
+  const again = (await runApi(tables, { atTime: now + 3 })).body.items[0];
+  assert.deepEqual(ids(again.recommendations), ids(after.recommendations));
+  assert.equal(again.refresh_remaining, after.refresh_remaining);
 });
 
 test('a new suitable nearby registration returns to the front of a broader-age page without a refresh use', () => {

@@ -44,7 +44,7 @@ test('compensation copy separates bonus from rolling quota without inventing a l
 });
 
 test('refresh explains gradual region/age expansion and does not call an old page new', () => {
-  assert.match(copy.buildOneOnOneRefreshConfirmation(quota()), /가까운 지역부터 범위를 넓혀/);
+  assert.match(copy.buildOneOnOneRefreshConfirmation(quota()), /나이가 맞는 후보부터 가까운 지역순/);
   const text = copy.buildOneOnOneRefreshSuccess({ refresh_consumed: false, refresh_remaining: 2 });
   assert.match(text, /새로 보여드릴 후보를 찾지 못해 횟수를 사용하지 않았어요/);
   assert.match(text, /2회 그대로/);

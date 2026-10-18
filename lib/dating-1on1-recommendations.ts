@@ -125,6 +125,27 @@ function createRecommendationMetaReader(source: RecommendationCandidate) {
 }
 type RecommendationMetaReader = ReturnType<typeof createRecommendationMetaReader>;
 
+function groupBroaderCandidates<T extends RecommendationCandidate>(candidates: T[], readMeta: RecommendationMetaReader) {
+  const groups = new Map<string, { ranks: number[]; cards: T[] }>();
+  for (const card of candidates) {
+    const { km, ageMatch, ageGap } = readMeta(card);
+    // Broaden distance while preserving the preferred age range first. Only
+    // after that pool runs out relax age, from smallest gap to largest, and
+    // keep nearby regions first within each age group. Unknown regions last.
+    const ranks = [km == null ? 1 : 0, ageMatch ? 0 : ageGap + 1, distanceBand(km)];
+    const key = ranks.join(':');
+    const group: { ranks: number[]; cards: T[] } = groups.get(key) ?? { ranks, cards: [] };
+    group.cards.push(card);
+    groups.set(key, group);
+  }
+  return [...groups.values()].sort((a, b) => {
+    for (let i = 0; i < a.ranks.length; i++) {
+      if (a.ranks[i] !== b.ranks[i]) return a.ranks[i] - b.ranks[i];
+    }
+    return 0;
+  }).map(group => group.cards);
+}
+
 function groupByRelevance<T extends RecommendationCandidate>(
   candidates: T[], readMeta: RecommendationMetaReader, splitWiderDistanceBands = true
 ) {
@@ -264,31 +285,30 @@ export function takeObservedRecommendations<T extends RecommendationCandidate>(
   // Before repeating locals, broaden only to the existing safe nearby tiers:
   // <=90 km / age gap <=6, or <=180 km / the normal age range. Do not fill with
   // arbitrary distant/unknown-age people just to make the refresh look different.
-  const suitable = (card: T) => meta(card).tier <= Math.max(2, bestTier);
+  // A sparse pool may start at tier 4 or 7. During refresh it must still pass
+  // through the age-aware broader ordering, not treat every such card as a fit.
+  const suitable = (card: T) => meta(card).tier <= (allowWiderUnseen ? 2 : Math.max(2, bestTier));
   const fresh = (card: T) => suitable(card) && !observed.has(card.id) && !isRecentlyHandledCandidate(card, nowMs);
-  // Once the preferred unseen pool is exhausted, continue through the broader
-  // eligible pool by distance band. Keep the existing relevance/age ranking
-  // INSIDE each band; an age-compatible remote card must not skip a nearer band.
+  // Once the preferred unseen pool is exhausted, expand known regions while
+  // keeping age compatibility. Distance alone must not promote large age gaps.
   // All cards are already server-validated adults with safety exclusions applied.
   // Unknown regions come last and are never presented as nearby.
   const broaderFresh = (card: T) => allowWiderUnseen && !observed.has(card.id) &&
     !handled.has(card.id) && !isRecentlyHandledCandidate(card, nowMs);
-  const byDistance = (pool: T[]) => [...Array(RECOMMENDATION_DISTANCE_BANDS_KM.length + 1).keys()]
-    .map(band => pool.filter(card => distanceBand(meta(card).km) === band));
-  const broaderPools = allowWiderUnseen ? byDistance(sorted.filter(broaderFresh)) : [];
+  const broaderPools = allowWiderUnseen ? groupBroaderCandidates(sorted.filter(broaderFresh), meta) : [];
   const picked: T[] = [];
   const used = new Set<string>();
   for (const pool of [sorted.filter(card => fresh(card) && !previous.has(card.id)), sorted.filter(fresh),
     ...broaderPools,
     // All eligible people may already have been shown. Still permit another
     // page; the API distinguishes a free repeat rotation from a new-person use.
-    ...(allowWiderUnseen ? byDistance(sorted.filter(card => !previous.has(card.id))) : []),
+    ...(allowWiderUnseen ? groupBroaderCandidates(sorted.filter(card => !previous.has(card.id)), meta) : []),
     sorted.filter(card => suitable(card) && !previous.has(card.id)), sorted.filter(suitable), sorted]) {
     const next = takeBalancedRecommendations(source, pool.filter(card => !used.has(card.id)), limit - picked.length, handled, nowMs, meta);
     picked.push(...next); for (const card of next) used.add(card.id);
     if (picked.length >= limit) break;
   }
-  // Preserve the preferred-then-distance expansion order, not global tier order.
+  // Preserve age-aware expansion order, not global tier order.
   if (allowWiderUnseen) return picked;
   const order = new Map(sorted.map((card, index) => [card.id, index]));
   return picked.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
