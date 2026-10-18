@@ -52,7 +52,15 @@ if (require.main === module) {
       ? '22bca1832e0b0b35c8bffa45c87d7108d12b73bf2206dcae9083c930ce6396ef'
       // Same article/children/buttons, with a visibility-only observation hook.
       : name === 'OneOnOneCandidateCard' ? '31f6f4a089163a4631d1cd45be6017b561e93e9a69114a68d27ad2927a07d6e3' : baseline.functions[name];
-    assert.equal(fingerprint(read(file), name), expected);
+    let source = read(file);
+    if (name === 'OneOnOneContactOffer') {
+      // Only the reviewed, read-on-open support guide may be added. Keep the
+      // original payment callback/price/disabled-state fingerprint unchanged.
+      const guide = '      {!included ? <ContactCarePanel key={matchId} matchId={matchId} guideOnly /> : null}\n';
+      assert.equal(source.split(guide).length, 2);
+      source = source.replace(guide, '');
+    }
+    assert.equal(fingerprint(source, name), expected);
   });
   test('recommendation ordering, counters and existing action bindings remain unchanged', () => {
     // The resilience patch adds one explicit, GET-only recommendation retry.

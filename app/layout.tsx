@@ -7,6 +7,7 @@ import Header from "@/components/Header";
 import Footer from "@/components/Footer";
 import MobileBottomTabBar from "@/components/MobileBottomTabBar";
 import PaymentMethodAnnouncement from "@/components/PaymentMethodAnnouncement";
+import ContactCareAnnouncement from "@/components/dating/ContactCareAnnouncement";
 import SiteGuideBubble from "@/components/SiteGuideBubble";
 import ReturnProfileRewardBanner from "@/components/ReturnProfileRewardBanner";
 import GrowthPrompts from "@/components/GrowthPrompts";
@@ -117,6 +118,7 @@ export default function RootLayout({
         <Header />
         <SiteGuideBubble />
         <PaymentMethodAnnouncement />
+        <ContactCareAnnouncement />
         <ReturnProfileRewardBanner />
         <GrowthPrompts />
         <div className="flex-1 pb-20 md:pb-0">{children}</div>

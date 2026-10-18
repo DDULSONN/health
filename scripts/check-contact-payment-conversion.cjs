@@ -23,6 +23,8 @@ const nudge = load('lib/dating-1on1-contact-nudge.ts');
 const nudgeUI = load('components/dating/OneOnOneContactNudge.tsx', { '@/lib/dating-1on1-contact-nudge': nudge });
 const notice = load('components/PaymentCardNotice.tsx', { '@/lib/payment-card-notice': load('lib/payment-card-notice.ts') });
 const Offer = load('components/dating/OneOnOneContactOffer.tsx', {
+  // The support panel has its own SQL/API/mobile suite; isolate this payment-copy contract.
+  '@/components/dating/ContactCarePanel': { default: () => null },
   '@/lib/use-contact-payment-tracking': { useContactPaymentTracking: () => ({ buttonRef: { current: null }, trackClick() {} }) },
   '@/lib/contact-intro-offer': load('lib/contact-intro-offer.ts'),
   '@/components/PaymentCardNotice': notice, '@/components/dating/OneOnOneContactNudge': nudgeUI, '@/lib/dating-contact-price': price,

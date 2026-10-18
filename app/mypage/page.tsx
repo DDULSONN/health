@@ -62,6 +62,8 @@ const AdminTodayPaymentSummary = dynamic(() => import("@/components/admin/AdminT
 const AdminRegistrationSexCounts = dynamic(() => import("@/components/admin/AdminRegistrationSexCounts"));
 const AdminActiveOneOnOneCounts = dynamic(() => import("@/components/admin/AdminActiveOneOnOneCounts"));
 const AdminUserContactExchangesPanel = dynamic(() => import("@/components/admin/AdminUserContactExchangesPanel"));
+const AdminContactCarePanel = dynamic(() => import("@/components/admin/AdminContactCarePanel"));
+const ContactCarePanel = dynamic(() => import("@/components/dating/ContactCarePanel"));
 const AdminOnboardingFunnelPanel = dynamic(() => import("@/components/admin/AdminOnboardingFunnelPanel"));
 
 const DatingPlusOffers = dynamic(() => import("@/components/dating/DatingPlusOffers"));
@@ -10142,6 +10144,7 @@ export default function MyPage() {
 
       <section id="one-on-one-status" className={`${showMatchingGroup(matchingFilter, "one_on_one", myOneOnOneCards.length) ? "" : "hidden"} mb-3 rounded-xl border border-neutral-200 bg-white p-4`}>
         <h2 className="mb-3 text-base font-bold text-neutral-950">1:1 진행 내역</h2>
+        <ContactCarePanel key={summary?.profile.email ?? "member"} />
         <div className="mb-3 rounded-xl border border-neutral-200 bg-[#fbfaf8] px-3 py-3">
           <p className="text-xs font-semibold text-neutral-900">1:1 이용 안내</p>
           <p className="mt-1 text-[11px] leading-5 text-neutral-600">
@@ -10814,6 +10817,7 @@ export default function MyPage() {
                                     <p className="mt-1 text-[11px] text-neutral-500">
                                       외부 공유, 무단 저장, 불쾌한 연락은 제재 대상입니다.
                                     </p>
+                                    <ContactCarePanel key={`care-${match.id}`} matchId={match.id} />
                                     <div className="mt-2 flex justify-end">
                                       {canCancelMatch ? (
                                         <button
@@ -14512,6 +14516,8 @@ export default function MyPage() {
                     />
                   ) : null}
 
+                  {adminUserActivityResult.user ? <AdminContactCarePanel userId={adminUserActivityResult.user.id} /> : null}
+
                   {adminUserActivityResult.deleted_audits.length > 0 ? (
                     <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
                       <p className="text-xs font-semibold text-amber-900">탈퇴 보관 기록</p>
@@ -14998,6 +15004,7 @@ export default function MyPage() {
 
           {adminManageTab === "one_on_one_contact" && (
           <div className="mb-3 rounded-xl border border-violet-200 bg-white p-3">
+            <AdminContactCarePanel />
             <p className="text-xs font-semibold text-violet-800">
               1:1 번호 공개 가능 매칭 {adminOneOnOneContactTotal.toLocaleString("ko-KR")}건
             </p>

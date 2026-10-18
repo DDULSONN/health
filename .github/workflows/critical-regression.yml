@@ -46,6 +46,10 @@ jobs:
         run: node scripts/check-signup-stories-browser.cjs
         env:
           TEST_BROWSER: webkit
+      - name: WebKit contact care application and credit isolation
+        run: node scripts/check-contact-care-browser.cjs
+        env:
+          TEST_BROWSER: webkit
       - name: Save isolated fixture screenshots
         if: always()
         uses: actions/upload-artifact@v4

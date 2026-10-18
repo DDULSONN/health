@@ -7,6 +7,7 @@ import type { OneOnOneContactNudgePresetKey, OneOnOneContactNudgeSummary } from 
 import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
 import { isContactIntroOffer, type ContactIntroOffer } from "@/lib/contact-intro-offer";
 import { useContactPaymentTracking } from "@/lib/use-contact-payment-tracking";
+import ContactCarePanel from "@/components/dating/ContactCarePanel";
 
 type Props = {
   matchId: string;
@@ -88,6 +89,7 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
         </details>
       ) : null}
       <OneOnOneContactNudge matchId={matchId} nudge={nudge} hideReceived compact={compact} processing={nudgeProcessing} onSend={onNudge} />
+      {!included ? <ContactCarePanel key={matchId} matchId={matchId} guideOnly /> : null}
     </div>
   );
 }
