@@ -57,8 +57,10 @@ async function main() {
       passed = await require('./test-admin-active-counts-browser.cjs')({ browser, origin, output });
     }
     for (const surface of process.argv.includes('--expansion') || process.argv.includes('--impressions') || process.argv.includes('--region-notice') || process.argv.includes('--admin-counts') ? [] : ['home', 'mypage']) for (const width of [360, 1280]) {
-      for (const scenario of ['success', 'no-change', 'no-change-read-failure', 'read-failure', 'bad-read', 'lost-post', 'timeout-post', 'slow-post', 'cancel', 'escape', 'non-plus', 'legacy-plus', 'compensation', 'no-change-compensation']) {
+      for (const scenario of ['success', 'repeat-rotation', 'no-change', 'no-change-read-failure', 'read-failure', 'bad-read', 'lost-post', 'timeout-post', 'slow-post', 'cancel', 'escape', 'non-plus', 'legacy-plus', 'compensation', 'no-change-compensation']) {
         const noChange = scenario.startsWith('no-change');
+        const repeatRotation = scenario === 'repeat-rotation';
+        const noCharge = noChange || repeatRotation;
         const compensated = scenario.includes('compensation');
         const context = await browser.newContext({ viewport: { width, height: 844 } });
         const page = await context.newPage();
@@ -93,9 +95,9 @@ async function main() {
             if (scenario === 'timeout-post') return;
             if (scenario === 'lost-post') { await route.abort(); return; }
             await route.fulfill({ json: { ok: true, source_card_id: profile.id, refresh_limit: 2,
-              refresh_consumed: !noChange, changed_candidate_count: noChange ? 0 : 1,
-              refresh_remaining: noChange ? 2 : 1, refresh_used_count: compensated ? 2 : noChange ? 0 : 1,
-              refresh_bonus_remaining: compensated ? noChange ? 2 : 1 : 0, refresh_used_at: noChange ? null : now } }); return;
+              refresh_consumed: !noCharge, changed_candidate_count: noCharge ? 0 : 1, rotated_candidate_count: repeatRotation ? 1 : 0,
+              refresh_remaining: noCharge ? 2 : 1, refresh_used_count: compensated ? 2 : noCharge ? 0 : 1,
+              refresh_bonus_remaining: compensated ? noCharge ? 2 : 1 : 0, refresh_used_at: noChange ? null : now } }); return;
           }
           switch (url.pathname) {
             case '/api/dating/cards/queue-stats': body = { male: { public_count: 0, pending_count: 0, slot_limit: 45 }, female: { public_count: 0, pending_count: 0, slot_limit: 45 } }; break;
@@ -109,10 +111,10 @@ async function main() {
               if (posts && !recover && scenario === 'bad-read') { await route.fulfill({ json: { items: [null] } }); return; }
               body = { items: [{ source_card_id: profile.id, source_card_status: 'approved', recommendations: [{
                 ...profile, id: posts && !noChange ? 'candidate-new' : 'candidate-old', user_id: 'other', sex: 'male',
-                name: posts && !noChange ? '새 후보' : '이전 후보',
+                name: posts && !noChange ? repeatRotation ? '다른 기존 후보' : '새 후보' : '이전 후보',
               }], admin_recommendations: [], favorite_candidates: [],
-                refresh_limit: 2, refresh_used_count: posts && !noChange ? 1 : 0, refresh_remaining: posts && !noChange ? 1 : 2, can_refresh: true,
-                refresh_bonus_remaining: compensated ? posts && !noChange ? 1 : 2 : 0,
+                refresh_limit: 2, refresh_used_count: posts && !noCharge ? 1 : 0, refresh_remaining: posts && !noCharge ? 1 : 2, can_refresh: true,
+                refresh_bonus_remaining: compensated ? posts && !noCharge ? 1 : 2 : 0,
                 refresh_used_at: posts && !noChange ? now : null }] }; break;
             case '/api/dating/cards/viewer-sex': body = { status: 'resolved', viewerSex: 'female', targetSex: 'male', source: 'one_on_one', canSwitchSex: false, requiresSexSelection: false }; break;
             case '/api/dating/cards/my/swipe-status': body = { outgoing_likes: [], incoming_likes: [], summary: { incoming_pending: 0, outgoing_pending: 0 } }; break;
@@ -182,11 +184,15 @@ async function main() {
             recover = true;
             await recovery.click();
           }
-          await page.getByText(noChange ? '이전 후보' : '새 후보', { exact: false }).first().waitFor();
-          await page.getByRole('button', { name: noChange ? /후보 새로고침 · 2회/ : /후보 새로고침 · 1회/ }).first().waitFor();
+          await page.getByText(noChange ? '이전 후보' : repeatRotation ? '다른 기존 후보' : '새 후보', { exact: false }).first().waitFor();
+          await page.getByRole('button', { name: noCharge ? /후보 새로고침 · 2회/ : /후보 새로고침 · 1회/ }).first().waitFor();
           assert.equal(posts, 1, 'GET recovery cannot consume an additional refresh');
           assert.equal(alerts.length, 0, 'no native confirm or alert dependency');
-          if (!needsRecovery) await page.getByRole('status').filter({ hasText: noChange ? '횟수를 사용하지 않았어요.' : '새로고침 1회를 사용했어요.' }).waitFor();
+          if (!needsRecovery) await page.getByRole('status').filter({ hasText: repeatRotation ? '이전에 본 후보 중 다른 1명' : noChange ? '횟수를 사용하지 않았어요.' : '새로고침 1회를 사용했어요.' }).waitFor();
+          if (width === 360 && repeatRotation) {
+            await page.getByRole('status').filter({ hasText: '이전에 본 후보' }).scrollIntoViewIfNeeded();
+            await page.screenshot({ path: path.join(output, surface + '-mobile-repeat-rotation.png') });
+          }
           assert.equal(errors.length, 0, errors.join('\n'));
           assert.equal(blocked, 0, 'unexpected external request');
           assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'page overflow');

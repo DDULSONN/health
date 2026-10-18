@@ -131,6 +131,7 @@ export type RecommendationRefreshPlan = {
   expected_refresh_used_at: string | null;
   refresh_at: string;
   changed_candidate_count: number;
+  rotated_candidate_count: number;
   refresh_limit: number;
   refresh_used_count: number;
   refresh_remaining: number;
@@ -515,6 +516,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       // Compare people across main + extras, not positions. Moving the same person
       // between the two sections is NOT a new candidate and must not consume quota.
       const oldIds = new Set(hydrate([...before.recommendations, ...before.admin_recommendations]).map((card) => card.user_id));
+      const visibleBeforeIds = new Set(oldIds);
       // A different page is not necessarily a new person. Members with exhausted
       // local pools were paying to alternate between already-viewed pages.
       // Use the same 30-day history as ranking, at the planned generation cutoff.
@@ -538,6 +540,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
         source_card_id: before.source_card_id, expected_refresh_used_at: before.refresh_used_at,
         refresh_at: refreshPlan.at,
         changed_candidate_count: [...newIds].filter((id) => !oldIds.has(id)).length,
+        rotated_candidate_count: [...newIds].filter((id) => !visibleBeforeIds.has(id)).length,
         refresh_limit: before.refresh_limit, refresh_used_count: before.refresh_used_count,
         refresh_remaining: before.refresh_remaining, refresh_bonus_remaining: before.refresh_bonus_remaining,
         next_refresh_at: before.next_refresh_at,

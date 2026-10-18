@@ -382,16 +382,19 @@ async function runApi(tables, { intercept, signedIn = true, atTime } = {}) {
 async function runRefresh(tables, { intercept, signedIn = true, atTime = now, sourceId = 'source', rpc, legacyClient = false, expansionEnabled = false } = {}) {
   const db = mockDatabase(tables, intercept), rpcCalls = [];
   db.rpc = async (name, args) => {
-    assert.equal(name, 'consume_dating_1on1_recommendation_refresh_checked'); rpcCalls.push(args);
-    if (rpc) return rpc(args);
+    assert.ok(['consume_dating_1on1_recommendation_refresh_checked', 'rotate_dating_1on1_recommendations_without_charge'].includes(name)); rpcCalls.push(args);
+    if (rpc) return rpc(args, name);
+    const repeatOnly = name === 'rotate_dating_1on1_recommendations_without_charge';
     const source = tables.dating_1on1_cards.find(row => row.id === args.p_card_id);
     assert.equal(source.recommendation_refresh_used_at, args.p_expected_refresh_at);
     // PostgreSQL serializes timestamptz differently from JavaScript's ISO string.
     const stamp = args.p_refresh_at.replace('Z', '+00:00');
     source.recommendation_refresh_used_at = stamp;
     tables.dating_1on1_recommendation_refresh_events ??= [];
-    tables.dating_1on1_recommendation_refresh_events.push({ card_id: args.p_card_id, user_id: args.p_user_id, refreshed_at: stamp });
-    return { data: [{ allowed: true, reason: 'consumed', used_count: 1, remaining_count: args.p_limit - 1, refreshed_at: stamp, next_refresh_at: null }], error: null };
+    tables.dating_1on1_recommendation_refresh_events.push({ card_id: args.p_card_id, user_id: args.p_user_id, refreshed_at: stamp,
+      ...(repeatOnly ? { quota_refunded_at: stamp, rotation_only: true } : {}) });
+    return { data: [{ allowed: true, reason: repeatOnly ? 'rotated' : 'consumed', used_count: repeatOnly ? 0 : 1,
+      remaining_count: args.p_limit - (repeatOnly ? 0 : 1), refreshed_at: stamp, next_refresh_at: null }], error: null };
   };
   const apiLoad = createLoader({
     '@/lib/supabase/server': { createAdminClient: () => db },
@@ -419,13 +422,116 @@ test('refresh cannot charge for a different page made entirely of previously obs
   tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1).map(c => ({
     viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now - 3600000).toISOString(),
   }));
-  const before = structuredClone(tables);
+  const before = await runApi(tables, { atTime: now });
   const result = await runRefresh(tables);
   assert.equal(result.response.status, 200);
   assert.equal(result.body.refresh_consumed, false);
   assert.equal(result.body.changed_candidate_count, 0);
-  assert.equal(result.rpcCalls.length, 0);
-  assert.deepEqual(tables, before);
+  assert.equal(result.rpcCalls.length, 1);
+  assert.ok(result.body.rotated_candidate_count > 0);
+  const after = await runApi(tables, { atTime: now + 1 });
+  assert.ok(allCandidates(after.body).some(c => !allCandidates(before.body).some(old => old.id === c.id)));
+  assert.equal(after.body.items[0].refresh_remaining, 1);
+  assert.ok(tables.dating_1on1_recommendation_refresh_events.every(e => e.rotation_only && e.quota_refunded_at));
+});
+
+test('manual refresh continues to unseen broader candidates before repeating previously observed nearby candidates', async () => {
+  const tables = fixture(60);
+  const sourceYear = tables.dating_1on1_cards[0].birth_year;
+  for (const [i,c] of tables.dating_1on1_cards.slice(1).entries()) {
+    if (i >= 20) c.birth_year = sourceYear - (i < 35 ? 8 : i < 50 ? 12 : 25);
+  }
+  tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1, 21).map(c => ({
+    viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now - 3600000).toISOString(),
+  }));
+  const before = (await runApi(tables, { atTime: now })).body;
+  assert.ok(before.items[0].recommendations.every(c => c.birth_year > sourceYear - 8), 'ordinary GET stays nearby/age-first');
+  const result = await runRefresh(tables);
+  assert.equal(result.response.status, 200); assert.equal(result.body.refresh_consumed, true);
+  assert.equal(result.body.changed_candidate_count, 10);
+  const after = (await runApi(tables, { atTime: now + 1 })).body;
+  assert.ok(after.items[0].recommendations.every(c => c.birth_year <= sourceYear - 8), 'broader adults remain reachable after preferred candidates are exhausted');
+  assert.ok(after.items[0].recommendations.every(c => c.photo_signed_urls.length > 0));
+  const seenIds = new Set(tables.dating_1on1_candidate_impressions.map(r => r.candidate_user_id));
+  assert.ok(after.items[0].recommendations.every(c => !seenIds.has(c.user_id)));
+  tables.dating_1on1_candidate_impressions.push(...after.items[0].recommendations.map(c => ({
+    viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now + 2).toISOString(),
+  })));
+  assert.deepEqual(ids((await runApi(tables, { atTime: now + 3 })).body.items[0].recommendations), ids(after.items[0].recommendations));
+});
+
+test('broader fallback exhausts nearer distance bands before far age-compatible or unknown-region candidates', () => {
+  const helpers = createLoader({ '@/lib/region-distance': {
+    getRegionDistanceMeta: (_source, region) => ({ distanceKm: region === 'unknown' ? null : Number(region) }),
+  } })('@/lib/dating-1on1-recommendations');
+  const locals = Array.from({ length: 13 }, (_, i) => card('viewed-' + i, { region: '10' }));
+  const near = Array.from({ length: 6 }, (_, i) => card('near-broad-' + i, { region: '40', age: 38 }));
+  const next = Array.from({ length: 10 }, (_, i) => card('next-broad-' + i, { region: '90', age: 39 }));
+  const far = Array.from({ length: 20 }, (_, i) => card('far-age-' + i, { region: '300' }));
+  const unknown = card('unknown-broad', { region: 'unknown' });
+  const sorted = helpers.sortCandidatesForSource(source, [...locals, ...near, ...next, ...far, unknown], 'broader', now);
+  const result = helpers.takeObservedRecommendations(source, sorted, 10, new Set(ids(locals)), new Set(ids(locals)), new Set(), now, true);
+  assert.equal(result.length, 10);
+  assert.deepEqual(new Set(ids(result.slice(0, 6))), new Set(ids(near)));
+  assert.ok(result.slice(6).every(c => c.id.startsWith('next-broad-')));
+  const allSeen = new Set(ids([...locals, ...near, ...next]));
+  const widened = helpers.takeObservedRecommendations(source, sorted, 10, allSeen, new Set(ids(result)), new Set(), now, true);
+  assert.ok(widened.every(c => c.id.startsWith('far-age-')));
+});
+
+test('a new suitable nearby registration returns to the front of a broader-age page without a refresh use', () => {
+  const locals = Array.from({ length: 13 }, (_, i) => card('seen-local-' + i));
+  const broad = Array.from({ length: 30 }, (_, i) => card('broad-' + i, { age: 38 }));
+  const stamps = [new Date(now - 1000).toISOString()];
+  const views = locals.map(c => ({ id: c.id, at: now - 2000 }));
+  const run = pool => rules.replayRecommendationRefreshes(source, pool, locals.slice(0, 10), stamps, new Set(), 10, now,
+    { limit: 3, excludeIds: new Set() }, views);
+  const before = run([...locals, ...broad]);
+  assert.ok(before.recommendations.every(c => c.id.startsWith('broad-')));
+  const fresh = card('fresh-nearby', { created_at: new Date(now - 500).toISOString() });
+  const after = run([...locals, ...broad, fresh]);
+  assert.equal(after.recommendations[0].id, fresh.id);
+  assert.deepEqual(after.seeds, before.seeds);
+  assert.equal(new Set(ids([...after.recommendations, ...after.extraRecommendations])).size,
+    after.recommendations.length + after.extraRecommendations.length);
+});
+
+test('broader unseen candidates never restore blocked, rejected, pending, banned or underage users', async () => {
+  const tables = fixture(50);
+  for (const c of tables.dating_1on1_cards.slice(21)) c.birth_year = tables.dating_1on1_cards[0].birth_year - 8;
+  tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1,21).map(c => ({
+    viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now - 3600000).toISOString(),
+  }));
+  tables.dating_user_blocks = [{ blocker_user_id: 'user-c20', blocked_user_id: 'user-source' }];
+  tables.dating_1on1_admin_user_blocks = [{ user_a_id: 'user-source', user_b_id: 'user-c21' }];
+  tables.dating_1on1_match_proposals = ['source_selected','mutual_accepted','candidate_rejected'].map((state,i) =>
+    pair({ id: 'p'+i, state, candidate_card_id: 'c'+(22+i), candidate_user_id: 'user-c'+(22+i) }));
+  tables.profiles.find(p => p.user_id === 'user-c25').is_banned = true;
+  tables.profiles = tables.profiles.filter(p => p.user_id !== 'user-c26');
+  tables.dating_1on1_cards.find(c => c.id === 'c27').birth_year = 2012;
+  const snapshot = structuredClone(tables.dating_1on1_match_proposals);
+  const result = await runRefresh(tables);
+  assert.equal(result.response.status,200); assert.equal(result.body.refresh_consumed,true);
+  const candidates = allCandidates((await runApi(tables,{atTime:now+1})).body);
+  for (let i=20;i<=27;i++) assert.ok(!candidates.some(c => c.id === 'c'+i));
+  assert.deepEqual(tables.dating_1on1_match_proposals, snapshot);
+});
+
+test('repeat-only RPC failure or cooldown never retries through the charged function', async () => {
+  for (const reason of ['missing-sql','cooldown','stale']) {
+    const tables = fixture(50);
+    tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1).map(c => ({
+      viewer_user_id:'user-source', candidate_user_id:c.user_id, first_seen_at:new Date(now-1000).toISOString(),
+    }));
+    const before = structuredClone(tables);
+    const result = await runRefresh(tables,{ rpc: async (_args,name) => {
+      assert.equal(name,'rotate_dating_1on1_recommendations_without_charge');
+      return reason === 'missing-sql' ? {data:null,error:{code:'PGRST202',message:'not installed'}}
+        : {data:[{allowed:false,reason,used_count:0,remaining_count:1,next_refresh_at:null}],error:null};
+    }});
+    assert.equal(result.rpcCalls.length,1); assert.equal(result.response.status,reason === 'missing-sql'?503:409);
+    assert.deepEqual(tables,before);
+  }
 });
 
 test('API refresh escapes an exhausted nearby pool and produces a stable wider unseen page', async () => {
@@ -477,7 +583,8 @@ test('real API refresh advances through distance bands, preserves response shape
     assert.deepEqual(ids(allCandidates((await runApi(tables, { atTime: at + 3 })).body)), ids(page));
   }
   const exhausted = await runRefresh(tables, { atTime: now + 50000 });
-  assert.equal(exhausted.body.refresh_consumed, false); assert.equal(exhausted.rpcCalls.length, 0);
+  assert.equal(exhausted.body.refresh_consumed, false); assert.equal(exhausted.rpcCalls.length, 1);
+  assert.ok(exhausted.body.rotated_candidate_count > 0);
 });
 
 test('API inserts eligible new regional profiles on read without touching usage or restoring unsafe profiles', async () => {
@@ -823,7 +930,8 @@ test('a refresh cannot charge only for people already seen in an expansion batch
   tables.dating_1on1_expansion_batches = [{ user_id: 'user-source', day_key: '2026-08-31', candidate_ids: expanded.body.candidates.map(c => c.id) }];
   const result = await runRefresh(tables, { expansionEnabled: true });
   assert.equal(result.response.status, 200); assert.equal(result.body.refresh_consumed, false);
-  assert.equal(result.body.changed_candidate_count, 0); assert.equal(result.rpcCalls.length, 0);
+  assert.equal(result.body.changed_candidate_count, 0); assert.equal(result.rpcCalls.length, 1);
+  assert.ok(tables.dating_1on1_recommendation_refresh_events.every(e => e.rotation_only && e.quota_refunded_at));
 });
 function pair(overrides = {}) {
   return {

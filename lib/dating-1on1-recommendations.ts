@@ -266,21 +266,30 @@ export function takeObservedRecommendations<T extends RecommendationCandidate>(
   // arbitrary distant/unknown-age people just to make the refresh look different.
   const suitable = (card: T) => meta(card).tier <= Math.max(2, bestTier);
   const fresh = (card: T) => suitable(card) && !observed.has(card.id) && !isRecentlyHandledCandidate(card, nowMs);
-  // Manual refresh is an explicit request for other people. Once nearby unseen
-  // candidates run out, try known regions in the normal age range before
-  // recycling locals. Do not widen to unknown regions or arbitrary age gaps.
-  // Default browsing retains its existing nearby-first behavior.
-  const widerFresh = (card: T) => allowWiderUnseen && meta(card).tier === 3 &&
-    !observed.has(card.id) && !handled.has(card.id) && !isRecentlyHandledCandidate(card, nowMs);
+  // Once the preferred unseen pool is exhausted, continue through the broader
+  // eligible pool by distance band. Keep the existing relevance/age ranking
+  // INSIDE each band; an age-compatible remote card must not skip a nearer band.
+  // All cards are already server-validated adults with safety exclusions applied.
+  // Unknown regions come last and are never presented as nearby.
+  const broaderFresh = (card: T) => allowWiderUnseen && !observed.has(card.id) &&
+    !handled.has(card.id) && !isRecentlyHandledCandidate(card, nowMs);
+  const byDistance = (pool: T[]) => [...Array(RECOMMENDATION_DISTANCE_BANDS_KM.length + 1).keys()]
+    .map(band => pool.filter(card => distanceBand(meta(card).km) === band));
+  const broaderPools = allowWiderUnseen ? byDistance(sorted.filter(broaderFresh)) : [];
   const picked: T[] = [];
   const used = new Set<string>();
   for (const pool of [sorted.filter(card => fresh(card) && !previous.has(card.id)), sorted.filter(fresh),
-    sorted.filter(card => widerFresh(card) && !previous.has(card.id)), sorted.filter(widerFresh),
+    ...broaderPools,
+    // All eligible people may already have been shown. Still permit another
+    // page; the API distinguishes a free repeat rotation from a new-person use.
+    ...(allowWiderUnseen ? byDistance(sorted.filter(card => !previous.has(card.id))) : []),
     sorted.filter(card => suitable(card) && !previous.has(card.id)), sorted.filter(suitable), sorted]) {
     const next = takeBalancedRecommendations(source, pool.filter(card => !used.has(card.id)), limit - picked.length, handled, nowMs, meta);
     picked.push(...next); for (const card of next) used.add(card.id);
     if (picked.length >= limit) break;
   }
+  // Preserve the preferred-then-distance expansion order, not global tier order.
+  if (allowWiderUnseen) return picked;
   const order = new Map(sorted.map((card, index) => [card.id, index]));
   return picked.sort((a, b) => order.get(a.id)! - order.get(b.id)!);
 }

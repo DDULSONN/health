@@ -7,7 +7,7 @@ import { compensationFromRefreshResult } from "@/lib/dating-1on1-refresh-compens
 
 type RefreshResult = {
   allowed: boolean;
-  reason: "consumed" | "stale" | "limit";
+  reason: "consumed" | "rotated" | "stale" | "limit" | "cooldown";
   used_count: number;
   remaining_count: number;
   refreshed_at: string | null;
@@ -41,7 +41,8 @@ export async function POST(req: Request) {
         refresh_remaining: 0, refresh_bonus_remaining: 0, next_refresh_at: plan.next_refresh_at,
       }, { status: 409 });
     }
-    if (plan.changed_candidate_count === 0) {
+    const repeatRotation = plan.changed_candidate_count === 0 && plan.rotated_candidate_count > 0 && body?.refresh_contract === 2;
+    if (plan.changed_candidate_count === 0 && !repeatRotation) {
       // A read-only no-op: do not rotate the seed, insert history, or alter timestamps.
       // Pre-deployment tabs interpret every 200 as one consumed use. Refuse with
       // an explicit no-charge notice until that old client reloads its code.
@@ -60,7 +61,11 @@ export async function POST(req: Request) {
       });
     }
 
-    const result = await admin.rpc("consume_dating_1on1_recommendation_refresh_checked", {
+    // Repeat-only browsing persists the seed atomically without touching normal
+    // quota or compensation. Never consume then refund in separate requests.
+    const result = await admin.rpc(repeatRotation
+      ? "rotate_dating_1on1_recommendations_without_charge"
+      : "consume_dating_1on1_recommendation_refresh_checked", {
       p_card_id: sourceCardId, p_user_id: user.id, p_limit: plan.refresh_limit,
       p_expected_refresh_at: plan.expected_refresh_used_at, p_refresh_at: plan.refresh_at,
     });
@@ -69,20 +74,21 @@ export async function POST(req: Request) {
     if (!row || typeof row.allowed !== "boolean") throw new Error("Invalid refresh transaction result");
     if (!row.allowed) {
       return NextResponse.json({
-        error: row.reason === "stale"
+        error: row.reason === "cooldown" ? "방금 후보를 바꿨어요. 30초 뒤에 다시 눌러 주세요." : row.reason === "stale"
           ? "다른 화면에서 후보가 갱신됐습니다. 명단을 다시 불러온 뒤 확인해 주세요."
           : `후보 새로고침은 최근 24시간 동안 ${plan.refresh_limit}회까지 가능합니다.`,
-        code: row.reason === "stale" ? "REFRESH_PLAN_CHANGED" : "REFRESH_LIMIT",
+        code: row.reason === "cooldown" ? "REFRESH_ROTATION_COOLDOWN" : row.reason === "stale" ? "REFRESH_PLAN_CHANGED" : "REFRESH_LIMIT",
         refresh_limit: plan.refresh_limit, refresh_used_count: row.used_count,
         refresh_remaining: row.remaining_count, next_refresh_at: row.next_refresh_at,
         refresh_bonus_remaining: compensationFromRefreshResult(plan.refresh_limit, row.used_count, row.remaining_count),
       }, { status: 409 });
     }
-    if (row.reason !== "consumed" || Date.parse(row.refreshed_at ?? "") !== Date.parse(plan.refresh_at)) {
+    if (row.reason !== (repeatRotation ? "rotated" : "consumed") || Date.parse(row.refreshed_at ?? "") !== Date.parse(plan.refresh_at)) {
       throw new Error("Refresh seed was not persisted as planned");
     }
     return NextResponse.json({
-      ok: true, source_card_id: sourceCardId, refresh_consumed: true,
+      ok: true, source_card_id: sourceCardId, refresh_consumed: !repeatRotation,
+      rotated_candidate_count: plan.rotated_candidate_count,
       changed_candidate_count: plan.changed_candidate_count, refresh_used_at: row.refreshed_at,
       refresh_limit: plan.refresh_limit, refresh_used_count: row.used_count,
       refresh_remaining: row.remaining_count, next_refresh_at: row.next_refresh_at, plus_active: plan.plus_active,
