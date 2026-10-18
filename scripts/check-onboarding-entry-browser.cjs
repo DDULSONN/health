@@ -89,7 +89,13 @@ const freshPath = '/onboarding/dating?target=one_on_one';
       await page.screenshot({ path: path.join(output, 'reuse-basic-' + width + '.png'), fullPage: true });
       await toPhotos(page);
       assert.equal(await page.getByAltText(/사진 [12] 미리보기/).count(), 2);
-      assert.ok(await page.getByAltText('사진 1 미리보기').evaluate(img => img.complete && img.naturalWidth > 0));
+      // The photo step mounts new blob-backed <img> elements. Their presence
+      // does not mean decoding has finished, particularly on a busy CI runner.
+      // Wait for BOTH previews, still failing for broken/missing images.
+      await page.waitForFunction(() => {
+        const photos = [...document.querySelectorAll('img[alt="사진 1 미리보기"], img[alt="사진 2 미리보기"]')];
+        return photos.length === 2 && photos.every(img => img.complete && img.naturalWidth > 0);
+      }, null, { timeout: 10000 });
       assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
       await page.screenshot({ path: path.join(output, 'reuse-photos-' + width + '.png'), fullPage: true });
       await next(page);
