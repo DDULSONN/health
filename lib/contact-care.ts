@@ -20,7 +20,7 @@ export const CONTACT_CARE_MESSAGES: Record<string, string> = {
   CARE_UPLOAD: "대화 캡처 1~3장을 첨부해 주세요. 업로드가 완료되지 않았다면 다시 확인해 주세요.",
   CARE_RATE: "오늘 업로드 시도가 많아요. 고객센터로 문의해 주세요.",
   CARE_PAYMENT: "본인이 결제한 정상 결제 건인지 다시 확인해 주세요. 취소·환불된 결제는 대상이 아니에요.",
-  CARE_INACTIVE: "현재 신규 신청 대상이 아니에요. 시범 운영 시작 후 결제한 건만 신청할 수 있어요.",
+  CARE_INACTIVE: "현재 신규 신청을 받지 않아요. 기존 신청 내역은 유지돼요. 고객센터로 문의해 주세요.",
   CARE_INPUT: "입력 내용을 확인해 주세요.",
   CARE_ADMIN: "관리자 권한을 확인해 주세요.",
   CARE_EVIDENCE: "첨부 캡처와 신청 사유에 맞는 증빙을 먼저 확인해 주세요.",
@@ -34,3 +34,35 @@ export const CONTACT_CARE_MESSAGES: Record<string, string> = {
   CARE_BLOCKED: "현재 이 상대와 번호를 교환할 수 없어요. 교환권은 유지돼요.",
   CARE_UNAVAILABLE: "현재 신청 또는 교환 조건을 확인할 수 없어요. 고객센터에 문의해 주세요.",
 };
+
+// Client guidance only. The database independently rechecks every condition.
+export function contactCareApplicationIssue(input: {
+  selected?: ContactCareMatch; first: string; reason: string; explanation: string;
+  evidenceCount: number; confirmed: boolean; stale: boolean;
+  supplement?: { dueAt: string | null }; now: number;
+}): string | null {
+  if (input.stale) return "‘내역 다시 확인’을 누른 뒤 신청해 주세요.";
+  if (!input.selected) return "신청할 결제 건을 선택해 주세요. 목록에 없으면 고객센터로 문의해 주세요.";
+  const exchanged = Date.parse(input.selected.exchanged_at ?? "");
+  if (!Number.isFinite(exchanged)) return "번호교환 시각을 확인하지 못했어요. 내역을 다시 확인해 주세요.";
+  if (input.supplement) {
+    const due = Date.parse(input.supplement.dueAt ?? "");
+    if (!Number.isFinite(due) || input.now > due) return CONTACT_CARE_MESSAGES.CARE_SUPPLEMENT;
+  } else if (input.now > exchanged + 72 * 3600000) return CONTACT_CARE_MESSAGES.CARE_DEADLINE;
+  const first = Date.parse(input.first);
+  if (!Number.isFinite(first)) return "첫 연락을 보낸 날짜와 시간을 입력해 주세요.";
+  if (first < exchanged) return "첫 연락 시각은 번호교환 이후로 입력해 주세요.";
+  if (first > input.now) return "첫 연락 시각이 미래로 입력되어 있어요. 다시 확인해 주세요.";
+  if (input.reason === "no_response" && input.now < first + 24 * 3600000) {
+    const available = first + 24 * 3600000;
+    if (!input.supplement && available > exchanged + 72 * 3600000) {
+      return "첫 연락 후 24시간을 기다리면 신청 기한이 지나요. 고객센터로 문의해 주세요.";
+    }
+    return `무응답 신청은 첫 연락 후 24시간부터 가능해요. ${new Date(available).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" })}부터 신청할 수 있어요.`;
+  }
+  if (input.explanation.trim().length < 10) return "연락 방법과 상황을 10자 이상 적어 주세요.";
+  if (input.explanation.length > 500) return "연락 방법과 상황을 500자 이내로 적어 주세요.";
+  if (input.evidenceCount < 1 || input.evidenceCount > 3) return "대화 캡처를 1~3장 첨부해 주세요.";
+  if (!input.confirmed) return "제출 내용과 관리자 검토 안내를 확인하고 체크해 주세요.";
+  return null;
+}

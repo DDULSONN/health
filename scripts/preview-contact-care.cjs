@@ -44,11 +44,12 @@ async function main(){
           return json({ok:true});
         }
         if(url.pathname.startsWith('/api/admin'))return json({items:claim&&['pending','needs_info'].includes(claim.status)?[{...claim,nickname:'미리보기 회원',counterparty_name:'예시 상대',exchanged_at:exchanged}]:[],next:null});
-        return json({active:true,starts_at:exchanged,claim,payments:!claim||['rejected','needs_info'].includes(claim.status)?[{id:id(10),name:'예시 상대',order_id:id(100),exchanged_at:exchanged}]:[],matches:claim?.status==='approved'&&!claim.used_at?[{id:id(20),name:'다음 예시 상대'}]:[]});
+        return json({active:true,starts_at:new Date(Date.now()-3600000).toISOString(),claim,payments:!claim||['rejected','needs_info'].includes(claim.status)?[{id:id(10),name:'예시 상대',order_id:id(100),exchanged_at:exchanged}]:[],matches:claim?.status==='approved'&&!claim.used_at?[{id:id(20),name:'다음 예시 상대'}]:[]});
       }
       res.setHeader('Content-Type','text/html; charset=utf-8');res.end('<!doctype html><html lang="ko"><title>짐툴 연락처 교환 지원 · 로컬 미리보기</title><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"><div id="root"></div><script src="/fixture.js"></script></html>');
     }catch{json({error:'미리보기 입력을 확인해 주세요.'},400);}
   });
-  server.listen(3182,'127.0.0.1',()=>console.log('Local mock preview: http://127.0.0.1:3182 — no real claims, payments or grants'));
+  const port=Number(process.env.CONTACT_CARE_PREVIEW_PORT||3182);
+  server.listen(port,'127.0.0.1',()=>console.log(`Local mock preview: http://127.0.0.1:${port} — no real claims, payments or grants`));
 }
 main().catch(error=>{console.error(error);process.exitCode=1;});

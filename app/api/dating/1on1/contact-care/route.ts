@@ -24,10 +24,13 @@ export async function GET(req: Request) {
     const result = { active, starts_at: policy.data?.starts_at ?? null, claim: claim.data,
       payments: [] as { id: string; name?: string; order_id: string; exchanged_at: string }[], matches: [] as unknown[] };
     if ((active && (!claim.data || claim.data.status === "rejected")) || claim.data?.status === "needs_info") {
-      const orders = await admin.from("toss_test_payment_orders").select("id,product_ref_id,approved_at")
+      const orderQuery = admin.from("toss_test_payment_orders").select("id,product_ref_id,approved_at")
         .eq("user_id", user.id).eq("product_type", "one_on_one_contact_exchange").eq("status", "paid")
         .is("canceled_at", null).or("cancel_amount.is.null,cancel_amount.eq.0").gt("amount", 0)
-        .gte("approved_at", policy.data!.starts_at).order("approved_at", { ascending: false }).limit(50);
+        .not("approved_at", "is", null).order("approved_at", { ascending: false }).limit(50);
+      // Eligibility runs from the actual exchange, not the feature launch date.
+      // A requested supplement must stay reachable even after newer purchases.
+      const orders = await (claim.data?.status === "needs_info" ? orderQuery.eq("id", claim.data.order_id) : orderQuery);
       if (orders.error) throw orders.error;
       const ids = [...new Set((orders.data ?? []).map(o => o.product_ref_id).filter(Boolean))];
       if (ids.length) {

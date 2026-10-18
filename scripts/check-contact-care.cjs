@@ -236,6 +236,7 @@ function client(f) {
         lt(k,v){filters.push(`${column(k)}<${bind(v)}`);return b;},
         gte(k,v){filters.push(`${column(k)}>=${bind(v)}`);return b;},
         is(k,v){assert.equal(v,null);filters.push(`${column(k)} is null`);return b;},
+        not(k,operator,v){assert.equal(operator,'is');assert.equal(v,null);filters.push(`${column(k)} is not null`);return b;},
         in(k,v){filters.push(`${column(k)} in (${v.map(bind).join(',')})`);return b;},
         or(v){
           if(v==='cancel_amount.is.null,cancel_amount.eq.0')filters.push('(cancel_amount is null or cancel_amount=0)');
@@ -258,6 +259,8 @@ function client(f) {
 }
 test('full API -> DB -> response story: member apply, admin review, member credit redemption, no payment/phone payload leakage', () => withDb(async f => {
   await f.activate();const db=client(f);
+  // A valid exchange paid BEFORE launch must be listed and accepted, too.
+  await f.db.exec("update contact_care_policy set starts_at=now()-interval '1 hour'");
   const mocks={
     'next/server':{NextResponse:{json:(body,init)=>Response.json(body,init)}},
     '@/lib/supabase/request':{getRequestAuthContext:async()=>({user:{id:id(1)}})},
@@ -401,6 +404,8 @@ test('supplement after original-match deletion uses the verified snapshot, not a
   await f.activate();const c=await f.apply();
   await f.approve(c.id,[undefined,undefined,'needs_info',false,'날짜가 보이는 캡처를 첨부해 주세요.']);
   await f.q('delete from dating_1on1_match_proposals where id=$1',[id(10)]);
+  await f.db.exec("update contact_care_policy set enabled=false,starts_at=now()-interval '1 hour'");
+  for(let n=0;n<51;n++) await f.q('insert into toss_test_payment_orders(id,user_id,product_ref_id,approved_at) values($1,$2,$3,now())',[id(700+n),id(1),id(800+n)]);
   const db=client(f),mocks={
     'next/server':{NextResponse:{json:(body,init)=>Response.json(body,init)}},
     '@/lib/supabase/request':{getRequestAuthContext:async()=>({user:{id:id(1)}})},
@@ -470,4 +475,64 @@ test('bounded JSON reader rejects oversized bodies even without Content-Length',
   const {readCareJson}=load('lib/contact-care-server.ts',{'next/server':{NextResponse:{json:Response.json}}});
   await assert.rejects(readCareJson(new Request('https://local.invalid',{method:'POST',body:'x'.repeat(4001)}),4000),/CARE_INPUT/);
   assert.deepEqual(await readCareJson(new Request('https://local.invalid',{method:'POST',body:'{"note":"한글 정상"}'}),4000),{note:'한글 정상'});
+});
+
+test('narrow migration upgrades legacy eligibility, preserves all rows/grants and matches fresh install',()=>withDb(async f=>{
+  const definition=read('supabase/sql/contact_care.sql').replace(/\r\n/g,'\n').match(/create or replace function public\.check_contact_care_application[\s\S]*?\$\$;/)[0];
+  const legacy=definition.replace('from public.contact_care_policy p\n','from public.contact_care_policy p join public.toss_test_payment_orders o on o.id=p_order\n')
+    .replace('p.starts_at<=now())','p.starts_at<=now() and o.approved_at>=p.starts_at)');
+  assert.notEqual(legacy,definition);await f.db.exec(legacy);
+  await f.activate();await f.db.exec("update contact_care_policy set starts_at=now()-interval '1 hour'");
+  await assert.rejects(f.upload(),/CARE_INACTIVE/);
+  const snapshot=async()=>{
+    const out={};for(const table of ['contact_care_policy','contact_care_claims','contact_care_uploads','toss_test_payment_orders','dating_1on1_match_proposals']) out[table]=await f.q(`select * from ${table} order by id`);
+    out.grants=await f.q("select proowner,proacl from pg_proc where oid='public.check_contact_care_application(uuid,uuid,uuid)'::regprocedure");return out;
+  };
+  const before=await snapshot();
+  for(let i=0;i<2;i++)await f.db.exec(read('supabase/sql/contact_care_recent_exchanges.sql'));
+  assert.deepEqual(await snapshot(),before);
+  const upgraded=await f.q("select pg_get_functiondef('public.check_contact_care_application(uuid,uuid,uuid)'::regprocedure) definition");
+  await f.db.exec(definition);
+  assert.deepEqual(await f.q("select pg_get_functiondef('public.check_contact_care_application(uuid,uuid,uuid)'::regprocedure) definition"),upgraded);
+  assert.equal((await f.apply()).ok,true);assert.equal((await f.status()).status,'pending');
+}));
+
+for(const [sql,code] of [
+  ["update contact_care_policy set enabled=false",'CARE_INACTIVE'],
+  ["update contact_care_policy set starts_at=now()+interval '1 hour'",'CARE_INACTIVE'],
+  ["update contact_care_policy set enabled=false,starts_at=null",'CARE_INACTIVE'],
+  ["update toss_test_payment_orders set amount=0",'CARE_PAYMENT'],
+  ["update toss_test_payment_orders set approved_at=null",'CARE_PAYMENT'],
+  ["update toss_test_payment_orders set cancel_amount=1",'CARE_PAYMENT'],
+  ["update toss_test_payment_orders set canceled_at=now()",'CARE_PAYMENT'],
+  ["update toss_test_payment_orders set user_id='"+id(2)+"'",'CARE_PAYMENT'],
+  ["update dating_1on1_match_proposals set contact_exchange_approved_at=now()-interval '73 hours' where id='"+id(10)+"'",'CARE_DEADLINE'],
+]) test('pre-launch exchange still enforces '+code+' / '+sql,()=>withDb(async f=>{
+  await f.activate();await f.db.exec("update contact_care_policy set starts_at=now()-interval '1 hour'");
+  await f.db.exec(sql);await assert.rejects(f.upload(),new RegExp(code));
+  assert.equal((await f.q('select count(*)::int n from contact_care_uploads')).rows[0].n,0);
+  assert.equal((await f.q('select count(*)::int n from contact_care_claims')).rows[0].n,0);
+}));
+
+test('application guidance matches 24h/72h boundaries, supplement, inputs and scam exception',()=>{
+  const {contactCareApplicationIssue:issue}=load('lib/contact-care.ts');
+  const now=Date.parse('2026-10-18T12:00:00Z'),hour=3600000;
+  const value={selected:{id:id(10),name:'검증',exchanged_at:new Date(now-48*hour).toISOString()},first:new Date(now-24*hour).toISOString(),reason:'no_response',explanation:'연락 후 첫 답장이 오지 않았습니다.',evidenceCount:1,confirmed:true,stale:false,now};
+  assert.equal(issue(value),null);
+  for(const [change,pattern] of [
+    [{stale:true},/내역 다시 확인/],[{selected:undefined},/결제 건/],
+    [{first:''},/날짜와 시간/],[{first:'bad'},/날짜와 시간/],
+    [{first:new Date(now+hour).toISOString()},/미래/],
+    [{first:new Date(now-49*hour).toISOString()},/번호교환 이후/],
+    [{first:new Date(now-24*hour+1).toISOString()},/24시간부터/],
+    [{first:new Date(now+hour).toISOString(),now:now+24*hour},/기한이 지나요/],
+    [{explanation:'짧음'},/10자/],[{explanation:'가'.repeat(501)},/500자/],
+    [{evidenceCount:0},/캡처/],[{evidenceCount:4},/캡처/],[{confirmed:false},/체크/],
+    [{now:now+24*hour+1},/72시간/],
+    [{supplement:{dueAt:null}},/추가 자료 제출 기간/],
+    [{supplement:{dueAt:new Date(now-1).toISOString()}},/추가 자료 제출 기간/],
+  ]) assert.match(issue({...value,...change}),pattern,JSON.stringify(change));
+  assert.equal(issue({...value,now:now+24*hour}),null,'72h inclusive');
+  assert.equal(issue({...value,reason:'scam',first:new Date(now).toISOString()}),null);
+  assert.equal(issue({...value,now:now+48*hour,supplement:{dueAt:new Date(now+48*hour).toISOString()}}),null);
 });

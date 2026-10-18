@@ -1,8 +1,8 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
 import { fetchClientJson } from "@/lib/client-json-request";
-import type { ContactCareStatus } from "@/lib/contact-care";
+import { contactCareApplicationIssue, type ContactCareStatus } from "@/lib/contact-care";
 import { oneOnOneMatchHref } from "@/lib/dating-1on1-match-navigation";
 
 const inputClass = "mt-1 w-full min-w-0 rounded-lg border border-neutral-300 bg-white p-2 text-sm text-neutral-900";
@@ -22,11 +22,19 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
   const [reason, setReason] = useState("no_response");
   const [files, setFiles] = useState<File[]>([]);
   const [target, setTarget] = useState("");
+  const [now, setNow] = useState(Date.now);
+  const applicationHintId = useId();
   const pending = useRef(false);
   const alive = useRef(true);
   const controller = useRef<AbortController | null>(null);
   const details = useRef<HTMLDetailsElement | null>(null);
   useEffect(() => { alive.current = true; return () => { alive.current = false; controller.current?.abort(); }; }, []);
+  useEffect(() => {
+    if (!expanded) return;
+    // Only an open panel updates its clock; no API polling or collapsed-card timers.
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, [expanded]);
   useEffect(() => {
     if (matchId) return;
     const reveal = () => {
@@ -54,7 +62,11 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
   const send = async (action: "apply" | "redeem") => {
     if (pending.current || stale || !data) return;
     const selected = data.payments.find(p => p.order_id === payment);
-    if (action === "apply" && (!selected || !first || !confirmed || !files.length || explanation.trim().length < 10)) return;
+    if (action === "apply") {
+      const issue = contactCareApplicationIssue({ selected, first, reason, explanation, evidenceCount: files.length, confirmed, stale,
+        supplement: data.claim?.status === "needs_info" ? { dueAt: data.claim.supplement_due_at } : undefined, now: Date.now() });
+      if (issue) { setError(issue); return; }
+    }
     if (action === "redeem" && (!target || !window.confirm("교환권 1장으로 이 상대와 서로의 연락처를 공개할까요? 결제는 진행되지 않습니다."))) return;
     pending.current = true; setBusy(true); setError(""); setInfo("");
     let refresh = false;
@@ -85,13 +97,15 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
   const selected = payments.find(p => p.order_id === payment);
   const date = (value: string) => new Date(value).toLocaleString("ko-KR", { timeZone: "Asia/Seoul" });
   const canApply = !guideOnly && data && ((data.active && !data.claim) || claim?.status === "rejected" && data.active || claim?.status === "needs_info");
+  const applicationIssue = contactCareApplicationIssue({ selected, first, reason, explanation, evidenceCount: files.length, confirmed, stale,
+    supplement: claim?.status === "needs_info" ? { dueAt: claim.supplement_due_at } : undefined, now });
   return <details ref={details} id={matchId ? undefined : "contact-care"} className="mb-3 rounded-xl border border-neutral-200 bg-white px-3 text-xs text-neutral-600"
     onToggle={e => { setExpanded(e.currentTarget.open); if (e.currentTarget.open && !pending.current) void load(); }}>
     <summary className="min-h-[44px] cursor-pointer content-center font-medium text-neutral-700">{guideOnly ? "연락처 교환 지원 기준" : matchId ? "연락이 닿지 않거나 문제가 있나요? · 지원 신청" : "연락처 교환 지원 · 신청 내역 / 교환권"}</summary>
     {expanded ? <div className="space-y-3 pb-3">
       {data?.active || claim ? <p>번호교환 후 72시간 이내, 결제한 회원이 신청할 수 있어요. 캡처를 검토해 승인하면 다음 번호교환에 쓸 교환권 1장을 드려요. 계정당 1회이며 사용 전까지 유지돼요.</p> : <p>연락처 교환 지원 가능 여부와 교환권 내역을 확인할 수 있어요.</p>}
       <p className="text-[11px] leading-5">교환 직후 무응답·잠수는 첫 연락 후 24시간 이상 응답이 없을 때, 스캠·사칭 의심은 즉시 신청할 수 있어요. 단순 거절·대화 불만·대화가 이어진 뒤 관계 중단은 제외해요. 신청만으로 자동 지급되거나 상대가 제재되지는 않아요.</p>
-      <p className="text-[11px] leading-5">시범 운영 시작 후 웹에서 결제한 건만 여기서 신청할 수 있어요. 앱 내 결제·별도 입금 또는 목록에 없는 건은 고객센터로 문의해 주세요.</p>
+      <p className="text-[11px] leading-5">웹에서 직접 결제한 번호교환이 대상이에요. 시행 전에 결제했어도 번호교환 후 72시간 이내라면 신청할 수 있어요. 앱 내 결제·별도 입금 또는 목록에 없는 건은 고객센터로 문의해 주세요.</p>
       {data && !data.active ? <p>현재 신규 신청을 받지 않아요. 이미 지급된 교환권과 신청 내역은 유지돼요.</p> : null}
       {guideOnly && data?.active ? <p>교환 완료 후 마이페이지의 해당 상대 카드에서 신청하세요. 취소·환불·무료 교환은 대상이 아니며, 스캠 의심은 별도 조사·환불 검토가 필요할 수 있어요.</p> : null}
       {!guideOnly && matchId && data?.claim && !claim ? <p>다른 매칭에 신청 또는 지급 내역이 있어요. 상단 ‘연락처 교환 지원 · 신청 내역 / 교환권’에서 확인해 주세요.</p> : null}
@@ -119,7 +133,7 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
         <label className="block">내가 결제한 상대<select className={inputClass} value={payment} onChange={e => setPayment(e.target.value)} required disabled={busy || stale}>
           <option value="">결제 건 선택</option>{payments.map(p => <option key={p.order_id} value={p.order_id}>{p.name} · {new Date(p.exchanged_at!).toLocaleDateString("ko-KR")}</option>)}
         </select></label>
-        {!payments.length ? <p>신청 가능한 웹 결제 내역이 없어요. 결제자 본인·시행 이후 결제·번호교환 후 72시간 조건을 확인해 주세요.</p> : null}
+        {!payments.length ? <p>신청 가능한 웹 결제 내역이 없어요. 결제자 본인인지, 번호교환 후 72시간 이내인지 확인해 주세요. 취소·환불·무료 교환은 대상이 아니에요.</p> : null}
         {selected && claim?.status !== "needs_info" ? <p>신청 가능: {date(new Date(Date.parse(selected.exchanged_at!) + 72 * 3600000).toISOString())}까지</p> : null}
         <label className="block">신청 사유<select className={inputClass} value={reason} disabled={busy || stale} onChange={e => setReason(e.target.value)}><option value="no_response">교환 직후 무응답·잠수</option><option value="scam">스캠·사칭 의심</option></select></label>
         <label className="block">첫 연락을 보낸 시각<input type="datetime-local" className={inputClass} value={first} onChange={e => setFirst(e.target.value)} required disabled={busy || stale} /></label>
@@ -134,7 +148,8 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
         {files.length ? <p>{files.length}장 선택됨 · {files.map(f => f.name).join(", ")}</p> : null}
         <p className="text-[11px] leading-5">상대 식별에 필요한 부분과 연락 날짜·시간을 남기고, 전체 전화번호·사진·무관한 대화는 가려 주세요. 캡처는 본인과 관리자만 열람하며 상대에게 공개하지 않아요.</p>
         <label className="flex min-h-[44px] items-start gap-2"><input type="checkbox" className="mt-1" checked={confirmed} onChange={e => setConfirmed(e.target.checked)} disabled={busy || stale} required /><span>제출 내용은 사실이며 필요한 부분만 첨부했어요. 관리자가 캡처를 확인한 뒤 지급 여부를 결정하는 점을 확인했어요.</span></label>
-        <button className={buttonClass} disabled={busy || stale || !selected || !files.length || !confirmed || !first || explanation.trim().length < 10}>{claim?.status === "needs_info" ? "추가 자료 제출" : "교환권 신청"}</button>
+        {applicationIssue ? <p id={applicationHintId} role="status" className="text-[11px] leading-5 text-neutral-600">{applicationIssue}</p> : null}
+        <button className={buttonClass} aria-describedby={applicationIssue ? applicationHintId : undefined} disabled={busy || !!applicationIssue}>{claim?.status === "needs_info" ? "추가 자료 제출" : "교환권 신청"}</button>
       </form> : null}
       <p className="text-[11px] leading-5">결과는 이곳에서 확인해 주세요. 캡처는 검토 종료 후 30일까지만 열람할 수 있어요. 잘못된 번호·사이트 오류·환불 문의는 고객센터에서 별도로 확인해요.</p>
       <a href="https://open.kakao.com/o/s2gvTdhi" target="_blank" rel="noreferrer" className="inline-flex min-h-[44px] items-center underline">고객센터 문의</a>

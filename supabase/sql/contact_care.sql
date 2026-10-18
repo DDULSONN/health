@@ -97,8 +97,8 @@ begin
     return; -- timely initial applications may supplement after the original deadline, even during a pause.
   end if;
   if c.status='needs_info' then raise exception 'CARE_ONCE'; end if;
-  if not exists(select 1 from public.contact_care_policy p join public.toss_test_payment_orders o on o.id=p_order
-    where p.id and p.enabled and p.starts_at<=now() and o.approved_at>=p.starts_at) then raise exception 'CARE_INACTIVE'; end if;
+  if not exists(select 1 from public.contact_care_policy p
+    where p.id and p.enabled and p.starts_at<=now()) then raise exception 'CARE_INACTIVE'; end if;
   if coalesce(m.contact_exchange_approved_at,case when c.match_id=p_match and c.order_id=p_order then c.exchanged_at end) is null
     or now()>coalesce(m.contact_exchange_approved_at,case when c.match_id=p_match and c.order_id=p_order then c.exchanged_at end)+interval '72 hours'
     then raise exception 'CARE_DEADLINE'; end if;
