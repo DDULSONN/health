@@ -30,7 +30,8 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
   useEffect(() => {
     if (matchId) return;
     const reveal = () => {
-      if (window.location.hash === "#contact-care" && details.current) {
+      // Login redirects retain the query string, but may discard the fragment.
+      if ((window.location.hash === "#contact-care" || new URLSearchParams(window.location.search).get("care") === "1") && details.current) {
         details.current.open = true;
         details.current.scrollIntoView({ block: "center" });
       }

@@ -108,7 +108,7 @@ async function main(){
     assert.equal(await member.getByRole('button',{name:'교환권 신청',exact:true}).count(),0);
     await page.goto(origin+'/?notice');await page.waitForTimeout(700);assert.equal(await page.getByRole('dialog').count(),0,'disabled policy never announces availability');
     installed=true;active=true;await page.reload();await page.getByRole('dialog').waitFor();
-    assert.equal(await page.getByRole('link',{name:'자세히 보기'}).getAttribute('href'),'/mypage?section=matching&match=one_on_one#contact-care');
+    assert.equal(await page.getByRole('link',{name:'자세히 보기'}).getAttribute('href'),'/mypage?section=matching&match=one_on_one&care=1#contact-care');
     for(const width of [320,390,768]){await page.setViewportSize({width,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:path.join(output,`notice-${width}.png`)});}
     await page.keyboard.press('Escape');await page.getByRole('dialog').waitFor({state:'hidden'});
     const beforePolicyReads=policyReads;await page.reload();await page.waitForTimeout(700);assert.equal(policyReads,beforePolicyReads,'acknowledged visitors skip public-policy fetch');
@@ -117,6 +117,8 @@ async function main(){
     noticeStarted=Date.now()-48*3600000+2500;await page.goto(origin+'/?notice');await page.getByRole('dialog').waitFor();await page.getByRole('dialog').waitFor({state:'hidden',timeout:5000});
     await page.goto(origin+'/#contact-care');await member.getByLabel('내가 결제한 상대').waitFor();
     assert.equal(await member.locator('details').getAttribute('open'),'','support deep link opens the form without a second click');
+    await page.goto(origin+'/mypage?section=matching&match=one_on_one&care=1');await member.getByLabel('내가 결제한 상대').waitFor();
+    assert.equal(await member.locator('details').getAttribute('open'),'','login return query opens support even without the URL fragment');
     assert.deepEqual(errors,[]);console.log(JSON.stringify({ok:true,widths:[320,390,768],writes,reads,policyReads,paymentRequests:0,pageErrors:errors,screenshots:output}));
   }finally{await browser?.close();await new Promise(r=>server.close(r));}
 }
