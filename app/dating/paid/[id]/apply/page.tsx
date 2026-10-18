@@ -1,10 +1,14 @@
 "use client";
 
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatRemainingToKorean } from "@/lib/dating-open";
+import { paidApplicationPrefill } from "@/lib/paid-application-prefill";
+import { importOwnOpenCardPhoto } from "@/lib/dating-open-card-photo-import";
+import { DATING_PHOTO_ACCEPT, DATING_PHOTO_UPLOAD_MAX_BYTES, HEIC_HELP } from "@/lib/dating-photo-preparation";
+import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
 
 type PaidCardDetail = {
   id: string;
@@ -24,7 +28,7 @@ type PaidCardDetail = {
 };
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_FILE_SIZE = 12 * 1024 * 1024;
 
 function normalizeInstagramId(value: string) {
   return value.trim().replace(/^@+/, "").replace(/\s+/g, "").slice(0, 30);
@@ -41,9 +45,15 @@ export default function PaidCardApplyPage() {
 
   const [card, setCard] = useState<PaidCardDetail | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState("");
   const [profileEditUrl, setProfileEditUrl] = useState<string | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [importMessage, setImportMessage] = useState("");
+  const importRequest = useRef<AbortController | null>(null);
+  const submitLock = useRef(false);
+  const photoPreparation = useDatingPhotoPreparation(MAX_FILE_SIZE);
 
   const [age, setAge] = useState("");
   const [heightCm, setHeightCm] = useState("");
@@ -55,43 +65,109 @@ export default function PaidCardApplyPage() {
   const [consent, setConsent] = useState(false);
   const [photos, setPhotos] = useState<(File | null)[]>([null, null]);
 
-  useEffect(() => {
-    queueMicrotask(async () => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        router.replace(`/login?redirect=/dating/paid/${id}/apply`);
-        return;
-      }
+  useEffect(() => () => { importRequest.current?.abort(); importRequest.current = null; }, []);
 
+  useEffect(() => {
+    let active = true;
+    const controller = new AbortController();
+    queueMicrotask(async () => {
       try {
-        const res = await fetch(`/api/dating/paid/${id}`);
-        if (!res.ok) {
-          router.replace("/dating/paid");
+        const { data: { user }, error: authError } = await supabase.auth.getUser();
+        if (!active) return;
+        if (authError) throw authError;
+        if (!user) {
+          router.replace(`/login?redirect=/dating/paid/${id}/apply`);
           return;
         }
+        const res = await fetch(`/api/dating/paid/${id}`, { cache: "no-store", signal: controller.signal });
+        if (!active) return;
+        if (!res.ok) {
+          if (res.status === 404 || res.status === 410) { router.replace("/dating/paid"); return; }
+          throw new Error("CARD_UNAVAILABLE");
+        }
         const data = (await res.json()) as { card?: PaidCardDetail };
+        if (!active) return;
         if (!data.card) {
-          router.replace("/dating/paid");
-          return;
+          throw new Error("CARD_UNAVAILABLE");
         }
         setCard(data.card);
       } catch {
-        router.replace("/dating/paid");
+        if (active) setLoadError(true);
       }
-      setLoading(false);
+      if (active) setLoading(false);
     });
+    return () => { active = false; controller.abort(); };
   }, [id, router, supabase]);
 
   const handlePhotoChange = (index: number, file: File | null) => {
-    const next = [...photos];
-    next[index] = file;
-    setPhotos(next);
+    if (!file) return;
+    setConsent(false);
+    void photoPreparation.select(index, file, prepared => {
+      setPhotos(current => current.map((photo, slot) => slot === index ? prepared : photo));
+    }, () => {
+      // A failed replacement must not silently submit the previous photo.
+      setPhotos(current => current.map((photo, slot) => slot === index ? null : photo));
+    });
+  };
+
+  const loadOwnOpenCard = async () => {
+    if (importRequest.current || submitLock.current || photoPreparation.isProcessing()) return;
+    const controller = new AbortController();
+    importRequest.current = controller;
+    const current = () => importRequest.current === controller && !controller.signal.aborted;
+    setImporting(true);
+    setImportMessage("");
+    setConsent(false);
+    const timer = setTimeout(() => {
+      if (!current()) return;
+      controller.abort();
+      importRequest.current = null;
+      setImporting(false);
+      setImportMessage("불러오기가 지연되고 있어요. 다시 시도하거나 직접 입력해 주세요.");
+    }, 25000);
+    try {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (!current()) return;
+      if (authError || !user) throw new Error("로그인 상태를 확인하지 못했어요. 다시 시도해 주세요.");
+      const res = await fetch("/api/dating/paid/create?source=open_card", { cache: "no-store", signal: controller.signal });
+      const body = await res.json().catch(() => ({}));
+      if (!current()) return;
+      if (res.status === 404) throw new Error("불러올 오픈카드가 없어요. 아래에서 직접 작성해 주세요.");
+      if (!res.ok || !body.card) throw new Error("내 오픈카드를 불러오지 못했어요. 다시 시도하거나 직접 입력해 주세요.");
+      const profile = paidApplicationPrefill(body.card);
+      setAge(value => value || profile.age);
+      setHeightCm(value => value || profile.heightCm);
+      setRegion(value => value || profile.region);
+      setJob(value => value || profile.job);
+      setTrainingYears(value => value || profile.trainingYears);
+      setInstagramId(value => value || profile.instagramId);
+      setIntroText(value => value || profile.introText);
+      // Download only the authenticated owner's raw photos; upload as new application photos on submit.
+      const results = await Promise.allSettled(profile.photoUrls.map((url, slot) => photos[slot]
+        ? Promise.resolve(photos[slot]!)
+        : importOwnOpenCardPhoto(url, user.id, slot, MAX_FILE_SIZE, controller.signal)));
+      if (!current()) return;
+      results.forEach((result, slot) => {
+        if (!photos[slot] && result.status === "fulfilled") photoPreparation.cancel(slot);
+      });
+      setPhotos(previous => previous.map((photo, slot) => {
+        const result = results[slot];
+        return photo || (result.status === "fulfilled" ? result.value : null);
+      }));
+      setImportMessage(results.some(result => result.status === "rejected")
+        ? "빈 항목에 내 정보를 채웠어요. 불러오지 못한 사진은 직접 선택해 주세요."
+        : "빈 항목에 내 정보와 사진을 채웠어요. 내용을 확인하고 지원해 주세요.");
+    } catch (error) {
+      if (current()) setImportMessage(error instanceof Error ? error.message : "불러오지 못했어요. 직접 입력해 주세요.");
+    } finally {
+      clearTimeout(timer);
+      if (current()) { importRequest.current = null; setImporting(false); }
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitLock.current || importRequest.current || photoPreparation.isProcessing()) return;
     setError("");
     setProfileEditUrl(null);
 
@@ -115,12 +191,13 @@ export default function PaidCardApplyPage() {
         setError("사진은 JPG/PNG/WebP만 가능합니다.");
         return;
       }
-      if (photo.size > MAX_FILE_SIZE) {
-        setError("사진은 장당 5MB 이하만 가능합니다.");
+      if (photo.size > DATING_PHOTO_UPLOAD_MAX_BYTES) {
+        setError("사진 용량을 줄이지 못했어요. 다시 선택해 주세요.");
         return;
       }
     }
 
+    submitLock.current = true;
     setSubmitting(true);
     try {
       const uploadedPaths: string[] = [];
@@ -157,7 +234,9 @@ export default function PaidCardApplyPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const body = (await res.json().catch(() => ({}))) as {
+      const parsed: unknown = await res.json().catch(() => null);
+      const body = (parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {}) as {
+        ok?: boolean;
         error?: string;
         code?: string;
         message?: string;
@@ -177,20 +256,26 @@ export default function PaidCardApplyPage() {
         setSubmitting(false);
         return;
       }
+      if (body.ok !== true) {
+        setError("지원 결과를 확인하지 못했어요. 마이페이지의 ‘내 지원’을 먼저 확인해 주세요.");
+        return;
+      }
 
       alert("지원이 완료되었습니다.");
-      router.push("/mypage");
+      router.push("/mypage?section=matching&match=applied#paid-card-applied");
     } catch {
       setError("네트워크 오류가 발생했습니다.");
+    } finally {
+      submitLock.current = false;
+      setSubmitting(false);
     }
-
-    setSubmitting(false);
   };
 
   if (loading || !card) {
     return (
       <main className="max-w-lg mx-auto px-4 py-8">
-        <p className="text-sm text-neutral-500">불러오는 중...</p>
+        <p className="text-sm text-neutral-500">{loadError ? "카드를 불러오지 못했어요. 잠시 후 다시 확인해 주세요." : "불러오는 중..."}</p>
+        {loadError ? <button type="button" onClick={() => window.location.reload()} className="mt-3 min-h-10 text-sm font-semibold text-neutral-800">다시 불러오기</button> : null}
       </main>
     );
   }
@@ -201,7 +286,7 @@ export default function PaidCardApplyPage() {
         뒤로가기
       </Link>
 
-      <h1 className="text-2xl font-bold text-neutral-900 mt-3">36시간 고정 지원하기</h1>
+      <h1 className="text-2xl font-bold text-neutral-900 mt-3">오픈카드 지원하기</h1>
       <p className="mt-2 text-xs leading-5 text-neutral-500">지원권 소모 없이 지원할 수 있어요.</p>
 
       <div className="mt-4 rounded-xl border border-neutral-200 bg-white p-3">
@@ -224,7 +309,19 @@ export default function PaidCardApplyPage() {
         )}
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4 mt-6">
+      <div className="mt-5 rounded-xl border border-neutral-200 px-3 py-2.5">
+        <button type="button" disabled={importing || submitting || photoPreparation.busy} onClick={() => void loadOwnOpenCard()} className="min-h-10 text-sm font-semibold text-neutral-800 disabled:opacity-50">
+          {importing ? "내 정보와 사진 불러오는 중…" : "내 오픈카드 불러오기"}
+        </button>
+        <p className="text-xs leading-5 text-neutral-500">빈 항목만 채워요. 이미 적은 내용과 선택한 사진은 유지돼요.</p>
+        {importing ? <button type="button" className="min-h-9 text-xs text-neutral-500 underline" onClick={() => {
+          importRequest.current?.abort(); importRequest.current = null; setImporting(false);
+          setImportMessage("불러오기를 취소했어요. 아래에서 직접 입력할 수 있어요.");
+        }}>불러오기 취소</button> : null}
+        {importMessage ? <p role="status" className="mt-1 text-xs leading-5 text-neutral-600">{importMessage}</p> : null}
+      </div>
+      <form onSubmit={handleSubmit} className="mt-5">
+        <fieldset disabled={importing || submitting} className="min-w-0 space-y-4">
         <Field label="나이" required>
           <input className="input" type="number" min={19} max={99} required value={age} onChange={(e) => setAge(e.target.value)} />
         </Field>
@@ -246,12 +343,13 @@ export default function PaidCardApplyPage() {
         <Field label="자기소개" required>
           <textarea className="w-full rounded-xl border border-neutral-300 px-3 py-2" required maxLength={1000} rows={4} value={introText} onChange={(e) => setIntroText(e.target.value)} />
         </Field>
-        <Field label="지원 사진 1" required>
-          <input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e) => handlePhotoChange(0, e.target.files?.[0] ?? null)} />
-        </Field>
-        <Field label="지원 사진 2" required>
-          <input type="file" accept="image/jpeg,image/png,image/webp" required onChange={(e) => handlePhotoChange(1, e.target.files?.[0] ?? null)} />
-        </Field>
+        {[0, 1].map(slot => <Field key={slot} label={`지원 사진 ${slot + 1}`} required>
+          {photos[slot] ? <PhotoPreview file={photos[slot]!} slot={slot} /> : null}
+          <input className="w-full min-w-0 text-xs" type="file" accept={DATING_PHOTO_ACCEPT} required={!photos[slot]} onChange={(e) => handlePhotoChange(slot, e.target.files?.[0] ?? null)} />
+          {photoPreparation.pending.includes(slot) ? <p role="status" className="mt-1 text-xs text-neutral-500">사진을 준비하고 있어요…</p> : null}
+          {photoPreparation.errors[slot] ? <p role="alert" className="mt-1 text-xs text-red-600">{photoPreparation.errors[slot]}</p> : null}
+        </Field>)}
+        <p className="text-xs leading-5 text-neutral-500">{HEIC_HELP}</p>
 
         <label className="flex items-start gap-2 text-sm text-neutral-700">
           <input type="checkbox" checked={consent} onChange={(e) => setConsent(e.target.checked)} className="mt-1" />
@@ -269,9 +367,10 @@ export default function PaidCardApplyPage() {
           </div>
         )}
 
-        <button type="submit" disabled={submitting} className="w-full min-h-[46px] rounded-xl bg-pink-500 text-white text-sm font-medium hover:bg-pink-600 disabled:opacity-50">
+        <button type="submit" disabled={submitting || importing || photoPreparation.busy} className="w-full min-h-[46px] rounded-xl bg-rose-600 text-white text-sm font-medium hover:bg-rose-700 disabled:opacity-50">
           {submitting ? "지원 중..." : "지원하기"}
         </button>
+        </fieldset>
       </form>
 
       <style jsx>{`
@@ -290,11 +389,22 @@ export default function PaidCardApplyPage() {
 
 function Field({ label, required = false, children }: { label: string; required?: boolean; children: ReactNode }) {
   return (
-    <div>
-      <label className="block text-sm font-medium text-neutral-700 mb-1">
+    <label className="block">
+      <span className="block text-sm font-medium text-neutral-700 mb-1">
         {label} {required ? "*" : ""}
-      </label>
+      </span>
       {children}
-    </div>
+    </label>
   );
+}
+
+function PhotoPreview({ file, slot }: { file: File; slot: number }) {
+  const image = useRef<HTMLImageElement>(null);
+  useEffect(() => {
+    const next = URL.createObjectURL(file);
+    if (image.current) image.current.src = next;
+    return () => URL.revokeObjectURL(next);
+  }, [file]);
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img ref={image} alt={`지원 사진 ${slot + 1} 미리보기`} className="mb-2 h-28 w-24 rounded-lg border border-neutral-200 object-contain" />;
 }

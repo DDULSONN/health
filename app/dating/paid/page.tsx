@@ -778,16 +778,12 @@ function DatingPaidContent() {
             신청하기
           </Link>
         </div>
-        <p className="inline-flex items-center gap-2 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
-          <span className="inline-block h-2 w-2 rounded-full bg-amber-500" />
-          대기 없이 등록과 상단 고정은 일반 오픈카드보다 지원률이 2배가량 높아요.
+        <p className="mt-2 text-sm leading-6 text-neutral-600">
+          {displayMode === "instant_public"
+            ? "기존 대기 순번은 그대로, 별도 카드로 바로 공개해요."
+            : `${DATING_PAID_FIXED_HOURS}시간 동안 오픈카드 목록 상단에 노출돼요.`}
         </p>
-        <p className="mt-2 text-sm text-neutral-600">대기열 없이 게시 · 지원서 여러 장 수락 가능 · {DATING_PAID_FIXED_HOURS}시간 글에는 하루 지원권 차감 없이 지원 가능 · 남/녀 오픈카드 최상단에 고정 노출</p>
-        <p className="mt-2 inline-flex items-center gap-2 rounded-full border border-rose-200 bg-white/90 px-3 py-1 text-xs font-medium text-rose-700">
-          <span className="inline-block h-2 w-2 rounded-full bg-rose-500" />
-          기다리지 않고 바로 눈에 띄게 올리는 빠른 등록 옵션
-        </p>
-        <p className="mt-2 text-xs text-neutral-500">가격: 10,000원</p>
+        <p className="mt-1 text-xs leading-5 text-neutral-500">상대방은 지원권 차감 없이 지원할 수 있어요. · 10,000원</p>
       </section>
 
       <DatingAdultNotice />

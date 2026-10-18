@@ -4,6 +4,8 @@ import Link from "next/link";
 import dynamic from "next/dynamic";
 import type { OneOnOneHomeState } from "@/components/dating/OneOnOneHomePanel";
 import PaidRegistrationStatus from "@/components/dating/PaidRegistrationStatus";
+import InstantOpenCardHint from "@/components/dating/InstantOpenCardHint";
+import { canOfferInstantOpenCard } from "@/lib/paid-application-prefill";
 import { usePaidRegistrationStatus } from "@/lib/use-paid-registration-status";
 import { PAID_REGISTRATION_MANAGE_HREF } from "@/lib/paid-registration-status";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -2939,6 +2941,7 @@ function OpenCardsContent() {
   const instantOpenCardOnboardingHref = "/onboarding/dating?next=instant_open_card";
   const checkPaidRegistration = paidRegistration.loading || paidRegistration.error || paidRegistration.presentation?.active;
   const instantOpenCardLabel = checkPaidRegistration ? "등록 상태 확인" : "대기 없이 등록";
+  const showInstantOpenCardHint = openCardPresenceReady && canOfferInstantOpenCard(myOpenCards.some(card => card.status === "pending"), paidRegistration);
   const instantOpenCardHref = checkPaidRegistration ? PAID_REGISTRATION_MANAGE_HREF : viewerLoggedIn
     ? openCardPresenceReady && hasAnyOpenCardProfile
       ? "/dating/paid?apply=1&source=open_card"
@@ -3089,7 +3092,7 @@ function OpenCardsContent() {
                   {reactivatingHomeOpenCardId === reactivatableOpenCard.id ? "등록 중..." : "기존 카드 다시 공개"}
                 </button>
               ) : null}
-              {openCardPresenceReady && hasAnyOpenCardProfile ? (
+              {openCardPresenceReady && hasAnyOpenCardProfile && !showInstantOpenCardHint ? (
                 <Link
                   href={instantOpenCardHref}
                   className="inline-flex min-h-[42px] items-center justify-center rounded-lg bg-rose-600 px-4 text-sm font-bold text-white transition hover:bg-rose-700"
@@ -3100,6 +3103,7 @@ function OpenCardsContent() {
             </div>
           </div>
 
+          {showInstantOpenCardHint ? <InstantOpenCardHint /> : null}
           {firstQueueBoostCard ? (
             <button
               type="button"
@@ -3949,6 +3953,7 @@ function PaidCardRow({ card, viewerLoggedIn }: { card: PaidCard; viewerLoggedIn:
           >
             {viewerLoggedIn ? "지원하기" : "로그인 후 지원"}
           </Link>
+          <p className="text-center text-[11px] leading-4 text-neutral-500">지원권 차감 없음</p>
         </div>
       </div>
     </div>

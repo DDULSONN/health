@@ -7,7 +7,9 @@ export const useSearchParams = () => {
   return useMemo(() => new URLSearchParams(search), [search]);
 };
 const navigate = (url: string) => { window.history.pushState(null, "", url); window.dispatchEvent(new PopStateEvent("popstate")); };
-export const useRouter = () => ({ push: navigate, replace: navigate, prefetch: () => {} });
+const router = { push: navigate, replace: navigate, prefetch: () => {} };
+export const useRouter = () => router;
+export const useParams = () => ({ id: "fixture-paid" });
 export default function Adapter(props: { children?: ReactNode; href?: string; className?: string; onClick?: () => void }) {
   if (!props.href) return <>{props.children}</>;
   const click = (event: MouseEvent<HTMLAnchorElement>) => {

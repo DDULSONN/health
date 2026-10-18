@@ -2,6 +2,8 @@
 
 import dynamic from "next/dynamic";
 import PaidRegistrationStatus from "@/components/dating/PaidRegistrationStatus";
+import InstantOpenCardHint from "@/components/dating/InstantOpenCardHint";
+import { canOfferInstantOpenCard } from "@/lib/paid-application-prefill";
 import { usePaidRegistrationStatus } from "@/lib/use-paid-registration-status";
 import { paidRegistrationPresentation, PAID_REGISTRATION_MANAGE_HREF } from "@/lib/paid-registration-status";
 import { getMypageMatchingAnchorFilter } from "@/lib/mypage-matching-anchor";
@@ -8557,12 +8559,12 @@ export default function MyPage() {
                     >
                       카드 관리
                     </button>
-                    <Link
+                    {!canOfferInstantOpenCard(myDatingCards.some(card => card.status === "pending"), paidRegistration) ? <Link
                       href={paidRegistration.loading || paidRegistration.error || paidRegistration.presentation?.active ? PAID_REGISTRATION_MANAGE_HREF : "/dating/paid?apply=1&source=open_card"}
                       className="inline-flex min-h-[40px] flex-1 items-center justify-center rounded-lg bg-rose-600 px-3.5 text-xs font-bold text-white hover:bg-rose-700 sm:flex-none"
                     >
                       {paidRegistration.loading || paidRegistration.error || paidRegistration.presentation?.active ? "등록 상태 확인" : "대기 없이 등록"}
-                    </Link>
+                    </Link> : null}
                   </>
                 ) : matchingDataLoaded ? (
                   <Link
@@ -8578,11 +8580,7 @@ export default function MyPage() {
                 )}
               </div>
             </div>
-            {matchingDataLoaded && myDatingCards.some((card) => card.status === "pending") ? (
-              <p className="mt-3 border-t border-rose-100 pt-3 text-[11px] leading-5 text-rose-700">
-                기다리는 동안 별도 유료 카드로 먼저 공개할 수 있어요. 기존 오픈카드의 대기 순번은 그대로 유지됩니다.
-              </p>
-            ) : null}
+            {matchingDataLoaded && canOfferInstantOpenCard(myDatingCards.some(card => card.status === "pending"), paidRegistration) ? <InstantOpenCardHint /> : null}
           </section>
           <div id="matching-filter-panel" className="scroll-mt-24">
             <div className="flex items-end justify-between gap-3">

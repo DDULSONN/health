@@ -1,5 +1,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 const { test } = require('node:test');
+require('./check-open-card-participation.cjs');
 const assert = require('node:assert/strict');
 const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm'), ts = require('typescript');
 const root = path.resolve(__dirname, '..');
@@ -88,7 +89,8 @@ test('instant entry accepts existing hidden/expired profiles without changing or
   assert.match(home,/const showOpenCardManagement =[\s\S]*?openCardPresenceReady/);
   assert.match(home,/const instantOpenCardHref =[\s\S]*?openCardPresenceReady && hasAnyOpenCardProfile/);
   assert.match(home,/currentCount=\{activeCurrentCount \+ activePaidItems.length\}/);
-  assert.match(home,/openCardPresenceReady && hasAnyOpenCardProfile \? \([\s\S]*?대기 없이 등록/);
+  assert.match(home,/openCardPresenceReady && hasAnyOpenCardProfile && !showInstantOpenCardHint \? \([\s\S]*?대기 없이 등록/);
+  assert.match(home,/showInstantOpenCardHint \? <InstantOpenCardHint \/>/);
   const source=read('app/api/dating/paid/create/route.ts');
   assert.match(source,/\.in\("status", \["pending", "public", "hidden", "expired"\]\)/);
   assert.doesNotMatch(source,/from\("dating_cards"\)[\s\S]{0,80}\.(update|delete)\(/);

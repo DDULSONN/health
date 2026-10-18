@@ -6,7 +6,9 @@ const fs = require('node:fs'), path = require('node:path');
 const { PGlite } = require('@electric-sql/pglite');
 const ts = require('typescript');
 const root = path.resolve(__dirname, '..');
-const read = f => fs.readFileSync(path.join(root, f), 'utf8');
+// Git archives and Windows checkouts can use different line endings. PostgreSQL
+// retains function-body whitespace, so compare the same canonical source text.
+const read = f => fs.readFileSync(path.join(root, f), 'utf8').replace(/\r\n/g, '\n');
 const id = n => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 async function fixture() {
   const db = new PGlite();

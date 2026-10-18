@@ -12,25 +12,43 @@ async function startPreview(port=3152) {
       module:{rules:[{test:/\.tsx?$/,exclude:/node_modules/,use:path.join(__dirname,'fixtures/profile-ux-loader.cjs')}]} });
     compiler.run((error,stats)=>{compiler.close(()=>{});if(error||stats.hasErrors())reject(error||Error(stats.toString({all:false,errors:true})));else resolve();});
   });
-  const cssDir=path.join(root,'.next/static/css');
-  const css=fs.readdirSync(cssDir).filter(p=>p.endsWith('.css')).map(p=>fs.readFileSync(path.join(cssDir,p),'utf8')).join('\n');
+  const cssDir=process.env.PROFILE_UX_CSS_DIR || path.join(root,'.next/static/css');
+  const css=fs.readdirSync(cssDir).filter(p=>p.endsWith('.css')).map(p=>fs.readFileSync(path.join(cssDir,p),'utf8')).join('\n') + '\n.input{width:100%;min-height:44px;border:1px solid #d4d4d8;border-radius:12px;padding:0 12px;background:white}';
   const source={id:'fixture-open',sex:'male',status:'pending',age:30,region:'서울',height_cm:178,job:'회사원',training_years:2,strengths_text:'대화와 산책을 좋아해요.',ideal_type:'서로 배려하는 분',instagram_id:'fixture_member',photo_visibility:'public',photo_paths:['cards/fixture-member/raw/a.jpg','cards/fixture-member/raw/b.jpg'],photo_preview_urls:['/preview-photo.svg','/preview-photo.svg']};
   const card={id:'fixture-paid',nickname:'공개 테스트',gender:'F',age:29,region:'서울',height_cm:165,job:'회사원',photo_visibility:'public',thumbUrl:'/preview-photo.svg',image_urls:['/preview-photo.svg','/preview-photo.svg'],display_mode:'instant_public',expires_at:new Date(Date.now()+36*3600000).toISOString(),strengths_text:'가상 프로필 · 운영 회원이 아닙니다.'};
   let failedReads=0;
+  const submissions=[];
   const server=http.createServer((req,res)=>{
     res.setHeader('Content-Security-Policy',"default-src 'self'; connect-src 'self'; img-src 'self' blob: data:; style-src 'self' 'unsafe-inline'; script-src 'self'");
     const url=new URL(req.url,'http://localhost');
+    const scenario=new URL(req.headers.referer||'http://localhost').searchParams.get('scenario');
+    if(url.pathname.startsWith('/i/signed/dating-card-photos/cards/fixture-member/raw/')) {
+      if(scenario==='broken-photo' && url.pathname.endsWith('b.png')) { res.writeHead(503); res.end(); return; }
+      const send=()=>{ if(res.destroyed)return;res.setHeader('Content-Type','image/png');res.end(fs.readFileSync(path.join(root,'public/icon-192x192.png'))); };
+      if(scenario==='slow-photo') setTimeout(send, 5000); else send();return;
+    }
+    if(url.pathname==='/preview-receipt') {
+      res.setHeader('Content-Type','application/json; charset=utf-8');res.end(JSON.stringify({ applications:submissions.length,latest:submissions.at(-1)||null }));return;
+    }
     if(url.pathname==='/fixture.js'){res.setHeader('Content-Type','text/javascript; charset=utf-8');res.end(fs.readFileSync(path.join(output,'fixture.js')));return;}
     if(url.pathname==='/fixture.css'){res.setHeader('Content-Type','text/css');res.end(css);return;}
     if(url.pathname==='/preview-photo.svg'){res.setHeader('Content-Type','image/svg+xml');res.end('<svg xmlns="http://www.w3.org/2000/svg" width="240" height="300"><rect width="240" height="300" fill="#f3f4f6"/><text x="35" y="155" font-size="20" fill="#555">TEST PHOTO</text></svg>');return;}
     if(url.pathname.startsWith('/api/')){
       res.setHeader('Content-Type','application/json; charset=utf-8');
+      if(req.method==='POST' && url.pathname==='/api/dating/paid/upload') {
+        req.resume();req.on('end',()=>{res.end(JSON.stringify({path:'paid-card-applications/fixture-member/fixture-paid/'+Date.now()+'.png'}));});return;
+      }
+      if(req.method==='POST' && url.pathname==='/api/dating/paid/apply') {
+        const chunks=[]; req.on('data',chunk=>chunks.push(chunk));req.on('end',()=>{
+          try { const payload=JSON.parse(Buffer.concat(chunks).toString('utf8'));submissions.push(payload);res.end(JSON.stringify({ok:true})); }
+          catch { res.writeHead(400);res.end('{}'); }
+        });return;
+      }
       if(url.pathname==='/api/payments/toss/confirm'&&req.method==='POST'){res.end(JSON.stringify({ok:true,orderId:'fixture-order',productType:'paid_card',amount:10000,orderName:'가상 등록 검증'}));return;}
       if(req.method!=='GET'){console.log('BLOCKED_LOCAL_WRITE',req.method,url.pathname);res.statusCode=405;res.end(JSON.stringify({error:'로컬 검증에서는 등록/결제를 실행하지 않습니다.'}));return;}
-      const scenario=new URL(req.headers.referer||'http://localhost').searchParams.get('scenario');
       let body={ok:true,items:[],cards:[],applications:[],loggedIn:true};
       if(url.pathname==='/api/dating/paid/my/status'){
-        body={card:scenario==='no-profile'?null:{id:'00000000-0000-4000-8000-000000000001',status:scenario==='status-pending'?'pending':scenario==='status-expired'?'expired':'approved',display_mode:scenario==='status-priority'?'priority_24h':'instant_public',expires_at:new Date(Date.now()+(scenario==='status-expired'?-1:23*3600000+1800000)).toISOString()},checked_at:new Date().toISOString()};
+        body={card:['no-profile','waiting'].includes(scenario)?null:{id:'00000000-0000-4000-8000-000000000001',status:scenario==='status-pending'?'pending':scenario==='status-expired'?'expired':'approved',display_mode:scenario==='status-priority'?'priority_24h':'instant_public',expires_at:new Date(Date.now()+(scenario==='status-expired'?-1:23*3600000+1800000)).toISOString()},checked_at:new Date().toISOString()};
         if(scenario==='status-error'){res.statusCode=503;body={error:'가상 상태 조회 오류'};}
       }
       if(url.pathname==='/api/mypage/summary')body={profile:{nickname:'테스트',phone_verified:true}};
@@ -41,7 +59,11 @@ async function startPreview(port=3152) {
       if(url.pathname==='/api/dating/paid/list'){
         body={items:[card]}; if(scenario==='list-failure'&&failedReads++<2){res.statusCode=503;body={message:'의도적으로 만든 목록 오류'};}
       }
-      if(url.pathname==='/api/dating/paid/create')body={card:{...source,...(url.searchParams.has('id')?{gender:'M',display_mode:'instant_public',status:'approved',expires_at:card.expires_at,ideal_text:source.ideal_type}:{})}};
+      if(url.pathname==='/api/dating/paid/fixture-paid')body={card};
+      if(url.pathname==='/api/dating/paid/create') {
+        body={card:{...source,photo_preview_urls:['/i/signed/dating-card-photos/cards/fixture-member/raw/a.png','/i/signed/dating-card-photos/cards/fixture-member/raw/b.png'],...(url.searchParams.has('id')?{gender:'M',display_mode:'instant_public',status:'approved',expires_at:card.expires_at,ideal_text:source.ideal_type}:{})}};
+        if(scenario==='no-profile'){res.statusCode=404;body={error:'SOURCE_NOT_FOUND'};}
+      }
       res.end(JSON.stringify(body));return;
     }
     res.setHeader('Content-Type','text/html; charset=utf-8');
@@ -50,4 +72,4 @@ async function startPreview(port=3152) {
   await new Promise(resolve=>server.listen(port,'127.0.0.1',resolve));return {server,origin:'http://127.0.0.1:'+server.address().port};
 }
 module.exports={startPreview};
-if(require.main===module)startPreview().then(({origin})=>console.log(origin+'/community/dating/cards')).catch(error=>{console.error(error);process.exitCode=1;});
+if(require.main===module)startPreview(Number(process.env.OPEN_CARD_PREVIEW_PORT || 3152)).then(({origin})=>console.log(origin+'/community/dating/cards?scenario=waiting')).catch(error=>{console.error(error);process.exitCode=1;});
