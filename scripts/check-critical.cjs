@@ -49,6 +49,7 @@ const unitFiles = [
   'check-dating-contact-block-sync.cjs',
   'check-auth-session-middleware.cjs',
   'check-account-recovery.cjs',
+  'check-account-recovery-safety.cjs',
   'check-contact-payment-conversion.cjs',
   'check-contact-care.cjs',
   'check-payment-recovery.cjs',

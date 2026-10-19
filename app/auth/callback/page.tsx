@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import type { EmailOtpType } from "@supabase/supabase-js";
@@ -9,6 +9,8 @@ import { isEmailConfirmed } from "@/lib/auth-confirmed";
 import { isValidReferralCode, normalizeReferralCode } from "@/lib/referral-code";
 import { safeInternalPath } from "@/lib/safe-internal-path";
 import { checkAccountRecoverySession } from "@/lib/account-recovery-client";
+import { accountRecoveryNeedsRetry, authEmailError, clearConsumedAuthLink, readAuthHint, readAuthWithTimeout, removeAuthHint, writeAuthHint, type AuthLinkAttempt } from "@/lib/auth-ui-recovery";
+import { safeAccountRecoveryNext } from "@/lib/account-recovery";
 
 const STORED_EMAIL_KEY = "recent_login_email";
 const PENDING_REFERRAL_KEY = "pending_signup_referral";
@@ -67,7 +69,7 @@ function parseStateFromLocation(): CallbackState {
   }
 
   return {
-    next: safeNextPath(merged.get("next")),
+    next: safeAccountRecoveryNext(merged.get("next")),
     email: normalizeEmail(merged.get("email")),
     code: merged.get("code"),
     tokenHash: merged.get("token_hash"),
@@ -84,18 +86,18 @@ function parseStateFromLocation(): CallbackState {
 
 function readPendingReferralCode(): string | null {
   try {
-    const raw = window.localStorage.getItem(PENDING_REFERRAL_KEY);
+    const raw = readAuthHint(PENDING_REFERRAL_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as { code?: unknown; createdAt?: unknown };
     const code = normalizeReferralCode(parsed.code);
     const createdAt = Number(parsed.createdAt);
     if (!isValidReferralCode(code) || !Number.isFinite(createdAt) || Date.now() - createdAt > PENDING_REFERRAL_MAX_AGE_MS) {
-      window.localStorage.removeItem(PENDING_REFERRAL_KEY);
+      removeAuthHint(PENDING_REFERRAL_KEY);
       return null;
     }
     return code;
   } catch {
-    window.localStorage.removeItem(PENDING_REFERRAL_KEY);
+    removeAuthHint(PENDING_REFERRAL_KEY);
     return null;
   }
 }
@@ -127,14 +129,18 @@ export default function AuthCallbackPage() {
   const [sending, setSending] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [inAppBrowser, setInAppBrowser] = useState(false);
+  const [checkAttempt, setCheckAttempt] = useState(0);
+  const linkAttempt = useRef<AuthLinkAttempt | null>(null);
 
   useEffect(() => {
+    let active = true;
+    setViewState({ kind: "processing" });
     const parsed = parseStateFromLocation();
     setState(parsed);
     setInAppBrowser(isInAppBrowser(navigator.userAgent));
 
-    const stored = normalizeEmail(window.localStorage.getItem(STORED_EMAIL_KEY));
-    const seedEmail = parsed.email || stored;
+    const stored = normalizeEmail(readAuthHint(STORED_EMAIL_KEY));
+    const seedEmail = parsed.email || (parsed.recovery ? "" : stored);
     if (seedEmail) setEmail(seedEmail);
 
     (async () => {
@@ -154,7 +160,7 @@ export default function AuthCallbackPage() {
             body: JSON.stringify({ code: referralCode }),
           });
           if (response.status < 500) {
-            window.localStorage.removeItem(PENDING_REFERRAL_KEY);
+            removeAuthHint(PENDING_REFERRAL_KEY);
           }
         } catch (claimError) {
           console.error("[auth/callback] referral claim failed", claimError);
@@ -164,12 +170,18 @@ export default function AuthCallbackPage() {
       const finalizeSuccess = async () => {
         const {
           data: { session },
-        } = await supabase.auth.getSession();
+        } = await readAuthWithTimeout(() => supabase.auth.getSession());
+        if (!active) return;
 
         if (session) {
           if (parsed.recovery) {
             const recoveryCheck = await checkAccountRecoverySession();
+            if (!active) return;
             if (!recoveryCheck.ok) {
+              if (accountRecoveryNeedsRetry(recoveryCheck.code)) {
+                setViewState({ kind: "recovery", detail: "recovery_verification_failed" });
+                return;
+              }
               const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
               const mismatch = recoveryCheck.code === "RECOVERY_ACCOUNT_MISMATCH";
               const expired = recoveryCheck.code === "RECOVERY_SESSION_EXPIRED";
@@ -195,7 +207,7 @@ export default function AuthCallbackPage() {
               signal: AbortSignal.timeout(4000),
             }).catch(() => null);
           }
-          router.replace(gatedNext);
+          if (active) router.replace(gatedNext);
           return;
         }
 
@@ -205,28 +217,52 @@ export default function AuthCallbackPage() {
       const hasConfirmedUser = async () => {
         const {
           data: { user },
-        } = await supabase.auth.getUser();
+        } = await readAuthWithTimeout(() => supabase.auth.getUser());
         return Boolean(user && isEmailConfirmed(user));
       };
 
+      const exchangeLink = (key: string, exchange: () => AuthLinkAttempt["promise"]) => {
+        if (linkAttempt.current?.key !== key) linkAttempt.current = { key, promise: exchange() };
+        return linkAttempt.current.promise;
+      };
+
+      if (parsed.recovery && (parsed.errorCode || parsed.error)) {
+        setViewState({ kind: "recovery", detail: (parsed.errorCode || parsed.error || "auth_link_invalid").toLowerCase() });
+        return;
+      }
+
       const {
         data: { session: initialSession },
-      } = await supabase.auth.getSession();
-      if (initialSession) {
+      } = await readAuthWithTimeout(() => supabase.auth.getSession());
+      if (!active) return;
+      // The SDK consumes PKCE/implicit callbacks itself, but never token_hash links.
+      // A still-present code or email token must not fall back to a different cached account.
+      const pendingCode = parsed.code && new URLSearchParams(window.location.search).has("code");
+      const pendingEmailToken = parsed.tokenHash && parsed.otpType;
+      const pendingAccessToken = parsed.accessToken && parsed.refreshToken && parseStateFromLocation().accessToken;
+      if (initialSession && !pendingCode && !pendingEmailToken && !pendingAccessToken) {
         await finalizeSuccess();
         return;
       }
 
-      if (await hasConfirmedUser()) {
+      if (!pendingCode && !pendingEmailToken && !pendingAccessToken && await hasConfirmedUser()) {
         await finalizeSuccess();
         return;
       }
 
-      if (parsed.code) {
-        await supabase.auth.exchangeCodeForSession(parsed.code);
+      if (pendingCode && parsed.code) {
+        const code = parsed.code;
+        const { error } = await exchangeLink(`code:${code}`, () => supabase.auth.exchangeCodeForSession(code));
+        if (!active) return;
+        if (error) {
+          setViewState({ kind: "recovery", detail: error.code || "auth_link_invalid" });
+          return;
+        }
+        clearConsumedAuthLink();
         const {
           data: { session: afterCodeSession },
-        } = await supabase.auth.getSession();
+        } = await readAuthWithTimeout(() => supabase.auth.getSession());
+        if (!active) return;
         if (afterCodeSession || (await hasConfirmedUser())) {
           await finalizeSuccess();
           return;
@@ -234,27 +270,44 @@ export default function AuthCallbackPage() {
       }
 
       if (parsed.tokenHash && parsed.otpType) {
-        await supabase.auth.verifyOtp({
-          token_hash: parsed.tokenHash,
+        const tokenHash = parsed.tokenHash;
+        const { error } = await exchangeLink(`otp:${parsed.otpType}:${tokenHash}`, () => supabase.auth.verifyOtp({
+          token_hash: tokenHash,
           type: parsed.otpType as EmailOtpType,
-        });
+        }));
+        if (!active) return;
+        if (error) {
+          setViewState({ kind: "recovery", detail: error.code || "auth_link_invalid" });
+          return;
+        }
+        clearConsumedAuthLink();
         const {
           data: { session: afterOtpSession },
-        } = await supabase.auth.getSession();
+        } = await readAuthWithTimeout(() => supabase.auth.getSession());
+        if (!active) return;
         if (afterOtpSession || (await hasConfirmedUser())) {
           await finalizeSuccess();
           return;
         }
       }
 
-      if (parsed.accessToken && parsed.refreshToken) {
-        await supabase.auth.setSession({
-          access_token: parsed.accessToken,
-          refresh_token: parsed.refreshToken,
-        });
+      if (pendingAccessToken && parsed.accessToken && parsed.refreshToken) {
+        const accessToken = parsed.accessToken;
+        const refreshToken = parsed.refreshToken;
+        const { error } = await exchangeLink(`session:${accessToken}`, () => supabase.auth.setSession({
+          access_token: accessToken,
+          refresh_token: refreshToken,
+        }));
+        if (!active) return;
+        if (error) {
+          setViewState({ kind: "recovery", detail: error.code || "auth_link_invalid" });
+          return;
+        }
+        clearConsumedAuthLink();
         const {
           data: { session: afterTokenSession },
-        } = await supabase.auth.getSession();
+        } = await readAuthWithTimeout(() => supabase.auth.getSession());
+        if (!active) return;
         if (afterTokenSession || (await hasConfirmedUser())) {
           await finalizeSuccess();
           return;
@@ -263,7 +316,8 @@ export default function AuthCallbackPage() {
 
       const {
         data: { session: finalSession },
-      } = await supabase.auth.getSession();
+      } = await readAuthWithTimeout(() => supabase.auth.getSession());
+      if (!active) return;
       if (finalSession || (await hasConfirmedUser())) {
         await finalizeSuccess();
         return;
@@ -271,8 +325,11 @@ export default function AuthCallbackPage() {
 
       const detail = parsed.errorCode?.toLowerCase() ?? parsed.error?.toLowerCase() ?? "";
       setViewState({ kind: "recovery", detail });
-    })();
-  }, [router]);
+    })().catch(() => {
+      if (active) setViewState({ kind: "recovery", detail: "auth_check_failed" });
+    });
+    return () => { active = false; };
+  }, [router, checkAttempt]);
 
   const gatedNext = withPhoneVerificationGate(state?.next ?? "/");
 
@@ -280,7 +337,12 @@ export default function AuthCallbackPage() {
     if (!state || viewState.kind !== "recovery") return "";
 
     if (viewState.detail === "otp_expired" || viewState.detail === "access_denied") {
+      if (state.recovery) return "인증 링크가 만료됐거나 이미 사용됐어요. 가입했던 이메일로 새 로그인 링크를 받아 주세요.";
       return "인증 링크가 만료됐거나 이미 사용됐어요. 계정은 만들어졌을 수 있으니 로그인해 주세요.";
+    }
+
+    if (viewState.detail === "auth_link_invalid" || /flow_state|code_verifier|pkce/.test(viewState.detail)) {
+      return "이 브라우저에서 인증 링크를 확인하지 못했어요. 아래에서 새 링크를 받아 같은 브라우저에서 열어 주세요.";
     }
 
     if (viewState.detail === "recovery_account_mismatch") {
@@ -295,8 +357,8 @@ export default function AuthCallbackPage() {
       return "계정 찾기 확인 시간이 지났어요. 휴대폰 인증 화면에서 다시 계정 찾기를 시작해 주세요.";
     }
 
-    if (viewState.detail === "recovery_verification_failed") {
-      return "기존 계정 확인이 일시적으로 지연되고 있어요. 잠시 후 다시 시도해 주세요.";
+    if (viewState.detail === "recovery_verification_failed" || viewState.detail === "auth_check_failed") {
+      return "계정 확인이 일시적으로 지연되고 있어요. 아래에서 확인을 다시 시도해 주세요.";
     }
 
     if (state.errorDescription) return state.errorDescription;
@@ -334,14 +396,14 @@ export default function AuthCallbackPage() {
           });
 
       if (error) {
-        setMessage(error.message);
+        setMessage(authEmailError(error.message));
         return;
       }
 
-      window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
+      writeAuthHint(STORED_EMAIL_KEY, normalized);
       setMessage("인증 메일을 보냈어요. 인앱 브라우저에서 실패하면 Safari/Chrome으로 열어주세요.");
     } catch (e) {
-      setMessage(e instanceof Error ? e.message : "인증 메일 전송에 실패했어요.");
+      setMessage(authEmailError(e instanceof Error ? e.message : ""));
     } finally {
       setSending(false);
     }
@@ -410,6 +472,12 @@ export default function AuthCallbackPage() {
         <p className="mt-1 text-sm text-amber-800">{recoveryMessage}</p>
 
         <div className="mt-3 grid grid-cols-1 gap-2">
+          {(viewState.detail === "recovery_verification_failed" || viewState.detail === "auth_check_failed") && (
+            <button type="button" onClick={() => setCheckAttempt(value => value + 1)}
+              className="min-h-[44px] rounded-lg bg-amber-600 text-sm font-medium text-white">
+              계정 확인 다시 시도
+            </button>
+          )}
           <Link
             href={buildLoginHref(gatedNext, email, state.recovery)}
             className="inline-flex min-h-[44px] items-center justify-center rounded-lg bg-amber-600 text-white text-sm font-medium"

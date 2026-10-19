@@ -8,6 +8,8 @@ import { isEmailConfirmed } from "@/lib/auth-confirmed";
 import { safeInternalPath } from "@/lib/safe-internal-path";
 import { checkAccountRecoverySession } from "@/lib/account-recovery-client";
 import { getVerifiedLoginUser } from "@/lib/verified-login-user";
+import { buildPasswordResetHref, safeAccountRecoveryNext } from "@/lib/account-recovery";
+import { accountRecoveryNeedsRetry, authEmailError, readAuthWithTimeout, writeAuthHint } from "@/lib/auth-ui-recovery";
 
 const STORED_EMAIL_KEY = "recent_login_email";
 const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
@@ -57,7 +59,7 @@ function LoginContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
-  const next = safeNextPath(searchParams.get("next") ?? searchParams.get("redirect") ?? "/");
+  const next = safeAccountRecoveryNext(searchParams.get("next") ?? searchParams.get("redirect") ?? "/");
   const tabParam = searchParams.get("tab");
   const resetParam = searchParams.get("reset");
   const recoveryParam = searchParams.get("recovery");
@@ -84,6 +86,8 @@ function LoginContent() {
   const [inAppBrowser, setInAppBrowser] = useState(false);
   const [sessionChecking, setSessionChecking] = useState(true);
   const [canResendConfirm, setCanResendConfirm] = useState(false);
+  const [sessionAttempt, setSessionAttempt] = useState(0);
+  const [recoveryRetry, setRecoveryRetry] = useState(false);
 
   const callbackUrl = useMemo(() => {
     const url = new URL(buildCanonicalCallbackUrl(next));
@@ -94,10 +98,21 @@ function LoginContent() {
   const isOtpExpired = errorCode === "otp_expired";
   const isFlowStateMissing = errorCode === "flow_state_missing";
 
-  const finishPasswordRecoveryLogin = useCallback(async (supabase: ReturnType<typeof createClient>) => {
+  const finishPasswordRecoveryLogin = useCallback(async (
+    supabase: ReturnType<typeof createClient>,
+    isCurrent: () => boolean = () => true,
+  ) => {
     if (!isRecoveryFlow) return true;
     const recoveryCheck = await checkAccountRecoverySession();
+    // A superseded page check must not sign out a more recent login attempt.
+    if (!isCurrent()) return false;
     if (recoveryCheck.ok) return true;
+
+    if (accountRecoveryNeedsRetry(recoveryCheck.code)) {
+      setRecoveryRetry(true);
+      setError("기존 계정 확인이 지연되고 있어요. 다시 로그인할 필요 없이 아래에서 확인을 다시 시도해 주세요.");
+      return false;
+    }
 
     const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
     if (signOutError) {
@@ -124,6 +139,10 @@ function LoginContent() {
   }, [errorCode, errorDescription, errorParam, isFlowStateMissing, isOtpExpired]);
 
   useEffect(() => {
+    let active = true;
+    let redirectTimer: ReturnType<typeof setTimeout> | undefined;
+    setSessionChecking(true);
+    setRecoveryRetry(false);
     try {
       const stored = window.localStorage.getItem(STORED_EMAIL_KEY);
       // Do not prefill a potentially different account during account recovery.
@@ -136,13 +155,15 @@ function LoginContent() {
     (async () => {
       try {
         const supabase = createClient();
-        const user = await getVerifiedLoginUser(supabase);
+        const user = await readAuthWithTimeout(() => getVerifiedLoginUser(supabase));
+        if (!active) return;
 
         if (user && isEmailConfirmed(user)) {
-          if (!(await finishPasswordRecoveryLogin(supabase))) return;
+          if (!(await finishPasswordRecoveryLogin(supabase, () => active))) return;
+          if (!active) return;
           setError(null);
           setSuccess("이미 로그인되어 있습니다. 이동 중...");
-          setTimeout(() => router.replace(next || "/"), 700);
+          redirectTimer = setTimeout(() => { if (active) router.replace(next || "/"); }, 700);
           return;
         }
 
@@ -153,13 +174,16 @@ function LoginContent() {
 
         setError(initialErrorMessage);
       } catch {
+        if (!active) return;
         // Do not sign active members out for a temporary network/Auth outage.
         setError("로그인 상태 확인이 지연되고 있어요. 잠시 후 다시 시도해 주세요.");
+        setRecoveryRetry(true);
       } finally {
-        setSessionChecking(false);
+        if (active) setSessionChecking(false);
       }
     })();
-  }, [finishPasswordRecoveryLogin, initialErrorMessage, isRecoveryFlow, next, router]);
+    return () => { active = false; clearTimeout(redirectTimer); };
+  }, [finishPasswordRecoveryLogin, initialErrorMessage, isRecoveryFlow, next, router, sessionAttempt]);
 
   useEffect(() => {
     if (tabParam === "password") setMode("password");
@@ -189,14 +213,14 @@ function LoginContent() {
       });
 
       if (authError) {
-        setError(authError.message);
+        setError(authEmailError(authError.message));
         return;
       }
 
-      window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
+      writeAuthHint(STORED_EMAIL_KEY, normalized);
       setSuccess("로그인 링크를 보냈습니다. 메일 링크 클릭 시 바로 로그인됩니다(유효시간 10분).");
     } catch (e) {
-      setError(e instanceof Error ? e.message : "이메일 링크 전송에 실패했습니다.");
+      setError(authEmailError(e instanceof Error ? e.message : ""));
     } finally {
       setOtpLoading(false);
     }
@@ -255,7 +279,7 @@ function LoginContent() {
 
       if (!(await finishPasswordRecoveryLogin(supabase))) return;
 
-      window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
+      writeAuthHint(STORED_EMAIL_KEY, normalized);
       setSuccess("로그인되었습니다. 이동 중...");
       setTimeout(() => router.replace(next || "/"), 700);
     } catch (e) {
@@ -282,7 +306,7 @@ function LoginContent() {
         type: "signup",
         email: normalized,
         options: {
-          emailRedirectTo: buildCanonicalCallbackUrl(next || "/"),
+          emailRedirectTo: callbackUrl,
         },
       });
 
@@ -334,6 +358,10 @@ function LoginContent() {
       <p className="text-sm text-neutral-500 mb-6 text-center">커뮤니티/인증 기능을 사용하려면 로그인하세요.</p>
 
       {error && <p className="text-sm text-red-600 bg-red-50 rounded-xl p-3 mb-4 w-full text-center">{error}</p>}
+      {recoveryRetry && <button type="button" onClick={() => setSessionAttempt(value => value + 1)}
+        className="mb-4 min-h-[44px] w-full rounded-xl border border-neutral-300 text-sm font-semibold">
+        계정 확인 다시 시도
+      </button>}
       {success && <p className="text-sm text-emerald-700 bg-emerald-50 rounded-xl p-3 mb-4 w-full text-center">{success}</p>}
       {tabParam === "password" && resetParam === "success" && (
         <p className="text-sm text-emerald-700 bg-emerald-50 rounded-xl p-3 mb-4 w-full text-center">
@@ -462,7 +490,7 @@ function LoginContent() {
                 {resendConfirmLoading ? "재전송 중..." : "인증 메일 다시 보내기"}
               </button>
             )}
-            <Link href="/auth/reset-password" className="block text-xs text-emerald-700 underline text-center pt-1">
+            <Link href={isRecoveryFlow ? buildPasswordResetHref(next) : `/auth/reset-password?next=${encodeURIComponent(next)}`} className="block text-xs text-emerald-700 underline text-center pt-1">
               비밀번호를 잊으셨나요?
             </Link>
           </>

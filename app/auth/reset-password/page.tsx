@@ -1,11 +1,13 @@
 "use client";
 
 import Link from "next/link";
-import { FormEvent, useEffect, useState } from "react";
+import { FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import type { EmailOtpType } from "@supabase/supabase-js";
 import { createClient } from "@/lib/supabase/client";
 import { safeInternalPath } from "@/lib/safe-internal-path";
+import { clearConsumedAuthLink, readAuthHint, readAuthWithTimeout, writeAuthHint, type AuthLinkAttempt } from "@/lib/auth-ui-recovery";
+import { safeAccountRecoveryNext } from "@/lib/account-recovery";
 
 const CANONICAL_SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? "https://helchang.com";
 const STORED_EMAIL_KEY = "recent_login_email";
@@ -114,13 +116,15 @@ export default function ResetPasswordPage() {
   const [nextPath, setNextPath] = useState("/");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const actionInFlight = useRef(false);
+  const linkAttempt = useRef<AuthLinkAttempt | null>(null);
 
   useEffect(() => {
     const supabase = createClient();
     let active = true;
     const locationParams = new URLSearchParams(window.location.search);
     const isRecoveryFlow = locationParams.get("recovery") === "1";
-    const recoveryNext = safeInternalPath(locationParams.get("next"));
+    const recoveryNext = safeAccountRecoveryNext(locationParams.get("next"));
 
     const setRequestView = (text?: string) => {
       if (!active) return;
@@ -142,12 +146,13 @@ export default function ResetPasswordPage() {
       if (event === "PASSWORD_RECOVERY") setUpdateView();
     });
 
-    const storedEmail = normalizeEmail(window.localStorage.getItem(STORED_EMAIL_KEY));
+    const storedEmail = normalizeEmail(readAuthHint(STORED_EMAIL_KEY));
     setRecoveryFlow(isRecoveryFlow);
     setNextPath(recoveryNext);
     if (!isRecoveryFlow && storedEmail) setEmail(storedEmail);
 
-    const sentAt = Number(window.localStorage.getItem(RESET_SENT_AT_KEY) ?? "0");
+    const savedSentAt = Number(readAuthHint(RESET_SENT_AT_KEY) ?? "0");
+    const sentAt = Number.isFinite(savedSentAt) && savedSentAt <= Date.now() ? savedSentAt : 0;
     const secondsLeft = Math.max(
       0,
       RESEND_COOLDOWN_SECONDS - Math.floor((Date.now() - sentAt) / 1000)
@@ -166,18 +171,27 @@ export default function ResetPasswordPage() {
       }
 
       try {
-        let exchangeError: Error | null = null;
+        // Wait for the SDK's automatic PKCE exchange before attempting a manual exchange.
+        await readAuthWithTimeout(() => supabase.auth.getSession());
+        if (!active) return;
+        let exchangeError: { message: string; code?: string } | null = null;
+        const exchangeLink = (key: string, exchange: () => AuthLinkAttempt["promise"]) => {
+          if (linkAttempt.current?.key !== key) linkAttempt.current = { key, promise: exchange() };
+          return linkAttempt.current.promise;
+        };
 
-        if (params.code) {
-          const { error: codeError } = await supabase.auth.exchangeCodeForSession(params.code);
+        if (params.code && new URLSearchParams(window.location.search).has("code")) {
+          const code = params.code;
+          const { error: codeError } = await exchangeLink(`code:${code}`, () => supabase.auth.exchangeCodeForSession(code));
           exchangeError = codeError;
         } else if (params.tokenHash) {
-          const { error: otpError } = await supabase.auth.verifyOtp({
-            token_hash: params.tokenHash,
+          const tokenHash = params.tokenHash;
+          const { error: otpError } = await exchangeLink(`otp:${params.otpType}:${tokenHash}`, () => supabase.auth.verifyOtp({
+            token_hash: tokenHash,
             type: (params.otpType || "recovery") as EmailOtpType,
-          });
+          }));
           exchangeError = otpError;
-        } else if (params.accessToken && params.refreshToken) {
+        } else if (params.accessToken && params.refreshToken && parseRecoveryParams().accessToken) {
           const { error: sessionError } = await supabase.auth.setSession({
             access_token: params.accessToken,
             refresh_token: params.refreshToken,
@@ -185,17 +199,19 @@ export default function ResetPasswordPage() {
           exchangeError = sessionError;
         }
 
+        if (!active) return;
+        if (exchangeError) {
+          setRequestView(mapRecoveryError(exchangeError.message, exchangeError.code));
+          return;
+        }
+        if (params.code || params.tokenHash || params.accessToken) clearConsumedAuthLink();
+
         const {
           data: { session },
-        } = await supabase.auth.getSession();
+        } = await readAuthWithTimeout(() => supabase.auth.getSession());
 
         if (session && (params.mode === "update" || params.code || params.tokenHash || params.accessToken)) {
           setUpdateView();
-          return;
-        }
-
-        if (exchangeError) {
-          setRequestView(mapRecoveryError(exchangeError.message));
           return;
         }
 
@@ -227,6 +243,7 @@ export default function ResetPasswordPage() {
 
   const handleSendReset = async (event: FormEvent) => {
     event.preventDefault();
+    if (actionInFlight.current) return;
     const normalized = normalizeEmail(email);
 
     if (!normalized) {
@@ -238,6 +255,7 @@ export default function ResetPasswordPage() {
       return;
     }
 
+    actionInFlight.current = true;
     setSending(true);
     setError(null);
     setMessage(null);
@@ -253,20 +271,22 @@ export default function ResetPasswordPage() {
         return;
       }
 
-      window.localStorage.setItem(STORED_EMAIL_KEY, normalized);
-      window.localStorage.setItem(RESET_SENT_AT_KEY, String(Date.now()));
+      writeAuthHint(STORED_EMAIL_KEY, normalized);
+      writeAuthHint(RESET_SENT_AT_KEY, String(Date.now()));
       setCooldown(RESEND_COOLDOWN_SECONDS);
       setMessage("재설정 메일을 보냈어요. 받은 메일의 링크를 열어 새 비밀번호를 설정해 주세요.");
     } catch (caught) {
       const detail = caught instanceof Error ? caught.message : "unknown";
       setError(mapRecoveryError(detail));
     } finally {
+      actionInFlight.current = false;
       setSending(false);
     }
   };
 
   const handleUpdatePassword = async (event: FormEvent) => {
     event.preventDefault();
+    if (actionInFlight.current) return;
 
     if (password.length < 8) {
       setError("비밀번호는 8자 이상이어야 합니다.");
@@ -277,6 +297,7 @@ export default function ResetPasswordPage() {
       return;
     }
 
+    actionInFlight.current = true;
     setUpdating(true);
     setError(null);
     setMessage(null);
@@ -285,7 +306,7 @@ export default function ResetPasswordPage() {
       const supabase = createClient();
       const {
         data: { session },
-      } = await supabase.auth.getSession();
+      } = await readAuthWithTimeout(() => supabase.auth.getSession());
 
       if (!session) {
         setView("request");
@@ -311,6 +332,7 @@ export default function ResetPasswordPage() {
       const detail = caught instanceof Error ? caught.message : "unknown";
       setError(mapRecoveryError(detail));
     } finally {
+      actionInFlight.current = false;
       setUpdating(false);
     }
   };
@@ -409,7 +431,7 @@ export default function ResetPasswordPage() {
           )}
 
           <Link
-            href={recoveryFlow ? `/account-recovery?next=${encodeURIComponent(nextPath)}` : "/login?tab=password"}
+            href={recoveryFlow ? `/account-recovery?next=${encodeURIComponent(nextPath)}` : `/login?tab=password&next=${encodeURIComponent(nextPath)}`}
             className="mt-5 block text-center text-sm text-neutral-500 underline"
           >
             {recoveryFlow ? "계정 찾기로 돌아가기" : "로그인으로 돌아가기"}
