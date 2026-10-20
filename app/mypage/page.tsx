@@ -4759,14 +4759,13 @@ export default function MyPage() {
     await oneOnOneRecommendationsRequest.run({
     replace: fresh,
     load: async (signal) => {
-      const res = await fetch("/api/dating/1on1/recommendations/my", { cache: "no-store", signal });
-      const body = (await res.json().catch(() => ({}))) as {
+      const { response: res, body } = await fetchClientJson<{
         items?: MyOneOnOneAutoRecommendationGroup[];
         error?: string;
-      };
-      if (!res.ok) throw new Error(body.error ?? "1:1 자동 추천 후보를 다시 불러오지 못했습니다.");
+      }>("/api/dating/1on1/recommendations/my", { cache: "no-store", signal }, 15000);
+      if (!res.ok) throw new Error(body?.error ?? "1:1 자동 추천 후보를 다시 불러오지 못했습니다.");
       if (!isOneOnOneRecommendationPayload(body)) throw new Error("후보 조회 응답을 확인하지 못했어요.");
-      return body.items ?? [];
+      return body!.items ?? [];
     },
     commit: (value) => { setMyOneOnOneAutoRecommendations(value); setOneOnOneRefreshReadError(""); oneOnOneRefreshNeedsReloadRef.current = false; updated = true; },
     });
@@ -5619,6 +5618,10 @@ export default function MyPage() {
       if (!res.ok || body?.ok !== true) {
         const message = body?.error ?? "자동 추천 후보를 새로고침하지 못했습니다.";
         setOneOnOneRefreshNotice({ sourceCardId, kind: "error", message: body?.request_id ? `${message}\n문의 코드: ${body.request_id}` : message });
+        // A rejected/stale request did not consume quota. Refresh the displayed
+        // allowance through GET so an old tab cannot keep advertising a used slot.
+        confirmedNotConsumed = true;
+        await reloadOneOnOneRecommendations(true, true);
         return;
       }
 
@@ -10390,6 +10393,7 @@ export default function MyPage() {
                           </div>
                         </div>
                         <OneOnOneRefreshControl usage={autoRecommendationGroup} busy={refreshingAutoRecommendations}
+                          onCheckUsage={() => { void reloadOneOnOneRecommendations(true, true).catch(() => setOneOnOneRefreshReadError("이용 횟수를 확인하지 못했어요. 잠시 후 명단을 다시 불러와 주세요. 횟수는 차감되지 않아요.")); }}
                           plusOffer={!oneOnOneRefreshReadError ? { cardId: item.id, active: priorityBoostActive } : undefined}
                           blocked={!canRefreshAutoRecommendations || Boolean(oneOnOneRefreshReadError)}
                           notice={oneOnOneRefreshNotice?.sourceCardId === item.id ? oneOnOneRefreshNotice : null}

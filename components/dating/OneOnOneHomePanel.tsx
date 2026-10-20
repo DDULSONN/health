@@ -448,6 +448,7 @@ export default function OneOnOneHomePanel({
                           </div>
                         </div>
                         <OneOnOneRefreshControl usage={group} busy={refreshing} blocked={!canRefresh}
+                          onCheckUsage={onReload}
                           plusOffer={{ cardId: sourceCardId, active: plusActive }}
                           notice={refreshNotice?.sourceCardId === sourceCardId ? refreshNotice : null}
                           onRequest={() => onRefreshRecommendations(sourceCardId)} />

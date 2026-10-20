@@ -57,7 +57,8 @@ async function main() {
       passed = await require('./test-admin-active-counts-browser.cjs')({ browser, origin, output });
     }
     for (const surface of process.argv.includes('--expansion') || process.argv.includes('--impressions') || process.argv.includes('--region-notice') || process.argv.includes('--admin-counts') ? [] : ['home', 'mypage']) for (const width of [360, 1280]) {
-      for (const scenario of ['success', 'repeat-rotation', 'no-change', 'no-change-read-failure', 'read-failure', 'bad-read', 'lost-post', 'timeout-post', 'slow-post', 'cancel', 'escape', 'non-plus', 'legacy-plus', 'compensation', 'no-change-compensation']) {
+      for (const scenario of ['success', 'quota-stale', 'repeat-rotation', 'no-change', 'no-change-read-failure', 'read-failure', 'bad-read', 'lost-post', 'timeout-post', 'timeout-read', 'timeout-core-read', 'slow-post', 'cancel', 'escape', 'non-plus', 'legacy-plus', 'compensation', 'no-change-compensation']) {
+        if (scenario === 'timeout-core-read' && surface !== 'home') continue;
         const noChange = scenario.startsWith('no-change');
         const repeatRotation = scenario === 'repeat-rotation';
         const noCharge = noChange || repeatRotation;
@@ -66,12 +67,12 @@ async function main() {
         const page = await context.newPage();
         page.setDefaultTimeout(10000);
         const errors = [], alerts = [];
-        let posts = 0, recover = false, blocked = 0;
+        let posts = 0, recover = false, blocked = 0, quotaChecked = false;
         let releasePost;
         const postGate = new Promise(resolve => { releasePost = resolve; });
-        if (scenario === 'timeout-post') await page.addInitScript(() => {
+        if (scenario.startsWith('timeout-')) await page.addInitScript(() => {
           const original = window.setTimeout;
-          window.setTimeout = (fn, delay, ...args) => original(fn, delay === 30000 ? 500 : delay, ...args);
+          window.setTimeout = (fn, delay, ...args) => original(fn, delay === 30000 || delay === 15000 ? 500 : delay, ...args);
         });
         const now = new Date().toISOString();
         const profile = { id: 'fixture-one', user_id: 'fixture-member', name: '검증 프로필', sex: 'female', age: 29, birth_year: 1998,
@@ -85,6 +86,8 @@ async function main() {
           const req = route.request(), url = new URL(req.url());
           if (url.origin !== origin) { blocked++; await route.abort(); return; }
           if (!url.pathname.startsWith('/api/')) { await route.continue(); return; }
+          if (posts && !recover && scenario === 'timeout-core-read' && url.pathname === '/api/dating/1on1/matches/my') return;
+          if (posts && !recover && scenario === 'timeout-read' && url.pathname === '/api/dating/1on1/recommendations/my') return;
           let body = { ok: true, items: [], cards: [], applications: [], loggedIn: true };
           if (req.method() !== 'GET') {
             assert.equal(req.method(), 'POST');
@@ -113,7 +116,9 @@ async function main() {
                 ...profile, id: posts && !noChange ? 'candidate-new' : 'candidate-old', user_id: 'other', sex: 'male',
                 name: posts && !noChange ? repeatRotation ? '다른 기존 후보' : '새 후보' : '이전 후보',
               }], admin_recommendations: [], favorite_candidates: [],
-                refresh_limit: 2, refresh_used_count: posts && !noCharge ? 1 : 0, refresh_remaining: posts && !noCharge ? 1 : 2, can_refresh: true,
+                refresh_limit: 2, refresh_used_count: posts && !noCharge ? 1 : 0,
+                refresh_remaining: scenario === 'quota-stale' && !quotaChecked ? 0 : posts && !noCharge ? 1 : 2,
+                can_refresh: scenario !== 'quota-stale' || quotaChecked,
                 refresh_bonus_remaining: compensated ? posts && !noCharge ? 1 : 2 : 0,
                 refresh_used_at: posts && !noChange ? now : null }] }; break;
             case '/api/dating/cards/viewer-sex': body = { status: 'resolved', viewerSex: 'female', targetSex: 'male', source: 'one_on_one', canSwitchSex: false, requiresSexSelection: false }; break;
@@ -127,6 +132,15 @@ async function main() {
         await page.goto(url);
         const refresh = page.getByRole('button', { name: /후보 새로고침 · 2회/ }).first();
         try {
+          if (scenario === 'quota-stale') {
+            const check = page.getByRole('button', { name: '횟수 다시 확인', exact: true });
+            await check.waitFor();
+            assert.equal(await page.getByRole('button', { name: '다음 이용 대기', exact: true }).first().isDisabled(), true);
+            quotaChecked = true;
+            await check.click();
+            await refresh.waitFor();
+            assert.equal(posts, 0, 'checking an expired quota display is GET-only');
+          }
           await refresh.waitFor();
           const plus = page.locator('[data-one-on-one-plus-status]').first();
           if (scenario !== 'non-plus') {
@@ -172,7 +186,7 @@ async function main() {
             assert.equal(posts, 1);
             releasePost();
           }
-          const needsRecovery = ['read-failure', 'no-change-read-failure', 'bad-read', 'lost-post', 'timeout-post'].includes(scenario);
+          const needsRecovery = ['read-failure', 'no-change-read-failure', 'bad-read', 'lost-post', 'timeout-post', 'timeout-read', 'timeout-core-read'].includes(scenario);
           if (needsRecovery) {
             const recovery = page.getByRole('button', { name: '명단 다시 불러오기 · 횟수 차감 없음', exact: true });
             await recovery.waitFor();

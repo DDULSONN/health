@@ -160,7 +160,7 @@ for (const kind of ['home', 'mypage']) {
   });
   test(`${kind}: rejection does not claim success or retry consumption`, async () => {
     const view = handler(kind, { status: 409, body: { error: '사용 횟수를 모두 이용했어요.', request_id: 'fixture-id' } });
-    await view.run(); assert.deepEqual(view.calls, ['post']);
+    await view.run(); assert.deepEqual(view.calls, kind === 'mypage' ? ['post', 'reload'] : ['post']);
     assert.match(view.alerts[0], /fixture-id/); assert.ok(!view.alerts[0].includes('1회를 사용했어요'));
     assert.deepEqual(view.states.at(-1), []);
   });
@@ -186,7 +186,7 @@ for (const remaining of [0, 1, 2]) test(`real home result markup shows ${remaini
   const source = ast('components/dating/OneOnOneHomePanel.tsx');
   const call = find(source, n => ts.isCallExpression(n) && n.expression.getText(source) === 'recommendationGroups.map');
   const render = evaluate('exports.render = ' + call.arguments[0].getText(source) + ';', {
-    ...copy, activeCards: [], refreshingRecommendationIds: [], onRefreshRecommendations() {},
+    ...copy, activeCards: [], refreshingRecommendationIds: [], onRefreshRecommendations() {}, onReload() {},
     OneOnOneRefreshControl: 'RefreshControl', refreshNotice: null, plusActive: false,
     OneOnOneExpansionPanel: 'ExpansionPanel', processingAutoKeys: [], onReported() {}, onAutoSelect() {},
   }).render;
@@ -249,6 +249,20 @@ test('unknown quota stays disabled; inline failure is an alert and success is a 
     const tree = renderControl({ usage: quota(1), busy: false, notice: { kind, message: '한글 안내' }, onRequest() {} });
     assert.equal(nodes(tree).find(n => n.props?.role === role).props.children, '한글 안내');
   }
+});
+test('stale zero allowance can be checked without starting a refresh or bypassing the quota', () => {
+  let reads = 0, mutations = 0;
+  for (const remaining of [0, 1, 2]) {
+    const tree = renderControl({ usage: quota(remaining), busy: false,
+      onRequest: () => { mutations++; }, onCheckUsage: () => { reads++; } });
+    const check = nodes(tree).find(n => n.type === 'button' && text(n) === '횟수 다시 확인');
+    assert.equal(Boolean(check), remaining === 0);
+    if (check) check.props.onClick();
+    assert.equal(nodes(tree).find(n => n.type === 'button').props.disabled, remaining === 0);
+  }
+  assert.equal(reads, 1); assert.equal(mutations, 0);
+  const busy = renderControl({ usage: quota(0), busy: true, onRequest() {}, onCheckUsage() {} });
+  assert.equal(nodes(busy).find(n => n.type === 'button' && text(n) === '횟수 다시 확인').props.disabled, true);
 });
 const plus = evaluate(read('components/dating/OneOnOnePlusStatus.tsx')).default;
 test('compact Plus stays collapsed, formats KST expiry and preserves legacy exchange entitlement', () => {

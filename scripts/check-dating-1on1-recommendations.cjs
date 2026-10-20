@@ -38,6 +38,85 @@ const card = (id, overrides = {}) => ({
 const source = card("source", { sex: "male", age: 30 });
 const ids = (cards) => cards.map((candidate) => candidate.id);
 
+for (const sex of ['male', 'female']) for (const unhandledCount of [0, 1, 7]) {
+  test(`exhausted exact pages rotate off-page recyclable people (${sex}/${unhandledCount} untouched)`, () => {
+    const pages = load('@/lib/dating-1on1-recommendation-page');
+    const src = card('exhausted-source', { sex, age: 30 });
+    const pool = Array.from({ length: 60 }, (_, i) => card(`exhausted-${i}`, {
+      age: 30, sex: sex === 'male' ? 'female' : 'male',
+      last_handled_at: i < unhandledCount ? null : new Date(now - 1000).toISOString(),
+    }));
+    const handled = new Set(ids(pool.slice(unhandledCount)));
+    const context = { handled, extraExcluded: handled, limit: 10, extraLimit: 3,
+      observations: pool.map(c => ({ id: c.id, at: now - 100 })) };
+    let previous = { recommendations: pool.slice(0, 10), extraRecommendations: [] };
+    for (let step = 0; step < 20; step++) {
+      const time = now + step * 60000, seed = new Date(time).toISOString();
+      const next = pages.nextRecommendationPage(src, pool, previous, seed, time, context);
+      const old = new Set(ids([...previous.recommendations, ...previous.extraRecommendations]));
+      assert.equal(next.recommendations.length, 10);
+      assert.equal(next.recommendations.filter(c => old.has(c.id)).length, 0, 'current people cannot crowd out recyclable off-page candidates');
+      assert.equal(new Set(ids([...next.recommendations, ...next.extraRecommendations])).size, 10 + next.extraRecommendations.length);
+      const restored = pages.restoreRecommendationPage(src, pool, {
+        source_card_id: src.id, refreshed_at: seed,
+        main_candidate_ids: ids(next.recommendations), extra_candidate_ids: ids(next.extraRecommendations),
+      }, time + 2, { ...context, observations: [...context.observations,
+        ...next.recommendations.map(c => ({ id: c.id, at: time + 1 }))] });
+      assert.deepEqual(restored, next, 'GET and impression acknowledgement preserve the exact selected page');
+      previous = next;
+    }
+  });
+}
+
+test('recyclable fallback preserves age and distance ordering and fills genuinely small pools', () => {
+  const pages = load('@/lib/dating-1on1-recommendation-page');
+  const recent = { last_handled_at: new Date(now - 1000).toISOString() };
+  const previous = Array.from({ length: 10 }, (_, i) => card(`old-${i}`));
+  const near = Array.from({ length: 10 }, (_, i) => card(`near-${i}`, recent));
+  const far = Array.from({ length: 10 }, (_, i) => card(`far-${i}`, { ...recent, region: '부산' }));
+  const largeGap = Array.from({ length: 10 }, (_, i) => card(`gap-${i}`, { ...recent, age: 60 }));
+  const pool = [...previous, ...near, ...far, ...largeGap];
+  const ctx = { handled: new Set(ids([...near, ...far, ...largeGap])), extraExcluded: new Set(ids(pool)),
+    limit: 10, extraLimit: 3, observations: pool.map(c => ({ id: c.id, at: now - 100 })) };
+  const next = pages.nextRecommendationPage(source, pool, { recommendations: previous, extraRecommendations: [] }, new Date(now).toISOString(), now, ctx);
+  assert.deepEqual(new Set(ids(next.recommendations)), new Set(ids(near)));
+  for (const size of [0, 1, 7, 10, 12, 15, 20]) {
+    const candidates = pool.slice(0, size).map(c => ({ ...c, ...recent }));
+    const old = candidates.slice(0, 10);
+    const nextSmall = pages.nextRecommendationPage(source, candidates, { recommendations: old, extraRecommendations: [] },
+      new Date(now).toISOString(), now, { ...ctx, handled: new Set(ids(candidates)), extraExcluded: new Set(ids(candidates)) });
+    assert.equal(nextSmall.recommendations.length, Math.min(size, 10));
+    assert.equal(nextSmall.recommendations.filter(c => !ids(old).includes(c.id)).length, Math.min(Math.max(size - 10, 0), 10));
+  }
+});
+
+test('exhausted refresh is quota-neutral and keeps blocks, rejections and pending pairs excluded', async () => {
+  const tables = fixture(65);
+  tables.dating_1on1_recommendation_pages = [];
+  tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1).map(c => ({
+    viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now - 1000).toISOString(),
+  }));
+  tables.dating_1on1_match_proposals = tables.dating_1on1_cards.slice(1, 61).map((c, i) => pair({
+    id: `closed-${i}`, candidate_card_id: c.id, candidate_user_id: c.user_id,
+    state: i === 0 ? 'candidate_rejected' : i === 1 ? 'source_selected' : i % 2 ? 'source_skipped' : 'admin_canceled',
+    updated_at: new Date(now - 1000).toISOString(),
+  }));
+  tables.dating_user_blocks = [{ blocker_user_id: 'user-source', blocked_user_id: 'user-c2' }];
+  tables.profiles.find(p => p.user_id === 'user-c3').is_banned = true;
+  const pairsBefore = structuredClone(tables.dating_1on1_match_proposals);
+  const before = allCandidates((await runApi(tables, { atTime: now - 1 })).body);
+  const result = await runRefresh(tables, { atTime: now });
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.refresh_consumed, false);
+  assert.equal(result.body.changed_candidate_count, 0);
+  assert.ok(result.body.rotated_candidate_count >= 10);
+  assert.equal(result.rpcCalls.length, 1);
+  const after = allCandidates((await runApi(tables, { atTime: now + 1 })).body);
+  assert.ok(after.every(c => !['c0', 'c1', 'c2', 'c3'].includes(c.id)));
+  assert.ok(after.slice(0, 10).every(c => !ids(before).includes(c.id)));
+  assert.deepEqual(tables.dating_1on1_match_proposals, pairsBefore);
+});
+
 for (const sex of ['male', 'female']) for (const history of ['none', 'partial', 'complete']) {
   test(`exact refresh mixes nearby revisits with new age-compatible people (${sex}/${history})`, () => {
     const pages = load('@/lib/dating-1on1-recommendation-page');

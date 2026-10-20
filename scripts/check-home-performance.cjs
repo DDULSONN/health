@@ -164,6 +164,12 @@ const movedFunctions = {
 };
 for (const [name, hash] of Object.entries(movedFunctions)) test('extraction preserves rendering/behavior byte-for-byte: ' + name, () => {
   let code = read('components/dating/OneOnOneHomePanel.tsx').replace(/\r\n/g, '\n').replaceAll('(matchId: string, offerId?: string) => void', '(matchId: string) => void');
+  if (name === 'OneOnOneHomePanel') {
+    // The separately tested GET-only quota check is the sole permitted addition.
+    const quotaCheck = '                          onCheckUsage={onReload}\n';
+    assert.equal(code.split(quotaCheck).length, 2);
+    code = code.replace(quotaCheck, '');
+  }
   if (name === 'OneOnOneCandidateCard') {
     // Allow only the separately tested region notice, preserving the old
     // byte-for-byte contract for every existing photo and action control.

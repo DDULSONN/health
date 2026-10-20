@@ -328,6 +328,14 @@ export function takeObservedRecommendations<T extends RecommendationCandidate>(
       // All eligible people may already have been shown. Still permit another
       // page; the API distinguishes a free repeat rotation from a new-person use.
       yield* groupBroaderCandidates(sorted.filter(card => !previous.has(card.id) && !isRecentlyHandledCandidate(card, nowMs)), meta);
+      if (mixNearbyRevisits) {
+        // Recent cancellations are a soft ranking preference, not a safety ban.
+        // Exhausted exact pages must try other recyclable people before refilling
+        // from the same few untouched people on the current main/extra page.
+        // Only opt-in NEW pages change; old saved pages and legacy replay stay stable.
+        // Blocks, rejections and active pairs were already removed by the service.
+        yield* groupBroaderCandidates(sorted.filter(card => !previous.has(card.id)), meta);
+      }
       yield sorted.filter(card => suitable(card) && !isRecentlyHandledCandidate(card, nowMs));
       yield* groupBroaderCandidates(sorted.filter(card => !isRecentlyHandledCandidate(card, nowMs)), meta);
     } else {

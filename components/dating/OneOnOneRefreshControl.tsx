@@ -59,12 +59,13 @@ export function useOneOnOneRefreshConfirmation() {
   return { confirmOneOnOneRefresh, refreshConfirmationDialog };
 }
 
-export default function OneOnOneRefreshControl({ usage, busy, blocked = false, notice, onRequest, plusOffer }: {
+export default function OneOnOneRefreshControl({ usage, busy, blocked = false, notice, onRequest, onCheckUsage, plusOffer }: {
   usage?: OneOnOneRefreshUsage | null;
   busy: boolean;
   blocked?: boolean;
   notice?: OneOnOneRefreshNotice | null;
   onRequest: () => void;
+  onCheckUsage?: () => void;
   plusOffer?: { cardId: string; active: boolean };
 }) {
   const [offerOpen, setOfferOpen] = useState(false);
@@ -80,6 +81,12 @@ export default function OneOnOneRefreshControl({ usage, busy, blocked = false, n
         <span aria-hidden="true">↻</span>{busy ? "새로고침 중..." : ready ? "후보 새로고침" : copy.button}
       </button>
       {remaining !== null && <span className="rounded-full bg-neutral-100 px-2.5 py-1 text-xs font-medium tabular-nums text-neutral-600">{remaining}회 남음</span>}
+      {!ready && remaining === 0 && onCheckUsage ? (
+        <button type="button" disabled={busy} onClick={onCheckUsage}
+          className="min-h-[44px] text-xs text-neutral-500 underline decoration-neutral-300 underline-offset-4 disabled:opacity-50">
+          횟수 다시 확인
+        </button>
+      ) : null}
     </div>
     {typeof usage?.refresh_bonus_remaining === "number" && usage.refresh_bonus_remaining > 0 && (
       <p className="text-xs leading-5 text-neutral-600">보상 새로고침 {usage.refresh_bonus_remaining}회 포함 · 사용 전까지 유지</p>

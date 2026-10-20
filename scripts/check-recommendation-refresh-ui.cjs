@@ -46,6 +46,7 @@ function fixture(surface, outcome = 'ok', confirmation = true) {
     fetch: async (_url, init) => {
       assert.notEqual(init?.method, 'POST');
       state.reads++;
+      if (state.outcome === 'core-error' && _url !== '/api/dating/1on1/recommendations/my') throw Error('core read failed');
       if (state.outcome === 'read-error' || state.outcome === 'no-charge-read-error') throw Error('offline');
       if (state.outcome === 'aborted-read') gate.cancel();
       if (state.outcome === 'null-group') return Response.json({ items: [null] });
@@ -76,6 +77,7 @@ function fixture(surface, outcome = 'ok', confirmation = true) {
       assert.equal(init.method, 'POST'); state.posts++;
       await Promise.resolve();
       if (state.outcome === 'lost-post') throw Error('POST response lost');
+      if (state.outcome === 'limit-post') return Response.json({ error: '다른 화면에서 이용 횟수가 변경됐어요.', code: 'REFRESH_LIMIT' }, { status: 409 });
       if (state.outcome === 'null-post') return Response.json(null);
       if (state.outcome === 'string-ok') return Response.json({ ok: 'true' });
       if (state.outcome.startsWith('no-charge')) return Response.json({ ok: true, refresh_consumed: false, changed_candidate_count: 0, refresh_remaining: 2 });
@@ -129,6 +131,26 @@ for (const surface of ['home', 'mypage']) {
     assert.equal(f.state.posts, 0); assert.equal(f.state.reads, 0);
   });
 }
+
+test('home: a successful candidate read clears a stale refresh lock independently of a failed match summary', async () => {
+  const f = fixture('home', 'lost-post');
+  await f.handler('source');
+  assert.equal(f.recovery.current, true);
+  f.state.outcome = 'core-error';
+  await f.reload(true, false);
+  assert.equal(f.state.commits, 1);
+  assert.equal(f.recovery.current, false, 'an authoritative candidate/quota read must not leave an invisible click lock');
+  assert.equal(f.state.posts, 1);
+});
+
+test('mypage: a stale quota refusal reloads the authoritative balance without another mutation', async () => {
+  const f = fixture('mypage', 'limit-post');
+  await f.handler('source');
+  assert.equal(f.state.posts, 1);
+  assert.equal(f.state.commits, 1);
+  assert.equal(f.recovery.current, false);
+  assert.deepEqual(f.state.alerts, ['다른 화면에서 이용 횟수가 변경됐어요.']);
+});
 
 test('response guard permits ordinary and legacy optional fields without changing candidates/photos', () => {
   const value = { items: [{ source_card_id: 'source', recommendations: [{ id: 'candidate', name: '가나다',

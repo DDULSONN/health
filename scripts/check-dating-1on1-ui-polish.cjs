@@ -70,8 +70,9 @@ if (require.main === module) {
     assert.equal(fingerprint(source, name), expected);
   });
   test('recommendation ordering, counters and existing action bindings remain unchanged', () => {
-    // The resilience patch adds one explicit, GET-only recommendation retry.
-    const expected = { ...baseline.panel, callbacks: [...baseline.panel.callbacks, 'onClick={onReload}', 'onExchange={onContactCheckout}', 'onNudge={onContactNudge}'].sort() };
+    // Read-only retries include the explicit stale-quota check; all mutation
+    // callbacks, candidate ordering and checkout bindings remain pinned.
+    const expected = { ...baseline.panel, callbacks: [...baseline.panel.callbacks, 'onClick={onReload}', 'onCheckUsage={onReload}', 'onExchange={onContactCheckout}', 'onNudge={onContactNudge}'].sort() };
     assert.deepEqual(panelContract(read(files.OneOnOneCandidateCard)), expected);
   });
   test('candidate section is before profile/plus/sent history, after incoming requests', () => {

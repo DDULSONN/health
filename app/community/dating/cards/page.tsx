@@ -1991,15 +1991,13 @@ function OpenCardsContent() {
       replace: fresh,
       start: () => { setOneOnOneHomeLoading(true); setOneOnOneHomeError(""); },
       load: async (signal) => {
-        const [statusRes, myCardsRes, matchesRes] = await Promise.all([
-          fetch("/api/dating/1on1/write-status", { cache: "no-store", signal }),
-          fetch("/api/dating/1on1/my", { cache: "no-store", signal }),
-          fetch("/api/dating/1on1/matches/my", { cache: "no-store", signal }),
+        const [statusRead, cardsRead, matchesRead] = await Promise.all([
+          fetchClientJson<NonNullable<OneOnOneHomeState["status"]> & { error?: string }>("/api/dating/1on1/write-status", { cache: "no-store", signal }, 15000),
+          fetchClientJson<{ items?: OneOnOneHomeState["myCards"]; plus?: OneOnOneHomeState["plus"]; error?: string }>("/api/dating/1on1/my", { cache: "no-store", signal }, 15000),
+          fetchClientJson<{ items?: OneOnOneHomeState["matches"]; error?: string }>("/api/dating/1on1/matches/my", { cache: "no-store", signal }, 15000),
         ]);
-        const [statusBody, myCardsBody, matchesBody] = await Promise.all([
-          statusRes.json().catch(() => ({})), myCardsRes.json().catch(() => ({})),
-          matchesRes.json().catch(() => ({})),
-        ]);
+        const statusRes = statusRead.response, myCardsRes = cardsRead.response, matchesRes = matchesRead.response;
+        const statusBody = statusRead.body ?? {}, myCardsBody = cardsRead.body ?? {}, matchesBody = matchesRead.body ?? {};
         if (!statusRes.ok) throw new Error(statusBody.error ?? "1:1 상태를 불러오지 못했습니다.");
         if (!myCardsRes.ok) throw new Error(myCardsBody.error ?? "내 1:1 신청 내역을 불러오지 못했습니다.");
         if (!matchesRes.ok) throw new Error(matchesBody.error ?? "1:1 매칭 상태를 불러오지 못했습니다.");
@@ -2037,7 +2035,13 @@ function OpenCardsContent() {
         }
         return (body as { items: OneOnOneHomeState["recommendations"] }).items;
       },
-      commit: (items) => { setOneOnOneRecommendations(items); recommendationsUpdated = true; },
+      commit: (items) => {
+        setOneOnOneRecommendations(items);
+        recommendationsUpdated = true;
+        // This authoritative candidate/quota read resolves an uncertain refresh,
+        // independently of the separate profile/matching summary request.
+        oneOnOneRefreshNeedsReloadRef.current = false;
+      },
       fail: (error) => {
         if (error instanceof Error && error.message === "one_on_one_auth_required") {
           setOneOnOneHomeError("로그인 상태와 이용 권한을 다시 확인해 주세요.");
@@ -2046,7 +2050,6 @@ function OpenCardsContent() {
       },
       finish: () => setOneOnOneRecommendationsLoading(false),
     })]);
-    if (updated && recommendationsUpdated) oneOnOneRefreshNeedsReloadRef.current = false;
     if (requireUpdated && (!updated || !recommendationsUpdated)) throw new Error("새 후보 명단을 불러오지 못했어요.");
   }, [viewerLoggedIn, oneOnOneHomeRequest, oneOnOneRecommendationsRequest]);
 
