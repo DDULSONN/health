@@ -782,7 +782,7 @@ function mockDatabase(tables, intercept) {
             calls.push(structuredClone(query));
             const override = intercept?.(query, tables);
             if (override) return override;
-            if (table === 'dating_1on1_recommendation_pages' && !Object.hasOwn(tables, table)) {
+            if (['dating_1on1_recommendation_pages', 'dating_1on1_recommendation_page_history'].includes(table) && !Object.hasOwn(tables, table)) {
               return { data: null, error: { code: '42P01', message: 'page migration not installed' } };
             }
             if (query.insert) {
@@ -893,6 +893,13 @@ async function runRefresh(tables, { intercept, signedIn = true, atTime = now, so
     tables.dating_1on1_recommendation_refresh_events.push({ card_id: args.p_card_id, user_id: args.p_user_id, refreshed_at: stamp,
       ...(repeatOnly ? { quota_refunded_at: stamp, rotation_only: true } : {}) });
     if (name === 'commit_dating_1on1_recommendation_page') {
+      if (tables.dating_1on1_recommendation_page_history) {
+        const history = tables.dating_1on1_recommendation_page_history;
+        const old = tables.dating_1on1_recommendation_pages?.[0];
+        if (old && !history.some(r => r.refreshed_at === old.refreshed_at)) history.push(structuredClone(old));
+        history.push({ user_id: args.p_user_id, refreshed_at: stamp,
+          main_candidate_ids: args.p_main_candidate_ids, extra_candidate_ids: args.p_extra_candidate_ids });
+      }
       tables.dating_1on1_recommendation_pages = [{ user_id: args.p_user_id, source_card_id: args.p_card_id,
         refreshed_at: stamp, source_profile_key: args.p_source_profile_key,
         main_candidate_ids: args.p_main_candidate_ids, extra_candidate_ids: args.p_extra_candidate_ids }];
@@ -911,6 +918,51 @@ async function runRefresh(tables, { intercept, signedIn = true, atTime = now, so
   }));
   return { response, body: await response.json(), calls: db.calls, rpcCalls };
 }
+
+test('history-aware real API rotates 30 times, preserves photos and rejects unavailable pairs without charging repeats', async () => {
+  const tables = fixture(80);
+  tables.dating_1on1_recommendation_pages = [];
+  tables.dating_1on1_recommendation_page_history = [];
+  tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1).map(c => ({
+    viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now - 1000).toISOString(),
+  }));
+  tables.dating_1on1_match_proposals = tables.dating_1on1_cards.slice(1).map((c, i) => pair({
+    id: `pair-v2-${i}`, candidate_card_id: c.id, candidate_user_id: c.user_id,
+    state: i === 0 ? 'candidate_rejected' : i === 1 ? 'source_selected' : i === 2 ? 'source_declined' : 'source_skipped',
+    updated_at: new Date(now - 1000).toISOString(),
+  }));
+  tables.dating_user_blocks = [{ blocker_user_id: 'user-source', blocked_user_id: 'user-c3' }];
+  tables.profiles.find(p => p.user_id === 'user-c4').is_banned = true;
+  const pairBefore = structuredClone(tables.dating_1on1_match_proposals), ever = new Set();
+  let previous = allCandidates((await runApi(tables, { atTime: now - 1 })).body);
+  for (let i = 0; i < 30; i++) {
+    const at = now + i * 60000;
+    const result = await runRefresh(tables, { atTime: at });
+    assert.equal(result.response.status, 200);
+    assert.equal(result.body.refresh_consumed, false);
+    const read = await runApi(tables, { atTime: at + 1 });
+    const next = allCandidates(read.body);
+    assert.equal(next.length, 13); assert.equal(read.body.items[0].refresh_remaining, 1);
+    assert.ok(next.every(c => !['c0', 'c1', 'c2', 'c3', 'c4'].includes(c.id)));
+    assert.ok(next.every(c => c.photo_signed_urls.length > 0));
+    assert.equal(next.filter(c => ids(previous).includes(c.id)).length, 0);
+    next.forEach(c => ever.add(c.id));
+    if (i === 6) assert.equal(ever.size, 75, 'every eligible local reached, not a repeated 20-person subset');
+    assert.deepEqual(ids(allCandidates((await runApi(tables, { atTime: at + 2 })).body)), ids(next));
+    previous = next;
+  }
+  assert.deepEqual(tables.dating_1on1_match_proposals, pairBefore);
+});
+
+test('history read failure stops a new refresh before any quota RPC or photo response', async () => {
+  const tables = fixture(40);
+  tables.dating_1on1_recommendation_pages = [];
+  const before = structuredClone(tables);
+  const result = await runRefresh(tables, { intercept: q => q.table === 'dating_1on1_recommendation_page_history'
+    ? { data: null, error: { code: '57014', message: 'timeout' } } : null });
+  assert.equal(result.response.status, 503);
+  assert.equal(result.rpcCalls.length, 0); assert.deepEqual(tables, before);
+});
 
 for (const size of [0, 1, 3, 10, 11, 12, 13]) test('checked refresh with ' + size + ' eligible people never charges just for reordering', async () => {
   const tables = fixture(size), before = structuredClone(tables);
@@ -1754,7 +1806,8 @@ test("summary pagination does not silently cap the eligible pool at 500 or 1000"
 });
 test("optional activity failure preserves candidates, but ban/context/detail failures do not disclose them", async () => {
   const failure = { data: null, error: { code: "XX000", message: "backend unavailable" } };
-  const activityFailure = await runApi(fixture(2), { intercept: (query) => query.filters.some(([op]) => op === "gte") ? failure : null });
+  const activityFailure = await runApi(fixture(2), { intercept: (query) =>
+    query.table === "dating_1on1_match_proposals" && query.filters.some(([op]) => op === "gte") ? failure : null });
   assert.equal(activityFailure.response.status, 200);
   assert.equal(allCandidates(activityFailure.body).length, 2);
   for (const table of ["profiles", "dating_user_blocks"]) {

@@ -43,6 +43,7 @@ const unitFiles = [
   'check-dating-photo-upload.cjs',
   'check-dating-1on1-recommendations.cjs',
   'check-dating-1on1-repeat-rotation-sql.cjs',
+  'check-recommendation-rotation-history.cjs',
   'check-recommendation-refresh-ui.cjs',
   'check-dating-1on1-refresh-copy.cjs',
   'check-dating-age.cjs',

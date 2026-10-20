@@ -56,6 +56,7 @@ import { createImpressionTicket, readCandidateImpressions } from "@/lib/dating-1
 import { readRefreshCompensation } from "@/lib/dating-1on1-refresh-compensation";
 import { readRecommendationPage, recommendationSourceKey } from "@/lib/dating-1on1-recommendation-page-store";
 import { nextRecommendationPage, restoreRecommendationPage } from "@/lib/dating-1on1-recommendation-page";
+import { readRecommendationHistory } from "@/lib/dating-1on1-recommendation-history";
 
 const RECOMMENDATION_LIMIT = 10;
 const FAVORITE_TABLE = "dating_1on1_candidate_favorites";
@@ -196,7 +197,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
   const refreshEventsByCardId = new Map<string, string[]>();
   const refundedEventsByCardId = new Map<string, string[]>();
 
-  const [initialRefreshEventsRes, recoveryRes, impressionResult, bonusRemaining, savedPageResult] = await Promise.all([
+  const [initialRefreshEventsRes, recoveryRes, impressionResult, bonusRemaining, savedPageResult, recentPages] = await Promise.all([
     admin.from("dating_1on1_recommendation_refresh_events")
       .select("card_id,refreshed_at,quota_refunded_at")
       .in("card_id", sourceCardIds)
@@ -211,7 +212,11 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     readCandidateImpressions(admin, user.id, nowMs).catch(() => null),
     readRefreshCompensation(admin, user.id).catch(() => null),
     readRecommendationPage(admin, user.id).catch(() => null),
+    readRecommendationHistory(admin, user.id, nowMs).catch(() => null),
   ]);
+  if (recentPages === null) {
+    return NextResponse.json({ error: "최근 후보 이력을 확인하지 못했어요. 횟수는 사용하지 않았으니 잠시 후 다시 시도해 주세요." }, { status: 503 });
+  }
   if (!savedPageResult) {
     return NextResponse.json({ error: "현재 후보 명단을 확인하지 못했어요. 횟수는 사용하지 않았으니 잠시 후 다시 시도해 주세요." }, { status: 503 });
   }
@@ -455,7 +460,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     let recommendations = hasActiveRefresh ? replay.recommendations : defaultRecommendations;
     let adminRecommendations = replay.extraRecommendations;
     const pageContext = { handled: handledPairIds, extraExcluded: recentHandledIds, observations,
-      limit: RECOMMENDATION_LIMIT, extraLimit: ONE_ON_ONE_FREE_EXTRA_CANDIDATES };
+      limit: RECOMMENDATION_LIMIT, extraLimit: ONE_ON_ONE_FREE_EXTRA_CANDIDATES, recentPages: recentPages ?? undefined };
     if (hasSavedPage) {
       const restored = restoreRecommendationPage(sourceCard, unsavedCandidates, savedPage, nowMs, pageContext);
       recommendations = restored.recommendations;

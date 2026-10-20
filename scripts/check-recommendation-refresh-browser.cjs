@@ -57,10 +57,10 @@ async function main() {
       passed = await require('./test-admin-active-counts-browser.cjs')({ browser, origin, output });
     }
     for (const surface of process.argv.includes('--expansion') || process.argv.includes('--impressions') || process.argv.includes('--region-notice') || process.argv.includes('--admin-counts') ? [] : ['home', 'mypage']) for (const width of [360, 1280]) {
-      for (const scenario of ['success', 'quota-stale', 'repeat-rotation', 'no-change', 'no-change-read-failure', 'read-failure', 'bad-read', 'lost-post', 'timeout-post', 'timeout-read', 'timeout-core-read', 'slow-post', 'cancel', 'escape', 'non-plus', 'legacy-plus', 'compensation', 'no-change-compensation']) {
+      for (const scenario of ['success', 'quota-stale', 'repeat-rotation', 'sequence-rotation', 'no-change', 'no-change-read-failure', 'read-failure', 'bad-read', 'lost-post', 'timeout-post', 'timeout-read', 'timeout-core-read', 'slow-post', 'cancel', 'escape', 'non-plus', 'legacy-plus', 'compensation', 'no-change-compensation']) {
         if (scenario === 'timeout-core-read' && surface !== 'home') continue;
         const noChange = scenario.startsWith('no-change');
-        const repeatRotation = scenario === 'repeat-rotation';
+        const repeatRotation = scenario === 'repeat-rotation' || scenario === 'sequence-rotation';
         const noCharge = noChange || repeatRotation;
         const compensated = scenario.includes('compensation');
         const context = await browser.newContext({ viewport: { width, height: 844 } });
@@ -114,7 +114,7 @@ async function main() {
               if (posts && !recover && scenario === 'bad-read') { await route.fulfill({ json: { items: [null] } }); return; }
               body = { items: [{ source_card_id: profile.id, source_card_status: 'approved', recommendations: [{
                 ...profile, id: posts && !noChange ? 'candidate-new' : 'candidate-old', user_id: 'other', sex: 'male',
-                name: posts && !noChange ? repeatRotation ? '다른 기존 후보' : '새 후보' : '이전 후보',
+                name: posts && !noChange ? repeatRotation ? `다른 기존 후보 ${posts}` : '새 후보' : '이전 후보',
               }], admin_recommendations: [], favorite_candidates: [],
                 refresh_limit: 2, refresh_used_count: posts && !noCharge ? 1 : 0,
                 refresh_remaining: scenario === 'quota-stale' && !quotaChecked ? 0 : posts && !noCharge ? 1 : 2,
@@ -201,6 +201,18 @@ async function main() {
           await page.getByText(noChange ? '이전 후보' : repeatRotation ? '다른 기존 후보' : '새 후보', { exact: false }).first().waitFor();
           await page.getByRole('button', { name: noCharge ? /후보 새로고침 · 2회/ : /후보 새로고침 · 1회/ }).first().waitFor();
           assert.equal(posts, 1, 'GET recovery cannot consume an additional refresh');
+          if (scenario === 'sequence-rotation') {
+            for (let round = 2; round <= 5; round++) {
+              await page.getByRole('button', { name: /후보 새로고침 · 2회/ }).first().click();
+              await confirmation.waitFor();
+              await confirmation.getByRole('button', { name: '1회 사용하기', exact: true }).click();
+              await confirmation.waitFor({ state: 'hidden' });
+              await page.getByText(`다른 기존 후보 ${round}`, { exact: false }).first().waitFor();
+              assert.equal(await page.getByText(`다른 기존 후보 ${round - 1}`, { exact: false }).count(), 0);
+              await page.getByRole('button', { name: /후보 새로고침 · 2회/ }).first().waitFor();
+              assert.equal(posts, round);
+            }
+          }
           assert.equal(alerts.length, 0, 'no native confirm or alert dependency');
           if (!needsRecovery) await page.getByRole('status').filter({ hasText: repeatRotation ? '이전에 본 후보 중 다른 1명' : noChange ? '횟수를 사용하지 않았어요.' : '새로고침 1회를 사용했어요.' }).waitFor();
           if (width === 360 && repeatRotation) {
