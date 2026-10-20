@@ -101,7 +101,10 @@ export default function ContactCarePanel({ matchId, guideOnly = false }: { match
     supplement: claim?.status === "needs_info" ? { dueAt: claim.supplement_due_at } : undefined, now });
   return <details ref={details} id={matchId ? undefined : "contact-care"} className="mb-3 rounded-xl border border-neutral-200 bg-white px-3 text-xs text-neutral-600"
     onToggle={e => { setExpanded(e.currentTarget.open); if (e.currentTarget.open && !pending.current) void load(); }}>
-    <summary className="min-h-[44px] cursor-pointer content-center font-medium text-neutral-700">{guideOnly ? "연락처 교환 지원 기준" : matchId ? "연락이 닿지 않거나 문제가 있나요? · 지원 신청" : "연락처 교환 지원 · 신청 내역 / 교환권"}</summary>
+    <summary className="min-h-[44px] cursor-pointer content-center py-2 font-medium text-neutral-700">{guideOnly ? <>
+      교환 직후 연락이 끊기면? · 지원 기준
+      <span className="mt-0.5 block text-[11px] font-normal leading-5 text-neutral-500">교환권 지원은 증빙 검토·승인이 필요해요.</span>
+    </> : matchId ? "연락이 닿지 않거나 문제가 있나요? · 지원 신청" : "연락처 교환 지원 · 신청 내역 / 교환권"}</summary>
     {expanded ? <div className="space-y-3 pb-3">
       {data?.active || claim ? <p>번호교환 후 72시간 이내, 결제한 회원이 신청할 수 있어요. 캡처를 검토해 승인하면 다음 번호교환에 쓸 교환권 1장을 드려요. 계정당 1회이며 사용 전까지 유지돼요.</p> : <p>연락처 교환 지원 가능 여부와 교환권 내역을 확인할 수 있어요.</p>}
       <p className="text-[11px] leading-5">교환 직후 무응답·잠수는 첫 연락 후 24시간 이상 응답이 없을 때, 스캠·사칭 의심은 즉시 신청할 수 있어요. 단순 거절·대화 불만·대화가 이어진 뒤 관계 중단은 제외해요. 신청만으로 자동 지급되거나 상대가 제재되지는 않아요.</p>

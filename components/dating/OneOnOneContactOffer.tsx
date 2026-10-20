@@ -60,12 +60,13 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
       <p className="mt-1 text-xs leading-5 text-neutral-600">
         {included ? "기존 플러스 혜택으로 추가 결제 없이 연락처를 교환할 수 있어요." : compact ? "서로 수락했어요. 결제 후 연락처가 공개돼요." : "결제 완료 후 서로의 연락처가 공개돼요."}
       </p>
-      {!included && <PaymentCardNotice className="mt-2" compact={compact} />}
       {nudge?.available && nudge.received_from_other ? (
-        <div className="mt-3 rounded-xl border border-neutral-200 bg-white p-3">
+        <div className="mt-2 rounded-lg border-l-2 border-rose-300 bg-neutral-50 px-3 py-2">
           <ReceivedContactNudge item={nudge.received_from_other} />
         </div>
       ) : null}
+      {!included ? <div className="mt-2"><ContactCarePanel key={matchId} matchId={matchId} guideOnly /></div> : null}
+      {!included && <PaymentCardNotice className="mt-2" compact={compact} />}
       {discount ? <p className="mt-2 text-xs font-semibold text-[#f0003d]">
         {discount.active ? <>첫 교환 25% 할인 <span className="ml-1 font-normal text-neutral-400 line-through">20,000원</span>
           <span className="ml-1 font-normal text-neutral-500">· {new Date(discount.expiresAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}까지</span></> : "진행 중인 할인 주문 · 기존 금액 유지"}
@@ -89,7 +90,6 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
         </details>
       ) : null}
       <OneOnOneContactNudge matchId={matchId} nudge={nudge} hideReceived compact={compact} processing={nudgeProcessing} onSend={onNudge} />
-      {!included ? <ContactCarePanel key={matchId} matchId={matchId} guideOnly /> : null}
     </div>
   );
 }

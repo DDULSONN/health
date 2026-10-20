@@ -151,9 +151,9 @@ test('1:1 view is a conditional dynamic import, not a static runtime import', ()
 // Impression tracking only replaces the existing article with the same DOM tag
 // and forwards a receipt; action, photo and checkout contracts stay unchanged.
 const movedFunctions = {
-  // Reviewed top contact shortcut, contextual Plus entry and post-registration copy.
-  // Candidate/order/refresh/payment authority contracts are still pinned separately.
-  OneOnOneHomePanel: 'e0f812779b2705871ac6d387f22956baad67529c4d413c51dc61392913735c17',
+  // Reviewed existing-match recency grouping and shared pagination; recommendation
+  // candidates, order/refresh/payment authority remain pinned separately.
+  OneOnOneHomePanel: '69b65fc42a0b932d8b85130fb120f2d3f0c4238f8e4c4b8f53d91137bb104e6b',
   OneOnOneCandidateCard: 'ec822f2fd3159af9b2ce34520527e294c73a86cd8c5bbfd79eca906c2a37c8bd',
   OneOnOneMatchActions: '6408ac6467228e01cf370b4942e9d42f19e7e34b937ad4e701ba82e1d1cceab4',
   canCancelOneOnOneMatchPreview: '0ec3faad4e8701ea4622ea220af8ebaddaf725cfa52a70fc686b82a37444036c',

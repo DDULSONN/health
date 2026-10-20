@@ -24,7 +24,7 @@ function panelContract(code) {
   const ast = tree(code), fn = ast.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === 'OneOnOneHomePanel');
   const bindings = {}, callbacks = [], disabled = [];
   function visit(n) {
-    if (ts.isVariableDeclaration(n) && ['activeMatches', 'recommendationGroups', 'recommendationCount', 'activeCards', 'incomingRequests', 'sortedMatches', 'plusActive', 'plusContactExchangeIncluded'].includes(n.name.getText(ast))) bindings[n.name.getText(ast)] = hash(canonical(n, ast));
+    if (ts.isVariableDeclaration(n) && ['activeMatches', 'recommendationGroups', 'recommendationCount', 'activeCards', 'incomingRequests', 'ongoingMatches', 'plusActive', 'plusContactExchangeIncluded'].includes(n.name.getText(ast))) bindings[n.name.getText(ast)] = hash(canonical(n, ast));
     if (ts.isJsxAttribute(n)) {
       const name = n.name.getText(ast), text = canonical(n, ast);
       if (/^on[A-Z]/.test(name) && !/jumpTo(Profile|Section|MatchSummary)/.test(text)) callbacks.push(text);
@@ -45,11 +45,11 @@ module.exports = { fingerprint, panelContract, files };
 if (require.main === module) {
   const baseline = JSON.parse(read('scripts/fixtures/one-on-one-ui-contract.json'));
   for (const [name, file] of Object.entries(files)) test('reviewed view contract: ' + name, () => {
-    // Reviewed CTA separates its visible, aria-describedby-linked price below the button.
-    // Quote/dispatch, disabled states and free benefits are unchanged; conversion tests
-    // assert full/compact prices, unique descriptions and existing payment callbacks.
+    // Reviewed received-message styling and lazy support-guide placement before the CTA.
+    // Quote/dispatch, price, disabled states and free benefits are unchanged; conversion
+    // tests assert prices, unique descriptions, original callbacks and lazy guide reads.
     const expected = name === 'OneOnOneContactOffer'
-      ? '22bca1832e0b0b35c8bffa45c87d7108d12b73bf2206dcae9083c930ce6396ef'
+      ? '2b4915047b9ab19aea4a65b95183bf0dad55d490272c970ee655da9e85e68e12'
       // Same article/children/buttons, with a visibility-only observation hook.
       : name === 'OneOnOneCandidateCard' ? '31f6f4a089163a4631d1cd45be6017b561e93e9a69114a68d27ad2927a07d6e3' : baseline.functions[name];
     let source = read(file);
@@ -60,20 +60,22 @@ if (require.main === module) {
       assert.equal(source.split(notice).length, 2);
       source = source.replace(notice, '');
     }
-    if (name === 'OneOnOneContactOffer') {
-      // Only the reviewed, read-on-open support guide may be added. Keep the
-      // original payment callback/price/disabled-state fingerprint unchanged.
-      const guide = '      {!included ? <ContactCarePanel key={matchId} matchId={matchId} guideOnly /> : null}\n';
-      assert.equal(source.split(guide).length, 2);
-      source = source.replace(guide, '');
-    }
     assert.equal(fingerprint(source, name), expected);
   });
   test('recommendation ordering, counters and existing action bindings remain unchanged', () => {
     // Read-only retries include the explicit stale-quota check; all mutation
     // callbacks, candidate ordering and checkout bindings remain pinned.
-    const expected = { ...baseline.panel, callbacks: [...baseline.panel.callbacks, 'onClick={onReload}', 'onCheckUsage={onReload}', 'onExchange={onContactCheckout}', 'onNudge={onContactNudge}'].sort() };
+    // Only existing-match presentation moves to the shared list. Recommendation
+    // inputs, incoming-request filters and all mutation callbacks remain pinned.
+    const bindings = { ...baseline.panel.bindings };
+    delete bindings.sortedMatches;
+    bindings.ongoingMatches = '6075d5c6d7c23c49f35cb64c2cc68a8d93403a1ca5a3088d8203d4898664eb92';
+    const expected = { ...baseline.panel, bindings, callbacks: [
+      ...baseline.panel.callbacks.filter(callback => callback !== 'onClick={() => setVisibleMatchCount((count) => count + 8)}'),
+      'onClick={onReload}', 'onCheckUsage={onReload}', 'onExchange={onContactCheckout}', 'onNudge={onContactNudge}',
+    ].sort() };
     assert.deepEqual(panelContract(read(files.OneOnOneCandidateCard)), expected);
+    assert.match(read(files.OneOnOneCandidateCard), /initialVisibleCount=\{8\} pageSize=\{8\}/);
   });
   test('candidate section is before profile/plus/sent history, after incoming requests', () => {
     const source = read(files.OneOnOneCandidateCard);

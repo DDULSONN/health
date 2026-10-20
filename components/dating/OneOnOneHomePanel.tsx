@@ -12,6 +12,7 @@ import OneOnOneContactOffer from "@/components/dating/OneOnOneContactOffer";
 import OneOnOneProfileSummary from "@/components/dating/OneOnOneProfileSummary";
 import OneOnOneIncomingRequests from "@/components/dating/OneOnOneIncomingRequests";
 import OneOnOneNextSteps from "@/components/dating/OneOnOneNextSteps";
+import OneOnOneContactList from "@/components/dating/OneOnOneContactList";
 import OneOnOneContactPending from "@/components/dating/OneOnOneContactPending";
 import OneOnOneUnavailableNotice from "@/components/dating/OneOnOneUnavailableNotice";
 import { oneOnOneEndedNotice } from "@/lib/dating-1on1-notification-status";
@@ -73,6 +74,8 @@ type OneOnOneMatchPreview = {
   counterparty_card?: OneOnOneCardPreview | null;
   counterparty_phone?: string | null;
   contact_nudge?: OneOnOneContactNudgeSummary | null;
+  source_final_responded_at?: string | null;
+  candidate_responded_at?: string | null;
   created_at?: string | null;
 };
 
@@ -183,7 +186,6 @@ export default function OneOnOneHomePanel({
 }) {
   const [plusGuideOpen, setPlusGuideOpen] = useState(false);
   const [matchGuideOpen, setMatchGuideOpen] = useState(false);
-  const [visibleMatchCount, setVisibleMatchCount] = useState(8);
   const focusedMatchRef = useRef<HTMLDivElement>(null);
   const scrolledMatchId = useRef<string | null>(null);
   const profileSectionRef = useRef<HTMLDetailsElement>(null);
@@ -219,12 +221,7 @@ export default function OneOnOneHomePanel({
   const hasOneOnOneCard = activeCards.length > 0;
   const actionSummary = getOneOnOneActionSummary(activeMatches);
   const incomingRequests = activeMatches.filter((match) => match.id !== focusedMatch?.id && isIncomingOneOnOneRequest(match));
-  const sortedMatches = activeMatches.filter((match) => match.id !== focusedMatch?.id && !isIncomingOneOnOneRequest(match)).sort((a, b) => {
-    const aImportant = a.action_required || a.state === "candidate_accepted" || a.state === "mutual_accepted" ? 1 : 0;
-    const bImportant = b.action_required || b.state === "candidate_accepted" || b.state === "mutual_accepted" ? 1 : 0;
-    if (aImportant !== bImportant) return bImportant - aImportant;
-    return String(b.created_at ?? "").localeCompare(String(a.created_at ?? ""));
-  });
+  const ongoingMatches = activeMatches.filter((match) => match.id !== focusedMatch?.id && !isIncomingOneOnOneRequest(match));
   // Shortcuts only move focus/scroll; they never refresh candidates or submit an action.
   function jumpToSection(section: HTMLElement | null) {
     if (!section) return;
@@ -601,15 +598,16 @@ export default function OneOnOneHomePanel({
               <div className="flex items-center justify-between gap-3">
                 <div>
                   <p className="text-base font-bold text-neutral-900">진행 중인 매칭</p>
-                  <p className="mt-1 text-xs leading-5 text-neutral-500">요청 보내기, 수락, 연락처 교환이 필요한 항목을 먼저 보여드려요.</p>
+                  <p className="mt-1 text-xs leading-5 text-neutral-500">최근 수락하거나 한마디를 받은 미교환 매칭을 먼저 보여드려요.</p>
                 </div>
-                <span className="shrink-0 whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-bold text-neutral-500">{sortedMatches.length}건</span>
+                <span className="shrink-0 whitespace-nowrap rounded-full bg-neutral-100 px-2.5 py-1 text-[11px] font-bold text-neutral-500">{ongoingMatches.length}건</span>
               </div>
-              {sortedMatches.length === 0 ? (
+              {ongoingMatches.length === 0 ? (
                 <p className="mt-3 rounded-2xl bg-neutral-50 p-4 text-sm leading-6 text-neutral-500">보낸 요청과 서로 수락한 매칭은 여기에 표시돼요.</p>
               ) : (
                 <div className="mt-3 space-y-3">
-                  {sortedMatches.slice(0, visibleMatchCount).map((match) => (
+                  <OneOnOneContactList matches={ongoingMatches} initialVisibleCount={8} pageSize={8}
+                    moreLabel="진행 중 매칭 더보기" listClassName="space-y-3" renderMatch={(match) => (
                     <OneOnOneCandidateCard
                       key={match.id}
                       compact={match.state === "proposed"}
@@ -632,11 +630,7 @@ export default function OneOnOneHomePanel({
                         onContactNudge={onContactNudge}
                       />
                     </OneOnOneCandidateCard>
-                  ))}
-                  {sortedMatches.length > visibleMatchCount ? <button type="button" onClick={() => setVisibleMatchCount((count) => count + 8)}
-                    className="min-h-[44px] w-full rounded-xl border border-neutral-200 text-xs font-medium text-neutral-600">
-                    진행 중 매칭 더보기 · {sortedMatches.length - visibleMatchCount}건
-                  </button> : null}
+                  )} />
                 </div>
               )}
             </div>

@@ -11,7 +11,10 @@ function load(file, deps = {}) {
   const code = ts.transpileModule(read(file), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX } }).outputText;
   new Function('module', 'exports', 'require', code)(mod, mod.exports, name => {
     if (Object.hasOwn(deps, name)) return deps[name];
-    if (name.startsWith('@/')) return load(name.slice(2) + '.ts', deps);
+    if (name.startsWith('@/')) {
+      const target = name.slice(2);
+      return load(target + (fs.existsSync(path.join(root, target + '.ts')) ? '.ts' : '.tsx'), deps);
+    }
     return require(name);
   });
   return mod.exports;

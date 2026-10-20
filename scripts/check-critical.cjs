@@ -51,6 +51,7 @@ const unitFiles = [
   'check-account-recovery.cjs',
   'check-account-recovery-safety.cjs',
   'check-contact-payment-conversion.cjs',
+  'check-contact-presentation.cjs',
   'check-contact-care.cjs',
   'check-payment-recovery.cjs',
   'check-payment-measurement.cjs',

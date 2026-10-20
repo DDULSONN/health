@@ -30,6 +30,7 @@ import CandidateImpression from "@/components/dating/CandidateImpression";
 import { flushCandidateImpressions } from "@/lib/dating-1on1-impressions-client";
 import OneOnOneIncomingRequests from "@/components/dating/OneOnOneIncomingRequests";
 import OneOnOneNextSteps from "@/components/dating/OneOnOneNextSteps";
+import OneOnOneContactList from "@/components/dating/OneOnOneContactList";
 import OneOnOneContactPending from "@/components/dating/OneOnOneContactPending";
 import { canOfferOneOnOneContact } from "@/lib/dating-1on1-match-navigation";
 import { buildOneOnOneRequestSentMessage, getOneOnOneActionSummary, getOneOnOneMatchLabel, isIncomingOneOnOneRequest } from "@/lib/dating-1on1-action-copy";
@@ -10765,7 +10766,7 @@ export default function MyPage() {
                     <div className="mt-3 rounded-xl border border-emerald-200 bg-emerald-50/60 p-3">
                       <p className="text-sm font-semibold text-emerald-900">쌍방 수락 완료</p>
                       <div className="mt-2 space-y-2">
-                        {mutualAcceptedMatches.map((match) => {
+                        <OneOnOneContactList matches={mutualAcceptedMatches.filter((match) => match.counterparty_card)} renderMatch={(match) => {
                           const card = match.counterparty_card;
                           if (!card) return null;
                           const contactProcessing = processingOneOnOneContactExchangeIds.includes(match.id);
@@ -10881,7 +10882,7 @@ export default function MyPage() {
                               )}
                             </div>
                           );
-                        })}
+                        }} />
                       </div>
                     </div>
                   )}

@@ -8,19 +8,21 @@ const root = path.resolve(__dirname, '..');
 const read = file => fs.readFileSync(path.join(root, file), 'utf8').replace(/\r\n/g, '\n');
 const Link = ({ children, href, ...props }) => React.createElement('a', { href, ...props }, children);
 function evaluate(source, deps = {}) {
-  const module = { exports: {} };
+  const mod = { exports: {} };
   const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX } }).outputText;
-  new Function('module', 'exports', 'require', compiled)(module, module.exports, name => {
+  new Function('module', 'exports', 'require', compiled)(mod, mod.exports, name => {
     if (Object.hasOwn(deps, name)) return deps[name];
     if (['react', 'react/jsx-runtime'].includes(name)) return require(name);
     if (name === 'next/link') return { default: Link };
     throw Error('Unexpected dependency: ' + name);
   });
-  return module.exports;
+  return mod.exports;
 }
 const nav = evaluate(read('lib/dating-1on1-match-navigation.ts'));
 const id = '01234567-abcd-4000-8000-012345678901';
 const deps = { '@/lib/dating-1on1-match-navigation': nav };
+deps['@/lib/dating-1on1-contact-presentation'] = evaluate(read('lib/dating-1on1-contact-presentation.ts'), deps);
+deps['@/components/dating/OneOnOneContactList'] = evaluate(read('components/dating/OneOnOneContactList.tsx'), deps);
 const Steps = evaluate(read('components/dating/OneOnOneNextSteps.tsx'), deps).default;
 const Pending = evaluate(read('components/dating/OneOnOneContactPending.tsx')).default;
 const Inbox = evaluate(read('components/dating/OneOnOneIncomingRequests.tsx')).default;
