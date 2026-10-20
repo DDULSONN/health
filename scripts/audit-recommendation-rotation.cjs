@@ -47,7 +47,7 @@ async function auditUser(userId) {
   const at = Date.now();
   const response = await load('@/lib/dating-1on1-recommendation-service').loadOneOnOneRecommendations(db,
     { id: userId }, { sourceCardId: source.id, at: new Date(at).toISOString() });
-  await response.json();
+  const body = await response.json();
   if (!response.ok || !captured) return { eligible: false, status: response.status };
   const pages = load('@/lib/dating-1on1-recommendation-page');
   const rules = load('@/lib/dating-1on1-recommendations');
@@ -86,7 +86,8 @@ async function auditUser(userId) {
         sourceAge: src.age, sourceSex: src.sex } : {}) };
   };
   const before = simulate(false), after = simulate(true);
-  return { eligible: true, pool: pool.length, before, after, productionWrites: 0 };
+  return { eligible: true, pool: pool.length, before, after, productionWrites: 0,
+    availability: { remaining: body.plan?.refresh_remaining, bonusRemaining: body.plan?.refresh_bonus_remaining } };
 }
 module.exports = { auditUser, db, ok, readCache };
 if (require.main === module) {

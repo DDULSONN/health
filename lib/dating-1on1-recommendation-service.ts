@@ -563,6 +563,11 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
         const seenAt = Date.parse(row.first_seen_at);
         if (seenAt < nowMs && seenAt >= nowMs - 30 * 86400000) oldIds.add(row.candidate_user_id);
       }
+      // A committed page is also a delivery receipt. A missed/delayed browser
+      // impression must not charge again when a previously assigned person returns.
+      const priorPageIds = new Set((recentPages ?? []).filter(page =>
+        page.at < nowMs && page.at >= nowMs - 30 * 86400000).flatMap(page => page.ids));
+      for (const card of candidateUniverse) if (priorPageIds.has(card.id)) oldIds.add(card.user_id);
       if (isExpansionEnabled(user.id)) {
         const seen = await admin.from(EXPANSION_TABLE).select("candidate_ids")
           .eq("user_id", user.id).gte("day_key", getKstDateString(new Date(nowMs - RECOMMENDATION_REFRESH_HISTORY_MS)));

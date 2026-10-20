@@ -963,6 +963,21 @@ test('history read failure stops a new refresh before any quota RPC or photo res
   assert.equal(result.response.status, 503);
   assert.equal(result.rpcCalls.length, 0); assert.deepEqual(tables, before);
 });
+test('committed page history prevents recharging when browser impressions never arrived', async () => {
+  const tables = fixture(40);
+  tables.dating_1on1_recommendation_pages = [];
+  tables.dating_1on1_candidate_impressions = [];
+  const candidates = tables.dating_1on1_cards.slice(1);
+  tables.dating_1on1_recommendation_page_history = Array.from({ length: 4 }, (_, i) => ({
+    user_id: 'user-source', refreshed_at: new Date(now - (i + 1) * 60000).toISOString(),
+    main_candidate_ids: candidates.slice(i * 10, i * 10 + 10).map(c => c.id), extra_candidate_ids: [],
+  }));
+  const result = await runRefresh(tables);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.refresh_consumed, false);
+  assert.equal(result.body.refresh_remaining, 1);
+  assert.ok(result.body.rotated_candidate_count > 0);
+});
 
 for (const size of [0, 1, 3, 10, 11, 12, 13]) test('checked refresh with ' + size + ' eligible people never charges just for reordering', async () => {
   const tables = fixture(size), before = structuredClone(tables);
