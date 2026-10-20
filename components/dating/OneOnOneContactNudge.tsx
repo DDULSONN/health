@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   ONE_ON_ONE_CONTACT_NUDGE_PRESETS,
   type OneOnOneContactNudgePresetKey,
@@ -17,12 +17,86 @@ type Props = {
   compact?: boolean;
 };
 
-export function ReceivedContactNudge({ item }: { item: OneOnOneContactNudgeItem }) {
+function messageIsVisible(element: HTMLElement) {
+  if (document.visibilityState !== "visible" || !element.isConnected) return false;
+  const rect = element.getBoundingClientRect();
+  if (!rect.width || !rect.height) return false;
+  const visibleWidth = Math.max(0, Math.min(rect.right, innerWidth) - Math.max(rect.left, 0));
+  const visibleHeight = Math.max(0, Math.min(rect.bottom, innerHeight) - Math.max(rect.top, 0));
+  if (visibleWidth * visibleHeight < rect.width * rect.height * 0.5) return false;
+  for (let node: HTMLElement | null = element; node; node = node.parentElement) {
+    const style = getComputedStyle(node);
+    if (style.visibility !== "visible" || style.display === "none" || Number(style.opacity) === 0) return false;
+    if (node instanceof HTMLDetailsElement && !node.open) return false;
+  }
+  // Do not record text covered by a modal or a fixed header.
+  const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+  return Boolean(hit && (hit === element || element.contains(hit)));
+}
+
+function useNudgeReadReceipt(matchId: string | undefined, item: OneOnOneContactNudgeItem, enabled: boolean) {
+  const messageRef = useRef<HTMLParagraphElement>(null);
+  useEffect(() => {
+    const element = messageRef.current;
+    if (!enabled || !matchId || !item.id || item.read_at || !element || typeof IntersectionObserver === "undefined") return;
+    let disposed = false, visible = false, saved = false, pending = false, attempts = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let request: AbortController | undefined;
+    const cancel = () => { if (timer !== undefined) clearTimeout(timer); timer = undefined; };
+    const save = async () => {
+      if (disposed || !visible || !messageIsVisible(element) || pending || saved || attempts >= 2) return;
+      attempts++;
+      pending = true;
+      const controller = new AbortController(); request = controller;
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      try {
+        const res = await fetch(`/api/dating/1on1/matches/${encodeURIComponent(matchId)}/nudge/read`, {
+          method: "POST", credentials: "same-origin", cache: "no-store",
+          headers: { "Content-Type": "application/json" }, body: JSON.stringify({ nudgeId: item.id }),
+          signal: controller.signal,
+        });
+        const body = await res.json();
+        saved = res.ok && body.ok === true && body.nudgeId === item.id &&
+          typeof body.read_at === "string" && Number.isFinite(Date.parse(body.read_at));
+        if ([401, 403, 404, 409].includes(res.status)) attempts = 2;
+      } catch { /* Receipt failure must never interrupt matching or checkout. */ }
+      finally { clearTimeout(timeout); pending = false; }
+    };
+    const schedule = () => {
+      cancel();
+      if (disposed || !visible || pending || saved || attempts >= 2 || !messageIsVisible(element)) return;
+      // A fast scroll, initial fetch, collapsed card or background tab is not a read.
+      timer = setTimeout(() => { timer = undefined; void save(); }, 1000);
+    };
+    let observer: IntersectionObserver;
+    try {
+      observer = new IntersectionObserver(entries => {
+        visible = entries.some(entry => entry.target === element && entry.isIntersecting && entry.intersectionRatio >= 0.5);
+        schedule();
+      }, { threshold: [0, 0.5, 1] });
+      observer.observe(element);
+    } catch { return; }
+    document.addEventListener("visibilitychange", schedule);
+    window.addEventListener("focus", schedule);
+    return () => {
+      disposed = true; cancel(); request?.abort(); observer.disconnect();
+      document.removeEventListener("visibilitychange", schedule);
+      window.removeEventListener("focus", schedule);
+    };
+  }, [matchId, item.id, item.read_at, enabled]);
+  return messageRef;
+}
+
+export function ReceivedContactNudge({ item, matchId, canMarkRead = false }: {
+  item: OneOnOneContactNudgeItem; matchId?: string; canMarkRead?: boolean;
+}) {
   const senderName = item.sender_display_name?.trim() ?? "";
+  const messageRef = useNudgeReadReceipt(matchId, item, canMarkRead);
   return <>
     <p className="text-[11px] font-semibold text-neutral-600">{senderName ? `${senderName}님이 보낸 1:1 한마디` : "상대가 보낸 1:1 한마디"}</p>
-    <p className="mt-1 break-words text-sm font-semibold leading-6 text-neutral-900">“{item.message_text}”</p>
+    <p ref={messageRef} className="mt-1 break-words text-sm font-semibold leading-6 text-neutral-900">“{item.message_text}”</p>
     <p className="mt-2 text-[11px] leading-5 text-neutral-500">연락처 교환 후 잠수하거나 상대방에게 불쾌한 언행을 할 경우 제재 대상입니다.</p>
+    {canMarkRead && matchId && item.id ? <p className="mt-1 text-[11px] leading-5 text-neutral-500">이 한마디를 보면 상대에게 ‘확인함’으로 표시돼요.</p> : null}
   </>;
 }
 
@@ -38,7 +112,7 @@ export default function OneOnOneContactNudge({ matchId, nudge, processing, onSen
     <div className={compact ? "mt-2 border-t border-neutral-100 pt-2" : "mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3"}>
       {received ? (
         <div className="rounded-xl bg-white px-3 py-2.5">
-          <ReceivedContactNudge item={received} />
+          <ReceivedContactNudge item={received} matchId={matchId} canMarkRead={nudge.read_receipts_available && nudge.can_mark_read} />
         </div>
       ) : null}
 
@@ -46,6 +120,14 @@ export default function OneOnOneContactNudge({ matchId, nudge, processing, onSen
         <div className={received ? "mt-2" : ""}>
           <p className="text-xs font-semibold text-neutral-800">상대에게 한마디를 보냈어요.</p>
           <p className="mt-1 text-xs leading-5 text-neutral-600">“{nudge.sent_by_me.message_text}”</p>
+          {nudge.read_receipts_available ? (
+            <div className="mt-1">
+              <p className="text-xs font-medium text-neutral-700">{nudge.sent_by_me.read_at ? "상대가 확인함" : "확인 기록 없음"}</p>
+              <p className="text-[11px] leading-5 text-neutral-500">
+                {nudge.sent_by_me.read_at ? "한마디가 상대 화면에 표시됐어요. 수락·결제 의사를 뜻하지 않아요." : "한마디가 상대 화면에 표시되면 확인함으로 바뀌어요."}
+              </p>
+            </div>
+          ) : null}
           <p className="mt-1 text-[11px] text-neutral-500">같은 매칭에서는 한 번만 보낼 수 있어요.</p>
         </div>
       ) : nudge.can_send ? (

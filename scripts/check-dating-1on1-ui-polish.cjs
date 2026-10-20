@@ -45,11 +45,11 @@ module.exports = { fingerprint, panelContract, files };
 if (require.main === module) {
   const baseline = JSON.parse(read('scripts/fixtures/one-on-one-ui-contract.json'));
   for (const [name, file] of Object.entries(files)) test('reviewed view contract: ' + name, () => {
-    // Reviewed received-message styling and lazy support-guide placement before the CTA.
+    // Reviewed receipt eligibility/match ID passed to the existing received message.
     // Quote/dispatch, price, disabled states and free benefits are unchanged; conversion
     // tests assert prices, unique descriptions, original callbacks and lazy guide reads.
     const expected = name === 'OneOnOneContactOffer'
-      ? '2b4915047b9ab19aea4a65b95183bf0dad55d490272c970ee655da9e85e68e12'
+      ? '10e8fc7ccf023d894ee7871d76c57359393d9c07b329d9ef13cd8c3a385ecc0c'
       // Same article/children/buttons, with a visibility-only observation hook.
       : name === 'OneOnOneCandidateCard' ? '31f6f4a089163a4631d1cd45be6017b561e93e9a69114a68d27ad2927a07d6e3' : baseline.functions[name];
     let source = read(file);

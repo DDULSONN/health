@@ -1,6 +1,8 @@
 import type { DatingOneOnOneMatchRow } from "@/lib/dating-1on1";
 import {
+  canConfirmOneOnOneContactNudge,
   getOneOnOneContactNudgeEligibility,
+  isMissingContactNudgeReadColumn,
   type OneOnOneContactNudgeItem,
   type OneOnOneContactNudgePresetKey,
 } from "@/lib/dating-1on1-contact-nudge";
@@ -169,13 +171,27 @@ export async function GET(req: Request) {
   }
 
   let nudgeSchemaAvailable = true;
+  let readReceiptsAvailable = true;
   let nudgeRows: ContactNudgeRow[] = [];
   if (rows.length > 0) {
-    const nudgeRes = await admin
+    let nudgeRes: {
+      data: ContactNudgeRow[] | null;
+      error: { code?: string | null; message?: string | null } | null;
+    } = await admin
       .from("dating_1on1_contact_nudges")
-      .select("match_id,sender_user_id,recipient_user_id,preset_key,message_text,created_at")
+      .select("id,match_id,sender_user_id,recipient_user_id,preset_key,message_text,created_at,read_at")
       .in("match_id", rows.map((row) => row.id))
       .order("created_at", { ascending: false });
+    // Deploying the UI before the additive migration must not hide old messages
+    // or interfere with contact exchange. Only the new missing column falls back.
+    if (nudgeRes.error && isMissingContactNudgeReadColumn(nudgeRes.error)) {
+      readReceiptsAvailable = false;
+      nudgeRes = await admin
+        .from("dating_1on1_contact_nudges")
+        .select("id,match_id,sender_user_id,recipient_user_id,preset_key,message_text,created_at")
+        .in("match_id", rows.map((row) => row.id))
+        .order("created_at", { ascending: false });
+    }
     if (nudgeRes.error) {
       nudgeSchemaAvailable = false;
       if (!isMissingNudgeSchema(nudgeRes.error)) {
@@ -220,10 +236,14 @@ export async function GET(req: Request) {
         counterparty_phone: counterpartyPhone,
         contact_nudge: {
           available: nudgeSchemaAvailable,
+          read_receipts_available: nudgeSchemaAvailable && readReceiptsAvailable,
+          can_mark_read: nudgeSchemaAvailable && readReceiptsAvailable && canConfirmOneOnOneContactNudge(row),
           eligible_at: nudgeEligibility.eligibleAt,
           can_send: nudgeSchemaAvailable && nudgeEligibility.eligible && !sentByMe,
           sent_by_me: sentByMe
             ? {
+                id: sentByMe.id,
+                read_at: readReceiptsAvailable ? sentByMe.read_at ?? null : null,
                 preset_key: sentByMe.preset_key,
                 message_text: sentByMe.message_text,
                 created_at: sentByMe.created_at,
@@ -231,6 +251,8 @@ export async function GET(req: Request) {
             : null,
           received_from_other: receivedFromOther
             ? {
+                id: receivedFromOther.id,
+                read_at: readReceiptsAvailable ? receivedFromOther.read_at ?? null : null,
                 preset_key: receivedFromOther.preset_key,
                 message_text: receivedFromOther.message_text,
                 created_at: receivedFromOther.created_at,
@@ -243,5 +265,5 @@ export async function GET(req: Request) {
           (role === "candidate" && row.state === "source_selected"),
       };
     }),
-  });
+  }, { headers: { "Cache-Control": "private, no-store" } });
 }

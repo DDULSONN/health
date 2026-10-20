@@ -23,6 +23,8 @@ export const ONE_ON_ONE_CONTACT_NUDGE_PRESETS = [
 export type OneOnOneContactNudgePresetKey = (typeof ONE_ON_ONE_CONTACT_NUDGE_PRESETS)[number]["key"];
 
 export type OneOnOneContactNudgeItem = {
+  id?: string;
+  read_at?: string | null;
   preset_key: OneOnOneContactNudgePresetKey;
   message_text: string;
   created_at: string;
@@ -31,11 +33,26 @@ export type OneOnOneContactNudgeItem = {
 
 export type OneOnOneContactNudgeSummary = {
   available: boolean;
+  read_receipts_available?: boolean;
+  can_mark_read?: boolean;
   eligible_at: string | null;
   can_send: boolean;
   sent_by_me: OneOnOneContactNudgeItem | null;
   received_from_other: OneOnOneContactNudgeItem | null;
 };
+
+export function canConfirmOneOnOneContactNudge(match: {
+  state?: string | null;
+  contact_exchange_status?: string | null;
+}) {
+  return match.state === "mutual_accepted" &&
+    ["none", "awaiting_applicant_payment", "payment_pending_admin", "approved"].includes(match.contact_exchange_status ?? "");
+}
+
+export function isMissingContactNudgeReadColumn(error: { code?: string | null; message?: string | null }) {
+  return ["42703", "PGRST204"].includes(error.code ?? "") &&
+    /\bread_at\b/i.test(error.message ?? "");
+}
 
 function normalizeOneOnOneSenderName(value: string | null | undefined) {
   return typeof value === "string" ? value.replace(/[\r\n]+/g, " ").trim().slice(0, 30) : "";

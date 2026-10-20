@@ -62,7 +62,7 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
       </p>
       {nudge?.available && nudge.received_from_other ? (
         <div className="mt-2 rounded-lg border-l-2 border-rose-300 bg-neutral-50 px-3 py-2">
-          <ReceivedContactNudge item={nudge.received_from_other} />
+          <ReceivedContactNudge item={nudge.received_from_other} matchId={matchId} canMarkRead={nudge.read_receipts_available && nudge.can_mark_read} />
         </div>
       ) : null}
       {!included ? <div className="mt-2"><ContactCarePanel key={matchId} matchId={matchId} guideOnly /></div> : null}
