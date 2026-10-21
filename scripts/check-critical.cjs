@@ -24,6 +24,7 @@ const unitFiles = [
   'check-dating-1on1-ui-polish.cjs',
   'check-admin-review-confirmation.cjs',
   'check-dating-sexual-text-review.cjs',
+  'check-dating-contact-text-review.cjs',
   'check-dating-1on1-checked-refresh-sql.cjs',
   'check-dating-1on1-impressions.cjs',
   'check-city-view-region-priority.cjs',
@@ -89,6 +90,7 @@ const browserFiles = [
   'check-revenue-journey-browser.cjs',
   'check-contact-intro-browser.cjs',
   'check-admin-contact-exchanges-browser.cjs',
+  'check-admin-contact-review-browser.cjs',
   'check-profile-writing-browser.cjs',
   'check-funnel-recovery-browser.cjs',
 ];

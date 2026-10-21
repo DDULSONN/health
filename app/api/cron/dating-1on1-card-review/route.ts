@@ -5,7 +5,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { NextResponse } from "next/server";
 
 export const maxDuration = 60;
-const MAX_SCAN_PER_RUN = 1000;
+const MAX_SCAN_PER_RUN = 5000;
 const BATCH_SIZE = 200;
 const ACTIVE_STATUSES = ["submitted", "reviewing", "approved"];
 
@@ -14,11 +14,17 @@ export async function GET(req: Request) {
   if (unauthorized) return unauthorized;
   const admin = createAdminClient();
   try {
-    const { data, error } = await admin.from("dating_1on1_cards")
-      .select("id,user_id,status,name,birth_year,job,region,intro_text,strengths_text,preferred_partner_text,photo_paths,admin_tags,created_at")
-      .in("status", ACTIVE_STATUSES).order("created_at", { ascending: false }).limit(MAX_SCAN_PER_RUN);
-    if (error) throw error;
-    const cards = (data ?? []) as Record<string, unknown>[];
+    // A single REST query silently caps at 1,000 rows. Page the bounded scan so
+    // older active profiles receive new rules too; do not download photos or call AI.
+    const cards: Record<string, unknown>[] = [];
+    for (let start = 0; start < MAX_SCAN_PER_RUN; start += BATCH_SIZE) {
+      const { data, error } = await admin.from("dating_1on1_cards")
+        .select("id,user_id,status,name,birth_year,job,region,intro_text,strengths_text,preferred_partner_text,photo_paths,admin_tags,created_at")
+        .in("status", ACTIVE_STATUSES).order("id").range(start, start + BATCH_SIZE - 1);
+      if (error) throw error;
+      cards.push(...(data ?? []) as Record<string, unknown>[]);
+      if (!data || data.length < BATCH_SIZE) break;
+    }
     const nicknames = new Map<string, string>();
     const existing = new Map<string, Record<string, unknown>>();
     const userIds = [...new Set(cards.map(card => String(card.user_id ?? "")).filter(Boolean))];
@@ -42,6 +48,9 @@ export async function GET(req: Request) {
       // Identical content and rules need no write. In particular, never replace
       // unchanged manual AI findings or invalidate an administrator's confirmation.
       if (snapshot?.contentFingerprint === reviewContentFingerprint(card) && raw.confirmationRulesVersion === REVIEW_RULES_VERSION) return [];
+      // A rule upgrade must not erase a human-triggered AI photo review.
+      // Changed content still gets reviewed; unchanged AI results need an explicit rescan.
+      if (raw.provider === "gemini" && snapshot?.contentFingerprint === reviewContentFingerprint(card)) return [];
       const review = withReviewSnapshot(card, ruleReview(card));
       return [{ saved, row: {
         source_type: "one_on_one", card_id: card.cardId, user_id: card.userId,
@@ -74,7 +83,8 @@ export async function GET(req: Request) {
     }
     return NextResponse.json({ ok: true, scanned: cards.length, reviewRows: newRows.length + updated,
       unchanged: cards.length - changes.length, deferred,
-      suspicious: changes.filter(change => ["medium", "high"].includes(change.row.suspicion_level)).length, scannedAt });
+      suspicious: changes.filter(change => ["medium", "high"].includes(change.row.suspicion_level)).length,
+      scanLimitReached: cards.length === MAX_SCAN_PER_RUN, scannedAt });
   } catch (error) {
     console.error("[cron dating-1on1-card-review] review failed", error);
     return NextResponse.json({ ok: false, error: "review_failed" }, { status: 500 });

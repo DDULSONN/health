@@ -1,3 +1,5 @@
+import { compactReviewText, joinsUnrelatedWords } from "@/lib/dating-review-text-boundaries";
+
 // Admin review signals only. Never use these heuristics to reject a profile or ban a user.
 export type DatingSexualTextReview = {
   level: "clear" | "medium" | "high";
@@ -34,7 +36,7 @@ const RULES: Rule[] = [
     level: "high",
     label: "음란물·노골적인 성적 표현 의심",
     compact: true,
-    pattern: /야동|포르노|자위행위|자위기구|성인용품|음경|음핵|클리토리스|젖꼭지|딜도|오나홀|러브젤|벗방|몸캠|은꼴/gu,
+    pattern: /야동|포르노|자위행위|자위기구|성인용품|음경|음핵|클리토리스|젖꼭지|딜도|오나홀|러브젤|벗방|몸캠|(?<!닮)은꼴/gu,
   },
   {
     level: "high",
@@ -47,7 +49,7 @@ const RULES: Rule[] = [
     level: "high",
     label: "성적 대화·사진 또는 취향 표현 의심",
     compact: true,
-    pattern: /속궁합|성욕|성적취향|성적인취향|성적판타지|페티시|패티시|(?:야한|야릇한)(?:대화|사진|영상|얘기|이야기|톡|채팅)|19금(?:대화|사진|영상|만남|얘기|가능|톡|채팅)|잠자리(?:목적|만남|상대|파트너)|sm성향|에셈(?:성향|플레이|가능|파트너)|돔섭|디그레이더|(?:사디스트|마조히스트|돔|섭)(?:성향|플레이)|본디지|초대남|초대녀|(?:커플스와핑|스와핑(?:커플|상대|파트너))/gu,
+    pattern: /속궁합|성욕|(?<![감이내외남여중])성적(?:인)?취향|성적판타지|페티시|패티시|(?:야한|야릇한)(?:대화|사진|영상|얘기|이야기|톡|채팅)|19금(?:대화|사진|영상|만남|얘기|가능|톡|채팅)|잠자리(?:목적|만남|상대|파트너)|sm성향|에셈(?:성향|플레이|가능|파트너)|돔섭|디그레이더|(?:사디스트|마조히스트|돔|섭)(?:성향|플레이)|본디지|초대남|초대녀|(?:커플스와핑|스와핑(?:커플|상대|파트너))/gu,
   },
   {
     level: "high",
@@ -61,7 +63,14 @@ const RULES: Rule[] = [
     compact: true,
     // Rejecting someone based on a sexual body condition is itself a review signal.
     skipRefusals: false,
-    pattern: /[a-k]컵|거유|빈유|왕가슴|(?:가슴|유방)(?:이|은|는|도|가|의)?(?:사이즈|크기|큰|크고|커요|작은|작고|작아요|빵빵|풍만)|대물(?:남|인분|좋아|선호)|소추(?:남|싫|사절)/gu,
+    pattern: /[a-k]컵|거유|빈유|왕가슴|(?:가슴|유방)(?:이|은|는|도|가|의)?(?:조금|좀)?(?:사이즈|크기|큰(?!근육|대흉근)|크고|크신|크셨|커요|작은|작고|작아요|빵빵|풍만|좋으신)|대물(?:남|인분|좋아|선호)|소추(?:남|싫|사절)/gu,
+  },
+  {
+    level: "medium",
+    label: "성적 성향·상대 조건 확인 필요",
+    compact: true,
+    // Suggestive wording needs a human decision, not an automatic penalty.
+    pattern: /(?<![아어해돼되])(?:야한|야릇한)(?:여자|남자|사람|분)/gu,
   },
   {
     level: "high",
@@ -93,7 +102,7 @@ const RULES: Rule[] = [
     level: "high",
     label: "노골적인 신체 표현 의심",
     // Do not match everyday Korean such as "보지 않아요" or "일찍 자지 못해요".
-    pattern: /(?:^|\s)(?:자지|보지)(?=$|\s*(?:크기|사이즈|큰|작은|굵|빨|핥)|(?:가|를|는|에|만)(?:\s|$))/gu,
+    pattern: /(?:^|\s)(?:자지|보지)(?!(?:는|만)?\s*(?:않|못|말|마(?:요|세요|십시오|라|\s|$)))(?=$|\s*(?:크기|사이즈|큰|작은|굵|빨|핥)|(?:가|를|는|에|만)(?:\s|$))/gu,
   },
 ];
 
@@ -123,14 +132,16 @@ export function reviewDatingSexualText(texts: Record<string, unknown>): DatingSe
   for (const [key, label] of Object.entries(FIELD_LABELS)) {
     const text = normalizedText(texts[key]);
     if (!text) continue;
-    const compact = compactText(text);
+    const compact = compactReviewText(text);
     for (const rule of RULES) {
-      const target = rule.compact ? compact : text;
+      const target = rule.compact ? compact.text : text;
       // matchAll clones the expression, so repeated requests never share a lastIndex cursor.
       let hit = "";
       for (const match of target.matchAll(rule.pattern)) {
         const start = match.index ?? 0;
         const end = start + match[0].length;
+        if (rule.compact && /^(?:음경|음핵)$/.test(match[0])
+          && joinsUnrelatedWords(text, compact.positions, start, match[0].length)) continue;
         if (rule.skipRefusals === false || !isRejection(target.slice(Math.max(0, start - 55), start), target.slice(end, end + 80))) {
           hit = match[0];
           break;

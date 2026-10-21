@@ -84,14 +84,18 @@ async function fetchProfileNicknames(admin: AdminClient, userIds: string[]) {
   const ids = [...new Set(userIds.map((id) => cleanText(id, 80)).filter(Boolean))];
   if (ids.length === 0) return new Map<string, string>();
 
-  const { data, error } = await admin.from("profiles").select("user_id,nickname").in("user_id", ids);
-  if (error) {
-    console.error("[admin card-ai-review] profile nickname lookup failed", error);
-    return new Map<string, string>();
+  const rows: Record<string, unknown>[] = [];
+  for (let start = 0; start < ids.length; start += 100) {
+    const { data, error } = await admin.from("profiles").select("user_id,nickname").in("user_id", ids.slice(start, start + 100));
+    if (error) {
+      console.error("[admin card-ai-review] profile nickname lookup failed", error);
+      return new Map<string, string>();
+    }
+    rows.push(...(data ?? []));
   }
 
   return new Map(
-    ((data ?? []) as Record<string, unknown>[])
+    rows
       .map((row) => [cleanText(row.user_id, 80), cleanText(row.nickname, 80)] as const)
       .filter(([userId, nickname]) => userId && nickname)
   );
@@ -265,6 +269,7 @@ async function analyzeWithGemini(admin: AdminClient, apiKey: string, model: stri
   const heuristic = ruleReview(card);
   const prompt = [
     "특히 1:1 매칭 신청서에 휴대폰 번호, 카카오톡/카톡 ID, 오픈채팅 링크, 인스타/IG 계정, DM 요청, 라인/텔레그램 ID 등 앱 밖 연락처를 적거나 유도하면 high로 판단한다.",
+    "인스타라는 말 없이 본문에 단독으로 적힌 영문·숫자·밑줄 아이디도 확인한다. 단순 형식 의심은 medium으로 두고, MBTI·운동 수치·일반 영문과 구분한다. 별도 instagramId 입력란과 상대 이름·카드 ID는 작성자의 본문 연락처로 판단하지 않는다.",
     "너는 소개팅 서비스의 관리자 검수 보조 AI다.",
     "절대 삭제, 거절, 유저 제재를 결정하지 말고 관리자에게 보여줄 의심 사유만 판단한다.",
     "성적 행위·만남 제안, 음란물, 성적 대화·사진 요구, 노골적인 신체 묘사도 확인한다. 신체 사이즈를 성적으로 강조한 문구는 관리자 확인 대상으로 두되, 운동·건강 설명이나 성적 제안을 거절하는 문구와 구분한다.",
@@ -498,13 +503,15 @@ async function fetchOneOnOneApplications(admin: AdminClient, limit: number): Pro
   const allCardIds = [...new Set([...sourceCardIds, ...candidateCardIds])];
   if (allCardIds.length === 0) return [];
 
-  const cardsRes = await admin
-    .from("dating_1on1_cards")
-    .select("id,user_id,status,name,birth_year,region,job,intro_text,strengths_text,preferred_partner_text,photo_paths,admin_tags,created_at")
-    .in("id", allCardIds);
-  if (cardsRes.error) throw cardsRes.error;
-
-  const cardRows = ((cardsRes.data ?? []) as Record<string, unknown>[]);
+  const cardRows: Record<string, unknown>[] = [];
+  for (let start = 0; start < allCardIds.length; start += 100) {
+    const cardsRes = await admin
+      .from("dating_1on1_cards")
+      .select("id,user_id,status,name,birth_year,region,job,intro_text,strengths_text,preferred_partner_text,photo_paths,admin_tags,created_at")
+      .in("id", allCardIds.slice(start, start + 100));
+    if (cardsRes.error) throw cardsRes.error;
+    cardRows.push(...(cardsRes.data ?? []));
+  }
   const cardById = new Map(cardRows.map((row) => [cleanText(row.id, 80), row]));
   const nicknamesByUserId = await fetchProfileNicknames(
     admin,
@@ -1330,7 +1337,9 @@ export async function GET(req: Request) {
       for (let index = 0; index < rows.length; index++) {
         const row = rows[index];
         const confirmation = confirmations.get(reviewConfirmationKey(String(row.source_type), String(row.card_id)));
-        const confirmed = confirmationAvailable && isReviewConfirmed(readReviewSnapshot(row.raw_result), confirmation);
+        const raw = (row.raw_result ?? {}) as Record<string, unknown>;
+        const confirmed = confirmationAvailable && raw.confirmationRulesVersion === REVIEW_RULES_VERSION
+          && isReviewConfirmed(readReviewSnapshot(row.raw_result), confirmation);
         if (confirmedView ? confirmed : !confirmed) visible.push(row);
         if (visible.length === 50) {
           nextOffset = index + 1 < rows.length || rows.length === 50 ? start + index + 1 : null;

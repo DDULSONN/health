@@ -17,9 +17,15 @@ function compile(file, resolve = require, extras = "", injectedFetch) {
   return loaded.exports;
 }
 
-const { reviewDatingSexualText } = compile("lib/dating-sexual-text-review.ts");
+const boundaryRules = compile("lib/dating-review-text-boundaries.ts");
+const boundaryRequire = id => {
+  if (id === '@/lib/dating-review-text-boundaries') return boundaryRules;
+  throw new Error('Unexpected boundary helper dependency: ' + id);
+};
+const { reviewDatingSexualText } = compile("lib/dating-sexual-text-review.ts", boundaryRequire);
 const { reviewDatingIntroQuality } = compile("lib/dating-intro-quality-review.ts");
-const { reviewDatingProfanity } = compile("lib/dating-profanity-review.ts");
+const { reviewDatingProfanity } = compile("lib/dating-profanity-review.ts", boundaryRequire);
+const { reviewDatingContactText } = compile("lib/dating-contact-text-review.ts");
 const confirmationRules = compile("lib/dating-review-confirmation.ts");
 const nameRules = compile("lib/dating-1on1-name-review.ts");
 
@@ -30,6 +36,7 @@ for (const value of [
   "fuck", "fucking", "f.u.c.k", "f u c k", "f**k", "f*ck", "ｆｕｃｋ", "motherfucker",
   "shit", "sh1t", "sh!t", "s.h.i.t", "bullshit", "bitch", "b1tch", "b!tch", "b.i.t.c.h", "asshole", "bastard", "cunt",
   "fuck_you", "씨발 같은 욕설은 하지 않아요",
+  "존 나 짜증나", "공존? 나름 운동해요. 그래도 존나", "존\n나",
 ]) {
   test("profanity review flags explicit/obfuscated text: " + value, () => {
     const result = reviewDatingProfanity({ intro: value });
@@ -52,6 +59,7 @@ for (const value of [
   "음식을 천천히 씹고 먹어요", "미친 듯이 운동했어요", "조나단과 존나단이라는 이름을 들어봤어요",
   "어머니와 아버지를 존경해요", "ㅁㄴㅇㄹ", "ㄱㅅ", "ㅇㅂㅅㄱ", "swimming class", "assistant manager",
   "I live in Scunthorpe", "shiitake mushrooms", "shitake mushrooms", "night shift", "favorite shirt", "Scunthorpe에서 살았어요",
+  "에겐과 테토의 공존?)\n- 나름 운동합니다", "차분함과 활발함의 공존, 나만의 취미가 있어요",
 ]) {
   test("profanity false-positive regression: " + value, () => {
     assert.deepEqual(reviewDatingProfanity({ intro: value }), { level: "clear", flags: [] });
@@ -112,6 +120,10 @@ const suspicious = [
   ["no FWB but sexting please", "high"], ["폰섹은 싫지만 초대남은 구해요", "high"],
   ["정액 사진", "high"], ["자위 중독", "high"],
   ["야.스 가능", "high"], ["색 스 할분", "high"],
+  ["야한여자", "medium"], ["다정하고 야한 사람", "medium"], ["야한 남자 입니다", "medium"],
+  ["가슴 크신 분", "medium"], ["가슴이.. 조금 크셨으면", "medium"], ["가슴 좋으신 분", "medium"],
+  ["성적인 취향이 맞는 분", "high"], ["은꼴 좋아요", "high"], ["음 경 크기", "high"],
+  ["음\n경", "high"], ["음.핵", "high"], ["잘 웃음, 경제관념 있어요. 음경", "high"],
 ];
 for (const [text, level] of suspicious) {
   test("sexual signal: " + text, () => {
@@ -147,6 +159,13 @@ const ordinary = [
   "ㅅㅅ 파트너는 안 구합니다", "야스 사절입니다", "초대남 사절", "몸캠은 거절합니다",
   "no FWB", "not looking for hookups", "not interested in sexting", "don't want sex", "FWB is not for me",
   "야 스쿼트 같이 하자", "회색 스니커즈를 좋아해요", "야스 사절입니다. 주말엔 운동하고 있어요",
+  "잘 웃음\n- 경제관념 있고", "리액션 좋음, 표현력 좋음, 경청 잘 함", "여사친 문제 없음, 경제관념 뚜렷함",
+  "잘 웃음🙂경제관념 있어요", "차분함과 따뜻한 마음, 핵심을 잘 파악해요",
+  "닮은 꼴로는 배우 이야기를 들어요", "닮은꼴은 없어요", "감성적인 취향을 공유하고 싶어요",
+  "이성적인 취향이 비슷한 사람이 좋아요", "외적인 것은 크게 보지는 않지만 약속은 중요해요",
+  "늦게 자지는 못해요", "외모만 보지만 않으면 좋아요", "겉모습만 보지는 마세요",
+  "가슴 큰 근육을 키우려 운동합니다", "가슴 운동과 닭가슴살", "좋아야 한다고 생각해요",
+  "야한 사람은 사절입니다", "야한 여자를 원하지 않아요",
 ];
 for (const text of ordinary) {
   test("ordinary/refusal text stays unflagged: " + text, () => {
@@ -328,6 +347,7 @@ function loadRoute(db, options = {}) {
     "@/lib/dating-sexual-text-review": { reviewDatingSexualText },
     "@/lib/dating-intro-quality-review": { reviewDatingIntroQuality },
     "@/lib/dating-profanity-review": { reviewDatingProfanity },
+    "@/lib/dating-contact-text-review": { reviewDatingContactText },
     "@/lib/dating-review-confirmation": confirmationRules,
     "node:crypto": require("node:crypto"),
     "@/lib/dating-cards-queue": { promotePendingCardsBySex: () => { throw new Error("Unexpected promotion"); } },
@@ -438,6 +458,36 @@ test("normal complete card is not added to the default review list", async () =>
   assert.equal((await (await route.POST(request("one_on_one"))).json()).items.length, 0);
 });
 
+for (const value of ["잘 웃음, 경제관념 있고 약속을 잘 지켜요", "에겐과 테토의 공존?)\n- 나름 운동하고 있어요",
+  "닮은 꼴은 없지만 다정하고 감성적인 취향입니다", "외적인 것은 크게 보지는 않지만 서로를 배려해요",
+  "체대출신이고 외부업무가 많아 주말에는 쉬어요", "투자 공부와 코인노래방이 취미예요"]) {
+  test('context-aware review keeps normal prose out of the admin list: ' + value, async () => {
+    const route = loadRoute(database(fixtures(value)));
+    const body = await (await route.POST(request('all'))).json();
+    assert.equal(body.items.length, 0);
+  });
+}
+for (const value of ['투자 문의 주세요', '코인 수익 보장', '부업 모집', '대출 상담 가능']) {
+  test('commercial solicitation stays visible: ' + value, async () => {
+    const route = loadRoute(database(fixtures(value)));
+    const body = await (await route.POST(request('one_on_one'))).json();
+    assert.ok(body.items[0].review.flags.includes('광고/상업성 문구 의심'));
+  });
+}
+test('numerous contact findings cannot hide sexual and profanity findings', async () => {
+  const value = Array.from({length: 12}, (_, i) => '@fixture' + i).join(' ') + ' 섹파 구해요 씨발';
+  const route = loadRoute(database(fixtures(value)));
+  const body = await (await route.POST(request('one_on_one'))).json();
+  const review = body.items[0].review;
+  assert.equal(review.suspicionLevel, 'high');
+  for (const flags of [review.flags, review.textFlags]) {
+    assert.ok(flags.some(flag => flag.includes('성적')));
+    assert.ok(flags.some(flag => flag.includes('욕설')));
+    assert.ok(flags.some(flag => flag.includes('외부 계정')));
+    assert.ok(flags.length <= 10);
+  }
+});
+
 test("rescan replaces a stale clear result and clears a quality flag after the author improves their text", async () => {
   const db = database(fixtures("배려하며 잘 웃어요")), route = loadRoute(db);
   await route.POST(request("one_on_one"));
@@ -459,6 +509,45 @@ test("existing external contact detection remains active", async () => {
   const body = await (await route.POST(request("one_on_one"))).json();
   assert.equal(body.items[0].review.suspicionLevel, "high");
   assert.ok(body.items[0].review.flags.some((flag) => /연락|계정/.test(flag)));
+});
+
+for (const source of sources) test(source + ' bare contact appears with evidence, but only review records change', async () => {
+  const db = database(fixtures('운동과 산책을 좋아하는 사람입니다.\nfixture_handle'));
+  const route = loadRoute(db), before = structuredClone(db.tables);
+  const response = await route.POST(request(source)), result = await response.json();
+  assert.equal(response.status, 200); assert.equal(result.items.length, 1);
+  const item = result.items[0];
+  assert.equal(item.review.suspicionLevel, 'medium');
+  assert.ok(item.review.flags.some(flag => flag.includes('감지: fixture_handle')));
+  assert.ok(item.confirmationSnapshot);
+  for (const table of Object.keys(before).filter(t => !t.startsWith('admin_'))) assert.deepEqual(db.tables[table], before[table]);
+  assert.equal((await route.PATCH(confirmationRequest(item))).status, 200);
+  assert.equal((await (await route.GET(listRequest(source))).json()).items.length, 0);
+});
+
+test('1:1 request metadata cannot create author contact, commercial or unsafe findings', async () => {
+  const route = loadRoute(database(fixtures()));
+  const result = route.testRuleReview({ sourceType:'one_on_one_application', cardId, userId:owner, status:'source_selected',
+    displayName:'민수', photoPaths:['a','b'], texts:{name:'민수',intro:'산책과 운동을 좋아하는 차분한 사람입니다.',
+      strengths:'약속을 잘 지키고 이야기를 잘 들어줍니다.',preferredPartner:'다정한 사람이 좋아요',
+      candidateName:'@other_handle 투자 문의',candidateUserId:'fixture99',candidateCardId:'example_handle',
+      matchId:'01012345678',sourceCardId:'bry__fixture',instagramId:'external_handle'} });
+  assert.equal(result.suspicionLevel,'clear');
+});
+
+test('1:1 application review batches source and recipient lookups', async () => {
+  const seed = fixtures('운동과 산책을 좋아하는 사람입니다.\nfixture_handle');
+  const template = seed.dating_1on1_cards[0], proposal = seed.dating_1on1_match_proposals[0];
+  seed.dating_1on1_cards = Array.from({length:140}, (_,i)=>({...template,id:uid(i+1000),user_id:uid(i+2000)}));
+  seed.profiles = seed.dating_1on1_cards.map(c=>({user_id:c.user_id,nickname:'검증회원'}));
+  seed.dating_1on1_match_proposals = Array.from({length:70},(_,i)=>({...proposal,id:uid(i+3000),
+    source_card_id:seed.dating_1on1_cards[i].id,source_user_id:seed.dating_1on1_cards[i].user_id,
+    candidate_card_id:seed.dating_1on1_cards[i+70].id,candidate_user_id:seed.dating_1on1_cards[i+70].user_id}));
+  const db=database(seed), route=loadRoute(db);
+  const result=await (await route.POST(request('one_on_one_application',{limit:100}))).json();
+  assert.equal(result.scannedCount,70); assert.equal(result.items.length,70);
+  assert.equal(db.calls.filter(c=>c.table==='dating_1on1_cards'&&c.op==='select').length,2);
+  assert.equal(db.calls.filter(c=>c.table==='profiles'&&c.op==='select').length,2);
 });
 test("denied admin cannot scan or read member data", async () => {
   const db = database(fixtures()), route = loadRoute(db, { denied: true });
@@ -756,6 +845,38 @@ test('scheduled review remains cron-only and fails safely if nickname lookup fai
   const failing = database(fixtures(), { fail: q => q.table === 'profiles' });
   assert.equal((await loadRoute(failing, { cron: true }).GET(new Request('https://fixture.invalid'))).status, 500);
   assert.equal(failing.tables[reviewTable].length, 0);
+});
+
+test('scheduled rules scan reaches profiles beyond REST first 1000 and is idempotent',async()=>{
+  const seed=fixtures('운동과 산책을 좋아하는 사람입니다.\nfixture_handle'), template=seed.dating_1on1_cards[0];
+  seed.dating_1on1_cards=Array.from({length:1205},(_,i)=>({...template,id:uid(i+1000)}));
+  const db=database(seed), cron=loadRoute(db,{cron:true});
+  const first=await (await cron.GET(new Request('https://fixture.invalid'))).json();
+  assert.equal(first.scanned,1205); assert.equal(first.reviewRows,1205); assert.equal(first.scanLimitReached,false);
+  assert.equal(db.tables[reviewTable].length,1205);
+  assert.ok(db.tables[reviewTable].every(r=>r.flags.some(f=>f.includes('fixture_handle'))));
+  assert.equal((await (await cron.GET(new Request('https://fixture.invalid'))).json()).reviewRows,0);
+});
+
+test('rule version upgrade preserves unchanged manual AI photo findings',async()=>{
+  const {db}=await scanFixture();
+  db.tables[reviewTable][0].raw_result.provider='gemini';
+  db.tables[reviewTable][0].raw_result.confirmationRulesVersion='old-photo-review';
+  db.tables[reviewTable][0].photo_flags=['관리자가 확인한 사진 사유'];
+  const before=structuredClone(db.tables[reviewTable]);
+  await loadRoute(db,{cron:true}).GET(new Request('https://fixture.invalid'));
+  assert.deepEqual(db.tables[reviewTable],before);
+});
+
+test('old-rule confirmation cannot hide a newly reviewable contact result',async()=>{
+  const {db,route,item}=await scanFixture();
+  assert.equal((await route.PATCH(confirmationRequest(item))).status,200);
+  db.tables[reviewTable][0].raw_result.confirmationRulesVersion='legacy-contact-rules';
+  db.tables.dating_1on1_cards[0].intro_text='운동과 산책을 좋아하는 사람입니다.\nfixture_handle';
+  const result=await (await route.GET(listRequest('one_on_one'))).json();
+  assert.equal(result.items.length,1);
+  assert.ok(result.items[0].flags.some(f=>f.includes('fixture_handle')));
+  assert.equal(result.items[0].confirmationCurrent,false);
 });
 test("older unconfirmed rows are reachable behind 300 confirmed rows without hydrating all photos", async () => {
   const { db, route } = await scanFixture("open_card");

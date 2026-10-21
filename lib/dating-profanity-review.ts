@@ -1,3 +1,5 @@
+import { compactReviewText, joinsUnrelatedWords } from "@/lib/dating-review-text-boundaries";
+
 // Admin review only. A keyword match is not proof of harassment and must never auto-ban.
 export type DatingProfanityReview = {
   level: "clear" | "medium" | "high";
@@ -61,9 +63,10 @@ export function reviewDatingProfanity(texts: Record<string, unknown>): DatingPro
   for (const [key, label] of Object.entries(FIELD_LABELS)) {
     const text = normalizedText(texts[key]);
     if (!text) continue;
-    const compact = text.replace(/[\s\p{P}\p{S}]/gu, "");
+    const compact = compactReviewText(text);
     for (const rule of RULES) {
-      const hit = (rule.compact ? compact : text).matchAll(rule.pattern).next().value;
+      const hit = [...(rule.compact ? compact.text : text).matchAll(rule.pattern)].find(match =>
+        !(rule.compact && match[0] === "존나" && joinsUnrelatedWords(text, compact.positions, match.index!, match[0].length)));
       if (!hit) continue;
       flags.add(`${label}: ${rule.label} (감지: ${readableHit(hit[0])})`);
       if (level === "clear" || rule.level === "high") level = rule.level;
