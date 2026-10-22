@@ -65,8 +65,6 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
           <ReceivedContactNudge item={nudge.received_from_other} matchId={matchId} canMarkRead={nudge.read_receipts_available && nudge.can_mark_read} />
         </div>
       ) : null}
-      {!included ? <div className="mt-2"><ContactCarePanel key={matchId} matchId={matchId} guideOnly /></div> : null}
-      {!included && <PaymentCardNotice className="mt-2" compact={compact} />}
       {discount ? <p className="mt-2 text-xs font-semibold text-[#f0003d]">
         {discount.active ? <>첫 교환 25% 할인 <span className="ml-1 font-normal text-neutral-400 line-through">20,000원</span>
           <span className="ml-1 font-normal text-neutral-500">· {new Date(discount.expiresAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}까지</span></> : "진행 중인 할인 주문 · 기존 금액 유지"}
@@ -79,16 +77,20 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
         className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl bg-[#f0003d] px-3 py-2 text-sm font-semibold text-white hover:bg-[#d90037] disabled:opacity-50">
         {processing ? (included ? "교환 중..." : "결제 준비 중...") : included ? "무료로 번호교환" : "연락처 교환하기"}
       </button>
-      {!included ? <p id={priceDescriptionId} className="mt-1 text-center text-xs font-medium text-neutral-600">
-        {amount.toLocaleString("ko-KR")}원
-      </p> : null}
+      {!included ? <div className="mt-1 flex flex-wrap items-center justify-center gap-x-2 text-xs leading-5 text-neutral-600">
+        <p id={priceDescriptionId} className="font-semibold text-neutral-800">{amount.toLocaleString("ko-KR")}원</p>
+        <span>이번 상대와의 연락처 교환 · 1회 결제</span>
+      </div> : null}
+      {!included && <PaymentCardNotice className="mt-2" compact />}
       {!included ? (
         <details className="mt-2 text-[11px] leading-5 text-neutral-500">
           <summary className="min-h-[44px] cursor-pointer content-center py-2">연락처 교환 안내</summary>
           <p className="mt-1">한 분이 결제를 완료하면 두 분 모두 연락처를 확인할 수 있어요. 각각 결제할 필요는 없어요.</p>
+          <p className="mt-1">연락처 공개는 실제 대화나 만남을 보장하지 않아요. 상대의 프로필과 한마디를 확인한 뒤 결정해 주세요.</p>
           {help}
         </details>
       ) : null}
+      {!included ? <div className="mt-1"><ContactCarePanel key={matchId} matchId={matchId} guideOnly /></div> : null}
       <OneOnOneContactNudge matchId={matchId} nudge={nudge} hideReceived compact={compact} processing={nudgeProcessing} onSend={onNudge} />
     </div>
   );

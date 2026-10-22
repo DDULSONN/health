@@ -11,13 +11,11 @@ export function isMissingDatingBlocksTableError(error: unknown): boolean {
   if (!error || typeof error !== "object") return false;
   const code = String((error as { code?: unknown }).code ?? "");
   const message = String((error as { message?: unknown }).message ?? "").toLowerCase();
-  return (
-    code === "42P01" ||
-    code === "PGRST205" ||
-    message.includes("dating_user_blocks") ||
-    message.includes("could not find the table") ||
-    message.includes("does not exist")
-  );
+  // A permissions/timeout error mentioning the table is NOT an empty block list.
+  // Only a confirmed missing relation may use the legacy-schema fallback.
+  return code === "42P01" || code === "PGRST205" ||
+    (!code && message.includes("dating_user_blocks") &&
+      (message.includes("could not find the table") || /relation .+ does not exist/.test(message)));
 }
 
 export async function getDatingBlockedUserIds(

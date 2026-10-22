@@ -3,6 +3,7 @@
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { isSiteAnnouncementActive, SITE_ANNOUNCEMENT } from "@/lib/site-announcement";
+import ContactPriceUpdateNotice from "@/components/dating/ContactPriceUpdateNotice";
 
 const STORAGE_KEY = `site-announcement:${SITE_ANNOUNCEMENT.id}`;
 // Site-wide notice, but never interrupt authentication, verification, checkout
@@ -74,29 +75,5 @@ export default function PaymentMethodAnnouncement() {
 
   if (!open || !isVisiblePath(pathname) || !isSiteAnnouncementActive()) return null;
 
-  return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/45 px-5 py-8">
-      <section
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="site-announcement-title"
-        className="w-full max-w-sm rounded-lg border border-neutral-200 bg-white p-5 shadow-2xl"
-      >
-        <p className="text-xs font-semibold text-rose-600">새 소식</p>
-        <h2 id="site-announcement-title" className="mt-2 text-xl font-bold text-neutral-950">
-          {SITE_ANNOUNCEMENT.title}
-        </h2>
-        <p className="mt-3 text-sm leading-6 text-neutral-600">
-          {SITE_ANNOUNCEMENT.message}
-        </p>
-        <button
-          type="button"
-          onClick={close}
-          className="mt-5 min-h-12 w-full rounded-lg bg-neutral-950 px-4 text-sm font-semibold text-white transition-colors hover:bg-neutral-800 active:bg-neutral-700"
-        >
-          확인
-        </button>
-      </section>
-    </div>
-  );
+  return <ContactPriceUpdateNotice onClose={close} />;
 }

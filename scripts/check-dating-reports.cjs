@@ -143,6 +143,8 @@ for (const [type, id] of [["open_card_application", appId], ["paid_card_applicat
     assert.equal(result.res.status, 200);
     assert.equal(result.db.tables.dating_user_reports[0].reported_user_id, other);
     assert.equal(result.body.blocked, true);
+    assert.equal(result.body.blocked_user_id, other);
+    if (type.startsWith("one_on_one_")) assert.equal(result.body.blocked_card_id, cardId);
     assert.ok(result.db.tables.dating_user_reports[0].reason.includes(userBody.detail));
   });
 }
@@ -151,6 +153,8 @@ for (const type of ["open_card_application", "paid_card_application", "one_on_on
     const result = await submit(userPath, initial(), { userId: other }, { ...userBody, target_type: type, target_id: type === "one_on_one_match" ? matchId : appId });
     assert.equal(result.res.status, 200);
     assert.equal(result.db.tables.dating_user_reports[0].reported_user_id, reporter);
+    assert.equal(result.body.blocked_user_id, reporter);
+    if (type === "one_on_one_match") assert.equal(result.body.blocked_card_id, ownId);
   });
 }
 for (const [name, options, body, status] of [
@@ -202,6 +206,8 @@ for (const file of [userPath, openPath]) {
     const result = await submit(file, initial(), { fail: (q) => q.table === "dating_user_blocks" ? thrown ? new Error("simulated network") : { code: "XX000" } : null }, payload);
     assert.equal(result.body.ok, true);
     assert.equal(result.body.blocked, false);
+    assert.equal(result.body.blocked_user_id, null);
+    if (file === userPath) assert.equal(result.body.blocked_card_id, null);
     assert.ok(result.body.message.includes("차단을 완료하지 못했습니다"));
     assert.equal(result.db.tables.dating_1on1_match_proposals[0].state, "source_selected");
   });

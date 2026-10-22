@@ -67,7 +67,7 @@ async function main() {
       assert.equal(await page.getByRole('button', { name: '무료로 번호교환', exact: true }).getAttribute('aria-describedby'), null);
     }
     for (const state of ['none', 'error', 'invalid']) {
-      scenario = state; await page.goto(origin); await priceBelowButton('20,000');
+      scenario = state; await page.goto(origin); await priceBelowButton('18,000');
       await page.waitForTimeout(150); assert.equal(await page.getByText('첫 교환 25% 할인', { exact: false }).count(), 0);
       await button.click();
       assert.equal(JSON.parse(await page.getByLabel('전달한 요청').innerText()).offerId, undefined);
@@ -76,7 +76,7 @@ async function main() {
     await priceBelowButton('15,000');
     scenario = 'slow'; await page.goto(origin); await page.getByLabel('다른 매칭').check();
     await page.waitForTimeout(550); assert.equal(await page.getByText('15,000원', { exact: true }).count(), 0);
-    await priceBelowButton('20,000'); await button.click();
+    await priceBelowButton('18,000'); await button.click();
     assert.equal(JSON.parse(await page.getByLabel('전달한 요청').innerText()).matchId, '00000000-0000-4000-8000-000000000003');
     assert.deepEqual(errors, []);
     console.log(JSON.stringify({ ok: true, widths: [320, 390, 768], states: ['discount', 'free', 'none', 'error', 'invalid', 'existing', 'late-other-match'], automaticPayments: 0, reads, screenshots: output }));

@@ -49,7 +49,7 @@ const root=path.resolve(__dirname,'..');
     for(const width of [320,390,768]){
       await page.setViewportSize({width,height:1000});await page.goto(origin+'/community/dating/cards?tab=one_on_one');
       const exchange=page.getByRole('button',{name:'연락처 교환하기',exact:true});await exchange.waitFor();
-      const price=page.getByText('20,000원',{exact:true});await price.waitFor();
+      const price=page.getByText('18,000원',{exact:true});await price.waitFor();
       assert.equal(await exchange.getAttribute('aria-describedby'),await price.getAttribute('id'));
       assert.equal(await page.getByLabel('기존 결제 동작 호출').innerText(),'0');assert.equal(sends,0);
       await exchange.click();assert.equal(await page.getByLabel('기존 결제 동작 호출').innerText(),'1');

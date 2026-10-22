@@ -11,9 +11,12 @@ const prefix = 'gymtools:growth:v1:';
 // post-success registration payloads are exercised by check-dating-photo-upload-browser.cjs.
 const baselines = {
  // Signup-journey copy/read recovery only; unchanged mutations also pinned in check-onboarding-user.cjs.
- 'app/onboarding/dating/page.tsx': '4b6d249b0b3a48b190f05c9a6c174c4b2dcb21b2b54a8cdf0bfbda741374cc4d',
+ // Reviewed job/photo guidance only; no new required fields or persistence changes.
+ 'app/onboarding/dating/page.tsx': '974822c2530d485308960aa984743008bb3a622cfe9276cebc1320ac570131b6',
  'app/dating/1on1/page.tsx': '4594d2f8d889979fc2a10ea59cf701a5ec5c67ad23900d68bb9ab77d298102bc',
- 'app/community/dating/cards/new/page.tsx': '89363bb447feb8d0d0793b02cfafd67338b62e87473165c56ac38cfd44c63299',
+ // Bounded raw/lite/blur upload and error text; save-after-all-upload contract
+ // and unchanged-photo preservation exercised by check-dating-trust-ux-browser.cjs.
+ 'app/community/dating/cards/new/page.tsx': '578f51961a523fcc40bb18e4a48e01be7a0f733c3b253611a1a5695c19e40530',
  'app/api/dating/cards/my/route.ts': 'b832effc2aeb9fb3918b040bf8cf70e7e31c698c02e6ee14628543d3d9642412',
  'app/api/dating/1on1/cards/route.ts': '498240e6c2b59b9fcf2737c6cc756cbfc2f6cc003066e7fa0bf9bdd9dc24a846',
  'app/api/payments/toss/create/route.ts': 'a6d250de0ca3dbc374a988815f80622d0c9331382e5507746fd5ec2c52ced60a',

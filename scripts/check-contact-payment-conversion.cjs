@@ -19,6 +19,25 @@ function load(file, mocks = {}, globals = {}) {
   return mod.exports;
 }
 const price = load('lib/dating-contact-price.ts');
+test('new standard checkout is exactly 10% lower; old order price remains explicitly supported', () => {
+  assert.equal(price.ONE_ON_ONE_CONTACT_PRICE_KRW, 18000);
+  assert.equal(price.LEGACY_ONE_ON_ONE_CONTACT_PRICE_KRW, 20000);
+  assert.equal(price.ONE_ON_ONE_CONTACT_PRICE_KRW, price.LEGACY_ONE_ON_ONE_CONTACT_PRICE_KRW * 0.9);
+  assert.match(read('app/api/payments/toss/create/route.ts'), /one_on_one_contact_exchange: \{\s*amount: ONE_ON_ONE_CONTACT_PRICE_KRW,/);
+  for (const file of ['app/mypage/page.tsx', 'app/community/dating/cards/page.tsx']) {
+    assert.match(read(file), /amount: body.amount \?\? ONE_ON_ONE_CONTACT_PRICE_KRW/);
+  }
+});
+test('approved announcement uses the new price and the existing site-wide host', () => {
+  const draft = load('lib/contact-price-update-notice.ts', { '@/lib/dating-contact-price': price }).CONTACT_PRICE_UPDATE_NOTICE;
+  assert.equal(draft.price, 18000); assert.equal(draft.previousPrice, 20000);
+  assert.match(draft.priceLabel, /10%/); assert.match(draft.paragraphs.join(' '), /프로필 검수와 신고 대응/);
+  assert.equal(draft.startsAt, undefined); assert.equal(draft.endsAt, undefined);
+  assert.doesNotMatch(read('app/layout.tsx'), /ContactPriceUpdateNotice/);
+  assert.match(read('lib/site-announcement.ts'), /contact-price-update-notice/);
+  assert.match(read('components/PaymentMethodAnnouncement.tsx'), /return <ContactPriceUpdateNotice onClose=\{close\}/);
+  assert.doesNotMatch(JSON.stringify(draft), /\uFFFD/);
+});
 const nudge = load('lib/dating-1on1-contact-nudge.ts');
 const nudgeUI = load('components/dating/OneOnOneContactNudge.tsx', { '@/lib/dating-1on1-contact-nudge': nudge });
 const notice = load('components/PaymentCardNotice.tsx', { '@/lib/payment-card-notice': load('lib/payment-card-notice.ts') });
@@ -39,7 +58,8 @@ test('matching offer displays the real name and server-shared price, with paymen
   assert.ok(html.includes('테스트상대님과 서로 수락했어요'));
   assert.ok(html.includes('결제 완료 후 서로의 연락처가 공개돼요.'));
   assert.match(html, /<button[^>]*>연락처 교환하기<\/button>/);
-  assert.match(html, /<\/button><p[^>]*>20,000원<\/p><details/);
+  assert.match(html, /<\/button><div[^>]*><p[^>]*>18,000원<\/p>/);
+  assert.ok(html.includes('이번 상대와의 연락처 교환 · 1회 결제'));
   assert.ok(html.indexOf('한 분이') > html.indexOf('<details'));
   assert.ok(!html.includes('�'));
   assert.ok(read('app/api/payments/toss/create/route.ts').includes('amount: ONE_ON_ONE_CONTACT_PRICE_KRW'));
@@ -50,8 +70,8 @@ test('full and compact offers associate the visible price below the button for s
     const html = offer({ compact });
     const descriptionId = html.match(/<button[^>]*aria-describedby="([^"]+)"/)?.[1];
     assert.ok(descriptionId);
-    assert.ok(html.includes(`<p id="${descriptionId}" class="mt-1 text-center text-xs font-medium text-neutral-600">20,000원</p>`));
-    assert.ok(html.indexOf('20,000원') < html.indexOf('<details'));
+    assert.ok(html.includes(`<p id="${descriptionId}" class="font-semibold text-neutral-800">18,000원</p>`));
+    assert.ok(html.indexOf('18,000원') < html.indexOf('<details'));
   }
   const html = renderToStaticMarkup(React.createElement(React.Fragment, null,
     React.createElement(Offer, defaults), React.createElement(Offer, { ...defaults, compact: true })));
@@ -69,12 +89,12 @@ test('received message appears exactly once above checkout; no received message 
 test('legacy included exchanges stay free and pending checkout disables its only payment button', () => {
   const html = offer({ included: true, processing: true, nudge: summary });
   assert.ok(html.includes('교환 중...')); assert.ok(html.includes('disabled=""'));
-  assert.ok(!html.includes('20,000')); assert.ok(!html.includes('현대·KB국민·우리카드'));
+  assert.ok(!html.includes('18,000')); assert.ok(!html.includes('현대·KB국민·우리카드'));
   assert.ok(!html.includes('aria-describedby'));
   assert.ok(offer({ included: true }).includes('무료로 번호교환'));
   const paid = offer({ processing: true });
   assert.match(paid, /<button[^>]*disabled=""[^>]*>결제 준비 중\.\.\.<\/button>/);
-  assert.match(paid, /<\/button><p[^>]*>20,000원<\/p>/);
+  assert.match(paid, /<\/button><div[^>]*><p[^>]*>18,000원<\/p>/);
 });
 test('long/Korean names and preset text are escaped; outgoing nudge controls remain available separately', () => {
   const html = offer({ name: '<script>테스트</script>', nudge: { ...summary, can_send: true } });
@@ -149,6 +169,16 @@ for (const [status, expected] of [['DONE','paid'], ['READY','retry'], ['ABORTED'
     assert.ok(!JSON.stringify(result.view).includes('phone'));
   });
 }
+for (const amount of [18000, 20000]) test(`new/legacy ${amount} order keeps provider amount, ownership and paid-state safety`, async () => {
+  for (const [status, state] of [['READY', 'retry'], ['DONE', 'paid'], ['IN_PROGRESS', 'pending']]) {
+    const result = await fixture({ order: { amount }, payment: { totalAmount: amount, status } }).run();
+    assert.equal(result.view.amount, amount); assert.equal(result.view.state, state);
+    assert.equal(Boolean(result.checkoutUrl), status === 'READY');
+  }
+  const mismatch = await fixture({ order: { amount }, payment: { totalAmount: 1, status: 'READY' } }).run();
+  assert.equal(mismatch.checkoutUrl, null); assert.equal(mismatch.view.state, 'unavailable');
+});
+
 test('provider mismatch, injected checkout URL, or unavailable provider never allow a new payment', async () => {
   for (const payment of [{ orderId: 'wrong' }, { totalAmount: 1 }, { status: 'READY', checkout: { url: 'https://tosspayments.com.evil.test' } }, { status: 'READY', checkout: { url: 'javascript:alert(1)' } }]) {
     const result = await fixture({ payment }).run(); assert.notEqual(result.view.state, 'retry'); assert.equal(result.checkoutUrl, null);
@@ -269,9 +299,10 @@ for (const [file,name] of [['app/mypage/page.tsx','handleRequestOneOnOneContactE
     const ast=ts.createSourceFile(file,read(file),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);let initializer;
     function visit(n){if(ts.isVariableDeclaration(n)&&n.name.getText(ast)===name)initializer=n.initializer.getText(ast);ts.forEachChild(n,visit);}visit(ast);
     const compiled=ts.transpileModule('const handler = '+initializer,{compilerOptions:{target:ts.ScriptTarget.ES2022}}).outputText;
-    for(const amount of [15000,20000,undefined]){
+    for(const amount of [15000,18000,20000,undefined]){
       const destination={href:'unchanged'},analytics=[],alerts=[];
       const globals={useCallback:fn=>fn,oneOnOneContactCheckoutLocksRef:{current:new Set()},reloadOneOnOneHome:async()=>{},
+        ONE_ON_ONE_CONTACT_PRICE_KRW: price.ONE_ON_ONE_CONTACT_PRICE_KRW,
         setProcessingOneOnOneContactExchangeIds:()=>{},setProcessingOneOnOneContactIds:()=>{},withPaymentCardNotice:v=>v,
         window:{location:destination},trackCheckoutStarted:value=>analytics.push(value),alert:value=>alerts.push(value),
         fetch:async()=>Response.json({ok:true,amount,checkoutUrl:'https://api.tosspayments.com/fixture'})};

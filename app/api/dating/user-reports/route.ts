@@ -351,6 +351,8 @@ async function submitReport(req: Request) {
   return NextResponse.json({
     ok: true,
     ...followUp,
+    blocked_user_id: followUp.blocked ? resolved.reportedUserId : null,
+    blocked_card_id: followUp.blocked ? resolved.targetCardId : null,
     already_reported: alreadyReported,
     message: reportResultMessage(alreadyReported, followUp.blocked, followUp.pending_matches_canceled),
   });

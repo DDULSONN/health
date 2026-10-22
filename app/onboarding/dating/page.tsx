@@ -783,7 +783,10 @@ export default function DatingOnboardingPage() {
                     {targets.oneOnOne && <TextField {...fieldProps("name")} value={name} onChange={setName} label="이름" placeholder="1:1 프로필에 표시되는 이름" className="sm:col-span-2" maxLength={30} />}
                     <TextField {...fieldProps("birthYear")} value={birthYear} onChange={(value) => setBirthYear(value.replace(/\D/g, "").slice(0, 4))} label="출생연도" placeholder="예: 1996" inputMode="numeric" />
                     <TextField {...fieldProps("heightCm")} value={heightCm} onChange={(value) => setHeightCm(value.replace(/\D/g, "").slice(0, 3))} label="키(cm)" placeholder="예: 175" inputMode="numeric" />
-                    <TextField {...fieldProps("job")} value={job} onChange={setJob} label="직업" placeholder="직업" className="sm:col-span-2" maxLength={targets.open ? 50 : 80} />
+                    <div className="sm:col-span-2">
+                      <TextField {...fieldProps("job")} value={job} onChange={setJob} label="직업" placeholder="예: IT 서비스 개발자, 병원 간호사" maxLength={targets.open ? 50 : 80} />
+                      <p className="mt-1 text-xs leading-5 text-neutral-500">회사명은 적지 않아도 괜찮아요. 어떤 일을 하는지 알려주세요.</p>
+                    </div>
                     <TextField {...fieldProps("region")} value={region} onChange={setRegion} label="지역" placeholder="예: 서울 마포구" className="sm:col-span-2" maxLength={targets.open ? 30 : 80} />
                   </div>
                 </div>
@@ -848,6 +851,7 @@ export default function DatingOnboardingPage() {
                   </div>
                   <PhotoPreparationStatus pending={photoPreparation.pending} errors={["", ""]} />
                   <p className="mt-3 text-xs leading-5 text-neutral-500">장당 10MB 이하. {HEIC_HELP}</p>
+                  <p className="mt-1 text-xs leading-5 text-neutral-500">최근 본인 모습이 잘 보이는 사진을 올려주세요. 다른 사람의 사진이나 실제 모습과 다른 AI 합성 사진은 사용하지 말아 주세요.</p>
                   {targets.open && (
                     <div className="mt-5 border-t border-neutral-200 pt-5">
                       <FieldLabel>오픈카드 사진 공개</FieldLabel>

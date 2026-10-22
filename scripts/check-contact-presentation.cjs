@@ -105,7 +105,8 @@ test('both full match surfaces share grouping and keep focused notification card
   assert.match(home, /match.id !== focusedMatch\?\.id/);
   assert.match(home, /id="selected-one-on-one-match"/);
   const offer = read('components/dating/OneOnOneContactOffer.tsx');
-  assert.ok(offer.indexOf('<ContactCarePanel') < offer.indexOf('<button ref={buttonRef}'));
+  // Checkout is the primary action; support is still accessible below, never fetched on mount.
+  assert.ok(offer.indexOf('<ContactCarePanel') > offer.indexOf('<button ref={buttonRef}'));
   assert.equal((offer.match(/<ContactCarePanel/g) || []).length, 1);
   assert.match(read('components/dating/ContactCarePanel.tsx'), /교환권 지원은 증빙 검토·승인이 필요해요/);
 });

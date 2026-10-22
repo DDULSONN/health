@@ -29,7 +29,7 @@ export async function recordContactPaymentEvent(eventName: ContactPaymentEvent, 
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     const placement = contactPaymentPlacement();
-    if (!placement || !UUID.test(matchId) || ![15000, 20000].includes(amount)) return false;
+    if (!placement || !UUID.test(matchId) || ![15000, 18000, 20000].includes(amount)) return false;
     const controller = new AbortController();
     timer = setTimeout(() => controller.abort(), 5000);
     const response = await fetch("/api/analytics/contact-exchange", {

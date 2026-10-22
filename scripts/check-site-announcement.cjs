@@ -14,7 +14,11 @@ function evaluate(file, imports, globals = {}) {
     name => Object.hasOwn(imports, name) ? imports[name] : require(name), mod, mod.exports, ...Object.values(globals));
   return mod.exports;
 }
-const policy = evaluate('lib/site-announcement.ts', {});
+const noticeContent = evaluate('lib/contact-price-update-notice.ts', {
+  '@/lib/dating-contact-price': evaluate('lib/dating-contact-price.ts', {}),
+});
+const policyImports = { '@/lib/contact-price-update-notice': noticeContent };
+const policy = evaluate('lib/site-announcement.ts', policyImports);
 const notice = policy.SITE_ANNOUNCEMENT;
 const start = Date.parse(notice.startsAt), end = Date.parse(notice.endsAt);
 const key = `site-announcement:${notice.id}`;
@@ -36,7 +40,8 @@ function browser({ at = start + 1000, pathname = '/mypage', storage = new Map(),
   const component = evaluate('components/PaymentMethodAnnouncement.tsx', {
     'react': { useState: () => [open, value => { open = value; }], useEffect: cb => { pendingEffect = cb; } },
     'next/navigation': { usePathname: () => pathname },
-    '@/lib/site-announcement': evaluate('lib/site-announcement.ts', {}, { Date: Clock }),
+    '@/lib/site-announcement': evaluate('lib/site-announcement.ts', policyImports, { Date: Clock }),
+    '@/components/dating/ContactPriceUpdateNotice': { default: 'test-notice' },
   }, { window: dom, document: dom, Date: Clock }).default;
   return {
     render: () => component(),
@@ -58,6 +63,7 @@ function browser({ at = start + 1000, pathname = '/mypage', storage = new Map(),
 }
 function button(node) {
   if (!node || typeof node !== 'object') return null;
+  if (node.type === 'test-notice') return { props: { onClick: node.props.onClose } };
   if (node.type === 'button') return node;
   for (const child of [].concat(node.props?.children ?? [])) { const found = button(child); if (found) return found; }
   return null;
@@ -66,13 +72,11 @@ function button(node) {
 test('new Korean notice replaces the old release and has a fixed 48-hour window', () => {
   assert.equal(end - start, 48 * 3600000);
   assert.notEqual(notice.id, 'one-on-one-refresh-fixed-2026-09-08');
-  assert.equal(notice.title, '1:1 후보 반복 오류 수정');
-  assert.match(notice.message, /일부 계정/);
-  assert.match(notice.message, /실제로 확인한 후보 기록/);
-  assert.match(notice.message, /과거 이용 기록까지 넓혀/);
-  assert.match(notice.message, /중복 없이 메일/);
-  assert.match(notice.message, /기존 매칭 내역은 그대로/);
-  assert.match(notice.message, /불편을 드려 죄송/);
+  assert.equal(notice.title, '더 나은 짐툴을 만들어가겠습니다');
+  assert.match(notice.message, /이용 화면과 사진 등록, 신고·차단 기능/);
+  assert.match(notice.message, /프로필 검수와 신고 대응/);
+  assert.match(notice.message, /꾸준히 개선/);
+  assert.equal(noticeContent.CONTACT_PRICE_UPDATE_NOTICE.price, 18000);
   assert.doesNotMatch(notice.message, /모든 회원|전부 새로운|100%/);
   assert.equal(/\uFFFD/.test(notice.title + notice.message), false);
   assert.equal(policy.isSiteAnnouncementActive(start - 1), false);
@@ -88,9 +92,9 @@ test('new notice still appears after acknowledging the previous notice, but only
   page.navigate('/dating/1on1'); page.advance(start + 2000); assert.equal(page.render(), null);
   const reload = browser({ storage }); reload.mount(); reload.advance(start + 2000); assert.equal(reload.render(), null);
 });
-test('site-wide expansion retains the same incident acknowledgement and fixed expiry', () => {
-  assert.equal(notice.id, 'one-on-one-repeat-repair-2026-10-12');
-  assert.equal(notice.endsAt, '2026-10-14T19:30:00+09:00');
+test('site-wide update has a new acknowledgement and fixed expiry', () => {
+  assert.equal(notice.id, 'contact-price-quality-update-2026-10');
+  assert.equal(notice.endsAt, '2026-10-25T00:00:00+09:00');
   for (const pathname of ['/', '/landing', '/community', '/community/dating/cards', '/dating/1on1', '/mypage', '/chat', '/notifications', '/tools', '/1rm', '/protein']) {
     const page = browser({ pathname }); page.mount(); page.advance(start+1450);
     assert.ok(page.render(), pathname);

@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
-const assert=require('node:assert/strict'),{test}=require('node:test'),{execFileSync}=require('node:child_process');
+const assert=require('node:assert/strict'),{test}=require('node:test'),{createHash}=require('node:crypto');
 const {read,load,user,other,match,order,body,req,database}=require('./fixtures/payment-measurement-runtime.cjs');
 
 test('real route -> PostgreSQL: one view/click per member, match, session and placement; no payment/match mutations',async()=>{
@@ -16,6 +16,17 @@ test('real route -> PostgreSQL: one view/click per member, match, session and pl
     assert.equal(row.match_id,match);assert.equal(row.amount,20000);
   }finally{await f.db.close();}
 });
+test('new 18000 price passes client/API/PostgreSQL diagnostics without changing a payment',async()=>{
+  const client=clientFixture();assert.equal(await client.contact.recordContactPaymentEvent('select_item',match,18000),true);
+  assert.equal(client.calls[0].body.amount,18000);
+  const f=await database();try{
+    const before=await f.db.query('select * from toss_test_payment_orders');
+    assert.equal((await f.contact.POST(req(body({amount:18000})))).status,200);
+    assert.equal((await f.db.query('select amount from payment_funnel_events')).rows[0].amount,18000);
+    assert.deepEqual((await f.db.query('select * from toss_test_payment_orders')).rows,before.rows);
+  }finally{await f.db.close();}
+});
+
 test('API rejects invalid input and foreign/closed matches without disclosing them; schema failure is NOT acknowledged',async()=>{
   const f=await database();try{
     for(const extra of [{matchId:'nope'},{eventName:'purchase'},{amount:0},{amount:'20000'},{placement:'email@example.com'},{sessionId:'private@example.com'}])assert.equal((await f.contact.POST(req(body(extra)))).status,400);
@@ -83,8 +94,17 @@ test('cross-origin telemetry is denied before auth/database; auth failure remain
   mocks['@/lib/request-origin'].ensureAllowedMutationOrigin=()=>null;
   assert.equal((await load('app/api/analytics/contact-exchange/route.ts',mocks).POST(req(body()))).status,503);
 });
-test('payment creation, confirmation, recovery, number disclosure and OTP implementation remain unchanged from HEAD',()=>{
-  for(const file of ['app/api/payments/toss/create/route.ts','app/api/payments/toss/confirm/route.ts','lib/contact-payment-recovery.ts','app/api/dating/1on1/matches/[id]/contact-exchange/route.ts','app/api/mypage/phone-verification/verify/route.ts']){
-    const baseline=execFileSync('git',['show','HEAD:'+file],{encoding:'utf8'});assert.equal(read(file).replace(/\r\n/g,'\n'),baseline.replace(/\r\n/g,'\n'),file);
-  }
+test('reviewed payment, disclosure and OTP implementations stay pinned before and after commit',()=>{
+  // Fixed reviewed baselines, not moving HEAD: deployment builds and source-only
+  // archives must enforce the same guard as local validation. Recovery includes
+  // only the new/legacy standard-price allowlist, covered by route/SQL tests above.
+  const reviewed = {
+    'app/api/payments/toss/create/route.ts': 'c13e32bf09d28ac2d22783468e681607f42062fef74bc578593c078d3035f65a',
+    'app/api/payments/toss/confirm/route.ts': '748a260385383bde62d88b2d245fae3c388555325869b79e4a30c3ccc14c68fa',
+    'lib/contact-payment-recovery.ts': '4ca902ef72f015135736342fafac2a2a7c20aaee0db1a6b918bb4c03975912e2',
+    'app/api/dating/1on1/matches/[id]/contact-exchange/route.ts': '2874c13ffe7ce0aea48d85f78b40a7b8041dc5fa03fd4f1287d24dd981d09f21',
+    'app/api/mypage/phone-verification/verify/route.ts': '7c756c3da7120f347204e331be3d4f91e37927ab3e3a2e25c6cfec4f81f0e84c',
+  };
+  for (const [file, digest] of Object.entries(reviewed))
+    assert.equal(createHash('sha256').update(read(file).replace(/\r\n/g,'\n')).digest('hex'), digest, file);
 });

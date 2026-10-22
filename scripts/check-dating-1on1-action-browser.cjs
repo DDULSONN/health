@@ -382,7 +382,7 @@ async function main() {
                 assert.equal(await focused.getByRole('button', { name: '거절', exact: true }).count(), 1);
               } else if (['journey-checkout', 'journey-shortcut'].includes(scenario)) {
                 await focused.getByRole('button', { name: '연락처 교환하기', exact: true }).waitFor();
-                await focused.getByText('20,000원', { exact: true }).waitFor();
+                await focused.getByText('18,000원', { exact: true }).waitFor();
               } else {
                 assert.equal(await focused.getByRole('button', { name: '연락처 교환하기', exact: true }).count(), 0);
                 if (scenario === 'journey-approved') await focused.getByText('010-0000-0000').waitFor();
@@ -468,9 +468,10 @@ async function main() {
         const summary = page.locator('[data-profile-summary]').filter({ has: button }).first();
         const expand = summary.getByRole('button', { name: '소개 더보기' }); await expand.waitFor();
         assert.equal(await expand.getAttribute('aria-expanded'), 'false');
-        assert.ok((await summary.locator(':scope > p').boundingBox()).height <= 41, 'long intro initially takes at most two lines');
+        const previewSize = await summary.locator(':scope > p').evaluate(el => ({ height: el.getBoundingClientRect().height, lineHeight: parseFloat(getComputedStyle(el).lineHeight) }));
+        assert.ok(previewSize.height <= previewSize.lineHeight * 2 + 1, 'long intro initially takes at most two lines');
         await expand.click();
-        assert.equal(await summary.getByText('끝까지 보이는 소개입니다.', { exact: false }).count(), 2, 'full intro remains available in addition to the preview');
+        assert.equal(await summary.getByText('끝까지 보이는 소개입니다.', { exact: false }).count(), 1, 'expanded introduction appears once, without repeating the preview');
         const detail = summary.locator('div[id]').last(); assert.equal(await detail.isVisible(), true);
         await summary.getByRole('button', { name: '소개 접기' }).click(); assert.equal(await detail.isVisible(), false);
         assert.equal(posts, 0, 'expanding text never sends a request');

@@ -22,6 +22,7 @@ import CandidateImpression from "@/components/dating/CandidateImpression";
 import { getOneOnOneActionSummary, getOneOnOneMatchLabel, isIncomingOneOnOneRequest } from "@/lib/dating-1on1-action-copy";
 import { VIEWER_SESSION_ERROR } from "@/lib/viewer-session-recovery";
 import { ONE_ON_ONE_HOME_HREF } from "@/lib/dating-navigation";
+import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
 import type { OneOnOneContactNudgePresetKey, OneOnOneContactNudgeSummary } from "@/lib/dating-1on1-contact-nudge";
 
 type OneOnOneCardPreview = {
@@ -270,7 +271,7 @@ export default function OneOnOneHomePanel({
           </button>
         </div>
         <p className="mt-1 text-[13px] leading-6 text-neutral-500">
-          마음에 드는 후보에게 매칭을 신청해보세요.
+          프로필을 보고, 마음에 드는 분에게 요청을 보내세요.
         </p>
         {viewerLoggedIn && hasOneOnOneCard ? <div className="mt-3 flex flex-wrap gap-2">
           <Link
@@ -285,8 +286,16 @@ export default function OneOnOneHomePanel({
       {matchGuideOpen ? (
         <div className="mt-4 rounded-xl border border-neutral-200 bg-neutral-50 px-4 py-3">
           <p className="text-xs font-semibold text-neutral-800">1:1 매칭은 이렇게 진행돼요</p>
-          <p className="mt-1.5 text-xs font-normal leading-5 text-neutral-600">
-            프로필 작성 → 매칭 요청 보내기 → 상대가 수락하면 매칭 완료 → 결제 후 연락처 공개
+          <ol className="mt-2 list-inside list-decimal space-y-1 text-xs leading-6 text-neutral-600">
+            <li>프로필을 작성하면 나이와 지역을 고려한 후보를 추천해요.</li>
+            <li>마음에 드는 분에게 요청을 보내고, 상대의 수락을 기다려요.</li>
+            <li>서로 수락한 뒤 연락처를 교환할 수 있어요.</li>
+          </ol>
+          <p className="mt-3 border-t border-neutral-200 pt-2 text-xs leading-5 text-neutral-700">
+            프로필 등록·매칭 요청은 무료예요. 연락처 교환은 건당 {ONE_ON_ONE_CONTACT_PRICE_KRW.toLocaleString("ko-KR")}원이에요.
+          </p>
+          <p className="mt-2 text-[11px] leading-5 text-neutral-500">
+            후보는 시스템이 추천해요. 사진·직업·소개는 회원이 직접 등록한 정보이며, 별도 인증 표시가 없는 정보는 확인된 사실을 뜻하지 않아요.
           </p>
         </div>
       ) : null}
@@ -321,8 +330,10 @@ export default function OneOnOneHomePanel({
             <button type="button" onClick={onRetrySession} className="mt-3 min-h-[44px] rounded-lg border border-neutral-300 bg-white px-3 font-semibold text-neutral-800">로그인 상태 다시 확인</button>
           </div>
         ) : !viewerLoggedIn ? (
-          <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4">
-            <p className="text-sm font-bold text-rose-900">로그인하면 내 1대1 진행 상태를 볼 수 있어요.</p>
+          <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+            <p className="text-sm font-semibold text-neutral-900">내 프로필로 시작하는 1대1 매칭</p>
+            <p className="mt-2 text-[13px] leading-6 text-neutral-600">프로필을 등록하고 추천 후보에게 요청을 보내세요. 서로 수락한 뒤 연락처를 교환할 수 있어요.</p>
+            <p className="mt-2 text-xs leading-5 text-neutral-500">등록·요청 무료 · 연락처 교환 건당 {ONE_ON_ONE_CONTACT_PRICE_KRW.toLocaleString("ko-KR")}원</p>
             <Link
               href={buildLoginRedirect(targetMatchId ? oneOnOneMatchHref(targetMatchId) : ONE_ON_ONE_HOME_HREF)}
               className="mt-3 inline-flex min-h-[42px] items-center rounded-xl bg-rose-600 px-4 text-sm font-bold text-white hover:bg-rose-700"
@@ -338,11 +349,12 @@ export default function OneOnOneHomePanel({
         ) : (
           <div className="flex flex-col gap-5">
             {!hasOneOnOneCard ? (
-          <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-5">
-            <p className="text-lg font-black text-rose-950">아직 1대1 프로필이 없어요.</p>
-            <p className="mt-2 text-sm leading-6 text-rose-900">
-              먼저 신청서를 작성하면 후보 확인과 매칭 진행을 이어갈 수 있어요. 신청은 무료입니다.
+          <div className="rounded-xl border border-neutral-200 bg-neutral-50 p-4">
+            <p className="text-base font-semibold text-neutral-900">내 소개를 등록하고 후보를 만나보세요</p>
+            <p className="mt-2 text-[13px] leading-6 text-neutral-600">
+              사진과 소개를 작성하면 추천 후보를 확인할 수 있어요. 프로필 등록과 매칭 요청은 무료예요.
             </p>
+            <p className="mt-1 text-xs leading-5 text-neutral-500">서로 수락한 후 연락처 교환은 건당 {ONE_ON_ONE_CONTACT_PRICE_KRW.toLocaleString("ko-KR")}원이에요.</p>
             <Link
               href={profileStartHref}
               className="mt-4 inline-flex min-h-[46px] items-center justify-center rounded-xl bg-rose-600 px-5 text-sm font-black text-white hover:bg-rose-700"
@@ -729,15 +741,9 @@ function OneOnOneCandidateCard({
         </div>
       </div>
 
-      {!compact && card?.intro_text ? <p className="mt-3 whitespace-pre-wrap break-words text-xs leading-6 text-neutral-700">{card.intro_text}</p> : null}
-      {!compact && card?.strengths_text ? <p className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-neutral-700">장점: {card.strengths_text}</p> : null}
-      {!compact && card?.preferred_partner_text ? (
-        <p className="mt-1 whitespace-pre-wrap break-words text-xs leading-5 text-neutral-700">원하는 점: {card.preferred_partner_text}</p>
-      ) : null}
-
-      <OneOnOneProfileSummary intro={compact ? card?.intro_text : undefined}
-        strengths={compact ? card?.strengths_text : undefined} preferredPartner={compact ? card?.preferred_partner_text : undefined}>
-      {visiblePhotos.length > 0 ? (
+      <OneOnOneProfileSummary intro={card?.intro_text}
+        strengths={card?.strengths_text} preferredPartner={card?.preferred_partner_text}
+        photos={visiblePhotos.length > 0 ? (
         <div className={`mt-3 grid gap-2 ${compact ? "grid-cols-2" : "grid-cols-3"}`}>
           {visiblePhotos.map((url, idx) => (
             <a
@@ -758,8 +764,7 @@ function OneOnOneCandidateCard({
             </a>
           ))}
         </div>
-      ) : null}
-
+      ) : null}>
       {children}
       </OneOnOneProfileSummary>
     </CandidateImpression>

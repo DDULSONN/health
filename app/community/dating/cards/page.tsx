@@ -1,6 +1,8 @@
 ﻿"use client";
 
 import Link from "next/link";
+import { hideReportedMatches, hideReportedRecommendations } from "@/lib/dating-report-visibility";
+import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
 import dynamic from "next/dynamic";
 import type { OneOnOneHomeState } from "@/components/dating/OneOnOneHomePanel";
 import PaidRegistrationStatus from "@/components/dating/PaidRegistrationStatus";
@@ -2658,7 +2660,7 @@ function OpenCardsContent() {
         trackCheckoutStarted({
           itemId: "one_on_one_contact_exchange",
           itemName: "1:1 번호 교환",
-          amount: body.amount ?? 20000,
+          amount: body.amount ?? ONE_ON_ONE_CONTACT_PRICE_KRW,
         });
         window.location.href = body.checkoutUrl;
       } catch (error) {
@@ -3526,7 +3528,15 @@ function OpenCardsContent() {
           processingAutoKeys={processingOneOnOneAutoKeys}
           refreshingRecommendationIds={refreshingOneOnOneRecommendationIds}
           onMatchAction={handleOneOnOneMatchAction}
-          onReported={() => { void reloadOneOnOneHome(); }}
+          onReported={(result) => {
+            if (result.blocked) {
+              oneOnOneHomeRequest.cancel();
+              oneOnOneRecommendationsRequest.cancel();
+              setOneOnOneHome(current => current ? { ...current, matches: hideReportedMatches(current.matches, result) } : current);
+              setOneOnOneRecommendations(current => hideReportedRecommendations(current, result));
+            }
+            void reloadOneOnOneHome();
+          }}
           onReload={() => { void reloadOneOnOneHome(); }}
           onContactCheckout={handleOneOnOneContactCheckout}
           onContactNudge={handleOneOnOneContactNudge}

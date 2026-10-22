@@ -106,15 +106,24 @@ async function main(){
     assert.equal(await member.getByRole('button',{name:'교환권 신청',exact:true}).count(),0);
     installed=false;await page.reload();await member.locator('summary').click();await member.getByRole('alert').waitFor();
     assert.equal(await member.getByRole('button',{name:'교환권 신청',exact:true}).count(),0);
-    await page.goto(origin+'/?notice');await page.waitForTimeout(700);assert.equal(await page.getByRole('dialog').count(),0,'disabled policy never announces availability');
+    // The current site-wide notice takes precedence; never stack two modal notices.
+    const releaseNow=Date.parse('2026-10-23T00:01:00+09:00');
+    await page.clock.setFixedTime(new Date(releaseNow));noticeStarted=releaseNow;installed=true;active=true;
+    const beforeGlobalNotice=policyReads;
+    await page.goto(origin+'/?notice');await page.waitForTimeout(700);
+    assert.equal(await page.getByRole('dialog').count(),0,'site-wide notice suppresses the older launch popup');
+    assert.equal(policyReads,beforeGlobalNotice,'suppressed popup skips policy fetch');
+    const noticeNow=Date.parse('2026-10-26T00:00:00+09:00');
+    await page.clock.setFixedTime(new Date(noticeNow));noticeStarted=noticeNow;installed=false;
+    await page.reload();await page.waitForTimeout(700);assert.equal(await page.getByRole('dialog').count(),0,'disabled policy never announces availability');
     installed=true;active=true;await page.reload();await page.getByRole('dialog').waitFor();
     assert.equal(await page.getByRole('link',{name:'자세히 보기'}).getAttribute('href'),'/mypage?section=matching&match=one_on_one&care=1#contact-care');
     for(const width of [320,390,768]){await page.setViewportSize({width,height:844});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);await page.screenshot({path:path.join(output,`notice-${width}.png`)});}
     await page.keyboard.press('Escape');await page.getByRole('dialog').waitFor({state:'hidden'});
     const beforePolicyReads=policyReads;await page.reload();await page.waitForTimeout(700);assert.equal(policyReads,beforePolicyReads,'acknowledged visitors skip public-policy fetch');
-    await page.evaluate(()=>localStorage.clear());noticeStarted=Date.now()-49*3600000;await page.reload();await page.waitForTimeout(700);assert.equal(await page.getByRole('dialog').count(),0);
-    noticeStarted=Date.now();const beforeExcluded=policyReads;await page.goto(origin+'/payments/success?notice');await page.waitForTimeout(600);assert.equal(policyReads,beforeExcluded,'notice never fetches or interrupts checkout');
-    noticeStarted=Date.now()-48*3600000+2500;await page.goto(origin+'/?notice');await page.getByRole('dialog').waitFor();await page.getByRole('dialog').waitFor({state:'hidden',timeout:5000});
+    await page.evaluate(()=>localStorage.clear());noticeStarted=noticeNow-49*3600000;await page.reload();await page.waitForTimeout(700);assert.equal(await page.getByRole('dialog').count(),0);
+    noticeStarted=noticeNow;const beforeExcluded=policyReads;await page.goto(origin+'/payments/success?notice');await page.waitForTimeout(600);assert.equal(policyReads,beforeExcluded,'notice never fetches or interrupts checkout');
+    noticeStarted=noticeNow-48*3600000+2500;await page.goto(origin+'/?notice');await page.getByRole('dialog').waitFor();await page.getByRole('dialog').waitFor({state:'hidden',timeout:5000});
     await page.goto(origin+'/#contact-care');await member.getByLabel('내가 결제한 상대').waitFor();
     assert.equal(await member.locator('details').getAttribute('open'),'','support deep link opens the form without a second click');
     await page.goto(origin+'/mypage?section=matching&match=one_on_one&care=1');await member.getByLabel('내가 결제한 상대').waitFor();

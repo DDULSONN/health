@@ -3,7 +3,7 @@ import { getDatingOneOnOneCardsByIds } from "@/lib/dating-1on1";
 import { isOneOnOnePairAgeEligible } from "@/lib/dating-1on1-age";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { hasDatingContactPhoneBlockBetween } from "@/lib/dating-contact-blocks";
-import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
+import { LEGACY_ONE_ON_ONE_CONTACT_PRICE_KRW, ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
 import { CONTACT_INTRO_PRICE } from "@/lib/contact-intro-offer";
 import { readContactIntroOffer } from "@/lib/contact-intro-offer-server";
 import { getTossPaymentByOrderId } from "@/lib/toss-payments";
@@ -36,7 +36,7 @@ export async function getContactPaymentRecovery(admin: SupabaseClient, userId: s
   if (orderRes.error) throw orderRes.error;
   const order = orderRes.data;
   if (!order || order.product_type !== "one_on_one_contact_exchange" || !order.product_ref_id) return null;
-  if (Number(order.amount) !== ONE_ON_ONE_CONTACT_PRICE_KRW) {
+  if (![ONE_ON_ONE_CONTACT_PRICE_KRW, LEGACY_ONE_ON_ONE_CONTACT_PRICE_KRW].includes(Number(order.amount))) {
     if (Number(order.amount) !== CONTACT_INTRO_PRICE) return null;
     const offer = await readContactIntroOffer(admin, userId, order.product_ref_id, true);
     if (!offer?.hasOrder || offer.offerId !== order.product_meta?.contactIntroOfferId) return null;

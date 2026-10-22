@@ -67,14 +67,15 @@ async function main() {
       const msgBox = await offer.getByText('“연락처 교환해 주시면 첫 커피는 제가 살게요 ☕”').boundingBox();
       const button = offer.getByRole('button',{name:'연락처 교환하기',exact:true});
       const buttonBox = await button.boundingBox();
-      const price = offer.getByText('20,000원',{exact:true}); await price.waitFor();
+      const price = offer.getByText('18,000원',{exact:true}); await price.waitFor();
       const priceBox = await price.boundingBox();
       assert.equal(await button.getAttribute('aria-describedby'),await price.getAttribute('id'));
       assert.ok(priceBox.y >= buttonBox.y + buttonBox.height, 'price stays visible directly below the CTA');
       assert.ok(priceBox.y - (buttonBox.y + buttonBox.height) <= 8);
       assert.ok(msgBox.y < buttonBox.y); assert.ok(buttonBox.height >= 44);
       const care = offer.locator('summary').filter({hasText:'교환 직후 연락이 끊기면?'});
-      assert.ok((await care.boundingBox()).y < buttonBox.y, 'conditional support guidance is visible before payment');
+      assert.ok(await care.isVisible(), 'conditional support guidance remains visible without starting payment');
+      assert.ok((await care.boundingBox()).y > priceBox.y, 'compact support guidance follows the CTA and its visible price');
       assert.equal(careReads, 0, 'support guidance does not fetch until opened');
       const list = page.getByRole('region',{name:'매칭 정렬 검증'});
       const links = list.getByRole('link');

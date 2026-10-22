@@ -1,6 +1,8 @@
 ﻿"use client";
 
 import dynamic from "next/dynamic";
+import { hideReportedMatches, hideReportedRecommendations } from "@/lib/dating-report-visibility";
+import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
 import PaidRegistrationStatus from "@/components/dating/PaidRegistrationStatus";
 import InstantOpenCardHint from "@/components/dating/InstantOpenCardHint";
 import { canOfferInstantOpenCard } from "@/lib/paid-application-prefill";
@@ -5001,6 +5003,12 @@ export default function MyPage() {
 
   const onDatingReportSubmitted = (result: DatingReportResult, targetType: DatingUserReportTargetType, targetId: string) => {
     if (result.blocked) {
+      // Cancel pre-report reads before removal so they cannot restore a blocked profile.
+      oneOnOneMatchesRequest.cancel();
+      oneOnOneRecommendationsRequest.cancel();
+      const report = { ...result, targetType, targetId };
+      setMyOneOnOneMatches(current => hideReportedMatches(current, report));
+      setMyOneOnOneAutoRecommendations(current => hideReportedRecommendations(current, report));
       if (targetType === "open_card_application") {
         setReceivedApplications((prev) => prev.filter((item) => item.id !== targetId));
         setMyAppliedCardApplications((prev) => prev.filter((item) => item.id !== targetId));
@@ -5513,7 +5521,7 @@ export default function MyPage() {
       trackCheckoutStarted({
         itemId: "one_on_one_contact_exchange",
         itemName: "1:1 번호 교환",
-        amount: body.amount ?? 20000,
+        amount: body.amount ?? ONE_ON_ONE_CONTACT_PRICE_KRW,
       });
       window.location.href = body.checkoutUrl;
     } catch (e) {

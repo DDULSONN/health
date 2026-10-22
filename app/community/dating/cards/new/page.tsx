@@ -7,6 +7,7 @@ import { recordGrowthProfileCreated } from "@/lib/growth-analytics";
 import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
 import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
 import PhotoPreparationStatus from "@/components/dating/PhotoPreparationStatus";
+import { DatingPhotoUploadError, uploadDatingPhoto } from "@/lib/dating-photo-upload";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
 const UNSUPPORTED_IPHONE_PHOTO_TYPES = ["image/heic", "image/heif"];
@@ -356,19 +357,7 @@ export default function NewDatingCardPage() {
         fd.append("kind", "raw");
         fd.append("asset_id", assetId);
         fd.append("index", String(i));
-        const res = await fetch("/api/dating/cards/upload-card", { method: "POST", body: fd });
-        if (!res.ok) {
-          setError(await readErrorMessage(res, "카드 사진 업로드에 실패했습니다."));
-          setSubmitting(false);
-          return;
-        }
-        const body = (await res.json().catch(() => ({}))) as { path?: string; error?: string };
-        if (!body.path) {
-          setError("카드 사진 업로드 응답이 올바르지 않습니다.");
-          setSubmitting(false);
-          return;
-        }
-        nextRawPaths[i] = body.path;
+        nextRawPaths[i] = await uploadDatingPhoto("/api/dating/cards/upload-card", fd, "open_raw");
 
         let liteFile: File;
         try {
@@ -383,12 +372,7 @@ export default function NewDatingCardPage() {
         liteFd.append("kind", "lite");
         liteFd.append("asset_id", assetId);
         liteFd.append("index", String(i));
-        const liteRes = await fetch("/api/dating/cards/upload-card", { method: "POST", body: liteFd });
-        if (!liteRes.ok) {
-          setError(await readErrorMessage(liteRes, "라이트 이미지 업로드에 실패했습니다."));
-          setSubmitting(false);
-          return;
-        }
+        await uploadDatingPhoto("/api/dating/cards/upload-card", liteFd, "open_lite");
 
         let blurFile: File;
         try {
@@ -401,21 +385,11 @@ export default function NewDatingCardPage() {
         const blurFd = new FormData();
         blurFd.append("file", blurFile);
         blurFd.append("kind", "blur");
+        blurFd.append("asset_id", assetId);
         blurFd.append("index", String(i));
-        const blurRes = await fetch("/api/dating/cards/upload-card", { method: "POST", body: blurFd });
-        if (!blurRes.ok) {
-          setError(await readErrorMessage(blurRes, "블러 썸네일 업로드에 실패했습니다."));
-          setSubmitting(false);
-          return;
-        }
-        const blurBody = (await blurRes.json().catch(() => ({}))) as { path?: string; error?: string };
-        if (!blurBody.path) {
-          setError("블러 썸네일 업로드 응답이 올바르지 않습니다.");
-          setSubmitting(false);
-          return;
-        }
-        nextBlurPaths[i] = blurBody.path;
-        if (i === 0) nextBlurThumbPath = blurBody.path;
+        const blurPath = await uploadDatingPhoto("/api/dating/cards/upload-card", blurFd, "open_blur");
+        nextBlurPaths[i] = blurPath;
+        if (i === 0) nextBlurThumbPath = blurPath;
       }
 
       if (nextRawPaths.length < 2 || !nextRawPaths[0] || !nextRawPaths[1]) {
@@ -463,8 +437,8 @@ export default function NewDatingCardPage() {
       if (!isEditMode) recordGrowthProfileCreated("open_card");
       alert(body.message ?? (isEditMode ? "오픈카드를 수정했습니다." : "오픈카드를 생성했습니다."));
       router.push("/mypage");
-    } catch {
-      setError("업로드 중 오류가 났어요. 캡쳐본으로 다시 올려주세요.");
+    } catch (error) {
+      setError(error instanceof DatingPhotoUploadError ? error.message : "저장 결과를 확인하지 못했어요. 입력 내용은 유지돼요. 연결 상태를 확인한 뒤 다시 시도해 주세요.");
     } finally {
       submissionInFlightRef.current = false;
       setSubmitting(false);
@@ -615,7 +589,7 @@ export default function NewDatingCardPage() {
           <p className="rounded-xl bg-neutral-50 px-3 py-3 text-xs leading-5 text-neutral-500">공개 카드 슬롯 상황에 따라 즉시 공개되거나 대기열에 등록됩니다. 등록 상태는 마이페이지에서 확인할 수 있어요.</p>
         </div>}
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p role="alert" className="text-sm text-red-600">{error}</p>}
 
         <div className="mt-7 flex gap-2">
           {formStep > 1 && <button type="button" onClick={() => moveToStep(formStep - 1)} disabled={submitting} className="h-14 min-w-24 rounded-full border border-neutral-200 bg-white px-5 text-sm font-black text-neutral-700 disabled:opacity-50">이전</button>}

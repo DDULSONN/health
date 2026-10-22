@@ -18,7 +18,7 @@ export async function POST(request: Request) {
     const matchId = normalizeOneOnOneMatchId(body?.matchId);
     if (!matchId || !["view_item", "select_item"].includes(body?.eventName) ||
         !["one_on_one_home", "mypage_matching"].includes(body?.placement) ||
-        ![15000, 20000].includes(body?.amount) || typeof body?.sessionId !== "string" ||
+        ![15000, 18000, 20000].includes(body?.amount) || typeof body?.sessionId !== "string" ||
         !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}:\d{4}-\d{2}-\d{2}$/i.test(body.sessionId)) {
       return new NextResponse(null, { status: 400 });
     }

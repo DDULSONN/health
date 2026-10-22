@@ -49,9 +49,10 @@ if (require.main === module) {
     // Quote/dispatch, price, disabled states and free benefits are unchanged; conversion
     // tests assert prices, unique descriptions, original callbacks and lazy guide reads.
     const expected = name === 'OneOnOneContactOffer'
-      ? '10e8fc7ccf023d894ee7871d76c57359393d9c07b329d9ef13cd8c3a385ecc0c'
+      ? '8953c631b548c6c1977d84dbd0c9d978d5250a55f3e3c5168833842d8fba3f33'
       // Same article/children/buttons, with a visibility-only observation hook.
-      : name === 'OneOnOneCandidateCard' ? '31f6f4a089163a4631d1cd45be6017b561e93e9a69114a68d27ad2927a07d6e3' : baseline.functions[name];
+      // Same photo links and action children; all profile text uses the shared disclosure.
+      : name === 'OneOnOneCandidateCard' ? '189e9053967893cf779d480e92fae212aa3a360e972816a71e48651ff217123a' : baseline.functions[name];
     let source = read(file);
     if (name === 'OneOnOneCandidateCard') {
       // The small, read-only region notice is tested separately. Keep the

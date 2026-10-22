@@ -5,7 +5,7 @@ import { createPortal } from "react-dom";
 import { DATING_CARD_REPORT_REASON_OPTIONS } from "@/lib/dating-report-reasons";
 
 export type DatingReportTargetType = "open_card" | "open_card_application" | "paid_card_application" | "one_on_one_card" | "one_on_one_match";
-export type DatingReportResult = { ok: true; blocked: boolean; message: string };
+export type DatingReportResult = { ok: true; blocked: boolean; message: string; blockedUserId?: string; blockedCardId?: string; targetType?: DatingReportTargetType; targetId?: string };
 
 export default function DatingReportButton({ targetType, targetId, label, onReported }: {
   targetType: DatingReportTargetType;
@@ -72,7 +72,10 @@ export function DatingReportDialog({ targetType, targetId, label, onClose, onRep
       if (!res.ok || body?.ok !== true) {
         throw new Error(body?.message || (body?.error === "forbidden_origin" ? "페이지를 새로 열고 다시 시도해 주세요." : body?.error) || "신고 결과를 확인하지 못했습니다. 다시 시도해 주세요.");
       }
-      setResult({ ok: true, blocked: body.blocked === true, message: body.message || "신고가 접수됐습니다." });
+      setResult({ ok: true, blocked: body.blocked === true, message: body.message || "신고가 접수됐습니다.", targetType, targetId,
+        ...(body.blocked === true && typeof body.blocked_user_id === "string" ? { blockedUserId: body.blocked_user_id } : {}),
+        ...(body.blocked === true && typeof body.blocked_card_id === "string" ? { blockedCardId: body.blocked_card_id } : {}),
+      });
     } catch (caught) {
       setError(controller.signal.aborted ? "응답이 지연되어 접수 여부를 확인하지 못했습니다. 다시 시도해도 중복 접수되지 않습니다." : caught instanceof Error ? caught.message : "신고 결과를 확인하지 못했습니다.");
     } finally {

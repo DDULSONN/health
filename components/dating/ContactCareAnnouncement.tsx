@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { usePathname } from "next/navigation";
 import { fetchClientJson } from "@/lib/client-json-request";
+import { isSiteAnnouncementActive } from "@/lib/site-announcement";
 import { CONTACT_CARE_HREF, CONTACT_CARE_NOTICE_ID, CONTACT_CARE_NOTICE_MESSAGE, CONTACT_CARE_NOTICE_TITLE,
   contactCareNoticePathAllowed, isContactCareNoticeActive, type ContactCarePublicPolicy } from "@/lib/contact-care-notice";
 
@@ -28,17 +29,17 @@ export default function ContactCareAnnouncement() {
   const [policy, setPolicy] = useState<ContactCarePublicPolicy | null>(null);
   useEffect(() => {
     let alive = true;
-    if (!contactCareNoticePathAllowed(pathname) || acknowledged()) return;
+    if (isSiteAnnouncementActive() || !contactCareNoticePathAllowed(pathname) || acknowledged()) return;
     void loadPolicy().then(value => { if (alive) setPolicy(value); });
     return () => { alive = false; };
   }, [pathname]);
   useEffect(() => {
     const element = dialog.current;
-    if (!element || !contactCareNoticePathAllowed(pathname) || !isContactCareNoticeActive(policy) || acknowledged()) {
+    if (!element || isSiteAnnouncementActive() || !contactCareNoticePathAllowed(pathname) || !isContactCareNoticeActive(policy) || acknowledged()) {
       element?.close(); return;
     }
-    const check = () => { if (!isContactCareNoticeActive(policy) || acknowledged()) element.close(); };
-    const show = window.setTimeout(() => { if (isContactCareNoticeActive(policy) && !acknowledged() && !element.open) element.showModal(); }, 500);
+    const check = () => { if (isSiteAnnouncementActive() || !isContactCareNoticeActive(policy) || acknowledged()) element.close(); };
+    const show = window.setTimeout(() => { if (!isSiteAnnouncementActive() && isContactCareNoticeActive(policy) && !acknowledged() && !element.open) element.showModal(); }, 500);
     const expiry = window.setTimeout(() => element.close(), Date.parse(policy!.endsAt!) - Date.now());
     window.addEventListener("storage", check);
     document.addEventListener("visibilitychange", check);

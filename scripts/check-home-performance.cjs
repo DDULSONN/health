@@ -153,8 +153,10 @@ test('1:1 view is a conditional dynamic import, not a static runtime import', ()
 const movedFunctions = {
   // Reviewed existing-match recency grouping and shared pagination; recommendation
   // candidates, order/refresh/payment authority remain pinned separately.
-  OneOnOneHomePanel: '69b65fc42a0b932d8b85130fb120f2d3f0c4238f8e4c4b8f53d91137bb104e6b',
-  OneOnOneCandidateCard: 'ec822f2fd3159af9b2ce34520527e294c73a86cd8c5bbfd79eca906c2a37c8bd',
+  // Reviewed trust UX: guide/free-vs-paid copy and photo-first collapsible text.
+  // Existing callbacks, filters, photo URL handling and quota controls remain pinned.
+  OneOnOneHomePanel: '00bfdf552a7168adcd3eb0b63c5996bd8a3e1c56d8faf65fc32e908b720722b7',
+  OneOnOneCandidateCard: 'ab83423c6962c84c974052b0bf024392846e572e8f7b2a4b8c7471a8f53a16a8',
   OneOnOneMatchActions: '6408ac6467228e01cf370b4942e9d42f19e7e34b937ad4e701ba82e1d1cceab4',
   canCancelOneOnOneMatchPreview: '0ec3faad4e8701ea4622ea220af8ebaddaf725cfa52a70fc686b82a37444036c',
   getOneOnOneDisplayName: 'cb337ea077c58b6fe6105cb1d3cb1079f5d0e8f3113e7a8bbd482dd3544ee0e9',
