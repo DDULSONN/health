@@ -76,13 +76,25 @@ test('new Korean notice replaces the old release and has a fixed 48-hour window'
   assert.match(notice.message, /이용 화면과 사진 등록, 신고·차단 기능/);
   assert.match(notice.message, /프로필 검수와 신고 대응/);
   assert.match(notice.message, /꾸준히 개선/);
-  assert.equal(noticeContent.CONTACT_PRICE_UPDATE_NOTICE.price, 18000);
+  assert.equal(noticeContent.CONTACT_PRICE_UPDATE_NOTICE.priceLabel, '1:1 연락처 교환 · 10% 인하');
+  assert.doesNotMatch(JSON.stringify(noticeContent.CONTACT_PRICE_UPDATE_NOTICE), /18,?000|20,?000/);
   assert.doesNotMatch(notice.message, /모든 회원|전부 새로운|100%/);
   assert.equal(/\uFFFD/.test(notice.title + notice.message), false);
   assert.equal(policy.isSiteAnnouncementActive(start - 1), false);
   assert.equal(policy.isSiteAnnouncementActive(start), true);
   assert.equal(policy.isSiteAnnouncementActive(end - 1), true);
   assert.equal(policy.isSiteAnnouncementActive(end), false);
+});
+test('rendered notice shows only the percentage, while actual checkout price remains unchanged', () => {
+  const React = require('react'), { renderToStaticMarkup } = require('react-dom/server');
+  const Component = evaluate('components/dating/ContactPriceUpdateNotice.tsx', {
+    '@/lib/contact-price-update-notice': noticeContent,
+  }).default;
+  const html = renderToStaticMarkup(React.createElement(Component, { onClose() {} }));
+  assert.match(html, /1:1 연락처 교환 · 10% 인하/);
+  assert.doesNotMatch(html, /18,?000|20,?000|\d[\d,]*\s*원/);
+  assert.match(html, /적용 이후 새로 생성하는 웹 결제부터 적용됩니다/);
+  assert.equal(evaluate('lib/dating-contact-price.ts', {}).ONE_ON_ONE_CONTACT_PRICE_KRW, 18000);
 });
 test('new notice still appears after acknowledging the previous notice, but only once itself', () => {
   const storage = new Map([['site-announcement:one-on-one-candidate-expansion-2026-10-10', '1']]);

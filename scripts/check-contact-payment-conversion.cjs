@@ -28,9 +28,10 @@ test('new standard checkout is exactly 10% lower; old order price remains explic
     assert.match(read(file), /amount: body.amount \?\? ONE_ON_ONE_CONTACT_PRICE_KRW/);
   }
 });
-test('approved announcement uses the new price and the existing site-wide host', () => {
+test('approved announcement shows only the discount percentage and uses the existing site-wide host', () => {
   const draft = load('lib/contact-price-update-notice.ts', { '@/lib/dating-contact-price': price }).CONTACT_PRICE_UPDATE_NOTICE;
-  assert.equal(draft.price, 18000); assert.equal(draft.previousPrice, 20000);
+  assert.equal(draft.price, undefined); assert.equal(draft.previousPrice, undefined);
+  assert.doesNotMatch(JSON.stringify(draft), /18,?000|20,?000/);
   assert.match(draft.priceLabel, /10%/); assert.match(draft.paragraphs.join(' '), /프로필 검수와 신고 대응/);
   assert.equal(draft.startsAt, undefined); assert.equal(draft.endsAt, undefined);
   assert.doesNotMatch(read('app/layout.tsx'), /ContactPriceUpdateNotice/);

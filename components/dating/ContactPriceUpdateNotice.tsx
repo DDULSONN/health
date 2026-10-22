@@ -19,12 +19,7 @@ export default function ContactPriceUpdateNotice({ onClose }: { onClose: () => v
     <p className="text-xs font-medium text-neutral-500">짐툴 이용 안내</p>
     <h2 id={titleId} className="mt-2 text-lg font-semibold leading-7 tracking-tight">{notice.title}</h2>
     <div className="mt-4 rounded-xl bg-neutral-50 px-4 py-3">
-      <p className="text-xs font-semibold text-neutral-700">{notice.priceLabel}</p>
-      <p className="mt-1 flex flex-wrap items-baseline gap-2">
-        <span className="text-sm text-neutral-400 line-through">{notice.previousPrice.toLocaleString("ko-KR")}원</span>
-        <span aria-hidden="true" className="text-neutral-400">→</span>
-        <strong className="text-xl font-bold text-[#f0003d]">{notice.price.toLocaleString("ko-KR")}원</strong>
-      </p>
+      <p className="text-sm font-semibold text-[#f0003d]">{notice.priceLabel}</p>
       <p className="mt-1 text-[11px] leading-5 text-neutral-500">{notice.priceNote}</p>
     </div>
     <div className="mt-4 space-y-3 text-[13px] leading-6 text-neutral-600">
