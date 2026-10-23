@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-require-imports -- Node CommonJS test runner. */
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
@@ -76,18 +77,20 @@ function createDeliveryAdmin() {
   };
 }
 
-function createSmsHarness({ memberBlocked = false, contactBlocked = false, unsubscribed = false, providerFails = false, deleted = false, missing = false, authError = false } = {}) {
+function createSmsHarness({ memberBlocked = false, contactBlocked = false, unsubscribed = false, providerFails = false, deleted = false, missing = false, authError = false, unsafe = false, accepted = false, phoneChanged = false } = {}) {
   const admin = createDeliveryAdmin();
   admin.auth = { admin: { getUserById: async (id) => {
     assert.equal(id, "recipient");
     return { data: { user: missing ? null : { id, deleted_at: deleted ? "2026-09-07" : null } }, error: authError ? new Error("unavailable") : null };
   } } };
   const sent = [];
+  let phoneReads = 0;
   const sms = loadSmsModule({
+    '@/lib/dating-1on1-delivery-guard': { canDeliverOneOnOneNotification: async () => !unsafe },
     '@/lib/dating-1on1-match-navigation': plainModule('lib/dating-1on1-match-navigation.ts'),
     '@/lib/dating-1on1-notification-guard': plainModule('lib/dating-1on1-notification-guard.ts'),
     "@/lib/dating-1on1": {
-      getProfilePhoneVerification: async () => ({ phoneVerified: true, phoneE164: "+821012345678" }),
+      getProfilePhoneVerification: async () => ({ phoneVerified: true, phoneE164: phoneChanged && ++phoneReads > 1 ? "+821087654321" : "+821012345678" }),
     },
     "@/lib/dating-blocks": { hasDatingBlockBetween: async () => memberBlocked },
     "@/lib/dating-contact-blocks": { hasDatingContactPhoneBlockBetween: async () => contactBlocked },
@@ -102,7 +105,8 @@ function createSmsHarness({ memberBlocked = false, contactBlocked = false, unsub
       },
     },
   });
-  return { admin, sent, send: () => sms.sendOneOnOneSelectionSms(admin, {
+  if (accepted) admin.matchState = 'mutual_accepted';
+  return { admin, sent, send: () => (accepted ? sms.sendOneOnOneAcceptedSms : sms.sendOneOnOneSelectionSms)(admin, {
     matchId: "match-1",
     sourceUserId: "source",
     recipientUserId: "recipient",
@@ -155,9 +159,29 @@ test('request ended after reservation never sends an obsolete SMS',async()=>{
 });
 test('real match SMS stays short, UTF-8 and leads to its own match',()=>{
   const {buildOneOnOneSelectionSms}=loadSmsModule({
+    '@/lib/dating-1on1-delivery-guard':{},
     '@/lib/dating-1on1-match-navigation':plainModule('lib/dating-1on1-match-navigation.ts'),
     '@/lib/dating-1on1-notification-guard':{}, '@/lib/dating-1on1':{},'@/lib/dating-blocks':{},'@/lib/dating-contact-blocks':{},'@/lib/marketing-email':{},'@/lib/solapi-phone-verification':{},
   });
   const id='00000000-0000-4000-8000-000000000012',text=buildOneOnOneSelectionSms(id);
   assert.ok(text.length<=80);assert.equal(Buffer.from(text).toString(),text);assert.ok(text.endsWith('/m/'+id));
+});
+
+test('acceptance adds a separate deduplicated SMS without changing an existing match', async () => {
+  const f = createSmsHarness({ accepted: true });
+  assert.equal(await f.send(), true); assert.equal(await f.send(), false);
+  assert.equal(f.sent.length, 1); assert.match(f.sent[0].text, /상대가 수락/);
+  assert.equal([...f.admin.deliveries.values()][0].event_kind, 'match_accepted');
+  assert.equal(f.admin.matchState, 'mutual_accepted');
+});
+test('late account/block/preference safety failure suppresses both SMS types', async () => {
+  for (const accepted of [true, false]) {
+    const f = createSmsHarness({ accepted, unsafe: true });
+    assert.equal(await f.send(), false); assert.equal(f.sent.length, 0);
+  }
+});
+test('a phone change during sending does not notify a previously verified number', async () => {
+  const f = createSmsHarness({ phoneChanged: true });
+  assert.equal(await f.send(), false); assert.equal(f.sent.length, 0);
+  assert.equal(f.admin.statusUpdates.at(-1).provider_error, 'RECIPIENT_PHONE_CHANGED');
 });

@@ -13,11 +13,11 @@ import { hasDatingContactPhoneBlockBetween } from "@/lib/dating-contact-blocks";
 import { notifyDatingUser } from "@/lib/dating-notifications";
 import { ensureAllowedMutationOrigin } from "@/lib/request-origin";
 import { sendDatingEmailNotification } from "@/lib/dating-swipe";
-import { sendOneOnOneSelectionSms } from "@/lib/dating-1on1-sms";
-import { isCurrentOneOnOneNotification } from "@/lib/dating-1on1-notification-guard";
+import { sendOneOnOneSelectionSms, sendOneOnOneAcceptedSms } from "@/lib/dating-1on1-sms";
+import { canDeliverOneOnOneNotification } from "@/lib/dating-1on1-delivery-guard";
 import { createAdminClient } from "@/lib/supabase/server";
 import { getRequestAuthContext } from "@/lib/supabase/request";
-import { NextResponse } from "next/server";
+import { after, NextResponse } from "next/server";
 import { isOneOnOnePairAgeEligible } from "@/lib/dating-1on1-age";
 import { DATING_AGE_INELIGIBLE_MESSAGE } from "@/lib/dating-age";
 
@@ -79,7 +79,8 @@ async function sendOneOnOneReminderEmail(
     targetUserId,
     notification.emailSubject,
     notification.emailText,
-    () => isCurrentOneOnOneNotification(admin, matchId, type, targetUserId),
+    () => canDeliverOneOnOneNotification(admin, matchId, type, targetUserId),
+    `one-on-one/${matchId}/${targetUserId}/${type}`,
   ).catch((error) => {
     console.error("[POST /api/dating/1on1/matches/[id]] reminder email failed", error);
     return false;
@@ -306,6 +307,11 @@ export async function POST(
       const sourceNotification = buildOneOnOneAcceptedNotification(candidateCard?.name ?? "상대", matchId);
       const candidateNotification = buildOneOnOneAcceptedNotification(sourceCard?.name ?? "상대", matchId);
 
+      // Extra SMS must not keep the accept button waiting on the provider.
+      const acceptedSms = {
+        matchId, sourceUserId: row.candidate_user_id, recipientUserId: row.source_user_id,
+      };
+      after(async () => { await sendOneOnOneAcceptedSms(admin, acceptedSms); });
       await Promise.all([
         sendOneOnOneReminderEmail(admin, row.source_user_id, () => sourceNotification, matchId, "dating_1on1_match_accepted"),
         notifyDatingUser(admin, {
@@ -469,15 +475,23 @@ export async function POST(
     }
 
     try {
-      await notifyDatingUser(admin, {
-        userId: row.candidate_user_id,
-        actorId: row.source_user_id,
-        type: "dating_1on1_match_accepted",
-        title: "1:1 매칭이 성사됐어요",
-        body: "서로 수락해 번호 교환 단계가 열렸습니다.",
-        route: "/dating/1on1",
-        meta: { match_id: matchId },
-      });
+      const notification = buildOneOnOneAcceptedNotification("상대", matchId);
+      const acceptedSms = {
+        matchId, sourceUserId: row.source_user_id, recipientUserId: row.candidate_user_id,
+      };
+      after(async () => { await sendOneOnOneAcceptedSms(admin, acceptedSms); });
+      await Promise.all([
+        sendOneOnOneReminderEmail(admin, row.candidate_user_id, () => notification, matchId, "dating_1on1_match_accepted"),
+        notifyDatingUser(admin, {
+          userId: row.candidate_user_id,
+          actorId: row.source_user_id,
+          type: "dating_1on1_match_accepted",
+          title: "1:1 매칭이 성사됐어요",
+          body: "서로 수락해 번호 교환 단계가 열렸습니다.",
+          route: "/dating/1on1",
+          meta: { match_id: matchId },
+        }),
+      ]);
     } catch (notificationError) {
       console.error("[POST /api/dating/1on1/matches/[id]] source accept notification failed", notificationError);
     }

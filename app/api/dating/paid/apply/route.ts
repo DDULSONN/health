@@ -236,7 +236,7 @@ export async function POST(req: Request) {
         adminClient,
         card.user_id,
         "대기 없이 등록 카드에 새 지원이 도착했어요",
-        `${notificationBody}\n마이페이지에서 지원 내용을 확인해 주세요.`
+        `${notificationBody}\n아래 링크에서 받은 지원을 확인해 주세요.\nhttps://helchang.com/mypage?section=matching#paid-card-received`
       ).catch((error) => {
         console.error("[POST /api/dating/paid/apply] email failed", { requestId, error });
         return false;

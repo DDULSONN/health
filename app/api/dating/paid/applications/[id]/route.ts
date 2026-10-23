@@ -177,7 +177,7 @@ export async function PATCH(
         admin,
         app.applicant_user_id,
         "대기 없이 등록 카드 지원이 수락됐어요",
-        `${body}\n마이페이지에서 연결 상태를 확인해 주세요.`
+        `${body}\n아래 링크에서 연결 상태를 확인해 주세요.\nhttps://helchang.com/mypage?section=matching#paid-card-applied`
       ).catch((error) => {
         console.error("[PATCH /api/dating/paid/applications/[id]] accepted email failed", error);
         return false;

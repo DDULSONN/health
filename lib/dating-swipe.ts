@@ -647,15 +647,17 @@ export async function sendDatingEmailNotification(
   subject: string,
   text: string,
   beforeSend?: () => Promise<boolean>,
+  idempotencyKey?: string,
 ): Promise<boolean> {
   const userRes = await adminClient.auth.admin.getUserById(userId).catch(() => null);
   const to = userRes?.data?.user?.email?.trim();
-  if (!to) return false;
+  const recipient = userRes?.data?.user as { deleted_at?: string | null; banned_until?: string | null } | undefined;
+  if (userRes?.error || !to || recipient?.deleted_at || Date.parse(recipient?.banned_until ?? "") > Date.now()) return false;
 
   const unsubscribed = await fetchMarketingUnsubscribedUserIds(adminClient, [userId], "dating_notifications").catch(
     (error) => {
       console.error("[dating-email] unsubscribe check failed", error);
-      return new Set<string>();
+      return new Set<string>([userId]);
     }
   );
   if (unsubscribed.has(userId)) return false;
@@ -668,7 +670,7 @@ export async function sendDatingEmailNotification(
     label: "오픈카드·1:1 소개팅 알림 메일을 더 이상 받고 싶지 않다면 아래 링크에서 수신거부할 수 있습니다.",
   });
 
-  return (await sendDatingEmailToAddressDetailed(to, subject, textWithFooter, { beforeSend })).ok;
+  return (await sendDatingEmailToAddressDetailed(to, subject, textWithFooter, { beforeSend, idempotencyKey })).ok;
 }
 
 export type DatingEmailSendResult = {
@@ -718,8 +720,14 @@ export async function sendDatingEmailToAddressDetailed(
     .split("\n")
     .map((line) => {
       const escaped = line.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+      if (/^https:\/\/helchang\.com\/mypage\?section=matching#(?:open|paid)-card-(?:received|applied)$/.test(line)) {
+        return `<a href="${escaped}" style="display:inline-block;margin:12px 0;padding:12px 20px;background:#111;color:#fff;border-radius:10px;text-decoration:none;font-weight:600">지원 내역 확인</a>`;
+      }
+      if (/^https:\/\/helchang\.com\/api\/email\/unsubscribe\?[^\s"<>]+$/.test(line)) {
+        return `<a href="${escaped}" style="color:#525252">알림 수신거부</a>`;
+      }
       return /^https:\/\/helchang\.com\/community\/dating\/cards\?tab=one_on_one&matchId=[0-9a-f-]{36}#selected-one-on-one-match$/i.test(line)
-        ? `<a href="${escaped}">매칭 상태 확인</a>` : escaped;
+        ? `<a href="${escaped}" style="display:inline-block;margin:12px 0;padding:12px 20px;background:#111;color:#fff;border-radius:10px;text-decoration:none;font-weight:600">매칭 상태 확인</a>` : escaped;
     })
     .join("<br />");
 
@@ -731,7 +739,7 @@ export async function sendDatingEmailToAddressDetailed(
     '<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />',
     '<meta name="viewport" content="width=device-width, initial-scale=1" />',
     "</head>",
-    '<body style="margin:0;padding:24px;background:#fff;color:#111827;font:16px/1.7 -apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;">',
+    '<body style="margin:0;padding:24px;background:#fff;color:#111827;overflow-wrap:anywhere;font:16px/1.7 -apple-system,BlinkMacSystemFont,\'Segoe UI\',sans-serif;">',
     htmlBody,
     "</body>",
     "</html>",

@@ -67,10 +67,12 @@ const unitFiles = [
   'check-account-deletion-matching.cjs',
   'check-account-deletion-regression.cjs',
   'check-dating-1on1-sms-message.cjs',
+  'check-dating-1on1-delivery-upgrade.cjs',
   'check-profiles-read-privacy.cjs',
   'check-profiles-authority-write-guard.cjs',
 ];
 const browserFiles = [
+  'check-dating-notification-email-browser.cjs',
   'check-signup-verification-browser.cjs',
   'check-home-performance-browser.cjs',
   'check-signup-stories-browser.cjs',

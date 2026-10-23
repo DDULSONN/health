@@ -6,6 +6,7 @@ import { isSolapiPhoneOtpConfigured, sendSolapiTextMessage } from "@/lib/solapi-
 import type { createAdminClient } from "@/lib/supabase/server";
 import { isCurrentOneOnOneNotification } from "@/lib/dating-1on1-notification-guard";
 import { normalizeOneOnOneMatchId } from "@/lib/dating-1on1-match-navigation";
+import { canDeliverOneOnOneNotification } from "@/lib/dating-1on1-delivery-guard";
 
 type AdminClient = ReturnType<typeof createAdminClient>;
 
@@ -17,19 +18,25 @@ export function buildOneOnOneSelectionSms(matchId: string) {
   return id ? `[짐툴] 1:1 요청이 도착했어요.\nhelchang.com/m/${id}` : ONE_ON_ONE_SELECTION_SMS_TEXT;
 }
 
+export function buildOneOnOneAcceptedSms(matchId: string) {
+  const id = normalizeOneOnOneMatchId(matchId);
+  return `[짐툴] 1:1 요청을 상대가 수락했어요.\n${id ? `helchang.com/m/${id}` : "helchang.com/community/dating/cards?tab=one_on_one"}`;
+}
+
 function isMissingSmsDeliverySchema(error: unknown) {
   const code = String((error as { code?: unknown } | null)?.code ?? "");
   const message = String((error as { message?: unknown } | null)?.message ?? error ?? "").toLowerCase();
   return code === "42P01" || code === "PGRST205" || message.includes(DELIVERY_TABLE) || message.includes("schema cache");
 }
 
-export async function sendOneOnOneSelectionSms(
+async function sendOneOnOneSms(
   admin: AdminClient,
   input: {
     matchId: string;
     sourceUserId: string;
     recipientUserId: string;
   },
+  eventKind: "selection_received" | "match_accepted",
 ) {
   if (!isSolapiPhoneOtpConfigured()) return false;
 
@@ -55,7 +62,7 @@ export async function sendOneOnOneSelectionSms(
       .insert({
         match_id: input.matchId,
         recipient_user_id: input.recipientUserId,
-        event_kind: "selection_received",
+        event_kind: eventKind,
         status: "sending",
       })
       .select("id")
@@ -77,12 +84,22 @@ export async function sendOneOnOneSelectionSms(
           .eq("id", reserveRes.data.id).eq("status", "sending");
         return false;
       }
-      if (!await isCurrentOneOnOneNotification(admin, input.matchId, "dating_1on1_selection_received", input.recipientUserId, input.sourceUserId)) {
+      const type = eventKind === "selection_received" ? "dating_1on1_selection_received" : "dating_1on1_match_accepted";
+      if (!await canDeliverOneOnOneNotification(admin, input.matchId, type, input.recipientUserId) ||
+        !await isCurrentOneOnOneNotification(admin, input.matchId, type, input.recipientUserId,
+          eventKind === "selection_received" ? input.sourceUserId : undefined)) {
         await admin.from(DELIVERY_TABLE).update({ status: "failed", provider_error: "MATCH_NO_LONGER_PENDING" })
           .eq("id", reserveRes.data.id).eq("status", "sending");
         return false;
       }
-      await sendSolapiTextMessage({ phoneE164: phone.phoneE164, text: buildOneOnOneSelectionSms(input.matchId) });
+      const currentPhone = await getProfilePhoneVerification(admin, input.recipientUserId);
+      if (!currentPhone.phoneVerified || currentPhone.phoneE164 !== phone.phoneE164) {
+        await admin.from(DELIVERY_TABLE).update({ status: "failed", provider_error: "RECIPIENT_PHONE_CHANGED" })
+          .eq("id", reserveRes.data.id).eq("status", "sending");
+        return false;
+      }
+      await sendSolapiTextMessage({ phoneE164: phone.phoneE164, text: eventKind === "selection_received"
+        ? buildOneOnOneSelectionSms(input.matchId) : buildOneOnOneAcceptedSms(input.matchId) });
       const sentRes = await admin
         .from(DELIVERY_TABLE)
         .update({ status: "sent", sent_at: new Date().toISOString(), provider_error: null })
@@ -111,4 +128,12 @@ export async function sendOneOnOneSelectionSms(
     console.error("[dating-1on1-sms] send skipped", { matchId: input.matchId, error });
     return false;
   }
+}
+
+type SmsInput = { matchId: string; sourceUserId: string; recipientUserId: string };
+export function sendOneOnOneSelectionSms(admin: AdminClient, input: SmsInput) {
+  return sendOneOnOneSms(admin, input, "selection_received");
+}
+export function sendOneOnOneAcceptedSms(admin: AdminClient, input: SmsInput) {
+  return sendOneOnOneSms(admin, input, "match_accepted");
 }
