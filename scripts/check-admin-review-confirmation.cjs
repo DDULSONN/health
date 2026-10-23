@@ -33,6 +33,7 @@ function ui(items = [fixture()], options = {}) {
       useRef: (initial) => refs[refIndex++] ??= { current: initial },
     };
     if (id === "react/jsx-runtime") return require(id);
+    if (id === "@/components/admin/AdminAutomaticProfileReviewPanel") return { default: () => null };
     throw new Error("Unexpected dependency: " + id);
   }, m, m.exports, async (url, init) => {
     assert.ok(url.startsWith("/api/admin/dating/card-ai-review"), "Normal confirmation must not call card deletion, ban, matching or email APIs");

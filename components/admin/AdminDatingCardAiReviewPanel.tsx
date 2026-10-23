@@ -1,5 +1,6 @@
 "use client";
 
+import AdminAutomaticProfileReviewPanel from "@/components/admin/AdminAutomaticProfileReviewPanel";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 type SourceType =
@@ -531,6 +532,7 @@ export default function AdminDatingCardAiReviewPanel() {
 
   return (
     <div className="space-y-4">
+      <AdminAutomaticProfileReviewPanel />
       <div className="rounded-2xl border border-violet-100 bg-white p-4 shadow-sm">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
           <div>
