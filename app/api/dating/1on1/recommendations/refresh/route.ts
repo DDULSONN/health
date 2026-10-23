@@ -4,6 +4,7 @@ import { createAdminClient } from "@/lib/supabase/server";
 import { loadOneOnOneRecommendations, type RecommendationRefreshPlan } from "@/lib/dating-1on1-recommendation-service";
 import { NextResponse } from "next/server";
 import { compensationFromRefreshResult } from "@/lib/dating-1on1-refresh-compensation";
+import { recordRefreshAttempt } from "@/lib/dating-1on1-refresh-monitor-record";
 
 type RefreshResult = {
   allowed: boolean;
@@ -25,16 +26,22 @@ export async function POST(req: Request) {
   if (!sourceCardId) return NextResponse.json({ error: "Source card id is required." }, { status: 400 });
 
   const admin = createAdminClient();
+  let observedPlan: RecommendationRefreshPlan | undefined;
   try {
     // Read once, simulate with the exact seed the transaction will persist.
     // No client-supplied candidate IDs, counts, timestamps or quota are trusted.
     const response = await loadOneOnOneRecommendations(admin, user, { sourceCardId, at: new Date().toISOString() });
-    if (!response.ok) return response;
+    if (!response.ok) {
+      recordRefreshAttempt(admin, user.id, requestId, undefined, "failed", sourceCardId);
+      return response;
+    }
     const { plan } = await response.json() as { plan?: RecommendationRefreshPlan };
     if (!plan || plan.source_card_id !== sourceCardId) {
       return NextResponse.json({ error: "현재 사용 중인 1:1 프로필을 다시 확인해 주세요." }, { status: 409 });
     }
+    observedPlan = plan;
     if (plan.refresh_remaining === 0) {
+      recordRefreshAttempt(admin, user.id, requestId, plan, "limited");
       return NextResponse.json({
         error: `후보 새로고침은 최근 24시간 동안 ${plan.refresh_limit}회까지 가능합니다.`,
         refresh_limit: plan.refresh_limit, refresh_used_count: plan.refresh_used_count,
@@ -43,6 +50,7 @@ export async function POST(req: Request) {
     }
     const repeatRotation = plan.changed_candidate_count === 0 && plan.rotated_candidate_count > 0 && body?.refresh_contract === 2;
     if (plan.changed_candidate_count === 0 && !repeatRotation) {
+      recordRefreshAttempt(admin, user.id, requestId, plan, "unchanged");
       // A read-only no-op: do not rotate the seed, insert history, or alter timestamps.
       // Pre-deployment tabs interpret every 200 as one consumed use. Refuse with
       // an explicit no-charge notice until that old client reloads its code.
@@ -76,6 +84,7 @@ export async function POST(req: Request) {
     const row = (Array.isArray(result.data) ? result.data[0] : result.data) as RefreshResult | null;
     if (!row || typeof row.allowed !== "boolean") throw new Error("Invalid refresh transaction result");
     if (!row.allowed) {
+      recordRefreshAttempt(admin, user.id, requestId, plan, row.reason === "limit" ? "limited" : "conflict");
       return NextResponse.json({
         error: row.reason === "cooldown" ? "방금 후보를 바꿨어요. 30초 뒤에 다시 눌러 주세요." : row.reason === "stale"
           ? "다른 화면에서 후보가 갱신됐습니다. 명단을 다시 불러온 뒤 확인해 주세요."
@@ -89,6 +98,7 @@ export async function POST(req: Request) {
     if (row.reason !== (repeatRotation ? "rotated" : "consumed") || Date.parse(row.refreshed_at ?? "") !== Date.parse(plan.refresh_at)) {
       throw new Error("Refresh seed was not persisted as planned");
     }
+    recordRefreshAttempt(admin, user.id, requestId, plan, repeatRotation ? "rotated" : "changed");
     return NextResponse.json({
       ok: true, source_card_id: sourceCardId, refresh_consumed: !repeatRotation,
       rotated_candidate_count: plan.rotated_candidate_count,
@@ -98,6 +108,7 @@ export async function POST(req: Request) {
       refresh_bonus_remaining: compensationFromRefreshResult(plan.refresh_limit, row.used_count, row.remaining_count),
     });
   } catch (error) {
+    recordRefreshAttempt(admin, user.id, requestId, observedPlan, "failed", sourceCardId);
     console.error("[POST /api/dating/1on1/recommendations/refresh] checked refresh failed", { requestId, error });
     // Never retry an uncertain write through another path: it could consume twice.
     return NextResponse.json({

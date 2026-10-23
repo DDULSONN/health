@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
+import AdminRefreshMonitorPanel from "@/components/admin/AdminRefreshMonitorPanel";
 
 type CandidateSearchCard = {
   id: string;
@@ -159,6 +160,8 @@ export default function AdminOneOnOneCandidateSenderPanel() {
   };
 
   return (
+    <>
+    <AdminRefreshMonitorPanel />
     <section className="mb-3 rounded-xl border border-sky-200 bg-white p-3">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
@@ -314,5 +317,6 @@ export default function AdminOneOnOneCandidateSenderPanel() {
         {sending ? "후보 발송 중..." : `선택 후보 ${selectedCandidates.length}명 발송`}
       </button>
     </section>
+    </>
   );
 }

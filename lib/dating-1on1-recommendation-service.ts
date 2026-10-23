@@ -29,6 +29,7 @@ import {
   takeObservedRecommendations,
   observedCandidateIdsAt,
   hasWiderRecommendationRegion,
+  isCandidateInSourceAgeRange,
   isWiderRecommendationRegion,
 } from "@/lib/dating-1on1-recommendations";
 import type { createAdminClient } from "@/lib/supabase/server";
@@ -57,6 +58,7 @@ import { readRefreshCompensation } from "@/lib/dating-1on1-refresh-compensation"
 import { readRecommendationPage, recommendationSourceKey } from "@/lib/dating-1on1-recommendation-page-store";
 import { nextRecommendationPage, restoreRecommendationPage } from "@/lib/dating-1on1-recommendation-page";
 import { readRecommendationHistory } from "@/lib/dating-1on1-recommendation-history";
+import { getRegionDistanceMeta } from "@/lib/region-distance";
 
 const RECOMMENDATION_LIMIT = 10;
 const FAVORITE_TABLE = "dating_1on1_candidate_favorites";
@@ -146,6 +148,15 @@ export type RecommendationRefreshPlan = {
   source_profile_key: string;
   main_candidate_ids: string[];
   extra_candidate_ids: string[];
+  monitor?: {
+    before_candidate_ids: string[];
+    before_user_ids: string[];
+    after_user_ids: string[];
+    pool_count: number;
+    safe_local_change: boolean;
+    widened_count: number;
+    age_mismatch_count: number;
+  };
 };
 
 // Only server code may request a plan. Public GET has no seed/preview overrides.
@@ -580,6 +591,15 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
         for (const card of candidateUniverse) if (seenIds.has(card.id)) oldIds.add(card.user_id);
       }
       const newIds = new Set(hydrate([...after.recommendations, ...after.admin_recommendations]).map((card) => card.user_id));
+      const source = mySourceCards.find(card => card.id === before.source_card_id)!;
+      const beforeCards = hydrate([...before.recommendations, ...before.admin_recommendations]);
+      const afterCards = hydrate([...after.recommendations, ...after.admin_recommendations]);
+      // Monitoring is server-only. A background recovery must not widen a
+      // member's region just to manufacture a different page.
+      const localAgeMatch = (card: (typeof afterCards)[number]) => {
+        const km = getRegionDistanceMeta(source.region, card.region).distanceKm;
+        return isCandidateInSourceAgeRange(source, card) && km != null && km <= 90;
+      };
       const plan: RecommendationRefreshPlan = {
         source_card_id: before.source_card_id, expected_refresh_used_at: before.refresh_used_at,
         refresh_at: refreshPlan.at,
@@ -593,6 +613,18 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
         source_profile_key: recommendationSourceKey(mySourceCards.find(card => card.id === before.source_card_id)!),
         main_candidate_ids: hydrate(after.recommendations).map(card => card.id),
         extra_candidate_ids: hydrate(after.admin_recommendations).map(card => card.id),
+        monitor: {
+          before_candidate_ids: beforeCards.map(card => card.id),
+          before_user_ids: [...visibleBeforeIds], after_user_ids: [...newIds],
+          pool_count: Math.max(0, before.candidate_pool_count - before.favorite_candidates.length),
+          widened_count: afterCards.filter(card => isWiderRecommendationRegion(source, card)).length,
+          age_mismatch_count: afterCards.filter(card => !isCandidateInSourceAgeRange(source, card)).length,
+          safe_local_change: afterCards.length >= beforeCards.length
+            && afterCards.some(card => !visibleBeforeIds.has(card.user_id))
+            && afterCards.filter(card => !visibleBeforeIds.has(card.user_id)).every(localAgeMatch)
+            && afterCards.filter(card => isCandidateInSourceAgeRange(source, card)).length
+              >= beforeCards.filter(card => isCandidateInSourceAgeRange(source, card)).length,
+        },
       };
       return NextResponse.json({ plan });
     }

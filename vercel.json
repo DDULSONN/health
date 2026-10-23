@@ -2,6 +2,10 @@
   "buildCommand": "npm run build",
   "crons": [
     {
+      "path": "/api/cron/dating-1on1-refresh-monitor",
+      "schedule": "48 * * * *"
+    },
+    {
       "path": "/api/cron/dating-profile-review",
       "schedule": "* * * * *"
     },
