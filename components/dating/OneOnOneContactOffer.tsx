@@ -2,7 +2,7 @@
 
 import { useEffect, useId, useState, type ReactNode } from "react";
 import PaymentCardNotice from "@/components/PaymentCardNotice";
-import OneOnOneContactNudge, { ReceivedContactNudge } from "@/components/dating/OneOnOneContactNudge";
+import OneOnOneContactNudge, { ReceivedContactNudge, SentContactNudgeReply } from "@/components/dating/OneOnOneContactNudge";
 import type { OneOnOneContactNudgePresetKey, OneOnOneContactNudgeSummary } from "@/lib/dating-1on1-contact-nudge";
 import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
 import { isContactIntroOffer, type ContactIntroOffer } from "@/lib/contact-intro-offer";
@@ -22,7 +22,7 @@ type Props = {
   compact?: boolean;
 };
 
-export default function OneOnOneContactOffer({ matchId, name, included, processing, nudge, nudgeProcessing, onExchange, onNudge, help, compact = false }: Props) {
+export default function OneOnOneContactOffer({ matchId, name, included, processing, nudge, nudgeProcessing, onExchange, onNudge, help }: Props) {
   const priceDescriptionId = useId();
   const [offer, setOffer] = useState<ContactIntroOffer | null>(null);
   useEffect(() => {
@@ -54,17 +54,14 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
   const { buttonRef, trackClick } = useContactPaymentTracking(matchId, amount, !included && !processing);
   return (
     <div className="min-w-0">
-      {!compact ? <p className="break-words text-sm font-semibold text-neutral-900">
-        {name?.trim() ? `${name.trim()}님과 서로 수락했어요` : "서로 수락했어요"}
-      </p> : null}
-      <p className="mt-1 text-xs leading-5 text-neutral-600">
-        {included ? "기존 플러스 혜택으로 추가 결제 없이 연락처를 교환할 수 있어요." : compact ? "서로 수락했어요. 결제 후 연락처가 공개돼요." : "결제 완료 후 서로의 연락처가 공개돼요."}
+      <p className="break-words text-sm font-semibold text-neutral-900">
+        {name?.trim() ? `${name.trim()}님도 매칭을 수락했어요` : "서로 매칭을 수락했어요"}
       </p>
-      {nudge?.available && nudge.received_from_other ? (
-        <div className="mt-2 rounded-lg border-l-2 border-rose-300 bg-neutral-50 px-3 py-2">
-          <ReceivedContactNudge item={nudge.received_from_other} matchId={matchId} canMarkRead={nudge.read_receipts_available && nudge.can_mark_read} />
-        </div>
-      ) : null}
+      <p className="mt-1 text-xs leading-5 text-neutral-600">
+        {included ? "기존 플러스 혜택으로 추가 결제 없이 연락처를 교환할 수 있어요." : "연락처를 교환하고 편하게 이야기 나눠보세요."}
+      </p>
+      {/* Actual replies, including a decline, stay visible before the decision. */}
+      {nudge?.available && nudge.sent_by_me?.reply ? <SentContactNudgeReply item={nudge.sent_by_me} /> : null}
       {discount ? <p className="mt-2 text-xs font-semibold text-[#f0003d]">
         {discount.active ? <>첫 교환 25% 할인 <span className="ml-1 font-normal text-neutral-400 line-through">20,000원</span>
           <span className="ml-1 font-normal text-neutral-500">· {new Date(discount.expiresAt).toLocaleString("ko-KR", { timeZone: "Asia/Seoul", month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit", hour12: false })}까지</span></> : "진행 중인 할인 주문 · 기존 금액 유지"}
@@ -91,7 +88,12 @@ export default function OneOnOneContactOffer({ matchId, name, included, processi
         </details>
       ) : null}
       {!included ? <div className="mt-1"><ContactCarePanel key={matchId} matchId={matchId} guideOnly /></div> : null}
-      <OneOnOneContactNudge matchId={matchId} nudge={nudge} hideReceived compact={compact} processing={nudgeProcessing} onSend={onNudge} />
+      {nudge?.available && nudge.received_from_other ? (
+        <div className="mt-3 rounded-lg border-l-2 border-neutral-200 bg-neutral-50 px-3 py-2">
+          <ReceivedContactNudge item={nudge.received_from_other} matchId={matchId} canMarkRead={nudge.read_receipts_available && nudge.can_mark_read} canReply={nudge.replies_available && nudge.can_reply} />
+        </div>
+      ) : null}
+      <OneOnOneContactNudge matchId={matchId} nudge={nudge} hideReceived hideReply compact processing={nudgeProcessing} onSend={onNudge} />
     </div>
   );
 }

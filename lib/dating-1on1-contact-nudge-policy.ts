@@ -11,3 +11,14 @@ export async function loadOneOnOneContactNudgeDelayHours(admin: Pick<ReturnType<
     return 24;
   }
 }
+
+// This RPC is installed atomically with the additive preset constraints. Missing
+// SQL/network errors fall back to the supported legacy picker, never checkout.
+export async function loadOneOnOneContactGreetingsAvailable(admin: Pick<ReturnType<typeof createAdminClient>, "rpc">) {
+  try {
+    const result = await admin.rpc("dating_1on1_contact_greetings_version").abortSignal(AbortSignal.timeout(2000));
+    return !result.error && result.data === 1;
+  } catch {
+    return false;
+  }
+}

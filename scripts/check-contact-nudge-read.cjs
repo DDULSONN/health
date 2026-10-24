@@ -118,7 +118,9 @@ test('narrow rollout fallback and sender copy do not claim historic messages wer
   for(const read_at of [null,'2026-10-20T10:00:00Z']){
     const html=renderToStaticMarkup(React.createElement(Component,{matchId:id(10),processing:false,onSend(){throw Error('No send');},
       nudge:{available:true,read_receipts_available:true,sent_by_me:{message_text:'안녕하세요 ☕',read_at}}}));
-    assert.match(html,read_at?/상대가 확인함/:/확인 기록 없음/);assert.doesNotMatch(html,/미확인|확인 버튼|�/);
+    if(read_at)assert.match(html,/상대가 확인함/);
+    else assert.doesNotMatch(html,/상대가 확인함|확인 기록 없음|답장 대기/);
+    assert.doesNotMatch(html,/미확인|확인 버튼|�/);
   }
   const sql=read('supabase/sql/dating_1on1_contact_nudge_read_receipts.sql');
   assert.doesNotMatch(sql,/update\s+public\.dating_1on1_match_proposals|delete\s+from|toss_test_payment_orders/i);

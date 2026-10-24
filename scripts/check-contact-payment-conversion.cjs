@@ -13,6 +13,7 @@ function load(file, mocks = {}, globals = {}) {
   const mod = { exports: {} };
   new Function('require', 'module', 'exports', ...Object.keys(globals), compiled)(id => {
     if (Object.hasOwn(mocks, id)) return mocks[id];
+    if (['@/components/dating/OneOnOneContactReply', '@/lib/dating-1on1-contact-reply'].includes(id)) return load(id.slice(2)+(id.startsWith('@/components/')?'.tsx':'.ts'),mocks,globals);
     if (id.startsWith('@/')) throw Error('Missing dependency: ' + id);
     return require(id);
   }, mod, mod.exports, ...Object.values(globals));
@@ -56,8 +57,8 @@ function offer(props = {}) { return renderToStaticMarkup(React.createElement(Off
 
 test('matching offer displays the real name and server-shared price, with payment explanation in details', () => {
   const html = offer();
-  assert.ok(html.includes('테스트상대님과 서로 수락했어요'));
-  assert.ok(html.includes('결제 완료 후 서로의 연락처가 공개돼요.'));
+  assert.ok(html.includes('테스트상대님도 매칭을 수락했어요'));
+  assert.ok(html.includes('연락처를 교환하고 편하게 이야기 나눠보세요.'));
   assert.match(html, /<button[^>]*>연락처 교환하기<\/button>/);
   assert.match(html, /<\/button><div[^>]*><p[^>]*>18,000원<\/p>/);
   assert.ok(html.includes('이번 상대와의 연락처 교환 · 1회 결제'));
@@ -79,10 +80,10 @@ test('full and compact offers associate the visible price below the button for s
   const ids = [...html.matchAll(/<button[^>]*aria-describedby="([^"]+)"/g)].map(match => match[1]);
   assert.equal(ids.length, 2); assert.equal(new Set(ids).size, 2, 'multiple offers must not share a price description ID');
 });
-test('received message appears exactly once above checkout; no received message is invented', () => {
+test('optional received greeting appears exactly once below checkout; no received message is invented', () => {
   const html = offer({ nudge: summary });
   assert.equal(html.split(received.message_text).length - 1, 1);
-  assert.ok(html.indexOf(received.message_text) < html.indexOf('<button'));
+  assert.ok(html.indexOf(received.message_text) > html.indexOf('연락처 교환하기'));
   assert.ok(html.includes('테스트상대님이 보낸 1:1 한마디'));
   assert.ok(!offer().includes(received.message_text));
   assert.ok(!offer({ nudge: { ...summary, available: false } }).includes(received.message_text));
@@ -100,8 +101,21 @@ test('legacy included exchanges stay free and pending checkout disables its only
 test('long/Korean names and preset text are escaped; outgoing nudge controls remain available separately', () => {
   const html = offer({ name: '<script>테스트</script>', nudge: { ...summary, can_send: true } });
   assert.ok(html.includes('&lt;script&gt;')); assert.ok(!html.includes('<script>'));
-  assert.ok(html.includes('한마디 보내기')); assert.ok(html.includes('선택 사항'));
+  assert.ok(html.includes('한마디 보내기')); assert.ok(html.includes('선택 · 매칭당 1회'));
   assert.ok(!offer({ nudge: { ...summary, sent_by_me: received } }).includes('한마디 보내기'));
+});
+
+test('actual replies including negative intent precede checkout, once; no missing-reply pressure or payment gating', () => {
+  const replies = load('lib/dating-1on1-contact-reply.ts').ONE_ON_ONE_CONTACT_REPLY_PRESETS;
+  for (const preset of replies) {
+    const html = offer({ nudge: { ...summary, sent_by_me: { ...received, reply: { preset_key:preset.key, message_text:preset.message, created_at:new Date().toISOString() } } } });
+    assert.equal(html.split(preset.message).length-1, 1);
+    assert.ok(html.indexOf(preset.message) < html.indexOf('연락처 교환하기'));
+    assert.doesNotMatch(html, /disabled=""/);
+  }
+  const html = offer({ nudge: { ...summary, read_receipts_available:true, sent_by_me:{...received,read_at:null} } });
+  assert.doesNotMatch(html, /확인 기록 없음|답장 대기|미응답/);
+  assert.ok(offer({ nudge: { ...summary, can_send:true, greetings_available:true } }).includes('가볍게 인사하기'));
 });
 
 const orderId = 'test_order_12345';

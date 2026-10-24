@@ -108,6 +108,9 @@ function loadFile(file, overrides) {
   const mod={exports:{}};
   new Function("require","module","exports","Date",code)(name=>{
     if(Object.hasOwn(overrides,name))return overrides[name];
+    if(["@/lib/dating-1on1-contact-reply", "@/lib/dating-1on1-contact-replies-server", "@/components/dating/OneOnOneContactReply"].includes(name)) {
+      return loadFile(name.slice(2)+(name.startsWith("@/components/")?".tsx":".ts"),overrides);
+    }
     if(name.startsWith("@/"))throw Error("Unmocked dependency: "+name);
     return require(name);
   },mod,mod.exports,Clock);
@@ -129,7 +132,7 @@ for (const scenario of ["future", "before24", "at24", "after30", "legacyPolicy",
     }).then(ok,bad);}};return q;}};
     const route=loadFile("app/api/dating/1on1/matches/[id]/nudge/route.ts",{
       "@/lib/dating-1on1-contact-nudge":helpers,
-      "@/lib/dating-1on1-contact-nudge-policy":{loadOneOnOneContactNudgeDelayHours:async()=>scenario==="legacyPolicy"?24:0},
+      "@/lib/dating-1on1-contact-nudge-policy":{loadOneOnOneContactNudgeDelayHours:async()=>scenario==="legacyPolicy"?24:0,loadOneOnOneContactGreetingsAvailable:async()=>false},
       "@/lib/dating-blocks":{hasDatingBlockBetween:async()=>scenario==="blocked"},
       "@/lib/dating-contact-blocks":{hasDatingContactPhoneBlockBetween:async()=>false},
       "@/lib/dating-notifications":{notifyDatingUser:async(_db,payload)=>{notifications++;assert.match(payload.title,/매칭 이름님이/);assert.equal(payload.meta.match_id,"match");}},
@@ -159,7 +162,7 @@ for(const scenario of ["before24","at24","after30","legacyPolicy","alreadySent",
     }).then(ok,bad);}};return q;}};
     const route=loadFile("app/api/dating/1on1/matches/my/route.ts",{
       "@/lib/dating-1on1-contact-nudge":helpers,
-      "@/lib/dating-1on1-contact-nudge-policy":{loadOneOnOneContactNudgeDelayHours:async()=>scenario==="legacyPolicy"?24:0},
+      "@/lib/dating-1on1-contact-nudge-policy":{loadOneOnOneContactNudgeDelayHours:async()=>scenario==="legacyPolicy"?24:0,loadOneOnOneContactGreetingsAvailable:async()=>false},
       "@/lib/dating-1on1":{getDatingOneOnOneCardsByIds:async()=>new Map([["source-card",{name:"본인"}],["candidate-card",{name:"상대"}]]),getDatingOneOnOneCardPhonesByIds:async(_db,ids)=>{if(scenario!=="approved")assert.deepEqual(ids,[]);return new Map();}},
       "@/lib/supabase/server":{createAdminClient:()=>db},
       "@/lib/supabase/request":{getRequestAuthContext:async()=>({user:{id:"source"}})},

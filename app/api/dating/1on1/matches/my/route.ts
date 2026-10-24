@@ -20,7 +20,9 @@ import {
   normalizeDatingContactPhone,
 } from "@/lib/dating-contact-blocks";
 import { NextResponse } from "next/server";
-import { loadOneOnOneContactNudgeDelayHours } from "@/lib/dating-1on1-contact-nudge-policy";
+import { loadOneOnOneContactNudgeDelayHours, loadOneOnOneContactGreetingsAvailable } from "@/lib/dating-1on1-contact-nudge-policy";
+import { canReplyToOneOnOneContactNudge } from "@/lib/dating-1on1-contact-reply";
+import { loadOneOnOneContactReplies } from "@/lib/dating-1on1-contact-replies-server";
 
 const MY_MATCH_BATCH_SIZE = 500;
 const CLOSED_MATCH_LIMIT = 80;
@@ -202,8 +204,12 @@ export async function GET(req: Request) {
     }
   }
 
-  const nudgeDelayHours = nudgeSchemaAvailable && rows.some((row) => row.state === "mutual_accepted" && row.contact_exchange_status === "awaiting_applicant_payment")
-    ? await loadOneOnOneContactNudgeDelayHours(admin) : 24;
+  const hasPendingContact = nudgeSchemaAvailable && rows.some((row) => row.state === "mutual_accepted" && row.contact_exchange_status === "awaiting_applicant_payment");
+  const [replyResult, nudgeDelayHours, greetingsAvailable] = await Promise.all([
+    loadOneOnOneContactReplies(admin, nudgeRows.flatMap(nudge => nudge.id ? [nudge.id] : [])),
+    hasPendingContact ? loadOneOnOneContactNudgeDelayHours(admin) : 24,
+    hasPendingContact ? loadOneOnOneContactGreetingsAvailable(admin) : false,
+  ]);
   const nudgesByMatchId = new Map<string, ContactNudgeRow[]>();
   for (const nudge of nudgeRows) {
     const items = nudgesByMatchId.get(nudge.match_id) ?? [];
@@ -238,11 +244,15 @@ export async function GET(req: Request) {
           available: nudgeSchemaAvailable,
           read_receipts_available: nudgeSchemaAvailable && readReceiptsAvailable,
           can_mark_read: nudgeSchemaAvailable && readReceiptsAvailable && canConfirmOneOnOneContactNudge(row),
+          replies_available: replyResult.available,
+          greetings_available: greetingsAvailable,
+          can_reply: replyResult.available && canReplyToOneOnOneContactNudge(row) && Boolean(receivedFromOther?.id) && !replyResult.replies.has(receivedFromOther?.id ?? ""),
           eligible_at: nudgeEligibility.eligibleAt,
           can_send: nudgeSchemaAvailable && nudgeEligibility.eligible && !sentByMe,
           sent_by_me: sentByMe
             ? {
                 id: sentByMe.id,
+                reply: replyResult.replies.get(sentByMe.id ?? "") ?? null,
                 read_at: readReceiptsAvailable ? sentByMe.read_at ?? null : null,
                 preset_key: sentByMe.preset_key,
                 message_text: sentByMe.message_text,
@@ -252,6 +262,7 @@ export async function GET(req: Request) {
           received_from_other: receivedFromOther
             ? {
                 id: receivedFromOther.id,
+                reply: replyResult.replies.get(receivedFromOther.id ?? "") ?? null,
                 read_at: readReceiptsAvailable ? receivedFromOther.read_at ?? null : null,
                 preset_key: receivedFromOther.preset_key,
                 message_text: receivedFromOther.message_text,

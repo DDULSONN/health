@@ -20,6 +20,17 @@ function fingerprint(code, name) {
   const ast = tree(code), fn = ast.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === name);
   assert.ok(fn); return hash(canonical(fn, ast, true));
 }
+// Pin non-visual payment setup and the actual checkout button separately from
+// legitimate greeting layout/copy changes. Never baseline a changed payment path.
+function paymentContract(code) {
+  const ast=tree(code),fn=ast.statements.find(n=>ts.isFunctionDeclaration(n)&&n.name?.text==='OneOnOneContactOffer');
+  const parts=fn.body.statements.filter(n=>!ts.isReturnStatement(n)).map(n=>canonical(n,ast));
+  function visit(n){
+    if(ts.isJsxOpeningElement(n)&&n.tagName.getText(ast)==='button'&&n.attributes.properties.some(p=>ts.isJsxAttribute(p)&&p.name.getText(ast)==='ref'&&p.initializer?.getText(ast)==='{buttonRef}'))parts.push(canonical(n,ast,true));
+    ts.forEachChild(n,visit);
+  }
+  visit(fn);return hash(parts.join('\n'));
+}
 function panelContract(code) {
   const ast = tree(code), fn = ast.statements.find(n => ts.isFunctionDeclaration(n) && n.name?.text === 'OneOnOneHomePanel');
   const bindings = {}, callbacks = [], disabled = [];
@@ -41,15 +52,15 @@ const files = {
   OneOnOneIncomingRequests: 'components/dating/OneOnOneIncomingRequests.tsx',
 };
 // Export the read-only canonicalizer for generating a pinned baseline from git show.
-module.exports = { fingerprint, panelContract, files };
+module.exports = { fingerprint, paymentContract, panelContract, files };
 if (require.main === module) {
   const baseline = JSON.parse(read('scripts/fixtures/one-on-one-ui-contract.json'));
   for (const [name, file] of Object.entries(files)) test('reviewed view contract: ' + name, () => {
-    // Reviewed receipt eligibility/match ID passed to the existing received message.
-    // Quote/dispatch, price, disabled states and free benefits are unchanged; conversion
-    // tests assert prices, unique descriptions, original callbacks and lazy guide reads.
+    // Reviewed mutual-acceptance-first layout and optional greeting/reply copy.
+    // Payment setup/dispatch is pinned independently below; conversion tests
+    // also assert prices, disabled states, included benefits and lazy guide reads.
     const expected = name === 'OneOnOneContactOffer'
-      ? '8953c631b548c6c1977d84dbd0c9d978d5250a55f3e3c5168833842d8fba3f33'
+      ? '763cb90a3de56248792d56130cae5b9aac5bbc39f0c05d68476a94c65be19132'
       // Same article/children/buttons, with a visibility-only observation hook.
       // Same photo links and action children; all profile text uses the shared disclosure.
       : name === 'OneOnOneCandidateCard' ? '189e9053967893cf779d480e92fae212aa3a360e972816a71e48651ff217123a' : baseline.functions[name];
@@ -62,6 +73,9 @@ if (require.main === module) {
       source = source.replace(notice, '');
     }
     assert.equal(fingerprint(source, name), expected);
+  });
+  test('greeting redesign preserves the original payment setup and dispatch contract', () => {
+    assert.equal(paymentContract(read(files.OneOnOneContactOffer)), '47f394e88a5bbd161a1ed53e52be7445178519c1a917c9be26487fd60057a425');
   });
   test('recommendation ordering, counters and existing action bindings remain unchanged', () => {
     // Read-only retries include the explicit stale-quota check; all mutation

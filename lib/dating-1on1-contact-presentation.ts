@@ -13,6 +13,8 @@ export type ContactPresentationMatch = {
   contact_nudge?: {
     available?: boolean;
     received_from_other?: { created_at?: string | null } | null;
+    replies_available?: boolean;
+    sent_by_me?: { reply?: { created_at?: string | null } | null } | null;
   } | null;
 };
 
@@ -34,8 +36,13 @@ export function contactPresentationTime(match: ContactPresentationMatch): number
   const receivedAt = canOfferOneOnOneContact(match) && match.contact_nudge?.available
     ? timestamp(match.contact_nudge.received_from_other?.created_at)
     : null;
-  // Sending one's own message or updating unrelated fields is not new partner interest.
-  return receivedAt === null ? base : base === null ? receivedAt : Math.max(base, receivedAt);
+  const repliedAt = canOfferOneOnOneContact(match) && match.contact_nudge?.available && match.contact_nudge.replies_available
+    ? timestamp(match.contact_nudge.sent_by_me?.reply?.created_at)
+    : null;
+  // Only an actual partner reply brings an old match back into view. A reply
+  // to their message (my own reply), receipt, or unrelated update never does.
+  const times = [base, receivedAt, repliedAt].filter((time): time is number => time !== null);
+  return times.length ? Math.max(...times) : null;
 }
 
 export function groupContactPresentation<T extends ContactPresentationMatch>(

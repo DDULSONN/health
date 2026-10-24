@@ -55,6 +55,18 @@ test('seven-day boundary is exact and no item is lost or duplicated', () => {
   assert.equal(JSON.stringify(input), before);
 });
 
+test('a recent partner reply reveals an old match; my reply and unavailable/invalid reply data do not', () => {
+  const reply = { created_at: date(0) };
+  const nudge = { available: true, replies_available: true, sent_by_me: { reply } };
+  const input = [match('partner-reply', 30, { contact_nudge: nudge }),
+    match('mine', 30, { contact_nudge: { available: true, replies_available: true, received_from_other: { created_at: date(30), reply } } }),
+    match('unavailable', 30, { contact_nudge: { ...nudge, replies_available: false } }),
+    match('invalid', 30, { contact_nudge: { ...nudge, sent_by_me: { reply: { created_at: 'bad' } } } })];
+  const snapshot = JSON.stringify(input), result = group(input, NOW);
+  assert.deepEqual(result.current.map(m => m.id), ['partner-reply']);
+  assert.equal(result.older.length, 3);assert.equal(JSON.stringify(input), snapshot);
+});
+
 test('missing/invalid acceptance timestamps are never silently folded; legacy candidate date is supported', () => {
   for (const value of [undefined, null, '', 'invalid']) {
     const item = match('unknown', 40, { source_final_responded_at: value });

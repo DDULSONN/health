@@ -72,7 +72,7 @@ async function main() {
       assert.equal(await button.getAttribute('aria-describedby'),await price.getAttribute('id'));
       assert.ok(priceBox.y >= buttonBox.y + buttonBox.height, 'price stays visible directly below the CTA');
       assert.ok(priceBox.y - (buttonBox.y + buttonBox.height) <= 8);
-      assert.ok(msgBox.y < buttonBox.y); assert.ok(buttonBox.height >= 44);
+      assert.ok(msgBox.y > buttonBox.y, 'optional greeting follows checkout; actual replies have a separate above-checkout assertion'); assert.ok(buttonBox.height >= 44);
       const care = offer.locator('summary').filter({hasText:'교환 직후 연락이 끊기면?'});
       assert.ok(await care.isVisible(), 'conditional support guidance remains visible without starting payment');
       assert.ok((await care.boundingBox()).y > priceBox.y, 'compact support guidance follows the CTA and its visible price');

@@ -120,7 +120,7 @@ async function runtime({provider = providerFixture()} = {}) {
     '@/lib/open-card-repost':unavailable('repost'),
     '@/lib/dating-blocks':{hasDatingBlockBetween:async()=>flags.blocked,getDatingBlockedUserIds:async()=>new Set(flags.blocked?[id(1),id(2)]:[])},
     '@/lib/dating-contact-blocks':contactBlocks,
-    '@/lib/dating-1on1-contact-nudge-policy':{loadOneOnOneContactNudgeDelayHours:async()=>24},
+    '@/lib/dating-1on1-contact-nudge-policy':{loadOneOnOneContactNudgeDelayHours:async()=>24,loadOneOnOneContactGreetingsAvailable:async()=>false},
     '@/lib/dating-1on1':{
       getDatingOneOnOneCardPhonesByIds:cardPhoneReader,
       getDatingOneOnOneCardsByIds:async(_admin,ids)=>new Map((await db.query('select id,user_id,birth_year,status,name,region from dating_1on1_cards where id=any($1::uuid[])',[ids])).rows.map(r=>[r.id,{...r,age:2026-r.birth_year,photo_signed_urls:[]}]))},

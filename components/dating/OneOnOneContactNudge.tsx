@@ -1,8 +1,10 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import OneOnOneContactReply from "@/components/dating/OneOnOneContactReply";
 import {
   ONE_ON_ONE_CONTACT_NUDGE_PRESETS,
+  ONE_ON_ONE_CONTACT_GREETING_PRESETS,
   type OneOnOneContactNudgePresetKey,
   type OneOnOneContactNudgeSummary,
   type OneOnOneContactNudgeItem,
@@ -14,6 +16,7 @@ type Props = {
   processing: boolean;
   onSend: (matchId: string, presetKey: OneOnOneContactNudgePresetKey) => void;
   hideReceived?: boolean;
+  hideReply?: boolean;
   compact?: boolean;
 };
 
@@ -87,8 +90,8 @@ function useNudgeReadReceipt(matchId: string | undefined, item: OneOnOneContactN
   return messageRef;
 }
 
-export function ReceivedContactNudge({ item, matchId, canMarkRead = false }: {
-  item: OneOnOneContactNudgeItem; matchId?: string; canMarkRead?: boolean;
+export function ReceivedContactNudge({ item, matchId, canMarkRead = false, canReply = false }: {
+  item: OneOnOneContactNudgeItem; matchId?: string; canMarkRead?: boolean; canReply?: boolean;
 }) {
   const senderName = item.sender_display_name?.trim() ?? "";
   const messageRef = useNudgeReadReceipt(matchId, item, canMarkRead);
@@ -97,10 +100,20 @@ export function ReceivedContactNudge({ item, matchId, canMarkRead = false }: {
     <p ref={messageRef} className="mt-1 break-words text-sm font-semibold leading-6 text-neutral-900">“{item.message_text}”</p>
     <p className="mt-2 text-[11px] leading-5 text-neutral-500">연락처 교환 후 잠수하거나 상대방에게 불쾌한 언행을 할 경우 제재 대상입니다.</p>
     {canMarkRead && matchId && item.id ? <p className="mt-1 text-[11px] leading-5 text-neutral-500">이 한마디를 보면 상대에게 ‘확인함’으로 표시돼요.</p> : null}
+    {matchId && item.id ? <OneOnOneContactReply key={`${matchId}:${item.id}`} matchId={matchId} nudgeId={item.id} reply={item.reply} canReply={canReply} /> : null}
   </>;
 }
 
-export default function OneOnOneContactNudge({ matchId, nudge, processing, onSend, hideReceived = false, compact = false }: Props) {
+export function SentContactNudgeReply({ item }: { item: OneOnOneContactNudgeItem }) {
+  if (!item.reply) return null;
+  return <div className="mt-2 rounded-lg border-l-2 border-neutral-300 bg-neutral-50 px-3 py-2">
+    <p className="text-[11px] font-semibold text-neutral-600">상대의 답장</p>
+    <p className="mt-1 text-sm font-semibold leading-6 text-neutral-900">“{item.reply.message_text}”</p>
+    <p className="mt-1 text-[11px] leading-5 text-neutral-500">상대가 직접 고른 답장이에요. 결제나 매칭 상태는 바뀌지 않아요.</p>
+  </div>;
+}
+
+export default function OneOnOneContactNudge({ matchId, nudge, processing, onSend, hideReceived = false, hideReply = false, compact = false }: Props) {
   const [pickerOpen, setPickerOpen] = useState(false);
 
   if (!nudge?.available) return null;
@@ -112,7 +125,7 @@ export default function OneOnOneContactNudge({ matchId, nudge, processing, onSen
     <div className={compact ? "mt-2 border-t border-neutral-100 pt-2" : "mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3"}>
       {received ? (
         <div className="rounded-xl bg-white px-3 py-2.5">
-          <ReceivedContactNudge item={received} matchId={matchId} canMarkRead={nudge.read_receipts_available && nudge.can_mark_read} />
+          <ReceivedContactNudge item={received} matchId={matchId} canMarkRead={nudge.read_receipts_available && nudge.can_mark_read} canReply={nudge.replies_available && nudge.can_reply} />
         </div>
       ) : null}
 
@@ -120,11 +133,13 @@ export default function OneOnOneContactNudge({ matchId, nudge, processing, onSen
         <div className={received ? "mt-2" : ""}>
           <p className="text-xs font-semibold text-neutral-800">상대에게 한마디를 보냈어요.</p>
           <p className="mt-1 text-xs leading-5 text-neutral-600">“{nudge.sent_by_me.message_text}”</p>
-          {nudge.read_receipts_available ? (
+          {nudge.sent_by_me.reply ? (
+            !hideReply ? <SentContactNudgeReply item={nudge.sent_by_me} /> : null
+          ) : nudge.read_receipts_available && nudge.sent_by_me.read_at ? (
             <div className="mt-1">
-              <p className="text-xs font-medium text-neutral-700">{nudge.sent_by_me.read_at ? "상대가 확인함" : "확인 기록 없음"}</p>
+              <p className="text-xs font-medium text-neutral-700">상대가 확인함</p>
               <p className="text-[11px] leading-5 text-neutral-500">
-                {nudge.sent_by_me.read_at ? "한마디가 상대 화면에 표시됐어요. 수락·결제 의사를 뜻하지 않아요." : "한마디가 상대 화면에 표시되면 확인함으로 바뀌어요."}
+                한마디가 상대 화면에 표시됐어요. 수락·결제 의사를 뜻하지 않아요.
               </p>
             </div>
           ) : null}
@@ -144,7 +159,7 @@ export default function OneOnOneContactNudge({ matchId, nudge, processing, onSen
               aria-expanded={pickerOpen}
               className="mt-2 inline-flex min-h-[44px] items-center rounded-lg border border-neutral-300 bg-white px-3 text-xs font-semibold text-neutral-700 disabled:opacity-50"
             >
-              {processing ? "보내는 중..." : pickerOpen ? "문구 닫기" : "한마디 보내기"}
+              {processing ? "보내는 중..." : pickerOpen ? "문구 닫기" : nudge.greetings_available ? "가볍게 인사하기" : "한마디 보내기"}
             </button>
             {compact ? <span className="ml-2 text-[11px] text-neutral-500">선택 · 매칭당 1회</span> : null}
           </div>
@@ -153,7 +168,7 @@ export default function OneOnOneContactNudge({ matchId, nudge, processing, onSen
               <p className="rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-[11px] font-bold leading-5 text-rose-700">
                 연락처 교환 후 잠수하거나 상대방에게 불쾌한 언행을 할 경우 제재 대상입니다.
               </p>
-              {ONE_ON_ONE_CONTACT_NUDGE_PRESETS.map((preset) => (
+              {(nudge.greetings_available ? ONE_ON_ONE_CONTACT_GREETING_PRESETS : ONE_ON_ONE_CONTACT_NUDGE_PRESETS).map((preset) => (
                 <button
                   key={preset.key}
                   type="button"

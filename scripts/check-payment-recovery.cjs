@@ -261,7 +261,8 @@ test("both contact checkout surfaces use the shared offer; free exchanges remain
   }
   assert.ok(source("app/mypage/page.tsx").includes("included={plusContactExchangeIncluded}"));
   assert.ok(source("components/dating/OneOnOneContactOffer.tsx").includes("!included && <PaymentCardNotice"));
-  assert.ok(source("components/dating/OneOnOneContactOffer.tsx").includes('compact={compact}'));
+  // Optional greetings use the small secondary style on both surfaces.
+  assert.match(source("components/dating/OneOnOneContactOffer.tsx"), /<OneOnOneContactNudge[^>]*hideReceived hideReply compact processing=/);
 });
 
 test("PostgreSQL migration is idempotent, private, deduplicated and leaves payment state alone", { skip: !process.env.PAYMENT_RECOVERY_PGLITE_PATH }, async () => {

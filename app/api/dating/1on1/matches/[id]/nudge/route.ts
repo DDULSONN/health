@@ -4,8 +4,9 @@ import {
   buildOneOnOneContactNudgeEmail,
   getOneOnOneContactNudgeEligibility,
   getOneOnOneContactNudgeMessage,
+  ONE_ON_ONE_CONTACT_GREETING_PRESETS,
 } from "@/lib/dating-1on1-contact-nudge";
-import { loadOneOnOneContactNudgeDelayHours } from "@/lib/dating-1on1-contact-nudge-policy";
+import { loadOneOnOneContactNudgeDelayHours, loadOneOnOneContactGreetingsAvailable } from "@/lib/dating-1on1-contact-nudge-policy";
 import { hasDatingBlockBetween } from "@/lib/dating-blocks";
 import { hasDatingContactPhoneBlockBetween } from "@/lib/dating-contact-blocks";
 import { notifyDatingUser } from "@/lib/dating-notifications";
@@ -79,6 +80,9 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   }
 
   const recipientUserId = isSource ? match.candidate_user_id : match.source_user_id;
+  if (ONE_ON_ONE_CONTACT_GREETING_PRESETS.some(item => item.key === preset.key) && !await loadOneOnOneContactGreetingsAvailable(admin)) {
+    return NextResponse.json({ error: "새 인사 문구를 준비 중이에요. 화면을 새로고침해 주세요." }, { status: 503 });
+  }
   const senderCardId = isSource ? match.source_card_id : match.candidate_card_id;
   try {
     const [memberBlocked, contactBlocked] = await Promise.all([

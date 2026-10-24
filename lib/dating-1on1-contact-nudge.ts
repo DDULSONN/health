@@ -1,3 +1,5 @@
+import type { OneOnOneContactReply } from "@/lib/dating-1on1-contact-reply";
+
 export const ONE_ON_ONE_CONTACT_NUDGE_DELAY_HOURS = 0;
 export const ONE_ON_ONE_CONTACT_NUDGE_DELAY_MS = ONE_ON_ONE_CONTACT_NUDGE_DELAY_HOURS * 60 * 60 * 1000;
 
@@ -20,7 +22,15 @@ export const ONE_ON_ONE_CONTACT_NUDGE_PRESETS = [
   },
 ] as const;
 
-export type OneOnOneContactNudgePresetKey = (typeof ONE_ON_ONE_CONTACT_NUDGE_PRESETS)[number]["key"];
+// Historical messages remain valid and are never rewritten on behalf of senders.
+export const ONE_ON_ONE_CONTACT_GREETING_PRESETS = [
+  { key: "nice_to_meet", message: "반가워요. 편하게 이야기 나눠보고 싶어요 🙂" },
+  { key: "coffee_together", message: "처음엔 가볍게 커피 한잔하면 좋겠어요 ☕" },
+  { key: "workout_chat", message: "운동 이야기부터 나눠봐도 좋겠네요!" },
+] as const;
+
+const ALL_CONTACT_NUDGE_PRESETS = [...ONE_ON_ONE_CONTACT_NUDGE_PRESETS, ...ONE_ON_ONE_CONTACT_GREETING_PRESETS];
+export type OneOnOneContactNudgePresetKey = (typeof ALL_CONTACT_NUDGE_PRESETS)[number]["key"];
 
 export type OneOnOneContactNudgeItem = {
   id?: string;
@@ -29,12 +39,16 @@ export type OneOnOneContactNudgeItem = {
   message_text: string;
   created_at: string;
   sender_display_name?: string | null;
+  reply?: OneOnOneContactReply | null;
 };
 
 export type OneOnOneContactNudgeSummary = {
   available: boolean;
   read_receipts_available?: boolean;
   can_mark_read?: boolean;
+  replies_available?: boolean;
+  can_reply?: boolean;
+  greetings_available?: boolean;
   eligible_at: string | null;
   can_send: boolean;
   sent_by_me: OneOnOneContactNudgeItem | null;
@@ -70,18 +84,18 @@ export function getOneOnOneContactNudgeSenderDisplayName(options: {
 
 export function getOneOnOneContactNudgeMessage(value: unknown) {
   if (typeof value !== "string") return null;
-  return ONE_ON_ONE_CONTACT_NUDGE_PRESETS.find((preset) => preset.key === value) ?? null;
+  return ALL_CONTACT_NUDGE_PRESETS.find((preset) => preset.key === value) ?? null;
 }
 
 export function buildOneOnOneContactNudgeEmail(message: string, senderDisplayName?: string | null) {
-  const preset = ONE_ON_ONE_CONTACT_NUDGE_PRESETS.find((item) => item.message === message);
+  const preset = ALL_CONTACT_NUDGE_PRESETS.find((item) => item.message === message);
   const safeMessage = preset?.message ?? "연락처를 교환하고 싶다는 한마디가 도착했어요.";
   const safeSenderName = getOneOnOneContactNudgeSenderDisplayName({ storedSenderName: senderDisplayName });
   const senderSubject = safeSenderName ? `${safeSenderName}님이` : "1:1 상대가";
   return {
     subject: `[짐툴] ${senderSubject} 한마디를 보냈어요`,
     text: [
-      `${senderSubject} 연락처 교환 한마디를 보냈어요.`,
+      `${senderSubject} 1:1 한마디를 보냈어요.`,
       "",
       `“${safeMessage}”`,
       "",
