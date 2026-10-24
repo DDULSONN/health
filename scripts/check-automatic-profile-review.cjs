@@ -23,9 +23,37 @@ function analyzer(fetcher, downloader = async () => ({ data: new Blob(['image'],
     '@/lib/dating-profile-review': { ruleReview: () => ({ ...clear }), cleanText: v => String(v ?? '').trim(), REVIEW_RULES_VERSION: 'test' },
     '@/lib/images': {}, '@/lib/supabase/server': {}, '@/lib/dating-review': review,
   }, { fetch: fetcher });
-  return () => engine.analyzeWithGemini(client, 'test-key', 'test-model', card);
+  return token => engine.analyzeWithGemini(client, 'test-key', 'test-model', card, token);
 }
 const response = result => ({ ok: true, json: async () => ({ candidates: [{ content: { parts: [{ text: JSON.stringify(result) }] } }] }) });
+test('gateway sends every photo, uses only gateway auth, and preserves evidence', async () => {
+  const result = await analyzer(async (url, init) => {
+    assert.equal(url, 'https://ai-gateway.vercel.sh/v1/chat/completions');
+    assert.equal(init.headers.Authorization, 'Bearer fixture-oidc');
+    assert.equal(init.headers['X-goog-api-key'], undefined);
+    assert.ok(init.signal);
+    const body = JSON.parse(init.body);
+    assert.equal(body.model, 'google/gemini-2.5-flash-lite');
+    assert.equal(body.messages[0].content.filter(x => x.type === 'image_url').length, 2);
+    return {ok: true, json: async () => ({choices: [{message: {content: JSON.stringify({...clear, suspicionLevel: 'high', photoFlags: ['AI 생성 워터마크']})}}]})};
+  })('fixture-oidc');
+  assert.equal(result.raw.transport, 'ai_gateway');
+  assert.equal(result.raw.provider, 'gemini');
+  assert.ok(result.photoFlags.includes('AI 생성 워터마크'));
+});
+for (const variant of ['402', '429', 'timeout', 'malformed']) test(`gateway ${variant} remains incomplete`, async () => {
+  const result = await analyzer(async () => {
+    if (variant === 'timeout') throw new Error('timeout');
+    if (variant === 'malformed') return {ok: true, json: async () => ({choices: []})};
+    return {ok: false, status: Number(variant), json: async () => ({error: 'unavailable'})};
+  })('fixture-oidc');
+  assert.equal(result.raw.provider, 'rules_fallback');
+});
+test('gateway cannot clear a profile with unreadable photos', async () => {
+  const result = await analyzer(async () => ({ok: true, json: async () => ({choices: [{message: {content: JSON.stringify(clear)}}]})}), async () => ({error: 'missing'}))('fixture-oidc');
+  assert.equal(result.suspicionLevel, 'medium');
+  assert.ok(result.raw.incomplete.length);
+});
 for (const variant of ['http-error', 'timeout', 'malformed']) test(`AI ${variant} stays incomplete and never mutates a profile`, async () => {
   const run = analyzer(async () => {
     if (variant === 'timeout') throw new Error('timeout');

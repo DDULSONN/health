@@ -115,7 +115,7 @@ async function downloadImagePart(admin: AdminClient, bucket: string, path: strin
   return null;
 }
 
-export async function analyzeWithGemini(admin: AdminClient, apiKey: string, model: string, card: CandidateCard): Promise<CardReview> {
+export async function analyzeWithGemini(admin: AdminClient, apiKey: string, model: string, card: CandidateCard, gatewayToken?: string): Promise<CardReview> {
   const imageParts = (
     await Promise.all(card.photoPaths.map((path) => downloadImagePart(admin, card.bucket, path).catch(() => null)))
   ).filter(Boolean);
@@ -145,14 +145,24 @@ export async function analyzeWithGemini(admin: AdminClient, apiKey: string, mode
   ].join("\n");
 
   try {
-    const res = await fetch(`${GEMINI_API_URL}/${encodeURIComponent(model)}:generateContent`, {
+    const gatewayModel = "google/gemini-2.5-flash-lite";
+    const res = await fetch(gatewayToken ? "https://ai-gateway.vercel.sh/v1/chat/completions" : `${GEMINI_API_URL}/${encodeURIComponent(model)}:generateContent`, {
       method: "POST",
       signal: AbortSignal.timeout(25_000),
       headers: {
         "Content-Type": "application/json",
-        "X-goog-api-key": apiKey,
+        ...(gatewayToken ? { Authorization: `Bearer ${gatewayToken}` } : { "X-goog-api-key": apiKey }),
       },
-      body: JSON.stringify({
+      body: JSON.stringify(gatewayToken ? {
+        model: gatewayModel,
+        messages: [{ role: "user", content: [
+          { type: "text", text: prompt },
+          ...imageParts.filter(part => part !== null).map(part => ({ type: "image_url", image_url: {
+            url: `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`,
+          } })),
+        ] }],
+        temperature: 0.1, max_tokens: 1200, response_format: { type: "json_object" },
+      } : {
         contents: [{ role: "user", parts: [{ text: prompt }, ...imageParts] }],
         generationConfig: {
           temperature: 0.1,
@@ -165,14 +175,14 @@ export async function analyzeWithGemini(admin: AdminClient, apiKey: string, mode
 
     const payload = await res.json().catch(() => ({}));
     if (!res.ok) {
-      return { ...heuristic, raw: { ...heuristic.raw, provider: "rules_fallback", geminiStatus: res.status, geminiError: payload } };
+      return { ...heuristic, raw: { ...heuristic.raw, provider: "rules_fallback", transport: gatewayToken ? "ai_gateway" : "direct", geminiStatus: res.status, geminiError: payload } };
     }
 
-    const parsed = parseAiJson(extractGeminiText(payload));
+    const parsed = parseAiJson(gatewayToken ? (typeof payload.choices?.[0]?.message?.content === "string" ? payload.choices[0].message.content : "") : extractGeminiText(payload));
     if (!parsed) return { ...heuristic, raw: { ...heuristic.raw, provider: "rules_fallback", geminiParseFailed: true } };
 
     if (parsed.suspicionLevel === "clear" && (parsed.flags.length || parsed.photoFlags.length || parsed.textFlags.length)) parsed.suspicionLevel = "low";
-    return combineReview(heuristic, parsed, incomplete, { provider: "gemini", model, rulesVersion: REVIEW_RULES_VERSION });
+    return combineReview(heuristic, parsed, incomplete, { provider: "gemini", transport: gatewayToken ? "ai_gateway" : "direct", model: gatewayToken ? gatewayModel : model, rulesVersion: REVIEW_RULES_VERSION });
   } catch (error) {
     return {
       ...heuristic,

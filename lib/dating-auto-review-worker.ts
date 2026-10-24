@@ -2,6 +2,7 @@ import { analyzeWithGemini, loadCandidateById, ruleReview } from "@/lib/admin-da
 import { addRegistrationReviewFlags, reviewFailure } from "@/lib/dating-auto-review-policy";
 import { combineReview } from "@/lib/dating-review";
 import { createAdminClient } from "@/lib/supabase/server";
+import { getVercelOidcToken } from "@vercel/oidc";
 
 type Job = { source_type: "open_card" | "one_on_one"; card_id: string; revision: string; lease_token: string; payload: Record<string, unknown> };
 
@@ -22,8 +23,13 @@ export async function runAutomaticProfileReviews() {
         return "gone";
       }
       const key = process.env.GEMINI_API_KEY;
+      // Resolve per invocation so a warm function never retains an expired OIDC token.
+      let gatewayToken = process.env.AI_GATEWAY_API_KEY;
+      if (!gatewayToken) {
+        try { gatewayToken = await getVercelOidcToken(); } catch { /* Local/direct-key deployments. */ }
+      }
       const model = process.env.GEMINI_VISION_MODEL || process.env.GEMINI_MODEL || "gemini-2.5-flash-lite";
-      const raw = key ? await analyzeWithGemini(admin, key, model, card)
+      const raw = key || gatewayToken ? await analyzeWithGemini(admin, key ?? "", model, card, gatewayToken)
         : combineReview(ruleReview(card), null, ["AI 검수 설정 누락"], { provider: "rules_fallback" });
       // Determine completeness before enriching the result with registered age evidence.
       const failure = reviewFailure(raw);
