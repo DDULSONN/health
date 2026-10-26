@@ -29,7 +29,7 @@ test('API: verified caller only, no body, no caching, cross-origin rejected, GET
     'next/server': next,
     '@/lib/supabase/request': { getRequestAuthContext: async () => ({ user }) },
     '@/lib/supabase/server': { createAdminClient: () => 'ADMIN' },
-    '@/lib/return-profile-reward-server': { readReturnProfileReward: async (...args) => { calls.push(args); if (fail) throw Error('secret'); return reward('eligible'); } },
+    '@/lib/return-profile-reward-server': { readProfileReward: async (...args) => { calls.push(args); if (fail) throw Error('secret'); return reward('eligible'); } },
   });
   const request = (method, options = {}) => new Request('https://helchang.com/api/return-profile-reward?userId=mallory', { method, headers: { host: 'helchang.com', origin: 'https://helchang.com' }, ...options });
   let response = await route.GET(request('GET'));

@@ -3,7 +3,7 @@
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os'), http = require('node:http');
 const webpack = require('webpack');
 const root = path.resolve(__dirname, '..');
-async function startPreview(port = 0) {
+async function startPreview(port = 0, options = {}) {
   const output = fs.mkdtempSync(path.join(os.tmpdir(), 'gymtools-return-reward-preview-'));
   const adapter = path.join(__dirname,'fixtures/return-reward-adapters.tsx');
   await new Promise((resolve,reject) => {
@@ -23,10 +23,14 @@ async function startPreview(port = 0) {
     if (url.pathname === '/fixture.css') { res.setHeader('Content-Type','text/css; charset=utf-8'); res.end(css); return; }
     if (url.pathname.startsWith('/api/')) {
       if (url.pathname !== '/api/return-profile-reward') { res.writeHead(404); res.end(); return; }
+      if (options.handleApi) {
+        Promise.resolve(options.handleApi(req,res)).catch(error=>{ console.error(error);res.writeHead(500);res.end(); });return;
+      }
       const preview = new URL(req.headers.referer || 'http://localhost').searchParams.get('preview');
       const state = req.method === 'POST' || preview === 'rewarded' ? 'rewarded' : preview === 'ready' ? 'ready' : 'eligible';
+      const first = new URL(req.headers.referer || 'http://localhost').searchParams.get('campaign') === 'first';
       res.setHeader('Content-Type','application/json; charset=utf-8');
-      res.end(JSON.stringify({ userId:'return-member', reward:{ campaignKey:'return-profile-2026-10',credits:5,state } })); return;
+      res.end(JSON.stringify({ userId:'return-member', reward:{ campaignKey:first?'first-profile-2026-10':'return-profile-2026-10',credits:first?1:5,state } })); return;
     }
     res.setHeader('Content-Type','text/html; charset=utf-8');
     res.end('<!doctype html><html lang="ko"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/fixture.css"><body><aside style="font:12px sans-serif;text-align:center;padding:8px;background:#f5f5f5">로컬 미리보기 · 가상 회원 · 실제 지급 없음</aside><div id="root"></div><script src="/fixture.js"></script></body></html>');

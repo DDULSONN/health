@@ -5,9 +5,10 @@ import { usePathname } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { fetchClientJson } from "@/lib/client-json-request";
-import { isReturnProfileReward, showReturnRewardOnPath, type ReturnProfileReward } from "@/lib/return-profile-reward";
+import { showReturnRewardOnPath } from "@/lib/return-profile-reward";
+import { FIRST_PROFILE_CAMPAIGN, isProfileReward, type ProfileReward } from "@/lib/first-profile-reward";
 
-type Result = { userId: string; reward: ReturnProfileReward | null };
+type Result = { userId: string; reward: ProfileReward | null };
 
 export default function ReturnProfileRewardBanner() {
   const pathname = usePathname();
@@ -57,7 +58,7 @@ export default function ReturnProfileRewardBanner() {
       });
       let response = await get(claim ? "POST" : "GET");
       const accept = () => response.response.ok && response.body?.userId === id &&
-        (response.body.reward === null || isReturnProfileReward(response.body.reward));
+        (response.body.reward === null || isProfileReward(response.body.reward));
       if (!current()) return;
       if (!accept()) throw new Error("unavailable");
       if (!claim && response.body?.reward?.state === "ready") {
@@ -90,6 +91,31 @@ export default function ReturnProfileRewardBanner() {
   if (!allowed || !reward || dismissed === key) return null;
   const rewarded = reward.state === "rewarded";
   const ready = reward.state === "ready";
+  const first = reward.campaignKey === FIRST_PROFILE_CAMPAIGN;
+  if (first) return (
+    <aside aria-label="1:1 프로필 작성 혜택" className="mx-auto mt-3 w-[calc(100%-2rem)] max-w-5xl rounded-xl border border-rose-200 bg-white px-3 py-2 text-gray-900">
+      <div className="flex items-center gap-2">
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold leading-6">{rewarded ? "오픈카드 지원권 1장을 받았어요" : "1:1 프로필 등록하면 오픈카드 지원권 1장"}</p>
+          <p className="text-xs leading-5 text-gray-500">{rewarded ? "기존 지원권에 더해졌어요." : "휴대폰 인증 후 등록 완료 시 한 번 드려요."}</p>
+        </div>
+        <button type="button" aria-label="작성 혜택 안내 닫기" className="-mr-1 flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-xl text-gray-400 hover:bg-gray-50" onClick={() => {
+          setDismissed(key);
+          try { sessionStorage.setItem(`return-reward:${key}`, "1"); } catch { /* closing works without storage */ }
+        }}>×</button>
+      </div>
+      <div className="flex flex-wrap items-center gap-x-4">
+        {rewarded ? <Link href="/community/dating/cards?tab=open_cards" className="inline-flex min-h-11 items-center text-sm font-semibold text-rose-600">오픈카드 보기 →</Link>
+          : ready ? <button type="button" disabled={busy} onClick={() => userId && void refresh(userId, true)} className="min-h-11 text-sm font-semibold text-rose-600 disabled:opacity-60">{busy ? "지원권 지급 확인 중…" : "지급 다시 확인"}</button>
+          : <Link href="/onboarding/dating?target=one_on_one" className="inline-flex min-h-11 items-center text-sm font-semibold text-rose-600">프로필 작성하기 →</Link>}
+        {!rewarded && <details className="text-xs text-gray-500">
+          <summary className="flex min-h-11 cursor-pointer items-center underline decoration-gray-300 underline-offset-4">지급 안내</summary>
+          <p className="max-w-lg pb-2 leading-5">안내를 받은 대상 회원이 휴대폰 인증 후 새 1:1 프로필 등록을 완료하면 계정당 한 번 지급돼요. 통합 작성에서는 1:1 매칭을 포함해 주세요. 오픈카드만 등록하거나 기존 프로필을 수정하는 경우는 제외되며, 복귀 지원권 5장 혜택과 중복 지급되지 않아요.</p>
+        </details>}
+      </div>
+      {failed && ready && <p role="status" className="text-xs leading-5 text-gray-600">프로필은 등록됐어요. 지원권 지급만 다시 확인해 주세요.</p>}
+    </aside>
+  );
   return (
     <aside aria-label="복귀 회원 지원권 혜택" className="mx-auto mt-3 w-[calc(100%-2rem)] max-w-5xl rounded-2xl border border-rose-200 bg-white px-4 py-3 text-gray-900 shadow-sm">
       <div className="flex items-start justify-between gap-2">
