@@ -26,6 +26,7 @@ const unitFiles = [
   'check-one-on-one-notification-status.cjs',
   'check-dating-1on1-match-journey.cjs',
   'check-dating-1on1-ui-polish.cjs',
+  'check-site-button-tone.cjs',
   'check-admin-review-confirmation.cjs',
   'check-dating-sexual-text-review.cjs',
   'check-dating-contact-text-review.cjs',
@@ -79,6 +80,7 @@ const unitFiles = [
   'check-profiles-authority-write-guard.cjs',
 ];
 const browserFiles = [
+  'check-site-button-tone-browser.cjs',
   'check-refresh-monitor-browser.cjs',
   'check-dating-notification-email-browser.cjs',
   'check-signup-verification-browser.cjs',

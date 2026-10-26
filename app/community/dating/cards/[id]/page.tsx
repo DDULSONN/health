@@ -91,7 +91,7 @@ export default function OpenCardDetailPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <Link href={listHref} className="text-sm text-neutral-500 hover:text-neutral-700">
+      <Link href={listHref} className="text-sm text-neutral-500 hover:text-neutral-700 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
         뒤로가기
       </Link>
 
@@ -171,7 +171,7 @@ export default function OpenCardDetailPage() {
           <div className="flex flex-wrap gap-2">
             <Link
               href={`/community/dating/cards/${card.id}/apply${fromNearby ? "?from=nearby" : ""}`}
-              className="inline-flex min-h-[44px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
+              className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-4 text-sm font-medium text-white hover:bg-[#d90037] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
             >
               지원하기
             </Link>

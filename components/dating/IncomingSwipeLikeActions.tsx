@@ -58,13 +58,13 @@ export default function IncomingSwipeLikeActions({
       <div className="flex flex-wrap gap-2">
         {canLike && (
           <button type="button" disabled={busy !== null} onClick={() => void act("like")}
-            className="min-h-11 rounded-md bg-pink-500 px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50">
+            className="min-h-11 rounded-xl bg-[#f0003d] px-3 text-xs font-medium text-white disabled:cursor-not-allowed disabled:opacity-50 hover:bg-[#d90037] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
             {busy === "like" ? "처리 중..." : "바로 라이크"}
           </button>
         )}
         {canDelete && (
           <button type="button" disabled={busy !== null} onClick={() => void act("delete")}
-            className="min-h-11 min-w-11 rounded-md border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50">
+            className="min-h-11 min-w-11 rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-600 hover:bg-neutral-50 disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed">
             {busy === "delete" ? "삭제 중..." : "삭제"}
           </button>
         )}

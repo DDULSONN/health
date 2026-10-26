@@ -393,7 +393,7 @@ export default function DatingCardApplyPage() {
 
   return (
     <main className="mx-auto max-w-lg px-4 py-8">
-      <Link href={detailHref} className="text-sm text-neutral-500 hover:text-neutral-700">
+      <Link href={detailHref} className="text-sm text-neutral-500 hover:text-neutral-700 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
         뒤로가기
       </Link>
 
@@ -436,7 +436,7 @@ export default function DatingCardApplyPage() {
               <button
                 type="button"
                 onClick={handleUseLatestAgain}
-                className="inline-flex min-h-[36px] items-center rounded-md border border-emerald-300 bg-white px-3 text-xs font-medium text-emerald-700"
+                className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
               >
                 다시 불러오기
               </button>
@@ -458,7 +458,7 @@ export default function DatingCardApplyPage() {
                     setReuseLastPhotos(true);
                     setPhotos([null, null]);
                   }}
-                  className="mt-2 inline-flex min-h-[36px] items-center rounded-md border border-emerald-300 bg-white px-3 text-xs font-medium text-emerald-700"
+                  className="mt-2 inline-flex min-h-[44px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                 >
                   이전 사진 다시 사용
                 </button>
@@ -533,7 +533,7 @@ export default function DatingCardApplyPage() {
           <div className="space-y-2">
             <p className="text-sm text-red-600">{error}</p>
             {profileEditUrl && (
-              <Link href={profileEditUrl} className="inline-block text-sm text-pink-700 underline">
+              <Link href={profileEditUrl} className="inline-block text-sm text-pink-700 underline transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">
                 닉네임 설정하러 가기
               </Link>
             )}
@@ -546,7 +546,7 @@ export default function DatingCardApplyPage() {
                     type="button"
                     onClick={() => void handleRequestApplyCredits()}
                     disabled={creditRequesting}
-                    className="inline-flex min-h-[36px] items-center rounded-md bg-amber-500 px-3 text-xs font-medium text-white disabled:opacity-50"
+                    className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-3 text-xs font-medium text-white disabled:opacity-50 hover:bg-[#d90037] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                   >
                     {creditRequesting ? "결제창 준비 중..." : "지원권 5장 충전 · 5,000원"}
                   </button>
@@ -554,7 +554,7 @@ export default function DatingCardApplyPage() {
                     href={OPEN_KAKAO_URL}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex min-h-[36px] items-center rounded-md border border-amber-300 bg-white px-3 text-xs font-medium text-amber-800"
+                    className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
                   >
                     오픈카톡 문의
                   </a>
@@ -568,7 +568,7 @@ export default function DatingCardApplyPage() {
         <button
           type="submit"
           disabled={submitting || creditRequesting || photoPreparation.busy}
-          className="w-full min-h-[46px] rounded-xl bg-pink-500 text-sm font-medium text-white hover:bg-pink-600 disabled:opacity-50"
+          className="w-full min-h-[46px] rounded-xl bg-[#f0003d] text-sm font-medium text-white hover:bg-[#d90037] disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
         >
           {submitting ? "지원 중..." : "지원하기"}
         </button>

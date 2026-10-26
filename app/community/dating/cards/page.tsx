@@ -3050,12 +3050,12 @@ function OpenCardsContent() {
           href={homeAdLink.linkUrl}
           target={homeAdLink.linkUrl.startsWith("/") ? undefined : "_blank"}
           rel={homeAdLink.linkUrl.startsWith("/") ? undefined : "noreferrer"}
-          className="mb-4 flex min-h-[38px] items-center gap-2 border border-blue-100 bg-blue-50 px-3 text-xs font-bold text-blue-700 transition hover:bg-blue-100/70"
+          className="mb-4 flex min-h-[44px] items-center gap-2 border border-neutral-200 bg-neutral-50 px-3 text-xs font-semibold text-neutral-700 transition hover:bg-neutral-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
           title={homeAdLink.description || homeAdLink.title}
         >
-          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-blue-500" aria-hidden />
+          <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-[#f0003d]" aria-hidden />
           <span className="min-w-0 truncate">{homeAdLink.title}</span>
-          <span className="ml-auto shrink-0 text-[11px] text-blue-600">보기 &rsaquo;</span>
+          <span className="ml-auto shrink-0 text-[11px] text-neutral-500">보기 &rsaquo;</span>
         </a>
       ) : null}
       {showLoveFortuneSection ? <AdminLoveFortunePanel /> : null}
@@ -3083,7 +3083,7 @@ function OpenCardsContent() {
               ) : hasActiveMyOpenCard ? (
                 <Link
                   href="/mypage?section=matching"
-                  className="inline-flex min-h-[42px] items-center justify-center rounded-lg bg-neutral-950 px-4 text-sm font-bold text-white transition hover:bg-neutral-800"
+                  className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-neutral-950 px-4 text-sm font-semibold text-white transition hover:bg-neutral-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
                 >
                   상태 확인
                 </Link>
@@ -3092,7 +3092,7 @@ function OpenCardsContent() {
                   type="button"
                   disabled={reactivatingHomeOpenCardId === reactivatableOpenCard.id}
                   onClick={() => void handleReactivateHomeOpenCard(reactivatableOpenCard.id)}
-                  className="inline-flex min-h-[42px] items-center justify-center rounded-lg bg-rose-600 px-4 text-sm font-bold text-white transition hover:bg-rose-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-[#f0003d] px-4 text-sm font-semibold text-white transition hover:bg-[#d90037] disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
                 >
                   {reactivatingHomeOpenCardId === reactivatableOpenCard.id ? "등록 중..." : "기존 카드 다시 공개"}
                 </button>
@@ -3100,7 +3100,7 @@ function OpenCardsContent() {
               {openCardPresenceReady && hasAnyOpenCardProfile && !showInstantOpenCardHint ? (
                 <Link
                   href={instantOpenCardHref}
-                  className="inline-flex min-h-[42px] items-center justify-center rounded-lg bg-rose-600 px-4 text-sm font-bold text-white transition hover:bg-rose-700"
+                  className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-[#f0003d] px-4 text-sm font-semibold text-white transition hover:bg-[#d90037] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
                 >
                   {instantOpenCardLabel}
                 </Link>
@@ -3114,7 +3114,7 @@ function OpenCardsContent() {
               type="button"
               disabled={boostingFirstQueueCardId === firstQueueBoostCard.id}
               onClick={() => void handleFirstQueueBoost(firstQueueBoostCard.id)}
-              className="mt-3 inline-flex min-h-[40px] w-full items-center justify-center rounded-lg border border-sky-100 bg-sky-50 px-4 text-xs font-black text-sky-700 transition hover:bg-sky-100 disabled:cursor-not-allowed disabled:opacity-60"
+              className="mt-3 inline-flex min-h-[44px] w-full items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50 px-4 text-xs font-semibold text-neutral-700 transition hover:bg-neutral-50 disabled:cursor-not-allowed disabled:opacity-60 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
             >
               {boostingFirstQueueCardId === firstQueueBoostCard.id ? "앞당기는 중..." : "첫 카드 순번 30명 앞당기기"}
             </button>
@@ -3425,7 +3425,7 @@ function OpenCardsContent() {
               <button
                 type="button"
                 onClick={() => setSwipePremiumGuideOpen(false)}
-                className="inline-flex h-9 w-9 items-center justify-center rounded-full border border-neutral-200 text-lg text-neutral-500 hover:bg-neutral-50"
+                className="inline-flex min-h-[44px] min-w-[44px] items-center justify-center rounded-full border border-neutral-200 text-lg text-neutral-500 hover:bg-neutral-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                 aria-label="빠른매칭 플러스 안내 닫기"
               >
                 ×
@@ -3442,7 +3442,7 @@ function OpenCardsContent() {
                 href={OPEN_KAKAO_URL}
                 target="_blank"
                 rel="noreferrer"
-                className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-2xl border border-amber-200 bg-white px-4 text-sm font-bold text-amber-800 hover:bg-amber-50"
+                className="inline-flex min-h-[44px] flex-1 items-center justify-center rounded-xl border border-neutral-200 bg-white px-4 text-sm font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
               >
                 오픈카톡 문의
               </a>

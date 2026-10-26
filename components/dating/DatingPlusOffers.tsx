@@ -170,9 +170,9 @@ export default function DatingPlusOffers({
           type="button"
           disabled={disabled || Boolean(submitting)}
           onClick={() => void startCheckout(plan)}
-          className={`flex min-h-[58px] w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition disabled:cursor-not-allowed disabled:opacity-50 ${
+          className={`flex min-h-[58px] w-full items-center justify-between gap-3 rounded-xl border px-3 py-2.5 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed disabled:opacity-50 ${
             plan.productType === "dating_all_pass_30d"
-              ? "border-amber-300 bg-amber-50 hover:bg-amber-100/70"
+              ? "border-rose-200 bg-rose-50/40 hover:bg-rose-50"
               : "border-neutral-200 bg-white hover:bg-neutral-50"
           }`}
         >

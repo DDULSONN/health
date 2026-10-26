@@ -16,7 +16,7 @@ export default function DatingReportButton({ targetType, targetId, label, onRepo
   const [open, setOpen] = useState(false);
   return <>
     <button type="button" onClick={() => setOpen(true)} aria-label={`${label} 신고`}
-      className="inline-flex h-8 shrink-0 items-center justify-center rounded-md border border-neutral-200 bg-white px-2.5 text-xs font-medium text-neutral-500 hover:bg-neutral-50">
+      className="inline-flex min-h-[44px] shrink-0 items-center justify-center rounded-xl border border-neutral-200 bg-white px-2.5 text-xs font-medium text-neutral-500 hover:bg-neutral-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed">
       신고
     </button>
     {open ? <DatingReportDialog targetType={targetType} targetId={targetId} label={label} onClose={() => setOpen(false)} onReported={onReported} /> : null}
@@ -92,8 +92,8 @@ export function DatingReportDialog({ targetType, targetId, label, onClose, onRep
       <p className="mt-1 break-words text-sm text-neutral-500">{label}</p>
       {result ? <>
         <p role="status" className="mt-4 whitespace-pre-wrap text-sm leading-relaxed">{result.message}</p>
-        {!result.blocked ? <button type="button" onClick={() => setResult(null)} className="mt-4 min-h-11 w-full rounded-lg border border-neutral-200 text-sm">차단 다시 시도</button> : null}
-        <button ref={confirmRef} type="button" onClick={close} className="mt-3 min-h-11 w-full rounded-lg bg-neutral-900 text-sm font-medium text-white">확인</button>
+        {!result.blocked ? <button type="button" onClick={() => setResult(null)} className="mt-4 min-h-11 w-full rounded-xl border border-neutral-200 text-sm transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed">차단 다시 시도</button> : null}
+        <button ref={confirmRef} type="button" onClick={close} className="mt-3 min-h-11 w-full rounded-xl bg-neutral-900 text-sm font-medium text-white transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed">확인</button>
       </> : <>
         <label className="mt-4 block text-sm font-medium">신고 사유
           <select value={reason} disabled={busy} onChange={(event) => setReason(event.target.value)} className="mt-2 min-h-11 w-full rounded-lg border border-neutral-200 bg-white px-3 text-sm">
@@ -108,8 +108,8 @@ export function DatingReportDialog({ targetType, targetId, label, onClose, onRep
         <p className="mt-2 text-xs leading-relaxed text-neutral-500">신고하면 상대 회원도 차단됩니다. 이미 교환한 연락처는 회수되지 않으며, 결제가 자동 취소되지는 않습니다.</p>
         {error ? <p role="alert" className="mt-3 text-sm text-rose-600">{error}</p> : null}
         <div className="sticky -bottom-5 -mx-5 -mb-5 mt-4 flex gap-2 border-t border-neutral-100 bg-white px-5 py-4">
-          <button type="button" disabled={busy} onClick={close} className="min-h-11 flex-1 rounded-lg border border-neutral-200 text-sm disabled:opacity-50">닫기</button>
-          <button type="button" disabled={busy || !reason} onClick={() => void submit()} className="min-h-11 flex-1 rounded-lg bg-neutral-900 text-sm font-medium text-white disabled:opacity-50">{busy ? "접수 중…" : "신고 접수"}</button>
+          <button type="button" disabled={busy} onClick={close} className="min-h-11 flex-1 rounded-xl border border-neutral-200 text-sm disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed">닫기</button>
+          <button type="button" disabled={busy || !reason} onClick={() => void submit()} className="min-h-11 flex-1 rounded-xl bg-neutral-900 text-sm font-medium text-white disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed">{busy ? "접수 중…" : "신고 접수"}</button>
         </div>
       </>}
     </dialog>, document.body

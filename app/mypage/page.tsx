@@ -453,7 +453,7 @@ function SmallDatingReportButton({
       type="button"
       disabled={disabled}
       onClick={onClick}
-      className="inline-flex h-8 items-center rounded-md border border-neutral-200 bg-white px-3 text-[11px] font-medium text-neutral-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50"
+      className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-[11px] font-medium text-neutral-500 hover:border-rose-200 hover:bg-rose-50 hover:text-rose-700 disabled:cursor-not-allowed disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
     >
       {disabled ? "신고 중..." : "신고"}
     </button>
@@ -9794,15 +9794,15 @@ export default function MyPage() {
       </>
       )}
       {showSettingsSection && (
-      <section className="mb-5 rounded-2xl border border-sky-200 bg-sky-50/40 p-5">
+      <section className="mb-5 rounded-2xl border border-neutral-200 bg-white p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="text-lg font-bold text-sky-900">1:1 문의 접수</h2>
-            <p className="mt-1 text-sm text-sky-800">
+            <h2 className="text-base font-semibold text-neutral-950">1:1 문의 접수</h2>
+            <p className="mt-1 text-sm leading-6 text-neutral-600">
               결제, 소개팅, 신고/악용, 계정 문제를 마이페이지에서 바로 접수할 수 있습니다.
             </p>
             {!supportPanelOpen && (
-              <p className="mt-1 text-xs text-sky-700">
+              <p className="mt-1 text-xs leading-5 text-neutral-600">
                 필요할 때만 펼쳐서 문의를 남기고 답변 이력을 확인할 수 있습니다.
               </p>
             )}
@@ -9810,14 +9810,14 @@ export default function MyPage() {
           <div className="flex flex-wrap gap-2">
             <Link
               href="/dating-policy"
-              className="rounded-lg border border-sky-300 bg-white px-3 py-2 text-xs font-medium text-sky-800 hover:bg-sky-100"
+              className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
             >
               소개팅 운영정책 보기
             </Link>
             <button
               type="button"
               onClick={() => setSupportPanelOpen((prev) => !prev)}
-              className="rounded-lg border border-sky-300 bg-white px-3 py-2 text-xs font-medium text-sky-800 hover:bg-sky-100"
+              className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-200 bg-white px-3 py-2 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
             >
               {supportPanelOpen ? "문의 접기" : "문의 펼치기"}
             </button>
@@ -9878,15 +9878,15 @@ export default function MyPage() {
                 type="button"
                 onClick={() => void handleSubmitSupportInquiry()}
                 disabled={supportSubmitting}
-                className="min-h-[44px] rounded-xl bg-sky-600 px-4 text-sm font-medium text-white hover:bg-sky-700 disabled:opacity-60"
+                className="min-h-[44px] rounded-xl bg-[#f0003d] px-4 text-sm font-medium text-white hover:bg-[#d90037] disabled:opacity-60 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
               >
                 {supportSubmitting ? "접수 중..." : "문의 접수하기"}
               </button>
-              <span className="text-xs text-sky-800">긴급 문의: gymtools.kr@gmail.com / 010-8693-0657</span>
+              <span className="text-xs text-neutral-500">긴급 문의: gymtools.kr@gmail.com / 010-8693-0657</span>
             </div>
 
             <div className="mt-5">
-              <p className="text-sm font-semibold text-sky-900">내 문의 이력</p>
+              <p className="text-sm font-semibold text-neutral-900">내 문의 이력</p>
               {supportLoading ? (
                 <p className="mt-2 text-sm text-neutral-500">불러오는 중...</p>
               ) : supportItems.length === 0 ? (
@@ -9984,7 +9984,7 @@ export default function MyPage() {
                   {card.status === "pending" || card.status === "approved" ? (
                     <Link
                       href={`/dating/paid?editId=${card.id}`}
-                      className="inline-flex h-8 items-center rounded-md border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 shadow-sm hover:bg-neutral-50"
+                      className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 shadow-none hover:bg-neutral-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
                     >
                       내용 수정
                     </Link>
@@ -9993,7 +9993,7 @@ export default function MyPage() {
                     type="button"
                     disabled={deletingPaidCardIds.includes(card.id)}
                     onClick={() => void handleDeleteMyPaidCard(card.id)}
-                    className="inline-flex h-8 items-center rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                    className="inline-flex min-h-[44px] items-center rounded-xl border border-red-300 bg-white px-3 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                   >
                     {deletingPaidCardIds.includes(card.id) ? "삭제 중..." : "삭제"}
                   </button>
@@ -10043,14 +10043,14 @@ export default function MyPage() {
                       <button
                         type="button"
                         onClick={() => void handlePaidApplicationStatus(app.id, "accepted")}
-                        className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white"
+                        className="min-h-[44px] rounded-xl bg-[#f0003d] px-3 text-xs font-medium text-white hover:bg-[#d90037] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                       >
                         수락
                       </button>
                       <button
                         type="button"
                         onClick={() => void handlePaidApplicationStatus(app.id, "rejected")}
-                        className="h-9 rounded-lg bg-red-600 px-3 text-xs font-medium text-white"
+                        className="min-h-[44px] rounded-xl border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                       >
                         거절
                       </button>
@@ -10061,7 +10061,7 @@ export default function MyPage() {
                         type="button"
                         disabled={cancelingPaidAppliedIds.includes(app.id)}
                         onClick={() => void handleCancelReceivedPaidApplication(app.id)}
-                        className="h-9 rounded-lg border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                        className="min-h-[44px] rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-60 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                       >
                         {cancelingPaidAppliedIds.includes(app.id) ? "취소 중..." : "매칭 취소"}
                       </button>
@@ -10129,7 +10129,7 @@ export default function MyPage() {
                         type="button"
                         disabled={cancelingPaidAppliedIds.includes(app.id)}
                         onClick={() => void handleCancelMyAppliedPaidApplication(app.id)}
-                        className="h-8 rounded-md border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                        className="min-h-[44px] rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-60 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                       >
                         {cancelingPaidAppliedIds.includes(app.id) ? "취소 중..." : app.status === "accepted" ? "매칭 취소" : "지원 취소"}
                       </button>
@@ -10138,7 +10138,7 @@ export default function MyPage() {
                       type="button"
                       disabled={deletingPaidAppliedIds.includes(app.id)}
                       onClick={() => void handleDeleteMyAppliedPaidApplication(app.id)}
-                      className="h-8 rounded-md border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60"
+                      className="min-h-[44px] rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                     >
                       {deletingPaidAppliedIds.includes(app.id) ? "삭제 중..." : "지원서 삭제"}
                     </button>
@@ -10212,7 +10212,7 @@ export default function MyPage() {
               const priorityBoostDetailOpen = oneOnOnePriorityDetailCardId === item.id;
 
               return (
-                <div key={item.id} className="rounded-xl border border-sky-200 bg-white p-3">
+                <div key={item.id} className="rounded-xl border border-neutral-200 bg-white p-3">
                   <div className="flex items-center justify-between gap-2">
                     <p className="text-sm font-medium text-neutral-900">
                       {item.name} / {item.sex === "male" ? "남자" : "여자"} / {item.age ?? "-"}세
@@ -10253,7 +10253,7 @@ export default function MyPage() {
                       {canEditOneOnOneCard ? (
                         <Link
                           href={`/dating/1on1?editId=${item.id}`}
-                          className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-lg border border-amber-300 bg-amber-50 px-4 text-xs font-semibold text-amber-800 hover:bg-amber-100"
+                          className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50 px-4 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
                         >
                           신청서 수정
                         </Link>
@@ -10271,7 +10271,7 @@ export default function MyPage() {
                           type="button"
                           onClick={() => void handleRestoreMyOneOnOneCard(item.id)}
                           disabled={mutatingOneOnOneCard}
-                          className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-lg border border-emerald-300 bg-emerald-50 px-4 text-xs font-semibold text-emerald-800 hover:bg-emerald-100 disabled:opacity-50"
+                          className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-xl border border-neutral-200 bg-neutral-50 px-4 text-xs font-semibold text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                         >
                           {restoringOneOnOneIds.includes(item.id) ? "처리 중..." : "프로필 다시 올리기"}
                         </button>
@@ -10298,7 +10298,7 @@ export default function MyPage() {
                           type="button"
                           onClick={() => void handleRemoveMyOneOnOneCard(item.id)}
                           disabled={mutatingOneOnOneCard}
-                          className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-md px-2 text-[11px] font-medium text-neutral-400 underline decoration-neutral-300 underline-offset-4 hover:text-red-600 active:scale-[0.98] disabled:opacity-50"
+                          className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-xl px-2 text-[11px] font-medium text-neutral-400 underline decoration-neutral-300 underline-offset-4 hover:text-red-600 active:scale-[0.98] disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                         >
                           {removingOneOnOneIds.includes(item.id) ? "삭제 중..." : "삭제"}
                         </button>
@@ -10338,7 +10338,7 @@ export default function MyPage() {
                     <div className="relative mt-3 overflow-hidden rounded-xl border border-neutral-200 bg-neutral-50 p-4">
                       <div className="relative flex flex-wrap items-start justify-between gap-3">
                         <div className="min-w-0">
-                          <div className="flex items-center gap-2">
+                          <div className="flex flex-wrap items-center gap-2">
                             <span className="rounded-md border border-neutral-200 bg-white px-2 py-0.5 text-[10px] font-bold text-neutral-700">PLUS</span>
                             <p className="text-sm font-bold text-neutral-950">1:1 매칭 플러스</p>
                           </div>
@@ -10365,7 +10365,7 @@ export default function MyPage() {
                             type="button"
                             disabled={priorityBoostSubmitting}
                             onClick={() => setOneOnOnePriorityDetailCardId((prev) => (prev === item.id ? null : item.id))}
-                            className="min-h-[44px] shrink-0 rounded-xl bg-neutral-900 px-4 text-xs font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500"
+                            className="min-h-[44px] shrink-0 rounded-xl bg-neutral-900 px-4 text-xs font-semibold text-white transition hover:bg-neutral-800 disabled:cursor-not-allowed disabled:bg-neutral-200 disabled:text-neutral-500 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
                           >
                             {priorityBoostSubmitting ? "결제 준비 중..." : priorityBoostDetailOpen ? "혜택 닫기" : "혜택 보기"}
                           </button>
@@ -10388,7 +10388,7 @@ export default function MyPage() {
                       <div className="mt-3 rounded-xl border border-neutral-200 bg-white p-3">
                         {oneOnOneRefreshReadError ? <div role="alert" className="mb-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                           <p>{oneOnOneRefreshReadError}</p>
-                          <button type="button" className="mt-2 min-h-[44px] rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700"
+                          <button type="button" className="mt-2 min-h-[44px] rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                             onClick={() => { void reloadOneOnOneRecommendations(true, true).catch(() => setOneOnOneRefreshReadError("명단을 불러오지 못했어요. 네트워크 연결을 확인하고 다시 눌러 주세요. 횟수는 차감되지 않아요.")); }}>
                             명단 다시 불러오기 · 횟수 차감 없음
                           </button>
@@ -10451,7 +10451,7 @@ export default function MyPage() {
                                         type="button"
                                         disabled={selecting || saving}
                                         onClick={() => void handleOneOnOneAutoRecommendationSelect(item.id, card.id, card.name)}
-                                        className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-3 text-xs font-semibold text-white hover:bg-[#d90037] disabled:opacity-50"
+                                        className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-3 text-xs font-semibold text-white hover:bg-[#d90037] disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                                       >
                                         {selecting ? "요청 보내는 중..." : "매칭 요청 보내기"}
                                       </button>
@@ -10459,7 +10459,7 @@ export default function MyPage() {
                                         type="button"
                                         disabled={selecting || saving}
                                         onClick={() => void handleToggleOneOnOneFavorite(item.id, card.id, true)}
-                                        className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 disabled:opacity-50"
+                                        className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                                       >
                                         {saving ? "처리 중..." : "찜 해제"}
                                       </button>
@@ -10517,7 +10517,7 @@ export default function MyPage() {
                                     type="button"
                                     disabled={processing}
                                     onClick={() => void handleOneOnOneAutoRecommendationSelect(item.id, card.id, card.name)}
-                                    className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-3 text-xs font-semibold text-white hover:bg-[#d90037] disabled:opacity-50"
+                                    className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-3 text-xs font-semibold text-white hover:bg-[#d90037] disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                                   >
                                     {processing ? "요청 보내는 중..." : "매칭 요청 보내기"}
                                   </button>
@@ -10525,7 +10525,7 @@ export default function MyPage() {
                                     type="button"
                                     disabled={processing || processingOneOnOneFavoriteKeys.includes(actionKey)}
                                     onClick={() => void handleToggleOneOnOneFavorite(item.id, card.id, false)}
-                                    className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 disabled:opacity-50"
+                                    className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                                   >
                                     {processingOneOnOneFavoriteKeys.includes(actionKey) ? "저장 중..." : "♡ 찜"}
                                   </button>
@@ -10583,7 +10583,7 @@ export default function MyPage() {
                                           type="button"
                                           disabled={processing}
                                           onClick={() => void handleOneOnOneAutoRecommendationSelect(item.id, card.id, card.name)}
-                                          className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-3 text-xs font-semibold text-white hover:bg-[#d90037] disabled:opacity-50"
+                                          className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-3 text-xs font-semibold text-white hover:bg-[#d90037] disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                                         >
                                           {processing ? "요청 보내는 중..." : "매칭 요청 보내기"}
                                         </button>
@@ -10591,7 +10591,7 @@ export default function MyPage() {
                                           type="button"
                                           disabled={processing || processingOneOnOneFavoriteKeys.includes(actionKey)}
                                           onClick={() => void handleToggleOneOnOneFavorite(item.id, card.id, false)}
-                                          className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 disabled:opacity-50"
+                                          className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                                         >
                                           {processingOneOnOneFavoriteKeys.includes(actionKey) ? "저장 중..." : "♡ 찜"}
                                         </button>
@@ -10618,9 +10618,9 @@ export default function MyPage() {
                     onSelect={(candidateId, name) => handleOneOnOneAutoRecommendationSelect(item.id, candidateId, name)} />}
 
                   {incomingCandidates.length > 0 && (
-                    <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50/50 p-3">
-                      <p className="text-sm font-semibold text-sky-900">추가 후보</p>
-                      <p className="mt-1 text-xs text-sky-700">마음에 드는 분에게 각각 요청을 보낼 수 있어요. 상대가 내 프로필을 보고 수락 여부를 결정해요.</p>
+                    <div className="mt-3 rounded-xl border border-neutral-200 bg-neutral-50 p-3">
+                      <p className="text-sm font-semibold text-neutral-900">추가 후보</p>
+                      <p className="mt-1 text-xs leading-5 text-neutral-600">마음에 드는 분에게 각각 요청을 보낼 수 있어요. 상대가 내 프로필을 보고 수락 여부를 결정해요.</p>
                       <div className="mt-3 space-y-2">
                         {incomingCandidates.map((match) => {
                           const processing = processingOneOnOneMatchIds.includes(match.id);
@@ -10662,7 +10662,7 @@ export default function MyPage() {
                                   type="button"
                                   disabled={processing}
                                   onClick={() => void handleOneOnOneMatchAction(match.id, "select_candidate")}
-                                  className="inline-flex h-8 items-center rounded-md bg-sky-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                                  className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-3 text-xs font-medium text-white disabled:opacity-50 hover:bg-[#d90037] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                                 >
                                   {processing ? "요청 보내는 중..." : "매칭 요청 보내기"}
                                 </button>
@@ -10746,7 +10746,7 @@ export default function MyPage() {
                                   type="button"
                                   disabled={processing}
                                   onClick={() => void handleOneOnOneMatchAction(match.id, "source_accept")}
-                                  className="inline-flex h-8 items-center rounded-md bg-emerald-600 px-3 text-xs font-medium text-white disabled:opacity-50"
+                                  className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-3 text-xs font-medium text-white disabled:opacity-50 hover:bg-[#d90037] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                                 >
                                   {processing ? "처리 중..." : "나도 수락하기"}
                                 </button>
@@ -10754,7 +10754,7 @@ export default function MyPage() {
                                   type="button"
                                   disabled={processing}
                                   onClick={() => void handleOneOnOneMatchAction(match.id, "source_reject")}
-                                  className="inline-flex h-8 items-center rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-700 disabled:opacity-50"
+                                  className="inline-flex min-h-[44px] items-center rounded-xl border border-red-300 bg-white px-3 text-xs font-medium text-red-700 disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                                 >
                                   거절
                                 </button>
@@ -10818,7 +10818,7 @@ export default function MyPage() {
                                     nudge={match.contact_nudge} nudgeProcessing={processingOneOnOneNudgeIds.includes(match.id)}
                                     onExchange={(id, offerId) => void handleRequestOneOnOneContactExchange(id, offerId)}
                                     onNudge={(id, preset) => void handleOneOnOneContactNudge(id, preset)}
-                                    help={<p className="mt-1 break-words">다른 결제 방법은 <a href={OPEN_KAKAO_URL} target="_blank" rel="noreferrer" className="underline">오픈카톡으로 문의</a>해 주세요. 매칭 ID {match.id}</p>}
+                                    help={<p className="mt-1 break-words">다른 결제 방법은 <a href={OPEN_KAKAO_URL} target="_blank" rel="noreferrer" className="underline transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900">오픈카톡으로 문의</a>해 주세요. 매칭 ID {match.id}</p>}
                                   />
                                 ) : null}
                                 {!canOfferOneOnOneContact(match) && match.contact_exchange_status !== "approved" ?
@@ -10842,7 +10842,7 @@ export default function MyPage() {
                                             if (!window.confirm("이 1:1 매칭을 취소할까요?")) return;
                                             void handleOneOnOneMatchAction(match.id, "cancel_mutual");
                                           }}
-                                          className="inline-flex min-h-[44px] touch-manipulation items-center rounded-lg border border-rose-300 bg-white px-4 text-xs font-medium text-rose-700 disabled:opacity-50"
+                                          className="inline-flex min-h-[44px] touch-manipulation items-center rounded-xl border border-rose-300 bg-white px-4 text-xs font-medium text-rose-700 disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                                         >
                                           {processingOneOnOneMatchIds.includes(match.id) ? "취소 중..." : "매칭 취소"}
                                         </button>
@@ -10860,7 +10860,7 @@ export default function MyPage() {
                                       if (!window.confirm("이 1:1 매칭을 취소할까요?")) return;
                                       void handleOneOnOneMatchAction(match.id, "cancel_mutual");
                                     }}
-                                    className="inline-flex min-h-[44px] touch-manipulation items-center rounded-lg border border-rose-300 bg-white px-4 text-xs font-medium text-rose-700 disabled:opacity-50"
+                                    className="inline-flex min-h-[44px] touch-manipulation items-center rounded-xl border border-rose-300 bg-white px-4 text-xs font-medium text-rose-700 disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                                   >
                                     {processingOneOnOneMatchIds.includes(match.id) ? "취소 중..." : "매칭 취소"}
                                   </button>
@@ -10934,7 +10934,7 @@ export default function MyPage() {
                   <div className="mt-3 flex flex-wrap gap-2">
                     <Link
                       href="/dating/1on1"
-                      className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-lg border border-sky-300 bg-white px-4 text-xs font-medium text-sky-700 hover:bg-sky-50"
+                      className="inline-flex min-h-[44px] touch-manipulation items-center justify-center rounded-xl border border-neutral-200 bg-white px-4 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
                     >
                       1:1 소개팅 페이지
                     </Link>
@@ -10985,7 +10985,7 @@ export default function MyPage() {
                 type="button"
                 onClick={() => void handleAddDatingContactBlock()}
                 disabled={datingContactBlockSubmitting || datingUserBlockSearchLoading}
-                className="inline-flex min-h-[38px] items-center justify-center rounded-lg bg-rose-600 px-3 text-xs font-semibold text-white disabled:opacity-50"
+                className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-[#f0003d] px-3 text-xs font-semibold text-white disabled:opacity-50 hover:bg-[#d90037] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
               >
                 {datingContactBlockType === "nickname" ? datingUserBlockSearchLoading ? "검색 중..." : "검색" : datingContactBlockSubmitting ? "저장 중..." : "차단"}
               </button>
@@ -10997,7 +10997,7 @@ export default function MyPage() {
                   return (
                     <div key={`manage-search-${result.user_id}`} className="flex items-center justify-between gap-3 px-3 py-2">
                       <span className="truncate text-xs font-medium text-neutral-800">{result.nickname ?? "닉네임 없음"}</span>
-                      <button type="button" disabled={result.already_blocked || blocking} onClick={() => void handleAddDatingUserBlock(result)} className="shrink-0 rounded-md border border-rose-200 px-2.5 py-1 text-[11px] font-semibold text-rose-700 disabled:bg-neutral-50 disabled:text-neutral-400">
+                      <button type="button" disabled={result.already_blocked || blocking} onClick={() => void handleAddDatingUserBlock(result)} className="shrink-0 rounded-xl border border-rose-200 px-2.5 py-1 text-[11px] font-semibold text-rose-700 disabled:bg-neutral-50 disabled:text-neutral-400 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed">
                         {result.already_blocked ? "차단됨" : blocking ? "처리 중" : "서로 숨기기"}
                       </button>
                     </div>
@@ -11012,7 +11012,7 @@ export default function MyPage() {
                   return (
                     <span key={`manage-user-${block.blocked_user_id}`} className="inline-flex items-center gap-2 rounded-full border border-rose-200 bg-rose-50 px-3 py-1 text-[11px] text-rose-800">
                       닉네임 {block.nickname ?? block.latest_card?.display_nickname ?? "회원"}
-                      <button type="button" disabled={deleting} onClick={() => void handleDeleteDatingUserBlock(block.blocked_user_id)} className="font-semibold text-rose-700 disabled:opacity-50">
+                      <button type="button" disabled={deleting} onClick={() => void handleDeleteDatingUserBlock(block.blocked_user_id)} className="font-semibold text-rose-700 disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed">
                         {deleting ? "삭제 중" : "해제"}
                       </button>
                     </span>
@@ -11035,7 +11035,7 @@ export default function MyPage() {
                         type="button"
                         disabled={deleting}
                         onClick={() => void handleDeleteDatingContactBlock(block.id)}
-                        className="font-semibold text-rose-700 disabled:opacity-50"
+                        className="font-semibold text-rose-700 disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                       >
                         {deleting ? "삭제 중" : "해제"}
                       </button>
@@ -11053,7 +11053,7 @@ export default function MyPage() {
                   return (
                     <span key={`manage-legacy-1on1-${block.id}`} className="inline-flex items-center gap-2 rounded-full border border-neutral-200 bg-white px-3 py-1 text-[11px] text-neutral-700">
                       기존 1:1 · 끝자리 {block.phone_last4 ?? "----"}
-                      <button type="button" disabled={deleting} onClick={() => void handleDeleteOneOnOnePhoneBlock(block.id)} className="font-semibold text-rose-700 disabled:opacity-50">
+                      <button type="button" disabled={deleting} onClick={() => void handleDeleteOneOnOnePhoneBlock(block.id)} className="font-semibold text-rose-700 disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed">
                         {deleting ? "삭제 중" : "해제"}
                       </button>
                     </span>
@@ -11065,9 +11065,9 @@ export default function MyPage() {
         </div>
       </section>
 
-      <section className={`${matchingFilter === "all" ? "" : "hidden"} mb-5 rounded-2xl border border-emerald-200 bg-emerald-50/40 p-5`}>
-        <h2 className="text-lg font-bold text-emerald-900 mb-2">지원권 현황</h2>
-        <p className="text-sm text-emerald-900">
+      <section className={`${matchingFilter === "all" ? "" : "hidden"} mb-5 rounded-2xl border border-neutral-200 bg-white p-4`}>
+        <h2 className="mb-2 text-base font-semibold text-neutral-950">지원권 현황</h2>
+        <p className="text-sm leading-6 text-neutral-600">
           평일 기본 2장 · 주말 기본 3장 / 추가 지원권 <span className="font-semibold">{applyCreditsRemaining}장</span>
         </p>
       </section>
@@ -11134,11 +11134,11 @@ export default function MyPage() {
                           ? "공개 기간이 끝난 오픈카드입니다."
                           : "숨김 처리된 오픈카드입니다."}
                   </p>
-                  <div className="flex items-center gap-2">
+                  <div className="flex flex-wrap items-center gap-2">
                     {card.status === "pending" || card.status === "hidden" || card.status === "expired" ? (
                       <Link
                         href={`/dating/card/new?editId=${card.id}`}
-                        className="inline-flex h-8 items-center rounded-md border border-pink-300 bg-white px-3 text-xs font-medium text-pink-700 hover:bg-pink-50"
+                        className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
                       >
                         {card.status === "pending" ? "내용 수정" : "내용 확인/수정"}
                       </Link>
@@ -11153,7 +11153,7 @@ export default function MyPage() {
                             card.photo_visibility === "public" ? "blur" : "public"
                           )
                         }
-                        className="inline-flex h-8 items-center rounded-md border border-sky-300 bg-white px-3 text-xs font-medium text-sky-700 hover:bg-sky-50 disabled:opacity-50"
+                        className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                       >
                         {savingOpenCardVisibilityIds.includes(card.id)
                           ? "변경 중..."
@@ -11167,7 +11167,7 @@ export default function MyPage() {
                         type="button"
                         disabled={reopening}
                         onClick={() => void handleReopenMyOpenCard(card)}
-                        className="inline-flex h-8 items-center rounded-md border border-emerald-300 bg-white px-3 text-xs font-medium text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+                        className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                       >
                         {reopening ? "결제 준비 중..." : "5,000원 대기없이 다시 노출"}
                       </button>
@@ -11177,7 +11177,7 @@ export default function MyPage() {
                         type="button"
                         disabled={reactivating}
                         onClick={() => void handleReactivateMyOpenCard(card)}
-                        className="inline-flex h-8 items-center rounded-md border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50"
+                        className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                       >
                         {reactivating ? "등록 중..." : "대기열에 다시 등록"}
                       </button>
@@ -11186,7 +11186,7 @@ export default function MyPage() {
                       type="button"
                       disabled={deletingOpenCardIds.includes(card.id)}
                       onClick={() => void handleDeleteMyOpenCard(card.id)}
-                      className="inline-flex h-8 items-center rounded-md border border-red-300 bg-white px-3 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50"
+                      className="inline-flex min-h-[44px] items-center rounded-xl border border-red-300 bg-white px-3 text-xs font-medium text-red-700 hover:bg-red-50 disabled:opacity-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                     >
                       {deletingOpenCardIds.includes(card.id) ? "삭제 중..." : "삭제"}
                     </button>
@@ -11209,11 +11209,11 @@ export default function MyPage() {
         {hasActiveOpenCard && (
           <p className="mb-2 text-xs text-amber-700">오픈카드는 1개만 유지할 수 있습니다. 기존 카드(대기중/공개중) 처리 후 새로 작성할 수 있습니다.</p>
         )}
-        <div className="mt-4 flex gap-2">
+        <div className="mt-4 flex flex-wrap gap-2">
           {openCardWriteEnabled && !hasActiveOpenCard ? (
             <Link
               href="/dating/card/new"
-              className="inline-flex min-h-[42px] items-center rounded-lg bg-pink-500 px-4 text-sm font-medium text-white hover:bg-pink-600"
+              className="inline-flex min-h-[44px] items-center rounded-xl bg-[#f0003d] px-4 text-sm font-medium text-white hover:bg-[#d90037] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
             >
               오픈카드 작성하기
             </Link>
@@ -11224,7 +11224,7 @@ export default function MyPage() {
           )}
           <Link
             href="/community/dating/cards"
-            className="inline-flex min-h-[42px] items-center rounded-lg border border-neutral-300 px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50"
+            className="inline-flex min-h-[44px] items-center rounded-xl border border-neutral-300 px-4 text-sm font-medium text-neutral-700 hover:bg-neutral-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
           >
             오픈카드 보러가기
           </Link>
@@ -11298,14 +11298,14 @@ export default function MyPage() {
                       <button
                         type="button"
                         onClick={() => void handleCardApplicationStatus(app.id, "accepted")}
-                        className="h-9 rounded-lg bg-emerald-600 px-3 text-xs font-medium text-white"
+                        className="min-h-[44px] rounded-xl bg-[#f0003d] px-3 text-xs font-medium text-white hover:bg-[#d90037] transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                       >
                         수락
                       </button>
                       <button
                         type="button"
                         onClick={() => void handleCardApplicationStatus(app.id, "rejected")}
-                        className="h-9 rounded-lg bg-red-600 px-3 text-xs font-medium text-white"
+                        className="min-h-[44px] rounded-xl border border-neutral-200 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                       >
                         거절
                       </button>
@@ -11401,7 +11401,7 @@ export default function MyPage() {
                         type="button"
                         disabled={cancelingAppliedIds.includes(app.id)}
                         onClick={() => void handleCancelMyAppliedCardApplication(app.id)}
-                        className="h-8 rounded-md border border-amber-300 bg-amber-50 px-3 text-xs font-medium text-amber-800 hover:bg-amber-100 disabled:opacity-60"
+                        className="min-h-[44px] rounded-xl border border-neutral-200 bg-neutral-50 px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-50 disabled:opacity-60 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                       >
                         {cancelingAppliedIds.includes(app.id) ? "취소 중..." : "지원 취소"}
                       </button>
@@ -11410,7 +11410,7 @@ export default function MyPage() {
                       type="button"
                       disabled={deletingAppliedIds.includes(app.id)}
                       onClick={() => void handleDeleteMyAppliedCardApplication(app.id)}
-                      className="h-8 rounded-md border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60"
+                      className="min-h-[44px] rounded-xl border border-neutral-300 bg-white px-3 text-xs font-medium text-neutral-700 hover:bg-neutral-100 disabled:opacity-60 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900 disabled:cursor-not-allowed"
                     >
                       {deletingAppliedIds.includes(app.id) ? "삭제 중..." : "지원서 삭제"}
                     </button>
@@ -11459,7 +11459,7 @@ export default function MyPage() {
                 <div className="mt-3 flex flex-wrap gap-2">
                   <Link
                     href={`/chat?source_kind=${encodeURIComponent(item.source ?? "open")}&source_id=${encodeURIComponent(item.application_id)}`}
-                    className="inline-flex min-h-[40px] items-center justify-center rounded-lg bg-neutral-900 px-4 text-xs font-semibold text-white hover:bg-neutral-800"
+                    className="inline-flex min-h-[44px] items-center justify-center rounded-xl bg-neutral-900 px-4 text-xs font-semibold text-white hover:bg-neutral-800 transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-neutral-900"
                   >
                     채팅하기
                   </Link>
