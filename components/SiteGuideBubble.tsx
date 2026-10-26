@@ -251,10 +251,10 @@ function buildSuggestions(input: {
   } else if (pathname.startsWith("/dating/more-view")) {
     suggestions.unshift({
       id: "route-more-view",
-      title: "이상형 더보기는 선택지를 넓히고 싶을 때 좋아요",
-      body: "더 넓게 보고, 마음에 들면 상세보기나 지원으로 바로 이어가면 돼요.",
-      href: "/dating/more-view",
-      cta: "계속 둘러보기",
+      title: "기존 열람권의 이용 내역을 확인해 주세요",
+      body: "기존 열람권은 남은 기간 동안 이용할 수 있어요. 새로운 열람은 가까운 이상형에서 확인해 주세요.",
+      href: "/dating/nearby-view",
+      cta: "가까운 이상형 보기",
     });
   } else if (pathname.startsWith("/dating/nearby-view")) {
     suggestions.unshift({

@@ -110,6 +110,7 @@ function submitter(overrides = {}) {
   const requests = [], state = {};
   const context = {
     photos: [new File(['png'], '1.png', { type: 'image/png' }), new File(['png'], '2.png', { type: 'image/png' })],
+    completed: false, setCompleted: value => { state.completed = value; },
     consent: true, age: '30', heightCm: '178', region: ' 서울 ', job: ' 회사원 ', trainingYears: '0', introText: '한글 소개', instagramId: '@fixture_member', id: 'fixture-paid',
     ALLOWED_TYPES: ['image/jpeg', 'image/png', 'image/webp'], DATING_PHOTO_UPLOAD_MAX_BYTES: 3 * 1024 * 1024,
     normalizeInstagramId: value => value.replace(/^@+/, ''), validInstagramId: value => /^[A-Za-z0-9._]{1,30}$/.test(value),
@@ -128,7 +129,8 @@ test('application payload uses normalized text and newly uploaded photos, not or
   const payload = JSON.parse(f.requests[2].options.body);
   assert.equal(payload.instagram_id, 'fixture_member'); assert.equal(payload.training_years, 0); assert.equal(payload.region, '서울'); assert.equal(payload.intro_text, '한글 소개');
   assert.equal(payload.photo_paths.length, 2); assert.ok(payload.photo_paths.every(path => path.startsWith('paid-card-applications/owner/')));
-  assert.equal(f.state.redirect, '/mypage?section=matching&match=applied#paid-card-applied'); assert.equal(f.context.submitLock.current, false);
+  assert.equal(f.state.completed, true); assert.equal(f.state.redirect, undefined); assert.equal(f.state.alert, undefined);
+  assert.match(page, /historyHref="\/mypage\?section=matching&match=applied#paid-card-applied"/); assert.equal(f.context.submitLock.current, false);
 });
 test('rapid repeated submit makes only one application request', async () => {
   const wait = deferred(), f = submitter(); const original = f.context.fetch;

@@ -355,7 +355,7 @@ function LoginContent() {
   return (
     <main className="max-w-sm mx-auto px-4 py-16 flex flex-col items-center min-h-[70vh] justify-center">
       <h1 className="text-2xl font-bold text-neutral-900 mb-2">로그인</h1>
-      <p className="text-sm text-neutral-500 mb-6 text-center">커뮤니티/인증 기능을 사용하려면 로그인하세요.</p>
+      <p className="text-sm text-neutral-500 mb-6 text-center">로그인하고 프로필과 매칭을 확인하세요.</p>
 
       {error && <p className="text-sm text-red-600 bg-red-50 rounded-xl p-3 mb-4 w-full text-center">{error}</p>}
       {recoveryRetry && <button type="button" onClick={() => setSessionAttempt(value => value + 1)}

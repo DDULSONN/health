@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import ApplicationCompleteNotice from "@/components/dating/ApplicationCompleteNotice";
 import dynamic from "next/dynamic";
 import { DATING_PHOTO_ACCEPT, HEIC_HELP, PHOTO_PROCESSING_MESSAGE } from "@/lib/dating-photo-preparation";
 import { useDatingPhotoPreparation } from "@/lib/use-dating-photo-preparation";
@@ -86,6 +87,7 @@ export default function DatingCardApplyPage() {
   const creditCheckoutInFlightRef = useRef(false);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
+  const [completed, setCompleted] = useState(false);
   const [error, setError] = useState("");
   const [errorCode, setErrorCode] = useState("");
   const [profileEditUrl, setProfileEditUrl] = useState<string | null>(null);
@@ -209,7 +211,7 @@ export default function DatingCardApplyPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (photoPreparation.isProcessing()) { setError(PHOTO_PROCESSING_MESSAGE); return; }
-    if (submitting || creditCheckoutInFlightRef.current) return;
+    if (completed || submitting || creditCheckoutInFlightRef.current) return;
     setError("");
     setErrorCode("");
     setProfileEditUrl(null);
@@ -328,9 +330,13 @@ export default function DatingCardApplyPage() {
         return;
       }
 
-      alert("지원이 완료됐습니다.");
+      if (body?.ok !== true) {
+        setError("지원 결과를 확인하지 못했어요. 마이페이지의 ‘내 지원’을 먼저 확인해 주세요.");
+        setSubmitting(false);
+        return;
+      }
       try { clearApplyCheckoutDraft(window.sessionStorage, viewerIdRef.current, id); } catch { /* Storage may be disabled. */ }
-      router.push("/mypage");
+      setCompleted(true);
     } catch {
       setError("네트워크 오류가 발생했습니다.");
     }
@@ -382,6 +388,8 @@ export default function DatingCardApplyPage() {
       setCreditRequesting(false);
     }
   };
+
+  if (completed) return <ApplicationCompleteNotice historyHref="/mypage?section=matching&match=applied#open-card-applied" listHref={listHref} />;
 
   if (loading || !card) {
     return (

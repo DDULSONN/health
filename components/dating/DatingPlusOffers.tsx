@@ -105,6 +105,7 @@ export default function DatingPlusOffers({
   const plans = useMemo(() => (mode === "one_on_one" ? ONE_ON_ONE_PLANS : SWIPE_PLANS).map(plan =>
     plan.productType === "dating_all_pass_30d" && offer ? { ...plan, amount: offer.amount, badge: ALL_PASS_PROFILE_DISCOUNT_LABEL } : plan), [mode, offer]);
   const [submitting, setSubmitting] = useState<PaidPlan["productType"] | null>(null);
+  const [checkoutError, setCheckoutError] = useState("");
 
   useEffect(() => {
     for (const plan of plans) {
@@ -120,6 +121,7 @@ export default function DatingPlusOffers({
   const startCheckout = async (plan: PaidPlan) => {
     if (disabled || submitting) return;
     setSubmitting(plan.productType);
+    setCheckoutError("");
     trackPaidOfferSelected({
       itemId: plan.productType,
       itemName: plan.title,
@@ -157,7 +159,7 @@ export default function DatingPlusOffers({
       window.location.href = body.checkoutUrl;
     } catch (error) {
       const message = error instanceof Error ? error.message : "결제를 시작하지 못했습니다.";
-      window.alert(`${message}\n\n${PAYMENT_NOTICE}`);
+      setCheckoutError(`${message}\n\n${PAYMENT_NOTICE}`);
       setSubmitting(null);
     }
   };
@@ -193,6 +195,7 @@ export default function DatingPlusOffers({
           </span>
         </button>
       ))}
+      {checkoutError ? <p role="alert" className="whitespace-pre-wrap break-words rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs leading-5 text-rose-800">{checkoutError}</p> : null}
       {mode === "one_on_one" ? <p className="px-1 text-[11px] leading-5 text-neutral-500">1:1 후보 새로고침은 {ONE_ON_ONE_REFRESH_POLICY_COPY}</p> : null}
       <p className="px-1 text-[10px] leading-4 text-neutral-500">번호교환은 기존과 동일하게 건별 결제됩니다.</p>
     </div>

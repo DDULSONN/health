@@ -27,6 +27,7 @@ const unitFiles = [
   'check-dating-1on1-match-journey.cjs',
   'check-dating-1on1-ui-polish.cjs',
   'check-site-button-tone.cjs',
+  'check-legacy-ux.cjs',
   'check-admin-review-confirmation.cjs',
   'check-dating-sexual-text-review.cjs',
   'check-dating-contact-text-review.cjs',
@@ -81,6 +82,7 @@ const unitFiles = [
 ];
 const browserFiles = [
   'check-site-button-tone-browser.cjs',
+  'check-legacy-ux-browser.cjs',
   'check-refresh-monitor-browser.cjs',
   'check-dating-notification-email-browser.cjs',
   'check-signup-verification-browser.cjs',

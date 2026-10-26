@@ -2,11 +2,11 @@
 // Real member pages; loopback synthetic API only. No env, credentials or external calls.
 const fs = require('node:fs'), path = require('node:path'), os = require('node:os'), http = require('node:http'), webpack = require('webpack');
 const root = path.resolve(__dirname, '..');
-async function start({ port = 0 } = {}) {
+async function start({ port = 0, entry, adapter: customAdapter } = {}) {
   const output = fs.mkdtempSync(path.join(os.tmpdir(), 'gymtools-button-tone-'));
-  const adapter = path.join(__dirname, 'fixtures/recommendation-refresh-adapters.tsx');
+  const adapter = customAdapter || path.join(__dirname, 'fixtures/recommendation-refresh-adapters.tsx');
   await new Promise((resolve, reject) => {
-    const compiler = webpack({ mode: 'development', devtool: false, entry: path.join(__dirname, 'fixtures/site-button-tone-browser.tsx'),
+    const compiler = webpack({ mode: 'development', devtool: false, entry: entry || path.join(__dirname, 'fixtures/site-button-tone-browser.tsx'),
       output: { path: output, filename: 'fixture.js' }, resolve: { extensions: ['.tsx', '.ts', '.js'], fallback: { crypto: false }, alias: {
         'next/link': adapter, 'next/image': adapter, 'next/navigation': adapter, '@/lib/supabase/client': adapter, '@/components/DatingAdultNotice': adapter, '@': root,
       } }, plugins: [new webpack.DefinePlugin({ 'process.env.NEXT_PUBLIC_OPENKAKAO_URL': 'undefined' })],
@@ -14,7 +14,7 @@ async function start({ port = 0 } = {}) {
     compiler.run((err, stats) => { compiler.close(() => {}); if (err || stats.hasErrors()) reject(err || Error(stats.toString({ all: false, errors: true }))); else resolve(); });
   });
   const css = (await require('postcss')([require('@tailwindcss/postcss')({ base: root })]).process(fs.readFileSync(path.join(root, 'app/globals.css'), 'utf8'), { from: path.join(root, 'app/globals.css') })).css + '\n:root{--font-geist-sans:Arial;--font-geist-mono:monospace}';
-  const stamp = new Date().toISOString(), writes = [], flags = { fail: false, archived: false };
+  const stamp = new Date().toISOString(), writes = [], flags = { fail: false, archived: false, creditsError: false, legacy: false, checkoutSuccess: false };
   const profile = { id: 'fixture-one', user_id: 'fixture-member', name: '서연', sex: 'female', age: 29, birth_year: 1998, height_cm: 165,
     job: '회사원', region: '서울', intro_text: '퇴근 후 운동하고 주말에는 산책해요. 서로 편하게 이야기 나누고 싶어요.', strengths_text: '약속을 잘 지켜요.',
     preferred_partner_text: '대화가 잘 통하는 분', smoking: 'non_smoker', status: 'submitted', created_at: stamp, photo_signed_urls: ['/fixture-photo.svg', '/fixture-photo.svg'] };
@@ -43,6 +43,7 @@ async function start({ port = 0 } = {}) {
           if (req.headers.origin && req.headers.origin !== origin) { res.statusCode = 403; return res.end('{}'); }
           let body = ''; for await (const chunk of req) { body += chunk; if (body.length > 10000) throw Error('Body too large'); }
           writes.push({ method: req.method, path: url.pathname + url.search, body });
+          if (url.pathname === '/api/payments/toss/create' && flags.checkoutSuccess) return res.end(JSON.stringify({ ok: true, checkoutUrl: '/fixture-checkout' }));
           if (url.pathname.startsWith('/api/analytics/')) { res.statusCode = 204; return res.end(); }
           if (url.pathname === '/api/dating/1on1/my' && req.method === 'DELETE' && !flags.fail) {
             flags.archived = true; return res.end(JSON.stringify({ ok: true, archived: true, message: '미리보기: 프로필 노출만 종료했습니다.' }));
@@ -63,7 +64,11 @@ async function start({ port = 0 } = {}) {
           case '/api/dating/cards/viewer-sex': body = { status: 'resolved', viewerSex: 'female', targetSex: 'male', canSwitchSex: false, requiresSexSelection: false }; break;
           case '/api/dating/cards/my/swipe-status': body = { can_dismiss_incoming: true, incoming_likes: [], outgoing_likes: [], summary: { incoming_pending: 0, outgoing_pending: 0, mutual_matches: 0 } }; break;
           case '/api/dating/cards/write-enabled': body = { enabled: true }; break;
-          case '/api/dating/apply-credits/status': body = { creditsRemaining: 5 }; break;
+          case '/api/dating/apply-credits/status':
+            if (flags.creditsError) { res.statusCode = 503; body = { ok: false }; } else body = { ok: true, loggedIn: true, baseRemaining: 2, creditsRemaining: 5 }; break;
+          case '/api/dating/cards/more-view/status': body = { loggedIn: true, male: flags.legacy ? 'approved' : 'none', female: 'none' }; break;
+          case '/api/dating/cards/more-view/list': body = { items: flags.legacy ? [{ ...card, image_urls: ['/fixture-photo.svg'] }] : [] }; break;
+          case '/api/dating/paid/fixture-paid': body = { card: { ...card, id: 'fixture-paid', nickname: '가상 공개 카드', gender: 'F', image_urls: ['/fixture-photo.svg'], expires_at: new Date(Date.now() + 86400000).toISOString() } }; break;
           case '/api/dating/cards/queue-stats': body = { male: { public_count: 0, pending_count: 0, slot_limit: 45 }, female: { public_count: 0, pending_count: 0, slot_limit: 45 } }; break;
           case '/api/dating/all-pass-offer': body = { userId: 'fixture-member', offer: null }; break;
           case '/api/return-profile-reward': body = { reward: null }; break;

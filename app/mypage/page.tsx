@@ -1,6 +1,7 @@
 ﻿"use client";
 
 import dynamic from "next/dynamic";
+import { openCardStatusLabel } from "@/lib/dating-ui-labels";
 import { hideReportedMatches, hideReportedRecommendations } from "@/lib/dating-report-visibility";
 import { ONE_ON_ONE_CONTACT_PRICE_KRW } from "@/lib/dating-contact-price";
 import PaidRegistrationStatus from "@/components/dating/PaidRegistrationStatus";
@@ -9361,7 +9362,7 @@ export default function MyPage() {
             </p>
             {!paymentCenterOpen && (
               <p className="mt-1 text-xs text-neutral-500">
-                결제 내역, 매출전표, 지원권 잔여 수량, 이상형 더보기 상태, 1:1 번호 교환 결제까지 여기서 확인할 수 있어요.
+                결제 내역, 매출전표, 남은 지원권과 1:1 번호 교환 내역을 확인할 수 있어요.
               </p>
             )}
           </div>
@@ -9432,14 +9433,15 @@ export default function MyPage() {
 
             {paymentCenterData ? (
               <>
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                <div className="mt-4 grid gap-3 sm:grid-cols-2">
                   <div className="rounded-xl border border-neutral-200 bg-[#fbfaf8] p-4">
                     <p className="text-xs text-neutral-500">남은 지원권</p>
                     <p className="mt-2 text-2xl font-black text-neutral-900">{paymentCenterData.summary.creditsRemaining.toLocaleString("ko-KR")}장</p>
                     <p className="mt-1 text-[11px] text-neutral-500">오늘 기본 지원 가능 {paymentCenterData.summary.baseRemaining}회</p>
                   </div>
+                  {(["approved", "pending"].includes(paymentCenterData.summary.moreViewMale) || ["approved", "pending"].includes(paymentCenterData.summary.moreViewFemale) || paymentCenterData.orders.some((order) => order.product_type === "more_view")) ? <>
                   <div className="rounded-xl border border-neutral-200 bg-[#fbfaf8] p-4">
-                    <p className="text-xs text-neutral-500">남자 더보기 상태</p>
+                    <p className="text-xs text-neutral-500">이전 열람권 · 남자 카드</p>
                     <p className="mt-2 text-lg font-bold text-neutral-900">
                       {paymentCenterData.summary.moreViewMale === "approved"
                         ? "이용 가능"
@@ -9451,7 +9453,7 @@ export default function MyPage() {
                     </p>
                   </div>
                   <div className="rounded-xl border border-neutral-200 bg-[#fbfaf8] p-4">
-                    <p className="text-xs text-neutral-500">여자 더보기 상태</p>
+                    <p className="text-xs text-neutral-500">이전 열람권 · 여자 카드</p>
                     <p className="mt-2 text-lg font-bold text-neutral-900">
                       {paymentCenterData.summary.moreViewFemale === "approved"
                         ? "이용 가능"
@@ -9462,6 +9464,7 @@ export default function MyPage() {
                             : "이용 없음"}
                     </p>
                   </div>
+                  </> : null}
                   <div className="rounded-xl border border-neutral-200 bg-[#fbfaf8] p-4">
                     <p className="text-xs text-neutral-500">최근 주문</p>
                     <p className="mt-2 text-2xl font-black text-neutral-900">{paymentCenterData.orders.length.toLocaleString("ko-KR")}건</p>
@@ -9474,7 +9477,7 @@ export default function MyPage() {
                     <div>
                       <p className="text-sm font-semibold text-neutral-900">내 결제 내역</p>
                       <p className="mt-1 text-xs text-neutral-500">
-                        토스 문서 기준으로 결제 성공 후에는 주문번호, 금액, 상태를 확인할 수 있어야 하고, 카드 결제는 매출전표도 조회할 수 있어요.
+                        상품별 결제 상태와 주문번호를 확인할 수 있어요. 카드 결제는 매출전표도 볼 수 있어요.
                       </p>
                     </div>
                     <button
@@ -11107,7 +11110,7 @@ export default function MyPage() {
                     {card.display_nickname} / {card.sex === "male" ? "남자" : "여자"}
                   </p>
                   <span className="inline-flex rounded-full bg-neutral-100 px-2 py-0.5 text-xs text-neutral-700">
-                    {card.status}
+                    {openCardStatusLabel(card.status)}
                   </span>
                 </div>
                 <p className="text-xs text-neutral-500 mt-1">

@@ -2,6 +2,7 @@
 
 import { type ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import ApplicationCompleteNotice from "@/components/dating/ApplicationCompleteNotice";
 import { useParams, useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 import { formatRemainingToKorean } from "@/lib/dating-open";
@@ -47,6 +48,7 @@ export default function PaidCardApplyPage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [completed, setCompleted] = useState(false);
   const [error, setError] = useState("");
   const [profileEditUrl, setProfileEditUrl] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -82,7 +84,7 @@ export default function PaidCardApplyPage() {
         const res = await fetch(`/api/dating/paid/${id}`, { cache: "no-store", signal: controller.signal });
         if (!active) return;
         if (!res.ok) {
-          if (res.status === 404 || res.status === 410) { router.replace("/dating/paid"); return; }
+          if (res.status === 404 || res.status === 410) { router.replace("/community/dating/cards?tab=open_cards"); return; }
           throw new Error("CARD_UNAVAILABLE");
         }
         const data = (await res.json()) as { card?: PaidCardDetail };
@@ -167,7 +169,7 @@ export default function PaidCardApplyPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (submitLock.current || importRequest.current || photoPreparation.isProcessing()) return;
+    if (completed || submitLock.current || importRequest.current || photoPreparation.isProcessing()) return;
     setError("");
     setProfileEditUrl(null);
 
@@ -261,8 +263,7 @@ export default function PaidCardApplyPage() {
         return;
       }
 
-      alert("지원이 완료되었습니다.");
-      router.push("/mypage?section=matching&match=applied#paid-card-applied");
+      setCompleted(true);
     } catch {
       setError("네트워크 오류가 발생했습니다.");
     } finally {
@@ -270,6 +271,8 @@ export default function PaidCardApplyPage() {
       setSubmitting(false);
     }
   };
+
+  if (completed) return <ApplicationCompleteNotice historyHref="/mypage?section=matching&match=applied#paid-card-applied" listHref="/community/dating/cards?tab=open_cards" />;
 
   if (loading || !card) {
     return (
@@ -282,7 +285,7 @@ export default function PaidCardApplyPage() {
 
   return (
     <main className="max-w-lg mx-auto px-4 py-8">
-      <Link href="/dating/paid" className="text-sm text-neutral-500 hover:text-neutral-700">
+      <Link href={`/dating/paid/${id}`} className="inline-flex min-h-[44px] items-center text-sm text-neutral-500 hover:text-neutral-700">
         뒤로가기
       </Link>
 

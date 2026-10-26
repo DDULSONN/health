@@ -43,12 +43,12 @@ export default function PaidCardDetailPage() {
       try {
         const res = await fetch(`/api/dating/paid/${id}`, { cache: "no-store" });
         if (!res.ok) {
-          router.replace("/dating/paid");
+          router.replace("/community/dating/cards?tab=open_cards");
           return;
         }
         const body = (await res.json().catch(() => ({}))) as { card?: PaidCardDetail };
         if (!body.card) {
-          router.replace("/dating/paid");
+          router.replace("/community/dating/cards?tab=open_cards");
           return;
         }
 
@@ -76,7 +76,7 @@ export default function PaidCardDetailPage() {
 
         setCard(nextCard);
       } catch {
-        router.replace("/dating/paid");
+        router.replace("/community/dating/cards?tab=open_cards");
       } finally {
         setLoading(false);
       }
@@ -95,7 +95,7 @@ export default function PaidCardDetailPage() {
 
   return (
     <main className="mx-auto max-w-2xl px-4 py-8">
-      <Link href="/dating/paid" className="text-sm text-neutral-500 hover:text-neutral-700">
+      <Link href="/community/dating/cards?tab=open_cards" className="inline-flex min-h-[44px] items-center text-sm text-neutral-500 hover:text-neutral-700">
         목록으로
       </Link>
 
