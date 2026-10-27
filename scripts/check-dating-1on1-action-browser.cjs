@@ -253,7 +253,7 @@ async function main() {
             await panel.getByRole('alert').filter({ hasText: scenario === 'resilience-unauthorized' ? '로그인 상태와 이용 권한' : '로컬 매칭 조회 실패' }).waitFor();
             assert.equal(await phone.count(), 0); assert.equal(await panel.getByRole('button', { name: '연락처 교환하기', exact: true }).count(), 0);
           } else if (noProfile) {
-            await panel.getByText('아직 1대1 프로필이 없어요.', { exact: true }).waitFor();
+            await panel.getByText('내 소개를 등록하고 후보를 만나보세요', { exact: true }).waitFor();
             const start = panel.getByRole('link', { name: '프로필 작성하기', exact: true });
             assert.ok((await start.getAttribute('href')).startsWith('/onboarding/dating'));
             assert.equal(await panel.getByText(/조건에 맞는 후보가 생기면/).count(), 0);

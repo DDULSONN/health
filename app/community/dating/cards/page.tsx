@@ -2059,6 +2059,20 @@ function OpenCardsContent() {
     if (homeFeatureTab === "one_on_one") void reloadOneOnOneHome(false);
   }, [homeFeatureTab, reloadOneOnOneHome]);
 
+  const handleHideOneOnOneCandidate = (candidateId: string) => {
+    // Called only after the server persisted the preference. Cancel stale reads
+    // before removing it locally; never alter requests, contacts, or refresh quota.
+    oneOnOneRecommendationsRequest.cancel();
+    setOneOnOneRecommendations(groups => groups.map(group => ({
+      ...group,
+      recommendations: group.recommendations?.filter(card => card.id !== candidateId),
+      admin_recommendations: group.admin_recommendations?.filter(card => card.id !== candidateId),
+      hidden_candidate_ids: [...new Set([...(group.hidden_candidate_ids ?? []), candidateId])],
+    })));
+    setOneOnOneRecommendationsLoading(false);
+    setOneOnOneActionNotice("추천 목록에서 숨겼어요. 기존 요청·매칭은 그대로 유지돼요.");
+  };
+
   useEffect(() => {
     writeOpenCardsSnapshot({
       activeSex,
@@ -3538,6 +3552,8 @@ function OpenCardsContent() {
             void reloadOneOnOneHome();
           }}
           onReload={() => { void reloadOneOnOneHome(); }}
+          onCandidateHidden={handleHideOneOnOneCandidate}
+          onCandidateRestored={() => reloadOneOnOneHome(true, true)}
           onContactCheckout={handleOneOnOneContactCheckout}
           onContactNudge={handleOneOnOneContactNudge}
           onAutoSelect={handleOneOnOneAutoSelect}

@@ -155,7 +155,9 @@ const movedFunctions = {
   // candidates, order/refresh/payment authority remain pinned separately.
   // Reviewed trust UX: guide/free-vs-paid copy and photo-first collapsible text.
   // Existing callbacks, filters, photo URL handling and quota controls remain pinned.
-  OneOnOneHomePanel: '00bfdf552a7168adcd3eb0b63c5996bd8a3e1c56d8faf65fc32e908b720722b7',
+  // Reviewed home hide/restore controls against 91ff9fd. Existing action functions,
+  // ordering, contacts and quota are pinned separately and exercised in real pages.
+  OneOnOneHomePanel: '83e206d6b61d72784c066f0147200b0dbcfa80661f4321b9b3dda41eae4d05c5',
   OneOnOneCandidateCard: 'ab83423c6962c84c974052b0bf024392846e572e8f7b2a4b8c7471a8f53a16a8',
   OneOnOneMatchActions: '6408ac6467228e01cf370b4942e9d42f19e7e34b937ad4e701ba82e1d1cceab4',
   canCancelOneOnOneMatchPreview: '0ec3faad4e8701ea4622ea220af8ebaddaf725cfa52a70fc686b82a37444036c',

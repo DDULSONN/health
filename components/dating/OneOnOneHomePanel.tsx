@@ -19,6 +19,7 @@ import { oneOnOneEndedNotice } from "@/lib/dating-1on1-notification-status";
 import { canOfferOneOnOneContact, normalizeOneOnOneMatchId, oneOnOneMatchHref } from "@/lib/dating-1on1-match-navigation";
 import OneOnOneExpansionPanel from "@/components/dating/OneOnOneExpansionPanel";
 import CandidateImpression from "@/components/dating/CandidateImpression";
+import { CandidateHideButton, CandidateHidesPanel } from "@/components/dating/CandidateHides";
 import { getOneOnOneActionSummary, getOneOnOneMatchLabel, isIncomingOneOnOneRequest } from "@/lib/dating-1on1-action-copy";
 import { VIEWER_SESSION_ERROR } from "@/lib/viewer-session-recovery";
 import { ONE_ON_ONE_HOME_HREF } from "@/lib/dating-navigation";
@@ -46,6 +47,8 @@ type OneOnOneCardPreview = {
 };
 
 type OneOnOneRecommendationGroup = {
+  hides_enabled?: boolean;
+  hidden_candidate_ids?: string[];
   recommendation_region_widened?: boolean;
   impression_ticket?: string | null;
   expansion_enabled?: boolean;
@@ -67,6 +70,7 @@ type OneOnOneRecommendationGroup = {
 
 type OneOnOneMatchPreview = {
   id: string;
+  source_card_id?: string;
   role?: "source" | "candidate";
   state?: string;
   contact_exchange_status?: string;
@@ -155,6 +159,8 @@ export default function OneOnOneHomePanel({
   onContactNudge,
   onAutoSelect,
   onRefreshRecommendations,
+  onCandidateHidden,
+  onCandidateRestored,
 }: {
   focusedMatchId?: string | null;
   arrivedFromOnboarding: boolean;
@@ -183,6 +189,8 @@ export default function OneOnOneHomePanel({
   onContactNudge: (matchId: string, presetKey: OneOnOneContactNudgePresetKey) => void;
   onAutoSelect: (sourceCardId: string, candidateCardId: string, candidateName?: string | null) => void | Promise<void>;
   onRefreshRecommendations: (sourceCardId: string) => void;
+  onCandidateHidden?: (candidateId: string) => void;
+  onCandidateRestored?: () => Promise<void>;
   refreshNotice: OneOnOneRefreshNotice | null;
 }) {
   const [plusGuideOpen, setPlusGuideOpen] = useState(false);
@@ -208,10 +216,12 @@ export default function OneOnOneHomePanel({
     focusedMatchRef.current.focus({ preventScroll: true });
     scrolledMatchId.current = targetMatchId;
   }, [targetMatchId, focusedMatch, loading, sessionError, error, viewerLoggedIn]);
-  const activeMatches = matches.filter((match) =>
-    ["proposed", "source_selected", "candidate_accepted", "mutual_accepted"].includes(String(match.state ?? ""))
-  );
   const recommendationGroups = data?.recommendations ?? [];
+  const hiddenCandidateIds = new Set(recommendationGroups.flatMap(group => group.hidden_candidate_ids ?? []));
+  const activeMatches = matches.filter((match) =>
+    ["proposed", "source_selected", "candidate_accepted", "mutual_accepted"].includes(String(match.state ?? "")) &&
+    !(match.state === "proposed" && match.role === "source" && hiddenCandidateIds.has(match.counterparty_card?.id ?? ""))
+  );
   const plusActive = Boolean(data?.plus?.expires_at);
   const plusContactExchangeIncluded = data?.plus?.contact_exchange_included === true;
   const recommendationCount = recommendationGroups.reduce(
@@ -485,6 +495,10 @@ export default function OneOnOneHomePanel({
                                 >
                                   {processingAutoKeys.includes(actionKey) ? "요청 보내는 중..." : "매칭 요청 보내기"}
                                 </button>
+                                {onCandidateHidden ? <CandidateHideButton enabled={group.hides_enabled === true}
+                                  sourceCardId={sourceCardId} candidateId={candidateId} ticket={group.impression_ticket}
+                                  disabled={!canSelect || refreshing || processingAutoKeys.length > 0}
+                                  onHidden={onCandidateHidden} /> : null}
                               </OneOnOneCandidateCard>
                             );
                           })}
@@ -520,6 +534,10 @@ export default function OneOnOneHomePanel({
                                       >
                                         {processingAutoKeys.includes(actionKey) ? "요청 보내는 중..." : "매칭 요청 보내기"}
                                       </button>
+                                      {onCandidateHidden ? <CandidateHideButton enabled={group.hides_enabled === true}
+                                        sourceCardId={sourceCardId} candidateId={candidateId} ticket={group.impression_ticket}
+                                        disabled={!canSelect || refreshing || processingAutoKeys.length > 0}
+                                        onHidden={onCandidateHidden} /> : null}
                                     </OneOnOneCandidateCard>
                                   );
                                 })}
@@ -529,7 +547,10 @@ export default function OneOnOneHomePanel({
                         </div>
                         <OneOnOneExpansionPanel enabled={group.expansion_enabled === true} sourceCardId={sourceCardId}
                           revision={group} blocked={refreshing || processingAutoKeys.length > 0}
+                          hidesEnabled={group.hides_enabled === true && Boolean(onCandidateHidden)} onHidden={onCandidateHidden}
                           onSelect={(candidateId, name) => onAutoSelect(sourceCardId, candidateId, name)} onReported={onReported} />
+                        {onCandidateRestored ? <CandidateHidesPanel enabled={group.hides_enabled === true}
+                          revision={group} onRestored={onCandidateRestored} /> : null}
                       </div>
                     );
                   })}
@@ -641,6 +662,11 @@ export default function OneOnOneHomePanel({
                         onContactCheckout={onContactCheckout}
                         onContactNudge={onContactNudge}
                       />
+                      {match.role === "source" && match.state === "proposed" && match.source_card_id && match.counterparty_card?.id && onCandidateHidden ?
+                        <CandidateHideButton enabled={recommendationGroups.some(group => group.source_card_id === match.source_card_id && group.hides_enabled === true)}
+                          sourceCardId={match.source_card_id} candidateId={match.counterparty_card.id}
+                          disabled={processingMatchIds.includes(match.id) || refreshingRecommendationIds.length > 0}
+                          onHidden={onCandidateHidden} /> : null}
                     </OneOnOneCandidateCard>
                   )} />
                 </div>

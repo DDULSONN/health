@@ -325,8 +325,8 @@ for (const failureTable of ["profiles", "dating_cards", null]) test("admin ban r
   assert.equal(response.status, failureTable ? 500 : 200);
   assert.equal(db.tables.dating_card_reports[0].status, failureTable ? "open" : "resolved");
 });
-test("evidence migration is additive and safe to re-run", { skip: !process.env.REPORT_TEST_PGLITE_PATH }, async () => {
-  const { PGlite } = require(process.env.REPORT_TEST_PGLITE_PATH);
+test("evidence migration is additive and safe to re-run", async () => {
+  const { PGlite } = require(process.env.REPORT_TEST_PGLITE_PATH || '@electric-sql/pglite');
   const db = new PGlite();
   try {
     await db.exec("create schema auth; create table auth.users(id uuid primary key); create table public.dating_user_reports(id uuid primary key, reason text, status text); insert into public.dating_user_reports values ('" + uid(900) + "', '한글 신고 원본', 'open');");

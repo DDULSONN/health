@@ -85,9 +85,16 @@ if (require.main === module) {
     const bindings = { ...baseline.panel.bindings };
     delete bindings.sortedMatches;
     bindings.ongoingMatches = '6075d5c6d7c23c49f35cb64c2cc68a8d93403a1ca5a3088d8203d4898664eb92';
+    // Reviewed private-hide filter excludes only unsent admin proposals.
+    // check-home-candidate-hides executes it against incoming/sent/paid states.
+    bindings.activeMatches = '97d0aadcc8c126739a2bd9517c464ed7e8f06d6cd02837f0d078222ebb8033e7';
     const expected = { ...baseline.panel, bindings, callbacks: [
       ...baseline.panel.callbacks.filter(callback => callback !== 'onClick={() => setVisibleMatchCount((count) => count + 8)}'),
       'onClick={onReload}', 'onCheckUsage={onReload}', 'onExchange={onContactCheckout}', 'onNudge={onContactNudge}',
+      ...Array(4).fill('onHidden={onCandidateHidden}'), 'onRestored={onCandidateRestored}',
+    ].sort(), disabled: [...baseline.panel.disabled,
+      ...Array(2).fill('disabled={!canSelect || refreshing || processingAutoKeys.length > 0}'),
+      'disabled={processingMatchIds.includes(match.id) || refreshingRecommendationIds.length > 0}',
     ].sort() };
     assert.deepEqual(panelContract(read(files.OneOnOneCandidateCard)), expected);
     assert.match(read(files.OneOnOneCandidateCard), /initialVisibleCount=\{8\} pageSize=\{8\}/);

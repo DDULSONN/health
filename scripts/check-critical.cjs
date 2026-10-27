@@ -8,6 +8,9 @@ for (const key of Object.keys(env)) {
   if (/SUPABASE|SOLAPI|RESEND|TOSS|KAKAO|SERVICE_ROLE|CRON_SECRET|PAYMENT_SECRET|SMTP/i.test(key)) delete env[key];
 }
 const unitFiles = [
+  'check-release-db.cjs',
+  'check-home-candidate-hides.cjs',
+  'check-dating-reports.cjs',
   'check-candidate-hides.cjs',
   'check-refresh-monitor.cjs',
   'check-refresh-monitor-sql.cjs',
@@ -128,6 +131,7 @@ if (process.argv.includes('--browser')) {
   run([path.join(__dirname, 'check-dating-1on1-action-browser.cjs'), '--ui-polish'], 10 * 60_000);
   run([path.join(__dirname, 'check-dating-1on1-action-browser.cjs'), '--resilience'], 10 * 60_000);
   run([path.join(__dirname, 'check-recommendation-refresh-browser.cjs'), '--expansion'], 10 * 60_000);
+  run([path.join(__dirname, 'check-recommendation-refresh-browser.cjs'), '--hides'], 10 * 60_000);
   run([path.join(__dirname, 'check-recommendation-refresh-browser.cjs'), '--impressions'], 10 * 60_000);
 } else {
   const pglite = require.resolve('@electric-sql/pglite');

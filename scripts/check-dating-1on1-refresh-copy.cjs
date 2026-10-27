@@ -189,6 +189,7 @@ for (const remaining of [0, 1, 2]) test(`real home result markup shows ${remaini
     ...copy, activeCards: [], refreshingRecommendationIds: [], onRefreshRecommendations() {}, onReload() {},
     OneOnOneRefreshControl: 'RefreshControl', refreshNotice: null, plusActive: false,
     OneOnOneExpansionPanel: 'ExpansionPanel', processingAutoKeys: [], onReported() {}, onAutoSelect() {},
+    onCandidateHidden: undefined, onCandidateRestored: undefined,
   }).render;
   const tree = render({ ...quota(remaining), recommendations: [], admin_recommendations: [] }, 0);
   const control = nodes(tree).find(n => n.type === 'RefreshControl');
