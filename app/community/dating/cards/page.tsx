@@ -2071,7 +2071,7 @@ function OpenCardsContent() {
       hidden_candidate_ids: [...new Set([...(group.hidden_candidate_ids ?? []), candidateId])],
     })));
     setOneOnOneRecommendationsLoading(false);
-    setOneOnOneActionNotice("추천 목록에서 숨겼어요. 기존 요청·매칭은 그대로 유지돼요.");
+    setOneOnOneActionNotice("후보를 숨겼어요. 빈자리는 바로 채워지지 않아요. 기존 요청·매칭은 그대로 유지돼요.");
   };
 
   const handleOneOnOneFavoriteChanged = (sourceCardId: string, candidateId: string, favorite: boolean) => {

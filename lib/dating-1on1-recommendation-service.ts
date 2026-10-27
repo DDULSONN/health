@@ -59,7 +59,7 @@ import { readRecommendationPage, recommendationSourceKey } from "@/lib/dating-1o
 import { nextRecommendationPage, restoreRecommendationPage } from "@/lib/dating-1on1-recommendation-page";
 import { readRecommendationHistory } from "@/lib/dating-1on1-recommendation-history";
 import { getRegionDistanceMeta } from "@/lib/region-distance";
-import { readCandidateHides } from "@/lib/dating-candidate-hides";
+import { candidateHideUserIdsAt, readCandidateHides } from "@/lib/dating-candidate-hides";
 
 const RECOMMENDATION_LIMIT = 10;
 const FAVORITE_TABLE = "dating_1on1_candidate_favorites";
@@ -438,20 +438,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
       last_handled_at: candidateRevisitTimes.get(candidate.id) != null
         ? new Date(candidateRevisitTimes.get(candidate.id)!).toISOString() : null,
     }));
-    // New selections and legacy replay must use the same eligible pool, so the
-    // planned refresh cannot disagree with its subsequent GET response.
-    const selectionCandidates = unsavedCandidates.filter(notHidden);
-    const defaultSortedCandidates = sortCandidatesForSource(sourceCard, selectionCandidates, `${adminRecommendationDate}:default`, nowMs);
     const defaultPageAt = Date.parse(`${adminRecommendationDate}T00:00:00+09:00`);
-    const dailyObservedIds = observedCandidateIdsAt(observations, defaultPageAt);
-    const defaultRecommendations = dailyObservedIds.size ? takeObservedRecommendations(sourceCard, defaultSortedCandidates,
-      RECOMMENDATION_LIMIT, dailyObservedIds, new Set(), handledPairIds, nowMs) : takeBalancedRecommendations(
-      sourceCard,
-      defaultSortedCandidates,
-      RECOMMENDATION_LIMIT,
-      handledPairIds,
-      nowMs
-    );
     const activeRefresh = getActiveRecommendationRefresh(sourceCard.recommendation_refresh_used_at, nowMs);
     const refreshSeeds = [...(refreshEventsByCardId.get(sourceCard.id) ?? [])];
     if (
@@ -467,6 +454,25 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     if (recoverySeed) refreshSeeds.push(recoverySeed);
     if (simulateRefresh && refreshPlan && sourceCard.id === refreshPlan.sourceCardId && !savedPageResult?.available) refreshSeeds.push(refreshPlan.at);
     const hasActiveRefresh = refreshSeeds.some((seed) => getActiveRecommendationRefresh(seed, nowMs));
+    // Initial/legacy pages are reconstructed on GET. Removing today's hidden
+    // people BEFORE ranking refilled them for free on every reload. Keep their
+    // slots in this generation, then filter them from the final response.
+    // A subsequent explicit refresh (or normal new daily generation) uses the
+    // preferences already in effect at its generation time and can fill again.
+    const pageAt = hasActiveRefresh ? Math.max(...refreshSeeds.filter(seed => getActiveRecommendationRefresh(seed, nowMs)).map(Date.parse)) : defaultPageAt;
+    const hiddenAtGeneration = candidateHideUserIdsAt(hiddenCandidates.rows, pageAt);
+    const replayCandidates = unsavedCandidates.filter(card => !hiddenAtGeneration.has(card.user_id));
+    const selectionCandidates = unsavedCandidates.filter(notHidden);
+    const defaultSortedCandidates = sortCandidatesForSource(sourceCard, replayCandidates, `${adminRecommendationDate}:default`, nowMs);
+    const dailyObservedIds = observedCandidateIdsAt(observations, defaultPageAt);
+    const defaultRecommendations = dailyObservedIds.size ? takeObservedRecommendations(sourceCard, defaultSortedCandidates,
+      RECOMMENDATION_LIMIT, dailyObservedIds, new Set(), handledPairIds, nowMs) : takeBalancedRecommendations(
+      sourceCard,
+      defaultSortedCandidates,
+      RECOMMENDATION_LIMIT,
+      handledPairIds,
+      nowMs
+    );
     const recentHandledIds = new Set(unsavedCandidates.filter((card) => isRecentlyHandledCandidate(card, nowMs)).map((card) => card.id));
     const savedPage = savedPageResult.page;
     const hasSavedPage = savedPage && savedPage.source_card_id === sourceCard.id && activeRefresh &&
@@ -478,7 +484,7 @@ export async function loadOneOnOneRecommendations(admin: ReturnType<typeof creat
     const replay = hasSavedPage && observations.length > 0
       ? { recommendations: [] as typeof defaultRecommendations, extraRecommendations: [] as typeof defaultRecommendations,
         shownIds: observedCandidateIdsAt(observations, nowMs) }
-      : replayRecommendationRefreshes(sourceCard, selectionCandidates,
+      : replayRecommendationRefreshes(sourceCard, replayCandidates,
       defaultRecommendations, hasActiveRefresh ? refreshSeeds : [], handledPairIds, RECOMMENDATION_LIMIT, nowMs,
       { limit: ONE_ON_ONE_FREE_EXTRA_CANDIDATES, excludeIds: recentHandledIds }, observations);
     let recommendations = hasActiveRefresh ? replay.recommendations : defaultRecommendations;

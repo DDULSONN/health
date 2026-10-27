@@ -5590,7 +5590,7 @@ export default function MyPage() {
       admin_recommendations: group.admin_recommendations?.filter((card) => card.id !== candidateId),
       hidden_candidate_ids: [...new Set([...(group.hidden_candidate_ids ?? []), candidateId])],
     })));
-    setOneOnOneActionNotice("추천 목록에서 숨겼어요. 기존 요청·매칭은 그대로 유지돼요.");
+    setOneOnOneActionNotice("후보를 숨겼어요. 빈자리는 바로 채워지지 않아요. 기존 요청·매칭은 그대로 유지돼요.");
     void reloadOneOnOneRecommendations(true, true).catch(() => {
       setOneOnOneActionNotice("숨김은 저장됐어요. 목록 확인이 늦어지고 있으니 화면을 다시 불러와 주세요.");
     });

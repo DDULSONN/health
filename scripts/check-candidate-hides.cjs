@@ -123,6 +123,16 @@ function routeFixture({ signedIn = true, originError = false, ticketSource = id(
   const post = (body = { action: 'hide', sourceCardId: id(11), candidateId: id(12) }) => route.POST(new Request('http://localhost/api/dating/1on1/candidate-hides', { method: 'POST', body: typeof body === 'string' ? body : JSON.stringify(body) }));
   return { route, post, calls, queries };
 }
+
+test('page reconstruction excludes old hides but reserves later hidden slots; invalid dates fail closed', () => {
+  const { candidateHideUserIdsAt } = loader()('@/lib/dating-candidate-hides');
+  const at = Date.parse('2026-10-28T00:00:00+09:00');
+  const rows = [-1, 0, 1].map((offset, i) => ({ candidate_user_id: id(i + 10), created_at: new Date(at + offset).toISOString() }));
+  rows.push({ candidate_user_id: id(20), created_at: 'invalid' });
+  assert.deepEqual([...candidateHideUserIdsAt(rows, at)], [id(10), id(11), id(20)]);
+  assert.equal(candidateHideUserIdsAt(rows, NaN).size, 4);
+  assert.equal(candidateHideUserIdsAt(rows, at + 2).size, 4, 'next generation applies every existing hide');
+});
 test('API authentication, CSRF, malformed/oversized body, wrong receipt and guessed IDs are rejected', async () => {
   assert.equal((await routeFixture({ signedIn: false }).post()).status, 401);
   assert.equal((await routeFixture({ originError: true }).post()).status, 403);

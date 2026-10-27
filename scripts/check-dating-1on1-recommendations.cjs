@@ -1542,6 +1542,131 @@ test('hiding an already-saved page removes only those cards and never consumes a
   assert.deepEqual(ids(allCandidates(after.body)), ids(before.slice(4)));
   assert.deepEqual(tables, snapshot, 'ordinary GET neither alters exact page nor writes quota');
 });
+
+for (const mode of ['initial', 'legacy-refresh', 'saved-refresh']) test('hide slots: repeated reads remove only hidden people without free replacements: ' + mode, async () => {
+  const tables = activeFixture(80);
+  if (mode !== 'legacy-refresh') tables.dating_1on1_recommendation_pages = [];
+  if (mode !== 'initial') await runRefresh(tables, { atTime: now });
+  const initial = (await runApi(tables, { atTime: now + 1 })).body.items[0];
+  let main = ids(initial.recommendations), extra = ids(initial.admin_recommendations);
+  const expectedMain = [...main], expectedExtra = [...extra], hiddenIds = new Set();
+  // Real observations of this page must not reorder it on a later GET.
+  tables.dating_1on1_candidate_impressions = [...initial.recommendations, ...initial.admin_recommendations].map(c => ({
+    viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now + 1).toISOString(),
+  }));
+  for (let step = 0; step < 3; step++) {
+    const target = step === 1 ? extra[0] : main[0];
+    const c = tables.dating_1on1_cards.find(c => c.id === target);
+    hideCandidate(tables, c);
+    tables.dating_1on1_candidate_hides.at(-1).created_at = new Date(now + 10 + step).toISOString();
+    hiddenIds.add(target);
+    const unchanged = structuredClone(tables);
+    for (let repeat = 0; repeat < 3; repeat++) {
+      const result = await runApi(tables, { atTime: now + 100 + step * 10 + repeat });
+      assert.equal(result.response.status, 200);
+      const group = result.body.items[0]; main = ids(group.recommendations); extra = ids(group.admin_recommendations);
+      assert.deepEqual(main, expectedMain.filter(id => !hiddenIds.has(id)), 'main never refills a hidden slot');
+      assert.deepEqual(extra, expectedExtra.filter(id => !hiddenIds.has(id)), 'extras never refill a hidden slot');
+      assert.equal(group.refresh_remaining, initial.refresh_remaining);
+      assert.deepEqual(tables, unchanged, 'GET cannot write quota, matches or a replacement page');
+    }
+  }
+  tables.dating_1on1_candidate_hides = [];
+  const restored = (await runApi(tables, { atTime: now + 200 })).body.items[0];
+  assert.deepEqual(ids(restored.recommendations), expectedMain, 'restore returns the original people, not a new batch');
+  assert.deepEqual(ids(restored.admin_recommendations), expectedExtra);
+});
+
+for (const legacy of [false, true]) test('hide slots: next explicit refresh fills up to 10 + 3 and repeated GET stays exact: legacy=' + legacy, async () => {
+  const tables = activeFixture(80);
+  if (!legacy) tables.dating_1on1_recommendation_pages = [];
+  const initial = (await runApi(tables, { atTime: now })).body.items[0];
+  const hidden = [...initial.recommendations.slice(0, 3), initial.admin_recommendations[0]];
+  for (const c of hidden) {
+    hideCandidate(tables, c); tables.dating_1on1_candidate_hides.at(-1).created_at = new Date(now + 1).toISOString();
+  }
+  const reduced = (await runApi(tables, { atTime: now + 2 })).body.items[0];
+  assert.equal(reduced.recommendations.length, 7); assert.equal(reduced.admin_recommendations.length, 2);
+  const result = await runRefresh(tables, { atTime: now + 10 });
+  assert.equal(result.response.status, 200); assert.equal(result.body.refresh_consumed, true);
+  assert.equal(result.rpcCalls.length, 1);
+  const after = (await runApi(tables, { atTime: now + 11 })).body.items[0];
+  assert.equal(after.recommendations.length, 10); assert.equal(after.admin_recommendations.length, 3);
+  assert.ok([...after.recommendations, ...after.admin_recommendations].every(c => !hidden.some(h => h.user_id === c.user_id)));
+  assert.equal(after.refresh_remaining, initial.refresh_remaining - 1);
+  const again = (await runApi(tables, { atTime: now + 12 })).body.items[0];
+  assert.deepEqual(ids(again.recommendations), ids(after.recommendations));
+  assert.deepEqual(ids(again.admin_recommendations), ids(after.admin_recommendations));
+});
+
+test('hide slots: previous-day preferences apply to a new daily generation, not as permanent empty slots', async () => {
+  const tables = activeFixture(40); tables.dating_1on1_recommendation_pages = [];
+  const first = allCandidates((await runApi(tables, { atTime: now })).body).slice(0, 4);
+  first.forEach(c => hideCandidate(tables, c));
+  const snapshot = structuredClone(tables);
+  const after = (await runApi(tables, { atTime: now + day })).body.items[0];
+  assert.equal(after.recommendations.length, 10); assert.equal(after.admin_recommendations.length, 3);
+  assert.ok([...after.recommendations, ...after.admin_recommendations].every(c => !first.some(h => h.user_id === c.user_id)));
+  assert.deepEqual(tables, snapshot);
+});
+
+test('hide slots: a genuinely scarce pool is not forced to ten or charged for unchanged candidates', async () => {
+  const tables = activeFixture(10); tables.dating_1on1_recommendation_pages = [];
+  const first = allCandidates((await runApi(tables, { atTime: now })).body);
+  hideCandidate(tables, first[0]);
+  const read = await runApi(tables, { atTime: now + 1 });
+  assert.equal(allCandidates(read.body).length, 9);
+  const result = await runRefresh(tables, { atTime: now + 2 });
+  assert.equal(result.response.status, 200); assert.equal(result.body.refresh_consumed, false);
+  assert.equal(result.body.refresh_remaining, 1);
+  assert.equal(allCandidates((await runApi(tables, { atTime: now + 3 })).body).length, 9);
+});
+
+test('hide slots: hiding all ten leaves no main candidates until an explicit refresh, without touching extras', async () => {
+  const tables = activeFixture(80); tables.dating_1on1_recommendation_pages = [];
+  const initial = (await runApi(tables, { atTime: now })).body.items[0];
+  initial.recommendations.forEach(c => hideCandidate(tables, c));
+  const hiddenState = structuredClone(tables);
+  const after = (await runApi(tables, { atTime: now + 1 })).body.items[0];
+  assert.equal(after.recommendations.length, 0);
+  assert.deepEqual(ids(after.admin_recommendations), ids(initial.admin_recommendations));
+  assert.equal(after.can_refresh, true); assert.equal(after.refresh_remaining, initial.refresh_remaining);
+  assert.deepEqual(tables, hiddenState);
+  const refresh = await runRefresh(tables, { atTime: now + 2 });
+  assert.equal(refresh.response.status, 200); assert.equal(refresh.body.refresh_consumed, true);
+  const next = (await runApi(tables, { atTime: now + 3 })).body.items[0];
+  assert.equal(next.recommendations.length, 10);
+  assert.ok(next.recommendations.every(c => !initial.recommendations.some(h => h.user_id === c.user_id)));
+});
+
+for (const legacy of [false, true]) test('hide slots: repeated hide, restore and refresh cycles retain slots and exclude earlier hides: legacy=' + legacy, async () => {
+  const tables = activeFixture(100);
+  if (!legacy) tables.dating_1on1_recommendation_pages = [];
+  tables.dating_1on1_candidate_impressions = tables.dating_1on1_cards.slice(1).map(c => ({
+    viewer_user_id: 'user-source', candidate_user_id: c.user_id, first_seen_at: new Date(now - 1000).toISOString(),
+  }));
+  const hiddenUsers = new Set();
+  for (let round = 0; round < 3; round++) {
+    const at = now + round * 10000;
+    const current = (await runApi(tables, { atTime: at })).body.items[0];
+    assert.equal(current.recommendations.length, 10);
+    const target = current.recommendations[0];
+    hideCandidate(tables, target); tables.dating_1on1_candidate_hides.at(-1).created_at = new Date(at + 1).toISOString();
+    const reduced = (await runApi(tables, { atTime: at + 2 })).body.items[0];
+    assert.deepEqual(ids(reduced.recommendations), ids(current.recommendations.slice(1)));
+    tables.dating_1on1_candidate_hides.pop();
+    const restored = (await runApi(tables, { atTime: at + 3 })).body.items[0];
+    assert.deepEqual(ids(restored.recommendations), ids(current.recommendations));
+    hideCandidate(tables, target); tables.dating_1on1_candidate_hides.at(-1).created_at = new Date(at + 4).toISOString();
+    hiddenUsers.add(target.user_id);
+    const next = await runRefresh(tables, { atTime: at + 5 });
+    assert.equal(next.response.status, 200); assert.equal(next.rpcCalls.length, 1);
+    assert.equal(next.body.refresh_consumed, false, 'rotating previously seen people retains the existing no-charge rule');
+    const read = (await runApi(tables, { atTime: at + 6 })).body.items[0];
+    assert.equal(read.recommendations.length, 10); assert.equal(read.admin_recommendations.length, 3);
+    assert.ok([...read.recommendations, ...read.admin_recommendations].every(c => !hiddenUsers.has(c.user_id)));
+  }
+});
 test('hides apply to stored expansion without refilling and do not affect another viewer', async () => {
   const tables = activeFixture(40);
   const expanded = await runExpansion(tables); const snapshotIds = ids(expanded.body.candidates);

@@ -8,6 +8,16 @@ export type CandidateHide = {
   candidate_name: string; created_at: string;
 };
 
+// Replay a page with the preferences that existed when it was generated.
+// Later hides reserve their old slots until the next generation; the caller
+// must still remove ALL currently hidden users before returning any profiles.
+export function candidateHideUserIdsAt(rows: readonly CandidateHide[], pageAt: number) {
+  return new Set(rows.filter(row => {
+    const hiddenAt = Date.parse(row.created_at);
+    return !Number.isFinite(hiddenAt) || !Number.isFinite(pageAt) || hiddenAt <= pageAt;
+  }).map(row => row.candidate_user_id));
+}
+
 export async function readCandidateHides(admin: SupabaseClient, userId: string) {
   const result = await admin.from(CANDIDATE_HIDES_TABLE)
     .select("id,candidate_user_id,candidate_card_id,candidate_name,created_at")

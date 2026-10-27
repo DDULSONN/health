@@ -23,7 +23,7 @@ export function CandidateHideButton({ enabled, sourceCardId, candidateId, ticket
   if (!enabled) return null;
   return <span className="inline-flex flex-wrap items-center">
     <button type="button" className={smallButton} disabled={disabled || busy} onClick={async () => {
-      if (request.current || disabled || !window.confirm("이 후보를 추천 목록에서 숨길까요? 상대에게 알리지 않으며, 기존 요청·매칭은 유지돼요. ‘숨긴 후보’에서 해제할 수 있어요.")) return;
+      if (request.current || disabled || !window.confirm("이 후보를 숨길까요? 빈자리는 바로 채워지지 않고, 다음 후보 새로고침 때 다시 추천해요. 상대에게 알리지 않으며 기존 요청·매칭은 유지돼요. ‘숨긴 후보’에서 해제할 수 있어요.")) return;
       const controller = new AbortController(); request.current = controller; setBusy(true); setError("");
       try { await change({ action: "hide", sourceCardId, candidateId, ticket }, controller.signal); if (!controller.signal.aborted) onHidden(candidateId); }
       catch (e) { if (!controller.signal.aborted) setError(errorMessage(e, "숨김 결과를 확인하지 못했어요. 숨긴 후보에서 다시 확인해 주세요.")); }
@@ -55,7 +55,7 @@ export function CandidateHidesPanel({ enabled, revision, onRestored }: { enabled
   return <div className="mt-2 text-xs text-neutral-500">
     <button type="button" className={smallButton} aria-expanded={open} disabled={busy} onClick={() => { setOpen(!open); if (!open) void load(); }}>숨긴 후보 {open ? "접기" : "보기"}</button>
     {open ? <div className="rounded-xl border border-neutral-200 bg-white p-3">
-      <p className="text-[11px] leading-5">내 추천에서만 숨겨져요. 상대에게 알림은 가지 않고, 기존 요청·매칭은 유지돼요. 해제한 후보는 추천 조건에 맞으면 다시 보여요.</p>
+      <p className="text-[11px] leading-5">숨긴 자리는 바로 채우지 않고, 다음 후보 새로고침 때 다시 추천해요. 상대에게 알리지 않으며 기존 요청·매칭은 유지돼요. 해제하면 조건에 맞는 후보가 다시 보여요.</p>
       {busy ? <p role="status">확인 중…</p> : null}
       {error ? <p role="alert" className="text-rose-700">{error}<button type="button" className={smallButton} disabled={busy} onClick={() => void load()}>다시 확인</button></p> : null}
       {items?.length === 0 ? <p className="mt-2">숨긴 후보가 없어요.</p> : null}
